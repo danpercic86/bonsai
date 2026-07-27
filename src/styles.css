@@ -1,8 +1,45 @@
-/* Minimal placeholder styles for M0a. M0c applies the full token set from
-   docs/contracts/ui-reference.md. */
+/* Bonsai theme tokens — canonical values from docs/contracts/ui-reference.md.
+   Dark is the default; light theme via [data-theme="light"]. */
 
 :root {
   color-scheme: dark;
+
+  --bg-0: #16181d;
+  --bg-1: #1d2026;
+  --bg-2: #262a31;
+  --bg-3: #2f343d;
+  --text-1: #e8eaed;
+  --text-2: #a8adb8;
+  --text-3: #6b7280;
+  --border: #2c313a;
+  --accent: #4f8cff;
+  --accent-text: #ffffff;
+  --selection: #2a3b57;
+  --danger: #e5534b;
+  --success: #57ab5a;
+  --warning: #d4a72c;
+
+  --font-ui: 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Cascadia Code', 'Cascadia Mono', Consolas, 'JetBrains Mono', monospace;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --bg-0: #ffffff;
+  --bg-1: #f6f7f9;
+  --bg-2: #eceef2;
+  --bg-3: #e2e5ea;
+  --text-1: #1c1f24;
+  --text-2: #4b515c;
+  --text-3: #8a919e;
+  --border: #dcdfe5;
+  --accent: #2f6fe4;
+  --accent-text: #ffffff;
+  --selection: #dbe7ff;
+  --danger: #d13438;
+  --success: #1a7f37;
+  --warning: #9a6700;
 }
 
 * {
@@ -17,26 +54,231 @@ body,
 }
 
 body {
-  font-family: 'Segoe UI', system-ui, sans-serif;
-  background: #16181d;
-  color: #e6e8ee;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  background: var(--bg-0);
+  color: var(--text-1);
 }
 
-.app-placeholder {
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* ---------- App frame ---------- */
+
+.app {
   height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Header (40px) ---------- */
+
+.header {
+  height: 40px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.header-repo {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.repo-name {
+  font-weight: 600;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+
+.repo-path {
+  font-size: 12px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.head-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.head-branch {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+/* ---------- Pills ---------- */
+
+.pill {
+  display: inline-block;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pill-detached {
+  background: var(--danger);
+  color: #ffffff;
+}
+
+.pill-unborn {
+  background: var(--bg-2);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+}
+
+/* ---------- Buttons ---------- */
+
+.btn-primary {
+  height: 32px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.btn-icon:hover:not(:disabled) {
+  background: var(--bg-2);
+}
+
+.btn-icon:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+/* ---------- 3-pane layout ---------- */
+
+.panes {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 240px minmax(480px, 1fr) 380px;
+}
+
+.sidebar {
+  background: var(--bg-1);
+  border-right: 1px solid var(--border);
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.graph-pane {
+  background: var(--bg-0);
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.right-panel {
+  background: var(--bg-1);
+  border-left: 1px solid var(--border);
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  font-weight: 600;
+}
+
+.pane-empty {
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: center;
+  margin: 0;
+}
+
+/* ---------- Empty state ---------- */
+
+.empty-state {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 12px;
+  padding: 24px;
 }
 
-.app-placeholder h1 {
+.empty-title {
   margin: 0;
+  font-size: 20px;
   font-weight: 600;
 }
 
-.app-placeholder p {
+.empty-tagline {
   margin: 0;
-  color: #9aa1ad;
+  color: var(--text-3);
+}
+
+/* ---------- Errors ---------- */
+
+.error-banner {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  border-radius: 6px;
+  padding: 8px 12px;
+  max-width: 480px;
+  overflow-wrap: anywhere;
 }

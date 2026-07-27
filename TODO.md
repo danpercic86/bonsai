@@ -5,8 +5,10 @@
 
 ## M0 — Scaffold — **in-progress**
 
-Current step: M0b (repo info core + command + tests) — implemented, cargo test 6/6 + clippy
-green; awaiting reviewer round 1. M0a committed (c090459). Prereqs installed: Rust 1.97.1 stable-msvc, VS Build Tools
+Current step: M0c (frontend shell + IPC + mock harness) — implemented, pnpm build green;
+awaiting reviewer round 1. M0a committed (c090459), M0b committed (0cd1d4d).
+Carry-over note for M1 contract: define bare-repo semantics (open_ext accepts bare repos;
+M1 status/watcher assume a workdir). Prereqs installed: Rust 1.97.1 stable-msvc, VS Build Tools
 2022 17.14, pnpm 11.17.0, Node 24, WebView2. Architect contract + `docs/contracts/ui-reference.md`
 done.
 
