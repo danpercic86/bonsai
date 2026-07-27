@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "bonsai-mock",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev:mock"],
+      "port": 1420
+    }
+  ]
+}
