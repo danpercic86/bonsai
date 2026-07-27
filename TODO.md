@@ -5,8 +5,8 @@
 
 ## M0 — Scaffold — **in-progress**
 
-Current step: M0a (scaffold compiles) — implemented, gates green (cargo check/clippy, pnpm
-build); awaiting reviewer round 1. Prereqs installed: Rust 1.97.1 stable-msvc, VS Build Tools
+Current step: M0b (repo info core + command + tests) — implemented, cargo test 6/6 + clippy
+green; awaiting reviewer round 1. M0a committed (c090459). Prereqs installed: Rust 1.97.1 stable-msvc, VS Build Tools
 2022 17.14, pnpm 11.17.0, Node 24, WebView2. Architect contract + `docs/contracts/ui-reference.md`
 done.
 
