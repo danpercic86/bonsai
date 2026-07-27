@@ -15,8 +15,8 @@ function author(row: number): string {
  * 30-row mock layout per contract M2-graph.md §3.5. Rows 0–7 exercise the
  * E-series geometry in one graph: octopus merge (row 0), fork/merge curves,
  * criss-cross-style convergences; rows 27–29 are two disconnected roots.
- * Covers all five ref-pill variants except detached HEAD (headIndex ring
- * covers HEAD display; the head-kind pill variant is styled but unused here).
+ * Covers all ref-pill variants except detached HEAD — that one is exercised
+ * by the `?fixture=detached` variant below.
  */
 export function buildMockGraph(): GraphLayout {
   const base = Math.floor(Date.now() / 1000) - HOUR; // newest commit ~1h ago
@@ -79,4 +79,20 @@ export function buildMockGraph(): GraphLayout {
   push('pages: init', 0, []);
 
   return { nodes, edges, laneCount: 3, headIndex: 0, truncated: false };
+}
+
+/**
+ * Detached-HEAD variant of the §3.5 fixture (dev-only, `?fixture=detached`):
+ * HEAD is detached onto row 5 ("core work 3"), which gets the solid red HEAD
+ * pill (kind `head`); `main` on row 0 loses `isHead` (its pill goes outline).
+ * Same geometry as `buildMockGraph` — exercises the one pill variant the
+ * locked default fixture cannot.
+ */
+export function buildMockGraphDetached(): GraphLayout {
+  const layout = buildMockGraph();
+  layout.headIndex = 5;
+  const mainRef = layout.nodes[0].refs?.find((r) => r.kind === 'localBranch');
+  if (mainRef !== undefined) mainRef.isHead = false;
+  layout.nodes[5].refs = [{ name: 'HEAD', kind: 'head', isHead: true }];
+  return layout;
 }

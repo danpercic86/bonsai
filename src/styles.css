@@ -235,11 +235,13 @@ body {
   background: var(--bg-0);
   min-width: 0;
   position: relative;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .graph-pane-empty {
+  flex: 1;
   height: 100%;
   display: flex;
   align-items: center;
@@ -249,14 +251,29 @@ body {
 .graph-error-banner {
   margin: 12px;
   max-width: none;
+  flex: none;
 }
 
+/* M2c scroll model: fixed viewport-sized canvas + transparent overlay scroller
+   whose spacer provides the native scrollbar (contract M2-graph.md §4.1). */
 .graph-canvas-host {
+  position: relative;
+  flex: 1;
+  min-height: 0;
   width: 100%;
 }
 
-.graph-canvas-host canvas {
+.graph-canvas {
+  position: absolute;
+  inset: 0;
   display: block;
+}
+
+.graph-scroll {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   cursor: default;
 }
 

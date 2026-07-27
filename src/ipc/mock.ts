@@ -1,4 +1,4 @@
-import { buildMockGraph } from './fixtures/graph';
+import { buildMockGraph, buildMockGraphDetached } from './fixtures/graph';
 import type {
   AppError,
   GraphLayout,
@@ -86,7 +86,9 @@ export const mockIpc: IpcApi = {
   async getGraph(): Promise<GraphLayout> {
     await delay(150);
     // Built fresh per call (timestamps relative to now; callers own the copy).
-    return buildMockGraph();
+    // `?fixture=` selects a variant (contract §5.4 mechanism; 20k lands in M2d).
+    const fixture = new URLSearchParams(window.location.search).get('fixture');
+    return fixture === 'detached' ? buildMockGraphDetached() : buildMockGraph();
   },
 
   // The mock never emits repo-changed (no backend watcher in the browser

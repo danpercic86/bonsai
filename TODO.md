@@ -23,9 +23,10 @@ Sub-increments: ee3bb52, 65c6c73, 04a87df, a87a41e.
 
 ## M2 — Commit graph (centerpiece; M2a–M2d) — **in-progress**
 
-Current step: M2b (canvas rendering of static layout) — senior-dev implementing per
-`docs/contracts/M2-graph.md` §3 (+ deferred getGraph TS IPC/mock from M2a). M2a committed
-(cfba129).
+Current step: M2c (virtualization/scrolling/HiDPI) — implemented + live-verified by dev
+(pixel checks, dpr=2, scrollSweep 182 frames avg 16.6ms); awaiting reviewer round 1.
+M2a committed (cfba129), M2b committed (cccbb2f). Still open nit: refresh-failure path
+alignment (App.tsx) — Polish candidate.
 
 Goal: Rust computes GraphLayout from a commit walk seeded from all local branches,
 remote-tracking branches, and tags; topological-then-date ordering; deterministic lane colors
