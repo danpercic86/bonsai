@@ -44,7 +44,7 @@ fn read_repo_info_matches_git_cli() {
     let cli_branch = git(path, &["symbolic-ref", "--short", "HEAD"]);
     let cli_oid = git(path, &["rev-parse", "HEAD"]);
 
-    let info = bonsai::git::repo::read_repo_info(path).expect("read_repo_info");
+    let info = bonsai_lib::git::repo::read_repo_info(path).expect("read_repo_info");
     assert!(info.is_repo, "CLI-created repo must be reported is_repo=true");
     let head = info.head.expect("head present for a repo with a commit");
     assert!(!head.unborn);

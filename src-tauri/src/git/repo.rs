@@ -19,6 +19,9 @@ pub struct RepoInfo {
     /// Canonical workdir path as passed in.
     pub path: String,
     pub is_repo: bool,
+    /// `true` for bare repositories (rejected at open; M1 contract §3.3).
+    /// Always `false` when `is_repo == false`.
+    pub bare: bool,
     /// `None` iff `is_repo == false`.
     pub head: Option<HeadInfo>,
 }
@@ -49,6 +52,7 @@ pub fn read_repo_info(path: &std::path::Path) -> Result<RepoInfo, AppError> {
             return Ok(RepoInfo {
                 path: path_str,
                 is_repo: false,
+                bare: false,
                 head: None,
             });
         }
@@ -59,6 +63,7 @@ pub fn read_repo_info(path: &std::path::Path) -> Result<RepoInfo, AppError> {
     Ok(RepoInfo {
         path: path_str,
         is_repo: true,
+        bare: repo.is_bare(),
         head: Some(head),
     })
 }
@@ -156,6 +161,7 @@ mod tests {
 
         let info = read_repo_info(dir.path()).expect("read_repo_info");
         assert!(info.is_repo);
+        assert!(!info.bare);
         let head = info.head.expect("head present");
         assert!(!head.unborn);
         assert!(!head.detached);
@@ -178,6 +184,7 @@ mod tests {
 
         let info = read_repo_info(dir.path()).expect("read_repo_info");
         assert!(info.is_repo);
+        assert!(!info.bare);
         let head = info.head.expect("head present");
         assert!(head.unborn);
         assert!(!head.detached);
@@ -198,6 +205,19 @@ mod tests {
         assert!(!head.unborn);
         assert_eq!(head.branch_name, None);
         assert_eq!(head.oid, oid.to_string());
+    }
+
+    #[test]
+    fn bare_repo() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        git2::Repository::init_bare(dir.path()).expect("init bare repo");
+
+        let info = read_repo_info(dir.path()).expect("read_repo_info");
+        assert!(info.is_repo);
+        assert!(info.bare);
+        // HEAD is still reported (unborn in a fresh bare repo).
+        let head = info.head.expect("head present");
+        assert!(head.unborn);
     }
 
     #[test]

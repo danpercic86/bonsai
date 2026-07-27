@@ -1,6 +1,6 @@
 /// Application-level error surfaced to the frontend.
 ///
-/// Serialized as `{ "kind": "git" | "io" | "other", "message": "..." }`.
+/// Serialized as `{ "kind": "git" | "io" | "other" | "noRepo", "message": "..." }`.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("git error: {0}")]
@@ -9,6 +9,8 @@ pub enum AppError {
     Io(String),
     #[error("{0}")]
     Other(String),
+    #[error("no repository is open")]
+    NoRepo,
 }
 
 impl AppError {
@@ -17,12 +19,14 @@ impl AppError {
             AppError::Git(_) => "git",
             AppError::Io(_) => "io",
             AppError::Other(_) => "other",
+            AppError::NoRepo => "noRepo",
         }
     }
 
     fn message(&self) -> &str {
         match self {
             AppError::Git(m) | AppError::Io(m) | AppError::Other(m) => m,
+            AppError::NoRepo => "no repository is open",
         }
     }
 }
