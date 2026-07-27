@@ -371,3 +371,101 @@ fn non_repo_path_is_an_error() {
     let err = read_status(dir.path()).expect_err("non-repo dir must be an error");
     assert!(matches!(err, AppError::Git(_)), "got: {err:?}");
 }
+
+// ---------------------------------------------------------------------------
+// Adversarial probes beyond the contract's 10 scenarios (tester additions).
+// ---------------------------------------------------------------------------
+
+// Probe A: filenames with spaces and non-ASCII (unicode) characters, both
+// untracked and staged. Porcelain `-z` emits raw (unquoted) UTF-8 paths, so
+// the oracle comparison exercises our from_utf8_lossy path handling.
+#[test]
+fn filenames_with_spaces_and_unicode() {
+    require_git!();
+    let dir = init_repo_with_commit();
+    let path = dir.path();
+
+    std::fs::write(path.join("my notes file.txt"), "spaces\n").expect("write spaced name");
+    std::fs::write(path.join("über-café-日本語.txt"), "unicode\n").expect("write unicode name");
+    // Stage one of each kind, leave the others untracked.
+    std::fs::write(path.join("staged üñïçødé file.txt"), "both\n").expect("write staged unicode");
+    git(path, &["add", "staged üñïçødé file.txt"]);
+
+    let snapshot = assert_matches_porcelain(path);
+    assert_eq!(snapshot.staged.len(), 1);
+    assert_eq!(snapshot.staged[0].path, "staged üñïçødé file.txt");
+    assert_eq!(snapshot.staged[0].status, FileStatus::Added);
+    let untracked: BTreeSet<&str> = snapshot.untracked.iter().map(|e| e.path.as_str()).collect();
+    assert!(untracked.contains("my notes file.txt"));
+    assert!(untracked.contains("über-café-日本語.txt"));
+}
+
+// Probe B: files inside an ignored directory (and an ignored loose file) must
+// be excluded entirely; the .gitignore itself is untracked. Verifies
+// include_ignored(false) really excludes nested ignored content even with
+// recurse_untracked_dirs(true).
+#[test]
+fn ignored_directory_contents_excluded() {
+    require_git!();
+    let dir = init_repo_with_commit();
+    let path = dir.path();
+
+    std::fs::write(path.join(".gitignore"), "target/\n*.log\n").expect("write .gitignore");
+    std::fs::create_dir_all(path.join("target").join("debug")).expect("mkdir target/debug");
+    std::fs::write(path.join("target").join("debug").join("bonsai.exe"), "bin").expect("write");
+    std::fs::write(path.join("build.log"), "noise\n").expect("write build.log");
+    std::fs::write(path.join("visible.txt"), "kept\n").expect("write visible.txt");
+
+    let snapshot = assert_matches_porcelain(path);
+    let untracked: Vec<&str> = snapshot.untracked.iter().map(|e| e.path.as_str()).collect();
+    assert_eq!(
+        untracked,
+        vec![".gitignore", "visible.txt"],
+        "ignored dir contents and *.log must be excluded"
+    );
+    assert!(snapshot.staged.is_empty());
+    assert!(snapshot.unstaged.is_empty());
+}
+
+// Probe C: rename across subdirectories (`git mv` into a new dir) with
+// forward-slash paths on both sides, plus an empty-content staged file
+// (zero-byte blob; also stands in for the executable-bit question, which is
+// moot on Windows).
+#[test]
+fn subdirectory_rename_and_empty_staged_file() {
+    require_git!();
+    let dir = init_repo_with_commit();
+    let path = dir.path();
+
+    // Commit a nested file first so we can rename it across directories.
+    std::fs::create_dir_all(path.join("src").join("old")).expect("mkdir src/old");
+    std::fs::write(
+        path.join("src").join("old").join("module.rs"),
+        "fn a() {}\nfn b() {}\nfn c() {}\nfn d() {}\n",
+    )
+    .expect("write module.rs");
+    git(path, &["add", "src/old/module.rs"]);
+    git(path, &["commit", "-m", "add nested module"]);
+
+    std::fs::create_dir_all(path.join("src").join("new")).expect("mkdir src/new");
+    git(path, &["mv", "src/old/module.rs", "src/new/module.rs"]);
+
+    // Zero-byte staged file.
+    std::fs::write(path.join("empty.txt"), "").expect("write empty.txt");
+    git(path, &["add", "empty.txt"]);
+
+    let snapshot = assert_matches_porcelain(path);
+    let rename = snapshot
+        .staged
+        .iter()
+        .find(|e| e.status == FileStatus::Renamed)
+        .expect("staged rename entry");
+    assert_eq!(rename.path, "src/new/module.rs", "forward slashes, new path");
+    assert_eq!(rename.orig_path.as_deref(), Some("src/old/module.rs"));
+    assert!(snapshot
+        .staged
+        .iter()
+        .any(|e| e.path == "empty.txt" && e.status == FileStatus::Added));
+    assert!(snapshot.unstaged.is_empty());
+    assert!(snapshot.untracked.is_empty());
+}
