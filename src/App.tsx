@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { StatusPanel } from './components/StatusPanel';
 import { ipc } from './ipc';
-import type { AppError, HeadInfo, RepoInfo } from './ipc';
+import type { AppError, HeadInfo, RepoInfo, StatusSnapshot, Unsubscribe } from './ipc';
 
 function isAppError(e: unknown): e is AppError {
   return (
@@ -56,10 +57,84 @@ function HeadSummary({ head }: { head: HeadInfo }) {
   );
 }
 
+function isUsableRepo(info: RepoInfo): boolean {
+  return info.isRepo && !info.bare;
+}
+
 export default function App() {
   const [repo, setRepo] = useState<RepoInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const [status, setStatus] = useState<StatusSnapshot | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Request-id last-wins guard: only the latest in-flight get_status may
+  // apply its result (M1 contract §5 — no frontend debounce beyond this).
+  const statusReqId = useRef(0);
+
+  const repoPath = repo !== null && isUsableRepo(repo) ? repo.path : null;
+
+  const refetchStatus = useCallback(async () => {
+    const id = ++statusReqId.current;
+    setStatusLoading(true);
+    try {
+      const snapshot = await ipc.getStatus();
+      if (id !== statusReqId.current) return;
+      setStatus(snapshot);
+      setStatusError(null);
+    } catch (e) {
+      if (id !== statusReqId.current) return;
+      setStatusError(errorMessage(e));
+    } finally {
+      if (id === statusReqId.current) setStatusLoading(false);
+    }
+  }, []);
+
+  const clearStatus = useCallback(() => {
+    statusReqId.current += 1; // invalidate any in-flight request
+    setStatus(null);
+    setStatusError(null);
+    setStatusLoading(false);
+  }, []);
+
+  // Subscriptions only (per React rules): repo-changed events + window focus
+  // both trigger a status refetch while a usable repo is open.
+  useEffect(() => {
+    if (repoPath === null) return;
+    let cancelled = false;
+    const unsubs: Unsubscribe[] = [];
+
+    const subscribe = async () => {
+      const offChanged = await ipc.onRepoChanged(() => {
+        console.debug('[bonsai] repo-changed → refetch status');
+        void refetchStatus();
+      });
+      if (cancelled) {
+        offChanged();
+        return;
+      }
+      unsubs.push(offChanged);
+
+      const offFocus = await ipc.onWindowFocus(() => {
+        console.debug('[bonsai] window focus → refetch status');
+        void refetchStatus();
+      });
+      if (cancelled) {
+        offFocus();
+        return;
+      }
+      unsubs.push(offFocus);
+    };
+    void subscribe();
+
+    return () => {
+      cancelled = true;
+      for (const unsub of unsubs) unsub();
+    };
+  }, [repoPath, refetchStatus]);
 
   async function handleOpenRepository() {
     setError(null);
@@ -71,20 +146,47 @@ export default function App() {
       }
       const info = await ipc.openRepo(path);
       setRepo(info);
+      if (isUsableRepo(info)) {
+        void refetchStatus();
+      } else {
+        clearStatus();
+      }
     } catch (e) {
       setError(errorMessage(e));
+      setRepo(null); // a failed open leaves no repo open (matches backend)
+      clearStatus();
     } finally {
       setLoading(false);
     }
   }
 
-  const repoOpen = repo !== null && repo.isRepo;
+  // Re-runs open_repo on the current path (refreshes HEAD in the header and
+  // self-heals the watcher), then refetches status.
+  async function handleRefresh() {
+    if (repoPath === null || refreshing) return;
+    setRefreshing(true);
+    try {
+      const info = await ipc.openRepo(repoPath);
+      setRepo(info);
+      if (isUsableRepo(info)) {
+        await refetchStatus();
+      } else {
+        clearStatus();
+      }
+    } catch (e) {
+      setStatusError(errorMessage(e));
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  const repoOpen = repoPath !== null;
 
   return (
     <div className="app">
       <header className="header">
         <span className="app-name">Bonsai</span>
-        {repoOpen && (
+        {repoOpen && repo !== null && (
           <div className="header-repo">
             <span className="repo-name">{folderName(repo.path)}</span>
             <span className="repo-path" title={repo.path}>
@@ -96,15 +198,16 @@ export default function App() {
         <button
           type="button"
           className="btn-icon"
-          disabled
-          title="Refresh (coming soon)"
+          disabled={!repoOpen || refreshing || statusLoading}
+          onClick={handleRefresh}
+          title="Refresh"
           aria-label="Refresh"
         >
           {'⟳'}
         </button>
       </header>
 
-      {repoOpen ? (
+      {repoOpen && repo !== null ? (
         <div className="panes">
           <aside className="sidebar">
             <div className="section-label">Branches</div>
@@ -117,7 +220,7 @@ export default function App() {
             )}
           </main>
           <aside className="right-panel">
-            <div className="section-label">Status</div>
+            <StatusPanel snapshot={status} loading={statusLoading} error={statusError} />
           </aside>
         </div>
       ) : (
@@ -128,6 +231,11 @@ export default function App() {
           {repo !== null && !repo.isRepo && (
             <div className="error-banner">
               Not a Git repository: <span className="mono">{repo.path}</span>
+            </div>
+          )}
+          {repo !== null && repo.isRepo && repo.bare && (
+            <div className="error-banner">
+              Bare repositories are not supported: <span className="mono">{repo.path}</span>
             </div>
           )}
           <button

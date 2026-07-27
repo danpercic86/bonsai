@@ -282,3 +282,158 @@ body {
   max-width: 480px;
   overflow-wrap: anywhere;
 }
+
+.error-banner-dismissible {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: none;
+  margin-bottom: 12px;
+}
+
+.error-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.error-dismiss {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: var(--danger);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.error-dismiss:hover {
+  background: color-mix(in srgb, var(--danger) 20%, transparent);
+}
+
+/* ---------- Status panel (M1) ---------- */
+
+.status-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 100%;
+}
+
+.status-panel-empty {
+  justify-content: center;
+}
+
+.status-section {
+  min-width: 0;
+}
+
+.file-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+.file-row {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.file-row:hover {
+  background: var(--bg-2);
+}
+
+.file-badge {
+  flex: none;
+  width: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.file-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-dir {
+  color: var(--text-3);
+}
+
+.file-name {
+  color: var(--text-1);
+}
+
+.file-rename {
+  color: var(--text-1);
+}
+
+/* Status colors per ui-reference §7. */
+.file-status-added .file-badge {
+  color: var(--success);
+}
+
+.file-status-modified .file-badge,
+.file-status-typechange .file-badge {
+  color: var(--warning);
+}
+
+.file-status-deleted .file-badge,
+.file-status-conflicted .file-badge {
+  color: var(--danger);
+}
+
+.file-status-renamed .file-badge {
+  color: var(--accent);
+}
+
+.file-status-untracked .file-badge,
+.file-status-untracked .file-path {
+  color: var(--text-3);
+  font-style: italic;
+}
+
+.file-status-untracked .file-name {
+  color: var(--text-3);
+}
+
+.section-label-danger {
+  color: var(--danger);
+}
+
+/* ---------- Loading skeletons ---------- */
+
+.skeleton-row {
+  height: 14px;
+  margin: 10px 0;
+  border-radius: 4px;
+  background: var(--bg-2);
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+.skeleton-row:nth-child(2n) {
+  width: 80%;
+}
+
+.skeleton-row:nth-child(3n) {
+  width: 65%;
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}

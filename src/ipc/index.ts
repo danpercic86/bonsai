@@ -6,4 +6,14 @@ export const ipc: IpcApi =
     ? (await import('./mock')).mockIpc
     : (await import('./tauri')).tauriIpc;
 
-export type { AppError, HeadInfo, IpcApi, RepoInfo } from './types';
+export type {
+  AppError,
+  FileStatus,
+  HeadInfo,
+  IpcApi,
+  RepoChangedPayload,
+  RepoInfo,
+  StatusEntry,
+  StatusSnapshot,
+  Unsubscribe,
+} from './types';

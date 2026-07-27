@@ -14,8 +14,11 @@ Contract: docs/contracts/M0-scaffold.md. Sub-increments: c090459, 0cd1d4d, b60fc
 
 ## M1 — Working-directory status — **in-progress**
 
-Current step: M1b (watcher + event + lifecycle) — implemented, cargo test 24/24 (watcher tests
-3× stable) + clippy green; awaiting reviewer round 1. M1a committed (ee3bb52).
+Current step: M1c (frontend status panel + IPC + mock + failed-open fixlet) — implemented,
+cargo test 27/27 + clippy + pnpm build green; awaiting reviewer round 1.
+M1a committed (ee3bb52), M1b committed (65c6c73).
+Note: avoid tauri "test" feature on this machine (STATUS_ENTRYPOINT_NOT_FOUND); use
+runtime-free inner functions for command tests instead.
 
 Goal: show staged / unstaged / untracked files via git2 in the right panel; auto-refresh via
 notify watcher (debounced ~300 ms, emits "repo-changed") + manual refresh button + rescan on

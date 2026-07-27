@@ -1,4 +1,11 @@
-import type { AppError, IpcApi, RepoInfo } from './types';
+import type {
+  AppError,
+  IpcApi,
+  RepoChangedPayload,
+  RepoInfo,
+  StatusSnapshot,
+  Unsubscribe,
+} from './types';
 
 const MOCK_REPO_PATH = 'C:\\mock\\bonsai-fixture';
 const MOCK_OID = '9fceb02d0ae598e95dc970b74767f19372d61af8';
@@ -6,6 +13,26 @@ const MOCK_OID = '9fceb02d0ae598e95dc970b74767f19372d61af8';
 function delay(ms = 150): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+/** Exercises every status render path, incl. a file both staged AND modified. */
+const MOCK_STATUS: StatusSnapshot = {
+  staged: [
+    { path: 'src/app.rs', origPath: null, status: 'added' },
+    { path: 'src/main.rs', origPath: null, status: 'modified' },
+    { path: 'docs/getting-started.md', origPath: 'docs/intro.md', status: 'renamed' },
+    { path: 'src/shared/util.rs', origPath: null, status: 'modified' }, // also unstaged below
+  ],
+  unstaged: [
+    { path: 'src/shared/util.rs', origPath: null, status: 'modified' },
+    { path: 'README.md', origPath: null, status: 'modified' },
+    { path: 'old-config.toml', origPath: null, status: 'deleted' },
+  ],
+  untracked: [
+    { path: 'notes/todo.txt', origPath: null, status: 'untracked' },
+    { path: 'scratch.rs', origPath: null, status: 'untracked' },
+  ],
+  conflicted: [],
+};
 
 export const mockIpc: IpcApi = {
   async openRepo(path: string): Promise<RepoInfo> {
@@ -16,12 +43,21 @@ export const mockIpc: IpcApi = {
       throw err;
     }
     if (path.includes('not-a-repo')) {
-      return { path, isRepo: false, head: null };
+      return { path, isRepo: false, bare: false, head: null };
+    }
+    if (path.includes('bare')) {
+      return {
+        path,
+        isRepo: true,
+        bare: true,
+        head: { branchName: 'main', oid: '', detached: false, unborn: true },
+      };
     }
     if (path.includes('unborn')) {
       return {
         path,
         isRepo: true,
+        bare: false,
         head: { branchName: 'main', oid: '', detached: false, unborn: true },
       };
     }
@@ -29,6 +65,7 @@ export const mockIpc: IpcApi = {
     return {
       path,
       isRepo: true,
+      bare: false,
       head: { branchName: 'main', oid: MOCK_OID, detached: false, unborn: false },
     };
   },
@@ -36,5 +73,23 @@ export const mockIpc: IpcApi = {
   async pickFolder(): Promise<string | null> {
     await delay(150);
     return MOCK_REPO_PATH;
+  },
+
+  async getStatus(): Promise<StatusSnapshot> {
+    await delay(150);
+    // Fresh copy so callers can't mutate the fixture between fetches.
+    return structuredClone(MOCK_STATUS);
+  },
+
+  // The mock never emits repo-changed (no backend watcher in the browser
+  // harness); resolves to a no-op unsubscribe.
+  async onRepoChanged(_cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe> {
+    return () => {};
+  },
+
+  // Real browser focus event so the harness exercises the refocus-refetch path.
+  async onWindowFocus(cb: () => void): Promise<Unsubscribe> {
+    window.addEventListener('focus', cb);
+    return () => window.removeEventListener('focus', cb);
   },
 };
