@@ -6,7 +6,11 @@ pub struct OpenRepo {
 }
 
 /// Shared application state, registered via `.manage(AppState::default())`.
-#[derive(Debug, Default)]
+///
+/// The watcher lives behind its own lock (M1 contract §4) so `OpenRepo`
+/// stays `Clone`/`Debug`; `WatcherHandle` is neither.
+#[derive(Default)]
 pub struct AppState {
     pub repo: std::sync::Mutex<Option<OpenRepo>>,
+    pub watcher: std::sync::Mutex<Option<crate::watcher::WatcherHandle>>,
 }

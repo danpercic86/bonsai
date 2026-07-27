@@ -14,8 +14,8 @@ Contract: docs/contracts/M0-scaffold.md. Sub-increments: c090459, 0cd1d4d, b60fc
 
 ## M1 — Working-directory status — **in-progress**
 
-Current step: M1a (status core + command + porcelain tests) — implemented, cargo test 19/19 +
-clippy green; awaiting reviewer round 1. (Split: M1a core, M1b watcher, M1c frontend.)
+Current step: M1b (watcher + event + lifecycle) — implemented, cargo test 24/24 (watcher tests
+3× stable) + clippy green; awaiting reviewer round 1. M1a committed (ee3bb52).
 
 Goal: show staged / unstaged / untracked files via git2 in the right panel; auto-refresh via
 notify watcher (debounced ~300 ms, emits "repo-changed") + manual refresh button + rescan on

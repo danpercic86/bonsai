@@ -2,6 +2,7 @@ pub mod commands;
 pub mod error;
 pub mod git;
 pub mod state;
+pub mod watcher;
 
 pub fn run() {
     tauri::Builder::default()
