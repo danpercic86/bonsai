@@ -31,6 +31,27 @@ with a **GitKraken-style commit graph as the centerpiece**: multi-colored branch
 edges where branches fork/merge, commit dots, ref pills (branch/tag/HEAD) beside commits, and smooth
 scrolling over large histories (target: **20k+ commits without jank**).
 
+## Product decisions (v1 — locked; ask before deviating)
+
+- **Layout:** classic 3-pane. Left sidebar: branches / remotes / tags. Center: commit graph.
+  Right panel: working-directory status, diffs, and commit details (shows the selected commit's
+  message/author/date + its changes; shows working-dir status + staging when no commit selected).
+- **Graph contents:** the walk is seeded from **all local branches, remote-tracking branches, and
+  tags** (GitKraken-style). Ordering: **topological, then commit date**. Ref pills show local
+  branches, remotes as `origin/name`, tags, and HEAD. Lane colors are assigned deterministically
+  per branch lane and **stay stable while scrolling**. Detached HEAD is shown as a HEAD pill on the
+  checked-out commit. An uncommitted-changes (WIP) row at the top is a Polish-phase item, not MVP.
+- **Diffs (M4):** two kinds — (a) working-dir diffs (unstaged vs index, staged vs HEAD) and
+  (b) **commit diffs**: selecting a graph node shows that commit vs its first parent.
+- **Commit (M3):** file-level staging only — no hunk staging, no amend in v1. Author/committer come
+  from git config; error clearly if unset.
+- **Pull (M6):** fetch + **fast-forward only**. If not fast-forwardable, show a clear message and
+  change nothing — no auto-merge, no conflict resolution in v1.
+- **Repos:** one repo open at a time; remember and reopen the last repo on launch (recent-repos
+  list is Polish-phase).
+- **Empty states:** no repo open → prompt with folder picker; empty/unborn-HEAD repo → empty graph
+  plus status panel usable for the first commit.
+
 ## Tech stack (locked)
 
 - **Backend:** Rust, Tauri v2, `git2` (libgit2), `notify` (file watching), `serde`.
@@ -103,8 +124,8 @@ Every milestone gate splits into two kinds of checks:
   Windows; a folder picker (use `tauri-plugin-dialog` and grant its capability in
   `src-tauri/capabilities/`); Rust detects whether the folder is a Git repo and reads HEAD. Pin the
   toolchain (`rust-toolchain.toml`, `packageManager` in package.json). Architect also delivers a
-  one-page UI reference spec (lane color palette, spacing, typography, dark/light) reused by all
-  later milestones.
+  one-page UI reference spec (the 3-pane layout from Product decisions, lane color palette,
+  spacing, typography, dark/light) reused by all later milestones.
   *AI gate:* project compiles (`cargo check`, `pnpm build`); browser harness renders; a Rust unit
   test opens a fixture repo and reads HEAD. *USER CHECKPOINT:* window opens via `pnpm tauri dev`,
   folder picker selects a repo, HEAD shown.
@@ -129,13 +150,16 @@ Every milestone gate splits into two kinds of checks:
   in the native app feels smooth.
 - **M3 — Stage / unstage / commit.** *AI gate:* Rust tests verify results against the `git` CLI on
   scratch repos. *USER CHECKPOINT:* stage/unstage/commit round-trip in the native app.
-- **M4 — Diff view.** File diffs via git2, unified or side-by-side. *AI gate:* diff output matches
-  `git diff` in tests; harness renders diffs from mock data. *USER CHECKPOINT:* diffs display for a
-  real repo in the native app.
+- **M4 — Diff view.** Via git2, unified or side-by-side: working-dir diffs (unstaged vs index,
+  staged vs HEAD) AND commit diffs (selected graph node vs first parent, with commit details in the
+  right panel). *AI gate:* diff output matches `git diff` / `git show` in tests; harness renders
+  both diff kinds from mock data. *USER CHECKPOINT:* selecting a commit in the graph shows its
+  details + changes in the native app.
 - **M5 — Branches.** List, create, checkout, delete; show current branch/HEAD.
   *AI gate:* verified against the CLI in tests; code review confirms destructive ops require UI
   confirmation. *USER CHECKPOINT:* branch operations + confirmation dialog work in the native app.
-- **M6 — Remotes.** Fetch / pull / push with credential handling. Credential strategy: use git2's
+- **M6 — Remotes.** Fetch / pull (fast-forward only, per Product decisions) / push with credential
+  handling. Credential strategy: use git2's
   `CredentialHelper` (delegates to Git's configured helper, i.e. Windows Credential Manager) first,
   then SSH agent for ssh URLs; never prompt for or store raw passwords ourselves. Confirm this with
   the user at milestone start before implementing.
