@@ -13,7 +13,10 @@ UI never blocks. Return compact typed structs (serde).
 
 Frontend (src): Vite + React + TypeScript. Thin IPC wrappers over `invoke` from
 `@tauri-apps/api/core` and `listen` from `@tauri-apps/api/event` (always clean up listeners
-on unmount). Render the commit graph to a canvas from the precomputed layout; virtualize to
+on unmount). The IPC layer has a **mock implementation** (`src/ipc/mock.ts`, selected via
+`VITE_MOCK_IPC=1`) serving fixture data so the app runs in a plain browser via `pnpm dev` —
+whenever you add or change an IPC call, update the mock in the same increment; it must always
+compile and cover the new surface. Render the commit graph to a canvas from the precomputed layout; virtualize to
 visible rows; never create thousands of DOM nodes for commits.
 
 Working style:

@@ -15,6 +15,7 @@
       "Bash(pnpm tsc:*)",
       "Bash(pnpm build:*)",
       "Bash(pnpm test:*)",
+      "Bash(pnpm dev:*)",
       "Bash(pnpm tauri dev:*)",
       "Bash(pnpm tauri build:*)",
       "Bash(git status:*)",
@@ -27,6 +28,9 @@
       "Bash(git branch:*)",
       "Bash(git checkout:*)",
       "Bash(git switch:*)",
+      "Bash(git fast-import:*)",
+      "Bash(git worktree:*)",
+      "Bash(node:*)",
       "Bash(mkdir:*)"
     ]
   }
