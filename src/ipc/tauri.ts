@@ -2,7 +2,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
-import type { IpcApi, RepoChangedPayload, RepoInfo, StatusSnapshot, Unsubscribe } from './types';
+import type {
+  GraphLayout,
+  IpcApi,
+  RepoChangedPayload,
+  RepoInfo,
+  StatusSnapshot,
+  Unsubscribe,
+} from './types';
 
 export const tauriIpc: IpcApi = {
   openRepo(path: string): Promise<RepoInfo> {
@@ -20,6 +27,10 @@ export const tauriIpc: IpcApi = {
 
   getStatus(): Promise<StatusSnapshot> {
     return invoke<StatusSnapshot>('get_status');
+  },
+
+  getGraph(): Promise<GraphLayout> {
+    return invoke<GraphLayout>('get_graph');
   },
 
   onRepoChanged(cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe> {

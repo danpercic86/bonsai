@@ -1,5 +1,7 @@
+import { buildMockGraph } from './fixtures/graph';
 import type {
   AppError,
+  GraphLayout,
   IpcApi,
   RepoChangedPayload,
   RepoInfo,
@@ -79,6 +81,12 @@ export const mockIpc: IpcApi = {
     await delay(150);
     // Fresh copy so callers can't mutate the fixture between fetches.
     return structuredClone(MOCK_STATUS);
+  },
+
+  async getGraph(): Promise<GraphLayout> {
+    await delay(150);
+    // Built fresh per call (timestamps relative to now; callers own the copy).
+    return buildMockGraph();
   },
 
   // The mock never emits repo-changed (no backend watcher in the browser

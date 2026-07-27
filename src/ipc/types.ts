@@ -37,6 +37,49 @@ export interface StatusSnapshot {
   conflicted: StatusEntry[];
 }
 
+export type RefKind = 'localBranch' | 'remoteBranch' | 'tag' | 'head';
+
+export interface RefLabel {
+  /** Shorthand: "main", "origin/main", "v1.0", "HEAD". */
+  name: string;
+  kind: RefKind;
+  /** true on the local branch HEAD points at (attached), or on the head label (detached). */
+  isHead: boolean;
+}
+
+export interface GraphNode {
+  /** Full 40-char hex oid. */
+  id: string;
+  lane: number;
+  /** Indices into GraphLayout.nodes; parents always at a HIGHER index. First entry = first parent. */
+  parents: number[];
+  /** Absent when empty (serde skip_serializing_if). */
+  refs?: RefLabel[];
+  summary: string;
+  author: string;
+  /** Author commit time, seconds since epoch (UTC). */
+  ts: number;
+}
+
+export interface GraphEdge {
+  /** Child row/index. */
+  from: number;
+  /** Parent row/index; to > from. */
+  to: number;
+  /** Lane of the vertical run between the rows. */
+  lane: number;
+}
+
+export interface GraphLayout {
+  /** Row number == index in this array (no row field on the wire). */
+  nodes: GraphNode[];
+  /** Sorted ascending by (from, to). */
+  edges: GraphEdge[];
+  laneCount: number;
+  headIndex: number | null;
+  truncated: boolean;
+}
+
 export interface RepoChangedPayload {
   reason: string;
 }
@@ -55,6 +98,8 @@ export interface IpcApi {
   pickFolder(): Promise<string | null>;
   /** Rejects with {@link AppError} (`noRepo` when nothing is open). */
   getStatus(): Promise<StatusSnapshot>;
+  /** Full graph layout for the open repo. Rejects with {@link AppError} (`noRepo` when nothing open). */
+  getGraph(): Promise<GraphLayout>;
   /** Fires after debounced filesystem changes in the open repo. */
   onRepoChanged(cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe>;
   /** Fires when the app window regains focus. */

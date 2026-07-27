@@ -9,8 +9,13 @@ export const ipc: IpcApi =
 export type {
   AppError,
   FileStatus,
+  GraphEdge,
+  GraphLayout,
+  GraphNode,
   HeadInfo,
   IpcApi,
+  RefKind,
+  RefLabel,
   RepoChangedPayload,
   RepoInfo,
   StatusEntry,

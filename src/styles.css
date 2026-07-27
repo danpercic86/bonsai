@@ -21,6 +21,19 @@
 
   --font-ui: 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --font-mono: 'Cascadia Code', 'Cascadia Mono', Consolas, 'JetBrains Mono', monospace;
+
+  /* Lane color palette (ui-reference §5) — identical in both themes;
+     resolved once per mount by src/graph/colors.ts, assigned by lane % 10. */
+  --lane-0: #4f8cff;
+  --lane-1: #f2994a;
+  --lane-2: #9b6dff;
+  --lane-3: #43b97f;
+  --lane-4: #e5534b;
+  --lane-5: #3ec6c0;
+  --lane-6: #e8c341;
+  --lane-7: #f26d9c;
+  --lane-8: #7a86ff;
+  --lane-9: #8fbf4d;
 }
 
 [data-theme='light'] {
@@ -221,10 +234,30 @@ body {
 .graph-pane {
   background: var(--bg-0);
   min-width: 0;
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.graph-pane-empty {
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+}
+
+.graph-error-banner {
+  margin: 12px;
+  max-width: none;
+}
+
+.graph-canvas-host {
+  width: 100%;
+}
+
+.graph-canvas-host canvas {
+  display: block;
+  cursor: default;
 }
 
 .right-panel {

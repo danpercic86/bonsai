@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StatusPanel } from './components/StatusPanel';
+import { GraphCanvas } from './graph/GraphCanvas';
 import { ipc } from './ipc';
-import type { AppError, HeadInfo, RepoInfo, StatusSnapshot, Unsubscribe } from './ipc';
+import type { AppError, GraphLayout, HeadInfo, RepoInfo, StatusSnapshot, Unsubscribe } from './ipc';
 
 function isAppError(e: unknown): e is AppError {
   return (
@@ -71,9 +72,15 @@ export default function App() {
   const [statusLoading, setStatusLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Request-id last-wins guard: only the latest in-flight get_status may
-  // apply its result (M1 contract §5 — no frontend debounce beyond this).
+  const [graph, setGraph] = useState<GraphLayout | null>(null);
+  const [graphError, setGraphError] = useState<string | null>(null);
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+
+  // Request-id last-wins guards: only the latest in-flight request may apply
+  // its result (M1 contract §5 — no frontend debounce beyond this).
   const statusReqId = useRef(0);
+  const graphReqId = useRef(0);
 
   const repoPath = repo !== null && isUsableRepo(repo) ? repo.path : null;
 
@@ -100,6 +107,32 @@ export default function App() {
     setStatusLoading(false);
   }, []);
 
+  // Refetches keep showing the previous layout until the new one arrives.
+  const refetchGraph = useCallback(async () => {
+    const id = ++graphReqId.current;
+    setGraphLoading(true);
+    try {
+      const layout = await ipc.getGraph();
+      if (id !== graphReqId.current) return;
+      setGraph(layout);
+      setGraphError(null);
+      setSelectedIndex(null); // indices are only valid within one layout
+    } catch (e) {
+      if (id !== graphReqId.current) return;
+      setGraphError(errorMessage(e));
+    } finally {
+      if (id === graphReqId.current) setGraphLoading(false);
+    }
+  }, []);
+
+  const clearGraph = useCallback(() => {
+    graphReqId.current += 1; // invalidate any in-flight request
+    setGraph(null);
+    setGraphError(null);
+    setGraphLoading(false);
+    setSelectedIndex(null);
+  }, []);
+
   // Subscriptions only (per React rules): repo-changed events + window focus
   // both trigger a status refetch while a usable repo is open.
   useEffect(() => {
@@ -109,8 +142,9 @@ export default function App() {
 
     const subscribe = async () => {
       const offChanged = await ipc.onRepoChanged(() => {
-        console.debug('[bonsai] repo-changed → refetch status');
+        console.debug('[bonsai] repo-changed → refetch status+graph');
         void refetchStatus();
+        void refetchGraph();
       });
       if (cancelled) {
         offChanged();
@@ -119,8 +153,9 @@ export default function App() {
       unsubs.push(offChanged);
 
       const offFocus = await ipc.onWindowFocus(() => {
-        console.debug('[bonsai] window focus → refetch status');
+        console.debug('[bonsai] window focus → refetch status+graph');
         void refetchStatus();
+        void refetchGraph();
       });
       if (cancelled) {
         offFocus();
@@ -134,7 +169,7 @@ export default function App() {
       cancelled = true;
       for (const unsub of unsubs) unsub();
     };
-  }, [repoPath, refetchStatus]);
+  }, [repoPath, refetchStatus, refetchGraph]);
 
   async function handleOpenRepository() {
     setError(null);
@@ -148,13 +183,16 @@ export default function App() {
       setRepo(info);
       if (isUsableRepo(info)) {
         void refetchStatus();
+        void refetchGraph();
       } else {
         clearStatus();
+        clearGraph();
       }
     } catch (e) {
       setError(errorMessage(e));
       setRepo(null); // a failed open leaves no repo open (matches backend)
       clearStatus();
+      clearGraph();
     } finally {
       setLoading(false);
     }
@@ -169,9 +207,10 @@ export default function App() {
       const info = await ipc.openRepo(repoPath);
       setRepo(info);
       if (isUsableRepo(info)) {
-        await refetchStatus();
+        await Promise.all([refetchStatus(), refetchGraph()]);
       } else {
         clearStatus();
+        clearGraph();
       }
     } catch (e) {
       setStatusError(errorMessage(e));
@@ -198,7 +237,7 @@ export default function App() {
         <button
           type="button"
           className="btn-icon"
-          disabled={!repoOpen || refreshing || statusLoading}
+          disabled={!repoOpen || refreshing || statusLoading || graphLoading}
           onClick={handleRefresh}
           title="Refresh"
           aria-label="Refresh"
@@ -213,11 +252,21 @@ export default function App() {
             <div className="section-label">Branches</div>
           </aside>
           <main className="graph-pane">
-            {repo.head?.unborn ? (
-              <p className="pane-empty">No commits yet</p>
-            ) : (
-              <p className="pane-empty">Commit graph</p>
+            {graphError !== null && (
+              <div className="error-banner graph-error-banner">{graphError}</div>
             )}
+            {repo.head?.unborn ? (
+              <div className="graph-pane-empty">
+                <p className="pane-empty">No commits yet</p>
+              </div>
+            ) : graph !== null ? (
+              // Loading first layout: nothing over the canvas area (no spinners).
+              <GraphCanvas
+                layout={graph}
+                selectedIndex={selectedIndex}
+                onSelect={setSelectedIndex}
+              />
+            ) : null}
           </main>
           <aside className="right-panel">
             <StatusPanel snapshot={status} loading={statusLoading} error={statusError} />
