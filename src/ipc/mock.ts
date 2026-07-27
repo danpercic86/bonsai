@@ -1,4 +1,5 @@
 import { buildMockGraph, buildMockGraphDetached } from './fixtures/graph';
+import { generateLayout20k } from './fixtures/graph20k';
 import type {
   AppError,
   GraphLayout,
@@ -86,8 +87,9 @@ export const mockIpc: IpcApi = {
   async getGraph(): Promise<GraphLayout> {
     await delay(150);
     // Built fresh per call (timestamps relative to now; callers own the copy).
-    // `?fixture=` selects a variant (contract §5.4 mechanism; 20k lands in M2d).
+    // `?fixture=` selects a variant (contract §5.4 mechanism).
     const fixture = new URLSearchParams(window.location.search).get('fixture');
+    if (fixture === '20k') return generateLayout20k();
     return fixture === 'detached' ? buildMockGraphDetached() : buildMockGraph();
   },
 

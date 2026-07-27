@@ -1,11 +1,14 @@
 pub mod commands;
 pub mod error;
+#[doc(hidden)]
+pub mod fixture;
 pub mod git;
 pub mod graph;
 pub mod state;
 pub mod watcher;
 
 pub fn run() {
+    git::relax_odb_hash_verification();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(state::AppState::default())
