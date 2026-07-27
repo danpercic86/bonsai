@@ -23,9 +23,8 @@ Sub-increments: ee3bb52, 65c6c73, 04a87df, a87a41e.
 
 ## M2 — Commit graph (centerpiece; M2a–M2d) — **in-progress**
 
-Current step: M2d — implemented, ALL perf gates PASS (gen 15.8s, layout 409ms median/500 limit,
-serialize 12ms/5.4MB, sweep maxWindow5Avg 20.1ms over100=0); awaiting reviewer round 1.
-M2a (cfba129), M2b (cccbb2f), M2c (5ad41a6) committed. Perf notes: mempack fixture gen;
+Current step: M2 gate — all sub-increments committed (cfba129, cccbb2f, 5ad41a6, d2a6cf5);
+tester running; orchestrator verifying 20k harness. Perf notes: mempack fixture gen;
 strict_hash_verification(false) global opt-out needed for <500ms; next lever if regression =
 cached repo handle in AppState. Polish candidates: refresh-failure alignment, frame-log tagging.
 WARNING: C: drive ~0 bytes free — flag to user.
