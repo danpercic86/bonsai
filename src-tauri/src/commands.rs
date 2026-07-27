@@ -2,6 +2,7 @@ use tauri::Emitter;
 
 use crate::error::AppError;
 use crate::git::repo::{read_repo_info, RepoInfo};
+use crate::graph::{compute_graph, GraphLayout};
 use crate::git::status::{read_status, StatusSnapshot};
 use crate::state::{AppState, OpenRepo};
 use crate::watcher::spawn_watcher;
@@ -141,6 +142,30 @@ async fn get_status_inner(state: &AppState) -> Result<StatusSnapshot, AppError> 
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Computes the full commit-graph layout of the currently open repository.
+///
+/// Unborn-HEAD / zero-ref repos yield an empty layout (M2 contract §2.1),
+/// not an error; `NoRepo` when nothing is open.
+#[tauri::command]
+pub async fn get_graph(state: tauri::State<'_, AppState>) -> Result<GraphLayout, AppError> {
+    get_graph_inner(state.inner()).await
+}
+
+/// Runtime-free core of `get_graph` (unit-testable without a Tauri app).
+async fn get_graph_inner(state: &AppState) -> Result<GraphLayout, AppError> {
+    let path = {
+        let repo = state
+            .repo
+            .lock()
+            .map_err(|_| AppError::Other("state lock poisoned".to_string()))?;
+        repo.as_ref().ok_or(AppError::NoRepo)?.path.clone()
+    };
+
+    tauri::async_runtime::spawn_blocking(move || compute_graph(&path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,6 +206,26 @@ mod tests {
 
         assert!(state.repo.lock().expect("repo lock").is_none());
         assert!(state.watcher.lock().expect("watcher lock").is_none());
+    }
+
+    /// `get_graph` with nothing open returns `NoRepo`; after opening an
+    /// unborn-HEAD repo it returns an empty layout (not an error).
+    #[test]
+    fn get_graph_no_repo_and_unborn() {
+        let state = AppState::default();
+
+        let err = tauri::async_runtime::block_on(get_graph_inner(&state))
+            .expect_err("no repo open must be NoRepo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let repo_dir = tempfile::TempDir::new().expect("create temp dir");
+        git2::Repository::init(repo_dir.path()).expect("init repo");
+        open(&state, repo_dir.path()).expect("open unborn repo");
+
+        let layout = tauri::async_runtime::block_on(get_graph_inner(&state))
+            .expect("empty layout for unborn repo");
+        assert!(layout.nodes.is_empty());
+        assert_eq!(layout.head_index, None);
     }
 
     /// Same semantics for bare repos: reported but not kept open.

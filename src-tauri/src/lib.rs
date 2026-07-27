@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod error;
 pub mod git;
+pub mod graph;
 pub mod state;
 pub mod watcher;
 
@@ -10,7 +11,8 @@ pub fn run() {
         .manage(state::AppState::default())
         .invoke_handler(tauri::generate_handler![
             commands::open_repo,
-            commands::get_status
+            commands::get_status,
+            commands::get_graph
         ])
         .run(tauri::generate_context!())
         .expect("error while running Bonsai");

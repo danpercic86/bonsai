@@ -23,7 +23,8 @@ Sub-increments: ee3bb52, 65c6c73, 04a87df, a87a41e.
 
 ## M2 — Commit graph (centerpiece; M2a–M2d) — **in-progress**
 
-Current step: M2 — architect drafting `docs/contracts/M2-graph.md`.
+Current step: M2a (layout engine + unit tests) — implemented, cargo test 41/41 + clippy green;
+awaiting reviewer round 1. Note: getGraph TS mock deferred to M2b (carry into M2b prompt).
 
 Goal: Rust computes GraphLayout from a commit walk seeded from all local branches,
 remote-tracking branches, and tags; topological-then-date ordering; deterministic lane colors
