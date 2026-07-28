@@ -111,7 +111,7 @@ definition of done.
 
 ## P3 — Diff overlay, trees, merge/rebase, multi-repo tabs — **in-progress** (2026-07-28)
 
-Current step: P3a — AI gate passed (65aa4d2 + harness verification); awaiting USER CHECKPOINT
+Current step: P3a + P3b — AI gates passed; awaiting USER CHECKPOINT for both (P3a overlay 65aa4d2/dfc2b3b; P3b trees 64c0358/8dde13e/a96446e)
 
 Plan approved by user 2026-07-28 (see ~/.claude/plans/for-this-bonsai-git-moonlit-metcalfe.md).
 Sequencing locked (UI wins first): P3a diff overlay → P3b tree grouping → P3c merge+conflicts →
