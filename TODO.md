@@ -62,8 +62,10 @@ string-compare; ignored-file staging = git add -f semantics (documented).
 
 ## M4 — Diff view — **in-progress**
 
-Current step: M4b — implemented + live-verified by dev (24/24 CDP checks both modes);
-awaiting reviewer round 1. M4a committed (3ab213a).
+Current step: M4 gate — sub-increments committed (3ab213a, 7200824); tester running;
+orchestrator verifying harness. Polish candidates: keep old diff visible during same-key
+refetch (skeleton flash on focus/watcher tick); React.memo(DiffView); CommitPanel messageBody
+first-line strip.
 
 Goal: via git2, working-dir diffs (unstaged vs index, staged vs HEAD) AND commit diffs
 (selected graph node vs first parent, with commit details — message/author/date — in the right
