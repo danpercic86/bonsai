@@ -81,7 +81,11 @@ pub fn create_commit(workdir: &Path, message: &str) -> Result<CommitResult, AppE
         ));
     }
 
-    let msg = message.trim();
+    // Normalize line endings BEFORE trim: `git commit -m` (cleanup=whitespace)
+    // strips the trailing `\r` of every line, so interior CRLF/CR must not
+    // survive into the commit object (stray ^M in other clients otherwise).
+    let normalized = message.replace("\r\n", "\n").replace('\r', "\n");
+    let msg = normalized.trim();
     if msg.is_empty() {
         return Err(AppError::EmptyMessage);
     }
@@ -187,6 +191,46 @@ mod tests {
     fn resolve_signature_empty_values_count_as_missing() {
         let (_dir, cfg) = isolated_config(&[("user.name", ""), ("user.email", "")]);
         expect_config_missing(&cfg, &["user.name", "user.email"], &[]);
+    }
+
+    /// CRLF / lone-CR line endings are normalized to `\n` before trim, so no
+    /// carriage return ever reaches the commit object (matches `git commit
+    /// -m` cleanup=whitespace CR handling).
+    #[test]
+    fn create_commit_normalizes_crlf_and_lone_cr() {
+        let dir = crate::testutil::scratch_dir();
+        let repo = git2::Repository::init(dir.path()).expect("init repo");
+        {
+            let mut cfg = repo.config().expect("open config");
+            cfg.set_str("user.name", "Test User").expect("set name");
+            cfg.set_str("user.email", "test@example.com").expect("set email");
+        }
+
+        let head_message = |expect: &str| {
+            let head = repo.head().expect("HEAD");
+            let commit = head.peel_to_commit().expect("HEAD commit");
+            assert_eq!(commit.message(), Some(expect));
+        };
+
+        // CRLF input (Windows textarea), incl. a trailing lone \r.
+        std::fs::write(dir.path().join("a.txt"), "one\n").expect("write a.txt");
+        crate::git::stage::stage_paths(dir.path(), &["a.txt".to_string()]).expect("stage");
+        let res = create_commit(dir.path(), "subject line\r\nsecond line\r").expect("commit");
+        assert_eq!(res.summary, "subject line");
+        head_message("subject line\nsecond line\n");
+
+        // Lone-CR interior endings.
+        std::fs::write(dir.path().join("a.txt"), "two\n").expect("modify a.txt");
+        crate::git::stage::stage_paths(dir.path(), &["a.txt".to_string()]).expect("stage");
+        let res = create_commit(dir.path(), "first\rsecond\rthird").expect("commit");
+        assert_eq!(res.summary, "first");
+        head_message("first\nsecond\nthird\n");
+
+        // A CR-only message is whitespace after normalization -> EmptyMessage.
+        std::fs::write(dir.path().join("a.txt"), "three\n").expect("modify a.txt");
+        crate::git::stage::stage_paths(dir.path(), &["a.txt".to_string()]).expect("stage");
+        let err = create_commit(dir.path(), "\r\n\r").expect_err("CR-only message");
+        assert!(matches!(err, AppError::EmptyMessage), "got: {err:?}");
     }
 
     #[test]

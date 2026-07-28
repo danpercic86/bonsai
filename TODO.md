@@ -53,8 +53,9 @@ Acceptance (USER CHECKPOINT): scrolling the 20k repo in the native app feels smo
 
 ## M3 — Stage / unstage / commit — **in-progress**
 
-Current step: M3b — implemented + live-verified by dev (26/26 CDP checks: stage/unstage/
-rename/commit/Ctrl+Enter/noconfig); awaiting reviewer round 1. M3a committed (ab0f943).
+Current step: M3 gate — sub-increments committed (ab0f943, 2ce24be); tester running;
+orchestrator verifying harness. Polish notes: textarea disabled during stage-in-flight
+(focus drop on Windows); dismissed-error string-compare pattern.
 
 Goal: file-level staging only (no hunk staging, no amend in v1); stage/unstage from the status
 panel; commit with message; author/committer from git config, clear error if unset.
