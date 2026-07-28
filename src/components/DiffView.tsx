@@ -81,7 +81,7 @@ export interface DiffSlotViewProps {
 export function DiffSlotView({ slot, onDismissError }: DiffSlotViewProps) {
   if (slot.state === 'loading' && slot.diff === null) {
     return (
-      <div className="diff-slot-loading" aria-hidden="true">
+      <div className="diff-slot-loading skeleton-group" aria-hidden="true">
         {Array.from({ length: 3 }, (_, i) => (
           <div key={i} className="skeleton-row" />
         ))}

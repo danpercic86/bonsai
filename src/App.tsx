@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CommitBox } from './components/CommitBox';
 import { CommitPanel } from './components/CommitPanel';
+import { ShortcutOverlay } from './components/ShortcutOverlay';
 import { Sidebar } from './components/Sidebar';
 import { StatusPanel } from './components/StatusPanel';
 import type { DiffSlot, WorkdirSection } from './components/StatusPanel';
+import { Toasts } from './components/Toasts';
+import type { Toast, ToastTone } from './components/Toasts';
 import { GraphCanvas } from './graph/GraphCanvas';
 import { ipc } from './ipc';
 import type {
@@ -81,15 +84,18 @@ export default function App() {
   const [branchesError, setBranchesError] = useState<string | null>(null);
   const [branchesLoading, setBranchesLoading] = useState(false);
 
-  // M6 §4.1: remote-op feedback. Notice = transient success/warning line under
-  // the header; error = dismissible banner. Never routed to statusError.
-  const [remoteNotice, setRemoteNotice] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(
-    null,
-  );
-  const [remoteError, setRemoteError] = useState<string | null>(null);
   // Which remote op is in flight — drives the per-button busy label.
   const [remoteOp, setRemoteOp] = useState<'fetch' | 'pull' | 'push' | null>(null);
-  const noticeId = useRef(0);
+
+  // P1 §5: toast stack. Remote-op feedback (M6) and composite-refresh failures
+  // surface here; contextual banners (status/commit/sidebar/graph) stay inline.
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastId = useRef(0);
+
+  // P1 §6: keyboard shortcuts — "?" overlay + ConfirmDialog-open lift from the
+  // Sidebar (shortcuts are inert while the dialog is up).
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   const [graph, setGraph] = useState<GraphLayout | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
@@ -116,10 +122,35 @@ export default function App() {
   const statusErrorId = useRef(0);
 
   const repoPath = repo !== null && isUsableRepo(repo) ? repo.path : null;
+  const repoOpen = repoPath !== null;
+  // Convenience gating only — the backend guards detached/unborn itself (§4.2).
+  const canPullPush = repo?.head != null && !repo.head.detached && !repo.head.unborn;
 
   const reportStatusError = useCallback((message: string) => {
     setStatusError({ id: ++statusErrorId.current, message });
   }, []);
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts((cur) => cur.filter((t) => t.id !== id));
+  }, []);
+
+  /** P1 §5.1: sticky = tone === 'error' (stays until dismissed); non-sticky
+   * auto-dismiss after 5 s (timeout captured per toast id). Stack cap 5 —
+   * pushing the 6th drops the oldest NON-sticky toast (oldest sticky if none). */
+  const pushToast = useCallback(
+    (tone: ToastTone, text: string) => {
+      const id = ++toastId.current;
+      const sticky = tone === 'error';
+      setToasts((cur) => {
+        const next = [...cur, { id, tone, text, sticky }];
+        if (next.length <= 5) return next;
+        const dropIdx = next.findIndex((t) => !t.sticky && t.id !== id);
+        return next.filter((_, i) => i !== (dropIdx !== -1 ? dropIdx : 0));
+      });
+      if (!sticky) window.setTimeout(() => dismissToast(id), 5000);
+    },
+    [dismissToast],
+  );
 
   /** Fetch (or re-fetch) the expanded diff for `key`; last-wins guarded.
    * A same-key refetch keeps the stale diff visible (P1 §4.1) — first-time
@@ -235,9 +266,9 @@ export default function App() {
 
   /** Composite post-op refresh (P1 §4.6): openRepo on the current path
    * (refreshes header HEAD, self-heals the watcher) + refetch status/graph/
-   * branches. Never throws — failures surface as "Refresh failed: <message>"
-   * (temporary statusError sink; P1c swaps it for an error toast). The
-   * `refetch*` helpers keep their own pane-scoped error states. */
+   * branches. Never throws — failures surface as a sticky error toast
+   * "Refresh failed: <message>" (P1c §5.3). The `refetch*` helpers keep their
+   * own pane-scoped error states. */
   const refreshAll = useCallback(async (): Promise<void> => {
     if (repoPath === null) return;
     try {
@@ -251,7 +282,7 @@ export default function App() {
         clearBranches();
       }
     } catch (e) {
-      reportStatusError(`Refresh failed: ${errorMessage(e)}`);
+      pushToast('error', `Refresh failed: ${errorMessage(e)}`);
     }
   }, [
     repoPath,
@@ -261,7 +292,7 @@ export default function App() {
     clearStatus,
     clearGraph,
     clearBranches,
-    reportStatusError,
+    pushToast,
   ]);
 
   // M4 §4.4: selection -> commit diff. Every selection change also resets the
@@ -299,17 +330,103 @@ export default function App() {
     }
   }, [selectedIndex, graph]);
 
-  // Esc deselects (back to mode A), except while typing in an input/textarea.
+  // Esc: closes the shortcut overlay first (P1 §6.4); otherwise deselects the
+  // selected commit (back to mode A), except while typing in an input/textarea.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      if (overlayOpen) {
+        setOverlayOpen(false);
+        return;
+      }
       const target = e.target as HTMLElement | null;
       if (target !== null && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) return;
       setSelectedIndex((cur) => (cur !== null ? null : cur));
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [overlayOpen]);
+
+  // P1 §6.2: global shortcut handler. Guard order: refresh (always
+  // preventDefault, even as a no-op) -> typing guard -> dialog-open guard ->
+  // remaining bindings (each gated by the same enablement as its button).
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const ctrl = e.ctrlKey || e.metaKey;
+
+      if (e.key === 'F5' || (ctrl && e.key.toLowerCase() === 'r')) {
+        e.preventDefault();
+        const canRefresh =
+          repoOpen && !refreshing && !statusLoading && !graphLoading && !mutating;
+        if (canRefresh) void handleRefresh();
+        return;
+      }
+
+      const target = e.target as HTMLElement | null;
+      const typing =
+        target !== null &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable);
+      if (typing) return;
+
+      if (dialogOpen) return;
+
+      if (ctrl && e.key.toLowerCase() === 'o') {
+        e.preventDefault();
+        void handleOpenRepository();
+        return;
+      }
+
+      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        if (repoOpen && !refreshing && !mutating) void handleFetch();
+        return;
+      }
+
+      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        if (repoOpen && !refreshing && !mutating && canPullPush) void handlePull();
+        return;
+      }
+
+      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'u') {
+        e.preventDefault();
+        if (repoOpen && !refreshing && !mutating && canPullPush) void handlePush();
+        return;
+      }
+
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        if (selectedIndex === null || graph === null) return;
+        e.preventDefault();
+        setSelectedIndex((cur) => {
+          if (cur === null) return cur;
+          const next = e.key === 'ArrowDown' ? cur + 1 : cur - 1;
+          return Math.max(0, Math.min(next, graph.nodes.length - 1));
+        });
+        return;
+      }
+
+      if (e.key === '?') {
+        e.preventDefault();
+        setOverlayOpen((cur) => !cur);
+        return;
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    repoOpen,
+    refreshing,
+    statusLoading,
+    graphLoading,
+    mutating,
+    canPullPush,
+    dialogOpen,
+    selectedIndex,
+    graph,
+  ]);
 
   // Subscriptions only (per React rules): repo-changed events + window focus
   // both trigger a status refetch while a usable repo is open.
@@ -473,25 +590,12 @@ export default function App() {
   }
 
   // ----- M6: remote operations (fetch / pull / push) -----
+  // P1 §5.3: remote notice/error migrated to the toast stack — 'ok' -> success
+  // toast (auto-dismiss), 'warn' -> warning toast (auto-dismiss), errors ->
+  // sticky error toast. Copy is byte-identical to the pre-P1 banner strings.
 
-  /** Shows the transient notice; auto-clears after 5 s iff still current. */
-  const showNotice = useCallback((text: string, tone: 'ok' | 'warn') => {
-    const id = ++noticeId.current;
-    setRemoteNotice({ text, tone });
-    window.setTimeout(() => {
-      if (id === noticeId.current) setRemoteNotice(null);
-    }, 5000);
-  }, []);
-
-  const dismissNotice = useCallback(() => {
-    noticeId.current += 1; // invalidate the pending auto-clear timeout
-    setRemoteNotice(null);
-  }, []);
-
-  /** Common entry for every remote-op handler: clear feedback, mark busy. */
+  /** Common entry for every remote-op handler: mark busy. */
   function beginRemoteOp(op: 'fetch' | 'pull' | 'push') {
-    setRemoteError(null);
-    dismissNotice();
     setMutating(true);
     setRemoteOp(op);
   }
@@ -507,14 +611,14 @@ export default function App() {
       const res = await ipc.fetch();
       const n = res.remotes.length;
       const k = res.remotes.reduce((sum, r) => sum + r.updatedRefs, 0);
-      showNotice(
+      pushToast(
+        'success',
         `Fetched ${n} remote${n === 1 ? '' : 's'}` +
           (k > 0 ? ` — ${k} ref${k === 1 ? '' : 's'} updated` : ''),
-        'ok',
       );
       await Promise.all([refetchBranches(), refetchGraph()]); // status unaffected
     } catch (e) {
-      setRemoteError(errorMessage(e));
+      pushToast('error', errorMessage(e));
     } finally {
       endRemoteOp();
     }
@@ -526,23 +630,23 @@ export default function App() {
       const res = await ipc.pull();
       switch (res.kind) {
         case 'upToDate':
-          showNotice('Already up to date', 'ok');
+          pushToast('success', 'Already up to date');
           break;
         case 'fastForwarded':
-          showNotice(`Fast-forwarded ${res.branch} to ${shortOid(res.to)}`, 'ok');
+          pushToast('success', `Fast-forwarded ${res.branch} to ${shortOid(res.to)}`);
           break;
         case 'wouldNotFastForward':
-          showNotice(
+          pushToast(
+            'warning',
             `Cannot fast-forward: '${res.branch}' has ${res.ahead} local commit(s) not on ` +
               'upstream. Bonsai v1 does not merge — push your commits or reconcile via the CLI.',
-            'warn',
           );
           break;
       }
       // Composite refresh (§4.6): the branch tip may have moved.
       await refreshAll();
     } catch (e) {
-      setRemoteError(errorMessage(e));
+      pushToast('error', errorMessage(e));
     } finally {
       endRemoteOp();
     }
@@ -553,17 +657,17 @@ export default function App() {
     try {
       const res = await ipc.push();
       if (res.kind === 'upToDate') {
-        showNotice('Already up to date', 'ok');
+        pushToast('success', 'Already up to date');
       } else {
-        showNotice(
+        pushToast(
+          'success',
           `Pushed ${res.branch} → ${res.remote}/${res.branch}` +
             (res.setUpstream ? ' (upstream set)' : ''),
-          'ok',
         );
       }
       await Promise.all([refetchBranches(), refetchGraph()]); // ahead badge -> 0
     } catch (e) {
-      setRemoteError(errorMessage(e));
+      pushToast('error', errorMessage(e));
     } finally {
       endRemoteOp();
     }
@@ -602,9 +706,6 @@ export default function App() {
     if (parentIndex !== undefined) setSelectedIndex(parentIndex);
   }
 
-  const repoOpen = repoPath !== null;
-  // Convenience gating only — the backend guards detached/unborn itself (§4.2).
-  const canPullPush = repo?.head != null && !repo.head.detached && !repo.head.unborn;
   const headBranch = branches?.local.find((b) => b.isHead) ?? null;
   const pushTitle =
     headBranch === null
@@ -632,7 +733,7 @@ export default function App() {
             className="toolbar-btn"
             disabled={!repoOpen || refreshing || mutating}
             onClick={() => void handleFetch()}
-            title="Fetch all remotes"
+            title="Fetch all remotes (Ctrl+Shift+F)"
           >
             {remoteOp === 'fetch' ? 'Fetching…' : '↓ Fetch'}
           </button>
@@ -641,7 +742,7 @@ export default function App() {
             className="toolbar-btn"
             disabled={!repoOpen || refreshing || mutating || !canPullPush}
             onClick={() => void handlePull()}
-            title="Pull (fast-forward only)"
+            title="Pull (fast-forward only) (Ctrl+Shift+P)"
           >
             {remoteOp === 'pull' ? 'Pulling…' : '⇣ Pull'}
           </button>
@@ -650,7 +751,7 @@ export default function App() {
             className="toolbar-btn"
             disabled={!repoOpen || refreshing || mutating || !canPullPush}
             onClick={() => void handlePush()}
-            title={pushTitle}
+            title={`${pushTitle} (Ctrl+Shift+U)`}
           >
             {remoteOp === 'push' ? 'Pushing…' : '↑ Push'}
           </button>
@@ -659,39 +760,15 @@ export default function App() {
             className="btn-icon"
             disabled={!repoOpen || refreshing || statusLoading || graphLoading || mutating}
             onClick={handleRefresh}
-            title="Refresh"
+            title="Refresh (Ctrl+R)"
             aria-label="Refresh"
           >
             {'⟳'}
           </button>
         </div>
       </header>
-
-      {repoOpen && remoteError !== null && (
-        <div className="error-banner error-banner-dismissible remote-error-banner">
-          <span className="error-banner-text">{remoteError}</span>
-          <button
-            type="button"
-            className="error-dismiss"
-            onClick={() => setRemoteError(null)}
-            aria-label="Dismiss"
-          >
-            {'✕'}
-          </button>
-        </div>
-      )}
-      {repoOpen && remoteError === null && remoteNotice !== null && (
-        <div className={`remote-notice${remoteNotice.tone === 'warn' ? ' remote-notice-warn' : ''}`}>
-          <span className="remote-notice-text">{remoteNotice.text}</span>
-          <button
-            type="button"
-            className="notice-dismiss"
-            onClick={dismissNotice}
-            aria-label="Dismiss"
-          >
-            {'✕'}
-          </button>
-        </div>
+      {(remoteOp !== null || refreshing) && (
+        <div className="header-progress" aria-hidden="true" />
       )}
 
       {repoOpen && repo !== null ? (
@@ -705,10 +782,16 @@ export default function App() {
             onCheckout={(name) => void handleCheckoutBranch(name)}
             onDelete={(name) => void handleDeleteBranch(name)}
             onCreateBranch={handleCreateBranch}
+            onDialogOpenChange={setDialogOpen}
           />
           <main className="graph-pane">
             {graphError !== null && (
               <div className="error-banner graph-error-banner">{graphError}</div>
+            )}
+            {graph !== null && graph.truncated && (
+              <div className="graph-truncated-banner">
+                History truncated to the most recent 100,000 commits
+              </div>
             )}
             {repo.head?.unborn ? (
               <div className="graph-pane-empty">
@@ -781,6 +864,8 @@ export default function App() {
           </button>
         </div>
       )}
+      <ShortcutOverlay open={overlayOpen} onClose={() => setOverlayOpen(false)} />
+      <Toasts toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

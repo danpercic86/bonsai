@@ -185,7 +185,7 @@ function Section({
 
 function SkeletonRows() {
   return (
-    <div aria-hidden="true">
+    <div className="skeleton-group" aria-hidden="true">
       {Array.from({ length: 6 }, (_, i) => (
         <div key={i} className="skeleton-row" />
       ))}

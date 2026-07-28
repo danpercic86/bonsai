@@ -57,8 +57,12 @@ export function CommitBox({ stagedCount, busy, onCommit }: CommitBoxProps) {
           }
         }}
       />
-      {firstLineLen > SUMMARY_LIMIT && (
-        <div className="commit-counter">
+      {message.length > 0 && (
+        <div
+          className={
+            firstLineLen > SUMMARY_LIMIT ? 'commit-counter commit-counter-over' : 'commit-counter'
+          }
+        >
           {firstLineLen}/{SUMMARY_LIMIT}
         </div>
       )}

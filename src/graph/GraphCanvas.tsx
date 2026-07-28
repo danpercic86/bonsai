@@ -187,6 +187,24 @@ export function GraphCanvas({ layout, selectedIndex, onSelect }: GraphCanvasProp
     paintNow();
   }, [paintNow, layout, selectedIndex]);
 
+  // P1 §6.3: when selectedIndex changes to non-null (e.g. via ArrowUp/Down in
+  // App), bring the row into view if it's outside the visible window. Pure
+  // scroll adjustment — no layout math here, row position = row * rowHeight.
+  useEffect(() => {
+    if (selectedIndex === null) return;
+    const scroller = scrollerRef.current;
+    if (scroller === null) return;
+    const rowTop = selectedIndex * METRICS.rowHeight;
+    const rowBottom = rowTop + METRICS.rowHeight;
+    const viewTop = scroller.scrollTop;
+    const viewBottom = viewTop + scroller.clientHeight;
+    if (rowTop < viewTop) {
+      scroller.scrollTop = Math.max(0, rowTop - METRICS.rowHeight);
+    } else if (rowBottom > viewBottom) {
+      scroller.scrollTop = rowBottom - scroller.clientHeight + METRICS.rowHeight;
+    }
+  }, [selectedIndex]);
+
   // Mock-mode dev hook: programmatic scroll sweep with frame timing (§4.7).
   useEffect(() => {
     if (!MOCK_MODE) return;

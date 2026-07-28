@@ -104,10 +104,11 @@ Bonsai upToDate vs CLI non-ff reject (fetch-first resolves).
 
 ## Polish — **in-progress**
 
-Current step: P1b — senior-dev implementing frontend correctness items per
-docs/contracts/P1-polish.md. P1a committed 185628d (reviewer APPROVE, 65 lib tests).
-Remaining: P1b (correctness), P1c (toasts/shortcuts/empty states/styling), P1d (WIP row +
-recents UI + launch reopen).
+Current step: P1d — WIP row (frontend-composited) + recents UI/RepoSwitcher + launch reopen,
+per docs/contracts/P1-polish.md. P1a committed 185628d, P1b 348d751, P1c approved round 2
+(toasts, shortcuts+overlay, empty/loading states, §8 styling; reviewer APPROVE).
+Remaining after P1d: P1 AI gate (full suite + harness incl. M2d 20k scroll re-run with WIP
+row) + USER CHECKPOINT.
 Architect findings: reopen-last-repo was never built (designed now); no repo-switch UI
 existed (RepoSwitcher added). WIP row = frontend-composited +1 render offset (orchestrator
 accepted §12.1: no lane/edge math in TS, GraphLayout unchanged).

@@ -204,6 +204,10 @@ body {
   color: var(--text-2);
   font-size: 14px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .btn-icon:hover:not(:disabled) {
@@ -221,7 +225,7 @@ body {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   flex: none;
 }
 
@@ -241,6 +245,10 @@ body {
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .toolbar-btn:hover:not(:disabled) {
@@ -252,41 +260,50 @@ body {
   cursor: default;
 }
 
-/* ---------- Remote-op feedback (M6: notice line + error banner) ---------- */
+/* ---------- Toast stack (P1 §5.2) ---------- */
 
-/* Double selector outweighs .error-banner-dismissible's margin-bottom later in the file. */
-.remote-error-banner.error-banner-dismissible {
-  flex: none;
-  margin: 8px 12px 0;
+.toast-stack {
+  position: fixed;
+  top: 52px;
+  right: 12px;
+  z-index: 90; /* above panes, below .dialog-overlay (100) */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 360px;
 }
 
-.remote-notice {
-  flex: none;
+.toast {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  margin: 8px 12px 0;
   padding: 8px 12px;
   border-radius: 6px;
   font-size: 13px;
-  color: var(--text-2);
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-}
-
-.remote-notice-warn {
-  background: color-mix(in srgb, var(--warning) 12%, transparent);
-  border-color: color-mix(in srgb, var(--warning) 35%, transparent);
-  color: color-mix(in srgb, var(--warning) 80%, var(--text-1));
-}
-
-.remote-notice-text {
-  flex: 1;
-  min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.notice-dismiss {
+.toast-error {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.toast-success {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
+}
+
+.toast-warning {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+}
+
+.toast-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.toast-dismiss {
   flex: none;
   border: none;
   background: transparent;
@@ -298,8 +315,118 @@ body {
   cursor: pointer;
 }
 
-.notice-dismiss:hover {
+.toast-dismiss:hover {
   background: color-mix(in srgb, currentcolor 12%, transparent);
+}
+
+/* ---------- Shortcut overlay (P1 §6.4) ---------- */
+
+.shortcut-card {
+  width: 480px;
+}
+
+.shortcut-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.shortcut-title {
+  margin: 0;
+}
+
+.shortcut-close {
+  margin-left: 0;
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+
+.shortcut-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.shortcut-keys {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.shortcut-plus {
+  color: var(--text-3);
+  margin: 0 3px;
+  font-size: 11px;
+}
+
+.kbd {
+  display: inline-block;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 1px 6px;
+}
+
+.shortcut-action {
+  flex: 1;
+  text-align: right;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+/* ---------- Graph truncated banner (P1 §7 item 14) ---------- */
+
+.graph-truncated-banner {
+  flex: none;
+  margin: 8px 12px 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+}
+
+/* ---------- Header progress bar (P1 §7: remote op / refresh feedback) ---------- */
+
+.header-progress {
+  position: relative;
+  height: 2px;
+  flex: none;
+  background: transparent;
+  overflow: hidden;
+}
+
+.header-progress::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: var(--accent);
+  animation: header-progress-sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes header-progress-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
 }
 
 /* ---------- 3-pane layout ---------- */
@@ -652,11 +779,16 @@ body {
   opacity: 0.6;
 }
 
+/* P1 §8 item 7: neutral until the first line exceeds the limit, then --warning. */
 .commit-counter {
   align-self: flex-end;
   font-size: 11px;
-  color: var(--warning);
+  color: var(--text-3);
   font-family: var(--font-mono);
+}
+
+.commit-counter-over {
+  color: var(--warning);
 }
 
 .commit-error {
@@ -1195,12 +1327,42 @@ span.file-row-main {
   cursor: default;
 }
 
-/* ---------- Loading skeletons ---------- */
+/* ---------- Panel scrollbars (P1 §8 item 5 — WebView2 is Chromium, safe) ---------- */
+
+.sidebar::-webkit-scrollbar,
+.right-panel > .status-panel::-webkit-scrollbar,
+.commit-panel::-webkit-scrollbar,
+.diff-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar::-webkit-scrollbar-track,
+.right-panel > .status-panel::-webkit-scrollbar-track,
+.commit-panel::-webkit-scrollbar-track,
+.diff-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar::-webkit-scrollbar-thumb,
+.right-panel > .status-panel::-webkit-scrollbar-thumb,
+.commit-panel::-webkit-scrollbar-thumb,
+.diff-scroll::-webkit-scrollbar-thumb {
+  background: var(--bg-3);
+  border-radius: 4px;
+}
+
+/* ---------- Loading skeletons (P1 §8 item 1: one recipe everywhere) ---------- */
+
+.skeleton-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 
 .skeleton-row {
-  height: 14px;
-  margin: 10px 0;
-  border-radius: 4px;
+  height: 20px;
+  margin: 0;
+  border-radius: 6px;
   background: var(--bg-2);
   animation: skeleton-pulse 1.2s ease-in-out infinite;
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { BranchInfo, BranchesSnapshot } from '../ipc';
 import { errorMessage } from '../utils/errors';
@@ -21,6 +21,9 @@ export interface SidebarProps {
   onDelete(name: string): void;
   /** Resolves on success (input clears+closes); rejects with AppError (shown inline). */
   onCreateBranch(name: string): Promise<void>;
+  /** P1 §6.2: lifted so App's global shortcut handler can suppress bindings
+   *  while the delete-branch ConfirmDialog is open. */
+  onDialogOpenChange?(open: boolean): void;
 }
 
 function TrashIcon() {
@@ -126,7 +129,7 @@ function BranchRow({
 
 function SkeletonRows() {
   return (
-    <div aria-hidden="true">
+    <div className="skeleton-group" aria-hidden="true">
       {Array.from({ length: 3 }, (_, i) => (
         <div key={i} className="skeleton-row" />
       ))}
@@ -145,6 +148,7 @@ export function Sidebar({
   onCheckout,
   onDelete,
   onCreateBranch,
+  onDialogOpenChange,
 }: SidebarProps) {
   const [branchesCollapsed, setBranchesCollapsed] = useState(false);
   const [remotesCollapsed, setRemotesCollapsed] = useState(false);
@@ -155,6 +159,10 @@ export function Sidebar({
   const [createError, setCreateError] = useState<string | null>(null);
 
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+
+  useEffect(() => {
+    onDialogOpenChange?.(pendingDelete !== null);
+  }, [pendingDelete, onDialogOpenChange]);
 
   function closeCreate() {
     setCreateOpen(false);
@@ -269,6 +277,9 @@ export function Sidebar({
                     />
                   ))}
                 </ul>
+                {!data.head.detached && data.local.length === 0 && (
+                  <p className="branch-muted">No branches yet</p>
+                )}
               </>
             )}
           </section>
