@@ -10,7 +10,7 @@ import type { DiffSlot, WorkdirSection } from './components/StatusPanel';
 import { Toasts } from './components/Toasts';
 import type { Toast, ToastTone } from './components/Toasts';
 import { GraphCanvas } from './graph/GraphCanvas';
-import type { WipSummary } from './graph/GraphCanvas';
+import type { GraphCanvasHandle, WipSummary } from './graph/GraphCanvas';
 import { ipc } from './ipc';
 import type {
   BranchesSnapshot,
@@ -123,6 +123,9 @@ export default function App() {
   const [graphError, setGraphError] = useState<string | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  // P2c §5.2: imperative handle to read the DOM-measured visible row count
+  // for PageUp/PageDown deltas — pure index arithmetic, no lane/edge math.
+  const graphRef = useRef<GraphCanvasHandle>(null);
 
   // M4: commit details (mode B) + the shared per-file diff expansion slot.
   const [commitDiff, setCommitDiff] = useState<CommitDiff | null>(null);
@@ -568,6 +571,25 @@ export default function App() {
         return;
       }
 
+      if (e.key === 'PageDown' || e.key === 'PageUp') {
+        if (selectedIndex === null || graph === null) return;
+        e.preventDefault();
+        const n = graphRef.current?.getVisibleRowCount() ?? 10;
+        setSelectedIndex((cur) => {
+          if (cur === null) return cur;
+          const next = e.key === 'PageDown' ? cur + n : cur - n;
+          return Math.max(0, Math.min(next, graph.nodes.length - 1));
+        });
+        return;
+      }
+
+      if (e.key === 'Home' || e.key === 'End') {
+        if (selectedIndex === null || graph === null) return;
+        e.preventDefault();
+        setSelectedIndex(e.key === 'Home' ? 0 : graph.nodes.length - 1);
+        return;
+      }
+
       if (e.key === '?') {
         e.preventDefault();
         setOverlayOpen((cur) => !cur);
@@ -962,6 +984,7 @@ export default function App() {
             ) : graph !== null ? (
               // Loading first layout: nothing over the canvas area (no spinners).
               <GraphCanvas
+                ref={graphRef}
                 layout={graph}
                 selectedIndex={selectedIndex}
                 onSelect={setSelectedIndex}

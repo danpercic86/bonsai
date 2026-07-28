@@ -17,6 +17,9 @@ const SHORTCUTS: { keys: string[]; action: string }[] = [
   { keys: ['Ctrl', 'Shift', 'P'], action: 'Pull (fast-forward only)' },
   { keys: ['Ctrl', 'Shift', 'U'], action: 'Push current branch' },
   { keys: ['↑', '↓'], action: 'Move commit selection' },
+  { keys: ['Page Up', 'Page Down'], action: 'Move commit selection by one screenful' },
+  { keys: ['Home'], action: 'Select the topmost commit' },
+  { keys: ['End'], action: 'Select the last commit' },
   { keys: ['?'], action: 'Toggle this overlay' },
 ];
 

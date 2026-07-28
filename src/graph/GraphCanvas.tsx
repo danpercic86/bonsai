@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import type { GraphLayout } from '../ipc';
 import { resolveTheme } from './colors';
 import type { Theme } from './colors';
@@ -23,6 +23,14 @@ export interface GraphCanvasProps {
    *  `resolveTheme` re-run (colors are otherwise cached for the component's
    *  lifetime) followed by a repaint. Lane palette itself is theme-invariant. */
   themeVersion: number;
+}
+
+/** P2c §5.2: imperative escape hatch — App needs the DOM-measured visible row
+ *  count for PageUp/PageDown deltas, which App has no other way to learn
+ *  without duplicating a ResizeObserver of its own. Pure view-layer index
+ *  arithmetic downstream — no lane/edge math involved. */
+export interface GraphCanvasHandle {
+  getVisibleRowCount(): number;
 }
 
 /** Row hit-test result: a layout row index, the synthetic WIP row, or none. */
@@ -54,7 +62,10 @@ const LOG_EVERY = 120;
  * and schedule one rAF paint. Initial/resize/data-driven paints stay
  * synchronous (rAF is throttled to zero in hidden windows).
  */
-export function GraphCanvas({ layout, selectedIndex, onSelect, wip, themeVersion }: GraphCanvasProps) {
+export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function GraphCanvas(
+  { layout, selectedIndex, onSelect, wip, themeVersion },
+  ref,
+) {
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -75,6 +86,14 @@ export function GraphCanvas({ layout, selectedIndex, onSelect, wip, themeVersion
   const gapRecorderRef = useRef(createFrameRecorder());
   const gapCountRef = useRef(0);
   const firstDataPaintSkippedRef = useRef(false);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      getVisibleRowCount: () => Math.max(1, Math.floor(cssSizeRef.current.h / METRICS.rowHeight)),
+    }),
+    [],
+  );
 
   // Edge culling index, built once per layout object (§4.4).
   const edgeIndex = useMemo(() => buildEdgeIndex(layout), [layout]);
@@ -360,4 +379,4 @@ export function GraphCanvas({ layout, selectedIndex, onSelect, wip, themeVersion
       </div>
     </div>
   );
-}
+});
