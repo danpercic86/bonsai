@@ -1,7 +1,6 @@
-import { Fragment, useState } from 'react';
+import { useState } from 'react';
 import { relativeDate } from '../graph/draw';
 import type { CommitDiff, FileDiffHeader, FileStatus, GraphNode } from '../ipc';
-import { DiffSlotView } from './DiffView';
 import type { DiffSlot } from './DiffView';
 
 // Mode B (M4 contract §4.3): shown INSTEAD of StatusPanel + CommitBox when a
@@ -116,7 +115,8 @@ export interface CommitPanelProps {
   data: CommitDiff | null; // null while loading
   loading: boolean;
   error: string | null;
-  /** Same accordion mechanism as StatusPanel; key = `commit:${path}`. */
+  /** Currently open diff (key = `commit:${path}`) — drives row expanded state;
+   * the diff itself renders in App's center-pane DiffOverlay (P3a). */
   diffSlot: DiffSlot | null;
   onToggleDiff(file: FileDiffHeader): void;
   /** Parent short-oid clicked; App maps to a row via node.parents indices. */
@@ -221,18 +221,12 @@ export function CommitPanel({
                 const key = `commit:${file.path}`;
                 const expanded = diffSlot !== null && diffSlot.key === key;
                 return (
-                  <Fragment key={key}>
-                    <FileHeaderRow
-                      file={file}
-                      expanded={expanded}
-                      onToggle={() => onToggleDiff(file)}
-                    />
-                    {expanded && diffSlot !== null && (
-                      <li className="diff-expansion">
-                        <DiffSlotView slot={diffSlot} onDismissError={() => onToggleDiff(file)} />
-                      </li>
-                    )}
-                  </Fragment>
+                  <FileHeaderRow
+                    key={key}
+                    file={file}
+                    expanded={expanded}
+                    onToggle={() => onToggleDiff(file)}
+                  />
                 );
               })}
             </ul>

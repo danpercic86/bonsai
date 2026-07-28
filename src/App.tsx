@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CommitBox } from './components/CommitBox';
 import { CommitPanel } from './components/CommitPanel';
+import { DiffOverlay } from './components/DiffOverlay';
+import type { DiffOverlayMeta } from './components/DiffOverlay';
 import { PaneDivider } from './components/PaneDivider';
 import { RepoSwitcher } from './components/RepoSwitcher';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
@@ -161,6 +163,36 @@ export default function App() {
     }
     return paths.size > 0 ? { fileCount: paths.size } : null;
   }, [status, repo]);
+
+  // P3a §2.3: overlay header meta, derived (never stored) from the slot key +
+  // the current snapshot/commitDiff so it can't go stale. Lookup miss (entry
+  // gone from a newer snapshot in the brief window before refetchStatus
+  // collapses the slot, or commitDiff cleared mid-flight): path from the key,
+  // no badge — never throw, never hide the close button.
+  const overlayMeta: DiffOverlayMeta | null = useMemo(() => {
+    if (diffSlot === null) return null;
+    const key = diffSlot.key;
+    if (key.startsWith('commit:')) {
+      const path = key.slice('commit:'.length);
+      const file = commitDiff?.files.find((f) => f.path === path) ?? null;
+      return {
+        path,
+        origPath: file?.origPath ?? null,
+        status: file?.status ?? null,
+        kind: 'commit',
+      };
+    }
+    const sep = key.indexOf(':');
+    const section = key.slice(0, sep) as WorkdirSection;
+    const path = key.slice(sep + 1);
+    const entry = status?.[section].find((e) => e.path === path) ?? null;
+    return {
+      path,
+      origPath: entry?.origPath ?? null,
+      status: entry?.status ?? null,
+      kind: section,
+    };
+  }, [diffSlot, status, commitDiff]);
 
   const reportStatusError = useCallback((message: string) => {
     setStatusError({ id: ++statusErrorId.current, message });
@@ -490,8 +522,8 @@ export default function App() {
     }
   }, [selectedIndex, graph]);
 
-  // Esc: closes the shortcut overlay first (P1 §6.4); otherwise deselects the
-  // selected commit (back to mode A), except while typing in an input/textarea.
+  // Esc precedence (P3a §2.4), top wins — one layer per keypress: switcher →
+  // shortcut "?" overlay → typing guard → diff overlay → deselect commit.
   // Skip entirely while the switcher dropdown is open — RepoSwitcher's own Esc
   // listener already closes it; without this guard the same keypress would
   // ALSO close the overlay/deselect the commit underneath.
@@ -505,11 +537,15 @@ export default function App() {
       }
       const target = e.target as HTMLElement | null;
       if (target !== null && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) return;
+      if (diffSlotRef.current !== null) {
+        collapseDiffSlot();
+        return;
+      }
       setSelectedIndex((cur) => (cur !== null ? null : cur));
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [overlayOpen, switcherOpen]);
+  }, [overlayOpen, switcherOpen, collapseDiffSlot]);
 
   // P1 §6.2: global shortcut handler. Guard order: refresh (always
   // preventDefault, even as a no-op) -> typing guard -> dialog-open guard ->
@@ -993,6 +1029,14 @@ export default function App() {
                 themeVersion={themeVersion}
               />
             ) : null}
+            {/* P3a §2.1 lifecycle (all pre-existing behavior, no new code):
+               refetchStatus collapses the slot when the file disappears (overlay
+               closes) or same-key refetches it (stale content dimmed); any
+               selection change resets the slot (overlay closes); clicking a
+               different file row switches the overlay content in place. */}
+            {diffSlot !== null && overlayMeta !== null && (
+              <DiffOverlay slot={diffSlot} meta={overlayMeta} onClose={collapseDiffSlot} />
+            )}
           </main>
           <PaneDivider
             side="right-panel"

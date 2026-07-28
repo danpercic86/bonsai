@@ -109,6 +109,43 @@ all pass in the native app. Release build verified: MSI + NSIS bundles at
 src-tauri/target/release/bundle (Bonsai 0.1.0 x64). **v1 COMPLETE** per CLAUDE.md
 definition of done.
 
+## P3 — Diff overlay, trees, merge/rebase, multi-repo tabs — **in-progress** (2026-07-28)
+
+Current step: P3a — architect contract
+
+Plan approved by user 2026-07-28 (see ~/.claude/plans/for-this-bonsai-git-moonlit-metcalfe.md).
+Sequencing locked (UI wins first): P3a diff overlay → P3b tree grouping → P3c merge+conflicts →
+P3d rebase → P3e multi-repo tabs. Locked decisions: rebase = plain non-interactive only;
+conflicts = file-level (Take ours/theirs/Mark resolved + read-only marker view); diff overlay =
+unified only; tabs last (repoId threading over final command set).
+
+- **P3a — Diff overlay in center pane** (frontend only): diffSlot machinery stays; DiffSlotView
+  renders as full-pane overlay over `.graph-pane` (header w/ path+badge+close, Esc closes);
+  StatusPanel/CommitPanel drop inline `<li class="diff-expansion">`; remove 45vh diff-scroll cap.
+  AI gate: harness screenshots (workdir + commit diff overlay, Esc/close/toggle-off), pnpm build.
+  USER CHECKPOINT: overlay feels right in native app.
+- **P3b — Tree-grouped sidebar & status lists** (frontend only): pathTree.ts builder + Tree.tsx
+  recursive renderer (render-prop leaves); applied to Sidebar branches/remotes/tags +
+  StatusPanel/CommitPanel file lists; tree/flat toggle persisted via additive listView ui-setting.
+  AI gate: harness tree screenshots, actions still work from leaves, toggle persists.
+- **P3c — Merge + conflicts** (backend+frontend): git/opstate.rs (RepoOpState + get_op_state),
+  git/conflict.rs (list/get/resolve — shared with rebase), git/merge.rs (merge_branch analysis
+  UpToDate/FF/Merged/Conflicts, commit_merge 2-parent, abort_merge); OpBanner.tsx; actionable
+  Conflicts section routed through center overlay (`conflict:<path>`). AI gate: merge_cli oracle
+  tests + harness ?op=merge round-trip.
+- **P3d — Rebase** (backend+frontend): git/rebase.rs start/continue/skip/abort, on-disk state
+  re-opened per call (never inmemory; no cleanup_state mid-rebase); OpBanner rebase mode
+  step n/m + Continue/Skip/Abort. AI gate: rebase_cli oracle tests + harness ?op=rebase.
+- **P3e — Multi-repo tabs** (backend state + IPC + frontend refactor): AppState keyed
+  HashMap<repoId, RepoEntry{path,watcher}>; all repo-scoped commands gain repoId; close_repo;
+  repo-changed payload gains repoId; RepoWorkspace.tsx owns per-repo state cluster (all tabs
+  mounted, inactive display:none, GraphCanvas zero-size guard + re-measure on show); TabStrip.tsx
+  replaces RepoSwitcher; openRepos/activeRepo persisted, reopen-all on launch. AI gate: two-repo
+  isolation tests + harness multi-tab flows.
+
+Rules: scratch repos under D:\Temp\bonsai-scratch only; TMP/TEMP=D:\Temp for cargo tests;
+orchestrator makes all commits (`wip(P3x): …`); mock.ts kept compiling with every IPC change.
+
 ## P2 — Post-v1 follow-ups — **done** (2026-07-28)
 
 AI gate passed and USER CHECKPOINT confirmed by user: pane resizing/persistence, theme

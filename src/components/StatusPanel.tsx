@@ -1,6 +1,5 @@
-import { Fragment, useState } from 'react';
+import { useState } from 'react';
 import type { FileStatus, StatusEntry, StatusSnapshot } from '../ipc';
-import { DiffSlotView } from './DiffView';
 import type { DiffSlot } from './DiffView';
 
 export type { DiffSlot } from './DiffView';
@@ -153,29 +152,18 @@ function Section({
           const key = section !== null ? `${section}:${entry.path}` : null;
           const expanded = key !== null && diffSlot !== null && diffSlot.key === key;
           return (
-            <Fragment key={`${entry.status}:${entry.path}`}>
-              <FileRow
-                entry={entry}
-                action={rowAction}
-                disabled={disabled}
-                expandable={expandable && section !== null}
-                expanded={expanded}
-                onAction={onAction}
-                onToggle={() => {
-                  if (section !== null) onToggleDiff(section, entry);
-                }}
-              />
-              {expanded && diffSlot !== null && (
-                <li className="diff-expansion">
-                  <DiffSlotView
-                    slot={diffSlot}
-                    onDismissError={() => {
-                      if (section !== null) onToggleDiff(section, entry);
-                    }}
-                  />
-                </li>
-              )}
-            </Fragment>
+            <FileRow
+              key={`${entry.status}:${entry.path}`}
+              entry={entry}
+              action={rowAction}
+              disabled={disabled}
+              expandable={expandable && section !== null}
+              expanded={expanded}
+              onAction={onAction}
+              onToggle={() => {
+                if (section !== null) onToggleDiff(section, entry);
+              }}
+            />
           );
         })}
       </ul>
@@ -201,11 +189,12 @@ export interface StatusPanelProps {
   error: { id: number; message: string } | null;
   /** True while any stage/unstage/commit is in flight — disables all action buttons. */
   busy: boolean;
-  /** Currently expanded diff (null = none). Single expansion across ALL sections. */
+  /** Currently open diff (null = none) — drives row expanded/highlight state;
+   * the diff itself renders in App's center-pane DiffOverlay (P3a). */
   diffSlot: DiffSlot | null;
   onStage(paths: string[]): void;
   onUnstage(paths: string[]): void;
-  /** Toggle inline diff expansion for a row (App owns the fetch). */
+  /** Toggle a row's diff in the center-pane overlay (App owns the fetch). */
   onToggleDiff(section: WorkdirSection, entry: StatusEntry): void;
 }
 

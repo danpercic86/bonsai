@@ -1007,17 +1007,60 @@ span.file-row-main {
   background: var(--bg-2);
 }
 
-.diff-expansion {
-  list-style: none;
-  margin: 2px 0 8px;
-  padding: 0;
+/* P3a: DiffSlotView renders only inside the overlay body — height comes from
+   the flex column there (no viewport cap). */
+.diff-scroll {
+  overflow-y: auto;
 }
 
-/* Contract §4.2: expansion capped at 45% of the panel height, scrolls inside
-   (the right panel fills the window below the 40px header). */
-.diff-scroll {
-  max-height: calc(45vh - 18px);
-  overflow-y: auto;
+/* ---------- Diff overlay (P3a §2.5) ---------- */
+
+.diff-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5; /* above canvas + graph banners; toasts/ShortcutOverlay are
+                 outside .graph-pane and unaffected */
+  background: var(--bg-0);
+  display: flex;
+  flex-direction: column;
+}
+
+.diff-overlay-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+  min-width: 0;
+}
+
+.diff-overlay-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-overlay-kind {
+  color: var(--text-3);
+  font-size: 12px;
+  flex: none;
+}
+
+.diff-overlay-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px;
+}
+
+.diff-overlay-body .diff-scroll {
+  flex: 1;
+  min-height: 0;
 }
 
 /* P1 §4.1: stale content shown dimmed during a same-key refetch. */
