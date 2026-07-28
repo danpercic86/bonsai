@@ -81,9 +81,12 @@ the native app.
 
 ## M5 — Branches — **in-progress**
 
-Current step: M5 — tester running adversarial probes + writing user checklist.
-M5a committed 7264523, M5b committed 043faba (both reviewer APPROVE; delete-only-via-dialog
-guardrail confirmed in review).
+Current step: M5 — AI gate PASSED (131 tests + 2 ignored: 19 branches CLI-oracle + 5
+adversarial probes; reviewer confirmed delete reachable ONLY via ConfirmDialog; harness
+verified live by orchestrator: list/badge/create/checkout/conflict/unmerged-block/merged-delete/
+detached row + dialog focus/Esc). AWAITING USER CHECKPOINT: docs/contracts/M5-user-checklist.md.
+Commits: 7264523 (M5a), 043faba (M5b), d4727f9 (tester).
+Mock-only nit: ?fixture=detached header still shows main (openRepo not overridden) — polish.
 
 Goal: list, create, checkout, delete branches; show current branch/HEAD in the sidebar.
 Acceptance (AI gate): branch operations verified against the `git` CLI in tests; code review
