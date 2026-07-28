@@ -214,6 +214,9 @@ export interface RepoChangedPayload {
 
 export type Theme = 'dark' | 'light';
 
+/** Flat vs tree-grouped list rendering (P3b §2) — pure display preference. */
+export type ListView = 'tree' | 'flat';
+
 export interface PaneWidths {
   sidebar: number;
   rightPanel: number;
@@ -222,11 +225,13 @@ export interface PaneWidths {
 export interface UiSettings {
   theme: Theme;
   paneWidths: PaneWidths;
+  listView: ListView;
 }
 
 export interface UiSettingsPatch {
   theme?: Theme;
   paneWidths?: PaneWidths;
+  listView?: ListView;
 }
 
 export type Unsubscribe = () => void;

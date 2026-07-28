@@ -9,7 +9,7 @@ use crate::git::repo::{read_repo_info, RepoInfo};
 use crate::git::stage::{stage_paths, unstage_paths};
 use crate::git::status::{read_status, StatusSnapshot};
 use crate::graph::{compute_graph, GraphLayout};
-use crate::settings::{self, clamp_pane_widths, PaneWidths, RecentRepo, ThemeChoice};
+use crate::settings::{self, clamp_pane_widths, ListView, PaneWidths, RecentRepo, ThemeChoice};
 use crate::state::{AppState, OpenRepo};
 use crate::watcher::spawn_watcher;
 
@@ -127,6 +127,7 @@ pub async fn remove_recent_repo(
 pub struct UiSettings {
     pub theme: ThemeChoice,
     pub pane_widths: PaneWidths,
+    pub list_view: ListView,
 }
 
 /// Partial patch for `set_ui_settings` — only `Some(..)` fields are applied
@@ -136,6 +137,7 @@ pub struct UiSettings {
 pub struct UiSettingsPatch {
     pub theme: Option<ThemeChoice>,
     pub pane_widths: Option<PaneWidths>,
+    pub list_view: Option<ListView>,
 }
 
 /// Pure patch application: only `Some(..)` fields of `patch` mutate `s`; pane
@@ -148,6 +150,9 @@ fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     }
     if let Some(pane_widths) = patch.pane_widths {
         s.pane_widths = clamp_pane_widths(pane_widths);
+    }
+    if let Some(list_view) = patch.list_view {
+        s.list_view = list_view;
     }
 }
 
@@ -162,6 +167,7 @@ pub async fn get_ui_settings(app: tauri::AppHandle) -> Result<UiSettings, AppErr
         UiSettings {
             theme: s.theme,
             pane_widths: s.pane_widths,
+            list_view: s.list_view,
         }
     })
     .await
@@ -186,6 +192,7 @@ pub async fn set_ui_settings(
         Ok(UiSettings {
             theme: s.theme,
             pane_widths: s.pane_widths,
+            list_view: s.list_view,
         })
     })
     .await
@@ -742,8 +749,9 @@ mod tests {
         assert!(matches!(err, AppError::NoRepo));
     }
 
-    /// Patching only `theme` leaves `pane_widths` untouched and vice versa
-    /// (P2a contract §3.4.3).
+    /// Patching only `theme` leaves `pane_widths`/`list_view` untouched, and
+    /// each other single-field patch is equally partial (P2a contract §3.4.3;
+    /// P3b contract §2.1).
     #[test]
     fn set_ui_settings_patch_is_partial() {
         let mut s = settings::Settings::default();
@@ -754,10 +762,12 @@ mod tests {
             UiSettingsPatch {
                 theme: Some(ThemeChoice::Light),
                 pane_widths: None,
+                list_view: None,
             },
         );
         assert_eq!(s.theme, ThemeChoice::Light);
         assert_eq!(s.pane_widths, original_widths);
+        assert_eq!(s.list_view, settings::ListView::Tree);
 
         apply_patch(
             &mut s,
@@ -767,9 +777,30 @@ mod tests {
                     sidebar: 300,
                     right_panel: 400,
                 }),
+                list_view: None,
             },
         );
         assert_eq!(s.theme, ThemeChoice::Light); // untouched by the second patch
+        assert_eq!(s.list_view, settings::ListView::Tree);
+        assert_eq!(
+            s.pane_widths,
+            PaneWidths {
+                sidebar: 300,
+                right_panel: 400,
+            }
+        );
+
+        // Patching only `list_view` leaves theme + pane widths untouched.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                theme: None,
+                pane_widths: None,
+                list_view: Some(settings::ListView::Flat),
+            },
+        );
+        assert_eq!(s.list_view, settings::ListView::Flat);
+        assert_eq!(s.theme, ThemeChoice::Light);
         assert_eq!(
             s.pane_widths,
             PaneWidths {
@@ -787,6 +818,7 @@ mod tests {
                     sidebar: 5,
                     right_panel: 5000,
                 }),
+                list_view: None,
             },
         );
         assert_eq!(s.pane_widths.sidebar, settings::SIDEBAR_MIN);

@@ -33,6 +33,16 @@ pub enum ThemeChoice {
     Light,
 }
 
+/// Flat vs tree-grouped list rendering for sidebar refs and file lists
+/// (P3b contract §2). Pure UI preference; display-only, no Git effect.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ListView {
+    #[default]
+    Tree,
+    Flat,
+}
+
 /// Persisted sidebar/right-panel widths in px (P2 contract §2.1). Clamped to
 /// documented sane bounds on BOTH read (`load_from`) and write (setter
 /// commands) — this is the "persisted sanity" bound; the frontend additionally
@@ -72,7 +82,8 @@ pub fn clamp_pane_widths(w: PaneWidths) -> PaneWidths {
 
 /// On-disk settings wire format:
 /// `{ "version": 1, "recentRepos": [ { "path": "...", "lastOpened": 0 } ],
-///    "theme": "dark", "paneWidths": { "sidebar": 240, "rightPanel": 380 } }`.
+///    "theme": "dark", "paneWidths": { "sidebar": 240, "rightPanel": 380 },
+///    "listView": "tree" }`.
 ///
 /// `SETTINGS_VERSION` stays `1`: both `theme` and `pane_widths` are additive
 /// `#[serde(default)]` fields (on the whole struct already, via the
@@ -88,6 +99,7 @@ pub struct Settings {
     pub recent_repos: Vec<RecentRepo>,
     pub theme: ThemeChoice,
     pub pane_widths: PaneWidths,
+    pub list_view: ListView,
 }
 
 impl Default for Settings {
@@ -97,6 +109,7 @@ impl Default for Settings {
             recent_repos: Vec::new(),
             theme: ThemeChoice::default(),
             pane_widths: PaneWidths::default(),
+            list_view: ListView::default(),
         }
     }
 }
@@ -354,6 +367,34 @@ mod tests {
         assert!(raw_light.contains("\"theme\": \"light\""));
     }
 
+    /// Both `ListView` wire strings ("tree"/"flat") round-trip through
+    /// save/load, and the raw JSON uses the documented camelCase key +
+    /// lowercase values (P3b contract §2.1).
+    #[test]
+    fn list_view_roundtrips_both_variants() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+
+        let file_tree = settings_path(&dir).with_file_name("tree.json");
+        let s_tree = Settings {
+            list_view: ListView::Tree,
+            ..Default::default()
+        };
+        save_to(&file_tree, &s_tree).expect("save tree");
+        assert_eq!(load_from(&file_tree).list_view, ListView::Tree);
+        let raw_tree = std::fs::read_to_string(&file_tree).expect("read tree.json");
+        assert!(raw_tree.contains("\"listView\": \"tree\""));
+
+        let file_flat = settings_path(&dir).with_file_name("flat.json");
+        let s_flat = Settings {
+            list_view: ListView::Flat,
+            ..Default::default()
+        };
+        save_to(&file_flat, &s_flat).expect("save flat");
+        assert_eq!(load_from(&file_flat).list_view, ListView::Flat);
+        let raw_flat = std::fs::read_to_string(&file_flat).expect("read flat.json");
+        assert!(raw_flat.contains("\"listView\": \"flat\""));
+    }
+
     /// An old `settings.json` written before P2 (only `version`/`recentRepos`,
     /// no `theme`/`paneWidths` keys at all) still loads without error and
     /// falls back to the type defaults for the new fields — this is the
@@ -376,6 +417,28 @@ mod tests {
         assert_eq!(loaded.recent_repos[0].path, "D:\\Repos\\legacy");
         assert_eq!(loaded.theme, ThemeChoice::default());
         assert_eq!(loaded.pane_widths, PaneWidths::default());
+        assert_eq!(loaded.list_view, ListView::Tree);
+    }
+
+    /// A pre-P3b `settings.json` that has `theme`/`paneWidths` but no
+    /// `listView` key loads with the default (`Tree`) — the additive-field
+    /// guarantee for the P3b setting specifically (P3b contract §2.1).
+    #[test]
+    fn old_settings_file_without_list_view_loads_default() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let json = r#"{
+            "version": 1,
+            "recentRepos": [],
+            "theme": "light",
+            "paneWidths": { "sidebar": 300, "rightPanel": 400 }
+        }"#;
+        std::fs::write(&file, json).expect("write pre-P3b settings.json");
+
+        let loaded = load_from(&file);
+        assert_eq!(loaded.list_view, ListView::Tree);
+        assert_eq!(loaded.theme, ThemeChoice::Light); // other fields untouched
+        assert_eq!(loaded.pane_widths.sidebar, 300);
     }
 
     /// A `settings.json` with in-range `recentRepos` but out-of-range/corrupt

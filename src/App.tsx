@@ -20,6 +20,7 @@ import type {
   FileDiff,
   FileDiffHeader,
   GraphLayout,
+  ListView,
   PaneWidths,
   RecentRepo,
   RepoInfo,
@@ -120,6 +121,11 @@ export default function App() {
   // GraphCanvas knows to re-resolve its cached CSS-variable colors (§4.4).
   const [theme, setTheme] = useState<Theme>('dark');
   const [themeVersion, setThemeVersion] = useState(0);
+
+  // P3b: flat vs tree-grouped lists — loaded from the same getUiSettings call,
+  // persisted on toggle. Consumed by Sidebar/StatusPanel/CommitPanel from
+  // P3b-2/3 onward; until then the toggle just flips + persists the state.
+  const [listView, setListView] = useState<ListView>('tree');
 
   const [graph, setGraph] = useState<GraphLayout | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
@@ -245,6 +251,14 @@ export default function App() {
       .setUiSettings({ theme: next })
       .catch((e) => pushToast('error', `Could not save theme: ${errorMessage(e)}`));
   }, [theme, pushToast]);
+
+  const toggleListView = useCallback(() => {
+    const next: ListView = listView === 'tree' ? 'flat' : 'tree';
+    setListView(next);
+    void ipc
+      .setUiSettings({ listView: next })
+      .catch((e) => pushToast('error', `Could not save list view: ${errorMessage(e)}`));
+  }, [listView, pushToast]);
 
   const handleSidebarResize = useCallback((delta: number) => {
     setPaneWidths((w) => ({
@@ -480,6 +494,7 @@ export default function App() {
         setTheme(s.theme);
         applyTheme(s.theme);
         setThemeVersion((v) => v + 1);
+        setListView(s.listView);
       } catch {
         // Non-fatal — keep defaults.
       }
@@ -969,6 +984,15 @@ export default function App() {
             aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
           >
             {theme === 'dark' ? '☀' : '☾'}
+          </button>
+          <button
+            type="button"
+            className="btn-icon list-view-toggle"
+            onClick={toggleListView}
+            title={listView === 'tree' ? 'Switch to flat lists' : 'Switch to tree lists'}
+            aria-label={listView === 'tree' ? 'Switch to flat lists' : 'Switch to tree lists'}
+          >
+            {listView === 'tree' ? '☰' : '⋔'}
           </button>
           <button
             type="button"

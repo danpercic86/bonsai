@@ -374,6 +374,12 @@ body {
   font-size: 16px;
 }
 
+/* ---------- List-view toggle (P3b) ---------- */
+
+.list-view-toggle {
+  font-size: 16px;
+}
+
 /* ---------- Header toolbar (M6: Fetch / Pull / Push + Refresh) ---------- */
 
 .header-toolbar {

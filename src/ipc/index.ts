@@ -24,6 +24,7 @@ export type {
   Hunk,
   IpcApi,
   LineKind,
+  ListView,
   RecentRepo,
   RefKind,
   RefLabel,

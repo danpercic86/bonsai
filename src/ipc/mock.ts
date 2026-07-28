@@ -12,6 +12,7 @@ import type {
   FileDiff,
   GraphLayout,
   IpcApi,
+  ListView,
   PullResult,
   PushResult,
   PaneWidths,
@@ -121,6 +122,7 @@ const RIGHT_PANEL_MAX = 640;
 const DEFAULT_UI_SETTINGS: UiSettings = {
   theme: 'dark',
   paneWidths: { sidebar: 240, rightPanel: 380 },
+  listView: 'tree',
 };
 
 function clampPaneWidths(w: PaneWidths): PaneWidths {
@@ -147,7 +149,8 @@ function readUiSettings(): UiSettings {
           ? parsed.paneWidths.rightPanel
           : DEFAULT_UI_SETTINGS.paneWidths.rightPanel,
     });
-    return { theme, paneWidths };
+    const listView: ListView = parsed.listView === 'flat' ? 'flat' : 'tree';
+    return { theme, paneWidths, listView };
   } catch {
     return structuredClone(DEFAULT_UI_SETTINGS);
   }
@@ -651,6 +654,7 @@ export const mockIpc: IpcApi = {
     const next: UiSettings = {
       theme: patch.theme ?? current.theme,
       paneWidths: patch.paneWidths !== undefined ? clampPaneWidths(patch.paneWidths) : current.paneWidths,
+      listView: patch.listView ?? current.listView,
     };
     writeUiSettings(next);
     return next;
