@@ -16,6 +16,8 @@ import type {
   RepoChangedPayload,
   RepoInfo,
   StatusSnapshot,
+  UiSettings,
+  UiSettingsPatch,
   Unsubscribe,
 } from './types';
 
@@ -109,5 +111,13 @@ export const tauriIpc: IpcApi = {
     return getCurrentWindow().onFocusChanged(({ payload: focused }) => {
       if (focused) cb();
     });
+  },
+
+  getUiSettings(): Promise<UiSettings> {
+    return invoke<UiSettings>('get_ui_settings');
+  },
+
+  setUiSettings(patch: UiSettingsPatch): Promise<UiSettings> {
+    return invoke<UiSettings>('set_ui_settings', { patch });
   },
 };

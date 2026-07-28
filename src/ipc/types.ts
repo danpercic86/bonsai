@@ -212,6 +212,23 @@ export interface RepoChangedPayload {
   reason: string;
 }
 
+export type Theme = 'dark' | 'light';
+
+export interface PaneWidths {
+  sidebar: number;
+  rightPanel: number;
+}
+
+export interface UiSettings {
+  theme: Theme;
+  paneWidths: PaneWidths;
+}
+
+export interface UiSettingsPatch {
+  theme?: Theme;
+  paneWidths?: PaneWidths;
+}
+
 export type Unsubscribe = () => void;
 
 export interface AppError {
@@ -287,4 +304,8 @@ export interface IpcApi {
   onRepoChanged(cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe>;
   /** Fires when the app window regains focus. */
   onWindowFocus(cb: () => void): Promise<Unsubscribe>;
+  /** Current UI settings (theme + pane widths). Never rejects for a missing/corrupt file. */
+  getUiSettings(): Promise<UiSettings>;
+  /** Applies a partial patch (only defined fields) and returns the resulting settings. */
+  setUiSettings(patch: UiSettingsPatch): Promise<UiSettings>;
 }

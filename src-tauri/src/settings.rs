@@ -22,13 +22,72 @@ pub struct RecentRepo {
     pub last_opened: i64,
 }
 
+/// Dark or light chrome (P2 contract §2.1). Lane colors are theme-invariant —
+/// only chrome (`--bg-*`/`--text-*`/etc.) differs; this enum is purely a UI
+/// preference with no effect on Git logic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemeChoice {
+    #[default]
+    Dark,
+    Light,
+}
+
+/// Persisted sidebar/right-panel widths in px (P2 contract §2.1). Clamped to
+/// documented sane bounds on BOTH read (`load_from`) and write (setter
+/// commands) — this is the "persisted sanity" bound; the frontend additionally
+/// applies a dynamic live-drag clamp against the current window width and the
+/// graph pane's 480px floor, which is a deliberately separate check (contract
+/// §2.5) not duplicated here.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PaneWidths {
+    pub sidebar: u32,
+    pub right_panel: u32,
+}
+
+impl Default for PaneWidths {
+    fn default() -> Self {
+        PaneWidths {
+            sidebar: 240,
+            right_panel: 380,
+        }
+    }
+}
+
+pub const SIDEBAR_MIN: u32 = 180;
+pub const SIDEBAR_MAX: u32 = 480;
+pub const RIGHT_PANEL_MIN: u32 = 280;
+pub const RIGHT_PANEL_MAX: u32 = 640;
+
+/// Clamps to the documented ranges; called by both `load_from` (defend
+/// against a hand-edited file) and the setter commands (defend against a
+/// future UI bug).
+pub fn clamp_pane_widths(w: PaneWidths) -> PaneWidths {
+    PaneWidths {
+        sidebar: w.sidebar.clamp(SIDEBAR_MIN, SIDEBAR_MAX),
+        right_panel: w.right_panel.clamp(RIGHT_PANEL_MIN, RIGHT_PANEL_MAX),
+    }
+}
+
 /// On-disk settings wire format:
-/// `{ "version": 1, "recentRepos": [ { "path": "...", "lastOpened": 0 } ] }`.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// `{ "version": 1, "recentRepos": [ { "path": "...", "lastOpened": 0 } ],
+///    "theme": "dark", "paneWidths": { "sidebar": 240, "rightPanel": 380 } }`.
+///
+/// `SETTINGS_VERSION` stays `1`: both `theme` and `pane_widths` are additive
+/// `#[serde(default)]` fields (on the whole struct already, via the
+/// container-level `default`) — an old settings.json containing only
+/// `recentRepos` deserializes fine, missing fields fall back to their type
+/// defaults. No migration code is needed. A future genuine breaking change
+/// (e.g. renaming/removing a field with no safe default) IS when a version
+/// bump becomes necessary — this precedent documents the bar for that.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub version: u32,
     pub recent_repos: Vec<RecentRepo>,
+    pub theme: ThemeChoice,
+    pub pane_widths: PaneWidths,
 }
 
 impl Default for Settings {
@@ -36,6 +95,8 @@ impl Default for Settings {
         Settings {
             version: SETTINGS_VERSION,
             recent_repos: Vec::new(),
+            theme: ThemeChoice::default(),
+            pane_widths: PaneWidths::default(),
         }
     }
 }
@@ -44,10 +105,14 @@ impl Default for Settings {
 /// JSON all yield `Settings::default()` — settings are best-effort and this
 /// NEVER errors (P1 contract §3.1).
 pub fn load_from(file: &Path) -> Settings {
-    match std::fs::read_to_string(file) {
+    let mut s: Settings = match std::fs::read_to_string(file) {
         Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
         Err(_) => Settings::default(),
-    }
+    };
+    // Defends against a hand-edited or future-version file with out-of-range
+    // values (contract §2.1).
+    s.pane_widths = clamp_pane_widths(s.pane_widths);
+    s
 }
 
 /// Saves settings to `file` atomically: creates parent dirs, writes pretty
@@ -205,5 +270,59 @@ mod tests {
         let file = dir.path().join("nested").join("deeper").join("settings.json");
         save_to(&file, &Settings::default()).expect("save into nested dir");
         assert_eq!(load_from(&file), Settings::default());
+    }
+
+    /// Below-min and above-max on each axis clamp to the documented bounds;
+    /// in-range values pass through unchanged (P2a contract §3.4.1).
+    #[test]
+    fn clamp_pane_widths_clamps_both_axes() {
+        assert_eq!(
+            clamp_pane_widths(PaneWidths {
+                sidebar: 10,
+                right_panel: 10,
+            }),
+            PaneWidths {
+                sidebar: SIDEBAR_MIN,
+                right_panel: RIGHT_PANEL_MIN,
+            }
+        );
+        assert_eq!(
+            clamp_pane_widths(PaneWidths {
+                sidebar: 9999,
+                right_panel: 9999,
+            }),
+            PaneWidths {
+                sidebar: SIDEBAR_MAX,
+                right_panel: RIGHT_PANEL_MAX,
+            }
+        );
+        let in_range = PaneWidths {
+            sidebar: 300,
+            right_panel: 400,
+        };
+        assert_eq!(clamp_pane_widths(in_range), in_range);
+    }
+
+    /// Save/load a `Settings` with non-default `theme` + `pane_widths`
+    /// round-trips exactly (P2a contract §3.4.2).
+    #[test]
+    fn ui_settings_roundtrip() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let s = Settings {
+            theme: ThemeChoice::Light,
+            pane_widths: PaneWidths {
+                sidebar: 300,
+                right_panel: 420,
+            },
+            ..Default::default()
+        };
+
+        save_to(&file, &s).expect("save settings");
+        let loaded = load_from(&file);
+        assert_eq!(loaded, s);
+        assert_eq!(loaded.theme, ThemeChoice::Light);
+        assert_eq!(loaded.pane_widths.sidebar, 300);
+        assert_eq!(loaded.pane_widths.right_panel, 420);
     }
 }

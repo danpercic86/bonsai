@@ -582,7 +582,9 @@ body {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 240px minmax(480px, 1fr) 380px;
+  /* P2a: sidebar/right-panel widths are inline-styled per pane (persisted via
+     settings.json); the two divider columns are fixed hit-strip width. */
+  grid-template-columns: auto 4px minmax(480px, 1fr) 4px auto;
 }
 
 .sidebar {
@@ -590,6 +592,17 @@ body {
   border-right: 1px solid var(--border);
   padding: 12px;
   overflow-y: auto;
+}
+
+.pane-divider {
+  position: relative;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.pane-divider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
 }
 
 .graph-pane {

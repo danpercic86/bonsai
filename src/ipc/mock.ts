@@ -14,11 +14,15 @@ import type {
   IpcApi,
   PullResult,
   PushResult,
+  PaneWidths,
   RecentRepo,
   RepoChangedPayload,
   RepoInfo,
   StatusEntry,
   StatusSnapshot,
+  Theme,
+  UiSettings,
+  UiSettingsPatch,
   Unsubscribe,
 } from './types';
 
@@ -98,6 +102,60 @@ function readRecents(): RecentRepo[] {
 function writeRecents(list: RecentRepo[]): void {
   try {
     window.localStorage.setItem(RECENTS_KEY, JSON.stringify(list));
+  } catch {
+    // Best-effort, like the backend's non-fatal save.
+  }
+}
+
+// UI settings persistence (P2a contract §2.4): mirrors bonsai.mockRecents —
+// localStorage-backed so the harness drag/toggle-then-reload story is
+// verifiable. Ranges mirror settings.rs's clamp_pane_widths — the ONE place
+// the mock duplicates a Rust-side clamp, acceptable because it's a pure
+// numeric guard, not git/layout logic (contract §2.4).
+const UI_SETTINGS_KEY = 'bonsai.mockUiSettings';
+const SIDEBAR_MIN = 180;
+const SIDEBAR_MAX = 480;
+const RIGHT_PANEL_MIN = 280;
+const RIGHT_PANEL_MAX = 640;
+
+const DEFAULT_UI_SETTINGS: UiSettings = {
+  theme: 'dark',
+  paneWidths: { sidebar: 240, rightPanel: 380 },
+};
+
+function clampPaneWidths(w: PaneWidths): PaneWidths {
+  return {
+    sidebar: Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, w.sidebar)),
+    rightPanel: Math.min(RIGHT_PANEL_MAX, Math.max(RIGHT_PANEL_MIN, w.rightPanel)),
+  };
+}
+
+/** Corrupt/missing storage degrades to the default — mirrors load_from. */
+function readUiSettings(): UiSettings {
+  try {
+    const raw = window.localStorage.getItem(UI_SETTINGS_KEY);
+    if (raw === null) return structuredClone(DEFAULT_UI_SETTINGS);
+    const parsed = JSON.parse(raw) as Partial<UiSettings>;
+    const theme: Theme = parsed.theme === 'light' ? 'light' : 'dark';
+    const paneWidths = clampPaneWidths({
+      sidebar:
+        typeof parsed.paneWidths?.sidebar === 'number'
+          ? parsed.paneWidths.sidebar
+          : DEFAULT_UI_SETTINGS.paneWidths.sidebar,
+      rightPanel:
+        typeof parsed.paneWidths?.rightPanel === 'number'
+          ? parsed.paneWidths.rightPanel
+          : DEFAULT_UI_SETTINGS.paneWidths.rightPanel,
+    });
+    return { theme, paneWidths };
+  } catch {
+    return structuredClone(DEFAULT_UI_SETTINGS);
+  }
+}
+
+function writeUiSettings(s: UiSettings): void {
+  try {
+    window.localStorage.setItem(UI_SETTINGS_KEY, JSON.stringify(s));
   } catch {
     // Best-effort, like the backend's non-fatal save.
   }
@@ -580,5 +638,21 @@ export const mockIpc: IpcApi = {
   async onWindowFocus(cb: () => void): Promise<Unsubscribe> {
     window.addEventListener('focus', cb);
     return () => window.removeEventListener('focus', cb);
+  },
+
+  async getUiSettings(): Promise<UiSettings> {
+    await delay(150);
+    return readUiSettings();
+  },
+
+  async setUiSettings(patch: UiSettingsPatch): Promise<UiSettings> {
+    await delay(150);
+    const current = readUiSettings();
+    const next: UiSettings = {
+      theme: patch.theme ?? current.theme,
+      paneWidths: patch.paneWidths !== undefined ? clampPaneWidths(patch.paneWidths) : current.paneWidths,
+    };
+    writeUiSettings(next);
+    return next;
   },
 };

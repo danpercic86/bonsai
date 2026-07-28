@@ -9,7 +9,7 @@ use crate::git::repo::{read_repo_info, RepoInfo};
 use crate::git::stage::{stage_paths, unstage_paths};
 use crate::git::status::{read_status, StatusSnapshot};
 use crate::graph::{compute_graph, GraphLayout};
-use crate::settings::{self, RecentRepo};
+use crate::settings::{self, clamp_pane_widths, PaneWidths, RecentRepo, ThemeChoice};
 use crate::state::{AppState, OpenRepo};
 use crate::watcher::spawn_watcher;
 
@@ -116,6 +116,77 @@ pub async fn remove_recent_repo(
             .retain(|r| !r.path.eq_ignore_ascii_case(&path));
         settings::save_to(&file, &s)?;
         Ok(s.recent_repos)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Combined UI settings surfaced to the frontend (P2 contract §2.2).
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiSettings {
+    pub theme: ThemeChoice,
+    pub pane_widths: PaneWidths,
+}
+
+/// Partial patch for `set_ui_settings` — only `Some(..)` fields are applied
+/// (P2 contract §2.2).
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiSettingsPatch {
+    pub theme: Option<ThemeChoice>,
+    pub pane_widths: Option<PaneWidths>,
+}
+
+/// Pure patch application: only `Some(..)` fields of `patch` mutate `s`; pane
+/// widths are clamped on write. Extracted from `set_ui_settings` so its
+/// partial-update semantics are unit-testable without a Tauri app
+/// (P2a contract §3.4.3).
+fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
+    if let Some(theme) = patch.theme {
+        s.theme = theme;
+    }
+    if let Some(pane_widths) = patch.pane_widths {
+        s.pane_widths = clamp_pane_widths(pane_widths);
+    }
+}
+
+/// Current UI settings (theme + pane widths). Never rejects for a
+/// missing/corrupt settings file (same as `get_recent_repos`); only
+/// settings-path resolution can error.
+#[tauri::command]
+pub async fn get_ui_settings(app: tauri::AppHandle) -> Result<UiSettings, AppError> {
+    let file = settings::settings_file(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let s = settings::load_from(&file);
+        UiSettings {
+            theme: s.theme,
+            pane_widths: s.pane_widths,
+        }
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))
+}
+
+/// Applies a partial patch (only `Some(..)` fields) to the persisted UI
+/// settings and returns the resulting `UiSettings`. Save failure surfaces as
+/// `AppError::Io` (NOT silently swallowed like the recents hook — the user
+/// just took an explicit action, e.g. finished a drag or toggled the theme,
+/// and silently losing it would be surprising).
+#[tauri::command]
+pub async fn set_ui_settings(
+    app: tauri::AppHandle,
+    patch: UiSettingsPatch,
+) -> Result<UiSettings, AppError> {
+    let file = settings::settings_file(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut s = settings::load_from(&file);
+        apply_patch(&mut s, patch);
+        settings::save_to(&file, &s)?;
+        Ok(UiSettings {
+            theme: s.theme,
+            pane_widths: s.pane_widths,
+        })
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -669,5 +740,56 @@ mod tests {
         let err = tauri::async_runtime::block_on(push_inner(&state))
             .expect_err("push with no repo");
         assert!(matches!(err, AppError::NoRepo));
+    }
+
+    /// Patching only `theme` leaves `pane_widths` untouched and vice versa
+    /// (P2a contract §3.4.3).
+    #[test]
+    fn set_ui_settings_patch_is_partial() {
+        let mut s = settings::Settings::default();
+        let original_widths = s.pane_widths;
+
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                theme: Some(ThemeChoice::Light),
+                pane_widths: None,
+            },
+        );
+        assert_eq!(s.theme, ThemeChoice::Light);
+        assert_eq!(s.pane_widths, original_widths);
+
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                theme: None,
+                pane_widths: Some(PaneWidths {
+                    sidebar: 300,
+                    right_panel: 400,
+                }),
+            },
+        );
+        assert_eq!(s.theme, ThemeChoice::Light); // untouched by the second patch
+        assert_eq!(
+            s.pane_widths,
+            PaneWidths {
+                sidebar: 300,
+                right_panel: 400,
+            }
+        );
+
+        // Out-of-range pane widths in a patch get clamped on write.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                theme: None,
+                pane_widths: Some(PaneWidths {
+                    sidebar: 5,
+                    right_panel: 5000,
+                }),
+            },
+        );
+        assert_eq!(s.pane_widths.sidebar, settings::SIDEBAR_MIN);
+        assert_eq!(s.pane_widths.right_panel, settings::RIGHT_PANEL_MAX);
     }
 }

@@ -111,8 +111,8 @@ definition of done.
 
 ## P2 — Post-v1 follow-ups — **in-progress**
 
-Current step: P2 — architect drafting docs/contracts/P2-followups.md. Implementation NOT
-started (user directive: contract first, wait before implementing).
+Current step: P2a (pane resizing) — senior-dev implementing per docs/contracts/P2-followups.md
+(contract committed 55f9ba5; user go-ahead 2026-07-28).
 Scope (user-approved 2026-07-28):
 - Pane resizing (3-pane layout: draggable sidebar/right-panel dividers, persisted widths)
 - Light-theme toggle (dark stays default; theme tokens already CSS variables; persist choice)

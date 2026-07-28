@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CommitBox } from './components/CommitBox';
 import { CommitPanel } from './components/CommitPanel';
+import { PaneDivider } from './components/PaneDivider';
 import { RepoSwitcher } from './components/RepoSwitcher';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
 import { Sidebar } from './components/Sidebar';
@@ -17,6 +18,7 @@ import type {
   FileDiff,
   FileDiffHeader,
   GraphLayout,
+  PaneWidths,
   RecentRepo,
   RepoInfo,
   StatusEntry,
@@ -36,6 +38,24 @@ function shortOid(oid: string): string {
 
 function isUsableRepo(info: RepoInfo): boolean {
   return info.isRepo && !info.bare;
+}
+
+// P2a §2.5: persisted-sanity clamp ranges (mirrors settings.rs clamp_pane_widths).
+const SIDEBAR_MIN = 180;
+const SIDEBAR_MAX = 480;
+const RIGHT_PANEL_MIN = 280;
+const RIGHT_PANEL_MAX = 640;
+const GRAPH_MIN_WIDTH = 480;
+const DEFAULT_PANE_WIDTHS: PaneWidths = { sidebar: 240, rightPanel: 380 };
+
+/** Live-drag clamp (§2.5): the persisted range intersected with the current
+ * window size and the graph pane's floor — a deliberately different check
+ * from the persisted-sanity range above (that one alone could let a resize
+ * squeeze the graph pane on a small window). */
+function clampLive(value: number, side: 'sidebar' | 'rightPanel', otherWidth: number): number {
+  const [min, max] = side === 'sidebar' ? [SIDEBAR_MIN, SIDEBAR_MAX] : [RIGHT_PANEL_MIN, RIGHT_PANEL_MAX];
+  const dynamicMax = Math.min(max, window.innerWidth - otherWidth - GRAPH_MIN_WIDTH);
+  return Math.max(min, Math.min(value, Math.max(min, dynamicMax)));
 }
 
 export default function App() {
@@ -76,6 +96,13 @@ export default function App() {
 
   // P1 §10: recent repos — persisted list + reopen-last-on-launch.
   const [recents, setRecents] = useState<RecentRepo[]>([]);
+
+  // P2a: pane widths — loaded once from ipc.getUiSettings() (§3.3), persisted
+  // debounced on drag-end/keyboard-nudge.
+  const [paneWidths, setPaneWidths] = useState<PaneWidths>(DEFAULT_PANE_WIDTHS);
+  const paneWidthsRef = useRef(paneWidths);
+  paneWidthsRef.current = paneWidths;
+  const saveTimerRef = useRef<number | null>(null);
 
   const [graph, setGraph] = useState<GraphLayout | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
@@ -142,6 +169,39 @@ export default function App() {
     },
     [dismissToast],
   );
+
+  /** Debounced persist (300ms) so rapid successive small nudges (keyboard)
+   * don't spam IPC; the drag path already only calls this once per
+   * onResizeEnd, but keyboard nudges are per-keypress (P2a §3.2). */
+  const commitPaneWidths = useCallback(
+    (next: PaneWidths) => {
+      if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = window.setTimeout(() => {
+        void ipc
+          .setUiSettings({ paneWidths: next })
+          .catch((e) => pushToast('error', `Could not save pane widths: ${errorMessage(e)}`));
+      }, 300);
+    },
+    [pushToast],
+  );
+
+  const handleSidebarResize = useCallback((delta: number) => {
+    setPaneWidths((w) => ({
+      ...w,
+      sidebar: clampLive(w.sidebar + delta, 'sidebar', w.rightPanel),
+    }));
+  }, []);
+
+  const handleRightPanelResize = useCallback((delta: number) => {
+    setPaneWidths((w) => ({
+      ...w,
+      rightPanel: clampLive(w.rightPanel + delta, 'rightPanel', w.sidebar),
+    }));
+  }, []);
+
+  const handlePaneResizeEnd = useCallback(() => {
+    commitPaneWidths(paneWidthsRef.current);
+  }, [commitPaneWidths]);
 
   /** Fetch (or re-fetch) the expanded diff for `key`; last-wins guarded.
    * A same-key refetch keeps the stale diff visible (P1 §4.1) — first-time
@@ -352,6 +412,12 @@ export default function App() {
         }
       } catch {
         // Non-fatal.
+      }
+      try {
+        const s = await ipc.getUiSettings();
+        setPaneWidths(s.paneWidths);
+      } catch {
+        // Non-fatal — keep defaults.
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -836,6 +902,12 @@ export default function App() {
             onDelete={(name) => void handleDeleteBranch(name)}
             onCreateBranch={handleCreateBranch}
             onDialogOpenChange={setDialogOpen}
+            width={paneWidths.sidebar}
+          />
+          <PaneDivider
+            side="sidebar"
+            onResize={handleSidebarResize}
+            onResizeEnd={handlePaneResizeEnd}
           />
           <main className="graph-pane">
             {graphError !== null && (
@@ -860,7 +932,12 @@ export default function App() {
               />
             ) : null}
           </main>
-          <aside className="right-panel">
+          <PaneDivider
+            side="right-panel"
+            onResize={handleRightPanelResize}
+            onResizeEnd={handlePaneResizeEnd}
+          />
+          <aside className="right-panel" style={{ width: paneWidths.rightPanel }}>
             {selectedIndex !== null && graph !== null ? (
               <CommitPanel
                 node={graph.nodes[selectedIndex]}

@@ -24,6 +24,8 @@ export interface SidebarProps {
   /** P1 §6.2: lifted so App's global shortcut handler can suppress bindings
    *  while the delete-branch ConfirmDialog is open. */
   onDialogOpenChange?(open: boolean): void;
+  /** P2a: persisted sidebar width in px, applied as inline style on the root. */
+  width: number;
 }
 
 function TrashIcon() {
@@ -149,6 +151,7 @@ export function Sidebar({
   onDelete,
   onCreateBranch,
   onDialogOpenChange,
+  width,
 }: SidebarProps) {
   const [branchesCollapsed, setBranchesCollapsed] = useState(false);
   const [remotesCollapsed, setRemotesCollapsed] = useState(false);
@@ -182,7 +185,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" style={{ width }}>
       {error !== null && (
         <div className="error-banner error-banner-dismissible sidebar-error" role="alert">
           <span className="error-banner-text">{error}</span>
