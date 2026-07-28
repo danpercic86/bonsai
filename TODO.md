@@ -62,7 +62,9 @@ string-compare; ignored-file staging = git add -f semantics (documented).
 
 ## M4 — Diff view — **in-progress**
 
-Current step: M4 — architect drafting `docs/contracts/M4-diff.md`.
+Current step: M4a — implemented, cargo test 102/102 + clippy green; awaiting reviewer round 1.
+(Split: M4a backend, M4b frontend.) Note: watcher tests hardened (drain 1.5s) — flaked under
+enlarged-suite parallel fs load, test code only.
 
 Goal: via git2, working-dir diffs (unstaged vs index, staged vs HEAD) AND commit diffs
 (selected graph node vs first parent, with commit details — message/author/date — in the right

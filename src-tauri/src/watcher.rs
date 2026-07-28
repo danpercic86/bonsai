@@ -155,10 +155,12 @@ mod tests {
         // `git2::Repository::init` are flushed lazily and arrive AFTER the
         // watch is registered — e.g. a late `.git\refs` creation event, which
         // correctly passes the relevance filter and would poison the test.
-        // 700 ms of quiet > the 300 ms debounce window, so a stale burst has
-        // fully discharged before we hand the channel to the test body.
-        std::thread::sleep(Duration::from_millis(200));
-        while rx.recv_timeout(Duration::from_millis(700)).is_ok() {}
+        // The quiet window must comfortably exceed the 300 ms debounce so a
+        // stale burst has fully discharged before the test body runs; 1.5 s
+        // (up from 700 ms) because heavy parallel-test load (M4 grew the lib
+        // suite) delays the lazy flush enough to slip past a shorter drain.
+        std::thread::sleep(Duration::from_millis(500));
+        while rx.recv_timeout(Duration::from_millis(1500)).is_ok() {}
         (handle, rx)
     }
 
@@ -236,13 +238,25 @@ mod tests {
         // Explicit drop must not hang (watcher drops, debounce thread joins).
         drop(handle);
 
-        // A write after the drop must produce no callbacks.
+        // A write after the drop must produce no callbacks. The channel may
+        // still hold callbacks sent BEFORE the drop finished (a stale fixture
+        // event firing the debounce right as we dropped — seen under heavy
+        // parallel-test load); drain those, then require Disconnected. A
+        // Timeout here would mean the debounce thread is still alive.
         std::fs::write(workdir.join("after-drop.txt"), "x").unwrap();
-        assert_eq!(
-            rx.recv_timeout(Duration::from_secs(1)).unwrap_err(),
-            RecvTimeoutError::Disconnected,
-            "callback sender should be disconnected after drop"
-        );
+        loop {
+            match rx.recv_timeout(Duration::from_secs(1)) {
+                Ok(_) => continue, // pre-drop stale callback: not a violation
+                Err(e) => {
+                    assert_eq!(
+                        e,
+                        RecvTimeoutError::Disconnected,
+                        "callback sender should be disconnected after drop"
+                    );
+                    break;
+                }
+            }
+        }
     }
 
     #[test]

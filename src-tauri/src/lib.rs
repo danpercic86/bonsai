@@ -20,7 +20,10 @@ pub fn run() {
             commands::get_graph,
             commands::stage,
             commands::unstage,
-            commands::commit
+            commands::commit,
+            commands::get_workdir_file_diff,
+            commands::get_commit_diff,
+            commands::get_commit_file_diff
         ])
         .run(tauri::generate_context!())
         .expect("error while running Bonsai");

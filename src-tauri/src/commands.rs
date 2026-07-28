@@ -2,6 +2,7 @@ use tauri::Emitter;
 
 use crate::error::AppError;
 use crate::git::commit::{create_commit, CommitResult};
+use crate::git::diff::{commit_diff, commit_file_diff, workdir_file_diff, CommitDiff, FileDiff};
 use crate::git::repo::{read_repo_info, RepoInfo};
 use crate::git::stage::{stage_paths, unstage_paths};
 use crate::git::status::{read_status, StatusSnapshot};
@@ -229,6 +230,78 @@ async fn commit_inner(state: &AppState, message: String) -> Result<CommitResult,
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Diff of one working-dir file (M4 contract §2.2/§2.8).
+/// `staged == false`: index vs workdir; `staged == true`: HEAD vs index.
+/// `orig_path`: pass `StatusEntry.origPath` for renames.
+#[tauri::command]
+pub async fn get_workdir_file_diff(
+    state: tauri::State<'_, AppState>,
+    path: String,
+    orig_path: Option<String>,
+    staged: bool,
+) -> Result<FileDiff, AppError> {
+    get_workdir_file_diff_inner(state.inner(), path, orig_path, staged).await
+}
+
+/// Runtime-free core of `get_workdir_file_diff` (unit-testable without a Tauri app).
+async fn get_workdir_file_diff_inner(
+    state: &AppState,
+    path: String,
+    orig_path: Option<String>,
+    staged: bool,
+) -> Result<FileDiff, AppError> {
+    let repo_path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        workdir_file_diff(&repo_path, &path, orig_path.as_deref(), staged)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Commit details + per-file headers for `oid` vs its first parent
+/// (M4 contract §2.2/§2.8). Errors: `noRepo` | `git`.
+#[tauri::command]
+pub async fn get_commit_diff(
+    state: tauri::State<'_, AppState>,
+    oid: String,
+) -> Result<CommitDiff, AppError> {
+    get_commit_diff_inner(state.inner(), oid).await
+}
+
+/// Runtime-free core of `get_commit_diff` (unit-testable without a Tauri app).
+async fn get_commit_diff_inner(state: &AppState, oid: String) -> Result<CommitDiff, AppError> {
+    let repo_path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || commit_diff(&repo_path, &oid))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Hunks for ONE file of a commit's first-parent diff (M4 contract §2.2/§2.8).
+#[tauri::command]
+pub async fn get_commit_file_diff(
+    state: tauri::State<'_, AppState>,
+    oid: String,
+    path: String,
+    orig_path: Option<String>,
+) -> Result<FileDiff, AppError> {
+    get_commit_file_diff_inner(state.inner(), oid, path, orig_path).await
+}
+
+/// Runtime-free core of `get_commit_file_diff` (unit-testable without a Tauri app).
+async fn get_commit_file_diff_inner(
+    state: &AppState,
+    oid: String,
+    path: String,
+    orig_path: Option<String>,
+) -> Result<FileDiff, AppError> {
+    let repo_path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        commit_file_diff(&repo_path, &oid, &path, orig_path.as_deref())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,6 +402,36 @@ mod tests {
 
         let err = tauri::async_runtime::block_on(commit_inner(&state, "msg".to_string()))
             .expect_err("commit with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+    }
+
+    /// The M4 diff commands all return `NoRepo` when nothing is open
+    /// (contract §6.2 scenario 17).
+    #[test]
+    fn diff_commands_require_an_open_repo() {
+        let state = AppState::default();
+
+        let err = tauri::async_runtime::block_on(get_workdir_file_diff_inner(
+            &state,
+            "file.txt".to_string(),
+            None,
+            false,
+        ))
+        .expect_err("get_workdir_file_diff with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let oid = "0123456789abcdef0123456789abcdef01234567".to_string();
+        let err = tauri::async_runtime::block_on(get_commit_diff_inner(&state, oid.clone()))
+            .expect_err("get_commit_diff with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(get_commit_file_diff_inner(
+            &state,
+            oid,
+            "file.txt".to_string(),
+            None,
+        ))
+        .expect_err("get_commit_file_diff with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
 }
