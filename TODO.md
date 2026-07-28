@@ -90,24 +90,32 @@ Polish candidates: ?fixture=detached mock header not overridden; shared isAppErr
 (3rd copy in Sidebar); dialog actionable if branch removed externally (falls back to
 branchNotFound banner — acceptable).
 
-## M6 — Remotes (fetch / pull ff-only / push) — **in-progress**
+## M6 — Remotes (fetch / pull ff-only / push) — **done** (2026-07-28)
 
-Current step: M6 — AI gate PASSED (165 tests + 2 ignored: 18 remote bare-repo round-trips +
-5 adversarial probes incl. force-rewrite guard; harness verified live by orchestrator:
-fetch badge, pull ff, wouldNotFF warn notice, push upstream-set, authFailed banner, detached
-disables pull/push). AWAITING USER CHECKPOINT: docs/contracts/M6-user-checklist.md
-(Part B real-network round-trip with credential helper is the essential half).
-Commits: 1862dbf (M6a), 40c9a65 (M6b), 71baa54 (tester).
-Documented divergence: stale-tracking push → Bonsai upToDate vs CLI non-ff reject (§9 edge).
-Credential strategy CONFIRMED by user (2026-07-28): git credential helper first
-(Windows Credential Manager via git2 CredentialHelper), SSH agent for ssh URLs,
-never prompt/store raw passwords in-app; clear error if no credentials available.
+AI gate passed (165 tests + 2 ignored: 18 bare-repo round-trips + 5 adversarial probes incl.
+force-rewrite guard; no force-push/force-checkout paths; credential attempt guard unit-tested;
+harness verified all UI flows live). USER CHECKPOINT confirmed by user (local Part A + real
+network Part B round-trip with credential helper, no in-app prompt).
+Contract: docs/contracts/M6-remotes.md. Sub-increments: 1862dbf, 40c9a65, 71baa54.
+Credential strategy user-confirmed 2026-07-28: helper (Windows Credential Manager) →
+SSH agent → default; never prompt/store in-app. Documented divergence: stale-tracking push →
+Bonsai upToDate vs CLI non-ff reject (fetch-first resolves).
+**MVP COMPLETE** — v1 definition-of-done core loop all shipped.
 
-Goal: fetch / pull (fast-forward only — clear message + no change if not ff-able) / push
-with credential handling (git2 CredentialHelper → Windows Credential Manager first, then
-SSH agent for ssh URLs; never prompt for or store raw passwords ourselves).
-Acceptance (AI gate): fetch/pull/push round-trip against a local bare repo (file:// remote
-on a scratch repo) — no network or credentials needed.
-Acceptance (USER CHECKPOINT): one round-trip against a real network remote with the
-credential helper.
-## Polish — pending
+## Polish — **in-progress**
+
+Current step: Polish — architect drafting contract (docs/contracts/P1-polish.md).
+
+Goal (CLAUDE.md): keyboard shortcuts, error toasts, empty/loading states, GitButler-clean
+styling. Accumulated backlog:
+- WIP (uncommitted changes) row at top of graph (deferred from MVP per product decisions)
+- Recent-repos list + reopen last repo polish (deferred from MVP)
+- Keep old diff visible during same-key refetch (skeleton flash on focus/watcher tick)
+- React.memo(DiffView) for 5000-row diffs
+- CommitPanel messageBody unconditional first-line strip
+- Commit textarea disabled during stage-in-flight (Windows focus drop)
+- Dismissed-error string-compare pattern; shared isAppError util (3 copies)
+- Refresh-failure path alignment in App.tsx; frame-log stream tagging
+- Mock: prepend synthetic graph row on commit (TODO(polish) in mock.ts)
+Acceptance (AI gate): full suite stays green; harness verification of new UI states.
+Acceptance (USER CHECKPOINT): shortcuts, toasts, empty states feel right in the native app.
