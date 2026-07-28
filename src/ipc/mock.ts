@@ -3,6 +3,7 @@ import { buildMockGraph, buildMockGraphDetached } from './fixtures/graph';
 import { generateLayout20k } from './fixtures/graph20k';
 import type {
   AppError,
+  BranchesSnapshot,
   CommitDiff,
   CommitResult,
   FileDiff,
@@ -233,6 +234,33 @@ export const mockIpc: IpcApi = {
     const fixture = new URLSearchParams(window.location.search).get('fixture');
     if (fixture === '20k') return generateLayout20k();
     return fixture === 'detached' ? buildMockGraphDetached() : buildMockGraph();
+  },
+
+  // M5a stubs: static snapshot only — the stateful branch mock (create/
+  // checkout/delete mutating module state, fixtures/branches.ts) is M5b.
+  async listBranches(): Promise<BranchesSnapshot> {
+    await delay(150);
+    return {
+      local: [
+        { name: 'feature/sidebar', isHead: false, upstream: 'origin/feature/sidebar', ahead: 2, behind: 1 },
+        { name: 'main', isHead: true, upstream: 'origin/main', ahead: 0, behind: 0 },
+      ],
+      remote: [{ name: 'origin/feature/sidebar' }, { name: 'origin/main' }],
+      tags: ['v0.1.0', 'v0.2.0'],
+      head: { branchName: 'main', oid: mockHeadOid, detached: false, unborn: false },
+    };
+  },
+
+  async createBranch(_name: string): Promise<void> {
+    await delay(150); // TODO(M5b): stateful mock — mutate branch list
+  },
+
+  async checkoutBranch(_name: string): Promise<void> {
+    await delay(150); // TODO(M5b): stateful mock — move isHead + header branch
+  },
+
+  async deleteBranch(_name: string): Promise<void> {
+    await delay(150); // TODO(M5b): stateful mock — remove row / throw unmergedBranch
   },
 
   // The mock never emits repo-changed (no backend watcher in the browser

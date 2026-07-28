@@ -68,8 +68,9 @@ pub fn read_repo_info(path: &std::path::Path) -> Result<RepoInfo, AppError> {
     })
 }
 
-/// Inspects HEAD of an opened repository.
-fn read_head_info(repo: &git2::Repository) -> Result<HeadInfo, AppError> {
+/// Inspects HEAD of an opened repository. Also reused by `git/branches.rs`
+/// for the sidebar snapshot (one source of truth for attached/detached/unborn).
+pub(crate) fn read_head_info(repo: &git2::Repository) -> Result<HeadInfo, AppError> {
     let head = match repo.head() {
         Ok(head) => head,
         Err(e) if e.code() == git2::ErrorCode::UnbornBranch => {

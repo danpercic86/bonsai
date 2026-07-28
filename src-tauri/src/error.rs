@@ -1,7 +1,9 @@
 /// Application-level error surfaced to the frontend.
 ///
 /// Serialized as `{ "kind": "git" | "io" | "other" | "noRepo" | "emptyMessage"
-/// | "configMissing" | "nothingToCommit", "message": "..." }`.
+/// | "configMissing" | "nothingToCommit" | "branchExists" | "invalidName"
+/// | "checkoutConflict" | "unmergedBranch" | "branchNotFound",
+/// "message": "..." }`.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("git error: {0}")]
@@ -18,6 +20,16 @@ pub enum AppError {
     ConfigMissing(String),
     #[error("nothing to commit (index matches HEAD)")]
     NothingToCommit,
+    #[error("{0}")]
+    BranchExists(String),
+    #[error("{0}")]
+    InvalidName(String),
+    #[error("{0}")]
+    CheckoutConflict(String),
+    #[error("{0}")]
+    UnmergedBranch(String),
+    #[error("{0}")]
+    BranchNotFound(String),
 }
 
 impl AppError {
@@ -30,6 +42,11 @@ impl AppError {
             AppError::EmptyMessage => "emptyMessage",
             AppError::ConfigMissing(_) => "configMissing",
             AppError::NothingToCommit => "nothingToCommit",
+            AppError::BranchExists(_) => "branchExists",
+            AppError::InvalidName(_) => "invalidName",
+            AppError::CheckoutConflict(_) => "checkoutConflict",
+            AppError::UnmergedBranch(_) => "unmergedBranch",
+            AppError::BranchNotFound(_) => "branchNotFound",
         }
     }
 
@@ -38,7 +55,12 @@ impl AppError {
             AppError::Git(m)
             | AppError::Io(m)
             | AppError::Other(m)
-            | AppError::ConfigMissing(m) => m,
+            | AppError::ConfigMissing(m)
+            | AppError::BranchExists(m)
+            | AppError::InvalidName(m)
+            | AppError::CheckoutConflict(m)
+            | AppError::UnmergedBranch(m)
+            | AppError::BranchNotFound(m) => m,
             AppError::NoRepo => "no repository is open",
             AppError::EmptyMessage => "commit message is empty",
             AppError::NothingToCommit => "nothing to commit (index matches HEAD)",

@@ -23,7 +23,11 @@ pub fn run() {
             commands::commit,
             commands::get_workdir_file_diff,
             commands::get_commit_diff,
-            commands::get_commit_file_diff
+            commands::get_commit_file_diff,
+            commands::list_branches,
+            commands::create_branch,
+            commands::checkout_branch,
+            commands::delete_branch
         ])
         .run(tauri::generate_context!())
         .expect("error while running Bonsai");

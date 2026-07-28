@@ -1,6 +1,7 @@
 use tauri::Emitter;
 
 use crate::error::AppError;
+use crate::git::branches::{self, BranchesSnapshot};
 use crate::git::commit::{create_commit, CommitResult};
 use crate::git::diff::{commit_diff, commit_file_diff, workdir_file_diff, CommitDiff, FileDiff};
 use crate::git::repo::{read_repo_info, RepoInfo};
@@ -302,6 +303,79 @@ async fn get_commit_file_diff_inner(
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// One snapshot of local branches + remote-tracking branches + tags + HEAD
+/// (M5 contract §2.2/§2.8). Errors: `noRepo` | `git`.
+#[tauri::command]
+pub async fn list_branches(
+    state: tauri::State<'_, AppState>,
+) -> Result<BranchesSnapshot, AppError> {
+    list_branches_inner(state.inner()).await
+}
+
+/// Runtime-free core of `list_branches` (unit-testable without a Tauri app).
+async fn list_branches_inner(state: &AppState) -> Result<BranchesSnapshot, AppError> {
+    let path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || branches::list_refs(&path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Creates a local branch at the current HEAD commit — does NOT check out
+/// (M5 contract §2.4). Errors: `invalidName` | `branchExists` | `git` | `noRepo`.
+/// Does NOT emit `repo-changed` — the frontend refetches imperatively.
+#[tauri::command]
+pub async fn create_branch(
+    state: tauri::State<'_, AppState>,
+    name: String,
+) -> Result<(), AppError> {
+    create_branch_inner(state.inner(), name).await
+}
+
+/// Runtime-free core of `create_branch` (unit-testable without a Tauri app).
+async fn create_branch_inner(state: &AppState, name: String) -> Result<(), AppError> {
+    let path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || branches::create_branch(&path, &name))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Safe checkout of a LOCAL branch (M5 contract §2.5 — never force).
+/// Errors: `branchNotFound` | `checkoutConflict` | `git` | `noRepo`.
+#[tauri::command]
+pub async fn checkout_branch(
+    state: tauri::State<'_, AppState>,
+    name: String,
+) -> Result<(), AppError> {
+    checkout_branch_inner(state.inner(), name).await
+}
+
+/// Runtime-free core of `checkout_branch` (unit-testable without a Tauri app).
+async fn checkout_branch_inner(state: &AppState, name: String) -> Result<(), AppError> {
+    let path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || branches::checkout_branch(&path, &name))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Deletes a LOCAL, fully merged, non-current branch (M5 contract §2.6 —
+/// unmerged deletion is blocked; no force-delete in v1).
+/// Errors: `branchNotFound` | `unmergedBranch` | `git` | `noRepo`.
+#[tauri::command]
+pub async fn delete_branch(
+    state: tauri::State<'_, AppState>,
+    name: String,
+) -> Result<(), AppError> {
+    delete_branch_inner(state.inner(), name).await
+}
+
+/// Runtime-free core of `delete_branch` (unit-testable without a Tauri app).
+async fn delete_branch_inner(state: &AppState, name: String) -> Result<(), AppError> {
+    let path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || branches::delete_branch(&path, &name))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -432,6 +506,32 @@ mod tests {
             None,
         ))
         .expect_err("get_commit_file_diff with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+    }
+
+    /// The M5 branch commands all return `NoRepo` when nothing is open
+    /// (contract §6.5).
+    #[test]
+    fn branch_commands_require_an_open_repo() {
+        let state = AppState::default();
+
+        let err = tauri::async_runtime::block_on(list_branches_inner(&state))
+            .expect_err("list_branches with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err =
+            tauri::async_runtime::block_on(create_branch_inner(&state, "topic".to_string()))
+                .expect_err("create_branch with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err =
+            tauri::async_runtime::block_on(checkout_branch_inner(&state, "topic".to_string()))
+                .expect_err("checkout_branch with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err =
+            tauri::async_runtime::block_on(delete_branch_inner(&state, "topic".to_string()))
+                .expect_err("delete_branch with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
 }

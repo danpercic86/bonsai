@@ -151,6 +151,34 @@ export interface CommitResult {
   branch: string | null;
 }
 
+export interface BranchInfo {
+  /** Shorthand, e.g. "main", "feature/sidebar". */
+  name: string;
+  /** True for the branch HEAD points at (always false when detached/unborn). */
+  isHead: boolean;
+  /** Upstream shorthand, e.g. "origin/main"; null when none configured or the ref is gone. */
+  upstream: string | null;
+  /** Commits ahead of / behind upstream. null whenever `upstream` is null. */
+  ahead: number | null;
+  behind: number | null;
+}
+
+export interface RemoteBranchInfo {
+  /** Shorthand incl. remote, e.g. "origin/main". */
+  name: string;
+}
+
+export interface BranchesSnapshot {
+  /** Sorted case-insensitively by name. */
+  local: BranchInfo[];
+  /** Sorted case-insensitively; symbolic "<remote>/HEAD" entries excluded. */
+  remote: RemoteBranchInfo[];
+  /** Tag names (lightweight + annotated), sorted case-insensitively. */
+  tags: string[];
+  /** One source of truth for attached/detached/unborn in the sidebar. */
+  head: HeadInfo;
+}
+
 export interface RepoChangedPayload {
   reason: string;
 }
@@ -158,7 +186,19 @@ export interface RepoChangedPayload {
 export type Unsubscribe = () => void;
 
 export interface AppError {
-  kind: 'git' | 'io' | 'other' | 'noRepo' | 'emptyMessage' | 'configMissing' | 'nothingToCommit';
+  kind:
+    | 'git'
+    | 'io'
+    | 'other'
+    | 'noRepo'
+    | 'emptyMessage'
+    | 'configMissing'
+    | 'nothingToCommit'
+    | 'branchExists'
+    | 'invalidName'
+    | 'checkoutConflict'
+    | 'unmergedBranch'
+    | 'branchNotFound';
   message: string;
 }
 
@@ -185,6 +225,17 @@ export interface IpcApi {
   getCommitDiff(oid: string): Promise<CommitDiff>;
   /** Hunks for one file of a commit's first-parent diff. */
   getCommitFileDiff(oid: string, path: string, origPath: string | null): Promise<FileDiff>;
+  /** Local branches + remotes + tags + HEAD in one snapshot. Rejects noRepo | git. */
+  listBranches(): Promise<BranchesSnapshot>;
+  /** Create branch at current HEAD (no checkout). Rejects
+   *  invalidName | branchExists | git | noRepo. */
+  createBranch(name: string): Promise<void>;
+  /** Safe checkout of a LOCAL branch. Rejects
+   *  branchNotFound | checkoutConflict | git | noRepo. */
+  checkoutBranch(name: string): Promise<void>;
+  /** Delete a LOCAL, fully merged, non-current branch. Rejects
+   *  branchNotFound | unmergedBranch | git | noRepo. */
+  deleteBranch(name: string): Promise<void>;
   /** Fires after debounced filesystem changes in the open repo. */
   onRepoChanged(cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe>;
   /** Fires when the app window regains focus. */

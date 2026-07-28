@@ -81,7 +81,8 @@ the native app.
 
 ## M5 — Branches — **in-progress**
 
-Current step: M5 — architect drafting contract (docs/contracts/M5-branches.md).
+Current step: M5a — senior-dev implementing backend (branches.rs + commands + errors + tests)
+per docs/contracts/M5-branches.md.
 
 Goal: list, create, checkout, delete branches; show current branch/HEAD in the sidebar.
 Acceptance (AI gate): branch operations verified against the `git` CLI in tests; code review

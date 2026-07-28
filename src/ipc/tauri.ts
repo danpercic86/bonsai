@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import type {
+  BranchesSnapshot,
   CommitDiff,
   CommitResult,
   FileDiff,
@@ -58,6 +59,22 @@ export const tauriIpc: IpcApi = {
 
   getCommitFileDiff(oid: string, path: string, origPath: string | null): Promise<FileDiff> {
     return invoke<FileDiff>('get_commit_file_diff', { oid, path, origPath });
+  },
+
+  listBranches(): Promise<BranchesSnapshot> {
+    return invoke<BranchesSnapshot>('list_branches');
+  },
+
+  createBranch(name: string): Promise<void> {
+    return invoke<void>('create_branch', { name });
+  },
+
+  checkoutBranch(name: string): Promise<void> {
+    return invoke<void>('checkout_branch', { name });
+  },
+
+  deleteBranch(name: string): Promise<void> {
+    return invoke<void>('delete_branch', { name });
   },
 
   onRepoChanged(cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe> {
