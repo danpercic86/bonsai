@@ -92,9 +92,13 @@ branchNotFound banner — acceptable).
 
 ## M6 — Remotes (fetch / pull ff-only / push) — **in-progress**
 
-Current step: M6 — tester running adversarial probes + writing user checklist.
-M6a committed 1862dbf, M6b committed 40c9a65 (both reviewer APPROVE; CSS margin should-fix
-applied by orchestrator pre-commit).
+Current step: M6 — AI gate PASSED (165 tests + 2 ignored: 18 remote bare-repo round-trips +
+5 adversarial probes incl. force-rewrite guard; harness verified live by orchestrator:
+fetch badge, pull ff, wouldNotFF warn notice, push upstream-set, authFailed banner, detached
+disables pull/push). AWAITING USER CHECKPOINT: docs/contracts/M6-user-checklist.md
+(Part B real-network round-trip with credential helper is the essential half).
+Commits: 1862dbf (M6a), 40c9a65 (M6b), 71baa54 (tester).
+Documented divergence: stale-tracking push → Bonsai upToDate vs CLI non-ff reject (§9 edge).
 Credential strategy CONFIRMED by user (2026-07-28): git credential helper first
 (Windows Credential Manager via git2 CredentialHelper), SSH agent for ssh URLs,
 never prompt/store raw passwords in-app; clear error if no credentials available.
