@@ -149,9 +149,16 @@ mod tests {
             }),
         )
         .unwrap();
-        // Give ReadDirectoryChangesW a moment to be fully armed before the
-        // test mutates the directory.
+        // Give ReadDirectoryChangesW a moment to be fully armed, then drain
+        // any STALE callbacks until the channel is quiet: on some volumes
+        // (observed on this machine's D: scratch drive) directory events from
+        // `git2::Repository::init` are flushed lazily and arrive AFTER the
+        // watch is registered — e.g. a late `.git\refs` creation event, which
+        // correctly passes the relevance filter and would poison the test.
+        // 700 ms of quiet > the 300 ms debounce window, so a stale burst has
+        // fully discharged before we hand the channel to the test body.
         std::thread::sleep(Duration::from_millis(200));
+        while rx.recv_timeout(Duration::from_millis(700)).is_ok() {}
         (handle, rx)
     }
 

@@ -1,9 +1,11 @@
 use tauri::Emitter;
 
 use crate::error::AppError;
+use crate::git::commit::{create_commit, CommitResult};
 use crate::git::repo::{read_repo_info, RepoInfo};
-use crate::graph::{compute_graph, GraphLayout};
+use crate::git::stage::{stage_paths, unstage_paths};
 use crate::git::status::{read_status, StatusSnapshot};
+use crate::graph::{compute_graph, GraphLayout};
 use crate::state::{AppState, OpenRepo};
 use crate::watcher::spawn_watcher;
 
@@ -166,6 +168,67 @@ async fn get_graph_inner(state: &AppState) -> Result<GraphLayout, AppError> {
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Path of the currently open repo, or `NoRepo`.
+fn current_repo_path(state: &AppState) -> Result<std::path::PathBuf, AppError> {
+    let repo = state
+        .repo
+        .lock()
+        .map_err(|_| AppError::Other("state lock poisoned".to_string()))?;
+    Ok(repo.as_ref().ok_or(AppError::NoRepo)?.path.clone())
+}
+
+/// Stages the given worktree-relative paths (atomic batch, M3 contract §2.2).
+/// Does NOT emit `repo-changed` — the frontend refetches imperatively after
+/// every successful mutation (§2.7).
+#[tauri::command]
+pub async fn stage(state: tauri::State<'_, AppState>, paths: Vec<String>) -> Result<(), AppError> {
+    stage_inner(state.inner(), paths).await
+}
+
+/// Runtime-free core of `stage` (unit-testable without a Tauri app).
+async fn stage_inner(state: &AppState, paths: Vec<String>) -> Result<(), AppError> {
+    let path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || stage_paths(&path, &paths))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Unstages the given worktree-relative paths (atomic batch). Safe: the
+/// worktree is never touched.
+#[tauri::command]
+pub async fn unstage(
+    state: tauri::State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<(), AppError> {
+    unstage_inner(state.inner(), paths).await
+}
+
+/// Runtime-free core of `unstage` (unit-testable without a Tauri app).
+async fn unstage_inner(state: &AppState, paths: Vec<String>) -> Result<(), AppError> {
+    let path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || unstage_paths(&path, &paths))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Creates a commit from the current index. Errors:
+/// `emptyMessage` | `configMissing` | `nothingToCommit` | `git` | `noRepo`.
+#[tauri::command]
+pub async fn commit(
+    state: tauri::State<'_, AppState>,
+    message: String,
+) -> Result<CommitResult, AppError> {
+    commit_inner(state.inner(), message).await
+}
+
+/// Runtime-free core of `commit` (unit-testable without a Tauri app).
+async fn commit_inner(state: &AppState, message: String) -> Result<CommitResult, AppError> {
+    let path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || create_commit(&path, &message))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,5 +311,24 @@ mod tests {
 
         assert!(state.repo.lock().expect("repo lock").is_none());
         assert!(state.watcher.lock().expect("watcher lock").is_none());
+    }
+
+    /// The M3 mutation commands all return `NoRepo` when nothing is open.
+    #[test]
+    fn mutation_commands_require_an_open_repo() {
+        let state = AppState::default();
+        let paths = vec!["file.txt".to_string()];
+
+        let err = tauri::async_runtime::block_on(stage_inner(&state, paths.clone()))
+            .expect_err("stage with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(unstage_inner(&state, paths))
+            .expect_err("unstage with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(commit_inner(&state, "msg".to_string()))
+            .expect_err("commit with no repo");
+        assert!(matches!(err, AppError::NoRepo));
     }
 }

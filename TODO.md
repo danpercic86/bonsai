@@ -53,7 +53,9 @@ Acceptance (USER CHECKPOINT): scrolling the 20k repo in the native app feels smo
 
 ## M3 — Stage / unstage / commit — **in-progress**
 
-Current step: M3 — architect drafting `docs/contracts/M3-commit.md`.
+Current step: M3a (Rust stage/unstage/commit + CLI-oracle tests) — implemented, cargo test
+75/75 + clippy green; awaiting reviewer round 1. Note: libgit2 ignores GIT_CONFIG_* env vars —
+config isolation via git2::opts::set_search_path instead.
 
 Goal: file-level staging only (no hunk staging, no amend in v1); stage/unstage from the status
 panel; commit with message; author/committer from git config, clear error if unset.

@@ -1,6 +1,7 @@
 /// Application-level error surfaced to the frontend.
 ///
-/// Serialized as `{ "kind": "git" | "io" | "other" | "noRepo", "message": "..." }`.
+/// Serialized as `{ "kind": "git" | "io" | "other" | "noRepo" | "emptyMessage"
+/// | "configMissing" | "nothingToCommit", "message": "..." }`.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("git error: {0}")]
@@ -11,6 +12,12 @@ pub enum AppError {
     Other(String),
     #[error("no repository is open")]
     NoRepo,
+    #[error("commit message is empty")]
+    EmptyMessage,
+    #[error("{0}")]
+    ConfigMissing(String),
+    #[error("nothing to commit (index matches HEAD)")]
+    NothingToCommit,
 }
 
 impl AppError {
@@ -20,13 +27,21 @@ impl AppError {
             AppError::Io(_) => "io",
             AppError::Other(_) => "other",
             AppError::NoRepo => "noRepo",
+            AppError::EmptyMessage => "emptyMessage",
+            AppError::ConfigMissing(_) => "configMissing",
+            AppError::NothingToCommit => "nothingToCommit",
         }
     }
 
     fn message(&self) -> &str {
         match self {
-            AppError::Git(m) | AppError::Io(m) | AppError::Other(m) => m,
+            AppError::Git(m)
+            | AppError::Io(m)
+            | AppError::Other(m)
+            | AppError::ConfigMissing(m) => m,
             AppError::NoRepo => "no repository is open",
+            AppError::EmptyMessage => "commit message is empty",
+            AppError::NothingToCommit => "nothing to commit (index matches HEAD)",
         }
     }
 }

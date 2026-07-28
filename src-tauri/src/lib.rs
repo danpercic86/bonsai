@@ -5,6 +5,8 @@ pub mod fixture;
 pub mod git;
 pub mod graph;
 pub mod state;
+#[cfg(test)]
+pub mod testutil;
 pub mod watcher;
 
 pub fn run() {
@@ -15,7 +17,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::open_repo,
             commands::get_status,
-            commands::get_graph
+            commands::get_graph,
+            commands::stage,
+            commands::unstage,
+            commands::commit
         ])
         .run(tauri::generate_context!())
         .expect("error while running Bonsai");
