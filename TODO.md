@@ -102,13 +102,16 @@ SSH agent → default; never prompt/store in-app. Documented divergence: stale-t
 Bonsai upToDate vs CLI non-ff reject (fetch-first resolves).
 **MVP COMPLETE** — v1 definition-of-done core loop all shipped.
 
-## Polish — **in-progress**
+## Polish — **done** (2026-07-28)
 
-Current step: P1d — WIP row (frontend-composited) + recents UI/RepoSwitcher + launch reopen,
-per docs/contracts/P1-polish.md. P1a committed 185628d, P1b 348d751, P1c approved round 2
-(toasts, shortcuts+overlay, empty/loading states, §8 styling; reviewer APPROVE).
-Remaining after P1d: P1 AI gate (full suite + harness incl. M2d 20k scroll re-run with WIP
-row) + USER CHECKPOINT.
+USER CHECKPOINT confirmed by user: shortcuts, toasts, WIP row, recents/reopen, empty states
+all pass in the native app. **v1 COMPLETE** per CLAUDE.md definition of done.
+P1a 185628d, P1b 348d751, P1c 7100cd3, P1d a3eb70d (all reviewer-APPROVE).
+AI-gate evidence: full cargo suite exit 0; pnpm build green; harness verified — toast
+success (M6 string byte-identical) + sticky error toast w/ manual dismiss; ? overlay
+open/Esc close; shortcuts inert while RepoSwitcher open; WIP row offset live (spacer
+(N+1)*28+8); recents in localStorage + dropdown; 20k scroll WITH WIP row: 240 rAF frames
+avg 16.5ms, max 17.6ms, zero frames >33ms.
 Architect findings: reopen-last-repo was never built (designed now); no repo-switch UI
 existed (RepoSwitcher added). WIP row = frontend-composited +1 render offset (orchestrator
 accepted §12.1: no lane/edge math in TS, GraphLayout unchanged).
