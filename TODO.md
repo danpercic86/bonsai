@@ -109,11 +109,13 @@ all pass in the native app. Release build verified: MSI + NSIS bundles at
 src-tauri/target/release/bundle (Bonsai 0.1.0 x64). **v1 COMPLETE** per CLAUDE.md
 definition of done.
 
-## P2 — Post-v1 follow-ups — **in-progress**
+## P2 — Post-v1 follow-ups — **done** (2026-07-28)
 
-Current step: P2 AI gate passed — awaiting USER CHECKPOINT (native-app smoke checklist:
-pane resizing/persistence, theme toggle/persistence, PageUp/PageDown/Home/End, new app icon
-in taskbar/installer — user must also run `pnpm tauri build` or `tauri dev` to see the icon).
+AI gate passed and USER CHECKPOINT confirmed by user: pane resizing/persistence, theme
+toggle/persistence, extended keyboard nav, new app icon all pass in the native app.
+Contract: docs/contracts/P2-followups.md.
+Open item for the user (no code work pending): code-signing decision per
+docs/code-signing.md — needs a user-provided certificate.
 Sub-increments (all reviewer-APPROVE): P2a pane resizing + ui_settings commands; P2b light
 theme (data-theme + themeVersion repaint); P2c keyboard nav (GraphCanvasHandle);
 P2d generated bonsai icon + tauri icon set + favicon + docs/code-signing.md (docs-only;
