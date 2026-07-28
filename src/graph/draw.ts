@@ -208,6 +208,82 @@ function pillWidth(ctx: CanvasRenderingContext2D, style: PillStyle): number {
   return Math.ceil(measure(ctx, label)) + 2 * METRICS.pillPadX;
 }
 
+// ---------- WIP (uncommitted changes) row (P1 §9.3) ----------
+
+export interface WipSummary {
+  fileCount: number;
+}
+
+/** Standard text-column x — same formula as drawGraph pass 5. */
+function textColumnX(laneCount: number): number {
+  return (
+    METRICS.gutter + Math.min(laneCount, METRICS.maxRenderLanes) * METRICS.laneWidth + METRICS.textGap
+  );
+}
+
+/** Draws the frontend-composited WIP row (P1 §9.1/§9.3). `vp.scrollTop` is the
+ * RAW (un-offset) scroll position; the unchanged Rust layout's own scrollTop
+ * (`layoutScrollTop`) is derived here as `vp.scrollTop - RH`. */
+export function drawWipRow(
+  ctx: CanvasRenderingContext2D,
+  layout: GraphLayout,
+  wip: WipSummary,
+  vp: Viewport,
+  theme: Theme,
+  hovered: boolean,
+): void {
+  const RH = METRICS.rowHeight;
+  const layoutScrollTop = vp.scrollTop - RH;
+  const headIndex = layout.headIndex;
+  const headLane = headIndex !== null ? layout.nodes[headIndex].lane : 0;
+  const x = laneX(headLane);
+  const y = RH / 2 - vp.scrollTop;
+
+  if (hovered) {
+    ctx.fillStyle = theme.bg2;
+    ctx.fillRect(0, -vp.scrollTop, vp.width, RH);
+  }
+
+  if (headIndex !== null) {
+    const headY = headIndex * RH + RH / 2 - layoutScrollTop;
+    const clampedY = Math.max(-56, Math.min(vp.height + 56, headY));
+    ctx.save();
+    ctx.setLineDash([3, 3]);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = theme.laneColors[headLane % 10];
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x, clampedY);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.save();
+  ctx.setLineDash([3, 3]);
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(x, y, 4, 0, Math.PI * 2);
+  ctx.fillStyle = theme.bg0;
+  ctx.fill();
+  ctx.strokeStyle = theme.warning;
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  const textX = textColumnX(layout.laneCount);
+  ctx.font = `italic ${METRICS.summaryFont} ${FONT_UI}`;
+  ctx.fillStyle = theme.text2;
+  const label = 'Uncommitted changes';
+  ctx.fillText(label, textX, y);
+  const labelW = measure(ctx, label);
+
+  ctx.font = `${METRICS.metaFont} ${FONT_UI}`;
+  ctx.fillStyle = theme.text3;
+  const count = `(${wip.fileCount} file${wip.fileCount === 1 ? '' : 's'})`;
+  ctx.fillText(count, textX + labelW + 6, y);
+}
+
 // ---------- main entry ----------
 
 export function drawGraph(

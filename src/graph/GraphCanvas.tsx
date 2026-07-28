@@ -2,17 +2,36 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { GraphLayout } from '../ipc';
 import { resolveTheme } from './colors';
 import type { Theme } from './colors';
-import { drawGraph, rowAtPoint } from './draw';
+import { drawGraph, drawWipRow } from './draw';
+import type { WipSummary } from './draw';
 import { buildEdgeIndex, edgesInRange } from './edgeIndex';
 import { createFrameRecorder } from './frameStats';
 import type { FrameStats } from './frameStats';
 import { METRICS } from './metrics';
+
+export type { WipSummary };
 
 export interface GraphCanvasProps {
   layout: GraphLayout;
   selectedIndex: number | null;
   /** Clicking a row toggles it; empty area below the rows selects null. */
   onSelect(index: number | null): void;
+  /** P1 §9: non-null when the workdir has changes — renders a frontend-
+   *  composited WIP row atop the (unchanged) Rust layout, +1 row offset. */
+  wip: WipSummary | null;
+}
+
+/** Row hit-test result: a layout row index, the synthetic WIP row, or none. */
+type HitRow = number | 'wip' | null;
+
+/** raw = floor((y + scrollTop) / RH); raw < wipOffset -> 'wip' (only possible
+ * when wipOffset === 1); else row = raw - wipOffset (P1 §9.3). */
+function hitTest(yCss: number, scrollTop: number, wipOffset: number, nodesLen: number): HitRow {
+  const raw = Math.floor((yCss + scrollTop) / METRICS.rowHeight);
+  if (raw < 0) return null;
+  if (raw < wipOffset) return 'wip';
+  const row = raw - wipOffset;
+  return row >= 0 && row < nodesLen ? row : null;
 }
 
 const MOCK_MODE = import.meta.env.VITE_MOCK_IPC === '1';
@@ -31,11 +50,12 @@ const LOG_EVERY = 120;
  * and schedule one rAF paint. Initial/resize/data-driven paints stay
  * synchronous (rAF is throttled to zero in hidden windows).
  */
-export function GraphCanvas({ layout, selectedIndex, onSelect }: GraphCanvasProps) {
+export function GraphCanvas({ layout, selectedIndex, onSelect, wip }: GraphCanvasProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const themeRef = useRef<Theme | null>(null);
+  /** Row index, `null` (none), or `-1` sentinel for the synthetic WIP row. */
   const hoverRowRef = useRef<number | null>(null);
   const rafRef = useRef(0);
   const scrollTopRef = useRef(0);
@@ -56,8 +76,8 @@ export function GraphCanvas({ layout, selectedIndex, onSelect }: GraphCanvasProp
   const edgeIndex = useMemo(() => buildEdgeIndex(layout), [layout]);
 
   // Latest props for the stable paint callback.
-  const propsRef = useRef({ layout, selectedIndex, edgeIndex });
-  propsRef.current = { layout, selectedIndex, edgeIndex };
+  const propsRef = useRef({ layout, selectedIndex, edgeIndex, wip });
+  propsRef.current = { layout, selectedIndex, edgeIndex, wip };
 
   const recordFrame = useCallback((kind: 'paint' | 'gap', durMs: number) => {
     const rec = kind === 'paint' ? paintRecorderRef.current : gapRecorderRef.current;
@@ -86,24 +106,37 @@ export function GraphCanvas({ layout, selectedIndex, onSelect }: GraphCanvasProp
     themeRef.current ??= resolveTheme(canvas);
 
     const t0 = STATS_ENABLED ? performance.now() : 0;
-    const { layout: lay, selectedIndex: sel, edgeIndex: ix } = propsRef.current;
+    const { layout: lay, selectedIndex: sel, edgeIndex: ix, wip } = propsRef.current;
     const { w, h } = cssSizeRef.current;
     const scrollTop = scrollerRef.current?.scrollTop ?? scrollTopRef.current;
     scrollTopRef.current = scrollTop;
     const n = lay.nodes.length;
-    const firstRow = Math.max(0, Math.floor(scrollTop / METRICS.rowHeight) - OVERSCAN);
+    const wipOffset = wip !== null ? 1 : 0;
+    const layoutScrollTop = scrollTop - wipOffset * METRICS.rowHeight;
+    const firstRow = Math.max(0, Math.floor(layoutScrollTop / METRICS.rowHeight) - OVERSCAN);
     const lastRow = Math.min(
       n - 1,
-      Math.ceil((scrollTop + h) / METRICS.rowHeight) + OVERSCAN,
+      Math.ceil((layoutScrollTop + h) / METRICS.rowHeight) + OVERSCAN,
     );
+    const hoverRow = hoverRowRef.current !== null && hoverRowRef.current >= 0 ? hoverRowRef.current : null;
     drawGraph(
       ctx,
       lay,
       edgesInRange(lay, ix, firstRow, lastRow),
-      { firstRow, lastRow, scrollTop, width: w, height: h },
+      { firstRow, lastRow, scrollTop: layoutScrollTop, width: w, height: h },
       themeRef.current,
-      { hoverRow: hoverRowRef.current, selectedIndex: sel },
+      { hoverRow, selectedIndex: sel },
     );
+    if (wip !== null && scrollTop < METRICS.rowHeight + 56) {
+      drawWipRow(
+        ctx,
+        lay,
+        wip,
+        { firstRow: 0, lastRow: 0, scrollTop, width: w, height: h },
+        themeRef.current,
+        hoverRowRef.current === -1,
+      );
+    }
     if (STATS_ENABLED) recordFrame('paint', performance.now() - t0);
   }, [recordFrame]);
 
@@ -185,16 +218,18 @@ export function GraphCanvas({ layout, selectedIndex, onSelect }: GraphCanvasProp
       return;
     }
     paintNow();
-  }, [paintNow, layout, selectedIndex]);
+  }, [paintNow, layout, selectedIndex, wip]);
 
-  // P1 §6.3: when selectedIndex changes to non-null (e.g. via ArrowUp/Down in
-  // App), bring the row into view if it's outside the visible window. Pure
-  // scroll adjustment — no layout math here, row position = row * rowHeight.
+  // P1 §6.3/§9.3: when selectedIndex changes to non-null (e.g. via ArrowUp/
+  // Down in App), bring the row into view if it's outside the visible window.
+  // Pure scroll adjustment — row position accounts for the WIP row offset:
+  // target y = (row + wipOffset) * rowHeight.
   useEffect(() => {
     if (selectedIndex === null) return;
     const scroller = scrollerRef.current;
     if (scroller === null) return;
-    const rowTop = selectedIndex * METRICS.rowHeight;
+    const wipOffset = wip !== null ? 1 : 0;
+    const rowTop = (selectedIndex + wipOffset) * METRICS.rowHeight;
     const rowBottom = rowTop + METRICS.rowHeight;
     const viewTop = scroller.scrollTop;
     const viewBottom = viewTop + scroller.clientHeight;
@@ -203,7 +238,7 @@ export function GraphCanvas({ layout, selectedIndex, onSelect }: GraphCanvasProp
     } else if (rowBottom > viewBottom) {
       scroller.scrollTop = rowBottom - scroller.clientHeight + METRICS.rowHeight;
     }
-  }, [selectedIndex]);
+  }, [selectedIndex, wip]);
 
   // Mock-mode dev hook: programmatic scroll sweep with frame timing (§4.7).
   useEffect(() => {
@@ -240,9 +275,12 @@ export function GraphCanvas({ layout, selectedIndex, onSelect }: GraphCanvasProp
     };
   }, []);
 
-  const rowAtMouseY = (yCss: number, scrollTop: number): number | null => {
-    const row = rowAtPoint(yCss, scrollTop);
-    return row >= 0 && row < propsRef.current.layout.nodes.length ? row : null;
+  /** Hover-ref encoding: row index, `-1` for the WIP row, or `null`. */
+  const hitTestAtMouseY = (yCss: number, scrollTop: number): number | null => {
+    const { layout: lay, wip } = propsRef.current;
+    const wipOffset = wip !== null ? 1 : 0;
+    const hit = hitTest(yCss, scrollTop, wipOffset, lay.nodes.length);
+    return hit === 'wip' ? -1 : hit;
   };
 
   // Scroll handler ONLY records scrollTop and schedules one rAF paint (§4.1).
@@ -253,7 +291,7 @@ export function GraphCanvas({ layout, selectedIndex, onSelect }: GraphCanvasProp
     lastScrollTsRef.current = performance.now();
     // Rows move under a stationary cursor while wheel-scrolling.
     if (mouseYRef.current !== null) {
-      hoverRowRef.current = rowAtMouseY(mouseYRef.current, scroller.scrollTop);
+      hoverRowRef.current = hitTestAtMouseY(mouseYRef.current, scroller.scrollTop);
     }
     schedulePaint();
   };
@@ -263,7 +301,7 @@ export function GraphCanvas({ layout, selectedIndex, onSelect }: GraphCanvasProp
     if (scroller === null) return;
     const y = e.clientY - scroller.getBoundingClientRect().top;
     mouseYRef.current = y;
-    const row = rowAtMouseY(y, scroller.scrollTop);
+    const row = hitTestAtMouseY(y, scroller.scrollTop);
     if (row !== hoverRowRef.current) {
       hoverRowRef.current = row;
       schedulePaint(); // repaint only when the hovered row changed, via rAF
@@ -282,12 +320,13 @@ export function GraphCanvas({ layout, selectedIndex, onSelect }: GraphCanvasProp
     const scroller = scrollerRef.current;
     if (scroller === null) return;
     const y = e.clientY - scroller.getBoundingClientRect().top;
-    const row = rowAtMouseY(y, scroller.scrollTop);
-    if (row === null) onSelect(null);
-    else onSelect(row === selectedIndex ? null : row);
+    const wipOffset = wip !== null ? 1 : 0;
+    const hit = hitTest(y, scroller.scrollTop, wipOffset, layout.nodes.length);
+    if (hit === null || hit === 'wip') onSelect(null);
+    else onSelect(hit === selectedIndex ? null : hit);
   };
 
-  const spacerHeight = layout.nodes.length * METRICS.rowHeight + 8;
+  const spacerHeight = (layout.nodes.length + (wip !== null ? 1 : 0)) * METRICS.rowHeight + 8;
 
   return (
     <div ref={hostRef} className="graph-canvas-host">

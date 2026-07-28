@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CommitBox } from './components/CommitBox';
 import { CommitPanel } from './components/CommitPanel';
+import { RepoSwitcher } from './components/RepoSwitcher';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
 import { Sidebar } from './components/Sidebar';
 import { StatusPanel } from './components/StatusPanel';
@@ -8,6 +9,7 @@ import type { DiffSlot, WorkdirSection } from './components/StatusPanel';
 import { Toasts } from './components/Toasts';
 import type { Toast, ToastTone } from './components/Toasts';
 import { GraphCanvas } from './graph/GraphCanvas';
+import type { WipSummary } from './graph/GraphCanvas';
 import { ipc } from './ipc';
 import type {
   BranchesSnapshot,
@@ -15,13 +17,13 @@ import type {
   FileDiff,
   FileDiffHeader,
   GraphLayout,
-  HeadInfo,
+  RecentRepo,
   RepoInfo,
   StatusEntry,
   StatusSnapshot,
   Unsubscribe,
 } from './ipc';
-import { errorMessage } from './utils/errors';
+import { errorMessage, isAppError } from './utils/errors';
 
 function folderName(path: string): string {
   const segments = path.split(/[\\/]/).filter(Boolean);
@@ -30,35 +32,6 @@ function folderName(path: string): string {
 
 function shortOid(oid: string): string {
   return oid.slice(0, 7);
-}
-
-function HeadSummary({ head }: { head: HeadInfo }) {
-  if (head.unborn) {
-    return (
-      <span className="head-summary">
-        <span className="head-branch">{head.branchName ?? '?'}</span>
-        <span className="pill pill-unborn">no commits yet</span>
-      </span>
-    );
-  }
-  if (head.detached) {
-    return (
-      <span className="head-summary">
-        <span className="head-branch">
-          HEAD detached @ <span className="mono">{shortOid(head.oid)}</span>
-        </span>
-        <span className="pill pill-detached">detached</span>
-      </span>
-    );
-  }
-  return (
-    <span className="head-summary">
-      <span className="head-branch">
-        {'⎇ '}
-        {head.branchName ?? '?'} @ <span className="mono">{shortOid(head.oid)}</span>
-      </span>
-    </span>
-  );
 }
 
 function isUsableRepo(info: RepoInfo): boolean {
@@ -96,6 +69,13 @@ export default function App() {
   // Sidebar (shortcuts are inert while the dialog is up).
   const [overlayOpen, setOverlayOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  // P1 reviewer SHOULD-FIX: RepoSwitcher's dropdown lifted the same way as
+  // Sidebar's ConfirmDialog (onDialogOpenChange) — global shortcuts go inert
+  // and the Esc effect below skips a keypress the switcher already consumed.
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+
+  // P1 §10: recent repos — persisted list + reopen-last-on-launch.
+  const [recents, setRecents] = useState<RecentRepo[]>([]);
 
   const [graph, setGraph] = useState<GraphLayout | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
@@ -125,6 +105,17 @@ export default function App() {
   const repoOpen = repoPath !== null;
   // Convenience gating only — the backend guards detached/unborn itself (§4.2).
   const canPullPush = repo?.head != null && !repo.head.detached && !repo.head.unborn;
+
+  // P1 §9.2: WIP row summary derived from the already-fetched status snapshot
+  // — no new IPC call, no Rust layout change.
+  const wip: WipSummary | null = useMemo(() => {
+    if (status === null || repo?.head?.unborn === true) return null;
+    const paths = new Set<string>();
+    for (const s of [status.staged, status.unstaged, status.untracked, status.conflicted]) {
+      for (const e of s) paths.add(e.path);
+    }
+    return paths.size > 0 ? { fileCount: paths.size } : null;
+  }, [status, repo]);
 
   const reportStatusError = useCallback((message: string) => {
     setStatusError({ id: ++statusErrorId.current, message });
@@ -295,6 +286,77 @@ export default function App() {
     pushToast,
   ]);
 
+  // P1 §10.1: recent-repos list, refetched after every successful open.
+  const refreshRecents = useCallback(async () => {
+    try {
+      setRecents(await ipc.getRecentRepos());
+    } catch {
+      // Non-fatal — recents are best-effort UI sugar.
+    }
+  }, []);
+
+  /** Open a specific path with no folder picker — shared by the switcher, the
+   * empty-state recents list, and reopen-on-launch (P1 §10.1). */
+  const openPath = useCallback(
+    async (path: string, opts: { fromRecents: boolean }) => {
+      const hadRepoOpen = repoPath !== null;
+      setError(null);
+      setLoading(true);
+      try {
+        const info = await ipc.openRepo(path);
+        setRepo(info);
+        if (isUsableRepo(info)) {
+          void refetchStatus();
+          void refetchGraph();
+          void refetchBranches();
+        } else {
+          clearStatus();
+          clearGraph();
+          clearBranches();
+        }
+        void refreshRecents();
+      } catch (e) {
+        if (opts.fromRecents && isAppError(e) && e.kind === 'io') {
+          // Path moved/deleted: drop it from recents (never resurrect it).
+          void ipc.removeRecentRepo(path).then(setRecents);
+        }
+        if (hadRepoOpen) {
+          pushToast('error', errorMessage(e));
+        } else {
+          setError(errorMessage(e));
+          setRepo(null); // a failed open leaves no repo open (matches backend)
+        }
+        clearStatus();
+        clearGraph();
+        clearBranches();
+      } finally {
+        setLoading(false);
+      }
+    },
+    [repoPath, refetchStatus, refetchGraph, refetchBranches, clearStatus, clearGraph, clearBranches, refreshRecents, pushToast],
+  );
+
+  // Mount effect (once): load recents; if none is currently open, reopen the
+  // most-recently-used repo (locked "reopen last repo on launch" product
+  // decision, P1 §12.2). Guarded against StrictMode double-invoke via a ref.
+  const launchedRef = useRef(false);
+  useEffect(() => {
+    if (launchedRef.current) return;
+    launchedRef.current = true;
+    (async () => {
+      try {
+        const list = await ipc.getRecentRepos();
+        setRecents(list);
+        if (repoPath === null && list.length > 0) {
+          void openPath(list[0].path, { fromRecents: true });
+        }
+      } catch {
+        // Non-fatal.
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // M4 §4.4: selection -> commit diff. Every selection change also resets the
   // shared expansion slot (its keys belong to the previous mode/commit).
   useEffect(() => {
@@ -332,9 +394,13 @@ export default function App() {
 
   // Esc: closes the shortcut overlay first (P1 §6.4); otherwise deselects the
   // selected commit (back to mode A), except while typing in an input/textarea.
+  // Skip entirely while the switcher dropdown is open — RepoSwitcher's own Esc
+  // listener already closes it; without this guard the same keypress would
+  // ALSO close the overlay/deselect the commit underneath.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      if (switcherOpen) return;
       if (overlayOpen) {
         setOverlayOpen(false);
         return;
@@ -345,7 +411,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [overlayOpen]);
+  }, [overlayOpen, switcherOpen]);
 
   // P1 §6.2: global shortcut handler. Guard order: refresh (always
   // preventDefault, even as a no-op) -> typing guard -> dialog-open guard ->
@@ -371,7 +437,7 @@ export default function App() {
           target.isContentEditable);
       if (typing) return;
 
-      if (dialogOpen) return;
+      if (dialogOpen || switcherOpen) return;
 
       if (ctrl && e.key.toLowerCase() === 'o') {
         e.preventDefault();
@@ -424,6 +490,7 @@ export default function App() {
     mutating,
     canPullPush,
     dialogOpen,
+    switcherOpen,
     selectedIndex,
     graph,
   ]);
@@ -468,6 +535,7 @@ export default function App() {
     };
   }, [repoPath, refetchStatus, refetchGraph, refetchBranches]);
 
+  // Picker path: delegates to the shared openPath (P1 §10.1).
   async function handleOpenRepository() {
     setError(null);
     setLoading(true);
@@ -476,23 +544,7 @@ export default function App() {
       if (path === null) {
         return; // user cancelled; keep current state
       }
-      const info = await ipc.openRepo(path);
-      setRepo(info);
-      if (isUsableRepo(info)) {
-        void refetchStatus();
-        void refetchGraph();
-        void refetchBranches();
-      } else {
-        clearStatus();
-        clearGraph();
-        clearBranches();
-      }
-    } catch (e) {
-      setError(errorMessage(e));
-      setRepo(null); // a failed open leaves no repo open (matches backend)
-      clearStatus();
-      clearGraph();
-      clearBranches();
+      await openPath(path, { fromRecents: false });
     } finally {
       setLoading(false);
     }
@@ -719,13 +771,14 @@ export default function App() {
       <header className="header">
         <span className="app-name">Bonsai</span>
         {repoOpen && repo !== null && (
-          <div className="header-repo">
-            <span className="repo-name">{folderName(repo.path)}</span>
-            <span className="repo-path" title={repo.path}>
-              {repo.path}
-            </span>
-            {repo.head && <HeadSummary head={repo.head} />}
-          </div>
+          <RepoSwitcher
+            repo={repo}
+            recents={recents}
+            disabled={refreshing || mutating}
+            onOpenPath={(path) => void openPath(path, { fromRecents: true })}
+            onBrowse={() => void handleOpenRepository()}
+            onOpenChange={setSwitcherOpen}
+          />
         )}
         <div className="header-toolbar">
           <button
@@ -803,6 +856,7 @@ export default function App() {
                 layout={graph}
                 selectedIndex={selectedIndex}
                 onSelect={setSelectedIndex}
+                wip={wip}
               />
             ) : null}
           </main>
@@ -862,6 +916,25 @@ export default function App() {
           >
             {loading ? 'Opening…' : 'Open repository'}
           </button>
+          {recents.length > 0 && (
+            <div className="recents-list">
+              <p className="section-label recents-label">Recent</p>
+              {recents.map((r) => (
+                <button
+                  key={r.path}
+                  type="button"
+                  className="recents-item"
+                  disabled={loading}
+                  onClick={() => void openPath(r.path, { fromRecents: true })}
+                >
+                  <span className="recents-item-name">{folderName(r.path)}</span>
+                  <span className="recents-item-path" title={r.path}>
+                    {r.path}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
       <ShortcutOverlay open={overlayOpen} onClose={() => setOverlayOpen(false)} />
