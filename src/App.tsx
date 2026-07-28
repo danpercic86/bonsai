@@ -95,6 +95,16 @@ export default function App() {
   const [branchesError, setBranchesError] = useState<string | null>(null);
   const [branchesLoading, setBranchesLoading] = useState(false);
 
+  // M6 §4.1: remote-op feedback. Notice = transient success/warning line under
+  // the header; error = dismissible banner. Never routed to statusError.
+  const [remoteNotice, setRemoteNotice] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(
+    null,
+  );
+  const [remoteError, setRemoteError] = useState<string | null>(null);
+  // Which remote op is in flight — drives the per-button busy label.
+  const [remoteOp, setRemoteOp] = useState<'fetch' | 'pull' | 'push' | null>(null);
+  const noticeId = useRef(0);
+
   const [graph, setGraph] = useState<GraphLayout | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
@@ -458,6 +468,106 @@ export default function App() {
     }
   }
 
+  // ----- M6: remote operations (fetch / pull / push) -----
+
+  /** Shows the transient notice; auto-clears after 5 s iff still current. */
+  const showNotice = useCallback((text: string, tone: 'ok' | 'warn') => {
+    const id = ++noticeId.current;
+    setRemoteNotice({ text, tone });
+    window.setTimeout(() => {
+      if (id === noticeId.current) setRemoteNotice(null);
+    }, 5000);
+  }, []);
+
+  const dismissNotice = useCallback(() => {
+    noticeId.current += 1; // invalidate the pending auto-clear timeout
+    setRemoteNotice(null);
+  }, []);
+
+  /** Common entry for every remote-op handler: clear feedback, mark busy. */
+  function beginRemoteOp(op: 'fetch' | 'pull' | 'push') {
+    setRemoteError(null);
+    dismissNotice();
+    setMutating(true);
+    setRemoteOp(op);
+  }
+
+  function endRemoteOp() {
+    setMutating(false);
+    setRemoteOp(null);
+  }
+
+  async function handleFetch() {
+    beginRemoteOp('fetch');
+    try {
+      const res = await ipc.fetch();
+      const n = res.remotes.length;
+      const k = res.remotes.reduce((sum, r) => sum + r.updatedRefs, 0);
+      showNotice(
+        `Fetched ${n} remote${n === 1 ? '' : 's'}` +
+          (k > 0 ? ` — ${k} ref${k === 1 ? '' : 's'} updated` : ''),
+        'ok',
+      );
+      await Promise.all([refetchBranches(), refetchGraph()]); // status unaffected
+    } catch (e) {
+      setRemoteError(errorMessage(e));
+    } finally {
+      endRemoteOp();
+    }
+  }
+
+  async function handlePull() {
+    beginRemoteOp('pull');
+    try {
+      const res = await ipc.pull();
+      switch (res.kind) {
+        case 'upToDate':
+          showNotice('Already up to date', 'ok');
+          break;
+        case 'fastForwarded':
+          showNotice(`Fast-forwarded ${res.branch} to ${shortOid(res.to)}`, 'ok');
+          break;
+        case 'wouldNotFastForward':
+          showNotice(
+            `Cannot fast-forward: '${res.branch}' has ${res.ahead} local commit(s) not on ` +
+              'upstream. Bonsai v1 does not merge — push your commits or reconcile via the CLI.',
+            'warn',
+          );
+          break;
+      }
+      // Full refresh: the branch tip may have moved (same as post-checkout).
+      if (repoPath !== null) {
+        setRepo(await ipc.openRepo(repoPath));
+      }
+      await Promise.all([refetchBranches(), refetchStatus(), refetchGraph()]);
+    } catch (e) {
+      setRemoteError(errorMessage(e));
+    } finally {
+      endRemoteOp();
+    }
+  }
+
+  async function handlePush() {
+    beginRemoteOp('push');
+    try {
+      const res = await ipc.push();
+      if (res.kind === 'upToDate') {
+        showNotice('Already up to date', 'ok');
+      } else {
+        showNotice(
+          `Pushed ${res.branch} → ${res.remote}/${res.branch}` +
+            (res.setUpstream ? ' (upstream set)' : ''),
+          'ok',
+        );
+      }
+      await Promise.all([refetchBranches(), refetchGraph()]); // ahead badge -> 0
+    } catch (e) {
+      setRemoteError(errorMessage(e));
+    } finally {
+      endRemoteOp();
+    }
+  }
+
   // Mode-A accordion toggle: staged rows -> staged diff; unstaged/untracked ->
   // unstaged diff (M4 §4.2).
   function handleToggleWorkdirDiff(section: WorkdirSection, entry: StatusEntry) {
@@ -492,6 +602,15 @@ export default function App() {
   }
 
   const repoOpen = repoPath !== null;
+  // Convenience gating only — the backend guards detached/unborn itself (§4.2).
+  const canPullPush = repo?.head != null && !repo.head.detached && !repo.head.unborn;
+  const headBranch = branches?.local.find((b) => b.isHead) ?? null;
+  const pushTitle =
+    headBranch === null
+      ? 'Push'
+      : headBranch.upstream !== null
+        ? `Push ${headBranch.name} to ${headBranch.upstream}`
+        : `Push ${headBranch.name} to origin/${headBranch.name} and set upstream`;
 
   return (
     <div className="app">
@@ -506,17 +625,73 @@ export default function App() {
             {repo.head && <HeadSummary head={repo.head} />}
           </div>
         )}
-        <button
-          type="button"
-          className="btn-icon"
-          disabled={!repoOpen || refreshing || statusLoading || graphLoading || mutating}
-          onClick={handleRefresh}
-          title="Refresh"
-          aria-label="Refresh"
-        >
-          {'⟳'}
-        </button>
+        <div className="header-toolbar">
+          <button
+            type="button"
+            className="toolbar-btn"
+            disabled={!repoOpen || refreshing || mutating}
+            onClick={() => void handleFetch()}
+            title="Fetch all remotes"
+          >
+            {remoteOp === 'fetch' ? 'Fetching…' : '↓ Fetch'}
+          </button>
+          <button
+            type="button"
+            className="toolbar-btn"
+            disabled={!repoOpen || refreshing || mutating || !canPullPush}
+            onClick={() => void handlePull()}
+            title="Pull (fast-forward only)"
+          >
+            {remoteOp === 'pull' ? 'Pulling…' : '⇣ Pull'}
+          </button>
+          <button
+            type="button"
+            className="toolbar-btn"
+            disabled={!repoOpen || refreshing || mutating || !canPullPush}
+            onClick={() => void handlePush()}
+            title={pushTitle}
+          >
+            {remoteOp === 'push' ? 'Pushing…' : '↑ Push'}
+          </button>
+          <button
+            type="button"
+            className="btn-icon"
+            disabled={!repoOpen || refreshing || statusLoading || graphLoading || mutating}
+            onClick={handleRefresh}
+            title="Refresh"
+            aria-label="Refresh"
+          >
+            {'⟳'}
+          </button>
+        </div>
       </header>
+
+      {repoOpen && remoteError !== null && (
+        <div className="error-banner error-banner-dismissible remote-error-banner">
+          <span className="error-banner-text">{remoteError}</span>
+          <button
+            type="button"
+            className="error-dismiss"
+            onClick={() => setRemoteError(null)}
+            aria-label="Dismiss"
+          >
+            {'✕'}
+          </button>
+        </div>
+      )}
+      {repoOpen && remoteError === null && remoteNotice !== null && (
+        <div className={`remote-notice${remoteNotice.tone === 'warn' ? ' remote-notice-warn' : ''}`}>
+          <span className="remote-notice-text">{remoteNotice.text}</span>
+          <button
+            type="button"
+            className="notice-dismiss"
+            onClick={dismissNotice}
+            aria-label="Dismiss"
+          >
+            {'✕'}
+          </button>
+        </div>
+      )}
 
       {repoOpen && repo !== null ? (
         <div className="panes">

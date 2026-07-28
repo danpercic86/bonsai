@@ -215,6 +215,93 @@ body {
   cursor: default;
 }
 
+/* ---------- Header toolbar (M6: Fetch / Pull / Push + Refresh) ---------- */
+
+.header-toolbar {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.header-toolbar .btn-icon {
+  margin-left: 0; /* the toolbar owns the auto margin */
+}
+
+.toolbar-btn {
+  height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.toolbar-btn:hover:not(:disabled) {
+  background: var(--bg-2);
+}
+
+.toolbar-btn:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+/* ---------- Remote-op feedback (M6: notice line + error banner) ---------- */
+
+/* Double selector outweighs .error-banner-dismissible's margin-bottom later in the file. */
+.remote-error-banner.error-banner-dismissible {
+  flex: none;
+  margin: 8px 12px 0;
+}
+
+.remote-notice {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 12px 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-2);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+}
+
+.remote-notice-warn {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 35%, transparent);
+  color: color-mix(in srgb, var(--warning) 80%, var(--text-1));
+}
+
+.remote-notice-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.notice-dismiss {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.notice-dismiss:hover {
+  background: color-mix(in srgb, currentcolor 12%, transparent);
+}
+
 /* ---------- 3-pane layout ---------- */
 
 .panes {

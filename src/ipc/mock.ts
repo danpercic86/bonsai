@@ -61,6 +61,34 @@ let openedPath: string | null = null;
 let mockBranches: BranchesSnapshot = structuredClone(INITIAL_BRANCHES);
 let mockHeadBranch = 'main';
 
+// Stateful remote mock (M6 contract §5): the first fetch "discovers" one new
+// commit on origin/main (main goes behind:1) so a subsequent pull fast-forwards.
+let mockFetched = false;
+
+/** `?remote=` failure trigger — separate from `?fixture=` so they compose. */
+function remoteTrigger(): string | null {
+  return new URLSearchParams(window.location.search).get('remote');
+}
+
+function throwAuthFailed(): never {
+  const err: AppError = {
+    kind: 'authFailed',
+    message:
+      "authentication failed for 'origin': no usable credentials. Configure a Git " +
+      'credential helper (e.g. Git Credential Manager) for HTTPS remotes, or run an ' +
+      'SSH agent for SSH remotes.',
+  };
+  throw err;
+}
+
+function throwNetworkError(): never {
+  const err: AppError = {
+    kind: 'networkError',
+    message: "network error talking to 'origin': failed to resolve address",
+  };
+  throw err;
+}
+
 /**
  * Documented simplification of the git ref-format rules — the backend
  * (`git2::Branch::name_is_valid` + pre-checks) is authoritative.
@@ -119,6 +147,7 @@ export const mockIpc: IpcApi = {
       mockHeadOid = MOCK_OID;
       mockBranches = structuredClone(INITIAL_BRANCHES);
       mockHeadBranch = 'main';
+      mockFetched = false;
       openedPath = path;
     }
 
@@ -143,6 +172,16 @@ export const mockIpc: IpcApi = {
         isRepo: true,
         bare: false,
         head: { branchName: 'main', oid: '', detached: false, unborn: true },
+      };
+    }
+    // `?fixture=detached` mirrors the detached listBranches/graph fixtures in
+    // the header HEAD too (M6 §6.8.9: Pull/Push disabled, Fetch enabled).
+    if (new URLSearchParams(window.location.search).get('fixture') === 'detached') {
+      return {
+        path,
+        isRepo: true,
+        bare: false,
+        head: { branchName: null, oid: mockHeadOid, detached: true, unborn: false },
       };
     }
     // Default fixture: the canonical mock repo (and any unknown path). The
@@ -218,6 +257,12 @@ export const mockIpc: IpcApi = {
     }
     mockStatus.staged = [];
     mockHeadOid = randomOid();
+    // M6 contract §5: bump the current branch's ahead count so the harness
+    // gets the natural commit → push story (main: 0/0 → ↑1 → push clears).
+    const headBranch = mockBranches.local.find((b) => b.name === mockHeadBranch);
+    if (headBranch !== undefined && headBranch.upstream !== null) {
+      headBranch.ahead = (headBranch.ahead ?? 0) + 1;
+    }
     // TODO(polish): prepend a synthetic graph row on mock commit (contract §5
     // decision: not worth the coupling for now — harness proof of commit is
     // the emptied staged list + changed header oid + cleared textarea).
@@ -362,23 +407,102 @@ export const mockIpc: IpcApi = {
     mockBranches.local = mockBranches.local.filter((b) => b.name !== name);
   },
 
-  // TODO(M6b): stateful mock per contract §5 — mockFetched flag, ?remote=
-  // failure triggers (authfail | network | rejected | conflict), badge
-  // transitions, commit-ahead bump. These minimal stubs only keep the mock
-  // compiling and covering the new IPC surface for the M6a increment.
+  // Stateful remote mock (M6 contract §5). Failure triggers via `?remote=`
+  // (authfail | network | rejected | conflict), composable with `?fixture=`.
   async fetch(): Promise<FetchResult> {
     await delay(400);
+    const trigger = remoteTrigger();
+    if (trigger === 'authfail') throwAuthFailed();
+    if (trigger === 'network') throwNetworkError();
+    if (!mockFetched) {
+      mockFetched = true;
+      // The fetch "discovers" one new upstream commit on main.
+      const main = mockBranches.local.find((b) => b.name === 'main');
+      if (main !== undefined && main.upstream !== null) {
+        main.behind = 1;
+      }
+      return { remotes: [{ remote: 'origin', receivedObjects: 12, updatedRefs: 1 }] };
+    }
     return { remotes: [{ remote: 'origin', receivedObjects: 0, updatedRefs: 0 }] };
   },
 
   async pull(): Promise<PullResult> {
     await delay(400);
+    const trigger = remoteTrigger();
+    if (trigger === 'authfail') throwAuthFailed();
+    if (trigger === 'network') throwNetworkError();
+    if (trigger === 'conflict') {
+      const err: AppError = {
+        kind: 'checkoutConflict',
+        message:
+          'cannot pull: local changes would be overwritten by the update. ' +
+          'Commit or discard them first.',
+      };
+      throw err;
+    }
+    const branch = mockBranches.local.find((b) => b.name === mockHeadBranch);
+    if (branch === undefined) {
+      // Detached fixture etc. — button is disabled anyway; stay inert.
+      return { kind: 'upToDate' };
+    }
+    if (branch.upstream === null) {
+      const err: AppError = {
+        kind: 'noUpstream',
+        message: `cannot pull: branch '${branch.name}' has no upstream configured`,
+      };
+      throw err;
+    }
+    const ahead = branch.ahead ?? 0;
+    const behind = branch.behind ?? 0;
+    if (ahead > 0 && behind > 0) {
+      // Would not fast-forward: change NOTHING (fetch already "happened").
+      return { kind: 'wouldNotFastForward', branch: branch.name, ahead, behind };
+    }
+    if (behind > 0) {
+      const from = mockHeadOid;
+      mockHeadOid = randomOid();
+      branch.behind = 0;
+      return { kind: 'fastForwarded', branch: branch.name, from, to: mockHeadOid };
+    }
     return { kind: 'upToDate' };
   },
 
   async push(): Promise<PushResult> {
     await delay(400);
-    return { kind: 'upToDate', remote: 'origin', branch: mockHeadBranch };
+    const trigger = remoteTrigger();
+    if (trigger === 'authfail') throwAuthFailed();
+    if (trigger === 'network') throwNetworkError();
+    if (trigger === 'rejected') {
+      const err: AppError = {
+        kind: 'pushRejected',
+        message:
+          'push rejected: the remote contains commits you do not have. ' +
+          'Fetch/pull first — Bonsai v1 never force-pushes.',
+      };
+      throw err;
+    }
+    const branch = mockBranches.local.find((b) => b.name === mockHeadBranch);
+    if (branch === undefined) {
+      return { kind: 'upToDate', remote: 'origin', branch: mockHeadBranch };
+    }
+    if (branch.upstream === null) {
+      // First push of a new branch: push to origin/<name> AND set upstream.
+      branch.upstream = `origin/${branch.name}`;
+      branch.ahead = 0;
+      branch.behind = 0;
+      if (!mockBranches.remote.some((r) => r.name === branch.upstream)) {
+        mockBranches.remote.push({ name: `origin/${branch.name}` });
+        mockBranches.remote.sort((a, b) =>
+          a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
+        );
+      }
+      return { kind: 'pushed', remote: 'origin', branch: branch.name, setUpstream: true };
+    }
+    if ((branch.ahead ?? 0) > 0) {
+      branch.ahead = 0;
+      return { kind: 'pushed', remote: 'origin', branch: branch.name, setUpstream: false };
+    }
+    return { kind: 'upToDate', remote: 'origin', branch: branch.name };
   },
 
   // The mock never emits repo-changed (no backend watcher in the browser
