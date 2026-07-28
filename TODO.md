@@ -104,10 +104,10 @@ Bonsai upToDate vs CLI non-ff reject (fetch-first resolves).
 
 ## Polish — **in-progress**
 
-Current step: P1a — senior-dev implementing Rust settings/recents + mock updates per
-docs/contracts/P1-polish.md. Sub-increments: P1a (settings.json persistence + recents
-commands + mock), P1b (frontend correctness items), P1c (toasts/shortcuts/empty states/
-styling), P1d (WIP row + recents UI + launch reopen).
+Current step: P1b — senior-dev implementing frontend correctness items per
+docs/contracts/P1-polish.md. P1a committed 185628d (reviewer APPROVE, 65 lib tests).
+Remaining: P1b (correctness), P1c (toasts/shortcuts/empty states/styling), P1d (WIP row +
+recents UI + launch reopen).
 Architect findings: reopen-last-repo was never built (designed now); no repo-switch UI
 existed (RepoSwitcher added). WIP row = frontend-composited +1 render offset (orchestrator
 accepted §12.1: no lane/edge math in TS, GraphLayout unchanged).

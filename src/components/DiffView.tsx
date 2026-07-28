@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, memo } from 'react';
 import type { FileDiff } from '../ipc';
 
 // Pure unified-diff renderer (M4 contract §4.1). No ipc imports: diffs arrive
@@ -12,11 +12,15 @@ export interface DiffViewProps {
  * One expanded diff's fetch state, shared by StatusPanel (mode A) and
  * CommitPanel (mode B). Key convention: `${section}:${path}` for workdir rows,
  * `commit:${path}` for commit files. App owns all fetching.
+ *
+ * P1 §4.1: `diff` MAY be non-null while `state === 'loading'` — a same-key
+ * refetch keeps the stale content visible (dimmed) instead of flashing the
+ * skeleton. First-time expansions still load with `diff: null`.
  */
 export interface DiffSlot {
   key: string;
   state: 'loading' | 'error' | 'ready';
-  diff: FileDiff | null; // when ready
+  diff: FileDiff | null; // when ready, or stale content during a refetch
   error: string | null; // when error
 }
 
@@ -24,7 +28,10 @@ function Placeholder({ text }: { text: string }) {
   return <div className="diff-placeholder">{text}</div>;
 }
 
-export function DiffView({ diff }: DiffViewProps) {
+// Memoized (P1 §4.2): with §4.1 keeping the same FileDiff reference for stale
+// content, a large diff no longer re-renders while its slot is loading or
+// unrelated App state changes.
+export const DiffView = memo(function DiffView({ diff }: DiffViewProps) {
   if (diff.binary) return <Placeholder text="Binary file" />;
   if (diff.tooLarge) return <Placeholder text="Diff too large to display (> 5000 lines)" />;
   if (diff.hunks.length === 0) return <Placeholder text="No changes" />;
@@ -60,7 +67,7 @@ export function DiffView({ diff }: DiffViewProps) {
       ))}
     </div>
   );
-}
+});
 
 export interface DiffSlotViewProps {
   slot: DiffSlot;
@@ -68,9 +75,11 @@ export interface DiffSlotViewProps {
   onDismissError(): void;
 }
 
-/** Loading / error / ready body under an expanded file row (contract §4.2). */
+/** Loading / error / ready body under an expanded file row (contract §4.2).
+ * Skeleton only when there is no content yet; a same-key refetch renders the
+ * stale diff dimmed (P1 §4.1). */
 export function DiffSlotView({ slot, onDismissError }: DiffSlotViewProps) {
-  if (slot.state === 'loading') {
+  if (slot.state === 'loading' && slot.diff === null) {
     return (
       <div className="diff-slot-loading" aria-hidden="true">
         {Array.from({ length: 3 }, (_, i) => (
@@ -95,7 +104,7 @@ export function DiffSlotView({ slot, onDismissError }: DiffSlotViewProps) {
     );
   }
   return slot.diff !== null ? (
-    <div className="diff-scroll">
+    <div className={slot.state === 'loading' ? 'diff-scroll diff-stale' : 'diff-scroll'}>
       <DiffView diff={slot.diff} />
     </div>
   ) : null;

@@ -7,7 +7,6 @@ import type { DiffSlot, WorkdirSection } from './components/StatusPanel';
 import { GraphCanvas } from './graph/GraphCanvas';
 import { ipc } from './ipc';
 import type {
-  AppError,
   BranchesSnapshot,
   CommitDiff,
   FileDiff,
@@ -19,22 +18,7 @@ import type {
   StatusSnapshot,
   Unsubscribe,
 } from './ipc';
-
-function isAppError(e: unknown): e is AppError {
-  return (
-    typeof e === 'object' &&
-    e !== null &&
-    'kind' in e &&
-    'message' in e &&
-    typeof (e as { message: unknown }).message === 'string'
-  );
-}
-
-function errorMessage(e: unknown): string {
-  if (isAppError(e)) return e.message;
-  if (e instanceof Error) return e.message;
-  return String(e);
-}
+import { errorMessage } from './utils/errors';
 
 function folderName(path: string): string {
   const segments = path.split(/[\\/]/).filter(Boolean);
@@ -84,7 +68,9 @@ export default function App() {
   const [loading, setLoading] = useState(false);
 
   const [status, setStatus] = useState<StatusSnapshot | null>(null);
-  const [statusError, setStatusError] = useState<string | null>(null);
+  // Id-wrapped (P1 §4.5) so StatusPanel's dismissal is per-occurrence, not
+  // per-message — identical errors from distinct operations re-surface.
+  const [statusError, setStatusError] = useState<{ id: number; message: string } | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   // Single flag for stage/unstage/commit (M3 §4.4): pessimistic UI — controls
@@ -126,13 +112,23 @@ export default function App() {
   // Current slot, readable from stable callbacks without re-subscribing.
   const diffSlotRef = useRef<DiffSlot | null>(null);
   diffSlotRef.current = diffSlot;
+  // Monotonic id for statusError occurrences (P1 §4.5).
+  const statusErrorId = useRef(0);
 
   const repoPath = repo !== null && isUsableRepo(repo) ? repo.path : null;
 
-  /** Fetch (or re-fetch) the expanded diff for `key`; last-wins guarded. */
+  const reportStatusError = useCallback((message: string) => {
+    setStatusError({ id: ++statusErrorId.current, message });
+  }, []);
+
+  /** Fetch (or re-fetch) the expanded diff for `key`; last-wins guarded.
+   * A same-key refetch keeps the stale diff visible (P1 §4.1) — first-time
+   * expansions load with `diff: null` (skeleton). */
   const fetchDiffSlot = useCallback(async (key: string, fetcher: () => Promise<FileDiff>) => {
     const id = ++fileDiffReqId.current;
-    setDiffSlot({ key, state: 'loading', diff: null, error: null });
+    const prev = diffSlotRef.current;
+    const stale = prev !== null && prev.key === key ? prev.diff : null;
+    setDiffSlot({ key, state: 'loading', diff: stale, error: null });
     try {
       const diff = await fetcher();
       if (id !== fileDiffReqId.current) return;
@@ -174,11 +170,11 @@ export default function App() {
       }
     } catch (e) {
       if (id !== statusReqId.current) return;
-      setStatusError(errorMessage(e));
+      reportStatusError(errorMessage(e));
     } finally {
       if (id === statusReqId.current) setStatusLoading(false);
     }
-  }, [fetchDiffSlot, collapseDiffSlot]);
+  }, [fetchDiffSlot, collapseDiffSlot, reportStatusError]);
 
   const clearStatus = useCallback(() => {
     statusReqId.current += 1; // invalidate any in-flight request
@@ -236,6 +232,37 @@ export default function App() {
     setGraphLoading(false);
     setSelectedIndex(null);
   }, []);
+
+  /** Composite post-op refresh (P1 §4.6): openRepo on the current path
+   * (refreshes header HEAD, self-heals the watcher) + refetch status/graph/
+   * branches. Never throws — failures surface as "Refresh failed: <message>"
+   * (temporary statusError sink; P1c swaps it for an error toast). The
+   * `refetch*` helpers keep their own pane-scoped error states. */
+  const refreshAll = useCallback(async (): Promise<void> => {
+    if (repoPath === null) return;
+    try {
+      const info = await ipc.openRepo(repoPath);
+      setRepo(info);
+      if (isUsableRepo(info)) {
+        await Promise.all([refetchStatus(), refetchGraph(), refetchBranches()]);
+      } else {
+        clearStatus();
+        clearGraph();
+        clearBranches();
+      }
+    } catch (e) {
+      reportStatusError(`Refresh failed: ${errorMessage(e)}`);
+    }
+  }, [
+    repoPath,
+    refetchStatus,
+    refetchGraph,
+    refetchBranches,
+    clearStatus,
+    clearGraph,
+    clearBranches,
+    reportStatusError,
+  ]);
 
   // M4 §4.4: selection -> commit diff. Every selection change also resets the
   // shared expansion slot (its keys belong to the previous mode/commit).
@@ -354,23 +381,12 @@ export default function App() {
     }
   }
 
-  // Re-runs open_repo on the current path (refreshes HEAD in the header and
-  // self-heals the watcher), then refetches status.
+  // Manual refresh button: the shared composite refresh, with a busy flag.
   async function handleRefresh() {
     if (repoPath === null || refreshing) return;
     setRefreshing(true);
     try {
-      const info = await ipc.openRepo(repoPath);
-      setRepo(info);
-      if (isUsableRepo(info)) {
-        await Promise.all([refetchStatus(), refetchGraph(), refetchBranches()]);
-      } else {
-        clearStatus();
-        clearGraph();
-        clearBranches();
-      }
-    } catch (e) {
-      setStatusError(errorMessage(e));
+      await refreshAll(); // never throws (§4.6)
     } finally {
       setRefreshing(false);
     }
@@ -382,7 +398,7 @@ export default function App() {
       await ipc.stage(paths);
       await refetchStatus();
     } catch (e) {
-      setStatusError(errorMessage(e));
+      reportStatusError(errorMessage(e));
     } finally {
       setMutating(false);
     }
@@ -394,30 +410,21 @@ export default function App() {
       await ipc.unstage(paths);
       await refetchStatus();
     } catch (e) {
-      setStatusError(errorMessage(e));
+      reportStatusError(errorMessage(e));
     } finally {
       setMutating(false);
     }
   }
 
   // Commit errors are RETHROWN so CommitBox displays them inline; errors from
-  // the post-commit refresh (commit already succeeded) go to statusError.
+  // the post-commit refresh (commit already succeeded) surface via refreshAll.
   async function handleCommit(message: string) {
     setMutating(true);
     try {
       await ipc.commit(message);
-      try {
-        // Post-commit refresh: openRepo updates the header HEAD oid and
-        // self-heals the watcher (same as handleRefresh), then both refetches.
-        if (repoPath !== null) {
-          const info = await ipc.openRepo(repoPath);
-          setRepo(info);
-        }
-        // Branches too: the commit moved the branch tip → ahead counts change.
-        await Promise.all([refetchStatus(), refetchGraph(), refetchBranches()]);
-      } catch (e) {
-        setStatusError(errorMessage(e));
-      }
+      // Post-commit composite refresh (§4.6) — never throws, so a refresh
+      // failure cannot masquerade as a commit failure in CommitBox.
+      await refreshAll();
     } finally {
       setMutating(false);
     }
@@ -442,12 +449,9 @@ export default function App() {
     setMutating(true);
     try {
       await ipc.checkoutBranch(name);
-      // Full refresh: openRepo updates the header HEAD and self-heals the
-      // watcher (same as post-commit), then all three refetches.
-      if (repoPath !== null) {
-        setRepo(await ipc.openRepo(repoPath));
-      }
-      await Promise.all([refetchBranches(), refetchStatus(), refetchGraph()]);
+      // Composite refresh (§4.6): never throws, so the catch below only sees
+      // checkout failures (which belong to the sidebar banner).
+      await refreshAll();
     } catch (e) {
       setBranchesError(errorMessage(e));
     } finally {
@@ -535,11 +539,8 @@ export default function App() {
           );
           break;
       }
-      // Full refresh: the branch tip may have moved (same as post-checkout).
-      if (repoPath !== null) {
-        setRepo(await ipc.openRepo(repoPath));
-      }
-      await Promise.all([refetchBranches(), refetchStatus(), refetchGraph()]);
+      // Composite refresh (§4.6): the branch tip may have moved.
+      await refreshAll();
     } catch (e) {
       setRemoteError(errorMessage(e));
     } finally {

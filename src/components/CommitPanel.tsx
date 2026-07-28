@@ -29,10 +29,13 @@ function splitPath(path: string): { dir: string | null; name: string } {
   return { dir: path.slice(0, idx + 1), name: path.slice(idx + 1) };
 }
 
-/** Message body = full message minus the summary line (and its blank separator). */
-function messageBody(message: string, summary: string): string {
-  if (!message.startsWith(summary)) return message;
-  return message.slice(summary.length).replace(/^\r?\n+/, '');
+/** Body = message minus its first line and the following blank separator lines
+ * (P1 §4.3 — the summary is always derived from line 1 by git2, so an
+ * unconditional first-line strip can neither cut mid-line nor duplicate). */
+function messageBody(message: string): string {
+  const nl = message.indexOf('\n');
+  if (nl === -1) return '';
+  return message.slice(nl + 1).replace(/^(\r?\n)+/, '').replace(/^\r/, '');
 }
 
 function MessageBody({ body }: { body: string }) {
@@ -134,7 +137,7 @@ export function CommitPanel({
 }: CommitPanelProps) {
   const details = data?.details ?? null;
   const now = Math.floor(Date.now() / 1000);
-  const body = details !== null ? messageBody(details.message, details.summary) : '';
+  const body = details !== null ? messageBody(details.message) : '';
 
   return (
     <div className="commit-panel">

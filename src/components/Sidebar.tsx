@@ -1,23 +1,8 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import type { AppError, BranchInfo, BranchesSnapshot } from '../ipc';
+import type { BranchInfo, BranchesSnapshot } from '../ipc';
+import { errorMessage } from '../utils/errors';
 import { ConfirmDialog } from './ConfirmDialog';
-
-function isAppError(e: unknown): e is AppError {
-  return (
-    typeof e === 'object' &&
-    e !== null &&
-    'kind' in e &&
-    'message' in e &&
-    typeof (e as { message: unknown }).message === 'string'
-  );
-}
-
-function errorMessage(e: unknown): string {
-  if (isAppError(e)) return e.message;
-  if (e instanceof Error) return e.message;
-  return String(e);
-}
 
 function shortOid(oid: string): string {
   return oid.slice(0, 7);

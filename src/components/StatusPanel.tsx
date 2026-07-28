@@ -196,7 +196,9 @@ function SkeletonRows() {
 export interface StatusPanelProps {
   snapshot: StatusSnapshot | null;
   loading: boolean;
-  error: string | null;
+  /** Id-wrapped (P1 §4.5): identical messages from distinct operations get
+   * distinct ids, so the banner re-surfaces after dismissal. */
+  error: { id: number; message: string } | null;
   /** True while any stage/unstage/commit is in flight — disables all action buttons. */
   busy: boolean;
   /** Currently expanded diff (null = none). Single expansion across ALL sections. */
@@ -218,8 +220,8 @@ export function StatusPanel({
   onUnstage,
   onToggleDiff,
 }: StatusPanelProps) {
-  const [dismissedError, setDismissedError] = useState<string | null>(null);
-  const visibleError = error !== null && error !== dismissedError ? error : null;
+  const [dismissedErrorId, setDismissedErrorId] = useState<number | null>(null);
+  const visibleError = error !== null && error.id !== dismissedErrorId ? error : null;
 
   const disabled = busy || loading;
 
@@ -234,12 +236,12 @@ export function StatusPanel({
     <div className={isEmpty ? 'status-panel status-panel-empty' : 'status-panel'}>
       {visibleError !== null && (
         <div className="error-banner error-banner-dismissible" role="alert">
-          <span className="error-banner-text">{visibleError}</span>
+          <span className="error-banner-text">{visibleError.message}</span>
           <button
             type="button"
             className="error-dismiss"
             aria-label="Dismiss error"
-            onClick={() => setDismissedError(visibleError)}
+            onClick={() => setDismissedErrorId(visibleError.id)}
           >
             {'×'}
           </button>

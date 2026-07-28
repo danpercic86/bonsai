@@ -1,15 +1,5 @@
 import { useState } from 'react';
-import type { AppError } from '../ipc';
-
-function isAppError(e: unknown): e is AppError {
-  return (
-    typeof e === 'object' &&
-    e !== null &&
-    'kind' in e &&
-    'message' in e &&
-    typeof (e as { message: unknown }).message === 'string'
-  );
-}
+import { isAppError } from '../utils/errors';
 
 export interface CommitBoxProps {
   stagedCount: number;
@@ -55,7 +45,10 @@ export function CommitBox({ stagedCount, busy, onCommit }: CommitBoxProps) {
         rows={3}
         placeholder="Commit message"
         value={message}
-        disabled={busy || submitting}
+        // P1 §4.4: only the in-flight commit locks the textarea — typing keeps
+        // focus while stage/unstage runs (Windows focus-drop fix). The Commit
+        // button below still gates on `busy`.
+        disabled={submitting}
         onChange={(e) => setMessage(e.target.value)}
         onKeyDown={(e) => {
           if (e.ctrlKey && e.key === 'Enter') {

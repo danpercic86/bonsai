@@ -44,8 +44,12 @@ export function GraphCanvas({ layout, selectedIndex, onSelect }: GraphCanvasProp
   const mouseYRef = useRef<number | null>(null);
   const lastScrollTsRef = useRef(Number.NEGATIVE_INFINITY);
   const prevFrameTsRef = useRef<number | null>(null);
-  const recorderRef = useRef(createFrameRecorder());
-  const frameCountRef = useRef(0);
+  // Two recorders (P1 §4.7): paint durations and scroll inter-frame gaps are
+  // different quantities — mixing them made `avg` meaningless.
+  const paintRecorderRef = useRef(createFrameRecorder());
+  const paintCountRef = useRef(0);
+  const gapRecorderRef = useRef(createFrameRecorder());
+  const gapCountRef = useRef(0);
   const firstDataPaintSkippedRef = useRef(false);
 
   // Edge culling index, built once per layout object (§4.4).
@@ -55,13 +59,15 @@ export function GraphCanvas({ layout, selectedIndex, onSelect }: GraphCanvasProp
   const propsRef = useRef({ layout, selectedIndex, edgeIndex });
   propsRef.current = { layout, selectedIndex, edgeIndex };
 
-  const recordFrame = useCallback((durMs: number) => {
-    recorderRef.current.record(durMs);
-    if (++frameCountRef.current >= LOG_EVERY) {
-      frameCountRef.current = 0;
-      const s = recorderRef.current.flushSummary();
+  const recordFrame = useCallback((kind: 'paint' | 'gap', durMs: number) => {
+    const rec = kind === 'paint' ? paintRecorderRef.current : gapRecorderRef.current;
+    const countRef = kind === 'paint' ? paintCountRef : gapCountRef;
+    rec.record(durMs);
+    if (++countRef.current >= LOG_EVERY) {
+      countRef.current = 0;
+      const s = rec.flushSummary();
       console.log(
-        `[bonsai] frames n=${s.frames} avg=${s.avgMs.toFixed(1)}ms ` +
+        `[bonsai] frames kind=${kind} n=${s.frames} avg=${s.avgMs.toFixed(1)}ms ` +
           `max=${s.maxMs.toFixed(1)}ms >33ms=${s.over33}`,
       );
     }
@@ -98,7 +104,7 @@ export function GraphCanvas({ layout, selectedIndex, onSelect }: GraphCanvasProp
       themeRef.current,
       { hoverRow: hoverRowRef.current, selectedIndex: sel },
     );
-    if (STATS_ENABLED) recordFrame(performance.now() - t0);
+    if (STATS_ENABLED) recordFrame('paint', performance.now() - t0);
   }, [recordFrame]);
 
   const paintFrame = useCallback(
@@ -108,7 +114,7 @@ export function GraphCanvas({ layout, selectedIndex, onSelect }: GraphCanvasProp
         // Record inter-frame gaps while scroll activity is ongoing (§4.7).
         const scrolling = performance.now() - lastScrollTsRef.current < SCROLL_ACTIVE_MS;
         if (scrolling && prevFrameTsRef.current !== null) {
-          recordFrame(ts - prevFrameTsRef.current);
+          recordFrame('gap', ts - prevFrameTsRef.current);
         }
         prevFrameTsRef.current = scrolling ? ts : null;
       }
