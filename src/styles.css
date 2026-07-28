@@ -50,6 +50,8 @@
   --accent: #2f6fe4;
   --accent-text: #ffffff;
   --selection: #dbe7ff;
+  /* --accent-text is intentionally identical to the dark palette's value
+     (ui-reference §2: both themes use white text on the blue accent). */
   --danger: #d13438;
   --success: #1a7f37;
   --warning: #9a6700;
@@ -364,6 +366,12 @@ body {
 .btn-icon:disabled {
   color: var(--text-3);
   cursor: default;
+}
+
+/* ---------- Theme toggle (P2b) ---------- */
+
+.theme-toggle {
+  font-size: 16px;
 }
 
 /* ---------- Header toolbar (M6: Fetch / Pull / Push + Refresh) ---------- */

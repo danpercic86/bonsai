@@ -23,6 +23,7 @@ import type {
   RepoInfo,
   StatusEntry,
   StatusSnapshot,
+  Theme,
   Unsubscribe,
 } from './ipc';
 import { errorMessage, isAppError } from './utils/errors';
@@ -56,6 +57,14 @@ function clampLive(value: number, side: 'sidebar' | 'rightPanel', otherWidth: nu
   const [min, max] = side === 'sidebar' ? [SIDEBAR_MIN, SIDEBAR_MAX] : [RIGHT_PANEL_MIN, RIGHT_PANEL_MAX];
   const dynamicMax = Math.min(max, window.innerWidth - otherWidth - GRAPH_MIN_WIDTH);
   return Math.max(min, Math.min(value, Math.max(min, dynamicMax)));
+}
+
+/** P2b §4.2: sets data-theme on <html> (not <body> — matches the
+ * :root/[data-theme] selector scope). 'dark' also sets the attribute
+ * explicitly (rather than removing it) so [data-theme="light"] and a
+ * default :root both work identically regardless of prior state. */
+function applyTheme(theme: Theme): void {
+  document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
 }
 
 export default function App() {
@@ -103,6 +112,12 @@ export default function App() {
   const paneWidthsRef = useRef(paneWidths);
   paneWidthsRef.current = paneWidths;
   const saveTimerRef = useRef<number | null>(null);
+
+  // P2b: theme — loaded once from ipc.getUiSettings() (mount effect below),
+  // persisted on toggle. themeVersion increments on every change so
+  // GraphCanvas knows to re-resolve its cached CSS-variable colors (§4.4).
+  const [theme, setTheme] = useState<Theme>('dark');
+  const [themeVersion, setThemeVersion] = useState(0);
 
   const [graph, setGraph] = useState<GraphLayout | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
@@ -184,6 +199,16 @@ export default function App() {
     },
     [pushToast],
   );
+
+  const toggleTheme = useCallback(() => {
+    const next: Theme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    applyTheme(next);
+    setThemeVersion((v) => v + 1);
+    void ipc
+      .setUiSettings({ theme: next })
+      .catch((e) => pushToast('error', `Could not save theme: ${errorMessage(e)}`));
+  }, [theme, pushToast]);
 
   const handleSidebarResize = useCallback((delta: number) => {
     setPaneWidths((w) => ({
@@ -416,6 +441,9 @@ export default function App() {
       try {
         const s = await ipc.getUiSettings();
         setPaneWidths(s.paneWidths);
+        setTheme(s.theme);
+        applyTheme(s.theme);
+        setThemeVersion((v) => v + 1);
       } catch {
         // Non-fatal — keep defaults.
       }
@@ -876,6 +904,15 @@ export default function App() {
           </button>
           <button
             type="button"
+            className="btn-icon theme-toggle"
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          >
+            {theme === 'dark' ? '☀' : '☾'}
+          </button>
+          <button
+            type="button"
             className="btn-icon"
             disabled={!repoOpen || refreshing || statusLoading || graphLoading || mutating}
             onClick={handleRefresh}
@@ -929,6 +966,7 @@ export default function App() {
                 selectedIndex={selectedIndex}
                 onSelect={setSelectedIndex}
                 wip={wip}
+                themeVersion={themeVersion}
               />
             ) : null}
           </main>

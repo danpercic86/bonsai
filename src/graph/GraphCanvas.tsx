@@ -19,6 +19,10 @@ export interface GraphCanvasProps {
   /** P1 §9: non-null when the workdir has changes — renders a frontend-
    *  composited WIP row atop the (unchanged) Rust layout, +1 row offset. */
   wip: WipSummary | null;
+  /** P2b §4.4: incremented by App on every theme change — forces a
+   *  `resolveTheme` re-run (colors are otherwise cached for the component's
+   *  lifetime) followed by a repaint. Lane palette itself is theme-invariant. */
+  themeVersion: number;
 }
 
 /** Row hit-test result: a layout row index, the synthetic WIP row, or none. */
@@ -50,7 +54,7 @@ const LOG_EVERY = 120;
  * and schedule one rAF paint. Initial/resize/data-driven paints stay
  * synchronous (rAF is throttled to zero in hidden windows).
  */
-export function GraphCanvas({ layout, selectedIndex, onSelect, wip }: GraphCanvasProps) {
+export function GraphCanvas({ layout, selectedIndex, onSelect, wip, themeVersion }: GraphCanvasProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -219,6 +223,19 @@ export function GraphCanvas({ layout, selectedIndex, onSelect, wip }: GraphCanva
     }
     paintNow();
   }, [paintNow, layout, selectedIndex, wip]);
+
+  // P2b §4.4: theme changes re-resolve the cached CSS-variable colors and
+  // repaint. Runs once on mount too (themeVersion starts at 0), which is
+  // harmless — resize()'s initial paint already resolved the theme via the
+  // `??=` fallback in paintNow, so this is a cheap re-resolve, not a second
+  // distinct paint pathway.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas === null) return;
+    themeRef.current = resolveTheme(canvas);
+    schedulePaint();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [themeVersion]);
 
   // P1 §6.3/§9.3: when selectedIndex changes to non-null (e.g. via ArrowUp/
   // Down in App), bring the row into view if it's outside the visible window.
