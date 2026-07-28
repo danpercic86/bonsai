@@ -9,6 +9,7 @@ use crate::git::repo::{read_repo_info, RepoInfo};
 use crate::git::stage::{stage_paths, unstage_paths};
 use crate::git::status::{read_status, StatusSnapshot};
 use crate::graph::{compute_graph, GraphLayout};
+use crate::settings::{self, RecentRepo};
 use crate::state::{AppState, OpenRepo};
 use crate::watcher::spawn_watcher;
 
@@ -39,11 +40,12 @@ pub async fn open_repo(
     state: tauri::State<'_, AppState>,
     path: String,
 ) -> Result<RepoInfo, AppError> {
-    open_repo_inner(
+    let emit_app = app.clone();
+    let info = open_repo_inner(
         state.inner(),
         path,
         Box::new(move || {
-            let _ = app.emit(
+            let _ = emit_app.emit(
                 "repo-changed",
                 RepoChangedPayload {
                     reason: "fs".to_string(),
@@ -51,7 +53,72 @@ pub async fn open_repo(
             );
         }),
     )
+    .await?;
+
+    // Recents hook (P1 contract §3.2): record every successful usable open.
+    // Uses `info.path` (canonical workdir root), not the raw argument, so
+    // "repo root" vs "subfolder" opens dedupe. Save failure is NON-FATAL —
+    // the open itself succeeded.
+    if info.is_repo && !info.bare {
+        match settings::settings_file(&app) {
+            Ok(file) => {
+                let repo_path = info.path.clone();
+                let saved = tauri::async_runtime::spawn_blocking(move || {
+                    let mut s = settings::load_from(&file);
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs() as i64)
+                        .unwrap_or(0);
+                    settings::record_recent(&mut s, &repo_path, now);
+                    settings::save_to(&file, &s)
+                })
+                .await;
+                match saved {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => {
+                        eprintln!("bonsai: failed to save recent repos (non-fatal): {e}");
+                    }
+                    Err(e) => {
+                        eprintln!("bonsai: recent-repos task join error (non-fatal): {e}");
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("bonsai: cannot resolve settings file (non-fatal): {e}");
+            }
+        }
+    }
+    Ok(info)
+}
+
+/// Recent successfully-opened repos, most recent first, max 10. Never rejects
+/// for a missing/corrupt settings file (`load_from` defaults); only
+/// settings-path resolution can error (P1 contract §3.2).
+#[tauri::command]
+pub async fn get_recent_repos(app: tauri::AppHandle) -> Result<Vec<RecentRepo>, AppError> {
+    let file = settings::settings_file(&app)?;
+    tauri::async_runtime::spawn_blocking(move || settings::load_from(&file).recent_repos)
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))
+}
+
+/// Removes one recents entry (case-insensitive path match) and returns the
+/// updated list (P1 contract §3.2).
+#[tauri::command]
+pub async fn remove_recent_repo(
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<Vec<RecentRepo>, AppError> {
+    let file = settings::settings_file(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut s = settings::load_from(&file);
+        s.recent_repos
+            .retain(|r| !r.path.eq_ignore_ascii_case(&path));
+        settings::save_to(&file, &s)?;
+        Ok(s.recent_repos)
+    })
     .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Runtime-free core of `open_repo` (unit-testable without a Tauri app).

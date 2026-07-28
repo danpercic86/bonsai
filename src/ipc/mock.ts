@@ -1,6 +1,7 @@
 import { INITIAL_BRANCHES, MOCK_OID } from './fixtures/branches';
 import { mockCommitDiff, mockCommitFileDiff, mockWorkdirDiff } from './fixtures/diffs';
-import { buildMockGraph, buildMockGraphDetached } from './fixtures/graph';
+import { buildMockGraph, buildMockGraphDetached, prependCommits } from './fixtures/graph';
+import type { MockCommit } from './fixtures/graph';
 import { generateLayout20k } from './fixtures/graph20k';
 import type {
   AppError,
@@ -13,6 +14,7 @@ import type {
   IpcApi,
   PullResult,
   PushResult,
+  RecentRepo,
   RepoChangedPayload,
   RepoInfo,
   StatusEntry,
@@ -64,6 +66,49 @@ let mockHeadBranch = 'main';
 // Stateful remote mock (M6 contract §5): the first fetch "discovers" one new
 // commit on origin/main (main goes behind:1) so a subsequent pull fast-forwards.
 let mockFetched = false;
+
+// Synthetic commit rows (P1 contract §3.5): commit() prepends lane-0 rows to
+// the DEFAULT graph fixture so the harness shows the new commit at the top.
+let mockCommits: MockCommit[] = [];
+
+// Recents persistence (P1 contract §3.4): localStorage-backed so the harness
+// reopen-on-launch story is verifiable — open once, reload, auto-reopen.
+const RECENTS_KEY = 'bonsai.mockRecents';
+const MAX_RECENTS = 10;
+
+/** Corrupt/missing storage degrades to [] — mirrors the backend's load_from. */
+function readRecents(): RecentRepo[] {
+  try {
+    const raw = window.localStorage.getItem(RECENTS_KEY);
+    if (raw === null) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (r): r is RecentRepo =>
+        typeof r === 'object' &&
+        r !== null &&
+        typeof (r as RecentRepo).path === 'string' &&
+        typeof (r as RecentRepo).lastOpened === 'number',
+    );
+  } catch {
+    return [];
+  }
+}
+
+function writeRecents(list: RecentRepo[]): void {
+  try {
+    window.localStorage.setItem(RECENTS_KEY, JSON.stringify(list));
+  } catch {
+    // Best-effort, like the backend's non-fatal save.
+  }
+}
+
+/** Upsert at front, dedupe case-insensitively, cap 10 (mirrors record_recent). */
+function recordRecent(path: string): void {
+  const list = readRecents().filter((r) => r.path.toLowerCase() !== path.toLowerCase());
+  list.unshift({ path, lastOpened: Math.floor(Date.now() / 1000) });
+  writeRecents(list.slice(0, MAX_RECENTS));
+}
 
 /** `?remote=` failure trigger — separate from `?fixture=` so they compose. */
 function remoteTrigger(): string | null {
@@ -148,6 +193,7 @@ export const mockIpc: IpcApi = {
       mockBranches = structuredClone(INITIAL_BRANCHES);
       mockHeadBranch = 'main';
       mockFetched = false;
+      mockCommits = [];
       openedPath = path;
     }
 
@@ -167,6 +213,7 @@ export const mockIpc: IpcApi = {
       };
     }
     if (path.includes('unborn')) {
+      recordRecent(path); // usable open: isRepo && !bare (unborn included)
       return {
         path,
         isRepo: true,
@@ -174,6 +221,9 @@ export const mockIpc: IpcApi = {
         head: { branchName: 'main', oid: '', detached: false, unborn: true },
       };
     }
+    // Every successful usable open (isRepo && !bare) lands in the recents
+    // list, like the backend open_repo hook (P1 contract §3.2/§3.4).
+    recordRecent(path);
     // `?fixture=detached` mirrors the detached listBranches/graph fixtures in
     // the header HEAD too (M6 §6.8.9: Pull/Push disabled, Fetch enabled).
     if (new URLSearchParams(window.location.search).get('fixture') === 'detached') {
@@ -263,10 +313,10 @@ export const mockIpc: IpcApi = {
     if (headBranch !== undefined && headBranch.upstream !== null) {
       headBranch.ahead = (headBranch.ahead ?? 0) + 1;
     }
-    // TODO(polish): prepend a synthetic graph row on mock commit (contract §5
-    // decision: not worth the coupling for now — harness proof of commit is
-    // the emptied staged list + changed header oid + cleared textarea).
     const summary = message.trim().split('\n', 1)[0] ?? '';
+    // P1 contract §3.5: the DEFAULT graph fixture gains a synthetic lane-0 row
+    // per mock commit (newest first) so the harness shows the commit on top.
+    mockCommits.unshift({ oid: mockHeadOid, summary });
     return { oid: mockHeadOid, summary, branch: mockHeadBranch };
   },
 
@@ -289,7 +339,7 @@ export const mockIpc: IpcApi = {
         ? generateLayout20k()
         : fixture === 'detached'
           ? buildMockGraphDetached()
-          : buildMockGraph();
+          : prependCommits(buildMockGraph(), mockCommits);
     const index = layout.nodes.findIndex((n) => n.id === oid);
     if (index === -1) {
       const err: AppError = { kind: 'git', message: 'mock: unknown commit' };
@@ -309,7 +359,10 @@ export const mockIpc: IpcApi = {
     // `?fixture=` selects a variant (contract §5.4 mechanism).
     const fixture = new URLSearchParams(window.location.search).get('fixture');
     if (fixture === '20k') return generateLayout20k();
-    return fixture === 'detached' ? buildMockGraphDetached() : buildMockGraph();
+    if (fixture === 'detached') return buildMockGraphDetached();
+    // Default fixture: synthetic mock-commit rows prepended (P1 §3.5); the
+    // 20k and detached fixtures stay as-is.
+    return prependCommits(buildMockGraph(), mockCommits);
   },
 
   async listBranches(): Promise<BranchesSnapshot> {
@@ -503,6 +556,18 @@ export const mockIpc: IpcApi = {
       return { kind: 'pushed', remote: 'origin', branch: branch.name, setUpstream: false };
     }
     return { kind: 'upToDate', remote: 'origin', branch: branch.name };
+  },
+
+  async getRecentRepos(): Promise<RecentRepo[]> {
+    await delay(150);
+    return readRecents();
+  },
+
+  async removeRecentRepo(path: string): Promise<RecentRepo[]> {
+    await delay(150);
+    const list = readRecents().filter((r) => r.path.toLowerCase() !== path.toLowerCase());
+    writeRecents(list);
+    return list;
   },
 
   // The mock never emits repo-changed (no backend watcher in the browser

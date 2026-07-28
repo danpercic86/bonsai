@@ -201,6 +201,13 @@ export type PushResult =
   | { kind: 'upToDate'; remote: string; branch: string }
   | { kind: 'pushed'; remote: string; branch: string; setUpstream: boolean };
 
+export interface RecentRepo {
+  /** Absolute workdir path as passed to openRepo. */
+  path: string;
+  /** Seconds since epoch (UTC) of the last successful open. */
+  lastOpened: number;
+}
+
 export interface RepoChangedPayload {
   reason: string;
 }
@@ -271,6 +278,11 @@ export interface IpcApi {
   /** Push current branch (sets upstream to origin/<branch> when none). Rejects
    *  noRemote | authFailed | networkError | pushRejected | git | noRepo. */
   push(): Promise<PushResult>;
+  /** Recent successfully-opened repos, most recent first, max 10. Never rejects
+   *  for a missing/corrupt settings file (returns []). */
+  getRecentRepos(): Promise<RecentRepo[]>;
+  /** Removes one entry; returns the updated list. */
+  removeRecentRepo(path: string): Promise<RecentRepo[]>;
   /** Fires after debounced filesystem changes in the open repo. */
   onRepoChanged(cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe>;
   /** Fires when the app window regains focus. */

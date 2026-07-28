@@ -24,6 +24,7 @@ export type {
   Hunk,
   IpcApi,
   LineKind,
+  RecentRepo,
   RefKind,
   RefLabel,
   RemoteBranchInfo,

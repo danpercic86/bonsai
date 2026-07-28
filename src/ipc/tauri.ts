@@ -12,6 +12,7 @@ import type {
   IpcApi,
   PullResult,
   PushResult,
+  RecentRepo,
   RepoChangedPayload,
   RepoInfo,
   StatusSnapshot,
@@ -90,6 +91,14 @@ export const tauriIpc: IpcApi = {
 
   push(): Promise<PushResult> {
     return invoke<PushResult>('push');
+  },
+
+  getRecentRepos(): Promise<RecentRepo[]> {
+    return invoke<RecentRepo[]>('get_recent_repos');
+  },
+
+  removeRecentRepo(path: string): Promise<RecentRepo[]> {
+    return invoke<RecentRepo[]>('remove_recent_repo', { path });
   },
 
   onRepoChanged(cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe> {

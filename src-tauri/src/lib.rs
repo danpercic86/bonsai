@@ -4,6 +4,7 @@ pub mod error;
 pub mod fixture;
 pub mod git;
 pub mod graph;
+pub mod settings;
 pub mod state;
 #[cfg(test)]
 pub mod testutil;
@@ -30,7 +31,9 @@ pub fn run() {
             commands::delete_branch,
             commands::fetch,
             commands::pull,
-            commands::push
+            commands::push,
+            commands::get_recent_repos,
+            commands::remove_recent_repo
         ])
         .run(tauri::generate_context!())
         .expect("error while running Bonsai");

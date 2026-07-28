@@ -81,6 +81,69 @@ export function buildMockGraph(): GraphLayout {
   return { nodes, edges, laneCount: 3, headIndex: 0, truncated: false };
 }
 
+export interface MockCommit {
+  oid: string;
+  summary: string;
+}
+
+/**
+ * Prepends `commits` (newest first) as lane-0 rows to `layout` (P1 contract
+ * §3.5 — synthetic rows for mock commits):
+ * - every existing node's `parents` indices and every edge's from/to shift by
+ *   `commits.length`;
+ * - new rows: node i = { id, lane: 0, parents: [i+1], summary, author: 'You',
+ *   ts: now - i*60 }, edges (i, i+1, 0) prepended keeping (from,to) sort order
+ *   (shifted old edges all have from >= commits.length);
+ * - moves the `⌂`/isHead LOCAL-branch pill from the old head row to row 0
+ *   (other pills — origin/main, tags — stay on the old row); headIndex = 0.
+ */
+export function prependCommits(layout: GraphLayout, commits: MockCommit[]): GraphLayout {
+  const k = commits.length;
+  if (k === 0) return layout;
+  const now = Math.floor(Date.now() / 1000);
+
+  const shiftedNodes: GraphNode[] = layout.nodes.map((n) => {
+    const copy: GraphNode = { ...n, parents: n.parents.map((p) => p + k) };
+    if (n.refs !== undefined) copy.refs = n.refs.map((r) => ({ ...r }));
+    return copy;
+  });
+  const newNodes: GraphNode[] = commits.map((c, i) => ({
+    id: c.oid,
+    lane: 0,
+    parents: [i + 1],
+    summary: c.summary,
+    author: 'You',
+    ts: now - i * 60,
+  }));
+  const newEdges: GraphEdge[] = commits.map((_, i) => ({ from: i, to: i + 1, lane: 0 }));
+  const shiftedEdges: GraphEdge[] = layout.edges.map((e) => ({
+    ...e,
+    from: e.from + k,
+    to: e.to + k,
+  }));
+
+  if (layout.headIndex !== null) {
+    const oldHead = shiftedNodes[layout.headIndex];
+    const refs = oldHead.refs;
+    if (refs !== undefined) {
+      const idx = refs.findIndex((r) => r.kind === 'localBranch' && r.isHead);
+      if (idx !== -1) {
+        const [pill] = refs.splice(idx, 1);
+        if (refs.length === 0) delete oldHead.refs;
+        newNodes[0].refs = [pill];
+      }
+    }
+  }
+
+  return {
+    nodes: [...newNodes, ...shiftedNodes],
+    edges: [...newEdges, ...shiftedEdges],
+    laneCount: layout.laneCount,
+    headIndex: 0,
+    truncated: layout.truncated,
+  };
+}
+
 /**
  * Detached-HEAD variant of the §3.5 fixture (dev-only, `?fixture=detached`):
  * HEAD is detached onto row 5 ("core work 3"), which gets the solid red HEAD
