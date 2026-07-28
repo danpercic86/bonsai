@@ -1023,6 +1023,7 @@ export default function App() {
             onCreateBranch={handleCreateBranch}
             onDialogOpenChange={setDialogOpen}
             width={paneWidths.sidebar}
+            listView={listView}
           />
           <PaneDivider
             side="sidebar"

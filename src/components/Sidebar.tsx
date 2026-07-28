@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { BranchInfo, BranchesSnapshot } from '../ipc';
+import type { BranchInfo, BranchesSnapshot, ListView } from '../ipc';
 import { errorMessage } from '../utils/errors';
+import { buildPathTree } from '../utils/pathTree';
 import { ConfirmDialog } from './ConfirmDialog';
+import { Tree } from './Tree';
 
 function shortOid(oid: string): string {
   return oid.slice(0, 7);
@@ -26,6 +28,8 @@ export interface SidebarProps {
   onDialogOpenChange?(open: boolean): void;
   /** P2a: persisted sidebar width in px, applied as inline style on the root. */
   width: number;
+  /** P3b: flat (backend order) vs tree-grouped-by-'/' rendering of refs. */
+  listView: ListView;
 }
 
 function TrashIcon() {
@@ -82,11 +86,15 @@ function BranchRow({
   busy,
   onCheckout,
   onAskDelete,
+  displayName,
 }: {
   branch: BranchInfo;
   busy: boolean;
   onCheckout(name: string): void;
   onAskDelete(name: string): void;
+  /** P3b tree mode: visible basename; ALL semantics (title, checkout, delete,
+   *  badge, head glyph) keep using the full branch.name. */
+  displayName?: string;
 }) {
   return (
     <li
@@ -98,7 +106,7 @@ function BranchRow({
     >
       <span className="branch-glyph">{branch.isHead ? '●' : '⎇'}</span>
       <span className="branch-name" title={branch.name}>
-        {branch.name}
+        {displayName ?? branch.name}
       </span>
       <AheadBehindBadge branch={branch} />
       {!branch.isHead && (
@@ -129,6 +137,28 @@ function BranchRow({
   );
 }
 
+function RemoteRow({ name, displayName }: { name: string; displayName?: string }) {
+  return (
+    <li className="branch-row branch-row-readonly">
+      <span className="branch-glyph">{'☁'}</span>
+      <span className="branch-name branch-name-muted" title={name}>
+        {displayName ?? name}
+      </span>
+    </li>
+  );
+}
+
+function TagRow({ name, displayName }: { name: string; displayName?: string }) {
+  return (
+    <li className="branch-row branch-row-readonly">
+      <span className="branch-glyph">{'#'}</span>
+      <span className="branch-name branch-name-muted" title={name}>
+        {displayName ?? name}
+      </span>
+    </li>
+  );
+}
+
 function SkeletonRows() {
   return (
     <div className="skeleton-group" aria-hidden="true">
@@ -152,6 +182,7 @@ export function Sidebar({
   onCreateBranch,
   onDialogOpenChange,
   width,
+  listView,
 }: SidebarProps) {
   const [branchesCollapsed, setBranchesCollapsed] = useState(false);
   const [remotesCollapsed, setRemotesCollapsed] = useState(false);
@@ -162,6 +193,21 @@ export function Sidebar({
   const [createError, setCreateError] = useState<string | null>(null);
 
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+
+  // P3b §5.3 — tree-grouped refs (display-only; full names drive all actions).
+  const treeMode = listView === 'tree';
+  const localTree = useMemo(
+    () => (treeMode && data !== null ? buildPathTree(data.local, (b) => b.name) : []),
+    [treeMode, data],
+  );
+  const remoteTree = useMemo(
+    () => (treeMode && data !== null ? buildPathTree(data.remote, (r) => r.name) : []),
+    [treeMode, data],
+  );
+  const tagTree = useMemo(
+    () => (treeMode && data !== null ? buildPathTree(data.tags, (t) => t) : []),
+    [treeMode, data],
+  );
 
   useEffect(() => {
     onDialogOpenChange?.(pendingDelete !== null);
@@ -261,6 +307,7 @@ export function Sidebar({
                     )}
                   </div>
                 )}
+                {(data.head.detached || !treeMode) && (
                 <ul className="branch-list">
                   {data.head.detached && (
                     <li className="branch-row branch-row-detached" title={data.head.oid}>
@@ -270,16 +317,33 @@ export function Sidebar({
                       </span>
                     </li>
                   )}
-                  {data.local.map((branch) => (
-                    <BranchRow
-                      key={branch.name}
-                      branch={branch}
-                      busy={busy}
-                      onCheckout={onCheckout}
-                      onAskDelete={setPendingDelete}
-                    />
-                  ))}
+                  {!treeMode &&
+                    data.local.map((branch) => (
+                      <BranchRow
+                        key={branch.name}
+                        branch={branch}
+                        busy={busy}
+                        onCheckout={onCheckout}
+                        onAskDelete={setPendingDelete}
+                      />
+                    ))}
                 </ul>
+                )}
+                {treeMode && data.local.length > 0 && (
+                  <Tree
+                    nodes={localTree}
+                    leafKey={(l) => l.item.name}
+                    renderLeaf={(l) => (
+                      <BranchRow
+                        branch={l.item}
+                        busy={busy}
+                        onCheckout={onCheckout}
+                        onAskDelete={setPendingDelete}
+                        displayName={l.name}
+                      />
+                    )}
+                  />
+                )}
                 {!data.head.detached && data.local.length === 0 && (
                   <p className="branch-muted">No branches yet</p>
                 )}
@@ -296,15 +360,16 @@ export function Sidebar({
             {!remotesCollapsed &&
               (data.remote.length === 0 ? (
                 <p className="branch-muted">No remotes</p>
+              ) : treeMode ? (
+                <Tree
+                  nodes={remoteTree}
+                  leafKey={(l) => l.item.name}
+                  renderLeaf={(l) => <RemoteRow name={l.item.name} displayName={l.name} />}
+                />
               ) : (
                 <ul className="branch-list">
                   {data.remote.map((r) => (
-                    <li key={r.name} className="branch-row branch-row-readonly">
-                      <span className="branch-glyph">{'☁'}</span>
-                      <span className="branch-name branch-name-muted" title={r.name}>
-                        {r.name}
-                      </span>
-                    </li>
+                    <RemoteRow key={r.name} name={r.name} />
                   ))}
                 </ul>
               ))}
@@ -319,15 +384,16 @@ export function Sidebar({
             {!tagsCollapsed &&
               (data.tags.length === 0 ? (
                 <p className="branch-muted">No tags</p>
+              ) : treeMode ? (
+                <Tree
+                  nodes={tagTree}
+                  leafKey={(l) => l.item}
+                  renderLeaf={(l) => <TagRow name={l.item} displayName={l.name} />}
+                />
               ) : (
                 <ul className="branch-list">
                   {data.tags.map((tag) => (
-                    <li key={tag} className="branch-row branch-row-readonly">
-                      <span className="branch-glyph">{'#'}</span>
-                      <span className="branch-name branch-name-muted" title={tag}>
-                        {tag}
-                      </span>
-                    </li>
+                    <TagRow key={tag} name={tag} />
                   ))}
                 </ul>
               ))}
