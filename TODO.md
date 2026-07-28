@@ -111,8 +111,19 @@ definition of done.
 
 ## P2 — Post-v1 follow-ups — **in-progress**
 
-Current step: P2a (pane resizing) — senior-dev implementing per docs/contracts/P2-followups.md
-(contract committed 55f9ba5; user go-ahead 2026-07-28).
+Current step: P2 AI gate passed — awaiting USER CHECKPOINT (native-app smoke checklist:
+pane resizing/persistence, theme toggle/persistence, PageUp/PageDown/Home/End, new app icon
+in taskbar/installer — user must also run `pnpm tauri build` or `tauri dev` to see the icon).
+Sub-increments (all reviewer-APPROVE): P2a pane resizing + ui_settings commands; P2b light
+theme (data-theme + themeVersion repaint); P2c keyboard nav (GraphCanvasHandle);
+P2d generated bonsai icon + tauri icon set + favicon + docs/code-signing.md (docs-only;
+signing needs a user cert decision). Orchestrator-found+fixed bug: keyboard-nudge pane
+persist read a stale ref (commit now reads ref at debounce fire time).
+AI-gate evidence: cargo test 73 lib + all integration suites green, clippy -D warnings
+clean, pnpm build clean; harness verified — dividers render + nudge clamps to graph floor
++ persists to uiSettings; theme toggle flips data-theme/glyph, lane colors invariant,
+survives reload; End/Home/PageDown move selection + follow-scroll, no-ops with no
+selection; icon set regenerated (icon.ico 6 sizes), favicon wired.
 Scope (user-approved 2026-07-28):
 - Pane resizing (3-pane layout: draggable sidebar/right-panel dividers, persisted widths)
 - Light-theme toggle (dark stays default; theme tokens already CSS variables; persist choice)
