@@ -60,12 +60,15 @@ Sub-increments: ab0f943, 2ce24be, e484daa.
 Polish notes: textarea disabled during stage-in-flight (focus drop); dismissed-error
 string-compare; ignored-file staging = git add -f semantics (documented).
 
-## M4 — Diff view — **in-progress**
+## M4 — Diff view — **done** (2026-07-28)
 
-Current step: M4 gate — sub-increments committed (3ab213a, 7200824); tester running;
-orchestrator verifying harness. Polish candidates: keep old diff visible during same-key
-refetch (skeleton flash on focus/watcher tick); React.memo(DiffView); CommitPanel messageBody
-first-line strip.
+AI gate passed (106 tests + 2 ignored: 19 diff CLI-oracle incl. 3 adversarial probes — BOM
+parity, rename+edit vs `git diff -M`, empty-added vs emptied; harness verified: mode A exact
+hunks, mode B commit panel with details/parents/merge note). USER CHECKPOINT confirmed by
+user: selecting a commit shows details + changes in the native app, all checklist items pass.
+Contract: docs/contracts/M4-diff.md. Sub-increments: 3ab213a, 7200824, 4bac8e6.
+Polish candidates: keep old diff visible during same-key refetch (skeleton flash on
+focus/watcher tick); React.memo(DiffView); CommitPanel messageBody first-line strip.
 
 Goal: via git2, working-dir diffs (unstaged vs index, staged vs HEAD) AND commit diffs
 (selected graph node vs first parent, with commit details — message/author/date — in the right
@@ -76,8 +79,14 @@ both diff kinds from mock data.
 Acceptance (USER CHECKPOINT): selecting a commit in the graph shows its details + changes in
 the native app.
 
-## M5 — Branches — pending
-## M4 — Diff view — pending
-## M5 — Branches — pending
+## M5 — Branches — **in-progress**
+
+Current step: M5 — architect drafting contract (docs/contracts/M5-branches.md).
+
+Goal: list, create, checkout, delete branches; show current branch/HEAD in the sidebar.
+Acceptance (AI gate): branch operations verified against the `git` CLI in tests; code review
+confirms destructive ops (delete) require explicit UI confirmation.
+Acceptance (USER CHECKPOINT): branch operations + confirmation dialog work in the native app.
+
 ## M6 — Remotes (fetch / pull ff-only / push) — pending
 ## Polish — pending
