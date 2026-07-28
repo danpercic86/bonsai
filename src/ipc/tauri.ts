@@ -6,9 +6,12 @@ import type {
   BranchesSnapshot,
   CommitDiff,
   CommitResult,
+  FetchResult,
   FileDiff,
   GraphLayout,
   IpcApi,
+  PullResult,
+  PushResult,
   RepoChangedPayload,
   RepoInfo,
   StatusSnapshot,
@@ -75,6 +78,18 @@ export const tauriIpc: IpcApi = {
 
   deleteBranch(name: string): Promise<void> {
     return invoke<void>('delete_branch', { name });
+  },
+
+  fetch(): Promise<FetchResult> {
+    return invoke<FetchResult>('fetch');
+  },
+
+  pull(): Promise<PullResult> {
+    return invoke<PullResult>('pull');
+  },
+
+  push(): Promise<PushResult> {
+    return invoke<PushResult>('push');
   },
 
   onRepoChanged(cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe> {

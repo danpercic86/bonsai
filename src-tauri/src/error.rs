@@ -2,7 +2,9 @@
 ///
 /// Serialized as `{ "kind": "git" | "io" | "other" | "noRepo" | "emptyMessage"
 /// | "configMissing" | "nothingToCommit" | "branchExists" | "invalidName"
-/// | "checkoutConflict" | "unmergedBranch" | "branchNotFound",
+/// | "checkoutConflict" | "unmergedBranch" | "branchNotFound"
+/// | "noRemote" | "noUpstream" | "authFailed" | "networkError"
+/// | "pushRejected",
 /// "message": "..." }`.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
@@ -30,6 +32,16 @@ pub enum AppError {
     UnmergedBranch(String),
     #[error("{0}")]
     BranchNotFound(String),
+    #[error("{0}")]
+    NoRemote(String),
+    #[error("{0}")]
+    NoUpstream(String),
+    #[error("{0}")]
+    AuthFailed(String),
+    #[error("{0}")]
+    NetworkError(String),
+    #[error("{0}")]
+    PushRejected(String),
 }
 
 impl AppError {
@@ -47,6 +59,11 @@ impl AppError {
             AppError::CheckoutConflict(_) => "checkoutConflict",
             AppError::UnmergedBranch(_) => "unmergedBranch",
             AppError::BranchNotFound(_) => "branchNotFound",
+            AppError::NoRemote(_) => "noRemote",
+            AppError::NoUpstream(_) => "noUpstream",
+            AppError::AuthFailed(_) => "authFailed",
+            AppError::NetworkError(_) => "networkError",
+            AppError::PushRejected(_) => "pushRejected",
         }
     }
 
@@ -60,7 +77,12 @@ impl AppError {
             | AppError::InvalidName(m)
             | AppError::CheckoutConflict(m)
             | AppError::UnmergedBranch(m)
-            | AppError::BranchNotFound(m) => m,
+            | AppError::BranchNotFound(m)
+            | AppError::NoRemote(m)
+            | AppError::NoUpstream(m)
+            | AppError::AuthFailed(m)
+            | AppError::NetworkError(m)
+            | AppError::PushRejected(m) => m,
             AppError::NoRepo => "no repository is open",
             AppError::EmptyMessage => "commit message is empty",
             AppError::NothingToCommit => "nothing to commit (index matches HEAD)",

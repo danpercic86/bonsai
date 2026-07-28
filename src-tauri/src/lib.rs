@@ -27,7 +27,10 @@ pub fn run() {
             commands::list_branches,
             commands::create_branch,
             commands::checkout_branch,
-            commands::delete_branch
+            commands::delete_branch,
+            commands::fetch,
+            commands::pull,
+            commands::push
         ])
         .run(tauri::generate_context!())
         .expect("error while running Bonsai");

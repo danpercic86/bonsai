@@ -4,6 +4,7 @@ use crate::error::AppError;
 use crate::git::branches::{self, BranchesSnapshot};
 use crate::git::commit::{create_commit, CommitResult};
 use crate::git::diff::{commit_diff, commit_file_diff, workdir_file_diff, CommitDiff, FileDiff};
+use crate::git::remote::{fetch_all, pull_ff, push_current, FetchResult, PullResult, PushResult};
 use crate::git::repo::{read_repo_info, RepoInfo};
 use crate::git::stage::{stage_paths, unstage_paths};
 use crate::git::status::{read_status, StatusSnapshot};
@@ -376,6 +377,55 @@ async fn delete_branch_inner(state: &AppState, name: String) -> Result<(), AppEr
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Fetches every configured remote, sequentially, fail-fast (M6 contract
+/// §2.4/§9). Errors: `noRemote` | `authFailed` | `networkError` | `git`
+/// | `noRepo`. Does NOT emit `repo-changed` — the frontend refetches
+/// imperatively (the watcher also fires and is absorbed by request-id guards).
+#[tauri::command]
+pub async fn fetch(state: tauri::State<'_, AppState>) -> Result<FetchResult, AppError> {
+    fetch_inner(state.inner()).await
+}
+
+/// Runtime-free core of `fetch` (unit-testable without a Tauri app).
+async fn fetch_inner(state: &AppState) -> Result<FetchResult, AppError> {
+    let path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || fetch_all(&path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Fetches the upstream's remote + fast-forwards ONLY (M6 contract §2.5).
+/// Errors: `noUpstream` | `authFailed` | `networkError` | `checkoutConflict`
+/// | `git` | `noRepo`.
+#[tauri::command]
+pub async fn pull(state: tauri::State<'_, AppState>) -> Result<PullResult, AppError> {
+    pull_inner(state.inner()).await
+}
+
+/// Runtime-free core of `pull` (unit-testable without a Tauri app).
+async fn pull_inner(state: &AppState) -> Result<PullResult, AppError> {
+    let path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || pull_ff(&path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Pushes the current branch to its upstream — or origin/<branch> + set
+/// upstream when none (M6 contract §2.6). Never force. Errors: `noRemote`
+/// | `authFailed` | `networkError` | `pushRejected` | `git` | `noRepo`.
+#[tauri::command]
+pub async fn push(state: tauri::State<'_, AppState>) -> Result<PushResult, AppError> {
+    push_inner(state.inner()).await
+}
+
+/// Runtime-free core of `push` (unit-testable without a Tauri app).
+async fn push_inner(state: &AppState) -> Result<PushResult, AppError> {
+    let path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || push_current(&path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -532,6 +582,25 @@ mod tests {
         let err =
             tauri::async_runtime::block_on(delete_branch_inner(&state, "topic".to_string()))
                 .expect_err("delete_branch with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+    }
+
+    /// The M6 remote commands all return `NoRepo` when nothing is open
+    /// (contract §6.7).
+    #[test]
+    fn remote_commands_require_an_open_repo() {
+        let state = AppState::default();
+
+        let err = tauri::async_runtime::block_on(fetch_inner(&state))
+            .expect_err("fetch with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(pull_inner(&state))
+            .expect_err("pull with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(push_inner(&state))
+            .expect_err("push with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
 }

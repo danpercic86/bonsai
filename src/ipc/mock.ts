@@ -7,9 +7,12 @@ import type {
   BranchesSnapshot,
   CommitDiff,
   CommitResult,
+  FetchResult,
   FileDiff,
   GraphLayout,
   IpcApi,
+  PullResult,
+  PushResult,
   RepoChangedPayload,
   RepoInfo,
   StatusEntry,
@@ -357,6 +360,25 @@ export const mockIpc: IpcApi = {
       throw err;
     }
     mockBranches.local = mockBranches.local.filter((b) => b.name !== name);
+  },
+
+  // TODO(M6b): stateful mock per contract §5 — mockFetched flag, ?remote=
+  // failure triggers (authfail | network | rejected | conflict), badge
+  // transitions, commit-ahead bump. These minimal stubs only keep the mock
+  // compiling and covering the new IPC surface for the M6a increment.
+  async fetch(): Promise<FetchResult> {
+    await delay(400);
+    return { remotes: [{ remote: 'origin', receivedObjects: 0, updatedRefs: 0 }] };
+  },
+
+  async pull(): Promise<PullResult> {
+    await delay(400);
+    return { kind: 'upToDate' };
+  },
+
+  async push(): Promise<PushResult> {
+    await delay(400);
+    return { kind: 'upToDate', remote: 'origin', branch: mockHeadBranch };
   },
 
   // The mock never emits repo-changed (no backend watcher in the browser

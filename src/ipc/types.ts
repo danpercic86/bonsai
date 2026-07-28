@@ -179,6 +179,28 @@ export interface BranchesSnapshot {
   head: HeadInfo;
 }
 
+export interface RemoteFetchResult {
+  /** Remote name, e.g. "origin". */
+  remote: string;
+  receivedObjects: number;
+  /** update_tips invocations where old != new (incl. newly created refs). */
+  updatedRefs: number;
+}
+
+export interface FetchResult {
+  /** One entry per configured remote, in remote-list order. */
+  remotes: RemoteFetchResult[];
+}
+
+export type PullResult =
+  | { kind: 'upToDate' }
+  | { kind: 'fastForwarded'; branch: string; from: string; to: string }
+  | { kind: 'wouldNotFastForward'; branch: string; ahead: number; behind: number };
+
+export type PushResult =
+  | { kind: 'upToDate'; remote: string; branch: string }
+  | { kind: 'pushed'; remote: string; branch: string; setUpstream: boolean };
+
 export interface RepoChangedPayload {
   reason: string;
 }
@@ -198,7 +220,12 @@ export interface AppError {
     | 'invalidName'
     | 'checkoutConflict'
     | 'unmergedBranch'
-    | 'branchNotFound';
+    | 'branchNotFound'
+    | 'noRemote'
+    | 'noUpstream'
+    | 'authFailed'
+    | 'networkError'
+    | 'pushRejected';
   message: string;
 }
 
@@ -236,6 +263,14 @@ export interface IpcApi {
   /** Delete a LOCAL, fully merged, non-current branch. Rejects
    *  branchNotFound | unmergedBranch | git | noRepo. */
   deleteBranch(name: string): Promise<void>;
+  /** Fetch ALL remotes. Rejects noRemote | authFailed | networkError | git | noRepo. */
+  fetch(): Promise<FetchResult>;
+  /** Fetch upstream remote + fast-forward only. Rejects noUpstream | authFailed
+   *  | networkError | checkoutConflict | git | noRepo. */
+  pull(): Promise<PullResult>;
+  /** Push current branch (sets upstream to origin/<branch> when none). Rejects
+   *  noRemote | authFailed | networkError | pushRejected | git | noRepo. */
+  push(): Promise<PushResult>;
   /** Fires after debounced filesystem changes in the open repo. */
   onRepoChanged(cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe>;
   /** Fires when the app window regains focus. */

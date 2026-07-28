@@ -92,8 +92,11 @@ branchNotFound banner — acceptable).
 
 ## M6 — Remotes (fetch / pull ff-only / push) — **in-progress**
 
-Current step: M6 — confirming credential strategy with user before architect contract
-(CLAUDE.md requirement).
+Current step: M6a — senior-dev implementing backend (remote.rs fetch/pull/push + cred
+guard + tests vs local bare repo) per docs/contracts/M6-remotes.md.
+Credential strategy CONFIRMED by user (2026-07-28): git credential helper first
+(Windows Credential Manager via git2 CredentialHelper), SSH agent for ssh URLs,
+never prompt/store raw passwords in-app; clear error if no credentials available.
 
 Goal: fetch / pull (fast-forward only — clear message + no change if not ff-able) / push
 with credential handling (git2 CredentialHelper → Windows Credential Manager first, then

@@ -269,6 +269,11 @@ mod tests {
         assert!(is_relevant(&git_dir.join("index"), git_dir));
         assert!(is_relevant(&git_dir.join("packed-refs"), git_dir));
         assert!(is_relevant(&git_dir.join("refs").join("heads").join("main"), git_dir));
+        // M6 §6.4: remote-tracking ref updates after a fetch must refresh.
+        assert!(is_relevant(
+            &git_dir.join("refs").join("remotes").join("origin").join("main"),
+            git_dir
+        ));
         // Noise.
         assert!(!is_relevant(&git_dir.join("index.lock"), git_dir));
         assert!(!is_relevant(
