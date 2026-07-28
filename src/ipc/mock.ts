@@ -1,3 +1,4 @@
+import { INITIAL_BRANCHES, MOCK_OID } from './fixtures/branches';
 import { mockCommitDiff, mockCommitFileDiff, mockWorkdirDiff } from './fixtures/diffs';
 import { buildMockGraph, buildMockGraphDetached } from './fixtures/graph';
 import { generateLayout20k } from './fixtures/graph20k';
@@ -17,7 +18,6 @@ import type {
 } from './types';
 
 const MOCK_REPO_PATH = 'C:\\mock\\bonsai-fixture';
-const MOCK_OID = '9fceb02d0ae598e95dc970b74767f19372d61af8';
 
 function delay(ms = 150): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -52,6 +52,30 @@ const INITIAL_STATUS: StatusSnapshot = {
 let mockStatus: StatusSnapshot = structuredClone(INITIAL_STATUS);
 let mockHeadOid: string = MOCK_OID;
 let openedPath: string | null = null;
+
+// Stateful branch mock (M5 contract §5): create/checkout/delete mutate this
+// snapshot; mockHeadBranch drives the header after a checkout.
+let mockBranches: BranchesSnapshot = structuredClone(INITIAL_BRANCHES);
+let mockHeadBranch = 'main';
+
+/**
+ * Documented simplification of the git ref-format rules — the backend
+ * (`git2::Branch::name_is_valid` + pre-checks) is authoritative.
+ */
+function isInvalidBranchName(name: string): boolean {
+  const trimmed = name.trim();
+  return (
+    trimmed === '' ||
+    /\s/.test(trimmed) ||
+    trimmed.includes('..') ||
+    /[~^:?*[\\]/.test(trimmed) ||
+    trimmed.includes('@{') ||
+    trimmed.startsWith('-') ||
+    trimmed.startsWith('/') ||
+    trimmed.endsWith('/') ||
+    trimmed.endsWith('.lock')
+  );
+}
 
 function randomOid(): string {
   return Array.from({ length: 40 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join(
@@ -90,6 +114,8 @@ export const mockIpc: IpcApi = {
     if (path !== openedPath) {
       mockStatus = structuredClone(INITIAL_STATUS);
       mockHeadOid = MOCK_OID;
+      mockBranches = structuredClone(INITIAL_BRANCHES);
+      mockHeadBranch = 'main';
       openedPath = path;
     }
 
@@ -116,12 +142,14 @@ export const mockIpc: IpcApi = {
         head: { branchName: 'main', oid: '', detached: false, unborn: true },
       };
     }
-    // Default fixture: the canonical mock repo (and any unknown path).
+    // Default fixture: the canonical mock repo (and any unknown path). The
+    // branch name follows mock checkouts so the App's post-checkout openRepo
+    // visibly updates the header (M5 contract §5).
     return {
       path,
       isRepo: true,
       bare: false,
-      head: { branchName: 'main', oid: mockHeadOid, detached: false, unborn: false },
+      head: { branchName: mockHeadBranch, oid: mockHeadOid, detached: false, unborn: false },
     };
   },
 
@@ -191,7 +219,7 @@ export const mockIpc: IpcApi = {
     // decision: not worth the coupling for now — harness proof of commit is
     // the emptied staged list + changed header oid + cleared textarea).
     const summary = message.trim().split('\n', 1)[0] ?? '';
-    return { oid: mockHeadOid, summary, branch: 'main' };
+    return { oid: mockHeadOid, summary, branch: mockHeadBranch };
   },
 
   async getWorkdirFileDiff(
@@ -236,31 +264,99 @@ export const mockIpc: IpcApi = {
     return fixture === 'detached' ? buildMockGraphDetached() : buildMockGraph();
   },
 
-  // M5a stubs: static snapshot only — the stateful branch mock (create/
-  // checkout/delete mutating module state, fixtures/branches.ts) is M5b.
   async listBranches(): Promise<BranchesSnapshot> {
     await delay(150);
-    return {
-      local: [
-        { name: 'feature/sidebar', isHead: false, upstream: 'origin/feature/sidebar', ahead: 2, behind: 1 },
-        { name: 'main', isHead: true, upstream: 'origin/main', ahead: 0, behind: 0 },
-      ],
-      remote: [{ name: 'origin/feature/sidebar' }, { name: 'origin/main' }],
-      tags: ['v0.1.0', 'v0.2.0'],
-      head: { branchName: 'main', oid: mockHeadOid, detached: false, unborn: false },
-    };
+    const snapshot = structuredClone(mockBranches);
+    if (new URLSearchParams(window.location.search).get('fixture') === 'detached') {
+      snapshot.head = { branchName: null, oid: mockHeadOid, detached: true, unborn: false };
+      for (const branch of snapshot.local) branch.isHead = false;
+    } else {
+      snapshot.head = {
+        branchName: mockHeadBranch,
+        oid: mockHeadOid,
+        detached: false,
+        unborn: false,
+      };
+    }
+    return snapshot;
   },
 
-  async createBranch(_name: string): Promise<void> {
-    await delay(150); // TODO(M5b): stateful mock — mutate branch list
+  async createBranch(name: string): Promise<void> {
+    await delay(150);
+    if (isInvalidBranchName(name)) {
+      const err: AppError = { kind: 'invalidName', message: `invalid branch name: '${name}'` };
+      throw err;
+    }
+    const trimmed = name.trim();
+    if (mockBranches.local.some((b) => b.name === trimmed)) {
+      const err: AppError = {
+        kind: 'branchExists',
+        message: `branch '${trimmed}' already exists`,
+      };
+      throw err;
+    }
+    mockBranches.local.push({
+      name: trimmed,
+      isHead: false,
+      upstream: null,
+      ahead: null,
+      behind: null,
+    });
+    mockBranches.local.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   },
 
-  async checkoutBranch(_name: string): Promise<void> {
-    await delay(150); // TODO(M5b): stateful mock — move isHead + header branch
+  async checkoutBranch(name: string): Promise<void> {
+    await delay(150);
+    const branch = mockBranches.local.find((b) => b.name === name);
+    if (branch === undefined) {
+      const err: AppError = { kind: 'branchNotFound', message: `branch '${name}' not found` };
+      throw err;
+    }
+    // Designated dirty-checkout branch (contract §5).
+    if (name === 'fix/watcher-debounce') {
+      const err: AppError = {
+        kind: 'checkoutConflict',
+        message:
+          "cannot switch to 'fix/watcher-debounce': local changes would be overwritten. " +
+          'Commit or discard them first.',
+      };
+      throw err;
+    }
+    for (const b of mockBranches.local) b.isHead = false;
+    branch.isHead = true;
+    mockHeadBranch = name;
+    mockBranches.head = { branchName: name, oid: mockHeadOid, detached: false, unborn: false };
+    // TODO(polish): move the HEAD/branch pills in the mock graph fixture too
+    // (contract §5 decision: fixtures stay decoupled from branch state —
+    // harness proof is the sidebar dot + header branch name).
   },
 
-  async deleteBranch(_name: string): Promise<void> {
-    await delay(150); // TODO(M5b): stateful mock — remove row / throw unmergedBranch
+  async deleteBranch(name: string): Promise<void> {
+    await delay(150);
+    const branch = mockBranches.local.find((b) => b.name === name);
+    if (branch === undefined) {
+      const err: AppError = { kind: 'branchNotFound', message: `branch '${name}' not found` };
+      throw err;
+    }
+    if (branch.isHead) {
+      const err: AppError = {
+        kind: 'git',
+        message: `cannot delete '${name}': it is the currently checked-out branch`,
+      };
+      throw err;
+    }
+    // Designated unmerged branch (contract §5).
+    if (name === 'experiment-unmerged') {
+      const err: AppError = {
+        kind: 'unmergedBranch',
+        message:
+          "branch 'experiment-unmerged' is not fully merged into HEAD (tip 1a2b3c4). " +
+          'Bonsai v1 does not force-delete; use `git branch -D experiment-unmerged` ' +
+          'if you are sure.',
+      };
+      throw err;
+    }
+    mockBranches.local = mockBranches.local.filter((b) => b.name !== name);
   },
 
   // The mock never emits repo-changed (no backend watcher in the browser

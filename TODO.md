@@ -81,8 +81,9 @@ the native app.
 
 ## M5 — Branches — **in-progress**
 
-Current step: M5a — senior-dev implementing backend (branches.rs + commands + errors + tests)
-per docs/contracts/M5-branches.md.
+Current step: M5b — senior-dev implementing frontend (sidebar branch list, create/checkout,
+delete ConfirmDialog, stateful mock) per docs/contracts/M5-branches.md §5/§7.
+M5a committed 7264523 (reviewer APPROVE; 129 tests incl. 19 branches CLI-oracle).
 
 Goal: list, create, checkout, delete branches; show current branch/HEAD in the sidebar.
 Acceptance (AI gate): branch operations verified against the `git` CLI in tests; code review

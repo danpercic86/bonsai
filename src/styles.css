@@ -848,6 +848,261 @@ span.file-row-main {
   color: var(--text-3);
 }
 
+/* ---------- Sidebar: branches / remotes / tags (M5) ---------- */
+
+.sidebar-error {
+  margin-bottom: 12px;
+}
+
+.sidebar-section {
+  margin-bottom: 16px;
+}
+
+.sidebar-section-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sidebar-section-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  padding: 2px 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sidebar-add {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+
+.sidebar-add:hover:not(:disabled) {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.sidebar-add:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+.branch-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+.branch-row {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.branch-row:hover {
+  background: var(--bg-2);
+}
+
+.branch-glyph {
+  flex: none;
+  width: 14px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.branch-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-1);
+}
+
+.branch-name-muted {
+  color: var(--text-2);
+}
+
+.branch-row-head .branch-name {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.branch-row-head .branch-glyph {
+  color: var(--accent);
+}
+
+.branch-row-detached .branch-name,
+.branch-row-detached .branch-glyph {
+  color: color-mix(in srgb, var(--warning) 80%, var(--text-1));
+  font-size: 12px;
+}
+
+.branch-badge {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* Hover-revealed branch row actions (same pattern as .file-row). */
+.branch-row:hover .row-action,
+.branch-row .row-action:focus-visible {
+  opacity: 1;
+}
+
+.branch-row .row-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.branch-muted {
+  color: var(--text-3);
+  font-size: 12px;
+  margin: 4px 0 0;
+  padding: 0 4px;
+}
+
+.branch-create-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.branch-create-input {
+  height: 24px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 0 6px;
+}
+
+.branch-create-input::placeholder {
+  color: var(--text-3);
+}
+
+.branch-create-input:disabled {
+  opacity: 0.6;
+}
+
+.branch-create-error {
+  color: var(--danger);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Confirm dialog (M5) ---------- */
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.dialog-card {
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.dialog-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.dialog-body {
+  font-size: 13px;
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+
+.dialog-body-note {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 4px;
+}
+
+.dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.btn-secondary {
+  height: 32px;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--bg-3);
+}
+
+.btn-danger {
+  height: 32px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 6px;
+  background: var(--danger);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.btn-secondary:disabled,
+.btn-danger:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* ---------- Loading skeletons ---------- */
 
 .skeleton-row {

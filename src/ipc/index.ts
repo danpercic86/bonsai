@@ -8,6 +8,8 @@ export const ipc: IpcApi =
 
 export type {
   AppError,
+  BranchesSnapshot,
+  BranchInfo,
   CommitDetails,
   CommitDiff,
   CommitResult,
@@ -24,6 +26,7 @@ export type {
   LineKind,
   RefKind,
   RefLabel,
+  RemoteBranchInfo,
   RepoChangedPayload,
   RepoInfo,
   StatusEntry,

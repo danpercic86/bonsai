@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CommitBox } from './components/CommitBox';
 import { CommitPanel } from './components/CommitPanel';
+import { Sidebar } from './components/Sidebar';
 import { StatusPanel } from './components/StatusPanel';
 import type { DiffSlot, WorkdirSection } from './components/StatusPanel';
 import { GraphCanvas } from './graph/GraphCanvas';
 import { ipc } from './ipc';
 import type {
   AppError,
+  BranchesSnapshot,
   CommitDiff,
   FileDiff,
   FileDiffHeader,
@@ -89,6 +91,10 @@ export default function App() {
   // disable in flight, state comes back via refetch.
   const [mutating, setMutating] = useState(false);
 
+  const [branches, setBranches] = useState<BranchesSnapshot | null>(null);
+  const [branchesError, setBranchesError] = useState<string | null>(null);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+
   const [graph, setGraph] = useState<GraphLayout | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
@@ -104,6 +110,7 @@ export default function App() {
   // its result (M1 contract §5 — no frontend debounce beyond this).
   const statusReqId = useRef(0);
   const graphReqId = useRef(0);
+  const branchesReqId = useRef(0);
   const commitDiffReqId = useRef(0);
   const fileDiffReqId = useRef(0);
   // Current slot, readable from stable callbacks without re-subscribing.
@@ -189,6 +196,29 @@ export default function App() {
     }
   }, []);
 
+  const refetchBranches = useCallback(async () => {
+    const id = ++branchesReqId.current;
+    setBranchesLoading(true);
+    try {
+      const snapshot = await ipc.listBranches();
+      if (id !== branchesReqId.current) return;
+      setBranches(snapshot);
+      setBranchesError(null);
+    } catch (e) {
+      if (id !== branchesReqId.current) return;
+      setBranchesError(errorMessage(e));
+    } finally {
+      if (id === branchesReqId.current) setBranchesLoading(false);
+    }
+  }, []);
+
+  const clearBranches = useCallback(() => {
+    branchesReqId.current += 1; // invalidate any in-flight request
+    setBranches(null);
+    setBranchesError(null);
+    setBranchesLoading(false);
+  }, []);
+
   const clearGraph = useCallback(() => {
     graphReqId.current += 1; // invalidate any in-flight request
     setGraph(null);
@@ -253,9 +283,10 @@ export default function App() {
 
     const subscribe = async () => {
       const offChanged = await ipc.onRepoChanged(() => {
-        console.debug('[bonsai] repo-changed → refetch status+graph');
+        console.debug('[bonsai] repo-changed → refetch status+graph+branches');
         void refetchStatus();
         void refetchGraph();
+        void refetchBranches();
       });
       if (cancelled) {
         offChanged();
@@ -264,9 +295,10 @@ export default function App() {
       unsubs.push(offChanged);
 
       const offFocus = await ipc.onWindowFocus(() => {
-        console.debug('[bonsai] window focus → refetch status+graph');
+        console.debug('[bonsai] window focus → refetch status+graph+branches');
         void refetchStatus();
         void refetchGraph();
+        void refetchBranches();
       });
       if (cancelled) {
         offFocus();
@@ -280,7 +312,7 @@ export default function App() {
       cancelled = true;
       for (const unsub of unsubs) unsub();
     };
-  }, [repoPath, refetchStatus, refetchGraph]);
+  }, [repoPath, refetchStatus, refetchGraph, refetchBranches]);
 
   async function handleOpenRepository() {
     setError(null);
@@ -295,15 +327,18 @@ export default function App() {
       if (isUsableRepo(info)) {
         void refetchStatus();
         void refetchGraph();
+        void refetchBranches();
       } else {
         clearStatus();
         clearGraph();
+        clearBranches();
       }
     } catch (e) {
       setError(errorMessage(e));
       setRepo(null); // a failed open leaves no repo open (matches backend)
       clearStatus();
       clearGraph();
+      clearBranches();
     } finally {
       setLoading(false);
     }
@@ -318,10 +353,11 @@ export default function App() {
       const info = await ipc.openRepo(repoPath);
       setRepo(info);
       if (isUsableRepo(info)) {
-        await Promise.all([refetchStatus(), refetchGraph()]);
+        await Promise.all([refetchStatus(), refetchGraph(), refetchBranches()]);
       } else {
         clearStatus();
         clearGraph();
+        clearBranches();
       }
     } catch (e) {
       setStatusError(errorMessage(e));
@@ -367,10 +403,56 @@ export default function App() {
           const info = await ipc.openRepo(repoPath);
           setRepo(info);
         }
-        await Promise.all([refetchStatus(), refetchGraph()]);
+        // Branches too: the commit moved the branch tip → ahead counts change.
+        await Promise.all([refetchStatus(), refetchGraph(), refetchBranches()]);
       } catch (e) {
         setStatusError(errorMessage(e));
       }
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  // Errors RETHROWN so the Sidebar's create input shows them inline
+  // (CommitBox pattern).
+  async function handleCreateBranch(name: string) {
+    setBranchesError(null);
+    setMutating(true);
+    try {
+      await ipc.createBranch(name);
+      await refetchBranches();
+      void refetchGraph(); // new ref pill appears
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleCheckoutBranch(name: string) {
+    setBranchesError(null);
+    setMutating(true);
+    try {
+      await ipc.checkoutBranch(name);
+      // Full refresh: openRepo updates the header HEAD and self-heals the
+      // watcher (same as post-commit), then all three refetches.
+      if (repoPath !== null) {
+        setRepo(await ipc.openRepo(repoPath));
+      }
+      await Promise.all([refetchBranches(), refetchStatus(), refetchGraph()]);
+    } catch (e) {
+      setBranchesError(errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleDeleteBranch(name: string) {
+    setBranchesError(null);
+    setMutating(true);
+    try {
+      await ipc.deleteBranch(name);
+      await Promise.all([refetchBranches(), refetchGraph()]);
+    } catch (e) {
+      setBranchesError(errorMessage(e));
     } finally {
       setMutating(false);
     }
@@ -438,9 +520,16 @@ export default function App() {
 
       {repoOpen && repo !== null ? (
         <div className="panes">
-          <aside className="sidebar">
-            <div className="section-label">Branches</div>
-          </aside>
+          <Sidebar
+            data={branches}
+            loading={branchesLoading}
+            error={branchesError}
+            onDismissError={() => setBranchesError(null)}
+            busy={mutating}
+            onCheckout={(name) => void handleCheckoutBranch(name)}
+            onDelete={(name) => void handleDeleteBranch(name)}
+            onCreateBranch={handleCreateBranch}
+          />
           <main className="graph-pane">
             {graphError !== null && (
               <div className="error-banner graph-error-banner">{graphError}</div>
