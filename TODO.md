@@ -105,7 +105,24 @@ Bonsai upToDate vs CLI non-ff reject (fetch-first resolves).
 ## Polish — **done** (2026-07-28)
 
 USER CHECKPOINT confirmed by user: shortcuts, toasts, WIP row, recents/reopen, empty states
-all pass in the native app. **v1 COMPLETE** per CLAUDE.md definition of done.
+all pass in the native app. Release build verified: MSI + NSIS bundles at
+src-tauri/target/release/bundle (Bonsai 0.1.0 x64). **v1 COMPLETE** per CLAUDE.md
+definition of done.
+
+## P2 — Post-v1 follow-ups — **in-progress**
+
+Current step: P2 — architect drafting docs/contracts/P2-followups.md. Implementation NOT
+started (user directive: contract first, wait before implementing).
+Scope (user-approved 2026-07-28):
+- Pane resizing (3-pane layout: draggable sidebar/right-panel dividers, persisted widths)
+- Light-theme toggle (dark stays default; theme tokens already CSS variables; persist choice)
+- Extended graph keyboard navigation (deferred from P1: PageUp/PageDown/Home/End, Enter
+  semantics per architect)
+- App icon + branding (replace default Tauri icons; window/taskbar/installer icons)
+- Code signing for installers — investigate/document only; needs a user-provided
+  certificate, cannot be completed autonomously.
+Same workflow loop: architect contract → senior-dev sub-increments → reviewer → orchestrator
+commits → tester → AI gate → USER CHECKPOINT.
 P1a 185628d, P1b 348d751, P1c 7100cd3, P1d a3eb70d (all reviewer-APPROVE).
 AI-gate evidence: full cargo suite exit 0; pnpm build green; harness verified — toast
 success (M6 string byte-identical) + sticky error toast w/ manual dismiss; ? overlay
