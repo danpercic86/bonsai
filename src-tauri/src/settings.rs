@@ -325,4 +325,118 @@ mod tests {
         assert_eq!(loaded.pane_widths.sidebar, 300);
         assert_eq!(loaded.pane_widths.right_panel, 420);
     }
+
+    /// `Dark` also round-trips explicitly (not just the non-default `Light`
+    /// case above) — both wire strings ("dark"/"light") deserialize back to
+    /// the matching enum variant (P2 contract §2.1/§4.1).
+    #[test]
+    fn theme_choice_roundtrips_both_variants() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+
+        let file_dark = settings_path(&dir).with_file_name("dark.json");
+        let s_dark = Settings {
+            theme: ThemeChoice::Dark,
+            ..Default::default()
+        };
+        save_to(&file_dark, &s_dark).expect("save dark");
+        assert_eq!(load_from(&file_dark).theme, ThemeChoice::Dark);
+        let raw_dark = std::fs::read_to_string(&file_dark).expect("read dark.json");
+        assert!(raw_dark.contains("\"theme\": \"dark\""));
+
+        let file_light = settings_path(&dir).with_file_name("light.json");
+        let s_light = Settings {
+            theme: ThemeChoice::Light,
+            ..Default::default()
+        };
+        save_to(&file_light, &s_light).expect("save light");
+        assert_eq!(load_from(&file_light).theme, ThemeChoice::Light);
+        let raw_light = std::fs::read_to_string(&file_light).expect("read light.json");
+        assert!(raw_light.contains("\"theme\": \"light\""));
+    }
+
+    /// An old `settings.json` written before P2 (only `version`/`recentRepos`,
+    /// no `theme`/`paneWidths` keys at all) still loads without error and
+    /// falls back to the type defaults for the new fields — this is the
+    /// forward-compat guarantee documented in the `Settings` doc comment
+    /// (`#[serde(default)]` on the whole struct), exercised here against a
+    /// hand-written legacy JSON string rather than a struct round-trip so a
+    /// future accidental removal of `default` would actually fail this test.
+    #[test]
+    fn old_settings_file_without_new_fields_loads_with_defaults() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let legacy_json = r#"{
+            "version": 1,
+            "recentRepos": [ { "path": "D:\\Repos\\legacy", "lastOpened": 123 } ]
+        }"#;
+        std::fs::write(&file, legacy_json).expect("write legacy settings.json");
+
+        let loaded = load_from(&file);
+        assert_eq!(loaded.recent_repos.len(), 1);
+        assert_eq!(loaded.recent_repos[0].path, "D:\\Repos\\legacy");
+        assert_eq!(loaded.theme, ThemeChoice::default());
+        assert_eq!(loaded.pane_widths, PaneWidths::default());
+    }
+
+    /// A `settings.json` with in-range `recentRepos` but out-of-range/corrupt
+    /// `paneWidths` values (e.g. hand-edited, or written by a future version
+    /// with looser bounds) is clamped on load rather than left out-of-range or
+    /// rejected wholesale (contract §2.1: "load_from calls clamp_pane_widths
+    /// on the deserialized value before returning").
+    #[test]
+    fn corrupt_pane_widths_on_disk_are_clamped_on_load() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let json = r#"{
+            "version": 1,
+            "recentRepos": [],
+            "theme": "dark",
+            "paneWidths": { "sidebar": 0, "rightPanel": 999999 }
+        }"#;
+        std::fs::write(&file, json).expect("write out-of-range settings.json");
+
+        let loaded = load_from(&file);
+        assert_eq!(loaded.pane_widths.sidebar, SIDEBAR_MIN);
+        assert_eq!(loaded.pane_widths.right_panel, RIGHT_PANEL_MAX);
+    }
+
+    /// A `paneWidths.sidebar` field of the wrong JSON type (string instead of
+    /// number) makes the whole document fail to parse as `Settings` — per the
+    /// documented "never errors" contract this degrades to full defaults
+    /// (same as `corrupt_json_defaults`), not a partial/field-level recovery.
+    /// This pins that behavior so a future switch to field-level tolerant
+    /// parsing is a deliberate, visible change rather than an accidental
+    /// regression.
+    #[test]
+    fn malformed_field_type_falls_back_to_full_defaults() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let json = r#"{
+            "version": 1,
+            "recentRepos": [ { "path": "D:\\Repos\\x", "lastOpened": 1 } ],
+            "theme": "dark",
+            "paneWidths": { "sidebar": "not-a-number", "rightPanel": 380 }
+        }"#;
+        std::fs::write(&file, json).expect("write malformed settings.json");
+
+        assert_eq!(load_from(&file), Settings::default());
+    }
+
+    /// An unrecognized `theme` string (e.g. from a hypothetical future third
+    /// theme, or a hand-typo'd file) fails the whole-document parse the same
+    /// way a malformed field type does — pinned for the same reason as above.
+    #[test]
+    fn unknown_theme_string_falls_back_to_full_defaults() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let json = r#"{
+            "version": 1,
+            "recentRepos": [],
+            "theme": "solarized",
+            "paneWidths": { "sidebar": 240, "rightPanel": 380 }
+        }"#;
+        std::fs::write(&file, json).expect("write unknown-theme settings.json");
+
+        assert_eq!(load_from(&file), Settings::default());
+    }
 }

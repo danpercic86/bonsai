@@ -190,18 +190,19 @@ export default function App() {
 
   /** Debounced persist (300ms) so rapid successive small nudges (keyboard)
    * don't spam IPC; the drag path already only calls this once per
-   * onResizeEnd, but keyboard nudges are per-keypress (P2a §3.2). */
-  const commitPaneWidths = useCallback(
-    (next: PaneWidths) => {
-      if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = window.setTimeout(() => {
-        void ipc
-          .setUiSettings({ paneWidths: next })
-          .catch((e) => pushToast('error', `Could not save pane widths: ${errorMessage(e)}`));
-      }, 300);
-    },
-    [pushToast],
-  );
+   * onResizeEnd, but keyboard nudges are per-keypress (P2a §3.2).
+   * Reads paneWidthsRef at fire time, not call time: onResizeEnd runs in the
+   * same event handler as the setPaneWidths that changed the width, so the
+   * ref is still one render stale there — by the time the debounce fires the
+   * re-render has happened and the ref holds the post-nudge value. */
+  const commitPaneWidths = useCallback(() => {
+    if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = window.setTimeout(() => {
+      void ipc
+        .setUiSettings({ paneWidths: paneWidthsRef.current })
+        .catch((e) => pushToast('error', `Could not save pane widths: ${errorMessage(e)}`));
+    }, 300);
+  }, [pushToast]);
 
   const toggleTheme = useCallback(() => {
     const next: Theme = theme === 'dark' ? 'light' : 'dark';
@@ -228,7 +229,7 @@ export default function App() {
   }, []);
 
   const handlePaneResizeEnd = useCallback(() => {
-    commitPaneWidths(paneWidthsRef.current);
+    commitPaneWidths();
   }, [commitPaneWidths]);
 
   /** Fetch (or re-fetch) the expanded diff for `key`; last-wins guarded.
