@@ -1,0 +1,27 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Bonsai app icon: flat/geometric bonsai-tree mark, accent blue on a dark-neutral disc.
+       No gradients/shadows; bold shapes chosen to stay legible when downsampled to 16x16. -->
+
+  <!-- Background disc -->
+  <circle cx="512" cy="512" r="496" fill="#1b1f27" />
+
+  <!-- Trunk: short, slightly curved, flat-filled -->
+  <path
+    d="M 512 760
+       C 500 700, 470 660, 470 600
+       C 470 560, 500 540, 512 520
+       C 524 540, 554 560, 554 600
+       C 554 660, 524 700, 512 760
+       Z"
+    fill="#4f8cff"
+  />
+
+  <!-- Base / pot hint: simple flattened ellipse to ground the mark -->
+  <rect x="430" y="756" width="164" height="44" rx="10" fill="#4f8cff" />
+
+  <!-- Canopy: 4 overlapping rounded lobes, single flat color, no per-lobe shading -->
+  <circle cx="512" cy="420" r="150" fill="#4f8cff" />
+  <circle cx="392" cy="470" r="110" fill="#4f8cff" />
+  <circle cx="632" cy="470" r="110" fill="#4f8cff" />
+  <circle cx="512" cy="540" r="120" fill="#4f8cff" />
+</svg>
