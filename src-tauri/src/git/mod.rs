@@ -1,6 +1,9 @@
 pub mod branches;
 pub mod commit;
+pub mod conflict;
 pub mod diff;
+pub mod merge;
+pub mod opstate;
 pub mod remote;
 pub mod repo;
 pub mod stage;

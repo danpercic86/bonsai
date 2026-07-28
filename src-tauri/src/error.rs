@@ -4,7 +4,8 @@
 /// | "configMissing" | "nothingToCommit" | "branchExists" | "invalidName"
 /// | "checkoutConflict" | "unmergedBranch" | "branchNotFound"
 /// | "noRemote" | "noUpstream" | "authFailed" | "networkError"
-/// | "pushRejected",
+/// | "pushRejected" | "operationInProgress" | "noOperationInProgress"
+/// | "unresolvedConflicts",
 /// "message": "..." }`.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
@@ -42,6 +43,12 @@ pub enum AppError {
     NetworkError(String),
     #[error("{0}")]
     PushRejected(String),
+    #[error("{0}")]
+    OperationInProgress(String),
+    #[error("{0}")]
+    NoOperationInProgress(String),
+    #[error("{0}")]
+    UnresolvedConflicts(String),
 }
 
 impl AppError {
@@ -64,6 +71,9 @@ impl AppError {
             AppError::AuthFailed(_) => "authFailed",
             AppError::NetworkError(_) => "networkError",
             AppError::PushRejected(_) => "pushRejected",
+            AppError::OperationInProgress(_) => "operationInProgress",
+            AppError::NoOperationInProgress(_) => "noOperationInProgress",
+            AppError::UnresolvedConflicts(_) => "unresolvedConflicts",
         }
     }
 
@@ -82,7 +92,10 @@ impl AppError {
             | AppError::NoUpstream(m)
             | AppError::AuthFailed(m)
             | AppError::NetworkError(m)
-            | AppError::PushRejected(m) => m,
+            | AppError::PushRejected(m)
+            | AppError::OperationInProgress(m)
+            | AppError::NoOperationInProgress(m)
+            | AppError::UnresolvedConflicts(m) => m,
             AppError::NoRepo => "no repository is open",
             AppError::EmptyMessage => "commit message is empty",
             AppError::NothingToCommit => "nothing to commit (index matches HEAD)",

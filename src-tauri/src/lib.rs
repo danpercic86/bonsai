@@ -35,7 +35,14 @@ pub fn run() {
             commands::get_recent_repos,
             commands::remove_recent_repo,
             commands::get_ui_settings,
-            commands::set_ui_settings
+            commands::set_ui_settings,
+            commands::get_op_state,
+            commands::merge_branch,
+            commands::commit_merge,
+            commands::abort_merge,
+            commands::list_conflicts,
+            commands::get_conflict,
+            commands::resolve_conflict
         ])
         .run(tauri::generate_context!())
         .expect("error while running Bonsai");

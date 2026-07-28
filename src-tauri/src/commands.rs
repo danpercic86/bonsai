@@ -3,7 +3,10 @@ use tauri::Emitter;
 use crate::error::AppError;
 use crate::git::branches::{self, BranchesSnapshot};
 use crate::git::commit::{create_commit, CommitResult};
+use crate::git::conflict::{self, ConflictEntry, ConflictFile, ConflictResolution};
 use crate::git::diff::{commit_diff, commit_file_diff, workdir_file_diff, CommitDiff, FileDiff};
+use crate::git::merge::{self, MergeOutcome};
+use crate::git::opstate::{read_op_state, RepoOpState};
 use crate::git::remote::{fetch_all, pull_ff, push_current, FetchResult, PullResult, PushResult};
 use crate::git::repo::{read_repo_info, RepoInfo};
 use crate::git::stage::{stage_paths, unstage_paths};
@@ -571,6 +574,137 @@ async fn push_inner(state: &AppState) -> Result<PushResult, AppError> {
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Current operation state (merge / rebase / cherry-pick / revert / none).
+/// Part of the frontend refresh batch (P3c contract §6). Errors: `noRepo`
+/// | `git`.
+#[tauri::command]
+pub async fn get_op_state(state: tauri::State<'_, AppState>) -> Result<RepoOpState, AppError> {
+    get_op_state_inner(state.inner()).await
+}
+
+/// Runtime-free core of `get_op_state` (unit-testable without a Tauri app).
+async fn get_op_state_inner(state: &AppState) -> Result<RepoOpState, AppError> {
+    let path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || read_op_state(&path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Merges a local or remote-tracking branch into the current branch (P3c
+/// contract §4). Errors: `operationInProgress` | `branchNotFound`
+/// | `checkoutConflict` | `configMissing` | `git` | `noRepo`. Does NOT emit
+/// `repo-changed` — the frontend refetches imperatively.
+#[tauri::command]
+pub async fn merge_branch(
+    state: tauri::State<'_, AppState>,
+    name: String,
+) -> Result<MergeOutcome, AppError> {
+    merge_branch_inner(state.inner(), name).await
+}
+
+/// Runtime-free core of `merge_branch` (unit-testable without a Tauri app).
+async fn merge_branch_inner(state: &AppState, name: String) -> Result<MergeOutcome, AppError> {
+    let path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || merge::merge_branch(&path, &name))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Finalizes a paused merge as a 2(+)-parent commit (P3c contract §4.4).
+/// Errors: `noOperationInProgress` | `unresolvedConflicts` | `emptyMessage`
+/// | `configMissing` | `git` | `noRepo`.
+#[tauri::command]
+pub async fn commit_merge(
+    state: tauri::State<'_, AppState>,
+    message: String,
+) -> Result<CommitResult, AppError> {
+    commit_merge_inner(state.inner(), message).await
+}
+
+/// Runtime-free core of `commit_merge` (unit-testable without a Tauri app).
+async fn commit_merge_inner(state: &AppState, message: String) -> Result<CommitResult, AppError> {
+    let path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || merge::commit_merge(&path, &message))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Aborts a paused merge (worktree-destructive for merge-touched files —
+/// the UI confirms first; P3c contract §4.5). Errors: `noOperationInProgress`
+/// | `git` | `noRepo`.
+#[tauri::command]
+pub async fn abort_merge(state: tauri::State<'_, AppState>) -> Result<(), AppError> {
+    abort_merge_inner(state.inner()).await
+}
+
+/// Runtime-free core of `abort_merge` (unit-testable without a Tauri app).
+async fn abort_merge_inner(state: &AppState) -> Result<(), AppError> {
+    let path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || merge::abort_merge(&path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// All current index conflicts, path-ascending (P3c contract §3).
+/// Errors: `noRepo` | `git`.
+#[tauri::command]
+pub async fn list_conflicts(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<ConflictEntry>, AppError> {
+    list_conflicts_inner(state.inner()).await
+}
+
+/// Runtime-free core of `list_conflicts` (unit-testable without a Tauri app).
+async fn list_conflicts_inner(state: &AppState) -> Result<Vec<ConflictEntry>, AppError> {
+    let path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || conflict::list_conflicts(&path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Read-only marker view of one conflicted file (P3c contract §3).
+/// Errors: `noRepo` | `git`.
+#[tauri::command]
+pub async fn get_conflict(
+    state: tauri::State<'_, AppState>,
+    path: String,
+) -> Result<ConflictFile, AppError> {
+    get_conflict_inner(state.inner(), path).await
+}
+
+/// Runtime-free core of `get_conflict` (unit-testable without a Tauri app).
+async fn get_conflict_inner(state: &AppState, path: String) -> Result<ConflictFile, AppError> {
+    let repo_path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || conflict::get_conflict(&repo_path, &path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Resolves one conflicted path per the P3c contract §3.2 matrix.
+/// Errors: `noRepo` | `git` | `invalidName` (validate_rel_path).
+#[tauri::command]
+pub async fn resolve_conflict(
+    state: tauri::State<'_, AppState>,
+    path: String,
+    resolution: ConflictResolution,
+) -> Result<(), AppError> {
+    resolve_conflict_inner(state.inner(), path, resolution).await
+}
+
+/// Runtime-free core of `resolve_conflict` (unit-testable without a Tauri app).
+async fn resolve_conflict_inner(
+    state: &AppState,
+    path: String,
+    resolution: ConflictResolution,
+) -> Result<(), AppError> {
+    let repo_path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        conflict::resolve_conflict(&repo_path, &path, resolution)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -746,6 +880,48 @@ mod tests {
 
         let err = tauri::async_runtime::block_on(push_inner(&state))
             .expect_err("push with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+    }
+
+    /// The P3c merge/conflict commands all return `NoRepo` when nothing is
+    /// open (contract §6).
+    #[test]
+    fn merge_commands_require_an_open_repo() {
+        let state = AppState::default();
+
+        let err = tauri::async_runtime::block_on(get_op_state_inner(&state))
+            .expect_err("get_op_state with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err =
+            tauri::async_runtime::block_on(merge_branch_inner(&state, "topic".to_string()))
+                .expect_err("merge_branch with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err =
+            tauri::async_runtime::block_on(commit_merge_inner(&state, "msg".to_string()))
+                .expect_err("commit_merge with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(abort_merge_inner(&state))
+            .expect_err("abort_merge with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(list_conflicts_inner(&state))
+            .expect_err("list_conflicts with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err =
+            tauri::async_runtime::block_on(get_conflict_inner(&state, "file.txt".to_string()))
+                .expect_err("get_conflict with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(resolve_conflict_inner(
+            &state,
+            "file.txt".to_string(),
+            ConflictResolution::Ours,
+        ))
+        .expect_err("resolve_conflict with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
 

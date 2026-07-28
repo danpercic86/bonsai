@@ -73,6 +73,15 @@ pub fn resolve_signature(cfg: &git2::Config) -> Result<git2::Signature<'static>,
 /// branch HEAD symbolically points at (first-commit flow).
 pub fn create_commit(workdir: &Path, message: &str) -> Result<CommitResult, AppError> {
     let repo = open_workdir_repo(workdir)?;
+
+    // P3c contract §4.5 backend guard: a plain commit mid-merge would create
+    // a 1-parent commit and silently drop MERGE_HEAD ancestry.
+    if repo.state() != git2::RepositoryState::Clean {
+        return Err(AppError::OperationInProgress(
+            "an operation is in progress — use 'Commit merge' or abort it".to_string(),
+        ));
+    }
+
     let mut index = repo.index()?;
 
     if index.has_conflicts() {
