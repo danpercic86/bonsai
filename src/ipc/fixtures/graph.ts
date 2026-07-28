@@ -84,6 +84,13 @@ export function buildMockGraph(): GraphLayout {
 export interface MockCommit {
   oid: string;
   summary: string;
+  /**
+   * P3c mock merges: index of the SECOND parent in the BASE fixture layout
+   * (pre-prepend row index, e.g. 1 = the 'feat' tip). Absent for plain
+   * commits. Adds a second parent index + a curved merge edge on that
+   * node's lane.
+   */
+  mergeParentBase?: number;
 }
 
 /**
@@ -110,12 +117,26 @@ export function prependCommits(layout: GraphLayout, commits: MockCommit[]): Grap
   const newNodes: GraphNode[] = commits.map((c, i) => ({
     id: c.oid,
     lane: 0,
-    parents: [i + 1],
+    parents:
+      c.mergeParentBase !== undefined ? [i + 1, c.mergeParentBase + k] : [i + 1],
     summary: c.summary,
     author: 'You',
     ts: now - i * 60,
   }));
-  const newEdges: GraphEdge[] = commits.map((_, i) => ({ from: i, to: i + 1, lane: 0 }));
+  // Per row: the lane-0 first-parent edge, then (merge commits only) a second
+  // edge to the base-layout parent on that parent's lane. Keeps (from, to)
+  // ascending: i + 1 <= k <= mergeParentBase + k.
+  const newEdges: GraphEdge[] = commits.flatMap((c, i) => {
+    const edges: GraphEdge[] = [{ from: i, to: i + 1, lane: 0 }];
+    if (c.mergeParentBase !== undefined) {
+      edges.push({
+        from: i,
+        to: c.mergeParentBase + k,
+        lane: layout.nodes[c.mergeParentBase]?.lane ?? 1,
+      });
+    }
+    return edges;
+  });
   const shiftedEdges: GraphEdge[] = layout.edges.map((e) => ({
     ...e,
     from: e.from + k,

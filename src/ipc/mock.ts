@@ -8,17 +8,22 @@ import type {
   BranchesSnapshot,
   CommitDiff,
   CommitResult,
+  ConflictEntry,
+  ConflictFile,
+  ConflictResolution,
   FetchResult,
   FileDiff,
   GraphLayout,
   IpcApi,
   ListView,
+  MergeOutcome,
   PullResult,
   PushResult,
   PaneWidths,
   RecentRepo,
   RepoChangedPayload,
   RepoInfo,
+  RepoOpState,
   StatusEntry,
   StatusSnapshot,
   Theme,
@@ -77,6 +82,89 @@ let mockFetched = false;
 // Synthetic commit rows (P1 contract §3.5): commit() prepends lane-0 rows to
 // the DEFAULT graph fixture so the harness shows the new commit at the top.
 let mockCommits: MockCommit[] = [];
+
+// Stateful op-state mock (P3c contract §7.2): `?op=merge` seeds a paused
+// conflicted merge; resolve/commit/abort mutate this state so the harness
+// walks the full merge story. Composable with `?fixture=`.
+let opState: RepoOpState = { kind: 'none' };
+let conflicts: ConflictEntry[] = [];
+let conflictTexts = new Map<string, ConflictFile>();
+
+const MERGE_AUTH_TEXT = [
+  'import { hash } from "./crypto";',
+  '',
+  'export interface Session {',
+  '  user: string;',
+  '  token: string;',
+  '}',
+  '',
+  'export function login(user: string, password: string): Session {',
+  '<<<<<<< HEAD',
+  '  const token = hash(`${user}:${password}:v2`);',
+  '  return { user, token };',
+  '=======',
+  '  const token = hash(password + user);',
+  '  return { user: user.toLowerCase(), token };',
+  '>>>>>>> feature/login',
+  '}',
+  '',
+  'export function logout(session: Session): void {',
+  '  void session;',
+  '}',
+  '',
+].join('\n');
+
+const MERGE_README_TEXT = [
+  '# Bonsai fixture',
+  '',
+  'Our side kept this README while feature/login deleted it.',
+  '',
+].join('\n');
+
+/** Seeds (or clears) the `?op=merge` paused-merge state, incl. status rows. */
+function seedOpState(): void {
+  conflictTexts = new Map();
+  if (new URLSearchParams(window.location.search).get('op') !== 'merge') {
+    opState = { kind: 'none' };
+    conflicts = [];
+    return;
+  }
+  opState = {
+    kind: 'merge',
+    incoming: 'feature/login',
+    message: "Merge branch 'feature/login'\n\nConflicts:\n\tsrc/auth.ts\n\tREADME.md",
+  };
+  // Path-ascending, like the backend's list_conflicts.
+  conflicts = [
+    { path: 'README.md', kind: 'deletedByThem', hasBase: true, hasOurs: true, hasTheirs: false },
+    { path: 'src/auth.ts', kind: 'bothModified', hasBase: true, hasOurs: true, hasTheirs: true },
+  ];
+  conflictTexts.set('src/auth.ts', {
+    path: 'src/auth.ts',
+    kind: 'bothModified',
+    binary: false,
+    tooLarge: false,
+    missing: false,
+    text: MERGE_AUTH_TEXT,
+  });
+  // deletedByThem: the worktree keeps OUR version (no markers).
+  conflictTexts.set('README.md', {
+    path: 'README.md',
+    kind: 'deletedByThem',
+    binary: false,
+    tooLarge: false,
+    missing: false,
+    text: MERGE_README_TEXT,
+  });
+  mockStatus.conflicted = conflicts.map((c) => ({
+    path: c.path,
+    origPath: null,
+    status: 'conflicted',
+  }));
+  // README.md is conflicted, not plain-modified, while the merge is paused.
+  mockStatus.unstaged = mockStatus.unstaged.filter((e) => e.path !== 'README.md');
+}
+seedOpState();
 
 // Recents persistence (P1 contract §3.4): localStorage-backed so the harness
 // reopen-on-launch story is verifiable — open once, reload, auto-reopen.
@@ -257,6 +345,7 @@ export const mockIpc: IpcApi = {
       mockHeadBranch = 'main';
       mockFetched = false;
       mockCommits = [];
+      seedOpState();
       openedPath = path;
     }
 
@@ -619,6 +708,114 @@ export const mockIpc: IpcApi = {
       return { kind: 'pushed', remote: 'origin', branch: branch.name, setUpstream: false };
     }
     return { kind: 'upToDate', remote: 'origin', branch: branch.name };
+  },
+
+  // Stateful op-state mock (P3c contract §7.2). `?op=merge` starts the
+  // harness pre-seeded in a paused conflicted merge; mergeBranch is the
+  // clean-merge demo path.
+  async getOpState(): Promise<RepoOpState> {
+    await delay(150);
+    return structuredClone(opState);
+  },
+
+  async mergeBranch(name: string): Promise<MergeOutcome> {
+    await delay(150);
+    if (opState.kind !== 'none') {
+      const err: AppError = {
+        kind: 'operationInProgress',
+        message: 'an operation is already in progress — commit or abort it first',
+      };
+      throw err;
+    }
+    // Clean-merge demo: auto-committed 2-parent node on top of the graph.
+    mockHeadOid = randomOid();
+    mockCommits.unshift({
+      oid: mockHeadOid,
+      summary: `Merge branch '${name}'`,
+      mergeParentBase: 1, // the 'feat' fixture tip
+    });
+    const headBranch = mockBranches.local.find((b) => b.name === mockHeadBranch);
+    if (headBranch !== undefined && headBranch.upstream !== null) {
+      headBranch.ahead = (headBranch.ahead ?? 0) + 1;
+    }
+    return { kind: 'merged', oid: mockHeadOid };
+  },
+
+  async commitMerge(message: string): Promise<CommitResult> {
+    await delay(150);
+    if (opState.kind !== 'merge') {
+      const err: AppError = { kind: 'noOperationInProgress', message: 'no merge in progress' };
+      throw err;
+    }
+    if (conflicts.length > 0) {
+      const err: AppError = {
+        kind: 'unresolvedConflicts',
+        message: `cannot commit: ${conflicts.length} unresolved conflict(s) remain`,
+      };
+      throw err;
+    }
+    if (message.trim() === '') {
+      const err: AppError = { kind: 'emptyMessage', message: 'commit message is empty' };
+      throw err;
+    }
+    opState = { kind: 'none' };
+    mockStatus.conflicted = [];
+    mockHeadOid = randomOid();
+    const summary = message.trim().split('\n', 1)[0] ?? '';
+    // Faithful twin: a visible 2-parent merge node on top of the graph
+    // (second parent = the 'feat' fixture tip, base row 1).
+    mockCommits.unshift({ oid: mockHeadOid, summary, mergeParentBase: 1 });
+    const headBranch = mockBranches.local.find((b) => b.name === mockHeadBranch);
+    if (headBranch !== undefined && headBranch.upstream !== null) {
+      headBranch.ahead = (headBranch.ahead ?? 0) + 1;
+    }
+    return { oid: mockHeadOid, summary, branch: mockHeadBranch };
+  },
+
+  async abortMerge(): Promise<void> {
+    await delay(150);
+    if (opState.kind !== 'merge') {
+      const err: AppError = { kind: 'noOperationInProgress', message: 'no merge in progress' };
+      throw err;
+    }
+    // Restore the pre-merge state.
+    opState = { kind: 'none' };
+    conflicts = [];
+    conflictTexts = new Map();
+    mockStatus.conflicted = [];
+  },
+
+  async listConflicts(): Promise<ConflictEntry[]> {
+    await delay(150);
+    return structuredClone(conflicts);
+  },
+
+  async getConflict(path: string): Promise<ConflictFile> {
+    await delay(150);
+    const file = conflictTexts.get(path);
+    if (file === undefined) {
+      const err: AppError = { kind: 'git', message: `path '${path}' has no conflict` };
+      throw err;
+    }
+    return structuredClone(file);
+  },
+
+  async resolveConflict(path: string, resolution: ConflictResolution): Promise<void> {
+    await delay(150);
+    const entry = conflicts.find((c) => c.path === path);
+    if (entry === undefined) {
+      const err: AppError = { kind: 'git', message: `path '${path}' has no conflict` };
+      throw err;
+    }
+    conflicts = conflicts.filter((c) => c.path !== path);
+    conflictTexts.delete(path);
+    mockStatus.conflicted = mockStatus.conflicted.filter((e) => e.path !== path);
+    // Taking THEIRS on a deletedByThem conflict accepts their deletion: the
+    // file shows up as a staged deletion in the mock lists (contract §7.2).
+    if (resolution === 'theirs' && entry.kind === 'deletedByThem') {
+      upsert(mockStatus.staged, { path, origPath: null, status: 'deleted' });
+      sortByPath(mockStatus.staged);
+    }
   },
 
   async getRecentRepos(): Promise<RecentRepo[]> {

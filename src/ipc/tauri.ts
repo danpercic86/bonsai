@@ -6,15 +6,20 @@ import type {
   BranchesSnapshot,
   CommitDiff,
   CommitResult,
+  ConflictEntry,
+  ConflictFile,
+  ConflictResolution,
   FetchResult,
   FileDiff,
   GraphLayout,
   IpcApi,
+  MergeOutcome,
   PullResult,
   PushResult,
   RecentRepo,
   RepoChangedPayload,
   RepoInfo,
+  RepoOpState,
   StatusSnapshot,
   UiSettings,
   UiSettingsPatch,
@@ -93,6 +98,34 @@ export const tauriIpc: IpcApi = {
 
   push(): Promise<PushResult> {
     return invoke<PushResult>('push');
+  },
+
+  getOpState(): Promise<RepoOpState> {
+    return invoke<RepoOpState>('get_op_state');
+  },
+
+  mergeBranch(name: string): Promise<MergeOutcome> {
+    return invoke<MergeOutcome>('merge_branch', { name });
+  },
+
+  commitMerge(message: string): Promise<CommitResult> {
+    return invoke<CommitResult>('commit_merge', { message });
+  },
+
+  abortMerge(): Promise<void> {
+    return invoke<void>('abort_merge');
+  },
+
+  listConflicts(): Promise<ConflictEntry[]> {
+    return invoke<ConflictEntry[]>('list_conflicts');
+  },
+
+  getConflict(path: string): Promise<ConflictFile> {
+    return invoke<ConflictFile>('get_conflict', { path });
+  },
+
+  resolveConflict(path: string, resolution: ConflictResolution): Promise<void> {
+    return invoke<void>('resolve_conflict', { path, resolution });
   },
 
   getRecentRepos(): Promise<RecentRepo[]> {

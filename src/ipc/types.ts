@@ -197,6 +197,55 @@ export type PullResult =
   | { kind: 'fastForwarded'; branch: string; from: string; to: string }
   | { kind: 'wouldNotFastForward'; branch: string; ahead: number; behind: number };
 
+export type RepoOpState =
+  | { kind: 'none' }
+  | { kind: 'merge'; incoming: string; message: string }
+  | {
+      kind: 'rebase';
+      headName: string | null;
+      onto: string | null;
+      currentStep: number;
+      totalSteps: number;
+    }
+  | { kind: 'cherryPick' }
+  | { kind: 'revert' };
+
+export type ConflictKind =
+  | 'bothModified'
+  | 'bothAdded'
+  | 'deletedByUs'
+  | 'deletedByThem'
+  | 'addedByUs'
+  | 'addedByThem'
+  | 'bothDeleted';
+
+export interface ConflictEntry {
+  path: string;
+  kind: ConflictKind;
+  hasBase: boolean;
+  hasOurs: boolean;
+  hasTheirs: boolean;
+}
+
+export interface ConflictFile {
+  path: string;
+  kind: ConflictKind;
+  binary: boolean;
+  tooLarge: boolean;
+  /** Worktree file missing (deletion conflicts). text is '' when true. */
+  missing: boolean;
+  /** Worktree contents INCLUDING <<<<<<< ======= >>>>>>> markers. */
+  text: string;
+}
+
+export type ConflictResolution = 'ours' | 'theirs' | 'markResolved';
+
+export type MergeOutcome =
+  | { kind: 'upToDate' }
+  | { kind: 'fastForwarded'; branch: string; to: string }
+  | { kind: 'merged'; oid: string }
+  | { kind: 'conflicts'; paths: string[] };
+
 export type PushResult =
   | { kind: 'upToDate'; remote: string; branch: string }
   | { kind: 'pushed'; remote: string; branch: string; setUpstream: boolean };
@@ -254,7 +303,10 @@ export interface AppError {
     | 'noUpstream'
     | 'authFailed'
     | 'networkError'
-    | 'pushRejected';
+    | 'pushRejected'
+    | 'operationInProgress'
+    | 'noOperationInProgress'
+    | 'unresolvedConflicts';
   message: string;
 }
 
@@ -300,6 +352,25 @@ export interface IpcApi {
   /** Push current branch (sets upstream to origin/<branch> when none). Rejects
    *  noRemote | authFailed | networkError | pushRejected | git | noRepo. */
   push(): Promise<PushResult>;
+  /** Current operation state (merge/rebase/...). Part of the refresh batch.
+   *  Rejects noRepo | git. */
+  getOpState(): Promise<RepoOpState>;
+  /** Merge a local or remote-tracking branch into the current branch. Rejects
+   *  operationInProgress | branchNotFound | checkoutConflict | configMissing
+   *  | git | noRepo. */
+  mergeBranch(name: string): Promise<MergeOutcome>;
+  /** Finalize a paused merge. Rejects noOperationInProgress
+   *  | unresolvedConflicts | emptyMessage | configMissing | git | noRepo. */
+  commitMerge(message: string): Promise<CommitResult>;
+  /** Abort a paused merge (worktree-destructive for merge-touched files).
+   *  Rejects noOperationInProgress | git | noRepo. */
+  abortMerge(): Promise<void>;
+  /** All current index conflicts, path-ascending. Rejects noRepo | git. */
+  listConflicts(): Promise<ConflictEntry[]>;
+  /** Read-only marker view of one conflicted file. Rejects noRepo | git. */
+  getConflict(path: string): Promise<ConflictFile>;
+  /** Resolve one conflicted path. Rejects noRepo | git | invalidName. */
+  resolveConflict(path: string, resolution: ConflictResolution): Promise<void>;
   /** Recent successfully-opened repos, most recent first, max 10. Never rejects
    *  for a missing/corrupt settings file (returns []). */
   getRecentRepos(): Promise<RecentRepo[]>;
