@@ -80,6 +80,68 @@ export interface GraphLayout {
   truncated: boolean;
 }
 
+export type LineKind = 'context' | 'add' | 'del';
+
+export interface DiffLine {
+  kind: LineKind;
+  /** Line number in the OLD file; `null` for add lines. */
+  oldNo: number | null;
+  /** Line number in the NEW file; `null` for del lines. */
+  newNo: number | null;
+  /** Content without the leading +/-/space and without the trailing newline. */
+  content: string;
+  /** Present (true) only on the last line of a file lacking a trailing newline. */
+  noNewline?: boolean;
+}
+
+export interface Hunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: DiffLine[];
+}
+
+export interface FileDiff {
+  /** NEW path for renames; repo-relative, forward slashes. */
+  path: string;
+  /** OLD path for renames; `null` otherwise. */
+  origPath: string | null;
+  status: FileStatus;
+  binary: boolean; // true -> hunks empty
+  tooLarge: boolean; // true -> hunks empty
+  hunks: Hunk[];
+}
+
+export interface FileDiffHeader {
+  path: string;
+  origPath: string | null;
+  status: FileStatus;
+  additions: number;
+  deletions: number;
+  binary: boolean;
+}
+
+export interface CommitDetails {
+  oid: string;
+  summary: string;
+  /** Full message, trailing whitespace trimmed. Includes the summary line. */
+  message: string;
+  authorName: string;
+  authorEmail: string;
+  /** Seconds since epoch (UTC). */
+  authorTs: number;
+  committerTs: number;
+  /** Full oids, first parent first. length > 1 => merge commit. */
+  parents: string[];
+}
+
+export interface CommitDiff {
+  details: CommitDetails;
+  /** Sorted by path ascending. Headers only — hunks are fetched per file. */
+  files: FileDiffHeader[];
+}
+
 export interface CommitResult {
   /** Full 40-char hex oid of the new commit. */
   oid: string;
@@ -116,6 +178,13 @@ export interface IpcApi {
   /** Create a commit from the index. Rejects with AppError kinds
    *  emptyMessage | configMissing | nothingToCommit | git | noRepo. */
   commit(message: string): Promise<CommitResult>;
+  /** Diff of one working-dir file. staged=false: index vs workdir; staged=true: HEAD vs index.
+   *  origPath: pass StatusEntry.origPath (renames). Rejects AppError ('noRepo', 'git'). */
+  getWorkdirFileDiff(path: string, origPath: string | null, staged: boolean): Promise<FileDiff>;
+  /** Commit details + per-file headers vs first parent. Rejects AppError ('noRepo', 'git'). */
+  getCommitDiff(oid: string): Promise<CommitDiff>;
+  /** Hunks for one file of a commit's first-parent diff. */
+  getCommitFileDiff(oid: string, path: string, origPath: string | null): Promise<FileDiff>;
   /** Fires after debounced filesystem changes in the open repo. */
   onRepoChanged(cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe>;
   /** Fires when the app window regains focus. */

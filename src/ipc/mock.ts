@@ -1,8 +1,11 @@
+import { mockCommitDiff, mockCommitFileDiff, mockWorkdirDiff } from './fixtures/diffs';
 import { buildMockGraph, buildMockGraphDetached } from './fixtures/graph';
 import { generateLayout20k } from './fixtures/graph20k';
 import type {
   AppError,
+  CommitDiff,
   CommitResult,
+  FileDiff,
   GraphLayout,
   IpcApi,
   RepoChangedPayload,
@@ -31,6 +34,9 @@ const INITIAL_STATUS: StatusSnapshot = {
     { path: 'src/shared/util.rs', origPath: null, status: 'modified' },
     { path: 'README.md', origPath: null, status: 'modified' },
     { path: 'old-config.toml', origPath: null, status: 'deleted' },
+    // M4 contract §5: exercise the binary + too-large diff placeholders.
+    { path: 'assets/logo.png', origPath: null, status: 'modified' },
+    { path: 'data/big-report.csv', origPath: null, status: 'modified' },
   ],
   untracked: [
     { path: 'notes/todo.txt', origPath: null, status: 'untracked' },
@@ -185,6 +191,39 @@ export const mockIpc: IpcApi = {
     // the emptied staged list + changed header oid + cleared textarea).
     const summary = message.trim().split('\n', 1)[0] ?? '';
     return { oid: mockHeadOid, summary, branch: 'main' };
+  },
+
+  async getWorkdirFileDiff(
+    path: string,
+    origPath: string | null,
+    staged: boolean,
+  ): Promise<FileDiff> {
+    await delay(150);
+    return structuredClone(mockWorkdirDiff(path, origPath, staged));
+  },
+
+  async getCommitDiff(oid: string): Promise<CommitDiff> {
+    await delay(150);
+    // Route by row index of the ACTIVE fixture layout (contract §5: robust
+    // against oid spelling; 20k rows fall through to the generic diff).
+    const fixture = new URLSearchParams(window.location.search).get('fixture');
+    const layout =
+      fixture === '20k'
+        ? generateLayout20k()
+        : fixture === 'detached'
+          ? buildMockGraphDetached()
+          : buildMockGraph();
+    const index = layout.nodes.findIndex((n) => n.id === oid);
+    if (index === -1) {
+      const err: AppError = { kind: 'git', message: 'mock: unknown commit' };
+      throw err;
+    }
+    return structuredClone(mockCommitDiff(index, oid));
+  },
+
+  async getCommitFileDiff(oid: string, path: string, origPath: string | null): Promise<FileDiff> {
+    await delay(150);
+    return structuredClone(mockCommitFileDiff(oid, path, origPath));
   },
 
   async getGraph(): Promise<GraphLayout> {

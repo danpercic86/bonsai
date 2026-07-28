@@ -62,9 +62,8 @@ string-compare; ignored-file staging = git add -f semantics (documented).
 
 ## M4 — Diff view — **in-progress**
 
-Current step: M4a — implemented, cargo test 102/102 + clippy green; awaiting reviewer round 1.
-(Split: M4a backend, M4b frontend.) Note: watcher tests hardened (drain 1.5s) — flaked under
-enlarged-suite parallel fs load, test code only.
+Current step: M4b — implemented + live-verified by dev (24/24 CDP checks both modes);
+awaiting reviewer round 1. M4a committed (3ab213a).
 
 Goal: via git2, working-dir diffs (unstaged vs index, staged vs HEAD) AND commit diffs
 (selected graph node vs first parent, with commit details — message/author/date — in the right

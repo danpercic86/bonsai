@@ -1,5 +1,9 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import type { FileStatus, StatusEntry, StatusSnapshot } from '../ipc';
+import { DiffSlotView } from './DiffView';
+import type { DiffSlot } from './DiffView';
+
+export type { DiffSlot } from './DiffView';
 
 const BADGES: Record<FileStatus, string> = {
   added: 'A',
@@ -24,32 +28,60 @@ function splitPath(path: string): { dir: string | null; name: string } {
 
 type RowAction = 'stage' | 'unstage' | null;
 
+export type WorkdirSection = 'staged' | 'unstaged' | 'untracked';
+
 function FileRow({
   entry,
   action,
   disabled,
+  expandable,
+  expanded,
   onAction,
+  onToggle,
 }: {
   entry: StatusEntry;
   /** Which button the row shows; null = no button (conflicted rows). */
   action: RowAction;
   disabled: boolean;
+  /** Conflicted rows are not expandable (no diff kind for conflicts in v1). */
+  expandable: boolean;
+  expanded: boolean;
   onAction: (paths: string[]) => void;
+  onToggle: () => void;
 }) {
   const isRename = entry.origPath !== null;
   const title = isRename ? `${entry.origPath} → ${entry.path}` : entry.path;
   const { dir, name } = splitPath(entry.path);
+  const pathEl = isRename ? (
+    <span className="file-path mono file-rename">
+      {entry.origPath} {'→'} {entry.path}
+    </span>
+  ) : (
+    <span className="file-path">
+      {dir !== null && <span className="file-dir">{dir}</span>}
+      <span className="file-name">{name}</span>
+    </span>
+  );
   return (
-    <li className={`file-row file-status-${entry.status}`} title={title}>
-      <span className="file-badge mono">{BADGES[entry.status]}</span>
-      {isRename ? (
-        <span className="file-path mono file-rename">
-          {entry.origPath} {'→'} {entry.path}
-        </span>
+    <li
+      className={`file-row file-status-${entry.status}${expanded ? ' file-row-expanded' : ''}`}
+      title={title}
+    >
+      {expandable ? (
+        <button
+          type="button"
+          className="file-row-main"
+          aria-expanded={expanded}
+          onClick={onToggle}
+        >
+          <span className={`file-chevron${expanded ? ' file-chevron-open' : ''}`}>{'›'}</span>
+          <span className="file-badge mono">{BADGES[entry.status]}</span>
+          {pathEl}
+        </button>
       ) : (
-        <span className="file-path">
-          {dir !== null && <span className="file-dir">{dir}</span>}
-          <span className="file-name">{name}</span>
+        <span className="file-row-main">
+          <span className="file-badge mono">{BADGES[entry.status]}</span>
+          {pathEl}
         </span>
       )}
       {action !== null && (
@@ -69,14 +101,20 @@ function FileRow({
 
 function Section({
   label,
+  section,
   entries,
   danger = false,
   rowAction,
   actionLabel,
   disabled,
+  expandable,
+  diffSlot,
   onAction,
+  onToggleDiff,
 }: {
   label: string;
+  /** Diff-key prefix; null for the conflicts section (not expandable). */
+  section: WorkdirSection | null;
   entries: StatusEntry[];
   danger?: boolean;
   /** Per-row button kind; null = no actions in this section. */
@@ -84,7 +122,10 @@ function Section({
   /** Section-header bulk button label ("Stage all" / "Unstage all"). */
   actionLabel: string | null;
   disabled: boolean;
+  expandable: boolean;
+  diffSlot: DiffSlot | null;
   onAction: (paths: string[]) => void;
+  onToggleDiff: (section: WorkdirSection, entry: StatusEntry) => void;
 }) {
   return (
     <section className="status-section">
@@ -108,15 +149,35 @@ function Section({
         )}
       </div>
       <ul className="file-list">
-        {entries.map((entry) => (
-          <FileRow
-            key={`${entry.status}:${entry.path}`}
-            entry={entry}
-            action={rowAction}
-            disabled={disabled}
-            onAction={onAction}
-          />
-        ))}
+        {entries.map((entry) => {
+          const key = section !== null ? `${section}:${entry.path}` : null;
+          const expanded = key !== null && diffSlot !== null && diffSlot.key === key;
+          return (
+            <Fragment key={`${entry.status}:${entry.path}`}>
+              <FileRow
+                entry={entry}
+                action={rowAction}
+                disabled={disabled}
+                expandable={expandable && section !== null}
+                expanded={expanded}
+                onAction={onAction}
+                onToggle={() => {
+                  if (section !== null) onToggleDiff(section, entry);
+                }}
+              />
+              {expanded && diffSlot !== null && (
+                <li className="diff-expansion">
+                  <DiffSlotView
+                    slot={diffSlot}
+                    onDismissError={() => {
+                      if (section !== null) onToggleDiff(section, entry);
+                    }}
+                  />
+                </li>
+              )}
+            </Fragment>
+          );
+        })}
       </ul>
     </section>
   );
@@ -138,12 +199,25 @@ export interface StatusPanelProps {
   error: string | null;
   /** True while any stage/unstage/commit is in flight — disables all action buttons. */
   busy: boolean;
+  /** Currently expanded diff (null = none). Single expansion across ALL sections. */
+  diffSlot: DiffSlot | null;
   onStage(paths: string[]): void;
   onUnstage(paths: string[]): void;
+  /** Toggle inline diff expansion for a row (App owns the fetch). */
+  onToggleDiff(section: WorkdirSection, entry: StatusEntry): void;
 }
 
 /** Pure presentational right-panel status view; all fetching lives in App. */
-export function StatusPanel({ snapshot, loading, error, busy, onStage, onUnstage }: StatusPanelProps) {
+export function StatusPanel({
+  snapshot,
+  loading,
+  error,
+  busy,
+  diffSlot,
+  onStage,
+  onUnstage,
+  onToggleDiff,
+}: StatusPanelProps) {
   const [dismissedError, setDismissedError] = useState<string | null>(null);
   const visibleError = error !== null && error !== dismissedError ? error : null;
 
@@ -181,37 +255,53 @@ export function StatusPanel({ snapshot, loading, error, busy, onStage, onUnstage
         <>
           <Section
             label="Staged"
+            section="staged"
             entries={snapshot.staged}
             rowAction="unstage"
             actionLabel="Unstage all"
             disabled={disabled}
+            expandable
+            diffSlot={diffSlot}
             onAction={onUnstage}
+            onToggleDiff={onToggleDiff}
           />
           <Section
             label="Unstaged"
+            section="unstaged"
             entries={snapshot.unstaged}
             rowAction="stage"
             actionLabel="Stage all"
             disabled={disabled}
+            expandable
+            diffSlot={diffSlot}
             onAction={onStage}
+            onToggleDiff={onToggleDiff}
           />
           <Section
             label="Untracked"
+            section="untracked"
             entries={snapshot.untracked}
             rowAction="stage"
             actionLabel="Stage all"
             disabled={disabled}
+            expandable
+            diffSlot={diffSlot}
             onAction={onStage}
+            onToggleDiff={onToggleDiff}
           />
           {snapshot.conflicted.length > 0 && (
             <Section
               label="Conflicts"
+              section={null}
               entries={snapshot.conflicted}
               danger
               rowAction={null}
               actionLabel={null}
               disabled={disabled}
+              expandable={false}
+              diffSlot={null}
               onAction={() => {}}
+              onToggleDiff={() => {}}
             />
           )}
         </>

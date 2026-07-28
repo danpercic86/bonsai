@@ -1,9 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CommitBox } from './components/CommitBox';
+import { CommitPanel } from './components/CommitPanel';
 import { StatusPanel } from './components/StatusPanel';
+import type { DiffSlot, WorkdirSection } from './components/StatusPanel';
 import { GraphCanvas } from './graph/GraphCanvas';
 import { ipc } from './ipc';
-import type { AppError, GraphLayout, HeadInfo, RepoInfo, StatusSnapshot, Unsubscribe } from './ipc';
+import type {
+  AppError,
+  CommitDiff,
+  FileDiff,
+  FileDiffHeader,
+  GraphLayout,
+  HeadInfo,
+  RepoInfo,
+  StatusEntry,
+  StatusSnapshot,
+  Unsubscribe,
+} from './ipc';
 
 function isAppError(e: unknown): e is AppError {
   return (
@@ -81,12 +94,42 @@ export default function App() {
   const [graphLoading, setGraphLoading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
+  // M4: commit details (mode B) + the shared per-file diff expansion slot.
+  const [commitDiff, setCommitDiff] = useState<CommitDiff | null>(null);
+  const [commitDiffLoading, setCommitDiffLoading] = useState(false);
+  const [commitDiffError, setCommitDiffError] = useState<string | null>(null);
+  const [diffSlot, setDiffSlot] = useState<DiffSlot | null>(null); // shared by both modes
+
   // Request-id last-wins guards: only the latest in-flight request may apply
   // its result (M1 contract §5 — no frontend debounce beyond this).
   const statusReqId = useRef(0);
   const graphReqId = useRef(0);
+  const commitDiffReqId = useRef(0);
+  const fileDiffReqId = useRef(0);
+  // Current slot, readable from stable callbacks without re-subscribing.
+  const diffSlotRef = useRef<DiffSlot | null>(null);
+  diffSlotRef.current = diffSlot;
 
   const repoPath = repo !== null && isUsableRepo(repo) ? repo.path : null;
+
+  /** Fetch (or re-fetch) the expanded diff for `key`; last-wins guarded. */
+  const fetchDiffSlot = useCallback(async (key: string, fetcher: () => Promise<FileDiff>) => {
+    const id = ++fileDiffReqId.current;
+    setDiffSlot({ key, state: 'loading', diff: null, error: null });
+    try {
+      const diff = await fetcher();
+      if (id !== fileDiffReqId.current) return;
+      setDiffSlot({ key, state: 'ready', diff, error: null });
+    } catch (e) {
+      if (id !== fileDiffReqId.current) return;
+      setDiffSlot({ key, state: 'error', diff: null, error: errorMessage(e) });
+    }
+  }, []);
+
+  const collapseDiffSlot = useCallback(() => {
+    fileDiffReqId.current += 1; // invalidate any in-flight fetch
+    setDiffSlot(null);
+  }, []);
 
   const refetchStatus = useCallback(async () => {
     const id = ++statusReqId.current;
@@ -96,20 +139,37 @@ export default function App() {
       if (id !== statusReqId.current) return;
       setStatus(snapshot);
       setStatusError(null);
+      // M4 §4.4: a new snapshot invalidates the mode-A expansion — entry gone
+      // -> collapse; still present -> re-fetch (content may have changed).
+      const slot = diffSlotRef.current;
+      if (slot !== null && !slot.key.startsWith('commit:')) {
+        const sep = slot.key.indexOf(':');
+        const section = slot.key.slice(0, sep) as WorkdirSection;
+        const path = slot.key.slice(sep + 1);
+        const entry = snapshot[section].find((en) => en.path === path);
+        if (entry === undefined) {
+          collapseDiffSlot();
+        } else {
+          void fetchDiffSlot(slot.key, () =>
+            ipc.getWorkdirFileDiff(entry.path, entry.origPath, section === 'staged'),
+          );
+        }
+      }
     } catch (e) {
       if (id !== statusReqId.current) return;
       setStatusError(errorMessage(e));
     } finally {
       if (id === statusReqId.current) setStatusLoading(false);
     }
-  }, []);
+  }, [fetchDiffSlot, collapseDiffSlot]);
 
   const clearStatus = useCallback(() => {
     statusReqId.current += 1; // invalidate any in-flight request
     setStatus(null);
     setStatusError(null);
     setStatusLoading(false);
-  }, []);
+    collapseDiffSlot();
+  }, [collapseDiffSlot]);
 
   // Refetches keep showing the previous layout until the new one arrives.
   const refetchGraph = useCallback(async () => {
@@ -135,6 +195,53 @@ export default function App() {
     setGraphError(null);
     setGraphLoading(false);
     setSelectedIndex(null);
+  }, []);
+
+  // M4 §4.4: selection -> commit diff. Every selection change also resets the
+  // shared expansion slot (its keys belong to the previous mode/commit).
+  useEffect(() => {
+    if (selectedIndex !== null && graph !== null) {
+      fileDiffReqId.current += 1;
+      setDiffSlot(null);
+      const oid = graph.nodes[selectedIndex].id;
+      const id = ++commitDiffReqId.current;
+      setCommitDiff(null);
+      setCommitDiffLoading(true);
+      setCommitDiffError(null);
+      ipc.getCommitDiff(oid).then(
+        (cd) => {
+          if (id !== commitDiffReqId.current) return;
+          setCommitDiff(cd);
+          setCommitDiffLoading(false);
+        },
+        (e: unknown) => {
+          if (id !== commitDiffReqId.current) return;
+          setCommitDiffError(errorMessage(e));
+          setCommitDiffLoading(false);
+        },
+      );
+    } else {
+      commitDiffReqId.current += 1; // invalidate any in-flight commit diff
+      setCommitDiff(null);
+      setCommitDiffLoading(false);
+      setCommitDiffError(null);
+      if (diffSlotRef.current?.key.startsWith('commit:') === true) {
+        fileDiffReqId.current += 1;
+        setDiffSlot(null);
+      }
+    }
+  }, [selectedIndex, graph]);
+
+  // Esc deselects (back to mode A), except while typing in an input/textarea.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const target = e.target as HTMLElement | null;
+      if (target !== null && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) return;
+      setSelectedIndex((cur) => (cur !== null ? null : cur));
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
   // Subscriptions only (per React rules): repo-changed events + window focus
@@ -269,6 +376,39 @@ export default function App() {
     }
   }
 
+  // Mode-A accordion toggle: staged rows -> staged diff; unstaged/untracked ->
+  // unstaged diff (M4 §4.2).
+  function handleToggleWorkdirDiff(section: WorkdirSection, entry: StatusEntry) {
+    const key = `${section}:${entry.path}`;
+    if (diffSlotRef.current?.key === key) {
+      collapseDiffSlot();
+      return;
+    }
+    void fetchDiffSlot(key, () =>
+      ipc.getWorkdirFileDiff(entry.path, entry.origPath, section === 'staged'),
+    );
+  }
+
+  // Mode-B accordion toggle: hunks for one file of the selected commit.
+  function handleToggleCommitDiff(file: FileDiffHeader) {
+    if (selectedIndex === null || graph === null) return;
+    const oid = graph.nodes[selectedIndex].id;
+    const key = `commit:${file.path}`;
+    if (diffSlotRef.current?.key === key) {
+      collapseDiffSlot();
+      return;
+    }
+    void fetchDiffSlot(key, () => ipc.getCommitFileDiff(oid, file.path, file.origPath));
+  }
+
+  // Parent short-oid clicked: GraphNode.parents are node indices, ordinal-
+  // matched to CommitDetails.parents (both first-parent-first).
+  function handleSelectParent(parentOrdinal: number) {
+    if (selectedIndex === null || graph === null) return;
+    const parentIndex = graph.nodes[selectedIndex].parents[parentOrdinal];
+    if (parentIndex !== undefined) setSelectedIndex(parentIndex);
+  }
+
   const repoOpen = repoPath !== null;
 
   return (
@@ -319,19 +459,36 @@ export default function App() {
             ) : null}
           </main>
           <aside className="right-panel">
-            <StatusPanel
-              snapshot={status}
-              loading={statusLoading}
-              error={statusError}
-              busy={mutating}
-              onStage={(paths) => void handleStage(paths)}
-              onUnstage={(paths) => void handleUnstage(paths)}
-            />
-            <CommitBox
-              stagedCount={status?.staged.length ?? 0}
-              busy={mutating}
-              onCommit={handleCommit}
-            />
+            {selectedIndex !== null && graph !== null ? (
+              <CommitPanel
+                node={graph.nodes[selectedIndex]}
+                data={commitDiff}
+                loading={commitDiffLoading}
+                error={commitDiffError}
+                diffSlot={diffSlot}
+                onToggleDiff={handleToggleCommitDiff}
+                onSelectParent={handleSelectParent}
+                onClose={() => setSelectedIndex(null)}
+              />
+            ) : (
+              <>
+                <StatusPanel
+                  snapshot={status}
+                  loading={statusLoading}
+                  error={statusError}
+                  busy={mutating}
+                  diffSlot={diffSlot}
+                  onStage={(paths) => void handleStage(paths)}
+                  onUnstage={(paths) => void handleUnstage(paths)}
+                  onToggleDiff={handleToggleWorkdirDiff}
+                />
+                <CommitBox
+                  stagedCount={status?.staged.length ?? 0}
+                  busy={mutating}
+                  onCommit={handleCommit}
+                />
+              </>
+            )}
           </aside>
         </div>
       ) : (

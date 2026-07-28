@@ -149,6 +149,12 @@ fn build_diff_options(paths: &[&str]) -> git2::DiffOptions {
         .include_untracked(true)
         .show_untracked_content(true)
         .recurse_untracked_dirs(true);
+    if !paths.is_empty() {
+        // Explicit pathspecs are LITERAL paths from StatusEntry / headers, not
+        // globs: without this a file named `a[bc].txt` would fnmatch other
+        // deltas and merge them into one corrupted FileDiff.
+        opts.disable_pathspec_match(true);
+    }
     for p in paths {
         opts.pathspec(p);
     }
@@ -602,6 +608,44 @@ mod tests {
             assert!(!fd.binary && !fd.too_large);
             assert!(fd.hunks.is_empty());
         }
+    }
+
+    /// Pathspecs are literal (fixlet): a file whose NAME contains glob
+    /// metachars must not fnmatch sibling deltas. `*` is illegal in Windows
+    /// filenames, but `[`/`]` are legal AND are fnmatch metachars — the glob
+    /// `a[ab].txt` would match `aa.txt` and `ab.txt`, merging three deltas
+    /// into one corrupted FileDiff without `disable_pathspec_match`.
+    #[test]
+    fn glob_metachar_filename_matches_literally() {
+        let dir = crate::testutil::scratch_dir();
+        let repo = git2::Repository::init(dir.path()).expect("init repo");
+        {
+            let mut cfg = repo.config().expect("config");
+            cfg.set_str("user.name", "Test User").expect("name");
+            cfg.set_str("user.email", "test@example.com").expect("email");
+            cfg.set_bool("core.autocrlf", false).expect("autocrlf");
+        }
+        for name in ["a[ab].txt", "aa.txt", "ab.txt"] {
+            std::fs::write(dir.path().join(name), format!("{name} old\n")).expect("write");
+        }
+        crate::git::stage::stage_paths(
+            dir.path(),
+            &["a[ab].txt".into(), "aa.txt".into(), "ab.txt".into()],
+        )
+        .expect("stage");
+        crate::git::commit::create_commit(dir.path(), "base").expect("commit");
+        for name in ["a[ab].txt", "aa.txt", "ab.txt"] {
+            std::fs::write(dir.path().join(name), format!("{name} new\n")).expect("rewrite");
+        }
+
+        let fd = workdir_file_diff(dir.path(), "a[ab].txt", None, false).expect("diff");
+        assert_eq!(fd.path, "a[ab].txt");
+        assert_eq!(fd.status, FileStatus::Modified);
+        assert_eq!(fd.hunks.len(), 1, "exactly one delta must match");
+        let lines = &fd.hunks[0].lines;
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].content, "a[ab].txt old");
+        assert_eq!(lines[1].content, "a[ab].txt new");
     }
 
     #[test]
