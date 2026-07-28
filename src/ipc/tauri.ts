@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import type {
+  CommitResult,
   GraphLayout,
   IpcApi,
   RepoChangedPayload,
@@ -31,6 +32,18 @@ export const tauriIpc: IpcApi = {
 
   getGraph(): Promise<GraphLayout> {
     return invoke<GraphLayout>('get_graph');
+  },
+
+  stage(paths: string[]): Promise<void> {
+    return invoke<void>('stage', { paths });
+  },
+
+  unstage(paths: string[]): Promise<void> {
+    return invoke<void>('unstage', { paths });
+  },
+
+  commit(message: string): Promise<CommitResult> {
+    return invoke<CommitResult>('commit', { message });
   },
 
   onRepoChanged(cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe> {

@@ -26,15 +26,15 @@ pub(crate) fn open_workdir_repo(workdir: &Path) -> Result<git2::Repository, AppE
 }
 
 /// Validates a wire path (worktree-relative, forward slashes). Rejects empty
-/// strings, absolute paths (leading `/`, `\`, or a drive letter `X:`), and
-/// any `..` component (M3 contract §2.1).
+/// strings, absolute paths (leading `/` or a drive letter `X:`), any path
+/// containing `\` (the wire format is forward-slash only — backslashes would
+/// hit libgit2's opaque error path), and any `..` component (M3 contract §2.1).
 fn validate_path(p: &str) -> Result<(), AppError> {
     let bytes = p.as_bytes();
     let absolute = p.starts_with('/')
-        || p.starts_with('\\')
         || (bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':');
-    let escapes = p.split(['/', '\\']).any(|component| component == "..");
-    if p.is_empty() || absolute || escapes {
+    let escapes = p.split('/').any(|component| component == "..");
+    if p.is_empty() || absolute || p.contains('\\') || escapes {
         return Err(AppError::Other(format!("invalid path: {p}")));
     }
     Ok(())
@@ -137,6 +137,17 @@ mod tests {
             "a/..",
             "..\\escape",
         ] {
+            let err = validate_path(bad).expect_err(&format!("must reject {bad:?}"));
+            match err {
+                AppError::Other(m) => assert!(m.contains("invalid path"), "got: {m}"),
+                other => panic!("expected AppError::Other, got: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn path_validation_rejects_interior_backslashes() {
+        for bad in ["dir\\file.txt", "a\\b\\c.rs", "trailing\\", "mid\\..end"] {
             let err = validate_path(bad).expect_err(&format!("must reject {bad:?}"));
             match err {
                 AppError::Other(m) => assert!(m.contains("invalid path"), "got: {m}"),

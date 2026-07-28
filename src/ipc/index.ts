@@ -8,6 +8,7 @@ export const ipc: IpcApi =
 
 export type {
   AppError,
+  CommitResult,
   FileStatus,
   GraphEdge,
   GraphLayout,

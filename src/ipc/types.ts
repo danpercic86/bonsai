@@ -80,6 +80,15 @@ export interface GraphLayout {
   truncated: boolean;
 }
 
+export interface CommitResult {
+  /** Full 40-char hex oid of the new commit. */
+  oid: string;
+  /** First line of the cleaned message. */
+  summary: string;
+  /** Branch HEAD points at after the commit ("main"); null when detached. */
+  branch: string | null;
+}
+
 export interface RepoChangedPayload {
   reason: string;
 }
@@ -87,7 +96,7 @@ export interface RepoChangedPayload {
 export type Unsubscribe = () => void;
 
 export interface AppError {
-  kind: 'git' | 'io' | 'other' | 'noRepo';
+  kind: 'git' | 'io' | 'other' | 'noRepo' | 'emptyMessage' | 'configMissing' | 'nothingToCommit';
   message: string;
 }
 
@@ -100,6 +109,13 @@ export interface IpcApi {
   getStatus(): Promise<StatusSnapshot>;
   /** Full graph layout for the open repo. Rejects with {@link AppError} (`noRepo` when nothing open). */
   getGraph(): Promise<GraphLayout>;
+  /** Stage paths (worktree-relative, forward slashes — StatusEntry.path strings). Atomic. */
+  stage(paths: string[]): Promise<void>;
+  /** Unstage paths. Atomic. Safe (worktree never touched). */
+  unstage(paths: string[]): Promise<void>;
+  /** Create a commit from the index. Rejects with AppError kinds
+   *  emptyMessage | configMissing | nothingToCommit | git | noRepo. */
+  commit(message: string): Promise<CommitResult>;
   /** Fires after debounced filesystem changes in the open repo. */
   onRepoChanged(cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe>;
   /** Fires when the app window regains focus. */

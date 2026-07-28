@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { CommitBox } from './components/CommitBox';
 import { StatusPanel } from './components/StatusPanel';
 import { GraphCanvas } from './graph/GraphCanvas';
 import { ipc } from './ipc';
@@ -71,6 +72,9 @@ export default function App() {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  // Single flag for stage/unstage/commit (M3 §4.4): pessimistic UI — controls
+  // disable in flight, state comes back via refetch.
+  const [mutating, setMutating] = useState(false);
 
   const [graph, setGraph] = useState<GraphLayout | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
@@ -219,6 +223,52 @@ export default function App() {
     }
   }
 
+  async function handleStage(paths: string[]) {
+    setMutating(true);
+    try {
+      await ipc.stage(paths);
+      await refetchStatus();
+    } catch (e) {
+      setStatusError(errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleUnstage(paths: string[]) {
+    setMutating(true);
+    try {
+      await ipc.unstage(paths);
+      await refetchStatus();
+    } catch (e) {
+      setStatusError(errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  // Commit errors are RETHROWN so CommitBox displays them inline; errors from
+  // the post-commit refresh (commit already succeeded) go to statusError.
+  async function handleCommit(message: string) {
+    setMutating(true);
+    try {
+      await ipc.commit(message);
+      try {
+        // Post-commit refresh: openRepo updates the header HEAD oid and
+        // self-heals the watcher (same as handleRefresh), then both refetches.
+        if (repoPath !== null) {
+          const info = await ipc.openRepo(repoPath);
+          setRepo(info);
+        }
+        await Promise.all([refetchStatus(), refetchGraph()]);
+      } catch (e) {
+        setStatusError(errorMessage(e));
+      }
+    } finally {
+      setMutating(false);
+    }
+  }
+
   const repoOpen = repoPath !== null;
 
   return (
@@ -237,7 +287,7 @@ export default function App() {
         <button
           type="button"
           className="btn-icon"
-          disabled={!repoOpen || refreshing || statusLoading || graphLoading}
+          disabled={!repoOpen || refreshing || statusLoading || graphLoading || mutating}
           onClick={handleRefresh}
           title="Refresh"
           aria-label="Refresh"
@@ -269,7 +319,19 @@ export default function App() {
             ) : null}
           </main>
           <aside className="right-panel">
-            <StatusPanel snapshot={status} loading={statusLoading} error={statusError} />
+            <StatusPanel
+              snapshot={status}
+              loading={statusLoading}
+              error={statusError}
+              busy={mutating}
+              onStage={(paths) => void handleStage(paths)}
+              onUnstage={(paths) => void handleUnstage(paths)}
+            />
+            <CommitBox
+              stagedCount={status?.staged.length ?? 0}
+              busy={mutating}
+              onCommit={handleCommit}
+            />
           </aside>
         </div>
       ) : (
