@@ -79,19 +79,27 @@ both diff kinds from mock data.
 Acceptance (USER CHECKPOINT): selecting a commit in the graph shows its details + changes in
 the native app.
 
-## M5 — Branches — **in-progress**
+## M5 — Branches — **done** (2026-07-28)
 
-Current step: M5 — AI gate PASSED (131 tests + 2 ignored: 19 branches CLI-oracle + 5
-adversarial probes; reviewer confirmed delete reachable ONLY via ConfirmDialog; harness
-verified live by orchestrator: list/badge/create/checkout/conflict/unmerged-block/merged-delete/
-detached row + dialog focus/Esc). AWAITING USER CHECKPOINT: docs/contracts/M5-user-checklist.md.
-Commits: 7264523 (M5a), 043faba (M5b), d4727f9 (tester).
-Mock-only nit: ?fixture=detached header still shows main (openRepo not overridden) — polish.
+AI gate passed (131 tests + 2 ignored: 19 branches CLI-oracle + 5 adversarial probes;
+reviewer confirmed delete reachable ONLY via ConfirmDialog, backend blocks head/unmerged
+delete with no force path; harness verified all flows live). USER CHECKPOINT confirmed by
+user: branch ops + confirmation dialog work in the native app.
+Contract: docs/contracts/M5-branches.md. Sub-increments: 7264523, 043faba, d4727f9.
+Polish candidates: ?fixture=detached mock header not overridden; shared isAppError util
+(3rd copy in Sidebar); dialog actionable if branch removed externally (falls back to
+branchNotFound banner — acceptable).
 
-Goal: list, create, checkout, delete branches; show current branch/HEAD in the sidebar.
-Acceptance (AI gate): branch operations verified against the `git` CLI in tests; code review
-confirms destructive ops (delete) require explicit UI confirmation.
-Acceptance (USER CHECKPOINT): branch operations + confirmation dialog work in the native app.
+## M6 — Remotes (fetch / pull ff-only / push) — **in-progress**
 
-## M6 — Remotes (fetch / pull ff-only / push) — pending
+Current step: M6 — confirming credential strategy with user before architect contract
+(CLAUDE.md requirement).
+
+Goal: fetch / pull (fast-forward only — clear message + no change if not ff-able) / push
+with credential handling (git2 CredentialHelper → Windows Credential Manager first, then
+SSH agent for ssh URLs; never prompt for or store raw passwords ourselves).
+Acceptance (AI gate): fetch/pull/push round-trip against a local bare repo (file:// remote
+on a scratch repo) — no network or credentials needed.
+Acceptance (USER CHECKPOINT): one round-trip against a real network remote with the
+credential helper.
 ## Polish — pending
