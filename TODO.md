@@ -51,20 +51,29 @@ correct lanes/curves/dots/pills; synthetic 20k+ commit fixture built via git2 or
 timings with no sustained frames > 33 ms.
 Acceptance (USER CHECKPOINT): scrolling the 20k repo in the native app feels smooth.
 
-## M3 — Stage / unstage / commit — **in-progress**
+## M3 — Stage / unstage / commit — **done** (2026-07-28)
 
-Current step: M3 gate — sub-increments committed (ab0f943, 2ce24be); tester running;
-orchestrator verifying harness. Polish notes: textarea disabled during stage-in-flight
-(focus drop on Windows); dismissed-error string-compare pattern.
+AI gate passed (80 tests incl. 18 CLI-oracle + 3 adversarial; CRLF normalization fixed; harness
+round-trip verified). USER CHECKPOINT confirmed by user: stage/unstage/commit round-trip works
+in the native app, all checklist items pass. Contract: docs/contracts/M3-commit.md.
+Sub-increments: ab0f943, 2ce24be, e484daa.
+Polish notes: textarea disabled during stage-in-flight (focus drop); dismissed-error
+string-compare; ignored-file staging = git add -f semantics (documented).
 
-Goal: file-level staging only (no hunk staging, no amend in v1); stage/unstage from the status
-panel; commit with message; author/committer from git config, clear error if unset.
+## M4 — Diff view — **in-progress**
 
-Acceptance (AI gate): Rust tests verify stage/unstage/commit results against the git CLI on
-scratch repos; harness exercises the flows from mock data.
-Acceptance (USER CHECKPOINT): stage/unstage/commit round-trip in the native app.
+Current step: M4 — architect drafting `docs/contracts/M4-diff.md`.
 
-## M4 — Diff view — pending
+Goal: via git2, working-dir diffs (unstaged vs index, staged vs HEAD) AND commit diffs
+(selected graph node vs first parent, with commit details — message/author/date — in the right
+panel). Unified or side-by-side per architect.
+
+Acceptance (AI gate): diff output matches `git diff` / `git show` in tests; harness renders
+both diff kinds from mock data.
+Acceptance (USER CHECKPOINT): selecting a commit in the graph shows its details + changes in
+the native app.
+
+## M5 — Branches — pending
 ## M4 — Diff view — pending
 ## M5 — Branches — pending
 ## M6 — Remotes (fetch / pull ff-only / push) — pending
