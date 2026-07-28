@@ -815,6 +815,56 @@ body {
   color: var(--text-3);
 }
 
+/* P3b: tree-grouped lists (contract §4.3). */
+.tree {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+.tree-group {
+  margin: 0;
+  padding: 0 0 0 14px;
+  list-style: none;
+}
+
+.tree-dir-row {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border-radius: 4px;
+}
+
+.tree-dir-row:hover {
+  background: var(--bg-2);
+}
+
+.tree-dir-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: none;
+  padding: 0 4px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tree-dir-name {
+  color: var(--text-3);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .file-name {
   color: var(--text-1);
 }

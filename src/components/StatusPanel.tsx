@@ -1,6 +1,8 @@
-import { useState } from 'react';
-import type { FileStatus, StatusEntry, StatusSnapshot } from '../ipc';
+import { useMemo, useState } from 'react';
+import type { FileStatus, ListView, StatusEntry, StatusSnapshot } from '../ipc';
+import { buildPathTree } from '../utils/pathTree';
 import type { DiffSlot } from './DiffView';
+import { Tree } from './Tree';
 
 export type { DiffSlot } from './DiffView';
 
@@ -37,6 +39,7 @@ function FileRow({
   expanded,
   onAction,
   onToggle,
+  treeMode = false,
 }: {
   entry: StatusEntry;
   /** Which button the row shows; null = no button (conflicted rows). */
@@ -47,6 +50,9 @@ function FileRow({
   expanded: boolean;
   onAction: (paths: string[]) => void;
   onToggle: () => void;
+  /** P3b: the tree supplies directory context — render only the basename
+   *  (renames keep the full `orig → path` text; tooltips keep full paths). */
+  treeMode?: boolean;
 }) {
   const isRename = entry.origPath !== null;
   const title = isRename ? `${entry.origPath} → ${entry.path}` : entry.path;
@@ -57,7 +63,7 @@ function FileRow({
     </span>
   ) : (
     <span className="file-path">
-      {dir !== null && <span className="file-dir">{dir}</span>}
+      {!treeMode && dir !== null && <span className="file-dir">{dir}</span>}
       <span className="file-name">{name}</span>
     </span>
   );
@@ -108,6 +114,7 @@ function Section({
   disabled,
   expandable,
   diffSlot,
+  listView,
   onAction,
   onToggleDiff,
 }: {
@@ -123,9 +130,34 @@ function Section({
   disabled: boolean;
   expandable: boolean;
   diffSlot: DiffSlot | null;
+  listView: ListView;
   onAction: (paths: string[]) => void;
   onToggleDiff: (section: WorkdirSection, entry: StatusEntry) => void;
 }) {
+  // P3b §5.1: tree placement by NEW path (origPath never affects placement).
+  const nodes = useMemo(
+    () => (listView === 'tree' ? buildPathTree(entries, (e) => e.path) : null),
+    [listView, entries],
+  );
+  const renderRow = (entry: StatusEntry, treeMode: boolean) => {
+    const key = section !== null ? `${section}:${entry.path}` : null;
+    const expanded = key !== null && diffSlot !== null && diffSlot.key === key;
+    return (
+      <FileRow
+        key={`${entry.status}:${entry.path}`}
+        entry={entry}
+        action={rowAction}
+        disabled={disabled}
+        expandable={expandable && section !== null}
+        expanded={expanded}
+        onAction={onAction}
+        onToggle={() => {
+          if (section !== null) onToggleDiff(section, entry);
+        }}
+        treeMode={treeMode}
+      />
+    );
+  };
   return (
     <section className="status-section">
       <div
@@ -147,26 +179,15 @@ function Section({
           </button>
         )}
       </div>
-      <ul className="file-list">
-        {entries.map((entry) => {
-          const key = section !== null ? `${section}:${entry.path}` : null;
-          const expanded = key !== null && diffSlot !== null && diffSlot.key === key;
-          return (
-            <FileRow
-              key={`${entry.status}:${entry.path}`}
-              entry={entry}
-              action={rowAction}
-              disabled={disabled}
-              expandable={expandable && section !== null}
-              expanded={expanded}
-              onAction={onAction}
-              onToggle={() => {
-                if (section !== null) onToggleDiff(section, entry);
-              }}
-            />
-          );
-        })}
-      </ul>
+      {nodes !== null ? (
+        <Tree
+          nodes={nodes}
+          leafKey={(l) => `${l.item.status}:${l.item.path}`}
+          renderLeaf={(l) => renderRow(l.item, true)}
+        />
+      ) : (
+        <ul className="file-list">{entries.map((entry) => renderRow(entry, false))}</ul>
+      )}
     </section>
   );
 }
@@ -192,6 +213,8 @@ export interface StatusPanelProps {
   /** Currently open diff (null = none) — drives row expanded/highlight state;
    * the diff itself renders in App's center-pane DiffOverlay (P3a). */
   diffSlot: DiffSlot | null;
+  /** P3b: flat vs directory-tree file lists (display-only). */
+  listView: ListView;
   onStage(paths: string[]): void;
   onUnstage(paths: string[]): void;
   /** Toggle a row's diff in the center-pane overlay (App owns the fetch). */
@@ -205,6 +228,7 @@ export function StatusPanel({
   error,
   busy,
   diffSlot,
+  listView,
   onStage,
   onUnstage,
   onToggleDiff,
@@ -253,6 +277,7 @@ export function StatusPanel({
             disabled={disabled}
             expandable
             diffSlot={diffSlot}
+            listView={listView}
             onAction={onUnstage}
             onToggleDiff={onToggleDiff}
           />
@@ -265,6 +290,7 @@ export function StatusPanel({
             disabled={disabled}
             expandable
             diffSlot={diffSlot}
+            listView={listView}
             onAction={onStage}
             onToggleDiff={onToggleDiff}
           />
@@ -277,6 +303,7 @@ export function StatusPanel({
             disabled={disabled}
             expandable
             diffSlot={diffSlot}
+            listView={listView}
             onAction={onStage}
             onToggleDiff={onToggleDiff}
           />
@@ -291,6 +318,7 @@ export function StatusPanel({
               disabled={disabled}
               expandable={false}
               diffSlot={null}
+              listView={listView}
               onAction={() => {}}
               onToggleDiff={() => {}}
             />

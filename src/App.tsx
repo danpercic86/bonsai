@@ -1075,6 +1075,7 @@ export default function App() {
                 loading={commitDiffLoading}
                 error={commitDiffError}
                 diffSlot={diffSlot}
+                listView={listView}
                 onToggleDiff={handleToggleCommitDiff}
                 onSelectParent={handleSelectParent}
                 onClose={() => setSelectedIndex(null)}
@@ -1087,6 +1088,7 @@ export default function App() {
                   error={statusError}
                   busy={mutating}
                   diffSlot={diffSlot}
+                  listView={listView}
                   onStage={(paths) => void handleStage(paths)}
                   onUnstage={(paths) => void handleUnstage(paths)}
                   onToggleDiff={handleToggleWorkdirDiff}

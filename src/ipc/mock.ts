@@ -51,6 +51,8 @@ const INITIAL_STATUS: StatusSnapshot = {
   ],
   untracked: [
     { path: 'notes/todo.txt', origPath: null, status: 'untracked' },
+    // P3b §3.4: single-child chain — collapses to one "src/git" dir in tree mode.
+    { path: 'src/git/status.rs', origPath: null, status: 'untracked' },
     { path: 'scratch.rs', origPath: null, status: 'untracked' },
   ],
   conflicted: [],

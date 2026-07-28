@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { relativeDate } from '../graph/draw';
-import type { CommitDiff, FileDiffHeader, FileStatus, GraphNode } from '../ipc';
+import type { CommitDiff, FileDiffHeader, FileStatus, GraphNode, ListView } from '../ipc';
+import { buildPathTree } from '../utils/pathTree';
 import type { DiffSlot } from './DiffView';
+import { Tree } from './Tree';
 
 // Mode B (M4 contract §4.3): shown INSTEAD of StatusPanel + CommitBox when a
 // graph commit is selected. Presentational — App owns all fetching.
@@ -58,10 +60,14 @@ function FileHeaderRow({
   file,
   expanded,
   onToggle,
+  treeMode = false,
 }: {
   file: FileDiffHeader;
   expanded: boolean;
   onToggle: () => void;
+  /** P3b: the tree supplies directory context — render only the basename
+   *  (renames keep the full `orig → path` text; tooltips keep full paths). */
+  treeMode?: boolean;
 }) {
   const isRename = file.origPath !== null;
   const title = isRename ? `${file.origPath} → ${file.path}` : file.path;
@@ -80,7 +86,7 @@ function FileHeaderRow({
           </span>
         ) : (
           <span className="file-path">
-            {dir !== null && <span className="file-dir">{dir}</span>}
+            {!treeMode && dir !== null && <span className="file-dir">{dir}</span>}
             <span className="file-name">{name}</span>
           </span>
         )}
@@ -118,6 +124,8 @@ export interface CommitPanelProps {
   /** Currently open diff (key = `commit:${path}`) — drives row expanded state;
    * the diff itself renders in App's center-pane DiffOverlay (P3a). */
   diffSlot: DiffSlot | null;
+  /** P3b: flat vs directory-tree file list (display-only). */
+  listView: ListView;
   onToggleDiff(file: FileDiffHeader): void;
   /** Parent short-oid clicked; App maps to a row via node.parents indices. */
   onSelectParent(parentOrdinal: number): void;
@@ -131,10 +139,18 @@ export function CommitPanel({
   loading,
   error,
   diffSlot,
+  listView,
   onToggleDiff,
   onSelectParent,
   onClose,
 }: CommitPanelProps) {
+  const files = data?.files;
+  // P3b §5.2: directory tree of the commit's file list (tree mode only).
+  const fileNodes = useMemo(
+    () =>
+      listView === 'tree' && files !== undefined ? buildPathTree(files, (f) => f.path) : null,
+    [listView, files],
+  );
   const details = data?.details ?? null;
   const now = Math.floor(Date.now() / 1000);
   const body = details !== null ? messageBody(details.message) : '';
@@ -216,20 +232,35 @@ export function CommitPanel({
             <div className="section-header section-label">
               <span>Changes ({data.files.length})</span>
             </div>
-            <ul className="file-list">
-              {data.files.map((file) => {
-                const key = `commit:${file.path}`;
-                const expanded = diffSlot !== null && diffSlot.key === key;
-                return (
+            {fileNodes !== null ? (
+              <Tree
+                nodes={fileNodes}
+                leafKey={(l) => `commit:${l.item.path}`}
+                renderLeaf={(l) => (
                   <FileHeaderRow
-                    key={key}
-                    file={file}
-                    expanded={expanded}
-                    onToggle={() => onToggleDiff(file)}
+                    file={l.item}
+                    expanded={diffSlot !== null && diffSlot.key === `commit:${l.item.path}`}
+                    onToggle={() => onToggleDiff(l.item)}
+                    treeMode
                   />
-                );
-              })}
-            </ul>
+                )}
+              />
+            ) : (
+              <ul className="file-list">
+                {data.files.map((file) => {
+                  const key = `commit:${file.path}`;
+                  const expanded = diffSlot !== null && diffSlot.key === key;
+                  return (
+                    <FileHeaderRow
+                      key={key}
+                      file={file}
+                      expanded={expanded}
+                      onToggle={() => onToggleDiff(file)}
+                    />
+                  );
+                })}
+              </ul>
+            )}
           </section>
         )
       )}
