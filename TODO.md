@@ -92,9 +92,9 @@ branchNotFound banner — acceptable).
 
 ## M6 — Remotes (fetch / pull ff-only / push) — **in-progress**
 
-Current step: M6b — senior-dev implementing frontend (toolbar fetch/pull/push buttons,
-busy states, notices, stateful mock with ?remote= triggers) per docs/contracts/M6-remotes.md.
-M6a committed 1862dbf (reviewer APPROVE; 18 bare-repo round-trip tests + cred-guard units).
+Current step: M6 — tester running adversarial probes + writing user checklist.
+M6a committed 1862dbf, M6b committed 40c9a65 (both reviewer APPROVE; CSS margin should-fix
+applied by orchestrator pre-commit).
 Credential strategy CONFIRMED by user (2026-07-28): git credential helper first
 (Windows Credential Manager via git2 CredentialHelper), SSH agent for ssh URLs,
 never prompt/store raw passwords in-app; clear error if no credentials available.
