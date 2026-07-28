@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CommitBox } from './components/CommitBox';
+import type { CommitBoxHandle } from './components/CommitBox';
 import { CommitPanel } from './components/CommitPanel';
+import { ConfirmDialog } from './components/ConfirmDialog';
 import { DiffOverlay } from './components/DiffOverlay';
 import type { DiffOverlayMeta } from './components/DiffOverlay';
+import { OpBanner } from './components/OpBanner';
 import { PaneDivider } from './components/PaneDivider';
 import { RepoSwitcher } from './components/RepoSwitcher';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
@@ -17,6 +20,8 @@ import { ipc } from './ipc';
 import type {
   BranchesSnapshot,
   CommitDiff,
+  ConflictEntry,
+  ConflictResolution,
   FileDiff,
   FileDiffHeader,
   GraphLayout,
@@ -24,6 +29,7 @@ import type {
   PaneWidths,
   RecentRepo,
   RepoInfo,
+  RepoOpState,
   StatusEntry,
   StatusSnapshot,
   Theme,
@@ -92,6 +98,15 @@ export default function App() {
   // Which remote op is in flight — drives the per-button busy label.
   const [remoteOp, setRemoteOp] = useState<'fetch' | 'pull' | 'push' | null>(null);
 
+  // P3c §8.4: in-progress operation state (merge/rebase/…) + its conflicts.
+  const [opState, setOpState] = useState<RepoOpState>({ kind: 'none' });
+  const [conflicts, setConflicts] = useState<ConflictEntry[]>([]);
+  // Abort-merge ConfirmDialog (destructive — the only confirmed step, §11.3).
+  const [abortConfirmOpen, setAbortConfirmOpen] = useState(false);
+  // Imperative submit so OpBanner's [Commit merge] triggers the CommitBox's
+  // own submit path (single merge-message editor, §8.4).
+  const commitBoxRef = useRef<CommitBoxHandle>(null);
+
   // P1 §5: toast stack. Remote-op feedback (M6) and composite-refresh failures
   // surface here; contextual banners (status/commit/sidebar/graph) stay inline.
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -148,6 +163,7 @@ export default function App() {
   const branchesReqId = useRef(0);
   const commitDiffReqId = useRef(0);
   const fileDiffReqId = useRef(0);
+  const opStateReqId = useRef(0);
   // Current slot, readable from stable callbacks without re-subscribing.
   const diffSlotRef = useRef<DiffSlot | null>(null);
   diffSlotRef.current = diffSlot;
@@ -156,8 +172,11 @@ export default function App() {
 
   const repoPath = repo !== null && isUsableRepo(repo) ? repo.path : null;
   const repoOpen = repoPath !== null;
+  // P3c §8.5: op-active gating — normal commit, checkout/delete/create,
+  // merge, pull and push are disabled (fetch stays enabled — always safe).
+  const opActive = opState.kind !== 'none';
   // Convenience gating only — the backend guards detached/unborn itself (§4.2).
-  const canPullPush = repo?.head != null && !repo.head.detached && !repo.head.unborn;
+  const canPullPush = repo?.head != null && !repo.head.detached && !repo.head.unborn && !opActive;
 
   // P1 §9.2: WIP row summary derived from the already-fetched status snapshot
   // — no new IPC call, no Rust layout change.
@@ -186,6 +205,15 @@ export default function App() {
         origPath: file?.origPath ?? null,
         status: file?.status ?? null,
         kind: 'commit',
+      };
+    }
+    if (key.startsWith('conflict:')) {
+      // P3c §8.3: conflicted rows have no origPath; badge is always 'C'.
+      return {
+        path: key.slice('conflict:'.length),
+        origPath: null,
+        status: 'conflicted',
+        kind: 'conflict',
       };
     }
     const sep = key.indexOf(':');
@@ -301,6 +329,57 @@ export default function App() {
     setDiffSlot(null);
   }, []);
 
+  /** P3c §8.3: fetch (or re-fetch) the read-only marker view for a conflicted
+   * path into the shared slot (key `conflict:<path>`); last-wins guarded by
+   * the same counter as file diffs — the slot is single-occupancy. */
+  const fetchConflictSlot = useCallback(async (path: string) => {
+    const key = `conflict:${path}`;
+    const id = ++fileDiffReqId.current;
+    const prev = diffSlotRef.current;
+    const stale = prev !== null && prev.key === key ? (prev.conflict ?? null) : null;
+    setDiffSlot({ key, state: 'loading', diff: null, conflict: stale, error: null });
+    try {
+      const file = await ipc.getConflict(path);
+      if (id !== fileDiffReqId.current) return;
+      setDiffSlot({ key, state: 'ready', diff: null, conflict: file, error: null });
+    } catch (e) {
+      if (id !== fileDiffReqId.current) return;
+      setDiffSlot({ key, state: 'error', diff: null, conflict: null, error: errorMessage(e) });
+    }
+  }, []);
+
+  /** P3c §8.4: fetch the operation state and, while merging, its conflicts in
+   * the same pass. Also owns the `conflict:<path>` slot lifecycle: entry gone
+   * -> collapse; still conflicted -> re-fetch (content may have changed). */
+  const refetchOpState = useCallback(async () => {
+    const id = ++opStateReqId.current;
+    try {
+      const op = await ipc.getOpState();
+      const list = op.kind === 'merge' ? await ipc.listConflicts() : [];
+      if (id !== opStateReqId.current) return;
+      setOpState(op);
+      setConflicts(list);
+      const slot = diffSlotRef.current;
+      if (slot !== null && slot.key.startsWith('conflict:')) {
+        const path = slot.key.slice('conflict:'.length);
+        if (list.some((c) => c.path === path)) {
+          void fetchConflictSlot(path);
+        } else {
+          collapseDiffSlot();
+        }
+      }
+    } catch (e) {
+      if (id !== opStateReqId.current) return;
+      pushToast('error', `Could not read operation state: ${errorMessage(e)}`);
+    }
+  }, [fetchConflictSlot, collapseDiffSlot, pushToast]);
+
+  const clearOpState = useCallback(() => {
+    opStateReqId.current += 1; // invalidate any in-flight request
+    setOpState({ kind: 'none' });
+    setConflicts([]);
+  }, []);
+
   const refetchStatus = useCallback(async () => {
     const id = ++statusReqId.current;
     setStatusLoading(true);
@@ -311,8 +390,9 @@ export default function App() {
       setStatusError(null);
       // M4 §4.4: a new snapshot invalidates the mode-A expansion — entry gone
       // -> collapse; still present -> re-fetch (content may have changed).
+      // conflict:-keyed slots are owned by refetchOpState, not the snapshot.
       const slot = diffSlotRef.current;
-      if (slot !== null && !slot.key.startsWith('commit:')) {
+      if (slot !== null && !slot.key.startsWith('commit:') && !slot.key.startsWith('conflict:')) {
         const sep = slot.key.indexOf(':');
         const section = slot.key.slice(0, sep) as WorkdirSection;
         const path = slot.key.slice(sep + 1);
@@ -401,11 +481,12 @@ export default function App() {
       const info = await ipc.openRepo(repoPath);
       setRepo(info);
       if (isUsableRepo(info)) {
-        await Promise.all([refetchStatus(), refetchGraph(), refetchBranches()]);
+        await Promise.all([refetchStatus(), refetchGraph(), refetchBranches(), refetchOpState()]);
       } else {
         clearStatus();
         clearGraph();
         clearBranches();
+        clearOpState();
       }
     } catch (e) {
       pushToast('error', `Refresh failed: ${errorMessage(e)}`);
@@ -415,9 +496,11 @@ export default function App() {
     refetchStatus,
     refetchGraph,
     refetchBranches,
+    refetchOpState,
     clearStatus,
     clearGraph,
     clearBranches,
+    clearOpState,
     pushToast,
   ]);
 
@@ -444,10 +527,12 @@ export default function App() {
           void refetchStatus();
           void refetchGraph();
           void refetchBranches();
+          void refetchOpState();
         } else {
           clearStatus();
           clearGraph();
           clearBranches();
+          clearOpState();
         }
         void refreshRecents();
       } catch (e) {
@@ -464,11 +549,12 @@ export default function App() {
         clearStatus();
         clearGraph();
         clearBranches();
+        clearOpState();
       } finally {
         setLoading(false);
       }
     },
-    [repoPath, refetchStatus, refetchGraph, refetchBranches, clearStatus, clearGraph, clearBranches, refreshRecents, pushToast],
+    [repoPath, refetchStatus, refetchGraph, refetchBranches, refetchOpState, clearStatus, clearGraph, clearBranches, clearOpState, refreshRecents, pushToast],
   );
 
   // Mount effect (once): load recents; if none is currently open, reopen the
@@ -586,7 +672,7 @@ export default function App() {
           target.isContentEditable);
       if (typing) return;
 
-      if (dialogOpen || switcherOpen) return;
+      if (dialogOpen || switcherOpen || abortConfirmOpen) return;
 
       if (ctrl && e.key.toLowerCase() === 'o') {
         e.preventDefault();
@@ -659,6 +745,7 @@ export default function App() {
     canPullPush,
     dialogOpen,
     switcherOpen,
+    abortConfirmOpen,
     selectedIndex,
     graph,
   ]);
@@ -672,10 +759,11 @@ export default function App() {
 
     const subscribe = async () => {
       const offChanged = await ipc.onRepoChanged(() => {
-        console.debug('[bonsai] repo-changed → refetch status+graph+branches');
+        console.debug('[bonsai] repo-changed → refetch status+graph+branches+opstate');
         void refetchStatus();
         void refetchGraph();
         void refetchBranches();
+        void refetchOpState();
       });
       if (cancelled) {
         offChanged();
@@ -684,10 +772,11 @@ export default function App() {
       unsubs.push(offChanged);
 
       const offFocus = await ipc.onWindowFocus(() => {
-        console.debug('[bonsai] window focus → refetch status+graph+branches');
+        console.debug('[bonsai] window focus → refetch status+graph+branches+opstate');
         void refetchStatus();
         void refetchGraph();
         void refetchBranches();
+        void refetchOpState();
       });
       if (cancelled) {
         offFocus();
@@ -701,7 +790,7 @@ export default function App() {
       cancelled = true;
       for (const unsub of unsubs) unsub();
     };
-  }, [repoPath, refetchStatus, refetchGraph, refetchBranches]);
+  }, [repoPath, refetchStatus, refetchGraph, refetchBranches, refetchOpState]);
 
   // Picker path: delegates to the shared openPath (P1 §10.1).
   async function handleOpenRepository() {
@@ -893,6 +982,95 @@ export default function App() {
     }
   }
 
+  // ----- P3c: merge + conflict handling -----
+
+  async function handleMergeBranch(name: string) {
+    setMutating(true);
+    try {
+      const res = await ipc.mergeBranch(name);
+      switch (res.kind) {
+        case 'upToDate':
+          pushToast('info', `Already up to date with ${name}`);
+          break;
+        case 'fastForwarded':
+          pushToast('success', `Fast-forwarded to ${name}`);
+          break;
+        case 'merged':
+          pushToast('success', `Merged ${name}`);
+          break;
+        case 'conflicts':
+          // A normal pause, not an error (§8.4).
+          pushToast('info', `Merge paused: ${res.paths.length} conflict(s) to resolve`);
+          break;
+      }
+      await refreshAll();
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleResolveConflict(path: string, resolution: ConflictResolution) {
+    setMutating(true);
+    try {
+      await ipc.resolveConflict(path, resolution);
+      await refreshAll();
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  // Submit path of the merge-mode CommitBox (§8.4): errors are RETHROWN so
+  // the box shows them inline (same shape as handleCommit).
+  async function handleCommitMerge(message: string) {
+    setMutating(true);
+    try {
+      await ipc.commitMerge(message);
+      await refreshAll(); // never throws (§4.6)
+      pushToast('success', 'Merge committed');
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  // Called ONLY after the Abort-merge ConfirmDialog confirms.
+  async function handleAbortMerge() {
+    setMutating(true);
+    try {
+      await ipc.abortMerge();
+      await refreshAll();
+      pushToast('success', 'Merge aborted');
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  // P3c §8.2: row click toggles the read-only marker view (`conflict:<path>`).
+  function handleToggleConflictView(path: string) {
+    const key = `conflict:${path}`;
+    if (diffSlotRef.current?.key === key) {
+      collapseDiffSlot();
+      return;
+    }
+    void fetchConflictSlot(path);
+  }
+
+  // OpBanner's [Commit merge] triggers the CommitBox submit path. With a
+  // commit selected the box is unmounted — deselect so it appears (a second
+  // click then submits).
+  function handleBannerCommitMerge() {
+    if (commitBoxRef.current !== null) {
+      commitBoxRef.current.submit();
+    } else {
+      setSelectedIndex(null);
+    }
+  }
+
   // Mode-A accordion toggle: staged rows -> staged diff; unstaged/untracked ->
   // unstaged diff (M4 §4.2).
   function handleToggleWorkdirDiff(section: WorkdirSection, entry: StatusEntry) {
@@ -1018,7 +1196,10 @@ export default function App() {
             error={branchesError}
             onDismissError={() => setBranchesError(null)}
             busy={mutating}
+            opActive={opActive}
+            currentBranch={headBranch?.name ?? null}
             onCheckout={(name) => void handleCheckoutBranch(name)}
+            onMergeBranch={(name) => void handleMergeBranch(name)}
             onDelete={(name) => void handleDeleteBranch(name)}
             onCreateBranch={handleCreateBranch}
             onDialogOpenChange={setDialogOpen}
@@ -1069,6 +1250,13 @@ export default function App() {
             onResizeEnd={handlePaneResizeEnd}
           />
           <aside className="right-panel" style={{ width: paneWidths.rightPanel }}>
+            <OpBanner
+              op={opState}
+              conflictCount={conflicts.length}
+              mutating={mutating}
+              onCommitMerge={handleBannerCommitMerge}
+              onAbort={() => setAbortConfirmOpen(true)}
+            />
             {selectedIndex !== null && graph !== null ? (
               <CommitPanel
                 node={graph.nodes[selectedIndex]}
@@ -1090,14 +1278,25 @@ export default function App() {
                   busy={mutating}
                   diffSlot={diffSlot}
                   listView={listView}
+                  conflicts={conflicts}
                   onStage={(paths) => void handleStage(paths)}
                   onUnstage={(paths) => void handleUnstage(paths)}
                   onToggleDiff={handleToggleWorkdirDiff}
+                  onResolveConflict={(path, r) => void handleResolveConflict(path, r)}
+                  onToggleConflictView={handleToggleConflictView}
                 />
                 <CommitBox
+                  // Remount on merge transitions so the merge message is
+                  // prefilled ONCE per merge (§8.4).
+                  key={opState.kind === 'merge' ? `merge:${opState.incoming}` : 'commit'}
+                  ref={commitBoxRef}
                   stagedCount={status?.staged.length ?? 0}
                   busy={mutating}
-                  onCommit={handleCommit}
+                  mode={opState.kind === 'merge' ? 'merge' : 'commit'}
+                  initialMessage={opState.kind === 'merge' ? opState.message : undefined}
+                  conflictCount={conflicts.length}
+                  blocked={opActive && opState.kind !== 'merge'}
+                  onCommit={opState.kind === 'merge' ? handleCommitMerge : handleCommit}
                 />
               </>
             )}
@@ -1147,6 +1346,22 @@ export default function App() {
           )}
         </div>
       )}
+      <ConfirmDialog
+        open={abortConfirmOpen}
+        title="Abort merge?"
+        confirmLabel="Abort merge"
+        busy={mutating}
+        onConfirm={() => {
+          setAbortConfirmOpen(false);
+          void handleAbortMerge();
+        }}
+        onCancel={() => setAbortConfirmOpen(false)}
+      >
+        <div>
+          This restores the files touched by the merge to their pre-merge state. Conflict
+          resolutions will be lost.
+        </div>
+      </ConfirmDialog>
       <ShortcutOverlay open={overlayOpen} onClose={() => setOverlayOpen(false)} />
       <Toasts toasts={toasts} onDismiss={dismissToast} />
     </div>

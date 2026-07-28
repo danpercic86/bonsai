@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { forwardRef, useImperativeHandle, useState } from 'react';
 import { isAppError } from '../utils/errors';
 
 export interface CommitBoxProps {
@@ -7,18 +7,51 @@ export interface CommitBoxProps {
   busy: boolean;
   /** Resolves on success (box clears its textarea); rejects with AppError on failure. */
   onCommit(message: string): Promise<void>;
+  /** P3c §8.4: 'merge' repurposes the box as the merge-message editor —
+   * prefilled once (App remounts via key on the merge transition), button
+   * label "Commit merge", submit routed to commitMerge by the parent. */
+  mode?: 'commit' | 'merge';
+  /** Initial textarea contents (merge: opState.message). */
+  initialMessage?: string;
+  /** Merge mode: remaining conflicts gate submission. */
+  conflictCount?: number;
+  /** Non-merge op active (rebase/cherry-pick/revert): fully disabled. */
+  blocked?: boolean;
+}
+
+/** Imperative submit hook so OpBanner's [Commit merge] triggers the same
+ * submit path as the box's own button (P3c §8.1/§8.4). */
+export interface CommitBoxHandle {
+  submit(): void;
 }
 
 const SUMMARY_LIMIT = 72;
 
 /** Pinned at the right-panel bottom: message textarea + Commit button (M3 §4.3). */
-export function CommitBox({ stagedCount, busy, onCommit }: CommitBoxProps) {
-  const [message, setMessage] = useState('');
+export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function CommitBox(
+  {
+    stagedCount,
+    busy,
+    onCommit,
+    mode = 'commit',
+    initialMessage,
+    conflictCount = 0,
+    blocked = false,
+  },
+  ref,
+) {
+  const [message, setMessage] = useState(initialMessage ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<{ kind: string; text: string } | null>(null);
 
+  const merge = mode === 'merge';
   const firstLineLen = (message.split('\n', 1)[0] ?? '').length;
-  const disabled = stagedCount === 0 || message.trim() === '' || busy || submitting;
+  const disabled =
+    blocked ||
+    message.trim() === '' ||
+    busy ||
+    submitting ||
+    (merge ? conflictCount > 0 : stagedCount === 0);
 
   async function submit() {
     if (disabled) return;
@@ -38,17 +71,21 @@ export function CommitBox({ stagedCount, busy, onCommit }: CommitBoxProps) {
     }
   }
 
+  useImperativeHandle(ref, () => ({ submit: () => void submit() }));
+
   return (
     <div className="commit-box">
       <textarea
         className="commit-message"
-        rows={3}
-        placeholder="Commit message"
+        rows={merge ? 5 : 3}
+        placeholder={
+          blocked ? 'An operation is in progress' : merge ? 'Merge commit message' : 'Commit message'
+        }
         value={message}
         // P1 §4.4: only the in-flight commit locks the textarea — typing keeps
         // focus while stage/unstage runs (Windows focus-drop fix). The Commit
         // button below still gates on `busy`.
-        disabled={submitting}
+        disabled={submitting || blocked}
         onChange={(e) => setMessage(e.target.value)}
         onKeyDown={(e) => {
           if (e.ctrlKey && e.key === 'Enter') {
@@ -87,8 +124,8 @@ export function CommitBox({ stagedCount, busy, onCommit }: CommitBoxProps) {
         disabled={disabled}
         onClick={() => void submit()}
       >
-        {submitting ? 'Committing…' : 'Commit'}
+        {submitting ? 'Committing…' : merge ? 'Commit merge' : 'Commit'}
       </button>
     </div>
   );
-}
+});

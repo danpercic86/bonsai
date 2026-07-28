@@ -1,5 +1,13 @@
 import { useMemo, useState } from 'react';
-import type { FileStatus, ListView, StatusEntry, StatusSnapshot } from '../ipc';
+import type {
+  ConflictEntry,
+  ConflictKind,
+  ConflictResolution,
+  FileStatus,
+  ListView,
+  StatusEntry,
+  StatusSnapshot,
+} from '../ipc';
 import { buildPathTree } from '../utils/pathTree';
 import type { DiffSlot } from './DiffView';
 import { Tree } from './Tree';
@@ -192,6 +200,130 @@ function Section({
   );
 }
 
+// P3c §8.2: lowercase spaced text of ConflictKind for the per-row badge.
+const CONFLICT_KIND_LABELS: Record<ConflictKind, string> = {
+  bothModified: 'both modified',
+  bothAdded: 'both added',
+  deletedByUs: 'deleted by us',
+  deletedByThem: 'deleted by them',
+  addedByUs: 'added by us',
+  addedByThem: 'added by them',
+  bothDeleted: 'both deleted',
+};
+
+function ConflictRow({
+  entry,
+  kind,
+  disabled,
+  expanded,
+  onResolve,
+  onToggleView,
+}: {
+  entry: StatusEntry;
+  /** null = kind lookup miss (conflicts list momentarily stale) — no badge. */
+  kind: ConflictKind | null;
+  disabled: boolean;
+  expanded: boolean;
+  onResolve: (r: ConflictResolution) => void;
+  onToggleView: () => void;
+}) {
+  const { dir, name } = splitPath(entry.path);
+  return (
+    <li
+      className={`file-row file-status-conflicted conflict-row${expanded ? ' file-row-expanded' : ''}`}
+      title={entry.path}
+    >
+      <button
+        type="button"
+        className="file-row-main"
+        aria-expanded={expanded}
+        onClick={onToggleView}
+      >
+        <span className={`file-chevron${expanded ? ' file-chevron-open' : ''}`}>{'›'}</span>
+        <span className="file-badge mono">{BADGES.conflicted}</span>
+        <span className="file-path">
+          {dir !== null && <span className="file-dir">{dir}</span>}
+          <span className="file-name">{name}</span>
+        </span>
+        {kind !== null && <span className="conflict-kind">{CONFLICT_KIND_LABELS[kind]}</span>}
+      </button>
+      <button
+        type="button"
+        className="row-action conflict-action"
+        title="Take our version"
+        aria-label={`Take our version of ${entry.path}`}
+        disabled={disabled}
+        onClick={() => onResolve('ours')}
+      >
+        ours
+      </button>
+      <button
+        type="button"
+        className="row-action conflict-action"
+        title="Take their version"
+        aria-label={`Take their version of ${entry.path}`}
+        disabled={disabled}
+        onClick={() => onResolve('theirs')}
+      >
+        theirs
+      </button>
+      <button
+        type="button"
+        className="row-action conflict-action"
+        title="Mark resolved (I edited the file)"
+        aria-label={`Mark ${entry.path} resolved`}
+        disabled={disabled}
+        onClick={() => onResolve('markResolved')}
+      >
+        resolved
+      </button>
+    </li>
+  );
+}
+
+/** P3c §8.2: conflict rows always render FLAT (no P3b tree grouping) —
+ * conflicts are few; keep the section simple. */
+function ConflictsSection({
+  entries,
+  conflicts,
+  disabled,
+  diffSlot,
+  onResolveConflict,
+  onToggleConflictView,
+}: {
+  entries: StatusEntry[];
+  conflicts: ConflictEntry[];
+  disabled: boolean;
+  diffSlot: DiffSlot | null;
+  onResolveConflict: (path: string, r: ConflictResolution) => void;
+  onToggleConflictView: (path: string) => void;
+}) {
+  const kindByPath = useMemo(
+    () => new Map(conflicts.map((c) => [c.path, c.kind] as const)),
+    [conflicts],
+  );
+  return (
+    <section className="status-section">
+      <div className="section-header section-label section-label-danger">
+        <span>Conflicts ({entries.length})</span>
+      </div>
+      <ul className="file-list">
+        {entries.map((entry) => (
+          <ConflictRow
+            key={entry.path}
+            entry={entry}
+            kind={kindByPath.get(entry.path) ?? null}
+            disabled={disabled}
+            expanded={diffSlot !== null && diffSlot.key === `conflict:${entry.path}`}
+            onResolve={(r) => onResolveConflict(entry.path, r)}
+            onToggleView={() => onToggleConflictView(entry.path)}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function SkeletonRows() {
   return (
     <div className="skeleton-group" aria-hidden="true">
@@ -215,10 +347,16 @@ export interface StatusPanelProps {
   diffSlot: DiffSlot | null;
   /** P3b: flat vs directory-tree file lists (display-only). */
   listView: ListView;
+  /** P3c: authoritative kind per conflicted path (from listConflicts). */
+  conflicts: ConflictEntry[];
   onStage(paths: string[]): void;
   onUnstage(paths: string[]): void;
   /** Toggle a row's diff in the center-pane overlay (App owns the fetch). */
   onToggleDiff(section: WorkdirSection, entry: StatusEntry): void;
+  /** P3c §8.2: resolve one conflicted path (no confirm — re-doable). */
+  onResolveConflict(path: string, r: ConflictResolution): void;
+  /** Toggle the read-only marker view (diffSlot key `conflict:<path>`). */
+  onToggleConflictView(path: string): void;
 }
 
 /** Pure presentational right-panel status view; all fetching lives in App. */
@@ -229,9 +367,12 @@ export function StatusPanel({
   busy,
   diffSlot,
   listView,
+  conflicts,
   onStage,
   onUnstage,
   onToggleDiff,
+  onResolveConflict,
+  onToggleConflictView,
 }: StatusPanelProps) {
   const [dismissedErrorId, setDismissedErrorId] = useState<number | null>(null);
   const visibleError = error !== null && error.id !== dismissedErrorId ? error : null;
@@ -308,19 +449,13 @@ export function StatusPanel({
             onToggleDiff={onToggleDiff}
           />
           {snapshot.conflicted.length > 0 && (
-            <Section
-              label="Conflicts"
-              section={null}
+            <ConflictsSection
               entries={snapshot.conflicted}
-              danger
-              rowAction={null}
-              actionLabel={null}
+              conflicts={conflicts}
               disabled={disabled}
-              expandable={false}
-              diffSlot={null}
-              listView={listView}
-              onAction={() => {}}
-              onToggleDiff={() => {}}
+              diffSlot={diffSlot}
+              onResolveConflict={onResolveConflict}
+              onToggleConflictView={onToggleConflictView}
             />
           )}
         </>

@@ -1,7 +1,7 @@
 // Toast stack (P1 contract §5). Presentational — App owns the state, the
 // monotonic id counter, the 5-toast cap, and the 5 s auto-dismiss timers.
 
-export type ToastTone = 'error' | 'success' | 'warning';
+export type ToastTone = 'error' | 'success' | 'warning' | 'info';
 
 export interface Toast {
   /** Monotonic, App-owned counter. */

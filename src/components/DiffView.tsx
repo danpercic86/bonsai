@@ -1,5 +1,5 @@
 import { Fragment, memo } from 'react';
-import type { FileDiff } from '../ipc';
+import type { ConflictFile, FileDiff } from '../ipc';
 
 // Pure unified-diff renderer (M4 contract §4.1). No ipc imports: diffs arrive
 // precomputed from Rust (or the mock); this component only lays them out.
@@ -22,6 +22,9 @@ export interface DiffSlot {
   state: 'loading' | 'error' | 'ready';
   diff: FileDiff | null; // when ready, or stale content during a refetch
   error: string | null; // when error
+  /** P3c: populated instead of `diff` for `conflict:<path>` keys — the
+   * read-only marker view (same stale-during-refetch rule as `diff`). */
+  conflict?: ConflictFile | null;
 }
 
 function Placeholder({ text }: { text: string }) {

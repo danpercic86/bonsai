@@ -18,7 +18,15 @@ export interface SidebarProps {
   onDismissError(): void;
   /** Global mutating flag — disables every action. */
   busy: boolean;
+  /** P3c §8.5: an operation (merge/rebase/…) is in progress — disables
+   * checkout, delete, create-branch, and merge actions. */
+  opActive: boolean;
+  /** Current branch name (null when detached/unborn) — merge target; the
+   * merge affordance is hidden without one. */
+  currentBranch: string | null;
   onCheckout(name: string): void;
+  /** P3c §8.6: merge this branch (local or remote shorthand) into current. */
+  onMergeBranch(name: string): void;
   /** Called ONLY after the confirmation dialog is confirmed (contract §4.3). */
   onDelete(name: string): void;
   /** Resolves on success (input clears+closes); rejects with AppError (shown inline). */
@@ -84,13 +92,18 @@ function AheadBehindBadge({ branch }: { branch: BranchInfo }) {
 function BranchRow({
   branch,
   busy,
+  currentBranch,
   onCheckout,
+  onMerge,
   onAskDelete,
   displayName,
 }: {
   branch: BranchInfo;
   busy: boolean;
+  /** null = detached/unborn — the merge affordance is hidden. */
+  currentBranch: string | null;
   onCheckout(name: string): void;
+  onMerge(name: string): void;
   onAskDelete(name: string): void;
   /** P3b tree mode: visible basename; ALL semantics (title, checkout, delete,
    *  badge, head glyph) keep using the full branch.name. */
@@ -121,6 +134,18 @@ function BranchRow({
           >
             {'⇄'}
           </button>
+          {currentBranch !== null && (
+            <button
+              type="button"
+              className="row-action"
+              aria-label={`Merge ${branch.name} into ${currentBranch}`}
+              title={`Merge ${branch.name} into ${currentBranch}`}
+              disabled={busy}
+              onClick={() => onMerge(branch.name)}
+            >
+              {'⇋'}
+            </button>
+          )}
           <button
             type="button"
             className="row-action"
@@ -137,13 +162,37 @@ function BranchRow({
   );
 }
 
-function RemoteRow({ name, displayName }: { name: string; displayName?: string }) {
+function RemoteRow({
+  name,
+  displayName,
+  busy,
+  currentBranch,
+  onMerge,
+}: {
+  name: string;
+  displayName?: string;
+  busy: boolean;
+  currentBranch: string | null;
+  onMerge(name: string): void;
+}) {
   return (
     <li className="branch-row branch-row-readonly">
       <span className="branch-glyph">{'☁'}</span>
       <span className="branch-name branch-name-muted" title={name}>
         {displayName ?? name}
       </span>
+      {currentBranch !== null && (
+        <button
+          type="button"
+          className="row-action"
+          aria-label={`Merge ${name} into ${currentBranch}`}
+          title={`Merge ${name} into ${currentBranch}`}
+          disabled={busy}
+          onClick={() => onMerge(name)}
+        >
+          {'⇋'}
+        </button>
+      )}
     </li>
   );
 }
@@ -177,7 +226,10 @@ export function Sidebar({
   error,
   onDismissError,
   busy,
+  opActive,
+  currentBranch,
   onCheckout,
+  onMergeBranch,
   onDelete,
   onCreateBranch,
   onDialogOpenChange,
@@ -193,6 +245,10 @@ export function Sidebar({
   const [createError, setCreateError] = useState<string | null>(null);
 
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+
+  // P3c §8.5: while an operation is in progress, every branch mutation
+  // (checkout / delete / create / merge) is disabled.
+  const actionsDisabled = busy || opActive;
 
   // P3b §5.3 — tree-grouped refs (display-only; full names drive all actions).
   const treeMode = listView === 'tree';
@@ -221,7 +277,7 @@ export function Sidebar({
 
   async function submitCreate() {
     const trimmed = createValue.trim();
-    if (trimmed === '' || busy) return;
+    if (trimmed === '' || actionsDisabled) return;
     try {
       await onCreateBranch(trimmed);
       closeCreate();
@@ -262,7 +318,7 @@ export function Sidebar({
                     className="sidebar-add"
                     aria-label="Create branch"
                     title="Create branch"
-                    disabled={busy}
+                    disabled={actionsDisabled}
                     onClick={() => {
                       setBranchesCollapsed(false);
                       setCreateOpen(true);
@@ -283,7 +339,7 @@ export function Sidebar({
                       placeholder="new-branch-name"
                       autoFocus
                       value={createValue}
-                      disabled={busy}
+                      disabled={actionsDisabled}
                       onChange={(e) => {
                         setCreateValue(e.target.value);
                         setCreateError(null);
@@ -322,8 +378,10 @@ export function Sidebar({
                       <BranchRow
                         key={branch.name}
                         branch={branch}
-                        busy={busy}
+                        busy={actionsDisabled}
+                        currentBranch={currentBranch}
                         onCheckout={onCheckout}
+                        onMerge={onMergeBranch}
                         onAskDelete={setPendingDelete}
                       />
                     ))}
@@ -336,8 +394,10 @@ export function Sidebar({
                     renderLeaf={(l) => (
                       <BranchRow
                         branch={l.item}
-                        busy={busy}
+                        busy={actionsDisabled}
+                        currentBranch={currentBranch}
                         onCheckout={onCheckout}
+                        onMerge={onMergeBranch}
                         onAskDelete={setPendingDelete}
                         displayName={l.name}
                       />
@@ -364,12 +424,26 @@ export function Sidebar({
                 <Tree
                   nodes={remoteTree}
                   leafKey={(l) => l.item.name}
-                  renderLeaf={(l) => <RemoteRow name={l.item.name} displayName={l.name} />}
+                  renderLeaf={(l) => (
+                    <RemoteRow
+                      name={l.item.name}
+                      displayName={l.name}
+                      busy={actionsDisabled}
+                      currentBranch={currentBranch}
+                      onMerge={onMergeBranch}
+                    />
+                  )}
                 />
               ) : (
                 <ul className="branch-list">
                   {data.remote.map((r) => (
-                    <RemoteRow key={r.name} name={r.name} />
+                    <RemoteRow
+                      key={r.name}
+                      name={r.name}
+                      busy={actionsDisabled}
+                      currentBranch={currentBranch}
+                      onMerge={onMergeBranch}
+                    />
                   ))}
                 </ul>
               ))}

@@ -459,6 +459,11 @@ body {
   color: var(--warning);
 }
 
+.toast-info {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
 .toast-text {
   flex: 1;
   min-width: 0;
@@ -1650,4 +1655,89 @@ span.file-row-main {
   50% {
     opacity: 0.45;
   }
+}
+
+/* ----- P3c: operation banner (merge / external ops) ----- */
+
+.op-banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-1);
+  border-top: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  font-size: 13px;
+}
+
+.op-banner-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.op-banner-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.op-banner-sub {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.op-banner-actions {
+  flex: none;
+  display: flex;
+  gap: 6px;
+}
+
+.op-banner-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* ----- P3c: conflict rows (StatusPanel) ----- */
+
+.conflict-kind {
+  flex: none;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  white-space: nowrap;
+}
+
+.row-action.conflict-action {
+  width: auto;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+/* ----- P3c: read-only conflict marker view (DiffOverlay) ----- */
+
+.conflict-view {
+  margin: 0;
+  padding: 8px 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--bg-0);
+  overflow-x: auto;
+}
+
+.conflict-line {
+  padding: 0 12px;
+  white-space: pre;
+  min-width: max-content;
+}
+
+.conflict-marker-line {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  font-weight: 600;
 }
