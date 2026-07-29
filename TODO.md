@@ -111,13 +111,21 @@ definition of done.
 
 ## P3 — Diff overlay, trees, merge/rebase, multi-repo tabs — **in-progress** (2026-07-28)
 
-Current step: P3c — AI gate PASSED (reviewer APPROVE, no must-fix/should-fix; cargo test 220 pass incl.
-merge_cli 17 + conflict_cli 9; clippy -D warnings clean; pnpm build clean; harness ?op=merge verified —
-OpBanner, conflict rows + kind badges, ours/theirs/resolved, op-active gating §8.5, marker view with
-highlighted markers, resolve→Commit-merge-enable, commit clears banner + advances HEAD, Abort→ConfirmDialog
-clears state, plain-harness regression clean). AWAITING USER CHECKPOINT for P3c (see docs/contracts/P3c
-§10). P3a overlay (65aa4d2/dfc2b3b) + P3b trees (64c0358/8dde13e/a96446e) also still awaiting USER CHECKPOINT.
-Sub-increments: 51487db backend, e367c3d IPC/mock, bc13d90 frontend, 9d72ef1 tests.
+Current step: P3d — IN PROGRESS. User said "proceed to P3d" (2026-07-29) without confirming the P3c
+USER CHECKPOINT; proceeding with development per that instruction. Contract written + orchestrator-reviewed:
+docs/contracts/P3d-rebase.md (plain non-interactive rebase; reuses P3c opstate.rs/conflict.rs/OpBanner
+verbatim; RepoOpState::Rebase wire type unchanged; on-disk state re-opened per call, no cleanup_state
+mid-rebase; §11.3 merge-linearization accepted as the locked "plain non-interactive" default). Sub-increments:
+P3d-a backend (git/rebase.rs + 4 commands) — DONE, reviewer verdict resolved (sole MUST-FIX was a
+let_and_return false-positive; clippy -D warnings verified clean exit 0, cargo check clean, 3 unit tests
+pass; map_conflict judgment call approved as-is). NEXT: P3d-b IPC/mock; P3d-c frontend (actionable OpBanner
+rebase mode + Sidebar ⤵). Tester after P3d-a: src-tauri/tests/rebase_cli.rs (11 cases).
+USER-CHECKPOINT DEBT (not self-declared — user must confirm in native `pnpm tauri dev`):
+  - P3c merge/conflicts — AI gate PASSED 9e187e7 (reviewer APPROVE; cargo test 220 incl. merge_cli 17 +
+    conflict_cli 9; clippy clean; pnpm build clean; harness ?op=merge fully verified). Checkpoint items:
+    docs/contracts/P3c §10. Sub-increments: 51487db backend, e367c3d IPC/mock, bc13d90 frontend, 9d72ef1 tests.
+  - P3a diff overlay — 65aa4d2/dfc2b3b.
+  - P3b tree grouping — 64c0358/8dde13e/a96446e.
 
 Plan approved by user 2026-07-28 (see ~/.claude/plans/for-this-bonsai-git-moonlit-metcalfe.md).
 Sequencing locked (UI wins first): P3a diff overlay → P3b tree grouping → P3c merge+conflicts →

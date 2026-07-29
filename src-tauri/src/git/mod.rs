@@ -4,6 +4,7 @@ pub mod conflict;
 pub mod diff;
 pub mod merge;
 pub mod opstate;
+pub mod rebase;
 pub mod remote;
 pub mod repo;
 pub mod stage;

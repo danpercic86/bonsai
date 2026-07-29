@@ -7,6 +7,7 @@ use crate::git::conflict::{self, ConflictEntry, ConflictFile, ConflictResolution
 use crate::git::diff::{commit_diff, commit_file_diff, workdir_file_diff, CommitDiff, FileDiff};
 use crate::git::merge::{self, MergeOutcome};
 use crate::git::opstate::{read_op_state, RepoOpState};
+use crate::git::rebase::{self, RebaseOutcome};
 use crate::git::remote::{fetch_all, pull_ff, push_current, FetchResult, PullResult, PushResult};
 use crate::git::repo::{read_repo_info, RepoInfo};
 use crate::git::stage::{stage_paths, unstage_paths};
@@ -705,6 +706,74 @@ async fn resolve_conflict_inner(
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Starts a rebase of the current branch onto `onto` (local or remote-tracking
+/// shorthand; P3d contract §3). Errors: `operationInProgress` | `branchNotFound`
+/// | `checkoutConflict` | `configMissing` | `git` | `noRepo`. Does NOT emit
+/// `repo-changed` — the frontend refetches imperatively.
+#[tauri::command]
+pub async fn rebase_branch(
+    state: tauri::State<'_, AppState>,
+    onto: String,
+) -> Result<RebaseOutcome, AppError> {
+    rebase_branch_inner(state.inner(), onto).await
+}
+
+/// Runtime-free core of `rebase_branch` (unit-testable without a Tauri app).
+async fn rebase_branch_inner(state: &AppState, onto: String) -> Result<RebaseOutcome, AppError> {
+    let path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || rebase::rebase_branch(&path, &onto))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Resumes a paused rebase — commits the resolved op, then replays on (P3d
+/// contract §3.7). Errors: `noOperationInProgress` | `unresolvedConflicts`
+/// | `configMissing` | `git` | `noRepo`.
+#[tauri::command]
+pub async fn rebase_continue(
+    state: tauri::State<'_, AppState>,
+) -> Result<RebaseOutcome, AppError> {
+    rebase_continue_inner(state.inner()).await
+}
+
+/// Runtime-free core of `rebase_continue` (unit-testable without a Tauri app).
+async fn rebase_continue_inner(state: &AppState) -> Result<RebaseOutcome, AppError> {
+    let path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || rebase::rebase_continue(&path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Skips the current operation and resumes (P3d contract §3.8). Errors:
+/// `noOperationInProgress` | `configMissing` | `git` | `noRepo`.
+#[tauri::command]
+pub async fn rebase_skip(state: tauri::State<'_, AppState>) -> Result<RebaseOutcome, AppError> {
+    rebase_skip_inner(state.inner()).await
+}
+
+/// Runtime-free core of `rebase_skip` (unit-testable without a Tauri app).
+async fn rebase_skip_inner(state: &AppState) -> Result<RebaseOutcome, AppError> {
+    let path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || rebase::rebase_skip(&path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Aborts a paused rebase (worktree-destructive — the UI confirms first; P3d
+/// contract §3.10). Errors: `noOperationInProgress` | `git` | `noRepo`.
+#[tauri::command]
+pub async fn rebase_abort(state: tauri::State<'_, AppState>) -> Result<(), AppError> {
+    rebase_abort_inner(state.inner()).await
+}
+
+/// Runtime-free core of `rebase_abort` (unit-testable without a Tauri app).
+async fn rebase_abort_inner(state: &AppState) -> Result<(), AppError> {
+    let path = current_repo_path(state)?;
+    tauri::async_runtime::spawn_blocking(move || rebase::rebase_abort(&path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -922,6 +991,30 @@ mod tests {
             ConflictResolution::Ours,
         ))
         .expect_err("resolve_conflict with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+    }
+
+    /// The P3d rebase commands all return `NoRepo` when nothing is open
+    /// (contract §4).
+    #[test]
+    fn rebase_commands_require_an_open_repo() {
+        let state = AppState::default();
+
+        let err =
+            tauri::async_runtime::block_on(rebase_branch_inner(&state, "main".to_string()))
+                .expect_err("rebase_branch with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(rebase_continue_inner(&state))
+            .expect_err("rebase_continue with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(rebase_skip_inner(&state))
+            .expect_err("rebase_skip with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(rebase_abort_inner(&state))
+            .expect_err("rebase_abort with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
 

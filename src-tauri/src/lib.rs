@@ -42,7 +42,11 @@ pub fn run() {
             commands::abort_merge,
             commands::list_conflicts,
             commands::get_conflict,
-            commands::resolve_conflict
+            commands::resolve_conflict,
+            commands::rebase_branch,
+            commands::rebase_continue,
+            commands::rebase_skip,
+            commands::rebase_abort
         ])
         .run(tauri::generate_context!())
         .expect("error while running Bonsai");
