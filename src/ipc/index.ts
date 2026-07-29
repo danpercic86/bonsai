@@ -13,6 +13,8 @@ export type {
   CommitDetails,
   CommitDiff,
   CommitResult,
+  CompareDiff,
+  CompareEndpoint,
   ConflictEntry,
   ConflictFile,
   ConflictKind,

@@ -6,6 +6,7 @@ import type {
   BranchesSnapshot,
   CommitDiff,
   CommitResult,
+  CompareDiff,
   ConflictEntry,
   ConflictFile,
   ConflictResolution,
@@ -86,6 +87,19 @@ export const tauriIpc: IpcApi = {
     origPath: string | null,
   ): Promise<FileDiff> {
     return invoke<FileDiff>('get_commit_file_diff', { repoId, oid, path, origPath });
+  },
+
+  compareWithHead(repoId: string, oid: string): Promise<CompareDiff> {
+    return invoke<CompareDiff>('compare_with_head', { repoId, oid });
+  },
+
+  compareWithHeadFileDiff(
+    repoId: string,
+    oid: string,
+    path: string,
+    origPath: string | null,
+  ): Promise<FileDiff> {
+    return invoke<FileDiff>('compare_with_head_file_diff', { repoId, oid, path, origPath });
   },
 
   listBranches(repoId: string): Promise<BranchesSnapshot> {

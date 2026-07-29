@@ -150,6 +150,22 @@ export interface CommitDiff {
   files: FileDiffHeader[];
 }
 
+export interface CompareEndpoint {
+  /** Full 40-char hex; "" when HEAD is unborn (old side). */
+  oid: string;
+  /** First line of that commit's message; "" when unborn. */
+  summary: string;
+}
+
+export interface CompareDiff {
+  /** OLD side = HEAD. */
+  from: CompareEndpoint;
+  /** NEW side = the right-clicked commit. */
+  to: CompareEndpoint;
+  /** Sorted path-ascending. Empty when from.oid === to.oid. Headers only. */
+  files: FileDiffHeader[];
+}
+
 export interface CommitResult {
   /** Full 40-char hex oid of the new commit. */
   oid: string;
@@ -365,6 +381,18 @@ export interface IpcApi {
   getCommitDiff(repoId: string, oid: string): Promise<CommitDiff>;
   /** Hunks for one file of a commit's first-parent diff. */
   getCommitFileDiff(
+    repoId: string,
+    oid: string,
+    path: string,
+    origPath: string | null,
+  ): Promise<FileDiff>;
+  /** Tree-vs-tree diff between HEAD (old) and `oid` (new): `git diff HEAD <oid>`.
+   *  HEAD is resolved server-side (detached ok; unborn -> empty old tree). Empty
+   *  `files` when `oid` IS HEAD. Rejects {@link AppError} (`noRepo`, `git`). */
+  compareWithHead(repoId: string, oid: string): Promise<CompareDiff>;
+  /** Hunks for one file of the HEAD → `oid` comparison. `origPath`: pass the
+   *  FileDiffHeader.origPath for renames. Rejects AppError (`noRepo`, `git`). */
+  compareWithHeadFileDiff(
     repoId: string,
     oid: string,
     path: string,

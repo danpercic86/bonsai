@@ -1,5 +1,10 @@
 import { INITIAL_BRANCHES, MOCK_OID } from './fixtures/branches';
-import { mockCommitDiff, mockCommitFileDiff, mockWorkdirDiff } from './fixtures/diffs';
+import {
+  mockCommitDiff,
+  mockCommitFileDiff,
+  mockCompareDiff,
+  mockWorkdirDiff,
+} from './fixtures/diffs';
 import { buildMockGraph, buildMockGraphDetached, prependCommits } from './fixtures/graph';
 import type { MockCommit } from './fixtures/graph';
 import { generateLayout20k } from './fixtures/graph20k';
@@ -8,6 +13,7 @@ import type {
   BranchesSnapshot,
   CommitDiff,
   CommitResult,
+  CompareDiff,
   ConflictEntry,
   ConflictFile,
   ConflictResolution,
@@ -695,6 +701,37 @@ export const mockIpc: IpcApi = {
   ): Promise<FileDiff> {
     await delay(150);
     requireRepo(repoId);
+    return structuredClone(mockCommitFileDiff(oid, path, origPath));
+  },
+
+  async compareWithHead(repoId: string, oid: string): Promise<CompareDiff> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    // Route by row index of the ACTIVE fixture layout, exactly like getCommitDiff.
+    const layout =
+      state.graphFixture === '20k'
+        ? generateLayout20k()
+        : state.graphFixture === 'detached'
+          ? buildMockGraphDetached()
+          : prependCommits(buildMockGraph(), state.commits);
+    const index = layout.nodes.findIndex((n) => n.id === oid);
+    if (index === -1) {
+      const err: AppError = { kind: 'git', message: 'mock: unknown commit' };
+      throw err;
+    }
+    // OLD = HEAD (state.headOid), NEW = the right-clicked commit oid.
+    return structuredClone(mockCompareDiff(state.headOid, oid, index, layout));
+  },
+
+  async compareWithHeadFileDiff(
+    repoId: string,
+    oid: string,
+    path: string,
+    origPath: string | null,
+  ): Promise<FileDiff> {
+    await delay(150);
+    requireRepo(repoId);
+    // A compare file diff has the same FileDiff shape — reuse the commit builder.
     return structuredClone(mockCommitFileDiff(oid, path, origPath));
   },
 

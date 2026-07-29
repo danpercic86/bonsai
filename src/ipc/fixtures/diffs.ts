@@ -5,10 +5,12 @@
 
 import type {
   CommitDiff,
+  CompareDiff,
   DiffLine,
   FileDiff,
   FileDiffHeader,
   FileStatus,
+  GraphLayout,
   Hunk,
 } from '../types';
 import { buildMockGraph } from './graph';
@@ -367,6 +369,29 @@ export function mockCommitDiff(index: number, oid: string): CommitDiff {
     },
     files: [header('src/lib.rs', 'modified', 3, 1)],
   };
+}
+
+// ---------- compare diffs (HEAD → selected), routed by row index ----------
+
+/**
+ * Tree-vs-tree comparison HEAD(old) → the right-clicked commit(new). Reuses the
+ * commit-diff file list for a believable header set; empty when comparing HEAD
+ * to itself (drives the "No differences" state).
+ */
+export function mockCompareDiff(
+  fromOid: string,
+  toOid: string,
+  toIndex: number,
+  layout: GraphLayout,
+): CompareDiff {
+  const fromSummary = layout.nodes.find((n) => n.id === fromOid)?.summary ?? 'HEAD';
+  const toSummary = layout.nodes[toIndex]?.summary ?? 'commit';
+  const from = { oid: fromOid, summary: fromSummary };
+  const to = { oid: toOid, summary: toSummary };
+  if (fromOid === toOid) {
+    return { from, to, files: [] };
+  }
+  return { from, to, files: mockCommitDiff(toIndex, toOid).files };
 }
 
 // ---------- per-file commit hunks, keyed by path ----------
