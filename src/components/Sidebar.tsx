@@ -10,6 +10,15 @@ function shortOid(oid: string): string {
   return oid.slice(0, 7);
 }
 
+/** P4d: proper ancestor folder prefixes of a branch name.
+ *  "a/b/c" -> ["a", "a/b"]; root-level branch -> []. */
+function ancestorPrefixes(name: string): string[] {
+  const segs = name.split('/').filter(Boolean);
+  const out: string[] = [];
+  for (let i = 1; i < segs.length; i++) out.push(segs.slice(0, i).join('/'));
+  return out;
+}
+
 export interface SidebarProps {
   data: BranchesSnapshot | null;
   loading: boolean;
@@ -284,9 +293,19 @@ export function Sidebar({
   // P3b §5.3 — tree-grouped refs (display-only; full names drive all actions).
   const treeMode = listView === 'tree';
   const localTree = useMemo(
-    () => (treeMode && data !== null ? buildPathTree(data.local, (b) => b.name) : []),
-    [treeMode, data],
+    () =>
+      treeMode && data !== null
+        ? buildPathTree(data.local, (b) => b.name, { priorityPath: currentBranch ?? undefined })
+        : [],
+    [treeMode, data, currentBranch],
   );
+  // P4d: flat mode — current (HEAD) branch first, rest in backend order.
+  const localFlat = useMemo(() => {
+    if (data === null) return [];
+    const head = data.local.filter((b) => b.isHead);
+    const rest = data.local.filter((b) => !b.isHead);
+    return [...head, ...rest];
+  }, [data]);
   const remoteTree = useMemo(
     () => (treeMode && data !== null ? buildPathTree(data.remote, (r) => r.name) : []),
     [treeMode, data],
@@ -405,7 +424,7 @@ export function Sidebar({
                     </li>
                   )}
                   {!treeMode &&
-                    data.local.map((branch) => (
+                    localFlat.map((branch) => (
                       <BranchRow
                         key={branch.name}
                         branch={branch}
@@ -421,8 +440,13 @@ export function Sidebar({
                 )}
                 {treeMode && data.local.length > 0 && (
                   <Tree
+                    key={`local:${currentBranch ?? 'none'}`}
                     nodes={localTree}
                     leafKey={(l) => l.item.name}
+                    defaultCollapsed
+                    initiallyExpanded={
+                      currentBranch !== null ? ancestorPrefixes(currentBranch) : []
+                    }
                     renderLeaf={(l) => (
                       <BranchRow
                         branch={l.item}
@@ -457,6 +481,8 @@ export function Sidebar({
                 <Tree
                   nodes={remoteTree}
                   leafKey={(l) => l.item.name}
+                  defaultCollapsed
+                  initiallyExpanded={[]}
                   renderLeaf={(l) => (
                     <RemoteRow
                       name={l.item.name}
@@ -497,6 +523,8 @@ export function Sidebar({
                 <Tree
                   nodes={tagTree}
                   leafKey={(l) => l.item}
+                  defaultCollapsed
+                  initiallyExpanded={[]}
                   renderLeaf={(l) => <TagRow name={l.item} displayName={l.name} />}
                 />
               ) : (

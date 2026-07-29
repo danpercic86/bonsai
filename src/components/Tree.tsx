@@ -18,6 +18,21 @@ export interface TreeProps<T> {
   leafKey(leaf: TreeLeaf<T>): string;
   /** Optional extra class on nested <ul role="group"> levels (styling hook). */
   groupClassName?: string;
+  /** P4d: when true, every dir starts COLLAPSED except those in initiallyExpanded.
+   *  When falsy (default), all dirs start expanded — legacy behavior. */
+  defaultCollapsed?: boolean;
+  /** P4d: dir fullPrefixes to leave expanded on first render (seed). Applied
+   *  once by the useState initializer; callers reseed by changing the React key. */
+  initiallyExpanded?: readonly string[];
+}
+
+function collectDirPrefixes<T>(nodes: TreeNode<T>[], out: string[]): void {
+  for (const n of nodes) {
+    if (n.kind === 'dir') {
+      out.push(n.fullPrefix);
+      collectDirPrefixes(n.children, out);
+    }
+  }
 }
 
 function renderNodes<T>(
@@ -72,7 +87,14 @@ function TreeLeafSlot({ children }: { children: ReactNode }) {
 }
 
 export function Tree<T>(props: TreeProps<T>): JSX.Element {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    if (props.defaultCollapsed !== true) return new Set(); // legacy: all expanded
+    const all: string[] = [];
+    collectDirPrefixes(props.nodes, all);
+    const s = new Set(all);
+    for (const p of props.initiallyExpanded ?? []) s.delete(p);
+    return s;
+  });
   const toggle = (prefix: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev);

@@ -56,6 +56,7 @@ function compareNames(a: string, b: string): number {
 export function buildPathTree<T>(
   items: readonly T[],
   getPath: (item: T) => string,
+  options?: { priorityPath?: string },
 ): TreeNode<T>[] {
   const root = newBuildNode<T>();
   for (const item of items) {
@@ -98,7 +99,14 @@ export function buildPathTree<T>(
       dirs.push(d);
     }
     dirs.sort((a, b) => compareNames(a.name, b.name));
-    const leaves = [...node.leaves].sort((a, b) => compareNames(a.name, b.name));
+    const pp = options?.priorityPath;
+    const leaves = [...node.leaves].sort((a, b) => {
+      if (pp !== undefined) {
+        if (a.path === pp && b.path !== pp) return -1;
+        if (b.path === pp && a.path !== pp) return 1;
+      }
+      return compareNames(a.name, b.name);
+    });
     return { kind: 'dir', name, fullPrefix: prefix, children: [...dirs, ...leaves] };
   }
 
