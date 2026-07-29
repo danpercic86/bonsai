@@ -1,7 +1,7 @@
 /** Single source for all graph geometry numbers (contract M2-graph.md §3.2,
  * canonical values from ui-reference §4–§6). All values are CSS px. */
 export const METRICS = {
-  rowHeight: 28,
+  rowHeight: 32,
   laneWidth: 16,
   gutter: 12,
   dotRadius: 4,
@@ -28,13 +28,14 @@ export const METRICS = {
   refColWidth: 180,
   refColPadLeft: 12, // gutter before the first ref label (matches graph gutter feel)
   refColPadRight: 8, // gap between the ref band and the graph gutter
-  /** P7 §2/§8: commit avatar. dia 16 fits row 28 with rings (max ring dia 23). */
-  avatarRadius: 8,
-  avatarBgRingExtra: 2, // bg0 halo behind the avatar (edge readability)
+  /** P7 §2/§8 (P7e §13.3): commit avatar. dia 20 fits row 32 with rings
+   *  (max ring — selection — dia 27 → ~2.5px top/bottom margin). */
+  avatarRadius: 10,
+  avatarBgRingExtra: 2, // bg0 halo behind the avatar (edge readability); r=12, inside the head ring
   avatarRingWidth: 1.5, // lane-color ring
-  avatarHeadRingRadius: 10.5,
-  avatarSelRingRadius: 11.5,
-  avatarFont: '600 9px', // 2 initials inside a dia-16 disc
+  avatarHeadRingRadius: 12.5,
+  avatarSelRingRadius: 13.5,
+  avatarFont: '600 11px', // 2 initials inside a dia-20 disc
   /** P7 §3.4/§8: ref-label glyph box + gap (icon-icon and icon-label). */
   iconSize: 11,
   iconGap: 3,

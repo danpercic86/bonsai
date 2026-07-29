@@ -614,3 +614,45 @@ No feature flags. No backend build. Ship P7a→P7d; each is one fresh-context se
 5. **Collapsed-label right-click targets the LOCAL branch (§5).** Chosen because the local menu is the
    superset (Checkout/Merge/Rebase/Compare/Delete). If the user wants remote actions on a collapsed
    label, a submenu is a later enhancement.
+
+---
+
+## §13 P7e — post-checkpoint layout refinement (user feedback 2026-07-29)
+
+User screenshots surfaced two overlap defects plus a sizing request. All three are **frontend-only**
+(Rust and the wire types are untouched); they refine P7's render/geometry.
+
+### §13.1 Ref-column `+n` chip must stay inside the band (fixes screenshot-1 overlap)
+`layoutRefLabels` (draw.ts §4) currently appends the `+n` overflow chip **after** the greedy loop with
+no budget check, so the chip spills past `startX + budget` and butts against the CENTER avatar.
+Fix — the laid-out set (chip included) must satisfy `lastLaid.x + lastLaid.w ≤ startX + budget`:
+- Lay pills greedily as today. If **all** entities fit (`hidden === 0`) → no chip, return unchanged.
+- If `hidden > 0`, the chip is mandatory. Reserve room for it: while the trailing shown pill's right
+  edge + `pillGap` + chip width would exceed `startX + budget`, **pop** the trailing shown pill
+  (increment `hidden`, recompute the chip width for the new `+n` label). Place the chip at the freed
+  cursor. Guarantee the chip fits even if it means showing zero pills (chip alone at `startX`).
+- `layoutRefLabels` stays PURE and the single source of truth — draw pass + both hit-tests
+  (`computeHoverTarget`, `handleContextMenu`) consume it, so parity is automatic.
+- Self-test: extend `p7SelfTest` with an assertion that for an overflowing ref set the **last** laid
+  label's right edge (`x + w`) is `≤ startX + budget`.
+
+### §13.2 Reserve the vertical-scrollbar width on the right (fixes screenshot-2 overlap)
+`.graph-scroll` is an `inset:0` overlay whose native vertical scrollbar (~17px on Windows) paints over
+the full-width canvas's right edge, so the right-aligned relative-time (and potentially the summary)
+render **under** the scrollbar. Fix:
+- Add optional `rightInset?: number` (CSS px) to `Viewport`; default `0`.
+- drawGraph pass 5 uses an effective right edge `vp.width - (vp.rightInset ?? 0)`:
+  `dateRight = width - rightInset - colGap`, `dateLeft = dateRight - dateColWidth`,
+  `summaryMax = dateLeft - colGap - sx`. (WIP row unaffected.)
+- `GraphCanvas.paintNow` computes `rightInset = scroller.offsetWidth - scroller.clientWidth`
+  (0 when no scrollbar present) and passes it in the viewport. Dynamic — no scrollbar ⇒ inset 0.
+
+### §13.3 Slightly larger commit avatars ("a little bigger")
+Grow the avatar and its rings, and grow `rowHeight` to preserve ring margins (all values in metrics.ts;
+every consumer derives from `METRICS.rowHeight`, so the change is parametric):
+`rowHeight 28→32`, `avatarRadius 8→10`, `avatarHeadRingRadius 10.5→12.5`, `avatarSelRingRadius 11.5→13.5`,
+`avatarFont '600 9px'→'600 11px'` (`avatarBgRingExtra` stays 2 → halo r=12, just inside the head ring).
+Outermost (selection) ring dia 27 in a 32px row ⇒ ~2.5px top/bottom margin (matches the pre-P7e feel).
+
+*Gate:* `pnpm build` clean; `p7SelfTest` all-pass incl. the new chip-fit assertion; harness shows the
+`+n` chip fully left of the avatar, relative-time clear of the scrollbar, and visibly larger avatars.

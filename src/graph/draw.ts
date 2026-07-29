@@ -17,6 +17,11 @@ export interface Viewport {
   /** CSS px of the canvas. */
   width: number;
   height: number;
+  /** P7e §13.2: CSS px reserved on the RIGHT for the vertical scrollbar (the
+   *  `.graph-scroll` overlay's native scrollbar paints over the full-width
+   *  canvas's right edge). Absent/`undefined` → treated as 0, i.e. identical to
+   *  pre-P7e behavior. */
+  rightInset?: number;
 }
 
 export interface Interaction {
@@ -441,16 +446,31 @@ export function layoutRefLabels(
     x += w + METRICS.pillGap;
     shown++;
   }
-  const hidden = entities.length - shown;
+  let hidden = entities.length - shown;
   if (hidden > 0) {
-    const chipStyle: PillStyle = {
+    // The chip is mandatory. P7e §13.1: RESERVE room for it so the laid set
+    // (chip included) never spills past the band. Compute the chip width, then
+    // while the trailing shown pill's slot leaves no room, pop it (rewinding the
+    // cursor and recomputing the "+n" label for the now-larger hidden count).
+    const noIcons = { laptop: false, cloud: false };
+    const chipStyleFor = (h: number): PillStyle => ({
       fill: theme.bg2,
       text: theme.text2,
       border: theme.border,
-      label: `+${hidden}`,
-    };
-    const noIcons = { laptop: false, cloud: false };
-    result.push({ entity: null, style: chipStyle, x, w: refPillWidth(ctx, chipStyle, noIcons), icons: noIcons });
+      label: `+${h}`,
+    });
+    let chipStyle = chipStyleFor(hidden);
+    let chipW = refPillWidth(ctx, chipStyle, noIcons);
+    while (result.length > 0 && x + chipW > startX + budget) {
+      const popped = result.pop();
+      if (popped === undefined) break;
+      x -= popped.w + METRICS.pillGap;
+      hidden++;
+      chipStyle = chipStyleFor(hidden);
+      chipW = refPillWidth(ctx, chipStyle, noIcons);
+    }
+    // If every pill got popped the chip sits alone at startX (x === startX).
+    result.push({ entity: null, style: chipStyle, x, w: chipW, icons: noIcons });
   }
   return result;
 }
@@ -671,8 +691,11 @@ export function drawGraph(
   // RIGHT summary, RIGHT relative time; author removed).
   const { startX, budget } = refColArea();
   const sx = summaryStartX(layout.laneCount);
-  const dateLeft = vp.width - METRICS.dateColWidth - METRICS.colGap;
-  const dateRight = vp.width - METRICS.colGap;
+  // P7e §13.2: keep the right-aligned relative-time (and summary) clear of the
+  // vertical scrollbar by shrinking the effective right edge by `rightInset`.
+  const effRight = vp.width - (vp.rightInset ?? 0);
+  const dateRight = effRight - METRICS.colGap;
+  const dateLeft = dateRight - METRICS.dateColWidth;
   const summaryMax = dateLeft - METRICS.colGap - sx;
   const now = Math.floor(Date.now() / 1000);
 
