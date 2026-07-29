@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import type {
+  ApplyStashOutcome,
   BranchesSnapshot,
   CommitDiff,
   CommitResult,
@@ -10,6 +11,7 @@ import type {
   ConflictEntry,
   ConflictFile,
   ConflictResolution,
+  CreateStashResult,
   FetchResult,
   FileDiff,
   GraphLayout,
@@ -23,6 +25,7 @@ import type {
   RepoChangedPayload,
   RepoOpState,
   SessionState,
+  StashEntry,
   StatusSnapshot,
   UiSettings,
   UiSettingsPatch,
@@ -180,6 +183,30 @@ export const tauriIpc: IpcApi = {
 
   rebaseAbort(repoId: string): Promise<void> {
     return invoke<void>('rebase_abort', { repoId });
+  },
+
+  listStashes(repoId: string): Promise<StashEntry[]> {
+    return invoke<StashEntry[]>('list_stashes', { repoId });
+  },
+
+  createStash(
+    repoId: string,
+    message: string | null,
+    includeUntracked: boolean,
+  ): Promise<CreateStashResult> {
+    return invoke<CreateStashResult>('create_stash', { repoId, message, includeUntracked });
+  },
+
+  applyStash(repoId: string, index: number): Promise<ApplyStashOutcome> {
+    return invoke<ApplyStashOutcome>('apply_stash', { repoId, index });
+  },
+
+  popStash(repoId: string, index: number): Promise<ApplyStashOutcome> {
+    return invoke<ApplyStashOutcome>('pop_stash', { repoId, index });
+  },
+
+  dropStash(repoId: string, index: number): Promise<void> {
+    return invoke<void>('drop_stash', { repoId, index });
   },
 
   getRecentRepos(): Promise<RecentRepo[]> {

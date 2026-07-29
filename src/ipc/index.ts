@@ -8,6 +8,7 @@ export const ipc: IpcApi =
 
 export type {
   AppError,
+  ApplyStashOutcome,
   BranchesSnapshot,
   BranchInfo,
   CommitDetails,
@@ -19,6 +20,7 @@ export type {
   ConflictFile,
   ConflictKind,
   ConflictResolution,
+  CreateStashResult,
   DiffLine,
   FileDiff,
   FileDiffHeader,
@@ -43,6 +45,7 @@ export type {
   RepoInfo,
   RepoOpState,
   SessionState,
+  StashEntry,
   StatusEntry,
   StatusSnapshot,
   Theme,

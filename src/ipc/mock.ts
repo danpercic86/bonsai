@@ -10,6 +10,7 @@ import type { MockCommit } from './fixtures/graph';
 import { generateLayout20k } from './fixtures/graph20k';
 import type {
   AppError,
+  ApplyStashOutcome,
   BranchesSnapshot,
   CommitDiff,
   CommitResult,
@@ -17,6 +18,7 @@ import type {
   ConflictEntry,
   ConflictFile,
   ConflictResolution,
+  CreateStashResult,
   FetchResult,
   FileDiff,
   GraphLayout,
@@ -33,6 +35,7 @@ import type {
   RepoInfo,
   RepoOpState,
   SessionState,
+  StashEntry,
   StatusEntry,
   StatusSnapshot,
   Theme,
@@ -134,6 +137,8 @@ interface MockRepoState {
   opState: RepoOpState;
   conflicts: ConflictEntry[];
   conflictTexts: Map<string, ConflictFile>;
+  /** Stash stack, index 0 (most recent) first (P9 §6.5). */
+  stashes: StashEntry[];
 }
 
 const repos = new Map<string /* repoId */, MockRepoState>();
@@ -271,12 +276,50 @@ function seedOpState(state: MockRepoState, op: 'merge' | 'rebase' | null): void 
   state.status.unstaged = state.status.unstaged.filter((e) => e.path !== 'README.md');
 }
 
+/** Deterministic 40-hex oid for a default-fixture row — MUST match
+ *  fixtures/graph.ts `oid(row)` so seeded stash baseOids line up with the graph
+ *  pills (index 0 → row 3 `core work 4`; indices 1 & 2 → row 6 `core work 2`). */
+function fixtureOid(row: number): string {
+  return row.toString(16).padStart(2, '0').repeat(20);
+}
+
+/** Seed the DEFAULT repo's stash stack so the sidebar list and the graph pills
+ *  (fixtures/graph.ts §6.6) tell the same story. Non-default repos get []. */
+function seedStashes(kind: RepoKind, graphFixture: GraphFixture): StashEntry[] {
+  if (kind !== 'default' || graphFixture !== 'default') return [];
+  const now = Math.floor(Date.now() / 1000);
+  return [
+    {
+      index: 0,
+      message: 'WIP on main: polish sidebar',
+      oid: randomOid(),
+      baseOid: fixtureOid(3), // `core work 4` — carries stash@{0} in the graph
+      ts: now - 3600,
+    },
+    {
+      index: 1,
+      message: 'WIP on main: extract graph layout helpers',
+      oid: randomOid(),
+      baseOid: fixtureOid(6), // `core work 2` — carries stash@{1}
+      ts: now - 7200,
+    },
+    {
+      index: 2,
+      message: 'WIP on main: experiment with lane colors',
+      oid: randomOid(),
+      baseOid: fixtureOid(6), // `core work 2` — carries stash@{2}
+      ts: now - 10800,
+    },
+  ];
+}
+
 /** Builds a fresh MockRepoState for a usable repo (default / detached / unborn). */
 function createRepoState(path: string): MockRepoState {
   const graphFixture = repoGraphFixture(path);
+  const kind = repoKind(path, graphFixture);
   const state: MockRepoState = {
     path,
-    kind: repoKind(path, graphFixture),
+    kind,
     graphFixture,
     noConfig: query('fixture') === 'noconfig',
     remoteTrigger: query('remote'),
@@ -289,6 +332,7 @@ function createRepoState(path: string): MockRepoState {
     opState: { kind: 'none' },
     conflicts: [],
     conflictTexts: new Map(),
+    stashes: seedStashes(kind, graphFixture),
   };
   seedOpState(state, repoOp(path));
   return state;
@@ -1210,6 +1254,75 @@ export const mockIpc: IpcApi = {
     state.conflicts = [];
     state.conflictTexts = new Map();
     state.status.conflicted = [];
+  },
+
+  // Stateful stash mock (P9 §6.5). Indices are positional into the mutating
+  // stack: every create/pop/drop re-indexes so index 0 stays the most recent.
+  async listStashes(repoId: string): Promise<StashEntry[]> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    return structuredClone(state.stashes);
+  },
+
+  async createStash(
+    repoId: string,
+    _message: string | null,
+    _includeUntracked: boolean,
+  ): Promise<CreateStashResult> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    const s = state.status;
+    // Nothing to stash when the worktree is clean (no tracked/untracked changes).
+    if (s.staged.length === 0 && s.unstaged.length === 0 && s.untracked.length === 0) {
+      return { created: false };
+    }
+    // Push a new stash@{0} and re-index the rest (+1).
+    for (const entry of state.stashes) entry.index += 1;
+    state.stashes.unshift({
+      index: 0,
+      message: `WIP on ${state.headBranch}: mock stashed changes`,
+      oid: randomOid(),
+      baseOid: state.headOid,
+      ts: Math.floor(Date.now() / 1000),
+    });
+    // The worktree comes back clean (INCLUDE_UNTRACKED semantics).
+    s.staged = [];
+    s.unstaged = [];
+    s.untracked = [];
+    return { created: true };
+  },
+
+  async applyStash(repoId: string, index: number): Promise<ApplyStashOutcome> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    const entry = state.stashes.find((e) => e.index === index);
+    // Demo conflict trigger — mirrors the P8 mergeBranch "conflict" convention.
+    if (entry !== undefined && entry.message.includes('conflict')) {
+      return { kind: 'conflicts', paths: ['src/app.ts'] };
+    }
+    // Apply leaves the stack unchanged.
+    return { kind: 'applied' };
+  },
+
+  async popStash(repoId: string, index: number): Promise<ApplyStashOutcome> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    const entry = state.stashes.find((e) => e.index === index);
+    // Conflict trigger: the entry is RETAINED (libgit2 only drops on clean pop).
+    if (entry !== undefined && entry.message.includes('conflict')) {
+      return { kind: 'conflicts', paths: ['src/app.ts'] };
+    }
+    // Clean pop: remove the entry, then re-index the survivors.
+    state.stashes = state.stashes.filter((e) => e.index !== index);
+    state.stashes.forEach((e, i) => (e.index = i));
+    return { kind: 'applied' };
+  },
+
+  async dropStash(repoId: string, index: number): Promise<void> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    state.stashes = state.stashes.filter((e) => e.index !== index);
+    state.stashes.forEach((e, i) => (e.index = i));
   },
 
   async getRecentRepos(): Promise<RecentRepo[]> {

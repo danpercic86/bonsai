@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { BranchInfo, BranchesSnapshot, ListView } from '../ipc';
+import type { BranchInfo, BranchesSnapshot, ListView, StashEntry } from '../ipc';
+import { relativeDate } from '../graph/draw';
 import { errorMessage } from '../utils/errors';
 import { buildPathTree } from '../utils/pathTree';
 import { Tree } from './Tree';
@@ -47,6 +48,12 @@ export interface SidebarProps {
   width: number;
   /** P3b: flat (backend order) vs tree-grouped-by-'/' rendering of refs. */
   listView: ListView;
+  /** P9 §6.2: stash stack, index 0 (most recent) first. */
+  stashes: StashEntry[];
+  /** "Stash changes" action — stash the dirty worktree. */
+  onCreateStash(): void;
+  /** Right-click a stash row → open the shared context menu at the cursor. */
+  onStashContextMenu(index: number, clientX: number, clientY: number): void;
 }
 
 function SectionHeader({
@@ -172,6 +179,41 @@ function TagRow({ name, displayName }: { name: string; displayName?: string }) {
   );
 }
 
+function StashRow({
+  index,
+  message,
+  ts,
+  onContextMenu,
+}: {
+  index: number;
+  message: string;
+  ts: number;
+  onContextMenu(index: number, clientX: number, clientY: number): void;
+}) {
+  const label = `stash@{${index}}`;
+  const now = Math.floor(Date.now() / 1000);
+  return (
+    <li
+      className="branch-row"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu(index, e.clientX, e.clientY);
+      }}
+    >
+      <span className="branch-glyph">{'⊟'}</span>
+      <span className="mono" title={label}>
+        {label}
+      </span>
+      <span className="branch-name branch-name-muted" title={message}>
+        {message}
+      </span>
+      <span className="branch-badge" title={label}>
+        {relativeDate(ts, now)}
+      </span>
+    </li>
+  );
+}
+
 function SkeletonRows() {
   return (
     <div className="skeleton-group" aria-hidden="true">
@@ -197,10 +239,14 @@ export function Sidebar({
   onCreateBranch,
   width,
   listView,
+  stashes,
+  onCreateStash,
+  onStashContextMenu,
 }: SidebarProps) {
   const [branchesCollapsed, setBranchesCollapsed] = useState(false);
   const [remotesCollapsed, setRemotesCollapsed] = useState(false);
   const [tagsCollapsed, setTagsCollapsed] = useState(false);
+  const [stashesCollapsed, setStashesCollapsed] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createValue, setCreateValue] = useState('');
@@ -431,6 +477,47 @@ export function Sidebar({
                 <ul className="branch-list">
                   {data.tags.map((tag) => (
                     <TagRow key={tag} name={tag} />
+                  ))}
+                </ul>
+              ))}
+          </section>
+
+          <section className="sidebar-section">
+            <SectionHeader
+              label="Stashes"
+              collapsed={stashesCollapsed}
+              onToggle={() => setStashesCollapsed((c) => !c)}
+              extra={
+                !data.head.unborn && (
+                  <button
+                    type="button"
+                    className="sidebar-add"
+                    aria-label="Stash changes"
+                    title="Stash changes"
+                    disabled={actionsDisabled}
+                    onClick={() => {
+                      setStashesCollapsed(false);
+                      onCreateStash();
+                    }}
+                  >
+                    {'⊟'}
+                  </button>
+                )
+              }
+            />
+            {!stashesCollapsed &&
+              (stashes.length === 0 ? (
+                <p className="branch-muted">No stashes</p>
+              ) : (
+                <ul className="branch-list">
+                  {stashes.map((s) => (
+                    <StashRow
+                      key={s.index}
+                      index={s.index}
+                      message={s.message}
+                      ts={s.ts}
+                      onContextMenu={onStashContextMenu}
+                    />
                   ))}
                 </ul>
               ))}

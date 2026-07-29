@@ -31,6 +31,7 @@ import type {
   PaneWidths,
   RepoInfo,
   RepoOpState,
+  StashEntry,
   StatusEntry,
   StatusSnapshot,
   Unsubscribe,
@@ -96,6 +97,8 @@ export function RepoWorkspace({
   const [branchesError, setBranchesError] = useState<string | null>(null);
   const [branchesLoading, setBranchesLoading] = useState(false);
 
+  const [stashes, setStashes] = useState<StashEntry[]>([]);
+
   const [remoteOp, setRemoteOp] = useState<'fetch' | 'pull' | 'push' | null>(null);
 
   const [opState, setOpState] = useState<RepoOpState>({ kind: 'none' });
@@ -106,7 +109,9 @@ export function RepoWorkspace({
   // shortcut effect is suppressed while either is up (derived `dialogOpen`).
   const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(null);
   const [pendingDeleteRemote, setPendingDeleteRemote] = useState<string | null>(null);
-  const dialogOpen = pendingDeleteBranch !== null || pendingDeleteRemote !== null;
+  const [pendingDropStash, setPendingDropStash] = useState<number | null>(null);
+  const dialogOpen =
+    pendingDeleteBranch !== null || pendingDeleteRemote !== null || pendingDropStash !== null;
 
   const [graph, setGraph] = useState<GraphLayout | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
@@ -135,6 +140,7 @@ export function RepoWorkspace({
   const statusReqId = useRef(0);
   const graphReqId = useRef(0);
   const branchesReqId = useRef(0);
+  const stashesReqId = useRef(0);
   const commitDiffReqId = useRef(0);
   const fileDiffReqId = useRef(0);
   const opStateReqId = useRef(0);
@@ -410,6 +416,23 @@ export function RepoWorkspace({
     setBranchesLoading(false);
   }, []);
 
+  const refetchStashes = useCallback(async () => {
+    const id = ++stashesReqId.current;
+    try {
+      const list = await ipc.listStashes(repoId);
+      if (id !== stashesReqId.current) return;
+      setStashes(list);
+    } catch {
+      if (id !== stashesReqId.current) return;
+      // Non-fatal: stashes are a secondary surface; keep the last-known list.
+    }
+  }, [repoId]);
+
+  const clearStashes = useCallback(() => {
+    stashesReqId.current += 1;
+    setStashes([]);
+  }, []);
+
   const clearGraph = useCallback(() => {
     graphReqId.current += 1;
     setGraph(null);
@@ -430,6 +453,7 @@ export function RepoWorkspace({
           refetchStatus(),
           refetchGraph(),
           refetchBranches(),
+          refetchStashes(),
           refetchOpState(),
           refetchCompare(),
         ]);
@@ -437,6 +461,7 @@ export function RepoWorkspace({
         clearStatus();
         clearGraph();
         clearBranches();
+        clearStashes();
         clearOpState();
         clearCompare();
       }
@@ -448,11 +473,13 @@ export function RepoWorkspace({
     refetchStatus,
     refetchGraph,
     refetchBranches,
+    refetchStashes,
     refetchOpState,
     refetchCompare,
     clearStatus,
     clearGraph,
     clearBranches,
+    clearStashes,
     clearOpState,
     clearCompare,
     pushToast,
@@ -467,6 +494,7 @@ export function RepoWorkspace({
     void refetchStatus();
     void refetchGraph();
     void refetchBranches();
+    void refetchStashes();
     void refetchOpState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -537,6 +565,7 @@ export function RepoWorkspace({
         void refetchStatus();
         void refetchGraph();
         void refetchBranches();
+        void refetchStashes();
         void refetchOpState();
         void refetchCompare();
       });
@@ -551,7 +580,15 @@ export function RepoWorkspace({
       cancelled = true;
       for (const unsub of unsubs) unsub();
     };
-  }, [repoId, refetchStatus, refetchGraph, refetchBranches, refetchOpState, refetchCompare]);
+  }, [
+    repoId,
+    refetchStatus,
+    refetchGraph,
+    refetchBranches,
+    refetchStashes,
+    refetchOpState,
+    refetchCompare,
+  ]);
 
   // Window-focus rescan: ACTIVE tab only (the visible tab is the one the user
   // just returned to; background tabs self-heal on activation, §7).
@@ -564,6 +601,7 @@ export function RepoWorkspace({
         void refetchStatus();
         void refetchGraph();
         void refetchBranches();
+        void refetchStashes();
         void refetchOpState();
         void refetchCompare();
       });
@@ -578,7 +616,15 @@ export function RepoWorkspace({
       cancelled = true;
       for (const unsub of unsubs) unsub();
     };
-  }, [active, refetchStatus, refetchGraph, refetchBranches, refetchOpState, refetchCompare]);
+  }, [
+    active,
+    refetchStatus,
+    refetchGraph,
+    refetchBranches,
+    refetchStashes,
+    refetchOpState,
+    refetchCompare,
+  ]);
 
   // Manual refresh (button + Ctrl+R/F5).
   const handleRefresh = useCallback(async () => {
@@ -854,6 +900,74 @@ export function RepoWorkspace({
     }
   }
 
+  // ----- P9: stash handling -----
+  async function handleCreateStash() {
+    setMutating(true);
+    try {
+      const res = await ipc.createStash(repoId, null, /* includeUntracked */ true);
+      pushToast(
+        res.created ? 'success' : 'info',
+        res.created ? 'Changes stashed' : 'Nothing to stash — working tree is clean',
+      );
+      await refreshAll(); // status + graph (pills) + stashes
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleApplyStash(index: number) {
+    setMutating(true);
+    try {
+      const res = await ipc.applyStash(repoId, index);
+      if (res.kind === 'applied') pushToast('success', `Applied stash@{${index}}`);
+      else
+        pushToast(
+          'info',
+          `Stash applied with ${res.paths.length} conflict(s) to resolve — the stash is kept (stash@{${index}}).`,
+        );
+      await refreshAll();
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handlePopStash(index: number) {
+    setMutating(true);
+    try {
+      const res = await ipc.popStash(repoId, index);
+      if (res.kind === 'applied') pushToast('success', `Popped stash@{${index}}`);
+      else
+        pushToast(
+          'error',
+          `Pop hit ${res.paths.length} conflict(s); your changes are still on the stash (stash@{${index}}). ` +
+            'Resolve the conflicts, then drop it.',
+        );
+      await refreshAll();
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleDropStash(index: number) {
+    // called after ConfirmDialog
+    setMutating(true);
+    try {
+      await ipc.dropStash(repoId, index);
+      pushToast('success', `Dropped stash@{${index}}`);
+      await Promise.all([refetchStashes(), refetchGraph()]); // pills change; worktree does not
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
   // ----- P3d: rebase handling -----
   async function handleRebaseBranch(onto: string) {
     setMutating(true);
@@ -1087,6 +1201,23 @@ export function RepoWorkspace({
     return items;
   }
 
+  // P9 §6.4: build the right-click menu for a stash row. Apply/Pop need a clean,
+  // idle repo (gated on mutating || opActive); Drop is allowed mid-op (it only
+  // edits the stash reflog) → routes through the ConfirmDialog.
+  function stashMenuItems(index: number): ContextMenuItem[] {
+    const gate = mutating || opActive;
+    return [
+      { label: 'Apply', disabled: gate, onSelect: () => void handleApplyStash(index) },
+      { label: 'Pop', disabled: gate, onSelect: () => void handlePopStash(index) },
+      { label: 'Drop', disabled: mutating, onSelect: () => setPendingDropStash(index) },
+    ];
+  }
+
+  // P9 §6.4: right-click a sidebar stash row → open the shared context menu.
+  function handleStashContextMenu(index: number, clientX: number, clientY: number) {
+    setMenu({ x: clientX, y: clientY, items: stashMenuItems(index) });
+  }
+
   // P5 §5.2 / P6 §4.2: build the right-click menu items for a graph target. Ref
   // pills delegate to the shared branchMenuItems builder; commit rows offer
   // "Compare with HEAD" (read-only; unavailable when HEAD is unborn).
@@ -1311,6 +1442,9 @@ export function RepoWorkspace({
           onCreateBranch={handleCreateBranch}
           width={paneWidths.sidebar}
           listView={listView}
+          stashes={stashes}
+          onCreateStash={() => void handleCreateStash()}
+          onStashContextMenu={handleStashContextMenu}
         />
         <PaneDivider side="sidebar" onResize={onSidebarResize} onResizeEnd={onPaneResizeEnd} />
         <main className="graph-pane">
@@ -1479,6 +1613,24 @@ export function RepoWorkspace({
         <div className="dialog-body-note">
           This removes only Bonsai's local copy of the remote branch. It does NOT delete the branch on
           the server — a future fetch may recreate it.
+        </div>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pendingDropStash !== null}
+        title="Drop stash"
+        confirmLabel="Drop stash"
+        busy={mutating}
+        onConfirm={() => {
+          const i = pendingDropStash;
+          setPendingDropStash(null);
+          if (i !== null) void handleDropStash(i);
+        }}
+        onCancel={() => setPendingDropStash(null)}
+      >
+        <div>Drop <span className="mono">stash@{`{${pendingDropStash ?? 0}}`}</span>?</div>
+        <div className="dialog-body-note">
+          This permanently discards the stashed changes and cannot be undone.
         </div>
       </ConfirmDialog>
 

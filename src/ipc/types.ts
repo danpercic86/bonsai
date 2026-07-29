@@ -268,6 +268,22 @@ export interface ConflictFile {
 
 export type ConflictResolution = 'ours' | 'theirs' | 'markResolved';
 
+export interface StashEntry {
+  index: number;      // 0 == stash@{0}; SHIFTS after drop/pop — always refetch
+  message: string;
+  oid: string;        // stash commit oid
+  baseOid: string;    // first-parent = base commit the pill attaches to
+  ts: number;         // seconds since epoch (UTC)
+}
+
+export type ApplyStashOutcome =
+  | { kind: 'applied' }
+  | { kind: 'conflicts'; paths: string[] };
+
+export interface CreateStashResult {
+  created: boolean;
+}
+
 export type MergeOutcome =
   | { kind: 'upToDate' }
   | { kind: 'fastForwarded'; branch: string; to: string; stashed: boolean }
@@ -461,6 +477,21 @@ export interface IpcApi {
   /** Abort a paused rebase (worktree-destructive). Rejects noOperationInProgress
    *  | git | noRepo. */
   rebaseAbort(repoId: string): Promise<void>;
+  /** Stash stack, index 0 (most recent) first. Rejects noRepo | git. */
+  listStashes(repoId: string): Promise<StashEntry[]>;
+  /** Stash the dirty worktree. message=null → git default. Rejects
+   *  operationInProgress | configMissing | git | noRepo. created:false == nothing to stash. */
+  createStash(
+    repoId: string,
+    message: string | null,
+    includeUntracked: boolean,
+  ): Promise<CreateStashResult>;
+  /** Apply stash `index` WITHOUT dropping. Rejects operationInProgress | git | noRepo. */
+  applyStash(repoId: string, index: number): Promise<ApplyStashOutcome>;
+  /** Apply + drop on clean success (retained on conflict). Rejects operationInProgress | git | noRepo. */
+  popStash(repoId: string, index: number): Promise<ApplyStashOutcome>;
+  /** Permanently discard stash `index` (UI confirms). Rejects git | noRepo. */
+  dropStash(repoId: string, index: number): Promise<void>;
   /** Recent successfully-opened repos, most recent first, max 10. Never rejects
    *  for a missing/corrupt settings file (returns []). */
   getRecentRepos(): Promise<RecentRepo[]>;
