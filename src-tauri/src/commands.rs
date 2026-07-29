@@ -4,7 +4,10 @@ use crate::error::AppError;
 use crate::git::branches::{self, BranchesSnapshot};
 use crate::git::commit::{create_commit, CommitResult};
 use crate::git::conflict::{self, ConflictEntry, ConflictFile, ConflictResolution};
-use crate::git::diff::{commit_diff, commit_file_diff, workdir_file_diff, CommitDiff, FileDiff};
+use crate::git::diff::{
+    commit_diff, commit_file_diff, compare_head_diff, compare_head_file_diff, workdir_file_diff,
+    CommitDiff, CompareDiff, FileDiff,
+};
 use crate::git::merge::{self, MergeOutcome};
 use crate::git::opstate::{read_op_state, RepoOpState};
 use crate::git::rebase::{self, RebaseOutcome};
@@ -575,6 +578,56 @@ async fn get_commit_file_diff_inner(
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// HEAD → `oid` tree comparison (P5 §1.2). Errors: `noRepo` | `git`.
+#[tauri::command]
+pub async fn compare_with_head(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    oid: String,
+) -> Result<CompareDiff, AppError> {
+    compare_with_head_inner(state.inner(), &repo_id, oid).await
+}
+
+/// Runtime-free core of `compare_with_head` (unit-testable without a Tauri app).
+async fn compare_with_head_inner(
+    state: &AppState,
+    repo_id: &str,
+    oid: String,
+) -> Result<CompareDiff, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || compare_head_diff(&workdir, &oid))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Hunks for one file of the HEAD → `oid` comparison. Errors: `noRepo` | `git`.
+#[tauri::command]
+pub async fn compare_with_head_file_diff(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    oid: String,
+    path: String,
+    orig_path: Option<String>,
+) -> Result<FileDiff, AppError> {
+    compare_with_head_file_diff_inner(state.inner(), &repo_id, oid, path, orig_path).await
+}
+
+/// Runtime-free core of `compare_with_head_file_diff`.
+async fn compare_with_head_file_diff_inner(
+    state: &AppState,
+    repo_id: &str,
+    oid: String,
+    path: String,
+    orig_path: Option<String>,
+) -> Result<FileDiff, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        compare_head_file_diff(&workdir, &oid, &path, orig_path.as_deref())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// One snapshot of local branches + remote-tracking branches + tags + HEAD
 /// (M5 contract §2.2/§2.8). Errors: `noRepo` | `git`.
 #[tauri::command]
@@ -1137,6 +1190,32 @@ mod tests {
             None,
         ))
         .expect_err("get_commit_file_diff with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+    }
+
+    /// The P5 compare commands also return `NoRepo` for an unknown id
+    /// (contract §6.2).
+    #[test]
+    fn compare_commands_require_an_open_repo() {
+        let state = AppState::default();
+        let oid = "0123456789abcdef0123456789abcdef01234567".to_string();
+
+        let err = tauri::async_runtime::block_on(compare_with_head_inner(
+            &state,
+            MISSING_ID,
+            oid.clone(),
+        ))
+        .expect_err("compare_with_head with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(compare_with_head_file_diff_inner(
+            &state,
+            MISSING_ID,
+            oid,
+            "file.txt".to_string(),
+            None,
+        ))
+        .expect_err("compare_with_head_file_diff with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
 

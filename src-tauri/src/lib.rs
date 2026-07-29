@@ -26,6 +26,8 @@ pub fn run() {
             commands::get_workdir_file_diff,
             commands::get_commit_diff,
             commands::get_commit_file_diff,
+            commands::compare_with_head,
+            commands::compare_with_head_file_diff,
             commands::list_branches,
             commands::create_branch,
             commands::checkout_branch,

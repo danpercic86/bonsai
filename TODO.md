@@ -11,6 +11,29 @@ inner functions for command tests.
 Use `D:\Temp\bonsai-scratch`; when running cargo tests set TMP/TEMP to `D:\Temp` (tempfile
 honors them). Include this in every subagent prompt that runs tests or creates repos.**
 
+## P5 — Graph context menus — **in-progress** (2026-07-29)
+
+Current step: P5 kickoff — writing architect contract. Source: user request (2026-07-29) after
+P4 toolbar refinements (committed 9cdd635; P4 AI gate still awaiting USER CHECKPOINT).
+Two features:
+1. **Merge/rebase on graph branch pills** — right-click a local (non-current) or remote-tracking
+   branch ref pill in the commit graph → context menu with Merge/Rebase, mirroring the sidebar
+   affordances EXACTLY (same gating: currentBranch != null, not busy/opActive). Reuses existing
+   `handleMergeBranch`/`handleRebaseBranch` in RepoWorkspace. Needs ref-pill hit-testing in the
+   canvas (draw.ts currently draws pills but exposes no geometry). Frontend-only.
+2. **Compare HEAD ↔ selected commit** — right-click a commit row/dot → "Compare with HEAD" showing
+   the tree-vs-tree diff between HEAD and that commit. Needs a NEW backend command
+   (`diff_tree_to_tree` engine already exists in git/diff.rs) + IPC contract addition + mock twin +
+   a UI surface (recommend a right-panel Compare mode reusing the FileDiffHeader list + DiffOverlay
+   per-file pattern). Backend + IPC + frontend.
+Direction decision (orchestrator default, surface to user): old=HEAD, new=selected commit
+(= `git diff HEAD <commit>`), header labels both endpoints clearly.
+Rules: scratch repos under D:\Temp\bonsai-scratch only; TMP/TEMP=D:\Temp for cargo tests;
+orchestrator makes all commits (`wip(P5): …`); mock.ts kept compiling with every IPC change.
+
+Note: P4 post-gate toolbar refinements committed after the AI-gate record: 9cdd635 (Fetch/Pull/Push
+moved into the top toolbar, centered; Refresh pinned right). P4 USER CHECKPOINT still pending.
+
 ## M0 — Scaffold — **done** (2026-07-27)
 
 AI gate passed (cargo test 6/6 + CLI cross-check, clippy, pnpm build, browser harness live incl.

@@ -108,6 +108,25 @@ pub struct CommitDiff {
     pub files: Vec<FileDiffHeader>,
 }
 
+/// One endpoint of a two-commit comparison (P5 §1.2).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompareEndpoint {
+    pub oid: String,     // full 40-char hex; "" when HEAD is unborn (old side)
+    pub summary: String, // first line of that commit's message; "" when unborn
+}
+
+/// Tree-vs-tree comparison HEAD(old) → `to`(new). Headers only — hunks fetched
+/// per file, exactly like `CommitDiff`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompareDiff {
+    pub from: CompareEndpoint, // OLD = HEAD
+    pub to: CompareEndpoint,   // NEW = the right-clicked commit
+    /// Sorted path-ascending (byte-wise). Empty when from.oid == to.oid.
+    pub files: Vec<FileDiffHeader>,
+}
+
 /// Lossy decode of a byte path.
 fn lossy(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
@@ -507,9 +526,104 @@ pub fn commit_file_diff(
         .ok_or_else(|| AppError::Git(format!("path not changed in commit: {path}")))
 }
 
+/// Resolve HEAD (attached or detached) as the OLD endpoint of a comparison
+/// plus its tree. Unborn HEAD / `NotFound` -> `CompareEndpoint{"",""}` and no
+/// tree (the compare-vs-empty-tree side, so everything shows Added).
+fn head_endpoint(
+    repo: &git2::Repository,
+) -> Result<(CompareEndpoint, Option<git2::Tree<'_>>), AppError> {
+    match repo.head() {
+        Ok(h) => {
+            let commit = h.peel_to_commit()?;
+            let endpoint = CompareEndpoint {
+                oid: commit.id().to_string(),
+                summary: commit.summary_bytes().map(lossy).unwrap_or_default(),
+            };
+            let tree = commit.tree()?;
+            Ok((endpoint, Some(tree)))
+        }
+        Err(e)
+            if matches!(
+                e.code(),
+                git2::ErrorCode::UnbornBranch | git2::ErrorCode::NotFound
+            ) =>
+        {
+            Ok((
+                CompareEndpoint {
+                    oid: String::new(),
+                    summary: String::new(),
+                },
+                None,
+            ))
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// `git diff HEAD <to_oid>` as headers (P5 §2.2). HEAD (old side) is resolved
+/// internally: attached or detached both work via `repo.head()`; unborn HEAD ->
+/// old tree is the empty tree (everything shows Added) and `from` =
+/// `CompareEndpoint{"",""}`. `from.oid == to_oid` (comparing HEAD to itself) ->
+/// empty `files`, not an error. Bad/unknown/non-commit `to_oid` -> `AppError::Git`.
+pub fn compare_head_diff(workdir: &Path, to_oid: &str) -> Result<CompareDiff, AppError> {
+    let repo = open_workdir_repo(workdir)?;
+    let to_commit = repo.find_commit(git2::Oid::from_str(to_oid)?)?;
+    let to_tree = to_commit.tree()?;
+    let (from, old_tree) = head_endpoint(&repo)?;
+    let to = CompareEndpoint {
+        oid: to_commit.id().to_string(),
+        summary: to_commit.summary_bytes().map(lossy).unwrap_or_default(),
+    };
+    let mut opts = build_diff_options(&[]);
+    let mut diff =
+        repo.diff_tree_to_tree(old_tree.as_ref(), Some(&to_tree), Some(&mut opts))?;
+    apply_find_similar(&mut diff)?;
+    let files = collect_headers(&diff)?;
+    Ok(CompareDiff { from, to, files })
+}
+
+/// Hunks for ONE file of the HEAD → `to_oid` comparison (P5 §2.2; shape mirrors
+/// `commit_file_diff`). No matching delta -> `AppError::Git`.
+pub fn compare_head_file_diff(
+    workdir: &Path,
+    to_oid: &str,
+    path: &str,
+    orig_path: Option<&str>,
+) -> Result<FileDiff, AppError> {
+    validate_rel_path(path)?;
+    if let Some(op) = orig_path {
+        validate_rel_path(op)?;
+    }
+    let repo = open_workdir_repo(workdir)?;
+    let to_commit = repo.find_commit(git2::Oid::from_str(to_oid)?)?;
+    let to_tree = to_commit.tree()?;
+    let (_from, old_tree) = head_endpoint(&repo)?;
+    let paths = pathspecs(path, orig_path);
+    let mut opts = build_diff_options(&paths);
+    let mut diff =
+        repo.diff_tree_to_tree(old_tree.as_ref(), Some(&to_tree), Some(&mut opts))?;
+    apply_find_similar(&mut diff)?;
+    collect_file_diff(&diff)?
+        .ok_or_else(|| AppError::Git(format!("path not changed in comparison: {path}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::git::commit::create_commit;
+    use crate::git::stage::stage_paths;
+
+    /// git2-init a scratch repo with identity + autocrlf off (mirrors the
+    /// other tests in this module).
+    fn init_scratch() -> tempfile::TempDir {
+        let dir = crate::testutil::scratch_dir();
+        let repo = git2::Repository::init(dir.path()).expect("init repo");
+        let mut cfg = repo.config().expect("config");
+        cfg.set_str("user.name", "Test User").expect("name");
+        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_bool("core.autocrlf", false).expect("autocrlf");
+        dir
+    }
 
     #[test]
     fn normalize_content_strips_one_newline_then_one_cr() {
@@ -661,5 +775,192 @@ mod tests {
         let err = workdir_file_diff(dir.path(), "ok.txt", Some("../escape"), false)
             .expect_err("must reject bad orig_path");
         assert!(matches!(err, AppError::Other(m) if m.contains("invalid path")));
+    }
+
+    /// P5 §6.2: `compare_head_diff(HEAD, earlier)` on a LINEAR history. HEAD = B,
+    /// `to` = A. Going B -> A: file1 Modified, file2 Deleted (matches
+    /// `git diff --name-status HEAD A`). Endpoints carry oids + summaries.
+    #[test]
+    fn compare_head_diff_linear_history() {
+        let dir = init_scratch();
+        let p = dir.path();
+
+        std::fs::write(p.join("file1.txt"), "one\n").expect("write");
+        stage_paths(p, &["file1.txt".into()]).expect("stage");
+        let a = create_commit(p, "A").expect("commit A").oid;
+
+        std::fs::write(p.join("file1.txt"), "one changed\n").expect("write");
+        std::fs::write(p.join("file2.txt"), "two\n").expect("write");
+        stage_paths(p, &["file1.txt".into(), "file2.txt".into()]).expect("stage");
+        let b = create_commit(p, "B").expect("commit B").oid;
+
+        let cmp = compare_head_diff(p, &a).expect("compare");
+        assert_eq!(cmp.to.oid, a);
+        assert_eq!(cmp.to.summary, "A");
+        assert_eq!(cmp.from.oid, b);
+        assert_eq!(cmp.from.summary, "B");
+
+        let got: Vec<(String, FileStatus)> = cmp
+            .files
+            .iter()
+            .map(|f| (f.path.clone(), f.status))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("file1.txt".to_string(), FileStatus::Modified),
+                ("file2.txt".to_string(), FileStatus::Deleted),
+            ]
+        );
+    }
+
+    /// P5 §6.2: `compare_head_diff(HEAD, branch_tip)` across diverged branches.
+    /// main tip B has file_main; feat tip C has file_feat. HEAD = B; `to` = C.
+    /// Going B -> C: file_feat Added, file_main Deleted (byte-sorted).
+    #[test]
+    fn compare_head_diff_branch_tip() {
+        let dir = init_scratch();
+        let p = dir.path();
+
+        std::fs::write(p.join("file1.txt"), "base\n").expect("write");
+        stage_paths(p, &["file1.txt".into()]).expect("stage");
+        let base = create_commit(p, "A").expect("commit A");
+        // Default branch name is git2's choice (master/main) — resolve it.
+        let main_name = base.branch.expect("base commit is on a branch");
+
+        // feat diverges from A.
+        crate::git::branches::create_branch(p, "feat").expect("create feat");
+        crate::git::branches::checkout_branch(p, "feat").expect("checkout feat");
+        std::fs::write(p.join("file_feat.txt"), "feat\n").expect("write");
+        stage_paths(p, &["file_feat.txt".into()]).expect("stage");
+        let c = create_commit(p, "C").expect("commit C").oid;
+
+        // Back to the default branch, add a divergent commit B (now HEAD = B).
+        crate::git::branches::checkout_branch(p, &main_name).expect("checkout base branch");
+        std::fs::write(p.join("file_main.txt"), "main\n").expect("write");
+        stage_paths(p, &["file_main.txt".into()]).expect("stage");
+        let b = create_commit(p, "B").expect("commit B").oid;
+
+        let cmp = compare_head_diff(p, &c).expect("compare");
+        assert_eq!(cmp.from.oid, b);
+        assert_eq!(cmp.to.oid, c);
+
+        let got: Vec<(String, FileStatus)> = cmp
+            .files
+            .iter()
+            .map(|f| (f.path.clone(), f.status))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("file_feat.txt".to_string(), FileStatus::Added),
+                ("file_main.txt".to_string(), FileStatus::Deleted),
+            ]
+        );
+    }
+
+    /// P5 §1.3 / §6.2: comparing HEAD to itself -> `from.oid == to.oid`, empty
+    /// `files`, and NOT an error.
+    #[test]
+    fn compare_head_to_itself_is_empty() {
+        let dir = init_scratch();
+        let p = dir.path();
+        std::fs::write(p.join("a.txt"), "one\n").expect("write");
+        stage_paths(p, &["a.txt".into()]).expect("stage");
+        let a = create_commit(p, "A").expect("commit").oid;
+
+        let cmp = compare_head_diff(p, &a).expect("compare HEAD to itself");
+        assert_eq!(cmp.from.oid, cmp.to.oid);
+        assert_eq!(cmp.from.oid, a);
+        assert!(cmp.files.is_empty());
+    }
+
+    /// P5 §2.2 / §6.2: unborn HEAD -> `from == {"",""}`, old tree is empty, so
+    /// every file of `to` shows as Added (compare-vs-empty-tree).
+    #[test]
+    fn compare_unborn_head_shows_all_added() {
+        let dir = init_scratch();
+        let p = dir.path();
+        std::fs::write(p.join("a.txt"), "one\n").expect("write");
+        std::fs::write(p.join("b.txt"), "two\n").expect("write");
+        stage_paths(p, &["a.txt".into(), "b.txt".into()]).expect("stage");
+        let a = create_commit(p, "A").expect("commit").oid;
+
+        // Force HEAD unborn: point it at a branch with no commit. Commit A
+        // still lives in the object DB (reachable via refs/heads/main).
+        {
+            let repo = git2::Repository::open(p).expect("open");
+            repo.set_head("refs/heads/does-not-exist")
+                .expect("set_head unborn");
+        }
+
+        let cmp = compare_head_diff(p, &a).expect("compare from unborn HEAD");
+        assert_eq!(cmp.from.oid, "");
+        assert_eq!(cmp.from.summary, "");
+        assert_eq!(cmp.to.oid, a);
+        assert!(cmp.files.iter().all(|f| f.status == FileStatus::Added));
+        let paths: Vec<String> = cmp.files.iter().map(|f| f.path.clone()).collect();
+        assert_eq!(paths, vec!["a.txt".to_string(), "b.txt".to_string()]);
+    }
+
+    /// P5 §2.2 / §6.2: malformed, unknown, and non-commit oids all map to
+    /// `AppError::Git`.
+    #[test]
+    fn compare_bad_or_non_commit_oid_errors() {
+        let dir = init_scratch();
+        let p = dir.path();
+        std::fs::write(p.join("a.txt"), "one\n").expect("write");
+        stage_paths(p, &["a.txt".into()]).expect("stage");
+        create_commit(p, "A").expect("commit");
+
+        // Malformed hex.
+        let err = compare_head_diff(p, "notahexoid").expect_err("malformed oid");
+        assert!(matches!(err, AppError::Git(_)));
+
+        // Well-formed but unknown.
+        let unknown = "0123456789abcdef0123456789abcdef01234567";
+        let err = compare_head_diff(p, unknown).expect_err("unknown oid");
+        assert!(matches!(err, AppError::Git(_)));
+
+        // Non-commit oid (a tree): find_commit must reject it.
+        let tree_oid = {
+            let repo = git2::Repository::open(p).expect("open");
+            let head = repo.head().expect("head").peel_to_commit().expect("commit");
+            head.tree_id().to_string()
+        };
+        let err = compare_head_diff(p, &tree_oid).expect_err("tree oid is not a commit");
+        assert!(matches!(err, AppError::Git(_)));
+    }
+
+    /// P5 §6.2: `compare_head_file_diff` hunks for one changed file. HEAD = B
+    /// (f.txt = "line1\nCHANGED"); `to` = A (f.txt = "line1\nline2"). The B -> A
+    /// diff deletes "CHANGED" and adds "line2".
+    #[test]
+    fn compare_head_file_diff_hunks_match() {
+        let dir = init_scratch();
+        let p = dir.path();
+
+        std::fs::write(p.join("f.txt"), "line1\nline2\n").expect("write");
+        stage_paths(p, &["f.txt".into()]).expect("stage");
+        let a = create_commit(p, "A").expect("commit A").oid;
+
+        std::fs::write(p.join("f.txt"), "line1\nCHANGED\n").expect("write");
+        stage_paths(p, &["f.txt".into()]).expect("stage");
+        create_commit(p, "B").expect("commit B");
+
+        let fd = compare_head_file_diff(p, &a, "f.txt", None).expect("file diff");
+        assert_eq!(fd.path, "f.txt");
+        assert_eq!(fd.status, FileStatus::Modified);
+        assert!(!fd.binary && !fd.too_large);
+        assert_eq!(fd.hunks.len(), 1);
+
+        let lines: Vec<(LineKind, &str)> = fd.hunks[0]
+            .lines
+            .iter()
+            .map(|l| (l.kind, l.content.as_str()))
+            .collect();
+        assert!(lines.contains(&(LineKind::Del, "CHANGED")), "{lines:?}");
+        assert!(lines.contains(&(LineKind::Add, "line2")), "{lines:?}");
+        assert!(lines.contains(&(LineKind::Context, "line1")), "{lines:?}");
     }
 }
