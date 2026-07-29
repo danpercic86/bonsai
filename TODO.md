@@ -108,19 +108,24 @@ Conflicts + new StashPopConflicts{head,paths}. Command surface UNCHANGED. AI gat
 pnpm build clean; 7-row behavioral test matrix (tester) vs scratch repos; harness renders each toast
 via mock triggers. USER CHECKPOINT (native): merge a branch with a dirty tree; changes reappear.
 
-## P9 — Stash management (list/apply/pop/drop/create + view in graph) — **in-progress** (2026-07-29)
-Current step: P9a DONE (committed da53c41); P9b (graph pill) in senior-dev. Contract:
-docs/contracts/P9-stash-management.md. All 5 OPEN QUESTIONS resolved to the recommended defaults
-(user-authorized autonomous): include untracked on create; pop-with-conflict allowed+retained;
-apply/pop require clean state, drop any state; no REINSTATE_INDEX; pill label `stash@{n}` (message in
-sidebar). Orchestrator direction: sidebar Stashes section + a `stash` RefLabel PILL on each stash's
-base commit (reusing ref-pill machinery) — NOT synthetic nodes in the perf-gated walk.
-- P9a (git/stash.rs + 5 commands + registration): reviewer APPROVE; tester 8-row matrix green (124
-  unit/0 fail); reuses P8 apply+inspect+conditional-drop so conflicted pop/apply RETAINS the stash.
-- P9b (graph.rs collect_stash_bases + step 6.5 attach; draw.ts stash entity/pill/icon; types.ts
-  RefKind 'stash'; fixtures rows 3 & 6; p7SelfTest stash-not-collapsed): in senior-dev.
-- P9c (Sidebar Stashes section + RepoWorkspace handlers/menu/confirm + mock 5 cmds + tauri.ts + IpcApi):
-  pending.
+## P9 — Stash management (list/apply/pop/drop/create + view in graph) — AI GATE PASSED, awaiting USER CHECKPOINT (2026-07-29)
+Contract: docs/contracts/P9-stash-management.md. Commits: da53c41 (P9a), 324be0d (P9b), b5a0cf4 (P9c).
+All 5 OPEN QUESTIONS resolved to the recommended defaults (user-authorized autonomous): include
+untracked on create; pop-with-conflict allowed+retained; apply/pop require clean state, drop any state;
+no REINSTATE_INDEX; pill label `stash@{n}` (message in sidebar). Orchestrator direction: sidebar
+Stashes section + a `stash` RefLabel PILL on each stash's base commit (reusing ref-pill machinery) —
+NOT synthetic nodes in the perf-gated walk.
+- P9a (git/stash.rs + 5 commands + registration): reviewer APPROVE; tester 8-row matrix green; reuses
+  the P8 apply+inspect+conditional-drop so a conflicted pop/apply RETAINS the stash.
+- P9b (graph.rs collect_stash_bases + layout_walk step 6.5 attach; draw.ts stash entity/violet pill/
+  drawer icon; types.ts RefKind 'stash'; fixtures rows 3 & 6; buildContextItems no-menu for stash):
+  reviewer APPROVE (+ multi-stash-on-one-base graph test); harness violet pills render.
+- P9c (Sidebar Stashes section + RepoWorkspace handlers/menu/Drop-confirm + mock 5 cmds + tauri.ts +
+  IpcApi): harness-verified end-to-end (create 2->3, pop 3->2, drop-with-confirm 3->2, re-index correct).
+AI GATE: pnpm build clean; cargo test --lib 125 passed / 0 failed; p7SelfTest 29/0; no console errors.
+USER CHECKPOINT (native pnpm tauri dev): the Stashes sidebar lists real stashes with Apply/Pop/Drop
+(Drop confirms) + a "Stash changes" action; each stash shows as a pill on its base commit in the graph;
+operations round-trip against a real repo (cross-check `git stash list`).
 
 Original step: P7 kickoff. Source: user request (2026-07-29) after
 confirming P6 works. Four requirements:
