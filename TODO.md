@@ -111,7 +111,13 @@ definition of done.
 
 ## P3 — Diff overlay, trees, merge/rebase, multi-repo tabs — **in-progress** (2026-07-28)
 
-Current step: P3a + P3b — AI gates passed; awaiting USER CHECKPOINT for both (P3a overlay 65aa4d2/dfc2b3b; P3b trees 64c0358/8dde13e/a96446e)
+Current step: P3c — AI gate PASSED (reviewer APPROVE, no must-fix/should-fix; cargo test 220 pass incl.
+merge_cli 17 + conflict_cli 9; clippy -D warnings clean; pnpm build clean; harness ?op=merge verified —
+OpBanner, conflict rows + kind badges, ours/theirs/resolved, op-active gating §8.5, marker view with
+highlighted markers, resolve→Commit-merge-enable, commit clears banner + advances HEAD, Abort→ConfirmDialog
+clears state, plain-harness regression clean). AWAITING USER CHECKPOINT for P3c (see docs/contracts/P3c
+§10). P3a overlay (65aa4d2/dfc2b3b) + P3b trees (64c0358/8dde13e/a96446e) also still awaiting USER CHECKPOINT.
+Sub-increments: 51487db backend, e367c3d IPC/mock, bc13d90 frontend, 9d72ef1 tests.
 
 Plan approved by user 2026-07-28 (see ~/.claude/plans/for-this-bonsai-git-moonlit-metcalfe.md).
 Sequencing locked (UI wins first): P3a diff overlay → P3b tree grouping → P3c merge+conflicts →
