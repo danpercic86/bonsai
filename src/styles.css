@@ -34,6 +34,15 @@
   --lane-7: #f26d9c;
   --lane-8: #7a86ff;
   --lane-9: #8fbf4d;
+
+  /* Language-accent palette (P4e chip) — theme-shared, following the --lane-*
+     precedent: these brand hues read acceptably on the neutral chip background
+     in both dark and light, so they are defined once here and NOT duplicated in
+     the [data-theme='light'] block. */
+  --lang-ts: #3178c6;  --lang-js: #f1b542;  --lang-json: #a0a0a0;
+  --lang-html: #e34c26; --lang-css: #563d7c; --lang-md: #4f8cff;
+  --lang-rust: #dea584; --lang-py: #3572a5; --lang-cs: #68217a;
+  --lang-go: #00add8;  --lang-shell: #89e051; --lang-default: #6b7280;
 }
 
 [data-theme='light'] {
@@ -1244,6 +1253,34 @@ span.file-row-main {
   font-size: 12px;
   flex: none;
 }
+
+/* P4e Step 1: file-type accent chip in the diff overlay header. */
+.lang-chip {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-1);
+  background: var(--bg-2);
+  border-left: 3px solid var(--lang-accent, var(--lang-default));
+}
+.lang-chip[data-lang="typescript"] { --lang-accent: var(--lang-ts); }
+.lang-chip[data-lang="javascript"] { --lang-accent: var(--lang-js); }
+.lang-chip[data-lang="json"]       { --lang-accent: var(--lang-json); }
+.lang-chip[data-lang="xml"]        { --lang-accent: var(--lang-html); }
+.lang-chip[data-lang="css"],
+.lang-chip[data-lang="scss"]       { --lang-accent: var(--lang-css); }
+.lang-chip[data-lang="markdown"]   { --lang-accent: var(--lang-md); }
+.lang-chip[data-lang="rust"]       { --lang-accent: var(--lang-rust); }
+.lang-chip[data-lang="python"]     { --lang-accent: var(--lang-py); }
+.lang-chip[data-lang="csharp"]     { --lang-accent: var(--lang-cs); }
+.lang-chip[data-lang="go"]         { --lang-accent: var(--lang-go); }
+.lang-chip[data-lang="bash"]       { --lang-accent: var(--lang-shell); }
+/* remaining ids fall back to --lang-default via the .lang-chip default */
 
 .diff-overlay-body {
   flex: 1;

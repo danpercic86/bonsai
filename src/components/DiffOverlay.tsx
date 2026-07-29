@@ -1,6 +1,7 @@
 import type { ConflictFile, FileStatus } from '../ipc';
 import { DiffSlotView } from './DiffView';
 import type { DiffSlot } from './DiffView';
+import { detectLanguage } from '../utils/language';
 
 // P3a §2.2: full-pane diff overlay over the center graph pane. Purely
 // presentational — App owns the slot state, meta derivation, and Esc handling.
@@ -102,6 +103,7 @@ export interface DiffOverlayProps {
 }
 
 export function DiffOverlay({ slot, meta, onClose }: DiffOverlayProps) {
+  const lang = detectLanguage(meta.path);
   return (
     <div className="diff-overlay" role="region" aria-label={`Diff: ${meta.path}`}>
       <div className="diff-overlay-header">
@@ -117,6 +119,9 @@ export function DiffOverlay({ slot, meta, onClose }: DiffOverlayProps) {
           <span className="diff-overlay-path mono" title={meta.path}>
             {meta.path}
           </span>
+        )}
+        {lang !== null && (
+          <span className="lang-chip" data-lang={lang.id}>{lang.label}</span>
         )}
         <span className="diff-overlay-kind">{KIND_LABEL[meta.kind]}</span>
         <button
