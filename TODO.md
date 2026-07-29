@@ -119,9 +119,25 @@ persistence (4324272, orchestrator self-review mirroring ui-settings). P3e-c IPC
 mock (6324d06, reviewer APPROVE — INTERMEDIATE red full-tree build: ~31 App.tsx errors by design,
 src/ipc/* tsc-clean, goes green at P3e-e). Now: P3e-d GraphCanvas active prop + zero-size guard +
 remeasure-on-show — DONE (8dce359, orchestrator self-review; zero new graph tsc errors).
-Now: P3e-e frontend refactor (extract RepoWorkspace.tsx, add TabStrip.tsx replacing RepoSwitcher,
-slim App.tsx to global state + tabs + session wiring, ToastContext, reopen-all-on-launch). This
-restores the green full-tree pnpm build. senior-dev in flight.
+P3e-e frontend refactor — DONE (dc0d827, reviewer APPROVE; RepoWorkspace + TabStrip + slim App +
+ToastContext + reopen-all; 3 review fixes folded: selection-preserve-by-OID, Ctrl+W typing guard,
+back-compat session persist). Full-tree pnpm build GREEN.
+ALL 5 SUB-INCREMENTS COMMITTED: be49130 / 4324272 / 6324d06 / 8dce359 / dc0d827.
+P3e AI GATE PASSED (2026-07-29). Tester added isolation_in_progress_merge_does_not_leak (drives repo A
+into a real paused merge, asserts B's op-state/branches/status/graph untouched — closes reviewer NIT) +
+isolation_close_preserves_other_repos_in_progress_op. Full suite: cargo test 251 passed / 0 failed /
+2 ignored (perf gates) incl. commands lib 101, merge_cli 17, rebase_cli 18, conflict_cli 9; clippy
+-D warnings EXIT 0; pnpm build GREEN. Harness multi-tab §9.2 fully verified: reopen-all rehydrates 3
+tabs from persisted session (no console errors); all tabs mounted inactive display:none (hostCount=3);
+tab independence (repo-merge merge-banner vs repo-rebase rebase-banner step 2/3, hidden tab retains
+state); TabStrip folder-name pills + close + .tab-active + `+` recents/Browse/dedupe; per-repo
+workspace-toolbar; selection-preserve-by-OID across switch (commit stays selected + panel); scroll
+preserved across display:none (afterShow=200); close active tab -> right neighbor activates + host
+unmounts + session persisted; bogus-path skip -> skipped, no crash, session pruned, valid tabs open,
+toast system verified functional (sticky error toast renders). AWAITING USER CHECKPOINT §9.3.
+Sub-increments: be49130 / 4324272 / 6324d06 / 8dce359 / dc0d827 + tests commit.
+USER-CHECKPOINT DEBT carried (native pnpm tauri dev): P3a diff overlay, P3b tree grouping, P3c merge,
+P3d rebase, P3e multi-repo tabs.
 P3d AI gate PASSED + committed (56a43f7/f902ce0/c39af2a/95141ba); awaiting USER CHECKPOINT (debt below).
 
 --- P3d history (complete) ---
