@@ -13,7 +13,33 @@ honors them). Include this in every subagent prompt that runs tests or creates r
 
 ## P6 — Unified branch/remote context menus — **in-progress** (2026-07-29)
 
-Current step: P6 kickoff — writing architect contract. Source: user request (2026-07-29) after
+Current step: P6 AI GATE PASSED (2026-07-29) — awaiting USER CHECKPOINT. Commits: e3ae58e (P6a
+backend tip + checkout_remote/delete_remote_tracking + 6 CLI-oracle tests), e3a2e39 (P6b IPC/mock/
+fixtures), 1334a5c (P6cd unified branchMenuItems + strip sidebar buttons + moved/new delete
+confirms), a8fc529 (P6b mock compareWithHead "No differences" for HEAD-tip refs). Contract:
+docs/contracts/P6-unified-context-menus.md. Reviews: P6a APPROVE (0 must-fix; safe-checkout-first
+ordering + all 6 tests verified strong), P6cd APPROVE (0 must-fix; menu parity + derived dialogOpen
++ sidebar strip verified). Remote menu scope = FULL set (Checkout+Delete) per user choice
+(2026-07-29). P6c+P6d landed as ONE frontend commit (§4.5 removes setDialogOpen while §4.6 removes
+the onDialogOpenChange prop — split would not typecheck).
+AI-gate evidence: cargo test --lib 108 pass + branches_cli 25 pass (independently re-run, isolated
+target dir on D: to dodge the bonsai.exe lock from the user's tauri dev); clippy clean; pnpm build
+EXIT 0. Harness (mock :1424, both themes, no console errors): sidebar rows glyph+full-width name,
+ZERO inline buttons; local non-current row/pill → identical 5-item menu (Checkout/Merge/Rebase/
+Compare with HEAD/Delete), current main → no menu, tag → no menu; remote row/pill (incl.
+origin/release with no local) → 5-item remote menu; graph-pill parity confirmed (same branchMenuItems
+path, cur recomputed live); Compare on origin/main (tip=HEAD) → "No differences"; remote Checkout on
+origin/release → creates+switches to local "release", origin/release intact; remote Delete → "Delete
+remote-tracking reference" confirm (local-only wording) → row removed, other remotes intact; local
+Delete → "Delete branch" confirm. NOTE: non-HEAD branch Compare-with-HEAD not renderable in the mock
+(branch tips intentionally decoupled from graph-row ids) — wiring verified (panel opens, calls
+compareWithHead(tip)); real diffs covered by P5a Rust tests.
+USER CHECKPOINT (native pnpm tauri dev): (1) right-click a remote pill/row → Checkout creates a local
+tracking branch + switches (upstream set); (2) right-click a remote → Delete removes ONLY the local
+remote-tracking ref (server branch untouched, a fetch can bring it back); (3) the unified menu behaves
+identically from graph pill and sidebar row for checkout/merge/rebase/compare/delete on local + remote.
+
+Original step: P6 kickoff. Source: user request (2026-07-29) after
 confirming P5 works. Three requirements:
 1. **One context menu per branch** (graph pill AND sidebar row) with ALL applicable actions:
    Checkout, Merge …into current, Rebase current onto …, Compare with HEAD, Delete. Single place
