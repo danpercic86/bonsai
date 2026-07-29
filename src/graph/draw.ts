@@ -265,35 +265,6 @@ export function pillStyle(ref: RefLabel, node: GraphNode, theme: Theme): PillSty
   }
 }
 
-/** Draws one pill at x (left edge), row-centered at cy, with a precomputed
- *  width `w` (from {@link pillWidth}). Re-truncates the label the same way
- *  `pillWidth` measured it — so the drawn rect + text stay pixel-identical. */
-function drawPillAt(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  cy: number,
-  style: PillStyle,
-  w: number,
-): void {
-  const maxTextPx = METRICS.pillMaxWidth - 2 * METRICS.pillPadX;
-  const label = truncateToWidth(ctx, style.label, maxTextPx);
-  const h = METRICS.pillHeight;
-  const y = cy - h / 2;
-  const r = h / 2;
-
-  ctx.beginPath();
-  ctx.roundRect(x, y, w, h, r);
-  ctx.fillStyle = style.fill;
-  ctx.fill();
-  if (style.border !== null) {
-    ctx.strokeStyle = style.border;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  }
-  ctx.fillStyle = style.text;
-  ctx.fillText(label, x + METRICS.pillPadX, cy);
-}
-
 /** Measures a pill without drawing (for the overflow budget check). */
 function pillWidth(ctx: CanvasRenderingContext2D, style: PillStyle): number {
   const maxTextPx = METRICS.pillMaxWidth - 2 * METRICS.pillPadX;
@@ -577,17 +548,59 @@ export function layoutRefLabels(
   return result;
 }
 
+/** P7 §4.1: draws one laid-out ref label at row-center `cy`. Reuses the pill
+ *  rounded-rect body (fill + optional border), then draws the laptop/cloud
+ *  glyphs starting at `x + pillPadX`, then the label. The label is re-truncated
+ *  to the SAME `labelMaxPx` {@link layoutRefLabels} measured with, so the drawn
+ *  and laid-out widths stay pixel-identical. Nothing draws past the ref band
+ *  (guaranteed by the layout budget). */
+function drawRefLabelAt(ctx: CanvasRenderingContext2D, laid: LaidRefLabel, cy: number): void {
+  const { style, x, w, icons } = laid;
+  const h = METRICS.pillHeight;
+  const y = cy - h / 2;
+  const r = h / 2;
+
+  // pill body (reuses the old drawPillAt rounded-rect + border).
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+  ctx.fillStyle = style.fill;
+  ctx.fill();
+  if (style.border !== null) {
+    ctx.strokeStyle = style.border;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // icons (monochrome, colored by style.text), from x + pillPadX.
+  const S = METRICS.iconSize;
+  const by = cy - S / 2;
+  const anyIcon = icons.laptop || icons.cloud;
+  let ix = x + METRICS.pillPadX;
+  ctx.strokeStyle = style.text;
+  if (icons.laptop) {
+    drawLaptopIcon(ctx, ix, by, S);
+    ix += S;
+  }
+  if (icons.cloud) {
+    if (icons.laptop) ix += METRICS.iconGap;
+    drawCloudIcon(ctx, ix, by, S);
+    ix += S;
+  }
+  if (anyIcon) ix += METRICS.iconGap;
+
+  // label — same font + labelMaxPx as layoutRefLabels for pixel-identical width.
+  ctx.font = `${METRICS.pillFont} ${FONT_UI}`;
+  const labelMaxPx =
+    METRICS.pillMaxWidth - 2 * METRICS.pillPadX - iconsWidth(icons) - (anyIcon ? METRICS.iconGap : 0);
+  ctx.fillStyle = style.text;
+  ctx.textAlign = 'left';
+  ctx.fillText(truncateToWidth(ctx, style.label, labelMaxPx), ix, cy);
+}
+
 // ---------- WIP (uncommitted changes) row (P1 §9.3) ----------
 
 export interface WipSummary {
   fileCount: number;
-}
-
-/** Standard text-column x — same formula as drawGraph pass 5. */
-function textColumnX(laneCount: number): number {
-  return (
-    METRICS.gutter + Math.min(laneCount, METRICS.maxRenderLanes) * METRICS.laneWidth + METRICS.textGap
-  );
 }
 
 /** Draws the frontend-composited WIP row (P1 §9.1/§9.3). `vp.scrollTop` is the
@@ -640,7 +653,8 @@ export function drawWipRow(
 
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
-  const textX = textColumnX(layout.laneCount);
+  // P7 §7: WIP label moves to the summary zone; the LEFT ref band stays empty.
+  const textX = summaryStartX(layout.laneCount);
   ctx.font = `italic ${METRICS.summaryFont} ${FONT_UI}`;
   ctx.fillStyle = theme.text2;
   const label = 'Uncommitted changes';
@@ -689,81 +703,97 @@ export function drawGraph(
   ctx.lineCap = 'round';
   for (const e of visibleEdges) drawEdge(ctx, e, nodes, vp, theme);
 
-  // Pass 4: dots.
+  // Pass 4: author-initials avatars (P7 §2.1 — replaces the plain lane dot).
+  // Inner→outer: bg ring → avatar disc → lane ring → initials → HEAD ring →
+  // selection ring. Drawn per visible row only (virtualized).
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
   for (let row = firstRow; row <= lastRow; row++) {
     const node = nodes[row];
     const x = laneX(node.lane);
     const y = rowY(row, vp.scrollTop);
-    const color = theme.laneColors[node.lane % 10];
+    const laneColor = theme.laneColors[node.lane % 10];
+    const ac = avatarColor(node.author);
     const selected = ix.selectedIndex === row;
 
-    // 2px bg ring behind the dot (edges passing under read cleanly).
+    // bg ring — bg0 halo so edges passing under the avatar read cleanly.
     ctx.beginPath();
-    ctx.arc(x, y, METRICS.dotRadius + METRICS.dotRingWidth, 0, Math.PI * 2);
+    ctx.arc(x, y, METRICS.avatarRadius + METRICS.avatarBgRingExtra, 0, Math.PI * 2);
     ctx.fillStyle = theme.bg0;
     ctx.fill();
 
+    // avatar disc — theme-invariant hashed name color.
     ctx.beginPath();
-    ctx.arc(x, y, selected ? 5 : METRICS.dotRadius, 0, Math.PI * 2);
-    ctx.fillStyle = color;
+    ctx.arc(x, y, METRICS.avatarRadius, 0, Math.PI * 2);
+    ctx.fillStyle = ac.bg;
     ctx.fill();
+
+    // lane ring — ties the avatar to its lane color.
+    ctx.beginPath();
+    ctx.arc(x, y, METRICS.avatarRadius, 0, Math.PI * 2);
+    ctx.strokeStyle = laneColor;
+    ctx.lineWidth = METRICS.avatarRingWidth;
+    ctx.stroke();
+
+    // initials (centered baseline).
+    ctx.font = `${METRICS.avatarFont} ${FONT_UI}`;
+    ctx.fillStyle = ac.text;
+    ctx.fillText(initials(node.author), x, y);
 
     if (layout.headIndex === row) {
       ctx.beginPath();
-      ctx.arc(x, y, 6.5, 0, Math.PI * 2);
+      ctx.arc(x, y, METRICS.avatarHeadRingRadius, 0, Math.PI * 2);
       ctx.strokeStyle = theme.text1;
       ctx.lineWidth = 1.5;
       ctx.stroke();
-      ctx.lineWidth = METRICS.edgeWidth;
     }
     if (selected) {
       ctx.beginPath();
-      ctx.arc(x, y, 7, 0, Math.PI * 2);
+      ctx.arc(x, y, METRICS.avatarSelRingRadius, 0, Math.PI * 2);
       ctx.strokeStyle = theme.accent;
       ctx.lineWidth = 1.5;
       ctx.stroke();
-      ctx.lineWidth = METRICS.edgeWidth;
     }
   }
+  // Restore the text-pass expectations (textAlign) and edge lineWidth so the
+  // next paint's edges are unaffected (matches the old pass-4 cleanup).
+  ctx.textAlign = 'left';
+  ctx.lineWidth = METRICS.edgeWidth;
 
-  // Pass 5: text row content.
-  const { startX, budget } = pillArea(vp.width, layout.laneCount);
-  const authorRight = vp.width - METRICS.dateColWidth - METRICS.colGap * 2;
-  const authorLeft = authorRight - METRICS.authorColWidth;
+  // Pass 5: text row content (P7 §4.1 — three zones: LEFT ref column,
+  // RIGHT summary, RIGHT relative time; author removed).
+  const { startX, budget } = refColArea();
+  const sx = summaryStartX(layout.laneCount);
+  const dateLeft = vp.width - METRICS.dateColWidth - METRICS.colGap;
   const dateRight = vp.width - METRICS.colGap;
+  const summaryMax = dateLeft - METRICS.colGap - sx;
   const now = Math.floor(Date.now() / 1000);
 
   ctx.textBaseline = 'middle';
   for (let row = firstRow; row <= lastRow; row++) {
     const node = nodes[row];
     const y = rowY(row, vp.scrollTop);
-    let x = startX;
 
-    // 5a: ref pills, capped by the 40% budget with a trailing "+n" chip.
-    // Layout is computed by the shared pure helper (single source of truth
-    // with the hit-test); this pass only paints the laid-out pills.
-    const laid = layoutRowPills(ctx, node, theme, startX, budget);
-    if (laid.length > 0) {
+    // 5a (LEFT): ref column — collapsed entities capped by the fixed band with
+    // a trailing "+n" chip. Layout is the shared pure helper (single source of
+    // truth with the hit-test); this pass only paints the laid-out labels.
+    const laid = layoutRefLabels(ctx, groupRefs(node.refs), node, theme, startX, budget);
+    for (const l of laid) drawRefLabelAt(ctx, l, y);
+
+    // 5b (summary).
+    if (summaryMax > 0) {
+      ctx.font = `${METRICS.summaryFont} ${FONT_UI}`;
+      ctx.fillStyle = theme.text1;
       ctx.textAlign = 'left';
-      for (const p of laid) drawPillAt(ctx, p.x, y, p.style, p.w);
-      const last = laid[laid.length - 1];
-      x = last.x + last.w + METRICS.pillGap + 8;
+      ctx.fillText(truncateToWidth(ctx, node.summary, summaryMax), sx, y);
     }
 
-    // 5b: summary.
-    ctx.textAlign = 'left';
-    ctx.font = `${METRICS.summaryFont} ${FONT_UI}`;
-    ctx.fillStyle = theme.text1;
-    const summaryMax = authorLeft - METRICS.colGap - x;
-    if (summaryMax > 0) ctx.fillText(truncateToWidth(ctx, node.summary, summaryMax), x, y);
+    // 5c: author — REMOVED (P7 §4.1).
 
-    // 5c: author (right-aligned, fixed column).
+    // 5d (date): relative date, right-aligned in the last dateColWidth px.
     ctx.font = `${METRICS.metaFont} ${FONT_UI}`;
     ctx.fillStyle = theme.text3;
     ctx.textAlign = 'right';
-    ctx.fillText(truncateToWidth(ctx, node.author, METRICS.authorColWidth), authorRight, y);
-
-    // 5d: relative date (right-aligned in the last 72px).
     ctx.fillText(
       truncateToWidth(ctx, relativeDate(node.ts, now), METRICS.dateColWidth),
       dateRight,
