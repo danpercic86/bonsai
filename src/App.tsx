@@ -355,7 +355,7 @@ export default function App() {
     const id = ++opStateReqId.current;
     try {
       const op = await ipc.getOpState();
-      const list = op.kind === 'merge' ? await ipc.listConflicts() : [];
+      const list = op.kind === 'merge' || op.kind === 'rebase' ? await ipc.listConflicts() : [];
       if (id !== opStateReqId.current) return;
       setOpState(op);
       setConflicts(list);
@@ -1050,6 +1050,87 @@ export default function App() {
     }
   }
 
+  // ----- P3d: rebase handling -----
+
+  async function handleRebaseBranch(onto: string) {
+    setMutating(true);
+    try {
+      const res = await ipc.rebaseBranch(onto);
+      switch (res.kind) {
+        case 'upToDate':
+          pushToast('info', `Already up to date with ${onto}`);
+          break;
+        case 'fastForwarded':
+          pushToast('success', `Fast-forwarded onto ${onto}`);
+          break;
+        case 'rebased':
+          pushToast('success', `Rebased onto ${onto} (${res.steps} commit(s))`);
+          break;
+        case 'conflicts':
+          // A normal pause, not an error (§8.4).
+          pushToast(
+            'info',
+            `Rebase paused at step ${res.currentStep}/${res.totalSteps}: ` +
+              `${res.paths.length} conflict(s) to resolve`,
+          );
+          break;
+      }
+      await refreshAll();
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleRebaseContinue() {
+    setMutating(true);
+    try {
+      const res = await ipc.rebaseContinue();
+      if (res.kind === 'conflicts') {
+        pushToast('info', `Rebase paused at step ${res.currentStep}/${res.totalSteps}`);
+      } else if (res.kind === 'rebased') {
+        pushToast('success', 'Rebase complete');
+      }
+      await refreshAll();
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleRebaseSkip() {
+    setMutating(true);
+    try {
+      const res = await ipc.rebaseSkip();
+      if (res.kind === 'conflicts') {
+        pushToast('info', `Rebase paused at step ${res.currentStep}/${res.totalSteps}`);
+      } else if (res.kind === 'rebased') {
+        pushToast('success', 'Rebase complete');
+      }
+      await refreshAll();
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  // Called ONLY after the Abort-rebase ConfirmDialog confirms.
+  async function handleRebaseAbort() {
+    setMutating(true);
+    try {
+      await ipc.rebaseAbort();
+      await refreshAll();
+      pushToast('success', 'Rebase aborted');
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
   // P3c §8.2: row click toggles the read-only marker view (`conflict:<path>`).
   function handleToggleConflictView(path: string) {
     const key = `conflict:${path}`;
@@ -1200,6 +1281,7 @@ export default function App() {
             currentBranch={headBranch?.name ?? null}
             onCheckout={(name) => void handleCheckoutBranch(name)}
             onMergeBranch={(name) => void handleMergeBranch(name)}
+            onRebaseBranch={(name) => void handleRebaseBranch(name)}
             onDelete={(name) => void handleDeleteBranch(name)}
             onCreateBranch={handleCreateBranch}
             onDialogOpenChange={setDialogOpen}
@@ -1255,6 +1337,8 @@ export default function App() {
               conflictCount={conflicts.length}
               mutating={mutating}
               onCommitMerge={handleBannerCommitMerge}
+              onRebaseContinue={() => void handleRebaseContinue()}
+              onRebaseSkip={() => void handleRebaseSkip()}
               onAbort={() => setAbortConfirmOpen(true)}
             />
             {selectedIndex !== null && graph !== null ? (
@@ -1348,19 +1432,31 @@ export default function App() {
       )}
       <ConfirmDialog
         open={abortConfirmOpen}
-        title="Abort merge?"
-        confirmLabel="Abort merge"
+        title={opState.kind === 'rebase' ? 'Abort rebase?' : 'Abort merge?'}
+        confirmLabel={opState.kind === 'rebase' ? 'Abort rebase' : 'Abort merge'}
         busy={mutating}
         onConfirm={() => {
+          const isRebase = opState.kind === 'rebase';
           setAbortConfirmOpen(false);
-          void handleAbortMerge();
+          if (isRebase) {
+            void handleRebaseAbort();
+          } else {
+            void handleAbortMerge();
+          }
         }}
         onCancel={() => setAbortConfirmOpen(false)}
       >
-        <div>
-          This restores the files touched by the merge to their pre-merge state. Conflict
-          resolutions will be lost.
-        </div>
+        {opState.kind === 'rebase' ? (
+          <div>
+            This restores your branch and working tree to their pre-rebase state. Replayed commits
+            and conflict resolutions will be lost.
+          </div>
+        ) : (
+          <div>
+            This restores the files touched by the merge to their pre-merge state. Conflict
+            resolutions will be lost.
+          </div>
+        )}
       </ConfirmDialog>
       <ShortcutOverlay open={overlayOpen} onClose={() => setOverlayOpen(false)} />
       <Toasts toasts={toasts} onDismiss={dismissToast} />

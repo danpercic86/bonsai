@@ -27,6 +27,8 @@ export interface SidebarProps {
   onCheckout(name: string): void;
   /** P3c §8.6: merge this branch (local or remote shorthand) into current. */
   onMergeBranch(name: string): void;
+  /** P3d §8.6: rebase the current branch onto this branch (local or remote shorthand). */
+  onRebaseBranch(name: string): void;
   /** Called ONLY after the confirmation dialog is confirmed (contract §4.3). */
   onDelete(name: string): void;
   /** Resolves on success (input clears+closes); rejects with AppError (shown inline). */
@@ -95,15 +97,17 @@ function BranchRow({
   currentBranch,
   onCheckout,
   onMerge,
+  onRebase,
   onAskDelete,
   displayName,
 }: {
   branch: BranchInfo;
   busy: boolean;
-  /** null = detached/unborn — the merge affordance is hidden. */
+  /** null = detached/unborn — the merge/rebase affordances are hidden. */
   currentBranch: string | null;
   onCheckout(name: string): void;
   onMerge(name: string): void;
+  onRebase(name: string): void;
   onAskDelete(name: string): void;
   /** P3b tree mode: visible basename; ALL semantics (title, checkout, delete,
    *  badge, head glyph) keep using the full branch.name. */
@@ -146,6 +150,18 @@ function BranchRow({
               {'⇋'}
             </button>
           )}
+          {currentBranch !== null && (
+            <button
+              type="button"
+              className="row-action"
+              aria-label={`Rebase ${currentBranch} onto ${branch.name}`}
+              title={`Rebase ${currentBranch} onto ${branch.name}`}
+              disabled={busy}
+              onClick={() => onRebase(branch.name)}
+            >
+              {'⤵'}
+            </button>
+          )}
           <button
             type="button"
             className="row-action"
@@ -168,12 +184,14 @@ function RemoteRow({
   busy,
   currentBranch,
   onMerge,
+  onRebase,
 }: {
   name: string;
   displayName?: string;
   busy: boolean;
   currentBranch: string | null;
   onMerge(name: string): void;
+  onRebase(name: string): void;
 }) {
   return (
     <li className="branch-row branch-row-readonly">
@@ -191,6 +209,18 @@ function RemoteRow({
           onClick={() => onMerge(name)}
         >
           {'⇋'}
+        </button>
+      )}
+      {currentBranch !== null && (
+        <button
+          type="button"
+          className="row-action"
+          aria-label={`Rebase ${currentBranch} onto ${name}`}
+          title={`Rebase ${currentBranch} onto ${name}`}
+          disabled={busy}
+          onClick={() => onRebase(name)}
+        >
+          {'⤵'}
         </button>
       )}
     </li>
@@ -230,6 +260,7 @@ export function Sidebar({
   currentBranch,
   onCheckout,
   onMergeBranch,
+  onRebaseBranch,
   onDelete,
   onCreateBranch,
   onDialogOpenChange,
@@ -382,6 +413,7 @@ export function Sidebar({
                         currentBranch={currentBranch}
                         onCheckout={onCheckout}
                         onMerge={onMergeBranch}
+                        onRebase={onRebaseBranch}
                         onAskDelete={setPendingDelete}
                       />
                     ))}
@@ -398,6 +430,7 @@ export function Sidebar({
                         currentBranch={currentBranch}
                         onCheckout={onCheckout}
                         onMerge={onMergeBranch}
+                        onRebase={onRebaseBranch}
                         onAskDelete={setPendingDelete}
                         displayName={l.name}
                       />
@@ -431,6 +464,7 @@ export function Sidebar({
                       busy={actionsDisabled}
                       currentBranch={currentBranch}
                       onMerge={onMergeBranch}
+                      onRebase={onRebaseBranch}
                     />
                   )}
                 />
@@ -443,6 +477,7 @@ export function Sidebar({
                       busy={actionsDisabled}
                       currentBranch={currentBranch}
                       onMerge={onMergeBranch}
+                      onRebase={onRebaseBranch}
                     />
                   ))}
                 </ul>

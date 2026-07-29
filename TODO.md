@@ -119,8 +119,11 @@ mid-rebase; §11.3 merge-linearization accepted as the locked "plain non-interac
 P3d-a backend (git/rebase.rs + 4 commands) — DONE, reviewer verdict resolved (sole MUST-FIX was a
 let_and_return false-positive; clippy -D warnings verified clean exit 0, cargo check clean, 3 unit tests
 pass; map_conflict judgment call approved as-is). P3d-b IPC mirror + ?op=rebase mock — DONE (orchestrator
-self-reviewed the mechanical §7 mirror; pnpm build green). NEXT: P3d-c frontend (actionable OpBanner rebase
-mode + Sidebar ⤵). Tester (running in parallel): src-tauri/tests/rebase_cli.rs (11 cases).
+self-reviewed the mechanical §7 mirror; pnpm build green). P3d-c frontend (actionable OpBanner rebase mode
++ App handlers/generalized Abort dialog + Sidebar ⤵) — DONE, reviewer APPROVE (no must-fix/should-fix;
+pnpm build green). NEXT: verify full AI gate (cargo test incl. rebase_cli + clippy + build + ?op=rebase
+harness), then present P3d evidence + USER CHECKPOINT and STOP for user sign-off.
+Tester (running in parallel): src-tauri/tests/rebase_cli.rs (11 cases) — awaiting result.
 USER-CHECKPOINT DEBT (not self-declared — user must confirm in native `pnpm tauri dev`):
   - P3c merge/conflicts — AI gate PASSED 9e187e7 (reviewer APPROVE; cargo test 220 incl. merge_cli 17 +
     conflict_cli 9; clippy clean; pnpm build clean; harness ?op=merge fully verified). Checkpoint items:
