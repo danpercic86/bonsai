@@ -61,6 +61,47 @@ x=115 ≤ band-end 172, wide gap to avatar, "+4" chip overflow tooltip lists dev
 USER CHECKPOINT (native): overlaps gone (no "+n"/graph collision; timestamps not clipped by the
 scrollbar) and avatars read as comfortably larger, at whatever window size / theme.
 
+### P7f — ref-collapse fix + branch tooltip + copy (2026-07-29) — AI GATE PASSED, awaiting USER CHECKPOINT
+Frontend-only (Rust/wire UNCHANGED). Contract §14 (P7-gitkraken-layout.md). Commit: 00ac7f2.
+(A) groupRefs collapse key bug: keyed remote branches by lastIndexOf('/') → a slashed branch
+(origin/topic/x) mismatched local topic/x and showed twice; fixed to indexOf('/') (strip only the
+remote name) → collapses to one laptop+cloud pill. (B) hovering a shown branch pill shows the full
+branch name (new 'ref' TooltipState variant). (C) "Copy branch name" added to the shared
+branchMenuItems (graph pills + sidebar), clipboard-undefined-guarded. Also removed an embedded-NUL
+delimiter in sameTarget so GraphCanvas.tsx diffs as text now.
+AI-gate: pnpm build clean; p7SelfTest 28/0 (new slashed-collapse assertion); harness: no chevrons
+in file rows, dir hints correct. USER CHECKPOINT (native): a level local+remote slashed branch shows
+ONE pill; branch-pill hover shows full name; "Copy branch name" works in both menus.
+
+### P3f — changes-panel refinements (2026-07-29) — AI GATE PASSED, awaiting USER CHECKPOINT
+Frontend-only. Contract: docs/contracts/P3f-changes-panel.md. Commit: d546662.
+#1 double-click a directory row applies the section action to all descendants (Changes → stage all;
+Staged → unstage all) via a new generic Tree onActivateDir + dirActionHint; #2 removed the misleading
+chevron from file leaf rows (diff opens in center overlay; row already highlights). Dir chevrons and
+ConflictRow untouched. AI-gate (mock :1424, tree view): 9 dir toggles with correct hints, 0 chevrons
+in file rows; double-click "assets" dir moved Changes 8→7 / Staged 4→5. USER CHECKPOINT (native):
+double-click stages/unstages the whole folder; leaves read cleanly without arrows.
+
+## P8 — Merge with autostash — **in-progress** (2026-07-29)
+Current step: senior-dev implementing to docs/contracts/P8-merge-autostash.md; reviewer + tester next.
+User request: context-menu Merge should FF-by-default (already does) AND stash dirty changes → merge
+→ re-apply (git merge --autostash). Backend+frontend. Two OPEN QUESTIONS resolved by orchestrator with
+the architect's safe defaults (user asleep, authorized autonomous best-option choice): (1) NO
+REINSTATE_INDEX — staged returns unstaged; (2) deferred re-apply on a paused conflicted merge — leave
+autostash on the stack + toast, never dropped. New MergeOutcome shape: stashed:bool on FF/Merged/
+Conflicts + new StashPopConflicts{head,paths}. Command surface UNCHANGED. AI gate: cargo clippy +
+pnpm build clean; 7-row behavioral test matrix (tester) vs scratch repos; harness renders each toast
+via mock triggers. USER CHECKPOINT (native): merge a branch with a dirty tree; changes reappear.
+
+## P9 — Stash management (list/apply/pop/drop/create + view in graph) — **in-progress** (2026-07-29)
+Current step: architect designing docs/contracts/P9-stash-management.md. User request: "add support for
+stashes, to view stashes in graph, apply/pop/delete stash and so on." Orchestrator direction (chosen,
+lower-risk): sidebar "Stashes" section (list + Apply/Pop/Drop context menu + "Stash changes" action,
+Drop needs confirm) + represent each stash as a PILL on its base commit (new `stash` RefLabel kind,
+reusing ref-pill machinery) — NOT synthetic multi-parent nodes in the perf-gated walk. New Rust
+git/stash.rs + commands (list/create/apply/pop/drop) + graph.rs attaches stash refs to base commits.
+Likely sub-increments P9a (Rust+tests), P9b (graph.rs+draw.ts pill+mock+self-test), P9c (Sidebar+handlers).
+
 Original step: P7 kickoff. Source: user request (2026-07-29) after
 confirming P6 works. Four requirements:
 1. **Three-zone row layout** like GitKraken: LEFT = ref labels, CENTER = graph lanes+dots,
