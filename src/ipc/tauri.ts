@@ -14,13 +14,14 @@ import type {
   GraphLayout,
   IpcApi,
   MergeOutcome,
+  OpenRepoResult,
   PullResult,
   PushResult,
   RebaseOutcome,
   RecentRepo,
   RepoChangedPayload,
-  RepoInfo,
   RepoOpState,
+  SessionState,
   StatusSnapshot,
   UiSettings,
   UiSettingsPatch,
@@ -28,8 +29,12 @@ import type {
 } from './types';
 
 export const tauriIpc: IpcApi = {
-  openRepo(path: string): Promise<RepoInfo> {
-    return invoke<RepoInfo>('open_repo', { path });
+  openRepo(path: string): Promise<OpenRepoResult> {
+    return invoke<OpenRepoResult>('open_repo', { path });
+  },
+
+  closeRepo(repoId: string): Promise<void> {
+    return invoke<void>('close_repo', { repoId });
   },
 
   async pickFolder(): Promise<string | null> {
@@ -41,108 +46,118 @@ export const tauriIpc: IpcApi = {
     return typeof selected === 'string' ? selected : null;
   },
 
-  getStatus(): Promise<StatusSnapshot> {
-    return invoke<StatusSnapshot>('get_status');
+  getStatus(repoId: string): Promise<StatusSnapshot> {
+    return invoke<StatusSnapshot>('get_status', { repoId });
   },
 
-  getGraph(): Promise<GraphLayout> {
-    return invoke<GraphLayout>('get_graph');
+  getGraph(repoId: string): Promise<GraphLayout> {
+    return invoke<GraphLayout>('get_graph', { repoId });
   },
 
-  stage(paths: string[]): Promise<void> {
-    return invoke<void>('stage', { paths });
+  stage(repoId: string, paths: string[]): Promise<void> {
+    return invoke<void>('stage', { repoId, paths });
   },
 
-  unstage(paths: string[]): Promise<void> {
-    return invoke<void>('unstage', { paths });
+  unstage(repoId: string, paths: string[]): Promise<void> {
+    return invoke<void>('unstage', { repoId, paths });
   },
 
-  commit(message: string): Promise<CommitResult> {
-    return invoke<CommitResult>('commit', { message });
+  commit(repoId: string, message: string): Promise<CommitResult> {
+    return invoke<CommitResult>('commit', { repoId, message });
   },
 
-  getWorkdirFileDiff(path: string, origPath: string | null, staged: boolean): Promise<FileDiff> {
-    return invoke<FileDiff>('get_workdir_file_diff', { path, origPath, staged });
+  getWorkdirFileDiff(
+    repoId: string,
+    path: string,
+    origPath: string | null,
+    staged: boolean,
+  ): Promise<FileDiff> {
+    return invoke<FileDiff>('get_workdir_file_diff', { repoId, path, origPath, staged });
   },
 
-  getCommitDiff(oid: string): Promise<CommitDiff> {
-    return invoke<CommitDiff>('get_commit_diff', { oid });
+  getCommitDiff(repoId: string, oid: string): Promise<CommitDiff> {
+    return invoke<CommitDiff>('get_commit_diff', { repoId, oid });
   },
 
-  getCommitFileDiff(oid: string, path: string, origPath: string | null): Promise<FileDiff> {
-    return invoke<FileDiff>('get_commit_file_diff', { oid, path, origPath });
+  getCommitFileDiff(
+    repoId: string,
+    oid: string,
+    path: string,
+    origPath: string | null,
+  ): Promise<FileDiff> {
+    return invoke<FileDiff>('get_commit_file_diff', { repoId, oid, path, origPath });
   },
 
-  listBranches(): Promise<BranchesSnapshot> {
-    return invoke<BranchesSnapshot>('list_branches');
+  listBranches(repoId: string): Promise<BranchesSnapshot> {
+    return invoke<BranchesSnapshot>('list_branches', { repoId });
   },
 
-  createBranch(name: string): Promise<void> {
-    return invoke<void>('create_branch', { name });
+  createBranch(repoId: string, name: string): Promise<void> {
+    return invoke<void>('create_branch', { repoId, name });
   },
 
-  checkoutBranch(name: string): Promise<void> {
-    return invoke<void>('checkout_branch', { name });
+  checkoutBranch(repoId: string, name: string): Promise<void> {
+    return invoke<void>('checkout_branch', { repoId, name });
   },
 
-  deleteBranch(name: string): Promise<void> {
-    return invoke<void>('delete_branch', { name });
+  deleteBranch(repoId: string, name: string): Promise<void> {
+    return invoke<void>('delete_branch', { repoId, name });
   },
 
-  fetch(): Promise<FetchResult> {
-    return invoke<FetchResult>('fetch');
+  fetch(repoId: string): Promise<FetchResult> {
+    return invoke<FetchResult>('fetch', { repoId });
   },
 
-  pull(): Promise<PullResult> {
-    return invoke<PullResult>('pull');
+  pull(repoId: string): Promise<PullResult> {
+    return invoke<PullResult>('pull', { repoId });
   },
 
-  push(): Promise<PushResult> {
-    return invoke<PushResult>('push');
+  push(repoId: string): Promise<PushResult> {
+    return invoke<PushResult>('push', { repoId });
   },
 
-  getOpState(): Promise<RepoOpState> {
-    return invoke<RepoOpState>('get_op_state');
+  getOpState(repoId: string): Promise<RepoOpState> {
+    return invoke<RepoOpState>('get_op_state', { repoId });
   },
 
-  mergeBranch(name: string): Promise<MergeOutcome> {
-    return invoke<MergeOutcome>('merge_branch', { name });
+  mergeBranch(repoId: string, name: string): Promise<MergeOutcome> {
+    return invoke<MergeOutcome>('merge_branch', { repoId, name });
   },
 
-  commitMerge(message: string): Promise<CommitResult> {
-    return invoke<CommitResult>('commit_merge', { message });
+  commitMerge(repoId: string, message: string): Promise<CommitResult> {
+    return invoke<CommitResult>('commit_merge', { repoId, message });
   },
 
-  abortMerge(): Promise<void> {
-    return invoke<void>('abort_merge');
+  abortMerge(repoId: string): Promise<void> {
+    return invoke<void>('abort_merge', { repoId });
   },
 
-  listConflicts(): Promise<ConflictEntry[]> {
-    return invoke<ConflictEntry[]>('list_conflicts');
+  listConflicts(repoId: string): Promise<ConflictEntry[]> {
+    return invoke<ConflictEntry[]>('list_conflicts', { repoId });
   },
 
-  getConflict(path: string): Promise<ConflictFile> {
-    return invoke<ConflictFile>('get_conflict', { path });
+  getConflict(repoId: string, path: string): Promise<ConflictFile> {
+    return invoke<ConflictFile>('get_conflict', { repoId, path });
   },
 
-  resolveConflict(path: string, resolution: ConflictResolution): Promise<void> {
-    return invoke<void>('resolve_conflict', { path, resolution });
+  resolveConflict(repoId: string, path: string, resolution: ConflictResolution): Promise<void> {
+    return invoke<void>('resolve_conflict', { repoId, path, resolution });
   },
 
-  rebaseBranch(onto: string): Promise<RebaseOutcome> {
-    return invoke<RebaseOutcome>('rebase_branch', { onto });
+  rebaseBranch(repoId: string, onto: string): Promise<RebaseOutcome> {
+    return invoke<RebaseOutcome>('rebase_branch', { repoId, onto });
   },
 
-  rebaseContinue(): Promise<RebaseOutcome> {
-    return invoke<RebaseOutcome>('rebase_continue');
+  rebaseContinue(repoId: string): Promise<RebaseOutcome> {
+    return invoke<RebaseOutcome>('rebase_continue', { repoId });
   },
 
-  rebaseSkip(): Promise<RebaseOutcome> {
-    return invoke<RebaseOutcome>('rebase_skip');
+  rebaseSkip(repoId: string): Promise<RebaseOutcome> {
+    return invoke<RebaseOutcome>('rebase_skip', { repoId });
   },
 
-  rebaseAbort(): Promise<void> {
-    return invoke<void>('rebase_abort');
+  rebaseAbort(repoId: string): Promise<void> {
+    return invoke<void>('rebase_abort', { repoId });
   },
 
   getRecentRepos(): Promise<RecentRepo[]> {
@@ -169,5 +184,13 @@ export const tauriIpc: IpcApi = {
 
   setUiSettings(patch: UiSettingsPatch): Promise<UiSettings> {
     return invoke<UiSettings>('set_ui_settings', { patch });
+  },
+
+  getSession(): Promise<SessionState> {
+    return invoke<SessionState>('get_session');
+  },
+
+  setSession(session: SessionState): Promise<void> {
+    return invoke<void>('set_session', { session });
   },
 };

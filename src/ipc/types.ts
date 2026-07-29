@@ -13,6 +13,14 @@ export interface RepoInfo {
   head: HeadInfo | null;
 }
 
+/** Result of `openRepo`: the canonical `repoId` (workdir path string) + repo info.
+ *  `repoId` is meaningful (a map entry exists) only for a usable repo; it is still
+ *  returned for non-usable opens so the frontend can key its error UI. */
+export interface OpenRepoResult {
+  repoId: string;
+  info: RepoInfo;
+}
+
 export type FileStatus =
   | 'added'
   | 'modified'
@@ -264,6 +272,8 @@ export interface RecentRepo {
 }
 
 export interface RepoChangedPayload {
+  /** Which open repo the debounced filesystem change belongs to. */
+  repoId: string;
   reason: string;
 }
 
@@ -287,6 +297,13 @@ export interface UiSettingsPatch {
   theme?: Theme;
   paneWidths?: PaneWidths;
   listView?: ListView;
+}
+
+/** Persisted multi-tab session: open tabs (in display order) + the active tab.
+ *  `repoId`s are canonical workdir path strings. */
+export interface SessionState {
+  openRepos: string[];
+  activeRepo: string | null;
 }
 
 export type Unsubscribe = () => void;
@@ -317,85 +334,99 @@ export interface AppError {
 }
 
 export interface IpcApi {
-  /** Rejects with {@link AppError}. */
-  openRepo(path: string): Promise<RepoInfo>;
+  /** Open (or focus) a repo. Returns the canonical `repoId` + info. A usable
+   *  repo (isRepo && !bare) creates/refreshes a keyed entry; re-opening an
+   *  already-open path focuses it (same `repoId`, no reset). Rejects {@link AppError}. */
+  openRepo(path: string): Promise<OpenRepoResult>;
+  /** Close a repo and tear down its watcher. Idempotent (unknown id ⇒ resolves). */
+  closeRepo(repoId: string): Promise<void>;
   /** Resolves to `null` when the user cancels the dialog. */
   pickFolder(): Promise<string | null>;
-  /** Rejects with {@link AppError} (`noRepo` when nothing is open). */
-  getStatus(): Promise<StatusSnapshot>;
-  /** Full graph layout for the open repo. Rejects with {@link AppError} (`noRepo` when nothing open). */
-  getGraph(): Promise<GraphLayout>;
+  /** Rejects with {@link AppError} (`noRepo` when the id is not open). */
+  getStatus(repoId: string): Promise<StatusSnapshot>;
+  /** Full graph layout for a repo. Rejects with {@link AppError} (`noRepo` when the id is not open). */
+  getGraph(repoId: string): Promise<GraphLayout>;
   /** Stage paths (worktree-relative, forward slashes — StatusEntry.path strings). Atomic. */
-  stage(paths: string[]): Promise<void>;
+  stage(repoId: string, paths: string[]): Promise<void>;
   /** Unstage paths. Atomic. Safe (worktree never touched). */
-  unstage(paths: string[]): Promise<void>;
+  unstage(repoId: string, paths: string[]): Promise<void>;
   /** Create a commit from the index. Rejects with AppError kinds
    *  emptyMessage | configMissing | nothingToCommit | git | noRepo. */
-  commit(message: string): Promise<CommitResult>;
+  commit(repoId: string, message: string): Promise<CommitResult>;
   /** Diff of one working-dir file. staged=false: index vs workdir; staged=true: HEAD vs index.
    *  origPath: pass StatusEntry.origPath (renames). Rejects AppError ('noRepo', 'git'). */
-  getWorkdirFileDiff(path: string, origPath: string | null, staged: boolean): Promise<FileDiff>;
+  getWorkdirFileDiff(
+    repoId: string,
+    path: string,
+    origPath: string | null,
+    staged: boolean,
+  ): Promise<FileDiff>;
   /** Commit details + per-file headers vs first parent. Rejects AppError ('noRepo', 'git'). */
-  getCommitDiff(oid: string): Promise<CommitDiff>;
+  getCommitDiff(repoId: string, oid: string): Promise<CommitDiff>;
   /** Hunks for one file of a commit's first-parent diff. */
-  getCommitFileDiff(oid: string, path: string, origPath: string | null): Promise<FileDiff>;
+  getCommitFileDiff(
+    repoId: string,
+    oid: string,
+    path: string,
+    origPath: string | null,
+  ): Promise<FileDiff>;
   /** Local branches + remotes + tags + HEAD in one snapshot. Rejects noRepo | git. */
-  listBranches(): Promise<BranchesSnapshot>;
+  listBranches(repoId: string): Promise<BranchesSnapshot>;
   /** Create branch at current HEAD (no checkout). Rejects
    *  invalidName | branchExists | git | noRepo. */
-  createBranch(name: string): Promise<void>;
+  createBranch(repoId: string, name: string): Promise<void>;
   /** Safe checkout of a LOCAL branch. Rejects
    *  branchNotFound | checkoutConflict | git | noRepo. */
-  checkoutBranch(name: string): Promise<void>;
+  checkoutBranch(repoId: string, name: string): Promise<void>;
   /** Delete a LOCAL, fully merged, non-current branch. Rejects
    *  branchNotFound | unmergedBranch | git | noRepo. */
-  deleteBranch(name: string): Promise<void>;
+  deleteBranch(repoId: string, name: string): Promise<void>;
   /** Fetch ALL remotes. Rejects noRemote | authFailed | networkError | git | noRepo. */
-  fetch(): Promise<FetchResult>;
+  fetch(repoId: string): Promise<FetchResult>;
   /** Fetch upstream remote + fast-forward only. Rejects noUpstream | authFailed
    *  | networkError | checkoutConflict | git | noRepo. */
-  pull(): Promise<PullResult>;
+  pull(repoId: string): Promise<PullResult>;
   /** Push current branch (sets upstream to origin/<branch> when none). Rejects
    *  noRemote | authFailed | networkError | pushRejected | git | noRepo. */
-  push(): Promise<PushResult>;
+  push(repoId: string): Promise<PushResult>;
   /** Current operation state (merge/rebase/...). Part of the refresh batch.
    *  Rejects noRepo | git. */
-  getOpState(): Promise<RepoOpState>;
+  getOpState(repoId: string): Promise<RepoOpState>;
   /** Merge a local or remote-tracking branch into the current branch. Rejects
    *  operationInProgress | branchNotFound | checkoutConflict | configMissing
    *  | git | noRepo. */
-  mergeBranch(name: string): Promise<MergeOutcome>;
+  mergeBranch(repoId: string, name: string): Promise<MergeOutcome>;
   /** Finalize a paused merge. Rejects noOperationInProgress
    *  | unresolvedConflicts | emptyMessage | configMissing | git | noRepo. */
-  commitMerge(message: string): Promise<CommitResult>;
+  commitMerge(repoId: string, message: string): Promise<CommitResult>;
   /** Abort a paused merge (worktree-destructive for merge-touched files).
    *  Rejects noOperationInProgress | git | noRepo. */
-  abortMerge(): Promise<void>;
+  abortMerge(repoId: string): Promise<void>;
   /** All current index conflicts, path-ascending. Rejects noRepo | git. */
-  listConflicts(): Promise<ConflictEntry[]>;
+  listConflicts(repoId: string): Promise<ConflictEntry[]>;
   /** Read-only marker view of one conflicted file. Rejects noRepo | git. */
-  getConflict(path: string): Promise<ConflictFile>;
+  getConflict(repoId: string, path: string): Promise<ConflictFile>;
   /** Resolve one conflicted path. Rejects noRepo | git | invalidName. */
-  resolveConflict(path: string, resolution: ConflictResolution): Promise<void>;
+  resolveConflict(repoId: string, path: string, resolution: ConflictResolution): Promise<void>;
   /** Start a rebase of the current branch onto `onto` (local or remote-tracking
    *  shorthand). Rejects operationInProgress | branchNotFound | checkoutConflict
    *  | configMissing | git | noRepo. */
-  rebaseBranch(onto: string): Promise<RebaseOutcome>;
+  rebaseBranch(repoId: string, onto: string): Promise<RebaseOutcome>;
   /** Resume a paused rebase. Rejects noOperationInProgress | unresolvedConflicts
    *  | configMissing | git | noRepo. */
-  rebaseContinue(): Promise<RebaseOutcome>;
+  rebaseContinue(repoId: string): Promise<RebaseOutcome>;
   /** Skip the current operation and resume. Rejects noOperationInProgress
    *  | configMissing | git | noRepo. */
-  rebaseSkip(): Promise<RebaseOutcome>;
+  rebaseSkip(repoId: string): Promise<RebaseOutcome>;
   /** Abort a paused rebase (worktree-destructive). Rejects noOperationInProgress
    *  | git | noRepo. */
-  rebaseAbort(): Promise<void>;
+  rebaseAbort(repoId: string): Promise<void>;
   /** Recent successfully-opened repos, most recent first, max 10. Never rejects
    *  for a missing/corrupt settings file (returns []). */
   getRecentRepos(): Promise<RecentRepo[]>;
   /** Removes one entry; returns the updated list. */
   removeRecentRepo(path: string): Promise<RecentRepo[]>;
-  /** Fires after debounced filesystem changes in the open repo. */
+  /** Fires after debounced filesystem changes; payload carries the `repoId`. */
   onRepoChanged(cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe>;
   /** Fires when the app window regains focus. */
   onWindowFocus(cb: () => void): Promise<Unsubscribe>;
@@ -403,4 +434,8 @@ export interface IpcApi {
   getUiSettings(): Promise<UiSettings>;
   /** Applies a partial patch (only defined fields) and returns the resulting settings. */
   setUiSettings(patch: UiSettingsPatch): Promise<UiSettings>;
+  /** Persisted multi-tab session. Never rejects for a missing/corrupt file (empty). */
+  getSession(): Promise<SessionState>;
+  /** Writes the whole session (tabs change as a unit). Rejects io on save failure. */
+  setSession(session: SessionState): Promise<void>;
 }

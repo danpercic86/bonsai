@@ -17,6 +17,7 @@ import type {
   IpcApi,
   ListView,
   MergeOutcome,
+  OpenRepoResult,
   PullResult,
   PushResult,
   PaneWidths,
@@ -25,6 +26,7 @@ import type {
   RepoChangedPayload,
   RepoInfo,
   RepoOpState,
+  SessionState,
   StatusEntry,
   StatusSnapshot,
   Theme,
@@ -64,33 +66,6 @@ const INITIAL_STATUS: StatusSnapshot = {
   conflicted: [],
 };
 
-// Stateful mock (M3 contract §5): stage/unstage/commit mutate this snapshot so
-// the browser harness round-trips visibly. Reset only when a DIFFERENT path is
-// opened (the post-commit openRepo call must not resurrect staged files).
-let mockStatus: StatusSnapshot = structuredClone(INITIAL_STATUS);
-let mockHeadOid: string = MOCK_OID;
-let openedPath: string | null = null;
-
-// Stateful branch mock (M5 contract §5): create/checkout/delete mutate this
-// snapshot; mockHeadBranch drives the header after a checkout.
-let mockBranches: BranchesSnapshot = structuredClone(INITIAL_BRANCHES);
-let mockHeadBranch = 'main';
-
-// Stateful remote mock (M6 contract §5): the first fetch "discovers" one new
-// commit on origin/main (main goes behind:1) so a subsequent pull fast-forwards.
-let mockFetched = false;
-
-// Synthetic commit rows (P1 contract §3.5): commit() prepends lane-0 rows to
-// the DEFAULT graph fixture so the harness shows the new commit at the top.
-let mockCommits: MockCommit[] = [];
-
-// Stateful op-state mock (P3c contract §7.2): `?op=merge` seeds a paused
-// conflicted merge; resolve/commit/abort mutate this state so the harness
-// walks the full merge story. Composable with `?fixture=`.
-let opState: RepoOpState = { kind: 'none' };
-let conflicts: ConflictEntry[] = [];
-let conflictTexts = new Map<string, ConflictFile>();
-
 const MERGE_AUTH_TEXT = [
   'import { hash } from "./crypto";',
   '',
@@ -122,24 +97,119 @@ const MERGE_README_TEXT = [
   '',
 ].join('\n');
 
-/** Seeds (or clears) the `?op=merge` / `?op=rebase` paused-op state + status rows. */
-function seedOpState(): void {
-  conflictTexts = new Map();
-  const op = new URLSearchParams(window.location.search).get('op');
+// ---------------------------------------------------------------------------
+// P3e-c: per-repo state. Every stateful flow that used to live in module-level
+// singletons now lives inside a MockRepoState, one per open repoId. The map is
+// the single source of per-repo truth — there is NO module-level per-repo
+// singleton anymore. `openRepo` creates entries lazily; `closeRepo` deletes.
+// ---------------------------------------------------------------------------
+
+/** How a repo's HEAD / graph are shaped (seeded once at open). */
+type RepoKind = 'default' | 'detached' | 'unborn';
+type GraphFixture = 'default' | '20k' | 'detached';
+
+interface MockRepoState {
+  /** Path exactly as passed to openRepo (what the UI shows); repoId is the key. */
+  path: string;
+  kind: RepoKind;
+  /** Which fixture getGraph/getCommitDiff serve for this repo. */
+  graphFixture: GraphFixture;
+  /** `?fixture=noconfig` — commit() rejects with configMissing. */
+  noConfig: boolean;
+  /** `?remote=` failure trigger (authfail | network | rejected | conflict). */
+  remoteTrigger: string | null;
+
+  status: StatusSnapshot;
+  headOid: string;
+  branches: BranchesSnapshot;
+  headBranch: string;
+  fetched: boolean;
+  commits: MockCommit[];
+  opState: RepoOpState;
+  conflicts: ConflictEntry[];
+  conflictTexts: Map<string, ConflictFile>;
+}
+
+const repos = new Map<string /* repoId */, MockRepoState>();
+
+function query(name: string): string | null {
+  return new URLSearchParams(window.location.search).get(name);
+}
+
+/**
+ * Mock stand-in for the backend's `read_repo_info` workdir canonicalization:
+ * normalize separators + strip a trailing slash, preserving case (matches the
+ * real backend, whose ONLY case-insensitive step is the dedupe scan below).
+ */
+function mockCanonical(path: string): string {
+  return path.replace(/[\\/]+/g, '/').replace(/\/+$/, '');
+}
+
+/**
+ * Resolve the repoId for a usable open: reuse an existing key that matches
+ * case-insensitively (backend dedupe scan → focus), else the fresh canonical.
+ */
+function resolveRepoId(path: string): string {
+  const canonical = mockCanonical(path);
+  for (const key of repos.keys()) {
+    if (key.toLowerCase() === canonical.toLowerCase()) return key;
+  }
+  return canonical;
+}
+
+/**
+ * Per-repo seeding for distinct tabs. Query params (`?op=merge`, `?op=rebase`,
+ * `?fixture=detached|20k|noconfig`, `?remote=…`) seed the DEFAULT repo so
+ * single-tab harness flows are unchanged. ADDITIONALLY, a path whose string
+ * contains one of these substrings seeds that distinct state so the harness can
+ * open multiple tabs with independent states:
+ *   'merge'      → paused conflicted merge
+ *   'rebase'     → paused conflicted rebase (step 2/3)
+ *   'detached'   → detached HEAD + detached graph fixture
+ *   'unborn'     → unborn HEAD (usable, empty repo)
+ *   'not-a-repo' → non-usable (isRepo:false)   [handled in openRepo, no entry]
+ *   'bare'       → non-usable bare repo         [handled in openRepo, no entry]
+ * Path substrings win over query params for their own dimension.
+ */
+function repoOp(path: string): 'merge' | 'rebase' | null {
+  if (path.includes('merge')) return 'merge';
+  if (path.includes('rebase')) return 'rebase';
+  const q = query('op');
+  if (q === 'merge' || q === 'rebase') return q;
+  return null;
+}
+
+function repoGraphFixture(path: string): GraphFixture {
+  if (path.includes('detached')) return 'detached';
+  const q = query('fixture');
+  if (q === '20k') return '20k';
+  if (q === 'detached') return 'detached';
+  return 'default';
+}
+
+function repoKind(path: string, graphFixture: GraphFixture): RepoKind {
+  if (path.includes('unborn')) return 'unborn';
+  if (graphFixture === 'detached') return 'detached';
+  return 'default';
+}
+
+/** Seeds (or clears) a repo's paused-op state + conflicted status rows. */
+function seedOpState(state: MockRepoState, op: 'merge' | 'rebase' | null): void {
+  state.conflictTexts = new Map();
   if (op === 'rebase') {
     // Pre-seeded paused conflicted rebase at step 2/3 — the "resolve → continue
     // finishes" demo. `rebaseBranch` is the separate clean-rebase demo path.
-    opState = {
+    state.opState = {
       kind: 'rebase',
       headName: 'feature/topic',
       onto: '00'.repeat(20), // fixture full oid of the onto tip (base row 0's oid)
       currentStep: 2,
       totalSteps: 3,
     };
-    conflicts = [
+    state.conflicts = [
       { path: 'src/auth.ts', kind: 'bothModified', hasBase: true, hasOurs: true, hasTheirs: true },
     ];
-    conflictTexts.set('src/auth.ts', {
+    state.conflictTexts.set('src/auth.ts', {
       path: 'src/auth.ts',
       kind: 'bothModified',
       binary: false,
@@ -147,7 +217,7 @@ function seedOpState(): void {
       missing: false,
       text: MERGE_AUTH_TEXT, // reuse the marker fixture
     });
-    mockStatus.conflicted = conflicts.map((c) => ({
+    state.status.conflicted = state.conflicts.map((c) => ({
       path: c.path,
       origPath: null,
       status: 'conflicted',
@@ -155,21 +225,21 @@ function seedOpState(): void {
     return;
   }
   if (op !== 'merge') {
-    opState = { kind: 'none' };
-    conflicts = [];
+    state.opState = { kind: 'none' };
+    state.conflicts = [];
     return;
   }
-  opState = {
+  state.opState = {
     kind: 'merge',
     incoming: 'feature/login',
     message: "Merge branch 'feature/login'\n\nConflicts:\n\tsrc/auth.ts\n\tREADME.md",
   };
   // Path-ascending, like the backend's list_conflicts.
-  conflicts = [
+  state.conflicts = [
     { path: 'README.md', kind: 'deletedByThem', hasBase: true, hasOurs: true, hasTheirs: false },
     { path: 'src/auth.ts', kind: 'bothModified', hasBase: true, hasOurs: true, hasTheirs: true },
   ];
-  conflictTexts.set('src/auth.ts', {
+  state.conflictTexts.set('src/auth.ts', {
     path: 'src/auth.ts',
     kind: 'bothModified',
     binary: false,
@@ -178,7 +248,7 @@ function seedOpState(): void {
     text: MERGE_AUTH_TEXT,
   });
   // deletedByThem: the worktree keeps OUR version (no markers).
-  conflictTexts.set('README.md', {
+  state.conflictTexts.set('README.md', {
     path: 'README.md',
     kind: 'deletedByThem',
     binary: false,
@@ -186,15 +256,73 @@ function seedOpState(): void {
     missing: false,
     text: MERGE_README_TEXT,
   });
-  mockStatus.conflicted = conflicts.map((c) => ({
+  state.status.conflicted = state.conflicts.map((c) => ({
     path: c.path,
     origPath: null,
     status: 'conflicted',
   }));
   // README.md is conflicted, not plain-modified, while the merge is paused.
-  mockStatus.unstaged = mockStatus.unstaged.filter((e) => e.path !== 'README.md');
+  state.status.unstaged = state.status.unstaged.filter((e) => e.path !== 'README.md');
 }
-seedOpState();
+
+/** Builds a fresh MockRepoState for a usable repo (default / detached / unborn). */
+function createRepoState(path: string): MockRepoState {
+  const graphFixture = repoGraphFixture(path);
+  const state: MockRepoState = {
+    path,
+    kind: repoKind(path, graphFixture),
+    graphFixture,
+    noConfig: query('fixture') === 'noconfig',
+    remoteTrigger: query('remote'),
+    status: structuredClone(INITIAL_STATUS),
+    headOid: MOCK_OID,
+    branches: structuredClone(INITIAL_BRANCHES),
+    headBranch: 'main',
+    fetched: false,
+    commits: [],
+    opState: { kind: 'none' },
+    conflicts: [],
+    conflictTexts: new Map(),
+  };
+  seedOpState(state, repoOp(path));
+  return state;
+}
+
+/** Fresh RepoInfo reflecting the repo's current HEAD (follows checkouts/commits). */
+function buildInfo(state: MockRepoState, path: string): RepoInfo {
+  if (state.kind === 'unborn') {
+    return {
+      path,
+      isRepo: true,
+      bare: false,
+      head: { branchName: 'main', oid: '', detached: false, unborn: true },
+    };
+  }
+  if (state.kind === 'detached') {
+    return {
+      path,
+      isRepo: true,
+      bare: false,
+      head: { branchName: null, oid: state.headOid, detached: true, unborn: false },
+    };
+  }
+  return {
+    path,
+    isRepo: true,
+    bare: false,
+    head: { branchName: state.headBranch, oid: state.headOid, detached: false, unborn: false },
+  };
+}
+
+/** Looks up an open repo or throws the backend's NoRepo error shape. */
+function requireRepo(repoId: string): MockRepoState {
+  const state = repos.get(repoId);
+  if (state === undefined) {
+    const err: AppError = { kind: 'noRepo', message: 'mock: repository is not open' };
+    throw err;
+  }
+  return state;
+}
 
 // Recents persistence (P1 contract §3.4): localStorage-backed so the harness
 // reopen-on-launch story is verifiable — open once, reload, auto-reopen.
@@ -223,6 +351,34 @@ function readRecents(): RecentRepo[] {
 function writeRecents(list: RecentRepo[]): void {
   try {
     window.localStorage.setItem(RECENTS_KEY, JSON.stringify(list));
+  } catch {
+    // Best-effort, like the backend's non-fatal save.
+  }
+}
+
+// Session persistence (P3e contract §6/§8.1): localStorage-backed like recents /
+// ui-settings so reopen-all survives a harness reload.
+const SESSION_KEY = 'bonsai.mockSession';
+
+/** Corrupt/missing storage degrades to an empty session — mirrors load_from. */
+function readSession(): SessionState {
+  try {
+    const raw = window.localStorage.getItem(SESSION_KEY);
+    if (raw === null) return { openRepos: [], activeRepo: null };
+    const parsed = JSON.parse(raw) as Partial<SessionState>;
+    const openRepos = Array.isArray(parsed.openRepos)
+      ? parsed.openRepos.filter((r): r is string => typeof r === 'string')
+      : [];
+    const activeRepo = typeof parsed.activeRepo === 'string' ? parsed.activeRepo : null;
+    return { openRepos, activeRepo };
+  } catch {
+    return { openRepos: [], activeRepo: null };
+  }
+}
+
+function writeSession(session: SessionState): void {
+  try {
+    window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
   } catch {
     // Best-effort, like the backend's non-fatal save.
   }
@@ -289,11 +445,6 @@ function recordRecent(path: string): void {
   const list = readRecents().filter((r) => r.path.toLowerCase() !== path.toLowerCase());
   list.unshift({ path, lastOpened: Math.floor(Date.now() / 1000) });
   writeRecents(list.slice(0, MAX_RECENTS));
-}
-
-/** `?remote=` failure trigger — separate from `?fixture=` so they compose. */
-function remoteTrigger(): string | null {
-  return new URLSearchParams(window.location.search).get('remote');
 }
 
 function throwAuthFailed(): never {
@@ -369,81 +520,62 @@ function upsert(into: StatusEntry[], entry: StatusEntry): void {
  * op + conflicted status, moves HEAD, and prepends `steps` plain replayed
  * MockCommits atop the graph so they visibly appear.
  */
-function finishRebase(steps: number): RebaseOutcome {
-  opState = { kind: 'none' };
-  mockStatus.conflicted = [];
-  mockHeadOid = randomOid();
-  // mockCommits[0] is the topmost row = the new HEAD tip (prependCommits maps
-  // index 0 to headIndex 0), so the tip carries mockHeadOid.
+function finishRebase(state: MockRepoState, steps: number): RebaseOutcome {
+  state.opState = { kind: 'none' };
+  state.status.conflicted = [];
+  state.headOid = randomOid();
+  // commits[0] is the topmost row = the new HEAD tip (prependCommits maps
+  // index 0 to headIndex 0), so the tip carries headOid.
   const replayed: MockCommit[] = Array.from({ length: steps }, (_, i) => ({
-    oid: i === 0 ? mockHeadOid : randomOid(),
+    oid: i === 0 ? state.headOid : randomOid(),
     summary: `pick: replayed ${steps - i}`,
   }));
-  mockCommits.unshift(...replayed);
-  return { kind: 'rebased', branch: mockHeadBranch, head: mockHeadOid, steps };
+  state.commits.unshift(...replayed);
+  return { kind: 'rebased', branch: state.headBranch, head: state.headOid, steps };
 }
 
 export const mockIpc: IpcApi = {
-  async openRepo(path: string): Promise<RepoInfo> {
+  // Idempotent per repoId: a re-open focuses the existing tab (no state reset),
+  // matching the real backend + the old single-repo `path !== openedPath` guard.
+  async openRepo(path: string): Promise<OpenRepoResult> {
     await delay(150);
-
-    if (path !== openedPath) {
-      mockStatus = structuredClone(INITIAL_STATUS);
-      mockHeadOid = MOCK_OID;
-      mockBranches = structuredClone(INITIAL_BRANCHES);
-      mockHeadBranch = 'main';
-      mockFetched = false;
-      mockCommits = [];
-      seedOpState();
-      openedPath = path;
-    }
 
     if (path.includes('error')) {
       const err: AppError = { kind: 'io', message: 'mock: path does not exist' };
       throw err;
     }
+    // Non-usable opens still return a repoId (for the frontend's error UI) but
+    // create NO entry and touch no other tab (contract §4.2).
     if (path.includes('not-a-repo')) {
-      return { path, isRepo: false, bare: false, head: null };
+      return { repoId: mockCanonical(path), info: { path, isRepo: false, bare: false, head: null } };
     }
     if (path.includes('bare')) {
       return {
-        path,
-        isRepo: true,
-        bare: true,
-        head: { branchName: 'main', oid: '', detached: false, unborn: true },
+        repoId: mockCanonical(path),
+        info: {
+          path,
+          isRepo: true,
+          bare: true,
+          head: { branchName: 'main', oid: '', detached: false, unborn: true },
+        },
       };
     }
-    if (path.includes('unborn')) {
-      recordRecent(path); // usable open: isRepo && !bare (unborn included)
-      return {
-        path,
-        isRepo: true,
-        bare: false,
-        head: { branchName: 'main', oid: '', detached: false, unborn: true },
-      };
-    }
-    // Every successful usable open (isRepo && !bare) lands in the recents
-    // list, like the backend open_repo hook (P1 contract §3.2/§3.4).
+
+    // Usable open (isRepo && !bare — unborn included): create/focus an entry.
+    const repoId = resolveRepoId(path);
     recordRecent(path);
-    // `?fixture=detached` mirrors the detached listBranches/graph fixtures in
-    // the header HEAD too (M6 §6.8.9: Pull/Push disabled, Fetch enabled).
-    if (new URLSearchParams(window.location.search).get('fixture') === 'detached') {
-      return {
-        path,
-        isRepo: true,
-        bare: false,
-        head: { branchName: null, oid: mockHeadOid, detached: true, unborn: false },
-      };
+    let state = repos.get(repoId);
+    if (state === undefined) {
+      state = createRepoState(path);
+      repos.set(repoId, state);
     }
-    // Default fixture: the canonical mock repo (and any unknown path). The
-    // branch name follows mock checkouts so the App's post-checkout openRepo
-    // visibly updates the header (M5 contract §5).
-    return {
-      path,
-      isRepo: true,
-      bare: false,
-      head: { branchName: mockHeadBranch, oid: mockHeadOid, detached: false, unborn: false },
-    };
+    return { repoId, info: buildInfo(state, path) };
+  },
+
+  closeRepo(repoId: string): Promise<void> {
+    // Idempotent: deleting an unknown/already-closed id is a no-op.
+    repos.delete(repoId);
+    return Promise.resolve();
   },
 
   async pickFolder(): Promise<string | null> {
@@ -451,45 +583,49 @@ export const mockIpc: IpcApi = {
     return MOCK_REPO_PATH;
   },
 
-  async getStatus(): Promise<StatusSnapshot> {
+  async getStatus(repoId: string): Promise<StatusSnapshot> {
     await delay(150);
+    const state = requireRepo(repoId);
     // Fresh copy so callers can't mutate the fixture between fetches.
-    return structuredClone(mockStatus);
+    return structuredClone(state.status);
   },
 
-  async stage(paths: string[]): Promise<void> {
+  async stage(repoId: string, paths: string[]): Promise<void> {
     await delay(150);
-    for (const entry of takeMatching(mockStatus.unstaged, paths)) {
-      upsert(mockStatus.staged, entry);
+    const state = requireRepo(repoId);
+    for (const entry of takeMatching(state.status.unstaged, paths)) {
+      upsert(state.status.staged, entry);
     }
-    for (const entry of takeMatching(mockStatus.untracked, paths)) {
-      upsert(mockStatus.staged, { ...entry, status: 'added' });
+    for (const entry of takeMatching(state.status.untracked, paths)) {
+      upsert(state.status.staged, { ...entry, status: 'added' });
     }
-    sortByPath(mockStatus.staged);
+    sortByPath(state.status.staged);
   },
 
-  async unstage(paths: string[]): Promise<void> {
+  async unstage(repoId: string, paths: string[]): Promise<void> {
     await delay(150);
-    for (const entry of takeMatching(mockStatus.staged, paths)) {
+    const state = requireRepo(repoId);
+    for (const entry of takeMatching(state.status.staged, paths)) {
       if (entry.status === 'added') {
-        upsert(mockStatus.untracked, { ...entry, status: 'untracked' });
+        upsert(state.status.untracked, { ...entry, status: 'untracked' });
       } else {
-        upsert(mockStatus.unstaged, entry); // status + origPath preserved
+        upsert(state.status.unstaged, entry); // status + origPath preserved
       }
     }
-    sortByPath(mockStatus.unstaged);
-    sortByPath(mockStatus.untracked);
+    sortByPath(state.status.unstaged);
+    sortByPath(state.status.untracked);
   },
 
-  async commit(message: string): Promise<CommitResult> {
+  async commit(repoId: string, message: string): Promise<CommitResult> {
     await delay(150);
+    const state = requireRepo(repoId);
     if (message.trim() === '') {
       const err: AppError = { kind: 'emptyMessage', message: 'commit message is empty' };
       throw err;
     }
     // Signature resolution happens before the nothing-to-commit check in the
     // backend (contract §2.4 steps 4→6) — mirror that precedence here.
-    if (new URLSearchParams(window.location.search).get('fixture') === 'noconfig') {
+    if (state.noConfig) {
       const err: AppError = {
         kind: 'configMissing',
         message:
@@ -499,48 +635,50 @@ export const mockIpc: IpcApi = {
       };
       throw err;
     }
-    if (mockStatus.staged.length === 0) {
+    if (state.status.staged.length === 0) {
       const err: AppError = {
         kind: 'nothingToCommit',
         message: 'nothing to commit (index matches HEAD)',
       };
       throw err;
     }
-    mockStatus.staged = [];
-    mockHeadOid = randomOid();
+    state.status.staged = [];
+    state.headOid = randomOid();
     // M6 contract §5: bump the current branch's ahead count so the harness
     // gets the natural commit → push story (main: 0/0 → ↑1 → push clears).
-    const headBranch = mockBranches.local.find((b) => b.name === mockHeadBranch);
+    const headBranch = state.branches.local.find((b) => b.name === state.headBranch);
     if (headBranch !== undefined && headBranch.upstream !== null) {
       headBranch.ahead = (headBranch.ahead ?? 0) + 1;
     }
     const summary = message.trim().split('\n', 1)[0] ?? '';
     // P1 contract §3.5: the DEFAULT graph fixture gains a synthetic lane-0 row
     // per mock commit (newest first) so the harness shows the commit on top.
-    mockCommits.unshift({ oid: mockHeadOid, summary });
-    return { oid: mockHeadOid, summary, branch: mockHeadBranch };
+    state.commits.unshift({ oid: state.headOid, summary });
+    return { oid: state.headOid, summary, branch: state.headBranch };
   },
 
   async getWorkdirFileDiff(
+    repoId: string,
     path: string,
     origPath: string | null,
     staged: boolean,
   ): Promise<FileDiff> {
     await delay(150);
+    requireRepo(repoId);
     return structuredClone(mockWorkdirDiff(path, origPath, staged));
   },
 
-  async getCommitDiff(oid: string): Promise<CommitDiff> {
+  async getCommitDiff(repoId: string, oid: string): Promise<CommitDiff> {
     await delay(150);
+    const state = requireRepo(repoId);
     // Route by row index of the ACTIVE fixture layout (contract §5: robust
     // against oid spelling; 20k rows fall through to the generic diff).
-    const fixture = new URLSearchParams(window.location.search).get('fixture');
     const layout =
-      fixture === '20k'
+      state.graphFixture === '20k'
         ? generateLayout20k()
-        : fixture === 'detached'
+        : state.graphFixture === 'detached'
           ? buildMockGraphDetached()
-          : prependCommits(buildMockGraph(), mockCommits);
+          : prependCommits(buildMockGraph(), state.commits);
     const index = layout.nodes.findIndex((n) => n.id === oid);
     if (index === -1) {
       const err: AppError = { kind: 'git', message: 'mock: unknown commit' };
@@ -549,33 +687,38 @@ export const mockIpc: IpcApi = {
     return structuredClone(mockCommitDiff(index, oid));
   },
 
-  async getCommitFileDiff(oid: string, path: string, origPath: string | null): Promise<FileDiff> {
+  async getCommitFileDiff(
+    repoId: string,
+    oid: string,
+    path: string,
+    origPath: string | null,
+  ): Promise<FileDiff> {
     await delay(150);
+    requireRepo(repoId);
     return structuredClone(mockCommitFileDiff(oid, path, origPath));
   },
 
-  async getGraph(): Promise<GraphLayout> {
+  async getGraph(repoId: string): Promise<GraphLayout> {
     await delay(150);
+    const state = requireRepo(repoId);
     // Built fresh per call (timestamps relative to now; callers own the copy).
-    // `?fixture=` selects a variant (contract §5.4 mechanism).
-    const fixture = new URLSearchParams(window.location.search).get('fixture');
-    if (fixture === '20k') return generateLayout20k();
-    if (fixture === 'detached') return buildMockGraphDetached();
-    // Default fixture: synthetic mock-commit rows prepended (P1 §3.5); the
-    // 20k and detached fixtures stay as-is.
-    return prependCommits(buildMockGraph(), mockCommits);
+    if (state.graphFixture === '20k') return generateLayout20k();
+    if (state.graphFixture === 'detached') return buildMockGraphDetached();
+    // Default fixture: synthetic mock-commit rows prepended (P1 §3.5).
+    return prependCommits(buildMockGraph(), state.commits);
   },
 
-  async listBranches(): Promise<BranchesSnapshot> {
+  async listBranches(repoId: string): Promise<BranchesSnapshot> {
     await delay(150);
-    const snapshot = structuredClone(mockBranches);
-    if (new URLSearchParams(window.location.search).get('fixture') === 'detached') {
-      snapshot.head = { branchName: null, oid: mockHeadOid, detached: true, unborn: false };
+    const state = requireRepo(repoId);
+    const snapshot = structuredClone(state.branches);
+    if (state.kind === 'detached') {
+      snapshot.head = { branchName: null, oid: state.headOid, detached: true, unborn: false };
       for (const branch of snapshot.local) branch.isHead = false;
     } else {
       snapshot.head = {
-        branchName: mockHeadBranch,
-        oid: mockHeadOid,
+        branchName: state.headBranch,
+        oid: state.headOid,
         detached: false,
         unborn: false,
       };
@@ -583,33 +726,35 @@ export const mockIpc: IpcApi = {
     return snapshot;
   },
 
-  async createBranch(name: string): Promise<void> {
+  async createBranch(repoId: string, name: string): Promise<void> {
     await delay(150);
+    const state = requireRepo(repoId);
     if (isInvalidBranchName(name)) {
       const err: AppError = { kind: 'invalidName', message: `invalid branch name: '${name}'` };
       throw err;
     }
     const trimmed = name.trim();
-    if (mockBranches.local.some((b) => b.name === trimmed)) {
+    if (state.branches.local.some((b) => b.name === trimmed)) {
       const err: AppError = {
         kind: 'branchExists',
         message: `branch '${trimmed}' already exists`,
       };
       throw err;
     }
-    mockBranches.local.push({
+    state.branches.local.push({
       name: trimmed,
       isHead: false,
       upstream: null,
       ahead: null,
       behind: null,
     });
-    mockBranches.local.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+    state.branches.local.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   },
 
-  async checkoutBranch(name: string): Promise<void> {
+  async checkoutBranch(repoId: string, name: string): Promise<void> {
     await delay(150);
-    const branch = mockBranches.local.find((b) => b.name === name);
+    const state = requireRepo(repoId);
+    const branch = state.branches.local.find((b) => b.name === name);
     if (branch === undefined) {
       const err: AppError = { kind: 'branchNotFound', message: `branch '${name}' not found` };
       throw err;
@@ -624,18 +769,19 @@ export const mockIpc: IpcApi = {
       };
       throw err;
     }
-    for (const b of mockBranches.local) b.isHead = false;
+    for (const b of state.branches.local) b.isHead = false;
     branch.isHead = true;
-    mockHeadBranch = name;
-    mockBranches.head = { branchName: name, oid: mockHeadOid, detached: false, unborn: false };
+    state.headBranch = name;
+    state.branches.head = { branchName: name, oid: state.headOid, detached: false, unborn: false };
     // TODO(polish): move the HEAD/branch pills in the mock graph fixture too
     // (contract §5 decision: fixtures stay decoupled from branch state —
     // harness proof is the sidebar dot + header branch name).
   },
 
-  async deleteBranch(name: string): Promise<void> {
+  async deleteBranch(repoId: string, name: string): Promise<void> {
     await delay(150);
-    const branch = mockBranches.local.find((b) => b.name === name);
+    const state = requireRepo(repoId);
+    const branch = state.branches.local.find((b) => b.name === name);
     if (branch === undefined) {
       const err: AppError = { kind: 'branchNotFound', message: `branch '${name}' not found` };
       throw err;
@@ -658,20 +804,20 @@ export const mockIpc: IpcApi = {
       };
       throw err;
     }
-    mockBranches.local = mockBranches.local.filter((b) => b.name !== name);
+    state.branches.local = state.branches.local.filter((b) => b.name !== name);
   },
 
   // Stateful remote mock (M6 contract §5). Failure triggers via `?remote=`
   // (authfail | network | rejected | conflict), composable with `?fixture=`.
-  async fetch(): Promise<FetchResult> {
+  async fetch(repoId: string): Promise<FetchResult> {
     await delay(400);
-    const trigger = remoteTrigger();
-    if (trigger === 'authfail') throwAuthFailed();
-    if (trigger === 'network') throwNetworkError();
-    if (!mockFetched) {
-      mockFetched = true;
+    const state = requireRepo(repoId);
+    if (state.remoteTrigger === 'authfail') throwAuthFailed();
+    if (state.remoteTrigger === 'network') throwNetworkError();
+    if (!state.fetched) {
+      state.fetched = true;
       // The fetch "discovers" one new upstream commit on main.
-      const main = mockBranches.local.find((b) => b.name === 'main');
+      const main = state.branches.local.find((b) => b.name === 'main');
       if (main !== undefined && main.upstream !== null) {
         main.behind = 1;
       }
@@ -680,12 +826,12 @@ export const mockIpc: IpcApi = {
     return { remotes: [{ remote: 'origin', receivedObjects: 0, updatedRefs: 0 }] };
   },
 
-  async pull(): Promise<PullResult> {
+  async pull(repoId: string): Promise<PullResult> {
     await delay(400);
-    const trigger = remoteTrigger();
-    if (trigger === 'authfail') throwAuthFailed();
-    if (trigger === 'network') throwNetworkError();
-    if (trigger === 'conflict') {
+    const state = requireRepo(repoId);
+    if (state.remoteTrigger === 'authfail') throwAuthFailed();
+    if (state.remoteTrigger === 'network') throwNetworkError();
+    if (state.remoteTrigger === 'conflict') {
       const err: AppError = {
         kind: 'checkoutConflict',
         message:
@@ -694,7 +840,7 @@ export const mockIpc: IpcApi = {
       };
       throw err;
     }
-    const branch = mockBranches.local.find((b) => b.name === mockHeadBranch);
+    const branch = state.branches.local.find((b) => b.name === state.headBranch);
     if (branch === undefined) {
       // Detached fixture etc. — button is disabled anyway; stay inert.
       return { kind: 'upToDate' };
@@ -713,20 +859,20 @@ export const mockIpc: IpcApi = {
       return { kind: 'wouldNotFastForward', branch: branch.name, ahead, behind };
     }
     if (behind > 0) {
-      const from = mockHeadOid;
-      mockHeadOid = randomOid();
+      const from = state.headOid;
+      state.headOid = randomOid();
       branch.behind = 0;
-      return { kind: 'fastForwarded', branch: branch.name, from, to: mockHeadOid };
+      return { kind: 'fastForwarded', branch: branch.name, from, to: state.headOid };
     }
     return { kind: 'upToDate' };
   },
 
-  async push(): Promise<PushResult> {
+  async push(repoId: string): Promise<PushResult> {
     await delay(400);
-    const trigger = remoteTrigger();
-    if (trigger === 'authfail') throwAuthFailed();
-    if (trigger === 'network') throwNetworkError();
-    if (trigger === 'rejected') {
+    const state = requireRepo(repoId);
+    if (state.remoteTrigger === 'authfail') throwAuthFailed();
+    if (state.remoteTrigger === 'network') throwNetworkError();
+    if (state.remoteTrigger === 'rejected') {
       const err: AppError = {
         kind: 'pushRejected',
         message:
@@ -735,18 +881,18 @@ export const mockIpc: IpcApi = {
       };
       throw err;
     }
-    const branch = mockBranches.local.find((b) => b.name === mockHeadBranch);
+    const branch = state.branches.local.find((b) => b.name === state.headBranch);
     if (branch === undefined) {
-      return { kind: 'upToDate', remote: 'origin', branch: mockHeadBranch };
+      return { kind: 'upToDate', remote: 'origin', branch: state.headBranch };
     }
     if (branch.upstream === null) {
       // First push of a new branch: push to origin/<name> AND set upstream.
       branch.upstream = `origin/${branch.name}`;
       branch.ahead = 0;
       branch.behind = 0;
-      if (!mockBranches.remote.some((r) => r.name === branch.upstream)) {
-        mockBranches.remote.push({ name: `origin/${branch.name}` });
-        mockBranches.remote.sort((a, b) =>
+      if (!state.branches.remote.some((r) => r.name === branch.upstream)) {
+        state.branches.remote.push({ name: `origin/${branch.name}` });
+        state.branches.remote.sort((a, b) =>
           a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
         );
       }
@@ -759,17 +905,19 @@ export const mockIpc: IpcApi = {
     return { kind: 'upToDate', remote: 'origin', branch: branch.name };
   },
 
-  // Stateful op-state mock (P3c contract §7.2). `?op=merge` starts the
-  // harness pre-seeded in a paused conflicted merge; mergeBranch is the
-  // clean-merge demo path.
-  async getOpState(): Promise<RepoOpState> {
+  // Stateful op-state mock (P3c contract §7.2). A repo seeded with a merge/rebase
+  // (via `?op=` or a path substring) starts paused; mergeBranch/rebaseBranch are
+  // the clean-op demo paths.
+  async getOpState(repoId: string): Promise<RepoOpState> {
     await delay(150);
-    return structuredClone(opState);
+    const state = requireRepo(repoId);
+    return structuredClone(state.opState);
   },
 
-  async mergeBranch(name: string): Promise<MergeOutcome> {
+  async mergeBranch(repoId: string, name: string): Promise<MergeOutcome> {
     await delay(150);
-    if (opState.kind !== 'none') {
+    const state = requireRepo(repoId);
+    if (state.opState.kind !== 'none') {
       const err: AppError = {
         kind: 'operationInProgress',
         message: 'an operation is already in progress — commit or abort it first',
@@ -777,29 +925,30 @@ export const mockIpc: IpcApi = {
       throw err;
     }
     // Clean-merge demo: auto-committed 2-parent node on top of the graph.
-    mockHeadOid = randomOid();
-    mockCommits.unshift({
-      oid: mockHeadOid,
+    state.headOid = randomOid();
+    state.commits.unshift({
+      oid: state.headOid,
       summary: `Merge branch '${name}'`,
       mergeParentBase: 1, // the 'feat' fixture tip
     });
-    const headBranch = mockBranches.local.find((b) => b.name === mockHeadBranch);
+    const headBranch = state.branches.local.find((b) => b.name === state.headBranch);
     if (headBranch !== undefined && headBranch.upstream !== null) {
       headBranch.ahead = (headBranch.ahead ?? 0) + 1;
     }
-    return { kind: 'merged', oid: mockHeadOid };
+    return { kind: 'merged', oid: state.headOid };
   },
 
-  async commitMerge(message: string): Promise<CommitResult> {
+  async commitMerge(repoId: string, message: string): Promise<CommitResult> {
     await delay(150);
-    if (opState.kind !== 'merge') {
+    const state = requireRepo(repoId);
+    if (state.opState.kind !== 'merge') {
       const err: AppError = { kind: 'noOperationInProgress', message: 'no merge in progress' };
       throw err;
     }
-    if (conflicts.length > 0) {
+    if (state.conflicts.length > 0) {
       const err: AppError = {
         kind: 'unresolvedConflicts',
-        message: `cannot commit: ${conflicts.length} unresolved conflict(s) remain`,
+        message: `cannot commit: ${state.conflicts.length} unresolved conflict(s) remain`,
       };
       throw err;
     }
@@ -807,41 +956,44 @@ export const mockIpc: IpcApi = {
       const err: AppError = { kind: 'emptyMessage', message: 'commit message is empty' };
       throw err;
     }
-    opState = { kind: 'none' };
-    mockStatus.conflicted = [];
-    mockHeadOid = randomOid();
+    state.opState = { kind: 'none' };
+    state.status.conflicted = [];
+    state.headOid = randomOid();
     const summary = message.trim().split('\n', 1)[0] ?? '';
     // Faithful twin: a visible 2-parent merge node on top of the graph
     // (second parent = the 'feat' fixture tip, base row 1).
-    mockCommits.unshift({ oid: mockHeadOid, summary, mergeParentBase: 1 });
-    const headBranch = mockBranches.local.find((b) => b.name === mockHeadBranch);
+    state.commits.unshift({ oid: state.headOid, summary, mergeParentBase: 1 });
+    const headBranch = state.branches.local.find((b) => b.name === state.headBranch);
     if (headBranch !== undefined && headBranch.upstream !== null) {
       headBranch.ahead = (headBranch.ahead ?? 0) + 1;
     }
-    return { oid: mockHeadOid, summary, branch: mockHeadBranch };
+    return { oid: state.headOid, summary, branch: state.headBranch };
   },
 
-  async abortMerge(): Promise<void> {
+  async abortMerge(repoId: string): Promise<void> {
     await delay(150);
-    if (opState.kind !== 'merge') {
+    const state = requireRepo(repoId);
+    if (state.opState.kind !== 'merge') {
       const err: AppError = { kind: 'noOperationInProgress', message: 'no merge in progress' };
       throw err;
     }
     // Restore the pre-merge state.
-    opState = { kind: 'none' };
-    conflicts = [];
-    conflictTexts = new Map();
-    mockStatus.conflicted = [];
+    state.opState = { kind: 'none' };
+    state.conflicts = [];
+    state.conflictTexts = new Map();
+    state.status.conflicted = [];
   },
 
-  async listConflicts(): Promise<ConflictEntry[]> {
+  async listConflicts(repoId: string): Promise<ConflictEntry[]> {
     await delay(150);
-    return structuredClone(conflicts);
+    const state = requireRepo(repoId);
+    return structuredClone(state.conflicts);
   },
 
-  async getConflict(path: string): Promise<ConflictFile> {
+  async getConflict(repoId: string, path: string): Promise<ConflictFile> {
     await delay(150);
-    const file = conflictTexts.get(path);
+    const state = requireRepo(repoId);
+    const file = state.conflictTexts.get(path);
     if (file === undefined) {
       const err: AppError = { kind: 'git', message: `path '${path}' has no conflict` };
       throw err;
@@ -849,30 +1001,36 @@ export const mockIpc: IpcApi = {
     return structuredClone(file);
   },
 
-  async resolveConflict(path: string, resolution: ConflictResolution): Promise<void> {
+  async resolveConflict(
+    repoId: string,
+    path: string,
+    resolution: ConflictResolution,
+  ): Promise<void> {
     await delay(150);
-    const entry = conflicts.find((c) => c.path === path);
+    const state = requireRepo(repoId);
+    const entry = state.conflicts.find((c) => c.path === path);
     if (entry === undefined) {
       const err: AppError = { kind: 'git', message: `path '${path}' has no conflict` };
       throw err;
     }
-    conflicts = conflicts.filter((c) => c.path !== path);
-    conflictTexts.delete(path);
-    mockStatus.conflicted = mockStatus.conflicted.filter((e) => e.path !== path);
+    state.conflicts = state.conflicts.filter((c) => c.path !== path);
+    state.conflictTexts.delete(path);
+    state.status.conflicted = state.status.conflicted.filter((e) => e.path !== path);
     // Taking THEIRS on a deletedByThem conflict accepts their deletion: the
     // file shows up as a staged deletion in the mock lists (contract §7.2).
     if (resolution === 'theirs' && entry.kind === 'deletedByThem') {
-      upsert(mockStatus.staged, { path, origPath: null, status: 'deleted' });
-      sortByPath(mockStatus.staged);
+      upsert(state.status.staged, { path, origPath: null, status: 'deleted' });
+      sortByPath(state.status.staged);
     }
   },
 
-  // Stateful rebase mock (P3d contract §7.2). `?op=rebase` starts the harness
-  // pre-seeded in a paused conflicted rebase (step 2/3); rebaseBranch is the
-  // clean-rebase demo path. Shares opState/conflicts/conflictTexts with merge.
-  async rebaseBranch(_onto: string): Promise<RebaseOutcome> {
+  // Stateful rebase mock (P3d contract §7.2). A repo seeded with a rebase starts
+  // paused (step 2/3); rebaseBranch is the clean-rebase demo path. Shares
+  // opState/conflicts/conflictTexts with merge, now per-repo.
+  async rebaseBranch(repoId: string, _onto: string): Promise<RebaseOutcome> {
     await delay(150);
-    if (opState.kind !== 'none') {
+    const state = requireRepo(repoId);
+    if (state.opState.kind !== 'none') {
       const err: AppError = {
         kind: 'operationInProgress',
         message: 'an operation is already in progress — commit or abort it first',
@@ -880,67 +1038,70 @@ export const mockIpc: IpcApi = {
       throw err;
     }
     // Clean-rebase demo: replay 3 plain commits atop the graph so they appear.
-    // mockCommits[0] is the topmost row = the new HEAD tip, so it carries the oid.
-    mockHeadOid = randomOid();
-    mockCommits.unshift(
-      { oid: mockHeadOid, summary: 'pick: replayed 3' },
+    // commits[0] is the topmost row = the new HEAD tip, so it carries the oid.
+    state.headOid = randomOid();
+    state.commits.unshift(
+      { oid: state.headOid, summary: 'pick: replayed 3' },
       { oid: randomOid(), summary: 'pick: replayed 2' },
       { oid: randomOid(), summary: 'pick: replayed 1' },
     );
-    const headBranch = mockBranches.local.find((b) => b.name === mockHeadBranch);
+    const headBranch = state.branches.local.find((b) => b.name === state.headBranch);
     if (headBranch !== undefined && headBranch.upstream !== null) {
       headBranch.ahead = (headBranch.ahead ?? 0) + 3;
     }
-    return { kind: 'rebased', branch: mockHeadBranch, head: mockHeadOid, steps: 3 };
+    return { kind: 'rebased', branch: state.headBranch, head: state.headOid, steps: 3 };
   },
 
-  async rebaseContinue(): Promise<RebaseOutcome> {
+  async rebaseContinue(repoId: string): Promise<RebaseOutcome> {
     await delay(150);
-    if (opState.kind !== 'rebase') {
+    const state = requireRepo(repoId);
+    if (state.opState.kind !== 'rebase') {
       const err: AppError = { kind: 'noOperationInProgress', message: 'no rebase in progress' };
       throw err;
     }
-    if (conflicts.length > 0) {
+    if (state.conflicts.length > 0) {
       const err: AppError = {
         kind: 'unresolvedConflicts',
-        message: `cannot continue: ${conflicts.length} unresolved conflict(s) remain`,
+        message: `cannot continue: ${state.conflicts.length} unresolved conflict(s) remain`,
       };
       throw err;
     }
     // Advance the current step (so a mid-call getOpState would reflect it), then
     // finish: the seeded demo has no further conflict, so a single continue
     // completes the remaining steps (2/3 → done).
-    const totalSteps = opState.totalSteps;
-    opState = { ...opState, currentStep: opState.currentStep + 1 };
-    return finishRebase(totalSteps);
+    const totalSteps = state.opState.totalSteps;
+    state.opState = { ...state.opState, currentStep: state.opState.currentStep + 1 };
+    return finishRebase(state, totalSteps);
   },
 
-  async rebaseSkip(): Promise<RebaseOutcome> {
+  async rebaseSkip(repoId: string): Promise<RebaseOutcome> {
     await delay(150);
-    if (opState.kind !== 'rebase') {
+    const state = requireRepo(repoId);
+    if (state.opState.kind !== 'rebase') {
       const err: AppError = { kind: 'noOperationInProgress', message: 'no rebase in progress' };
       throw err;
     }
     // Skip is allowed WITH conflicts — dropping the offending commit resolves it.
-    const totalSteps = opState.totalSteps;
-    conflicts = [];
-    conflictTexts = new Map();
-    mockStatus.conflicted = [];
-    opState = { ...opState, currentStep: opState.currentStep + 1 };
-    return finishRebase(totalSteps);
+    const totalSteps = state.opState.totalSteps;
+    state.conflicts = [];
+    state.conflictTexts = new Map();
+    state.status.conflicted = [];
+    state.opState = { ...state.opState, currentStep: state.opState.currentStep + 1 };
+    return finishRebase(state, totalSteps);
   },
 
-  async rebaseAbort(): Promise<void> {
+  async rebaseAbort(repoId: string): Promise<void> {
     await delay(150);
-    if (opState.kind !== 'rebase') {
+    const state = requireRepo(repoId);
+    if (state.opState.kind !== 'rebase') {
       const err: AppError = { kind: 'noOperationInProgress', message: 'no rebase in progress' };
       throw err;
     }
     // Abort rewinds: restore the pre-rebase state, prepend NOTHING.
-    opState = { kind: 'none' };
-    conflicts = [];
-    conflictTexts = new Map();
-    mockStatus.conflicted = [];
+    state.opState = { kind: 'none' };
+    state.conflicts = [];
+    state.conflictTexts = new Map();
+    state.status.conflicted = [];
   },
 
   async getRecentRepos(): Promise<RecentRepo[]> {
@@ -977,10 +1138,21 @@ export const mockIpc: IpcApi = {
     const current = readUiSettings();
     const next: UiSettings = {
       theme: patch.theme ?? current.theme,
-      paneWidths: patch.paneWidths !== undefined ? clampPaneWidths(patch.paneWidths) : current.paneWidths,
+      paneWidths:
+        patch.paneWidths !== undefined ? clampPaneWidths(patch.paneWidths) : current.paneWidths,
       listView: patch.listView ?? current.listView,
     };
     writeUiSettings(next);
     return next;
+  },
+
+  async getSession(): Promise<SessionState> {
+    await delay(150);
+    return readSession();
+  },
+
+  async setSession(session: SessionState): Promise<void> {
+    await delay(150);
+    writeSession(session);
   },
 };
