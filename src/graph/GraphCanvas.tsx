@@ -23,6 +23,10 @@ export interface GraphCanvasProps {
    *  `resolveTheme` re-run (colors are otherwise cached for the component's
    *  lifetime) followed by a repaint. Lane palette itself is theme-invariant. */
   themeVersion: number;
+  /** P3e §5.4: false when the owning tab is display:none (zero-size). Defaults
+   *  true. When it flips true the canvas remeasures + repaints from the retained
+   *  last-good bitmap (the zero-size guard in resize() kept it intact). */
+  active?: boolean;
 }
 
 /** P2c §5.2: imperative escape hatch — App needs the DOM-measured visible row
@@ -63,7 +67,7 @@ const LOG_EVERY = 120;
  * synchronous (rAF is throttled to zero in hidden windows).
  */
 export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function GraphCanvas(
-  { layout, selectedIndex, onSelect, wip, themeVersion },
+  { layout, selectedIndex, onSelect, wip, themeVersion, active = true },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -190,6 +194,11 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     if (host === null || canvas === null) return;
     const cssW = host.clientWidth;
     const cssH = host.clientHeight;
+    // P3e §5.4: hidden tab (display:none) → zero client rect. Bail before
+    // touching the backing store or painting: shrinking to 1×1 or repainting
+    // here would blank the last-good bitmap, which must survive being hidden so
+    // the graph is still there when the tab is shown again (remeasure effect).
+    if (cssW === 0 || cssH === 0) return;
     cssSizeRef.current = { w: cssW, h: cssH };
     const dpr = window.devicePixelRatio || 1;
     canvas.style.width = `${cssW}px`;
@@ -232,6 +241,22 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       }
     };
   }, [resize]);
+
+  // P3e §5.4: authoritative remeasure-on-show. When `active` flips true (tab
+  // shown after display:none), re-run the SAME `resize()` the ResizeObserver
+  // uses — it re-reads the now-nonzero host size, restores the backing-store
+  // dimensions, and repaints synchronously. ResizeObserver is unreliable across
+  // the display:none→shown transition, so this is the trusted path; the observer
+  // stays as the steady-state handler. The initial mount run is skipped so we
+  // don't double-paint over the mount effect's resize() when already active.
+  const activeMountRef = useRef(false);
+  useEffect(() => {
+    if (!activeMountRef.current) {
+      activeMountRef.current = true;
+      return;
+    }
+    if (active) resize();
+  }, [active, resize]);
 
   // Layout/selection changes repaint synchronously; the mount paint already
   // happened inside resize() above (single mount paint — no double paint).

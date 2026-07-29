@@ -113,9 +113,12 @@ definition of done.
 
 Current step: P3e — IN PROGRESS. Contract written: docs/contracts/P3e-multi-repo-tabs.md (5 sub-increments
 P3e-a..e). Orchestrator resolved §10 open Qs: repoId==canonical path; focus-rescan=active-tab-only;
-tab branch/dirty badge + toast repo-prefix DEFERRED to polish (keep TabStrip lean). Now: P3e-a backend
-(state.rs keyed HashMap + thread repo_id through 26 commands + open_repo→OpenRepoResult + close_repo +
-RepoChangedPayload.repoId + isolation tests). senior-dev in flight.
+tab branch/dirty badge + toast repo-prefix DEFERRED to polish (keep TabStrip lean).
+Done: P3e-a backend core (be49130, reviewer APPROVE, cargo test 97 lib green). P3e-b session
+persistence (4324272, orchestrator self-review mirroring ui-settings). P3e-c IPC mirror + multi-repo
+mock (6324d06, reviewer APPROVE — INTERMEDIATE red full-tree build: ~31 App.tsx errors by design,
+src/ipc/* tsc-clean, goes green at P3e-e). Now: P3e-d GraphCanvas active prop + zero-size guard +
+remeasure-on-show. Then P3e-e frontend refactor (TabStrip/RepoWorkspace/App slim + reopen-all).
 P3d AI gate PASSED + committed (56a43f7/f902ce0/c39af2a/95141ba); awaiting USER CHECKPOINT (debt below).
 
 --- P3d history (complete) ---
