@@ -24,6 +24,18 @@ export interface TreeProps<T> {
   /** P4d: dir fullPrefixes to leave expanded on first render (seed). Applied
    *  once by the useState initializer; callers reseed by changing the React key. */
   initiallyExpanded?: readonly string[];
+  /** P3f §1: double-click a dir row → caller applies its section action to all
+   *  descendant leaves. Display-only; Tree stays generic (no "stage" knowledge). */
+  onActivateDir?(leaves: TreeLeaf<T>[]): void;
+  /** P3f §1: title on the dir toggle button for discoverability. */
+  dirActionHint?: string;
+}
+
+function collectLeaves<T>(node: Extract<TreeNode<T>, { kind: 'dir' }>, out: TreeLeaf<T>[]): void {
+  for (const c of node.children) {
+    if (c.kind === 'leaf') out.push(c);
+    else collectLeaves(c, out);
+  }
 }
 
 function collectDirPrefixes<T>(nodes: TreeNode<T>[], out: string[]): void {
@@ -55,7 +67,17 @@ function renderNodes<T>(
           <button
             type="button"
             className="tree-dir-toggle"
+            title={props.dirActionHint}
             onClick={() => toggle(node.fullPrefix)}
+            onDoubleClick={
+              props.onActivateDir
+                ? () => {
+                    const leaves: TreeLeaf<T>[] = [];
+                    collectLeaves(node, leaves);
+                    props.onActivateDir!(leaves);
+                  }
+                : undefined
+            }
           >
             <span className={`file-chevron${expanded ? ' file-chevron-open' : ''}`}>{'›'}</span>
             <span className="tree-dir-name" title={node.fullPrefix}>

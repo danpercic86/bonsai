@@ -87,7 +87,6 @@ function FileRow({
           aria-expanded={expanded}
           onClick={onToggle}
         >
-          <span className={`file-chevron${expanded ? ' file-chevron-open' : ''}`}>{'›'}</span>
           <span className="file-badge mono">{BADGES[entry.status]}</span>
           {pathEl}
         </button>
@@ -198,6 +197,10 @@ function Section({
           nodes={nodes}
           leafKey={(l) => `${l.item.status}:${l.item.path}`}
           renderLeaf={(l) => renderRow(l.item, true)}
+          onActivateDir={(leaves) => onAction(leaves.flatMap((l) => entryPaths(l.item)))}
+          dirActionHint={
+            rowAction === 'unstage' ? 'Double-click to unstage all' : 'Double-click to stage all'
+          }
         />
       ) : (
         <ul className="file-list">{entries.map((entry) => renderRow(entry, false))}</ul>
