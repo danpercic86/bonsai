@@ -3,6 +3,8 @@ import { CommitBox } from './CommitBox';
 import type { CommitBoxHandle } from './CommitBox';
 import { CommitPanel } from './CommitPanel';
 import { ConfirmDialog } from './ConfirmDialog';
+import { ContextMenu } from './ContextMenu';
+import type { ContextMenuItem } from './ContextMenu';
 import { DiffOverlay } from './DiffOverlay';
 import type { DiffOverlayMeta } from './DiffOverlay';
 import { OpBanner } from './OpBanner';
@@ -11,7 +13,7 @@ import { Sidebar } from './Sidebar';
 import { StatusPanel } from './StatusPanel';
 import type { DiffSlot, WorkdirSection } from './StatusPanel';
 import { GraphCanvas } from '../graph/GraphCanvas';
-import type { GraphCanvasHandle, WipSummary } from '../graph/GraphCanvas';
+import type { GraphCanvasHandle, GraphContextTarget, WipSummary } from '../graph/GraphCanvas';
 import { ipc } from '../ipc';
 import type {
   BranchesSnapshot,
@@ -110,6 +112,11 @@ export function RepoWorkspace({
   const [commitDiffLoading, setCommitDiffLoading] = useState(false);
   const [commitDiffError, setCommitDiffError] = useState<string | null>(null);
   const [diffSlot, setDiffSlot] = useState<DiffSlot | null>(null);
+
+  // P5 §5.2: graph right-click context menu (position + prebuilt items).
+  const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(
+    null,
+  );
 
   const statusReqId = useRef(0);
   const graphReqId = useRef(0);
@@ -849,6 +856,44 @@ export function RepoWorkspace({
     if (parentIndex !== undefined) setSelectedIndex(parentIndex);
   }
 
+  // P5 §5.2: build the right-click menu items for a graph target. Ref pills
+  // mirror the sidebar's merge/rebase gating EXACTLY; commit rows are handled
+  // in P5d (Compare with HEAD) — [] for now.
+  function buildContextItems(target: GraphContextTarget): ContextMenuItem[] {
+    if (target.kind === 'ref') {
+      const cur = headBranch?.name ?? null;
+      if (cur === null) return [];
+      const r = target.ref;
+      if (r.kind === 'tag' || r.kind === 'head') return [];
+      if (r.kind === 'localBranch' && r.isHead) return [];
+      // localBranch (non-head) | remoteBranch → merge/rebase against current.
+      return [
+        {
+          label: `Merge ${r.name} into ${cur}`,
+          disabled: mutating || opActive,
+          onSelect: () => void handleMergeBranch(r.name),
+        },
+        {
+          label: `Rebase ${cur} onto ${r.name}`,
+          disabled: mutating || opActive,
+          onSelect: () => void handleRebaseBranch(r.name),
+        },
+      ];
+    }
+    // TODO(P5d): Compare with HEAD
+    return [];
+  }
+
+  function handleGraphContextMenu(target: GraphContextTarget, clientX: number, clientY: number) {
+    const items = buildContextItems(target);
+    if (items.length === 0) return; // no valid actions → menu does not open
+    setMenu({ x: clientX, y: clientY, items });
+  }
+
+  // Stable so ContextMenu's dismiss-listener effect doesn't re-arm on every
+  // parent re-render while the menu is open (reviewer NIT).
+  const closeMenu = useCallback(() => setMenu(null), []);
+
   // Esc-layering effect (active tab only; global modals win). typing guard ->
   // collapse diff overlay -> deselect commit.
   useEffect(() => {
@@ -1053,6 +1098,7 @@ export function RepoWorkspace({
               wip={wip}
               themeVersion={themeVersion}
               active={active}
+              onContextMenu={handleGraphContextMenu}
             />
           ) : null}
           {diffSlot !== null && overlayMeta !== null && (
@@ -1146,6 +1192,10 @@ export function RepoWorkspace({
           </div>
         )}
       </ConfirmDialog>
+
+      {menu !== null && (
+        <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={closeMenu} />
+      )}
     </>
   );
 }

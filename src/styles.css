@@ -267,6 +267,48 @@ body {
   margin: 4px 0;
 }
 
+/* ---------- Context menu (P5 §5.1) ---------- */
+
+.context-menu {
+  position: fixed;
+  z-index: 200; /* above panes, graph, diff overlay (90) and dialogs (100) */
+  min-width: 200px;
+  max-width: 360px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.context-menu-item {
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.context-menu-item:hover:not(:disabled),
+.context-menu-item:focus-visible {
+  background: var(--selection);
+  outline: none;
+}
+
+.context-menu-item:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
 /* ---------- Empty-state recents list (P1 §10.2) ---------- */
 
 .recents-list {

@@ -1,8 +1,8 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
-import type { GraphLayout } from '../ipc';
+import type { GraphLayout, RefLabel } from '../ipc';
 import { resolveTheme } from './colors';
 import type { Theme } from './colors';
-import { drawGraph, drawWipRow } from './draw';
+import { drawGraph, drawWipRow, layoutRowPills, pillArea } from './draw';
 import type { WipSummary } from './draw';
 import { buildEdgeIndex, edgesInRange } from './edgeIndex';
 import { createFrameRecorder } from './frameStats';
@@ -10,6 +10,11 @@ import type { FrameStats } from './frameStats';
 import { METRICS } from './metrics';
 
 export type { WipSummary };
+
+/** Right-click target on the graph: a ref pill, or a bare commit row. */
+export type GraphContextTarget =
+  | { kind: 'ref'; ref: RefLabel }
+  | { kind: 'commit'; index: number; oid: string };
 
 export interface GraphCanvasProps {
   layout: GraphLayout;
@@ -27,6 +32,10 @@ export interface GraphCanvasProps {
    *  true. When it flips true the canvas remeasures + repaints from the retained
    *  last-good bitmap (the zero-size guard in resize() kept it intact). */
   active?: boolean;
+  /** P5 §4.2: right-click on a ref pill or a commit row. Empty area / WIP row →
+   *  not called (the native menu is suppressed regardless). clientX/clientY
+   *  anchor the context menu. */
+  onContextMenu?(target: GraphContextTarget, clientX: number, clientY: number): void;
 }
 
 /** P2c §5.2: imperative escape hatch — App needs the DOM-measured visible row
@@ -67,7 +76,7 @@ const LOG_EVERY = 120;
  * synchronous (rAF is throttled to zero in hidden windows).
  */
 export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function GraphCanvas(
-  { layout, selectedIndex, onSelect, wip, themeVersion, active = true },
+  { layout, selectedIndex, onSelect, wip, themeVersion, active = true, onContextMenu },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -387,6 +396,33 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     else onSelect(hit === selectedIndex ? null : hit);
   };
 
+  // P5 §4.2: right-click hit-test. Always suppress the native menu over the
+  // graph; then resolve a ref pill (via the shared pill layout) or a commit row.
+  const handleContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const scroller = scrollerRef.current;
+    if (scroller === null) return;
+    const rect = scroller.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const x = e.clientX - rect.left;
+    const wipOffset = wip !== null ? 1 : 0;
+    const hit = hitTest(y, scroller.scrollTop, wipOffset, layout.nodes.length);
+    if (hit === null || hit === 'wip') return;
+    const node = layout.nodes[hit];
+    const ctx = canvasRef.current?.getContext('2d') ?? null;
+    const theme = themeRef.current;
+    if (ctx !== null && theme !== null && node.refs !== undefined && node.refs.length > 0) {
+      const { startX, budget } = pillArea(cssSizeRef.current.w, layout.laneCount);
+      const pills = layoutRowPills(ctx, node, theme, startX, budget);
+      const hitPill = pills.find((p) => p.ref !== null && x >= p.x && x <= p.x + p.w);
+      if (hitPill !== undefined && hitPill.ref !== null) {
+        onContextMenu?.({ kind: 'ref', ref: hitPill.ref }, e.clientX, e.clientY);
+        return;
+      }
+    }
+    onContextMenu?.({ kind: 'commit', index: hit, oid: node.id }, e.clientX, e.clientY);
+  };
+
   const spacerHeight = (layout.nodes.length + (wip !== null ? 1 : 0)) * METRICS.rowHeight + 8;
 
   return (
@@ -399,6 +435,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         onClick={handleClick}
+        onContextMenu={handleContextMenu}
       >
         <div className="graph-spacer" style={{ height: `${spacerHeight}px` }} />
       </div>

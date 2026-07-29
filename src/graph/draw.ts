@@ -149,14 +149,26 @@ function drawEdge(
 
 // ---------- ref pills (§3.4) ----------
 
-interface PillStyle {
+export interface PillStyle {
   fill: string;
   text: string;
   border: string | null;
   label: string;
 }
 
-function pillStyle(ref: RefLabel, node: GraphNode, theme: Theme): PillStyle {
+/** One laid-out pill in canvas CSS-px space. `ref` is null for the "+n"
+ *  overflow chip (no ref → never a right-click target). */
+export interface LaidPill {
+  ref: RefLabel | null;
+  /** Resolved fill/text/border + the (still-untruncated) label. */
+  style: PillStyle;
+  /** Left edge, same coord space as the summary column. */
+  x: number;
+  /** Pill width incl. padding. */
+  w: number;
+}
+
+export function pillStyle(ref: RefLabel, node: GraphNode, theme: Theme): PillStyle {
   const laneColor = theme.laneColors[node.lane % 10];
   const laneAlpha = theme.laneColorsAlpha[node.lane % 10];
   switch (ref.kind) {
@@ -173,16 +185,18 @@ function pillStyle(ref: RefLabel, node: GraphNode, theme: Theme): PillStyle {
   }
 }
 
-/** Draws one pill at x (left edge), row-centered at cy; returns its width. */
-function drawPill(
+/** Draws one pill at x (left edge), row-centered at cy, with a precomputed
+ *  width `w` (from {@link pillWidth}). Re-truncates the label the same way
+ *  `pillWidth` measured it — so the drawn rect + text stay pixel-identical. */
+function drawPillAt(
   ctx: CanvasRenderingContext2D,
   x: number,
   cy: number,
   style: PillStyle,
-): number {
+  w: number,
+): void {
   const maxTextPx = METRICS.pillMaxWidth - 2 * METRICS.pillPadX;
   const label = truncateToWidth(ctx, style.label, maxTextPx);
-  const w = Math.ceil(measure(ctx, label)) + 2 * METRICS.pillPadX;
   const h = METRICS.pillHeight;
   const y = cy - h / 2;
   const r = h / 2;
@@ -198,7 +212,6 @@ function drawPill(
   }
   ctx.fillStyle = style.text;
   ctx.fillText(label, x + METRICS.pillPadX, cy);
-  return w;
 }
 
 /** Measures a pill without drawing (for the overflow budget check). */
@@ -206,6 +219,63 @@ function pillWidth(ctx: CanvasRenderingContext2D, style: PillStyle): number {
   const maxTextPx = METRICS.pillMaxWidth - 2 * METRICS.pillPadX;
   const label = truncateToWidth(ctx, style.label, maxTextPx);
   return Math.ceil(measure(ctx, label)) + 2 * METRICS.pillPadX;
+}
+
+/** Column geometry shared by pass 5 and the right-click hit-test. `startX` =
+ *  left edge of the first pill (== the summary column origin); `budget` = the
+ *  40% overflow budget (§ M2 pass 5). Single source of truth so the drawn pill
+ *  positions and the hit-test can never diverge. */
+export function pillArea(
+  vpWidth: number,
+  laneCount: number,
+): { startX: number; budget: number } {
+  const startX =
+    METRICS.gutter +
+    Math.min(laneCount, METRICS.maxRenderLanes) * METRICS.laneWidth +
+    METRICS.textGap;
+  const authorRight = vpWidth - METRICS.dateColWidth - METRICS.colGap * 2;
+  const authorLeft = authorRight - METRICS.authorColWidth;
+  const budget = Math.max(0, 0.4 * (authorLeft - startX));
+  return { startX, budget };
+}
+
+/** Lays out one row's pills left-to-right with the pass-5a overflow rule:
+ *  break before a pill that would exceed `startX + budget` (except the first),
+ *  then append a "+n" chip when any were hidden. Sets ctx.font internally.
+ *  PURE — no drawing. Consumed by both pass 5a and the hit-test. */
+export function layoutRowPills(
+  ctx: CanvasRenderingContext2D,
+  node: GraphNode,
+  theme: Theme,
+  startX: number,
+  budget: number,
+): LaidPill[] {
+  const result: LaidPill[] = [];
+  const refs = node.refs;
+  if (refs === undefined || refs.length === 0) return result;
+  ctx.font = `${METRICS.pillFont} ${FONT_UI}`;
+  let x = startX;
+  let shown = 0;
+  for (const ref of refs) {
+    const style = pillStyle(ref, node, theme);
+    const w = pillWidth(ctx, style);
+    if (shown > 0 && x + w > startX + budget) break;
+    result.push({ ref, style, x, w });
+    x += w + METRICS.pillGap;
+    shown++;
+  }
+  const hidden = refs.length - shown;
+  if (hidden > 0) {
+    const style: PillStyle = {
+      fill: theme.bg2,
+      text: theme.text2,
+      border: theme.border,
+      label: `+${hidden}`,
+    };
+    const w = pillWidth(ctx, style);
+    result.push({ ref: null, style, x, w });
+  }
+  return result;
 }
 
 // ---------- WIP (uncommitted changes) row (P1 §9.3) ----------
@@ -358,46 +428,27 @@ export function drawGraph(
   }
 
   // Pass 5: text row content.
-  const graphAreaWidth =
-    METRICS.gutter +
-    Math.min(layout.laneCount, METRICS.maxRenderLanes) * METRICS.laneWidth +
-    METRICS.textGap;
+  const { startX, budget } = pillArea(vp.width, layout.laneCount);
   const authorRight = vp.width - METRICS.dateColWidth - METRICS.colGap * 2;
   const authorLeft = authorRight - METRICS.authorColWidth;
   const dateRight = vp.width - METRICS.colGap;
-  const pillBudget = Math.max(0, 0.4 * (authorLeft - graphAreaWidth));
   const now = Math.floor(Date.now() / 1000);
 
   ctx.textBaseline = 'middle';
   for (let row = firstRow; row <= lastRow; row++) {
     const node = nodes[row];
     const y = rowY(row, vp.scrollTop);
-    let x = graphAreaWidth;
+    let x = startX;
 
     // 5a: ref pills, capped by the 40% budget with a trailing "+n" chip.
-    const refs = node.refs;
-    if (refs !== undefined && refs.length > 0) {
-      ctx.font = `${METRICS.pillFont} ${FONT_UI}`;
+    // Layout is computed by the shared pure helper (single source of truth
+    // with the hit-test); this pass only paints the laid-out pills.
+    const laid = layoutRowPills(ctx, node, theme, startX, budget);
+    if (laid.length > 0) {
       ctx.textAlign = 'left';
-      let shown = 0;
-      for (const ref of refs) {
-        const style = pillStyle(ref, node, theme);
-        const w = pillWidth(ctx, style);
-        if (shown > 0 && x + w > graphAreaWidth + pillBudget) break;
-        x += drawPill(ctx, x, y, style) + METRICS.pillGap;
-        shown++;
-      }
-      const hidden = refs.length - shown;
-      if (hidden > 0) {
-        x +=
-          drawPill(ctx, x, y, {
-            fill: theme.bg2,
-            text: theme.text2,
-            border: theme.border,
-            label: `+${hidden}`,
-          }) + METRICS.pillGap;
-      }
-      x += 8;
+      for (const p of laid) drawPillAt(ctx, p.x, y, p.style, p.w);
+      const last = laid[laid.length - 1];
+      x = last.x + last.w + METRICS.pillGap + 8;
     }
 
     // 5b: summary.
