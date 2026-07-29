@@ -82,8 +82,23 @@ ConflictRow untouched. AI-gate (mock :1424, tree view): 9 dir toggles with corre
 in file rows; double-click "assets" dir moved Changes 8→7 / Staged 4→5. USER CHECKPOINT (native):
 double-click stages/unstages the whole folder; leaves read cleanly without arrows.
 
-## P8 — Merge with autostash — **in-progress** (2026-07-29)
-Current step: senior-dev implementing to docs/contracts/P8-merge-autostash.md; reviewer + tester next.
+## P8 — Merge with autostash — AI GATE PASSED, awaiting USER CHECKPOINT (2026-07-29)
+Contract: docs/contracts/P8-merge-autostash.md. Reviewer APPROVED (stash never silently dropped).
+The tester's 7-row matrix caught TWO real regressions, both fixed (no test-expectation hacks):
+(1) this libgit2's stash_pop returns Ok() for a CONTENT conflict (writes markers) and DROPS the stash
+→ false green "restored". Fixed by using stash_apply + index.has_conflicts() + conditional stash_drop
+in pop_after_success + rollback_and_map (a conflicted re-apply RETAINS the stash → StashPopConflicts).
+(2) the borrow reorg made repo.merge use an Oid-based annotated commit → conflict markers stamped with
+the 40-char oid instead of the branch name. Fixed by rebuilding a reference-based annotated commit for
+the normal-merge path. Also: rewrote 3 pre-P8 merge_cli tests to the new autostash semantics (staged
+autostashed / unstaged-merge-touched → StashPopConflicts / abort keeps edit on stash), pinned #2 against
+a real `git merge --autostash` oracle; compile-only fixes for the enum growth in sibling test files.
+AI GATE: cargo clippy clean; pnpm build/tsc clean; FULL suite 271 passed / 0 failed / 2 ignored (perf,
+separate) — 115 unit + 156 integration. Env note: native bonsai.exe locks target/debug/bonsai.exe →
+use `cargo test --lib` + separate CARGO_TARGET_DIR for integration.
+USER CHECKPOINT (native pnpm tauri dev): right-click a branch → Merge with a dirty worktree; FF/merge
+lands and the local changes reappear; the paused-merge and pop-conflict toasts read clearly and the
+stash is findable via `git stash list`.
 User request: context-menu Merge should FF-by-default (already does) AND stash dirty changes → merge
 → re-apply (git merge --autostash). Backend+frontend. Two OPEN QUESTIONS resolved by orchestrator with
 the architect's safe defaults (user asleep, authorized autonomous best-option choice): (1) NO
