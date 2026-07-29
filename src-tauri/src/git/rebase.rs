@@ -394,11 +394,17 @@ pub fn rebase_continue(workdir: &Path) -> Result<RebaseOutcome, AppError> {
 /// discards its changes, does NOT commit it) and resumes.
 ///
 /// Unlike `rebase_continue`, skip does NOT call `commit_current` for the
-/// current operation — that operation is dropped from the result. The hard
-/// reset targets the current (detached) rebase HEAD, which is identity on
-/// committed content: already-replayed commits are untouched; only the skipped
-/// op's uncommitted/conflicted changes are discarded. A HARD error leaves the
-/// on-disk rebase state intact (§3.9).
+/// current operation — that operation is dropped from the result. We discard
+/// the current op's changes with a LIGHTWEIGHT reset of just the index +
+/// worktree to the current in-progress rebase HEAD — NOT `repo.reset(HEAD,
+/// Hard)`. The heavy reset rewrites the HEAD ref / reflog / ORIG_HEAD and, on
+/// the FIRST op (no commit replayed yet), disturbs `.git/rebase-merge` so the
+/// subsequent `rebase.next()` cannot write `msgnum`; it also detaches HEAD, so
+/// `read_head_from_rebase` fell through to an empty branch name. Restoring the
+/// index to HEAD's tree (stage 0, no conflicts) and force-checking-out the
+/// worktree leaves the rebase-merge metadata and the HEAD ref intact.
+/// Already-replayed commits are untouched. A HARD error leaves the on-disk
+/// rebase state intact (§3.9).
 pub fn rebase_skip(workdir: &Path) -> Result<RebaseOutcome, AppError> {
     let repo = open_workdir_repo(workdir)?;
 
@@ -412,12 +418,22 @@ pub fn rebase_skip(workdir: &Path) -> Result<RebaseOutcome, AppError> {
 
     let mut rebase = repo.open_rebase(None)?;
 
-    // Discard the current op's changes (conflicts + partial worktree) by
-    // hard-resetting to the in-progress rebase HEAD so the next patch applies
-    // cleanly. libgit2 equivalent of `git rebase --skip`: DO NOT commit the
+    // Discard the current op's changes (conflict stages + partial worktree) WITHOUT
+    // touching the HEAD ref/reflog or the rebase-merge metadata: read HEAD's tree
+    // into the index (clears all conflict stages, restores stage 0) and force-checkout
+    // that index so the worktree matches (drops conflict markers). The next patch then
+    // applies cleanly. libgit2 equivalent of `git rebase --skip`: DO NOT commit the
     // current op; just resume the plan.
     let head_commit = repo.head()?.peel_to_commit()?;
-    repo.reset(head_commit.as_object(), git2::ResetType::Hard, None)?;
+    let head_tree = head_commit.tree()?;
+    let mut idx = repo.index()?;
+    idx.read_tree(&head_tree)?;
+    idx.write()?;
+    let mut co = git2::build::CheckoutBuilder::new();
+    co.force();
+    repo.checkout_index(Some(&mut idx), Some(&mut co))?;
+    drop(idx);
+    drop(head_tree);
     drop(head_commit);
 
     let head_branch = read_head_from_rebase(&repo);

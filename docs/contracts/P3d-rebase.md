@@ -128,12 +128,19 @@ Identical shape to merge §4.1; error strings are rebase-specific for the oracle
 4. Resolve onto: `repo.find_branch(onto_name, Local)`, else `find_branch(onto_name, Remote)`, else →
    `AppError::BranchNotFound("branch '<onto_name>' not found (local or remote-tracking)")`
    (identical phrasing to merge §4.1.4). Rebasing onto the current branch falls out as `UpToDate`.
-5. **Dirty-index guard (identical to merge §4.1.5, locked):** `index.has_conflicts()` OR
+5. **Dirty-index guard (locked):** `index.has_conflicts()` OR
    `index.write_tree_to(&repo)? != head_commit.tree_id()` → `AppError::Git("cannot rebase: your
-   index contains uncommitted changes — commit or unstage them first")`. **Unstaged worktree
-   changes / untracked files are ALLOWED** — they only fail later as `CheckoutConflict` if the
-   initial checkout onto the base would overwrite them, in which case nothing is left behind
-   (cleanup guarantee §3.5).
+   index contains uncommitted changes — commit or unstage them first")`.
+   **AMENDED 2026-07-29 (tester finding, §11.11 — diverges from merge §4.1.5):** unlike merge,
+   a rebase requires a **clean worktree**. Both libgit2 (`repo.rebase()` → `Git("unstaged changes
+   exist in workdir")`) and `git rebase` (`error: cannot rebase: You have unstaged changes`) refuse
+   to START a rebase with ANY unstaged change — not just an overwriting one. Bonsai matches the CLI
+   exactly: unstaged changes are NOT allowed, and they surface as `AppError::Git` (the generic
+   libgit2 message) at the `repo.rebase()` call in §3.3, NOT as `CheckoutConflict`. The earlier
+   "unstaged worktree changes / untracked files are ALLOWED … fail later as CheckoutConflict" text
+   (copied from the more-permissive merge contract) was WRONG for rebase and is retracted. The
+   `CheckoutConflict` mapping in §3.2 (FF) / §3.3 (real replay) still stands for the rare case
+   libgit2 does raise `ErrorCode::Conflict`, but the common dirty-worktree rejection is `Git`.
 6. Identity EARLY: `resolve_signature(&repo.config()?.snapshot()?)?` — replay commits, so
    `ConfigMissing` must surface before the worktree is touched. This signature is the **committer**
    for every replayed commit and for `rebase.finish()` (§3.6).
@@ -655,11 +662,14 @@ replayed commit, and the final HEAD tree oid — NOT commit oids.
    and completes the rest. Twin: `git rebase --skip`. Assert final HEAD tree oid + remaining
    commits' trees/messages match the twin (the skipped commit absent from both); `repo.state()`
    Clean.
-7. **abort restores original HEAD byte-identically.** Before starting a conflicting rebase, make an
-   **unrelated pre-rebase UNSTAGED edit** to a file the rebase does NOT touch. Start (→ paused),
-   then `rebase_abort()`. Assert: branch oid == the pre-rebase tip (byte-identical), `repo.state()`
-   Clean, no `rebase-merge` dir, index tree == HEAD tree, and the unrelated unstaged edit **survives
-   byte-identically**. Also: `NoOperationInProgress` when `rebase_abort` runs with no rebase.
+7. **abort restores original HEAD byte-identically. AMENDED 2026-07-29 (tester, §11.11).** Rebase
+   requires a clean worktree (§3.1.5 amendment), so the original "unstaged edit survives START" premise
+   (copied from merge §9.8) is invalid for rebase. The suite pins the REAL contract in
+   `dirty_start_is_rejected_like_the_cli_then_abort_restores_byte_identically`: (a) a dirty START
+   (unstaged edit present) is rejected, `repo.state()` stays Clean, nothing is left behind, the
+   unstaged edit is untouched, and the `git rebase` twin rejects identically; (b) abort from a CLEAN
+   start restores HEAD/index/worktree byte-identically; (c) `NoOperationInProgress` when `rebase_abort`
+   runs with no rebase.
 8. **Remote-tracking onto.** Local bare `file://` remote (M6 pattern), fetch, `rebase_branch(
    "origin/main")` → replays onto the remote-tracking ref; parents/trees match twin `git rebase
    origin/main`. (No network.)
@@ -753,3 +763,15 @@ Module unit tests (senior-dev, P3d-a) in `rebase.rs`:
    (§8.6), same reasoning as merge.
 10. **No new `error.rs` variants** — every rebase failure maps onto an existing variant (§5). If a
     genuinely new case appears, STOP and flag before adding one.
+11. **AMENDED 2026-07-29 (tester findings during P3d-a verification):**
+    (a) **Rebase requires a clean worktree** (§3.1.5 / §9.7 amendments) — unlike merge, ANY unstaged
+    change makes both libgit2 and `git rebase` refuse to start; it surfaces as `AppError::Git`, not
+    `CheckoutConflict`. Bonsai matches the CLI. The permissive "unstaged allowed" prose copied from
+    merge was retracted; the abort test now pins dirty-START rejection + clean-START abort restoration.
+    (b) **`rebase_skip` recipe correction** — the original §3.8 `repo.reset(HEAD, Hard)` corrupted
+    `.git/rebase-merge` when skipping the FIRST (not-yet-committed) op and returned an empty branch
+    display name on the later-op path. Fixed to a lighter index-`read_tree(HEAD)` + force
+    `checkout_index` that discards the current op's changes without rewriting HEAD/reflog or disturbing
+    the rebase metadata; both first-op and later-op skip now match `git rebase --skip`, and the branch
+    name is correct. The §3.9 safety rule is unchanged (skip still never aborts/cleanup_states on a
+    hard error). The previously-ignored `skip_first_op_is_broken_known_bug` oracle test is un-ignored.

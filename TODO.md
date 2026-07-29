@@ -121,9 +121,19 @@ let_and_return false-positive; clippy -D warnings verified clean exit 0, cargo c
 pass; map_conflict judgment call approved as-is). P3d-b IPC mirror + ?op=rebase mock — DONE (orchestrator
 self-reviewed the mechanical §7 mirror; pnpm build green). P3d-c frontend (actionable OpBanner rebase mode
 + App handlers/generalized Abort dialog + Sidebar ⤵) — DONE, reviewer APPROVE (no must-fix/should-fix;
-pnpm build green). NEXT: verify full AI gate (cargo test incl. rebase_cli + clippy + build + ?op=rebase
-harness), then present P3d evidence + USER CHECKPOINT and STOP for user sign-off.
-Tester (running in parallel): src-tauri/tests/rebase_cli.rs (11 cases) — awaiting result.
+pnpm build green). ?op=rebase HARNESS FULLY VERIFIED (OpBanner step n/m, Continue/Skip/Abort gating, marker view,
+resolve→continue completes + HEAD advances, skip w/ conflict, Abort dialog rebase copy, sidebar ⤵
+clean rebase, plain regression; no console errors).
+Tester wrote rebase_cli.rs: 17 pass / 1 ignored, and found (1) CONFIRMED BUG: rebase_skip first-op
+corrupts .git/rebase-merge (repo.reset Hard) + returns empty branch name — senior-dev FIXING NOW
+(un-ignoring skip_first_op test); (2) contract divergence: rebase requires clean worktree (unstaged
+NOT allowed, unlike merge) — CONTRACT AMENDED §3.1.5/§9.7/§11.11, Bonsai already matches CLI (no code
+change). Skip bug FIXED (senior-dev: lightweight index read_tree(HEAD) + force checkout_index instead
+of repo.reset Hard; first-op + later-op skip both match git twin; branch name correct). AI GATE PASSED:
+cargo test 242 pass / 0 fail (2 perf ignored) incl. rebase_cli 18 + merge_cli 17 + conflict_cli 9, lib 92;
+clippy -D warnings clean; pnpm build green; ?op=rebase harness fully verified. AWAITING USER CHECKPOINT
+for P3d (docs/contracts/P3d §10). Sub-increments: 56a43f7 backend, f902ce0 IPC/mock, c39af2a frontend,
++ final commit (tester rebase_cli 18-case suite + skip fix + contract amendments).
 USER-CHECKPOINT DEBT (not self-declared — user must confirm in native `pnpm tauri dev`):
   - P3c merge/conflicts — AI gate PASSED 9e187e7 (reviewer APPROVE; cargo test 220 incl. merge_cli 17 +
     conflict_cli 9; clippy clean; pnpm build clean; harness ?op=merge fully verified). Checkpoint items:
