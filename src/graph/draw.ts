@@ -227,106 +227,13 @@ function drawEdge(
   ctx.stroke();
 }
 
-// ---------- ref pills (§3.4) ----------
+// ---------- shared pill style (P7 §3.3: consumed by entityStyle / LaidRefLabel) ----------
 
 export interface PillStyle {
   fill: string;
   text: string;
   border: string | null;
   label: string;
-}
-
-/** One laid-out pill in canvas CSS-px space. `ref` is null for the "+n"
- *  overflow chip (no ref → never a right-click target). */
-export interface LaidPill {
-  ref: RefLabel | null;
-  /** Resolved fill/text/border + the (still-untruncated) label. */
-  style: PillStyle;
-  /** Left edge, same coord space as the summary column. */
-  x: number;
-  /** Pill width incl. padding. */
-  w: number;
-}
-
-export function pillStyle(ref: RefLabel, node: GraphNode, theme: Theme): PillStyle {
-  const laneColor = theme.laneColors[node.lane % 10];
-  const laneAlpha = theme.laneColorsAlpha[node.lane % 10];
-  switch (ref.kind) {
-    case 'localBranch':
-      return ref.isHead
-        ? { fill: laneColor, text: theme.accentText, border: null, label: `⌂ ${ref.name}` }
-        : { fill: laneAlpha, text: laneColor, border: laneColor, label: ref.name };
-    case 'remoteBranch':
-      return { fill: theme.bg2, text: theme.text2, border: theme.border, label: ref.name };
-    case 'tag':
-      return { fill: TAG_BG, text: TAG_COLOR, border: TAG_COLOR, label: `# ${ref.name}` };
-    case 'head':
-      return { fill: theme.danger, text: '#ffffff', border: null, label: ref.name };
-  }
-}
-
-/** Measures a pill without drawing (for the overflow budget check). */
-function pillWidth(ctx: CanvasRenderingContext2D, style: PillStyle): number {
-  const maxTextPx = METRICS.pillMaxWidth - 2 * METRICS.pillPadX;
-  const label = truncateToWidth(ctx, style.label, maxTextPx);
-  return Math.ceil(measure(ctx, label)) + 2 * METRICS.pillPadX;
-}
-
-/** Column geometry shared by pass 5 and the right-click hit-test. `startX` =
- *  left edge of the first pill (== the summary column origin); `budget` = the
- *  40% overflow budget (§ M2 pass 5). Single source of truth so the drawn pill
- *  positions and the hit-test can never diverge. */
-export function pillArea(
-  vpWidth: number,
-  laneCount: number,
-): { startX: number; budget: number } {
-  const startX =
-    METRICS.gutter +
-    Math.min(laneCount, METRICS.maxRenderLanes) * METRICS.laneWidth +
-    METRICS.textGap;
-  const authorRight = vpWidth - METRICS.dateColWidth - METRICS.colGap * 2;
-  const authorLeft = authorRight - METRICS.authorColWidth;
-  const budget = Math.max(0, 0.4 * (authorLeft - startX));
-  return { startX, budget };
-}
-
-/** Lays out one row's pills left-to-right with the pass-5a overflow rule:
- *  break before a pill that would exceed `startX + budget` (except the first),
- *  then append a "+n" chip when any were hidden. Sets ctx.font internally.
- *  PURE — no drawing. Consumed by both pass 5a and the hit-test. */
-export function layoutRowPills(
-  ctx: CanvasRenderingContext2D,
-  node: GraphNode,
-  theme: Theme,
-  startX: number,
-  budget: number,
-): LaidPill[] {
-  const result: LaidPill[] = [];
-  const refs = node.refs;
-  if (refs === undefined || refs.length === 0) return result;
-  ctx.font = `${METRICS.pillFont} ${FONT_UI}`;
-  let x = startX;
-  let shown = 0;
-  for (const ref of refs) {
-    const style = pillStyle(ref, node, theme);
-    const w = pillWidth(ctx, style);
-    if (shown > 0 && x + w > startX + budget) break;
-    result.push({ ref, style, x, w });
-    x += w + METRICS.pillGap;
-    shown++;
-  }
-  const hidden = refs.length - shown;
-  if (hidden > 0) {
-    const style: PillStyle = {
-      fill: theme.bg2,
-      text: theme.text2,
-      border: theme.border,
-      label: `+${hidden}`,
-    };
-    const w = pillWidth(ctx, style);
-    result.push({ ref: null, style, x, w });
-  }
-  return result;
 }
 
 // ---------- ref grouping / collapse transform (P7 §3) ----------

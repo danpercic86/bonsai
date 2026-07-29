@@ -870,6 +870,28 @@ body {
   cursor: default;
 }
 
+/* P7 §6.3: hover tooltip (avatar full name / "+n" hidden refs). Absolutely
+   positioned inside .graph-canvas-host; pointer-events:none so it never eats
+   the overlay scroller's input. */
+.graph-tooltip {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  max-width: 260px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--bg-3);
+  color: var(--text-1);
+  border: 1px solid var(--border);
+  font: 400 12px/1.4 var(--font-ui, 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+}
+
+.graph-tooltip > div {
+  white-space: nowrap;
+}
+
 .right-panel {
   background: var(--bg-1);
   border-left: 1px solid var(--border);
