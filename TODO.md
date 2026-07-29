@@ -13,7 +13,38 @@ honors them). Include this in every subagent prompt that runs tests or creates r
 
 ## P7 — GitKraken-style graph layout — **in-progress** (2026-07-29)
 
-Current step: P7 kickoff — architect writing contract. Source: user request (2026-07-29) after
+Current step: P7 AI GATE PASSED (2026-07-29) — awaiting USER CHECKPOINT. Commits: e96c0fa (kickoff
++ contract), 1f0e337 (P7a pure helpers+metrics+self-test), d77788e (P7b renderer restructure), f23d0b8
+(P7c hit-test parity + tooltips + dead-pill removal), 78c8048 (P7d fixtures). Contract:
+docs/contracts/P7-gitkraken-layout.md. Rust/wire UNCHANGED (frontend-only). Reviews: P7a/b/c/d all
+APPROVE (0 must-fix). Locked decisions honored: initials-only HSL avatars, collapse only same-commit,
+all refs in left column.
+AI-gate evidence (mock :1424, verified by canvas pixel-sampling + synthetic events since the Browser
+pane is hidden — screenshots + rAF-scheduled/scroll-sweep repaints unavailable while hidden): pnpm
+build clean every increment; window.__bonsai.p7SelfTest() = 26 pass/0 fail (initials, avatarColor
+determinism+format, groupRefs same-commit collapse + diverged-separate, layoutRefLabels overflow,
+refColArea, avatarHit, relativeDate). Harness: three zones (refs LEFT / graph+avatars CENTER / summary
++relative-time RIGHT), NO right-side pills, NO author text; avatars = HSL initials discs + lane ring +
+HEAD/sel rings; row 0 collapses main(L+R) & dev(L+R) with laptop+cloud + "+N" chip; "+N" hover tooltip
+lists hidden entities (release / # v1.0 / # v0.9); diverged feat = row1 laptop-only local (5-item local
+menu) vs row4 origin/feat cloud-only (remote menu) — separate; single-word author row3 → avatar tooltip
+"torvalds" (initials TO); avatar hover → full-name tooltip (role=tooltip, Ada Lovelace); left-column
+right-click parity — feat/exp/dev local 5-item menu, origin/feat remote menu, current main → NO menu;
+LIGHT theme forced-sync-repaint shows white canvas bg + saturated (theme-invariant) avatar disc; DARK
+theme pixel-verified; no console errors. Dead pill helpers (pillStyle/pillArea/layoutRowPills/pillWidth/
+LaidPill) removed; PillStyle kept.
+NOTE (harness limits, hidden pane): scroll-sweep + theme-toggle repaints use requestAnimationFrame which
+is PAUSED while the Browser pane is hidden — could not run the rAF scroll perf sweep. Perf is
+structurally preserved (Rust layout math untouched; only visible rows draw) but the perceptual 20k
+smoothness re-check belongs to the USER CHECKPOINT.
+USER CHECKPOINT (native pnpm tauri dev): (1) rows read as three clean zones (refs left, graph+avatars
+center, message+relative-time right); (2) avatars show correct initials for real authors, hover shows
+full name, same author → same color; (3) a level local/remote branch shows ONE label with laptop+cloud,
+and after committing locally (diverge) it splits into two labels; (4) "+N" hover lists hidden refs;
+right-clicking refs in the left column drives the identical P6 menu; (5) scrolling a large repo stays
+smooth (perf).
+
+Original step: P7 kickoff. Source: user request (2026-07-29) after
 confirming P6 works. Four requirements:
 1. **Three-zone row layout** like GitKraken: LEFT = ref labels, CENTER = graph lanes+dots,
    RIGHT = commit summary + relative timestamp. (Today everything is one left→right run:
