@@ -714,6 +714,13 @@ export const mockIpc: IpcApi = {
         : state.graphFixture === 'detached'
           ? buildMockGraphDetached()
           : prependCommits(buildMockGraph(), state.commits);
+    // P6: a ref whose tip IS HEAD (e.g. origin/main == main, tip === headOid)
+    // compares HEAD-to-itself → "No differences". Handled up front because
+    // branch tips are intentionally decoupled from graph-row ids in the mock,
+    // so headOid need not appear as a walkable node.
+    if (oid === state.headOid) {
+      return structuredClone(mockCompareDiff(state.headOid, oid, 0, layout));
+    }
     const index = layout.nodes.findIndex((n) => n.id === oid);
     if (index === -1) {
       const err: AppError = { kind: 'git', message: 'mock: unknown commit' };
