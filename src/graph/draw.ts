@@ -5,7 +5,7 @@
 import type { GraphEdge, GraphLayout, GraphNode, RefLabel } from '../ipc';
 import { TAG_BG, TAG_COLOR } from './colors';
 import type { Theme } from './colors';
-import { FONT_UI, METRICS } from './metrics';
+import { AVATAR, FONT_UI, METRICS } from './metrics';
 
 export interface Viewport {
   /** Inclusive; M2b: 0. */
@@ -28,9 +28,42 @@ const HALF_ROW = METRICS.rowHeight / 2;
 /** Long-edge middle segments are clamped to this margin around the canvas. */
 const EDGE_CLAMP_MARGIN = 56;
 
-/** x of a lane center; lanes beyond the render clamp share the last x. */
+/** x of a lane center; lanes beyond the render clamp share the last x.
+ *  P7 §1.2: gains the fixed LEFT ref-band offset (`refColWidth`); the +8 lane
+ *  inset is preserved. The global right-shift flows through edges automatically
+ *  (they use `laneX`/`rowY`). */
 export function laneX(lane: number): number {
-  return METRICS.gutter + Math.min(lane, METRICS.maxRenderLanes - 1) * METRICS.laneWidth + 8;
+  return (
+    METRICS.refColWidth +
+    METRICS.gutter +
+    Math.min(lane, METRICS.maxRenderLanes - 1) * METRICS.laneWidth +
+    8
+  );
+}
+
+/** P7 §1.2: right edge of the graph area (clamped lane band), independent of
+ *  the +8 lane inset. Internal — feeds `summaryStartX`. */
+function graphAreaRight(laneCount: number): number {
+  return (
+    METRICS.refColWidth +
+    METRICS.gutter +
+    Math.min(laneCount, METRICS.maxRenderLanes) * METRICS.laneWidth
+  );
+}
+
+/** P7 §1.2: summary column origin (replaces the old `textColumnX`; no pills
+ *  live here now — refs moved to the LEFT band). */
+export function summaryStartX(laneCount: number): number {
+  return graphAreaRight(laneCount) + METRICS.textGap;
+}
+
+/** P7 §1.2: fixed LEFT ref-column layout window (analog of the old `pillArea`,
+ *  but NOT a function of viewport width or laneCount — the band is fixed). */
+export function refColArea(): { startX: number; budget: number } {
+  return {
+    startX: METRICS.refColPadLeft,
+    budget: Math.max(0, METRICS.refColWidth - METRICS.refColPadLeft - METRICS.refColPadRight),
+  };
 }
 
 /** y of a row center after scroll translation. */
@@ -56,6 +89,53 @@ export function relativeDate(ts: number, now: number): string {
   const mo = Math.floor(d / 30);
   if (mo < 12) return `${mo}mo`;
   return `${Math.max(1, Math.floor(d / 365))}y`;
+}
+
+// ---------- avatar (P7 §2, replaces the pass-4 dot) ----------
+
+/** P7 §2.2: 1–2 uppercased chars from an author display name. Surrogate-safe
+ *  (Array.from splits by code point). Examples: "Dan Percic"→"DP",
+ *  "torvalds"→"TO", "x"→"X", ""→"?", "  Grace  Hopper "→"GH". */
+export function initials(name: string): string {
+  const tokens = name
+    .trim()
+    .split(/\s+/)
+    .filter((t) => t.length > 0);
+  if (tokens.length === 0) return '?';
+  if (tokens.length === 1) {
+    const chars = Array.from(tokens[0]);
+    return (chars[0] + (chars[1] ?? '')).toUpperCase();
+  }
+  return (Array.from(tokens[0])[0] + Array.from(tokens[1])[0]).toUpperCase();
+}
+
+/** P7 §2.3: avatar colors. `bg` is a theme-invariant hashed HSL; `text` is
+ *  fixed white (legible ≥3:1 on both canvases at S=52%/L=42%). */
+export interface AvatarColor {
+  bg: string;
+  text: string;
+}
+
+/** FNV-1a 32-bit over code points; `Math.imul` keeps the 32-bit overflow. */
+function hashString(s: string): number {
+  let h = 0x811c9dc5;
+  for (const cp of Array.from(s)) h = Math.imul(h ^ (cp.codePointAt(0) ?? 0), 0x01000193);
+  return h >>> 0;
+}
+
+/** P7 §2.3: deterministic name→color. Same name ⇒ same hue, always. */
+export function avatarColor(name: string): AvatarColor {
+  const hue = hashString(name.trim()) % 360;
+  return { bg: `hsl(${hue}, ${AVATAR.sat}%, ${AVATAR.light}%)`, text: '#ffffff' };
+}
+
+/** P7 §2.4: avatar hit-test (shared by the tooltip hover). Uses the bg-ring
+ *  radius so the whole visible disc is hoverable. */
+export function avatarHit(px: number, py: number, cx: number, cy: number): boolean {
+  const r = METRICS.avatarRadius + METRICS.avatarBgRingExtra;
+  const dx = px - cx;
+  const dy = py - cy;
+  return dx * dx + dy * dy <= r * r;
 }
 
 // ---------- text measurement (cached) ----------
@@ -274,6 +354,225 @@ export function layoutRowPills(
     };
     const w = pillWidth(ctx, style);
     result.push({ ref: null, style, x, w });
+  }
+  return result;
+}
+
+// ---------- ref grouping / collapse transform (P7 §3) ----------
+
+/** P7 §3.1: per-node display entity. Collapses a local branch and its
+ *  same-commit remote into ONE `branch` (laptop + cloud, short name once);
+ *  diverged refs land on different nodes and stay separate. */
+export type RefEntity =
+  | {
+      kind: 'branch';
+      /** SHORT name shown once ("main"); the group key. */
+      name: string;
+      hasLocal: boolean; // laptop glyph when true
+      remotes: string[]; // full remote shorthands, e.g. ["origin/main"]; cloud glyph when non-empty
+      isHead: boolean; // attached HEAD local branch
+      refs: RefLabel[]; // underlying wire refs (right-click targeting)
+    }
+  | { kind: 'tag'; name: string; ref: RefLabel }
+  | { kind: 'head'; name: string; ref: RefLabel }; // detached-HEAD label
+
+/** P7 §3.2: group a node's wire refs into display entities. Insertion order is
+ *  preserved; input is already sorted local-head-first / remotes / tags. Output
+ *  order: detached `head`, then branch entities (local-first), then tags. */
+export function groupRefs(refs: readonly RefLabel[] | undefined): RefEntity[] {
+  const branches = new Map<
+    string,
+    { kind: 'branch'; name: string; hasLocal: boolean; remotes: string[]; isHead: boolean; refs: RefLabel[] }
+  >();
+  const tags: RefEntity[] = [];
+  const heads: RefEntity[] = [];
+  for (const ref of refs ?? []) {
+    switch (ref.kind) {
+      case 'localBranch': {
+        const key = ref.name;
+        const e =
+          branches.get(key) ??
+          { kind: 'branch' as const, name: key, hasLocal: false, remotes: [], isHead: false, refs: [] };
+        branches.set(key, e);
+        e.hasLocal = true;
+        e.isHead = e.isHead || ref.isHead;
+        e.refs.push(ref);
+        break;
+      }
+      case 'remoteBranch': {
+        const short = ref.name.slice(ref.name.lastIndexOf('/') + 1); // "origin/main" -> "main"
+        const e =
+          branches.get(short) ??
+          { kind: 'branch' as const, name: short, hasLocal: false, remotes: [], isHead: false, refs: [] };
+        branches.set(short, e);
+        e.remotes.push(ref.name);
+        e.refs.push(ref);
+        break;
+      }
+      case 'tag':
+        tags.push({ kind: 'tag', name: ref.name, ref });
+        break;
+      case 'head':
+        heads.push({ kind: 'head', name: ref.name, ref });
+        break;
+    }
+  }
+  return [...heads, ...branches.values(), ...tags];
+}
+
+/** P7 §3.3: resolve an entity's pill visuals (reuses {@link PillStyle}). Icons
+ *  are computed separately (see {@link layoutRefLabels}); the old "⌂ " HEAD
+ *  prefix is dropped (the laptop icon + solid fill convey local + head). */
+export function entityStyle(e: RefEntity, node: GraphNode, theme: Theme): PillStyle {
+  const laneColor = theme.laneColors[node.lane % 10];
+  const laneAlpha = theme.laneColorsAlpha[node.lane % 10];
+  switch (e.kind) {
+    case 'branch':
+      if (e.isHead) {
+        return { fill: laneColor, text: theme.accentText, border: null, label: e.name };
+      }
+      if (e.hasLocal) {
+        return { fill: laneAlpha, text: laneColor, border: laneColor, label: e.name };
+      }
+      return { fill: theme.bg2, text: theme.text2, border: theme.border, label: e.name };
+    case 'tag':
+      return { fill: TAG_BG, text: TAG_COLOR, border: TAG_COLOR, label: `# ${e.name}` };
+    case 'head':
+      return { fill: theme.danger, text: '#ffffff', border: null, label: e.name };
+  }
+}
+
+// ---------- ref-label icon recipes (P7 §3.4) ----------
+
+/** P7 §3.4: laptop glyph (local). Monochrome — the CALLER sets `ctx.strokeStyle`
+ *  (= `style.text`); this recipe sets width/join/cap and draws with the current
+ *  stroke. Box is `S × S` at `(bx, by)`. */
+export function drawLaptopIcon(
+  ctx: CanvasRenderingContext2D,
+  bx: number,
+  by: number,
+  S: number,
+): void {
+  ctx.lineWidth = 1.2;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  // screen (rounded rect)
+  ctx.beginPath();
+  ctx.roundRect(bx + S * 0.15, by + S * 0.1, S * 0.7, S * 0.52, S * 0.08);
+  ctx.stroke();
+  // base + sloped sides
+  ctx.beginPath();
+  ctx.moveTo(bx + S * 0.15, by + S * 0.62);
+  ctx.lineTo(bx + S * 0.05, by + S * 0.82);
+  ctx.lineTo(bx + S * 0.95, by + S * 0.82);
+  ctx.lineTo(bx + S * 0.85, by + S * 0.62);
+  ctx.stroke();
+}
+
+/** P7 §3.4: cloud glyph (remote). Same monochrome convention as
+ *  {@link drawLaptopIcon}. */
+export function drawCloudIcon(
+  ctx: CanvasRenderingContext2D,
+  bx: number,
+  by: number,
+  S: number,
+): void {
+  ctx.lineWidth = 1.2;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  const b = by + S * 0.74; // baseline
+  ctx.beginPath();
+  ctx.arc(bx + S * 0.34, b - S * 0.16, S * 0.2, Math.PI * 0.5, Math.PI * 1.5); // left lobe
+  ctx.arc(bx + S * 0.52, b - S * 0.3, S * 0.22, Math.PI * 1.05, Math.PI * 1.95); // top lobe
+  ctx.arc(bx + S * 0.68, b - S * 0.14, S * 0.18, Math.PI * 1.5, Math.PI * 0.5); // right lobe
+  ctx.lineTo(bx + S * 0.3, b);
+  ctx.closePath();
+  ctx.stroke();
+}
+
+// ---------- LEFT ref-column layout + overflow (P7 §4) ----------
+
+export interface LaidRefLabel {
+  /** The display entity, or `null` for the "+n" overflow chip. */
+  entity: RefEntity | null;
+  style: PillStyle;
+  /** Left edge, in canvas CSS-px (ref-column space). */
+  x: number;
+  /** Full pill width incl. padding + icons. */
+  w: number;
+  /** Glyphs to draw (both false for chip / tag / head). */
+  icons: { laptop: boolean; cloud: boolean };
+}
+
+/** Glyphs for an entity: laptop when it has a local ref, cloud when it has a
+ *  remote. Only `branch` entities carry icons. */
+function iconsFor(e: RefEntity): { laptop: boolean; cloud: boolean } {
+  if (e.kind === 'branch') return { laptop: e.hasLocal, cloud: e.remotes.length > 0 };
+  return { laptop: false, cloud: false };
+}
+
+/** Combined icon-block width (icon-icon gap only between two icons). */
+function iconsWidth(icons: { laptop: boolean; cloud: boolean }): number {
+  return (
+    (icons.laptop ? METRICS.iconSize : 0) +
+    (icons.cloud ? METRICS.iconSize : 0) +
+    (icons.laptop && icons.cloud ? METRICS.iconGap : 0)
+  );
+}
+
+/** Measures a ref-label pill (icons + truncated label), matching the width the
+ *  draw pass will reproduce (P7 §4). Assumes `ctx.font` is already `pillFont`. */
+function refPillWidth(
+  ctx: CanvasRenderingContext2D,
+  style: PillStyle,
+  icons: { laptop: boolean; cloud: boolean },
+): number {
+  const iconsW = iconsWidth(icons);
+  const anyIcon = icons.laptop || icons.cloud;
+  const labelMaxPx = METRICS.pillMaxWidth - 2 * METRICS.pillPadX - iconsW - (anyIcon ? METRICS.iconGap : 0);
+  const labelText = truncateToWidth(ctx, style.label, labelMaxPx);
+  return (
+    2 * METRICS.pillPadX + iconsW + (anyIcon ? METRICS.iconGap : 0) + Math.ceil(measure(ctx, labelText))
+  );
+}
+
+/** P7 §4: lay entities L→R in the fixed band `[startX, startX+budget]`; break
+ *  before an entity that would exceed the budget (except the first); append a
+ *  "+n" chip counting HIDDEN ENTITIES. Mirrors the old `layoutRowPills` overflow
+ *  rule exactly. PURE (no drawing); sets `ctx.font` internally. Single source of
+ *  truth for both the draw pass and hit-testing. */
+export function layoutRefLabels(
+  ctx: CanvasRenderingContext2D,
+  entities: readonly RefEntity[],
+  node: GraphNode,
+  theme: Theme,
+  startX: number,
+  budget: number,
+): LaidRefLabel[] {
+  const result: LaidRefLabel[] = [];
+  if (entities.length === 0) return result;
+  ctx.font = `${METRICS.pillFont} ${FONT_UI}`;
+  let x = startX;
+  let shown = 0;
+  for (const e of entities) {
+    const style = entityStyle(e, node, theme);
+    const icons = iconsFor(e);
+    const w = refPillWidth(ctx, style, icons);
+    if (shown > 0 && x + w > startX + budget) break;
+    result.push({ entity: e, style, x, w, icons });
+    x += w + METRICS.pillGap;
+    shown++;
+  }
+  const hidden = entities.length - shown;
+  if (hidden > 0) {
+    const chipStyle: PillStyle = {
+      fill: theme.bg2,
+      text: theme.text2,
+      border: theme.border,
+      label: `+${hidden}`,
+    };
+    const noIcons = { laptop: false, cloud: false };
+    result.push({ entity: null, style: chipStyle, x, w: refPillWidth(ctx, chipStyle, noIcons), icons: noIcons });
   }
   return result;
 }

@@ -70,11 +70,40 @@ export function createFrameRecorder(): FrameRecorder {
   };
 }
 
+/** P7 §10 item 2: pure helpers exposed for the self-test harness (mock only). */
+export interface P7DevHooks {
+  initials(name: string): string;
+  avatarColor(name: string): import('./draw').AvatarColor;
+  groupRefs(refs: readonly import('../ipc').RefLabel[] | undefined): import('./draw').RefEntity[];
+  layoutRefLabels(
+    ctx: CanvasRenderingContext2D,
+    entities: readonly import('./draw').RefEntity[],
+    node: import('../ipc').GraphNode,
+    theme: import('./colors').Theme,
+    startX: number,
+    budget: number,
+  ): import('./draw').LaidRefLabel[];
+  refColArea(): { startX: number; budget: number };
+  avatarHit(px: number, py: number, cx: number, cy: number): boolean;
+  relativeDate(ts: number, now: number): string;
+}
+
+/** P7 §10 item 2: pure-fn self-test result the orchestrator reads. */
+export interface P7SelfTestResult {
+  pass: number;
+  fail: number;
+  failures: string[];
+}
+
 /** Dev hooks exposed on `window.__bonsai` in mock mode only (§4.7/§5.5). */
 export interface BonsaiDevHooks {
   /** Animates scrollTop 0 → max → 0 over durationMs, recording every frame
    * delta; logs one `[bonsai] scroll-test {...}` line and resolves. */
   scrollSweep(durationMs?: number): Promise<FrameStats>;
+  /** P7 §10: pure helpers for interactive inspection (mock only). */
+  p7?: P7DevHooks;
+  /** P7 §10: run all pure-fn assertions; returns pass/fail counts + names. */
+  p7SelfTest?(): P7SelfTestResult;
 }
 
 declare global {
