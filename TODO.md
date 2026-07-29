@@ -13,7 +13,32 @@ honors them). Include this in every subagent prompt that runs tests or creates r
 
 ## P5 — Graph context menus — **in-progress** (2026-07-29)
 
-Current step: P5 kickoff — writing architect contract. Source: user request (2026-07-29) after
+Current step: P5 AI GATE PASSED (2026-07-29) — awaiting USER CHECKPOINT. All 4 sub-increments
+committed: 31082c1 (P5a backend), c6da6db (P5b IPC/mock), 621006f (P5c graph hit-test + merge/
+rebase menu), 5813902 (P5d Compare panel + overlay). Contract: docs/contracts/P5-graph-context-menus.md.
+Reviews: P5a APPROVE-WITH-NITS (non-blocking), P5b orchestrator self-review (mechanical IPC mirror),
+P5c APPROVE (pass-5a refactor verified pixel-identical; useCallback NIT folded in). P5d was
+finished by the orchestrator directly (user interrupted the senior-dev delegation and said
+"continue implementation") on top of pre-existing uncommitted scaffolding found in the working
+tree (compare state cluster + clearCompare/refetchCompare + ComparePanel.tsx + DiffOverlay/
+CommitPanel edits); orchestrator added the missing wiring (handleCompareWithHead/
+handleToggleCompareDiff, buildContextItems commit branch, ComparePanel render precedence,
+onSelect exit-compare wrap, Esc layering, refetchCompare in the 3 refresh batches).
+AI-gate evidence: cargo test --lib 108 pass (7 new compare tests, P5a; full `cargo test` bin link
+blocked by user's running tauri dev on 1420 — lib verified); clippy clean; pnpm build EXIT 0
+(tsc clean). Harness (mock :1423, no console errors) verified: (P5c) feat/origin-main pills open
+merge/rebase menus with correct wording, main(own)/tag/head/commit-row open none, Esc/outside/
+scroll dismiss, both themes, pass-5a pixel-identical; (P5d) commit row -> "Compare with HEAD" ->
+ComparePanel "HEAD (main) 9fceb02 -> 0303030 core work 4" + file list -> compare: overlay w/ hunks,
+Esc closes overlay then compare, left-click exits compare, both themes. NOTE: HEAD-vs-itself
+"No differences" empty state not reachable in the mock (MOCK_OID decoupled from graph row ids) —
+covered by Rust test compare_head_to_itself_is_empty + trivial JSX.
+USER CHECKPOINT (native pnpm tauri dev): (1) right-click a branch pill in the graph -> Merge/Rebase
+runs against the real repo; (2) right-click a commit -> "Compare with HEAD" shows the correct
+git-diff-HEAD-<commit> file list + per-file diffs, two-endpoint header reads correctly, HEAD-vs-itself
+shows "No differences".
+
+Original step: P5 kickoff — writing architect contract. Source: user request (2026-07-29) after
 P4 toolbar refinements (committed 9cdd635; P4 AI gate still awaiting USER CHECKPOINT).
 Two features:
 1. **Merge/rebase on graph branch pills** — right-click a local (non-current) or remote-tracking
