@@ -78,28 +78,30 @@ export function TabStrip({
 
   return (
     <div className="tab-strip" ref={rootRef}>
-      {tabs.map((t) => (
-        <div key={t.repoId} className={`tab${t.repoId === activeRepo ? ' tab-active' : ''}`}>
-          <button
-            type="button"
-            className="tab-label"
-            disabled={disabled}
-            onClick={() => onSelect(t.repoId)}
-            title={t.path}
-          >
-            {folderName(t.path)}
-          </button>
-          <button
-            type="button"
-            className="tab-close"
-            aria-label={`Close ${folderName(t.path)}`}
-            title={`Close ${folderName(t.path)}`}
-            onClick={() => onClose(t.repoId)}
-          >
-            {'×'}
-          </button>
-        </div>
-      ))}
+      <div className="tab-scroll">
+        {tabs.map((t) => (
+          <div key={t.repoId} className={`tab${t.repoId === activeRepo ? ' tab-active' : ''}`}>
+            <button
+              type="button"
+              className="tab-label"
+              disabled={disabled}
+              onClick={() => onSelect(t.repoId)}
+              title={t.path}
+            >
+              {folderName(t.path)}
+            </button>
+            <button
+              type="button"
+              className="tab-close"
+              aria-label={`Close ${folderName(t.path)}`}
+              title={`Close ${folderName(t.path)}`}
+              onClick={() => onClose(t.repoId)}
+            >
+              {'×'}
+            </button>
+          </div>
+        ))}
+      </div>
       <div className="tab-add-wrap">
         <button
           type="button"

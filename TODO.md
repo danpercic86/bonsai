@@ -109,6 +109,23 @@ all pass in the native app. Release build verified: MSI + NSIS bundles at
 src-tauri/target/release/bundle (Bonsai 0.1.0 x64). **v1 COMPLETE** per CLAUDE.md
 definition of done.
 
+## P4 — UX refinements (post-P3 feedback) — **in-progress** (2026-07-29)
+
+Current step: P4 kickoff — contract written (docs/contracts/P4-ux-refinements.md), starting Inc 1.
+Source: user returned from P3 checkpoint with 5 UI issues; decisions locked via AskUserQuestion:
+- #1 tab `+` menu overflow: FIX (bug — `.tab-strip` overflow-x forces overflow-y auto, clips menu).
+- #2 Fetch/Pull/Push: centered bar ABOVE the graph; Refresh (⟳) STAYS top-right.
+- #3 Unstaged+Untracked: MERGE into one "Changes" section (untracked badge → green A; one Stage all;
+  Staged + Conflicts stay separate). Presentation-only — WorkdirSection union + diff-key grammar unchanged.
+- #4 sidebar: tree mode ref folders collapsed by default EXCEPT the current-branch chain (auto-expanded);
+  current branch sorted first; sections stay open; flat mode = current-first.
+- #5 diff colors: BOTH file-type accent chip AND full per-line syntax highlighting (highlight.js, lazy,
+  CSS-var themed via --syn-*). Client-side presentation only — zero IPC/wire/Rust change.
+Frontend-only milestone. Zero backend/IPC change (architect confirmed). Mock stays compiling
+(fixture-data-only additions allowed for P4e visuals).
+Sub-increment plan (orchestrator): Inc1 = P4a+P4b (layout), Inc2 = P4c, Inc3 = P4d,
+Inc4 = P4e-1 (language util + accent chip), Inc5 = P4e-2 (syntax highlighting). Each implement→review→commit.
+
 ## P3 — Diff overlay, trees, merge/rebase, multi-repo tabs — **in-progress** (2026-07-28)
 
 Current step: P3e — IN PROGRESS. Contract written: docs/contracts/P3e-multi-repo-tabs.md (5 sub-increments

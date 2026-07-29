@@ -603,7 +603,17 @@ body {
   gap: 4px;
   flex: 1;
   min-width: 0;
+}
+
+.tab-scroll {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
 }
 
 .tab {
@@ -741,6 +751,18 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.graph-toolbar {
+  flex: none;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--bg-0);
+  border-bottom: 1px solid var(--border);
 }
 
 .graph-pane-empty {
