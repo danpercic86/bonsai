@@ -720,6 +720,53 @@ async fn delete_branch_inner(
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// GitKraken-style remote checkout: create/reuse a local tracking branch for
+/// `name` ("<remote>/<branch>") and safe-checkout it (P6 §2.2).
+/// Errors: `invalidName` | `branchNotFound` | `checkoutConflict` | `git` | `noRepo`.
+#[tauri::command]
+pub async fn checkout_remote(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    name: String,
+) -> Result<(), AppError> {
+    checkout_remote_inner(state.inner(), &repo_id, name).await
+}
+
+/// Runtime-free core of `checkout_remote` (unit-testable without a Tauri app).
+async fn checkout_remote_inner(
+    state: &AppState,
+    repo_id: &str,
+    name: String,
+) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || branches::checkout_remote(&path, &name))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Deletes the LOCAL remote-tracking ref `name` — does NOT touch the server
+/// (P6 §2.3). Errors: `branchNotFound` | `git` | `noRepo`.
+#[tauri::command]
+pub async fn delete_remote_tracking(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    name: String,
+) -> Result<(), AppError> {
+    delete_remote_tracking_inner(state.inner(), &repo_id, name).await
+}
+
+/// Runtime-free core of `delete_remote_tracking` (unit-testable without a Tauri app).
+async fn delete_remote_tracking_inner(
+    state: &AppState,
+    repo_id: &str,
+    name: String,
+) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || branches::delete_remote_tracking(&path, &name))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Fetches every configured remote, sequentially, fail-fast (M6 contract
 /// §2.4/§9). Errors: `noRemote` | `authFailed` | `networkError` | `git`
 /// | `noRepo`. Does NOT emit `repo-changed` — the frontend refetches
@@ -1251,6 +1298,22 @@ mod tests {
             "topic".to_string(),
         ))
         .expect_err("delete_branch with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(checkout_remote_inner(
+            &state,
+            MISSING_ID,
+            "origin/topic".to_string(),
+        ))
+        .expect_err("checkout_remote with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(delete_remote_tracking_inner(
+            &state,
+            MISSING_ID,
+            "origin/topic".to_string(),
+        ))
+        .expect_err("delete_remote_tracking with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
 

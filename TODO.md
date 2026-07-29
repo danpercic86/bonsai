@@ -11,9 +11,32 @@ inner functions for command tests.
 Use `D:\Temp\bonsai-scratch`; when running cargo tests set TMP/TEMP to `D:\Temp` (tempfile
 honors them). Include this in every subagent prompt that runs tests or creates repos.**
 
-## P5 — Graph context menus — **in-progress** (2026-07-29)
+## P6 — Unified branch/remote context menus — **in-progress** (2026-07-29)
 
-Current step: P5 AI GATE PASSED (2026-07-29) — awaiting USER CHECKPOINT. All 4 sub-increments
+Current step: P6 kickoff — writing architect contract. Source: user request (2026-07-29) after
+confirming P5 works. Three requirements:
+1. **One context menu per branch** (graph pill AND sidebar row) with ALL applicable actions:
+   Checkout, Merge …into current, Rebase current onto …, Compare with HEAD, Delete. Single place
+   that acts on a branch. Current/HEAD branch → no actions (empty menu, no open), as today.
+2. **Strip inline action buttons from the sidebar branch rows** — names take all available space;
+   actions live only in the right-click menu.
+3. **Same unification for remotes** — right-click menu (Merge/Rebase/Compare with HEAD — checkout
+   and delete of remote-tracking refs are NOT supported in v1, so they are omitted), names fill
+   available space.
+Implementation shape (orchestrator default): a single shared `branchMenuItems(name, kind)` builder in
+RepoWorkspace (owns every handler) consumed by BOTH `buildContextItems` (graph) and a new Sidebar
+`onContextMenu(name, kind, x, y)` prop. Compare-with-HEAD needs the ref's tip oid → add `tip: string`
+(full oid) to backend `BranchInfo`/`RemoteBranchInfo` + IPC types + mock fixtures; menu resolves tip
+by name from the branches snapshot, reusing existing `compareWithHead(repoId, tip)`. Move the
+delete-confirm ConfirmDialog + pendingDelete state UP from Sidebar to RepoWorkspace so the graph
+pill's Delete works too (wire pendingDelete→dialogOpen for shortcut suppression). Graph
+GraphContextTarget unchanged (tip resolved via snapshot). Rules: scratch repos under
+D:\Temp\bonsai-scratch only; TMP/TEMP=D:\Temp for cargo tests; orchestrator makes all commits
+(`wip(P6): …`); mock.ts kept compiling with every IPC change.
+
+## P5 — Graph context menus — **done** (2026-07-29, USER CONFIRMED)
+
+Current step: DONE — USER CONFIRMED it works (2026-07-29). All 4 sub-increments
 committed: 31082c1 (P5a backend), c6da6db (P5b IPC/mock), 621006f (P5c graph hit-test + merge/
 rebase menu), 5813902 (P5d Compare panel + overlay). Contract: docs/contracts/P5-graph-context-menus.md.
 Reviews: P5a APPROVE-WITH-NITS (non-blocking), P5b orchestrator self-review (mechanical IPC mirror),

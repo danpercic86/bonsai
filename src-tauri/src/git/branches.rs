@@ -23,6 +23,8 @@ pub struct BranchInfo {
     /// Commits ahead of / behind upstream. None whenever `upstream` is None.
     pub ahead: Option<u32>,
     pub behind: Option<u32>,
+    /// Full 40-char hex oid of the branch tip.
+    pub tip: String,
 }
 
 /// One remote-tracking branch (read-only list in M5).
@@ -31,6 +33,8 @@ pub struct BranchInfo {
 pub struct RemoteBranchInfo {
     /// Shorthand incl. remote, e.g. "origin/main".
     pub name: String,
+    /// Full 40-char hex oid of the remote-tracking branch tip.
+    pub tip: String,
 }
 
 /// One snapshot of everything the sidebar renders.
@@ -83,6 +87,17 @@ pub fn list_refs(workdir: &Path) -> Result<BranchesSnapshot, AppError> {
         };
         let is_head = branch.is_head();
 
+        // Tip oid; direct local branches always have a target — the `continue`
+        // is a defensive skip, consistent with the non-UTF-8 skip above.
+        let local_oid = match branch.get().target() {
+            Some(oid) => oid,
+            None => {
+                eprintln!("bonsai: skipping symbolic/targetless local branch");
+                continue;
+            }
+        };
+        let tip = local_oid.to_string();
+
         // Upstream shorthand; None when unset or the upstream ref is gone.
         let upstream_branch = branch.upstream().ok();
         let upstream = upstream_branch
@@ -90,16 +105,17 @@ pub fn list_refs(workdir: &Path) -> Result<BranchesSnapshot, AppError> {
             .and_then(|u| u.name().ok().flatten().map(str::to_string));
 
         // Ahead/behind is best-effort (contract §2.1): any lookup error
-        // degrades to None — never fail the whole snapshot for it.
-        let (ahead, behind) = match (&upstream, branch.get().target()) {
-            (Some(_), Some(local_oid)) => {
+        // degrades to None — never fail the whole snapshot for it. Reuse
+        // `local_oid` (already read above) rather than calling target() twice.
+        let (ahead, behind) = match &upstream {
+            Some(_) => {
                 let upstream_oid = upstream_branch.as_ref().and_then(|u| u.get().target());
                 match upstream_oid.map(|u| repo.graph_ahead_behind(local_oid, u)) {
                     Some(Ok((a, b))) => (u32::try_from(a).ok(), u32::try_from(b).ok()),
                     _ => (None, None),
                 }
             }
-            _ => (None, None),
+            None => (None, None),
         };
 
         local.push(BranchInfo {
@@ -108,6 +124,7 @@ pub fn list_refs(workdir: &Path) -> Result<BranchesSnapshot, AppError> {
             upstream,
             ahead,
             behind,
+            tip,
         });
     }
     local.sort_by(|a, b| ci_cmp(&a.name, &b.name));
@@ -119,12 +136,21 @@ pub fn list_refs(workdir: &Path) -> Result<BranchesSnapshot, AppError> {
         if branch.get().symbolic_target().is_some() {
             continue;
         }
-        match branch.name()? {
-            Some(n) => remote.push(RemoteBranchInfo {
-                name: n.to_string(),
-            }),
-            None => eprintln!("bonsai: skipping remote branch with non-UTF-8 name"),
-        }
+        let name = match branch.name()? {
+            Some(n) => n.to_string(),
+            None => {
+                eprintln!("bonsai: skipping remote branch with non-UTF-8 name");
+                continue;
+            }
+        };
+        let tip = match branch.get().target() {
+            Some(oid) => oid.to_string(),
+            None => {
+                eprintln!("bonsai: skipping targetless remote branch");
+                continue;
+            }
+        };
+        remote.push(RemoteBranchInfo { name, tip });
     }
     remote.sort_by(|a, b| ci_cmp(&a.name, &b.name));
 
@@ -290,6 +316,117 @@ pub fn delete_branch(workdir: &Path, name: &str) -> Result<(), AppError> {
              Bonsai v1 does not force-delete; use `git branch -D {name}` if you are sure."
         )));
     }
+
+    branch.delete()?;
+    Ok(())
+}
+
+/// Blocking. GitKraken-style remote checkout: create (or reuse) a LOCAL tracking
+/// branch for the remote-tracking ref `remote_shorthand` ("<remote>/<branch>")
+/// and safe-checkout it. SAFE checkout only — never force (P6 contract §2.2).
+///
+/// A name collision (a local branch of the same short name already exists) just
+/// switches to the existing local branch — it is NOT repointed. Safe checkout
+/// runs before any ref mutation, so a conflict leaves HEAD + worktree untouched
+/// and creates nothing.
+pub fn checkout_remote(workdir: &Path, remote_shorthand: &str) -> Result<(), AppError> {
+    let repo = open_repo_at(workdir)?;
+
+    // Split on the FIRST '/': remote names contain no '/'. The remote segment
+    // is validated non-empty but not otherwise needed here.
+    let local_name = match remote_shorthand.split_once('/') {
+        Some((r, l)) if !r.is_empty() && !l.is_empty() => l,
+        _ => {
+            return Err(AppError::InvalidName(format!(
+                "invalid remote branch name: '{remote_shorthand}'"
+            )));
+        }
+    };
+
+    // Find the remote-tracking ref and its tip.
+    let remote_branch = match repo.find_branch(remote_shorthand, git2::BranchType::Remote) {
+        Ok(b) => b,
+        Err(e) if e.code() == git2::ErrorCode::NotFound => {
+            return Err(AppError::BranchNotFound(format!(
+                "remote-tracking branch '{remote_shorthand}' not found"
+            )));
+        }
+        Err(e) => return Err(e.into()),
+    };
+    let remote_tip = remote_branch.get().target().ok_or_else(|| {
+        AppError::Git(format!(
+            "remote-tracking branch '{remote_shorthand}' has no target commit"
+        ))
+    })?;
+
+    // Decide the checkout target + whether we create — BEFORE touching the
+    // worktree, so a conflict leaves everything untouched and creates nothing.
+    let (checkout_oid, created) = match repo.find_branch(local_name, git2::BranchType::Local) {
+        Ok(existing) => {
+            let oid = existing.get().target().ok_or_else(|| {
+                AppError::Git(format!("branch '{local_name}' has no target commit"))
+            })?;
+            (oid, false)
+        }
+        Err(e) if e.code() == git2::ErrorCode::NotFound => (remote_tip, true),
+        Err(e) => return Err(e.into()),
+    };
+
+    // SAFE checkout FIRST (matches `checkout_branch`): a conflict leaves HEAD +
+    // worktree untouched AND nothing has been created yet.
+    let obj = repo.find_object(checkout_oid, None)?;
+    let mut opts = git2::build::CheckoutBuilder::new();
+    opts.safe(); // DEFAULT SAFE MODE — never .force()
+    match repo.checkout_tree(&obj, Some(&mut opts)) {
+        Ok(()) => {}
+        Err(e) if e.code() == git2::ErrorCode::Conflict => {
+            return Err(AppError::CheckoutConflict(format!(
+                "cannot switch to '{local_name}': local changes would be overwritten. \
+                 Commit or discard them first."
+            )));
+        }
+        Err(e) => return Err(e.into()),
+    }
+
+    // Checkout succeeded — only now mutate refs.
+    if created {
+        let remote_commit = repo.find_commit(remote_tip)?;
+        match repo.branch(local_name, &remote_commit, /* force */ false) {
+            Ok(mut new_branch) => {
+                // Best-effort upstream — a set failure is still a successful
+                // checkout; log and continue, do NOT roll back.
+                if let Err(e) = new_branch.set_upstream(Some(remote_shorthand)) {
+                    eprintln!(
+                        "bonsai: checked out '{local_name}' but failed to set upstream \
+                         '{remote_shorthand}': {e}"
+                    );
+                }
+            }
+            // Race: created between our probe and now — just proceed to set_head.
+            Err(e) if e.code() == git2::ErrorCode::Exists => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+
+    repo.set_head(&format!("refs/heads/{local_name}"))?;
+    Ok(())
+}
+
+/// Blocking. Deletes the LOCAL remote-tracking ref `name` ("origin/feature").
+/// Local-only: does NOT contact the server. No merged-check (a local-branch
+/// concept only) (P6 contract §2.3).
+pub fn delete_remote_tracking(workdir: &Path, name: &str) -> Result<(), AppError> {
+    let repo = open_repo_at(workdir)?;
+
+    let mut branch = match repo.find_branch(name, git2::BranchType::Remote) {
+        Ok(b) => b,
+        Err(e) if e.code() == git2::ErrorCode::NotFound => {
+            return Err(AppError::BranchNotFound(format!(
+                "remote-tracking branch '{name}' not found"
+            )));
+        }
+        Err(e) => return Err(e.into()),
+    };
 
     branch.delete()?;
     Ok(())

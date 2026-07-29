@@ -13,7 +13,8 @@ use std::path::Path;
 
 use bonsai_lib::error::AppError;
 use bonsai_lib::git::branches::{
-    checkout_branch, create_branch, delete_branch, list_refs,
+    checkout_branch, checkout_remote, create_branch, delete_branch, delete_remote_tracking,
+    list_refs,
 };
 use common::{assert_same_status, commit_fixed, git, git_ok, init_repo};
 
@@ -495,4 +496,166 @@ fn delete_merged_branch_while_detached() {
 
     delete_branch(path, "extra").expect("delete merged branch while detached");
     assert!(!git_ok(path, &["rev-parse", "--verify", "refs/heads/extra"]));
+}
+
+// ---------------------------------------------------- P6 §2.1 tip / §2.2 / §2.3
+
+/// Repo with a `file://` bare remote `origin` and a remote-tracking
+/// `origin/topic` advanced one commit past `main` (topic changes file.txt so a
+/// checkout touches the worktree). Currently on `main`, with NO local `topic`.
+/// Returns `(working dir, bare remote dir)` — keep both alive.
+fn remote_topic_repo() -> (tempfile::TempDir, tempfile::TempDir) {
+    let dir = init_repo();
+    let path = dir.path();
+    std::fs::write(path.join("file.txt"), "main v1\n").expect("write file.txt");
+    git(path, &["add", "-A"]);
+    commit_fixed(path, "base");
+
+    let bare = common::scratch_dir();
+    git(bare.path(), &["init", "--bare"]);
+    let bare_url = bare.path().to_string_lossy().replace('\\', "/");
+    git(path, &["remote", "add", "origin", &bare_url]);
+
+    // topic advances past main, changing file.txt.
+    git(path, &["checkout", "-b", "topic"]);
+    std::fs::write(path.join("file.txt"), "topic v1\n").expect("write file.txt");
+    git(path, &["add", "-A"]);
+    commit_fixed(path, "topic change");
+
+    git(path, &["push", "origin", "main", "topic"]);
+    git(path, &["checkout", "main"]);
+    git(path, &["fetch", "origin"]);
+    // Drop the local topic so tests exercise the create / collision paths.
+    git(path, &["branch", "-D", "topic"]);
+    (dir, bare)
+}
+
+/// P6 §2.1: BranchInfo.tip / RemoteBranchInfo.tip equal `git rev-parse <ref>`.
+#[test]
+fn list_refs_tip_matches_cli() {
+    require_git!();
+    let (dir, _bare) = remote_topic_repo();
+    let path = dir.path();
+
+    let snap = list_refs(path).expect("list_refs");
+
+    let main = snap.local.iter().find(|b| b.name == "main").expect("main");
+    assert_eq!(main.tip, git(path, &["rev-parse", "refs/heads/main"]));
+
+    let origin_topic = snap
+        .remote
+        .iter()
+        .find(|r| r.name == "origin/topic")
+        .expect("origin/topic");
+    assert_eq!(
+        origin_topic.tip,
+        git(path, &["rev-parse", "refs/remotes/origin/topic"])
+    );
+    // Tips are full 40-char hex oids.
+    assert_eq!(main.tip.len(), 40);
+    assert_eq!(origin_topic.tip.len(), 40);
+}
+
+/// P6 §2.2 create path: `origin/topic` with NO local `topic` -> creates and
+/// switches to a local tracking branch at the remote tip, upstream configured.
+#[test]
+fn checkout_remote_creates_and_tracks() {
+    require_git!();
+    let (dir, _bare) = remote_topic_repo();
+    let path = dir.path();
+
+    checkout_remote(path, "origin/topic").expect("checkout_remote create path");
+
+    assert_eq!(git(path, &["symbolic-ref", "HEAD"]), "refs/heads/topic");
+    assert_eq!(
+        git(path, &["rev-parse", "topic"]),
+        git(path, &["rev-parse", "refs/remotes/origin/topic"])
+    );
+    // Upstream configured to origin/refs/heads/topic.
+    assert_eq!(git(path, &["config", "branch.topic.remote"]), "origin");
+    assert_eq!(
+        git(path, &["config", "branch.topic.merge"]),
+        "refs/heads/topic"
+    );
+    // Worktree now has topic's content.
+    assert_eq!(read(path, "file.txt"), "topic v1\n");
+}
+
+/// P6 §2.2 collision path: a local `topic` already exists at a DIFFERENT oid ->
+/// switch to it WITHOUT repointing; returns Ok.
+#[test]
+fn checkout_remote_switches_to_existing_local_without_repointing() {
+    require_git!();
+    let (dir, _bare) = remote_topic_repo();
+    let path = dir.path();
+    // Local topic at main's oid — divergent from origin/topic's tip.
+    git(path, &["branch", "topic", "main"]);
+    let local_before = git(path, &["rev-parse", "topic"]);
+    let remote_tip = git(path, &["rev-parse", "refs/remotes/origin/topic"]);
+    assert_ne!(local_before, remote_tip, "fixture must diverge");
+
+    checkout_remote(path, "origin/topic").expect("checkout_remote collision path");
+
+    assert_eq!(git(path, &["symbolic-ref", "HEAD"]), "refs/heads/topic");
+    // NOT repointed to the remote tip.
+    assert_eq!(git(path, &["rev-parse", "topic"]), local_before);
+    assert_ne!(git(path, &["rev-parse", "topic"]), remote_tip);
+}
+
+/// P6 §2.2 conflict: a dirty worktree a safe checkout would overwrite ->
+/// CheckoutConflict, HEAD + worktree unchanged, and NO new local branch.
+#[test]
+fn checkout_remote_conflict_changes_nothing() {
+    require_git!();
+    let (dir, _bare) = remote_topic_repo();
+    let path = dir.path();
+    std::fs::write(path.join("file.txt"), "local edit\n").expect("write file.txt");
+    let head_before = git(path, &["symbolic-ref", "HEAD"]);
+
+    let err = checkout_remote(path, "origin/topic").expect_err("conflicting checkout must fail");
+    assert!(matches!(err, AppError::CheckoutConflict(_)), "got {err:?}");
+
+    assert_eq!(git(path, &["symbolic-ref", "HEAD"]), head_before);
+    assert_eq!(read(path, "file.txt"), "local edit\n");
+    // No local branch was created.
+    assert!(lines(&git(path, &["branch", "--list", "topic"])).is_empty());
+}
+
+/// P6 §2.2 errors: no '/' -> InvalidName; unknown remote ref -> BranchNotFound.
+#[test]
+fn checkout_remote_error_taxonomy() {
+    require_git!();
+    let (dir, _bare) = remote_topic_repo();
+    let path = dir.path();
+
+    let err = checkout_remote(path, "nope").expect_err("no slash must fail");
+    assert!(matches!(err, AppError::InvalidName(_)), "got {err:?}");
+
+    let err = checkout_remote(path, "origin/ghost").expect_err("unknown remote ref must fail");
+    assert!(matches!(err, AppError::BranchNotFound(_)), "got {err:?}");
+}
+
+/// P6 §2.3: deletes only the LOCAL remote-tracking ref; the server's own refs
+/// are untouched. Unknown ref -> BranchNotFound.
+#[test]
+fn delete_remote_tracking_local_only() {
+    require_git!();
+    let (dir, bare) = remote_topic_repo();
+    let path = dir.path();
+
+    // Sanity: the remote-tracking ref exists before deletion.
+    assert!(!lines(&git(path, &["branch", "-r", "--list", "origin/topic"])).is_empty());
+
+    delete_remote_tracking(path, "origin/topic").expect("delete_remote_tracking");
+
+    assert!(lines(&git(path, &["branch", "-r", "--list", "origin/topic"])).is_empty());
+    // The server's own branch is untouched.
+    assert!(
+        git(bare.path(), &["show-ref"]).contains("refs/heads/topic"),
+        "server ref refs/heads/topic must survive a local remote-tracking delete"
+    );
+
+    // Unknown ref -> BranchNotFound.
+    let err = delete_remote_tracking(path, "origin/ghost").expect_err("unknown ref must fail");
+    assert!(matches!(err, AppError::BranchNotFound(_)), "got {err:?}");
 }
