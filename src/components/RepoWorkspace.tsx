@@ -970,9 +970,38 @@ export function RepoWorkspace({
   return (
     <>
       <div className="workspace-toolbar">
+        <div className="toolbar-center">
+          <button
+            type="button"
+            className="toolbar-btn"
+            disabled={refreshing || mutating}
+            onClick={() => void handleFetch()}
+            title="Fetch all remotes (Ctrl+Shift+F)"
+          >
+            {remoteOp === 'fetch' ? 'Fetching…' : '↓ Fetch'}
+          </button>
+          <button
+            type="button"
+            className="toolbar-btn"
+            disabled={refreshing || mutating || !canPullPush}
+            onClick={() => void handlePull()}
+            title="Pull (fast-forward only) (Ctrl+Shift+P)"
+          >
+            {remoteOp === 'pull' ? 'Pulling…' : '⇣ Pull'}
+          </button>
+          <button
+            type="button"
+            className="toolbar-btn"
+            disabled={refreshing || mutating || !canPullPush}
+            onClick={() => void handlePush()}
+            title={`${pushTitle} (Ctrl+Shift+U)`}
+          >
+            {remoteOp === 'push' ? 'Pushing…' : '↑ Push'}
+          </button>
+        </div>
         <button
           type="button"
-          className="btn-icon"
+          className="btn-icon toolbar-refresh"
           disabled={refreshing || statusLoading || graphLoading || mutating}
           onClick={() => void handleRefresh()}
           title="Refresh (Ctrl+R)"
@@ -1003,35 +1032,6 @@ export function RepoWorkspace({
         />
         <PaneDivider side="sidebar" onResize={onSidebarResize} onResizeEnd={onPaneResizeEnd} />
         <main className="graph-pane">
-          <div className="graph-toolbar">
-            <button
-              type="button"
-              className="toolbar-btn"
-              disabled={refreshing || mutating}
-              onClick={() => void handleFetch()}
-              title="Fetch all remotes (Ctrl+Shift+F)"
-            >
-              {remoteOp === 'fetch' ? 'Fetching…' : '↓ Fetch'}
-            </button>
-            <button
-              type="button"
-              className="toolbar-btn"
-              disabled={refreshing || mutating || !canPullPush}
-              onClick={() => void handlePull()}
-              title="Pull (fast-forward only) (Ctrl+Shift+P)"
-            >
-              {remoteOp === 'pull' ? 'Pulling…' : '⇣ Pull'}
-            </button>
-            <button
-              type="button"
-              className="toolbar-btn"
-              disabled={refreshing || mutating || !canPullPush}
-              onClick={() => void handlePush()}
-              title={`${pushTitle} (Ctrl+Shift+U)`}
-            >
-              {remoteOp === 'push' ? 'Pushing…' : '↑ Push'}
-            </button>
-          </div>
           {graphError !== null && (
             <div className="error-banner graph-error-banner">{graphError}</div>
           )}

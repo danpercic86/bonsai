@@ -729,13 +729,27 @@ body {
 .workspace-toolbar {
   flex: none;
   height: 40px;
-  display: flex;
+  /* 3-column grid: empty | centered remote-op group | right-pinned Refresh.
+     The 1fr side columns keep the auto center column horizontally centered
+     regardless of the Refresh button's width. */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
   padding: 0 12px;
   background: var(--bg-1);
   border-bottom: 1px solid var(--border);
+}
+
+.toolbar-center {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar-refresh {
+  grid-column: 3;
+  justify-self: end;
 }
 
 /* ---------- 3-pane layout ---------- */
@@ -776,17 +790,6 @@ body {
   flex-direction: column;
 }
 
-.graph-toolbar {
-  flex: none;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 0 12px;
-  background: var(--bg-0);
-  border-bottom: 1px solid var(--border);
-}
 
 .graph-pane-empty {
   flex: 1;
