@@ -11,7 +11,7 @@ const BADGES: Record<FileStatus, string> = {
   deleted: 'D',
   renamed: 'R',
   typechange: 'T',
-  untracked: 'U',
+  untracked: 'A',
   conflicted: 'C',
 };
 

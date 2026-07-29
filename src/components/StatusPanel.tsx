@@ -20,7 +20,7 @@ const BADGES: Record<FileStatus, string> = {
   deleted: 'D',
   renamed: 'R',
   typechange: 'T',
-  untracked: 'U',
+  untracked: 'A',
   conflicted: 'C',
 };
 
@@ -115,6 +115,7 @@ function FileRow({
 function Section({
   label,
   section,
+  sectionForEntry,
   entries,
   danger = false,
   rowAction,
@@ -129,6 +130,10 @@ function Section({
   label: string;
   /** Diff-key prefix; null for the conflicts section (not expandable). */
   section: WorkdirSection | null;
+  /** P4c: per-entry origin resolver (Changes section merges unstaged +
+   *  untracked). When provided, the row's diff key + toggle use the resolved
+   *  origin instead of the representative `section` prop. */
+  sectionForEntry?: (e: StatusEntry) => WorkdirSection;
   entries: StatusEntry[];
   danger?: boolean;
   /** Per-row button kind; null = no actions in this section. */
@@ -148,7 +153,8 @@ function Section({
     [listView, entries],
   );
   const renderRow = (entry: StatusEntry, treeMode: boolean) => {
-    const key = section !== null ? `${section}:${entry.path}` : null;
+    const rowSection = sectionForEntry ? sectionForEntry(entry) : section;
+    const key = rowSection !== null ? `${rowSection}:${entry.path}` : null;
     const expanded = key !== null && diffSlot !== null && diffSlot.key === key;
     return (
       <FileRow
@@ -160,7 +166,7 @@ function Section({
         expanded={expanded}
         onAction={onAction}
         onToggle={() => {
-          if (section !== null) onToggleDiff(section, entry);
+          if (rowSection !== null) onToggleDiff(rowSection, entry);
         }}
         treeMode={treeMode}
       />
@@ -379,6 +385,20 @@ export function StatusPanel({
 
   const disabled = busy || loading;
 
+  // P4c: merge unstaged + untracked into one presentation-only "Changes" list.
+  // Each row keeps its ORIGIN section (via originByPath) so diff keys, refetch,
+  // and overlayMeta still resolve entries in the correct snapshot array.
+  const changes = useMemo(
+    () => [...(snapshot?.unstaged ?? []), ...(snapshot?.untracked ?? [])],
+    [snapshot?.unstaged, snapshot?.untracked],
+  );
+  const originByPath = useMemo(() => {
+    const m = new Map<string, WorkdirSection>();
+    for (const e of snapshot?.unstaged ?? []) m.set(e.path, 'unstaged');
+    for (const e of snapshot?.untracked ?? []) m.set(e.path, 'untracked');
+    return m;
+  }, [snapshot?.unstaged, snapshot?.untracked]);
+
   const isEmpty =
     snapshot !== null &&
     snapshot.staged.length === 0 &&
@@ -423,22 +443,10 @@ export function StatusPanel({
             onToggleDiff={onToggleDiff}
           />
           <Section
-            label="Unstaged"
+            label="Changes"
             section="unstaged"
-            entries={snapshot.unstaged}
-            rowAction="stage"
-            actionLabel="Stage all"
-            disabled={disabled}
-            expandable
-            diffSlot={diffSlot}
-            listView={listView}
-            onAction={onStage}
-            onToggleDiff={onToggleDiff}
-          />
-          <Section
-            label="Untracked"
-            section="untracked"
-            entries={snapshot.untracked}
+            sectionForEntry={(e) => originByPath.get(e.path) ?? 'unstaged'}
+            entries={changes}
             rowAction="stage"
             actionLabel="Stage all"
             disabled={disabled}

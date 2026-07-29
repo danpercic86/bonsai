@@ -1029,14 +1029,17 @@ body {
   color: var(--accent);
 }
 
-.file-status-untracked .file-badge,
-.file-status-untracked .file-path {
-  color: var(--text-3);
-  font-style: italic;
+/* P4c: untracked rows live in the merged "Changes" list and read as normal
+   adds — green "A" badge, no muted/italic path treatment. */
+.file-status-untracked .file-badge {
+  color: var(--success);
+  font-style: normal;
 }
 
+.file-status-untracked .file-path,
 .file-status-untracked .file-name {
-  color: var(--text-3);
+  color: var(--text-1);
+  font-style: normal;
 }
 
 .section-label-danger {
