@@ -227,6 +227,51 @@ pub async fn set_ui_settings(
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Persisted multi-tab session (P3e §6.1): the open tabs (in display order,
+/// repoIds == canonical workdir paths) and the active tab's repoId. Written as
+/// a whole unit — tabs change atomically, not via partial patch.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionState {
+    pub open_repos: Vec<String>,
+    pub active_repo: Option<String>,
+}
+
+/// Current persisted session (open tabs + active tab). Never rejects for a
+/// missing/corrupt settings file (same as `get_ui_settings`): defaults to an
+/// empty session. Only settings-path resolution can error.
+#[tauri::command]
+pub async fn get_session(app: tauri::AppHandle) -> Result<SessionState, AppError> {
+    let file = settings::settings_file(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let s = settings::load_from(&file);
+        SessionState {
+            open_repos: s.open_repos,
+            active_repo: s.active_repo,
+        }
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))
+}
+
+/// Persists the WHOLE session (tabs change as a unit — no partial patch).
+/// Loads the current settings, overwrites the session fields, and saves. Save
+/// failure surfaces as `AppError::Io` (NOT swallowed — mirrors
+/// `set_ui_settings`; the user just opened/closed/switched a tab and silently
+/// losing it would be surprising).
+#[tauri::command]
+pub async fn set_session(app: tauri::AppHandle, session: SessionState) -> Result<(), AppError> {
+    let file = settings::settings_file(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut s = settings::load_from(&file);
+        s.open_repos = session.open_repos;
+        s.active_repo = session.active_repo;
+        settings::save_to(&file, &s)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Runtime-free core of `open_repo` (unit-testable without a Tauri app).
 /// `make_on_change` is given the resolved `repo_id` and returns the watcher
 /// callback for that repo; the command wires it to an app-wide

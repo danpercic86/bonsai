@@ -85,13 +85,14 @@ pub fn clamp_pane_widths(w: PaneWidths) -> PaneWidths {
 ///    "theme": "dark", "paneWidths": { "sidebar": 240, "rightPanel": 380 },
 ///    "listView": "tree" }`.
 ///
-/// `SETTINGS_VERSION` stays `1`: both `theme` and `pane_widths` are additive
-/// `#[serde(default)]` fields (on the whole struct already, via the
-/// container-level `default`) — an old settings.json containing only
-/// `recentRepos` deserializes fine, missing fields fall back to their type
-/// defaults. No migration code is needed. A future genuine breaking change
-/// (e.g. renaming/removing a field with no safe default) IS when a version
-/// bump becomes necessary — this precedent documents the bar for that.
+/// `SETTINGS_VERSION` stays `1`: `theme`, `pane_widths`, `list_view`,
+/// `open_repos`, and `active_repo` are all additive `#[serde(default)]` fields
+/// (on the whole struct already, via the container-level `default`) — an old
+/// settings.json containing only `recentRepos` deserializes fine, missing
+/// fields fall back to their type defaults. No migration code is needed. A
+/// future genuine breaking change (e.g. renaming/removing a field with no safe
+/// default) IS when a version bump becomes necessary — this precedent documents
+/// the bar for that.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -100,6 +101,12 @@ pub struct Settings {
     pub theme: ThemeChoice,
     pub pane_widths: PaneWidths,
     pub list_view: ListView,
+    /// Open tabs, in display order (repoIds == canonical workdir paths).
+    /// Additive (P3e §6.1); a legacy file without this key loads as empty.
+    pub open_repos: Vec<String>,
+    /// The active tab's repoId; `None` ⇒ activate the first still-openable one.
+    /// Additive (P3e §6.1); a legacy file without this key loads as `None`.
+    pub active_repo: Option<String>,
 }
 
 impl Default for Settings {
@@ -110,6 +117,8 @@ impl Default for Settings {
             theme: ThemeChoice::default(),
             pane_widths: PaneWidths::default(),
             list_view: ListView::default(),
+            open_repos: Vec::new(),
+            active_repo: None,
         }
     }
 }
@@ -418,6 +427,63 @@ mod tests {
         assert_eq!(loaded.theme, ThemeChoice::default());
         assert_eq!(loaded.pane_widths, PaneWidths::default());
         assert_eq!(loaded.list_view, ListView::Tree);
+    }
+
+    /// Save/load a `Settings` with non-empty `open_repos` + `active_repo`
+    /// round-trips exactly (P3e §6.1 / §9.1 "Session (P3e-b)").
+    #[test]
+    fn session_roundtrip() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let s = Settings {
+            open_repos: vec![
+                "D:\\Repos\\alpha".to_string(),
+                "D:\\Repos\\beta".to_string(),
+            ],
+            active_repo: Some("D:\\Repos\\beta".to_string()),
+            ..Default::default()
+        };
+
+        save_to(&file, &s).expect("save settings");
+        let loaded = load_from(&file);
+        assert_eq!(loaded, s);
+        assert_eq!(
+            loaded.open_repos,
+            vec![
+                "D:\\Repos\\alpha".to_string(),
+                "D:\\Repos\\beta".to_string()
+            ]
+        );
+        assert_eq!(loaded.active_repo.as_deref(), Some("D:\\Repos\\beta"));
+    }
+
+    /// An old `settings.json` written before P3e (no `openRepos`/`activeRepo`
+    /// keys) loads with empty session defaults and preserves the existing
+    /// fields — the additive-field guarantee for the P3e session fields
+    /// specifically (P3e §6.1 / §9.1 "Session (P3e-b)").
+    #[test]
+    fn old_settings_file_without_session_fields_loads_with_defaults() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let json = r#"{
+            "version": 1,
+            "recentRepos": [ { "path": "D:\\Repos\\legacy", "lastOpened": 123 } ],
+            "theme": "light",
+            "paneWidths": { "sidebar": 300, "rightPanel": 400 },
+            "listView": "flat"
+        }"#;
+        std::fs::write(&file, json).expect("write pre-P3e settings.json");
+
+        let loaded = load_from(&file);
+        // New session fields fall back to empty defaults.
+        assert!(loaded.open_repos.is_empty());
+        assert_eq!(loaded.active_repo, None);
+        // Existing fields are preserved untouched.
+        assert_eq!(loaded.recent_repos.len(), 1);
+        assert_eq!(loaded.recent_repos[0].path, "D:\\Repos\\legacy");
+        assert_eq!(loaded.theme, ThemeChoice::Light);
+        assert_eq!(loaded.list_view, ListView::Flat);
+        assert_eq!(loaded.pane_widths.sidebar, 300);
     }
 
     /// A pre-P3b `settings.json` that has `theme`/`paneWidths` but no

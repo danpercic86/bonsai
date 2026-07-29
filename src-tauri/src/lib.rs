@@ -37,6 +37,8 @@ pub fn run() {
             commands::remove_recent_repo,
             commands::get_ui_settings,
             commands::set_ui_settings,
+            commands::get_session,
+            commands::set_session,
             commands::get_op_state,
             commands::merge_branch,
             commands::commit_merge,
