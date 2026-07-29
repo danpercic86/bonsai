@@ -118,7 +118,10 @@ Done: P3e-a backend core (be49130, reviewer APPROVE, cargo test 97 lib green). P
 persistence (4324272, orchestrator self-review mirroring ui-settings). P3e-c IPC mirror + multi-repo
 mock (6324d06, reviewer APPROVE — INTERMEDIATE red full-tree build: ~31 App.tsx errors by design,
 src/ipc/* tsc-clean, goes green at P3e-e). Now: P3e-d GraphCanvas active prop + zero-size guard +
-remeasure-on-show. Then P3e-e frontend refactor (TabStrip/RepoWorkspace/App slim + reopen-all).
+remeasure-on-show — DONE (8dce359, orchestrator self-review; zero new graph tsc errors).
+Now: P3e-e frontend refactor (extract RepoWorkspace.tsx, add TabStrip.tsx replacing RepoSwitcher,
+slim App.tsx to global state + tabs + session wiring, ToastContext, reopen-all-on-launch). This
+restores the green full-tree pnpm build. senior-dev in flight.
 P3d AI gate PASSED + committed (56a43f7/f902ce0/c39af2a/95141ba); awaiting USER CHECKPOINT (debt below).
 
 --- P3d history (complete) ---

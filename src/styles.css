@@ -595,6 +595,116 @@ body {
   }
 }
 
+/* ---------- Tab strip (P3e §5.6) ---------- */
+
+.tab-strip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  flex: none;
+  max-width: 200px;
+  border-radius: 6px;
+  background: transparent;
+}
+
+.tab-active {
+  background: var(--bg-2);
+}
+
+.tab-label {
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 4px 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+.tab-active .tab-label {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.tab-label:disabled {
+  cursor: default;
+}
+
+.tab-close {
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 8px 2px 4px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.tab-close:hover {
+  color: var(--text-1);
+}
+
+.tab-add-wrap {
+  position: relative;
+  flex: none;
+}
+
+.tab-add {
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 18px;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tab-add:hover:not(:disabled) {
+  background: var(--bg-2);
+}
+
+.tab-add:disabled {
+  cursor: default;
+  color: var(--text-3);
+}
+
+/* ---------- Per-tab workspace (P3e §5.3) ---------- */
+
+.workspace-host {
+  flex: 1;
+  min-height: 0;
+  /* display (flex | none) is inline-styled per tab: only the active tab shows;
+     the others stay mounted at display:none to preserve scroll/selection. */
+  flex-direction: column;
+}
+
+.workspace-toolbar {
+  flex: none;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+}
+
 /* ---------- 3-pane layout ---------- */
 
 .panes {

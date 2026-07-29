@@ -1,40 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CommitBox } from './components/CommitBox';
-import type { CommitBoxHandle } from './components/CommitBox';
-import { CommitPanel } from './components/CommitPanel';
-import { ConfirmDialog } from './components/ConfirmDialog';
-import { DiffOverlay } from './components/DiffOverlay';
-import type { DiffOverlayMeta } from './components/DiffOverlay';
-import { OpBanner } from './components/OpBanner';
-import { PaneDivider } from './components/PaneDivider';
-import { RepoSwitcher } from './components/RepoSwitcher';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { RepoWorkspace } from './components/RepoWorkspace';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
-import { Sidebar } from './components/Sidebar';
-import { StatusPanel } from './components/StatusPanel';
-import type { DiffSlot, WorkdirSection } from './components/StatusPanel';
+import { TabStrip } from './components/TabStrip';
+import type { TabMeta } from './components/TabStrip';
 import { Toasts } from './components/Toasts';
 import type { Toast, ToastTone } from './components/Toasts';
-import { GraphCanvas } from './graph/GraphCanvas';
-import type { GraphCanvasHandle, WipSummary } from './graph/GraphCanvas';
+import { ToastContext } from './ToastContext';
 import { ipc } from './ipc';
-import type {
-  BranchesSnapshot,
-  CommitDiff,
-  ConflictEntry,
-  ConflictResolution,
-  FileDiff,
-  FileDiffHeader,
-  GraphLayout,
-  ListView,
-  PaneWidths,
-  RecentRepo,
-  RepoInfo,
-  RepoOpState,
-  StatusEntry,
-  StatusSnapshot,
-  Theme,
-  Unsubscribe,
-} from './ipc';
+import type { ListView, PaneWidths, RecentRepo, RepoInfo, SessionState, Theme } from './ipc';
 import { errorMessage, isAppError } from './utils/errors';
 
 function folderName(path: string): string {
@@ -42,12 +15,14 @@ function folderName(path: string): string {
   return segments[segments.length - 1] ?? path;
 }
 
-function shortOid(oid: string): string {
-  return oid.slice(0, 7);
-}
-
 function isUsableRepo(info: RepoInfo): boolean {
   return info.isRepo && !info.bare;
+}
+
+function unusableRepoMessage(info: RepoInfo): string {
+  return info.isRepo
+    ? `Bare repositories are not supported: ${info.path}`
+    : `Not a Git repository: ${info.path}`;
 }
 
 // P2a §2.5: persisted-sanity clamp ranges (mirrors settings.rs clamp_pane_widths).
@@ -59,186 +34,51 @@ const GRAPH_MIN_WIDTH = 480;
 const DEFAULT_PANE_WIDTHS: PaneWidths = { sidebar: 240, rightPanel: 380 };
 
 /** Live-drag clamp (§2.5): the persisted range intersected with the current
- * window size and the graph pane's floor — a deliberately different check
- * from the persisted-sanity range above (that one alone could let a resize
- * squeeze the graph pane on a small window). */
+ * window size and the graph pane's floor. */
 function clampLive(value: number, side: 'sidebar' | 'rightPanel', otherWidth: number): number {
   const [min, max] = side === 'sidebar' ? [SIDEBAR_MIN, SIDEBAR_MAX] : [RIGHT_PANEL_MIN, RIGHT_PANEL_MAX];
   const dynamicMax = Math.min(max, window.innerWidth - otherWidth - GRAPH_MIN_WIDTH);
   return Math.max(min, Math.min(value, Math.max(min, dynamicMax)));
 }
 
-/** P2b §4.2: sets data-theme on <html> (not <body> — matches the
- * :root/[data-theme] selector scope). 'dark' also sets the attribute
- * explicitly (rather than removing it) so [data-theme="light"] and a
- * default :root both work identically regardless of prior state. */
+/** P2b §4.2: sets data-theme on <html>. */
 function applyTheme(theme: Theme): void {
   document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
 }
 
 export default function App() {
-  const [repo, setRepo] = useState<RepoInfo | null>(null);
+  // ----- App-global state (§5.1) -----
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const [status, setStatus] = useState<StatusSnapshot | null>(null);
-  // Id-wrapped (P1 §4.5) so StatusPanel's dismissal is per-occurrence, not
-  // per-message — identical errors from distinct operations re-surface.
-  const [statusError, setStatusError] = useState<{ id: number; message: string } | null>(null);
-  const [statusLoading, setStatusLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  // Single flag for stage/unstage/commit (M3 §4.4): pessimistic UI — controls
-  // disable in flight, state comes back via refetch.
-  const [mutating, setMutating] = useState(false);
-
-  const [branches, setBranches] = useState<BranchesSnapshot | null>(null);
-  const [branchesError, setBranchesError] = useState<string | null>(null);
-  const [branchesLoading, setBranchesLoading] = useState(false);
-
-  // Which remote op is in flight — drives the per-button busy label.
-  const [remoteOp, setRemoteOp] = useState<'fetch' | 'pull' | 'push' | null>(null);
-
-  // P3c §8.4: in-progress operation state (merge/rebase/…) + its conflicts.
-  const [opState, setOpState] = useState<RepoOpState>({ kind: 'none' });
-  const [conflicts, setConflicts] = useState<ConflictEntry[]>([]);
-  // Abort-merge ConfirmDialog (destructive — the only confirmed step, §11.3).
-  const [abortConfirmOpen, setAbortConfirmOpen] = useState(false);
-  // Imperative submit so OpBanner's [Commit merge] triggers the CommitBox's
-  // own submit path (single merge-message editor, §8.4).
-  const commitBoxRef = useRef<CommitBoxHandle>(null);
-
-  // P1 §5: toast stack. Remote-op feedback (M6) and composite-refresh failures
-  // surface here; contextual banners (status/commit/sidebar/graph) stay inline.
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastId = useRef(0);
 
-  // P1 §6: keyboard shortcuts — "?" overlay + ConfirmDialog-open lift from the
-  // Sidebar (shortcuts are inert while the dialog is up).
   const [overlayOpen, setOverlayOpen] = useState(false);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  // P1 reviewer SHOULD-FIX: RepoSwitcher's dropdown lifted the same way as
-  // Sidebar's ConfirmDialog (onDialogOpenChange) — global shortcuts go inert
-  // and the Esc effect below skips a keypress the switcher already consumed.
-  const [switcherOpen, setSwitcherOpen] = useState(false);
+  // TabStrip's `+` menu lift — suppresses global shortcuts + the consumed Esc.
+  const [menuOpen, setMenuOpen] = useState(false);
 
-  // P1 §10: recent repos — persisted list + reopen-last-on-launch.
   const [recents, setRecents] = useState<RecentRepo[]>([]);
 
-  // P2a: pane widths — loaded once from ipc.getUiSettings() (§3.3), persisted
-  // debounced on drag-end/keyboard-nudge.
   const [paneWidths, setPaneWidths] = useState<PaneWidths>(DEFAULT_PANE_WIDTHS);
   const paneWidthsRef = useRef(paneWidths);
   paneWidthsRef.current = paneWidths;
   const saveTimerRef = useRef<number | null>(null);
 
-  // P2b: theme — loaded once from ipc.getUiSettings() (mount effect below),
-  // persisted on toggle. themeVersion increments on every change so
-  // GraphCanvas knows to re-resolve its cached CSS-variable colors (§4.4).
   const [theme, setTheme] = useState<Theme>('dark');
   const [themeVersion, setThemeVersion] = useState(0);
-
-  // P3b: flat vs tree-grouped lists — loaded from the same getUiSettings call,
-  // persisted on toggle. Consumed by Sidebar/StatusPanel/CommitPanel from
-  // P3b-2/3 onward; until then the toggle just flips + persists the state.
   const [listView, setListView] = useState<ListView>('tree');
 
-  const [graph, setGraph] = useState<GraphLayout | null>(null);
-  const [graphError, setGraphError] = useState<string | null>(null);
-  const [graphLoading, setGraphLoading] = useState(false);
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  // P2c §5.2: imperative handle to read the DOM-measured visible row count
-  // for PageUp/PageDown deltas — pure index arithmetic, no lane/edge math.
-  const graphRef = useRef<GraphCanvasHandle>(null);
-
-  // M4: commit details (mode B) + the shared per-file diff expansion slot.
-  const [commitDiff, setCommitDiff] = useState<CommitDiff | null>(null);
-  const [commitDiffLoading, setCommitDiffLoading] = useState(false);
-  const [commitDiffError, setCommitDiffError] = useState<string | null>(null);
-  const [diffSlot, setDiffSlot] = useState<DiffSlot | null>(null); // shared by both modes
-
-  // Request-id last-wins guards: only the latest in-flight request may apply
-  // its result (M1 contract §5 — no frontend debounce beyond this).
-  const statusReqId = useRef(0);
-  const graphReqId = useRef(0);
-  const branchesReqId = useRef(0);
-  const commitDiffReqId = useRef(0);
-  const fileDiffReqId = useRef(0);
-  const opStateReqId = useRef(0);
-  // Current slot, readable from stable callbacks without re-subscribing.
-  const diffSlotRef = useRef<DiffSlot | null>(null);
-  diffSlotRef.current = diffSlot;
-  // Monotonic id for statusError occurrences (P1 §4.5).
-  const statusErrorId = useRef(0);
-
-  const repoPath = repo !== null && isUsableRepo(repo) ? repo.path : null;
-  const repoOpen = repoPath !== null;
-  // P3c §8.5: op-active gating — normal commit, checkout/delete/create,
-  // merge, pull and push are disabled (fetch stays enabled — always safe).
-  const opActive = opState.kind !== 'none';
-  // Convenience gating only — the backend guards detached/unborn itself (§4.2).
-  const canPullPush = repo?.head != null && !repo.head.detached && !repo.head.unborn && !opActive;
-
-  // P1 §9.2: WIP row summary derived from the already-fetched status snapshot
-  // — no new IPC call, no Rust layout change.
-  const wip: WipSummary | null = useMemo(() => {
-    if (status === null || repo?.head?.unborn === true) return null;
-    const paths = new Set<string>();
-    for (const s of [status.staged, status.unstaged, status.untracked, status.conflicted]) {
-      for (const e of s) paths.add(e.path);
-    }
-    return paths.size > 0 ? { fileCount: paths.size } : null;
-  }, [status, repo]);
-
-  // P3a §2.3: overlay header meta, derived (never stored) from the slot key +
-  // the current snapshot/commitDiff so it can't go stale. Lookup miss (entry
-  // gone from a newer snapshot in the brief window before refetchStatus
-  // collapses the slot, or commitDiff cleared mid-flight): path from the key,
-  // no badge — never throw, never hide the close button.
-  const overlayMeta: DiffOverlayMeta | null = useMemo(() => {
-    if (diffSlot === null) return null;
-    const key = diffSlot.key;
-    if (key.startsWith('commit:')) {
-      const path = key.slice('commit:'.length);
-      const file = commitDiff?.files.find((f) => f.path === path) ?? null;
-      return {
-        path,
-        origPath: file?.origPath ?? null,
-        status: file?.status ?? null,
-        kind: 'commit',
-      };
-    }
-    if (key.startsWith('conflict:')) {
-      // P3c §8.3: conflicted rows have no origPath; badge is always 'C'.
-      return {
-        path: key.slice('conflict:'.length),
-        origPath: null,
-        status: 'conflicted',
-        kind: 'conflict',
-      };
-    }
-    const sep = key.indexOf(':');
-    const section = key.slice(0, sep) as WorkdirSection;
-    const path = key.slice(sep + 1);
-    const entry = status?.[section].find((e) => e.path === path) ?? null;
-    return {
-      path,
-      origPath: entry?.origPath ?? null,
-      status: entry?.status ?? null,
-      kind: section,
-    };
-  }, [diffSlot, status, commitDiff]);
-
-  const reportStatusError = useCallback((message: string) => {
-    setStatusError({ id: ++statusErrorId.current, message });
-  }, []);
+  // ----- Tab state (§5.2) -----
+  const [tabs, setTabs] = useState<TabMeta[]>([]);
+  const [activeRepo, setActiveRepo] = useState<string | null>(null);
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
 
   const dismissToast = useCallback((id: number) => {
     setToasts((cur) => cur.filter((t) => t.id !== id));
   }, []);
 
-  /** P1 §5.1: sticky = tone === 'error' (stays until dismissed); non-sticky
-   * auto-dismiss after 5 s (timeout captured per toast id). Stack cap 5 —
-   * pushing the 6th drops the oldest NON-sticky toast (oldest sticky if none). */
   const pushToast = useCallback(
     (tone: ToastTone, text: string) => {
       const id = ++toastId.current;
@@ -254,13 +94,81 @@ export default function App() {
     [dismissToast],
   );
 
-  /** Debounced persist (300ms) so rapid successive small nudges (keyboard)
-   * don't spam IPC; the drag path already only calls this once per
-   * onResizeEnd, but keyboard nudges are per-keypress (P2a §3.2).
-   * Reads paneWidthsRef at fire time, not call time: onResizeEnd runs in the
-   * same event handler as the setPaneWidths that changed the width, so the
-   * ref is still one render stale there — by the time the debounce fires the
-   * re-render has happened and the ref holds the post-nudge value. */
+  // ----- Session persistence (§6): debounced whole-session write -----
+  const sessionSaveTimer = useRef<number | null>(null);
+  const sessionReadyRef = useRef(false);
+  const persistSession = useCallback((openRepos: string[], active: string | null) => {
+    if (sessionSaveTimer.current !== null) window.clearTimeout(sessionSaveTimer.current);
+    sessionSaveTimer.current = window.setTimeout(() => {
+      void ipc
+        .setSession({ openRepos, activeRepo: active })
+        .catch((e) => pushToast('error', `Could not save session: ${errorMessage(e)}`));
+    }, 300);
+  }, [pushToast]);
+
+  // Persist on any tab / active change once launch reopen has settled.
+  useEffect(() => {
+    if (!sessionReadyRef.current) return;
+    persistSession(tabs.map((t) => t.repoId), activeRepo);
+  }, [tabs, activeRepo, persistSession]);
+
+  const refreshRecents = useCallback(async () => {
+    try {
+      setRecents(await ipc.getRecentRepos());
+    } catch {
+      // Non-fatal — recents are best-effort UI sugar.
+    }
+  }, []);
+
+  /** Open (or focus) a repo as a tab (§5.2). Non-usable opens surface an error
+   *  (empty-state error when no tabs, else a toast) and add no tab. */
+  const openTab = useCallback(
+    async (path: string): Promise<void> => {
+      setError(null);
+      try {
+        const { repoId, info } = await ipc.openRepo(path);
+        if (!isUsableRepo(info)) {
+          const msg = unusableRepoMessage(info);
+          if (tabsRef.current.length > 0) pushToast('error', msg);
+          else setError(msg);
+          return;
+        }
+        void refreshRecents();
+        if (tabsRef.current.some((t) => t.repoId === repoId)) {
+          setActiveRepo(repoId); // focus existing tab
+          return;
+        }
+        setTabs((cur) =>
+          cur.some((t) => t.repoId === repoId) ? cur : [...cur, { repoId, path: info.path }],
+        );
+        setActiveRepo(repoId);
+      } catch (e) {
+        const msg = errorMessage(e);
+        if (isAppError(e) && e.kind === 'io') {
+          void ipc.removeRecentRepo(path).then(setRecents);
+        }
+        if (tabsRef.current.length > 0) pushToast('error', msg);
+        else setError(msg);
+      }
+    },
+    [pushToast, refreshRecents],
+  );
+
+  const closeTab = useCallback((repoId: string) => {
+    void ipc.closeRepo(repoId).catch(() => {
+      // Idempotent teardown — a failure to close is non-fatal for the UI.
+    });
+    const cur = tabsRef.current;
+    const idx = cur.findIndex((t) => t.repoId === repoId);
+    setTabs(cur.filter((t) => t.repoId !== repoId));
+    setActiveRepo((act) => {
+      if (act !== repoId) return act;
+      const next = cur.filter((t) => t.repoId !== repoId);
+      if (next.length === 0) return null;
+      return next[Math.min(idx, next.length - 1)].repoId;
+    });
+  }, []);
+
   const commitPaneWidths = useCallback(() => {
     if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
     saveTimerRef.current = window.setTimeout(() => {
@@ -289,10 +197,7 @@ export default function App() {
   }, [listView, pushToast]);
 
   const handleSidebarResize = useCallback((delta: number) => {
-    setPaneWidths((w) => ({
-      ...w,
-      sidebar: clampLive(w.sidebar + delta, 'sidebar', w.rightPanel),
-    }));
+    setPaneWidths((w) => ({ ...w, sidebar: clampLive(w.sidebar + delta, 'sidebar', w.rightPanel) }));
   }, []);
 
   const handleRightPanelResize = useCallback((delta: number) => {
@@ -306,274 +211,26 @@ export default function App() {
     commitPaneWidths();
   }, [commitPaneWidths]);
 
-  /** Fetch (or re-fetch) the expanded diff for `key`; last-wins guarded.
-   * A same-key refetch keeps the stale diff visible (P1 §4.1) — first-time
-   * expansions load with `diff: null` (skeleton). */
-  const fetchDiffSlot = useCallback(async (key: string, fetcher: () => Promise<FileDiff>) => {
-    const id = ++fileDiffReqId.current;
-    const prev = diffSlotRef.current;
-    const stale = prev !== null && prev.key === key ? prev.diff : null;
-    setDiffSlot({ key, state: 'loading', diff: stale, error: null });
+  // Picker path (Ctrl+O + TabStrip Browse…): pick a folder, open it as a tab.
+  const handleOpenRepository = useCallback(async () => {
+    setError(null);
+    setLoading(true);
     try {
-      const diff = await fetcher();
-      if (id !== fileDiffReqId.current) return;
-      setDiffSlot({ key, state: 'ready', diff, error: null });
-    } catch (e) {
-      if (id !== fileDiffReqId.current) return;
-      setDiffSlot({ key, state: 'error', diff: null, error: errorMessage(e) });
-    }
-  }, []);
-
-  const collapseDiffSlot = useCallback(() => {
-    fileDiffReqId.current += 1; // invalidate any in-flight fetch
-    setDiffSlot(null);
-  }, []);
-
-  /** P3c §8.3: fetch (or re-fetch) the read-only marker view for a conflicted
-   * path into the shared slot (key `conflict:<path>`); last-wins guarded by
-   * the same counter as file diffs — the slot is single-occupancy. */
-  const fetchConflictSlot = useCallback(async (path: string) => {
-    const key = `conflict:${path}`;
-    const id = ++fileDiffReqId.current;
-    const prev = diffSlotRef.current;
-    const stale = prev !== null && prev.key === key ? (prev.conflict ?? null) : null;
-    setDiffSlot({ key, state: 'loading', diff: null, conflict: stale, error: null });
-    try {
-      const file = await ipc.getConflict(path);
-      if (id !== fileDiffReqId.current) return;
-      setDiffSlot({ key, state: 'ready', diff: null, conflict: file, error: null });
-    } catch (e) {
-      if (id !== fileDiffReqId.current) return;
-      setDiffSlot({ key, state: 'error', diff: null, conflict: null, error: errorMessage(e) });
-    }
-  }, []);
-
-  /** P3c §8.4: fetch the operation state and, while merging, its conflicts in
-   * the same pass. Also owns the `conflict:<path>` slot lifecycle: entry gone
-   * -> collapse; still conflicted -> re-fetch (content may have changed). */
-  const refetchOpState = useCallback(async () => {
-    const id = ++opStateReqId.current;
-    try {
-      const op = await ipc.getOpState();
-      const list = op.kind === 'merge' || op.kind === 'rebase' ? await ipc.listConflicts() : [];
-      if (id !== opStateReqId.current) return;
-      setOpState(op);
-      setConflicts(list);
-      const slot = diffSlotRef.current;
-      if (slot !== null && slot.key.startsWith('conflict:')) {
-        const path = slot.key.slice('conflict:'.length);
-        if (list.some((c) => c.path === path)) {
-          void fetchConflictSlot(path);
-        } else {
-          collapseDiffSlot();
-        }
-      }
-    } catch (e) {
-      if (id !== opStateReqId.current) return;
-      pushToast('error', `Could not read operation state: ${errorMessage(e)}`);
-    }
-  }, [fetchConflictSlot, collapseDiffSlot, pushToast]);
-
-  const clearOpState = useCallback(() => {
-    opStateReqId.current += 1; // invalidate any in-flight request
-    setOpState({ kind: 'none' });
-    setConflicts([]);
-  }, []);
-
-  const refetchStatus = useCallback(async () => {
-    const id = ++statusReqId.current;
-    setStatusLoading(true);
-    try {
-      const snapshot = await ipc.getStatus();
-      if (id !== statusReqId.current) return;
-      setStatus(snapshot);
-      setStatusError(null);
-      // M4 §4.4: a new snapshot invalidates the mode-A expansion — entry gone
-      // -> collapse; still present -> re-fetch (content may have changed).
-      // conflict:-keyed slots are owned by refetchOpState, not the snapshot.
-      const slot = diffSlotRef.current;
-      if (slot !== null && !slot.key.startsWith('commit:') && !slot.key.startsWith('conflict:')) {
-        const sep = slot.key.indexOf(':');
-        const section = slot.key.slice(0, sep) as WorkdirSection;
-        const path = slot.key.slice(sep + 1);
-        const entry = snapshot[section].find((en) => en.path === path);
-        if (entry === undefined) {
-          collapseDiffSlot();
-        } else {
-          void fetchDiffSlot(slot.key, () =>
-            ipc.getWorkdirFileDiff(entry.path, entry.origPath, section === 'staged'),
-          );
-        }
-      }
-    } catch (e) {
-      if (id !== statusReqId.current) return;
-      reportStatusError(errorMessage(e));
+      const path = await ipc.pickFolder();
+      if (path === null) return; // cancelled
+      await openTab(path);
     } finally {
-      if (id === statusReqId.current) setStatusLoading(false);
+      setLoading(false);
     }
-  }, [fetchDiffSlot, collapseDiffSlot, reportStatusError]);
+  }, [openTab]);
 
-  const clearStatus = useCallback(() => {
-    statusReqId.current += 1; // invalidate any in-flight request
-    setStatus(null);
-    setStatusError(null);
-    setStatusLoading(false);
-    collapseDiffSlot();
-  }, [collapseDiffSlot]);
-
-  // Refetches keep showing the previous layout until the new one arrives.
-  const refetchGraph = useCallback(async () => {
-    const id = ++graphReqId.current;
-    setGraphLoading(true);
-    try {
-      const layout = await ipc.getGraph();
-      if (id !== graphReqId.current) return;
-      setGraph(layout);
-      setGraphError(null);
-      setSelectedIndex(null); // indices are only valid within one layout
-    } catch (e) {
-      if (id !== graphReqId.current) return;
-      setGraphError(errorMessage(e));
-    } finally {
-      if (id === graphReqId.current) setGraphLoading(false);
-    }
-  }, []);
-
-  const refetchBranches = useCallback(async () => {
-    const id = ++branchesReqId.current;
-    setBranchesLoading(true);
-    try {
-      const snapshot = await ipc.listBranches();
-      if (id !== branchesReqId.current) return;
-      setBranches(snapshot);
-      setBranchesError(null);
-    } catch (e) {
-      if (id !== branchesReqId.current) return;
-      setBranchesError(errorMessage(e));
-    } finally {
-      if (id === branchesReqId.current) setBranchesLoading(false);
-    }
-  }, []);
-
-  const clearBranches = useCallback(() => {
-    branchesReqId.current += 1; // invalidate any in-flight request
-    setBranches(null);
-    setBranchesError(null);
-    setBranchesLoading(false);
-  }, []);
-
-  const clearGraph = useCallback(() => {
-    graphReqId.current += 1; // invalidate any in-flight request
-    setGraph(null);
-    setGraphError(null);
-    setGraphLoading(false);
-    setSelectedIndex(null);
-  }, []);
-
-  /** Composite post-op refresh (P1 §4.6): openRepo on the current path
-   * (refreshes header HEAD, self-heals the watcher) + refetch status/graph/
-   * branches. Never throws — failures surface as a sticky error toast
-   * "Refresh failed: <message>" (P1c §5.3). The `refetch*` helpers keep their
-   * own pane-scoped error states. */
-  const refreshAll = useCallback(async (): Promise<void> => {
-    if (repoPath === null) return;
-    try {
-      const info = await ipc.openRepo(repoPath);
-      setRepo(info);
-      if (isUsableRepo(info)) {
-        await Promise.all([refetchStatus(), refetchGraph(), refetchBranches(), refetchOpState()]);
-      } else {
-        clearStatus();
-        clearGraph();
-        clearBranches();
-        clearOpState();
-      }
-    } catch (e) {
-      pushToast('error', `Refresh failed: ${errorMessage(e)}`);
-    }
-  }, [
-    repoPath,
-    refetchStatus,
-    refetchGraph,
-    refetchBranches,
-    refetchOpState,
-    clearStatus,
-    clearGraph,
-    clearBranches,
-    clearOpState,
-    pushToast,
-  ]);
-
-  // P1 §10.1: recent-repos list, refetched after every successful open.
-  const refreshRecents = useCallback(async () => {
-    try {
-      setRecents(await ipc.getRecentRepos());
-    } catch {
-      // Non-fatal — recents are best-effort UI sugar.
-    }
-  }, []);
-
-  /** Open a specific path with no folder picker — shared by the switcher, the
-   * empty-state recents list, and reopen-on-launch (P1 §10.1). */
-  const openPath = useCallback(
-    async (path: string, opts: { fromRecents: boolean }) => {
-      const hadRepoOpen = repoPath !== null;
-      setError(null);
-      setLoading(true);
-      try {
-        const info = await ipc.openRepo(path);
-        setRepo(info);
-        if (isUsableRepo(info)) {
-          void refetchStatus();
-          void refetchGraph();
-          void refetchBranches();
-          void refetchOpState();
-        } else {
-          clearStatus();
-          clearGraph();
-          clearBranches();
-          clearOpState();
-        }
-        void refreshRecents();
-      } catch (e) {
-        if (opts.fromRecents && isAppError(e) && e.kind === 'io') {
-          // Path moved/deleted: drop it from recents (never resurrect it).
-          void ipc.removeRecentRepo(path).then(setRecents);
-        }
-        if (hadRepoOpen) {
-          pushToast('error', errorMessage(e));
-        } else {
-          setError(errorMessage(e));
-          setRepo(null); // a failed open leaves no repo open (matches backend)
-        }
-        clearStatus();
-        clearGraph();
-        clearBranches();
-        clearOpState();
-      } finally {
-        setLoading(false);
-      }
-    },
-    [repoPath, refetchStatus, refetchGraph, refetchBranches, refetchOpState, clearStatus, clearGraph, clearBranches, clearOpState, refreshRecents, pushToast],
-  );
-
-  // Mount effect (once): load recents; if none is currently open, reopen the
-  // most-recently-used repo (locked "reopen last repo on launch" product
-  // decision, P1 §12.2). Guarded against StrictMode double-invoke via a ref.
+  // ----- Reopen-all-on-launch (§6.2) -----
   const launchedRef = useRef(false);
   useEffect(() => {
     if (launchedRef.current) return;
     launchedRef.current = true;
     (async () => {
-      try {
-        const list = await ipc.getRecentRepos();
-        setRecents(list);
-        if (repoPath === null && list.length > 0) {
-          void openPath(list[0].path, { fromRecents: true });
-        }
-      } catch {
-        // Non-fatal.
-      }
+      // UI settings first (theme/panes/listView).
       try {
         const s = await ipc.getUiSettings();
         setPaneWidths(s.paneWidths);
@@ -584,84 +241,88 @@ export default function App() {
       } catch {
         // Non-fatal — keep defaults.
       }
+
+      let recentsList: RecentRepo[] = [];
+      try {
+        recentsList = await ipc.getRecentRepos();
+        setRecents(recentsList);
+      } catch {
+        // Non-fatal.
+      }
+
+      let session: SessionState = { openRepos: [], activeRepo: null };
+      try {
+        session = await ipc.getSession();
+      } catch {
+        // Non-fatal — defaults to empty.
+      }
+
+      // Back-compat (§6.2.5): no persisted session → reopen the most-recent repo.
+      const usingSession = session.openRepos.length > 0;
+      const pathsToOpen = usingSession
+        ? session.openRepos
+        : recentsList.length > 0
+          ? [recentsList[0].path]
+          : [];
+
+      const opened: TabMeta[] = [];
+      for (const path of pathsToOpen) {
+        try {
+          const { repoId, info } = await ipc.openRepo(path);
+          if (!isUsableRepo(info)) {
+            pushToast('warning', `Could not reopen ${folderName(path)}: not a usable repository`);
+            continue;
+          }
+          if (!opened.some((t) => t.repoId === repoId)) {
+            opened.push({ repoId, path: info.path });
+          }
+        } catch (e) {
+          pushToast('warning', `Could not reopen ${folderName(path)}: ${errorMessage(e)}`);
+        }
+      }
+
+      const openedIds = opened.map((t) => t.repoId);
+      const active =
+        usingSession && session.activeRepo !== null && openedIds.includes(session.activeRepo)
+          ? session.activeRepo
+          : (openedIds[0] ?? null);
+
+      setTabs(opened);
+      setActiveRepo(active);
+      if (opened.length > 0) void refreshRecents();
+
+      // Prune dead paths from disk (§6.2.4); also seed the session file for
+      // existing users migrating in via the back-compat recents[0] path so
+      // their tab is persisted from launch (not only after they touch tabs).
+      if (usingSession || opened.length > 0) {
+        try {
+          await ipc.setSession({ openRepos: openedIds, activeRepo: active });
+        } catch {
+          // Non-fatal.
+        }
+      }
+      sessionReadyRef.current = true;
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // M4 §4.4: selection -> commit diff. Every selection change also resets the
-  // shared expansion slot (its keys belong to the previous mode/commit).
-  useEffect(() => {
-    if (selectedIndex !== null && graph !== null) {
-      fileDiffReqId.current += 1;
-      setDiffSlot(null);
-      const oid = graph.nodes[selectedIndex].id;
-      const id = ++commitDiffReqId.current;
-      setCommitDiff(null);
-      setCommitDiffLoading(true);
-      setCommitDiffError(null);
-      ipc.getCommitDiff(oid).then(
-        (cd) => {
-          if (id !== commitDiffReqId.current) return;
-          setCommitDiff(cd);
-          setCommitDiffLoading(false);
-        },
-        (e: unknown) => {
-          if (id !== commitDiffReqId.current) return;
-          setCommitDiffError(errorMessage(e));
-          setCommitDiffLoading(false);
-        },
-      );
-    } else {
-      commitDiffReqId.current += 1; // invalidate any in-flight commit diff
-      setCommitDiff(null);
-      setCommitDiffLoading(false);
-      setCommitDiffError(null);
-      if (diffSlotRef.current?.key.startsWith('commit:') === true) {
-        fileDiffReqId.current += 1;
-        setDiffSlot(null);
-      }
-    }
-  }, [selectedIndex, graph]);
-
-  // Esc precedence (P3a §2.4), top wins — one layer per keypress: switcher →
-  // shortcut "?" overlay → typing guard → diff overlay → deselect commit.
-  // Skip entirely while the switcher dropdown is open — RepoSwitcher's own Esc
-  // listener already closes it; without this guard the same keypress would
-  // ALSO close the overlay/deselect the commit underneath.
+  // Esc: close the shortcut overlay (TabStrip's own Esc handles its menu; skip
+  // when its menu consumed the keypress). Workspace Esc-layering is separate.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (switcherOpen) return;
-      if (overlayOpen) {
-        setOverlayOpen(false);
-        return;
-      }
-      const target = e.target as HTMLElement | null;
-      if (target !== null && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) return;
-      if (diffSlotRef.current !== null) {
-        collapseDiffSlot();
-        return;
-      }
-      setSelectedIndex((cur) => (cur !== null ? null : cur));
+      if (menuOpen) return;
+      if (overlayOpen) setOverlayOpen(false);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [overlayOpen, switcherOpen, collapseDiffSlot]);
+  }, [menuOpen, overlayOpen]);
 
-  // P1 §6.2: global shortcut handler. Guard order: refresh (always
-  // preventDefault, even as a no-op) -> typing guard -> dialog-open guard ->
-  // remaining bindings (each gated by the same enablement as its button).
+  // Global shortcuts (§5.1): Ctrl+O open, ? overlay, Ctrl+Tab / Ctrl+Shift+Tab
+  // cycle tabs, Ctrl+W close active tab.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const ctrl = e.ctrlKey || e.metaKey;
-
-      if (e.key === 'F5' || (ctrl && e.key.toLowerCase() === 'r')) {
-        e.preventDefault();
-        const canRefresh =
-          repoOpen && !refreshing && !statusLoading && !graphLoading && !mutating;
-        if (canRefresh) void handleRefresh();
-        return;
-      }
 
       const target = e.target as HTMLElement | null;
       const typing =
@@ -670,9 +331,8 @@ export default function App() {
           target.tagName === 'TEXTAREA' ||
           target.tagName === 'SELECT' ||
           target.isContentEditable);
-      if (typing) return;
 
-      if (dialogOpen || switcherOpen || abortConfirmOpen) return;
+      if (menuOpen) return;
 
       if (ctrl && e.key.toLowerCase() === 'o') {
         e.preventDefault();
@@ -680,51 +340,24 @@ export default function App() {
         return;
       }
 
-      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'f') {
+      if (ctrl && e.key === 'Tab') {
         e.preventDefault();
-        if (repoOpen && !refreshing && !mutating) void handleFetch();
+        const cur = tabsRef.current;
+        if (cur.length === 0) return;
+        const idx = cur.findIndex((t) => t.repoId === activeRepo);
+        const base = idx === -1 ? 0 : idx;
+        const nextIdx = (base + (e.shiftKey ? -1 : 1) + cur.length) % cur.length;
+        setActiveRepo(cur[nextIdx].repoId);
         return;
       }
 
-      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'p') {
-        e.preventDefault();
-        if (repoOpen && !refreshing && !mutating && canPullPush) void handlePull();
-        return;
-      }
+      if (typing) return;
 
-      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'u') {
+      // Ctrl+W gated behind the typing guard: word-delete muscle memory in the
+      // commit box must not close the tab (and lose the unsent message).
+      if (ctrl && e.key.toLowerCase() === 'w') {
         e.preventDefault();
-        if (repoOpen && !refreshing && !mutating && canPullPush) void handlePush();
-        return;
-      }
-
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        if (selectedIndex === null || graph === null) return;
-        e.preventDefault();
-        setSelectedIndex((cur) => {
-          if (cur === null) return cur;
-          const next = e.key === 'ArrowDown' ? cur + 1 : cur - 1;
-          return Math.max(0, Math.min(next, graph.nodes.length - 1));
-        });
-        return;
-      }
-
-      if (e.key === 'PageDown' || e.key === 'PageUp') {
-        if (selectedIndex === null || graph === null) return;
-        e.preventDefault();
-        const n = graphRef.current?.getVisibleRowCount() ?? 10;
-        setSelectedIndex((cur) => {
-          if (cur === null) return cur;
-          const next = e.key === 'PageDown' ? cur + n : cur - n;
-          return Math.max(0, Math.min(next, graph.nodes.length - 1));
-        });
-        return;
-      }
-
-      if (e.key === 'Home' || e.key === 'End') {
-        if (selectedIndex === null || graph === null) return;
-        e.preventDefault();
-        setSelectedIndex(e.key === 'Home' ? 0 : graph.nodes.length - 1);
+        if (activeRepo !== null) closeTab(activeRepo);
         return;
       }
 
@@ -736,730 +369,106 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [
-    repoOpen,
-    refreshing,
-    statusLoading,
-    graphLoading,
-    mutating,
-    canPullPush,
-    dialogOpen,
-    switcherOpen,
-    abortConfirmOpen,
-    selectedIndex,
-    graph,
-  ]);
+  }, [menuOpen, activeRepo, handleOpenRepository, closeTab]);
 
-  // Subscriptions only (per React rules): repo-changed events + window focus
-  // both trigger a status refetch while a usable repo is open.
-  useEffect(() => {
-    if (repoPath === null) return;
-    let cancelled = false;
-    const unsubs: Unsubscribe[] = [];
-
-    const subscribe = async () => {
-      const offChanged = await ipc.onRepoChanged(() => {
-        console.debug('[bonsai] repo-changed → refetch status+graph+branches+opstate');
-        void refetchStatus();
-        void refetchGraph();
-        void refetchBranches();
-        void refetchOpState();
-      });
-      if (cancelled) {
-        offChanged();
-        return;
-      }
-      unsubs.push(offChanged);
-
-      const offFocus = await ipc.onWindowFocus(() => {
-        console.debug('[bonsai] window focus → refetch status+graph+branches+opstate');
-        void refetchStatus();
-        void refetchGraph();
-        void refetchBranches();
-        void refetchOpState();
-      });
-      if (cancelled) {
-        offFocus();
-        return;
-      }
-      unsubs.push(offFocus);
-    };
-    void subscribe();
-
-    return () => {
-      cancelled = true;
-      for (const unsub of unsubs) unsub();
-    };
-  }, [repoPath, refetchStatus, refetchGraph, refetchBranches, refetchOpState]);
-
-  // Picker path: delegates to the shared openPath (P1 §10.1).
-  async function handleOpenRepository() {
-    setError(null);
-    setLoading(true);
-    try {
-      const path = await ipc.pickFolder();
-      if (path === null) {
-        return; // user cancelled; keep current state
-      }
-      await openPath(path, { fromRecents: false });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // Manual refresh button: the shared composite refresh, with a busy flag.
-  async function handleRefresh() {
-    if (repoPath === null || refreshing) return;
-    setRefreshing(true);
-    try {
-      await refreshAll(); // never throws (§4.6)
-    } finally {
-      setRefreshing(false);
-    }
-  }
-
-  async function handleStage(paths: string[]) {
-    setMutating(true);
-    try {
-      await ipc.stage(paths);
-      await refetchStatus();
-    } catch (e) {
-      reportStatusError(errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleUnstage(paths: string[]) {
-    setMutating(true);
-    try {
-      await ipc.unstage(paths);
-      await refetchStatus();
-    } catch (e) {
-      reportStatusError(errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // Commit errors are RETHROWN so CommitBox displays them inline; errors from
-  // the post-commit refresh (commit already succeeded) surface via refreshAll.
-  async function handleCommit(message: string) {
-    setMutating(true);
-    try {
-      await ipc.commit(message);
-      // Post-commit composite refresh (§4.6) — never throws, so a refresh
-      // failure cannot masquerade as a commit failure in CommitBox.
-      await refreshAll();
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // Errors RETHROWN so the Sidebar's create input shows them inline
-  // (CommitBox pattern).
-  async function handleCreateBranch(name: string) {
-    setBranchesError(null);
-    setMutating(true);
-    try {
-      await ipc.createBranch(name);
-      await refetchBranches();
-      void refetchGraph(); // new ref pill appears
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleCheckoutBranch(name: string) {
-    setBranchesError(null);
-    setMutating(true);
-    try {
-      await ipc.checkoutBranch(name);
-      // Composite refresh (§4.6): never throws, so the catch below only sees
-      // checkout failures (which belong to the sidebar banner).
-      await refreshAll();
-    } catch (e) {
-      setBranchesError(errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleDeleteBranch(name: string) {
-    setBranchesError(null);
-    setMutating(true);
-    try {
-      await ipc.deleteBranch(name);
-      await Promise.all([refetchBranches(), refetchGraph()]);
-    } catch (e) {
-      setBranchesError(errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // ----- M6: remote operations (fetch / pull / push) -----
-  // P1 §5.3: remote notice/error migrated to the toast stack — 'ok' -> success
-  // toast (auto-dismiss), 'warn' -> warning toast (auto-dismiss), errors ->
-  // sticky error toast. Copy is byte-identical to the pre-P1 banner strings.
-
-  /** Common entry for every remote-op handler: mark busy. */
-  function beginRemoteOp(op: 'fetch' | 'pull' | 'push') {
-    setMutating(true);
-    setRemoteOp(op);
-  }
-
-  function endRemoteOp() {
-    setMutating(false);
-    setRemoteOp(null);
-  }
-
-  async function handleFetch() {
-    beginRemoteOp('fetch');
-    try {
-      const res = await ipc.fetch();
-      const n = res.remotes.length;
-      const k = res.remotes.reduce((sum, r) => sum + r.updatedRefs, 0);
-      pushToast(
-        'success',
-        `Fetched ${n} remote${n === 1 ? '' : 's'}` +
-          (k > 0 ? ` — ${k} ref${k === 1 ? '' : 's'} updated` : ''),
-      );
-      await Promise.all([refetchBranches(), refetchGraph()]); // status unaffected
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      endRemoteOp();
-    }
-  }
-
-  async function handlePull() {
-    beginRemoteOp('pull');
-    try {
-      const res = await ipc.pull();
-      switch (res.kind) {
-        case 'upToDate':
-          pushToast('success', 'Already up to date');
-          break;
-        case 'fastForwarded':
-          pushToast('success', `Fast-forwarded ${res.branch} to ${shortOid(res.to)}`);
-          break;
-        case 'wouldNotFastForward':
-          pushToast(
-            'warning',
-            `Cannot fast-forward: '${res.branch}' has ${res.ahead} local commit(s) not on ` +
-              'upstream. Bonsai v1 does not merge — push your commits or reconcile via the CLI.',
-          );
-          break;
-      }
-      // Composite refresh (§4.6): the branch tip may have moved.
-      await refreshAll();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      endRemoteOp();
-    }
-  }
-
-  async function handlePush() {
-    beginRemoteOp('push');
-    try {
-      const res = await ipc.push();
-      if (res.kind === 'upToDate') {
-        pushToast('success', 'Already up to date');
-      } else {
-        pushToast(
-          'success',
-          `Pushed ${res.branch} → ${res.remote}/${res.branch}` +
-            (res.setUpstream ? ' (upstream set)' : ''),
-        );
-      }
-      await Promise.all([refetchBranches(), refetchGraph()]); // ahead badge -> 0
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      endRemoteOp();
-    }
-  }
-
-  // ----- P3c: merge + conflict handling -----
-
-  async function handleMergeBranch(name: string) {
-    setMutating(true);
-    try {
-      const res = await ipc.mergeBranch(name);
-      switch (res.kind) {
-        case 'upToDate':
-          pushToast('info', `Already up to date with ${name}`);
-          break;
-        case 'fastForwarded':
-          pushToast('success', `Fast-forwarded to ${name}`);
-          break;
-        case 'merged':
-          pushToast('success', `Merged ${name}`);
-          break;
-        case 'conflicts':
-          // A normal pause, not an error (§8.4).
-          pushToast('info', `Merge paused: ${res.paths.length} conflict(s) to resolve`);
-          break;
-      }
-      await refreshAll();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleResolveConflict(path: string, resolution: ConflictResolution) {
-    setMutating(true);
-    try {
-      await ipc.resolveConflict(path, resolution);
-      await refreshAll();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // Submit path of the merge-mode CommitBox (§8.4): errors are RETHROWN so
-  // the box shows them inline (same shape as handleCommit).
-  async function handleCommitMerge(message: string) {
-    setMutating(true);
-    try {
-      await ipc.commitMerge(message);
-      await refreshAll(); // never throws (§4.6)
-      pushToast('success', 'Merge committed');
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // Called ONLY after the Abort-merge ConfirmDialog confirms.
-  async function handleAbortMerge() {
-    setMutating(true);
-    try {
-      await ipc.abortMerge();
-      await refreshAll();
-      pushToast('success', 'Merge aborted');
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // ----- P3d: rebase handling -----
-
-  async function handleRebaseBranch(onto: string) {
-    setMutating(true);
-    try {
-      const res = await ipc.rebaseBranch(onto);
-      switch (res.kind) {
-        case 'upToDate':
-          pushToast('info', `Already up to date with ${onto}`);
-          break;
-        case 'fastForwarded':
-          pushToast('success', `Fast-forwarded onto ${onto}`);
-          break;
-        case 'rebased':
-          pushToast('success', `Rebased onto ${onto} (${res.steps} commit(s))`);
-          break;
-        case 'conflicts':
-          // A normal pause, not an error (§8.4).
-          pushToast(
-            'info',
-            `Rebase paused at step ${res.currentStep}/${res.totalSteps}: ` +
-              `${res.paths.length} conflict(s) to resolve`,
-          );
-          break;
-      }
-      await refreshAll();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleRebaseContinue() {
-    setMutating(true);
-    try {
-      const res = await ipc.rebaseContinue();
-      if (res.kind === 'conflicts') {
-        pushToast('info', `Rebase paused at step ${res.currentStep}/${res.totalSteps}`);
-      } else if (res.kind === 'rebased') {
-        pushToast('success', 'Rebase complete');
-      }
-      await refreshAll();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleRebaseSkip() {
-    setMutating(true);
-    try {
-      const res = await ipc.rebaseSkip();
-      if (res.kind === 'conflicts') {
-        pushToast('info', `Rebase paused at step ${res.currentStep}/${res.totalSteps}`);
-      } else if (res.kind === 'rebased') {
-        pushToast('success', 'Rebase complete');
-      }
-      await refreshAll();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // Called ONLY after the Abort-rebase ConfirmDialog confirms.
-  async function handleRebaseAbort() {
-    setMutating(true);
-    try {
-      await ipc.rebaseAbort();
-      await refreshAll();
-      pushToast('success', 'Rebase aborted');
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // P3c §8.2: row click toggles the read-only marker view (`conflict:<path>`).
-  function handleToggleConflictView(path: string) {
-    const key = `conflict:${path}`;
-    if (diffSlotRef.current?.key === key) {
-      collapseDiffSlot();
-      return;
-    }
-    void fetchConflictSlot(path);
-  }
-
-  // OpBanner's [Commit merge] triggers the CommitBox submit path. With a
-  // commit selected the box is unmounted — deselect so it appears (a second
-  // click then submits).
-  function handleBannerCommitMerge() {
-    if (commitBoxRef.current !== null) {
-      commitBoxRef.current.submit();
-    } else {
-      setSelectedIndex(null);
-    }
-  }
-
-  // Mode-A accordion toggle: staged rows -> staged diff; unstaged/untracked ->
-  // unstaged diff (M4 §4.2).
-  function handleToggleWorkdirDiff(section: WorkdirSection, entry: StatusEntry) {
-    const key = `${section}:${entry.path}`;
-    if (diffSlotRef.current?.key === key) {
-      collapseDiffSlot();
-      return;
-    }
-    void fetchDiffSlot(key, () =>
-      ipc.getWorkdirFileDiff(entry.path, entry.origPath, section === 'staged'),
-    );
-  }
-
-  // Mode-B accordion toggle: hunks for one file of the selected commit.
-  function handleToggleCommitDiff(file: FileDiffHeader) {
-    if (selectedIndex === null || graph === null) return;
-    const oid = graph.nodes[selectedIndex].id;
-    const key = `commit:${file.path}`;
-    if (diffSlotRef.current?.key === key) {
-      collapseDiffSlot();
-      return;
-    }
-    void fetchDiffSlot(key, () => ipc.getCommitFileDiff(oid, file.path, file.origPath));
-  }
-
-  // Parent short-oid clicked: GraphNode.parents are node indices, ordinal-
-  // matched to CommitDetails.parents (both first-parent-first).
-  function handleSelectParent(parentOrdinal: number) {
-    if (selectedIndex === null || graph === null) return;
-    const parentIndex = graph.nodes[selectedIndex].parents[parentOrdinal];
-    if (parentIndex !== undefined) setSelectedIndex(parentIndex);
-  }
-
-  const headBranch = branches?.local.find((b) => b.isHead) ?? null;
-  const pushTitle =
-    headBranch === null
-      ? 'Push'
-      : headBranch.upstream !== null
-        ? `Push ${headBranch.name} to ${headBranch.upstream}`
-        : `Push ${headBranch.name} to origin/${headBranch.name} and set upstream`;
+  const globalModalOpen = overlayOpen || menuOpen;
 
   return (
-    <div className="app">
-      <header className="header">
-        <span className="app-name">Bonsai</span>
-        {repoOpen && repo !== null && (
-          <RepoSwitcher
-            repo={repo}
+    <ToastContext.Provider value={pushToast}>
+      <div className="app">
+        <header className="header">
+          <span className="app-name">Bonsai</span>
+          <TabStrip
+            tabs={tabs}
+            activeRepo={activeRepo}
             recents={recents}
-            disabled={refreshing || mutating}
-            onOpenPath={(path) => void openPath(path, { fromRecents: true })}
-            onBrowse={() => void handleOpenRepository()}
-            onOpenChange={setSwitcherOpen}
-          />
-        )}
-        <div className="header-toolbar">
-          <button
-            type="button"
-            className="toolbar-btn"
-            disabled={!repoOpen || refreshing || mutating}
-            onClick={() => void handleFetch()}
-            title="Fetch all remotes (Ctrl+Shift+F)"
-          >
-            {remoteOp === 'fetch' ? 'Fetching…' : '↓ Fetch'}
-          </button>
-          <button
-            type="button"
-            className="toolbar-btn"
-            disabled={!repoOpen || refreshing || mutating || !canPullPush}
-            onClick={() => void handlePull()}
-            title="Pull (fast-forward only) (Ctrl+Shift+P)"
-          >
-            {remoteOp === 'pull' ? 'Pulling…' : '⇣ Pull'}
-          </button>
-          <button
-            type="button"
-            className="toolbar-btn"
-            disabled={!repoOpen || refreshing || mutating || !canPullPush}
-            onClick={() => void handlePush()}
-            title={`${pushTitle} (Ctrl+Shift+U)`}
-          >
-            {remoteOp === 'push' ? 'Pushing…' : '↑ Push'}
-          </button>
-          <button
-            type="button"
-            className="btn-icon theme-toggle"
-            onClick={toggleTheme}
-            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-            aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-          >
-            {theme === 'dark' ? '☀' : '☾'}
-          </button>
-          <button
-            type="button"
-            className="btn-icon list-view-toggle"
-            onClick={toggleListView}
-            title={listView === 'tree' ? 'Switch to flat lists' : 'Switch to tree lists'}
-            aria-label={listView === 'tree' ? 'Switch to flat lists' : 'Switch to tree lists'}
-          >
-            {listView === 'tree' ? '☰' : '⋔'}
-          </button>
-          <button
-            type="button"
-            className="btn-icon"
-            disabled={!repoOpen || refreshing || statusLoading || graphLoading || mutating}
-            onClick={handleRefresh}
-            title="Refresh (Ctrl+R)"
-            aria-label="Refresh"
-          >
-            {'⟳'}
-          </button>
-        </div>
-      </header>
-      {(remoteOp !== null || refreshing) && (
-        <div className="header-progress" aria-hidden="true" />
-      )}
-
-      {repoOpen && repo !== null ? (
-        <div className="panes">
-          <Sidebar
-            data={branches}
-            loading={branchesLoading}
-            error={branchesError}
-            onDismissError={() => setBranchesError(null)}
-            busy={mutating}
-            opActive={opActive}
-            currentBranch={headBranch?.name ?? null}
-            onCheckout={(name) => void handleCheckoutBranch(name)}
-            onMergeBranch={(name) => void handleMergeBranch(name)}
-            onRebaseBranch={(name) => void handleRebaseBranch(name)}
-            onDelete={(name) => void handleDeleteBranch(name)}
-            onCreateBranch={handleCreateBranch}
-            onDialogOpenChange={setDialogOpen}
-            width={paneWidths.sidebar}
-            listView={listView}
-          />
-          <PaneDivider
-            side="sidebar"
-            onResize={handleSidebarResize}
-            onResizeEnd={handlePaneResizeEnd}
-          />
-          <main className="graph-pane">
-            {graphError !== null && (
-              <div className="error-banner graph-error-banner">{graphError}</div>
-            )}
-            {graph !== null && graph.truncated && (
-              <div className="graph-truncated-banner">
-                History truncated to the most recent 100,000 commits
-              </div>
-            )}
-            {repo.head?.unborn ? (
-              <div className="graph-pane-empty">
-                <p className="pane-empty">No commits yet</p>
-              </div>
-            ) : graph !== null ? (
-              // Loading first layout: nothing over the canvas area (no spinners).
-              <GraphCanvas
-                ref={graphRef}
-                layout={graph}
-                selectedIndex={selectedIndex}
-                onSelect={setSelectedIndex}
-                wip={wip}
-                themeVersion={themeVersion}
-              />
-            ) : null}
-            {/* P3a §2.1 lifecycle (all pre-existing behavior, no new code):
-               refetchStatus collapses the slot when the file disappears (overlay
-               closes) or same-key refetches it (stale content dimmed); any
-               selection change resets the slot (overlay closes); clicking a
-               different file row switches the overlay content in place. */}
-            {diffSlot !== null && overlayMeta !== null && (
-              <DiffOverlay slot={diffSlot} meta={overlayMeta} onClose={collapseDiffSlot} />
-            )}
-          </main>
-          <PaneDivider
-            side="right-panel"
-            onResize={handleRightPanelResize}
-            onResizeEnd={handlePaneResizeEnd}
-          />
-          <aside className="right-panel" style={{ width: paneWidths.rightPanel }}>
-            <OpBanner
-              op={opState}
-              conflictCount={conflicts.length}
-              mutating={mutating}
-              onCommitMerge={handleBannerCommitMerge}
-              onRebaseContinue={() => void handleRebaseContinue()}
-              onRebaseSkip={() => void handleRebaseSkip()}
-              onAbort={() => setAbortConfirmOpen(true)}
-            />
-            {selectedIndex !== null && graph !== null ? (
-              <CommitPanel
-                node={graph.nodes[selectedIndex]}
-                data={commitDiff}
-                loading={commitDiffLoading}
-                error={commitDiffError}
-                diffSlot={diffSlot}
-                listView={listView}
-                onToggleDiff={handleToggleCommitDiff}
-                onSelectParent={handleSelectParent}
-                onClose={() => setSelectedIndex(null)}
-              />
-            ) : (
-              <>
-                <StatusPanel
-                  snapshot={status}
-                  loading={statusLoading}
-                  error={statusError}
-                  busy={mutating}
-                  diffSlot={diffSlot}
-                  listView={listView}
-                  conflicts={conflicts}
-                  onStage={(paths) => void handleStage(paths)}
-                  onUnstage={(paths) => void handleUnstage(paths)}
-                  onToggleDiff={handleToggleWorkdirDiff}
-                  onResolveConflict={(path, r) => void handleResolveConflict(path, r)}
-                  onToggleConflictView={handleToggleConflictView}
-                />
-                <CommitBox
-                  // Remount on merge transitions so the merge message is
-                  // prefilled ONCE per merge (§8.4).
-                  key={opState.kind === 'merge' ? `merge:${opState.incoming}` : 'commit'}
-                  ref={commitBoxRef}
-                  stagedCount={status?.staged.length ?? 0}
-                  busy={mutating}
-                  mode={opState.kind === 'merge' ? 'merge' : 'commit'}
-                  initialMessage={opState.kind === 'merge' ? opState.message : undefined}
-                  conflictCount={conflicts.length}
-                  blocked={opActive && opState.kind !== 'merge'}
-                  onCommit={opState.kind === 'merge' ? handleCommitMerge : handleCommit}
-                />
-              </>
-            )}
-          </aside>
-        </div>
-      ) : (
-        <div className="empty-state">
-          <h1 className="empty-title">Bonsai</h1>
-          <p className="empty-tagline">A tidy Git client</p>
-          {error !== null && <div className="error-banner">{error}</div>}
-          {repo !== null && !repo.isRepo && (
-            <div className="error-banner">
-              Not a Git repository: <span className="mono">{repo.path}</span>
-            </div>
-          )}
-          {repo !== null && repo.isRepo && repo.bare && (
-            <div className="error-banner">
-              Bare repositories are not supported: <span className="mono">{repo.path}</span>
-            </div>
-          )}
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={handleOpenRepository}
             disabled={loading}
-          >
-            {loading ? 'Opening…' : 'Open repository'}
-          </button>
-          {recents.length > 0 && (
-            <div className="recents-list">
-              <p className="section-label recents-label">Recent</p>
-              {recents.map((r) => (
-                <button
-                  key={r.path}
-                  type="button"
-                  className="recents-item"
-                  disabled={loading}
-                  onClick={() => void openPath(r.path, { fromRecents: true })}
-                >
-                  <span className="recents-item-name">{folderName(r.path)}</span>
-                  <span className="recents-item-path" title={r.path}>
-                    {r.path}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-      <ConfirmDialog
-        open={abortConfirmOpen}
-        title={opState.kind === 'rebase' ? 'Abort rebase?' : 'Abort merge?'}
-        confirmLabel={opState.kind === 'rebase' ? 'Abort rebase' : 'Abort merge'}
-        busy={mutating}
-        onConfirm={() => {
-          const isRebase = opState.kind === 'rebase';
-          setAbortConfirmOpen(false);
-          if (isRebase) {
-            void handleRebaseAbort();
-          } else {
-            void handleAbortMerge();
-          }
-        }}
-        onCancel={() => setAbortConfirmOpen(false)}
-      >
-        {opState.kind === 'rebase' ? (
-          <div>
-            This restores your branch and working tree to their pre-rebase state. Replayed commits
-            and conflict resolutions will be lost.
+            onSelect={setActiveRepo}
+            onClose={closeTab}
+            onOpenPath={(path) => void openTab(path)}
+            onBrowse={() => void handleOpenRepository()}
+            onMenuOpenChange={setMenuOpen}
+          />
+          <div className="header-toolbar">
+            <button
+              type="button"
+              className="btn-icon theme-toggle"
+              onClick={toggleTheme}
+              title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+              aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            >
+              {theme === 'dark' ? '☀' : '☾'}
+            </button>
+            <button
+              type="button"
+              className="btn-icon list-view-toggle"
+              onClick={toggleListView}
+              title={listView === 'tree' ? 'Switch to flat lists' : 'Switch to tree lists'}
+              aria-label={listView === 'tree' ? 'Switch to flat lists' : 'Switch to tree lists'}
+            >
+              {listView === 'tree' ? '☰' : '⋔'}
+            </button>
           </div>
+        </header>
+
+        {tabs.length > 0 ? (
+          tabs.map((t) => (
+            <div
+              key={t.repoId}
+              className="workspace-host"
+              style={{ display: t.repoId === activeRepo ? 'flex' : 'none' }}
+            >
+              <RepoWorkspace
+                repoId={t.repoId}
+                active={t.repoId === activeRepo}
+                listView={listView}
+                themeVersion={themeVersion}
+                paneWidths={paneWidths}
+                globalModalOpen={globalModalOpen}
+                onSidebarResize={handleSidebarResize}
+                onRightPanelResize={handleRightPanelResize}
+                onPaneResizeEnd={handlePaneResizeEnd}
+              />
+            </div>
+          ))
         ) : (
-          <div>
-            This restores the files touched by the merge to their pre-merge state. Conflict
-            resolutions will be lost.
+          <div className="empty-state">
+            <h1 className="empty-title">Bonsai</h1>
+            <p className="empty-tagline">A tidy Git client</p>
+            {error !== null && <div className="error-banner">{error}</div>}
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => void handleOpenRepository()}
+              disabled={loading}
+            >
+              {loading ? 'Opening…' : 'Open repository'}
+            </button>
+            {recents.length > 0 && (
+              <div className="recents-list">
+                <p className="section-label recents-label">Recent</p>
+                {recents.map((r) => (
+                  <button
+                    key={r.path}
+                    type="button"
+                    className="recents-item"
+                    disabled={loading}
+                    onClick={() => void openTab(r.path)}
+                  >
+                    <span className="recents-item-name">{folderName(r.path)}</span>
+                    <span className="recents-item-path" title={r.path}>
+                      {r.path}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
-      </ConfirmDialog>
-      <ShortcutOverlay open={overlayOpen} onClose={() => setOverlayOpen(false)} />
-      <Toasts toasts={toasts} onDismiss={dismissToast} />
-    </div>
+
+        <ShortcutOverlay open={overlayOpen} onClose={() => setOverlayOpen(false)} />
+        <Toasts toasts={toasts} onDismiss={dismissToast} />
+      </div>
+    </ToastContext.Provider>
   );
 }
