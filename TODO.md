@@ -44,6 +44,23 @@ and after committing locally (diverge) it splits into two labels; (4) "+N" hover
 right-clicking refs in the left column drives the identical P6 menu; (5) scrolling a large repo stays
 smooth (perf).
 
+### P7e — post-checkpoint layout refinement (2026-07-29) — AI GATE PASSED, awaiting USER CHECKPOINT
+User screenshots showed two overlap defects + a sizing request; contract §13 (P7-gitkraken-layout.md).
+Frontend-only (Rust/wire UNCHANGED). Commit: cc6acd4. Reviewer APPROVE after 1 must-fix round (a
+pre-existing p7SelfTest fixture budget regressed under the chip-fit clamp; fixed by widening the test
+budget). Changes: (A) layoutRefLabels reserves room so the "+n" overflow chip always fits inside the
+LEFT ref band — no spill into the graph/avatar; still pure + single source of truth for both hit-tests.
+(B) Viewport.rightInset = scroller.offsetWidth-clientWidth → relative-time/summary drawn clear of the
+vertical scrollbar (default 0 == old geometry). (C) bigger avatars: rowHeight 28→32, avatarRadius 8→10,
+head/sel rings + avatarFont scaled (all parametric off METRICS.rowHeight).
+AI-gate evidence (mock :1424, pixel-sampling + synthetic events, hidden pane): pnpm build clean;
+p7SelfTest 27 pass/0 fail (new chip-fit assertion last.x+w ≤ startX+budget); (A) row-0 ref content ends
+x=115 ≤ band-end 172, wide gap to avatar, "+4" chip overflow tooltip lists dev/release/# v1.0/# v0.9;
+(B) date right edge 624 = width(652)−scrollbar(15)−colGap(12) (old would be 640, under the scrollbar);
+(C) avatar disc+rings ~28px wide (was ~22), avatar hover tooltip "Ada Lovelace" resolves at new geometry.
+USER CHECKPOINT (native): overlaps gone (no "+n"/graph collision; timestamps not clipped by the
+scrollbar) and avatars read as comfortably larger, at whatever window size / theme.
+
 Original step: P7 kickoff. Source: user request (2026-07-29) after
 confirming P6 works. Four requirements:
 1. **Three-zone row layout** like GitKraken: LEFT = ref labels, CENTER = graph lanes+dots,
