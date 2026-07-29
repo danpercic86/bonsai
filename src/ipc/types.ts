@@ -185,11 +185,15 @@ export interface BranchInfo {
   /** Commits ahead of / behind upstream. null whenever `upstream` is null. */
   ahead: number | null;
   behind: number | null;
+  /** Full 40-char hex oid of the branch tip. */
+  tip: string;
 }
 
 export interface RemoteBranchInfo {
   /** Shorthand incl. remote, e.g. "origin/main". */
   name: string;
+  /** Full 40-char hex oid of the remote-tracking branch tip. */
+  tip: string;
 }
 
 export interface BranchesSnapshot {
@@ -409,6 +413,13 @@ export interface IpcApi {
   /** Delete a LOCAL, fully merged, non-current branch. Rejects
    *  branchNotFound | unmergedBranch | git | noRepo. */
   deleteBranch(repoId: string, name: string): Promise<void>;
+  /** GitKraken-style remote checkout: create/reuse a local tracking branch for
+   *  `name` ("<remote>/<branch>") and switch to it. Rejects
+   *  invalidName | branchNotFound | checkoutConflict | git | noRepo. */
+  checkoutRemoteBranch(repoId: string, name: string): Promise<void>;
+  /** Delete the LOCAL remote-tracking ref `name` (does NOT touch the server).
+   *  Rejects branchNotFound | git | noRepo. */
+  deleteRemoteBranch(repoId: string, name: string): Promise<void>;
   /** Fetch ALL remotes. Rejects noRemote | authFailed | networkError | git | noRepo. */
   fetch(repoId: string): Promise<FetchResult>;
   /** Fetch upstream remote + fast-forward only. Rejects noUpstream | authFailed

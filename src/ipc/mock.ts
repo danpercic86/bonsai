@@ -784,6 +784,7 @@ export const mockIpc: IpcApi = {
       upstream: null,
       ahead: null,
       behind: null,
+      tip: randomOid(),
     });
     state.branches.local.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   },
@@ -842,6 +843,57 @@ export const mockIpc: IpcApi = {
       throw err;
     }
     state.branches.local = state.branches.local.filter((b) => b.name !== name);
+  },
+
+  // P6 §3.5: GitKraken-style remote checkout — create/reuse a local tracking
+  // branch for the remote-tracking ref and switch to it.
+  async checkoutRemoteBranch(repoId: string, name: string): Promise<void> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    const remote = state.branches.remote.find((r) => r.name === name);
+    if (remote === undefined) {
+      const err: AppError = {
+        kind: 'branchNotFound',
+        message: `remote-tracking branch '${name}' not found`,
+      };
+      throw err;
+    }
+    // Split on the FIRST '/' (remote names contain no '/').
+    const slash = name.indexOf('/');
+    const localName = slash === -1 ? name : name.slice(slash + 1);
+    let local = state.branches.local.find((b) => b.name === localName);
+    if (local === undefined) {
+      // Create-and-track path: new local tracking branch at the remote tip.
+      local = { name: localName, isHead: false, upstream: name, ahead: 0, behind: 0, tip: remote.tip };
+      state.branches.local.push(local);
+      state.branches.local.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+    }
+    // Switch HEAD (same state transition as checkoutBranch).
+    for (const b of state.branches.local) b.isHead = false;
+    local.isHead = true;
+    state.headBranch = local.name;
+    state.headOid = local.tip;
+    state.branches.head = {
+      branchName: local.name,
+      oid: state.headOid,
+      detached: false,
+      unborn: false,
+    };
+  },
+
+  // P6 §3.5: delete the LOCAL remote-tracking ref only (never touches the server).
+  async deleteRemoteBranch(repoId: string, name: string): Promise<void> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    const remote = state.branches.remote.find((r) => r.name === name);
+    if (remote === undefined) {
+      const err: AppError = {
+        kind: 'branchNotFound',
+        message: `remote-tracking branch '${name}' not found`,
+      };
+      throw err;
+    }
+    state.branches.remote = state.branches.remote.filter((r) => r.name !== name);
   },
 
   // Stateful remote mock (M6 contract §5). Failure triggers via `?remote=`
@@ -928,7 +980,7 @@ export const mockIpc: IpcApi = {
       branch.ahead = 0;
       branch.behind = 0;
       if (!state.branches.remote.some((r) => r.name === branch.upstream)) {
-        state.branches.remote.push({ name: `origin/${branch.name}` });
+        state.branches.remote.push({ name: `origin/${branch.name}`, tip: branch.tip });
         state.branches.remote.sort((a, b) =>
           a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
         );

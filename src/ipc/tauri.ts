@@ -118,6 +118,14 @@ export const tauriIpc: IpcApi = {
     return invoke<void>('delete_branch', { repoId, name });
   },
 
+  checkoutRemoteBranch(repoId: string, name: string): Promise<void> {
+    return invoke<void>('checkout_remote', { repoId, name });
+  },
+
+  deleteRemoteBranch(repoId: string, name: string): Promise<void> {
+    return invoke<void>('delete_remote_tracking', { repoId, name });
+  },
+
   fetch(repoId: string): Promise<FetchResult> {
     return invoke<FetchResult>('fetch', { repoId });
   },
