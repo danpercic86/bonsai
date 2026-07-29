@@ -8,6 +8,7 @@ pub mod rebase;
 pub mod remote;
 pub mod repo;
 pub mod stage;
+pub mod stash;
 pub mod status;
 
 /// libgit2 re-hashes every object it inflates to verify its id (strict

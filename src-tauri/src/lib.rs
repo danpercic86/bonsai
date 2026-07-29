@@ -53,7 +53,12 @@ pub fn run() {
             commands::rebase_branch,
             commands::rebase_continue,
             commands::rebase_skip,
-            commands::rebase_abort
+            commands::rebase_abort,
+            commands::list_stashes,
+            commands::create_stash,
+            commands::apply_stash,
+            commands::pop_stash,
+            commands::drop_stash
         ])
         .run(tauri::generate_context!())
         .expect("error while running Bonsai");
