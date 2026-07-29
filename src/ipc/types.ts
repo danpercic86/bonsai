@@ -270,9 +270,10 @@ export type ConflictResolution = 'ours' | 'theirs' | 'markResolved';
 
 export type MergeOutcome =
   | { kind: 'upToDate' }
-  | { kind: 'fastForwarded'; branch: string; to: string }
-  | { kind: 'merged'; oid: string }
-  | { kind: 'conflicts'; paths: string[] };
+  | { kind: 'fastForwarded'; branch: string; to: string; stashed: boolean }
+  | { kind: 'merged'; oid: string; stashed: boolean }
+  | { kind: 'conflicts'; paths: string[]; stashed: boolean }
+  | { kind: 'stashPopConflicts'; head: string; paths: string[] };
 
 export type RebaseOutcome =
   | { kind: 'upToDate' }

@@ -1584,7 +1584,7 @@ mod tests {
             tauri::async_runtime::block_on(merge_branch_inner(state, id, "topic".to_string()))
                 .expect("merge_branch");
         match outcome {
-            MergeOutcome::Conflicts { paths } => {
+            MergeOutcome::Conflicts { paths, .. } => {
                 assert!(
                     paths.iter().any(|p| p == "a.txt"),
                     "expected a.txt to be conflicted, got {paths:?}"

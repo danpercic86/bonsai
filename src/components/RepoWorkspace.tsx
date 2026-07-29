@@ -781,13 +781,33 @@ export function RepoWorkspace({
           pushToast('info', `Already up to date with ${name}`);
           break;
         case 'fastForwarded':
-          pushToast('success', `Fast-forwarded to ${name}`);
+          pushToast(
+            'success',
+            `Fast-forwarded to ${name}` +
+              (res.stashed ? ' (local changes stashed and restored)' : ''),
+          );
           break;
         case 'merged':
-          pushToast('success', `Merged ${name}`);
+          pushToast(
+            'success',
+            `Merged ${name}` + (res.stashed ? ' (local changes stashed and restored)' : ''),
+          );
           break;
         case 'conflicts':
-          pushToast('info', `Merge paused: ${res.paths.length} conflict(s) to resolve`);
+          pushToast(
+            'info',
+            `Merge paused: ${res.paths.length} conflict(s) to resolve` +
+              (res.stashed
+                ? '. Your local changes are safe on the stash (stash@{0}) — apply them after finishing the merge.'
+                : ''),
+          );
+          break;
+        case 'stashPopConflicts':
+          pushToast(
+            'error',
+            `Merge done, but re-applying your stashed changes hit ${res.paths.length} conflict(s). ` +
+              'Your changes are still on the stash (stash@{0}); resolve the conflicts, then drop the stash.',
+          );
           break;
       }
       await refreshAll();

@@ -1020,6 +1020,18 @@ export const mockIpc: IpcApi = {
       };
       throw err;
     }
+    // P8 demo triggers (keyed on the branch name, like the `?op=` convention)
+    // so the browser harness can exercise every new outcome shape:
+    //   "stash-conflict" -> stashPopConflicts (repo stays clean, no graph mutation)
+    //   "conflict"       -> paused merge with an autostash retained on the stack
+    //   "autostash"      -> clean merge that stashed and restored local changes
+    if (name.includes('stash-conflict')) {
+      return { kind: 'stashPopConflicts', head: randomOid(), paths: ['src/app.ts'] };
+    }
+    if (name.includes('conflict')) {
+      return { kind: 'conflicts', paths: ['src/app.ts', 'README.md'], stashed: true };
+    }
+    const stashed = name.includes('autostash');
     // Clean-merge demo: auto-committed 2-parent node on top of the graph.
     state.headOid = randomOid();
     state.commits.unshift({
@@ -1031,7 +1043,7 @@ export const mockIpc: IpcApi = {
     if (headBranch !== undefined && headBranch.upstream !== null) {
       headBranch.ahead = (headBranch.ahead ?? 0) + 1;
     }
-    return { kind: 'merged', oid: state.headOid };
+    return { kind: 'merged', oid: state.headOid, stashed };
   },
 
   async commitMerge(repoId: string, message: string): Promise<CommitResult> {

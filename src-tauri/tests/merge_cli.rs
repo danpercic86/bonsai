@@ -84,6 +84,16 @@ fn repo_state(dir: &Path) -> git2::RepositoryState {
     git2::Repository::open(dir).expect("open repo").state()
 }
 
+/// Number of entries on the stash stack (P8 autostash assertions). Uses the
+/// git CLI since these tests already `require_git!`; git2's stash_save2 writes
+/// the standard refs/stash + reflog, so `git stash list` sees it.
+fn stash_count(dir: &Path) -> usize {
+    git(dir, &["stash", "list"])
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .count()
+}
+
 /// Twin `git merge --no-edit <name>` with fixed committer/author dates.
 fn cli_merge(dir: &Path, name: &str) {
     common::git_env(
@@ -172,7 +182,7 @@ fn clean_merge_matches_cli_twin() {
 
     let outcome = merge_branch(bonsai.path(), "topic").expect("merge");
     let oid = match outcome {
-        MergeOutcome::Merged { oid } => oid,
+        MergeOutcome::Merged { oid, .. } => oid,
         other => panic!("expected Merged, got {other:?}"),
     };
     assert_eq!(oid, head_oid(bonsai.path()), "returned oid must be HEAD");
@@ -224,6 +234,7 @@ fn fast_forward_matches_cli_twin() {
         MergeOutcome::FastForwarded {
             branch: "main".to_string(),
             to: twin_head.clone(),
+            stashed: false,
         }
     );
     assert_eq!(head_oid(bonsai.path()), twin_head);
@@ -306,7 +317,7 @@ fn remote_tracking_merge_matches_cli_twin() {
 
     let outcome = merge_branch(work, "origin/topic").expect("merge origin/topic");
     let oid = match outcome {
-        MergeOutcome::Merged { oid } => oid,
+        MergeOutcome::Merged { oid, .. } => oid,
         other => panic!("expected Merged, got {other:?}"),
     };
     assert_eq!(oid, head_oid(work));
@@ -337,7 +348,7 @@ fn conflicted_merge_matches_cli_conflicted_set() {
 
     let outcome = merge_branch(bonsai.path(), "topic").expect("merge");
     let paths = match outcome {
-        MergeOutcome::Conflicts { paths } => paths,
+        MergeOutcome::Conflicts { paths, .. } => paths,
         other => panic!("expected Conflicts, got {other:?}"),
     };
 
@@ -394,21 +405,56 @@ fn unborn_head_is_rejected() {
     }
 }
 
+/// P8 §2.1 removed the pre-P8 dirty-INDEX refusal: a STAGED change to a file
+/// the merge does not touch is now AUTOSTASHED, the (non-FF, clean) merge
+/// proceeds and auto-commits, then the stash is re-applied. Matrix row #3
+/// (dirty + clean normal merge + clean pop) -> `Merged { stashed: true }`.
+/// Per OPEN Q#1 (no REINSTATE_INDEX) the change comes back UNSTAGED.
 #[test]
-fn staged_changes_are_rejected() {
+fn staged_change_is_autostashed_and_merge_proceeds() {
     require_git!();
+    // script_clean_diverged: topic edits b.txt, main edits a.txt -> non-FF
+    // clean merge on disjoint files. The staged edit below is to a.txt, which
+    // the merge leaves at main's version, so the pop applies cleanly.
     let (bonsai, _twin) = twin_pair(script_clean_diverged);
     let d = bonsai.path();
     write(d, "a.txt", "staged edit\n");
     git(d, &["add", "a.txt"]);
 
-    let err = merge_branch(d, "topic").expect_err("staged");
-    match err {
-        AppError::Git(m) => assert!(m.contains("uncommitted changes"), "got: {m}"),
-        other => panic!("expected Git, got {other:?}"),
-    }
-    // Nothing mutated.
+    let outcome = merge_branch(d, "topic").expect("merge");
+    let oid = match &outcome {
+        MergeOutcome::Merged { oid, stashed } => {
+            assert!(*stashed, "staged change must be autostashed -> stashed:true");
+            oid.clone()
+        }
+        other => panic!("expected Merged{{stashed:true}}, got {other:?}"),
+    };
+
+    // A real 2-parent merge commit landed.
     assert_eq!(repo_state(d), git2::RepositoryState::Clean);
+    assert_eq!(oid, head_oid(d), "returned oid must be HEAD");
+    assert_eq!(parents(d).len(), 2, "normal merge -> 2-parent commit");
+    // Disjoint clean merge kept both sides.
+    assert_eq!(std::fs::read_to_string(d.join("b.txt")).expect("b"), "b topic\n");
+
+    // The staged change's CONTENT survives...
+    assert_eq!(
+        std::fs::read_to_string(d.join("a.txt")).expect("a"),
+        "staged edit\n",
+        "the autostashed change content must be restored"
+    );
+    // ...and returns UNSTAGED (OPEN Q#1: no REINSTATE_INDEX). Nothing staged;
+    // a.txt shows only as a worktree modification.
+    assert!(
+        git(d, &["diff", "--cached", "--name-only"]).trim().is_empty(),
+        "OPEN Q#1: the restored change must NOT be re-staged"
+    );
+    assert_eq!(
+        git(d, &["diff", "--name-only"]).trim(),
+        "a.txt",
+        "the restored change must be an UNSTAGED worktree modification"
+    );
+    assert_eq!(stash_count(d), 0, "clean pop -> stash applied and dropped");
 }
 
 #[test]
@@ -445,34 +491,66 @@ fn unknown_branch_is_rejected() {
     );
 }
 
-/// Unstaged edit to a merge-touched file -> CheckoutConflict; state still
-/// Clean afterwards; worktree byte-identical to before.
+/// P8: an UNSTAGED edit to a merge-touched file is no longer a pre-flight
+/// CheckoutConflict. The edit is autostashed, the (non-FF, clean) merge runs
+/// and auto-commits, then re-applying the stash onto the merged tree conflicts
+/// on that same file. Matrix row #4 -> `StashPopConflicts { head, paths }`:
+/// state Clean (a conflicted stash-apply is not a merge op), worktree has
+/// markers, the stash is RETAINED. Pinned against real `git merge --autostash`.
 #[test]
-fn unstaged_edit_to_merge_touched_file_is_checkout_conflict_and_leaves_clean() {
+fn unstaged_edit_to_merge_touched_file_autostashes_then_pop_conflicts() {
     require_git!();
-    let (bonsai, _twin) = twin_pair(script_clean_diverged);
+    let (bonsai, twin) = twin_pair(script_clean_diverged);
     let d = bonsai.path();
-    // topic changes b.txt; make an UNSTAGED local edit to b.txt.
+    // topic changes b.txt; make an UNSTAGED local edit to the SAME file.
     let local = "b local unstaged\n";
     write(d, "b.txt", local);
-    let a_before = std::fs::read(d.join("a.txt")).expect("read a");
 
-    let err = merge_branch(d, "topic").expect_err("would overwrite");
+    let (head, paths) = match merge_branch(d, "topic").expect("merge") {
+        MergeOutcome::StashPopConflicts { head, paths } => (head, paths),
+        other => panic!("expected StashPopConflicts, got {other:?}"),
+    };
+    assert_eq!(paths, vec!["b.txt".to_string()], "b.txt conflicted on the pop");
+    assert_eq!(head, head_oid(d), "head = the new merge-commit oid");
+
+    // A conflicted stash-apply is NOT a merge op: state stays Clean.
+    assert_eq!(repo_state(d), git2::RepositoryState::Clean, "state must be Clean");
+    assert!(!d.join(".git").join("MERGE_HEAD").exists(), "no MERGE_HEAD");
+    assert_eq!(parents(d).len(), 2, "the merge itself committed (2 parents)");
+    // a.txt is main's side (merge untouched); b.txt has conflict markers.
+    assert_eq!(std::fs::read_to_string(d.join("a.txt")).expect("a"), "a main\n");
+    let b = std::fs::read_to_string(d.join("b.txt")).expect("b");
     assert!(
-        matches!(err, AppError::CheckoutConflict(_)),
-        "expected CheckoutConflict, got {err:?}"
+        b.contains("<<<<<<<") && b.contains(">>>>>>>"),
+        "b.txt must carry conflict markers, got:\n{b}"
     );
+    assert_eq!(stash_count(d), 1, "conflicting pop RETAINS the stash");
 
-    assert_eq!(repo_state(d), git2::RepositoryState::Clean, "state must stay Clean");
-    assert!(!d.join(".git").join("MERGE_HEAD").exists(), "no MERGE_HEAD left behind");
+    // Oracle: real `git merge --autostash topic` on the twin with the same
+    // unstaged edit. The COMMITTED merge tree is stable regardless of the
+    // post-commit pop, so compare HEAD trees; also confirm git likewise keeps
+    // a stash and leaves markers. (Commit oids differ: timestamps differ.)
+    write(twin.path(), "b.txt", local);
+    let _ = Command::new("git")
+        .args(["merge", "--autostash", "--no-edit", "topic"])
+        .current_dir(twin.path())
+        .output()
+        .expect("run git merge --autostash");
     assert_eq!(
-        std::fs::read_to_string(d.join("b.txt")).expect("read b"),
-        local,
-        "the unstaged edit must survive the failed merge byte-identically"
+        tree_oid(d),
+        tree_oid(twin.path()),
+        "our committed merge tree must equal `git merge --autostash`'s"
     );
-    assert_eq!(std::fs::read(d.join("a.txt")).expect("read a"), a_before);
-    // Index still == HEAD tree.
-    assert_eq!(git(d, &["write-tree"]), tree_oid(d));
+    assert_eq!(
+        stash_count(twin.path()),
+        1,
+        "real git also RETAINS the autostash on a conflicting re-apply"
+    );
+    let twin_b = std::fs::read_to_string(twin.path().join("b.txt")).expect("twin b");
+    assert!(
+        twin_b.contains("<<<<<<<") && twin_b.contains(">>>>>>>"),
+        "real git also leaves conflict markers in b.txt"
+    );
 }
 
 // ============================================================ §9.7 commit_merge
@@ -485,7 +563,7 @@ fn commit_merge_after_resolving_matches_cli_twin() {
 
     // Bonsai: merge -> conflicts on a.txt + b.txt; resolve a=Ours, b=Theirs.
     match merge_branch(bonsai.path(), "topic").expect("merge") {
-        MergeOutcome::Conflicts { paths } => {
+        MergeOutcome::Conflicts { paths, .. } => {
             assert_eq!(paths, vec!["a.txt".to_string(), "b.txt".to_string()])
         }
         other => panic!("expected Conflicts, got {other:?}"),
@@ -568,8 +646,14 @@ fn commit_merge_without_a_merge_is_rejected() {
 
 // ============================================================ §9.8 abort_merge
 
+/// P8 + abort: a PRE-merge unstaged edit is moved onto the autostash before
+/// the merge runs (matrix row #5, deferred re-apply). So during the paused
+/// merge and after `abort_merge`, that edit is NOT in the worktree — the file
+/// sits at its HEAD version and the edit is safe at stash@{0}. This differs
+/// from pre-P8, where the edit stayed in the worktree. Abort still restores the
+/// merge-touched file to HEAD; the retained stash guarantees no data loss.
 #[test]
-fn abort_restores_state_and_preserves_unrelated_unstaged_edit() {
+fn abort_after_autostashed_merge_keeps_unrelated_edit_on_stash() {
     require_git!();
     let script = |d: &Path| {
         write(d, "a.txt", "line1\nbase\nline3\n");
@@ -591,13 +675,25 @@ fn abort_restores_state_and_preserves_unrelated_unstaged_edit() {
     // Pre-merge UNSTAGED edit to a file the merge does not touch.
     let unrelated = "edited but not staged\n";
     write(d, "unrelated.txt", unrelated);
-    let pre_a = std::fs::read(d.join("a.txt")).expect("read a.txt");
+    let pre_a = std::fs::read(d.join("a.txt")).expect("read a.txt"); // main's a.txt
     let pre_head = head_oid(d);
 
+    // Dirty tree -> autostash -> conflicting merge pauses; stash RETAINED.
     match merge_branch(d, "topic").expect("merge") {
-        MergeOutcome::Conflicts { paths } => assert_eq!(paths, vec!["a.txt".to_string()]),
-        other => panic!("expected Conflicts, got {other:?}"),
+        MergeOutcome::Conflicts { paths, stashed } => {
+            assert_eq!(paths, vec!["a.txt".to_string()]);
+            assert!(stashed, "the pre-merge edit must have been autostashed");
+        }
+        other => panic!("expected Conflicts{{stashed:true}}, got {other:?}"),
     }
+    assert_eq!(repo_state(d), git2::RepositoryState::Merge);
+    assert_eq!(stash_count(d), 1, "autostash retained during the paused merge");
+    // Mid-merge, the edit is on the stash: worktree unrelated.txt is at HEAD.
+    assert_eq!(
+        std::fs::read_to_string(d.join("unrelated.txt")).expect("read unrelated"),
+        "orig\n",
+        "the pre-merge edit is on the stash, not in the worktree"
+    );
 
     abort_merge(d).expect("abort");
 
@@ -608,13 +704,25 @@ fn abort_restores_state_and_preserves_unrelated_unstaged_edit() {
     assert_eq!(
         std::fs::read(d.join("a.txt")).expect("read a.txt"),
         pre_a,
-        "conflicted file must be restored to pre-merge bytes"
+        "conflicted file must be restored to pre-merge (HEAD) bytes"
     );
+    // The unrelated edit stays on the stash across the abort (not clobbered,
+    // not in the worktree).
+    assert_eq!(
+        std::fs::read_to_string(d.join("unrelated.txt")).expect("read unrelated"),
+        "orig\n",
+        "after abort the worktree file is at HEAD; the edit is still stashed"
+    );
+    assert_eq!(stash_count(d), 1, "the autostash survives the abort (stash@{{0}})");
+
+    // Data-safety proof: re-applying stash@{0} restores the edit byte-exactly.
+    git(d, &["stash", "pop"]);
     assert_eq!(
         std::fs::read_to_string(d.join("unrelated.txt")).expect("read unrelated"),
         unrelated,
-        "the unrelated unstaged edit must SURVIVE the abort"
+        "the user's edit is recoverable from stash@{{0}}"
     );
+    assert_eq!(stash_count(d), 0, "pop consumed the stash");
 }
 
 #[test]

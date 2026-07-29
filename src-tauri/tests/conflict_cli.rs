@@ -230,7 +230,7 @@ fn conflicted_pair(f: Fixture) -> (tempfile::TempDir, tempfile::TempDir, Vec<Str
 
     let outcome = merge_branch(bonsai.path(), "topic").expect("merge");
     let paths = match outcome {
-        MergeOutcome::Conflicts { paths } => paths,
+        MergeOutcome::Conflicts { paths, .. } => paths,
         other => panic!("fixture {f:?}: expected Conflicts, got {other:?}"),
     };
     git_fail(twin.path(), &["merge", "topic"]);
