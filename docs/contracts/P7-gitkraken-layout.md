@@ -656,3 +656,41 @@ Outermost (selection) ring dia 27 in a 32px row ⇒ ~2.5px top/bottom margin (ma
 
 *Gate:* `pnpm build` clean; `p7SelfTest` all-pass incl. the new chip-fit assertion; harness shows the
 `+n` chip fully left of the avatar, relative-time clear of the scrollbar, and visibly larger avatars.
+
+## §14 P7f — post-checkpoint ref-collapse fix + branch tooltip + copy (user feedback 2026-07-29)
+
+Three small **frontend-only** refinements (Rust and wire types untouched).
+
+### §14.1 Collapse key must strip only the remote NAME, not every path segment (bug)
+`groupRefs` (draw.ts §3.2) keys a `remoteBranch` by `ref.name.slice(ref.name.lastIndexOf('/') + 1)`.
+For a slashed branch this drops interior segments: `origin/topic/global-search-fixes` → `global-search-fixes`,
+which does NOT match the local branch key `topic/global-search-fixes`, so a level local+remote pair
+renders as TWO entities instead of collapsing. Fix — strip only the FIRST segment (the remote name):
+`ref.name.slice(ref.name.indexOf('/') + 1)` → `topic/global-search-fixes`, matching the local key.
+Simple `origin/main` → `main` is unchanged. The collapsed entity's `name` is the full branch path
+(`topic/global-search-fixes`), shown once with laptop + cloud icons.
+- Self-test: extend `p7SelfTest` groupRefs coverage — a slashed branch present as BOTH
+  `localBranch topic/x` and `remoteBranch origin/topic/x` on one node collapses to exactly ONE
+  `branch` entity with `hasLocal === true` && `remotes.length === 1` && `name === 'topic/x'`.
+
+### §14.2 Hover a shown branch pill → full branch name tooltip
+`computeHoverTarget` (GraphCanvas.tsx §6.1) currently builds tooltips only for the avatar disc and the
+`+n` chip. Add a case: when the cursor is over a SHOWN ref label (`laid` entry with `entity !== null`)
+whose entity `kind === 'branch'`, return a tooltip showing the entity's full `name` (pills truncate at
+`pillMaxWidth` 160, so the untruncated name is the value). Anchor = that label's rect
+(`x, cy - pillHeight/2, w, pillHeight`). Tags/head are out of scope (branches only, per the request).
+- Add a `TooltipState` variant `{ kind: 'ref'; text: string; anchor: Rect }`; extend `sameTarget`
+  (compare `text`) and the JSX (render `tooltip.text`, same as the `avatar` branch).
+- Precedence inside the ref column: avatar hit first (already earlier), then chip, then shown pill.
+
+### §14.3 "Copy branch name" context-menu item (both surfaces)
+`branchMenuItems` (RepoWorkspace.tsx) is the shared builder for the graph pills AND sidebar rows, so add
+the item there once. New item labelled `Copy branch name`, never disabled (read-only), that runs
+`navigator.clipboard.writeText(name)` then `pushToast('success', 'Copied branch name')` on resolve and
+`pushToast('error', ...errorMessage(e))` on reject. `name` is the ref name passed to the builder
+(local name, or `origin/...` for a remote-only entry). Place it directly after `Checkout`. The current
+local HEAD branch still returns `[]` (no menu) — unchanged; not in scope to change that parity rule.
+
+*Gate:* `pnpm build` clean; `p7SelfTest` all-pass incl. the new §14.1 collapse assertion; harness shows
+a slashed local+remote branch as ONE laptop+cloud pill, a branch-pill hover tooltip with the full name,
+and a "Copy branch name" entry in both the graph-pill and sidebar right-click menus.

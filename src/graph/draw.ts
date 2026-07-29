@@ -283,7 +283,7 @@ export function groupRefs(refs: readonly RefLabel[] | undefined): RefEntity[] {
         break;
       }
       case 'remoteBranch': {
-        const short = ref.name.slice(ref.name.lastIndexOf('/') + 1); // "origin/main" -> "main"
+        const short = ref.name.slice(ref.name.indexOf('/') + 1); // strip remote name only, keep interior slashes: "origin/topic/x" -> "topic/x"
         const e =
           branches.get(short) ??
           { kind: 'branch' as const, name: short, hasLocal: false, remotes: [], isHead: false, refs: [] };

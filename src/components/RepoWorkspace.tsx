@@ -1026,6 +1026,18 @@ export function RepoWorkspace({
             ? handleCheckoutRemote(name)
             : handleCheckoutBranch(name)),
       },
+      {
+        label: 'Copy branch name',
+        disabled: false,
+        onSelect: () => {
+          const p =
+            navigator.clipboard?.writeText(name) ??
+            Promise.reject(new Error('Clipboard unavailable'));
+          void p
+            .then(() => pushToast('success', 'Copied branch name'))
+            .catch((e) => pushToast('error', `Copy failed: ${errorMessage(e)}`));
+        },
+      },
     ];
     if (cur !== null) {
       items.push({
