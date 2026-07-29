@@ -111,7 +111,20 @@ definition of done.
 
 ## P4 — UX refinements (post-P3 feedback) — **in-progress** (2026-07-29)
 
-Current step: P4 kickoff — contract written (docs/contracts/P4-ux-refinements.md), starting Inc 1.
+Current step: P4 AI GATE PASSED (2026-07-29) — awaiting USER CHECKPOINT. All 5 increments committed:
+969bd70 (P4a+b layout), 6b6befd (P4c Changes), a7070d9 (P4d sidebar), 086a85e (P4e-1 chip),
+25844ae (P4e-2 highlighting). Each reviewer-APPROVE (P4a/P4c/P4d/P4e-2 APPROVE; P4a+b & P4e-1
+APPROVE-WITH-NITS, nits trivial/fixed). pnpm build EXIT 0 (highlight.js langs code-split into lazy
+chunks). Harness (mock on :1421, no console errors) verified all 5: P4a .tab-strip overflow now
+visible + .tab-scroll wraps pills + Browse… fully visible (menu escapes); P4b .graph-toolbar
+justify-content:center holds Fetch/Pull/Push, Refresh stays flex-end top-right; P4c sections
+Staged + Changes(8) + one Stage all, no Unstaged/Untracked headers, untracked→green A; P4d branch
+folders feature/fix + remote origin render collapsed, current branch main sorted first (HEAD=main
+root-level so nothing auto-expands — correct); P4e rust diff chip "rs" (#dea584) + 23 hljs token
+spans, keyword color = --syn-keyword in BOTH dark(#ff7b72) and light(#cf222e), add/del backgrounds +
+marker + gutters preserved. USER CHECKPOINT: confirm the 5 in native pnpm tauri dev (see below).
+
+Original step: P4 kickoff — contract written (docs/contracts/P4-ux-refinements.md), starting Inc 1.
 Source: user returned from P3 checkpoint with 5 UI issues; decisions locked via AskUserQuestion:
 - #1 tab `+` menu overflow: FIX (bug — `.tab-strip` overflow-x forces overflow-y auto, clips menu).
 - #2 Fetch/Pull/Push: centered bar ABOVE the graph; Refresh (⟳) STAYS top-right.
