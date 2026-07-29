@@ -17,6 +17,7 @@ import { GraphCanvas } from '../graph/GraphCanvas';
 import type { GraphCanvasHandle, GraphContextTarget, WipSummary } from '../graph/GraphCanvas';
 import { ipc } from '../ipc';
 import type {
+  BranchInfo,
   BranchesSnapshot,
   CommitDiff,
   CompareDiff,
@@ -101,8 +102,11 @@ export function RepoWorkspace({
   const [conflicts, setConflicts] = useState<ConflictEntry[]>([]);
   const [abortConfirmOpen, setAbortConfirmOpen] = useState(false);
   const commitBoxRef = useRef<CommitBoxHandle>(null);
-  // Sidebar's ConfirmDialog-open lift (shortcuts inert while a dialog is up).
-  const [dialogOpen, setDialogOpen] = useState(false);
+  // P6 §4.5: pending branch/remote deletes drive the two confirm dialogs; the
+  // shortcut effect is suppressed while either is up (derived `dialogOpen`).
+  const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(null);
+  const [pendingDeleteRemote, setPendingDeleteRemote] = useState<string | null>(null);
+  const dialogOpen = pendingDeleteBranch !== null || pendingDeleteRemote !== null;
 
   const [graph, setGraph] = useState<GraphLayout | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
@@ -659,6 +663,36 @@ export function RepoWorkspace({
     }
   }
 
+  // P6 §4.4: GitKraken-style remote checkout — create/reuse a local tracking
+  // branch and switch to it (HEAD moves, so refreshAll like handleCheckoutBranch).
+  async function handleCheckoutRemote(name: string) {
+    setBranchesError(null);
+    setMutating(true);
+    try {
+      await ipc.checkoutRemoteBranch(repoId, name);
+      await refreshAll();
+    } catch (e) {
+      setBranchesError(errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  // P6 §4.4: delete the LOCAL remote-tracking ref only (does not touch the
+  // server); refetch branches + graph like handleDeleteBranch.
+  async function handleDeleteRemoteTracking(name: string) {
+    setBranchesError(null);
+    setMutating(true);
+    try {
+      await ipc.deleteRemoteBranch(repoId, name);
+      await Promise.all([refetchBranches(), refetchGraph()]);
+    } catch (e) {
+      setBranchesError(errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
   // ----- M6: remote operations -----
   function beginRemoteOp(op: 'fetch' | 'pull' | 'push') {
     setMutating(true);
@@ -961,29 +995,74 @@ export function RepoWorkspace({
     );
   }
 
-  // P5 §5.2: build the right-click menu items for a graph target. Ref pills
-  // mirror the sidebar's merge/rebase gating EXACTLY; commit rows offer
+  // P6 §4.1: the single shared builder for a branch/remote-tracking ref menu,
+  // used identically by the graph pills AND the sidebar rows. Resolves tip +
+  // isHead from the current `branches` snapshot by name so the two surfaces can
+  // never diverge. Returns [] (menu does not open) when: no snapshot; the entry
+  // is missing; or the entry is the current local HEAD branch.
+  function branchMenuItems(
+    name: string,
+    kind: 'localBranch' | 'remoteBranch',
+  ): ContextMenuItem[] {
+    const snapshot = branches;
+    if (snapshot === null) return [];
+    const cur = headBranch?.name ?? null;
+    const gate = mutating || opActive;
+    const headUnborn = head === null || head.unborn;
+    const entry =
+      kind === 'localBranch'
+        ? snapshot.local.find((b) => b.name === name)
+        : snapshot.remote.find((r) => r.name === name);
+    if (entry === undefined) return [];
+    const isHead = kind === 'localBranch' ? (entry as BranchInfo).isHead : false;
+    if (isHead) return [];
+    const tip = entry.tip;
+    const items: ContextMenuItem[] = [
+      {
+        label: 'Checkout',
+        disabled: gate,
+        onSelect: () =>
+          void (kind === 'remoteBranch'
+            ? handleCheckoutRemote(name)
+            : handleCheckoutBranch(name)),
+      },
+    ];
+    if (cur !== null) {
+      items.push({
+        label: `Merge ${name} into ${cur}`,
+        disabled: gate,
+        onSelect: () => void handleMergeBranch(name),
+      });
+      items.push({
+        label: `Rebase ${cur} onto ${name}`,
+        disabled: gate,
+        onSelect: () => void handleRebaseBranch(name),
+      });
+    }
+    if (!headUnborn) {
+      items.push({
+        label: 'Compare with HEAD',
+        disabled: false,
+        onSelect: () => handleCompareWithHead(tip),
+      });
+    }
+    items.push({
+      label: 'Delete',
+      disabled: gate,
+      onSelect: () =>
+        kind === 'remoteBranch' ? setPendingDeleteRemote(name) : setPendingDeleteBranch(name),
+    });
+    return items;
+  }
+
+  // P5 §5.2 / P6 §4.2: build the right-click menu items for a graph target. Ref
+  // pills delegate to the shared branchMenuItems builder; commit rows offer
   // "Compare with HEAD" (read-only; unavailable when HEAD is unborn).
   function buildContextItems(target: GraphContextTarget): ContextMenuItem[] {
     if (target.kind === 'ref') {
-      const cur = headBranch?.name ?? null;
-      if (cur === null) return [];
       const r = target.ref;
       if (r.kind === 'tag' || r.kind === 'head') return [];
-      if (r.kind === 'localBranch' && r.isHead) return [];
-      // localBranch (non-head) | remoteBranch → merge/rebase against current.
-      return [
-        {
-          label: `Merge ${r.name} into ${cur}`,
-          disabled: mutating || opActive,
-          onSelect: () => void handleMergeBranch(r.name),
-        },
-        {
-          label: `Rebase ${cur} onto ${r.name}`,
-          disabled: mutating || opActive,
-          onSelect: () => void handleRebaseBranch(r.name),
-        },
-      ];
+      return branchMenuItems(r.name, r.kind === 'remoteBranch' ? 'remoteBranch' : 'localBranch');
     }
     // Commit row → Compare with HEAD (unavailable for unborn HEAD, §1.3).
     if (head === null || head.unborn) return [];
@@ -999,6 +1078,19 @@ export function RepoWorkspace({
   function handleGraphContextMenu(target: GraphContextTarget, clientX: number, clientY: number) {
     const items = buildContextItems(target);
     if (items.length === 0) return; // no valid actions → menu does not open
+    setMenu({ x: clientX, y: clientY, items });
+  }
+
+  // P6 §4.3: right-click a sidebar branch/remote row → open the SAME shared menu
+  // at the cursor. Empty items (current branch, missing entry) → no menu.
+  function handleSidebarContextMenu(
+    name: string,
+    kind: 'localBranch' | 'remoteBranch',
+    clientX: number,
+    clientY: number,
+  ) {
+    const items = branchMenuItems(name, kind);
+    if (items.length === 0) return;
     setMenu({ x: clientX, y: clientY, items });
   }
 
@@ -1183,11 +1275,8 @@ export function RepoWorkspace({
           opActive={opActive}
           currentBranch={headBranch?.name ?? null}
           onCheckout={(name) => void handleCheckoutBranch(name)}
-          onMergeBranch={(name) => void handleMergeBranch(name)}
-          onRebaseBranch={(name) => void handleRebaseBranch(name)}
-          onDelete={(name) => void handleDeleteBranch(name)}
+          onContextMenu={handleSidebarContextMenu}
           onCreateBranch={handleCreateBranch}
-          onDialogOpenChange={setDialogOpen}
           width={paneWidths.sidebar}
           listView={listView}
         />
@@ -1322,6 +1411,43 @@ export function RepoWorkspace({
             resolutions will be lost.
           </div>
         )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pendingDeleteBranch !== null}
+        title="Delete branch"
+        confirmLabel="Delete branch"
+        busy={mutating}
+        onConfirm={() => {
+          const name = pendingDeleteBranch;
+          setPendingDeleteBranch(null);
+          if (name !== null) void handleDeleteBranch(name);
+        }}
+        onCancel={() => setPendingDeleteBranch(null)}
+      >
+        <div>Delete branch "<span className="mono">{pendingDeleteBranch ?? ''}</span>"?</div>
+        <div className="dialog-body-note">
+          The branch is fully merged, but this cannot be undone from Bonsai.
+        </div>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pendingDeleteRemote !== null}
+        title="Delete remote-tracking reference"
+        confirmLabel="Delete reference"
+        busy={mutating}
+        onConfirm={() => {
+          const name = pendingDeleteRemote;
+          setPendingDeleteRemote(null);
+          if (name !== null) void handleDeleteRemoteTracking(name);
+        }}
+        onCancel={() => setPendingDeleteRemote(null)}
+      >
+        <div>Delete the remote-tracking reference "<span className="mono">{pendingDeleteRemote ?? ''}</span>"?</div>
+        <div className="dialog-body-note">
+          This removes only Bonsai's local copy of the remote branch. It does NOT delete the branch on
+          the server — a future fetch may recreate it.
+        </div>
       </ConfirmDialog>
 
       {menu !== null && (

@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { BranchInfo, BranchesSnapshot, ListView } from '../ipc';
 import { errorMessage } from '../utils/errors';
 import { buildPathTree } from '../utils/pathTree';
-import { ConfirmDialog } from './ConfirmDialog';
 import { Tree } from './Tree';
 
 function shortOid(oid: string): string {
@@ -34,29 +33,20 @@ export interface SidebarProps {
    * merge affordance is hidden without one. */
   currentBranch: string | null;
   onCheckout(name: string): void;
-  /** P3c §8.6: merge this branch (local or remote shorthand) into current. */
-  onMergeBranch(name: string): void;
-  /** P3d §8.6: rebase the current branch onto this branch (local or remote shorthand). */
-  onRebaseBranch(name: string): void;
-  /** Called ONLY after the confirmation dialog is confirmed (contract §4.3). */
-  onDelete(name: string): void;
+  /** P6 §4.6: right-click a branch/remote row → open the shared context menu at
+   *  the cursor. */
+  onContextMenu(
+    name: string,
+    kind: 'localBranch' | 'remoteBranch',
+    clientX: number,
+    clientY: number,
+  ): void;
   /** Resolves on success (input clears+closes); rejects with AppError (shown inline). */
   onCreateBranch(name: string): Promise<void>;
-  /** P1 §6.2: lifted so App's global shortcut handler can suppress bindings
-   *  while the delete-branch ConfirmDialog is open. */
-  onDialogOpenChange?(open: boolean): void;
   /** P2a: persisted sidebar width in px, applied as inline style on the root. */
   width: number;
   /** P3b: flat (backend order) vs tree-grouped-by-'/' rendering of refs. */
   listView: ListView;
-}
-
-function TrashIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-      <path d="M6.3 1.5h3.4l.6 1.2h3.2v1.4H2.5V2.7h3.2l.6-1.2zM3.4 5.4h9.2l-.7 8.6a1 1 0 0 1-1 .9H5.1a1 1 0 0 1-1-.9l-.7-8.6zM6 7v6h1.2V7H6zm2.8 0v6H10V7H8.8z" />
-    </svg>
-  );
 }
 
 function SectionHeader({
@@ -103,23 +93,21 @@ function AheadBehindBadge({ branch }: { branch: BranchInfo }) {
 function BranchRow({
   branch,
   busy,
-  currentBranch,
   onCheckout,
-  onMerge,
-  onRebase,
-  onAskDelete,
+  onContextMenu,
   displayName,
 }: {
   branch: BranchInfo;
   busy: boolean;
-  /** null = detached/unborn — the merge/rebase affordances are hidden. */
-  currentBranch: string | null;
   onCheckout(name: string): void;
-  onMerge(name: string): void;
-  onRebase(name: string): void;
-  onAskDelete(name: string): void;
-  /** P3b tree mode: visible basename; ALL semantics (title, checkout, delete,
-   *  badge, head glyph) keep using the full branch.name. */
+  onContextMenu(
+    name: string,
+    kind: 'localBranch' | 'remoteBranch',
+    clientX: number,
+    clientY: number,
+  ): void;
+  /** P3b tree mode: visible basename; ALL semantics (title, checkout, badge,
+   *  head glyph, menu) keep using the full branch.name. */
   displayName?: string;
 }) {
   return (
@@ -129,60 +117,16 @@ function BranchRow({
         // GitKraken muscle memory: double-click checks out (contract §4.2).
         if (!branch.isHead && !busy) onCheckout(branch.name);
       }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu(branch.name, 'localBranch', e.clientX, e.clientY);
+      }}
     >
       <span className="branch-glyph">{branch.isHead ? '●' : '⎇'}</span>
       <span className="branch-name" title={branch.name}>
         {displayName ?? branch.name}
       </span>
       <AheadBehindBadge branch={branch} />
-      {!branch.isHead && (
-        <>
-          <button
-            type="button"
-            className="row-action"
-            aria-label={`Checkout ${branch.name}`}
-            title={`Checkout ${branch.name}`}
-            disabled={busy}
-            onClick={() => onCheckout(branch.name)}
-          >
-            {'⇄'}
-          </button>
-          {currentBranch !== null && (
-            <button
-              type="button"
-              className="row-action"
-              aria-label={`Merge ${branch.name} into ${currentBranch}`}
-              title={`Merge ${branch.name} into ${currentBranch}`}
-              disabled={busy}
-              onClick={() => onMerge(branch.name)}
-            >
-              {'⇋'}
-            </button>
-          )}
-          {currentBranch !== null && (
-            <button
-              type="button"
-              className="row-action"
-              aria-label={`Rebase ${currentBranch} onto ${branch.name}`}
-              title={`Rebase ${currentBranch} onto ${branch.name}`}
-              disabled={busy}
-              onClick={() => onRebase(branch.name)}
-            >
-              {'⤵'}
-            </button>
-          )}
-          <button
-            type="button"
-            className="row-action"
-            aria-label={`Delete ${branch.name}`}
-            title={`Delete ${branch.name}`}
-            disabled={busy}
-            onClick={() => onAskDelete(branch.name)}
-          >
-            <TrashIcon />
-          </button>
-        </>
-      )}
     </li>
   );
 }
@@ -190,48 +134,29 @@ function BranchRow({
 function RemoteRow({
   name,
   displayName,
-  busy,
-  currentBranch,
-  onMerge,
-  onRebase,
+  onContextMenu,
 }: {
   name: string;
   displayName?: string;
-  busy: boolean;
-  currentBranch: string | null;
-  onMerge(name: string): void;
-  onRebase(name: string): void;
+  onContextMenu(
+    name: string,
+    kind: 'localBranch' | 'remoteBranch',
+    clientX: number,
+    clientY: number,
+  ): void;
 }) {
   return (
-    <li className="branch-row branch-row-readonly">
+    <li
+      className="branch-row branch-row-readonly"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu(name, 'remoteBranch', e.clientX, e.clientY);
+      }}
+    >
       <span className="branch-glyph">{'☁'}</span>
       <span className="branch-name branch-name-muted" title={name}>
         {displayName ?? name}
       </span>
-      {currentBranch !== null && (
-        <button
-          type="button"
-          className="row-action"
-          aria-label={`Merge ${name} into ${currentBranch}`}
-          title={`Merge ${name} into ${currentBranch}`}
-          disabled={busy}
-          onClick={() => onMerge(name)}
-        >
-          {'⇋'}
-        </button>
-      )}
-      {currentBranch !== null && (
-        <button
-          type="button"
-          className="row-action"
-          aria-label={`Rebase ${currentBranch} onto ${name}`}
-          title={`Rebase ${currentBranch} onto ${name}`}
-          disabled={busy}
-          onClick={() => onRebase(name)}
-        >
-          {'⤵'}
-        </button>
-      )}
     </li>
   );
 }
@@ -268,11 +193,8 @@ export function Sidebar({
   opActive,
   currentBranch,
   onCheckout,
-  onMergeBranch,
-  onRebaseBranch,
-  onDelete,
+  onContextMenu,
   onCreateBranch,
-  onDialogOpenChange,
   width,
   listView,
 }: SidebarProps) {
@@ -283,8 +205,6 @@ export function Sidebar({
   const [createOpen, setCreateOpen] = useState(false);
   const [createValue, setCreateValue] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
-
-  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   // P3c §8.5: while an operation is in progress, every branch mutation
   // (checkout / delete / create / merge) is disabled.
@@ -314,10 +234,6 @@ export function Sidebar({
     () => (treeMode && data !== null ? buildPathTree(data.tags, (t) => t) : []),
     [treeMode, data],
   );
-
-  useEffect(() => {
-    onDialogOpenChange?.(pendingDelete !== null);
-  }, [pendingDelete, onDialogOpenChange]);
 
   function closeCreate() {
     setCreateOpen(false);
@@ -429,11 +345,8 @@ export function Sidebar({
                         key={branch.name}
                         branch={branch}
                         busy={actionsDisabled}
-                        currentBranch={currentBranch}
                         onCheckout={onCheckout}
-                        onMerge={onMergeBranch}
-                        onRebase={onRebaseBranch}
-                        onAskDelete={setPendingDelete}
+                        onContextMenu={onContextMenu}
                       />
                     ))}
                 </ul>
@@ -451,11 +364,8 @@ export function Sidebar({
                       <BranchRow
                         branch={l.item}
                         busy={actionsDisabled}
-                        currentBranch={currentBranch}
                         onCheckout={onCheckout}
-                        onMerge={onMergeBranch}
-                        onRebase={onRebaseBranch}
-                        onAskDelete={setPendingDelete}
+                        onContextMenu={onContextMenu}
                         displayName={l.name}
                       />
                     )}
@@ -487,24 +397,14 @@ export function Sidebar({
                     <RemoteRow
                       name={l.item.name}
                       displayName={l.name}
-                      busy={actionsDisabled}
-                      currentBranch={currentBranch}
-                      onMerge={onMergeBranch}
-                      onRebase={onRebaseBranch}
+                      onContextMenu={onContextMenu}
                     />
                   )}
                 />
               ) : (
                 <ul className="branch-list">
                   {data.remote.map((r) => (
-                    <RemoteRow
-                      key={r.name}
-                      name={r.name}
-                      busy={actionsDisabled}
-                      currentBranch={currentBranch}
-                      onMerge={onMergeBranch}
-                      onRebase={onRebaseBranch}
-                    />
+                    <RemoteRow key={r.name} name={r.name} onContextMenu={onContextMenu} />
                   ))}
                 </ul>
               ))}
@@ -537,28 +437,6 @@ export function Sidebar({
           </section>
         </>
       )}
-
-      <ConfirmDialog
-        open={pendingDelete !== null}
-        title="Delete branch"
-        confirmLabel="Delete branch"
-        busy={busy}
-        onConfirm={() => {
-          const name = pendingDelete;
-          setPendingDelete(null);
-          if (name !== null) onDelete(name);
-        }}
-        onCancel={() => setPendingDelete(null)}
-      >
-        <div>
-          Delete branch {'"'}
-          <span className="mono">{pendingDelete ?? ''}</span>
-          {'"'}?
-        </div>
-        <div className="dialog-body-note">
-          The branch is fully merged, but this cannot be undone from Bonsai.
-        </div>
-      </ConfirmDialog>
     </aside>
   );
 }

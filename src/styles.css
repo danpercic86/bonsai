@@ -1708,6 +1708,8 @@ span.file-row-main {
   min-width: 0;
   border-radius: 4px;
   padding: 0 4px;
+  /* P6 §4.7: right-click opens the context menu — don't select the label text. */
+  user-select: none;
 }
 
 .branch-row:hover {
@@ -1756,18 +1758,6 @@ span.file-row-main {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-3);
-}
-
-/* Hover-revealed branch row actions (same pattern as .file-row). */
-.branch-row:hover .row-action,
-.branch-row .row-action:focus-visible {
-  opacity: 1;
-}
-
-.branch-row .row-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .branch-muted {
