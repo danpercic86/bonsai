@@ -111,7 +111,15 @@ definition of done.
 
 ## P3 — Diff overlay, trees, merge/rebase, multi-repo tabs — **in-progress** (2026-07-28)
 
-Current step: P3d — IN PROGRESS. User said "proceed to P3d" (2026-07-29) without confirming the P3c
+Current step: P3e — IN PROGRESS. Contract written: docs/contracts/P3e-multi-repo-tabs.md (5 sub-increments
+P3e-a..e). Orchestrator resolved §10 open Qs: repoId==canonical path; focus-rescan=active-tab-only;
+tab branch/dirty badge + toast repo-prefix DEFERRED to polish (keep TabStrip lean). Now: P3e-a backend
+(state.rs keyed HashMap + thread repo_id through 26 commands + open_repo→OpenRepoResult + close_repo +
+RepoChangedPayload.repoId + isolation tests). senior-dev in flight.
+P3d AI gate PASSED + committed (56a43f7/f902ce0/c39af2a/95141ba); awaiting USER CHECKPOINT (debt below).
+
+--- P3d history (complete) ---
+User said "proceed to P3d" (2026-07-29) without confirming the P3c
 USER CHECKPOINT; proceeding with development per that instruction. Contract written + orchestrator-reviewed:
 docs/contracts/P3d-rebase.md (plain non-interactive rebase; reuses P3c opstate.rs/conflict.rs/OpBanner
 verbatim; RepoOpState::Rebase wire type unchanged; on-disk state re-opened per call, no cleanup_state

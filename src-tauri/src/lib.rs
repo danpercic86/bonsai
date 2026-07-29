@@ -17,6 +17,7 @@ pub fn run() {
         .manage(state::AppState::default())
         .invoke_handler(tauri::generate_handler![
             commands::open_repo,
+            commands::close_repo,
             commands::get_status,
             commands::get_graph,
             commands::stage,

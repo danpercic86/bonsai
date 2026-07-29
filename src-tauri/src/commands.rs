@@ -14,15 +14,31 @@ use crate::git::stage::{stage_paths, unstage_paths};
 use crate::git::status::{read_status, StatusSnapshot};
 use crate::graph::{compute_graph, GraphLayout};
 use crate::settings::{self, clamp_pane_widths, ListView, PaneWidths, RecentRepo, ThemeChoice};
-use crate::state::{AppState, OpenRepo};
+use crate::state::{AppState, RepoEntry};
 use crate::watcher::spawn_watcher;
 
 /// Payload of the `"repo-changed"` event. `reason` is `"fs"` in M1; future
-/// reasons (e.g. `"op"` after a commit) reuse this event.
+/// reasons (e.g. `"op"` after a commit) reuse this event. `repo_id` identifies
+/// which open repo's watcher fired so the frontend can route it to the right
+/// tab (P3e contract §4.1).
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoChangedPayload {
+    pub repo_id: String,
     pub reason: String,
+}
+
+/// Result of `open_repo`: the resolved `repoId` plus the repo info (P3e
+/// contract §4.2).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenRepoResult {
+    /// Canonical workdir path (P3e contract §2). Meaningful (a map entry
+    /// exists) only when `info` is a usable repo; still returned for
+    /// non-usable opens so the frontend can key its error UI, but no
+    /// entry/watcher is created.
+    pub repo_id: String,
+    pub info: RepoInfo,
 }
 
 /// Opens the folder at `path` as a repository and reports its state.
@@ -31,33 +47,41 @@ pub struct RepoChangedPayload {
 /// get no watcher — Bonsai v1 is a working-copy client (M1 contract §3.3).
 /// The frontend treats `bare: true` like `isRepo: false`.
 ///
-/// For non-bare repos this (re)starts the file watcher: any previous watcher
-/// is dropped first, so re-invoking on the same path is idempotent and
+/// For usable (non-bare) repos this inserts a `RepoEntry` keyed by the
+/// canonical workdir path (`repoId`, P3e contract §2) and (re)arms that
+/// entry's file watcher: re-invoking on the same path is idempotent and
 /// self-heals a dead watcher (this is what the refresh button relies on).
+/// Opening an already-open path (case-insensitive match) FOCUSES the existing
+/// entry — its id is returned, no duplicate is created.
 ///
-/// Any `open_repo` call replaces the app's notion of "current repo": an
-/// unsuccessful open (non-repo or bare) leaves NO repo open — both the stored
-/// repo and the watcher are cleared, so `get_status` returns `NoRepo`.
+/// A non-usable open (non-repo or bare) inserts NO entry and touches no other
+/// entry — there is no single "current repo" anymore, so other tabs are
+/// unaffected.
 #[tauri::command]
 pub async fn open_repo(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     path: String,
-) -> Result<RepoInfo, AppError> {
+) -> Result<OpenRepoResult, AppError> {
     let emit_app = app.clone();
-    let info = open_repo_inner(
+    let result = open_repo_inner(
         state.inner(),
         path,
-        Box::new(move || {
-            let _ = emit_app.emit(
-                "repo-changed",
-                RepoChangedPayload {
-                    reason: "fs".to_string(),
-                },
-            );
-        }),
+        move |repo_id: String| {
+            let emit_app = emit_app.clone();
+            Box::new(move || {
+                let _ = emit_app.emit(
+                    "repo-changed",
+                    RepoChangedPayload {
+                        repo_id: repo_id.clone(),
+                        reason: "fs".to_string(),
+                    },
+                );
+            })
+        },
     )
     .await?;
+    let info = &result.info;
 
     // Recents hook (P1 contract §3.2): record every successful usable open.
     // Uses `info.path` (canonical workdir root), not the raw argument, so
@@ -92,7 +116,7 @@ pub async fn open_repo(
             }
         }
     }
-    Ok(info)
+    Ok(result)
 }
 
 /// Recent successfully-opened repos, most recent first, max 10. Never rejects
@@ -204,142 +228,176 @@ pub async fn set_ui_settings(
 }
 
 /// Runtime-free core of `open_repo` (unit-testable without a Tauri app).
-/// `on_change` is what the watcher fires on debounced filesystem changes; the
-/// command wires it to an app-wide `"repo-changed"` emit.
-async fn open_repo_inner(
+/// `make_on_change` is given the resolved `repo_id` and returns the watcher
+/// callback for that repo; the command wires it to an app-wide
+/// `"repo-changed"` emit carrying that id. Tests pass `|_id| Box::new(|| {})`
+/// (no Tauri runtime).
+async fn open_repo_inner<F>(
     state: &AppState,
     path: String,
-    on_change: Box<dyn Fn() + Send + 'static>,
-) -> Result<RepoInfo, AppError> {
+    make_on_change: F,
+) -> Result<OpenRepoResult, AppError>
+where
+    F: FnOnce(String) -> Box<dyn Fn() + Send + 'static>,
+{
     let path_buf = std::path::PathBuf::from(&path);
     let info = tauri::async_runtime::spawn_blocking(move || read_repo_info(&path_buf))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))??;
 
+    // repoId == canonical workdir path string (P3e contract §2).
+    let mut repo_id = info.path.clone();
+
     if info.is_repo && !info.bare {
         let workdir = std::path::PathBuf::from(&info.path);
 
-        // Stop any previous watcher BEFORE storing the new repo path: the old
-        // handle drops here, its debounce thread joins.
+        // Dedupe scan (P3e contract §2): if a case-insensitive match is already
+        // open, reuse its exact key so we FOCUS it instead of inserting a
+        // duplicate. Only compute the callback once we know the final id.
         {
-            let mut watcher = state
-                .watcher
+            let repos = state
+                .repos
                 .lock()
                 .map_err(|_| AppError::Other("state lock poisoned".to_string()))?;
-            *watcher = None;
+            if let Some(existing) = repos
+                .keys()
+                .find(|k| k.eq_ignore_ascii_case(&repo_id))
+                .cloned()
+            {
+                repo_id = existing;
+            }
         }
 
-        {
-            let mut repo = state
-                .repo
-                .lock()
-                .map_err(|_| AppError::Other("state lock poisoned".to_string()))?;
-            *repo = Some(OpenRepo {
-                path: workdir.clone(),
-            });
-        }
+        let on_change = make_on_change(repo_id.clone());
 
         // Watch failure is non-fatal (M1 contract §4): manual refresh + focus
-        // rescan keep the app correct even without filesystem events.
-        match spawn_watcher(&workdir, on_change) {
-            Ok(handle) => {
-                let mut watcher = state
-                    .watcher
-                    .lock()
-                    .map_err(|_| AppError::Other("state lock poisoned".to_string()))?;
-                *watcher = Some(handle);
-            }
+        // rescan keep the app correct even without filesystem events. Build the
+        // handle OUTSIDE the map lock (the initial watch registration is
+        // synchronous), then insert/replace the entry under the lock. Replacing
+        // an existing entry drops its old watcher here (self-heal); to keep
+        // that drop-join off the map lock we take the old entry out first.
+        let watcher = match spawn_watcher(&workdir, on_change) {
+            Ok(handle) => Some(handle),
             Err(e) => {
                 eprintln!("bonsai: file watcher failed to start (falling back to manual refresh): {e}");
+                None
             }
-        }
-    } else {
-        // Unsuccessful open (non-repo or bare): the previous repo is no longer
-        // "current". Drop the watcher first (its debounce thread joins), then
-        // clear the stored repo so get_status returns NoRepo.
-        {
-            let mut watcher = state
-                .watcher
+        };
+
+        let previous = {
+            let mut repos = state
+                .repos
                 .lock()
                 .map_err(|_| AppError::Other("state lock poisoned".to_string()))?;
-            *watcher = None;
-        }
-        {
-            let mut repo = state
-                .repo
-                .lock()
-                .map_err(|_| AppError::Other("state lock poisoned".to_string()))?;
-            *repo = None;
-        }
+            repos.insert(
+                repo_id.clone(),
+                RepoEntry {
+                    path: workdir,
+                    watcher,
+                },
+            )
+        };
+        // Drop the replaced entry (its watcher's debounce thread joins) off the
+        // map lock.
+        drop(previous);
     }
-    Ok(info)
+    // Non-usable open (non-repo or bare): insert nothing, touch no other entry.
+
+    Ok(OpenRepoResult { repo_id, info })
 }
 
-/// Computes the working-directory status of the currently open repository.
+/// Closes the tab identified by `repo_id`, stopping just that repo's watcher.
+/// Idempotent: closing an unknown/already-closed id is `Ok(())` (P3e contract
+/// §4.3).
 #[tauri::command]
-pub async fn get_status(state: tauri::State<'_, AppState>) -> Result<StatusSnapshot, AppError> {
-    get_status_inner(state.inner()).await
+pub async fn close_repo(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<(), AppError> {
+    close_repo_inner(state.inner(), &repo_id).await
+}
+
+/// Runtime-free core of `close_repo` (unit-testable without a Tauri app).
+async fn close_repo_inner(state: &AppState, repo_id: &str) -> Result<(), AppError> {
+    // Take the entry out UNDER the lock, then drop it OUTSIDE the lock so the
+    // WatcherHandle's debounce-thread join (≤ ~300 ms) doesn't hold the map
+    // lock.
+    let entry = {
+        let mut repos = state
+            .repos
+            .lock()
+            .map_err(|_| AppError::Other("state lock poisoned".to_string()))?;
+        repos.remove(repo_id)
+    };
+    drop(entry); // watcher stops, debounce thread joins here
+    Ok(())
+}
+
+/// Computes the working-directory status of `repo_id`.
+#[tauri::command]
+pub async fn get_status(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<StatusSnapshot, AppError> {
+    get_status_inner(state.inner(), &repo_id).await
 }
 
 /// Runtime-free core of `get_status` (unit-testable without a Tauri app).
-async fn get_status_inner(state: &AppState) -> Result<StatusSnapshot, AppError> {
-    let path = {
-        let repo = state
-            .repo
-            .lock()
-            .map_err(|_| AppError::Other("state lock poisoned".to_string()))?;
-        repo.as_ref().ok_or(AppError::NoRepo)?.path.clone()
-    };
-
+async fn get_status_inner(state: &AppState, repo_id: &str) -> Result<StatusSnapshot, AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || read_status(&path))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
-/// Computes the full commit-graph layout of the currently open repository.
+/// Computes the full commit-graph layout of `repo_id`.
 ///
 /// Unborn-HEAD / zero-ref repos yield an empty layout (M2 contract §2.1),
-/// not an error; `NoRepo` when nothing is open.
+/// not an error; `NoRepo` when nothing is open under that id.
 #[tauri::command]
-pub async fn get_graph(state: tauri::State<'_, AppState>) -> Result<GraphLayout, AppError> {
-    get_graph_inner(state.inner()).await
+pub async fn get_graph(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<GraphLayout, AppError> {
+    get_graph_inner(state.inner(), &repo_id).await
 }
 
 /// Runtime-free core of `get_graph` (unit-testable without a Tauri app).
-async fn get_graph_inner(state: &AppState) -> Result<GraphLayout, AppError> {
-    let path = {
-        let repo = state
-            .repo
-            .lock()
-            .map_err(|_| AppError::Other("state lock poisoned".to_string()))?;
-        repo.as_ref().ok_or(AppError::NoRepo)?.path.clone()
-    };
-
+async fn get_graph_inner(state: &AppState, repo_id: &str) -> Result<GraphLayout, AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || compute_graph(&path))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
-/// Path of the currently open repo, or `NoRepo`.
-fn current_repo_path(state: &AppState) -> Result<std::path::PathBuf, AppError> {
-    let repo = state
-        .repo
+/// Canonical workdir path for `repo_id`, or `NoRepo` if it isn't open
+/// (P3e contract §3).
+fn repo_path(state: &AppState, repo_id: &str) -> Result<std::path::PathBuf, AppError> {
+    let repos = state
+        .repos
         .lock()
         .map_err(|_| AppError::Other("state lock poisoned".to_string()))?;
-    Ok(repo.as_ref().ok_or(AppError::NoRepo)?.path.clone())
+    repos
+        .get(repo_id)
+        .map(|e| e.path.clone())
+        .ok_or(AppError::NoRepo)
 }
 
 /// Stages the given worktree-relative paths (atomic batch, M3 contract §2.2).
 /// Does NOT emit `repo-changed` — the frontend refetches imperatively after
 /// every successful mutation (§2.7).
 #[tauri::command]
-pub async fn stage(state: tauri::State<'_, AppState>, paths: Vec<String>) -> Result<(), AppError> {
-    stage_inner(state.inner(), paths).await
+pub async fn stage(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    paths: Vec<String>,
+) -> Result<(), AppError> {
+    stage_inner(state.inner(), &repo_id, paths).await
 }
 
 /// Runtime-free core of `stage` (unit-testable without a Tauri app).
-async fn stage_inner(state: &AppState, paths: Vec<String>) -> Result<(), AppError> {
-    let path = current_repo_path(state)?;
+async fn stage_inner(state: &AppState, repo_id: &str, paths: Vec<String>) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || stage_paths(&path, &paths))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -350,14 +408,19 @@ async fn stage_inner(state: &AppState, paths: Vec<String>) -> Result<(), AppErro
 #[tauri::command]
 pub async fn unstage(
     state: tauri::State<'_, AppState>,
+    repo_id: String,
     paths: Vec<String>,
 ) -> Result<(), AppError> {
-    unstage_inner(state.inner(), paths).await
+    unstage_inner(state.inner(), &repo_id, paths).await
 }
 
 /// Runtime-free core of `unstage` (unit-testable without a Tauri app).
-async fn unstage_inner(state: &AppState, paths: Vec<String>) -> Result<(), AppError> {
-    let path = current_repo_path(state)?;
+async fn unstage_inner(
+    state: &AppState,
+    repo_id: &str,
+    paths: Vec<String>,
+) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || unstage_paths(&path, &paths))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -368,14 +431,19 @@ async fn unstage_inner(state: &AppState, paths: Vec<String>) -> Result<(), AppEr
 #[tauri::command]
 pub async fn commit(
     state: tauri::State<'_, AppState>,
+    repo_id: String,
     message: String,
 ) -> Result<CommitResult, AppError> {
-    commit_inner(state.inner(), message).await
+    commit_inner(state.inner(), &repo_id, message).await
 }
 
 /// Runtime-free core of `commit` (unit-testable without a Tauri app).
-async fn commit_inner(state: &AppState, message: String) -> Result<CommitResult, AppError> {
-    let path = current_repo_path(state)?;
+async fn commit_inner(
+    state: &AppState,
+    repo_id: &str,
+    message: String,
+) -> Result<CommitResult, AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || create_commit(&path, &message))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -387,23 +455,25 @@ async fn commit_inner(state: &AppState, message: String) -> Result<CommitResult,
 #[tauri::command]
 pub async fn get_workdir_file_diff(
     state: tauri::State<'_, AppState>,
+    repo_id: String,
     path: String,
     orig_path: Option<String>,
     staged: bool,
 ) -> Result<FileDiff, AppError> {
-    get_workdir_file_diff_inner(state.inner(), path, orig_path, staged).await
+    get_workdir_file_diff_inner(state.inner(), &repo_id, path, orig_path, staged).await
 }
 
 /// Runtime-free core of `get_workdir_file_diff` (unit-testable without a Tauri app).
 async fn get_workdir_file_diff_inner(
     state: &AppState,
+    repo_id: &str,
     path: String,
     orig_path: Option<String>,
     staged: bool,
 ) -> Result<FileDiff, AppError> {
-    let repo_path = current_repo_path(state)?;
+    let workdir = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        workdir_file_diff(&repo_path, &path, orig_path.as_deref(), staged)
+        workdir_file_diff(&workdir, &path, orig_path.as_deref(), staged)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -414,15 +484,20 @@ async fn get_workdir_file_diff_inner(
 #[tauri::command]
 pub async fn get_commit_diff(
     state: tauri::State<'_, AppState>,
+    repo_id: String,
     oid: String,
 ) -> Result<CommitDiff, AppError> {
-    get_commit_diff_inner(state.inner(), oid).await
+    get_commit_diff_inner(state.inner(), &repo_id, oid).await
 }
 
 /// Runtime-free core of `get_commit_diff` (unit-testable without a Tauri app).
-async fn get_commit_diff_inner(state: &AppState, oid: String) -> Result<CommitDiff, AppError> {
-    let repo_path = current_repo_path(state)?;
-    tauri::async_runtime::spawn_blocking(move || commit_diff(&repo_path, &oid))
+async fn get_commit_diff_inner(
+    state: &AppState,
+    repo_id: &str,
+    oid: String,
+) -> Result<CommitDiff, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || commit_diff(&workdir, &oid))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
@@ -431,23 +506,25 @@ async fn get_commit_diff_inner(state: &AppState, oid: String) -> Result<CommitDi
 #[tauri::command]
 pub async fn get_commit_file_diff(
     state: tauri::State<'_, AppState>,
+    repo_id: String,
     oid: String,
     path: String,
     orig_path: Option<String>,
 ) -> Result<FileDiff, AppError> {
-    get_commit_file_diff_inner(state.inner(), oid, path, orig_path).await
+    get_commit_file_diff_inner(state.inner(), &repo_id, oid, path, orig_path).await
 }
 
 /// Runtime-free core of `get_commit_file_diff` (unit-testable without a Tauri app).
 async fn get_commit_file_diff_inner(
     state: &AppState,
+    repo_id: &str,
     oid: String,
     path: String,
     orig_path: Option<String>,
 ) -> Result<FileDiff, AppError> {
-    let repo_path = current_repo_path(state)?;
+    let workdir = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        commit_file_diff(&repo_path, &oid, &path, orig_path.as_deref())
+        commit_file_diff(&workdir, &oid, &path, orig_path.as_deref())
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -458,13 +535,17 @@ async fn get_commit_file_diff_inner(
 #[tauri::command]
 pub async fn list_branches(
     state: tauri::State<'_, AppState>,
+    repo_id: String,
 ) -> Result<BranchesSnapshot, AppError> {
-    list_branches_inner(state.inner()).await
+    list_branches_inner(state.inner(), &repo_id).await
 }
 
 /// Runtime-free core of `list_branches` (unit-testable without a Tauri app).
-async fn list_branches_inner(state: &AppState) -> Result<BranchesSnapshot, AppError> {
-    let path = current_repo_path(state)?;
+async fn list_branches_inner(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<BranchesSnapshot, AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || branches::list_refs(&path))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -476,14 +557,19 @@ async fn list_branches_inner(state: &AppState) -> Result<BranchesSnapshot, AppEr
 #[tauri::command]
 pub async fn create_branch(
     state: tauri::State<'_, AppState>,
+    repo_id: String,
     name: String,
 ) -> Result<(), AppError> {
-    create_branch_inner(state.inner(), name).await
+    create_branch_inner(state.inner(), &repo_id, name).await
 }
 
 /// Runtime-free core of `create_branch` (unit-testable without a Tauri app).
-async fn create_branch_inner(state: &AppState, name: String) -> Result<(), AppError> {
-    let path = current_repo_path(state)?;
+async fn create_branch_inner(
+    state: &AppState,
+    repo_id: &str,
+    name: String,
+) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || branches::create_branch(&path, &name))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -494,14 +580,19 @@ async fn create_branch_inner(state: &AppState, name: String) -> Result<(), AppEr
 #[tauri::command]
 pub async fn checkout_branch(
     state: tauri::State<'_, AppState>,
+    repo_id: String,
     name: String,
 ) -> Result<(), AppError> {
-    checkout_branch_inner(state.inner(), name).await
+    checkout_branch_inner(state.inner(), &repo_id, name).await
 }
 
 /// Runtime-free core of `checkout_branch` (unit-testable without a Tauri app).
-async fn checkout_branch_inner(state: &AppState, name: String) -> Result<(), AppError> {
-    let path = current_repo_path(state)?;
+async fn checkout_branch_inner(
+    state: &AppState,
+    repo_id: &str,
+    name: String,
+) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || branches::checkout_branch(&path, &name))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -513,14 +604,19 @@ async fn checkout_branch_inner(state: &AppState, name: String) -> Result<(), App
 #[tauri::command]
 pub async fn delete_branch(
     state: tauri::State<'_, AppState>,
+    repo_id: String,
     name: String,
 ) -> Result<(), AppError> {
-    delete_branch_inner(state.inner(), name).await
+    delete_branch_inner(state.inner(), &repo_id, name).await
 }
 
 /// Runtime-free core of `delete_branch` (unit-testable without a Tauri app).
-async fn delete_branch_inner(state: &AppState, name: String) -> Result<(), AppError> {
-    let path = current_repo_path(state)?;
+async fn delete_branch_inner(
+    state: &AppState,
+    repo_id: &str,
+    name: String,
+) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || branches::delete_branch(&path, &name))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -531,13 +627,16 @@ async fn delete_branch_inner(state: &AppState, name: String) -> Result<(), AppEr
 /// | `noRepo`. Does NOT emit `repo-changed` — the frontend refetches
 /// imperatively (the watcher also fires and is absorbed by request-id guards).
 #[tauri::command]
-pub async fn fetch(state: tauri::State<'_, AppState>) -> Result<FetchResult, AppError> {
-    fetch_inner(state.inner()).await
+pub async fn fetch(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<FetchResult, AppError> {
+    fetch_inner(state.inner(), &repo_id).await
 }
 
 /// Runtime-free core of `fetch` (unit-testable without a Tauri app).
-async fn fetch_inner(state: &AppState) -> Result<FetchResult, AppError> {
-    let path = current_repo_path(state)?;
+async fn fetch_inner(state: &AppState, repo_id: &str) -> Result<FetchResult, AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || fetch_all(&path))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -547,13 +646,16 @@ async fn fetch_inner(state: &AppState) -> Result<FetchResult, AppError> {
 /// Errors: `noUpstream` | `authFailed` | `networkError` | `checkoutConflict`
 /// | `git` | `noRepo`.
 #[tauri::command]
-pub async fn pull(state: tauri::State<'_, AppState>) -> Result<PullResult, AppError> {
-    pull_inner(state.inner()).await
+pub async fn pull(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<PullResult, AppError> {
+    pull_inner(state.inner(), &repo_id).await
 }
 
 /// Runtime-free core of `pull` (unit-testable without a Tauri app).
-async fn pull_inner(state: &AppState) -> Result<PullResult, AppError> {
-    let path = current_repo_path(state)?;
+async fn pull_inner(state: &AppState, repo_id: &str) -> Result<PullResult, AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || pull_ff(&path))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -563,13 +665,16 @@ async fn pull_inner(state: &AppState) -> Result<PullResult, AppError> {
 /// upstream when none (M6 contract §2.6). Never force. Errors: `noRemote`
 /// | `authFailed` | `networkError` | `pushRejected` | `git` | `noRepo`.
 #[tauri::command]
-pub async fn push(state: tauri::State<'_, AppState>) -> Result<PushResult, AppError> {
-    push_inner(state.inner()).await
+pub async fn push(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<PushResult, AppError> {
+    push_inner(state.inner(), &repo_id).await
 }
 
 /// Runtime-free core of `push` (unit-testable without a Tauri app).
-async fn push_inner(state: &AppState) -> Result<PushResult, AppError> {
-    let path = current_repo_path(state)?;
+async fn push_inner(state: &AppState, repo_id: &str) -> Result<PushResult, AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || push_current(&path))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -579,13 +684,16 @@ async fn push_inner(state: &AppState) -> Result<PushResult, AppError> {
 /// Part of the frontend refresh batch (P3c contract §6). Errors: `noRepo`
 /// | `git`.
 #[tauri::command]
-pub async fn get_op_state(state: tauri::State<'_, AppState>) -> Result<RepoOpState, AppError> {
-    get_op_state_inner(state.inner()).await
+pub async fn get_op_state(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<RepoOpState, AppError> {
+    get_op_state_inner(state.inner(), &repo_id).await
 }
 
 /// Runtime-free core of `get_op_state` (unit-testable without a Tauri app).
-async fn get_op_state_inner(state: &AppState) -> Result<RepoOpState, AppError> {
-    let path = current_repo_path(state)?;
+async fn get_op_state_inner(state: &AppState, repo_id: &str) -> Result<RepoOpState, AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || read_op_state(&path))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -598,14 +706,19 @@ async fn get_op_state_inner(state: &AppState) -> Result<RepoOpState, AppError> {
 #[tauri::command]
 pub async fn merge_branch(
     state: tauri::State<'_, AppState>,
+    repo_id: String,
     name: String,
 ) -> Result<MergeOutcome, AppError> {
-    merge_branch_inner(state.inner(), name).await
+    merge_branch_inner(state.inner(), &repo_id, name).await
 }
 
 /// Runtime-free core of `merge_branch` (unit-testable without a Tauri app).
-async fn merge_branch_inner(state: &AppState, name: String) -> Result<MergeOutcome, AppError> {
-    let path = current_repo_path(state)?;
+async fn merge_branch_inner(
+    state: &AppState,
+    repo_id: &str,
+    name: String,
+) -> Result<MergeOutcome, AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || merge::merge_branch(&path, &name))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -617,14 +730,19 @@ async fn merge_branch_inner(state: &AppState, name: String) -> Result<MergeOutco
 #[tauri::command]
 pub async fn commit_merge(
     state: tauri::State<'_, AppState>,
+    repo_id: String,
     message: String,
 ) -> Result<CommitResult, AppError> {
-    commit_merge_inner(state.inner(), message).await
+    commit_merge_inner(state.inner(), &repo_id, message).await
 }
 
 /// Runtime-free core of `commit_merge` (unit-testable without a Tauri app).
-async fn commit_merge_inner(state: &AppState, message: String) -> Result<CommitResult, AppError> {
-    let path = current_repo_path(state)?;
+async fn commit_merge_inner(
+    state: &AppState,
+    repo_id: &str,
+    message: String,
+) -> Result<CommitResult, AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || merge::commit_merge(&path, &message))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -634,13 +752,16 @@ async fn commit_merge_inner(state: &AppState, message: String) -> Result<CommitR
 /// the UI confirms first; P3c contract §4.5). Errors: `noOperationInProgress`
 /// | `git` | `noRepo`.
 #[tauri::command]
-pub async fn abort_merge(state: tauri::State<'_, AppState>) -> Result<(), AppError> {
-    abort_merge_inner(state.inner()).await
+pub async fn abort_merge(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<(), AppError> {
+    abort_merge_inner(state.inner(), &repo_id).await
 }
 
 /// Runtime-free core of `abort_merge` (unit-testable without a Tauri app).
-async fn abort_merge_inner(state: &AppState) -> Result<(), AppError> {
-    let path = current_repo_path(state)?;
+async fn abort_merge_inner(state: &AppState, repo_id: &str) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || merge::abort_merge(&path))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -651,13 +772,17 @@ async fn abort_merge_inner(state: &AppState) -> Result<(), AppError> {
 #[tauri::command]
 pub async fn list_conflicts(
     state: tauri::State<'_, AppState>,
+    repo_id: String,
 ) -> Result<Vec<ConflictEntry>, AppError> {
-    list_conflicts_inner(state.inner()).await
+    list_conflicts_inner(state.inner(), &repo_id).await
 }
 
 /// Runtime-free core of `list_conflicts` (unit-testable without a Tauri app).
-async fn list_conflicts_inner(state: &AppState) -> Result<Vec<ConflictEntry>, AppError> {
-    let path = current_repo_path(state)?;
+async fn list_conflicts_inner(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<Vec<ConflictEntry>, AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || conflict::list_conflicts(&path))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -668,15 +793,20 @@ async fn list_conflicts_inner(state: &AppState) -> Result<Vec<ConflictEntry>, Ap
 #[tauri::command]
 pub async fn get_conflict(
     state: tauri::State<'_, AppState>,
+    repo_id: String,
     path: String,
 ) -> Result<ConflictFile, AppError> {
-    get_conflict_inner(state.inner(), path).await
+    get_conflict_inner(state.inner(), &repo_id, path).await
 }
 
 /// Runtime-free core of `get_conflict` (unit-testable without a Tauri app).
-async fn get_conflict_inner(state: &AppState, path: String) -> Result<ConflictFile, AppError> {
-    let repo_path = current_repo_path(state)?;
-    tauri::async_runtime::spawn_blocking(move || conflict::get_conflict(&repo_path, &path))
+async fn get_conflict_inner(
+    state: &AppState,
+    repo_id: &str,
+    path: String,
+) -> Result<ConflictFile, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || conflict::get_conflict(&workdir, &path))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
@@ -686,21 +816,23 @@ async fn get_conflict_inner(state: &AppState, path: String) -> Result<ConflictFi
 #[tauri::command]
 pub async fn resolve_conflict(
     state: tauri::State<'_, AppState>,
+    repo_id: String,
     path: String,
     resolution: ConflictResolution,
 ) -> Result<(), AppError> {
-    resolve_conflict_inner(state.inner(), path, resolution).await
+    resolve_conflict_inner(state.inner(), &repo_id, path, resolution).await
 }
 
 /// Runtime-free core of `resolve_conflict` (unit-testable without a Tauri app).
 async fn resolve_conflict_inner(
     state: &AppState,
+    repo_id: &str,
     path: String,
     resolution: ConflictResolution,
 ) -> Result<(), AppError> {
-    let repo_path = current_repo_path(state)?;
+    let workdir = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        conflict::resolve_conflict(&repo_path, &path, resolution)
+        conflict::resolve_conflict(&workdir, &path, resolution)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -713,14 +845,19 @@ async fn resolve_conflict_inner(
 #[tauri::command]
 pub async fn rebase_branch(
     state: tauri::State<'_, AppState>,
+    repo_id: String,
     onto: String,
 ) -> Result<RebaseOutcome, AppError> {
-    rebase_branch_inner(state.inner(), onto).await
+    rebase_branch_inner(state.inner(), &repo_id, onto).await
 }
 
 /// Runtime-free core of `rebase_branch` (unit-testable without a Tauri app).
-async fn rebase_branch_inner(state: &AppState, onto: String) -> Result<RebaseOutcome, AppError> {
-    let path = current_repo_path(state)?;
+async fn rebase_branch_inner(
+    state: &AppState,
+    repo_id: &str,
+    onto: String,
+) -> Result<RebaseOutcome, AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || rebase::rebase_branch(&path, &onto))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -732,13 +869,14 @@ async fn rebase_branch_inner(state: &AppState, onto: String) -> Result<RebaseOut
 #[tauri::command]
 pub async fn rebase_continue(
     state: tauri::State<'_, AppState>,
+    repo_id: String,
 ) -> Result<RebaseOutcome, AppError> {
-    rebase_continue_inner(state.inner()).await
+    rebase_continue_inner(state.inner(), &repo_id).await
 }
 
 /// Runtime-free core of `rebase_continue` (unit-testable without a Tauri app).
-async fn rebase_continue_inner(state: &AppState) -> Result<RebaseOutcome, AppError> {
-    let path = current_repo_path(state)?;
+async fn rebase_continue_inner(state: &AppState, repo_id: &str) -> Result<RebaseOutcome, AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || rebase::rebase_continue(&path))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -747,13 +885,16 @@ async fn rebase_continue_inner(state: &AppState) -> Result<RebaseOutcome, AppErr
 /// Skips the current operation and resumes (P3d contract §3.8). Errors:
 /// `noOperationInProgress` | `configMissing` | `git` | `noRepo`.
 #[tauri::command]
-pub async fn rebase_skip(state: tauri::State<'_, AppState>) -> Result<RebaseOutcome, AppError> {
-    rebase_skip_inner(state.inner()).await
+pub async fn rebase_skip(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<RebaseOutcome, AppError> {
+    rebase_skip_inner(state.inner(), &repo_id).await
 }
 
 /// Runtime-free core of `rebase_skip` (unit-testable without a Tauri app).
-async fn rebase_skip_inner(state: &AppState) -> Result<RebaseOutcome, AppError> {
-    let path = current_repo_path(state)?;
+async fn rebase_skip_inner(state: &AppState, repo_id: &str) -> Result<RebaseOutcome, AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || rebase::rebase_skip(&path))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -762,13 +903,16 @@ async fn rebase_skip_inner(state: &AppState) -> Result<RebaseOutcome, AppError> 
 /// Aborts a paused rebase (worktree-destructive — the UI confirms first; P3d
 /// contract §3.10). Errors: `noOperationInProgress` | `git` | `noRepo`.
 #[tauri::command]
-pub async fn rebase_abort(state: tauri::State<'_, AppState>) -> Result<(), AppError> {
-    rebase_abort_inner(state.inner()).await
+pub async fn rebase_abort(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<(), AppError> {
+    rebase_abort_inner(state.inner(), &repo_id).await
 }
 
 /// Runtime-free core of `rebase_abort` (unit-testable without a Tauri app).
-async fn rebase_abort_inner(state: &AppState) -> Result<(), AppError> {
-    let path = current_repo_path(state)?;
+async fn rebase_abort_inner(state: &AppState, repo_id: &str) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || rebase::rebase_abort(&path))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -778,106 +922,147 @@ async fn rebase_abort_inner(state: &AppState) -> Result<(), AppError> {
 mod tests {
     use super::*;
 
+    const MISSING_ID: &str = "missing";
+
     fn path_string(p: &std::path::Path) -> String {
         p.to_string_lossy().into_owned()
     }
 
-    fn open(state: &AppState, path: &std::path::Path) -> Result<RepoInfo, AppError> {
+    /// Opens `path` runtime-free with a no-op watcher factory (P3e contract
+    /// §9.1: `open_repo_inner(state, path, |_id| Box::new(|| {}))`).
+    fn open(state: &AppState, path: &std::path::Path) -> Result<OpenRepoResult, AppError> {
         tauri::async_runtime::block_on(open_repo_inner(
             state,
             path_string(path),
-            Box::new(|| {}),
+            |_id| Box::new(|| {}),
         ))
     }
 
-    /// Opening a non-repo path replaces the current repo with "none open":
-    /// both the stored repo and the watcher slot are cleared.
+    /// git2-init a repo with a committable identity; returns the temp dir.
+    fn init_repo_with_identity() -> tempfile::TempDir {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let repo = git2::Repository::init(dir.path()).expect("init repo");
+        let mut cfg = repo.config().expect("open config");
+        cfg.set_str("user.name", "Test User").expect("set user.name");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("set user.email");
+        dir
+    }
+
+    /// Writes `rel` under the workdir, stages it, and commits — via the command
+    /// inners, so the whole round-trip is keyed by `repo_id`.
+    fn write_stage_commit(
+        state: &AppState,
+        repo_id: &str,
+        workdir: &std::path::Path,
+        rel: &str,
+        contents: &str,
+        message: &str,
+    ) -> CommitResult {
+        std::fs::write(workdir.join(rel), contents).expect("write file");
+        tauri::async_runtime::block_on(stage_inner(state, repo_id, vec![rel.to_string()]))
+            .expect("stage");
+        tauri::async_runtime::block_on(commit_inner(state, repo_id, message.to_string()))
+            .expect("commit")
+    }
+
+    fn repo_count(state: &AppState) -> usize {
+        state.repos.lock().expect("repos lock").len()
+    }
+
+    /// Opening a non-repo path inserts NO entry and touches no other open tab
+    /// (P3e contract §4.2 — there is no single "current repo" to clear).
     #[test]
-    fn failed_open_clears_previous_repo_and_watcher() {
+    fn failed_open_leaves_other_entries_untouched() {
         let state = AppState::default();
 
         // Open a real (empty, unborn-HEAD) repo first.
         let repo_dir = tempfile::TempDir::new().expect("create temp dir");
         git2::Repository::init(repo_dir.path()).expect("init repo");
-        let info = open(&state, repo_dir.path()).expect("open repo A");
-        assert!(info.is_repo && !info.bare);
-        tauri::async_runtime::block_on(get_status_inner(&state)).expect("status of repo A");
+        let a = open(&state, repo_dir.path()).expect("open repo A");
+        assert!(a.info.is_repo && !a.info.bare);
+        tauri::async_runtime::block_on(get_status_inner(&state, &a.repo_id))
+            .expect("status of repo A");
 
-        // Now open a plain directory: not a repo.
+        // Now open a plain directory: not a repo. No entry is created for it…
         let non_repo_dir = tempfile::TempDir::new().expect("create temp dir");
-        let info = open(&state, non_repo_dir.path()).expect("open non-repo dir");
-        assert!(!info.is_repo);
-
-        let err = tauri::async_runtime::block_on(get_status_inner(&state))
-            .expect_err("no repo must be open after a failed open");
+        let n = open(&state, non_repo_dir.path()).expect("open non-repo dir");
+        assert!(!n.info.is_repo);
+        let err = tauri::async_runtime::block_on(get_status_inner(&state, &n.repo_id))
+            .expect_err("a non-repo id must not be open");
         assert!(matches!(err, AppError::NoRepo));
 
-        assert!(state.repo.lock().expect("repo lock").is_none());
-        assert!(state.watcher.lock().expect("watcher lock").is_none());
+        // …and repo A is still open and usable.
+        tauri::async_runtime::block_on(get_status_inner(&state, &a.repo_id))
+            .expect("repo A still open after a failed open");
+        assert_eq!(repo_count(&state), 1);
     }
 
-    /// `get_graph` with nothing open returns `NoRepo`; after opening an
+    /// `get_graph` with an unknown id returns `NoRepo`; after opening an
     /// unborn-HEAD repo it returns an empty layout (not an error).
     #[test]
     fn get_graph_no_repo_and_unborn() {
         let state = AppState::default();
 
-        let err = tauri::async_runtime::block_on(get_graph_inner(&state))
+        let err = tauri::async_runtime::block_on(get_graph_inner(&state, MISSING_ID))
             .expect_err("no repo open must be NoRepo");
         assert!(matches!(err, AppError::NoRepo));
 
         let repo_dir = tempfile::TempDir::new().expect("create temp dir");
         git2::Repository::init(repo_dir.path()).expect("init repo");
-        open(&state, repo_dir.path()).expect("open unborn repo");
+        let id = open(&state, repo_dir.path()).expect("open unborn repo").repo_id;
 
-        let layout = tauri::async_runtime::block_on(get_graph_inner(&state))
+        let layout = tauri::async_runtime::block_on(get_graph_inner(&state, &id))
             .expect("empty layout for unborn repo");
         assert!(layout.nodes.is_empty());
         assert_eq!(layout.head_index, None);
     }
 
-    /// Same semantics for bare repos: reported but not kept open.
+    /// Bare repos are reported but not kept open; other entries are untouched.
     #[test]
-    fn bare_open_clears_previous_repo_and_watcher() {
+    fn bare_open_leaves_other_entries_untouched() {
         let state = AppState::default();
 
         let repo_dir = tempfile::TempDir::new().expect("create temp dir");
         git2::Repository::init(repo_dir.path()).expect("init repo");
-        open(&state, repo_dir.path()).expect("open repo A");
+        let a = open(&state, repo_dir.path()).expect("open repo A");
 
         let bare_dir = tempfile::TempDir::new().expect("create temp dir");
         git2::Repository::init_bare(bare_dir.path()).expect("init bare repo");
-        let info = open(&state, bare_dir.path()).expect("open bare repo");
-        assert!(info.is_repo && info.bare);
+        let b = open(&state, bare_dir.path()).expect("open bare repo");
+        assert!(b.info.is_repo && b.info.bare);
 
-        let err = tauri::async_runtime::block_on(get_status_inner(&state))
-            .expect_err("no repo must be open after opening a bare repo");
+        let err = tauri::async_runtime::block_on(get_status_inner(&state, &b.repo_id))
+            .expect_err("bare repo must not be open");
         assert!(matches!(err, AppError::NoRepo));
 
-        assert!(state.repo.lock().expect("repo lock").is_none());
-        assert!(state.watcher.lock().expect("watcher lock").is_none());
+        tauri::async_runtime::block_on(get_status_inner(&state, &a.repo_id))
+            .expect("repo A still open after opening a bare repo");
+        assert_eq!(repo_count(&state), 1);
     }
 
-    /// The M3 mutation commands all return `NoRepo` when nothing is open.
+    /// The M3 mutation commands all return `NoRepo` for an unknown id
+    /// (empty map + dummy id).
     #[test]
     fn mutation_commands_require_an_open_repo() {
         let state = AppState::default();
         let paths = vec!["file.txt".to_string()];
 
-        let err = tauri::async_runtime::block_on(stage_inner(&state, paths.clone()))
+        let err = tauri::async_runtime::block_on(stage_inner(&state, MISSING_ID, paths.clone()))
             .expect_err("stage with no repo");
         assert!(matches!(err, AppError::NoRepo));
 
-        let err = tauri::async_runtime::block_on(unstage_inner(&state, paths))
+        let err = tauri::async_runtime::block_on(unstage_inner(&state, MISSING_ID, paths))
             .expect_err("unstage with no repo");
         assert!(matches!(err, AppError::NoRepo));
 
-        let err = tauri::async_runtime::block_on(commit_inner(&state, "msg".to_string()))
-            .expect_err("commit with no repo");
+        let err =
+            tauri::async_runtime::block_on(commit_inner(&state, MISSING_ID, "msg".to_string()))
+                .expect_err("commit with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
 
-    /// The M4 diff commands all return `NoRepo` when nothing is open
+    /// The M4 diff commands all return `NoRepo` for an unknown id
     /// (contract §6.2 scenario 17).
     #[test]
     fn diff_commands_require_an_open_repo() {
@@ -885,6 +1070,7 @@ mod tests {
 
         let err = tauri::async_runtime::block_on(get_workdir_file_diff_inner(
             &state,
+            MISSING_ID,
             "file.txt".to_string(),
             None,
             false,
@@ -893,12 +1079,14 @@ mod tests {
         assert!(matches!(err, AppError::NoRepo));
 
         let oid = "0123456789abcdef0123456789abcdef01234567".to_string();
-        let err = tauri::async_runtime::block_on(get_commit_diff_inner(&state, oid.clone()))
-            .expect_err("get_commit_diff with no repo");
+        let err =
+            tauri::async_runtime::block_on(get_commit_diff_inner(&state, MISSING_ID, oid.clone()))
+                .expect_err("get_commit_diff with no repo");
         assert!(matches!(err, AppError::NoRepo));
 
         let err = tauri::async_runtime::block_on(get_commit_file_diff_inner(
             &state,
+            MISSING_ID,
             oid,
             "file.txt".to_string(),
             None,
@@ -907,86 +1095,105 @@ mod tests {
         assert!(matches!(err, AppError::NoRepo));
     }
 
-    /// The M5 branch commands all return `NoRepo` when nothing is open
+    /// The M5 branch commands all return `NoRepo` for an unknown id
     /// (contract §6.5).
     #[test]
     fn branch_commands_require_an_open_repo() {
         let state = AppState::default();
 
-        let err = tauri::async_runtime::block_on(list_branches_inner(&state))
+        let err = tauri::async_runtime::block_on(list_branches_inner(&state, MISSING_ID))
             .expect_err("list_branches with no repo");
         assert!(matches!(err, AppError::NoRepo));
 
-        let err =
-            tauri::async_runtime::block_on(create_branch_inner(&state, "topic".to_string()))
-                .expect_err("create_branch with no repo");
+        let err = tauri::async_runtime::block_on(create_branch_inner(
+            &state,
+            MISSING_ID,
+            "topic".to_string(),
+        ))
+        .expect_err("create_branch with no repo");
         assert!(matches!(err, AppError::NoRepo));
 
-        let err =
-            tauri::async_runtime::block_on(checkout_branch_inner(&state, "topic".to_string()))
-                .expect_err("checkout_branch with no repo");
+        let err = tauri::async_runtime::block_on(checkout_branch_inner(
+            &state,
+            MISSING_ID,
+            "topic".to_string(),
+        ))
+        .expect_err("checkout_branch with no repo");
         assert!(matches!(err, AppError::NoRepo));
 
-        let err =
-            tauri::async_runtime::block_on(delete_branch_inner(&state, "topic".to_string()))
-                .expect_err("delete_branch with no repo");
+        let err = tauri::async_runtime::block_on(delete_branch_inner(
+            &state,
+            MISSING_ID,
+            "topic".to_string(),
+        ))
+        .expect_err("delete_branch with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
 
-    /// The M6 remote commands all return `NoRepo` when nothing is open
+    /// The M6 remote commands all return `NoRepo` for an unknown id
     /// (contract §6.7).
     #[test]
     fn remote_commands_require_an_open_repo() {
         let state = AppState::default();
 
-        let err = tauri::async_runtime::block_on(fetch_inner(&state))
+        let err = tauri::async_runtime::block_on(fetch_inner(&state, MISSING_ID))
             .expect_err("fetch with no repo");
         assert!(matches!(err, AppError::NoRepo));
 
-        let err = tauri::async_runtime::block_on(pull_inner(&state))
+        let err = tauri::async_runtime::block_on(pull_inner(&state, MISSING_ID))
             .expect_err("pull with no repo");
         assert!(matches!(err, AppError::NoRepo));
 
-        let err = tauri::async_runtime::block_on(push_inner(&state))
+        let err = tauri::async_runtime::block_on(push_inner(&state, MISSING_ID))
             .expect_err("push with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
 
-    /// The P3c merge/conflict commands all return `NoRepo` when nothing is
-    /// open (contract §6).
+    /// The P3c merge/conflict commands all return `NoRepo` for an unknown id
+    /// (contract §6).
     #[test]
     fn merge_commands_require_an_open_repo() {
         let state = AppState::default();
 
-        let err = tauri::async_runtime::block_on(get_op_state_inner(&state))
+        let err = tauri::async_runtime::block_on(get_op_state_inner(&state, MISSING_ID))
             .expect_err("get_op_state with no repo");
         assert!(matches!(err, AppError::NoRepo));
 
-        let err =
-            tauri::async_runtime::block_on(merge_branch_inner(&state, "topic".to_string()))
-                .expect_err("merge_branch with no repo");
+        let err = tauri::async_runtime::block_on(merge_branch_inner(
+            &state,
+            MISSING_ID,
+            "topic".to_string(),
+        ))
+        .expect_err("merge_branch with no repo");
         assert!(matches!(err, AppError::NoRepo));
 
-        let err =
-            tauri::async_runtime::block_on(commit_merge_inner(&state, "msg".to_string()))
-                .expect_err("commit_merge with no repo");
+        let err = tauri::async_runtime::block_on(commit_merge_inner(
+            &state,
+            MISSING_ID,
+            "msg".to_string(),
+        ))
+        .expect_err("commit_merge with no repo");
         assert!(matches!(err, AppError::NoRepo));
 
-        let err = tauri::async_runtime::block_on(abort_merge_inner(&state))
+        let err = tauri::async_runtime::block_on(abort_merge_inner(&state, MISSING_ID))
             .expect_err("abort_merge with no repo");
         assert!(matches!(err, AppError::NoRepo));
 
-        let err = tauri::async_runtime::block_on(list_conflicts_inner(&state))
+        let err = tauri::async_runtime::block_on(list_conflicts_inner(&state, MISSING_ID))
             .expect_err("list_conflicts with no repo");
         assert!(matches!(err, AppError::NoRepo));
 
-        let err =
-            tauri::async_runtime::block_on(get_conflict_inner(&state, "file.txt".to_string()))
-                .expect_err("get_conflict with no repo");
+        let err = tauri::async_runtime::block_on(get_conflict_inner(
+            &state,
+            MISSING_ID,
+            "file.txt".to_string(),
+        ))
+        .expect_err("get_conflict with no repo");
         assert!(matches!(err, AppError::NoRepo));
 
         let err = tauri::async_runtime::block_on(resolve_conflict_inner(
             &state,
+            MISSING_ID,
             "file.txt".to_string(),
             ConflictResolution::Ours,
         ))
@@ -994,28 +1201,166 @@ mod tests {
         assert!(matches!(err, AppError::NoRepo));
     }
 
-    /// The P3d rebase commands all return `NoRepo` when nothing is open
+    /// The P3d rebase commands all return `NoRepo` for an unknown id
     /// (contract §4).
     #[test]
     fn rebase_commands_require_an_open_repo() {
         let state = AppState::default();
 
-        let err =
-            tauri::async_runtime::block_on(rebase_branch_inner(&state, "main".to_string()))
-                .expect_err("rebase_branch with no repo");
+        let err = tauri::async_runtime::block_on(rebase_branch_inner(
+            &state,
+            MISSING_ID,
+            "main".to_string(),
+        ))
+        .expect_err("rebase_branch with no repo");
         assert!(matches!(err, AppError::NoRepo));
 
-        let err = tauri::async_runtime::block_on(rebase_continue_inner(&state))
+        let err = tauri::async_runtime::block_on(rebase_continue_inner(&state, MISSING_ID))
             .expect_err("rebase_continue with no repo");
         assert!(matches!(err, AppError::NoRepo));
 
-        let err = tauri::async_runtime::block_on(rebase_skip_inner(&state))
+        let err = tauri::async_runtime::block_on(rebase_skip_inner(&state, MISSING_ID))
             .expect_err("rebase_skip with no repo");
         assert!(matches!(err, AppError::NoRepo));
 
-        let err = tauri::async_runtime::block_on(rebase_abort_inner(&state))
+        let err = tauri::async_runtime::block_on(rebase_abort_inner(&state, MISSING_ID))
             .expect_err("rebase_abort with no repo");
         assert!(matches!(err, AppError::NoRepo));
+    }
+
+    // ---- P3e-a two-repo isolation (contract §9.1) --------------------------
+
+    /// Committing in A leaves B's status/graph unaffected and A reflects the
+    /// change.
+    #[test]
+    fn isolation_independent_status_and_commit() {
+        let state = AppState::default();
+
+        let dir_a = init_repo_with_identity();
+        let dir_b = init_repo_with_identity();
+        let id_a = open(&state, dir_a.path()).expect("open A").repo_id;
+        let id_b = open(&state, dir_b.path()).expect("open B").repo_id;
+        assert_ne!(id_a, id_b);
+
+        write_stage_commit(&state, &id_a, dir_a.path(), "a.txt", "hello", "first in A");
+
+        // A now has one commit; its status is clean.
+        let graph_a = tauri::async_runtime::block_on(get_graph_inner(&state, &id_a))
+            .expect("graph A");
+        assert_eq!(graph_a.nodes.len(), 1, "A should have exactly one commit");
+        let status_a = tauri::async_runtime::block_on(get_status_inner(&state, &id_a))
+            .expect("status A");
+        assert!(status_a.staged.is_empty() && status_a.unstaged.is_empty());
+
+        // B is untouched: still unborn, empty graph, no files.
+        let graph_b = tauri::async_runtime::block_on(get_graph_inner(&state, &id_b))
+            .expect("graph B");
+        assert!(graph_b.nodes.is_empty(), "B must be unaffected by a commit in A");
+        let status_b = tauri::async_runtime::block_on(get_status_inner(&state, &id_b))
+            .expect("status B");
+        assert!(
+            status_b.staged.is_empty()
+                && status_b.unstaged.is_empty()
+                && status_b.untracked.is_empty(),
+            "B working dir must be empty"
+        );
+    }
+
+    /// A branch created in A does not appear in B; B's op-state stays `None`.
+    #[test]
+    fn isolation_independent_branches_and_op_state() {
+        let state = AppState::default();
+
+        let dir_a = init_repo_with_identity();
+        let dir_b = init_repo_with_identity();
+        let id_a = open(&state, dir_a.path()).expect("open A").repo_id;
+        let id_b = open(&state, dir_b.path()).expect("open B").repo_id;
+
+        // Need a commit before a branch can be created at HEAD.
+        write_stage_commit(&state, &id_a, dir_a.path(), "a.txt", "hello", "first in A");
+        tauri::async_runtime::block_on(create_branch_inner(&state, &id_a, "x".to_string()))
+            .expect("create branch x in A");
+
+        let branches_a = tauri::async_runtime::block_on(list_branches_inner(&state, &id_a))
+            .expect("branches A");
+        assert!(
+            branches_a.local.iter().any(|b| b.name == "x"),
+            "A must have branch x"
+        );
+
+        let branches_b = tauri::async_runtime::block_on(list_branches_inner(&state, &id_b))
+            .expect("branches B");
+        assert!(
+            !branches_b.local.iter().any(|b| b.name == "x"),
+            "B must NOT have branch x"
+        );
+
+        let op_b = tauri::async_runtime::block_on(get_op_state_inner(&state, &id_b))
+            .expect("op-state B");
+        assert_eq!(op_b, RepoOpState::None, "B op-state must stay None");
+    }
+
+    /// Closing A makes A's commands `NoRepo` while B keeps working; the map
+    /// then holds exactly one entry.
+    #[test]
+    fn isolation_close_only_affects_target() {
+        let state = AppState::default();
+
+        let dir_a = init_repo_with_identity();
+        let dir_b = init_repo_with_identity();
+        let id_a = open(&state, dir_a.path()).expect("open A").repo_id;
+        let id_b = open(&state, dir_b.path()).expect("open B").repo_id;
+        assert_eq!(repo_count(&state), 2);
+
+        tauri::async_runtime::block_on(close_repo_inner(&state, &id_a)).expect("close A");
+
+        let err = tauri::async_runtime::block_on(get_status_inner(&state, &id_a))
+            .expect_err("A must be closed");
+        assert!(matches!(err, AppError::NoRepo));
+
+        tauri::async_runtime::block_on(get_status_inner(&state, &id_b)).expect("B still open");
+        assert_eq!(repo_count(&state), 1, "exactly one entry after closing A");
+    }
+
+    /// Opening A's path twice (including a case-variant) focuses the same
+    /// entry: same `repo_id`, one map entry.
+    #[test]
+    fn isolation_focus_dedupe_on_reopen() {
+        let state = AppState::default();
+
+        let dir_a = init_repo_with_identity();
+        let first = open(&state, dir_a.path()).expect("open A").repo_id;
+        assert_eq!(repo_count(&state), 1);
+
+        // Re-open the exact same path.
+        let again = open(&state, dir_a.path()).expect("re-open A").repo_id;
+        assert_eq!(first, again, "re-opening the same path must reuse the id");
+        assert_eq!(repo_count(&state), 1, "no duplicate entry on re-open");
+
+        // Re-open via an ASCII case-variant of the path (Windows is
+        // case-insensitive): still the same entry.
+        let variant = path_string(dir_a.path()).to_uppercase();
+        let cased = tauri::async_runtime::block_on(open_repo_inner(
+            &state,
+            variant,
+            |_id| Box::new(|| {}),
+        ))
+        .expect("re-open A (case-variant)")
+        .repo_id;
+        assert_eq!(
+            first, cased,
+            "a case-variant path must dedupe to the same id"
+        );
+        assert_eq!(repo_count(&state), 1, "case-variant must not add an entry");
+    }
+
+    /// Closing an unknown id is a no-op `Ok(())` (idempotent).
+    #[test]
+    fn isolation_idempotent_close_of_unknown_id() {
+        let state = AppState::default();
+        tauri::async_runtime::block_on(close_repo_inner(&state, "does-not-exist"))
+            .expect("closing an unknown id must be Ok(())");
+        assert_eq!(repo_count(&state), 0);
     }
 
     /// Patching only `theme` leaves `pane_widths`/`list_view` untouched, and
