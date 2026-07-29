@@ -64,13 +64,18 @@ export function buildMockGraph(): GraphLayout {
   push('feat: polish', 1, [4], [{ name: 'feat', kind: 'localBranch', isHead: false }]);
   push('experiment', 2, [5], [{ name: 'exp', kind: 'localBranch', isHead: false }]);
   // P7 §9: single-token author → initials "TO" (other rows yield "AL"/"GH").
-  push('core work 4', 0, [5], undefined, 'torvalds');
+  // P9 §6.6: a single stash pill (violet, drawer icon) on this base commit.
+  push('core work 4', 0, [5], [{ name: 'stash@{0}', kind: 'stash', isHead: false }], 'torvalds');
   // P7 §9: diverged pair — local `feat` is on row 1; its remote `origin/feat`
   // lives here on row 4, so the two render as SEPARATE labels (no collapse):
   // row 1 = laptop-only `feat`, row 4 = cloud-only `feat`.
   push('feat: start', 1, [6], [{ name: 'origin/feat', kind: 'remoteBranch', isHead: false }]);
   push('core work 3', 0, [6]);
-  push('core work 2', 0, [7]);
+  // P9 §6.6: TWO stashes on one base → exercises multi-stash + the `+n` collapse.
+  push('core work 2', 0, [7], [
+    { name: 'stash@{1}', kind: 'stash', isHead: false },
+    { name: 'stash@{2}', kind: 'stash', isHead: false },
+  ]);
   // P7 §9: v0.9 moved to row 0 (collapse/overflow case); row 7 now ref-less.
   push('core work 1', 0, [8]);
 

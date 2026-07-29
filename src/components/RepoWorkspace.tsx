@@ -1093,7 +1093,7 @@ export function RepoWorkspace({
   function buildContextItems(target: GraphContextTarget): ContextMenuItem[] {
     if (target.kind === 'ref') {
       const r = target.ref;
-      if (r.kind === 'tag' || r.kind === 'head') return [];
+      if (r.kind === 'tag' || r.kind === 'head' || r.kind === 'stash') return [];
       return branchMenuItems(r.name, r.kind === 'remoteBranch' ? 'remoteBranch' : 'localBranch');
     }
     // Commit row → Compare with HEAD (unavailable for unborn HEAD, §1.3).

@@ -3,7 +3,7 @@
  * Geometry and draw order are normative per contract M2-graph.md §1.3/§3.3. */
 
 import type { GraphEdge, GraphLayout, GraphNode, RefLabel } from '../ipc';
-import { TAG_BG, TAG_COLOR } from './colors';
+import { STASH_BG, STASH_COLOR, TAG_BG, TAG_COLOR } from './colors';
 import type { Theme } from './colors';
 import { AVATAR, FONT_UI, METRICS } from './metrics';
 
@@ -257,7 +257,8 @@ export type RefEntity =
       refs: RefLabel[]; // underlying wire refs (right-click targeting)
     }
   | { kind: 'tag'; name: string; ref: RefLabel }
-  | { kind: 'head'; name: string; ref: RefLabel }; // detached-HEAD label
+  | { kind: 'head'; name: string; ref: RefLabel } // detached-HEAD label
+  | { kind: 'stash'; name: string; ref: RefLabel }; // name = "stash@{n}"
 
 /** P7 §3.2: group a node's wire refs into display entities. Insertion order is
  *  preserved; input is already sorted local-head-first / remotes / tags. Output
@@ -269,6 +270,7 @@ export function groupRefs(refs: readonly RefLabel[] | undefined): RefEntity[] {
   >();
   const tags: RefEntity[] = [];
   const heads: RefEntity[] = [];
+  const stashes: RefEntity[] = [];
   for (const ref of refs ?? []) {
     switch (ref.kind) {
       case 'localBranch': {
@@ -298,9 +300,12 @@ export function groupRefs(refs: readonly RefLabel[] | undefined): RefEntity[] {
       case 'head':
         heads.push({ kind: 'head', name: ref.name, ref });
         break;
+      case 'stash':
+        stashes.push({ kind: 'stash', name: ref.name, ref });
+        break;
     }
   }
-  return [...heads, ...branches.values(), ...tags];
+  return [...heads, ...branches.values(), ...tags, ...stashes];
 }
 
 /** P7 §3.3: resolve an entity's pill visuals (reuses {@link PillStyle}). Icons
@@ -322,6 +327,8 @@ export function entityStyle(e: RefEntity, node: GraphNode, theme: Theme): PillSt
       return { fill: TAG_BG, text: TAG_COLOR, border: TAG_COLOR, label: `# ${e.name}` };
     case 'head':
       return { fill: theme.danger, text: '#ffffff', border: null, label: e.name };
+    case 'stash':
+      return { fill: STASH_BG, text: STASH_COLOR, border: STASH_COLOR, label: e.name };
   }
 }
 
@@ -373,6 +380,28 @@ export function drawCloudIcon(
   ctx.stroke();
 }
 
+/** P9 §6.1: stash glyph (a drawer/tray box). Same monochrome convention as
+ *  {@link drawLaptopIcon} — the CALLER sets `ctx.strokeStyle` (= `style.text`). */
+export function drawStashIcon(
+  ctx: CanvasRenderingContext2D,
+  bx: number,
+  by: number,
+  S: number,
+): void {
+  ctx.lineWidth = 1.2;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  // tray/box body
+  ctx.beginPath();
+  ctx.roundRect(bx + S * 0.1, by + S * 0.32, S * 0.8, S * 0.5, S * 0.08);
+  ctx.stroke();
+  // slot line across the drawer's upper third
+  ctx.beginPath();
+  ctx.moveTo(bx + S * 0.3, by + S * 0.48);
+  ctx.lineTo(bx + S * 0.7, by + S * 0.48);
+  ctx.stroke();
+}
+
 // ---------- LEFT ref-column layout + overflow (P7 §4) ----------
 
 export interface LaidRefLabel {
@@ -383,22 +412,33 @@ export interface LaidRefLabel {
   x: number;
   /** Full pill width incl. padding + icons. */
   w: number;
-  /** Glyphs to draw (both false for chip / tag / head). */
-  icons: { laptop: boolean; cloud: boolean };
+  /** Glyphs to draw (all false for chip / tag / head). */
+  icons: RefIcons;
+}
+
+/** Which glyphs a pill carries. A branch may show laptop and/or cloud; a stash
+ *  shows exactly the stash glyph; everything else shows none. */
+export interface RefIcons {
+  laptop: boolean;
+  cloud: boolean;
+  stash: boolean;
 }
 
 /** Glyphs for an entity: laptop when it has a local ref, cloud when it has a
- *  remote. Only `branch` entities carry icons. */
-function iconsFor(e: RefEntity): { laptop: boolean; cloud: boolean } {
-  if (e.kind === 'branch') return { laptop: e.hasLocal, cloud: e.remotes.length > 0 };
-  return { laptop: false, cloud: false };
+ *  remote (branch only); the stash glyph for stash entities. */
+function iconsFor(e: RefEntity): RefIcons {
+  if (e.kind === 'branch') return { laptop: e.hasLocal, cloud: e.remotes.length > 0, stash: false };
+  if (e.kind === 'stash') return { laptop: false, cloud: false, stash: true };
+  return { laptop: false, cloud: false, stash: false };
 }
 
-/** Combined icon-block width (icon-icon gap only between two icons). */
-function iconsWidth(icons: { laptop: boolean; cloud: boolean }): number {
+/** Combined icon-block width (icon-icon gap only between two icons). A stash
+ *  pill has exactly one icon, so it needs no inter-icon gap term. */
+function iconsWidth(icons: RefIcons): number {
   return (
     (icons.laptop ? METRICS.iconSize : 0) +
     (icons.cloud ? METRICS.iconSize : 0) +
+    (icons.stash ? METRICS.iconSize : 0) +
     (icons.laptop && icons.cloud ? METRICS.iconGap : 0)
   );
 }
@@ -408,10 +448,10 @@ function iconsWidth(icons: { laptop: boolean; cloud: boolean }): number {
 function refPillWidth(
   ctx: CanvasRenderingContext2D,
   style: PillStyle,
-  icons: { laptop: boolean; cloud: boolean },
+  icons: RefIcons,
 ): number {
   const iconsW = iconsWidth(icons);
-  const anyIcon = icons.laptop || icons.cloud;
+  const anyIcon = icons.laptop || icons.cloud || icons.stash;
   const labelMaxPx = METRICS.pillMaxWidth - 2 * METRICS.pillPadX - iconsW - (anyIcon ? METRICS.iconGap : 0);
   const labelText = truncateToWidth(ctx, style.label, labelMaxPx);
   return (
@@ -452,7 +492,7 @@ export function layoutRefLabels(
     // (chip included) never spills past the band. Compute the chip width, then
     // while the trailing shown pill's slot leaves no room, pop it (rewinding the
     // cursor and recomputing the "+n" label for the now-larger hidden count).
-    const noIcons = { laptop: false, cloud: false };
+    const noIcons: RefIcons = { laptop: false, cloud: false, stash: false };
     const chipStyleFor = (h: number): PillStyle => ({
       fill: theme.bg2,
       text: theme.text2,
@@ -501,7 +541,7 @@ function drawRefLabelAt(ctx: CanvasRenderingContext2D, laid: LaidRefLabel, cy: n
   // icons (monochrome, colored by style.text), from x + pillPadX.
   const S = METRICS.iconSize;
   const by = cy - S / 2;
-  const anyIcon = icons.laptop || icons.cloud;
+  const anyIcon = icons.laptop || icons.cloud || icons.stash;
   let ix = x + METRICS.pillPadX;
   ctx.strokeStyle = style.text;
   if (icons.laptop) {
@@ -511,6 +551,10 @@ function drawRefLabelAt(ctx: CanvasRenderingContext2D, laid: LaidRefLabel, cy: n
   if (icons.cloud) {
     if (icons.laptop) ix += METRICS.iconGap;
     drawCloudIcon(ctx, ix, by, S);
+    ix += S;
+  }
+  if (icons.stash) {
+    drawStashIcon(ctx, ix, by, S);
     ix += S;
   }
   if (anyIcon) ix += METRICS.iconGap;

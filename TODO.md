@@ -109,13 +109,18 @@ pnpm build clean; 7-row behavioral test matrix (tester) vs scratch repos; harnes
 via mock triggers. USER CHECKPOINT (native): merge a branch with a dirty tree; changes reappear.
 
 ## P9 — Stash management (list/apply/pop/drop/create + view in graph) — **in-progress** (2026-07-29)
-Current step: architect designing docs/contracts/P9-stash-management.md. User request: "add support for
-stashes, to view stashes in graph, apply/pop/delete stash and so on." Orchestrator direction (chosen,
-lower-risk): sidebar "Stashes" section (list + Apply/Pop/Drop context menu + "Stash changes" action,
-Drop needs confirm) + represent each stash as a PILL on its base commit (new `stash` RefLabel kind,
-reusing ref-pill machinery) — NOT synthetic multi-parent nodes in the perf-gated walk. New Rust
-git/stash.rs + commands (list/create/apply/pop/drop) + graph.rs attaches stash refs to base commits.
-Likely sub-increments P9a (Rust+tests), P9b (graph.rs+draw.ts pill+mock+self-test), P9c (Sidebar+handlers).
+Current step: P9a DONE (committed da53c41); P9b (graph pill) in senior-dev. Contract:
+docs/contracts/P9-stash-management.md. All 5 OPEN QUESTIONS resolved to the recommended defaults
+(user-authorized autonomous): include untracked on create; pop-with-conflict allowed+retained;
+apply/pop require clean state, drop any state; no REINSTATE_INDEX; pill label `stash@{n}` (message in
+sidebar). Orchestrator direction: sidebar Stashes section + a `stash` RefLabel PILL on each stash's
+base commit (reusing ref-pill machinery) — NOT synthetic nodes in the perf-gated walk.
+- P9a (git/stash.rs + 5 commands + registration): reviewer APPROVE; tester 8-row matrix green (124
+  unit/0 fail); reuses P8 apply+inspect+conditional-drop so conflicted pop/apply RETAINS the stash.
+- P9b (graph.rs collect_stash_bases + step 6.5 attach; draw.ts stash entity/pill/icon; types.ts
+  RefKind 'stash'; fixtures rows 3 & 6; p7SelfTest stash-not-collapsed): in senior-dev.
+- P9c (Sidebar Stashes section + RepoWorkspace handlers/menu/confirm + mock 5 cmds + tauri.ts + IpcApi):
+  pending.
 
 Original step: P7 kickoff. Source: user request (2026-07-29) after
 confirming P6 works. Four requirements:

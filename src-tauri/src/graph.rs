@@ -29,6 +29,8 @@ pub enum RefKind {
     Tag,
     /// ONLY emitted when HEAD is detached.
     Head,
+    /// Attached to a stash's base commit; name is `stash@{n}`.
+    Stash,
 }
 
 /// A single ref pill.
@@ -109,16 +111,47 @@ type RefMap = HashMap<git2::Oid, Vec<RefLabel>>;
 /// `read_status`) and computes the full layout. Unborn HEAD / zero refs →
 /// empty layout, NOT an error.
 pub fn compute_graph(workdir: &std::path::Path) -> Result<GraphLayout, AppError> {
-    let repo = git2::Repository::open_ext(
+    let mut repo = git2::Repository::open_ext(
         workdir,
         git2::RepositoryOpenFlags::NO_SEARCH,
         std::iter::empty::<&std::ffi::OsStr>(),
     )?;
+    // Resolve stash bases BEFORE the immutable `collect_refs` borrow (needs
+    // `&mut` for `stash_foreach`). Stashes NEVER seed the walk.
+    let stash_bases = collect_stash_bases(&mut repo)?;
     let (refs, tips, head_oid) = collect_refs(&repo)?;
     if tips.is_empty() {
         return Ok(GraphLayout::empty());
     }
-    layout_walk(&repo, &tips, refs, head_oid)
+    layout_walk(&repo, &tips, refs, head_oid, &stash_bases)
+}
+
+/// O(stashes). Enumerate the stash stack; resolve each stash commit's FIRST
+/// parent (= the base commit it was created from). Does NOT touch tips/seeds.
+/// A missing `refs/stash` (no stashes) → empty; unresolvable entries are
+/// skipped. Returns ascending by index (stash@{0} first).
+fn collect_stash_bases(repo: &mut git2::Repository) -> Result<Vec<(usize, git2::Oid)>, AppError> {
+    let mut idxs: Vec<usize> = Vec::new();
+    repo.stash_foreach(|index, _msg, _oid| {
+        idxs.push(index);
+        true
+    })?;
+    let reflog = match repo.reflog("refs/stash") {
+        Ok(r) => r,
+        Err(_) => return Ok(Vec::new()), // no stash ref → nothing to attach
+    };
+    let mut out = Vec::with_capacity(idxs.len());
+    for &index in &idxs {
+        if let Some(entry) = reflog.get(index) {
+            let stash_oid = entry.id_new();
+            if let Ok(commit) = repo.find_commit(stash_oid) {
+                if let Ok(base) = commit.parent_id(0) {
+                    out.push((index, base));
+                }
+            }
+        }
+    }
+    Ok(out) // ascending by index (stash@{0} first)
 }
 
 /// Sort rank for pill order (§2.2): detached Head first, then LocalBranch
@@ -130,6 +163,7 @@ fn pill_rank(kind: RefKind) -> u8 {
         RefKind::LocalBranch => 1,
         RefKind::RemoteBranch => 2,
         RefKind::Tag => 3,
+        RefKind::Stash => 4,
     }
 }
 
@@ -295,6 +329,7 @@ fn layout_walk(
     tips: &[git2::Oid],
     mut refs: RefMap,
     head_oid: Option<git2::Oid>,
+    stash_bases: &[(usize, git2::Oid)],
 ) -> Result<GraphLayout, AppError> {
     let mut revwalk = repo.revwalk()?;
     revwalk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)?;
@@ -401,6 +436,22 @@ fn layout_walk(
     //    Pending edges never finalized are dropped with `pending`.
     for (node, ps) in nodes.iter_mut().zip(raw_parents.iter()) {
         node.parents = ps.iter().filter_map(|p| index_of.get(p).copied()).collect();
+    }
+
+    // 6.5. Attach stash pills to base commits present in the walk. `index_of`
+    //      maps every emitted commit oid → its row. Stash bases outside the
+    //      loaded/truncated window are simply omitted (no pill). O(stashes).
+    //      Stash is the highest pill_rank, so appending after the already-sorted
+    //      branch/tag/head labels keeps a valid pill order without re-sorting;
+    //      multiple stashes on one base append as stash@{0}, stash@{1}, ….
+    for &(idx, base_oid) in stash_bases {
+        if let Some(&row) = index_of.get(&base_oid) {
+            nodes[row as usize].refs.push(RefLabel {
+                name: format!("stash@{{{idx}}}"),
+                kind: RefKind::Stash,
+                is_head: false,
+            });
+        }
     }
 
     edges.sort_unstable_by_key(|e| (e.from, e.to)); // required wire order (§1.1)
@@ -837,5 +888,183 @@ mod tests {
             .refs
             .iter()
             .all(|r| r.kind != RefKind::Tag));
+    }
+
+    // ---------- P9b: stash pills on base commits ----------
+
+    /// Init a repo with a real worktree + local user config.
+    fn init_worktree_repo() -> (tempfile::TempDir, git2::Repository) {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let repo = git2::Repository::init(dir.path()).expect("init repo");
+        {
+            let mut config = repo.config().expect("open config");
+            config.set_str("user.name", "Test User").expect("set name");
+            config
+                .set_str("user.email", "test@example.com")
+                .expect("set email");
+        }
+        (dir, repo)
+    }
+
+    /// Writes `content` to `path` in the worktree, stages it, and commits it on
+    /// the current HEAD branch (updating HEAD). Returns the new commit oid.
+    fn commit_file(repo: &git2::Repository, path: &str, content: &str, msg: &str) -> git2::Oid {
+        let workdir = repo.workdir().expect("workdir");
+        std::fs::write(workdir.join(path), content).expect("write file");
+        let mut index = repo.index().expect("open index");
+        index
+            .add_path(std::path::Path::new(path))
+            .expect("stage file");
+        index.write().expect("write index");
+        let tree_oid = index.write_tree().expect("write tree");
+        let tree = repo.find_tree(tree_oid).expect("find tree");
+        let sig = git2::Signature::now("Test User", "test@example.com").expect("signature");
+        let parent = repo
+            .head()
+            .ok()
+            .and_then(|h| h.target())
+            .and_then(|o| repo.find_commit(o).ok());
+        let parents: Vec<&git2::Commit> = parent.iter().collect();
+        repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &parents)
+            .expect("commit")
+    }
+
+    /// Force-checks out `refname` (`refs/heads/...`) and moves HEAD onto it.
+    fn checkout_ref(repo: &git2::Repository, refname: &str) {
+        repo.set_head(refname).expect("set head");
+        let mut co = git2::build::CheckoutBuilder::new();
+        co.force();
+        repo.checkout_head(Some(&mut co)).expect("checkout head");
+    }
+
+    fn stash_labels(l: &GraphLayout) -> Vec<String> {
+        l.nodes
+            .iter()
+            .flat_map(|n| n.refs.iter())
+            .filter(|r| r.kind == RefKind::Stash)
+            .map(|r| r.name.clone())
+            .collect()
+    }
+
+    /// A stash whose base IS reachable from a branch tip → the base node carries
+    /// exactly one `RefKind::Stash` label `stash@{0}`, appended AFTER the branch
+    /// pill (highest pill rank). An orphaned stash base → no stash label anywhere.
+    #[test]
+    fn stash_pill_on_base_and_orphan_omitted() {
+        // --- Scenario 1: stash on a branch-ancestor commit. ---
+        {
+            let (dir, repo) = init_worktree_repo();
+            commit_file(&repo, "f.txt", "v0", "C0");
+            let c1 = commit_file(&repo, "f.txt", "v1", "C1"); // HEAD tip
+            // Dirty the worktree, then stash — base == c1 (current HEAD).
+            std::fs::write(dir.path().join("f.txt"), "v2-dirty").expect("dirty");
+            let res =
+                crate::git::stash::create_stash(dir.path(), None, false).expect("create_stash");
+            assert!(res.created, "worktree was dirty → a stash must be created");
+
+            let l = compute_graph(dir.path()).expect("compute_graph");
+            // c1 is row 0 (newest). Its refs end with the stash pill.
+            let base_row = l
+                .nodes
+                .iter()
+                .position(|n| n.id == c1.to_string())
+                .expect("base commit present in the walk");
+            let refs = &l.nodes[base_row].refs;
+            let stash_pills: Vec<&RefLabel> =
+                refs.iter().filter(|r| r.kind == RefKind::Stash).collect();
+            assert_eq!(stash_pills.len(), 1, "exactly one stash pill on the base");
+            assert_eq!(stash_pills[0].name, "stash@{0}");
+            assert!(!stash_pills[0].is_head);
+            // Stash pill is the LAST label (after the branch pill).
+            assert_eq!(
+                refs.last().map(|r| r.kind),
+                Some(RefKind::Stash),
+                "stash pill appended after branch/tag labels"
+            );
+            assert!(
+                refs.iter().any(|r| r.kind == RefKind::LocalBranch),
+                "branch pill still present on the base tip"
+            );
+            // Determinism still holds with a stash on the stack.
+            let l2 = compute_graph(dir.path()).expect("compute_graph again");
+            assert_eq!(l, l2);
+        }
+
+        // --- Scenario 2: stash on an ORPHANED commit → no pill. ---
+        {
+            let (dir, repo) = init_worktree_repo();
+            commit_file(&repo, "f.txt", "v0", "C0");
+            let c1 = commit_file(&repo, "f.txt", "v1", "C1");
+            let main_ref = repo
+                .head()
+                .expect("head")
+                .name()
+                .expect("head ref name")
+                .to_string();
+
+            // Branch off c1 onto `temp`, commit X there, stash on X.
+            let c1_commit = repo.find_commit(c1).expect("find c1");
+            repo.branch("temp", &c1_commit, false).expect("create temp");
+            checkout_ref(&repo, "refs/heads/temp");
+            let x = commit_file(&repo, "f.txt", "vX", "X"); // base-to-be
+            std::fs::write(dir.path().join("f.txt"), "vX-dirty").expect("dirty");
+            let res =
+                crate::git::stash::create_stash(dir.path(), None, false).expect("create_stash");
+            assert!(res.created);
+
+            // Return to the main branch and drop `temp` → X is now unreachable.
+            checkout_ref(&repo, &main_ref);
+            repo.find_branch("temp", git2::BranchType::Local)
+                .expect("find temp")
+                .delete()
+                .expect("delete temp");
+
+            let l = compute_graph(dir.path()).expect("compute_graph");
+            assert!(
+                l.nodes.iter().all(|n| n.id != x.to_string()),
+                "orphaned base must not be walked"
+            );
+            assert!(
+                stash_labels(&l).is_empty(),
+                "no stash label anywhere for an orphaned base"
+            );
+        }
+
+        // --- Scenario 3: TWO stashes on the SAME base → two pills in
+        //     ascending-index order stash@{0}, stash@{1} (pins step-6.5 append). ---
+        {
+            let (dir, repo) = init_worktree_repo();
+            commit_file(&repo, "f.txt", "v0", "C0");
+            let base = commit_file(&repo, "f.txt", "v1", "C1"); // HEAD, unchanged below
+
+            // First stash (becomes stash@{1} once the second is pushed).
+            std::fs::write(dir.path().join("f.txt"), "edit-a").expect("dirty a");
+            assert!(crate::git::stash::create_stash(dir.path(), None, false)
+                .expect("create_stash a")
+                .created);
+            // Second stash (most recent → stash@{0}). HEAD is still `base`.
+            std::fs::write(dir.path().join("f.txt"), "edit-b").expect("dirty b");
+            assert!(crate::git::stash::create_stash(dir.path(), None, false)
+                .expect("create_stash b")
+                .created);
+
+            let l = compute_graph(dir.path()).expect("compute_graph");
+            let base_row = l
+                .nodes
+                .iter()
+                .position(|n| n.id == base.to_string())
+                .expect("base commit present in the walk");
+            let names: Vec<String> = l.nodes[base_row]
+                .refs
+                .iter()
+                .filter(|r| r.kind == RefKind::Stash)
+                .map(|r| r.name.clone())
+                .collect();
+            assert_eq!(
+                names,
+                vec!["stash@{0}".to_string(), "stash@{1}".to_string()],
+                "both stashes attach to the same base in ascending-index order"
+            );
+        }
     }
 }

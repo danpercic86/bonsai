@@ -533,6 +533,20 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
           slashEnts[0].remotes.length === 1,
       );
 
+      // P9 §6.1: a stash is its OWN entity — never collapsed into a branch on
+      // the same commit — and sorts LAST (after the branch).
+      const stashEnts = groupRefs([
+        { name: 'main', kind: 'localBranch', isHead: true },
+        { name: 'stash@{0}', kind: 'stash', isHead: false },
+      ]);
+      check(
+        'groupRefs stash not collapsed, sorts last',
+        stashEnts.length === 2 &&
+          stashEnts[0].kind === 'branch' &&
+          stashEnts[1].kind === 'stash' &&
+          stashEnts[1].name === 'stash@{0}',
+      );
+
       // refColArea
       const area = refColArea();
       check('refColArea startX', area.startX === METRICS.refColPadLeft);

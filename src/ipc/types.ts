@@ -45,7 +45,7 @@ export interface StatusSnapshot {
   conflicted: StatusEntry[];
 }
 
-export type RefKind = 'localBranch' | 'remoteBranch' | 'tag' | 'head';
+export type RefKind = 'localBranch' | 'remoteBranch' | 'tag' | 'head' | 'stash';
 
 export interface RefLabel {
   /** Shorthand: "main", "origin/main", "v1.0", "HEAD". */

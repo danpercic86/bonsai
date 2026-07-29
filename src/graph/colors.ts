@@ -38,6 +38,12 @@ export function hexToRgba(hex: string, alpha: number): string {
 /** Tag pill background, precomputed at module load. */
 export const TAG_BG = hexToRgba(TAG_COLOR, 0.18);
 
+/** Stash pill color is fixed across themes — a muted violet (P9 §6.1). */
+export const STASH_COLOR = '#9a7cff';
+
+/** Stash pill background, precomputed at module load. */
+export const STASH_BG = hexToRgba(STASH_COLOR, 0.18);
+
 /** One getComputedStyle pass over the element's resolved custom properties. */
 export function resolveTheme(el: HTMLElement): Theme {
   const cs = getComputedStyle(el);
