@@ -43,6 +43,14 @@
   --lang-html: #e34c26; --lang-css: #563d7c; --lang-md: #4f8cff;
   --lang-rust: #dea584; --lang-py: #3572a5; --lang-cs: #68217a;
   --lang-go: #00add8;  --lang-shell: #89e051; --lang-default: #6b7280;
+
+  /* Syntax-token palette (P4e Step 2) — dark. Mapped to highlight.js
+     .hljs-* classes, scoped under .diff-content. No stock hljs theme CSS is
+     imported; all token colors come from these variables. */
+  --syn-keyword: #ff7b72;  --syn-string: #7ee787;  --syn-comment: #8b949e;
+  --syn-number: #79c0ff;   --syn-function: #d2a8ff; --syn-title: #d2a8ff;
+  --syn-type: #ffa657;     --syn-attr: #79c0ff;     --syn-tag: #7ee787;
+  --syn-operator: #a8adb8; --syn-punctuation: #a8adb8; --syn-meta: #6b7280;
 }
 
 [data-theme='light'] {
@@ -64,6 +72,12 @@
   --danger: #d13438;
   --success: #1a7f37;
   --warning: #9a6700;
+
+  /* Syntax-token palette (P4e Step 2) — light. */
+  --syn-keyword: #cf222e;  --syn-string: #0a7d33;  --syn-comment: #6e7781;
+  --syn-number: #0550ae;   --syn-function: #8250df; --syn-title: #8250df;
+  --syn-type: #953800;     --syn-attr: #0550ae;     --syn-tag: #0a7d33;
+  --syn-operator: #4b515c; --syn-punctuation: #4b515c; --syn-meta: #8a919e;
 }
 
 * {
@@ -1344,6 +1358,36 @@ span.file-row-main {
   color: var(--text-1);
   padding-right: 8px;
 }
+
+/* P4e Step 2: highlight.js token classes → --syn-* variables, scoped to diff
+   bodies. Token colors compose over the add/del line backgrounds (which live on
+   the ancestor .diff-line span) and leave markers + line-number gutters
+   untouched. No stock hljs theme CSS is imported. */
+.diff-content .hljs-keyword,
+.diff-content .hljs-built_in,
+.diff-content .hljs-literal      { color: var(--syn-keyword); }
+.diff-content .hljs-string,
+.diff-content .hljs-regexp       { color: var(--syn-string); }
+.diff-content .hljs-comment,
+.diff-content .hljs-quote        { color: var(--syn-comment); font-style: italic; }
+.diff-content .hljs-number       { color: var(--syn-number); }
+.diff-content .hljs-title,
+.diff-content .hljs-title.function_,
+.diff-content .hljs-function .hljs-title { color: var(--syn-function); }
+.diff-content .hljs-type,
+.diff-content .hljs-class .hljs-title,
+.diff-content .hljs-title.class_ { color: var(--syn-type); }
+.diff-content .hljs-attr,
+.diff-content .hljs-attribute,
+.diff-content .hljs-property     { color: var(--syn-attr); }
+.diff-content .hljs-tag,
+.diff-content .hljs-name,
+.diff-content .hljs-selector-tag { color: var(--syn-tag); }
+.diff-content .hljs-operator,
+.diff-content .hljs-symbol       { color: var(--syn-operator); }
+.diff-content .hljs-punctuation  { color: var(--syn-punctuation); }
+.diff-content .hljs-meta,
+.diff-content .hljs-doctag       { color: var(--syn-meta); }
 
 .diff-line-add {
   background: color-mix(in srgb, var(--success) 12%, transparent);

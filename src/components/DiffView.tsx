@@ -1,5 +1,7 @@
-import { Fragment, memo } from 'react';
+import { Fragment, memo, useMemo } from 'react';
 import type { ConflictFile, FileDiff } from '../ipc';
+import { detectLanguage } from '../utils/language';
+import { useHighlighter } from '../utils/useHighlighter';
 
 // Pure unified-diff renderer (M4 contract §4.1). No ipc imports: diffs arrive
 // precomputed from Rust (or the mock); this component only lays them out.
@@ -35,6 +37,12 @@ function Placeholder({ text }: { text: string }) {
 // content, a large diff no longer re-renders while its slot is loading or
 // unrelated App state changes.
 export const DiffView = memo(function DiffView({ diff }: DiffViewProps) {
+  // P4e Step 2: detect the file language and lazily load its grammar. Hooks
+  // run unconditionally at the top; the binary/too-large/empty short-circuits
+  // below never highlight, so this work is harmless for those states.
+  const lang = useMemo(() => detectLanguage(diff.path), [diff.path]);
+  const highlight = useHighlighter(lang?.id ?? null);
+
   if (diff.binary) return <Placeholder text="Binary file" />;
   if (diff.tooLarge) return <Placeholder text="Diff too large to display (> 5000 lines)" />;
   if (diff.hunks.length === 0) return <Placeholder text="No changes" />;
@@ -54,7 +62,17 @@ export const DiffView = memo(function DiffView({ diff }: DiffViewProps) {
                 <span className="diff-marker">
                   {line.kind === 'add' ? '+' : line.kind === 'del' ? '−' : ' '}
                 </span>
-                <span className="diff-content">{line.content}</span>
+                {(() => {
+                  const html = highlight ? highlight(line.content) : null;
+                  return html !== null ? (
+                    <span
+                      className="diff-content"
+                      dangerouslySetInnerHTML={{ __html: html }}
+                    />
+                  ) : (
+                    <span className="diff-content">{line.content}</span>
+                  );
+                })()}
               </div>
               {line.noNewline === true && (
                 <div className="diff-line diff-nonewline" aria-hidden="true">

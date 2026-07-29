@@ -183,6 +183,43 @@ const README_MD: FileDiff = fileDiff('README.md', 'modified', [
   ]),
 ]);
 
+// P4e Step 2 visibility: diffs across extensions so syntax highlighting is
+// exercised in the mock harness (.ts / .json / .css alongside the existing
+// .rs / .md / .toml). Fixture DATA only — no shape change.
+const IPC_TS: FileDiff = fileDiff('src/ipc/tabs.ts', 'modified', [
+  hunk(1, 6, 1, 7, [
+    ctx(1, 1, "import type { SessionState } from './types';"),
+    ctx(2, 2, ''),
+    del(3, 'export function activeTab(s: SessionState): string | null {'),
+    add(3, 'export function activeTab(s: SessionState): string | null {'),
+    add(4, '  // fall back to the first open repo when none is active'),
+    ctx(4, 5, '  return s.activeRepo ?? s.openRepos[0] ?? null;'),
+    ctx(5, 6, '}'),
+  ]),
+]);
+
+const TSCONFIG_JSON: FileDiff = fileDiff('tsconfig.json', 'modified', [
+  hunk(2, 5, 2, 5, [
+    ctx(2, 2, '  "compilerOptions": {'),
+    ctx(3, 3, '    "target": "ES2022",'),
+    del(4, '    "strict": false,'),
+    add(4, '    "strict": true,'),
+    ctx(5, 5, '    "jsx": "react-jsx"'),
+    ctx(6, 6, '  }'),
+  ]),
+]);
+
+const THEME_CSS: FileDiff = fileDiff('src/styles/theme.css', 'modified', [
+  hunk(1, 5, 1, 6, [
+    ctx(1, 1, '.lang-chip {'),
+    del(2, '  color: #888;'),
+    add(2, '  color: var(--text-1);'),
+    add(3, '  /* accent driven by data-lang */'),
+    ctx(3, 4, '  border-radius: 4px;'),
+    ctx(4, 5, '}'),
+  ]),
+]);
+
 const WORKDIR_DIFFS: Record<string, FileDiff> = {
   'src/main.rs': MAIN_RS,
   'src/app.rs': APP_RS,
@@ -193,6 +230,9 @@ const WORKDIR_DIFFS: Record<string, FileDiff> = {
   'assets/logo.png': LOGO_PNG,
   'data/big-report.csv': BIG_CSV,
   'README.md': README_MD,
+  'src/ipc/tabs.ts': IPC_TS,
+  'tsconfig.json': TSCONFIG_JSON,
+  'src/styles/theme.css': THEME_CSS,
 };
 
 /** Generic 1-hunk modified diff for any path without a canned fixture. */
