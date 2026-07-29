@@ -56,7 +56,7 @@ function MessageBody({ body }: { body: string }) {
   );
 }
 
-function FileHeaderRow({
+export function FileHeaderRow({
   file,
   expanded,
   onToggle,
@@ -105,7 +105,7 @@ function FileHeaderRow({
   );
 }
 
-function SkeletonRows() {
+export function SkeletonRows() {
   return (
     <div className="skeleton-group" aria-hidden="true">
       {Array.from({ length: 4 }, (_, i) => (

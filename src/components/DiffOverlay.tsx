@@ -22,6 +22,7 @@ const KIND_LABEL: Record<DiffOverlayMeta['kind'], string> = {
   untracked: 'Untracked',
   commit: 'Commit',
   conflict: 'Conflict',
+  compare: 'Compare',
 };
 
 /** Display metadata for the overlay header, derived by App (P3a §2.3) from the
@@ -34,7 +35,7 @@ export interface DiffOverlayMeta {
   /** null = lookup failed (P3a §2.3 fallback): no badge. */
   status: FileStatus | null;
   /** Drives the header context label. */
-  kind: 'staged' | 'unstaged' | 'untracked' | 'commit' | 'conflict';
+  kind: 'staged' | 'unstaged' | 'untracked' | 'commit' | 'conflict' | 'compare';
 }
 
 // P3c §8.3 (locked): the marker view is a plain highlighted <pre>, NOT

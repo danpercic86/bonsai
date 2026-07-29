@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CommitBox } from './CommitBox';
 import type { CommitBoxHandle } from './CommitBox';
 import { CommitPanel } from './CommitPanel';
+import { ComparePanel } from './ComparePanel';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
@@ -18,6 +19,7 @@ import { ipc } from '../ipc';
 import type {
   BranchesSnapshot,
   CommitDiff,
+  CompareDiff,
   ConflictEntry,
   ConflictResolution,
   FileDiff,
@@ -118,6 +120,14 @@ export function RepoWorkspace({
     null,
   );
 
+  // P5 §5.3: Compare right-panel mode (HEAD → right-clicked commit). Mirrors the
+  // commitDiff cluster; `compare.oid` is a full oid so it survives refetches.
+  const [compare, setCompare] = useState<{ oid: string } | null>(null);
+  const [compareData, setCompareData] = useState<CompareDiff | null>(null);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [compareError, setCompareError] = useState<string | null>(null);
+  const compareReqId = useRef(0);
+
   const statusReqId = useRef(0);
   const graphReqId = useRef(0);
   const branchesReqId = useRef(0);
@@ -133,6 +143,9 @@ export function RepoWorkspace({
   selectedIndexRef.current = selectedIndex;
   const graphDataRef = useRef(graph);
   graphDataRef.current = graph;
+  // Latest compare target read by refetchCompare without widening effect deps.
+  const compareRef = useRef(compare);
+  compareRef.current = compare;
   // Commit whose diff/panel is currently loaded — lets the selection effect skip
   // a reset+refetch when the selected OID is unchanged (tab switch / watcher tick
   // that only shifts the row index).
@@ -175,6 +188,16 @@ export function RepoWorkspace({
         kind: 'conflict',
       };
     }
+    if (key.startsWith('compare:')) {
+      const path = key.slice('compare:'.length);
+      const file = compareData?.files.find((f) => f.path === path) ?? null;
+      return {
+        path,
+        origPath: file?.origPath ?? null,
+        status: file?.status ?? null,
+        kind: 'compare',
+      };
+    }
     const sep = key.indexOf(':');
     const section = key.slice(0, sep) as WorkdirSection;
     const path = key.slice(sep + 1);
@@ -185,7 +208,7 @@ export function RepoWorkspace({
       status: entry?.status ?? null,
       kind: section,
     };
-  }, [diffSlot, status, commitDiff]);
+  }, [diffSlot, status, commitDiff, compareData]);
 
   const reportStatusError = useCallback((message: string) => {
     setStatusError({ id: ++statusErrorId.current, message });
@@ -210,6 +233,39 @@ export function RepoWorkspace({
     fileDiffReqId.current += 1;
     setDiffSlot(null);
   }, []);
+
+  // P5 §5.3: tear down compare mode. Bumps the req-id so any in-flight fetch is
+  // ignored, and collapses an open `compare:` overlay.
+  const clearCompare = useCallback(() => {
+    compareReqId.current += 1;
+    setCompare(null);
+    setCompareData(null);
+    setCompareLoading(false);
+    setCompareError(null);
+    if (diffSlotRef.current?.key.startsWith('compare:') === true) {
+      collapseDiffSlot();
+    }
+  }, [collapseDiffSlot]);
+
+  // P5 §5.3 refresh coexistence: re-fetch the active comparison after a repo
+  // change (HEAD may have moved). `compare.oid` is a full oid — no row remap. A
+  // `git`-error rejection means the compared commit is gone -> clear + inform.
+  const refetchCompare = useCallback(async () => {
+    const target = compareRef.current;
+    if (target === null) return;
+    const id = ++compareReqId.current;
+    try {
+      const cd = await ipc.compareWithHead(repoId, target.oid);
+      if (id !== compareReqId.current) return;
+      setCompareData(cd);
+      setCompareLoading(false);
+      setCompareError(null);
+    } catch {
+      if (id !== compareReqId.current) return;
+      clearCompare();
+      pushToast('info', 'Compared commit is no longer in this repository');
+    }
+  }, [repoId, clearCompare, pushToast]);
 
   const fetchConflictSlot = useCallback(
     async (path: string) => {
@@ -366,12 +422,19 @@ export function RepoWorkspace({
       const { info } = await ipc.openRepo(repoPath);
       setRepo(info);
       if (isUsableRepo(info)) {
-        await Promise.all([refetchStatus(), refetchGraph(), refetchBranches(), refetchOpState()]);
+        await Promise.all([
+          refetchStatus(),
+          refetchGraph(),
+          refetchBranches(),
+          refetchOpState(),
+          refetchCompare(),
+        ]);
       } else {
         clearStatus();
         clearGraph();
         clearBranches();
         clearOpState();
+        clearCompare();
       }
     } catch (e) {
       pushToast('error', `Refresh failed: ${errorMessage(e)}`);
@@ -382,10 +445,12 @@ export function RepoWorkspace({
     refetchGraph,
     refetchBranches,
     refetchOpState,
+    refetchCompare,
     clearStatus,
     clearGraph,
     clearBranches,
     clearOpState,
+    clearCompare,
     pushToast,
   ]);
 
@@ -469,6 +534,7 @@ export function RepoWorkspace({
         void refetchGraph();
         void refetchBranches();
         void refetchOpState();
+        void refetchCompare();
       });
       if (cancelled) {
         off();
@@ -481,7 +547,7 @@ export function RepoWorkspace({
       cancelled = true;
       for (const unsub of unsubs) unsub();
     };
-  }, [repoId, refetchStatus, refetchGraph, refetchBranches, refetchOpState]);
+  }, [repoId, refetchStatus, refetchGraph, refetchBranches, refetchOpState, refetchCompare]);
 
   // Window-focus rescan: ACTIVE tab only (the visible tab is the one the user
   // just returned to; background tabs self-heal on activation, §7).
@@ -495,6 +561,7 @@ export function RepoWorkspace({
         void refetchGraph();
         void refetchBranches();
         void refetchOpState();
+        void refetchCompare();
       });
       if (cancelled) {
         off();
@@ -507,7 +574,7 @@ export function RepoWorkspace({
       cancelled = true;
       for (const unsub of unsubs) unsub();
     };
-  }, [active, refetchStatus, refetchGraph, refetchBranches, refetchOpState]);
+  }, [active, refetchStatus, refetchGraph, refetchBranches, refetchOpState, refetchCompare]);
 
   // Manual refresh (button + Ctrl+R/F5).
   const handleRefresh = useCallback(async () => {
@@ -856,9 +923,47 @@ export function RepoWorkspace({
     if (parentIndex !== undefined) setSelectedIndex(parentIndex);
   }
 
+  // P5 §5.3: enter Compare mode (HEAD → the right-clicked commit). Read-only,
+  // so it is NOT gated on mutating/opActive. Collapses any open non-compare diff
+  // overlay first (its key belongs to another mode).
+  function handleCompareWithHead(oid: string) {
+    setMenu(null);
+    fileDiffReqId.current += 1;
+    setDiffSlot(null);
+    setCompare({ oid });
+    setCompareData(null);
+    setCompareLoading(true);
+    setCompareError(null);
+    const id = ++compareReqId.current;
+    ipc.compareWithHead(repoId, oid).then(
+      (cd) => {
+        if (id !== compareReqId.current) return;
+        setCompareData(cd);
+        setCompareLoading(false);
+      },
+      (e: unknown) => {
+        if (id !== compareReqId.current) return;
+        setCompareError(errorMessage(e));
+        setCompareLoading(false);
+      },
+    );
+  }
+
+  function handleToggleCompareDiff(file: FileDiffHeader) {
+    if (compare === null) return;
+    const key = `compare:${file.path}`;
+    if (diffSlotRef.current?.key === key) {
+      collapseDiffSlot();
+      return;
+    }
+    void fetchDiffSlot(key, () =>
+      ipc.compareWithHeadFileDiff(repoId, compare.oid, file.path, file.origPath),
+    );
+  }
+
   // P5 §5.2: build the right-click menu items for a graph target. Ref pills
-  // mirror the sidebar's merge/rebase gating EXACTLY; commit rows are handled
-  // in P5d (Compare with HEAD) — [] for now.
+  // mirror the sidebar's merge/rebase gating EXACTLY; commit rows offer
+  // "Compare with HEAD" (read-only; unavailable when HEAD is unborn).
   function buildContextItems(target: GraphContextTarget): ContextMenuItem[] {
     if (target.kind === 'ref') {
       const cur = headBranch?.name ?? null;
@@ -880,8 +985,15 @@ export function RepoWorkspace({
         },
       ];
     }
-    // TODO(P5d): Compare with HEAD
-    return [];
+    // Commit row → Compare with HEAD (unavailable for unborn HEAD, §1.3).
+    if (head === null || head.unborn) return [];
+    return [
+      {
+        label: 'Compare with HEAD',
+        disabled: false,
+        onSelect: () => handleCompareWithHead(target.oid),
+      },
+    ];
   }
 
   function handleGraphContextMenu(target: GraphContextTarget, clientX: number, clientY: number) {
@@ -895,7 +1007,7 @@ export function RepoWorkspace({
   const closeMenu = useCallback(() => setMenu(null), []);
 
   // Esc-layering effect (active tab only; global modals win). typing guard ->
-  // collapse diff overlay -> deselect commit.
+  // collapse diff overlay -> exit compare -> deselect commit (P5 §5.4).
   useEffect(() => {
     if (!active) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -907,11 +1019,15 @@ export function RepoWorkspace({
         collapseDiffSlot();
         return;
       }
+      if (compareRef.current !== null) {
+        clearCompare();
+        return;
+      }
       setSelectedIndex((cur) => (cur !== null ? null : cur));
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [active, globalModalOpen, collapseDiffSlot]);
+  }, [active, globalModalOpen, collapseDiffSlot, clearCompare]);
 
   // Per-repo shortcut effect (active tab only, §5.1): refresh / fetch / pull /
   // push / graph nav. Global modals + this repo's own dialogs suppress it.
@@ -1094,7 +1210,11 @@ export function RepoWorkspace({
               ref={graphRef}
               layout={graph}
               selectedIndex={selectedIndex}
-              onSelect={setSelectedIndex}
+              onSelect={(i) => {
+                // Left-clicking any row exits Compare mode (P5 §5.4).
+                if (compare !== null) clearCompare();
+                setSelectedIndex(i);
+              }}
               wip={wip}
               themeVersion={themeVersion}
               active={active}
@@ -1120,7 +1240,18 @@ export function RepoWorkspace({
             onRebaseSkip={() => void handleRebaseSkip()}
             onAbort={() => setAbortConfirmOpen(true)}
           />
-          {selectedIndex !== null && graph !== null ? (
+          {compare !== null ? (
+            <ComparePanel
+              data={compareData}
+              loading={compareLoading}
+              error={compareError}
+              headBranchName={headBranch?.name ?? null}
+              diffSlot={diffSlot}
+              listView={listView}
+              onToggleDiff={handleToggleCompareDiff}
+              onClose={clearCompare}
+            />
+          ) : selectedIndex !== null && graph !== null ? (
             <CommitPanel
               node={graph.nodes[selectedIndex]}
               data={commitDiff}

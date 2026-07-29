@@ -1524,6 +1524,42 @@ span.file-row-main {
   margin-top: 4px;
 }
 
+/* P5 §5.7: Compare (HEAD → commit) two-endpoint header. */
+.compare-endpoints {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.compare-endpoint {
+  overflow-wrap: anywhere;
+}
+
+.compare-endpoint-label {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.compare-endpoint-oid {
+  color: var(--text-2);
+}
+
+.compare-endpoint-summary {
+  color: var(--text-3);
+}
+
+.compare-arrow {
+  color: var(--text-3);
+}
+
+.compare-empty {
+  margin-top: 16px;
+}
+
 .commit-parents {
   display: flex;
   align-items: baseline;
