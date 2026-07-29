@@ -11,9 +11,32 @@ inner functions for command tests.
 Use `D:\Temp\bonsai-scratch`; when running cargo tests set TMP/TEMP to `D:\Temp` (tempfile
 honors them). Include this in every subagent prompt that runs tests or creates repos.**
 
-## P6 — Unified branch/remote context menus — **in-progress** (2026-07-29)
+## P7 — GitKraken-style graph layout — **in-progress** (2026-07-29)
 
-Current step: P6 AI GATE PASSED (2026-07-29) — awaiting USER CHECKPOINT. Commits: e3ae58e (P6a
+Current step: P7 kickoff — architect writing contract. Source: user request (2026-07-29) after
+confirming P6 works. Four requirements:
+1. **Three-zone row layout** like GitKraken: LEFT = ref labels, CENTER = graph lanes+dots,
+   RIGHT = commit summary + relative timestamp. (Today everything is one left→right run:
+   dot → pills → summary → author-text → date.)
+2. **Author initials avatar** on each commit node (colored circle w/ initials, color hashed from
+   author NAME — no network, no gravatar). Hover → full author name tooltip.
+3. **Multi-ref overflow**: keep the "+N" chip, but on hover list the hidden refs stacked
+   vertically (HTML tooltip/popover).
+4. **Collapse local+remote** into ONE label with icons (laptop = local, a remote/cloud icon =
+   remote) INSTEAD of showing `main` and `origin/main` separately — but ONLY when they sit on the
+   SAME commit; when diverged, show separately (locked decision).
+Locked decisions (user, 2026-07-29 AskUserQuestion): initials-only colored circles (no network);
+collapse local+remote only when same commit (separate when diverged); ALL refs (branches, remotes,
+tags) move to the LEFT column (right side is purely summary + timestamp).
+Orchestrator assessment: expected to be MOSTLY FRONTEND — Rust already sends author name + all refs
+per node, so graph.rs likely UNCHANGED. Work concentrates in src/graph/{draw.ts,metrics.ts,
+GraphCanvas.tsx}, plus ref-grouping + avatar helpers + an HTML tooltip overlay; hit-testing/context-
+menu (P5/P6 parity) must follow the refs to the left column. Rules: scratch repos under
+D:\Temp\bonsai-scratch only; TMP/TEMP=D:\Temp for cargo tests; orchestrator makes all commits.
+
+## P6 — Unified branch/remote context menus — **done** (USER CONFIRMED 2026-07-29)
+
+Current step: P6 DONE — USER CONFIRMED (2026-07-29, "confirmed it works"). Commits: e3ae58e (P6a
 backend tip + checkout_remote/delete_remote_tracking + 6 CLI-oracle tests), e3a2e39 (P6b IPC/mock/
 fixtures), 1334a5c (P6cd unified branchMenuItems + strip sidebar buttons + moved/new delete
 confirms), a8fc529 (P6b mock compareWithHead "No differences" for HEAD-tip refs). Contract:
