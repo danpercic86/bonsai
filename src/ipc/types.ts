@@ -246,6 +246,12 @@ export type MergeOutcome =
   | { kind: 'merged'; oid: string }
   | { kind: 'conflicts'; paths: string[] };
 
+export type RebaseOutcome =
+  | { kind: 'upToDate' }
+  | { kind: 'fastForwarded'; branch: string; to: string }
+  | { kind: 'rebased'; branch: string; head: string; steps: number }
+  | { kind: 'conflicts'; paths: string[]; currentStep: number; totalSteps: number };
+
 export type PushResult =
   | { kind: 'upToDate'; remote: string; branch: string }
   | { kind: 'pushed'; remote: string; branch: string; setUpstream: boolean };
@@ -371,6 +377,19 @@ export interface IpcApi {
   getConflict(path: string): Promise<ConflictFile>;
   /** Resolve one conflicted path. Rejects noRepo | git | invalidName. */
   resolveConflict(path: string, resolution: ConflictResolution): Promise<void>;
+  /** Start a rebase of the current branch onto `onto` (local or remote-tracking
+   *  shorthand). Rejects operationInProgress | branchNotFound | checkoutConflict
+   *  | configMissing | git | noRepo. */
+  rebaseBranch(onto: string): Promise<RebaseOutcome>;
+  /** Resume a paused rebase. Rejects noOperationInProgress | unresolvedConflicts
+   *  | configMissing | git | noRepo. */
+  rebaseContinue(): Promise<RebaseOutcome>;
+  /** Skip the current operation and resume. Rejects noOperationInProgress
+   *  | configMissing | git | noRepo. */
+  rebaseSkip(): Promise<RebaseOutcome>;
+  /** Abort a paused rebase (worktree-destructive). Rejects noOperationInProgress
+   *  | git | noRepo. */
+  rebaseAbort(): Promise<void>;
   /** Recent successfully-opened repos, most recent first, max 10. Never rejects
    *  for a missing/corrupt settings file (returns []). */
   getRecentRepos(): Promise<RecentRepo[]>;

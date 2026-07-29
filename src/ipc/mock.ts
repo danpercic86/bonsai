@@ -20,6 +20,7 @@ import type {
   PullResult,
   PushResult,
   PaneWidths,
+  RebaseOutcome,
   RecentRepo,
   RepoChangedPayload,
   RepoInfo,
@@ -121,10 +122,39 @@ const MERGE_README_TEXT = [
   '',
 ].join('\n');
 
-/** Seeds (or clears) the `?op=merge` paused-merge state, incl. status rows. */
+/** Seeds (or clears) the `?op=merge` / `?op=rebase` paused-op state + status rows. */
 function seedOpState(): void {
   conflictTexts = new Map();
-  if (new URLSearchParams(window.location.search).get('op') !== 'merge') {
+  const op = new URLSearchParams(window.location.search).get('op');
+  if (op === 'rebase') {
+    // Pre-seeded paused conflicted rebase at step 2/3 — the "resolve → continue
+    // finishes" demo. `rebaseBranch` is the separate clean-rebase demo path.
+    opState = {
+      kind: 'rebase',
+      headName: 'feature/topic',
+      onto: '00'.repeat(20), // fixture full oid of the onto tip (base row 0's oid)
+      currentStep: 2,
+      totalSteps: 3,
+    };
+    conflicts = [
+      { path: 'src/auth.ts', kind: 'bothModified', hasBase: true, hasOurs: true, hasTheirs: true },
+    ];
+    conflictTexts.set('src/auth.ts', {
+      path: 'src/auth.ts',
+      kind: 'bothModified',
+      binary: false,
+      tooLarge: false,
+      missing: false,
+      text: MERGE_AUTH_TEXT, // reuse the marker fixture
+    });
+    mockStatus.conflicted = conflicts.map((c) => ({
+      path: c.path,
+      origPath: null,
+      status: 'conflicted',
+    }));
+    return;
+  }
+  if (op !== 'merge') {
     opState = { kind: 'none' };
     conflicts = [];
     return;
@@ -332,6 +362,25 @@ function upsert(into: StatusEntry[], entry: StatusEntry): void {
   const idx = into.findIndex((e) => e.path === entry.path);
   if (idx !== -1) into.splice(idx, 1);
   into.push(entry);
+}
+
+/**
+ * Completes a paused rebase (shared by rebaseContinue/rebaseSkip): clears the
+ * op + conflicted status, moves HEAD, and prepends `steps` plain replayed
+ * MockCommits atop the graph so they visibly appear.
+ */
+function finishRebase(steps: number): RebaseOutcome {
+  opState = { kind: 'none' };
+  mockStatus.conflicted = [];
+  mockHeadOid = randomOid();
+  // mockCommits[0] is the topmost row = the new HEAD tip (prependCommits maps
+  // index 0 to headIndex 0), so the tip carries mockHeadOid.
+  const replayed: MockCommit[] = Array.from({ length: steps }, (_, i) => ({
+    oid: i === 0 ? mockHeadOid : randomOid(),
+    summary: `pick: replayed ${steps - i}`,
+  }));
+  mockCommits.unshift(...replayed);
+  return { kind: 'rebased', branch: mockHeadBranch, head: mockHeadOid, steps };
 }
 
 export const mockIpc: IpcApi = {
@@ -816,6 +865,82 @@ export const mockIpc: IpcApi = {
       upsert(mockStatus.staged, { path, origPath: null, status: 'deleted' });
       sortByPath(mockStatus.staged);
     }
+  },
+
+  // Stateful rebase mock (P3d contract §7.2). `?op=rebase` starts the harness
+  // pre-seeded in a paused conflicted rebase (step 2/3); rebaseBranch is the
+  // clean-rebase demo path. Shares opState/conflicts/conflictTexts with merge.
+  async rebaseBranch(_onto: string): Promise<RebaseOutcome> {
+    await delay(150);
+    if (opState.kind !== 'none') {
+      const err: AppError = {
+        kind: 'operationInProgress',
+        message: 'an operation is already in progress — commit or abort it first',
+      };
+      throw err;
+    }
+    // Clean-rebase demo: replay 3 plain commits atop the graph so they appear.
+    // mockCommits[0] is the topmost row = the new HEAD tip, so it carries the oid.
+    mockHeadOid = randomOid();
+    mockCommits.unshift(
+      { oid: mockHeadOid, summary: 'pick: replayed 3' },
+      { oid: randomOid(), summary: 'pick: replayed 2' },
+      { oid: randomOid(), summary: 'pick: replayed 1' },
+    );
+    const headBranch = mockBranches.local.find((b) => b.name === mockHeadBranch);
+    if (headBranch !== undefined && headBranch.upstream !== null) {
+      headBranch.ahead = (headBranch.ahead ?? 0) + 3;
+    }
+    return { kind: 'rebased', branch: mockHeadBranch, head: mockHeadOid, steps: 3 };
+  },
+
+  async rebaseContinue(): Promise<RebaseOutcome> {
+    await delay(150);
+    if (opState.kind !== 'rebase') {
+      const err: AppError = { kind: 'noOperationInProgress', message: 'no rebase in progress' };
+      throw err;
+    }
+    if (conflicts.length > 0) {
+      const err: AppError = {
+        kind: 'unresolvedConflicts',
+        message: `cannot continue: ${conflicts.length} unresolved conflict(s) remain`,
+      };
+      throw err;
+    }
+    // Advance the current step (so a mid-call getOpState would reflect it), then
+    // finish: the seeded demo has no further conflict, so a single continue
+    // completes the remaining steps (2/3 → done).
+    const totalSteps = opState.totalSteps;
+    opState = { ...opState, currentStep: opState.currentStep + 1 };
+    return finishRebase(totalSteps);
+  },
+
+  async rebaseSkip(): Promise<RebaseOutcome> {
+    await delay(150);
+    if (opState.kind !== 'rebase') {
+      const err: AppError = { kind: 'noOperationInProgress', message: 'no rebase in progress' };
+      throw err;
+    }
+    // Skip is allowed WITH conflicts — dropping the offending commit resolves it.
+    const totalSteps = opState.totalSteps;
+    conflicts = [];
+    conflictTexts = new Map();
+    mockStatus.conflicted = [];
+    opState = { ...opState, currentStep: opState.currentStep + 1 };
+    return finishRebase(totalSteps);
+  },
+
+  async rebaseAbort(): Promise<void> {
+    await delay(150);
+    if (opState.kind !== 'rebase') {
+      const err: AppError = { kind: 'noOperationInProgress', message: 'no rebase in progress' };
+      throw err;
+    }
+    // Abort rewinds: restore the pre-rebase state, prepend NOTHING.
+    opState = { kind: 'none' };
+    conflicts = [];
+    conflictTexts = new Map();
+    mockStatus.conflicted = [];
   },
 
   async getRecentRepos(): Promise<RecentRepo[]> {

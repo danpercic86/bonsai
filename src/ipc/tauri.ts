@@ -16,6 +16,7 @@ import type {
   MergeOutcome,
   PullResult,
   PushResult,
+  RebaseOutcome,
   RecentRepo,
   RepoChangedPayload,
   RepoInfo,
@@ -126,6 +127,22 @@ export const tauriIpc: IpcApi = {
 
   resolveConflict(path: string, resolution: ConflictResolution): Promise<void> {
     return invoke<void>('resolve_conflict', { path, resolution });
+  },
+
+  rebaseBranch(onto: string): Promise<RebaseOutcome> {
+    return invoke<RebaseOutcome>('rebase_branch', { onto });
+  },
+
+  rebaseContinue(): Promise<RebaseOutcome> {
+    return invoke<RebaseOutcome>('rebase_continue');
+  },
+
+  rebaseSkip(): Promise<RebaseOutcome> {
+    return invoke<RebaseOutcome>('rebase_skip');
+  },
+
+  rebaseAbort(): Promise<void> {
+    return invoke<void>('rebase_abort');
   },
 
   getRecentRepos(): Promise<RecentRepo[]> {

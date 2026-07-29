@@ -30,6 +30,7 @@ export type {
   LineKind,
   ListView,
   MergeOutcome,
+  RebaseOutcome,
   RecentRepo,
   RefKind,
   RefLabel,
