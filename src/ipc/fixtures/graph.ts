@@ -23,14 +23,21 @@ export function buildMockGraph(): GraphLayout {
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
 
-  const push = (summary: string, lane: number, parents: number[], refs?: RefLabel[]): void => {
+  const push = (
+    summary: string,
+    lane: number,
+    parents: number[],
+    refs?: RefLabel[],
+    // P7 §9: optional single-token author override (exercises initials "TO").
+    authorName?: string,
+  ): void => {
     const row = nodes.length;
     const node: GraphNode = {
       id: oid(row),
       lane,
       parents,
       summary,
-      author: author(row),
+      author: authorName ?? author(row),
       ts: base - row * HOUR,
     };
     if (refs !== undefined) node.refs = refs; // absent when empty, like the wire
@@ -38,18 +45,34 @@ export function buildMockGraph(): GraphLayout {
   };
 
   // Rows 0–7 (hand-computed lanes/edges — copied from the contract).
+  // P7 §9: collapse + overflow on one row. main(local head)+origin/main(remote)
+  // collapse to ONE 'main' label (laptop+cloud); dev(local)+origin/dev(remote)
+  // collapse to 'dev'; origin/release is remote-only ('release', cloud only);
+  // v1.0/v0.9 are tags. groupRefs yields 5 entities
+  // [main(L+R,head), dev(L+R), release(R), #v1.0, #v0.9] → the 180px band shows
+  // main (+ maybe dev) then a +N chip. Order mirrors the Rust backend:
+  // locals head-first, then remotes, then tags.
   push('Merge feat and exp', 0, [3, 1, 2], [
     { name: 'main', kind: 'localBranch', isHead: true },
+    { name: 'dev', kind: 'localBranch', isHead: false },
     { name: 'origin/main', kind: 'remoteBranch', isHead: false },
+    { name: 'origin/dev', kind: 'remoteBranch', isHead: false },
+    { name: 'origin/release', kind: 'remoteBranch', isHead: false },
     { name: 'v1.0', kind: 'tag', isHead: false },
+    { name: 'v0.9', kind: 'tag', isHead: false },
   ]);
   push('feat: polish', 1, [4], [{ name: 'feat', kind: 'localBranch', isHead: false }]);
   push('experiment', 2, [5], [{ name: 'exp', kind: 'localBranch', isHead: false }]);
-  push('core work 4', 0, [5]);
-  push('feat: start', 1, [6]);
+  // P7 §9: single-token author → initials "TO" (other rows yield "AL"/"GH").
+  push('core work 4', 0, [5], undefined, 'torvalds');
+  // P7 §9: diverged pair — local `feat` is on row 1; its remote `origin/feat`
+  // lives here on row 4, so the two render as SEPARATE labels (no collapse):
+  // row 1 = laptop-only `feat`, row 4 = cloud-only `feat`.
+  push('feat: start', 1, [6], [{ name: 'origin/feat', kind: 'remoteBranch', isHead: false }]);
   push('core work 3', 0, [6]);
   push('core work 2', 0, [7]);
-  push('core work 1', 0, [8], [{ name: 'v0.9', kind: 'tag', isHead: false }]);
+  // P7 §9: v0.9 moved to row 0 (collapse/overflow case); row 7 now ref-less.
+  push('core work 1', 0, [8]);
 
   edges.push(
     { from: 0, to: 1, lane: 1 },
