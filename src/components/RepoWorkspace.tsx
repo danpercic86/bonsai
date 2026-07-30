@@ -1637,6 +1637,7 @@ export function RepoWorkspace({
               source={diffBrowserView.source}
               files={diffBrowserView.files}
               scope={scope}
+              listView={listView}
               onClose={diffBrowserView.onClose}
             />
           )}

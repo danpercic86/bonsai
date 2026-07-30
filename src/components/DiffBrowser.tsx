@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { ipc } from '../ipc';
-import type { FileDiff, FileDiffHeader, FileStatus } from '../ipc';
+import type { FileDiff, FileDiffHeader, FileStatus, ListView } from '../ipc';
 import { errorMessage } from '../utils/errors';
+import { buildPathTree, flattenTreeLeaves } from '../utils/pathTree';
 import { SkeletonRows } from './CommitPanel';
 import type { DiffScope } from './DiffFileTree';
 import { DiffView } from './DiffView';
@@ -50,10 +51,13 @@ export interface DiffBrowserProps {
   files: FileDiffHeader[];
   /** P11g-rev §1: current scope (lifted to RepoWorkspace). Drives which cards render. */
   scope: DiffScope;
+  /** P11g-rev §2: current list view (lifted to RepoWorkspace). In 'tree' mode the
+   *  stacked card order mirrors the Changes-panel tree; in 'flat' it is raw order. */
+  listView: ListView;
   onClose(): void;
 }
 
-export function DiffBrowser({ repoId, source, files, scope, onClose }: DiffBrowserProps) {
+export function DiffBrowser({ repoId, source, files, scope, listView, onClose }: DiffBrowserProps) {
   // §6.4: component-local cache + a bounded fetch queue. The cache is a ref so
   // async resolutions mutate it in place; `bump` forces the re-render that shows
   // the new content. Reading the ref during render is safe — every mutation is
@@ -135,28 +139,42 @@ export function DiffBrowser({ repoId, source, files, scope, onClose }: DiffBrows
   );
 
   // §6.4: on unmount, cancel so any in-flight fetch's `.finally` re-pump stops
-  // draining the queue into a discarded cache.
-  useEffect(
-    () => () => {
+  // draining the queue into a discarded cache. Reset to false on (re)mount so a
+  // React.StrictMode simulated unmount→remount (dev only) does not leave the flag
+  // stuck true — that would permanently short-circuit pump()/enqueue().
+  useEffect(() => {
+    cancelledRef.current = false;
+    return () => {
       cancelledRef.current = true;
-    },
-    [],
+    };
+  }, []);
+
+  // P11g-rev §2: order the header list to match the Changes panel. In 'tree' view
+  // the panel renders buildPathTree(files) (dirs-first, deterministic alpha), so
+  // we flatten that tree to its visual leaf order; in 'flat' view the panel maps
+  // `files` directly, so raw order already matches.
+  const orderedFiles = useMemo(
+    () =>
+      listView === 'tree' ? flattenTreeLeaves(buildPathTree(files, (f) => f.path)) : files,
+    [listView, files],
   );
 
-  // §6.3: filter the header list to the current scope WITHOUT refetching — the
-  // cache persists across scope changes for the browser's lifetime. Scope now
-  // comes from props (lifted to RepoWorkspace).
+  // §6.3: filter the ordered header list to the current scope WITHOUT refetching —
+  // the cache persists across scope changes for the browser's lifetime. Scope now
+  // comes from props (lifted to RepoWorkspace); order mirrors the Changes-panel
+  // tree in tree view.
   const visibleFiles = useMemo(() => {
-    if (scope.kind === 'root') return files;
+    if (scope.kind === 'root') return orderedFiles;
     if (scope.kind === 'dir') {
       const prefix = scope.prefix;
-      return files.filter((f) => f.path === prefix || f.path.startsWith(`${prefix}/`));
+      return orderedFiles.filter((f) => f.path === prefix || f.path.startsWith(`${prefix}/`));
     }
-    return files.filter((f) => f.path === scope.path);
-  }, [files, scope]);
+    return orderedFiles.filter((f) => f.path === scope.path);
+  }, [orderedFiles, scope]);
 
   // Change D: no visibility events. Eagerly enqueue every non-binary file in the
-  // current scope (top-to-bottom order == visibleFiles order == path-ascending),
+  // current scope (top-to-bottom order == visibleFiles order == the Changes-panel
+  // order: tree pre-order in 'tree' view, raw file order in 'flat' view),
   // so the first cards paint first. `enqueue` is idempotent per cache key, so
   // re-running on scope change never double-fetches already-loaded/queued files;
   // narrowing to a folder/file simply enqueues fewer.
@@ -166,11 +184,18 @@ export function DiffBrowser({ repoId, source, files, scope, onClose }: DiffBrows
   // and scoping to a folder/file naturally reduces load. Acceptable at
   // desktop-repo scale (the user's 125-file case is fine); a batched command
   // remains a future additive optimization, out of scope here.
+  //
+  // The trailing pump() resumes a drain that stalled across a React.StrictMode
+  // remount: the queue may already hold `idle` entries pushed during the first
+  // pass, so enqueue() short-circuits on them (cache already has the key) and
+  // never re-pumps. pump() is a stable useCallback([]) — calling it here is safe
+  // and idempotent.
   useEffect(() => {
     for (const f of visibleFiles) {
       if (!f.binary) enqueue(f.path);
     }
-  }, [visibleFiles, enqueue]);
+    pump(); // resume any drain stalled across a StrictMode remount
+  }, [visibleFiles, enqueue, pump]);
 
   return (
     <div className="diff-browser" role="region" aria-label="All changes">

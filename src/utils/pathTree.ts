@@ -112,3 +112,18 @@ export function buildPathTree<T>(
 
   return finalize(root, '', '').children;
 }
+
+/**
+ * Flattens a TreeNode<T>[] into its leaves in visual (pre-order, dirs-first)
+ * traversal order — exactly the order DiffFileTree renders them. Because
+ * buildPathTree already orders each level as `[...dirs, ...leaves]` and sorts,
+ * this yields the canonical visual leaf order. Pure; O(n).
+ */
+export function flattenTreeLeaves<T>(nodes: readonly TreeNode<T>[]): T[] {
+  const out: T[] = [];
+  for (const node of nodes) {
+    if (node.kind === 'leaf') out.push(node.item);
+    else out.push(...flattenTreeLeaves(node.children));
+  }
+  return out;
+}

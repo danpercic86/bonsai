@@ -8,7 +8,7 @@
 > senior-dev implements strictly to the signatures below. NO Rust/IPC change (see §8). Mock must
 > keep compiling. Files touched: `src/components/DiffBrowser.tsx`, `src/components/DiffFileTree.tsx`
 > (NEW), `src/components/ComparePanel.tsx`, `src/components/CommitPanel.tsx`,
-> `src/components/RepoWorkspace.tsx`, `src/styles.css`.
+> `src/components/RepoWorkspace.tsx`, `src/styles.css`, `src/utils/pathTree.ts` (§9).
 
 ## §0 The four locked user decisions (do not re-litigate)
 
@@ -31,9 +31,14 @@
 
 ## §1 `DiffBrowser` — header + stacked scroll only (Change A + D)
 
-`scope` is LIFTED to `RepoWorkspace` and passed in. DiffBrowser filters `files` by the passed-in
+`scope` is LIFTED to `RepoWorkspace` and passed in. DiffBrowser filters its files by the passed-in
 `scope` prop internally (keep the existing `visibleFiles` memo, sourcing scope from props). It
-exposes NO internal tree and no `listView`.
+exposes NO internal file-tree navigator — the sole scope navigator is the shared `DiffFileTree` in
+ComparePanel/CommitPanel (§2/§3); that removal is what §1 is really about.
+
+It DOES take a `listView` prop, whose SOLE purpose is to ORDER the stacked cards so they match the
+right-hand Changes-panel tree. DiffBrowser renders no tree from it; it only sorts. See §1.1
+`orderedFiles`.
 
 ### 1.1 New props
 
@@ -51,14 +56,35 @@ export interface DiffBrowserProps {
   files: FileDiffHeader[];
   /** Current scope (lifted to RepoWorkspace). Drives which cards render. */
   scope: DiffScope;
+  /**
+   * Card-ordering ONLY (matches the right-pane Changes tree). NOT a tree toggle inside the
+   * overlay — DiffBrowser has no internal tree. 'tree' → dirs-first pre-order; else raw `files`.
+   */
+  listView: ListView;
   onClose(): void;
 }
 export function DiffBrowser(props: DiffBrowserProps): JSX.Element;
 ```
 
-REMOVED vs current: `listView`, `initialScope`, the internal `const [scope, setScope]` state,
+`orderedFiles` — compute BEFORE scope filtering so the stacked cards sit in the same order as the
+Changes-panel tree:
+
+```ts
+// 'tree' → dirs-first tree pre-order (same leaf order the right-pane DiffFileTree shows);
+// otherwise → the raw `files` order as received.
+const orderedFiles = useMemo(
+  () => (listView === 'tree' ? flattenTreeLeaves(buildPathTree(files, (f) => f.path)) : files),
+  [files, listView],
+);
+```
+
+`visibleFiles` then filters `orderedFiles` (not the raw `files`) by the `scope` prop (§6.3 filter).
+`flattenTreeLeaves` is the new pure helper in `src/utils/pathTree.ts` (§9).
+
+REMOVED vs current: `initialScope`, the internal `const [scope, setScope]` state,
 `DiffFileTree`/`DiffTreeNodes`/`DiffTreeFileRow` (moved to §2), the `observer` state, the
-IntersectionObserver effect, and the `data-diff-path` observe wiring.
+IntersectionObserver effect, and the `data-diff-path` observe wiring. NOTE: `listView` is NOT
+removed — it is retained for card ordering only (see above).
 
 ### 1.2 Kept unchanged
 
@@ -66,7 +92,8 @@ IntersectionObserver effect, and the `data-diff-path` observe wiring.
   `bump` reducer, `queueRef`, `inFlightRef`, `MAX_CONCURRENCY = 4`, the `pump` callback,
   `sourceRef`/`filesRef`/`repoIdRef`, `cancelledRef` unmount guard, `enqueue` (idempotent per cache
   key), `retry`.
-- `visibleFiles` memo (§6.3 filter), now reading the `scope` PROP instead of local state.
+- `visibleFiles` memo (§6.3 filter), now reading the `scope` PROP and filtering `orderedFiles`
+  (§1.1) instead of the raw `files` array.
 - The header markup (`.diff-browser-header`, title, `×` close → `onClose`).
 - `DiffCard` / `DiffCardBody` rendering: idle/loading → `SkeletonRows`; ready → `<DiffView>`;
   error → inline banner + Retry; binary short-circuit (never fetched); `DiffView` owns
@@ -83,7 +110,7 @@ Add a single mount-and-scope-change enqueue effect:
 
 ```ts
 // Change D: no visibility events. Eagerly enqueue every non-binary file in the
-// current scope (top-to-bottom order == visibleFiles order == path-ascending),
+// current scope (top-to-bottom order == visibleFiles order == orderedFiles order),
 // so the first cards paint first. `enqueue` is idempotent per cache key, so
 // re-running on scope change never double-fetches already-loaded/queued files;
 // narrowing to a folder/file simply enqueues fewer.
@@ -91,7 +118,8 @@ useEffect(() => {
   for (const f of visibleFiles) {
     if (!f.binary) enqueue(f.path);
   }
-}, [visibleFiles, enqueue]);
+  pump(); // §9 bug 1: resume any drain that stalled across a StrictMode remount.
+}, [visibleFiles, enqueue, pump]);
 ```
 
 `enqueue` stays `[pump]`-stable; `pump` stays `[]`-stable — the effect's real dep is `visibleFiles`.
@@ -233,6 +261,8 @@ useEffect(() => {
 - CommitPanel: `scope={scope}` and
   `onSelectScope={(s) => { setScope(s); setCommitBrowserOpen(true); }}` (clicking opens + scopes).
   Remove `onViewAll`/`onOpenFile`.
+- `listView` continues to be passed to both panels AND (§4.5) to `DiffBrowser`, so the overlay's
+  card order matches the panel tree.
 
 ### 4.4 DiffBrowser source memo (replaces `diffBrowserView` ~1497–1520)
 
@@ -274,6 +304,7 @@ stays visible and ComparePanel shows "No differences".
     source={diffBrowserView.source}
     files={diffBrowserView.files}
     scope={scope}
+    listView={listView}
     onClose={diffBrowserView.onClose}
   />
 )}
@@ -281,7 +312,8 @@ stays visible and ComparePanel shows "No differences".
 
 The `key` on `source.oid` makes a DIFFERENT compare target / commit remount fresh (clears the
 per-file cache + queue); a refetch of the SAME `compare.oid` (refetchCompare) keeps the same key, so
-the cache survives a repo refresh. No `listView`/`initialScope` props.
+the cache survives a repo refresh. `listView` is passed for card ordering only (§1.1); no
+`initialScope` prop.
 
 ### 4.6 Graph `onSelect` (~1611–1617)
 
@@ -347,6 +379,9 @@ here (the §4.2 effect covers selection changes; clearCompare is compare-only).
   already-loaded files are not refetched on scope change.
 - No left tree remains inside the overlay (`.diff-browser-tree`/`.diff-browser-body` gone; overlay =
   header + single scroll column).
+- Stacked-card order matches the right-pane Changes tree in BOTH `listView` modes (§9 bug 2): in
+  'tree' view the cards follow the dirs-first tree pre-order; in flat/'list' view they follow the
+  raw `files` order.
 - Commit mode: selecting a commit shows CommitPanel but NO overlay until a root/folder/file click in
   its tree; the × / Esc closes the overlay back to the summary; selecting a different commit closes
   it and resets scope.
@@ -367,3 +402,45 @@ reuses the existing `compareWithHeadFileDiff(repoId, oid, path, origPath)` and
 This revision is purely a frontend interaction/loader rework. If senior-dev finds the mock does not
 already serve those two per-file commands, that is a pre-existing gap to flag — this contract adds
 no new surface.
+
+---
+
+## §9 Post-revision fixes (2026-07-30)
+
+Two bugs reported after P11g-revision landed in the all-files DiffBrowser, now fixed. This section
+records what shipped so the contract matches the code; §1 above was reconciled to keep `listView`.
+
+### 9.1 Bug 1 — files past the first ≤4 stuck in the loading skeleton forever
+
+Root cause: under `React.StrictMode`, DiffBrowser mounts → unmounts → remounts. The `cancelledRef`
+unmount guard effect only set `cancelledRef.current = true` on cleanup and never reset it, so after
+the remount the ref stayed `true`, permanently short-circuiting `pump()`/`enqueue()`. The first
+in-flight batch (≤ `MAX_CONCURRENCY` = 4) that started before cleanup could resolve, but no further
+files were ever drained.
+
+Fix:
+- The guard effect now resets `cancelledRef.current = false` on (re)mount and sets it `true` on
+  cleanup (was cleanup-only).
+- The eager-enqueue effect (§1.3) calls `pump()` at the end, with `pump` in its dependency array, to
+  resume a drain that stalled across the remount.
+
+### 9.2 Bug 2 — stacked diff order did not match the right-hand Changes panel
+
+Root cause: DiffBrowser rendered cards in raw `files` order while the Changes panel showed a
+dirs-first tree, so the two lists disagreed in 'tree' view.
+
+Fix:
+- New pure helper `flattenTreeLeaves()` in `src/utils/pathTree.ts` — walks a `buildPathTree` result
+  and returns its leaves in dirs-first pre-order (the same order the `DiffFileTree` renders):
+
+  ```ts
+  // src/utils/pathTree.ts
+  export function flattenTreeLeaves<T>(tree: PathTree<T>): T[];
+  ```
+
+- DiffBrowser now takes the `listView` prop (§1.1) and computes
+  `orderedFiles = listView === 'tree' ? flattenTreeLeaves(buildPathTree(files, f => f.path)) : files`,
+  then filters `orderedFiles` by `scope` for `visibleFiles`. `listView` is used ONLY for this
+  ordering — DiffBrowser still has no internal file-tree navigator.
+- `RepoWorkspace` passes `listView` through to `DiffBrowser` (§4.5), the same value it already passes
+  to ComparePanel/CommitPanel, so the overlay order tracks the panel tree.
