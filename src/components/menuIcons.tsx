@@ -26,6 +26,19 @@ export function CheckoutIcon() {
   );
 }
 
+/** Create branch here — a trunk with a fork branching to a new dot. */
+export function BranchIcon() {
+  return (
+    <svg {...svgProps}>
+      <circle cx="4.5" cy="3" r="1.5" />
+      <circle cx="4.5" cy="13" r="1.5" />
+      <circle cx="11.5" cy="6.5" r="1.5" />
+      <path d="M4.5 4.5 V11.5" />
+      <path d="M4.5 8 C4.5 6 7 6.5 10 6.5" />
+    </svg>
+  );
+}
+
 /** Copy — two overlapping rounded rectangles (classic copy glyph). */
 export function CopyIcon() {
   return (

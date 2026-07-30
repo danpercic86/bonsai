@@ -284,6 +284,13 @@ export interface CreateStashResult {
   created: boolean;
 }
 
+export interface CreateBranchHereResult {
+  /** true when uncommitted work was auto-stashed and carried across. */
+  stashed: boolean;
+  /** Present only when `stashed`; null otherwise (serde None → null). */
+  apply: ApplyStashOutcome | null;
+}
+
 export type MergeOutcome =
   | { kind: 'upToDate' }
   | { kind: 'fastForwarded'; branch: string; to: string; stashed: boolean }
@@ -424,6 +431,10 @@ export interface IpcApi {
   /** Create branch at current HEAD (no checkout). Rejects
    *  invalidName | branchExists | git | noRepo. */
   createBranch(repoId: string, name: string): Promise<void>;
+  /** Create local branch `name` at commit `oid`, auto-stashing/re-applying
+   *  uncommitted work across the checkout. Rejects invalidName | branchExists
+   *  | operationInProgress | configMissing | checkoutConflict | git | noRepo. */
+  createBranchHere(repoId: string, name: string, oid: string): Promise<CreateBranchHereResult>;
   /** Safe checkout of a LOCAL branch. Rejects
    *  branchNotFound | checkoutConflict | git | noRepo. */
   checkoutBranch(repoId: string, name: string): Promise<void>;

@@ -11,6 +11,7 @@ import type {
   ConflictEntry,
   ConflictFile,
   ConflictResolution,
+  CreateBranchHereResult,
   CreateStashResult,
   FetchResult,
   FileDiff,
@@ -111,6 +112,10 @@ export const tauriIpc: IpcApi = {
 
   createBranch(repoId: string, name: string): Promise<void> {
     return invoke<void>('create_branch', { repoId, name });
+  },
+
+  createBranchHere(repoId: string, name: string, oid: string): Promise<CreateBranchHereResult> {
+    return invoke<CreateBranchHereResult>('create_branch_here', { repoId, name, oid });
   },
 
   checkoutBranch(repoId: string, name: string): Promise<void> {

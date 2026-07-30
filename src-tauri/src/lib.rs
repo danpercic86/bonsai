@@ -30,6 +30,7 @@ pub fn run() {
             commands::compare_with_head_file_diff,
             commands::list_branches,
             commands::create_branch,
+            commands::create_branch_here,
             commands::checkout_branch,
             commands::delete_branch,
             commands::checkout_remote,

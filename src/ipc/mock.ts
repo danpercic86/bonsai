@@ -23,6 +23,7 @@ import type {
   ConflictEntry,
   ConflictFile,
   ConflictResolution,
+  CreateBranchHereResult,
   CreateStashResult,
   FetchResult,
   FileDiff,
@@ -846,6 +847,61 @@ export const mockIpc: IpcApi = {
       tip: randomOid(),
     });
     state.branches.local.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  },
+
+  // P11 §1.3: create a local branch at `oid` and check it out, carrying any
+  // dirty worktree across. Stateful so the graph HEAD/new-branch pills move on
+  // the next refreshAll. `?branch=cbhconflict` exercises the Conflicts toast.
+  async createBranchHere(
+    repoId: string,
+    name: string,
+    oid: string,
+  ): Promise<CreateBranchHereResult> {
+    await delay(250);
+    const state = requireRepo(repoId);
+    if (isInvalidBranchName(name)) {
+      const err: AppError = { kind: 'invalidName', message: `invalid branch name: '${name}'` };
+      throw err;
+    }
+    const trimmed = name.trim();
+    if (state.branches.local.some((b) => b.name === trimmed)) {
+      const err: AppError = {
+        kind: 'branchExists',
+        message: `branch '${trimmed}' already exists`,
+      };
+      throw err;
+    }
+    const s = state.status;
+    const dirty =
+      s.staged.length > 0 ||
+      s.unstaged.length > 0 ||
+      s.untracked.length > 0 ||
+      s.conflicted.length > 0;
+    // Add the new branch at `oid` as the checked-out HEAD (unset previous head)
+    // + move headBranch/headOid so the graph HEAD pill follows on refreshAll.
+    for (const b of state.branches.local) b.isHead = false;
+    state.branches.local.push({
+      name: trimmed,
+      isHead: true,
+      upstream: null,
+      ahead: null,
+      behind: null,
+      tip: oid,
+    });
+    state.branches.local.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+    state.headBranch = trimmed;
+    state.headOid = oid;
+    state.branches.head = { branchName: trimmed, oid, detached: false, unborn: false };
+    if (!dirty) return { stashed: false, apply: null };
+    // Simulate carrying work across the switch.
+    if (query('branch') === 'cbhconflict') {
+      // Carried with markers: worktree stays dirty (synthetic conflict entry)
+      // and the stash would be RETAINED — do NOT clear the status.
+      upsert(s.conflicted, { path: 'src/app.ts', origPath: null, status: 'conflicted' });
+      return { stashed: true, apply: { kind: 'conflicts', paths: ['src/app.ts'] } };
+    }
+    // Clean carry-over: the changes moved with us — status preserved as-is.
+    return { stashed: true, apply: { kind: 'applied' } };
   },
 
   async checkoutBranch(repoId: string, name: string): Promise<void> {

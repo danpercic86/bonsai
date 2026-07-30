@@ -1,7 +1,7 @@
 use tauri::Emitter;
 
 use crate::error::AppError;
-use crate::git::branches::{self, BranchesSnapshot};
+use crate::git::branches::{self, BranchesSnapshot, CreateBranchHereResult};
 use crate::git::commit::{create_commit, CommitResult};
 use crate::git::conflict::{self, ConflictEntry, ConflictFile, ConflictResolution};
 use crate::git::diff::{
@@ -670,6 +670,33 @@ async fn create_branch_inner(
 ) -> Result<(), AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || branches::create_branch(&path, &name))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Creates local branch `name` at commit `oid`, auto-stashing/re-applying
+/// uncommitted work across the checkout (P11 §1). Errors: `invalidName` |
+/// `branchExists` | `operationInProgress` | `configMissing` | `checkoutConflict`
+/// | `git` | `noRepo`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn create_branch_here(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    name: String,
+    oid: String,
+) -> Result<CreateBranchHereResult, AppError> {
+    create_branch_here_inner(state.inner(), &repo_id, name, oid).await
+}
+
+/// Runtime-free core of `create_branch_here` (unit-testable without a Tauri app).
+async fn create_branch_here_inner(
+    state: &AppState,
+    repo_id: &str,
+    name: String,
+    oid: String,
+) -> Result<CreateBranchHereResult, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || branches::create_branch_here(&path, &name, &oid))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

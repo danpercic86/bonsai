@@ -4,9 +4,11 @@ import type { CommitBoxHandle } from './CommitBox';
 import { CommitPanel } from './CommitPanel';
 import { ComparePanel } from './ComparePanel';
 import { ConfirmDialog } from './ConfirmDialog';
+import { PromptDialog } from './PromptDialog';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
 import {
+  BranchIcon,
   CheckoutIcon,
   CompareIcon,
   CopyIcon,
@@ -120,8 +122,13 @@ export function RepoWorkspace({
   const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(null);
   const [pendingDeleteRemote, setPendingDeleteRemote] = useState<string | null>(null);
   const [pendingDropStash, setPendingDropStash] = useState<number | null>(null);
+  // P11 §1.4: "Create branch here" target commit → drives the PromptDialog.
+  const [pendingCreateBranch, setPendingCreateBranch] = useState<{ oid: string } | null>(null);
   const dialogOpen =
-    pendingDeleteBranch !== null || pendingDeleteRemote !== null || pendingDropStash !== null;
+    pendingDeleteBranch !== null ||
+    pendingDeleteRemote !== null ||
+    pendingDropStash !== null ||
+    pendingCreateBranch !== null;
 
   const [graph, setGraph] = useState<GraphLayout | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
@@ -706,6 +713,31 @@ export function RepoWorkspace({
     }
   }
 
+  // P11 §1.4: create a local branch at `oid` + check it out, carrying any
+  // uncommitted work across via auto-stash. HEAD moves, so refreshAll.
+  async function handleCreateBranchHere(oid: string, name: string): Promise<void> {
+    setMutating(true);
+    try {
+      const res = await ipc.createBranchHere(repoId, name, oid);
+      await refreshAll();
+      if (!res.stashed) {
+        pushToast('success', `Created and checked out ${name}`);
+      } else if (res.apply?.kind === 'applied') {
+        pushToast('success', `Created ${name} and carried your changes over`);
+      } else {
+        pushToast(
+          'warning',
+          `Created ${name}; your changes were carried over with conflicts — resolve them in the status panel`,
+        );
+      }
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+      setPendingCreateBranch(null);
+    }
+  }
+
   async function handleDeleteBranch(name: string) {
     setBranchesError(null);
     setMutating(true);
@@ -1172,6 +1204,12 @@ export function RepoWorkspace({
             : handleCheckoutBranch(name)),
       },
       {
+        label: 'Create branch here',
+        icon: <BranchIcon />,
+        disabled: gate,
+        onSelect: () => setPendingCreateBranch({ oid: tip }),
+      },
+      {
         label: 'Copy branch name',
         icon: <CopyIcon />,
         disabled: false,
@@ -1266,7 +1304,14 @@ export function RepoWorkspace({
     }
     // Commit row → Compare with HEAD (unavailable for unborn HEAD, §1.3).
     if (head === null || head.unborn) return [];
+    const gate = mutating || opActive;
     return [
+      {
+        label: 'Create branch here',
+        icon: <BranchIcon />,
+        disabled: gate,
+        onSelect: () => setPendingCreateBranch({ oid: target.oid }),
+      },
       {
         label: 'Compare with HEAD',
         icon: <CompareIcon />,
@@ -1671,6 +1716,24 @@ export function RepoWorkspace({
           This permanently discards the stashed changes and cannot be undone.
         </div>
       </ConfirmDialog>
+
+      <PromptDialog
+        open={pendingCreateBranch !== null}
+        title="Create branch here"
+        label="Branch name"
+        placeholder="feature/my-branch"
+        confirmLabel="Create branch"
+        busy={mutating}
+        validate={(v) => {
+          const t = v.trim();
+          if (t === '' || t.startsWith('-')) return 'Enter a valid branch name';
+          if (branches?.local.some((b) => b.name === t) === true)
+            return 'A branch with that name already exists';
+          return null;
+        }}
+        onSubmit={(v) => void handleCreateBranchHere(pendingCreateBranch!.oid, v.trim())}
+        onCancel={() => setPendingCreateBranch(null)}
+      />
 
       {menu !== null && (
         <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={closeMenu} />
