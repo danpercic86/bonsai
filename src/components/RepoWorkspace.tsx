@@ -20,6 +20,8 @@ import {
 } from './menuIcons';
 import { DiffOverlay } from './DiffOverlay';
 import type { DiffOverlayMeta } from './DiffOverlay';
+import { DiffBrowser } from './DiffBrowser';
+import type { DiffScope } from './DiffBrowser';
 import { OpBanner } from './OpBanner';
 import { PaneDivider } from './PaneDivider';
 import { Sidebar } from './Sidebar';
@@ -38,7 +40,6 @@ import type {
   ConflictEntry,
   ConflictResolution,
   FileDiff,
-  FileDiffHeader,
   GraphLayout,
   GraphPrefs,
   HeadInfo,
@@ -174,6 +175,19 @@ export function RepoWorkspace({
   const [compareError, setCompareError] = useState<string | null>(null);
   const compareReqId = useRef(0);
 
+  // P11g §6.5: the all-files DiffBrowser overlay (compare + commit-selected
+  // modes). `scope` seeds the initial tree selection (a clicked file row →
+  // {kind:'file',path}). Retires the single-file diffSlot/DiffOverlay for these
+  // two modes; the working-dir StatusPanel keeps its diffSlot untouched.
+  const [diffBrowser, setDiffBrowser] = useState<{
+    mode: 'commit' | 'compare';
+    oid: string;
+    scope?: DiffScope;
+  } | null>(null);
+  // Latest `diffBrowser` read by the Esc-layering effect without widening deps.
+  const diffBrowserRef = useRef(diffBrowser);
+  diffBrowserRef.current = diffBrowser;
+
   const statusReqId = useRef(0);
   const graphReqId = useRef(0);
   const branchesReqId = useRef(0);
@@ -217,32 +231,12 @@ export function RepoWorkspace({
   const overlayMeta: DiffOverlayMeta | null = useMemo(() => {
     if (diffSlot === null) return null;
     const key = diffSlot.key;
-    if (key.startsWith('commit:')) {
-      const path = key.slice('commit:'.length);
-      const file = commitDiff?.files.find((f) => f.path === path) ?? null;
-      return {
-        path,
-        origPath: file?.origPath ?? null,
-        status: file?.status ?? null,
-        kind: 'commit',
-      };
-    }
     if (key.startsWith('conflict:')) {
       return {
         path: key.slice('conflict:'.length),
         origPath: null,
         status: 'conflicted',
         kind: 'conflict',
-      };
-    }
-    if (key.startsWith('compare:')) {
-      const path = key.slice('compare:'.length);
-      const file = compareData?.files.find((f) => f.path === path) ?? null;
-      return {
-        path,
-        origPath: file?.origPath ?? null,
-        status: file?.status ?? null,
-        kind: 'compare',
       };
     }
     const sep = key.indexOf(':');
@@ -255,7 +249,7 @@ export function RepoWorkspace({
       status: entry?.status ?? null,
       kind: section,
     };
-  }, [diffSlot, status, commitDiff, compareData]);
+  }, [diffSlot, status]);
 
   const reportStatusError = useCallback((message: string) => {
     setStatusError({ id: ++statusErrorId.current, message });
@@ -292,6 +286,8 @@ export function RepoWorkspace({
     if (diffSlotRef.current?.key.startsWith('compare:') === true) {
       collapseDiffSlot();
     }
+    // P11g §6.5: exiting compare closes an open compare-mode DiffBrowser.
+    if (diffBrowserRef.current?.mode === 'compare') setDiffBrowser(null);
   }, [collapseDiffSlot]);
 
   // P5 §5.3 refresh coexistence: re-fetch the active comparison after a repo
@@ -584,10 +580,6 @@ export function RepoWorkspace({
       setCommitDiff(null);
       setCommitDiffLoading(false);
       setCommitDiffError(null);
-      if (diffSlotRef.current?.key.startsWith('commit:') === true) {
-        fileDiffReqId.current += 1;
-        setDiffSlot(null);
-      }
     }
   }, [selectedIndex, graph, repoId]);
 
@@ -1162,15 +1154,11 @@ export function RepoWorkspace({
     );
   }
 
-  function handleToggleCommitDiff(file: FileDiffHeader) {
+  // P11g §6.5: open the all-files DiffBrowser for the selected commit. `scope`
+  // is set when a specific file row was clicked (→ that file), else root.
+  function openCommitBrowser(scope?: DiffScope) {
     if (selectedIndex === null || graph === null) return;
-    const oid = graph.nodes[selectedIndex].id;
-    const key = `commit:${file.path}`;
-    if (diffSlotRef.current?.key === key) {
-      collapseDiffSlot();
-      return;
-    }
-    void fetchDiffSlot(key, () => ipc.getCommitFileDiff(repoId, oid, file.path, file.origPath));
+    setDiffBrowser({ mode: 'commit', oid: graph.nodes[selectedIndex].id, scope });
   }
 
   function handleSelectParent(parentOrdinal: number) {
@@ -1205,16 +1193,10 @@ export function RepoWorkspace({
     );
   }
 
-  function handleToggleCompareDiff(file: FileDiffHeader) {
+  // P11g §6.5: open the all-files DiffBrowser for the active comparison.
+  function openCompareBrowser(scope?: DiffScope) {
     if (compare === null) return;
-    const key = `compare:${file.path}`;
-    if (diffSlotRef.current?.key === key) {
-      collapseDiffSlot();
-      return;
-    }
-    void fetchDiffSlot(key, () =>
-      ipc.compareWithHeadFileDiff(repoId, compare.oid, file.path, file.origPath),
-    );
+    setDiffBrowser({ mode: 'compare', oid: compare.oid, scope });
   }
 
   // P6 §4.1: the single shared builder for a branch/remote-tracking ref menu,
@@ -1399,6 +1381,12 @@ export function RepoWorkspace({
       if (globalModalOpen) return;
       const target = e.target as HTMLElement | null;
       if (target !== null && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) return;
+      // P11g §6.5: the DiffBrowser sits ABOVE compare/commit selection in the
+      // Esc layering — close it first.
+      if (diffBrowserRef.current !== null) {
+        setDiffBrowser(null);
+        return;
+      }
       if (diffSlotRef.current !== null) {
         collapseDiffSlot();
         return;
@@ -1505,6 +1493,32 @@ export function RepoWorkspace({
   ]);
 
   const headBranch = branches?.local.find((b) => b.isHead) ?? null;
+
+  // P11g §6.5: resolve the DiffBrowser source labels + header list from the
+  // already-fetched commitDiff/compareData. null (browser not rendered) until
+  // the header list for the active mode has loaded.
+  const diffBrowserView = useMemo(() => {
+    if (diffBrowser === null) return null;
+    if (diffBrowser.mode === 'commit') {
+      if (commitDiff === null) return null;
+      return {
+        source: {
+          mode: 'commit' as const,
+          oid: diffBrowser.oid,
+          title: `${shortOid(diffBrowser.oid)} · ${commitDiff.details.summary}`,
+        },
+        files: commitDiff.files,
+      };
+    }
+    if (compareData === null) return null;
+    const fromLabel = `HEAD${headBranch?.name != null ? ` (${headBranch.name})` : ''}`;
+    const toLabel = `${shortOid(compareData.to.oid)} · ${compareData.to.summary}`;
+    return {
+      source: { mode: 'compare' as const, oid: diffBrowser.oid, fromLabel, toLabel },
+      files: compareData.files,
+    };
+  }, [diffBrowser, commitDiff, compareData, headBranch]);
+
   const pushTitle =
     headBranch === null
       ? 'Push'
@@ -1595,8 +1609,10 @@ export function RepoWorkspace({
               layout={graph}
               selectedIndex={selectedIndex}
               onSelect={(i) => {
-                // Left-clicking any row exits Compare mode (P5 §5.4).
+                // Left-clicking any row exits Compare mode (P5 §5.4) and closes
+                // the all-files DiffBrowser (P11g §6.5).
                 if (compare !== null) clearCompare();
+                setDiffBrowser(null);
                 setSelectedIndex(i);
               }}
               wip={wip}
@@ -1609,6 +1625,19 @@ export function RepoWorkspace({
           ) : null}
           {diffSlot !== null && overlayMeta !== null && (
             <DiffOverlay slot={diffSlot} meta={overlayMeta} onClose={collapseDiffSlot} />
+          )}
+          {/* P11g §6.5: all-files DiffBrowser replaces the single-file overlay
+              for compare + commit-selected modes (guarded on the loaded header
+              list). Sits above the canvas + right-panel summary. */}
+          {diffBrowserView !== null && (
+            <DiffBrowser
+              repoId={repoId}
+              source={diffBrowserView.source}
+              files={diffBrowserView.files}
+              listView={listView}
+              initialScope={diffBrowser?.scope}
+              onClose={() => setDiffBrowser(null)}
+            />
           )}
         </main>
         <PaneDivider
@@ -1632,9 +1661,9 @@ export function RepoWorkspace({
               loading={compareLoading}
               error={compareError}
               headBranchName={headBranch?.name ?? null}
-              diffSlot={diffSlot}
               listView={listView}
-              onToggleDiff={handleToggleCompareDiff}
+              onViewAll={() => openCompareBrowser()}
+              onOpenFile={(file) => openCompareBrowser({ kind: 'file', path: file.path })}
               onClose={clearCompare}
             />
           ) : selectedIndex !== null && graph !== null ? (
@@ -1643,9 +1672,9 @@ export function RepoWorkspace({
               data={commitDiff}
               loading={commitDiffLoading}
               error={commitDiffError}
-              diffSlot={diffSlot}
               listView={listView}
-              onToggleDiff={handleToggleCommitDiff}
+              onViewAll={() => openCommitBrowser()}
+              onOpenFile={(file) => openCommitBrowser({ kind: 'file', path: file.path })}
               onSelectParent={handleSelectParent}
               onClose={() => setSelectedIndex(null)}
             />

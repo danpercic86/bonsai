@@ -2,13 +2,13 @@ import { useMemo } from 'react';
 import type { CompareDiff, FileDiffHeader, ListView } from '../ipc';
 import { buildPathTree } from '../utils/pathTree';
 import { FileHeaderRow, SkeletonRows } from './CommitPanel';
-import type { DiffSlot } from './DiffView';
 import { Tree } from './Tree';
 
 // P5 §5.7: Compare right-panel mode. Shown INSTEAD of CommitPanel /
 // StatusPanel + CommitBox while a HEAD → commit comparison is active.
-// Mirrors CommitPanel's file-list rendering; presentational only (App owns
-// all fetching, the diff overlay, and the compare state).
+// P11g §6.5: now a SUMMARY panel — the file list + "View all changes" open the
+// all-files DiffBrowser over the graph pane (single-file diffSlot retired here).
+// Presentational only (App owns all fetching + the compare state).
 
 function shortOid(oid: string): string {
   return oid.slice(0, 7);
@@ -20,9 +20,11 @@ export interface ComparePanelProps {
   error: string | null;
   /** HEAD branch name for the header ("HEAD (main)"); null when detached. */
   headBranchName: string | null;
-  diffSlot: DiffSlot | null; // keys = `compare:${path}`
   listView: ListView;
-  onToggleDiff(file: FileDiffHeader): void;
+  /** P11g §6.5: open the all-files DiffBrowser at the root scope. */
+  onViewAll(): void;
+  /** P11g §6.5: open the DiffBrowser scoped to the clicked file. */
+  onOpenFile(file: FileDiffHeader): void;
   onClose(): void;
 }
 
@@ -31,9 +33,9 @@ export function ComparePanel({
   loading,
   error,
   headBranchName,
-  diffSlot,
   listView,
-  onToggleDiff,
+  onViewAll,
+  onOpenFile,
   onClose,
 }: ComparePanelProps) {
   const files = data?.files;
@@ -101,6 +103,9 @@ export function ComparePanel({
           <section className="status-section commit-files">
             <div className="section-header section-label">
               <span>Changes ({data.files.length})</span>
+              <button type="button" className="section-action" onClick={onViewAll}>
+                View all changes
+              </button>
             </div>
             {fileNodes !== null ? (
               <Tree
@@ -109,26 +114,22 @@ export function ComparePanel({
                 renderLeaf={(l) => (
                   <FileHeaderRow
                     file={l.item}
-                    expanded={diffSlot !== null && diffSlot.key === `compare:${l.item.path}`}
-                    onToggle={() => onToggleDiff(l.item)}
+                    expanded={false}
+                    onToggle={() => onOpenFile(l.item)}
                     treeMode
                   />
                 )}
               />
             ) : (
               <ul className="file-list">
-                {data.files.map((file) => {
-                  const key = `compare:${file.path}`;
-                  const expanded = diffSlot !== null && diffSlot.key === key;
-                  return (
-                    <FileHeaderRow
-                      key={key}
-                      file={file}
-                      expanded={expanded}
-                      onToggle={() => onToggleDiff(file)}
-                    />
-                  );
-                })}
+                {data.files.map((file) => (
+                  <FileHeaderRow
+                    key={`compare:${file.path}`}
+                    file={file}
+                    expanded={false}
+                    onToggle={() => onOpenFile(file)}
+                  />
+                ))}
               </ul>
             )}
           </section>

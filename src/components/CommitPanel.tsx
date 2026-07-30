@@ -2,11 +2,12 @@ import { useMemo, useState } from 'react';
 import { relativeDate } from '../graph/draw';
 import type { CommitDiff, FileDiffHeader, FileStatus, GraphNode, ListView } from '../ipc';
 import { buildPathTree } from '../utils/pathTree';
-import type { DiffSlot } from './DiffView';
 import { Tree } from './Tree';
 
 // Mode B (M4 contract §4.3): shown INSTEAD of StatusPanel + CommitBox when a
 // graph commit is selected. Presentational — App owns all fetching.
+// P11g §6.5: now a SUMMARY panel — the file list + "View all changes" open the
+// all-files DiffBrowser over the graph pane (single-file diffSlot retired here).
 
 const BADGES: Record<FileStatus, string> = {
   added: 'A',
@@ -121,12 +122,12 @@ export interface CommitPanelProps {
   data: CommitDiff | null; // null while loading
   loading: boolean;
   error: string | null;
-  /** Currently open diff (key = `commit:${path}`) — drives row expanded state;
-   * the diff itself renders in App's center-pane DiffOverlay (P3a). */
-  diffSlot: DiffSlot | null;
   /** P3b: flat vs directory-tree file list (display-only). */
   listView: ListView;
-  onToggleDiff(file: FileDiffHeader): void;
+  /** P11g §6.5: open the all-files DiffBrowser at the root scope. */
+  onViewAll(): void;
+  /** P11g §6.5: open the DiffBrowser scoped to the clicked file. */
+  onOpenFile(file: FileDiffHeader): void;
   /** Parent short-oid clicked; App maps to a row via node.parents indices. */
   onSelectParent(parentOrdinal: number): void;
   /** "×" button -> deselect. */
@@ -138,9 +139,9 @@ export function CommitPanel({
   data,
   loading,
   error,
-  diffSlot,
   listView,
-  onToggleDiff,
+  onViewAll,
+  onOpenFile,
   onSelectParent,
   onClose,
 }: CommitPanelProps) {
@@ -231,6 +232,9 @@ export function CommitPanel({
           <section className="status-section commit-files">
             <div className="section-header section-label">
               <span>Changes ({data.files.length})</span>
+              <button type="button" className="section-action" onClick={onViewAll}>
+                View all changes
+              </button>
             </div>
             {fileNodes !== null ? (
               <Tree
@@ -239,26 +243,22 @@ export function CommitPanel({
                 renderLeaf={(l) => (
                   <FileHeaderRow
                     file={l.item}
-                    expanded={diffSlot !== null && diffSlot.key === `commit:${l.item.path}`}
-                    onToggle={() => onToggleDiff(l.item)}
+                    expanded={false}
+                    onToggle={() => onOpenFile(l.item)}
                     treeMode
                   />
                 )}
               />
             ) : (
               <ul className="file-list">
-                {data.files.map((file) => {
-                  const key = `commit:${file.path}`;
-                  const expanded = diffSlot !== null && diffSlot.key === key;
-                  return (
-                    <FileHeaderRow
-                      key={key}
-                      file={file}
-                      expanded={expanded}
-                      onToggle={() => onToggleDiff(file)}
-                    />
-                  );
-                })}
+                {data.files.map((file) => (
+                  <FileHeaderRow
+                    key={`commit:${file.path}`}
+                    file={file}
+                    expanded={false}
+                    onToggle={() => onOpenFile(file)}
+                  />
+                ))}
               </ul>
             )}
           </section>
