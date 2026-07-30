@@ -2413,7 +2413,7 @@ span.file-row-main {
 
 .conflict-editor-path {
   font-size: 12px;
-  color: var(--fg-1);
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2440,4 +2440,73 @@ span.file-row-main {
 
 .conflict-editor-cm .cm-editor {
   height: 100%;
+}
+
+/* ----- P12c: per-region accept widgets (block-widget toolbars) ----- */
+
+.conflict-region-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-1));
+  border-top: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  user-select: none;
+}
+
+.conflict-region-caption {
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.conflict-region-caption-theirs {
+  margin-left: auto;
+}
+
+.conflict-region-btn {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11px;
+  border-radius: 4px;
+}
+
+/* Tinted conflict body lines (cheap Decoration.line ranges). */
+.cm-conflict-ours {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+.cm-conflict-theirs {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* ----- P12c: scrollbar overview ruler ----- */
+
+.conflict-overview-ruler {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 12px;
+  height: 100%;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.conflict-overview-tick {
+  position: absolute;
+  right: 2px;
+  width: 6px;
+  height: 3px;
+  transform: translateY(-50%);
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.conflict-overview-tick:hover {
+  background: color-mix(in srgb, var(--accent) 70%, var(--text-1));
+  width: 9px;
 }
