@@ -51,6 +51,13 @@ pub struct ConflictFile {
     pub missing: bool,
     /// Lossy UTF-8 of the worktree file WITH the <<<<<<< ======= >>>>>>> markers.
     pub text: String,
+    /// Lossy UTF-8 of the stage-2 (OURS) blob content. "" when the ours side is
+    /// absent (deletedByUs / addedByThem / bothDeleted) OR when binary/too_large/
+    /// missing suppressed `text`.
+    pub ours: String,
+    /// Lossy UTF-8 of the stage-3 (THEIRS) blob content. "" when the theirs side
+    /// is absent (deletedByThem / addedByUs / bothDeleted) OR when suppressed.
+    pub theirs: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
@@ -133,39 +140,63 @@ fn find_conflict(index: &git2::Index, path: &str) -> Result<ConflictEntry, AppEr
 /// path -> `AppError::Git("path '<p>' has no conflict")`.
 pub fn get_conflict(workdir: &Path, path: &str) -> Result<ConflictFile, AppError> {
     let repo = open_workdir_repo(workdir)?;
-    let entry = find_conflict(&repo.index()?, path)?;
+    let index = repo.index()?;
+    let entry = find_conflict(&index, path)?;
     let wd = repo
         .workdir()
         .ok_or_else(|| AppError::Git("repository has no workdir".to_string()))?;
     let file = wd.join(path);
 
-    let make = |binary, too_large, missing, text| ConflictFile {
+    // When text is suppressed (binary/too_large/missing) all three strings stay ""
+    // (§1.1): keep the payload bounded and the frontend mode-selection simple.
+    let make_suppressed = |binary, too_large, missing| ConflictFile {
         path: entry.path.clone(),
         kind: entry.kind,
         binary,
         too_large,
         missing,
-        text,
+        text: String::new(),
+        ours: String::new(),
+        theirs: String::new(),
     };
 
     let meta = match std::fs::symlink_metadata(&file) {
         Ok(m) => m,
-        Err(_) => return Ok(make(false, false, true, String::new())),
+        Err(_) => return Ok(make_suppressed(false, false, true)),
     };
     if meta.len() > MAX_CONFLICT_BYTES {
-        return Ok(make(false, true, false, String::new()));
+        return Ok(make_suppressed(false, true, false));
     }
     let bytes = std::fs::read(&file)?;
     let probe = &bytes[..bytes.len().min(8000)];
     if probe.contains(&0) {
-        return Ok(make(true, false, false, String::new()));
+        return Ok(make_suppressed(true, false, false));
     }
-    Ok(make(
-        false,
-        false,
-        false,
-        String::from_utf8_lossy(&bytes).into_owned(),
-    ))
+
+    // Text file under the cap: read each side blob from the index stages.
+    let rel = Path::new(path);
+    let read_side = |stage: i32| -> Result<String, AppError> {
+        match index.get_path(rel, stage) {
+            Some(e) => {
+                let blob = repo.find_blob(e.id)?;
+                Ok(String::from_utf8_lossy(blob.content()).into_owned())
+            }
+            None => Ok(String::new()),
+        }
+    };
+    let ours = read_side(2)?;
+    let theirs = read_side(3)?;
+
+    Ok(ConflictFile {
+        path: entry.path.clone(),
+        kind: entry.kind,
+        binary: false,
+        too_large: false,
+        missing: false,
+        text: String::from_utf8_lossy(&bytes).into_owned(),
+        ours,
+        theirs,
+    })
 }
 
 /// Which conflict side to materialize for a write(side) cell.
@@ -277,6 +308,40 @@ pub fn resolve_conflict(
     Ok(())
 }
 
+/// Blocking. Stages a user-authored resolution for one CURRENTLY CONFLICTED
+/// path: writes `content` verbatim to the worktree file (creating parent dirs)
+/// then `index.add_path(rel)` (clears all conflict stages → stage 0) +
+/// `index.write()`. This is the single primitive behind BOTH editor view modes
+/// (unified + side-by-side); per-region accept / combination happen in the
+/// frontend before calling this. Same trust model as `MarkResolved` / `git add`:
+/// leftover `<<<<<<<` markers are NOT rejected — the frontend gates its Save
+/// button on `hasUnresolvedMarkers`, so an unresolved doc never reaches this fn
+/// through the UI; a backend rejection would be a redundant second gate with a
+/// worse error surface. Trust the caller.
+/// Non-conflicted path -> `AppError::Git("path '<p>' has no conflict")`.
+pub fn resolve_conflict_text(workdir: &Path, path: &str, content: &str) -> Result<(), AppError> {
+    // Same guard as stage/unstage — no absolute/.. escapes. Surfaced as
+    // `invalidName`, identical to `resolve_conflict`.
+    validate_rel_path(path).map_err(|_| AppError::InvalidName(format!("invalid path: {path}")))?;
+    let repo = open_workdir_repo(workdir)?;
+    let mut index = repo.index()?;
+    // Require the path is currently conflicted; the entry itself is unused.
+    let _entry = find_conflict(&index, path)?;
+    let wd = repo
+        .workdir()
+        .ok_or_else(|| AppError::Git("repository has no workdir".to_string()))?;
+    let file = wd.join(path);
+    let rel = Path::new(path);
+
+    if let Some(parent) = file.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&file, content.as_bytes())?;
+    index.add_path(rel)?;
+    index.write()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -313,6 +378,8 @@ mod tests {
             too_large: false,
             missing: true,
             text: String::new(),
+            ours: String::new(),
+            theirs: String::new(),
         })
         .expect("json");
         assert_eq!(
@@ -323,7 +390,35 @@ mod tests {
                 "binary": false,
                 "tooLarge": false,
                 "missing": true,
-                "text": ""
+                "text": "",
+                "ours": "",
+                "theirs": ""
+            })
+        );
+
+        // A text-mergeable (bothModified) sample carries non-empty ours/theirs.
+        let v = serde_json::to_value(ConflictFile {
+            path: "src/auth.ts".to_string(),
+            kind: ConflictKind::BothModified,
+            binary: false,
+            too_large: false,
+            missing: false,
+            text: "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> feature\n".to_string(),
+            ours: "ours\n".to_string(),
+            theirs: "theirs\n".to_string(),
+        })
+        .expect("json");
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "path": "src/auth.ts",
+                "kind": "bothModified",
+                "binary": false,
+                "tooLarge": false,
+                "missing": false,
+                "text": "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> feature\n",
+                "ours": "ours\n",
+                "theirs": "theirs\n"
             })
         );
 
@@ -388,5 +483,199 @@ mod tests {
             AppError::InvalidName(m) => assert!(m.contains("invalid path"), "got: {m}"),
             other => panic!("expected InvalidName, got {other:?}"),
         }
+    }
+
+    // ------------------------------------- git2 bothModified fixture builders
+
+    /// Commits everything in the worktree (`add_all("*")`) on `HEAD` with the
+    /// given parents; returns the new commit oid.
+    fn commit_all(
+        repo: &git2::Repository,
+        msg: &str,
+        parents: &[&git2::Commit],
+    ) -> git2::Oid {
+        let mut index = repo.index().expect("index");
+        index
+            .add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
+            .expect("add_all");
+        index.write().expect("write index");
+        let tree_id = index.write_tree().expect("write tree");
+        let tree = repo.find_tree(tree_id).expect("find tree");
+        let sig = git2::Signature::now("Test", "test@example.com").expect("sig");
+        repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, parents)
+            .expect("commit")
+    }
+
+    /// Builds a scratch repo with an in-progress `bothModified` merge conflict on
+    /// `a.txt` (ours = "main" line, theirs = "topic" line) plus a non-conflicted
+    /// tracked `keep.txt`. Returns the scratch dir (HEAD = default branch, mid-merge).
+    fn both_modified_conflict() -> tempfile::TempDir {
+        let dir = crate::testutil::scratch_dir();
+        let repo = git2::Repository::init(dir.path()).expect("init");
+
+        // base commit on the default branch
+        std::fs::write(dir.path().join("a.txt"), "line1\nbase\nline3\n").expect("write a");
+        std::fs::write(dir.path().join("keep.txt"), "keep\n").expect("write keep");
+        let base = commit_all(&repo, "base", &[]);
+        let base_commit = repo.find_commit(base).expect("base commit");
+        let default_branch = repo
+            .head()
+            .expect("head")
+            .shorthand()
+            .expect("branch name")
+            .to_string();
+
+        // topic branch (theirs): change the middle line
+        repo.branch("topic", &base_commit, false).expect("branch topic");
+        repo.set_head("refs/heads/topic").expect("set head topic");
+        std::fs::write(dir.path().join("a.txt"), "line1\ntopic\nline3\n").expect("write topic");
+        commit_all(&repo, "topic change", &[&base_commit]);
+
+        // back to the default branch (ours): change the same middle line differently
+        repo.set_head(&format!("refs/heads/{default_branch}"))
+            .expect("set head default");
+        std::fs::write(dir.path().join("a.txt"), "line1\nmain\nline3\n").expect("write main");
+        commit_all(&repo, "main change", &[&base_commit]);
+
+        // merge topic -> produces an index conflict + worktree markers
+        let outcome = crate::git::merge::merge_branch(dir.path(), "topic").expect("merge");
+        assert!(
+            matches!(outcome, crate::git::merge::MergeOutcome::Conflicts { .. }),
+            "expected conflicts, got {outcome:?}"
+        );
+        dir
+    }
+
+    /// Reads the stage-`n` blob content for `path` from the repo's index.
+    fn stage_blob(dir: &Path, path: &str, stage: i32) -> Vec<u8> {
+        let repo = git2::Repository::open(dir).expect("open");
+        let index = repo.index().expect("index");
+        let entry = index
+            .get_path(Path::new(path), stage)
+            .unwrap_or_else(|| panic!("no stage {stage} entry for {path}"));
+        let blob = repo.find_blob(entry.id).expect("blob");
+        blob.content().to_vec()
+    }
+
+    #[test]
+    fn ours_theirs_equal_stage_blobs_and_text_keeps_markers() {
+        let dir = both_modified_conflict();
+        let view = get_conflict(dir.path(), "a.txt").expect("get_conflict");
+
+        assert_eq!(view.kind, ConflictKind::BothModified);
+        assert!(!view.binary && !view.too_large && !view.missing);
+
+        let stage2 = String::from_utf8_lossy(&stage_blob(dir.path(), "a.txt", 2)).into_owned();
+        let stage3 = String::from_utf8_lossy(&stage_blob(dir.path(), "a.txt", 3)).into_owned();
+        assert_eq!(view.ours, stage2, "ours must equal the stage-2 blob");
+        assert_eq!(view.theirs, stage3, "theirs must equal the stage-3 blob");
+        assert!(!view.ours.is_empty() && !view.theirs.is_empty());
+
+        assert!(
+            view.text.contains("<<<<<<<")
+                && view.text.contains("=======")
+                && view.text.contains(">>>>>>>"),
+            "text must still carry the conflict markers"
+        );
+    }
+
+    #[test]
+    fn too_large_suppresses_all_three_strings() {
+        let dir = both_modified_conflict();
+        std::fs::write(
+            dir.path().join("a.txt"),
+            vec![b'a'; MAX_CONFLICT_BYTES as usize + 1],
+        )
+        .expect("write huge");
+        let view = get_conflict(dir.path(), "a.txt").expect("get_conflict");
+        assert!(view.too_large && !view.binary && !view.missing);
+        assert_eq!(view.text, "");
+        assert_eq!(view.ours, "");
+        assert_eq!(view.theirs, "");
+    }
+
+    #[test]
+    fn binary_suppresses_all_three_strings() {
+        let dir = both_modified_conflict();
+        std::fs::write(dir.path().join("a.txt"), b"\x00\x01binary blob").expect("write binary");
+        let view = get_conflict(dir.path(), "a.txt").expect("get_conflict");
+        assert!(view.binary && !view.too_large && !view.missing);
+        assert_eq!(view.text, "");
+        assert_eq!(view.ours, "");
+        assert_eq!(view.theirs, "");
+    }
+
+    #[test]
+    fn resolve_conflict_text_round_trip() {
+        let dir = both_modified_conflict();
+        let merged = "line1\nmerged by hand\nline3\n";
+        resolve_conflict_text(dir.path(), "a.txt", merged).expect("resolve text");
+
+        // no longer conflicted
+        assert!(
+            !list_conflicts(dir.path())
+                .expect("list")
+                .iter()
+                .any(|e| e.path == "a.txt"),
+            "a.txt still conflicted after resolve_conflict_text"
+        );
+
+        // index has a stage-0 entry and no conflict stages for a.txt
+        let repo = git2::Repository::open(dir.path()).expect("open");
+        let index = repo.index().expect("index");
+        assert!(
+            index.get_path(Path::new("a.txt"), 0).is_some(),
+            "expected a stage-0 index entry for a.txt"
+        );
+        for stage in [1, 2, 3] {
+            assert!(
+                index.get_path(Path::new("a.txt"), stage).is_none(),
+                "unexpected stage-{stage} entry after resolve"
+            );
+        }
+
+        // worktree bytes equal the resolved content verbatim
+        let bytes = std::fs::read(dir.path().join("a.txt")).expect("read a");
+        assert_eq!(bytes, merged.as_bytes());
+    }
+
+    #[test]
+    fn resolve_conflict_text_non_conflicted_path_errors() {
+        let dir = both_modified_conflict();
+        let err = resolve_conflict_text(dir.path(), "keep.txt", "x").expect_err("no conflict");
+        match err {
+            AppError::Git(m) => assert!(m.contains("has no conflict"), "got: {m}"),
+            other => panic!("expected Git, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_conflict_text_escape_path_errors() {
+        let dir = both_modified_conflict();
+        for bad in ["../escape", "..\\escape", "C:\\Windows\\evil"] {
+            let err = resolve_conflict_text(dir.path(), bad, "x").expect_err("escape");
+            assert!(
+                matches!(err, AppError::InvalidName(_)),
+                "path {bad:?}: expected InvalidName, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_conflict_text_accepts_leftover_markers() {
+        let dir = both_modified_conflict();
+        // Trust model: leftover <<<<<<< markers are NOT rejected (same as git add).
+        let content = "<<<<<<< HEAD\nline1\nmain\n=======\ntopic\n>>>>>>> topic\n";
+        resolve_conflict_text(dir.path(), "a.txt", content).expect("accept markers");
+
+        let repo = git2::Repository::open(dir.path()).expect("open");
+        let index = repo.index().expect("index");
+        assert!(
+            index.get_path(Path::new("a.txt"), 0).is_some(),
+            "leftover-marker content must still stage at stage 0"
+        );
+        assert!(index.get_path(Path::new("a.txt"), 2).is_none());
+        let bytes = std::fs::read(dir.path().join("a.txt")).expect("read a");
+        assert_eq!(bytes, content.as_bytes());
     }
 }

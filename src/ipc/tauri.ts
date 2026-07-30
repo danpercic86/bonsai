@@ -174,6 +174,10 @@ export const tauriIpc: IpcApi = {
     return invoke<void>('resolve_conflict', { repoId, path, resolution });
   },
 
+  resolveConflictText(repoId: string, path: string, content: string): Promise<void> {
+    return invoke<void>('resolve_conflict_text', { repoId, path, content });
+  },
+
   rebaseBranch(repoId: string, onto: string): Promise<RebaseOutcome> {
     return invoke<RebaseOutcome>('rebase_branch', { repoId, onto });
   },

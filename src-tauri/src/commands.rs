@@ -1030,6 +1030,34 @@ async fn resolve_conflict_inner(
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Stages user-authored resolved text for one conflicted path (P12 §1.2).
+/// Errors: `noRepo` | `git` | `invalidName`. Does NOT emit `repo-changed` —
+/// the frontend refetches imperatively.
+#[tauri::command]
+pub async fn resolve_conflict_text(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    path: String,
+    content: String,
+) -> Result<(), AppError> {
+    resolve_conflict_text_inner(state.inner(), &repo_id, path, content).await
+}
+
+/// Runtime-free core of `resolve_conflict_text` (unit-testable without a Tauri app).
+async fn resolve_conflict_text_inner(
+    state: &AppState,
+    repo_id: &str,
+    path: String,
+    content: String,
+) -> Result<(), AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        conflict::resolve_conflict_text(&workdir, &path, &content)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Starts a rebase of the current branch onto `onto` (local or remote-tracking
 /// shorthand; P3d contract §3). Errors: `operationInProgress` | `branchNotFound`
 /// | `checkoutConflict` | `configMissing` | `git` | `noRepo`. Does NOT emit
@@ -1554,6 +1582,15 @@ mod tests {
             ConflictResolution::Ours,
         ))
         .expect_err("resolve_conflict with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(resolve_conflict_text_inner(
+            &state,
+            MISSING_ID,
+            "file.txt".to_string(),
+            "resolved\n".to_string(),
+        ))
+        .expect_err("resolve_conflict_text with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
 

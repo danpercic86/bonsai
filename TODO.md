@@ -16,6 +16,32 @@ that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e
 Every "awaiting USER CHECKPOINT" below is now CONFIRMED as of 2026-07-30. (P5/P6 were already
 confirmed earlier.)
 
+## P12 — Rich conflict-resolution editor — **in-progress** (2026-07-30)
+
+Source: user request (2026-07-30). Replace the read-only conflict marker `<pre>` (P3c) with a real
+resolution editor. Five asks:
+1. **Side-by-side** conflict diff (2-way: ours | theirs — user decision).
+2. **Unified** conflict diff.
+3. In-editor buttons to select **ours / theirs / combination** per conflict region.
+4. **Edit the merged result directly** in the editor.
+5. **Scrollbar overview-ruler markers** showing conflict locations in the file (user decision: ticks,
+   not a full minimap).
+
+Locked decisions: CodeMirror 6 + @codemirror/merge (net-new deps, user-approved); 2-way ours|theirs
+side-by-side; scrollbar overview ruler; combination = ours-block then theirs-block; rich editor only
+for text kinds (bothModified/bothAdded) — deleted/added/binary/tooLarge keep the whole-file
+ours/theirs/resolved quick actions.
+
+Plan: ~/.claude/plans/i-need-you-to-floofy-crown.md
+Sub-increments: P12a Backend (ConflictFile ours/theirs + resolve_conflict_text command + IPC/mock) →
+P12b Editor foundation + unified mode (CodeMirror deps, ConflictEditor.tsx, conflictRegions.ts,
+conflictSelfTest) → P12c Per-region accept + overview ruler → P12d Side-by-side (2-way) + toggle.
+Contract: docs/contracts/P12-conflict-editor.md.
+Rules: scratch repos under D:\Temp\bonsai-scratch only; TMP/TEMP=D:\Temp for cargo tests; no
+concurrent cargo test + clippy; orchestrator makes all commits; mock.ts kept compiling.
+
+**Current step:** P12a — senior-dev implementing backend + IPC. Contract written.
+
 ## P11 — Feature follow-up batch (5 requests) — **in-progress** (2026-07-30)
 
 Source: user request (2026-07-30) with an Azure DevOps PR diff reference screenshot. Five asks:

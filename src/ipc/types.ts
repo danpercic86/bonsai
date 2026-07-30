@@ -264,6 +264,10 @@ export interface ConflictFile {
   missing: boolean;
   /** Worktree contents INCLUDING <<<<<<< ======= >>>>>>> markers. */
   text: string;
+  /** Stage-2 (OURS) blob text. '' when the ours side is absent or text is suppressed. */
+  ours: string;
+  /** Stage-3 (THEIRS) blob text. '' when the theirs side is absent or text is suppressed. */
+  theirs: string;
 }
 
 export type ConflictResolution = 'ours' | 'theirs' | 'markResolved';
@@ -493,6 +497,9 @@ export interface IpcApi {
   getConflict(repoId: string, path: string): Promise<ConflictFile>;
   /** Resolve one conflicted path. Rejects noRepo | git | invalidName. */
   resolveConflict(repoId: string, path: string, resolution: ConflictResolution): Promise<void>;
+  /** Stage user-authored resolved text for one conflicted path (P12).
+   *  Rejects noRepo | git | invalidName. */
+  resolveConflictText(repoId: string, path: string, content: string): Promise<void>;
   /** Start a rebase of the current branch onto `onto` (local or remote-tracking
    *  shorthand). Rejects operationInProgress | branchNotFound | checkoutConflict
    *  | configMissing | git | noRepo. */

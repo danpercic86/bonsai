@@ -119,6 +119,47 @@ const MERGE_AUTH_TEXT = [
   '',
 ].join('\n');
 
+// P12 §1.4: the OURS / THEIRS blob sides for MERGE_AUTH_TEXT's single conflict
+// region — the file with the region collapsed to its ours / theirs block
+// (markers removed). Hand-written to match MERGE_AUTH_TEXT above.
+const MERGE_AUTH_OURS = [
+  'import { hash } from "./crypto";',
+  '',
+  'export interface Session {',
+  '  user: string;',
+  '  token: string;',
+  '}',
+  '',
+  'export function login(user: string, password: string): Session {',
+  '  const token = hash(`${user}:${password}:v2`);',
+  '  return { user, token };',
+  '}',
+  '',
+  'export function logout(session: Session): void {',
+  '  void session;',
+  '}',
+  '',
+].join('\n');
+
+const MERGE_AUTH_THEIRS = [
+  'import { hash } from "./crypto";',
+  '',
+  'export interface Session {',
+  '  user: string;',
+  '  token: string;',
+  '}',
+  '',
+  'export function login(user: string, password: string): Session {',
+  '  const token = hash(password + user);',
+  '  return { user: user.toLowerCase(), token };',
+  '}',
+  '',
+  'export function logout(session: Session): void {',
+  '  void session;',
+  '}',
+  '',
+].join('\n');
+
 const MERGE_README_TEXT = [
   '# Bonsai fixture',
   '',
@@ -247,6 +288,8 @@ function seedOpState(state: MockRepoState, op: 'merge' | 'rebase' | null): void 
       tooLarge: false,
       missing: false,
       text: MERGE_AUTH_TEXT, // reuse the marker fixture
+      ours: MERGE_AUTH_OURS,
+      theirs: MERGE_AUTH_THEIRS,
     });
     state.status.conflicted = state.conflicts.map((c) => ({
       path: c.path,
@@ -277,8 +320,11 @@ function seedOpState(state: MockRepoState, op: 'merge' | 'rebase' | null): void 
     tooLarge: false,
     missing: false,
     text: MERGE_AUTH_TEXT,
+    ours: MERGE_AUTH_OURS,
+    theirs: MERGE_AUTH_THEIRS,
   });
-  // deletedByThem: the worktree keeps OUR version (no markers).
+  // deletedByThem: the worktree keeps OUR version (no markers). ours/theirs are
+  // editor-irrelevant for this quick-action kind (§0.5) → '' per §1.4.
   state.conflictTexts.set('README.md', {
     path: 'README.md',
     kind: 'deletedByThem',
@@ -286,6 +332,8 @@ function seedOpState(state: MockRepoState, op: 'merge' | 'rebase' | null): void 
     tooLarge: false,
     missing: false,
     text: MERGE_README_TEXT,
+    ours: '',
+    theirs: '',
   });
   state.status.conflicted = state.conflicts.map((c) => ({
     path: c.path,
@@ -1303,6 +1351,23 @@ export const mockIpc: IpcApi = {
       upsert(state.status.staged, { path, origPath: null, status: 'deleted' });
       sortByPath(state.status.staged);
     }
+  },
+
+  async resolveConflictText(repoId: string, path: string, content: string): Promise<void> {
+    // Backend writes `content` verbatim + stages it (P12 §1.2); the mock only
+    // mirrors the resulting state change (the text editor runs for text kinds,
+    // so no deletedByThem special-case is needed here).
+    void content;
+    await delay(150);
+    const state = requireRepo(repoId);
+    const entry = state.conflicts.find((c) => c.path === path);
+    if (entry === undefined) {
+      const err: AppError = { kind: 'git', message: `path '${path}' has no conflict` };
+      throw err;
+    }
+    state.conflicts = state.conflicts.filter((c) => c.path !== path);
+    state.conflictTexts.delete(path);
+    state.status.conflicted = state.status.conflicted.filter((e) => e.path !== path);
   },
 
   // Stateful rebase mock (P3d contract §7.2). A repo seeded with a rebase starts
