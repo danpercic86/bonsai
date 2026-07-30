@@ -13,11 +13,11 @@ mod common;
 use std::path::Path;
 use std::process::Command;
 
-use bonsai_lib::error::AppError;
-use bonsai_lib::git::commit::create_commit;
-use bonsai_lib::git::conflict::{resolve_conflict, ConflictResolution};
-use bonsai_lib::git::merge::{abort_merge, commit_merge, merge_branch, MergeOutcome};
-use bonsai_lib::git::opstate::{read_op_state, RepoOpState};
+use bonsai_core::error::AppError;
+use bonsai_core::git::commit::create_commit;
+use bonsai_core::git::conflict::{resolve_conflict, ConflictResolution};
+use bonsai_core::git::merge::{abort_merge, commit_merge, merge_branch, MergeOutcome};
+use bonsai_core::git::opstate::{read_op_state, RepoOpState};
 use common::{commit_fixed, git, git_raw, init_repo, FIXED_DATE};
 
 macro_rules! require_git {

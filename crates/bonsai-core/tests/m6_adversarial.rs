@@ -11,8 +11,8 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use bonsai_lib::error::AppError;
-use bonsai_lib::git::remote::{fetch_all, pull_ff, push_current, PullResult, PushResult};
+use bonsai_core::error::AppError;
+use bonsai_core::git::remote::{fetch_all, pull_ff, push_current, PullResult, PushResult};
 use common::{commit_fixed, git, git_ok};
 
 macro_rules! require_git {

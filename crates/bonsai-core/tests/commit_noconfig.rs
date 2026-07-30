@@ -16,9 +16,9 @@
 
 mod common;
 
-use bonsai_lib::error::AppError;
-use bonsai_lib::git::commit::create_commit;
-use bonsai_lib::git::stage::stage_paths;
+use bonsai_core::error::AppError;
+use bonsai_core::git::commit::create_commit;
+use bonsai_core::git::stage::stage_paths;
 
 #[test]
 fn commit_without_identity_fails_then_local_identity_fixes_it() {

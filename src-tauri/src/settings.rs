@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::error::AppError;
+use bonsai_core::error::AppError;
 
 pub const MAX_RECENT_REPOS: usize = 10;
 pub const SETTINGS_VERSION: u32 = 1;

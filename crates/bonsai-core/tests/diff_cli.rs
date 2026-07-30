@@ -17,11 +17,11 @@ mod common;
 
 use std::path::Path;
 
-use bonsai_lib::error::AppError;
-use bonsai_lib::git::diff::{
+use bonsai_core::error::AppError;
+use bonsai_core::git::diff::{
     commit_diff, commit_file_diff, workdir_file_diff, FileDiff, LineKind, MAX_FILE_DIFF_LINES,
 };
-use bonsai_lib::git::status::FileStatus;
+use bonsai_core::git::status::FileStatus;
 use common::{commit_fixed, git, git_raw, init_repo};
 
 macro_rules! require_git {

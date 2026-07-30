@@ -12,8 +12,8 @@ mod common;
 
 use std::path::Path;
 
-use bonsai_lib::error::AppError;
-use bonsai_lib::git::stage::{stage_paths, unstage_paths};
+use bonsai_core::error::AppError;
+use bonsai_core::git::stage::{stage_paths, unstage_paths};
 use common::{assert_same_status, commit_fixed, git, init_repo, porcelain_records};
 
 macro_rules! require_git {

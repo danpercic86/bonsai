@@ -16,12 +16,12 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
 
-use bonsai_lib::error::AppError;
-use bonsai_lib::git::conflict::{
+use bonsai_core::error::AppError;
+use bonsai_core::git::conflict::{
     get_conflict, list_conflicts, resolve_conflict, resolve_conflict_text, ConflictKind,
     ConflictResolution, MAX_CONFLICT_BYTES,
 };
-use bonsai_lib::git::merge::{merge_branch, MergeOutcome};
+use bonsai_core::git::merge::{merge_branch, MergeOutcome};
 use common::{assert_same_status, commit_fixed, git, git_raw, init_repo};
 
 macro_rules! require_git {

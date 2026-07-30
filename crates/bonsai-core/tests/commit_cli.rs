@@ -12,10 +12,10 @@ mod common;
 
 use std::path::Path;
 
-use bonsai_lib::error::AppError;
-use bonsai_lib::git::commit::create_commit;
-use bonsai_lib::git::stage::stage_paths;
-use bonsai_lib::git::status::read_status;
+use bonsai_core::error::AppError;
+use bonsai_core::git::commit::create_commit;
+use bonsai_core::git::stage::stage_paths;
+use bonsai_core::git::status::read_status;
 use common::{commit_fixed, git, git_ok, git_raw, init_repo};
 
 macro_rules! require_git {

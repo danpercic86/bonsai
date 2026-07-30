@@ -11,7 +11,7 @@
 //! invariants from the contract (§1.1) are asserted where the contract does
 //! not pin exact geometry.
 
-use bonsai_lib::graph::{compute_graph, GraphLayout, RefKind};
+use bonsai_core::graph::{compute_graph, GraphLayout, RefKind};
 
 /// Init a repo in a fresh temp dir with local user config set.
 fn init_repo() -> (tempfile::TempDir, git2::Repository) {

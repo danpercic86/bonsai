@@ -6,8 +6,8 @@
 
 use criterion::{criterion_group, criterion_main, Criterion};
 
-use bonsai_lib::fixture::ensure_default_fixture;
-use bonsai_lib::graph::compute_graph;
+use bonsai_core::fixture::ensure_default_fixture;
+use bonsai_core::graph::compute_graph;
 
 fn bench_graph(c: &mut Criterion) {
     let path = ensure_default_fixture().expect("fixture generation failed");

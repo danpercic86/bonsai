@@ -7,8 +7,8 @@
 
 use std::time::Instant;
 
-use bonsai_lib::fixture::ensure_default_fixture;
-use bonsai_lib::graph::compute_graph;
+use bonsai_core::fixture::ensure_default_fixture;
+use bonsai_core::graph::compute_graph;
 
 #[test]
 #[ignore] // release-mode gate; see module docs for the invocation

@@ -10,8 +10,8 @@ mod common;
 
 use std::path::Path;
 
-use bonsai_lib::git::commit::create_commit;
-use bonsai_lib::git::stage::{stage_paths, unstage_paths};
+use bonsai_core::git::commit::create_commit;
+use bonsai_core::git::stage::{stage_paths, unstage_paths};
 use common::{assert_same_status, commit_fixed, git, git_ok, git_raw, init_repo, porcelain_records};
 
 macro_rules! require_git {

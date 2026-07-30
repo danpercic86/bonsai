@@ -1,24 +1,24 @@
 use tauri::Emitter;
 
-use crate::ai::{self, AiAvailability, RunOpts};
-use crate::error::AppError;
-use crate::git::ai_resolve::{self, AiResolveProposal};
-use crate::git::branches::{self, BranchesSnapshot, CreateBranchHereResult};
-use crate::git::commit::{create_commit, CommitResult};
-use crate::git::conflict::{self, ConflictEntry, ConflictFile, ConflictResolution};
-use crate::git::diff::{
+use bonsai_core::ai::{self, AiAvailability, RunOpts};
+use bonsai_core::error::AppError;
+use bonsai_core::git::ai_resolve::{self, AiResolveProposal};
+use bonsai_core::git::branches::{self, BranchesSnapshot, CreateBranchHereResult};
+use bonsai_core::git::commit::{create_commit, CommitResult};
+use bonsai_core::git::conflict::{self, ConflictEntry, ConflictFile, ConflictResolution};
+use bonsai_core::git::diff::{
     commit_diff, commit_file_diff, compare_head_diff, compare_head_file_diff, workdir_file_diff,
     CommitDiff, CompareDiff, FileDiff,
 };
-use crate::git::merge::{self, MergeOutcome};
-use crate::git::opstate::{read_op_state, RepoOpState};
-use crate::git::rebase::{self, RebaseOutcome};
-use crate::git::remote::{fetch_all, pull_ff, push_current, FetchResult, PullResult, PushResult};
-use crate::git::repo::{read_repo_info, RepoInfo};
-use crate::git::stage::{stage_paths, unstage_paths};
-use crate::git::stash::{self, ApplyStashOutcome, CreateStashResult, StashEntry};
-use crate::git::status::{read_status, StatusSnapshot};
-use crate::graph::{compute_graph, GraphLayout};
+use bonsai_core::git::merge::{self, MergeOutcome};
+use bonsai_core::git::opstate::{read_op_state, RepoOpState};
+use bonsai_core::git::rebase::{self, RebaseOutcome};
+use bonsai_core::git::remote::{fetch_all, pull_ff, push_current, FetchResult, PullResult, PushResult};
+use bonsai_core::git::repo::{read_repo_info, RepoInfo};
+use bonsai_core::git::stage::{stage_paths, unstage_paths};
+use bonsai_core::git::stash::{self, ApplyStashOutcome, CreateStashResult, StashEntry};
+use bonsai_core::git::status::{read_status, StatusSnapshot};
+use bonsai_core::graph::{compute_graph, GraphLayout};
 use crate::settings::{
     self, clamp_auto_fetch, clamp_graph_prefs, clamp_pane_widths, AiAutonomy, AutoFetch,
     GraphPrefs, ListView, PaneWidths, RecentRepo, ThemeChoice,

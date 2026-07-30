@@ -19,11 +19,11 @@ mod common;
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
-use bonsai_lib::ai::{run_claude, RunOpts, DEFAULT_MODEL};
-use bonsai_lib::error::AppError;
-use bonsai_lib::git::ai_resolve::ai_resolve_conflict;
-use bonsai_lib::git::conflict::{resolve_conflict_text, MAX_CONFLICT_BYTES};
-use bonsai_lib::git::merge::{commit_merge, merge_branch, MergeOutcome};
+use bonsai_core::ai::{run_claude, RunOpts, DEFAULT_MODEL};
+use bonsai_core::error::AppError;
+use bonsai_core::git::ai_resolve::ai_resolve_conflict;
+use bonsai_core::git::conflict::{resolve_conflict_text, MAX_CONFLICT_BYTES};
+use bonsai_core::git::merge::{commit_merge, merge_branch, MergeOutcome};
 use common::{commit_fixed, git, init_repo};
 
 const STUB_BODY: &str = "MERGED_BODY_OK";

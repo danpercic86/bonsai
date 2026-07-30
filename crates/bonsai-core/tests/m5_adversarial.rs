@@ -11,8 +11,8 @@ mod common;
 
 use std::path::Path;
 
-use bonsai_lib::error::AppError;
-use bonsai_lib::git::branches::{
+use bonsai_core::error::AppError;
+use bonsai_core::git::branches::{
     checkout_branch, create_branch, delete_branch, list_refs,
 };
 use common::{commit_fixed, git, git_ok, init_repo};

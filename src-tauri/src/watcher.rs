@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use notify::Watcher;
 
-use crate::error::AppError;
+use bonsai_core::error::AppError;
 
 const DEBOUNCE: Duration = Duration::from_millis(300);
 

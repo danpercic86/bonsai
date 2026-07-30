@@ -8,8 +8,8 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::Command;
 
-use bonsai_lib::error::AppError;
-use bonsai_lib::git::status::{read_status, FileStatus, StatusSnapshot};
+use bonsai_core::error::AppError;
+use bonsai_core::git::status::{read_status, FileStatus, StatusSnapshot};
 
 /// Canonical comparison tuple: (list, path, orig_path, status).
 type Tuple = (String, String, Option<String>, String);

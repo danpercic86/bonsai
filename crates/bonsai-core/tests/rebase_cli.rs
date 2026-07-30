@@ -17,15 +17,15 @@ mod common;
 use std::path::Path;
 use std::process::Command;
 
-use bonsai_lib::error::AppError;
-use bonsai_lib::git::commit::create_commit;
-use bonsai_lib::git::conflict::{get_conflict, resolve_conflict, ConflictResolution};
-use bonsai_lib::git::merge::{merge_branch, MergeOutcome};
-use bonsai_lib::git::opstate::{read_op_state, RepoOpState};
-use bonsai_lib::git::rebase::{
+use bonsai_core::error::AppError;
+use bonsai_core::git::commit::create_commit;
+use bonsai_core::git::conflict::{get_conflict, resolve_conflict, ConflictResolution};
+use bonsai_core::git::merge::{merge_branch, MergeOutcome};
+use bonsai_core::git::opstate::{read_op_state, RepoOpState};
+use bonsai_core::git::rebase::{
     rebase_abort, rebase_branch, rebase_continue, rebase_skip, RebaseOutcome,
 };
-use bonsai_lib::git::remote::fetch_all;
+use bonsai_core::git::remote::fetch_all;
 use common::{commit_fixed, git, git_raw, init_repo};
 
 macro_rules! require_git {
