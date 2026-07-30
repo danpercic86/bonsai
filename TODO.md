@@ -63,8 +63,32 @@ USER CHECKPOINT (native pnpm tauri dev, self-declare FORBIDDEN): (1) "Create bra
 repo actually stashes → switches → re-applies working changes (clean + conflict cases); (2) enable
 auto-fetch in Settings → it hits a real remote on the interval, active tab only; (3) settings persist
 across an app restart and the graph node/row/lane changes look right at the extremes; (4) the
-DiffBrowser lazily loads each file's hunks as you scroll (IntersectionObserver), and the multi-file
-scroll feel over a large comparison is good.
+DiffBrowser (see P11g REVISION) actually populates diffs on a real large comparison and the
+multi-file scroll feels good.
+
+### P11g REVISION — DiffBrowser rework (2026-07-30) — **AI GATE PASSED, awaiting USER CHECKPOINT**
+
+User feedback after testing P11g natively (3 items) + the infinite-loading bug. Contract:
+docs/contracts/P11g-revision.md (architect). Commit: 61f8588. Reviewer APPROVED (one NIT fixed:
+removed now-dead FileHeaderRow/splitPath/BADGES from CommitPanel). Frontend-only, no Rust/IPC/mock
+wire change.
+- A: DiffBrowser lost its internal left "All files" tree (was redundant with the right Changes pane)
+  → now header + one stacked scroll column. Tree extracted to shared src/components/DiffFileTree.tsx
+  (canonical DiffScope), rendered by ComparePanel/CommitPanel as the SOLE scope navigator.
+- B: right-pane root/folder/file click drives one lifted `scope` (highlighted) that filters the cards.
+- C: compare mode AUTO-OPENS the diff once compareData loads (no "View all changes"); commit mode
+  stays explicit-open.
+- D (bug): dropped IntersectionObserver (never fired in the user's WebView2, and is suspended by
+  document.hidden=true in our harness) → single mount/scope-change effect eagerly enqueues the
+  visible scope into the bounded (max 4) queue. THIS is the fix for "diff keeps loading forever".
+AI-gate evidence (mock harness, dev-tip compare via a temporary revertible mock fallback, since
+reverted): compare auto-opened and cards rendered REAL hunks on first paint with NO scroll/visibility
+event; binary file → "Binary file" placeholder (no fetch); refilter root=3 / folder src/core=2 /
+file=1 with ZERO skeletons (cache reuse, idempotent enqueue); ✕ in compare exits compare (browser +
+panel close, graph restored). tsc + pnpm build clean.
+USER CHECKPOINT (native, self-declare FORBIDDEN): on a real ~125-file comparison the diff auto-opens
+and every file actually POPULATES (no infinite loading), and the stacked multi-file scroll feels
+smooth.
 
 ## P10 — Stash-as-node graph redesign + context-menu polish — **in-progress** (2026-07-30)
 
