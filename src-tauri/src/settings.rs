@@ -43,6 +43,17 @@ pub enum ListView {
     Flat,
 }
 
+/// AI conflict-resolution autonomy (P13). ProposeReview = user accepts before
+/// anything is written/staged (default); AutoResolve = write+stage immediately,
+/// user reviews the staged diff before commit_merge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AiAutonomy {
+    #[default]
+    ProposeReview,
+    AutoResolve,
+}
+
 /// Persisted sidebar/right-panel widths in px (P2 contract §2.1). Clamped to
 /// documented sane bounds on BOTH read (`load_from`) and write (setter
 /// commands) — this is the "persisted sanity" bound; the frontend additionally
@@ -155,10 +166,13 @@ pub fn clamp_graph_prefs(g: GraphPrefs) -> GraphPrefs {
 /// On-disk settings wire format:
 /// `{ "version": 1, "recentRepos": [ { "path": "...", "lastOpened": 0 } ],
 ///    "theme": "dark", "paneWidths": { "sidebar": 240, "rightPanel": 380 },
-///    "listView": "tree" }`.
+///    "listView": "tree", "aiEnabled": true, "aiConflictAutonomy":
+///    "proposeReview", "aiConsented": false }`.
 ///
 /// `SETTINGS_VERSION` stays `1`: `theme`, `pane_widths`, `list_view`,
-/// `open_repos`, and `active_repo` are all additive `#[serde(default)]` fields
+/// `open_repos`, `active_repo`, `auto_fetch`, `graph`, `ai_enabled`,
+/// `ai_conflict_autonomy`, and `ai_consented` are all additive
+/// `#[serde(default)]` fields
 /// (on the whole struct already, via the container-level `default`) — an old
 /// settings.json containing only `recentRepos` deserializes fine, missing
 /// fields fall back to their type defaults. No migration code is needed. A
@@ -185,6 +199,18 @@ pub struct Settings {
     /// Graph geometry knobs (P11). Additive `#[serde(default)]`; a legacy file
     /// without this key loads with `GraphPrefs::default()`.
     pub graph: GraphPrefs,
+    /// AI features master toggle (P13). Defaults `true`, but the consent gate
+    /// (`ai_consented`) is what actually unlocks the feature. Additive
+    /// `#[serde(default)]`; a legacy file without this key loads as `true`.
+    pub ai_enabled: bool,
+    /// AI conflict-resolution autonomy (P13). Additive `#[serde(default)]`; a
+    /// legacy file without this key loads with `AiAutonomy::default()`
+    /// (ProposeReview).
+    pub ai_conflict_autonomy: AiAutonomy,
+    /// One-time consent to send repo content to the local Claude CLI (P13).
+    /// Defaults `false`; additive `#[serde(default)]`; a legacy file without
+    /// this key loads as `false`.
+    pub ai_consented: bool,
 }
 
 impl Default for Settings {
@@ -199,6 +225,9 @@ impl Default for Settings {
             active_repo: None,
             auto_fetch: AutoFetch::default(),
             graph: GraphPrefs::default(),
+            ai_enabled: true,
+            ai_conflict_autonomy: AiAutonomy::default(),
+            ai_consented: false,
         }
     }
 }
@@ -802,5 +831,61 @@ mod tests {
         std::fs::write(&file, json).expect("write unknown-theme settings.json");
 
         assert_eq!(load_from(&file), Settings::default());
+    }
+
+    /// Save/load a `Settings` with non-default AI fields round-trips exactly
+    /// (P13 §4.1). Also asserts the raw JSON uses the documented camelCase keys
+    /// + values.
+    #[test]
+    fn ai_settings_roundtrip() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let s = Settings {
+            ai_enabled: false,
+            ai_conflict_autonomy: AiAutonomy::AutoResolve,
+            ai_consented: true,
+            ..Default::default()
+        };
+
+        save_to(&file, &s).expect("save settings");
+        let loaded = load_from(&file);
+        assert_eq!(loaded, s);
+        assert!(!loaded.ai_enabled);
+        assert_eq!(loaded.ai_conflict_autonomy, AiAutonomy::AutoResolve);
+        assert!(loaded.ai_consented);
+
+        let raw = std::fs::read_to_string(&file).expect("read settings.json");
+        assert!(raw.contains("\"aiEnabled\": false"));
+        assert!(raw.contains("\"aiConflictAutonomy\": \"autoResolve\""));
+        assert!(raw.contains("\"aiConsented\": true"));
+    }
+
+    /// An old `settings.json` written before P13 (no `aiEnabled`/
+    /// `aiConflictAutonomy`/`aiConsented` keys) loads with the type defaults
+    /// for the new fields (`true` / `ProposeReview` / `false`) and preserves
+    /// existing ones — the additive-field guarantee for the P13 settings
+    /// specifically (P13 §4.1), mirroring
+    /// `old_settings_file_without_list_view_loads_default`.
+    #[test]
+    fn old_settings_file_without_ai_fields_loads_defaults() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let json = r#"{
+            "version": 1,
+            "recentRepos": [ { "path": "D:\\Repos\\legacy", "lastOpened": 123 } ],
+            "theme": "light",
+            "paneWidths": { "sidebar": 300, "rightPanel": 400 },
+            "listView": "flat"
+        }"#;
+        std::fs::write(&file, json).expect("write pre-P13 settings.json");
+
+        let loaded = load_from(&file);
+        assert!(loaded.ai_enabled);
+        assert_eq!(loaded.ai_conflict_autonomy, AiAutonomy::ProposeReview);
+        assert!(!loaded.ai_consented);
+        // Existing fields untouched.
+        assert_eq!(loaded.theme, ThemeChoice::Light);
+        assert_eq!(loaded.list_view, ListView::Flat);
+        assert_eq!(loaded.recent_repos.len(), 1);
     }
 }

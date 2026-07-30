@@ -18,8 +18,8 @@ use crate::git::stash::{self, ApplyStashOutcome, CreateStashResult, StashEntry};
 use crate::git::status::{read_status, StatusSnapshot};
 use crate::graph::{compute_graph, GraphLayout};
 use crate::settings::{
-    self, clamp_auto_fetch, clamp_graph_prefs, clamp_pane_widths, AutoFetch, GraphPrefs, ListView,
-    PaneWidths, RecentRepo, ThemeChoice,
+    self, clamp_auto_fetch, clamp_graph_prefs, clamp_pane_widths, AiAutonomy, AutoFetch,
+    GraphPrefs, ListView, PaneWidths, RecentRepo, ThemeChoice,
 };
 use crate::state::{AppState, RepoEntry};
 use crate::watcher::spawn_watcher;
@@ -165,6 +165,12 @@ pub struct UiSettings {
     pub list_view: ListView,
     pub auto_fetch: AutoFetch,
     pub graph: GraphPrefs,
+    /// AI features master toggle (P13).
+    pub ai_enabled: bool,
+    /// AI conflict-resolution autonomy (P13).
+    pub ai_conflict_autonomy: AiAutonomy,
+    /// One-time consent to send repo content to the local Claude CLI (P13).
+    pub ai_consented: bool,
 }
 
 /// Partial patch for `set_ui_settings` — only `Some(..)` fields are applied
@@ -179,6 +185,10 @@ pub struct UiSettingsPatch {
     /// nested object when any sub-field changes.
     pub auto_fetch: Option<AutoFetch>,
     pub graph: Option<GraphPrefs>,
+    /// AI settings (P13); each patches independently.
+    pub ai_enabled: Option<bool>,
+    pub ai_conflict_autonomy: Option<AiAutonomy>,
+    pub ai_consented: Option<bool>,
 }
 
 /// Pure patch application: only `Some(..)` fields of `patch` mutate `s`; pane
@@ -201,6 +211,15 @@ fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     if let Some(graph) = patch.graph {
         s.graph = clamp_graph_prefs(graph);
     }
+    if let Some(ai_enabled) = patch.ai_enabled {
+        s.ai_enabled = ai_enabled;
+    }
+    if let Some(ai_conflict_autonomy) = patch.ai_conflict_autonomy {
+        s.ai_conflict_autonomy = ai_conflict_autonomy;
+    }
+    if let Some(ai_consented) = patch.ai_consented {
+        s.ai_consented = ai_consented;
+    }
 }
 
 /// Current UI settings (theme + pane widths). Never rejects for a
@@ -217,6 +236,9 @@ pub async fn get_ui_settings(app: tauri::AppHandle) -> Result<UiSettings, AppErr
             list_view: s.list_view,
             auto_fetch: s.auto_fetch,
             graph: s.graph,
+            ai_enabled: s.ai_enabled,
+            ai_conflict_autonomy: s.ai_conflict_autonomy,
+            ai_consented: s.ai_consented,
         }
     })
     .await
@@ -244,6 +266,9 @@ pub async fn set_ui_settings(
             list_view: s.list_view,
             auto_fetch: s.auto_fetch,
             graph: s.graph,
+            ai_enabled: s.ai_enabled,
+            ai_conflict_autonomy: s.ai_conflict_autonomy,
+            ai_consented: s.ai_consented,
         })
     })
     .await
@@ -2120,5 +2145,61 @@ mod tests {
         // Sanity: the `original_*` snapshots were genuinely the defaults.
         assert_eq!(original_af, AutoFetch::default());
         assert_eq!(original_graph, GraphPrefs::default());
+    }
+
+    /// The three AI fields patch independently: patching only `ai_enabled`
+    /// leaves autonomy + consent untouched (and vice versa), and an empty
+    /// patch mutates nothing (P13 §4.2).
+    #[test]
+    fn set_ui_settings_patch_ai_is_partial() {
+        let mut s = settings::Settings::default();
+        // Defaults sanity: enabled true, ProposeReview, not consented.
+        assert!(s.ai_enabled);
+        assert_eq!(s.ai_conflict_autonomy, AiAutonomy::ProposeReview);
+        assert!(!s.ai_consented);
+
+        // Only `ai_enabled` changes; autonomy + consent untouched.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                ai_enabled: Some(false),
+                ..Default::default()
+            },
+        );
+        assert!(!s.ai_enabled);
+        assert_eq!(s.ai_conflict_autonomy, AiAutonomy::ProposeReview);
+        assert!(!s.ai_consented);
+        // Unrelated fields untouched too.
+        assert_eq!(s.theme, ThemeChoice::default());
+
+        // Only `ai_consented` changes; enabled + autonomy preserved.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                ai_consented: Some(true),
+                ..Default::default()
+            },
+        );
+        assert!(s.ai_consented);
+        assert!(!s.ai_enabled);
+        assert_eq!(s.ai_conflict_autonomy, AiAutonomy::ProposeReview);
+
+        // Only `ai_conflict_autonomy` changes; enabled + consent preserved.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                ai_conflict_autonomy: Some(AiAutonomy::AutoResolve),
+                ..Default::default()
+            },
+        );
+        assert_eq!(s.ai_conflict_autonomy, AiAutonomy::AutoResolve);
+        assert!(!s.ai_enabled);
+        assert!(s.ai_consented);
+
+        // An empty patch leaves all three AI fields unchanged.
+        apply_patch(&mut s, UiSettingsPatch::default());
+        assert!(!s.ai_enabled);
+        assert_eq!(s.ai_conflict_autonomy, AiAutonomy::AutoResolve);
+        assert!(s.ai_consented);
     }
 }

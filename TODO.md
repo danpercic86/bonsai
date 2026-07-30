@@ -28,7 +28,14 @@ resolution. Autonomy is a SETTING: default ProposeReview (propose→review/accep
 switchable to AutoResolve (write+stage immediately, review staged diff before commit_merge). Both
 finalize via the existing commit_merge (UNCHANGED).
 
-**Current step: contract done + orchestrator-reviewed; starting P13a (Rust AI layer).**
+**Current step: P13b done + committed; starting P13c (resolver + commands + tests).**
+Commits: 4e91d8c kickoff, 44fca6e P13a (AI layer, APPROVE-WITH-NITS), P13b (settings, orchestrator
+self-review — mechanical additive UiSettings mirror, matches auto_fetch/graph precedent; settings 23
+tests + set_ui_settings 3 tests green).
+ENV NOTE (2026-07-30): setting TMP/TEMP=D:\Temp for cargo FORCES a libgit2-sys C rebuild that trips an
+MSVC bug (D8050 "cannot execute c1.dll") on this machine; build with AMBIENT TMP/TEMP (uses the cached
+libgit2 build), and put scratch REPOS explicitly under D:\Temp\bonsai-scratch (or run the compiled test
+bin with TMP/TEMP=D:\Temp after `cargo test --no-run` built it ambiently). C: now has ~6.4 GB free.
 
 VERIFIED live on installed CLI **v2.1.220** (de-risk done before contract, one real call succeeded):
 - `claude -p --output-format json --safe-mode --tools "" --no-session-persistence --model sonnet`
