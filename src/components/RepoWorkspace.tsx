@@ -6,6 +6,16 @@ import { ComparePanel } from './ComparePanel';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
+import {
+  CheckoutIcon,
+  CompareIcon,
+  CopyIcon,
+  DeleteIcon,
+  MergeIcon,
+  RebaseIcon,
+  StashApplyIcon,
+  StashPopIcon,
+} from './menuIcons';
 import { DiffOverlay } from './DiffOverlay';
 import type { DiffOverlayMeta } from './DiffOverlay';
 import { OpBanner } from './OpBanner';
@@ -1154,6 +1164,7 @@ export function RepoWorkspace({
     const items: ContextMenuItem[] = [
       {
         label: 'Checkout',
+        icon: <CheckoutIcon />,
         disabled: gate,
         onSelect: () =>
           void (kind === 'remoteBranch'
@@ -1162,6 +1173,7 @@ export function RepoWorkspace({
       },
       {
         label: 'Copy branch name',
+        icon: <CopyIcon />,
         disabled: false,
         onSelect: () => {
           const p =
@@ -1176,11 +1188,13 @@ export function RepoWorkspace({
     if (cur !== null) {
       items.push({
         label: `Merge ${name} into ${cur}`,
+        icon: <MergeIcon />,
         disabled: gate,
         onSelect: () => void handleMergeBranch(name),
       });
       items.push({
         label: `Rebase ${cur} onto ${name}`,
+        icon: <RebaseIcon />,
         disabled: gate,
         onSelect: () => void handleRebaseBranch(name),
       });
@@ -1188,12 +1202,14 @@ export function RepoWorkspace({
     if (!headUnborn) {
       items.push({
         label: 'Compare with HEAD',
+        icon: <CompareIcon />,
         disabled: false,
         onSelect: () => handleCompareWithHead(tip),
       });
     }
     items.push({
       label: 'Delete',
+      icon: <DeleteIcon />,
       disabled: gate,
       onSelect: () =>
         kind === 'remoteBranch' ? setPendingDeleteRemote(name) : setPendingDeleteBranch(name),
@@ -1207,9 +1223,24 @@ export function RepoWorkspace({
   function stashMenuItems(index: number): ContextMenuItem[] {
     const gate = mutating || opActive;
     return [
-      { label: 'Apply', disabled: gate, onSelect: () => void handleApplyStash(index) },
-      { label: 'Pop', disabled: gate, onSelect: () => void handlePopStash(index) },
-      { label: 'Drop', disabled: mutating, onSelect: () => setPendingDropStash(index) },
+      {
+        label: 'Apply',
+        icon: <StashApplyIcon />,
+        disabled: gate,
+        onSelect: () => void handleApplyStash(index),
+      },
+      {
+        label: 'Pop',
+        icon: <StashPopIcon />,
+        disabled: gate,
+        onSelect: () => void handlePopStash(index),
+      },
+      {
+        label: 'Drop',
+        icon: <DeleteIcon />,
+        disabled: mutating,
+        onSelect: () => setPendingDropStash(index),
+      },
     ];
   }
 
@@ -1238,6 +1269,7 @@ export function RepoWorkspace({
     return [
       {
         label: 'Compare with HEAD',
+        icon: <CompareIcon />,
         disabled: false,
         onSelect: () => handleCompareWithHead(target.oid),
       },

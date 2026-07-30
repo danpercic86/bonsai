@@ -296,6 +296,26 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* P10 T2: leading-icon row. */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.context-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: currentColor;
+}
+
+.context-menu-icon svg {
+  width: 16px;
+  height: 16px;
+  display: block;
 }
 
 .context-menu-item:hover:not(:disabled),

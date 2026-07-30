@@ -4,6 +4,8 @@ export interface ContextMenuItem {
   label: string;
   onSelect(): void;
   disabled?: boolean;
+  /** P10 T2: optional leading 16×16 monochrome glyph, inherits item text color. */
+  icon?: React.ReactNode;
 }
 
 export interface ContextMenuProps {
@@ -125,6 +127,11 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
           onClick={() => activate(item)}
           onKeyDown={(e) => onItemKeyDown(e, i)}
         >
+          {item.icon !== undefined && (
+            <span className="context-menu-icon" aria-hidden="true">
+              {item.icon}
+            </span>
+          )}
           {item.label}
         </button>
       ))}
