@@ -28,10 +28,12 @@ resolution. Autonomy is a SETTING: default ProposeReview (propose→review/accep
 switchable to AutoResolve (write+stage immediately, review staged diff before commit_merge). Both
 finalize via the existing commit_merge (UNCHANGED).
 
-**Current step: P13b done + committed; starting P13c (resolver + commands + tests).**
-Commits: 4e91d8c kickoff, 44fca6e P13a (AI layer, APPROVE-WITH-NITS), P13b (settings, orchestrator
-self-review — mechanical additive UiSettings mirror, matches auto_fetch/graph precedent; settings 23
-tests + set_ui_settings 3 tests green).
+**Current step: backend + IPC done (P13a–d committed); starting P13e (frontend — the last increment).**
+Commits: 4e91d8c kickoff, 44fca6e P13a (AI layer, APPROVE-WITH-NITS), e39b444 P13b (settings, self-
+review), d7bfb11 P13c (resolver + check_ai_availability/ai_resolve_conflict commands + 4 oracle tests,
+reviewer APPROVE), P13d (IPC mirror types/tauri/index + stateful mock — self-review, pnpm build clean;
+`?ai=off` availability twin, aiResolveConflict returns markerless proposal without mutating state).
+Backend verified: `.cmd`-shim newline fix confirmed vs real claude.cmd; consent gate fires first.
 ENV NOTE (2026-07-30): the `D8050`/`c1.dll` build failure some subagents hit when "using D:\Temp" is a
 RED HERRING — in the **Bash tool** an inline `TMP=D:\Temp` loses the backslash → `D:Temp` (relative
 path) and the libgit2-sys C build dies. FIX: forward slashes in Bash (`TMP=D:/Temp TEMP=D:/Temp cargo

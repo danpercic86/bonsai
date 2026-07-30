@@ -3,6 +3,8 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import type {
+  AiAvailability,
+  AiResolveProposal,
   ApplyStashOutcome,
   BranchesSnapshot,
   CommitDiff,
@@ -176,6 +178,15 @@ export const tauriIpc: IpcApi = {
 
   resolveConflictText(repoId: string, path: string, content: string): Promise<void> {
     return invoke<void>('resolve_conflict_text', { repoId, path, content });
+  },
+
+  // P13: Claude Code CLI health probe + AI conflict resolution (proposal only).
+  checkAiAvailability(): Promise<AiAvailability> {
+    return invoke<AiAvailability>('check_ai_availability');
+  },
+
+  aiResolveConflict(repoId: string, path: string): Promise<AiResolveProposal> {
+    return invoke<AiResolveProposal>('ai_resolve_conflict', { repoId, path });
   },
 
   rebaseBranch(repoId: string, onto: string): Promise<RebaseOutcome> {

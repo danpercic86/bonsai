@@ -14,6 +14,9 @@ import {
 import type { MockCommit } from './fixtures/graph';
 import { generateLayout20k } from './fixtures/graph20k';
 import type {
+  AiAutonomy,
+  AiAvailability,
+  AiResolveProposal,
   AppError,
   ApplyStashOutcome,
   BranchesSnapshot,
@@ -206,6 +209,24 @@ const repos = new Map<string /* repoId */, MockRepoState>();
 
 function query(name: string): string | null {
   return new URLSearchParams(window.location.search).get(name);
+}
+
+// P13: `?ai=off` simulates "no claude on PATH" — read once at module init,
+// composable with `?op=merge` / `?fixture=`. Availability probes honour it;
+// aiResolveConflict is independent (it gates on the conflict kind, not this).
+const AI_OFF = query('ai') === 'off';
+
+/** Strips Git conflict markers, keeping BOTH sides' body lines — a plausible
+ *  markerless merged body for the mock AI proposal (P13, derived from the
+ *  fixture's `conflictTexts[path].text`). */
+function stripConflictMarkers(text: string): string {
+  return text
+    .split('\n')
+    .filter((line) => {
+      const t = line.trimStart();
+      return !(t.startsWith('<<<<<<<') || t.startsWith('=======') || t.startsWith('>>>>>>>'));
+    })
+    .join('\n');
 }
 
 /**
@@ -519,6 +540,10 @@ const DEFAULT_UI_SETTINGS: UiSettings = {
   listView: 'tree',
   autoFetch: { enabled: false, intervalMinutes: 5 },
   graph: { dotRadius: 4, avatarRadius: 10, rowHeight: 32, laneWidth: 16 },
+  // AI assistance (P13): enabled by default, but consent gates the feature.
+  aiEnabled: true,
+  aiConflictAutonomy: 'proposeReview',
+  aiConsented: false,
 };
 
 function clampPaneWidths(w: PaneWidths): PaneWidths {
@@ -595,7 +620,14 @@ function readUiSettings(): UiSettings {
           ? parsed.graph.laneWidth
           : DEFAULT_UI_SETTINGS.graph.laneWidth,
     });
-    return { theme, paneWidths, listView, autoFetch, graph };
+    // P13 AI fields (additive, like autoFetch/graph): fall back to defaults.
+    const aiEnabled =
+      typeof parsed.aiEnabled === 'boolean' ? parsed.aiEnabled : DEFAULT_UI_SETTINGS.aiEnabled;
+    const aiConflictAutonomy: AiAutonomy =
+      parsed.aiConflictAutonomy === 'autoResolve' ? 'autoResolve' : 'proposeReview';
+    const aiConsented =
+      typeof parsed.aiConsented === 'boolean' ? parsed.aiConsented : DEFAULT_UI_SETTINGS.aiConsented;
+    return { theme, paneWidths, listView, autoFetch, graph, aiEnabled, aiConflictAutonomy, aiConsented };
   } catch {
     return structuredClone(DEFAULT_UI_SETTINGS);
   }
@@ -1370,6 +1402,45 @@ export const mockIpc: IpcApi = {
     state.status.conflicted = state.status.conflicted.filter((e) => e.path !== path);
   },
 
+  // P13: cheap CLI health probe. `?ai=off` simulates no claude on PATH; never
+  // rejects for CLI state (matches the backend's never-Err check_availability).
+  async checkAiAvailability(): Promise<AiAvailability> {
+    await delay(150);
+    if (AI_OFF) {
+      return {
+        installed: false,
+        loggedIn: false,
+        version: null,
+        detail: 'Claude Code CLI not found on PATH',
+      };
+    }
+    return {
+      installed: true,
+      loggedIn: true,
+      version: '2.1.220',
+      detail: 'Claude Code 2.1.220 ready',
+    };
+  },
+
+  // P13: propose an AI resolution for one conflicted path. Writes NOTHING — the
+  // apply step is the existing resolveConflictText (P12). Only text-mergeable
+  // kinds (bothModified/bothAdded) are eligible; anything else → aiFailed.
+  async aiResolveConflict(repoId: string, path: string): Promise<AiResolveProposal> {
+    await delay(600);
+    const state = requireRepo(repoId);
+    const entry = state.conflicts.find((c) => c.path === path);
+    if (entry === undefined || (entry.kind !== 'bothModified' && entry.kind !== 'bothAdded')) {
+      const err: AppError = { kind: 'aiFailed', message: 'AI resolution unavailable for this file' };
+      throw err;
+    }
+    const file = state.conflictTexts.get(path);
+    // Derive a plausible markerless body from the seeded marker fixture. Do NOT
+    // mutate state: the proposal is only applied when the caller feeds it to
+    // resolveConflictText (ProposeReview accept / AutoResolve).
+    const proposedText = file !== undefined ? stripConflictMarkers(file.text) : '';
+    return { path, proposedText, costUsd: 0.012 };
+  },
+
   // Stateful rebase mock (P3d contract §7.2). A repo seeded with a rebase starts
   // paused (step 2/3); rebaseBranch is the clean-rebase demo path. Shares
   // opState/conflicts/conflictTexts with merge, now per-repo.
@@ -1565,6 +1636,9 @@ export const mockIpc: IpcApi = {
       autoFetch:
         patch.autoFetch !== undefined ? clampAutoFetch(patch.autoFetch) : current.autoFetch,
       graph: patch.graph !== undefined ? clampGraphPrefs(patch.graph) : current.graph,
+      aiEnabled: patch.aiEnabled ?? current.aiEnabled,
+      aiConflictAutonomy: patch.aiConflictAutonomy ?? current.aiConflictAutonomy,
+      aiConsented: patch.aiConsented ?? current.aiConsented,
     };
     writeUiSettings(next);
     return next;

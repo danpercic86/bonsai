@@ -349,12 +349,38 @@ export interface GraphPrefs {
   laneWidth: number;
 }
 
+/** AI conflict-resolution autonomy (P13). proposeReview = user accepts before
+ *  anything is written/staged (default); autoResolve = write+stage immediately,
+ *  user reviews the staged diff before commitMerge. */
+export type AiAutonomy = 'proposeReview' | 'autoResolve';
+
+/** Cheap Claude Code CLI health status (P13). A missing/broken CLI yields
+ *  `installed:false` — never an error. Mirrors the Rust `AiAvailability`. */
+export interface AiAvailability {
+  installed: boolean;
+  loggedIn: boolean;
+  version: string | null;
+  detail: string;
+}
+
+/** The model's proposed fully-merged file body for one conflicted path (P13).
+ *  Mirrors the Rust `AiResolveProposal`; the proposal writes nothing. */
+export interface AiResolveProposal {
+  path: string;
+  proposedText: string;
+  costUsd: number | null;
+}
+
 export interface UiSettings {
   theme: Theme;
   paneWidths: PaneWidths;
   listView: ListView;
   autoFetch: AutoFetchSettings;
   graph: GraphPrefs;
+  // AI assistance (P13).
+  aiEnabled: boolean;
+  aiConflictAutonomy: AiAutonomy;
+  aiConsented: boolean;
 }
 
 export interface UiSettingsPatch {
@@ -363,6 +389,10 @@ export interface UiSettingsPatch {
   listView?: ListView;
   autoFetch?: AutoFetchSettings;
   graph?: GraphPrefs;
+  // AI assistance (P13).
+  aiEnabled?: boolean;
+  aiConflictAutonomy?: AiAutonomy;
+  aiConsented?: boolean;
 }
 
 /** Persisted multi-tab session: open tabs (in display order) + the active tab.
@@ -395,7 +425,9 @@ export interface AppError {
     | 'pushRejected'
     | 'operationInProgress'
     | 'noOperationInProgress'
-    | 'unresolvedConflicts';
+    | 'unresolvedConflicts'
+    | 'aiUnavailable'
+    | 'aiFailed';
   message: string;
 }
 
@@ -541,6 +573,11 @@ export interface IpcApi {
   getUiSettings(): Promise<UiSettings>;
   /** Applies a partial patch (only defined fields) and returns the resulting settings. */
   setUiSettings(patch: UiSettingsPatch): Promise<UiSettings>;
+  /** Cheap Claude Code CLI health probe (P13). Never rejects for CLI state. */
+  checkAiAvailability(): Promise<AiAvailability>;
+  /** Propose an AI merge resolution for one conflicted path (P13). Writes nothing.
+   *  Rejects aiUnavailable | aiFailed | git | invalidName | noRepo. */
+  aiResolveConflict(repoId: string, path: string): Promise<AiResolveProposal>;
   /** Persisted multi-tab session. Never rejects for a missing/corrupt file (empty). */
   getSession(): Promise<SessionState>;
   /** Writes the whole session (tabs change as a unit). Rejects io on save failure. */
