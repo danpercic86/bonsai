@@ -1763,6 +1763,8 @@ span.file-row-main {
   background: var(--bg-0);
 }
 
+/* The header is a <button> (click to collapse/expand). Reset the default button
+ * chrome (border, appearance, text-align, font) while keeping the exact look. */
 .diff-card-header {
   position: sticky;
   top: 0;
@@ -1771,11 +1773,29 @@ span.file-row-main {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  appearance: none;
   background: var(--bg-1);
+  border: none;
   border-bottom: 1px solid var(--border);
   /* Match the card's rounded top so the header bg never pokes past the corner. */
   border-radius: 5px 5px 0 0;
-  font-size: 12px;
+}
+
+.diff-card-header:hover {
+  background: var(--bg-2);
+}
+
+/* Collapsed: body is unmounted, so the header IS the whole card — round every
+ * corner and drop the divider. */
+.diff-card-collapsed .diff-card-header {
+  border-bottom: none;
+  border-radius: 5px;
 }
 
 .diff-card-path {

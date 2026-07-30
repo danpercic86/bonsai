@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { ipc } from '../ipc';
 import type { FileDiff, FileDiffHeader, FileStatus, ListView } from '../ipc';
 import { errorMessage } from '../utils/errors';
@@ -69,6 +69,20 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
   // §6.4: set true on unmount so in-flight `.finally` re-pumps short-circuit —
   // no fetches writing into a discarded cache after the browser closes mid-load.
   const cancelledRef = useRef(false);
+
+  // Collapse state is component-local + ephemeral (same lifetime as the cache):
+  // keyed by file path, an EMPTY set means all files are expanded (the default).
+  // Collapsing a card UNMOUNTS its `.diff-card-body` (see DiffCard) rather than
+  // hiding it with CSS, so huge DiffViews are removed from the DOM entirely.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const toggleCollapsed = useCallback((path: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
 
   // Read the latest props inside the stable pump/enqueue callbacks without
   // making them churn.
@@ -197,6 +211,23 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
     pump(); // resume any drain stalled across a StrictMode remount
   }, [visibleFiles, enqueue, pump]);
 
+  // The collapse-all/expand-all toggle operates on the CURRENT scope's visible
+  // files: it reads as "all collapsed" only when every visible file is collapsed,
+  // and its click flips every visible path in one setState.
+  const allCollapsed =
+    visibleFiles.length > 0 && visibleFiles.every((f) => collapsed.has(f.path));
+  const toggleAll = useCallback(() => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (allCollapsed) {
+        for (const f of visibleFiles) next.delete(f.path); // expand all visible
+      } else {
+        for (const f of visibleFiles) next.add(f.path); // collapse all visible
+      }
+      return next;
+    });
+  }, [allCollapsed, visibleFiles]);
+
   return (
     <div className="diff-browser" role="region" aria-label="All changes">
       <div className="diff-browser-header">
@@ -213,6 +244,16 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
             <span className="diff-browser-endpoint">{source.title}</span>
           )}
         </div>
+        {visibleFiles.length > 0 && (
+          <button
+            type="button"
+            className="section-action diff-browser-collapse-all"
+            title={allCollapsed ? 'Expand all' : 'Collapse all'}
+            onClick={toggleAll}
+          >
+            {allCollapsed ? 'Expand all' : 'Collapse all'}
+          </button>
+        )}
         <button
           type="button"
           className="btn-icon diff-browser-close"
@@ -233,6 +274,8 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
               header={f}
               entry={f.binary ? undefined : cacheRef.current.get(`${source.oid}:${f.path}`)}
               onRetry={retry}
+              collapsed={collapsed.has(f.path)}
+              onToggle={toggleCollapsed}
             />
           ))
         )}
@@ -247,18 +290,31 @@ function DiffCard({
   header,
   entry,
   onRetry,
+  collapsed,
+  onToggle,
 }: {
   header: FileDiffHeader;
   /** undefined for binary headers (never fetched). */
   entry: CardState | undefined;
   onRetry(path: string): void;
+  collapsed: boolean;
+  onToggle(path: string): void;
 }) {
   const isRename = header.origPath !== null;
   const title = isRename ? `${header.origPath} → ${header.path}` : header.path;
 
   return (
-    <div className="diff-card">
-      <div className={`diff-card-header file-status-${header.status}`} title={title}>
+    <div className={`diff-card${collapsed ? ' diff-card-collapsed' : ''}`}>
+      <button
+        type="button"
+        className={`diff-card-header file-status-${header.status}`}
+        title={title}
+        aria-expanded={!collapsed}
+        onClick={() => onToggle(header.path)}
+      >
+        <span className={`file-chevron${collapsed ? '' : ' file-chevron-open'}`} aria-hidden="true">
+          {'›'}
+        </span>
         <span className="file-badge mono">{BADGES[header.status]}</span>
         {isRename ? (
           <span className="diff-card-path mono file-rename">
@@ -277,10 +333,14 @@ function DiffCard({
             </>
           )}
         </span>
-      </div>
-      <div className="diff-card-body">
-        <DiffCardBody header={header} entry={entry} onRetry={onRetry} />
-      </div>
+      </button>
+      {/* Collapsing UNMOUNTS the body (not display:none) so a giant DiffView is
+          removed from the DOM entirely — the whole point of this feature. */}
+      {!collapsed && (
+        <div className="diff-card-body">
+          <DiffCardBody header={header} entry={entry} onRetry={onRetry} />
+        </div>
+      )}
     </div>
   );
 }
