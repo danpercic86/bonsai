@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ConfirmDialog } from './components/ConfirmDialog';
 import { RepoWorkspace } from './components/RepoWorkspace';
 import { SettingsPanel } from './components/SettingsPanel';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
@@ -9,6 +10,8 @@ import type { Toast, ToastTone } from './components/Toasts';
 import { ToastContext } from './ToastContext';
 import { ipc } from './ipc';
 import type {
+  AiAutonomy,
+  AiAvailability,
   AutoFetchSettings,
   GraphPrefs,
   ListView,
@@ -94,6 +97,18 @@ export default function App() {
   });
   // P11d §4.3: bumped on every graph-knob change → GraphCanvas full re-measure.
   const [metricsVersion, setMetricsVersion] = useState(0);
+  // P13 §8: AI assistance settings (App-owned; threaded to Settings + each
+  // workspace). Consent is a one-time gate — enabling without it opens a dialog.
+  const [aiEnabled, setAiEnabled] = useState(true);
+  const [aiConflictAutonomy, setAiConflictAutonomy] = useState<AiAutonomy>('proposeReview');
+  const [aiConsented, setAiConsented] = useState(false);
+  // CLI health probe result; null while probing. Re-fetched on Settings open and
+  // on repo open (§8.3). A req-id guards against out-of-order probe resolutions.
+  const [aiAvailability, setAiAvailability] = useState<AiAvailability | null>(null);
+  const aiProbeIdRef = useRef(0);
+  // Consent ConfirmDialog (opened by SettingsPanel's enable toggle when consent
+  // has not yet been recorded).
+  const [consentOpen, setConsentOpen] = useState(false);
   // P11c §3.2: debounced settings persist — accumulates partial patches so a
   // burst of knob changes within the window all reach disk in one write.
   const settingsSaveTimerRef = useRef<number | null>(null);
@@ -236,6 +251,9 @@ export default function App() {
         setGraph(patch.graph);
         setMetricsVersion((v) => v + 1);
       }
+      if (patch.aiEnabled !== undefined) setAiEnabled(patch.aiEnabled);
+      if (patch.aiConflictAutonomy !== undefined) setAiConflictAutonomy(patch.aiConflictAutonomy);
+      if (patch.aiConsented !== undefined) setAiConsented(patch.aiConsented);
       pendingSettingsPatchRef.current = { ...pendingSettingsPatchRef.current, ...patch };
       if (settingsSaveTimerRef.current !== null) {
         window.clearTimeout(settingsSaveTimerRef.current);
@@ -250,6 +268,37 @@ export default function App() {
     },
     [pushToast],
   );
+
+  // P13 §8.3: probe the Claude Code CLI. Re-runnable; a req-id guards against a
+  // stale probe overwriting a newer result. Never throws (the IPC never rejects
+  // for CLI state) — a rejection just leaves the last-known availability.
+  const probeAiAvailability = useCallback(() => {
+    const id = ++aiProbeIdRef.current;
+    void ipc
+      .checkAiAvailability()
+      .then((a) => {
+        if (id === aiProbeIdRef.current) setAiAvailability(a);
+      })
+      .catch(() => {
+        // Non-fatal — keep the last-known availability.
+      });
+  }, []);
+
+  // Probe on Settings open (fresh status for the AI section) and whenever a repo
+  // becomes active (§8.3). Cheap enough to re-run; the req-id dedupes races.
+  useEffect(() => {
+    if (settingsOpen) probeAiAvailability();
+  }, [settingsOpen, probeAiAvailability]);
+  useEffect(() => {
+    if (activeRepo !== null) probeAiAvailability();
+  }, [activeRepo, probeAiAvailability]);
+
+  // Consent flow (§8.4): the Settings enable toggle defers here when consent has
+  // not been recorded; confirming records BOTH enable + consent in one patch.
+  const handleConfirmConsent = useCallback(() => {
+    setConsentOpen(false);
+    handleSettingsChange({ aiEnabled: true, aiConsented: true });
+  }, [handleSettingsChange]);
 
   const handleSidebarResize = useCallback((delta: number) => {
     setPaneWidths((w) => ({ ...w, sidebar: clampLive(w.sidebar + delta, 'sidebar', w.rightPanel) }));
@@ -296,6 +345,9 @@ export default function App() {
         setAutoFetch(s.autoFetch);
         setGraph(s.graph);
         setMetricsVersion((v) => v + 1);
+        setAiEnabled(s.aiEnabled);
+        setAiConflictAutonomy(s.aiConflictAutonomy);
+        setAiConsented(s.aiConsented);
       } catch {
         // Non-fatal — keep defaults.
       }
@@ -430,7 +482,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [menuOpen, activeRepo, handleOpenRepository, closeTab]);
 
-  const globalModalOpen = overlayOpen || menuOpen || settingsOpen;
+  const globalModalOpen = overlayOpen || menuOpen || settingsOpen || consentOpen;
 
   return (
     <ToastContext.Provider value={pushToast}>
@@ -496,6 +548,10 @@ export default function App() {
                 graph={graph}
                 metricsVersion={metricsVersion}
                 autoFetch={autoFetch}
+                aiEnabled={aiEnabled}
+                aiConflictAutonomy={aiConflictAutonomy}
+                aiConsented={aiConsented}
+                aiAvailability={aiAvailability}
                 onSidebarResize={handleSidebarResize}
                 onRightPanelResize={handleRightPanelResize}
                 onPaneResizeEnd={handlePaneResizeEnd}
@@ -548,7 +604,26 @@ export default function App() {
           onChange={handleSettingsChange}
           onToggleTheme={toggleTheme}
           onToggleListView={toggleListView}
+          aiEnabled={aiEnabled}
+          aiConflictAutonomy={aiConflictAutonomy}
+          aiConsented={aiConsented}
+          aiAvailability={aiAvailability}
+          onRequestEnableAi={() => setConsentOpen(true)}
         />
+        <ConfirmDialog
+          open={consentOpen}
+          title="Enable AI features?"
+          confirmLabel="Enable"
+          busy={false}
+          onConfirm={handleConfirmConsent}
+          onCancel={() => setConsentOpen(false)}
+        >
+          <div>
+            Bonsai will send the contents of conflicted files to the Claude Code CLI installed on
+            this machine, under your Claude subscription. Nothing is sent to Bonsai's own servers,
+            and no files are changed without your review. Enable AI features?
+          </div>
+        </ConfirmDialog>
         <Toasts toasts={toasts} onDismiss={dismissToast} />
       </div>
     </ToastContext.Provider>

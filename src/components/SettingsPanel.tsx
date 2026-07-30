@@ -5,6 +5,8 @@
 // state immediately (live preview) and debounces the persist.
 
 import type {
+  AiAutonomy,
+  AiAvailability,
   AutoFetchSettings,
   GraphPrefs,
   ListView,
@@ -35,6 +37,15 @@ export interface SettingsPanelProps {
   /** Reuse App's existing toggles for the Appearance section. */
   onToggleTheme(): void;
   onToggleListView(): void;
+  // AI assistance (P13 §8.1).
+  aiEnabled: boolean;
+  aiConflictAutonomy: AiAutonomy;
+  aiConsented: boolean;
+  /** CLI health status; `null` while App is probing (never a dead control). */
+  aiAvailability: AiAvailability | null;
+  /** Enabling AI when consent has not yet been given: App shows the consent
+   *  ConfirmDialog and only patches `{ aiEnabled, aiConsented }` on confirm. */
+  onRequestEnableAi(): void;
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -111,8 +122,25 @@ export function SettingsPanel({
   onChange,
   onToggleTheme,
   onToggleListView,
+  aiEnabled,
+  aiConflictAutonomy,
+  aiConsented,
+  aiAvailability,
+  onRequestEnableAi,
 }: SettingsPanelProps) {
   if (!open) return null;
+
+  // Enabling requires one-time consent (§8.1): turning ON without consent defers
+  // to App's consent dialog; turning OFF patches immediately (consent is kept).
+  const handleEnableToggle = (checked: boolean): void => {
+    if (!checked) {
+      onChange({ aiEnabled: false });
+      return;
+    }
+    if (aiConsented) onChange({ aiEnabled: true });
+    else onRequestEnableAi();
+  };
+  const aiActive = aiEnabled && aiConsented;
 
   return (
     <div
@@ -215,6 +243,56 @@ export function SettingsPanel({
               {listView === 'tree' ? 'Tree' : 'Flat'}
             </button>
           </div>
+        </section>
+
+        {/* --- AI assistance (P13 §8.1) --- */}
+        <section className="settings-section">
+          <h3 className="settings-section-title">AI assistance</h3>
+          <p className="settings-section-desc">
+            Resolve merge conflicts with the local Claude Code CLI, under your Claude subscription.
+          </p>
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={aiEnabled}
+              onChange={(e) => handleEnableToggle(e.target.checked)}
+            />
+            <span>Enable AI features</span>
+          </label>
+
+          <fieldset className="settings-radio-group" disabled={!aiActive}>
+            <legend className="settings-radio-legend">Conflict resolution</legend>
+            <label className="settings-radio">
+              <input
+                type="radio"
+                name="ai-autonomy"
+                checked={aiConflictAutonomy === 'proposeReview'}
+                disabled={!aiActive}
+                onChange={() => onChange({ aiConflictAutonomy: 'proposeReview' })}
+              />
+              <span>Propose &amp; review</span>
+            </label>
+            <label className="settings-radio">
+              <input
+                type="radio"
+                name="ai-autonomy"
+                checked={aiConflictAutonomy === 'autoResolve'}
+                disabled={!aiActive}
+                onChange={() => onChange({ aiConflictAutonomy: 'autoResolve' })}
+              />
+              <span>Auto-resolve, then review</span>
+            </label>
+          </fieldset>
+
+          {aiAvailability === null ? (
+            <p className="settings-ai-status">Checking for the Claude Code CLI…</p>
+          ) : aiAvailability.installed ? (
+            <p className="settings-ai-status settings-ai-status-ok">{aiAvailability.detail}</p>
+          ) : (
+            <p className="settings-ai-status settings-ai-status-warn" role="note">
+              Claude Code CLI not found on PATH — install it and log in to use AI features
+            </p>
+          )}
         </section>
       </div>
     </div>

@@ -28,7 +28,16 @@ resolution. Autonomy is a SETTING: default ProposeReview (propose→review/accep
 switchable to AutoResolve (write+stage immediately, review staged diff before commit_merge). Both
 finalize via the existing commit_merge (UNCHANGED).
 
-**Current step: backend + IPC done (P13a–d committed); starting P13e (frontend — the last increment).**
+**Current step: P13a–e all implemented + committed; AI gate PASSED in harness; running tester next.**
+P13e reviewer APPROVE-WITH-NITS (0 must-fix); folded NIT 1 (guard the proposeReview getConflict await
+with fileDiffReqId — was clobber-prone). NIT 2 (probe-state button title) + NIT 3 (shared ConfirmDialog
+red button) left as cosmetic. AI GATE (mock :1420, `?op=merge`, hidden pane → DOM/synthetic events):
+✨ AI shows ONLY on src/auth.ts (bothModified), hidden on README.md (deletedByThem); button disabled +
+"Enable AI features in Settings" title until consent; Settings→enable→consent dialog (verbatim §8.4)→
+Enable persists {aiEnabled:true,aiConsented:true}; autonomy radio→autoResolve persists; AutoResolve
+click clears src/auth.ts (Conflicts 2→1) + toast "Resolved src/auth.ts with AI — review the staged
+result"; no console errors. proposeReview overlay uses CodeMirror (can't composite in hidden pane) →
+USER CHECKPOINT (same limit as P12).
 Commits: 4e91d8c kickoff, 44fca6e P13a (AI layer, APPROVE-WITH-NITS), e39b444 P13b (settings, self-
 review), d7bfb11 P13c (resolver + check_ai_availability/ai_resolve_conflict commands + 4 oracle tests,
 reviewer APPROVE), P13d (IPC mirror types/tauri/index + stateful mock — self-review, pnpm build clean;

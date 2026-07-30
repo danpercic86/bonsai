@@ -746,6 +746,59 @@ body {
   min-width: 72px;
 }
 
+/* ---------- Settings: AI assistance (P13 §8.1) ---------- */
+
+.settings-radio-group {
+  margin: 10px 0 0;
+  padding: 0;
+  border: none;
+}
+
+.settings-radio-group:disabled {
+  opacity: 0.5;
+}
+
+.settings-radio-legend {
+  padding: 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.settings-radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-1);
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+.settings-radio input {
+  accent-color: var(--accent);
+}
+
+.settings-radio-group:disabled .settings-radio {
+  cursor: default;
+}
+
+.settings-ai-status {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.settings-ai-status-ok {
+  color: var(--success);
+}
+
+.settings-ai-status-warn {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+}
+
 /* ---------- Graph truncated banner (P1 §7 item 14) ---------- */
 
 .graph-truncated-banner {
@@ -2387,6 +2440,18 @@ span.file-row-main {
   width: auto;
   padding: 0 6px;
   font-size: 11px;
+}
+
+/* P13 §8.2: the ✨ AI conflict-row action — accent-tinted, distinct from the
+   plain ours/theirs/resolved text buttons. */
+.row-action.conflict-action-ai {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.row-action.conflict-action-ai:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
 }
 
 /* ----- P3c: read-only conflict marker view (DiffOverlay) ----- */

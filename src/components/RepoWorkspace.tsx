@@ -32,6 +32,9 @@ import type { GraphCanvasHandle, GraphContextTarget, WipSummary } from '../graph
 import { effectiveMetrics } from '../graph/metrics';
 import { ipc } from '../ipc';
 import type {
+  AiAutonomy,
+  AiAvailability,
+  AiResolveProposal,
   AutoFetchSettings,
   BranchInfo,
   BranchesSnapshot,
@@ -83,6 +86,12 @@ export interface RepoWorkspaceProps {
   metricsVersion: number;
   /** P11e §5: auto-fetch preference; drives the active-tab-only interval timer. */
   autoFetch: AutoFetchSettings;
+  /** P13 §8: AI assistance settings + CLI health (App owns these + consent). */
+  aiEnabled: boolean;
+  aiConflictAutonomy: AiAutonomy;
+  aiConsented: boolean;
+  /** CLI health status; null while App is probing. */
+  aiAvailability: AiAvailability | null;
   onSidebarResize(delta: number): void;
   onRightPanelResize(delta: number): void;
   onPaneResizeEnd(): void;
@@ -101,12 +110,20 @@ export function RepoWorkspace({
   graph: graphPrefs,
   metricsVersion,
   autoFetch,
+  aiEnabled,
+  aiConflictAutonomy,
+  aiConsented,
+  aiAvailability,
   onSidebarResize,
   onRightPanelResize,
   onPaneResizeEnd,
 }: RepoWorkspaceProps) {
   const pushToast = usePushToast();
   const repoPath = repoId; // repoId == canonical workdir path (§2)
+
+  // P13 §8.2: AI conflict-resolution is offered only when enabled, consented,
+  // and the CLI is actually installed. The backend re-checks enabled+consented.
+  const aiEligible = aiEnabled && aiConsented && aiAvailability?.installed === true;
 
   // P11d §4.1: METRICS overlaid with the user's graph knobs; memoized so the
   // canvas metricsRef only churns when a knob actually changes.
@@ -136,6 +153,9 @@ export function RepoWorkspace({
 
   const [opState, setOpState] = useState<RepoOpState>({ kind: 'none' });
   const [conflicts, setConflicts] = useState<ConflictEntry[]>([]);
+  // P13 §8.3: path whose AI resolution is in flight (calls take seconds). Gates
+  // the per-row ✨ AI button without freezing the whole panel like `mutating`.
+  const [aiResolvingPath, setAiResolvingPath] = useState<string | null>(null);
   const [abortConfirmOpen, setAbortConfirmOpen] = useState(false);
   const commitBoxRef = useRef<CommitBoxHandle>(null);
   // P6 §4.5: pending branch/remote deletes drive the two confirm dialogs; the
@@ -233,6 +253,16 @@ export function RepoWorkspace({
         origPath: null,
         status: 'conflicted',
         kind: 'conflict',
+      };
+    }
+    // P13 §8.3: AI proposal review — reuses the conflict editor (seeded with the
+    // markerless proposed body carried on diffSlot.conflict).
+    if (key.startsWith('ai-proposal:')) {
+      return {
+        path: key.slice('ai-proposal:'.length),
+        origPath: null,
+        status: 'conflicted',
+        kind: 'aiProposal',
       };
     }
     const sep = key.indexOf(':');
@@ -343,6 +373,13 @@ export function RepoWorkspace({
         } else {
           collapseDiffSlot();
         }
+      } else if (slot !== null && slot.key.startsWith('ai-proposal:')) {
+        // P13 §8.3: keep the proposal overlay as long as the path is still
+        // conflicted (do NOT re-fetch — that would replace the proposed body
+        // with the marker view). Once resolved (Accept), the path leaves the
+        // conflict list and the slot collapses (same post-resolve rule).
+        const path = slot.key.slice('ai-proposal:'.length);
+        if (!list.some((c) => c.path === path)) collapseDiffSlot();
       }
     } catch (e) {
       if (id !== opStateReqId.current) return;
@@ -365,7 +402,12 @@ export function RepoWorkspace({
       setStatus(snapshot);
       setStatusError(null);
       const slot = diffSlotRef.current;
-      if (slot !== null && !slot.key.startsWith('commit:') && !slot.key.startsWith('conflict:')) {
+      if (
+        slot !== null &&
+        !slot.key.startsWith('commit:') &&
+        !slot.key.startsWith('conflict:') &&
+        !slot.key.startsWith('ai-proposal:')
+      ) {
         const sep = slot.key.indexOf(':');
         const section = slot.key.slice(0, sep) as WorkdirSection;
         const path = slot.key.slice(sep + 1);
@@ -976,6 +1018,63 @@ export function RepoWorkspace({
       throw e;
     } finally {
       setMutating(false);
+    }
+  }
+
+  // P13 §8.3: AI conflict resolution for one path. Fetches a proposal (writes
+  // nothing), then branches on the autonomy setting: proposeReview opens the
+  // proposal in the conflict editor (reused, seeded with the markerless body) so
+  // the user reviews/edits before Accept; autoResolve stages it immediately and
+  // the user reviews the staged diff before commit_merge. A per-path busy flag
+  // gates the row's button (the AI call takes seconds) without freezing the
+  // whole panel. Errors surface via the sticky error toast; manual buttons stay.
+  async function handleAiResolveConflict(path: string) {
+    setAiResolvingPath(path);
+    let proposal: AiResolveProposal;
+    try {
+      proposal = await ipc.aiResolveConflict(repoId, path);
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+      setAiResolvingPath(null);
+      return;
+    }
+    if (aiConflictAutonomy === 'autoResolve') {
+      setMutating(true);
+      try {
+        await ipc.resolveConflictText(repoId, path, proposal.proposedText);
+        await refreshAll();
+        pushToast('success', `Resolved ${path} with AI — review the staged result`);
+      } catch (e) {
+        pushToast('error', errorMessage(e));
+      } finally {
+        setMutating(false);
+        setAiResolvingPath(null);
+      }
+      return;
+    }
+    // proposeReview: open the proposal in the conflict editor for review/edit.
+    // Guard the getConflict await with the shared fileDiffReqId (P13, same
+    // recipe as fetchConflictSlot): if the user opens another diff during the
+    // fetch, that bumps the id and we bail rather than clobber their slot.
+    const id = ++fileDiffReqId.current;
+    try {
+      const file = await ipc.getConflict(repoId, path);
+      if (id !== fileDiffReqId.current) return;
+      // Synthesize a ConflictFile carrying the AI's markerless body so the
+      // editor shows the proposed result; ours/theirs are kept for split mode.
+      const synthesized = { ...file, text: proposal.proposedText };
+      setDiffSlot({
+        key: `ai-proposal:${path}`,
+        state: 'ready',
+        diff: null,
+        conflict: synthesized,
+        error: null,
+      });
+    } catch (e) {
+      if (id !== fileDiffReqId.current) return;
+      pushToast('error', errorMessage(e));
+    } finally {
+      setAiResolvingPath(null);
     }
   }
 
@@ -1717,11 +1816,14 @@ export function RepoWorkspace({
                 diffSlot={diffSlot}
                 listView={listView}
                 conflicts={conflicts}
+                aiEligible={aiEligible}
+                aiResolvingPath={aiResolvingPath}
                 onStage={(paths) => void handleStage(paths)}
                 onUnstage={(paths) => void handleUnstage(paths)}
                 onToggleDiff={handleToggleWorkdirDiff}
                 onResolveConflict={(path, r) => void handleResolveConflict(path, r)}
                 onToggleConflictView={handleToggleConflictView}
+                onAiResolve={(path) => void handleAiResolveConflict(path)}
               />
               <CommitBox
                 key={opState.kind === 'merge' ? `merge:${opState.incoming}` : 'commit'}

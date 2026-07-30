@@ -225,18 +225,32 @@ function ConflictRow({
   kind,
   disabled,
   expanded,
+  aiEligible,
+  aiBusy,
+  aiDisabled,
   onResolve,
   onToggleView,
+  onAiResolve,
 }: {
   entry: StatusEntry;
   /** null = kind lookup miss (conflicts list momentarily stale) — no badge. */
   kind: ConflictKind | null;
   disabled: boolean;
   expanded: boolean;
+  /** P13 §8.2: AI enabled+consented+CLI installed (button shown but usable). */
+  aiEligible: boolean;
+  /** This row's AI resolution is in flight. */
+  aiBusy: boolean;
+  /** Any AI resolution in flight (only one at a time) — disables this button. */
+  aiDisabled: boolean;
   onResolve: (r: ConflictResolution) => void;
   onToggleView: () => void;
+  onAiResolve: () => void;
 }) {
   const { dir, name } = splitPath(entry.path);
+  // P13 §8.2: AI only makes sense for the two text-mergeable kinds (matches the
+  // ConflictEditor mount guard); hidden for deletion/add/binary kinds.
+  const aiShown = kind === 'bothModified' || kind === 'bothAdded';
   return (
     <li
       className={`file-row file-status-conflicted conflict-row${expanded ? ' file-row-expanded' : ''}`}
@@ -286,6 +300,18 @@ function ConflictRow({
       >
         resolved
       </button>
+      {aiShown && (
+        <button
+          type="button"
+          className="row-action conflict-action conflict-action-ai"
+          title={aiEligible ? 'Resolve with AI' : 'Enable AI features in Settings to use this'}
+          aria-label={`Resolve ${entry.path} with AI`}
+          disabled={!aiEligible || disabled || aiDisabled}
+          onClick={onAiResolve}
+        >
+          {aiBusy ? '…' : '✨ AI'}
+        </button>
+      )}
     </li>
   );
 }
@@ -297,15 +323,22 @@ function ConflictsSection({
   conflicts,
   disabled,
   diffSlot,
+  aiEligible,
+  aiResolvingPath,
   onResolveConflict,
   onToggleConflictView,
+  onAiResolve,
 }: {
   entries: StatusEntry[];
   conflicts: ConflictEntry[];
   disabled: boolean;
   diffSlot: DiffSlot | null;
+  aiEligible: boolean;
+  /** Path whose AI resolution is currently in flight, or null. */
+  aiResolvingPath: string | null;
   onResolveConflict: (path: string, r: ConflictResolution) => void;
   onToggleConflictView: (path: string) => void;
+  onAiResolve: (path: string) => void;
 }) {
   const kindByPath = useMemo(
     () => new Map(conflicts.map((c) => [c.path, c.kind] as const)),
@@ -324,8 +357,12 @@ function ConflictsSection({
             kind={kindByPath.get(entry.path) ?? null}
             disabled={disabled}
             expanded={diffSlot !== null && diffSlot.key === `conflict:${entry.path}`}
+            aiEligible={aiEligible}
+            aiBusy={aiResolvingPath === entry.path}
+            aiDisabled={aiResolvingPath !== null}
             onResolve={(r) => onResolveConflict(entry.path, r)}
             onToggleView={() => onToggleConflictView(entry.path)}
+            onAiResolve={() => onAiResolve(entry.path)}
           />
         ))}
       </ul>
@@ -358,6 +395,10 @@ export interface StatusPanelProps {
   listView: ListView;
   /** P3c: authoritative kind per conflicted path (from listConflicts). */
   conflicts: ConflictEntry[];
+  /** P13 §8.2: aiEnabled && aiConsented && aiAvailability?.installed. */
+  aiEligible: boolean;
+  /** P13 §8.3: path whose AI resolution is in flight (per-path busy), or null. */
+  aiResolvingPath: string | null;
   onStage(paths: string[]): void;
   onUnstage(paths: string[]): void;
   /** Toggle a row's diff in the center-pane overlay (App owns the fetch). */
@@ -366,6 +407,8 @@ export interface StatusPanelProps {
   onResolveConflict(path: string, r: ConflictResolution): void;
   /** Toggle the read-only marker view (diffSlot key `conflict:<path>`). */
   onToggleConflictView(path: string): void;
+  /** P13 §8.3: request an AI resolution for one conflicted path. */
+  onAiResolve(path: string): void;
 }
 
 /** Pure presentational right-panel status view; all fetching lives in App. */
@@ -377,11 +420,14 @@ export function StatusPanel({
   diffSlot,
   listView,
   conflicts,
+  aiEligible,
+  aiResolvingPath,
   onStage,
   onUnstage,
   onToggleDiff,
   onResolveConflict,
   onToggleConflictView,
+  onAiResolve,
 }: StatusPanelProps) {
   const [dismissedErrorId, setDismissedErrorId] = useState<number | null>(null);
   const visibleError = error !== null && error.id !== dismissedErrorId ? error : null;
@@ -465,8 +511,11 @@ export function StatusPanel({
               conflicts={conflicts}
               disabled={disabled}
               diffSlot={diffSlot}
+              aiEligible={aiEligible}
+              aiResolvingPath={aiResolvingPath}
               onResolveConflict={onResolveConflict}
               onToggleConflictView={onToggleConflictView}
+              onAiResolve={onAiResolve}
             />
           )}
         </>

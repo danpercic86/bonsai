@@ -28,6 +28,7 @@ const KIND_LABEL: Record<DiffOverlayMeta['kind'], string> = {
   commit: 'Commit',
   conflict: 'Conflict',
   compare: 'Compare',
+  aiProposal: 'AI proposal',
 };
 
 /** Display metadata for the overlay header, derived by App (P3a §2.3) from the
@@ -39,8 +40,9 @@ export interface DiffOverlayMeta {
   origPath: string | null;
   /** null = lookup failed (P3a §2.3 fallback): no badge. */
   status: FileStatus | null;
-  /** Drives the header context label. */
-  kind: 'staged' | 'unstaged' | 'untracked' | 'commit' | 'conflict' | 'compare';
+  /** Drives the header context label. `aiProposal` (P13 §8.3) reuses the
+   *  conflict editor, seeded with the AI-proposed markerless body. */
+  kind: 'staged' | 'unstaged' | 'untracked' | 'commit' | 'conflict' | 'compare' | 'aiProposal';
 }
 
 // P3c §8.3 (locked): the marker view is a plain highlighted <pre>, NOT
@@ -196,8 +198,12 @@ export function DiffOverlay({
         </button>
       </div>
       <div className="diff-overlay-body">
-        {meta.kind === 'conflict' ? (
+        {meta.kind === 'conflict' || meta.kind === 'aiProposal' ? (
+          // Keyed by kind+path so switching a `conflict:` slot to an
+          // `ai-proposal:` slot for the SAME path remounts the editor and
+          // reseeds from the proposed body (its reseed guard keys on path only).
           <ConflictSlotView
+            key={`${meta.kind}:${meta.path}`}
             slot={slot}
             onDismissError={onClose}
             onClose={onClose}
