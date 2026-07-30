@@ -57,6 +57,7 @@ import type {
 } from '../ipc';
 import { usePushToast } from '../ToastContext';
 import { errorMessage } from '../utils/errors';
+import { hasUnresolvedMarkers } from '../utils/conflictRegions';
 
 function shortOid(oid: string): string {
   return oid.slice(0, 7);
@@ -1038,7 +1039,13 @@ export function RepoWorkspace({
       setAiResolvingPath(null);
       return;
     }
-    if (aiConflictAutonomy === 'autoResolve') {
+    // Safety net (P13): never auto-stage a body that still carries conflict
+    // markers. The backend resolve_conflict_text trusts its input (git-add
+    // model), so a rare markerful model output would otherwise be staged
+    // silently in autoResolve. When that happens, fall through to the review
+    // editor with a warning instead — the user still resolves it by hand.
+    const markerful = hasUnresolvedMarkers(proposal.proposedText);
+    if (aiConflictAutonomy === 'autoResolve' && !markerful) {
       setMutating(true);
       try {
         await ipc.resolveConflictText(repoId, path, proposal.proposedText);
@@ -1052,7 +1059,11 @@ export function RepoWorkspace({
       }
       return;
     }
-    // proposeReview: open the proposal in the conflict editor for review/edit.
+    if (aiConflictAutonomy === 'autoResolve' && markerful) {
+      pushToast('error', `AI left unresolved markers in ${path} — opened for review`);
+    }
+    // proposeReview (or the autoResolve marker fallback): open the proposal in
+    // the conflict editor for review/edit.
     // Guard the getConflict await with the shared fileDiffReqId (P13, same
     // recipe as fetchConflictSlot): if the user opens another diff during the
     // fetch, that bumps the id and we bail rather than clobber their slot.
