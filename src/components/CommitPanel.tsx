@@ -1,34 +1,19 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { relativeDate } from '../graph/draw';
-import type { CommitDiff, FileDiffHeader, FileStatus, GraphNode, ListView } from '../ipc';
-import { buildPathTree } from '../utils/pathTree';
-import { Tree } from './Tree';
+import type { CommitDiff, GraphNode, ListView } from '../ipc';
+import { DiffFileTree } from './DiffFileTree';
+import type { DiffScope } from './DiffFileTree';
 
 // Mode B (M4 contract §4.3): shown INSTEAD of StatusPanel + CommitBox when a
 // graph commit is selected. Presentational — App owns all fetching.
-// P11g §6.5: now a SUMMARY panel — the file list + "View all changes" open the
-// all-files DiffBrowser over the graph pane (single-file diffSlot retired here).
-
-const BADGES: Record<FileStatus, string> = {
-  added: 'A',
-  modified: 'M',
-  deleted: 'D',
-  renamed: 'R',
-  typechange: 'T',
-  untracked: 'U',
-  conflicted: 'C',
-};
+// P11g-rev §3.2: the file list is now the shared DiffFileTree, the SOLE scope
+// navigator. Clicking root/folder/file drives the lifted `scope` AND opens the
+// all-files DiffBrowser over the graph pane (commit mode is explicit-open).
 
 const BODY_COLLAPSE_LINES = 8;
 
 function shortOid(oid: string): string {
   return oid.slice(0, 7);
-}
-
-function splitPath(path: string): { dir: string | null; name: string } {
-  const idx = path.lastIndexOf('/');
-  if (idx === -1) return { dir: null, name: path };
-  return { dir: path.slice(0, idx + 1), name: path.slice(idx + 1) };
 }
 
 /** Body = message minus its first line and the following blank separator lines
@@ -57,55 +42,6 @@ function MessageBody({ body }: { body: string }) {
   );
 }
 
-export function FileHeaderRow({
-  file,
-  expanded,
-  onToggle,
-  treeMode = false,
-}: {
-  file: FileDiffHeader;
-  expanded: boolean;
-  onToggle: () => void;
-  /** P3b: the tree supplies directory context — render only the basename
-   *  (renames keep the full `orig → path` text; tooltips keep full paths). */
-  treeMode?: boolean;
-}) {
-  const isRename = file.origPath !== null;
-  const title = isRename ? `${file.origPath} → ${file.path}` : file.path;
-  const { dir, name } = splitPath(file.path);
-  return (
-    <li
-      className={`file-row file-status-${file.status}${expanded ? ' file-row-expanded' : ''}`}
-      title={title}
-    >
-      <button type="button" className="file-row-main" aria-expanded={expanded} onClick={onToggle}>
-        <span className={`file-chevron${expanded ? ' file-chevron-open' : ''}`}>{'›'}</span>
-        <span className="file-badge mono">{BADGES[file.status]}</span>
-        {isRename ? (
-          <span className="file-path mono file-rename">
-            {file.origPath} {'→'} {file.path}
-          </span>
-        ) : (
-          <span className="file-path">
-            {!treeMode && dir !== null && <span className="file-dir">{dir}</span>}
-            <span className="file-name">{name}</span>
-          </span>
-        )}
-        <span className="file-counts mono">
-          {file.binary ? (
-            <span className="file-count-bin">bin</span>
-          ) : (
-            <>
-              <span className="file-count-add">+{file.additions}</span>
-              <span className="file-count-del">−{file.deletions}</span>
-            </>
-          )}
-        </span>
-      </button>
-    </li>
-  );
-}
-
 export function SkeletonRows() {
   return (
     <div className="skeleton-group" aria-hidden="true">
@@ -124,10 +60,9 @@ export interface CommitPanelProps {
   error: string | null;
   /** P3b: flat vs directory-tree file list (display-only). */
   listView: ListView;
-  /** P11g §6.5: open the all-files DiffBrowser at the root scope. */
-  onViewAll(): void;
-  /** P11g §6.5: open the DiffBrowser scoped to the clicked file. */
-  onOpenFile(file: FileDiffHeader): void;
+  /** P11g-rev §3.2: current diff scope (selection highlight) + its setter. */
+  scope: DiffScope;
+  onSelectScope(scope: DiffScope): void;
   /** Parent short-oid clicked; App maps to a row via node.parents indices. */
   onSelectParent(parentOrdinal: number): void;
   /** "×" button -> deselect. */
@@ -140,18 +75,11 @@ export function CommitPanel({
   loading,
   error,
   listView,
-  onViewAll,
-  onOpenFile,
+  scope,
+  onSelectScope,
   onSelectParent,
   onClose,
 }: CommitPanelProps) {
-  const files = data?.files;
-  // P3b §5.2: directory tree of the commit's file list (tree mode only).
-  const fileNodes = useMemo(
-    () =>
-      listView === 'tree' && files !== undefined ? buildPathTree(files, (f) => f.path) : null,
-    [listView, files],
-  );
   const details = data?.details ?? null;
   const now = Math.floor(Date.now() / 1000);
   const body = details !== null ? messageBody(details.message) : '';
@@ -232,35 +160,13 @@ export function CommitPanel({
           <section className="status-section commit-files">
             <div className="section-header section-label">
               <span>Changes ({data.files.length})</span>
-              <button type="button" className="section-action" onClick={onViewAll}>
-                View all changes
-              </button>
             </div>
-            {fileNodes !== null ? (
-              <Tree
-                nodes={fileNodes}
-                leafKey={(l) => `commit:${l.item.path}`}
-                renderLeaf={(l) => (
-                  <FileHeaderRow
-                    file={l.item}
-                    expanded={false}
-                    onToggle={() => onOpenFile(l.item)}
-                    treeMode
-                  />
-                )}
-              />
-            ) : (
-              <ul className="file-list">
-                {data.files.map((file) => (
-                  <FileHeaderRow
-                    key={`commit:${file.path}`}
-                    file={file}
-                    expanded={false}
-                    onToggle={() => onOpenFile(file)}
-                  />
-                ))}
-              </ul>
-            )}
+            <DiffFileTree
+              files={data.files}
+              listView={listView}
+              scope={scope}
+              onSelect={onSelectScope}
+            />
           </section>
         )
       )}

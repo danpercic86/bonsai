@@ -1,13 +1,13 @@
-import { useMemo } from 'react';
-import type { CompareDiff, FileDiffHeader, ListView } from '../ipc';
-import { buildPathTree } from '../utils/pathTree';
-import { FileHeaderRow, SkeletonRows } from './CommitPanel';
-import { Tree } from './Tree';
+import type { CompareDiff, ListView } from '../ipc';
+import { SkeletonRows } from './CommitPanel';
+import { DiffFileTree } from './DiffFileTree';
+import type { DiffScope } from './DiffFileTree';
 
 // P5 §5.7: Compare right-panel mode. Shown INSTEAD of CommitPanel /
 // StatusPanel + CommitBox while a HEAD → commit comparison is active.
-// P11g §6.5: now a SUMMARY panel — the file list + "View all changes" open the
-// all-files DiffBrowser over the graph pane (single-file diffSlot retired here).
+// P11g-rev §3.1: the file list is now the shared DiffFileTree, the SOLE scope
+// navigator. Clicking root/folder/file drives the lifted `scope`; the compare
+// DiffBrowser is already auto-open, so a click just refilters it.
 // Presentational only (App owns all fetching + the compare state).
 
 function shortOid(oid: string): string {
@@ -21,10 +21,9 @@ export interface ComparePanelProps {
   /** HEAD branch name for the header ("HEAD (main)"); null when detached. */
   headBranchName: string | null;
   listView: ListView;
-  /** P11g §6.5: open the all-files DiffBrowser at the root scope. */
-  onViewAll(): void;
-  /** P11g §6.5: open the DiffBrowser scoped to the clicked file. */
-  onOpenFile(file: FileDiffHeader): void;
+  /** P11g-rev §3.1: current diff scope (selection highlight) + its setter. */
+  scope: DiffScope;
+  onSelectScope(scope: DiffScope): void;
   onClose(): void;
 }
 
@@ -34,17 +33,10 @@ export function ComparePanel({
   error,
   headBranchName,
   listView,
-  onViewAll,
-  onOpenFile,
+  scope,
+  onSelectScope,
   onClose,
 }: ComparePanelProps) {
-  const files = data?.files;
-  const fileNodes = useMemo(
-    () =>
-      listView === 'tree' && files !== undefined ? buildPathTree(files, (f) => f.path) : null,
-    [listView, files],
-  );
-
   const fromUnborn = data !== null && data.from.oid === '';
   const fromLabel = `HEAD${headBranchName !== null ? ` (${headBranchName})` : ''}`;
 
@@ -103,35 +95,13 @@ export function ComparePanel({
           <section className="status-section commit-files">
             <div className="section-header section-label">
               <span>Changes ({data.files.length})</span>
-              <button type="button" className="section-action" onClick={onViewAll}>
-                View all changes
-              </button>
             </div>
-            {fileNodes !== null ? (
-              <Tree
-                nodes={fileNodes}
-                leafKey={(l) => `compare:${l.item.path}`}
-                renderLeaf={(l) => (
-                  <FileHeaderRow
-                    file={l.item}
-                    expanded={false}
-                    onToggle={() => onOpenFile(l.item)}
-                    treeMode
-                  />
-                )}
-              />
-            ) : (
-              <ul className="file-list">
-                {data.files.map((file) => (
-                  <FileHeaderRow
-                    key={`compare:${file.path}`}
-                    file={file}
-                    expanded={false}
-                    onToggle={() => onOpenFile(file)}
-                  />
-                ))}
-              </ul>
-            )}
+            <DiffFileTree
+              files={data.files}
+              listView={listView}
+              scope={scope}
+              onSelect={onSelectScope}
+            />
           </section>
         )
       ) : null}

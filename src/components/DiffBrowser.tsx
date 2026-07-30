@@ -1,20 +1,22 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { ipc } from '../ipc';
-import type { FileDiff, FileDiffHeader, FileStatus, ListView } from '../ipc';
-import { buildPathTree } from '../utils/pathTree';
-import type { TreeNode } from '../utils/pathTree';
+import type { FileDiff, FileDiffHeader, FileStatus } from '../ipc';
 import { errorMessage } from '../utils/errors';
 import { SkeletonRows } from './CommitPanel';
+import type { DiffScope } from './DiffFileTree';
 import { DiffView } from './DiffView';
 
-// P11g §6: Azure-DevOps-style all-files diff view. A file tree on the left
-// filters a right-hand vertical scroll of stacked per-file diffs. Replaces the
-// single-file DiffOverlay interaction for compare + commit-selected modes only
-// (the working-dir StatusPanel keeps its own diffSlot/DiffOverlay unchanged).
+// P11g §6 (revised by P11g-revision A + D): the all-files diff view. NO longer
+// owns an internal file tree — it is now just a header + a vertical scroll of
+// stacked per-file DiffCards, filling the graph/main pane. The scope navigator
+// lives in the right-hand ComparePanel/CommitPanel (shared DiffFileTree), which
+// drives the `scope` prop lifted to RepoWorkspace.
 //
-// DiffBrowser owns its per-file fetching (IntersectionObserver + a bounded
-// concurrency queue + a component-local cache), a deliberate, localized
-// exception to App's "diffSlot owns all diff fetching" pattern (§8.4).
+// DiffBrowser owns its per-file fetching (a bounded concurrency queue + a
+// component-local cache), a deliberate, localized exception to App's "diffSlot
+// owns all diff fetching" pattern (§8.4). Change D: the loader no longer depends
+// on IntersectionObserver/visibility — it eagerly enqueues the current scope's
+// non-binary files on mount + every scope change.
 
 const BADGES: Record<FileStatus, string> = {
   added: 'A',
@@ -30,13 +32,6 @@ const BADGES: Record<FileStatus, string> = {
  *  each resolves. Keeps IPC/memory proportional to what the user looks at. */
 const MAX_CONCURRENCY = 4;
 
-// P11g §6.2: the left-tree selection. `dir.prefix` is a TreeDir.fullPrefix
-// (no trailing '/'); `file.path` is a FileDiffHeader.path.
-export type DiffScope =
-  | { kind: 'root' }
-  | { kind: 'dir'; prefix: string }
-  | { kind: 'file'; path: string };
-
 /** Per-card fetch state, cached by `${source.oid}:${header.path}`. `idle` =
  *  queued but not yet fetched (renders the same skeleton as `loading`). */
 type CardState =
@@ -51,25 +46,14 @@ export interface DiffBrowserProps {
   source:
     | { mode: 'commit'; oid: string; title: string }
     | { mode: 'compare'; oid: string; fromLabel: string; toLabel: string };
-  /** Header list (already fetched by RepoWorkspace: CommitDiff/CompareDiff files). */
+  /** Header list for the active source (RepoWorkspace: CommitDiff/CompareDiff files). */
   files: FileDiffHeader[];
-  listView: ListView;
-  /** §6.5: initial scope — {kind:'file',path} when a specific row was clicked;
-   *  defaults to {kind:'root'} (all files). */
-  initialScope?: DiffScope;
+  /** P11g-rev §1: current scope (lifted to RepoWorkspace). Drives which cards render. */
+  scope: DiffScope;
   onClose(): void;
 }
 
-export function DiffBrowser({
-  repoId,
-  source,
-  files,
-  listView,
-  initialScope,
-  onClose,
-}: DiffBrowserProps) {
-  const [scope, setScope] = useState<DiffScope>(initialScope ?? { kind: 'root' });
-
+export function DiffBrowser({ repoId, source, files, scope, onClose }: DiffBrowserProps) {
   // §6.4: component-local cache + a bounded fetch queue. The cache is a ref so
   // async resolutions mutate it in place; `bump` forces the re-render that shows
   // the new content. Reading the ref during render is safe — every mutation is
@@ -78,15 +62,12 @@ export function DiffBrowser({
   const [, bump] = useReducer((n: number) => n + 1, 0);
   const queueRef = useRef<string[]>([]);
   const inFlightRef = useRef(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [observer, setObserver] = useState<IntersectionObserver | null>(null);
-  // §6.4: set true on unmount so in-flight `.finally` re-pumps and observer
-  // callbacks short-circuit — no fetches writing into a discarded cache after
-  // the browser closes mid-load.
+  // §6.4: set true on unmount so in-flight `.finally` re-pumps short-circuit —
+  // no fetches writing into a discarded cache after the browser closes mid-load.
   const cancelledRef = useRef(false);
 
   // Read the latest props inside the stable pump/enqueue callbacks without
-  // making them churn (which would re-arm the observer effect).
+  // making them churn.
   const sourceRef = useRef(source);
   sourceRef.current = source;
   const filesRef = useRef(files);
@@ -131,8 +112,8 @@ export function DiffBrowser({
     }
   }, []);
 
-  // §6.4: a card entered view → queue it once (idempotent per cache key). Binary
-  // files never reach here (their cards are not observed).
+  // §6.4: queue a file once (idempotent per cache key). Binary files never reach
+  // here (they are filtered out by the enqueue effect below).
   const enqueue = useCallback(
     (path: string) => {
       if (cancelledRef.current) return;
@@ -153,27 +134,8 @@ export function DiffBrowser({
     [enqueue],
   );
 
-  // §6.4: one IntersectionObserver rooted on the scroll container, ~200px
-  // rootMargin so a card starts loading just before it scrolls into view.
-  useEffect(() => {
-    const root = scrollRef.current;
-    if (root === null) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        for (const en of entries) {
-          if (!en.isIntersecting) continue;
-          const path = en.target.getAttribute('data-diff-path');
-          if (path !== null) enqueue(path);
-        }
-      },
-      { root, rootMargin: '200px 0px' },
-    );
-    setObserver(obs);
-    return () => obs.disconnect();
-  }, [enqueue]);
-
-  // §6.4: on unmount, cancel so any in-flight fetch's `.finally` re-pump and
-  // late observer callbacks stop draining the queue into a discarded cache.
+  // §6.4: on unmount, cancel so any in-flight fetch's `.finally` re-pump stops
+  // draining the queue into a discarded cache.
   useEffect(
     () => () => {
       cancelledRef.current = true;
@@ -182,7 +144,8 @@ export function DiffBrowser({
   );
 
   // §6.3: filter the header list to the current scope WITHOUT refetching — the
-  // cache persists across scope changes for the browser's lifetime.
+  // cache persists across scope changes for the browser's lifetime. Scope now
+  // comes from props (lifted to RepoWorkspace).
   const visibleFiles = useMemo(() => {
     if (scope.kind === 'root') return files;
     if (scope.kind === 'dir') {
@@ -191,6 +154,23 @@ export function DiffBrowser({
     }
     return files.filter((f) => f.path === scope.path);
   }, [files, scope]);
+
+  // Change D: no visibility events. Eagerly enqueue every non-binary file in the
+  // current scope (top-to-bottom order == visibleFiles order == path-ascending),
+  // so the first cards paint first. `enqueue` is idempotent per cache key, so
+  // re-running on scope change never double-fetches already-loaded/queued files;
+  // narrowing to a folder/file simply enqueues fewer.
+  //
+  // Tradeoff: at root scope this issues one bounded (max 4 in-flight) fetch per
+  // file. The per-file MAX_FILE_DIFF_LINES = 5000 cap keeps each response cheap,
+  // and scoping to a folder/file naturally reduces load. Acceptable at
+  // desktop-repo scale (the user's 125-file case is fine); a batched command
+  // remains a future additive optimization, out of scope here.
+  useEffect(() => {
+    for (const f of visibleFiles) {
+      if (!f.binary) enqueue(f.path);
+    }
+  }, [visibleFiles, enqueue]);
 
   return (
     <div className="diff-browser" role="region" aria-label="All changes">
@@ -218,25 +198,19 @@ export function DiffBrowser({
           {'×'}
         </button>
       </div>
-      <div className="diff-browser-body">
-        <div className="diff-browser-tree">
-          <DiffFileTree files={files} listView={listView} scope={scope} onSelect={setScope} />
-        </div>
-        <div className="diff-browser-scroll" ref={scrollRef}>
-          {visibleFiles.length === 0 ? (
-            <div className="pane-empty">No changes</div>
-          ) : (
-            visibleFiles.map((f) => (
-              <DiffCard
-                key={f.path}
-                header={f}
-                entry={f.binary ? undefined : cacheRef.current.get(`${source.oid}:${f.path}`)}
-                observer={observer}
-                onRetry={retry}
-              />
-            ))
-          )}
-        </div>
+      <div className="diff-browser-scroll">
+        {visibleFiles.length === 0 ? (
+          <div className="pane-empty">No changes</div>
+        ) : (
+          visibleFiles.map((f) => (
+            <DiffCard
+              key={f.path}
+              header={f}
+              entry={f.binary ? undefined : cacheRef.current.get(`${source.oid}:${f.path}`)}
+              onRetry={retry}
+            />
+          ))
+        )}
       </div>
     </div>
   );
@@ -247,30 +221,18 @@ export function DiffBrowser({
 function DiffCard({
   header,
   entry,
-  observer,
   onRetry,
 }: {
   header: FileDiffHeader;
-  /** undefined for binary headers (never fetched) and not-yet-observed files. */
+  /** undefined for binary headers (never fetched). */
   entry: CardState | undefined;
-  observer: IntersectionObserver | null;
   onRetry(path: string): void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  // Non-binary cards register with the observer; binary cards render their
-  // placeholder without ever fetching (§6.4 binary short-circuit).
-  useEffect(() => {
-    const el = ref.current;
-    if (el === null || observer === null || header.binary) return;
-    observer.observe(el);
-    return () => observer.unobserve(el);
-  }, [observer, header.binary]);
-
   const isRename = header.origPath !== null;
   const title = isRename ? `${header.origPath} → ${header.path}` : header.path;
 
   return (
-    <div ref={ref} data-diff-path={header.path} className="diff-card">
+    <div className="diff-card">
       <div className={`diff-card-header file-status-${header.status}`} title={title}>
         <span className="file-badge mono">{BADGES[header.status]}</span>
         {isRename ? (
@@ -327,183 +289,4 @@ function DiffCardBody({
   }
   // §6.4: DiffView already handles binary / tooLarge / empty-hunks placeholders.
   return <DiffView diff={entry.diff} />;
-}
-
-// ---------- left tree (§6.2 DiffFileTree) ----------
-
-// Purpose-built single-click tree over buildPathTree data (§8.3): the shared
-// Tree binds dir-click to collapse, so it cannot express single-click
-// select-folder. This reuses buildPathTree for STRUCTURE only.
-
-function DiffFileTree({
-  files,
-  listView,
-  scope,
-  onSelect,
-}: {
-  files: FileDiffHeader[];
-  listView: ListView;
-  scope: DiffScope;
-  onSelect(scope: DiffScope): void;
-}) {
-  const nodes = useMemo(
-    () => (listView === 'tree' ? buildPathTree(files, (f) => f.path) : null),
-    [listView, files],
-  );
-  // Local ephemeral collapse state (fullPrefix keys); independent of selection.
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const toggle = useCallback((prefix: string) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(prefix)) next.delete(prefix);
-      else next.add(prefix);
-      return next;
-    });
-  }, []);
-
-  return (
-    <div className="diff-tree">
-      <button
-        type="button"
-        className={`diff-tree-root${scope.kind === 'root' ? ' diff-tree-selected' : ''}`}
-        onClick={() => onSelect({ kind: 'root' })}
-      >
-        <span className="diff-tree-root-label">All files</span>
-        <span className="diff-tree-count mono">{files.length}</span>
-      </button>
-      {nodes !== null ? (
-        <ul className="tree" role="tree">
-          <DiffTreeNodes nodes={nodes} scope={scope} onSelect={onSelect} collapsed={collapsed} toggle={toggle} />
-        </ul>
-      ) : (
-        <ul className="file-list diff-tree-flat">
-          {files.map((f) => (
-            <li key={f.path}>
-              <DiffTreeFileRow
-                file={f}
-                selected={scope.kind === 'file' && scope.path === f.path}
-                onSelect={() => onSelect({ kind: 'file', path: f.path })}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function DiffTreeNodes({
-  nodes,
-  scope,
-  onSelect,
-  collapsed,
-  toggle,
-}: {
-  nodes: TreeNode<FileDiffHeader>[];
-  scope: DiffScope;
-  onSelect(scope: DiffScope): void;
-  collapsed: Set<string>;
-  toggle(prefix: string): void;
-}) {
-  return (
-    <>
-      {nodes.map((node) => {
-        if (node.kind === 'leaf') {
-          const selected = scope.kind === 'file' && scope.path === node.item.path;
-          return (
-            <li key={node.path}>
-              <DiffTreeFileRow
-                file={node.item}
-                name={node.name}
-                treeMode
-                selected={selected}
-                onSelect={() => onSelect({ kind: 'file', path: node.item.path })}
-              />
-            </li>
-          );
-        }
-        const expanded = !collapsed.has(node.fullPrefix);
-        const selected = scope.kind === 'dir' && scope.prefix === node.fullPrefix;
-        return (
-          <li key={node.fullPrefix} role="treeitem" aria-expanded={expanded} className="tree-dir">
-            <div className={`tree-dir-row diff-tree-dir-row${selected ? ' diff-tree-selected' : ''}`}>
-              <button
-                type="button"
-                className="diff-tree-chevron"
-                aria-label={expanded ? 'Collapse folder' : 'Expand folder'}
-                onClick={() => toggle(node.fullPrefix)}
-              >
-                <span className={`file-chevron${expanded ? ' file-chevron-open' : ''}`}>{'›'}</span>
-              </button>
-              <button
-                type="button"
-                className="diff-tree-dir-name-btn"
-                title={node.fullPrefix}
-                onClick={() => onSelect({ kind: 'dir', prefix: node.fullPrefix })}
-              >
-                <span className="tree-dir-name">{node.name}</span>
-              </button>
-            </div>
-            {expanded && (
-              <ul role="group" className="tree-group">
-                <DiffTreeNodes
-                  nodes={node.children}
-                  scope={scope}
-                  onSelect={onSelect}
-                  collapsed={collapsed}
-                  toggle={toggle}
-                />
-              </ul>
-            )}
-          </li>
-        );
-      })}
-    </>
-  );
-}
-
-function DiffTreeFileRow({
-  file,
-  name,
-  treeMode = false,
-  selected,
-  onSelect,
-}: {
-  file: FileDiffHeader;
-  /** Basename supplied by the tree (tree mode renders only the segment). */
-  name?: string;
-  treeMode?: boolean;
-  selected: boolean;
-  onSelect(): void;
-}) {
-  const isRename = file.origPath !== null;
-  const title = isRename ? `${file.origPath} → ${file.path}` : file.path;
-  const display = treeMode ? (name ?? file.path) : file.path;
-  return (
-    <button
-      type="button"
-      className={`file-row diff-tree-file file-status-${file.status}${selected ? ' diff-tree-selected' : ''}`}
-      title={title}
-      onClick={onSelect}
-    >
-      <span className="file-badge mono">{BADGES[file.status]}</span>
-      {isRename ? (
-        <span className="file-path mono file-rename">
-          {file.origPath} {'→'} {file.path}
-        </span>
-      ) : (
-        <span className="file-path">{display}</span>
-      )}
-      <span className="file-counts mono">
-        {file.binary ? (
-          <span className="file-count-bin">bin</span>
-        ) : (
-          <>
-            <span className="file-count-add">+{file.additions}</span>
-            <span className="file-count-del">−{file.deletions}</span>
-          </>
-        )}
-      </span>
-    </button>
-  );
 }

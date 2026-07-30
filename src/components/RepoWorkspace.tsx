@@ -21,7 +21,7 @@ import {
 import { DiffOverlay } from './DiffOverlay';
 import type { DiffOverlayMeta } from './DiffOverlay';
 import { DiffBrowser } from './DiffBrowser';
-import type { DiffScope } from './DiffBrowser';
+import type { DiffScope } from './DiffFileTree';
 import { OpBanner } from './OpBanner';
 import { PaneDivider } from './PaneDivider';
 import { Sidebar } from './Sidebar';
@@ -175,18 +175,14 @@ export function RepoWorkspace({
   const [compareError, setCompareError] = useState<string | null>(null);
   const compareReqId = useRef(0);
 
-  // P11g §6.5: the all-files DiffBrowser overlay (compare + commit-selected
-  // modes). `scope` seeds the initial tree selection (a clicked file row →
-  // {kind:'file',path}). Retires the single-file diffSlot/DiffOverlay for these
-  // two modes; the working-dir StatusPanel keeps its diffSlot untouched.
-  const [diffBrowser, setDiffBrowser] = useState<{
-    mode: 'commit' | 'compare';
-    oid: string;
-    scope?: DiffScope;
-  } | null>(null);
-  // Latest `diffBrowser` read by the Esc-layering effect without widening deps.
-  const diffBrowserRef = useRef(diffBrowser);
-  diffBrowserRef.current = diffBrowser;
+  // P11g-rev §4.1: ONE lifted scope drives BOTH the right-pane DiffFileTree
+  // highlight AND the DiffBrowser's visible cards. Reset to root whenever the
+  // active source (compare target / selected commit) changes.
+  const [scope, setScope] = useState<DiffScope>({ kind: 'root' });
+  // Commit mode ONLY: explicit-open flag (compare mode auto-opens, needs no flag).
+  const [commitBrowserOpen, setCommitBrowserOpen] = useState(false);
+  const commitBrowserOpenRef = useRef(commitBrowserOpen);
+  commitBrowserOpenRef.current = commitBrowserOpen;
 
   const statusReqId = useRef(0);
   const graphReqId = useRef(0);
@@ -286,8 +282,9 @@ export function RepoWorkspace({
     if (diffSlotRef.current?.key.startsWith('compare:') === true) {
       collapseDiffSlot();
     }
-    // P11g §6.5: exiting compare closes an open compare-mode DiffBrowser.
-    if (diffBrowserRef.current?.mode === 'compare') setDiffBrowser(null);
+    // P11g-rev §4.7: the compare DiffBrowser is now derived from
+    // compare/compareData, so setting compare=null (above) closes it
+    // automatically — no explicit browser teardown needed here.
   }, [collapseDiffSlot]);
 
   // P5 §5.3 refresh coexistence: re-fetch the active comparison after a repo
@@ -582,6 +579,14 @@ export function RepoWorkspace({
       setCommitDiffError(null);
     }
   }, [selectedIndex, graph, repoId]);
+
+  // P11g-rev §4.2: reset scope + close the commit browser whenever the active
+  // source changes (new compare target, or a different commit selected). Compare
+  // auto-open then renders at root; commit mode returns to closed.
+  useEffect(() => {
+    setScope({ kind: 'root' });
+    setCommitBrowserOpen(false);
+  }, [compare?.oid, selectedIndex]);
 
   // repo-changed subscription: filter to THIS repo; refetch regardless of active
   // so a background tab stays fresh when its watcher fires (§7).
@@ -1154,13 +1159,6 @@ export function RepoWorkspace({
     );
   }
 
-  // P11g §6.5: open the all-files DiffBrowser for the selected commit. `scope`
-  // is set when a specific file row was clicked (→ that file), else root.
-  function openCommitBrowser(scope?: DiffScope) {
-    if (selectedIndex === null || graph === null) return;
-    setDiffBrowser({ mode: 'commit', oid: graph.nodes[selectedIndex].id, scope });
-  }
-
   function handleSelectParent(parentOrdinal: number) {
     if (selectedIndex === null || graph === null) return;
     const parentIndex = graph.nodes[selectedIndex].parents[parentOrdinal];
@@ -1191,12 +1189,6 @@ export function RepoWorkspace({
         setCompareLoading(false);
       },
     );
-  }
-
-  // P11g §6.5: open the all-files DiffBrowser for the active comparison.
-  function openCompareBrowser(scope?: DiffScope) {
-    if (compare === null) return;
-    setDiffBrowser({ mode: 'compare', oid: compare.oid, scope });
   }
 
   // P6 §4.1: the single shared builder for a branch/remote-tracking ref menu,
@@ -1381,10 +1373,11 @@ export function RepoWorkspace({
       if (globalModalOpen) return;
       const target = e.target as HTMLElement | null;
       if (target !== null && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) return;
-      // P11g §6.5: the DiffBrowser sits ABOVE compare/commit selection in the
-      // Esc layering — close it first.
-      if (diffBrowserRef.current !== null) {
-        setDiffBrowser(null);
+      // P11g-rev §4.7: layering, topmost first. The commit-mode DiffBrowser
+      // overlay closes first; then the workdir single-file diffSlot; then
+      // compare mode (which also closes its auto-open browser); then deselect.
+      if (commitBrowserOpenRef.current) {
+        setCommitBrowserOpen(false);
         return;
       }
       if (diffSlotRef.current !== null) {
@@ -1494,30 +1487,35 @@ export function RepoWorkspace({
 
   const headBranch = branches?.local.find((b) => b.isHead) ?? null;
 
-  // P11g §6.5: resolve the DiffBrowser source labels + header list from the
-  // already-fetched commitDiff/compareData. null (browser not rendered) until
-  // the header list for the active mode has loaded.
+  // P11g-rev §4.4: resolve the DiffBrowser source labels + header list. Compare
+  // mode AUTO-OPENS once data has loaded (≥1 file); commit mode is EXPLICIT-open
+  // (gated on commitBrowserOpen). null → browser not rendered.
   const diffBrowserView = useMemo(() => {
-    if (diffBrowser === null) return null;
-    if (diffBrowser.mode === 'commit') {
-      if (commitDiff === null) return null;
+    // Compare mode: AUTO-OPEN once data has loaded and there is at least one file.
+    if (compare !== null && compareData !== null && compareData.files.length > 0) {
+      const fromLabel = `HEAD${headBranch?.name != null ? ` (${headBranch.name})` : ''}`;
+      const toLabel = `${shortOid(compareData.to.oid)} · ${compareData.to.summary}`;
+      return {
+        source: { mode: 'compare' as const, oid: compare.oid, fromLabel, toLabel },
+        files: compareData.files,
+        onClose: clearCompare, // × in compare mode exits compare (compare IS the diff)
+      };
+    }
+    // Commit mode: EXPLICIT-open only.
+    if (selectedIndex !== null && graph !== null && commitBrowserOpen && commitDiff !== null) {
+      const oid = graph.nodes[selectedIndex].id;
       return {
         source: {
           mode: 'commit' as const,
-          oid: diffBrowser.oid,
-          title: `${shortOid(diffBrowser.oid)} · ${commitDiff.details.summary}`,
+          oid,
+          title: `${shortOid(oid)} · ${commitDiff.details.summary}`,
         },
         files: commitDiff.files,
+        onClose: () => setCommitBrowserOpen(false),
       };
     }
-    if (compareData === null) return null;
-    const fromLabel = `HEAD${headBranch?.name != null ? ` (${headBranch.name})` : ''}`;
-    const toLabel = `${shortOid(compareData.to.oid)} · ${compareData.to.summary}`;
-    return {
-      source: { mode: 'compare' as const, oid: diffBrowser.oid, fromLabel, toLabel },
-      files: compareData.files,
-    };
-  }, [diffBrowser, commitDiff, compareData, headBranch]);
+    return null;
+  }, [compare, compareData, selectedIndex, graph, commitBrowserOpen, commitDiff, headBranch, clearCompare]);
 
   const pushTitle =
     headBranch === null
@@ -1609,10 +1607,11 @@ export function RepoWorkspace({
               layout={graph}
               selectedIndex={selectedIndex}
               onSelect={(i) => {
-                // Left-clicking any row exits Compare mode (P5 §5.4) and closes
-                // the all-files DiffBrowser (P11g §6.5).
+                // Left-clicking any row exits Compare mode (P5 §5.4). Scope reset
+                // + commit-browser close are handled by the §4.2 effect
+                // (selectedIndex dep); selecting does NOT auto-open the browser
+                // (P11g-rev Change C asymmetry).
                 if (compare !== null) clearCompare();
-                setDiffBrowser(null);
                 setSelectedIndex(i);
               }}
               wip={wip}
@@ -1626,17 +1625,19 @@ export function RepoWorkspace({
           {diffSlot !== null && overlayMeta !== null && (
             <DiffOverlay slot={diffSlot} meta={overlayMeta} onClose={collapseDiffSlot} />
           )}
-          {/* P11g §6.5: all-files DiffBrowser replaces the single-file overlay
-              for compare + commit-selected modes (guarded on the loaded header
-              list). Sits above the canvas + right-panel summary. */}
+          {/* P11g-rev §4.5: all-files DiffBrowser (header + stacked scroll only)
+              over the canvas. Compare mode auto-opens; commit mode is
+              explicit-open. The `key` on source.oid remounts fresh for a
+              DIFFERENT target/commit (clears cache+queue) but survives a refetch
+              of the SAME oid. */}
           {diffBrowserView !== null && (
             <DiffBrowser
+              key={`${diffBrowserView.source.mode}:${diffBrowserView.source.oid}`}
               repoId={repoId}
               source={diffBrowserView.source}
               files={diffBrowserView.files}
-              listView={listView}
-              initialScope={diffBrowser?.scope}
-              onClose={() => setDiffBrowser(null)}
+              scope={scope}
+              onClose={diffBrowserView.onClose}
             />
           )}
         </main>
@@ -1662,8 +1663,8 @@ export function RepoWorkspace({
               error={compareError}
               headBranchName={headBranch?.name ?? null}
               listView={listView}
-              onViewAll={() => openCompareBrowser()}
-              onOpenFile={(file) => openCompareBrowser({ kind: 'file', path: file.path })}
+              scope={scope}
+              onSelectScope={setScope}
               onClose={clearCompare}
             />
           ) : selectedIndex !== null && graph !== null ? (
@@ -1673,8 +1674,11 @@ export function RepoWorkspace({
               loading={commitDiffLoading}
               error={commitDiffError}
               listView={listView}
-              onViewAll={() => openCommitBrowser()}
-              onOpenFile={(file) => openCommitBrowser({ kind: 'file', path: file.path })}
+              scope={scope}
+              onSelectScope={(s) => {
+                setScope(s);
+                setCommitBrowserOpen(true);
+              }}
               onSelectParent={handleSelectParent}
               onClose={() => setSelectedIndex(null)}
             />

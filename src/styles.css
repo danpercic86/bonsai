@@ -1651,22 +1651,8 @@ span.file-row-main {
   flex: none;
 }
 
-.diff-browser-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-}
-
-/* Left column: the single-click file tree. */
-.diff-browser-tree {
-  flex: none;
-  width: 260px;
-  min-width: 160px;
-  overflow: auto;
-  border-right: 1px solid var(--border);
-  padding: 8px 6px;
-}
-
+/* Right-pane scope navigator (DiffFileTree) — these rules now style the file
+ * tree inside ComparePanel/CommitPanel, not a column inside the overlay. */
 .diff-tree-root {
   display: flex;
   align-items: center;
@@ -1751,10 +1737,15 @@ span.file-row-main {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
-/* Right column: the stacked per-file cards. */
+/* The DiffFileTree flows in the narrower right panel — no fixed width. */
+.commit-files .diff-tree {
+  padding: 0;
+}
+
+/* The pane-filling stacked per-file cards (the overlay is now header + this). */
 .diff-browser-scroll {
   flex: 1;
-  min-width: 0;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px;
   display: flex;
