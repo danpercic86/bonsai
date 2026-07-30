@@ -27,19 +27,26 @@ use rmcp::{schemars, tool, tool_handler, tool_router, ServerHandler};
 pub struct BonsaiServer {
     /// Canonical workdir path (from `bonsai_core::git::repo::read_repo_info().path`).
     workdir: Arc<PathBuf>,
-    /// Mutation tools are inert/unregistered unless `true`. Default `false`.
-    #[allow(dead_code)]
+    /// Mutation tools are unregistered unless `true`. Default `false`.
     allow_write: bool,
     tool_router: ToolRouter<BonsaiServer>,
 }
 
 impl BonsaiServer {
     /// Build a server over an already-validated canonical workdir path.
+    ///
+    /// The read tools (§7.1) are always registered. The write/mutation tools
+    /// (§7.3) are merged into `tool_router` **only** when `allow_write` is true,
+    /// so `tools/list` truthfully advertises exactly what the server can do.
     pub fn new(workdir: PathBuf, allow_write: bool) -> Self {
+        let mut tool_router = Self::tool_router();
+        if allow_write {
+            tool_router.merge(Self::write_router());
+        }
         Self {
             workdir: Arc::new(workdir),
             allow_write,
-            tool_router: Self::tool_router(),
+            tool_router,
         }
     }
 
@@ -65,6 +72,11 @@ fn ok_json<T: serde::Serialize>(v: &T) -> CallToolResult {
         Ok(value) => CallToolResult::structured(value),
         Err(e) => err_result(AppError::Other(format!("serialization error: {e}"))),
     }
+}
+
+/// Success result for a mutation that returns no data (`() -> null`).
+fn ok_null() -> CallToolResult {
+    CallToolResult::structured(serde_json::Value::Null)
 }
 
 /// Domain-error result: preserves `AppError`'s `{ kind, message }` in structured
@@ -137,6 +149,105 @@ struct CompareFileDiffArgs {
     path: String,
     /// Optional pre-rename path when the file was renamed.
     orig_path: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Mutation param structs (§7.4). Only used by the write tools (registered when
+// `--allow-write`). camelCase to match the frontend's JSON convention.
+// ---------------------------------------------------------------------------
+
+/// A batch of repo-relative paths to stage or unstage.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct PathsArgs {
+    /// Repo-relative paths (forward slashes) to operate on, staged atomically.
+    paths: Vec<String>,
+}
+
+/// A commit / merge-commit message.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct MessageArgs {
+    /// The commit message. Must be non-empty (else an `emptyMessage` error).
+    message: String,
+}
+
+/// AI-authored final content for a conflicted file.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct ResolveConflictTextArgs {
+    /// Repo-relative path of the conflicted file to resolve.
+    path: String,
+    /// Full final file content (no conflict markers). Written to the worktree and staged.
+    content: String,
+}
+
+/// A take-ours / take-theirs / mark-resolved shortcut for a conflicted file.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct ResolveConflictArgs {
+    /// Repo-relative path of the conflicted file to resolve.
+    path: String,
+    /// One of: `"ours"` | `"theirs"` | `"markResolved"`.
+    resolution: String,
+}
+
+/// A branch (or ref) name.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct NameArgs {
+    /// The branch name (short form, e.g. `feature/x`).
+    name: String,
+}
+
+/// The target ref a rebase replays onto.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct OntoArgs {
+    /// The branch/ref name to rebase the current branch onto.
+    onto: String,
+}
+
+/// A new branch at a specific commit.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct CreateBranchHereArgs {
+    /// The new branch name.
+    name: String,
+    /// Full 40-char hex object id of the commit the branch should point at.
+    oid: String,
+}
+
+/// Options for creating a stash.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct CreateStashArgs {
+    /// Optional stash message.
+    message: Option<String>,
+    /// Whether to include untracked files in the stash.
+    include_untracked: bool,
+}
+
+/// A stash-stack index.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct StashIndexArgs {
+    /// Zero-based index into the stash stack (0 = most recent).
+    index: usize,
+}
+
+/// Map the string `resolution` tool argument to the core `ConflictResolution`
+/// enum without adding a `schemars` dependency to `bonsai-core`.
+fn parse_resolution(s: &str) -> Result<bonsai_core::git::conflict::ConflictResolution, AppError> {
+    use bonsai_core::git::conflict::ConflictResolution;
+    match s {
+        "ours" => Ok(ConflictResolution::Ours),
+        "theirs" => Ok(ConflictResolution::Theirs),
+        "markResolved" => Ok(ConflictResolution::MarkResolved),
+        other => Err(AppError::InvalidName(format!(
+            "invalid resolution '{other}' (expected 'ours' | 'theirs' | 'markResolved')"
+        ))),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -321,17 +432,317 @@ impl BonsaiServer {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Mutation tools (§7.3). Registered into `tool_router` only when `--allow-write`
+// (see `new()`); when off, this router is never merged so the tools do not
+// appear in `tools/list`. `Self::write_router()` is generated by the macro.
+// ---------------------------------------------------------------------------
+
+#[tool_router(router = write_router)]
+impl BonsaiServer {
+    /// Atomically stage a batch of repo-relative paths (worktree untouched).
+    #[tool]
+    async fn bonsai_stage(&self, Parameters(args): Parameters<PathsArgs>) -> CallToolResult {
+        match self
+            .run_blocking(move |wd| bonsai_core::git::stage::stage_paths(wd, &args.paths))
+            .await
+        {
+            Ok(()) => ok_null(),
+            Err(e) => err_result(e),
+        }
+    }
+
+    /// Unstage a batch of repo-relative paths (never touches the worktree).
+    #[tool]
+    async fn bonsai_unstage(&self, Parameters(args): Parameters<PathsArgs>) -> CallToolResult {
+        match self
+            .run_blocking(move |wd| bonsai_core::git::stage::unstage_paths(wd, &args.paths))
+            .await
+        {
+            Ok(()) => ok_null(),
+            Err(e) => err_result(e),
+        }
+    }
+
+    /// Create a commit from the staged index. Errors clearly on empty message,
+    /// missing git identity, or nothing-to-commit (preserved `kind`).
+    #[tool]
+    async fn bonsai_commit(&self, Parameters(args): Parameters<MessageArgs>) -> CallToolResult {
+        match self
+            .run_blocking(move |wd| bonsai_core::git::commit::create_commit(wd, &args.message))
+            .await
+        {
+            Ok(v) => ok_json(&v),
+            Err(e) => err_result(e),
+        }
+    }
+
+    /// Resolve a conflicted file by writing AI-authored final content to the
+    /// worktree and staging it (the primary AI resolution path).
+    #[tool]
+    async fn bonsai_resolve_conflict_text(
+        &self,
+        Parameters(args): Parameters<ResolveConflictTextArgs>,
+    ) -> CallToolResult {
+        match self
+            .run_blocking(move |wd| {
+                bonsai_core::git::conflict::resolve_conflict_text(wd, &args.path, &args.content)
+            })
+            .await
+        {
+            Ok(()) => ok_null(),
+            Err(e) => err_result(e),
+        }
+    }
+
+    /// Resolve a conflicted file via take-ours / take-theirs / mark-resolved.
+    #[tool]
+    async fn bonsai_resolve_conflict(
+        &self,
+        Parameters(args): Parameters<ResolveConflictArgs>,
+    ) -> CallToolResult {
+        let resolution = match parse_resolution(&args.resolution) {
+            Ok(r) => r,
+            Err(e) => return err_result(e),
+        };
+        match self
+            .run_blocking(move |wd| {
+                bonsai_core::git::conflict::resolve_conflict(wd, &args.path, resolution)
+            })
+            .await
+        {
+            Ok(()) => ok_null(),
+            Err(e) => err_result(e),
+        }
+    }
+
+    /// Merge a branch into the current branch (FF / clean-merge / conflicts are
+    /// distinguished in the typed outcome; autostash handled; never force).
+    #[tool]
+    async fn bonsai_merge_branch(&self, Parameters(args): Parameters<NameArgs>) -> CallToolResult {
+        match self
+            .run_blocking(move |wd| bonsai_core::git::merge::merge_branch(wd, &args.name))
+            .await
+        {
+            Ok(v) => ok_json(&v),
+            Err(e) => err_result(e),
+        }
+    }
+
+    /// Finalize a paused merge (refuses on `unresolvedConflicts`).
+    #[tool]
+    async fn bonsai_commit_merge(
+        &self,
+        Parameters(args): Parameters<MessageArgs>,
+    ) -> CallToolResult {
+        match self
+            .run_blocking(move |wd| bonsai_core::git::merge::commit_merge(wd, &args.message))
+            .await
+        {
+            Ok(v) => ok_json(&v),
+            Err(e) => err_result(e),
+        }
+    }
+
+    /// Abort an in-progress merge (worktree-destructive; gated by `--allow-write`).
+    #[tool]
+    async fn bonsai_abort_merge(&self) -> CallToolResult {
+        match self.run_blocking(bonsai_core::git::merge::abort_merge).await {
+            Ok(()) => ok_null(),
+            Err(e) => err_result(e),
+        }
+    }
+
+    /// Rebase the current branch onto another ref (typed FF/rebased/conflicts
+    /// with step counters).
+    #[tool]
+    async fn bonsai_rebase_branch(&self, Parameters(args): Parameters<OntoArgs>) -> CallToolResult {
+        match self
+            .run_blocking(move |wd| bonsai_core::git::rebase::rebase_branch(wd, &args.onto))
+            .await
+        {
+            Ok(v) => ok_json(&v),
+            Err(e) => err_result(e),
+        }
+    }
+
+    /// Resume a paused rebase after resolving the current step's conflicts.
+    #[tool]
+    async fn bonsai_rebase_continue(&self) -> CallToolResult {
+        match self
+            .run_blocking(bonsai_core::git::rebase::rebase_continue)
+            .await
+        {
+            Ok(v) => ok_json(&v),
+            Err(e) => err_result(e),
+        }
+    }
+
+    /// Skip the current step of a paused rebase.
+    #[tool]
+    async fn bonsai_rebase_skip(&self) -> CallToolResult {
+        match self
+            .run_blocking(bonsai_core::git::rebase::rebase_skip)
+            .await
+        {
+            Ok(v) => ok_json(&v),
+            Err(e) => err_result(e),
+        }
+    }
+
+    /// Abort an in-progress rebase (worktree-destructive; gated).
+    #[tool]
+    async fn bonsai_rebase_abort(&self) -> CallToolResult {
+        match self
+            .run_blocking(bonsai_core::git::rebase::rebase_abort)
+            .await
+        {
+            Ok(()) => ok_null(),
+            Err(e) => err_result(e),
+        }
+    }
+
+    /// Create a branch at HEAD (no checkout).
+    #[tool]
+    async fn bonsai_create_branch(&self, Parameters(args): Parameters<NameArgs>) -> CallToolResult {
+        match self
+            .run_blocking(move |wd| bonsai_core::git::branches::create_branch(wd, &args.name))
+            .await
+        {
+            Ok(()) => ok_null(),
+            Err(e) => err_result(e),
+        }
+    }
+
+    /// Create a branch at a specific commit (autostash across the checkout).
+    #[tool]
+    async fn bonsai_create_branch_here(
+        &self,
+        Parameters(args): Parameters<CreateBranchHereArgs>,
+    ) -> CallToolResult {
+        match self
+            .run_blocking(move |wd| {
+                bonsai_core::git::branches::create_branch_here(wd, &args.name, &args.oid)
+            })
+            .await
+        {
+            Ok(v) => ok_json(&v),
+            Err(e) => err_result(e),
+        }
+    }
+
+    /// Safely checkout a branch — never force; `checkoutConflict` surfaces
+    /// instead of clobbering the worktree.
+    #[tool]
+    async fn bonsai_checkout_branch(
+        &self,
+        Parameters(args): Parameters<NameArgs>,
+    ) -> CallToolResult {
+        match self
+            .run_blocking(move |wd| bonsai_core::git::branches::checkout_branch(wd, &args.name))
+            .await
+        {
+            Ok(()) => ok_null(),
+            Err(e) => err_result(e),
+        }
+    }
+
+    /// Delete a branch — blocks unmerged deletion (`unmergedBranch`); no force.
+    #[tool]
+    async fn bonsai_delete_branch(&self, Parameters(args): Parameters<NameArgs>) -> CallToolResult {
+        match self
+            .run_blocking(move |wd| bonsai_core::git::branches::delete_branch(wd, &args.name))
+            .await
+        {
+            Ok(()) => ok_null(),
+            Err(e) => err_result(e),
+        }
+    }
+
+    /// Create a stash. `created=false` means nothing to stash (not an error).
+    #[tool]
+    async fn bonsai_create_stash(
+        &self,
+        Parameters(args): Parameters<CreateStashArgs>,
+    ) -> CallToolResult {
+        match self
+            .run_blocking(move |wd| {
+                bonsai_core::git::stash::create_stash(
+                    wd,
+                    args.message.as_deref(),
+                    args.include_untracked,
+                )
+            })
+            .await
+        {
+            Ok(v) => ok_json(&v),
+            Err(e) => err_result(e),
+        }
+    }
+
+    /// Apply a stash without dropping it; conflicts reported as typed paths.
+    #[tool]
+    async fn bonsai_apply_stash(
+        &self,
+        Parameters(args): Parameters<StashIndexArgs>,
+    ) -> CallToolResult {
+        match self
+            .run_blocking(move |wd| bonsai_core::git::stash::apply_stash(wd, args.index))
+            .await
+        {
+            Ok(v) => ok_json(&v),
+            Err(e) => err_result(e),
+        }
+    }
+
+    /// Apply a stash and drop it on clean success only.
+    #[tool]
+    async fn bonsai_pop_stash(
+        &self,
+        Parameters(args): Parameters<StashIndexArgs>,
+    ) -> CallToolResult {
+        match self
+            .run_blocking(move |wd| bonsai_core::git::stash::pop_stash(wd, args.index))
+            .await
+        {
+            Ok(v) => ok_json(&v),
+            Err(e) => err_result(e),
+        }
+    }
+
+    /// Permanently drop a stash (gated by `--allow-write`).
+    #[tool]
+    async fn bonsai_drop_stash(
+        &self,
+        Parameters(args): Parameters<StashIndexArgs>,
+    ) -> CallToolResult {
+        match self
+            .run_blocking(move |wd| bonsai_core::git::stash::drop_stash(wd, args.index))
+            .await
+        {
+            Ok(()) => ok_null(),
+            Err(e) => err_result(e),
+        }
+    }
+}
+
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for BonsaiServer {
     fn get_info(&self) -> ServerInfo {
+        let write_note = if self.allow_write {
+            " Mutation tools (stage/commit, conflict resolution, merge/rebase, branches, \
+             stashes) are ENABLED (--allow-write)."
+        } else {
+            " This server is READ-ONLY; mutation tools are not registered (start with \
+             --allow-write to enable them)."
+        };
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("bonsai", env!("CARGO_PKG_VERSION")))
-            .with_instructions(
+            .with_instructions(format!(
                 "Bonsai exposes structured Git data for the repository passed via --repo: a \
                  precomputed commit-graph layout (lanes/edges/refs), typed diffs, working-dir \
                  status, and the ours/theirs/base conflict trio. Prefer these tools over parsing \
-                 `git` output for graph topology, structured diffs, and conflict contents."
-                    .to_string(),
-            )
+                 `git` output for graph topology, structured diffs, and conflict contents.{write_note}"
+            ))
     }
 }
