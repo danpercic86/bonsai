@@ -28,7 +28,18 @@ resolution. Autonomy is a SETTING: default ProposeReview (propose→review/accep
 switchable to AutoResolve (write+stage immediately, review staged diff before commit_merge). Both
 finalize via the existing commit_merge (UNCHANGED).
 
-**Current step: P13a–e all implemented + committed; AI gate PASSED in harness; running tester next.**
+**P13 AI GATE PASSED (2026-07-30) — awaiting USER CHECKPOINT.** Commits: 4e91d8c kickoff · 44fca6e
+P13a · e39b444 P13b · d7bfb11 P13c · 051d375 P13d · ad7f61a P13e · 42c3547 autoResolve marker guard ·
+d1bd041 tester adversarial suite + user checklist. Tester: full suite 328 passed / 0 failed, clippy
++ pnpm build clean (only pre-existing watcher timing flakes, 5/5 in isolation). Post-review hardening:
+autoResolve now refuses to silently stage a markerful proposal (falls back to the review editor +
+warning) — reuses hasUnresolvedMarkers; harness-reverified markerless auto-resolve unchanged.
+USER CHECKPOINT checklist: docs/contracts/P13-user-checklist.md (native pnpm tauri dev + real
+logged-in claude: consent flow; real bothModified merge; Propose&review edit→Accept→2-parent commit;
+Auto-resolve repeat; logged-out/absent fallback). proposeReview overlay (CodeMirror) not harness-
+compositable → belongs to this checkpoint (same limit as P12).
+
+**Current step: P13 AI gate passed; awaiting USER CHECKPOINT confirmation.**
 P13e reviewer APPROVE-WITH-NITS (0 must-fix); folded NIT 1 (guard the proposeReview getConflict await
 with fileDiffReqId — was clobber-prone). NIT 2 (probe-state button title) + NIT 3 (shared ConfirmDialog
 red button) left as cosmetic. AI GATE (mock :1420, `?op=merge`, hidden pane → DOM/synthetic events):
