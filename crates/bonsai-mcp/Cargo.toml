@@ -1,0 +1,15 @@
+[package]
+name = "bonsai-mcp"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "bonsai-mcp"
+path = "src/main.rs"
+
+[dependencies]
+bonsai-core = { path = "../bonsai-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
+rmcp = { version = "3.0.1", features = ["server", "transport-io", "macros"] }

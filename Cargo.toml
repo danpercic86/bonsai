@@ -1,5 +1,5 @@
 [workspace]
-members = ["src-tauri", "crates/bonsai-core"]
+members = ["src-tauri", "crates/bonsai-core", "crates/bonsai-mcp"]
 resolver = "2"
 
 [workspace.dependencies]
