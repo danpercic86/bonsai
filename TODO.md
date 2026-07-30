@@ -36,8 +36,35 @@ P11e Auto-fetch timer → P11g Scrollable all-files diff. Contract: docs/contrac
 Rules: scratch repos under D:\Temp\bonsai-scratch only; TMP/TEMP=D:\Temp for cargo tests; no
 concurrent cargo test + clippy; orchestrator makes all commits; mock.ts kept compiling.
 
-**Current step:** P11a done (Sidebar tagsCollapsed default true). Awaiting architect contract for
-P11b–P11g, then P11f implementation.
+**P11 AI GATE PASSED (2026-07-30) — awaiting USER CHECKPOINT.** Commits: kickoff+P11a (contract,
+TODO, tags collapsed), P11f (create-branch-here), P11b (settings model+IPC), P11c/d/e (settings
+page + graph knobs + auto-fetch), P11g (scrollable DiffBrowser), P11f tests. All reviewer-APPROVED
+(P11c/d had a fix round: dead post-P7 dotRadius control dropped, rings scale with node size; P11g a
+polish round: sticky header, unmount fetch guard, dead-branch cleanup).
+
+AI-gate evidence: cargo test 136/0 at --test-threads=4 (6 new create_branch_here scenarios;
+apply_patch settings tests); cargo clippy + tsc + pnpm build clean; mock.ts compiles. Browser
+harness (mock on an alt port; native pane was NOT compositing → document.hidden=true, so
+IntersectionObserver-driven lazy hunk fetch and canvas clicks could not run — verified everything
+else via read_page/JS + real ref-clicks):
+- P11a Tags aria-expanded=false on load; others expanded; no console errors.
+- P11c/d/e Settings gear opens 3-section panel (Auto-fetch toggle+interval DISABLED since off by
+  default; Graph = node size 6-16 / row 24-48 / lane 10-28, NO dead dot control; Appearance). Ranges
+  match. Changing row height 32→48 re-mapped the graph-spacer 1096→1640px live; persisted to mock
+  storage and RESTORED across reload. p7SelfTest 29/0.
+- P11f "Create branch here" present on branch menu (after Checkout); PromptDialog (input-focused,
+  validated); submit created+checked-out the new branch (HEAD moved, Push target updated).
+- P11g DiffBrowser opens from compare mode; tree root "All files (n)" + folders + files (flat &
+  tree); scope filter verified: root=3 cards, folder src/core=2, file=1; binary file shows the
+  "Binary file" placeholder (no fetch); non-binary cards show the loading skeleton (lazy fetch
+  pending IO, which is dormant while the pane is hidden); ✕ closes the browser, compare panel stays.
+
+USER CHECKPOINT (native pnpm tauri dev, self-declare FORBIDDEN): (1) "Create branch here" on a real
+repo actually stashes → switches → re-applies working changes (clean + conflict cases); (2) enable
+auto-fetch in Settings → it hits a real remote on the interval, active tab only; (3) settings persist
+across an app restart and the graph node/row/lane changes look right at the extremes; (4) the
+DiffBrowser lazily loads each file's hunks as you scroll (IntersectionObserver), and the multi-file
+scroll feel over a large comparison is good.
 
 ## P10 — Stash-as-node graph redesign + context-menu polish — **in-progress** (2026-07-30)
 
