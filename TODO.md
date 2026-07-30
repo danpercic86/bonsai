@@ -16,6 +16,56 @@ that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e
 Every "awaiting USER CHECKPOINT" below is now CONFIRMED as of 2026-07-30. (P5/P6 were already
 confirmed earlier.)
 
+## P13 — Local-AI foundation (Claude Code CLI) + AI merge-conflict resolution — **in-progress** (2026-07-30)
+
+Source: user request (2026-07-30) — integrate AI WITHOUT API keys by driving the user's locally
+installed `claude` CLI (subscription auth). Approved plan:
+~/.claude/plans/analyze-the-possibility-to-logical-yeti.md.
+Contract: **docs/contracts/P13-ai-foundation.md** (numbered P13 because P11/P12 are already spent by
+shipped work — feature-followup + conflict editor; all NEW code comments/commits use the `P13` tag).
+Deliverable = reusable "run local claude CLI" layer (Rust) + first consumer = AI merge-conflict
+resolution. Autonomy is a SETTING: default ProposeReview (propose→review/accept before write+stage)
+switchable to AutoResolve (write+stage immediately, review staged diff before commit_merge). Both
+finalize via the existing commit_merge (UNCHANGED).
+
+**Current step: contract done + orchestrator-reviewed; starting P13a (Rust AI layer).**
+
+VERIFIED live on installed CLI **v2.1.220** (de-risk done before contract, one real call succeeded):
+- `claude -p --output-format json --safe-mode --tools "" --no-session-persistence --model sonnet`
+  runs headless on the **subscription session, NO ANTHROPIC_API_KEY**. Envelope fields used:
+  `result` (text), `is_error`, `total_cost_usd`, `session_id`, `subtype`, `type:"result"`.
+- **DO NOT use `--bare`** — it forces ANTHROPIC_API_KEY/apiKeyHelper and never reads OAuth/keychain.
+  `--safe-mode` keeps subscription auth AND disables the repo's own CLAUDE.md/hooks/skills/MCP.
+- `--tools ""` (NOT `--allowedTools`) disables all built-in tools → pure text transform (no
+  disk/network/git access). Default resolution model = `sonnet` (opus default ≈ $0.037/trivial call).
+
+Design (locked in contract): backend-spawn via `std::process::Command` under `spawn_blocking` — NO
+tauri-plugin-shell, NO new Tauri capability, ZERO new crates for MVP. Claude returns the merged file
+body via stdin→stdout (read `result`, defensive fence-strip; NO --json-schema in v1). Bonsai owns
+write+stage by REUSING the shipped `resolve_conflict_text` command (P12) — so NO new apply command;
+proposal review REUSES `ConflictEditor` seeded with the proposed body (edit-before-accept free).
+Backend gate: `ai_resolve_conflict` refuses unless `ai_enabled && ai_consented`. 90s std-only
+timeout (drain-and-poll, no crate). Streaming (tauri Channel) deferred to P13f.
+
+Sub-increments (each its own contract-driven senior-dev→review→commit pass):
+- **P13a** `src-tauri/src/ai/mod.rs` (`run_claude`, `check_availability`, `RunOpts`, `AiResult`,
+  `AiAvailability`); `error.rs` `AiUnavailable`/`AiFailed`; unit tests via a stub `claude`
+  (`BONSAI_CLAUDE_BIN`, `tests/fixtures/`).
+- **P13b** settings: `ai_enabled`(true)/`ai_conflict_autonomy`(ProposeReview)/`ai_consented`(false)
+  additive fields + `AiAutonomy` enum (settings.rs); UiSettings/UiSettingsPatch/apply_patch (commands.rs).
+- **P13c** `src-tauri/src/git/ai_resolve.rs` + 2 commands (`check_ai_availability`,
+  `ai_resolve_conflict` — proposal only, writes nothing); apply = existing `resolve_conflict_text`;
+  tests `tests/ai_resolve_cli.rs`.
+- **P13d** IPC mirror types.ts/tauri.ts/index.ts/mock.ts (canned proposal; `?ai=off` toggles
+  availability; harness works with no claude installed).
+- **P13e** frontend: SettingsPanel AI section (enable + autonomy + availability + consent dialog);
+  StatusPanel "✨ AI" conflict-row action (text kinds only); RepoWorkspace `handleAiResolveConflict`
+  branching on autonomy (ProposeReview → `ai-proposal:<path>` overlay reusing ConflictEditor; Auto →
+  resolve_conflict_text + toast).
+Rules: scratch repos under D:\Temp\bonsai-scratch only; TMP/TEMP=D:\Temp for cargo tests; NO
+concurrent cargo test + clippy; orchestrator makes all commits (`wip(P13): …`); mock.ts kept
+compiling with every IPC change.
+
 ## P12 — Rich conflict-resolution editor — **in-progress** (2026-07-30)
 
 Source: user request (2026-07-30). Replace the read-only conflict marker `<pre>` (P3c) with a real
