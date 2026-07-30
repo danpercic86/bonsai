@@ -1224,7 +1224,13 @@ export function RepoWorkspace({
   function buildContextItems(target: GraphContextTarget): ContextMenuItem[] {
     if (target.kind === 'ref') {
       const r = target.ref;
-      if (r.kind === 'tag' || r.kind === 'head' || r.kind === 'stash') return [];
+      // P10 §5: a stash pill → Apply/Pop/Drop menu (parse the index from the name).
+      if (r.kind === 'stash') {
+        const m = /^stash@\{(\d+)\}$/.exec(r.name);
+        if (m === null) return []; // malformed name → no menu (defensive)
+        return stashMenuItems(Number(m[1]));
+      }
+      if (r.kind === 'tag' || r.kind === 'head') return [];
       return branchMenuItems(r.name, r.kind === 'remoteBranch' ? 'remoteBranch' : 'localBranch');
     }
     // Commit row → Compare with HEAD (unavailable for unborn HEAD, §1.3).

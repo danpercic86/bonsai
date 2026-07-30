@@ -402,6 +402,31 @@ export function drawStashIcon(
   ctx.stroke();
 }
 
+/** P10 §2.1: a stash node — violet disc + centered white stash glyph + violet
+ *  lane ring. Draws in place of the author avatar; the caller has ALREADY drawn
+ *  the bg-ring halo and will draw HEAD/selection rings afterwards. The ring
+ *  matches the disc color (STASH_COLOR) rather than the row's lane color, so the
+ *  stash reads as "not a real branch commit" (a deliberate choice). */
+export function drawStashNode(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  // disc
+  ctx.beginPath();
+  ctx.arc(x, y, METRICS.avatarRadius, 0, Math.PI * 2);
+  ctx.fillStyle = STASH_COLOR;
+  ctx.fill();
+
+  // lane ring (violet, matches disc)
+  ctx.beginPath();
+  ctx.arc(x, y, METRICS.avatarRadius, 0, Math.PI * 2);
+  ctx.strokeStyle = STASH_COLOR;
+  ctx.lineWidth = METRICS.avatarRingWidth;
+  ctx.stroke();
+
+  // glyph (white, legible on the violet disc)
+  const S = METRICS.avatarRadius * 1.4;
+  ctx.strokeStyle = '#ffffff';
+  drawStashIcon(ctx, x - S / 2, y - S / 2, S);
+}
+
 // ---------- LEFT ref-column layout + overflow (P7 §4) ----------
 
 export interface LaidRefLabel {
@@ -686,6 +711,8 @@ export function drawGraph(
     const laneColor = theme.laneColors[node.lane % 10];
     const ac = avatarColor(node.author);
     const selected = ix.selectedIndex === row;
+    // P10 §2.1: a stash node draws a violet disc + glyph instead of the avatar.
+    const isStash = node.refs?.some((r) => r.kind === 'stash') ?? false;
 
     // bg ring — bg0 halo so edges passing under the avatar read cleanly.
     ctx.beginPath();
@@ -693,23 +720,27 @@ export function drawGraph(
     ctx.fillStyle = theme.bg0;
     ctx.fill();
 
-    // avatar disc — theme-invariant hashed name color.
-    ctx.beginPath();
-    ctx.arc(x, y, METRICS.avatarRadius, 0, Math.PI * 2);
-    ctx.fillStyle = ac.bg;
-    ctx.fill();
+    if (isStash) {
+      drawStashNode(ctx, x, y);
+    } else {
+      // avatar disc — theme-invariant hashed name color.
+      ctx.beginPath();
+      ctx.arc(x, y, METRICS.avatarRadius, 0, Math.PI * 2);
+      ctx.fillStyle = ac.bg;
+      ctx.fill();
 
-    // lane ring — ties the avatar to its lane color.
-    ctx.beginPath();
-    ctx.arc(x, y, METRICS.avatarRadius, 0, Math.PI * 2);
-    ctx.strokeStyle = laneColor;
-    ctx.lineWidth = METRICS.avatarRingWidth;
-    ctx.stroke();
+      // lane ring — ties the avatar to its lane color.
+      ctx.beginPath();
+      ctx.arc(x, y, METRICS.avatarRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = laneColor;
+      ctx.lineWidth = METRICS.avatarRingWidth;
+      ctx.stroke();
 
-    // initials (centered baseline).
-    ctx.font = `${METRICS.avatarFont} ${FONT_UI}`;
-    ctx.fillStyle = ac.text;
-    ctx.fillText(initials(node.author), x, y);
+      // initials (centered baseline).
+      ctx.font = `${METRICS.avatarFont} ${FONT_UI}`;
+      ctx.fillStyle = ac.text;
+      ctx.fillText(initials(node.author), x, y);
+    }
 
     if (layout.headIndex === row) {
       ctx.beginPath();

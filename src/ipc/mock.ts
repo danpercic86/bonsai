@@ -5,7 +5,12 @@ import {
   mockCompareDiff,
   mockWorkdirDiff,
 } from './fixtures/diffs';
-import { buildMockGraph, buildMockGraphDetached, prependCommits } from './fixtures/graph';
+import {
+  buildMockGraph,
+  buildMockGraphDetached,
+  prependCommits,
+  withStashNodes,
+} from './fixtures/graph';
 import type { MockCommit } from './fixtures/graph';
 import { generateLayout20k } from './fixtures/graph20k';
 import type {
@@ -792,8 +797,11 @@ export const mockIpc: IpcApi = {
     // Built fresh per call (timestamps relative to now; callers own the copy).
     if (state.graphFixture === '20k') return generateLayout20k();
     if (state.graphFixture === 'detached') return buildMockGraphDetached();
-    // Default fixture: synthetic mock-commit rows prepended (P1 §3.5).
-    return prependCommits(buildMockGraph(), state.commits);
+    // Default fixture: synthetic mock-commit rows prepended (P1 §3.5), then the
+    // live stash stack injected as offshoot nodes (P10 §3.3) so create/apply/
+    // pop/drop reflect visually on the next repo-changed refetch.
+    const base = prependCommits(buildMockGraph(), state.commits);
+    return withStashNodes(base, state.stashes);
   },
 
   async listBranches(repoId: string): Promise<BranchesSnapshot> {
@@ -1278,11 +1286,17 @@ export const mockIpc: IpcApi = {
     }
     // Push a new stash@{0} and re-index the rest (+1).
     for (const entry of state.stashes) entry.index += 1;
+    // P10 §8 risk #3: the new stash's baseOid must match the CURRENT HEAD node's
+    // id in the graph so withStashNodes renders a node for it. `state.headOid`
+    // (MOCK_OID) does NOT match the default fixture's row-0 id, so derive the
+    // head node id from the layout getGraph builds (headIndex is always 0).
+    const base = prependCommits(buildMockGraph(), state.commits);
+    const headNodeId = base.nodes[base.headIndex ?? 0]?.id ?? state.headOid;
     state.stashes.unshift({
       index: 0,
       message: `WIP on ${state.headBranch}: mock stashed changes`,
       oid: randomOid(),
-      baseOid: state.headOid,
+      baseOid: headNodeId,
       ts: Math.floor(Date.now() / 1000),
     });
     // The worktree comes back clean (INCLUDE_UNTRACKED semantics).

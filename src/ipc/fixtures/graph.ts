@@ -1,4 +1,4 @@
-import type { GraphEdge, GraphLayout, GraphNode, RefLabel } from '../types';
+import type { GraphEdge, GraphLayout, GraphNode, RefLabel, StashEntry } from '../types';
 
 const HOUR = 3600;
 
@@ -64,18 +64,18 @@ export function buildMockGraph(): GraphLayout {
   push('feat: polish', 1, [4], [{ name: 'feat', kind: 'localBranch', isHead: false }]);
   push('experiment', 2, [5], [{ name: 'exp', kind: 'localBranch', isHead: false }]);
   // P7 §9: single-token author → initials "TO" (other rows yield "AL"/"GH").
-  // P9 §6.6: a single stash pill (violet, drawer icon) on this base commit.
-  push('core work 4', 0, [5], [{ name: 'stash@{0}', kind: 'stash', isHead: false }], 'torvalds');
+  // P10 §3.1: base-row stash pills removed — stashes are now their OWN nodes
+  // (see withStashNodes), so `core work 4` is the plain base for stash@{0}.
+  push('core work 4', 0, [5], undefined, 'torvalds');
   // P7 §9: diverged pair — local `feat` is on row 1; its remote `origin/feat`
   // lives here on row 4, so the two render as SEPARATE labels (no collapse):
   // row 1 = laptop-only `feat`, row 4 = cloud-only `feat`.
   push('feat: start', 1, [6], [{ name: 'origin/feat', kind: 'remoteBranch', isHead: false }]);
   push('core work 3', 0, [6]);
-  // P9 §6.6: TWO stashes on one base → exercises multi-stash + the `+n` collapse.
-  push('core work 2', 0, [7], [
-    { name: 'stash@{1}', kind: 'stash', isHead: false },
-    { name: 'stash@{2}', kind: 'stash', isHead: false },
-  ]);
+  // P10 §3.1: base-row stash pills removed — `core work 2` is the plain base for
+  // stash@{1} and stash@{2}, which now render as their own offshoot nodes
+  // (withStashNodes) rather than pills on this row.
+  push('core work 2', 0, [7]);
   // P7 §9: v0.9 moved to row 0 (collapse/overflow case); row 7 now ref-less.
   push('core work 1', 0, [8]);
 
@@ -189,6 +189,67 @@ export function prependCommits(layout: GraphLayout, commits: MockCommit[]): Grap
     edges: [...newEdges, ...shiftedEdges],
     laneCount: layout.laneCount,
     headIndex: 0,
+    truncated: layout.truncated,
+  };
+}
+
+/**
+ * P10 §3.2: insert each stash as its OWN node at the TOP of `layout`, on a
+ * fresh offshoot lane, connected by a single edge to its base row.
+ *
+ * For each stash (index order, stash@{0} first) whose `baseOid` matches a node
+ * id in `layout`:
+ *   - it becomes a new top row (like {@link prependCommits}): all existing
+ *     node.parents and edge.from/to shift by k = number of INSERTED stash nodes;
+ *   - new stash node i (0..k): { id: stash.oid, lane: layout.laneCount + i,
+ *     parents: [baseRow + k], refs: [{ name:`stash@{n}`, kind:'stash',
+ *     isHead:false }], summary: stash.message, author:'', ts: stash.ts } where
+ *     baseRow = index of the base node in the ORIGINAL layout;
+ *   - new edge i: { from: i, to: baseRow + k, lane: layout.laneCount + i };
+ *   - laneCount += k; headIndex (if non-null) shifts by k.
+ * Stashes whose baseOid is not found are skipped (orphan → not rendered in the
+ * mock; the real Rust path DOES render them, but the mock has no ancestor to
+ * attach to). `baseRow + k` (= to) > `i` (= from) always holds, so `to > from`
+ * is preserved. Edges are NOT required to be (from,to)-sorted for the mock.
+ */
+export function withStashNodes(layout: GraphLayout, stashes: StashEntry[]): GraphLayout {
+  const baseIndex = (s: StashEntry): number =>
+    layout.nodes.findIndex((n) => n.id === s.baseOid);
+  const insertable = stashes.filter((s) => baseIndex(s) !== -1);
+  const k = insertable.length;
+  if (k === 0) return layout;
+
+  const shiftedNodes: GraphNode[] = layout.nodes.map((n) => {
+    const copy: GraphNode = { ...n, parents: n.parents.map((p) => p + k) };
+    if (n.refs !== undefined) copy.refs = n.refs.map((r) => ({ ...r }));
+    return copy;
+  });
+  const shiftedEdges: GraphEdge[] = layout.edges.map((e) => ({
+    ...e,
+    from: e.from + k,
+    to: e.to + k,
+  }));
+
+  const newNodes: GraphNode[] = insertable.map((s, i) => ({
+    id: s.oid,
+    lane: layout.laneCount + i,
+    parents: [baseIndex(s) + k],
+    refs: [{ name: `stash@{${s.index}}`, kind: 'stash', isHead: false }],
+    summary: s.message,
+    author: '',
+    ts: s.ts,
+  }));
+  const newEdges: GraphEdge[] = insertable.map((s, i) => ({
+    from: i,
+    to: baseIndex(s) + k,
+    lane: layout.laneCount + i,
+  }));
+
+  return {
+    nodes: [...newNodes, ...shiftedNodes],
+    edges: [...newEdges, ...shiftedEdges],
+    laneCount: layout.laneCount + k,
+    headIndex: layout.headIndex === null ? null : layout.headIndex + k,
     truncated: layout.truncated,
   };
 }
