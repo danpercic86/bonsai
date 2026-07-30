@@ -5,7 +5,7 @@
 /// | "checkoutConflict" | "unmergedBranch" | "branchNotFound"
 /// | "noRemote" | "noUpstream" | "authFailed" | "networkError"
 /// | "pushRejected" | "operationInProgress" | "noOperationInProgress"
-/// | "unresolvedConflicts",
+/// | "unresolvedConflicts" | "aiUnavailable" | "aiFailed",
 /// "message": "..." }`.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
@@ -49,6 +49,11 @@ pub enum AppError {
     NoOperationInProgress(String),
     #[error("{0}")]
     UnresolvedConflicts(String),
+    // AI subprocess layer (P13).
+    #[error("{0}")]
+    AiUnavailable(String),
+    #[error("{0}")]
+    AiFailed(String),
 }
 
 impl AppError {
@@ -74,6 +79,8 @@ impl AppError {
             AppError::OperationInProgress(_) => "operationInProgress",
             AppError::NoOperationInProgress(_) => "noOperationInProgress",
             AppError::UnresolvedConflicts(_) => "unresolvedConflicts",
+            AppError::AiUnavailable(_) => "aiUnavailable",
+            AppError::AiFailed(_) => "aiFailed",
         }
     }
 
@@ -95,7 +102,9 @@ impl AppError {
             | AppError::PushRejected(m)
             | AppError::OperationInProgress(m)
             | AppError::NoOperationInProgress(m)
-            | AppError::UnresolvedConflicts(m) => m,
+            | AppError::UnresolvedConflicts(m)
+            | AppError::AiUnavailable(m)
+            | AppError::AiFailed(m) => m,
             AppError::NoRepo => "no repository is open",
             AppError::EmptyMessage => "commit message is empty",
             AppError::NothingToCommit => "nothing to commit (index matches HEAD)",

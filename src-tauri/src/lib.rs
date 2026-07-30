@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod commands;
 pub mod error;
 #[doc(hidden)]
