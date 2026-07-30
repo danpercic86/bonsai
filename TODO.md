@@ -11,6 +11,28 @@ inner functions for command tests.
 Use `D:\Temp\bonsai-scratch`; when running cargo tests set TMP/TEMP to `D:\Temp` (tempfile
 honors them). Include this in every subagent prompt that runs tests or creates repos.**
 
+**USER CHECKPOINT BATCH CONFIRMED (2026-07-30):** the user confirmed in native `pnpm tauri dev`
+that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e, P7f, P3f, P8, P9.
+Every "awaiting USER CHECKPOINT" below is now CONFIRMED as of 2026-07-30. (P5/P6 were already
+confirmed earlier.)
+
+## P10 — Stash-as-node graph redesign + context-menu polish — **in-progress** (2026-07-30)
+
+Source: user request (2026-07-30) with GitExtensions + GitKraken reference screenshots. Four asks:
+1. (done, orchestrator) mark all prior USER CHECKPOINTs confirmed — see banner above.
+2. **Icons in context menus** — every context-menu action gets a small leading icon (frontend only).
+3. **Stash right-click context menu** — right-click a stash in the graph opens Apply/Pop/Drop
+   (today the stash target returns no menu). Reuses the existing `stashMenuItems(index)`.
+4. **Stashes as their own graph NODES** (GitKraken/GitExtensions style) — REPLACES the P9b
+   "pill on the base commit" model. The stash commit becomes a real node on an offshoot lane
+   connected to its base, drawn with a stash glyph + its "WIP on <branch>" summary. Rust seeds
+   the walk with stash commits and HIDES their index/untracked parents so only the WIP node shows.
+Sub-increments: P10a Rust graph (stashes seed walk as own nodes; hide index/untracked; stash
+label on the node) → P10b frontend graph render (node glyph + fixtures/mock rework + task-3 stash
+context menu) → P10c context-menu icons (task 2). Contract: docs/contracts/P10-stash-as-node.md.
+Rules: scratch repos under D:\Temp\bonsai-scratch only; TMP/TEMP=D:\Temp for cargo tests; no
+concurrent cargo test + clippy; orchestrator makes all commits; mock.ts kept compiling.
+
 ## P7 — GitKraken-style graph layout — **in-progress** (2026-07-29)
 
 Current step: P7 AI GATE PASSED (2026-07-29) — awaiting USER CHECKPOINT. Commits: e96c0fa (kickoff
