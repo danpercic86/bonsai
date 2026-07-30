@@ -331,16 +331,34 @@ export interface PaneWidths {
   rightPanel: number;
 }
 
+/** Auto-fetch preference (P11 §2.3). OFF by default; interval in minutes. */
+export interface AutoFetchSettings {
+  enabled: boolean;
+  intervalMinutes: number;
+}
+
+/** Graph geometry knobs (P11 §2.3) — pure render geometry, not layout math. */
+export interface GraphPrefs {
+  dotRadius: number;
+  avatarRadius: number;
+  rowHeight: number;
+  laneWidth: number;
+}
+
 export interface UiSettings {
   theme: Theme;
   paneWidths: PaneWidths;
   listView: ListView;
+  autoFetch: AutoFetchSettings;
+  graph: GraphPrefs;
 }
 
 export interface UiSettingsPatch {
   theme?: Theme;
   paneWidths?: PaneWidths;
   listView?: ListView;
+  autoFetch?: AutoFetchSettings;
+  graph?: GraphPrefs;
 }
 
 /** Persisted multi-tab session: open tabs (in display order) + the active tab.

@@ -27,7 +27,9 @@ import type {
   CreateStashResult,
   FetchResult,
   FileDiff,
+  AutoFetchSettings,
   GraphLayout,
+  GraphPrefs,
   IpcApi,
   ListView,
   MergeOutcome,
@@ -49,6 +51,18 @@ import type {
   UiSettingsPatch,
   Unsubscribe,
 } from './types';
+import {
+  AUTO_FETCH_INTERVAL_MAX,
+  AUTO_FETCH_INTERVAL_MIN,
+  AVATAR_RADIUS_MAX,
+  AVATAR_RADIUS_MIN,
+  DOT_RADIUS_MAX,
+  DOT_RADIUS_MIN,
+  LANE_WIDTH_MAX,
+  LANE_WIDTH_MIN,
+  ROW_HEIGHT_MAX,
+  ROW_HEIGHT_MIN,
+} from '../settings/ranges';
 
 const MOCK_REPO_PATH = 'C:\\mock\\bonsai-fixture';
 
@@ -455,12 +469,35 @@ const DEFAULT_UI_SETTINGS: UiSettings = {
   theme: 'dark',
   paneWidths: { sidebar: 240, rightPanel: 380 },
   listView: 'tree',
+  autoFetch: { enabled: false, intervalMinutes: 5 },
+  graph: { dotRadius: 4, avatarRadius: 10, rowHeight: 32, laneWidth: 16 },
 };
 
 function clampPaneWidths(w: PaneWidths): PaneWidths {
   return {
     sidebar: Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, w.sidebar)),
     rightPanel: Math.min(RIGHT_PANEL_MAX, Math.max(RIGHT_PANEL_MIN, w.rightPanel)),
+  };
+}
+
+/** Mirrors Rust `clamp_auto_fetch` (settings.rs). */
+function clampAutoFetch(a: AutoFetchSettings): AutoFetchSettings {
+  return {
+    enabled: a.enabled,
+    intervalMinutes: Math.min(
+      AUTO_FETCH_INTERVAL_MAX,
+      Math.max(AUTO_FETCH_INTERVAL_MIN, a.intervalMinutes),
+    ),
+  };
+}
+
+/** Mirrors Rust `clamp_graph_prefs` (settings.rs). */
+function clampGraphPrefs(g: GraphPrefs): GraphPrefs {
+  return {
+    dotRadius: Math.min(DOT_RADIUS_MAX, Math.max(DOT_RADIUS_MIN, g.dotRadius)),
+    avatarRadius: Math.min(AVATAR_RADIUS_MAX, Math.max(AVATAR_RADIUS_MIN, g.avatarRadius)),
+    rowHeight: Math.min(ROW_HEIGHT_MAX, Math.max(ROW_HEIGHT_MIN, g.rowHeight)),
+    laneWidth: Math.min(LANE_WIDTH_MAX, Math.max(LANE_WIDTH_MIN, g.laneWidth)),
   };
 }
 
@@ -482,7 +519,35 @@ function readUiSettings(): UiSettings {
           : DEFAULT_UI_SETTINGS.paneWidths.rightPanel,
     });
     const listView: ListView = parsed.listView === 'flat' ? 'flat' : 'tree';
-    return { theme, paneWidths, listView };
+    const autoFetch = clampAutoFetch({
+      enabled:
+        typeof parsed.autoFetch?.enabled === 'boolean'
+          ? parsed.autoFetch.enabled
+          : DEFAULT_UI_SETTINGS.autoFetch.enabled,
+      intervalMinutes:
+        typeof parsed.autoFetch?.intervalMinutes === 'number'
+          ? parsed.autoFetch.intervalMinutes
+          : DEFAULT_UI_SETTINGS.autoFetch.intervalMinutes,
+    });
+    const graph = clampGraphPrefs({
+      dotRadius:
+        typeof parsed.graph?.dotRadius === 'number'
+          ? parsed.graph.dotRadius
+          : DEFAULT_UI_SETTINGS.graph.dotRadius,
+      avatarRadius:
+        typeof parsed.graph?.avatarRadius === 'number'
+          ? parsed.graph.avatarRadius
+          : DEFAULT_UI_SETTINGS.graph.avatarRadius,
+      rowHeight:
+        typeof parsed.graph?.rowHeight === 'number'
+          ? parsed.graph.rowHeight
+          : DEFAULT_UI_SETTINGS.graph.rowHeight,
+      laneWidth:
+        typeof parsed.graph?.laneWidth === 'number'
+          ? parsed.graph.laneWidth
+          : DEFAULT_UI_SETTINGS.graph.laneWidth,
+    });
+    return { theme, paneWidths, listView, autoFetch, graph };
   } catch {
     return structuredClone(DEFAULT_UI_SETTINGS);
   }
@@ -1432,6 +1497,9 @@ export const mockIpc: IpcApi = {
       paneWidths:
         patch.paneWidths !== undefined ? clampPaneWidths(patch.paneWidths) : current.paneWidths,
       listView: patch.listView ?? current.listView,
+      autoFetch:
+        patch.autoFetch !== undefined ? clampAutoFetch(patch.autoFetch) : current.autoFetch,
+      graph: patch.graph !== undefined ? clampGraphPrefs(patch.graph) : current.graph,
     };
     writeUiSettings(next);
     return next;

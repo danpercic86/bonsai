@@ -80,6 +80,78 @@ pub fn clamp_pane_widths(w: PaneWidths) -> PaneWidths {
     }
 }
 
+/// Auto-fetch preference (P11). OFF by default; interval in minutes.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AutoFetch {
+    pub enabled: bool,
+    pub interval_minutes: u32,
+}
+
+impl Default for AutoFetch {
+    fn default() -> Self {
+        AutoFetch {
+            enabled: false,
+            interval_minutes: 5,
+        }
+    }
+}
+
+/// Graph geometry knobs (P11). Defaults EQUAL the frontend METRICS defaults
+/// (dot 4 / avatar 10 / row 32 / lane 16) — the "no override" baseline.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct GraphPrefs {
+    pub dot_radius: u32,
+    pub avatar_radius: u32,
+    pub row_height: u32,
+    pub lane_width: u32,
+}
+
+impl Default for GraphPrefs {
+    fn default() -> Self {
+        GraphPrefs {
+            dot_radius: 4,
+            avatar_radius: 10,
+            row_height: 32,
+            lane_width: 16,
+        }
+    }
+}
+
+pub const AUTO_FETCH_INTERVAL_MIN: u32 = 1;
+pub const AUTO_FETCH_INTERVAL_MAX: u32 = 120;
+pub const DOT_RADIUS_MIN: u32 = 2;
+pub const DOT_RADIUS_MAX: u32 = 10;
+pub const AVATAR_RADIUS_MIN: u32 = 6;
+pub const AVATAR_RADIUS_MAX: u32 = 16;
+pub const ROW_HEIGHT_MIN: u32 = 24;
+pub const ROW_HEIGHT_MAX: u32 = 48;
+pub const LANE_WIDTH_MIN: u32 = 10;
+pub const LANE_WIDTH_MAX: u32 = 28;
+
+/// Clamps the auto-fetch interval to its documented range; called by both
+/// `load_from` (defend a hand-edited file) and the setter command.
+pub fn clamp_auto_fetch(a: AutoFetch) -> AutoFetch {
+    AutoFetch {
+        enabled: a.enabled,
+        interval_minutes: a
+            .interval_minutes
+            .clamp(AUTO_FETCH_INTERVAL_MIN, AUTO_FETCH_INTERVAL_MAX),
+    }
+}
+
+/// Clamps each graph knob to its documented range; called by both `load_from`
+/// (defend a hand-edited file) and the setter command.
+pub fn clamp_graph_prefs(g: GraphPrefs) -> GraphPrefs {
+    GraphPrefs {
+        dot_radius: g.dot_radius.clamp(DOT_RADIUS_MIN, DOT_RADIUS_MAX),
+        avatar_radius: g.avatar_radius.clamp(AVATAR_RADIUS_MIN, AVATAR_RADIUS_MAX),
+        row_height: g.row_height.clamp(ROW_HEIGHT_MIN, ROW_HEIGHT_MAX),
+        lane_width: g.lane_width.clamp(LANE_WIDTH_MIN, LANE_WIDTH_MAX),
+    }
+}
+
 /// On-disk settings wire format:
 /// `{ "version": 1, "recentRepos": [ { "path": "...", "lastOpened": 0 } ],
 ///    "theme": "dark", "paneWidths": { "sidebar": 240, "rightPanel": 380 },
@@ -107,6 +179,12 @@ pub struct Settings {
     /// The active tab's repoId; `None` ⇒ activate the first still-openable one.
     /// Additive (P3e §6.1); a legacy file without this key loads as `None`.
     pub active_repo: Option<String>,
+    /// Auto-fetch preference (P11). Additive `#[serde(default)]`; a legacy file
+    /// without this key loads with `AutoFetch::default()`.
+    pub auto_fetch: AutoFetch,
+    /// Graph geometry knobs (P11). Additive `#[serde(default)]`; a legacy file
+    /// without this key loads with `GraphPrefs::default()`.
+    pub graph: GraphPrefs,
 }
 
 impl Default for Settings {
@@ -119,6 +197,8 @@ impl Default for Settings {
             list_view: ListView::default(),
             open_repos: Vec::new(),
             active_repo: None,
+            auto_fetch: AutoFetch::default(),
+            graph: GraphPrefs::default(),
         }
     }
 }
@@ -134,6 +214,8 @@ pub fn load_from(file: &Path) -> Settings {
     // Defends against a hand-edited or future-version file with out-of-range
     // values (contract §2.1).
     s.pane_widths = clamp_pane_widths(s.pane_widths);
+    s.auto_fetch = clamp_auto_fetch(s.auto_fetch);
+    s.graph = clamp_graph_prefs(s.graph);
     s
 }
 
@@ -549,6 +631,159 @@ mod tests {
         std::fs::write(&file, json).expect("write malformed settings.json");
 
         assert_eq!(load_from(&file), Settings::default());
+    }
+
+    /// Below-min and above-max clamp to their bounds on each graph knob and on
+    /// the auto-fetch interval; in-range values pass through (P11 §2.1/§2.4).
+    #[test]
+    fn clamp_auto_fetch_and_graph_prefs_clamp_ranges() {
+        // Interval below-min (0) and above-max (999) clamp to 1/120; `enabled`
+        // is carried through untouched.
+        assert_eq!(
+            clamp_auto_fetch(AutoFetch {
+                enabled: true,
+                interval_minutes: 0,
+            }),
+            AutoFetch {
+                enabled: true,
+                interval_minutes: AUTO_FETCH_INTERVAL_MIN,
+            }
+        );
+        assert_eq!(
+            clamp_auto_fetch(AutoFetch {
+                enabled: false,
+                interval_minutes: 999,
+            }),
+            AutoFetch {
+                enabled: false,
+                interval_minutes: AUTO_FETCH_INTERVAL_MAX,
+            }
+        );
+        let in_range = AutoFetch {
+            enabled: true,
+            interval_minutes: 30,
+        };
+        assert_eq!(clamp_auto_fetch(in_range), in_range);
+
+        // Each graph knob below-min clamps to its min.
+        assert_eq!(
+            clamp_graph_prefs(GraphPrefs {
+                dot_radius: 0,
+                avatar_radius: 0,
+                row_height: 0,
+                lane_width: 0,
+            }),
+            GraphPrefs {
+                dot_radius: DOT_RADIUS_MIN,
+                avatar_radius: AVATAR_RADIUS_MIN,
+                row_height: ROW_HEIGHT_MIN,
+                lane_width: LANE_WIDTH_MIN,
+            }
+        );
+        // Each graph knob above-max clamps to its max.
+        assert_eq!(
+            clamp_graph_prefs(GraphPrefs {
+                dot_radius: 9999,
+                avatar_radius: 9999,
+                row_height: 9999,
+                lane_width: 9999,
+            }),
+            GraphPrefs {
+                dot_radius: DOT_RADIUS_MAX,
+                avatar_radius: AVATAR_RADIUS_MAX,
+                row_height: ROW_HEIGHT_MAX,
+                lane_width: LANE_WIDTH_MAX,
+            }
+        );
+        // In-range graph knobs pass through unchanged.
+        let g_in = GraphPrefs {
+            dot_radius: 5,
+            avatar_radius: 12,
+            row_height: 36,
+            lane_width: 20,
+        };
+        assert_eq!(clamp_graph_prefs(g_in), g_in);
+    }
+
+    /// Save/load a `Settings` with non-default `auto_fetch` + `graph` round-trips
+    /// exactly (P11 §2.4).
+    #[test]
+    fn auto_fetch_and_graph_roundtrip() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let s = Settings {
+            auto_fetch: AutoFetch {
+                enabled: true,
+                interval_minutes: 15,
+            },
+            graph: GraphPrefs {
+                dot_radius: 6,
+                avatar_radius: 14,
+                row_height: 40,
+                lane_width: 24,
+            },
+            ..Default::default()
+        };
+
+        save_to(&file, &s).expect("save settings");
+        let loaded = load_from(&file);
+        assert_eq!(loaded, s);
+        assert!(loaded.auto_fetch.enabled);
+        assert_eq!(loaded.auto_fetch.interval_minutes, 15);
+        assert_eq!(loaded.graph.dot_radius, 6);
+        assert_eq!(loaded.graph.lane_width, 24);
+    }
+
+    /// A hand-edited file with out-of-range `autoFetch`/`graph` values is clamped
+    /// on load rather than left out-of-range (P11 §2.1 — `load_from` clamps both
+    /// new structs on read).
+    #[test]
+    fn corrupt_auto_fetch_and_graph_on_disk_are_clamped_on_load() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let json = r#"{
+            "version": 1,
+            "recentRepos": [],
+            "theme": "dark",
+            "paneWidths": { "sidebar": 240, "rightPanel": 380 },
+            "autoFetch": { "enabled": true, "intervalMinutes": 0 },
+            "graph": { "dotRadius": 0, "avatarRadius": 99, "rowHeight": 1, "laneWidth": 999 }
+        }"#;
+        std::fs::write(&file, json).expect("write out-of-range settings.json");
+
+        let loaded = load_from(&file);
+        assert_eq!(loaded.auto_fetch.interval_minutes, AUTO_FETCH_INTERVAL_MIN);
+        assert!(loaded.auto_fetch.enabled);
+        assert_eq!(loaded.graph.dot_radius, DOT_RADIUS_MIN);
+        assert_eq!(loaded.graph.avatar_radius, AVATAR_RADIUS_MAX);
+        assert_eq!(loaded.graph.row_height, ROW_HEIGHT_MIN);
+        assert_eq!(loaded.graph.lane_width, LANE_WIDTH_MAX);
+    }
+
+    /// An old `settings.json` written before P11 (no `autoFetch`/`graph` keys)
+    /// loads with the type defaults for the new fields and preserves existing
+    /// ones — the additive-field guarantee for the P11 settings specifically
+    /// (P11 §2.4).
+    #[test]
+    fn old_settings_file_without_auto_fetch_graph_loads_defaults() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let json = r#"{
+            "version": 1,
+            "recentRepos": [ { "path": "D:\\Repos\\legacy", "lastOpened": 123 } ],
+            "theme": "light",
+            "paneWidths": { "sidebar": 300, "rightPanel": 400 },
+            "listView": "flat"
+        }"#;
+        std::fs::write(&file, json).expect("write pre-P11 settings.json");
+
+        let loaded = load_from(&file);
+        assert_eq!(loaded.auto_fetch, AutoFetch::default());
+        assert_eq!(loaded.graph, GraphPrefs::default());
+        // Existing fields untouched.
+        assert_eq!(loaded.theme, ThemeChoice::Light);
+        assert_eq!(loaded.list_view, ListView::Flat);
+        assert_eq!(loaded.recent_repos.len(), 1);
     }
 
     /// An unrecognized `theme` string (e.g. from a hypothetical future third

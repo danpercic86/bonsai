@@ -17,7 +17,10 @@ use crate::git::stage::{stage_paths, unstage_paths};
 use crate::git::stash::{self, ApplyStashOutcome, CreateStashResult, StashEntry};
 use crate::git::status::{read_status, StatusSnapshot};
 use crate::graph::{compute_graph, GraphLayout};
-use crate::settings::{self, clamp_pane_widths, ListView, PaneWidths, RecentRepo, ThemeChoice};
+use crate::settings::{
+    self, clamp_auto_fetch, clamp_graph_prefs, clamp_pane_widths, AutoFetch, GraphPrefs, ListView,
+    PaneWidths, RecentRepo, ThemeChoice,
+};
 use crate::state::{AppState, RepoEntry};
 use crate::watcher::spawn_watcher;
 
@@ -160,6 +163,8 @@ pub struct UiSettings {
     pub theme: ThemeChoice,
     pub pane_widths: PaneWidths,
     pub list_view: ListView,
+    pub auto_fetch: AutoFetch,
+    pub graph: GraphPrefs,
 }
 
 /// Partial patch for `set_ui_settings` — only `Some(..)` fields are applied
@@ -170,6 +175,10 @@ pub struct UiSettingsPatch {
     pub theme: Option<ThemeChoice>,
     pub pane_widths: Option<PaneWidths>,
     pub list_view: Option<ListView>,
+    /// Whole-struct patch (like `pane_widths`): the frontend sends the entire
+    /// nested object when any sub-field changes.
+    pub auto_fetch: Option<AutoFetch>,
+    pub graph: Option<GraphPrefs>,
 }
 
 /// Pure patch application: only `Some(..)` fields of `patch` mutate `s`; pane
@@ -186,6 +195,12 @@ fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     if let Some(list_view) = patch.list_view {
         s.list_view = list_view;
     }
+    if let Some(auto_fetch) = patch.auto_fetch {
+        s.auto_fetch = clamp_auto_fetch(auto_fetch);
+    }
+    if let Some(graph) = patch.graph {
+        s.graph = clamp_graph_prefs(graph);
+    }
 }
 
 /// Current UI settings (theme + pane widths). Never rejects for a
@@ -200,6 +215,8 @@ pub async fn get_ui_settings(app: tauri::AppHandle) -> Result<UiSettings, AppErr
             theme: s.theme,
             pane_widths: s.pane_widths,
             list_view: s.list_view,
+            auto_fetch: s.auto_fetch,
+            graph: s.graph,
         }
     })
     .await
@@ -225,6 +242,8 @@ pub async fn set_ui_settings(
             theme: s.theme,
             pane_widths: s.pane_widths,
             list_view: s.list_view,
+            auto_fetch: s.auto_fetch,
+            graph: s.graph,
         })
     })
     .await
@@ -1873,6 +1892,7 @@ mod tests {
                 theme: Some(ThemeChoice::Light),
                 pane_widths: None,
                 list_view: None,
+                ..Default::default()
             },
         );
         assert_eq!(s.theme, ThemeChoice::Light);
@@ -1888,6 +1908,7 @@ mod tests {
                     right_panel: 400,
                 }),
                 list_view: None,
+                ..Default::default()
             },
         );
         assert_eq!(s.theme, ThemeChoice::Light); // untouched by the second patch
@@ -1907,6 +1928,7 @@ mod tests {
                 theme: None,
                 pane_widths: None,
                 list_view: Some(settings::ListView::Flat),
+                ..Default::default()
             },
         );
         assert_eq!(s.list_view, settings::ListView::Flat);
@@ -1929,9 +1951,137 @@ mod tests {
                     right_panel: 5000,
                 }),
                 list_view: None,
+                ..Default::default()
             },
         );
         assert_eq!(s.pane_widths.sidebar, settings::SIDEBAR_MIN);
         assert_eq!(s.pane_widths.right_panel, settings::RIGHT_PANEL_MAX);
+    }
+
+    /// `auto_fetch` and `graph` patch independently, leave the other fields
+    /// unchanged when `None`, and are clamped on write (P11 §2.4).
+    #[test]
+    fn set_ui_settings_patch_auto_fetch_and_graph() {
+        let mut s = settings::Settings::default();
+        let original_af = s.auto_fetch;
+        let original_graph = s.graph;
+
+        // Only `auto_fetch` changes auto-fetch; everything else untouched.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                auto_fetch: Some(AutoFetch {
+                    enabled: true,
+                    interval_minutes: 20,
+                }),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            s.auto_fetch,
+            AutoFetch {
+                enabled: true,
+                interval_minutes: 20,
+            }
+        );
+        assert_eq!(s.graph, original_graph);
+        assert_eq!(s.theme, ThemeChoice::default());
+
+        // Only `graph` changes graph; auto-fetch preserved from the prior patch.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                graph: Some(GraphPrefs {
+                    dot_radius: 5,
+                    avatar_radius: 12,
+                    row_height: 36,
+                    lane_width: 20,
+                }),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            s.graph,
+            GraphPrefs {
+                dot_radius: 5,
+                avatar_radius: 12,
+                row_height: 36,
+                lane_width: 20,
+            }
+        );
+        assert_eq!(
+            s.auto_fetch,
+            AutoFetch {
+                enabled: true,
+                interval_minutes: 20,
+            }
+        );
+
+        // An empty patch leaves both new fields unchanged.
+        apply_patch(&mut s, UiSettingsPatch::default());
+        assert_eq!(
+            s.auto_fetch,
+            AutoFetch {
+                enabled: true,
+                interval_minutes: 20,
+            }
+        );
+        assert_eq!(
+            s.graph,
+            GraphPrefs {
+                dot_radius: 5,
+                avatar_radius: 12,
+                row_height: 36,
+                lane_width: 20,
+            }
+        );
+
+        // Out-of-range interval (0) clamps to the min on write.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                auto_fetch: Some(AutoFetch {
+                    enabled: true,
+                    interval_minutes: 0,
+                }),
+                ..Default::default()
+            },
+        );
+        assert_eq!(s.auto_fetch.interval_minutes, settings::AUTO_FETCH_INTERVAL_MIN);
+
+        // Out-of-range interval (999) clamps to the max on write.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                auto_fetch: Some(AutoFetch {
+                    enabled: false,
+                    interval_minutes: 999,
+                }),
+                ..Default::default()
+            },
+        );
+        assert_eq!(s.auto_fetch.interval_minutes, settings::AUTO_FETCH_INTERVAL_MAX);
+
+        // Below-min / above-max graph knobs clamp to their bounds on write.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                graph: Some(GraphPrefs {
+                    dot_radius: 0,
+                    avatar_radius: 9999,
+                    row_height: 0,
+                    lane_width: 9999,
+                }),
+                ..Default::default()
+            },
+        );
+        assert_eq!(s.graph.dot_radius, settings::DOT_RADIUS_MIN);
+        assert_eq!(s.graph.avatar_radius, settings::AVATAR_RADIUS_MAX);
+        assert_eq!(s.graph.row_height, settings::ROW_HEIGHT_MIN);
+        assert_eq!(s.graph.lane_width, settings::LANE_WIDTH_MAX);
+
+        // Sanity: the `original_*` snapshots were genuinely the defaults.
+        assert_eq!(original_af, AutoFetch::default());
+        assert_eq!(original_graph, GraphPrefs::default());
     }
 }
