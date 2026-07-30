@@ -16,6 +16,41 @@ that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e
 Every "awaiting USER CHECKPOINT" below is now CONFIRMED as of 2026-07-30. (P5/P6 were already
 confirmed earlier.)
 
+## P14 — `bonsai-core` crate + standalone `bonsai-mcp` MCP server — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-30)
+
+Source: user request (2026-07-30) — "analyze if it makes sense to integrate Bonsai into an AI (e.g.
+MCP)". Analysis + approved plan: ~/.claude/plans/analyze-this-app-and-modular-gizmo.md
+(Tier 2 chosen: extract a reusable core crate + a standalone MCP server exposing only Bonsai's
+*differentiated* surface — graph topology, structured diffs, the conflict trio + safety-railed
+mutations — NOT a 1:1 mirror of `git`). Contract: **docs/contracts/P14-mcp-server.md**.
+
+**P14 AI GATE PASSED (2026-07-30) — awaiting USER CHECKPOINT.** Commits: 9d6d52b P14a · be8d538 P14b ·
+a47235d P14c · b8dfa46 P14d. `cargo build/test/clippy --workspace` all green (all pre-existing suites +
+new `crates/bonsai-mcp/tests/mcp_stdio.rs` 5/5). rmcp pinned **3.0.1** (stdio).
+
+- **P14a** (reviewer APPROVE-WITH-NITS) — converted the single `src-tauri` crate into a Cargo workspace;
+  moved pure Git/graph/error/AI logic into `crates/bonsai-core` (lib `bonsai_core`, ZERO `tauri::`
+  coupling). Pure move; all 158 unit + 18 integration suites stay green. `testutil` kept `#[cfg(test)]`
+  + `tempfile` dev-dep (not shipped in prod — folded the one SHOULD-FIX).
+- **P14b** (reviewer APPROVE-WITH-NITS) — `crates/bonsai-mcp` stdio server skeleton + 12 read tools;
+  `--repo` startup validation; `run_blocking` keeps git2 off the async path; `AppError {kind,message}`
+  preserved as structured tool errors. Dropped unused `anyhow` (the NIT).
+- **P14c** (reviewer APPROVE-WITH-NITS) — 20 mutation tools behind `--allow-write`, gated by
+  rmcp router-merge so `tools/list` is truthful (read-only=12, write=32; a mutation call in read-only
+  mode → JSON-RPC -32602, no side effect). `ConflictResolution` mapped locally (no schemars in core).
+- **P14d** (tester) — `mcp_stdio.rs` drives the built binary over stdio: gating, get_graph fidelity,
+  the **headline conflict round-trip** (merge→get_conflict→resolve_conflict_text→commit_merge asserting
+  the resolved **tree oid == a git-CLI hand-resolved merge**, `32b83b4…`), error discriminant, write-gate.
+  README has the full tool catalog + `claude mcp add` wiring.
+
+Decisions locked: `ai`/`ai_resolve` moved into core but NEVER exposed via MCP (consumer is itself an AI);
+`fetch`/`pull`/`push` excluded from v1; read-only by default.
+
+**Current step: P14 AI gate passed; awaiting USER CHECKPOINT** — user registers the server with real
+Claude Code (`claude mcp add bonsai -- <abs>\target\release\bonsai-mcp.exe --repo <repo> [--allow-write]`),
+confirms the `bonsai_*` tools appear and are callable, and that a real conflict resolves end-to-end via
+`bonsai_get_conflict` + `bonsai_resolve_conflict_text`. See crates/bonsai-mcp/README.md.
+
 ## P13 — Local-AI foundation (Claude Code CLI) + AI merge-conflict resolution — **in-progress** (2026-07-30)
 
 Source: user request (2026-07-30) — integrate AI WITHOUT API keys by driving the user's locally
