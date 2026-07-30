@@ -41,6 +41,46 @@ export const METRICS = {
   iconGap: 3,
 } as const;
 
+/** The four user-tunable knobs (P11 §2.3) — the only METRICS fields that vary
+ *  at runtime. Everything else stays at its `as const` baseline value. */
+type MetricKnob = 'dotRadius' | 'avatarRadius' | 'rowHeight' | 'laneWidth';
+
+/** P11d: ring radii derived from `avatarRadius` at runtime (see
+ *  `effectiveMetrics`); they widen to `number` alongside the user knobs. */
+type DerivedMetric = 'avatarHeadRingRadius' | 'avatarSelRingRadius';
+
+/** P11d §4.1: the effective render-geometry object threaded through the draw
+ *  pass — the METRICS baseline with the four user knobs overlaid (plus the two
+ *  avatarRadius-derived ring radii). Same shape as METRICS; the knobs and the
+ *  derived rings widen to `number` (they carry runtime values). */
+export type EffectiveMetrics = Omit<typeof METRICS, MetricKnob | DerivedMetric> &
+  Record<MetricKnob | DerivedMetric, number>;
+
+/** P11d §4.1: overlay the four user knobs onto the METRICS baseline. All other
+ *  fields (gutter, refColWidth, ring widths, fonts, maxRenderLanes, …) are
+ *  unchanged (they equal METRICS.*). */
+export function effectiveMetrics(g: {
+  dotRadius: number;
+  avatarRadius: number;
+  rowHeight: number;
+  laneWidth: number;
+}): EffectiveMetrics {
+  return {
+    ...METRICS,
+    dotRadius: g.dotRadius,
+    avatarRadius: g.avatarRadius,
+    rowHeight: g.rowHeight,
+    laneWidth: g.laneWidth,
+    // P11d: derive the HEAD/selection rings from the chosen avatarRadius so they
+    // stay outside the disc at large sizes (preserving the baseline deltas of
+    // +2.5 / +3.5 → 12.5 / 13.5 at the default avatarRadius 10).
+    avatarHeadRingRadius:
+      g.avatarRadius + (METRICS.avatarHeadRingRadius - METRICS.avatarRadius),
+    avatarSelRingRadius:
+      g.avatarRadius + (METRICS.avatarSelRingRadius - METRICS.avatarRadius),
+  };
+}
+
 /** P7 §2.3: avatar hue-hash HSL constants (theme-invariant, legible both themes). */
 export const AVATAR = { sat: 52, light: 42 } as const;
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { RepoWorkspace } from './components/RepoWorkspace';
+import { SettingsPanel } from './components/SettingsPanel';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
 import { TabStrip } from './components/TabStrip';
 import type { TabMeta } from './components/TabStrip';
@@ -7,7 +8,17 @@ import { Toasts } from './components/Toasts';
 import type { Toast, ToastTone } from './components/Toasts';
 import { ToastContext } from './ToastContext';
 import { ipc } from './ipc';
-import type { ListView, PaneWidths, RecentRepo, RepoInfo, SessionState, Theme } from './ipc';
+import type {
+  AutoFetchSettings,
+  GraphPrefs,
+  ListView,
+  PaneWidths,
+  RecentRepo,
+  RepoInfo,
+  SessionState,
+  Theme,
+  UiSettingsPatch,
+} from './ipc';
 import { errorMessage, isAppError } from './utils/errors';
 
 function folderName(path: string): string {
@@ -68,6 +79,25 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>('dark');
   const [themeVersion, setThemeVersion] = useState(0);
   const [listView, setListView] = useState<ListView>('tree');
+
+  // P11c §3.2: Settings page + the live-preview knob state it drives.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [autoFetch, setAutoFetch] = useState<AutoFetchSettings>({
+    enabled: false,
+    intervalMinutes: 5,
+  });
+  const [graph, setGraph] = useState<GraphPrefs>({
+    dotRadius: 4,
+    avatarRadius: 10,
+    rowHeight: 32,
+    laneWidth: 16,
+  });
+  // P11d §4.3: bumped on every graph-knob change → GraphCanvas full re-measure.
+  const [metricsVersion, setMetricsVersion] = useState(0);
+  // P11c §3.2: debounced settings persist — accumulates partial patches so a
+  // burst of knob changes within the window all reach disk in one write.
+  const settingsSaveTimerRef = useRef<number | null>(null);
+  const pendingSettingsPatchRef = useRef<UiSettingsPatch>({});
 
   // ----- Tab state (§5.2) -----
   const [tabs, setTabs] = useState<TabMeta[]>([]);
@@ -196,6 +226,31 @@ export default function App() {
       .catch((e) => pushToast('error', `Could not save list view: ${errorMessage(e)}`));
   }, [listView, pushToast]);
 
+  // P11c §3.2: apply a Settings patch — update local state immediately (live
+  // preview; graph changes bump metricsVersion so the canvas re-measures), then
+  // debounce a single merged persist (~300 ms, mirrors commitPaneWidths).
+  const handleSettingsChange = useCallback(
+    (patch: UiSettingsPatch) => {
+      if (patch.autoFetch !== undefined) setAutoFetch(patch.autoFetch);
+      if (patch.graph !== undefined) {
+        setGraph(patch.graph);
+        setMetricsVersion((v) => v + 1);
+      }
+      pendingSettingsPatchRef.current = { ...pendingSettingsPatchRef.current, ...patch };
+      if (settingsSaveTimerRef.current !== null) {
+        window.clearTimeout(settingsSaveTimerRef.current);
+      }
+      settingsSaveTimerRef.current = window.setTimeout(() => {
+        const merged = pendingSettingsPatchRef.current;
+        pendingSettingsPatchRef.current = {};
+        void ipc
+          .setUiSettings(merged)
+          .catch((e) => pushToast('error', `Could not save settings: ${errorMessage(e)}`));
+      }, 300);
+    },
+    [pushToast],
+  );
+
   const handleSidebarResize = useCallback((delta: number) => {
     setPaneWidths((w) => ({ ...w, sidebar: clampLive(w.sidebar + delta, 'sidebar', w.rightPanel) }));
   }, []);
@@ -238,6 +293,9 @@ export default function App() {
         applyTheme(s.theme);
         setThemeVersion((v) => v + 1);
         setListView(s.listView);
+        setAutoFetch(s.autoFetch);
+        setGraph(s.graph);
+        setMetricsVersion((v) => v + 1);
       } catch {
         // Non-fatal — keep defaults.
       }
@@ -312,11 +370,12 @@ export default function App() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (menuOpen) return;
+      if (settingsOpen) setSettingsOpen(false);
       if (overlayOpen) setOverlayOpen(false);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [menuOpen, overlayOpen]);
+  }, [menuOpen, overlayOpen, settingsOpen]);
 
   // Global shortcuts (§5.1): Ctrl+O open, ? overlay, Ctrl+Tab / Ctrl+Shift+Tab
   // cycle tabs, Ctrl+W close active tab.
@@ -371,7 +430,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [menuOpen, activeRepo, handleOpenRepository, closeTab]);
 
-  const globalModalOpen = overlayOpen || menuOpen;
+  const globalModalOpen = overlayOpen || menuOpen || settingsOpen;
 
   return (
     <ToastContext.Provider value={pushToast}>
@@ -408,6 +467,15 @@ export default function App() {
             >
               {listView === 'tree' ? '☰' : '⋔'}
             </button>
+            <button
+              type="button"
+              className="btn-icon settings-toggle"
+              onClick={() => setSettingsOpen(true)}
+              title="Settings"
+              aria-label="Settings"
+            >
+              {'⚙'}
+            </button>
           </div>
         </header>
 
@@ -425,6 +493,9 @@ export default function App() {
                 themeVersion={themeVersion}
                 paneWidths={paneWidths}
                 globalModalOpen={globalModalOpen}
+                graph={graph}
+                metricsVersion={metricsVersion}
+                autoFetch={autoFetch}
                 onSidebarResize={handleSidebarResize}
                 onRightPanelResize={handleRightPanelResize}
                 onPaneResizeEnd={handlePaneResizeEnd}
@@ -467,6 +538,17 @@ export default function App() {
         )}
 
         <ShortcutOverlay open={overlayOpen} onClose={() => setOverlayOpen(false)} />
+        <SettingsPanel
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          theme={theme}
+          listView={listView}
+          autoFetch={autoFetch}
+          graph={graph}
+          onChange={handleSettingsChange}
+          onToggleTheme={toggleTheme}
+          onToggleListView={toggleListView}
+        />
         <Toasts toasts={toasts} onDismiss={dismissToast} />
       </div>
     </ToastContext.Provider>

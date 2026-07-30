@@ -30,6 +30,7 @@ import { buildEdgeIndex, edgesInRange } from './edgeIndex';
 import { createFrameRecorder } from './frameStats';
 import type { FrameStats } from './frameStats';
 import { METRICS } from './metrics';
+import type { EffectiveMetrics } from './metrics';
 
 export type { WipSummary };
 
@@ -58,6 +59,12 @@ export interface GraphCanvasProps {
    *  not called (the native menu is suppressed regardless). clientX/clientY
    *  anchor the context menu. */
   onContextMenu?(target: GraphContextTarget, clientX: number, clientY: number): void;
+  /** P11d §4.3: effective render geometry (METRICS overlaid with the user's
+   *  graph knobs). Drives every dot/avatar/row/lane pixel in the draw pass. */
+  metrics: EffectiveMetrics;
+  /** P11d §4.3: bumped when any graph knob changes → forces a full re-measure +
+   *  repaint (analogous to `themeVersion`). */
+  metricsVersion: number;
 }
 
 /** P2c §5.2: imperative escape hatch — App needs the DOM-measured visible row
@@ -109,8 +116,14 @@ function targetRefOf(entity: RefEntity): RefLabel | null {
 
 /** raw = floor((y + scrollTop) / RH); raw < wipOffset -> 'wip' (only possible
  * when wipOffset === 1); else row = raw - wipOffset (P1 §9.3). */
-function hitTest(yCss: number, scrollTop: number, wipOffset: number, nodesLen: number): HitRow {
-  const raw = Math.floor((yCss + scrollTop) / METRICS.rowHeight);
+function hitTest(
+  yCss: number,
+  scrollTop: number,
+  wipOffset: number,
+  nodesLen: number,
+  rowHeight: number,
+): HitRow {
+  const raw = Math.floor((yCss + scrollTop) / rowHeight);
   if (raw < 0) return null;
   if (raw < wipOffset) return 'wip';
   const row = raw - wipOffset;
@@ -134,13 +147,27 @@ const LOG_EVERY = 120;
  * synchronous (rAF is throttled to zero in hidden windows).
  */
 export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function GraphCanvas(
-  { layout, selectedIndex, onSelect, wip, themeVersion, active = true, onContextMenu },
+  {
+    layout,
+    selectedIndex,
+    onSelect,
+    wip,
+    themeVersion,
+    active = true,
+    onContextMenu,
+    metrics,
+    metricsVersion,
+  },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const themeRef = useRef<Theme | null>(null);
+  // P11d §4.3: latest effective metrics, read by the per-frame paint + hit-test
+  // paths (mirror of themeRef) so they never close over a stale knob set.
+  const metricsRef = useRef(metrics);
+  metricsRef.current = metrics;
   /** Row index, `null` (none), or `-1` sentinel for the synthetic WIP row. */
   const hoverRowRef = useRef<number | null>(null);
   const rafRef = useRef(0);
@@ -173,7 +200,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   useImperativeHandle(
     ref,
     () => ({
-      getVisibleRowCount: () => Math.max(1, Math.floor(cssSizeRef.current.h / METRICS.rowHeight)),
+      getVisibleRowCount: () =>
+        Math.max(1, Math.floor(cssSizeRef.current.h / metricsRef.current.rowHeight)),
     }),
     [],
   );
@@ -212,17 +240,19 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     themeRef.current ??= resolveTheme(canvas);
 
     const t0 = STATS_ENABLED ? performance.now() : 0;
+    const m = metricsRef.current;
+    const rowHeight = m.rowHeight;
     const { layout: lay, selectedIndex: sel, edgeIndex: ix, wip } = propsRef.current;
     const { w, h } = cssSizeRef.current;
     const scrollTop = scrollerRef.current?.scrollTop ?? scrollTopRef.current;
     scrollTopRef.current = scrollTop;
     const n = lay.nodes.length;
     const wipOffset = wip !== null ? 1 : 0;
-    const layoutScrollTop = scrollTop - wipOffset * METRICS.rowHeight;
-    const firstRow = Math.max(0, Math.floor(layoutScrollTop / METRICS.rowHeight) - OVERSCAN);
+    const layoutScrollTop = scrollTop - wipOffset * rowHeight;
+    const firstRow = Math.max(0, Math.floor(layoutScrollTop / rowHeight) - OVERSCAN);
     const lastRow = Math.min(
       n - 1,
-      Math.ceil((layoutScrollTop + h) / METRICS.rowHeight) + OVERSCAN,
+      Math.ceil((layoutScrollTop + h) / rowHeight) + OVERSCAN,
     );
     const hoverRow = hoverRowRef.current !== null && hoverRowRef.current >= 0 ? hoverRowRef.current : null;
     // P7e §13.2: reserve the native vertical-scrollbar width on the right (0 when
@@ -237,8 +267,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       { firstRow, lastRow, scrollTop: layoutScrollTop, width: w, height: h, rightInset },
       themeRef.current,
       { hoverRow, selectedIndex: sel },
+      m,
     );
-    if (wip !== null && scrollTop < METRICS.rowHeight + 56) {
+    if (wip !== null && scrollTop < rowHeight + 56) {
       drawWipRow(
         ctx,
         lay,
@@ -246,6 +277,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
         { firstRow: 0, lastRow: 0, scrollTop, width: w, height: h },
         themeRef.current,
         hoverRowRef.current === -1,
+        m,
       );
     }
     if (STATS_ENABLED) recordFrame('paint', performance.now() - t0);
@@ -365,6 +397,23 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [themeVersion]);
 
+  // P11d §4.3: a graph-knob change re-maps every row↔pixel relationship. The
+  // spacer height (total scrollable extent) recomputes on render from the new
+  // `metrics` prop; here we re-run the SAME `resize()` path (re-measure the host,
+  // reset the HiDPI backing store, synchronous repaint) so virtualization + the
+  // scroll extent line up with the new rowHeight/lane geometry. Mirrors the
+  // `themeVersion` effect. The mount run is skipped (mount's resize() already
+  // painted with the initial metrics — no double paint).
+  const metricsMountRef = useRef(false);
+  useEffect(() => {
+    if (!metricsMountRef.current) {
+      metricsMountRef.current = true;
+      return;
+    }
+    resize();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metricsVersion]);
+
   // P1 §6.3/§9.3: when selectedIndex changes to non-null (e.g. via ArrowUp/
   // Down in App), bring the row into view if it's outside the visible window.
   // Pure scroll adjustment — row position accounts for the WIP row offset:
@@ -373,15 +422,16 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     if (selectedIndex === null) return;
     const scroller = scrollerRef.current;
     if (scroller === null) return;
+    const rowHeight = metricsRef.current.rowHeight;
     const wipOffset = wip !== null ? 1 : 0;
-    const rowTop = (selectedIndex + wipOffset) * METRICS.rowHeight;
-    const rowBottom = rowTop + METRICS.rowHeight;
+    const rowTop = (selectedIndex + wipOffset) * rowHeight;
+    const rowBottom = rowTop + rowHeight;
     const viewTop = scroller.scrollTop;
     const viewBottom = viewTop + scroller.clientHeight;
     if (rowTop < viewTop) {
-      scroller.scrollTop = Math.max(0, rowTop - METRICS.rowHeight);
+      scroller.scrollTop = Math.max(0, rowTop - rowHeight);
     } else if (rowBottom > viewBottom) {
-      scroller.scrollTop = rowBottom - scroller.clientHeight + METRICS.rowHeight;
+      scroller.scrollTop = rowBottom - scroller.clientHeight + rowHeight;
     }
   }, [selectedIndex, wip]);
 
@@ -548,7 +598,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       );
 
       // refColArea
-      const area = refColArea();
+      const area = refColArea(METRICS);
       check('refColArea startX', area.startX === METRICS.refColPadLeft);
       check(
         'refColArea budget',
@@ -556,8 +606,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       );
 
       // avatarHit
-      check('avatarHit center', avatarHit(10, 10, 10, 10));
-      check('avatarHit outside', !avatarHit(100, 100, 10, 10));
+      check('avatarHit center', avatarHit(10, 10, 10, 10, METRICS));
+      check('avatarHit outside', !avatarHit(100, 100, 10, 10, METRICS));
 
       // relativeDate regression guard
       const now = 1_000_000_000;
@@ -588,7 +638,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
           ts: 0,
         };
         const entities = groupRefs(manyRefs);
-        const { startX } = refColArea();
+        const { startX } = refColArea(METRICS);
         // Budget wide enough to fit `main` + gap + a `+n` chip, yet still
         // narrow enough to force overflow of the full 5-branch set.
         const testBudget = 120;
@@ -627,7 +677,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   const hitTestAtMouseY = (yCss: number, scrollTop: number): number | null => {
     const { layout: lay, wip } = propsRef.current;
     const wipOffset = wip !== null ? 1 : 0;
-    const hit = hitTest(yCss, scrollTop, wipOffset, lay.nodes.length);
+    const hit = hitTest(yCss, scrollTop, wipOffset, lay.nodes.length, metricsRef.current.rowHeight);
     return hit === 'wip' ? -1 : hit;
   };
 
@@ -643,19 +693,20 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     const ctx = canvasRef.current?.getContext('2d') ?? null;
     const theme = themeRef.current;
     if (ctx === null || theme === null) return null;
+    const m = metricsRef.current;
     const wipOffset = wip !== null ? 1 : 0;
-    const cy = (row + wipOffset) * METRICS.rowHeight + METRICS.rowHeight / 2 - scrollTop;
-    const cx = laneX(node.lane);
-    if (avatarHit(x, y, cx, cy)) {
-      const r = METRICS.avatarRadius + METRICS.avatarBgRingExtra;
+    const cy = (row + wipOffset) * m.rowHeight + m.rowHeight / 2 - scrollTop;
+    const cx = laneX(node.lane, m);
+    if (avatarHit(x, y, cx, cy, m)) {
+      const r = m.avatarRadius + m.avatarBgRingExtra;
       return {
         kind: 'avatar',
         text: node.author,
         anchor: { left: cx - r, top: cy - r, width: 2 * r, height: 2 * r },
       };
     }
-    if (node.refs !== undefined && node.refs.length > 0 && x < METRICS.refColWidth) {
-      const { startX, budget } = refColArea();
+    if (node.refs !== undefined && node.refs.length > 0 && x < m.refColWidth) {
+      const { startX, budget } = refColArea(m);
       const entities = groupRefs(node.refs);
       const laid = layoutRefLabels(ctx, entities, node, theme, startX, budget);
       const chip = laid.find((l) => l.entity === null && x >= l.x && x <= l.x + l.w);
@@ -665,7 +716,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
         return {
           kind: 'overflow',
           lines,
-          anchor: { left: chip.x, top: cy - METRICS.pillHeight / 2, width: chip.w, height: METRICS.pillHeight },
+          anchor: { left: chip.x, top: cy - m.pillHeight / 2, width: chip.w, height: m.pillHeight },
         };
       }
       // §14.2: hovering a SHOWN branch pill → full branch-name tooltip.
@@ -675,7 +726,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
         return {
           kind: 'ref',
           text: hitLabel.entity.name,
-          anchor: { left: hitLabel.x, top: cy - METRICS.pillHeight / 2, width: hitLabel.w, height: METRICS.pillHeight },
+          anchor: { left: hitLabel.x, top: cy - m.pillHeight / 2, width: hitLabel.w, height: m.pillHeight },
         };
       }
     }
@@ -734,7 +785,13 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     if (scroller === null) return;
     const y = e.clientY - scroller.getBoundingClientRect().top;
     const wipOffset = wip !== null ? 1 : 0;
-    const hit = hitTest(y, scroller.scrollTop, wipOffset, layout.nodes.length);
+    const hit = hitTest(
+      y,
+      scroller.scrollTop,
+      wipOffset,
+      layout.nodes.length,
+      metricsRef.current.rowHeight,
+    );
     if (hit === null || hit === 'wip') onSelect(null);
     else onSelect(hit === selectedIndex ? null : hit);
   };
@@ -751,8 +808,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     const rect = scroller.getBoundingClientRect();
     const y = e.clientY - rect.top;
     const x = e.clientX - rect.left;
+    const m = metricsRef.current;
     const wipOffset = wip !== null ? 1 : 0;
-    const hit = hitTest(y, scroller.scrollTop, wipOffset, layout.nodes.length);
+    const hit = hitTest(y, scroller.scrollTop, wipOffset, layout.nodes.length, m.rowHeight);
     if (hit === null || hit === 'wip') return;
     const node = layout.nodes[hit];
     const ctx = canvasRef.current?.getContext('2d') ?? null;
@@ -760,11 +818,11 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     if (
       ctx !== null &&
       theme !== null &&
-      x < METRICS.refColWidth &&
+      x < m.refColWidth &&
       node.refs !== undefined &&
       node.refs.length > 0
     ) {
-      const { startX, budget } = refColArea();
+      const { startX, budget } = refColArea(m);
       const laid = layoutRefLabels(ctx, groupRefs(node.refs), node, theme, startX, budget);
       const hitLabel = laid.find((l) => l.entity !== null && x >= l.x && x <= l.x + l.w);
       if (hitLabel !== undefined && hitLabel.entity !== null) {
@@ -781,7 +839,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     onContextMenu?.({ kind: 'commit', index: hit, oid: node.id }, e.clientX, e.clientY);
   };
 
-  const spacerHeight = (layout.nodes.length + (wip !== null ? 1 : 0)) * METRICS.rowHeight + 8;
+  // P11d §4.3: spacer (total scroll extent) tracks the live rowHeight knob so
+  // the scrollbar range re-maps on every graph-metric change.
+  const spacerHeight = (layout.nodes.length + (wip !== null ? 1 : 0)) * metrics.rowHeight + 8;
 
   return (
     <div ref={hostRef} className="graph-canvas-host">

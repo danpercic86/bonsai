@@ -83,8 +83,14 @@ export interface P7DevHooks {
     startX: number,
     budget: number,
   ): import('./draw').LaidRefLabel[];
-  refColArea(): { startX: number; budget: number };
-  avatarHit(px: number, py: number, cx: number, cy: number): boolean;
+  refColArea(m: import('./metrics').EffectiveMetrics): { startX: number; budget: number };
+  avatarHit(
+    px: number,
+    py: number,
+    cx: number,
+    cy: number,
+    m: import('./metrics').EffectiveMetrics,
+  ): boolean;
   relativeDate(ts: number, now: number): string;
 }
 

@@ -9,6 +9,7 @@ export const ipc: IpcApi =
 export type {
   AppError,
   ApplyStashOutcome,
+  AutoFetchSettings,
   BranchesSnapshot,
   BranchInfo,
   CommitDetails,
@@ -28,6 +29,7 @@ export type {
   GraphEdge,
   GraphLayout,
   GraphNode,
+  GraphPrefs,
   HeadInfo,
   Hunk,
   IpcApi,

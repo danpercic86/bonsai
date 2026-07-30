@@ -640,6 +640,112 @@ body {
   font-size: 13px;
 }
 
+/* ---------- Settings page (P11c §3) ---------- */
+
+.settings-card {
+  width: 460px;
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+}
+
+.settings-section {
+  margin-top: 20px;
+}
+
+.settings-section:first-of-type {
+  margin-top: 12px;
+}
+
+.settings-section-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+
+.settings-section-desc {
+  margin: 4px 0 10px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.settings-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-1);
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+
+.settings-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.settings-control.is-disabled {
+  opacity: 0.5;
+}
+
+.settings-control-label {
+  flex: none;
+  font-size: 13px;
+  color: var(--text-1);
+}
+
+.settings-control-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-range {
+  width: 140px;
+  accent-color: var(--accent);
+}
+
+.settings-number {
+  width: 56px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.settings-number:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.settings-unit {
+  flex: none;
+  width: 48px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.settings-toggle-btn {
+  min-width: 72px;
+}
+
 /* ---------- Graph truncated banner (P1 §7 item 14) ---------- */
 
 .graph-truncated-banner {

@@ -6,6 +6,7 @@ import type { GraphEdge, GraphLayout, GraphNode, RefLabel } from '../ipc';
 import { STASH_BG, STASH_COLOR, TAG_BG, TAG_COLOR } from './colors';
 import type { Theme } from './colors';
 import { AVATAR, FONT_UI, METRICS } from './metrics';
+import type { EffectiveMetrics } from './metrics';
 
 export interface Viewport {
   /** Inclusive; M2b: 0. */
@@ -29,7 +30,6 @@ export interface Interaction {
   selectedIndex: number | null;
 }
 
-const HALF_ROW = METRICS.rowHeight / 2;
 /** Long-edge middle segments are clamped to this margin around the canvas. */
 const EDGE_CLAMP_MARGIN = 56;
 
@@ -37,48 +37,48 @@ const EDGE_CLAMP_MARGIN = 56;
  *  P7 §1.2: gains the fixed LEFT ref-band offset (`refColWidth`); the +8 lane
  *  inset is preserved. The global right-shift flows through edges automatically
  *  (they use `laneX`/`rowY`). */
-export function laneX(lane: number): number {
+export function laneX(lane: number, m: EffectiveMetrics): number {
   return (
-    METRICS.refColWidth +
-    METRICS.gutter +
-    Math.min(lane, METRICS.maxRenderLanes - 1) * METRICS.laneWidth +
+    m.refColWidth +
+    m.gutter +
+    Math.min(lane, m.maxRenderLanes - 1) * m.laneWidth +
     8
   );
 }
 
 /** P7 §1.2: right edge of the graph area (clamped lane band), independent of
  *  the +8 lane inset. Internal — feeds `summaryStartX`. */
-function graphAreaRight(laneCount: number): number {
+function graphAreaRight(laneCount: number, m: EffectiveMetrics): number {
   return (
-    METRICS.refColWidth +
-    METRICS.gutter +
-    Math.min(laneCount, METRICS.maxRenderLanes) * METRICS.laneWidth
+    m.refColWidth +
+    m.gutter +
+    Math.min(laneCount, m.maxRenderLanes) * m.laneWidth
   );
 }
 
 /** P7 §1.2: summary column origin (replaces the old `textColumnX`; no pills
  *  live here now — refs moved to the LEFT band). */
-export function summaryStartX(laneCount: number): number {
-  return graphAreaRight(laneCount) + METRICS.textGap;
+export function summaryStartX(laneCount: number, m: EffectiveMetrics): number {
+  return graphAreaRight(laneCount, m) + m.textGap;
 }
 
 /** P7 §1.2: fixed LEFT ref-column layout window (analog of the old `pillArea`,
  *  but NOT a function of viewport width or laneCount — the band is fixed). */
-export function refColArea(): { startX: number; budget: number } {
+export function refColArea(m: EffectiveMetrics): { startX: number; budget: number } {
   return {
-    startX: METRICS.refColPadLeft,
-    budget: Math.max(0, METRICS.refColWidth - METRICS.refColPadLeft - METRICS.refColPadRight),
+    startX: m.refColPadLeft,
+    budget: Math.max(0, m.refColWidth - m.refColPadLeft - m.refColPadRight),
   };
 }
 
 /** y of a row center after scroll translation. */
-export function rowY(row: number, scrollTop: number): number {
-  return row * METRICS.rowHeight + HALF_ROW - scrollTop;
+export function rowY(row: number, scrollTop: number, m: EffectiveMetrics): number {
+  return row * m.rowHeight + m.rowHeight / 2 - scrollTop;
 }
 
 /** Row index under a CSS-px y coordinate (may be out of range — callers check). */
-export function rowAtPoint(yCss: number, scrollTop: number): number {
-  return Math.floor((yCss + scrollTop) / METRICS.rowHeight);
+export function rowAtPoint(yCss: number, scrollTop: number, m: EffectiveMetrics): number {
+  return Math.floor((yCss + scrollTop) / m.rowHeight);
 }
 
 /** Relative date: "now", "5m", "3h", "4d", "2mo", "1y". Pure, unit-testable. */
@@ -136,8 +136,14 @@ export function avatarColor(name: string): AvatarColor {
 
 /** P7 §2.4: avatar hit-test (shared by the tooltip hover). Uses the bg-ring
  *  radius so the whole visible disc is hoverable. */
-export function avatarHit(px: number, py: number, cx: number, cy: number): boolean {
-  const r = METRICS.avatarRadius + METRICS.avatarBgRingExtra;
+export function avatarHit(
+  px: number,
+  py: number,
+  cx: number,
+  cy: number,
+  m: EffectiveMetrics,
+): boolean {
+  const r = m.avatarRadius + m.avatarBgRingExtra;
   const dx = px - cx;
   const dy = py - cy;
   return dx * dx + dy * dy <= r * r;
@@ -187,10 +193,11 @@ function segmentTo(
   y1: number,
   x2: number,
   y2: number,
+  halfRow: number,
 ): void {
   ctx.moveTo(x1, y1);
   if (x1 === x2) ctx.lineTo(x2, y2);
-  else ctx.bezierCurveTo(x1, y1 + HALF_ROW, x2, y2 - HALF_ROW, x2, y2);
+  else ctx.bezierCurveTo(x1, y1 + halfRow, x2, y2 - halfRow, x2, y2);
 }
 
 function drawEdge(
@@ -199,26 +206,28 @@ function drawEdge(
   nodes: readonly GraphNode[],
   vp: Viewport,
   theme: Theme,
+  m: EffectiveMetrics,
 ): void {
+  const halfRow = m.rowHeight / 2;
   const fromLane = nodes[e.from].lane;
   const toLane = nodes[e.to].lane;
-  const fx = laneX(fromLane);
-  const fy = rowY(e.from, vp.scrollTop);
-  const tx = laneX(toLane);
-  const ty = rowY(e.to, vp.scrollTop);
+  const fx = laneX(fromLane, m);
+  const fy = rowY(e.from, vp.scrollTop, m);
+  const tx = laneX(toLane, m);
+  const ty = rowY(e.to, vp.scrollTop, m);
 
   ctx.strokeStyle = theme.laneColors[e.lane % 10];
   ctx.beginPath();
   if (e.to === e.from + 1) {
-    segmentTo(ctx, fx, fy, tx, ty);
+    segmentTo(ctx, fx, fy, tx, ty, halfRow);
   } else {
-    const mx = laneX(e.lane);
-    const yTop = rowY(e.from + 1, vp.scrollTop);
-    const yBot = rowY(e.to - 1, vp.scrollTop);
+    const mx = laneX(e.lane, m);
+    const yTop = rowY(e.from + 1, vp.scrollTop, m);
+    const yBot = rowY(e.to - 1, vp.scrollTop, m);
     const clampTop = -EDGE_CLAMP_MARGIN;
     const clampBot = vp.height + EDGE_CLAMP_MARGIN;
     // top curve fromLane -> e.lane (skip when fully above the clamp window)
-    if (yTop >= clampTop) segmentTo(ctx, fx, fy, mx, yTop);
+    if (yTop >= clampTop) segmentTo(ctx, fx, fy, mx, yTop, halfRow);
     // middle straight run, y-range clamped — never emit far-off-canvas coords
     const runTop = Math.max(yTop, clampTop);
     const runBot = Math.min(yBot, clampBot);
@@ -227,7 +236,7 @@ function drawEdge(
       ctx.lineTo(mx, runBot);
     }
     // bottom curve e.lane -> toLane (skip when fully below the clamp window)
-    if (yBot <= clampBot) segmentTo(ctx, mx, yBot, tx, ty);
+    if (yBot <= clampBot) segmentTo(ctx, mx, yBot, tx, ty, halfRow);
   }
   ctx.stroke();
 }
@@ -407,22 +416,27 @@ export function drawStashIcon(
  *  the bg-ring halo and will draw HEAD/selection rings afterwards. The ring
  *  matches the disc color (STASH_COLOR) rather than the row's lane color, so the
  *  stash reads as "not a real branch commit" (a deliberate choice). */
-export function drawStashNode(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+export function drawStashNode(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  m: EffectiveMetrics,
+): void {
   // disc
   ctx.beginPath();
-  ctx.arc(x, y, METRICS.avatarRadius, 0, Math.PI * 2);
+  ctx.arc(x, y, m.avatarRadius, 0, Math.PI * 2);
   ctx.fillStyle = STASH_COLOR;
   ctx.fill();
 
   // lane ring (violet, matches disc)
   ctx.beginPath();
-  ctx.arc(x, y, METRICS.avatarRadius, 0, Math.PI * 2);
+  ctx.arc(x, y, m.avatarRadius, 0, Math.PI * 2);
   ctx.strokeStyle = STASH_COLOR;
-  ctx.lineWidth = METRICS.avatarRingWidth;
+  ctx.lineWidth = m.avatarRingWidth;
   ctx.stroke();
 
   // glyph (white, legible on the violet disc)
-  const S = METRICS.avatarRadius * 1.4;
+  const S = m.avatarRadius * 1.4;
   ctx.strokeStyle = '#ffffff';
   drawStashIcon(ctx, x - S / 2, y - S / 2, S);
 }
@@ -609,12 +623,13 @@ export function drawWipRow(
   vp: Viewport,
   theme: Theme,
   hovered: boolean,
+  m: EffectiveMetrics,
 ): void {
-  const RH = METRICS.rowHeight;
+  const RH = m.rowHeight;
   const layoutScrollTop = vp.scrollTop - RH;
   const headIndex = layout.headIndex;
   const headLane = headIndex !== null ? layout.nodes[headIndex].lane : 0;
-  const x = laneX(headLane);
+  const x = laneX(headLane, m);
   const y = RH / 2 - vp.scrollTop;
 
   if (hovered) {
@@ -650,14 +665,14 @@ export function drawWipRow(
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
   // P7 §7: WIP label moves to the summary zone; the LEFT ref band stays empty.
-  const textX = summaryStartX(layout.laneCount);
-  ctx.font = `italic ${METRICS.summaryFont} ${FONT_UI}`;
+  const textX = summaryStartX(layout.laneCount, m);
+  ctx.font = `italic ${m.summaryFont} ${FONT_UI}`;
   ctx.fillStyle = theme.text2;
   const label = 'Uncommitted changes';
   ctx.fillText(label, textX, y);
   const labelW = measure(ctx, label);
 
-  ctx.font = `${METRICS.metaFont} ${FONT_UI}`;
+  ctx.font = `${m.metaFont} ${FONT_UI}`;
   ctx.fillStyle = theme.text3;
   const count = `(${wip.fileCount} file${wip.fileCount === 1 ? '' : 's'})`;
   ctx.fillText(count, textX + labelW + 6, y);
@@ -672,6 +687,7 @@ export function drawGraph(
   vp: Viewport,
   theme: Theme,
   ix: Interaction,
+  m: EffectiveMetrics,
 ): void {
   const { nodes } = layout;
   const n = nodes.length;
@@ -685,7 +701,7 @@ export function drawGraph(
   // Pass 2: row backgrounds (selection wins over hover).
   const rowBg = (row: number, color: string): void => {
     ctx.fillStyle = color;
-    ctx.fillRect(0, row * METRICS.rowHeight - vp.scrollTop, vp.width, METRICS.rowHeight);
+    ctx.fillRect(0, row * m.rowHeight - vp.scrollTop, vp.width, m.rowHeight);
   };
   if (ix.hoverRow !== null && ix.hoverRow !== ix.selectedIndex && ix.hoverRow < n) {
     rowBg(ix.hoverRow, theme.bg2);
@@ -695,9 +711,9 @@ export function drawGraph(
   }
 
   // Pass 3: edges (under dots).
-  ctx.lineWidth = METRICS.edgeWidth;
+  ctx.lineWidth = m.edgeWidth;
   ctx.lineCap = 'round';
-  for (const e of visibleEdges) drawEdge(ctx, e, nodes, vp, theme);
+  for (const e of visibleEdges) drawEdge(ctx, e, nodes, vp, theme, m);
 
   // Pass 4: author-initials avatars (P7 §2.1 — replaces the plain lane dot).
   // Inner→outer: bg ring → avatar disc → lane ring → initials → HEAD ring →
@@ -706,8 +722,8 @@ export function drawGraph(
   ctx.textBaseline = 'middle';
   for (let row = firstRow; row <= lastRow; row++) {
     const node = nodes[row];
-    const x = laneX(node.lane);
-    const y = rowY(row, vp.scrollTop);
+    const x = laneX(node.lane, m);
+    const y = rowY(row, vp.scrollTop, m);
     const laneColor = theme.laneColors[node.lane % 10];
     const ac = avatarColor(node.author);
     const selected = ix.selectedIndex === row;
@@ -716,42 +732,42 @@ export function drawGraph(
 
     // bg ring — bg0 halo so edges passing under the avatar read cleanly.
     ctx.beginPath();
-    ctx.arc(x, y, METRICS.avatarRadius + METRICS.avatarBgRingExtra, 0, Math.PI * 2);
+    ctx.arc(x, y, m.avatarRadius + m.avatarBgRingExtra, 0, Math.PI * 2);
     ctx.fillStyle = theme.bg0;
     ctx.fill();
 
     if (isStash) {
-      drawStashNode(ctx, x, y);
+      drawStashNode(ctx, x, y, m);
     } else {
       // avatar disc — theme-invariant hashed name color.
       ctx.beginPath();
-      ctx.arc(x, y, METRICS.avatarRadius, 0, Math.PI * 2);
+      ctx.arc(x, y, m.avatarRadius, 0, Math.PI * 2);
       ctx.fillStyle = ac.bg;
       ctx.fill();
 
       // lane ring — ties the avatar to its lane color.
       ctx.beginPath();
-      ctx.arc(x, y, METRICS.avatarRadius, 0, Math.PI * 2);
+      ctx.arc(x, y, m.avatarRadius, 0, Math.PI * 2);
       ctx.strokeStyle = laneColor;
-      ctx.lineWidth = METRICS.avatarRingWidth;
+      ctx.lineWidth = m.avatarRingWidth;
       ctx.stroke();
 
       // initials (centered baseline).
-      ctx.font = `${METRICS.avatarFont} ${FONT_UI}`;
+      ctx.font = `${m.avatarFont} ${FONT_UI}`;
       ctx.fillStyle = ac.text;
       ctx.fillText(initials(node.author), x, y);
     }
 
     if (layout.headIndex === row) {
       ctx.beginPath();
-      ctx.arc(x, y, METRICS.avatarHeadRingRadius, 0, Math.PI * 2);
+      ctx.arc(x, y, m.avatarHeadRingRadius, 0, Math.PI * 2);
       ctx.strokeStyle = theme.text1;
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
     if (selected) {
       ctx.beginPath();
-      ctx.arc(x, y, METRICS.avatarSelRingRadius, 0, Math.PI * 2);
+      ctx.arc(x, y, m.avatarSelRingRadius, 0, Math.PI * 2);
       ctx.strokeStyle = theme.accent;
       ctx.lineWidth = 1.5;
       ctx.stroke();
@@ -760,24 +776,24 @@ export function drawGraph(
   // Restore the text-pass expectations (textAlign) and edge lineWidth so the
   // next paint's edges are unaffected (matches the old pass-4 cleanup).
   ctx.textAlign = 'left';
-  ctx.lineWidth = METRICS.edgeWidth;
+  ctx.lineWidth = m.edgeWidth;
 
   // Pass 5: text row content (P7 §4.1 — three zones: LEFT ref column,
   // RIGHT summary, RIGHT relative time; author removed).
-  const { startX, budget } = refColArea();
-  const sx = summaryStartX(layout.laneCount);
+  const { startX, budget } = refColArea(m);
+  const sx = summaryStartX(layout.laneCount, m);
   // P7e §13.2: keep the right-aligned relative-time (and summary) clear of the
   // vertical scrollbar by shrinking the effective right edge by `rightInset`.
   const effRight = vp.width - (vp.rightInset ?? 0);
-  const dateRight = effRight - METRICS.colGap;
-  const dateLeft = dateRight - METRICS.dateColWidth;
-  const summaryMax = dateLeft - METRICS.colGap - sx;
+  const dateRight = effRight - m.colGap;
+  const dateLeft = dateRight - m.dateColWidth;
+  const summaryMax = dateLeft - m.colGap - sx;
   const now = Math.floor(Date.now() / 1000);
 
   ctx.textBaseline = 'middle';
   for (let row = firstRow; row <= lastRow; row++) {
     const node = nodes[row];
-    const y = rowY(row, vp.scrollTop);
+    const y = rowY(row, vp.scrollTop, m);
 
     // 5a (LEFT): ref column — collapsed entities capped by the fixed band with
     // a trailing "+n" chip. Layout is the shared pure helper (single source of
@@ -787,7 +803,7 @@ export function drawGraph(
 
     // 5b (summary).
     if (summaryMax > 0) {
-      ctx.font = `${METRICS.summaryFont} ${FONT_UI}`;
+      ctx.font = `${m.summaryFont} ${FONT_UI}`;
       ctx.fillStyle = theme.text1;
       ctx.textAlign = 'left';
       ctx.fillText(truncateToWidth(ctx, node.summary, summaryMax), sx, y);
@@ -796,11 +812,11 @@ export function drawGraph(
     // 5c: author — REMOVED (P7 §4.1).
 
     // 5d (date): relative date, right-aligned in the last dateColWidth px.
-    ctx.font = `${METRICS.metaFont} ${FONT_UI}`;
+    ctx.font = `${m.metaFont} ${FONT_UI}`;
     ctx.fillStyle = theme.text3;
     ctx.textAlign = 'right';
     ctx.fillText(
-      truncateToWidth(ctx, relativeDate(node.ts, now), METRICS.dateColWidth),
+      truncateToWidth(ctx, relativeDate(node.ts, now), m.dateColWidth),
       dateRight,
       y,
     );

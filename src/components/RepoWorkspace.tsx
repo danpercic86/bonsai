@@ -27,8 +27,10 @@ import { StatusPanel } from './StatusPanel';
 import type { DiffSlot, WorkdirSection } from './StatusPanel';
 import { GraphCanvas } from '../graph/GraphCanvas';
 import type { GraphCanvasHandle, GraphContextTarget, WipSummary } from '../graph/GraphCanvas';
+import { effectiveMetrics } from '../graph/metrics';
 import { ipc } from '../ipc';
 import type {
+  AutoFetchSettings,
   BranchInfo,
   BranchesSnapshot,
   CommitDiff,
@@ -38,6 +40,7 @@ import type {
   FileDiff,
   FileDiffHeader,
   GraphLayout,
+  GraphPrefs,
   HeadInfo,
   ListView,
   PaneWidths,
@@ -73,6 +76,12 @@ export interface RepoWorkspaceProps {
   /** True when a global modal (shortcut overlay / tab menu) is open — the
    *  workspace suppresses its own shortcuts + Esc handling (§5.1). */
   globalModalOpen: boolean;
+  /** P11d §3.3/§4: user graph geometry knobs (threaded into the canvas). */
+  graph: GraphPrefs;
+  /** P11d §4.3: bumped by App on every graph-knob change → GraphCanvas re-measure. */
+  metricsVersion: number;
+  /** P11e §5: auto-fetch preference; drives the active-tab-only interval timer. */
+  autoFetch: AutoFetchSettings;
   onSidebarResize(delta: number): void;
   onRightPanelResize(delta: number): void;
   onPaneResizeEnd(): void;
@@ -88,12 +97,19 @@ export function RepoWorkspace({
   themeVersion,
   paneWidths,
   globalModalOpen,
+  graph: graphPrefs,
+  metricsVersion,
+  autoFetch,
   onSidebarResize,
   onRightPanelResize,
   onPaneResizeEnd,
 }: RepoWorkspaceProps) {
   const pushToast = usePushToast();
   const repoPath = repoId; // repoId == canonical workdir path (§2)
+
+  // P11d §4.1: METRICS overlaid with the user's graph knobs; memoized so the
+  // canvas metricsRef only churns when a knob actually changes.
+  const metrics = useMemo(() => effectiveMetrics(graphPrefs), [graphPrefs]);
 
   // RepoInfo is (re)loaded by refreshAll's openRepo; head also arrives via the
   // branches snapshot, so gating works before the first refreshAll.
@@ -104,6 +120,10 @@ export function RepoWorkspace({
   const [statusLoading, setStatusLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [mutating, setMutating] = useState(false);
+  // P11e §5: latest `mutating` read by the auto-fetch interval callback WITHOUT
+  // resetting the timer on every mutation (it depends only on the settings).
+  const mutatingRef = useRef(mutating);
+  mutatingRef.current = mutating;
 
   const [branches, setBranches] = useState<BranchesSnapshot | null>(null);
   const [branchesError, setBranchesError] = useState<string | null>(null);
@@ -642,6 +662,32 @@ export function RepoWorkspace({
     refetchOpState,
     refetchCompare,
   ]);
+
+  // P11e §5: auto-fetch timer — ACTIVE tab only, OFF by default. Gated on
+  // `active && autoFetch.enabled`; the interval reschedules only when the tab
+  // activation or the settings change (NOT on every mutation — `mutating` is read
+  // through `mutatingRef`). A tick skips while a mutation is in flight; otherwise
+  // it fetches and, only when refs actually moved, refreshes + shows a quiet info
+  // toast. No-ops are silent; errors surface as a quiet warning (never a banner).
+  useEffect(() => {
+    if (!active || !autoFetch.enabled) return;
+    const tick = () => {
+      if (mutatingRef.current) return;
+      void ipc
+        .fetch(repoId)
+        .then((res) => {
+          const updated = res.remotes.reduce((n, r) => n + r.updatedRefs, 0);
+          if (updated > 0) {
+            void refreshAllRef.current();
+            pushToast('info', `Fetched ${updated} ref${updated === 1 ? '' : 's'}`);
+          }
+        })
+        .catch((e) => pushToast('warning', `Auto-fetch failed: ${errorMessage(e)}`));
+    };
+    const id = window.setInterval(tick, autoFetch.intervalMinutes * 60000);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, autoFetch.enabled, autoFetch.intervalMinutes, repoId]);
 
   // Manual refresh (button + Ctrl+R/F5).
   const handleRefresh = useCallback(async () => {
@@ -1557,6 +1603,8 @@ export function RepoWorkspace({
               themeVersion={themeVersion}
               active={active}
               onContextMenu={handleGraphContextMenu}
+              metrics={metrics}
+              metricsVersion={metricsVersion}
             />
           ) : null}
           {diffSlot !== null && overlayMeta !== null && (
