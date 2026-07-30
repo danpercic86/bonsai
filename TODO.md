@@ -40,7 +40,38 @@ Contract: docs/contracts/P12-conflict-editor.md.
 Rules: scratch repos under D:\Temp\bonsai-scratch only; TMP/TEMP=D:\Temp for cargo tests; no
 concurrent cargo test + clippy; orchestrator makes all commits; mock.ts kept compiling.
 
-**Current step:** P12a — senior-dev implementing backend + IPC. Contract written.
+**P12 AI GATE PASSED (2026-07-30) — awaiting USER CHECKPOINT.** Commits: P12a (8ce88cf backend
+ours/theirs + resolve_conflict_text + IPC), P12b (de81a4f unified editor + conflictRegions helpers,
+CM lazy-split), P12c (74d6dfc per-region accept widgets + overview ruler), P12d (d0af0a2 side-by-side
+MergeView + toggle + lazy highlighting), tests (07da23b conflict_cli oracle + user checklist). All
+sub-increments reviewer-APPROVED (P12b fixed: lazy-load CM out of main chunk; P12c fixed: undefined
+--fg-* CSS vars → --text-*, ignoreEvent semantics).
+
+AI-gate evidence:
+- Rust: cargo test 302 passed / 1 known flake (watcher::git_internals_filtered — timing, passes in
+  isolation, NOT a regression) / 2 ignored (perf gates). conflict_cli now 13 (4 new resolve_conflict_text
+  oracles: stage-0 blob oid + index snapshot + worktree bytes + porcelain all byte-identical to `git add`,
+  across several hand-merged contents; leftover-marker + error-path oracles). clippy clean.
+- Frontend: tsc + pnpm build clean; mock.ts compiles; CodeMirror code-split OUT of the main chunk (main
+  index ~320 kB, CM in a lazy ConflictEditor chunk ~341 kB, language grammars in on-demand siblings).
+- Browser harness (mock on an alt port; native pane NOT compositing → document.hidden, so CM
+  rendering/interaction + row-click overlay-open are USER CHECKPOINT — verified logic/wire in the REAL
+  bundle via dynamic import): shipped conflictRegions.ts self-test 12/0 (parse indices/labels/bodies,
+  empty input, hasUnresolvedMarkers, applyResolution ours/theirs/both incl. ours-then-theirs ordering,
+  two-region re-indexing after a rewrite); mock getConflict('src/auth.ts') returns kind bothModified with
+  non-empty ours+theirs and marker-bearing text; ipc.resolveConflictText wired; lazy ConflictEditor+CM
+  chunk resolves with no import errors. ?op=merge seeds the 2 conflicts (src/auth.ts bothModified →
+  editor path; README.md deletedByThem → fallback quick-actions).
+
+USER CHECKPOINT (native pnpm tauri dev, self-declare FORBIDDEN) — see docs/contracts/P12-user-checklist.md:
+create a real bothModified conflict, open src/auth.ts → (1) ConflictEditor renders with line numbers +
+syntax highlighting + tinted regions; (2) per-region Accept Ours/Theirs/Both rewrite correctly (Both =
+ours-then-theirs); (3) direct editing works, Stage-resolved disabled until zero markers; (4) unified⇄
+side-by-side toggle preserves in-progress edits both ways; (5) overview-ruler ticks render at each
+conflict + click-jump; (6) Save stages the file and the conflict clears; resolve all → Commit merge via
+OpBanner. Non-text kinds (README.md) still show the read-only fallback + ours/theirs/resolved quick actions.
+
+**Current step:** P12 AI gate passed — awaiting USER CHECKPOINT confirmation.
 
 ## P11 — Feature follow-up batch (5 requests) — **in-progress** (2026-07-30)
 
