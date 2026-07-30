@@ -961,6 +961,24 @@ export function RepoWorkspace({
     }
   }
 
+  // P12 §4.3: stage user-authored resolved text from the ConflictEditor. Same
+  // refresh batch as handleResolveConflict — refreshAll drops the resolved path
+  // and collapses the slot when the path is no longer conflicted. The editor
+  // surfaces a rejection inline via its onResolve promise, so re-throw on error.
+  async function handleResolveConflictText(path: string, content: string): Promise<void> {
+    setMutating(true);
+    try {
+      await ipc.resolveConflictText(repoId, path, content);
+      await refreshAll();
+      pushToast('success', `Staged resolution for ${path}`);
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+      throw e;
+    } finally {
+      setMutating(false);
+    }
+  }
+
   async function handleCommitMerge(message: string) {
     setMutating(true);
     try {
@@ -1623,7 +1641,13 @@ export function RepoWorkspace({
             />
           ) : null}
           {diffSlot !== null && overlayMeta !== null && (
-            <DiffOverlay slot={diffSlot} meta={overlayMeta} onClose={collapseDiffSlot} />
+            <DiffOverlay
+              slot={diffSlot}
+              meta={overlayMeta}
+              onClose={collapseDiffSlot}
+              onResolveConflictText={handleResolveConflictText}
+              mutating={mutating}
+            />
           )}
           {/* P11g-rev §4.5: all-files DiffBrowser (header + stacked scroll only)
               over the canvas. Compare mode auto-opens; commit mode is

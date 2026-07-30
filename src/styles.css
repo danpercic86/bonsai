@@ -2391,3 +2391,53 @@ span.file-row-main {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   font-weight: 600;
 }
+
+/* ----- P12b: rich conflict-resolution editor (DiffOverlay conflict body) ----- */
+
+.conflict-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.conflict-editor-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-0);
+  background: var(--bg-1);
+  flex: 0 0 auto;
+}
+
+.conflict-editor-path {
+  font-size: 12px;
+  color: var(--fg-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conflict-editor-spacer {
+  flex: 1 1 auto;
+}
+
+.conflict-editor-mode {
+  opacity: 0.6;
+}
+
+.conflict-editor-error {
+  margin: 8px 12px 0;
+  flex: 0 0 auto;
+}
+
+.conflict-editor-cm {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.conflict-editor-cm .cm-editor {
+  height: 100%;
+}

@@ -1,7 +1,12 @@
+import { lazy, Suspense } from 'react';
 import type { ConflictFile, FileStatus } from '../ipc';
 import { DiffSlotView } from './DiffView';
 import type { DiffSlot } from './DiffView';
 import { detectLanguage } from '../utils/language';
+
+// Lazy so CodeMirror is code-split out of the main bundle — it must not load
+// until a text-mergeable conflict is actually opened (P12b SHOULD-FIX).
+const ConflictEditor = lazy(() => import('./ConflictEditor'));
 
 // P3a §2.2: full-pane diff overlay over the center graph pane. Purely
 // presentational — App owns the slot state, meta derivation, and Esc handling.
@@ -60,9 +65,33 @@ function ConflictMarkerView({ file }: { file: ConflictFile }) {
   );
 }
 
+/** True when a conflict file is a text-merge kind the rich editor handles
+ * (P12 §5). Every other kind / suppressed payload keeps ConflictMarkerView. */
+function isTextMergeable(file: ConflictFile): boolean {
+  return (
+    (file.kind === 'bothModified' || file.kind === 'bothAdded') &&
+    !file.binary &&
+    !file.tooLarge &&
+    !file.missing
+  );
+}
+
 /** Loading / error / ready body for a `conflict:<path>` slot — same state
- * recipe as DiffSlotView but rendering the ConflictFile marker view. */
-function ConflictSlotView({ slot, onDismissError }: { slot: DiffSlot; onDismissError(): void }) {
+ * recipe as DiffSlotView but rendering either the rich ConflictEditor (text
+ * kinds, P12) or the read-only ConflictMarkerView (every other kind). */
+function ConflictSlotView({
+  slot,
+  onDismissError,
+  onClose,
+  onResolveConflictText,
+  mutating,
+}: {
+  slot: DiffSlot;
+  onDismissError(): void;
+  onClose(): void;
+  onResolveConflictText(path: string, content: string): Promise<void>;
+  mutating: boolean;
+}) {
   const file = slot.conflict ?? null;
   if (slot.state === 'loading' && file === null) {
     return (
@@ -88,11 +117,32 @@ function ConflictSlotView({ slot, onDismissError }: { slot: DiffSlot; onDismissE
       </div>
     );
   }
-  return file !== null ? (
+  if (file === null) return null;
+  if (isTextMergeable(file)) {
+    return (
+      <Suspense
+        fallback={
+          <div className="diff-slot-loading skeleton-group" aria-hidden="true">
+            {Array.from({ length: 3 }, (_, i) => (
+              <div key={i} className="skeleton-row" />
+            ))}
+          </div>
+        }
+      >
+        <ConflictEditor
+          file={file}
+          onResolve={onResolveConflictText}
+          onCancel={onClose}
+          mutating={mutating}
+        />
+      </Suspense>
+    );
+  }
+  return (
     <div className={slot.state === 'loading' ? 'diff-scroll diff-stale' : 'diff-scroll'}>
       <ConflictMarkerView file={file} />
     </div>
-  ) : null;
+  );
 }
 
 export interface DiffOverlayProps {
@@ -101,9 +151,19 @@ export interface DiffOverlayProps {
   meta: DiffOverlayMeta;
   /** × button AND error-banner dismiss both call this. */
   onClose(): void;
+  /** P12 §2.3: stage user-authored resolved text (text-kind conflict slots). */
+  onResolveConflictText(path: string, content: string): Promise<void>;
+  /** RepoWorkspace busy flag — disables the editor's Stage-resolved button. */
+  mutating: boolean;
 }
 
-export function DiffOverlay({ slot, meta, onClose }: DiffOverlayProps) {
+export function DiffOverlay({
+  slot,
+  meta,
+  onClose,
+  onResolveConflictText,
+  mutating,
+}: DiffOverlayProps) {
   const lang = detectLanguage(meta.path);
   return (
     <div className="diff-overlay" role="region" aria-label={`Diff: ${meta.path}`}>
@@ -137,7 +197,13 @@ export function DiffOverlay({ slot, meta, onClose }: DiffOverlayProps) {
       </div>
       <div className="diff-overlay-body">
         {meta.kind === 'conflict' ? (
-          <ConflictSlotView slot={slot} onDismissError={onClose} />
+          <ConflictSlotView
+            slot={slot}
+            onDismissError={onClose}
+            onClose={onClose}
+            onResolveConflictText={onResolveConflictText}
+            mutating={mutating}
+          />
         ) : (
           <DiffSlotView slot={slot} onDismissError={onClose} />
         )}

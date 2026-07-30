@@ -110,6 +110,9 @@ export interface BonsaiDevHooks {
   p7?: P7DevHooks;
   /** P7 §10: run all pure-fn assertions; returns pass/fail counts + names. */
   p7SelfTest?(): P7SelfTestResult;
+  /** P12 §2.2: run the conflict-region helper assertions (mock/dev only).
+   * Registered non-destructively by ConflictEditor's mount effect. */
+  conflictSelfTest?(): P7SelfTestResult;
 }
 
 declare global {
