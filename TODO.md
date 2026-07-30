@@ -33,6 +33,26 @@ context menu) → P10c context-menu icons (task 2). Contract: docs/contracts/P10
 Rules: scratch repos under D:\Temp\bonsai-scratch only; TMP/TEMP=D:\Temp for cargo tests; no
 concurrent cargo test + clippy; orchestrator makes all commits; mock.ts kept compiling.
 
+**P10 AI GATE PASSED (2026-07-30) — awaiting USER CHECKPOINT.** Commits: c825e68 (P10a),
+52375ea (P10b), da1c74b (P10c). Reviewer APPROVE (0 must-fix; 1 trivial NIT). Key design note:
+the contract's `revwalk.hide()` was WRONG (hide(I) transitively excludes the base B) — senior-dev
+correctly implemented a **skip-emit set** instead (HashSet + `continue`, row from nodes.len(),
+hidden oids filtered from parent lists); contract §1.4 corrected to match. Wire UNCHANGED
+(renderer detects a stash node via `node.refs.some(kind==='stash')`); M2d 20k perf gate untouched
+(skip-emit is a no-op for stash-free repos). Orphan-stash behavior reversed (now rendered + pulls
+its base into the walk) — encoded in the rewritten test.
+AI-gate evidence (mock harness :1425, hidden pane → canvas pixel-sampling + synthetic events):
+cargo test --lib 125 pass / 0 fail (new `stash_appears_as_own_node`, 3 scenarios); cargo clippy
+-D warnings clean; pnpm build clean; p7SelfTest 29/0. Harness (tight STASH_COLOR match): 3 stash
+node discs (266 stash-color px each) with white drawer glyphs on offshoot lanes at the top rows;
+`stash@{n}` pills ONLY on the stash node rows (base rows core work 4/2 carry no stash pill);
+right-click a stash pill → Apply/Pop/Drop menu (icons present); branch menu = 6 items all with
+SVG icons (Checkout/Copy/Merge/Rebase/Compare/Delete); stash menu = 3 icons; no console errors.
+USER CHECKPOINT (native pnpm tauri dev): (1) create a real stash → it appears as its own node on
+an offshoot lane linked to its base, with the stash glyph + "WIP on <branch>" summary; scrolling
+stays smooth; (2) right-click the stash node's pill → Apply/Pop/Drop work end-to-end (Drop
+confirms); (3) every context-menu action shows a crisp leading icon in both light and dark themes.
+
 ## P7 — GitKraken-style graph layout — **in-progress** (2026-07-29)
 
 Current step: P7 AI GATE PASSED (2026-07-29) — awaiting USER CHECKPOINT. Commits: e96c0fa (kickoff
