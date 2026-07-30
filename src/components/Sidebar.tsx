@@ -245,7 +245,9 @@ export function Sidebar({
 }: SidebarProps) {
   const [branchesCollapsed, setBranchesCollapsed] = useState(false);
   const [remotesCollapsed, setRemotesCollapsed] = useState(false);
-  const [tagsCollapsed, setTagsCollapsed] = useState(false);
+  // P11a: Tags start collapsed by default (they are the least-used section and
+  // can be long); the other sections stay expanded. Local/ephemeral state.
+  const [tagsCollapsed, setTagsCollapsed] = useState(true);
   const [stashesCollapsed, setStashesCollapsed] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);

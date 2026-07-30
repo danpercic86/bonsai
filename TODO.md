@@ -16,6 +16,29 @@ that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e
 Every "awaiting USER CHECKPOINT" below is now CONFIRMED as of 2026-07-30. (P5/P6 were already
 confirmed earlier.)
 
+## P11 — Feature follow-up batch (5 requests) — **in-progress** (2026-07-30)
+
+Source: user request (2026-07-30) with an Azure DevOps PR diff reference screenshot. Five asks:
+1. **"Create branch here"** context action on commits AND branches — creates the branch at that
+   commit, auto-stashes the working dir, checks out the new branch, then tries to apply the stash.
+2. **Tags section collapsed by default** in the left sidebar.
+3. **Azure-DevOps-style scrollable all-files diff** — all files' diffs stacked + scrollable; a file
+   tree filters by root (whole diff) / folder (its files) / single file. Applies to BOTH
+   Compare-with-HEAD AND single-commit (vs first-parent) diffs (user decision).
+4. **Auto-fetch** on an interval — OFF by default; active tab only; default 5 min; set in Settings.
+5. **Settings page** — expose all four knob groups: auto-fetch interval & toggle; commit node &
+   avatar sizes; row height & lane spacing; theme & list view (user decision).
+
+Plan: ~/.claude/plans/this-is-a-folloup-structured-milner.md
+Sub-increments: P11a Tags collapsed (trivial, done) → P11f Create-branch-here (backend + menu +
+prompt dialog) → P11b Settings model/IPC → P11c Settings page UI → P11d graph-knobs→renderer →
+P11e Auto-fetch timer → P11g Scrollable all-files diff. Contract: docs/contracts/P11-followup.md.
+Rules: scratch repos under D:\Temp\bonsai-scratch only; TMP/TEMP=D:\Temp for cargo tests; no
+concurrent cargo test + clippy; orchestrator makes all commits; mock.ts kept compiling.
+
+**Current step:** P11a done (Sidebar tagsCollapsed default true). Awaiting architect contract for
+P11b–P11g, then P11f implementation.
+
 ## P10 — Stash-as-node graph redesign + context-menu polish — **in-progress** (2026-07-30)
 
 Source: user request (2026-07-30) with GitExtensions + GitKraken reference screenshots. Four asks:
