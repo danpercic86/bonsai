@@ -53,6 +53,8 @@ pub fn run() {
             commands::get_conflict,
             commands::resolve_conflict,
             commands::resolve_conflict_text,
+            commands::check_ai_availability,
+            commands::ai_resolve_conflict,
             commands::rebase_branch,
             commands::rebase_continue,
             commands::rebase_skip,

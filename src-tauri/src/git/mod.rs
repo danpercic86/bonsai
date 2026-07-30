@@ -1,3 +1,4 @@
+pub mod ai_resolve;
 pub mod branches;
 pub mod commit;
 pub mod conflict;

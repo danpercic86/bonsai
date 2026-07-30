@@ -549,11 +549,11 @@ fn assert_text_resolution_matches_cli(hand_merged: &str) {
         "bonsai: {path} still conflicted after resolve_conflict_text"
     );
     assert!(
-        cli_stage_presence(bonsai.path()).get(path).is_none(),
+        !cli_stage_presence(bonsai.path()).contains_key(path),
         "bonsai: {path} still has conflict stages (ls-files -u)"
     );
     assert!(
-        cli_stage_presence(twin.path()).get(path).is_none(),
+        !cli_stage_presence(twin.path()).contains_key(path),
         "twin: {path} still has conflict stages (ls-files -u)"
     );
 
