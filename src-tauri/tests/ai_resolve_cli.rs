@@ -19,7 +19,7 @@ mod common;
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
-use bonsai_lib::ai::RunOpts;
+use bonsai_lib::ai::{run_claude, RunOpts, DEFAULT_MODEL};
 use bonsai_lib::error::AppError;
 use bonsai_lib::git::ai_resolve::ai_resolve_conflict;
 use bonsai_lib::git::conflict::{resolve_conflict_text, MAX_CONFLICT_BYTES};
@@ -54,6 +54,12 @@ fn stub_path() -> std::path::PathBuf {
 fn set_success_stub() {
     std::env::set_var(CLAUDE_BIN_ENV, stub_path());
     std::env::set_var(STUB_MODE_ENV, "success");
+}
+
+/// Point the AI layer at the committed stub in an arbitrary `BONSAI_STUB_MODE`.
+fn set_stub_mode(mode: &str) {
+    std::env::set_var(CLAUDE_BIN_ENV, stub_path());
+    std::env::set_var(STUB_MODE_ENV, mode);
 }
 
 fn write(dir: &Path, name: &str, content: &str) {
@@ -287,4 +293,193 @@ fn non_conflicted_and_escape_paths_error() {
             "path {bad:?}: expected InvalidName, got {err:?}"
         );
     }
+}
+
+// ============================================================ P13 tester: adversarial `ai_resolve` cases
+//
+// These extend §10.3 with the gaps the sub-increment tests skip: a proposal that
+// still carries conflict markers, empty / whitespace-only CLI output, CRLF in the
+// proposed body, and the default-model argv. All use the committed stub via
+// `BONSAI_CLAUDE_BIN` + `BONSAI_STUB_MODE` — no real `claude`, no network.
+
+// ---- Leftover conflict markers in the proposal ----
+//
+// DOCUMENTS ACTUAL BEHAVIOR (P3c/P12 trust model): `resolve_conflict_text` trusts
+// the caller exactly like `git add` — it does NOT scan for or reject leftover
+// `<<<<<<<`/`=======`/`>>>>>>>` markers. So if the model returns a body that is
+// still conflicted and the frontend Save-gate is bypassed, the marker text is
+// staged verbatim at stage 0 (the conflict record is still cleared). The
+// frontend `hasUnresolvedMarkers` gate — NOT the backend — is what normally
+// prevents this. This is the contract-implied behavior, not a bug.
+
+/// The `result` body carried by the `success_markers` stub (see
+/// `tests/fixtures/claude_envelope_markers.json`) after JSON `\n` unescaping.
+const MARKER_BODY: &str = "<<<<<<< HEAD\nMINE\n=======\nTHEIRS\n>>>>>>> topic\n";
+
+#[test]
+fn leftover_markers_proposal_is_staged_verbatim_not_rejected() {
+    require_git!();
+    let _g = env_lock();
+    set_stub_mode("success_markers");
+
+    let dir = both_modified_conflict();
+    let d = dir.path();
+
+    let proposal = ai_resolve_conflict(d, "a.txt", RunOpts::default())
+        .expect("a markerful proposal is still a valid AiResult (run_claude does not scan markers)");
+    assert_eq!(
+        proposal.proposed_text, MARKER_BODY,
+        "the proposal body carries leftover conflict markers verbatim"
+    );
+    assert!(
+        proposal.proposed_text.contains("<<<<<<<")
+            && proposal.proposed_text.contains("=======")
+            && proposal.proposed_text.contains(">>>>>>>"),
+        "sanity: all three marker kinds present in the proposal"
+    );
+
+    // Apply via the real primitive. It must NOT silently reject the markers.
+    resolve_conflict_text(d, "a.txt", &proposal.proposed_text)
+        .expect("resolve_conflict_text trusts the caller like `git add` — no marker rejection");
+
+    // The conflict record is cleared (stage 0 written) even though markers remain
+    // in the content — proving the trust model, not a marker-aware merge.
+    assert!(
+        !is_conflicted(d, "a.txt"),
+        "conflict record cleared even with leftover markers (git-add trust model)"
+    );
+    assert_eq!(
+        stage0_blob(d, "a.txt").as_deref(),
+        Some(MARKER_BODY.as_bytes()),
+        "the staged stage-0 blob is the marker text VERBATIM"
+    );
+    assert_eq!(
+        std::fs::read(d.join("a.txt")).expect("read a.txt"),
+        MARKER_BODY.as_bytes(),
+        "worktree bytes are the marker text verbatim"
+    );
+}
+
+// ---- Empty / whitespace-only proposal → AiFailed (§3.3 step 4) ----
+
+#[test]
+fn empty_proposal_maps_to_ai_failed() {
+    require_git!();
+    let _g = env_lock();
+    set_stub_mode("empty");
+
+    let dir = both_modified_conflict();
+    let err = ai_resolve_conflict(dir.path(), "a.txt", RunOpts::default())
+        .expect_err("empty `result` must be AiFailed('Claude returned no output')");
+    match err {
+        AppError::AiFailed(m) => assert!(
+            m.contains("no output"),
+            "expected the empty-output message, got: {m}"
+        ),
+        other => panic!("expected AiFailed, got {other:?}"),
+    }
+    // WRITES NOTHING on failure: a.txt is still conflicted.
+    assert!(is_conflicted(dir.path(), "a.txt"), "still conflicted after a failed proposal");
+}
+
+#[test]
+fn whitespace_only_proposal_maps_to_ai_failed() {
+    require_git!();
+    let _g = env_lock();
+    set_stub_mode("whitespace");
+
+    let dir = both_modified_conflict();
+    let err = ai_resolve_conflict(dir.path(), "a.txt", RunOpts::default())
+        .expect_err("whitespace-only `result` trims to empty → AiFailed");
+    match err {
+        AppError::AiFailed(m) => assert!(
+            m.contains("no output"),
+            "whitespace-only trims to empty; expected the empty-output message, got: {m}"
+        ),
+        other => panic!("expected AiFailed, got {other:?}"),
+    }
+    assert!(is_conflicted(dir.path(), "a.txt"), "still conflicted after a failed proposal");
+}
+
+// ---- CRLF in the proposed body ----
+//
+// DOCUMENTS ACTUAL NEWLINE BEHAVIOR: `resolve_conflict_text` does `fs::write` of
+// the bytes verbatim and `index.add_path`. `init_repo` sets `core.autocrlf=false`
+// (see tests/common/mod.rs), so libgit2 applies NO CRLF filter — the staged blob
+// keeps the CR bytes exactly as proposed. This mirrors the existing
+// `applying_proposal_clears_conflict_...` test (stage-0 blob == proposed bytes);
+// it asserts NO normalization the code does not perform.
+
+/// The `result` body carried by the `success_crlf` stub after JSON unescaping.
+const CRLF_BODY: &str = "L1\r\nL2\r\nL3\r\n";
+
+#[test]
+fn crlf_proposal_is_staged_verbatim_no_normalization() {
+    require_git!();
+    let _g = env_lock();
+    set_stub_mode("success_crlf");
+
+    let dir = both_modified_conflict();
+    let d = dir.path();
+
+    let proposal = ai_resolve_conflict(d, "a.txt", RunOpts::default()).expect("crlf proposal");
+    assert_eq!(
+        proposal.proposed_text, CRLF_BODY,
+        "the proposed body keeps its CRLF line endings through parse + strip_fence"
+    );
+    assert!(
+        proposal.proposed_text.contains("\r\n"),
+        "sanity: CR bytes present in the proposal"
+    );
+
+    resolve_conflict_text(d, "a.txt", &proposal.proposed_text).expect("apply crlf proposal");
+
+    assert!(!is_conflicted(d, "a.txt"), "conflict cleared");
+    // With core.autocrlf=false, the staged blob keeps the CR bytes verbatim.
+    assert_eq!(
+        stage0_blob(d, "a.txt").as_deref(),
+        Some(CRLF_BODY.as_bytes()),
+        "staged stage-0 blob keeps CRLF verbatim (autocrlf=false; no normalization)"
+    );
+    assert_eq!(
+        std::fs::read(d.join("a.txt")).expect("read a.txt"),
+        CRLF_BODY.as_bytes(),
+        "worktree bytes keep CRLF verbatim"
+    );
+}
+
+// ---- Default model → `--model sonnet` ----
+
+#[test]
+fn default_run_opts_model_is_none_and_default_model_is_sonnet() {
+    // Pure consts: RunOpts::default() carries no explicit model, so run_claude
+    // substitutes DEFAULT_MODEL, which is "sonnet".
+    assert!(RunOpts::default().model.is_none(), "RunOpts::default().model must be None");
+    assert_eq!(DEFAULT_MODEL, "sonnet", "the default resolution model is sonnet");
+}
+
+#[test]
+fn default_opts_spawn_model_sonnet_in_argv() {
+    // No git needed: the `check_model` stub inspects its OWN argv and only emits
+    // the success body when `--model sonnet` is present, so this asserts the
+    // ACTUAL spawned command line, not just the const.
+    let _g = env_lock();
+    set_stub_mode("check_model");
+
+    // RunOpts::default() → model None → run_claude passes `--model sonnet`.
+    let res = run_claude(Path::new("."), "prompt", Some("payload"), RunOpts::default())
+        .expect("default opts must spawn --model sonnet");
+    assert_eq!(
+        res.text, "MODEL_IS_SONNET",
+        "the stub confirms `--model sonnet` was on the argv"
+    );
+
+    // An explicit non-default model overrides it: the stub no longer sees sonnet.
+    let opts = RunOpts { model: Some("opus".to_string()), ..RunOpts::default() };
+    let err = run_claude(Path::new("."), "prompt", Some("payload"), opts)
+        .expect_err("explicit --model opus is NOT sonnet");
+    assert!(
+        matches!(err, AppError::AiFailed(_)),
+        "the stub reports an is_error envelope when sonnet is absent, got {err:?}"
+    );
 }

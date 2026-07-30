@@ -2277,6 +2277,23 @@ mod tests {
         .expect_err("disabled gate must refuse");
         assert!(matches!(err, AppError::AiUnavailable(_)), "got {err:?}");
 
+        // P13 tester: the gate is `ai_enabled && ai_consented` — the OTHER OR-half.
+        // Consented but DISABLED must still refuse (proves it is AND, not OR).
+        let s = settings::Settings {
+            ai_enabled: false,
+            ai_consented: true,
+            ..settings::Settings::default()
+        };
+        settings::save_to(&file, &s).expect("save settings");
+        let err = tauri::async_runtime::block_on(ai_resolve_conflict_inner(
+            &state,
+            &file,
+            MISSING_ID,
+            "a.txt".to_string(),
+        ))
+        .expect_err("enabled=false must refuse even when consented");
+        assert!(matches!(err, AppError::AiUnavailable(_)), "got {err:?}");
+
         // Enable + consent; now the gate passes and the missing repo → NoRepo.
         let s = settings::Settings {
             ai_enabled: true,
