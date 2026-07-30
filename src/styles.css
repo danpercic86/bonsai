@@ -2423,8 +2423,58 @@ span.file-row-main {
   flex: 1 1 auto;
 }
 
-.conflict-editor-mode {
-  opacity: 0.6;
+/* P12d: two-segment Unified | Side-by-side toggle. */
+.conflict-editor-mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-0);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.conflict-editor-mode-btn {
+  appearance: none;
+  border: none;
+  background: var(--bg-0);
+  color: var(--text-2);
+  font-size: 11px;
+  height: 24px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.conflict-editor-mode-btn + .conflict-editor-mode-btn {
+  border-left: 1px solid var(--border-0);
+}
+
+.conflict-editor-mode-btn:hover {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.conflict-editor-mode-btn.is-active {
+  background: var(--accent);
+  color: var(--accent-fg, #fff);
+}
+
+/* P12d: side-by-side pane labels (Ours | Theirs/Result). */
+.conflict-editor-split-labels {
+  display: flex;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--border-0);
+  background: var(--bg-1);
+}
+
+.conflict-editor-split-label {
+  flex: 1 1 0;
+  padding: 3px 12px;
+  font-size: 11px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.conflict-editor-split-label + .conflict-editor-split-label {
+  border-left: 1px solid var(--border-0);
 }
 
 .conflict-editor-error {
@@ -2439,6 +2489,16 @@ span.file-row-main {
 }
 
 .conflict-editor-cm .cm-editor {
+  height: 100%;
+}
+
+/* P12d: MergeView fills the host and splits its two editors evenly. */
+.conflict-editor-cm .cm-mergeView,
+.conflict-editor-cm .cm-mergeViewEditors {
+  height: 100%;
+}
+
+.conflict-editor-cm .cm-mergeView .cm-editor {
   height: 100%;
 }
 

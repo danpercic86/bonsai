@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
-import { EditorState, Compartment } from '@codemirror/state';
+import { EditorState, Compartment, type Extension } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { MergeView } from '@codemirror/merge';
+import { LanguageDescription } from '@codemirror/language';
+import { languages } from '@codemirror/language-data';
 import type { ConflictFile } from '../ipc';
 import { detectLanguage } from '../utils/language';
 import {
@@ -71,6 +74,61 @@ function cmTheme(mode: CmTheme): ReturnType<typeof EditorView.theme> {
     },
     { dark: mode === 'dark' },
   );
+}
+
+// ---- shared extensions (P12d §4.1) --------------------------------------
+
+// Both the unified EditorView and the split `b` (result) editor mount the SAME
+// editable extension list — factored here so the region widgets, overview ruler,
+// updateListener, history and the theme/language compartments never diverge.
+// The `theme`/`lang` Compartments are per-view instances (a Compartment may only
+// belong to one EditorState), passed in by the caller.
+function editableExtensions(
+  theme: Compartment,
+  lang: Compartment,
+  updateListener: Extension,
+): Extension[] {
+  return [
+    lineNumbers(),
+    highlightActiveLine(),
+    history(),
+    keymap.of([...defaultKeymap, ...historyKeymap]),
+    EditorState.allowMultipleSelections.of(true),
+    conflictRegionWidgets(),
+    conflictOverviewRuler(),
+    updateListener,
+    lang.of([]),
+    theme.of(cmTheme(readTheme())),
+  ];
+}
+
+// Extensions for the read-only `a` (ours) pane in split mode: same theme + lazy
+// language as the editable side (ours is the same language), but no region
+// widgets / ruler / history — it is never edited.
+function readonlyExtensions(theme: Compartment, lang: Compartment): Extension[] {
+  return [
+    lineNumbers(),
+    highlightActiveLine(),
+    EditorState.readOnly.of(true),
+    lang.of([]),
+    theme.of(cmTheme(readTheme())),
+  ];
+}
+
+// ---- lazy syntax highlighting (P12d §4.2) -------------------------------
+
+// Resolve a CodeMirror language for `path` via `@codemirror/language-data` and
+// lazily load its grammar. Returns null when nothing matches (plain text) or the
+// async load fails. The resolved Extension is applied through a `Compartment` so
+// it lands AFTER mount without recreating the view.
+async function loadLanguageExtension(path: string): Promise<Extension | null> {
+  const desc = LanguageDescription.matchFilename(languages, path);
+  if (desc === null) return null;
+  try {
+    return await desc.load();
+  } catch {
+    return null;
+  }
 }
 
 // ---- self-test (P12 §2.2) ----------------------------------------------
@@ -214,33 +272,37 @@ function conflictSelfTest(): P7SelfTestResult {
 
 // ---- component ----------------------------------------------------------
 
+type Mode = 'unified' | 'split';
+
 export function ConflictEditor({ file, onResolve, onCancel, mutating }: ConflictEditorProps) {
   // One React-owned result string, seeded ONCE per file.path (a new path
   // re-seeds — see the reseed effect below). This is the shared result doc
   // (§0.6) that P12d reads/reseeds across mode toggles.
   const [result, setResult] = useState<string>(file.text);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // View mode: unified single editable doc, or side-by-side ours | result.
+  const [mode, setMode] = useState<Mode>('unified');
 
   const hostRef = useRef<HTMLDivElement | null>(null);
+  // Exactly ONE of these is non-null at a time (unified EditorView OR split
+  // MergeView) — enforced by the view-creation effect below.
   const viewRef = useRef<EditorView | null>(null);
-  // Latest result kept in a ref so the mount effect (run once) can seed without
-  // re-running when `result` changes.
+  const mergeRef = useRef<MergeView | null>(null);
+  // Latest result kept in a ref so the view-creation effect can seed without
+  // re-running when `result` changes (edits flow through the doc, not remounts).
   const resultRef = useRef(result);
   resultRef.current = result;
 
   // Re-seed when the file identity changes (new conflict opened in the slot).
+  // Runs BEFORE the view-creation effect below, so it updates `resultRef`
+  // synchronously and the freshly-created view seeds from the new file's text.
   const seededPathRef = useRef(file.path);
   useEffect(() => {
     if (seededPathRef.current === file.path) return;
     seededPathRef.current = file.path;
+    resultRef.current = file.text;
     setResult(file.text);
     setSaveError(null);
-    const view = viewRef.current;
-    if (view !== null && view.state.doc.toString() !== file.text) {
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: file.text },
-      });
-    }
   }, [file.path, file.text]);
 
   // Register the conflictSelfTest hook (mock/dev only) via a NON-destructive
@@ -261,54 +323,116 @@ export function ConflictEditor({ file, onResolve, onCancel, mutating }: Conflict
     };
   }, []);
 
-  // Create the CodeMirror EditorView once, on mount.
+  // Create the active view (unified EditorView OR split MergeView). Recreated
+  // ONLY on mount, mode change, or file.path change — NEVER on keystrokes; edits
+  // are fed through the doc via `updateListener`, so cursor/undo history survive.
   useEffect(() => {
     const host = hostRef.current;
     if (host === null) return;
 
-    const themeCompartment = new Compartment();
+    let disposed = false;
 
+    // Shared doc->React sync used by the unified doc and the split `b` editor.
     const updateListener = EditorView.updateListener.of((update) => {
       if (!update.docChanged) return;
       const next = update.state.doc.toString();
       // Guard the feedback loop: only setState when the string truly differs.
-      if (next !== resultRef.current) setResult(next);
+      if (next !== resultRef.current) {
+        resultRef.current = next;
+        setResult(next);
+      }
     });
 
-    const view = new EditorView({
-      parent: host,
-      state: EditorState.create({
-        doc: resultRef.current,
-        extensions: [
-          lineNumbers(),
-          highlightActiveLine(),
-          history(),
-          keymap.of([...defaultKeymap, ...historyKeymap]),
-          EditorState.allowMultipleSelections.of(true),
-          conflictRegionWidgets(),
-          conflictOverviewRuler(),
-          updateListener,
-          themeCompartment.of(cmTheme(readTheme())),
-        ],
-      }),
-    });
-    viewRef.current = view;
+    // {view, compartment} pairs whose language compartment is reconfigured once
+    // the grammar finishes loading (both panes in split mode).
+    const langTargets: Array<{ view: EditorView; comp: Compartment }> = [];
+    let applyTheme: () => void;
+
+    if (mode === 'unified') {
+      const theme = new Compartment();
+      const lang = new Compartment();
+      const view = new EditorView({
+        parent: host,
+        state: EditorState.create({
+          doc: resultRef.current,
+          extensions: editableExtensions(theme, lang, updateListener),
+        }),
+      });
+      viewRef.current = view;
+      mergeRef.current = null;
+      langTargets.push({ view, comp: lang });
+      applyTheme = () => view.dispatch({ effects: theme.reconfigure(cmTheme(readTheme())) });
+    } else {
+      const themeA = new Compartment();
+      const langA = new Compartment();
+      const themeB = new Compartment();
+      const langB = new Compartment();
+      const merge = new MergeView({
+        parent: host,
+        // a = OURS (read-only, left). b = the SHARED editable result (right),
+        // seeded from the live result string so a mode switch keeps edits.
+        a: { doc: file.ours, extensions: readonlyExtensions(themeA, langA) },
+        b: {
+          doc: resultRef.current,
+          extensions: editableExtensions(themeB, langB, updateListener),
+        },
+        // Chunk-accept arrows copy ours (a) into the result (b) — complementary
+        // to the region toolbar; both mutate the one `b` doc.
+        revertControls: 'a-to-b',
+        highlightChanges: true,
+        gutter: true,
+      });
+      mergeRef.current = merge;
+      viewRef.current = null;
+      langTargets.push({ view: merge.a, comp: langA }, { view: merge.b, comp: langB });
+      applyTheme = () => {
+        merge.a.dispatch({ effects: themeA.reconfigure(cmTheme(readTheme())) });
+        merge.b.dispatch({ effects: themeB.reconfigure(cmTheme(readTheme())) });
+      };
+    }
 
     // Track app theme changes (data-theme on <html>) and reconfigure.
-    const observer = new MutationObserver(() => {
-      view.dispatch({ effects: themeCompartment.reconfigure(cmTheme(readTheme())) });
-    });
+    const observer = new MutationObserver(() => applyTheme());
     observer.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ['data-theme'],
     });
 
+    // Lazy syntax highlighting: resolve + load the grammar, then reconfigure each
+    // mounted view's language compartment. Guarded via `disposed` against a mode
+    // or file switch (or unmount) that lands before the async load resolves.
+    void loadLanguageExtension(file.path).then((ext) => {
+      if (disposed || ext === null) return;
+      for (const target of langTargets) {
+        target.view.dispatch({ effects: target.comp.reconfigure(ext) });
+      }
+    });
+
     return () => {
+      disposed = true;
       observer.disconnect();
-      view.destroy();
+      viewRef.current?.destroy();
+      mergeRef.current?.destroy();
       viewRef.current = null;
+      mergeRef.current = null;
     };
-  }, []);
+  }, [mode, file.path, file.ours]);
+
+  // Switch view mode, capturing in-progress edits from the live view first so
+  // the target mode re-seeds from them (§0.6 / §4.1 — never lose edits either
+  // direction). `resultRef` is set synchronously so the recreation effect (fired
+  // by `setMode`) seeds from the captured text.
+  const switchMode = (next: Mode): void => {
+    if (next === mode) return;
+    const live = viewRef.current
+      ? viewRef.current.state.doc.toString()
+      : (mergeRef.current?.b.state.doc.toString() ?? null);
+    if (live !== null) {
+      resultRef.current = live;
+      setResult(live);
+    }
+    setMode(next);
+  };
 
   const lang = detectLanguage(file.path);
   const unresolved = hasUnresolvedMarkers(result);
@@ -333,14 +457,24 @@ export function ConflictEditor({ file, onResolve, onCancel, mutating }: Conflict
           </span>
         )}
         <span className="conflict-editor-spacer" />
-        <button
-          type="button"
-          className="btn-secondary conflict-editor-mode"
-          disabled
-          title="Side-by-side view arrives in a later increment"
-        >
-          Unified
-        </button>
+        <div className="conflict-editor-mode-toggle" role="group" aria-label="Editor view mode">
+          <button
+            type="button"
+            className={`conflict-editor-mode-btn${mode === 'unified' ? ' is-active' : ''}`}
+            aria-pressed={mode === 'unified'}
+            onClick={() => switchMode('unified')}
+          >
+            Unified
+          </button>
+          <button
+            type="button"
+            className={`conflict-editor-mode-btn${mode === 'split' ? ' is-active' : ''}`}
+            aria-pressed={mode === 'split'}
+            onClick={() => switchMode('split')}
+          >
+            Side-by-side
+          </button>
+        </div>
         <button type="button" className="btn-secondary" onClick={onCancel}>
           Cancel
         </button>
@@ -365,6 +499,12 @@ export function ConflictEditor({ file, onResolve, onCancel, mutating }: Conflict
           >
             {'×'}
           </button>
+        </div>
+      )}
+      {mode === 'split' && (
+        <div className="conflict-editor-split-labels" aria-hidden="true">
+          <span className="conflict-editor-split-label">Ours</span>
+          <span className="conflict-editor-split-label">Theirs / Result</span>
         </div>
       )}
       <div className="conflict-editor-cm" ref={hostRef} />
