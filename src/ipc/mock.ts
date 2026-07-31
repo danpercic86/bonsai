@@ -29,6 +29,7 @@ import type {
   AppError,
   ApplyStashOutcome,
   BranchesSnapshot,
+  CherrypickOutcome,
   CommitDiff,
   CommitMessageProposal,
   CommitResult,
@@ -58,6 +59,7 @@ import type {
   RepoInfo,
   RepoOpState,
   ResetMode,
+  RevertOutcome,
   SessionState,
   StashEntry,
   StatusEntry,
@@ -184,6 +186,11 @@ const MERGE_README_TEXT = [
   'Our side kept this README while feature/login deleted it.',
   '',
 ].join('\n');
+
+// P20 §8.4 demo trigger: a cherry-pick / revert of a commit whose oid ends in
+// this suffix pauses with a conflict (mirrors the mergeBranch `name.includes
+// ('conflict')` convention, keyed on oid). Any other oid commits cleanly.
+const PICK_REVERT_CONFLICT_OID_SUFFIX = 'c0ffee';
 
 // ---------------------------------------------------------------------------
 // P3e-c: per-repo state. Every stateful flow that used to live in module-level
@@ -384,6 +391,33 @@ function seedOpState(state: MockRepoState, op: 'merge' | 'rebase' | null): void 
   }));
   // README.md is conflicted, not plain-modified, while the merge is paused.
   state.status.unstaged = state.status.unstaged.filter((e) => e.path !== 'README.md');
+}
+
+/** P20 §8.4: seed a paused cherry-pick / revert with one conflicted path
+ *  (src/app.ts), reusing the merge-conflict marker fixture. Mirrors the merge
+ *  branch of seedOpState so getOpState + listConflicts + the OpBanner render
+ *  from the mock with no extra plumbing. */
+function seedPickRevertConflict(state: MockRepoState, kind: 'cherryPick' | 'revert'): void {
+  state.opState = { kind };
+  state.conflicts = [
+    { path: 'src/app.ts', kind: 'bothModified', hasBase: true, hasOurs: true, hasTheirs: true },
+  ];
+  state.conflictTexts = new Map();
+  state.conflictTexts.set('src/app.ts', {
+    path: 'src/app.ts',
+    kind: 'bothModified',
+    binary: false,
+    tooLarge: false,
+    missing: false,
+    text: MERGE_AUTH_TEXT, // reuse the marker fixture
+    ours: MERGE_AUTH_OURS,
+    theirs: MERGE_AUTH_THEIRS,
+  });
+  state.status.conflicted = state.conflicts.map((c) => ({
+    path: c.path,
+    origPath: null,
+    status: 'conflicted',
+  }));
 }
 
 /** Deterministic 40-hex oid for a default-fixture row — MUST match
@@ -1978,6 +2012,123 @@ export const mockIpc: IpcApi = {
     const state = requireRepo(repoId);
     const drop = new Set(paths);
     state.status.unstaged = state.status.unstaged.filter((e) => !drop.has(e.path));
+  },
+
+  // P20 §5/§8.4: cherry-pick. An oid ending in the demo suffix pauses with a
+  // conflict (op-state → cherryPick); any other oid commits a new top node.
+  async cherrypickCommit(repoId: string, oid: string): Promise<CherrypickOutcome> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    if (state.opState.kind !== 'none') {
+      const err: AppError = {
+        kind: 'operationInProgress',
+        message: 'an operation is already in progress — finish or abort it first',
+      };
+      throw err;
+    }
+    if (oid.endsWith(PICK_REVERT_CONFLICT_OID_SUFFIX)) {
+      seedPickRevertConflict(state, 'cherryPick');
+      return { kind: 'conflicts', paths: ['src/app.ts'] };
+    }
+    state.headOid = randomOid();
+    state.commits.unshift({ oid: state.headOid, summary: `Cherry-pick ${oid.slice(0, 7)}` });
+    return { kind: 'committed', oid: state.headOid };
+  },
+
+  async cherrypickContinue(repoId: string): Promise<CherrypickOutcome> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    if (state.opState.kind !== 'cherryPick') {
+      const err: AppError = {
+        kind: 'noOperationInProgress',
+        message: 'no cherry-pick in progress',
+      };
+      throw err;
+    }
+    if (state.conflicts.length > 0) {
+      const err: AppError = {
+        kind: 'unresolvedConflicts',
+        message: `cannot continue: ${state.conflicts.length} unresolved conflict(s) remain`,
+      };
+      throw err;
+    }
+    state.opState = { kind: 'none' };
+    state.status.conflicted = [];
+    state.conflictTexts = new Map();
+    state.headOid = randomOid();
+    state.commits.unshift({ oid: state.headOid, summary: 'Cherry-pick (resolved)' });
+    return { kind: 'committed', oid: state.headOid };
+  },
+
+  async cherrypickAbort(repoId: string): Promise<void> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    if (state.opState.kind !== 'cherryPick') {
+      const err: AppError = {
+        kind: 'noOperationInProgress',
+        message: 'no cherry-pick in progress',
+      };
+      throw err;
+    }
+    state.opState = { kind: 'none' };
+    state.conflicts = [];
+    state.conflictTexts = new Map();
+    state.status.conflicted = [];
+  },
+
+  // P20 §6/§8.4: revert. Same demo-trigger + op-state plumbing as cherry-pick.
+  async revertCommit(repoId: string, oid: string): Promise<RevertOutcome> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    if (state.opState.kind !== 'none') {
+      const err: AppError = {
+        kind: 'operationInProgress',
+        message: 'an operation is already in progress — finish or abort it first',
+      };
+      throw err;
+    }
+    if (oid.endsWith(PICK_REVERT_CONFLICT_OID_SUFFIX)) {
+      seedPickRevertConflict(state, 'revert');
+      return { kind: 'conflicts', paths: ['src/app.ts'] };
+    }
+    state.headOid = randomOid();
+    state.commits.unshift({ oid: state.headOid, summary: `Revert "${oid.slice(0, 7)}"` });
+    return { kind: 'committed', oid: state.headOid };
+  },
+
+  async revertContinue(repoId: string): Promise<RevertOutcome> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    if (state.opState.kind !== 'revert') {
+      const err: AppError = { kind: 'noOperationInProgress', message: 'no revert in progress' };
+      throw err;
+    }
+    if (state.conflicts.length > 0) {
+      const err: AppError = {
+        kind: 'unresolvedConflicts',
+        message: `cannot continue: ${state.conflicts.length} unresolved conflict(s) remain`,
+      };
+      throw err;
+    }
+    state.opState = { kind: 'none' };
+    state.status.conflicted = [];
+    state.conflictTexts = new Map();
+    state.headOid = randomOid();
+    state.commits.unshift({ oid: state.headOid, summary: 'Revert (resolved)' });
+    return { kind: 'committed', oid: state.headOid };
+  },
+
+  async revertAbort(repoId: string): Promise<void> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    if (state.opState.kind !== 'revert') {
+      const err: AppError = { kind: 'noOperationInProgress', message: 'no revert in progress' };
+      throw err;
+    }
+    state.opState = { kind: 'none' };
+    state.conflicts = [];
+    state.conflictTexts = new Map();
+    state.status.conflicted = [];
   },
 
   // Stateful submodule mock (P19 §5). init flips uninitialized→upToDate;

@@ -115,7 +115,20 @@ null); message prefill reuses getCommitDiff(head.oid).details.message. Sub-incre
   + discard-preserves-staged) green; clippy + pnpm build clean. NITs (deferred, non-blocking): clear
   amend state when opState leaves 'none' (backend already rejects amend-during-op); import ordering.
 
-**Current step: P20b — implementing cherry-pick + revert (senior-dev), then P20 milestone AI gate.**
+- **P20b** (reviewer APPROVE, 1 SHOULD-FIX folded) — cherrypick.rs/revert.rs (CherrypickOutcome/
+  RevertOutcome Committed{oid}|Conflicts{paths}; clean→finalize+cleanup_state, conflict→leave state,
+  continue→finalize (conflict-free-index guard like commit_merge), abort→reset Hard+cleanup, failed
+  start→cleanup, empty→nothingToCommit AFTER cleanup; cherry-pick reuses picked author+message/fresh
+  committer, revert authors current sig + git's `Revert "..."` body). REUSE: conflict.rs list/resolve,
+  opstate.rs CherryPick/Revert (zero wire change), merge.rs finalize/abort pattern — no parallel conflict
+  code. 6 commands + lib.rs; IPC unions + mock (conflict-demo reuses merge marker fixture); OpBanner
+  actionable pick/revert (Continue gated conflictCount===0, Abort ConfirmDialog, no Skip, onOpContinue
+  dispatch); commit-row menu items. SHOULD-FIX folded: pick/revert items now excluded on detached HEAD
+  (match resetMenuItems). essentials_cli rows 2/3/4/5/8 → 14 tests total green (incl. conflict→resolve→
+  continue tree≡git, abort restore); clippy + pnpm build clean. NITs deferred: continue error handlers
+  don't refreshAll (self-heals via watcher); mock *Continue conflicts-array asymmetry.
+
+**Current step: P20 — committing P20b, then tester full regression + user checklist + harness AI gate.**
 
 ## P17 — Interactive diff: File/Diff toggle + partial staging — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-31)
 

@@ -7,6 +7,7 @@ use bonsai_core::git::ai_explain::{self, AiAnalysis, AiAnalysisMode, AiDiffTarge
 use bonsai_core::git::ai_resolve::{self, AiResolveProposal};
 use bonsai_core::git::ai_summary::{self, AiSummary};
 use bonsai_core::git::branches::{self, BranchesSnapshot, CreateBranchHereResult};
+use bonsai_core::git::cherrypick::{self, CherrypickOutcome};
 use bonsai_core::git::commit::{amend_commit, create_commit, CommitResult};
 use bonsai_core::git::conflict::{self, ConflictEntry, ConflictFile, ConflictResolution};
 use bonsai_core::git::diff::{
@@ -20,6 +21,7 @@ use bonsai_core::git::discard::discard_paths as discard_paths_core;
 use bonsai_core::git::remote::{fetch_all, pull_ff, push_current, FetchResult, PullResult, PushResult};
 use bonsai_core::git::repo::{read_repo_info, RepoInfo};
 use bonsai_core::git::reset::{reset_branch as reset_branch_core, ResetMode};
+use bonsai_core::git::revert::{self, RevertOutcome};
 use bonsai_core::git::stage::{stage_paths, unstage_paths};
 use bonsai_core::git::stage_partial::{
     stage_partial as stage_partial_core, unstage_partial as unstage_partial_core, LineSelection,
@@ -1676,6 +1678,138 @@ async fn discard_paths_inner(
 ) -> Result<(), AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || discard_paths_core(&path, &paths))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Cherry-picks a single commit onto the current branch (P20 contract §5).
+/// Clean → auto-commits; conflict → pauses into RepoOpState::CherryPick.
+/// Errors: `operationInProgress` | `git` | `checkoutConflict` | `configMissing`
+/// | `nothingToCommit` | `noRepo`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn cherrypick_commit(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    oid: String,
+) -> Result<CherrypickOutcome, AppError> {
+    cherrypick_commit_inner(state.inner(), &repo_id, oid).await
+}
+
+/// Runtime-free core of `cherrypick_commit` (unit-testable without a Tauri app).
+async fn cherrypick_commit_inner(
+    state: &AppState,
+    repo_id: &str,
+    oid: String,
+) -> Result<CherrypickOutcome, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || cherrypick::cherrypick_commit(&path, &oid))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Finalizes a paused (resolved) cherry-pick (P20 contract §5). Errors:
+/// `noOperationInProgress` | `unresolvedConflicts` | `configMissing`
+/// | `nothingToCommit` | `git` | `noRepo`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn cherrypick_continue(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<CherrypickOutcome, AppError> {
+    cherrypick_continue_inner(state.inner(), &repo_id).await
+}
+
+/// Runtime-free core of `cherrypick_continue`.
+async fn cherrypick_continue_inner(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<CherrypickOutcome, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || cherrypick::cherrypick_continue(&path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Aborts a paused cherry-pick (reset --hard to HEAD; destructive — the UI
+/// confirms first; P20 contract §5). Errors: `noOperationInProgress` | `git`
+/// | `noRepo`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn cherrypick_abort(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<(), AppError> {
+    cherrypick_abort_inner(state.inner(), &repo_id).await
+}
+
+/// Runtime-free core of `cherrypick_abort`.
+async fn cherrypick_abort_inner(state: &AppState, repo_id: &str) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || cherrypick::cherrypick_abort(&path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Reverts a single commit on the current branch (P20 contract §6). Clean →
+/// auto-commits; conflict → pauses into RepoOpState::Revert. Errors:
+/// `operationInProgress` | `git` | `checkoutConflict` | `configMissing`
+/// | `nothingToCommit` | `noRepo`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn revert_commit(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    oid: String,
+) -> Result<RevertOutcome, AppError> {
+    revert_commit_inner(state.inner(), &repo_id, oid).await
+}
+
+/// Runtime-free core of `revert_commit` (unit-testable without a Tauri app).
+async fn revert_commit_inner(
+    state: &AppState,
+    repo_id: &str,
+    oid: String,
+) -> Result<RevertOutcome, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || revert::revert_commit(&path, &oid))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Finalizes a paused (resolved) revert (P20 contract §6). Errors:
+/// `noOperationInProgress` | `unresolvedConflicts` | `configMissing`
+/// | `nothingToCommit` | `git` | `noRepo`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn revert_continue(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<RevertOutcome, AppError> {
+    revert_continue_inner(state.inner(), &repo_id).await
+}
+
+/// Runtime-free core of `revert_continue`.
+async fn revert_continue_inner(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<RevertOutcome, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || revert::revert_continue(&path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Aborts a paused revert (reset --hard to HEAD; destructive — the UI confirms
+/// first; P20 contract §6). Errors: `noOperationInProgress` | `git` | `noRepo`.
+/// Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn revert_abort(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<(), AppError> {
+    revert_abort_inner(state.inner(), &repo_id).await
+}
+
+/// Runtime-free core of `revert_abort`.
+async fn revert_abort_inner(state: &AppState, repo_id: &str) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || revert::revert_abort(&path))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

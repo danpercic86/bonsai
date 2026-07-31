@@ -14,10 +14,13 @@ mod common;
 use std::path::Path;
 
 use bonsai_core::error::AppError;
+use bonsai_core::git::cherrypick::{cherrypick_abort, cherrypick_commit, cherrypick_continue, CherrypickOutcome};
 use bonsai_core::git::commit::amend_commit;
+use bonsai_core::git::conflict::resolve_conflict_text;
 use bonsai_core::git::discard::discard_paths;
 use bonsai_core::git::reset::{reset_branch, ResetMode};
-use common::{git, git_env, init_repo, FIXED_DATE};
+use bonsai_core::git::revert::{revert_abort, revert_commit, revert_continue, RevertOutcome};
+use common::{git, git_env, git_ok, init_repo, FIXED_DATE};
 
 macro_rules! require_git {
     () => {
@@ -331,4 +334,277 @@ fn essentials_7b_discard_untracked_errors() {
         AppError::Git(m) => assert!(m.contains("not a tracked file"), "got: {m}"),
         other => panic!("expected Git, got {other:?}"),
     }
+}
+
+fn repo_state(dir: &Path) -> git2::RepositoryState {
+    git2::Repository::open(dir).expect("open repo").state()
+}
+
+// ==================================================== Row 2: cherry-pick clean
+
+/// Bonsai `cherrypick_commit` on a divergent branch produces the SAME tree as
+/// `git cherry-pick`, advances HEAD by one, reuses the picked message, and
+/// preserves the original author.
+#[test]
+fn essentials_2_cherrypick_clean_matches_cli() {
+    require_git!();
+    let a_dir = init_repo();
+    let b_dir = init_repo();
+    let a = a_dir.path();
+    let b = b_dir.path();
+
+    // Identical divergent history: base → feature adds feature.txt (the pick);
+    // main then advances with an unrelated file so the pick is NOT a fast path.
+    let build = |d: &Path| -> (String, String) {
+        add_commit(d, "base.txt", "base\n", "base");
+        let base = head_oid(d);
+        git(d, &["checkout", "-b", "feature"]);
+        add_commit(d, "feature.txt", "feature\n", "add feature");
+        let pick = head_oid(d);
+        git(d, &["checkout", "main"]);
+        add_commit(d, "main.txt", "main\n", "main work");
+        let _ = base;
+        (pick, head_oid(d))
+    };
+    let (pick_a, main_a) = build(a);
+    let (pick_b, main_b) = build(b);
+    assert_eq!(pick_a, pick_b, "twin pick oids must match (fixed dates)");
+    assert_eq!(main_a, main_b, "twin main-tip oids must match");
+
+    // Author epoch of the picked commit, to prove preservation.
+    let pick_author_at: i64 = git(a, &["show", "-s", "--format=%at", &pick_a])
+        .parse()
+        .expect("author epoch");
+
+    let outcome = cherrypick_commit(a, &pick_a).expect("bonsai cherry-pick");
+    match outcome {
+        CherrypickOutcome::Committed { .. } => {}
+        other => panic!("expected Committed, got {other:?}"),
+    }
+    git(b, &["cherry-pick", &pick_b]);
+
+    assert_eq!(tree_oid(a), tree_oid(b), "cherry-picked tree must match the CLI");
+    assert_eq!(read(a, "feature.txt"), "feature\n");
+
+    let repo = git2::Repository::open(a).expect("open A");
+    let head = repo.head().expect("head").peel_to_commit().expect("peel");
+    assert_eq!(head.parent_count(), 1, "pick has a single parent");
+    assert_eq!(
+        head.parent_id(0).expect("parent").to_string(),
+        main_a,
+        "HEAD advanced onto the former main tip"
+    );
+    assert_eq!(head.message(), Some("add feature\n"), "picked message reused");
+    assert_eq!(head.author().name(), Some("Test User"));
+    assert_eq!(
+        head.author().when().seconds(),
+        pick_author_at,
+        "the ORIGINAL author (and author time) is preserved"
+    );
+    assert_eq!(repo_state(a), git2::RepositoryState::Clean);
+}
+
+// ================================================= Row 3: cherry-pick conflict
+
+/// A conflicting cherry-pick pauses (Conflicts + state CherryPick); resolving
+/// the index then `cherrypick_continue` yields the SAME tree as the CLI's
+/// hand-resolved cherry-pick.
+#[test]
+fn essentials_3_cherrypick_conflict_resolve_continue_matches_cli() {
+    require_git!();
+    let a_dir = init_repo();
+    let b_dir = init_repo();
+    let a = a_dir.path();
+    let b = b_dir.path();
+
+    // base x.txt → feature edits it one way → main edits the SAME line another
+    // way. Cherry-picking feature onto main conflicts on x.txt.
+    let build = |d: &Path| -> String {
+        add_commit(d, "x.txt", "line1\nbase\nline3\n", "base");
+        git(d, &["checkout", "-b", "feature"]);
+        add_commit(d, "x.txt", "line1\nfeature\nline3\n", "feature edit");
+        let pick = head_oid(d);
+        git(d, &["checkout", "main"]);
+        add_commit(d, "x.txt", "line1\nmain\nline3\n", "main edit");
+        pick
+    };
+    let pick_a = build(a);
+    let pick_b = build(b);
+    assert_eq!(pick_a, pick_b, "twin pick oids must match");
+
+    let outcome = cherrypick_commit(a, &pick_a).expect("bonsai cherry-pick");
+    match outcome {
+        CherrypickOutcome::Conflicts { paths } => {
+            assert_eq!(paths, vec!["x.txt".to_string()], "x.txt must be conflicted");
+        }
+        other => panic!("expected Conflicts, got {other:?}"),
+    }
+    assert_eq!(repo_state(a), git2::RepositoryState::CherryPick);
+
+    // CLI twin: the same cherry-pick conflicts (non-zero exit).
+    assert!(!git_ok(b, &["cherry-pick", &pick_b]), "CLI cherry-pick must conflict");
+
+    // Both resolve x.txt to the SAME hand-merged content.
+    let resolved = "line1\nresolved\nline3\n";
+    resolve_conflict_text(a, "x.txt", resolved).expect("resolve index");
+    let out = cherrypick_continue(a).expect("bonsai continue");
+    match out {
+        CherrypickOutcome::Committed { .. } => {}
+        other => panic!("expected Committed after resolve, got {other:?}"),
+    }
+
+    write(b, "x.txt", resolved);
+    git(b, &["add", "x.txt"]);
+    git_env(b, &["cherry-pick", "--continue"], &[("GIT_EDITOR", "true")]);
+
+    assert_eq!(tree_oid(a), tree_oid(b), "resolved cherry-pick tree must match CLI");
+    assert_eq!(read(a, "x.txt"), resolved);
+    assert_eq!(repo_state(a), git2::RepositoryState::Clean);
+}
+
+// ========================================================= Row 4: revert clean
+
+/// Bonsai `revert_commit` produces the SAME tree as `git revert --no-edit` and
+/// writes the byte-exact `Revert "<subject>"\n\nThis reverts commit <oid>.\n`
+/// message, authored as the current signature.
+#[test]
+fn essentials_4_revert_clean_matches_cli() {
+    require_git!();
+    let a_dir = init_repo();
+    let b_dir = init_repo();
+    let a = a_dir.path();
+    let b = b_dir.path();
+
+    for d in [a, b] {
+        add_commit(d, "x.txt", "base\n", "base");
+        add_commit(d, "x.txt", "v2\n", "second");
+    }
+    let c2_a = head_oid(a);
+    let c2_b = head_oid(b);
+    assert_eq!(c2_a, c2_b, "twin target oids must match");
+
+    let outcome = revert_commit(a, &c2_a).expect("bonsai revert");
+    match outcome {
+        RevertOutcome::Committed { .. } => {}
+        other => panic!("expected Committed, got {other:?}"),
+    }
+    git(b, &["revert", "--no-edit", &c2_b]);
+
+    assert_eq!(tree_oid(a), tree_oid(b), "reverted tree must match the CLI");
+    assert_eq!(read(a, "x.txt"), "base\n", "revert undoes the second commit");
+
+    let repo = git2::Repository::open(a).expect("open A");
+    let head = repo.head().expect("head").peel_to_commit().expect("peel");
+    let expected = format!("Revert \"second\"\n\nThis reverts commit {c2_a}.\n");
+    assert_eq!(head.message(), Some(expected.as_str()), "byte-exact revert message");
+    // The revert is authored as YOU (current signature), not the reverted author.
+    assert_eq!(head.author().name(), Some("Test User"));
+    assert_eq!(head.committer().name(), Some("Test User"));
+    assert_eq!(repo_state(a), git2::RepositoryState::Clean);
+}
+
+// ====================================================== Row 5: revert conflict
+
+/// A conflicting revert pauses (Conflicts + state Revert); resolving then
+/// `revert_continue` yields the SAME tree as the CLI's hand-resolved revert.
+#[test]
+fn essentials_5_revert_conflict_resolve_continue_matches_cli() {
+    require_git!();
+    let a_dir = init_repo();
+    let b_dir = init_repo();
+    let a = a_dir.path();
+    let b = b_dir.path();
+
+    // base → c2 edits line2 → c3 edits the SAME line again. Reverting c2 tries
+    // to undo c2's change on a line c3 has since changed → conflict.
+    let build = |d: &Path| -> String {
+        add_commit(d, "x.txt", "line1\nbase\nline3\n", "base");
+        add_commit(d, "x.txt", "line1\nv2\nline3\n", "second");
+        let c2 = head_oid(d);
+        add_commit(d, "x.txt", "line1\nv3\nline3\n", "third");
+        c2
+    };
+    let c2_a = build(a);
+    let c2_b = build(b);
+    assert_eq!(c2_a, c2_b, "twin target oids must match");
+
+    let outcome = revert_commit(a, &c2_a).expect("bonsai revert");
+    match outcome {
+        RevertOutcome::Conflicts { paths } => {
+            assert_eq!(paths, vec!["x.txt".to_string()]);
+        }
+        other => panic!("expected Conflicts, got {other:?}"),
+    }
+    assert_eq!(repo_state(a), git2::RepositoryState::Revert);
+
+    assert!(!git_ok(b, &["revert", "--no-edit", &c2_b]), "CLI revert must conflict");
+
+    let resolved = "line1\nresolved\nline3\n";
+    resolve_conflict_text(a, "x.txt", resolved).expect("resolve index");
+    let out = revert_continue(a).expect("bonsai continue");
+    match out {
+        RevertOutcome::Committed { .. } => {}
+        other => panic!("expected Committed after resolve, got {other:?}"),
+    }
+
+    write(b, "x.txt", resolved);
+    git(b, &["add", "x.txt"]);
+    git_env(b, &["revert", "--continue"], &[("GIT_EDITOR", "true")]);
+
+    assert_eq!(tree_oid(a), tree_oid(b), "resolved revert tree must match CLI");
+    assert_eq!(repo_state(a), git2::RepositoryState::Clean);
+}
+
+// =============================================================== Row 8: abort
+
+/// Aborting a conflicting cherry-pick restores state Clean, HEAD, and worktree.
+#[test]
+fn essentials_8_cherrypick_abort_restores_head() {
+    require_git!();
+    let dir = init_repo();
+    let d = dir.path();
+
+    add_commit(d, "x.txt", "line1\nbase\nline3\n", "base");
+    git(d, &["checkout", "-b", "feature"]);
+    add_commit(d, "x.txt", "line1\nfeature\nline3\n", "feature edit");
+    let pick = head_oid(d);
+    git(d, &["checkout", "main"]);
+    add_commit(d, "x.txt", "line1\nmain\nline3\n", "main edit");
+    let head_before = head_oid(d);
+    let worktree_before = read(d, "x.txt");
+
+    let outcome = cherrypick_commit(d, &pick).expect("cherry-pick");
+    assert!(matches!(outcome, CherrypickOutcome::Conflicts { .. }));
+    assert_eq!(repo_state(d), git2::RepositoryState::CherryPick);
+
+    cherrypick_abort(d).expect("abort");
+
+    assert_eq!(repo_state(d), git2::RepositoryState::Clean);
+    assert_eq!(head_oid(d), head_before, "HEAD unchanged after abort");
+    assert_eq!(read(d, "x.txt"), worktree_before, "worktree back at HEAD");
+}
+
+/// Aborting a conflicting revert restores state Clean, HEAD, and worktree.
+#[test]
+fn essentials_8b_revert_abort_restores_head() {
+    require_git!();
+    let dir = init_repo();
+    let d = dir.path();
+
+    add_commit(d, "x.txt", "line1\nbase\nline3\n", "base");
+    add_commit(d, "x.txt", "line1\nv2\nline3\n", "second");
+    let c2 = head_oid(d);
+    add_commit(d, "x.txt", "line1\nv3\nline3\n", "third");
+    let head_before = head_oid(d);
+    let worktree_before = read(d, "x.txt");
+
+    let outcome = revert_commit(d, &c2).expect("revert");
+    assert!(matches!(outcome, RevertOutcome::Conflicts { .. }));
+    assert_eq!(repo_state(d), git2::RepositoryState::Revert);
+
+    revert_abort(d).expect("abort");
+
+    assert_eq!(repo_state(d), git2::RepositoryState::Clean);
+    assert_eq!(head_oid(d), head_before, "HEAD unchanged after abort");
+    assert_eq!(read(d, "x.txt"), worktree_before, "worktree back at HEAD");
 }

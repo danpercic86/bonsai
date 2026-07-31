@@ -333,6 +333,18 @@ export type RebaseOutcome =
   | { kind: 'rebased'; branch: string; head: string; steps: number }
   | { kind: 'conflicts'; paths: string[]; currentStep: number; totalSteps: number };
 
+/** Cherry-pick outcome (P20). Mirrors the Rust `CherrypickOutcome` serde enum
+ *  (tagged "kind", camelCase). `conflicts` pauses into RepoOpState.cherryPick. */
+export type CherrypickOutcome =
+  | { kind: 'committed'; oid: string }
+  | { kind: 'conflicts'; paths: string[] };
+
+/** Revert outcome (P20). Mirrors the Rust `RevertOutcome` serde enum (tagged
+ *  "kind", camelCase). `conflicts` pauses into RepoOpState.revert. */
+export type RevertOutcome =
+  | { kind: 'committed'; oid: string }
+  | { kind: 'conflicts'; paths: string[] };
+
 export type PushResult =
   | { kind: 'upToDate'; remote: string; branch: string }
   | { kind: 'pushed'; remote: string; branch: string; setUpstream: boolean };
@@ -680,6 +692,28 @@ export interface IpcApi {
   /** Restore tracked worktree files to the index version, discarding unstaged
    *  edits (P20). Destructive — the UI confirms first. Rejects other | git | noRepo. */
   discardPaths(repoId: string, paths: string[]): Promise<void>;
+  /** Cherry-pick a single commit onto the current branch (P20). Clean →
+   *  committed; conflict → pauses into RepoOpState.cherryPick. Rejects
+   *  operationInProgress | git | checkoutConflict | configMissing |
+   *  nothingToCommit | noRepo. */
+  cherrypickCommit(repoId: string, oid: string): Promise<CherrypickOutcome>;
+  /** Finalize a paused (resolved) cherry-pick (P20). Rejects
+   *  noOperationInProgress | unresolvedConflicts | configMissing |
+   *  nothingToCommit | git | noRepo. */
+  cherrypickContinue(repoId: string): Promise<CherrypickOutcome>;
+  /** Abort a paused cherry-pick (reset --hard; UI confirms). Rejects
+   *  noOperationInProgress | git | noRepo. */
+  cherrypickAbort(repoId: string): Promise<void>;
+  /** Revert a single commit on the current branch (P20). Clean → committed;
+   *  conflict → pauses into RepoOpState.revert. Rejects operationInProgress |
+   *  git | checkoutConflict | configMissing | nothingToCommit | noRepo. */
+  revertCommit(repoId: string, oid: string): Promise<RevertOutcome>;
+  /** Finalize a paused (resolved) revert (P20). Rejects noOperationInProgress |
+   *  unresolvedConflicts | configMissing | nothingToCommit | git | noRepo. */
+  revertContinue(repoId: string): Promise<RevertOutcome>;
+  /** Abort a paused revert (reset --hard; UI confirms). Rejects
+   *  noOperationInProgress | git | noRepo. */
+  revertAbort(repoId: string): Promise<void>;
   /** All submodules with classified status. Rejects noRepo | git. */
   listSubmodules(repoId: string): Promise<SubmoduleInfo[]>;
   /** Register `name` in .git/config (no worktree change). Rejects noRepo | invalidName | git. */

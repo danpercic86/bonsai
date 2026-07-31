@@ -63,7 +63,7 @@ import type {
   Unsubscribe,
 } from '../ipc';
 import { usePushToast } from '../ToastContext';
-import { errorMessage } from '../utils/errors';
+import { errorMessage, isAppError } from '../utils/errors';
 import { hasUnresolvedMarkers } from '../utils/conflictRegions';
 
 function shortOid(oid: string): string {
@@ -1608,6 +1608,112 @@ export function RepoWorkspace({
     }
   }
 
+  // ----- P20 §5/§6: cherry-pick + revert handling -----
+  // An empty pick/revert (nothingToCommit) is an info, not an error toast (§8.1);
+  // every other failure surfaces via the sticky error toast.
+  function surfacePickRevertError(e: unknown) {
+    if (isAppError(e) && e.kind === 'nothingToCommit') {
+      pushToast('info', 'Nothing to apply — the change is already present');
+    } else {
+      pushToast('error', errorMessage(e));
+    }
+  }
+
+  async function handleCherrypick(oid: string) {
+    setMutating(true);
+    try {
+      const res = await ipc.cherrypickCommit(repoId, oid);
+      if (res.kind === 'committed') {
+        pushToast('success', `Cherry-picked ${shortOid(res.oid)}`);
+      } else {
+        pushToast('info', `Cherry-pick paused: ${res.paths.length} conflict(s) to resolve`);
+      }
+      await refreshAll();
+    } catch (e) {
+      surfacePickRevertError(e);
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleRevert(oid: string) {
+    setMutating(true);
+    try {
+      const res = await ipc.revertCommit(repoId, oid);
+      if (res.kind === 'committed') {
+        pushToast('success', `Reverted ${shortOid(res.oid)}`);
+      } else {
+        pushToast('info', `Revert paused: ${res.paths.length} conflict(s) to resolve`);
+      }
+      await refreshAll();
+    } catch (e) {
+      surfacePickRevertError(e);
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleCherrypickContinue() {
+    setMutating(true);
+    try {
+      const res = await ipc.cherrypickContinue(repoId);
+      // Conflicts can't recur on a single-pick continue, but map defensively.
+      if (res.kind === 'committed') {
+        pushToast('success', `Cherry-picked ${shortOid(res.oid)}`);
+      } else {
+        pushToast('info', `Cherry-pick paused: ${res.paths.length} conflict(s) to resolve`);
+      }
+      await refreshAll();
+    } catch (e) {
+      surfacePickRevertError(e);
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleRevertContinue() {
+    setMutating(true);
+    try {
+      const res = await ipc.revertContinue(repoId);
+      if (res.kind === 'committed') {
+        pushToast('success', `Reverted ${shortOid(res.oid)}`);
+      } else {
+        pushToast('info', `Revert paused: ${res.paths.length} conflict(s) to resolve`);
+      }
+      await refreshAll();
+    } catch (e) {
+      surfacePickRevertError(e);
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleCherrypickAbort() {
+    setMutating(true);
+    try {
+      await ipc.cherrypickAbort(repoId);
+      await refreshAll();
+      pushToast('success', 'Cherry-pick aborted');
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleRevertAbort() {
+    setMutating(true);
+    try {
+      await ipc.revertAbort(repoId);
+      await refreshAll();
+      pushToast('success', 'Revert aborted');
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
   function handleToggleConflictView(path: string) {
     const key = `conflict:${path}`;
     if (diffSlotRef.current?.key === key) {
@@ -1898,6 +2004,26 @@ export function RepoWorkspace({
         disabled: false,
         onSelect: () => handleCompareWithHead(oid),
       },
+      // P20 §5.2/§6: cherry-pick / revert onto the current branch. Gated on an
+      // attached born HEAD (excluded on detached HEAD, which the backend rejects
+      // — mirrors resetMenuItems) and an idle repo. On Conflicts the existing
+      // OpBanner/conflict flow takes over.
+      ...(head.detached
+        ? []
+        : [
+            {
+              label: 'Cherry-pick onto current',
+              icon: <RebaseIcon />,
+              disabled: gate,
+              onSelect: () => void handleCherrypick(oid),
+            },
+            {
+              label: 'Revert commit',
+              icon: <RebaseIcon />,
+              disabled: gate,
+              onSelect: () => void handleRevert(oid),
+            },
+          ]),
       ...resetMenuItems(oid),
     ];
   }
@@ -2277,6 +2403,11 @@ export function RepoWorkspace({
             onCommitMerge={handleBannerCommitMerge}
             onRebaseContinue={() => void handleRebaseContinue()}
             onRebaseSkip={() => void handleRebaseSkip()}
+            onOpContinue={() =>
+              void (opState.kind === 'cherryPick'
+                ? handleCherrypickContinue()
+                : handleRevertContinue())
+            }
             onAbort={() => setAbortConfirmOpen(true)}
           />
           {compare !== null ? (
@@ -2394,14 +2525,34 @@ export function RepoWorkspace({
 
       <ConfirmDialog
         open={abortConfirmOpen}
-        title={opState.kind === 'rebase' ? 'Abort rebase?' : 'Abort merge?'}
-        confirmLabel={opState.kind === 'rebase' ? 'Abort rebase' : 'Abort merge'}
+        title={
+          opState.kind === 'rebase'
+            ? 'Abort rebase?'
+            : opState.kind === 'cherryPick'
+              ? 'Abort cherry-pick?'
+              : opState.kind === 'revert'
+                ? 'Abort revert?'
+                : 'Abort merge?'
+        }
+        confirmLabel={
+          opState.kind === 'rebase'
+            ? 'Abort rebase'
+            : opState.kind === 'cherryPick'
+              ? 'Abort cherry-pick'
+              : opState.kind === 'revert'
+                ? 'Abort revert'
+                : 'Abort merge'
+        }
         busy={mutating}
         onConfirm={() => {
-          const isRebase = opState.kind === 'rebase';
+          const kind = opState.kind;
           setAbortConfirmOpen(false);
-          if (isRebase) {
+          if (kind === 'rebase') {
             void handleRebaseAbort();
+          } else if (kind === 'cherryPick') {
+            void handleCherrypickAbort();
+          } else if (kind === 'revert') {
+            void handleRevertAbort();
           } else {
             void handleAbortMerge();
           }
@@ -2412,6 +2563,12 @@ export function RepoWorkspace({
           <div>
             This restores your branch and working tree to their pre-rebase state. Replayed commits
             and conflict resolutions will be lost.
+          </div>
+        ) : opState.kind === 'cherryPick' || opState.kind === 'revert' ? (
+          <div>
+            This resets your branch and working tree to HEAD. The in-progress{' '}
+            {opState.kind === 'cherryPick' ? 'cherry-pick' : 'revert'} and any conflict resolutions
+            will be lost.
           </div>
         ) : (
           <div>

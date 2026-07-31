@@ -13,6 +13,7 @@ import type {
   BranchesSnapshot,
   CommitDiff,
   CommitMessageProposal,
+  CherrypickOutcome,
   CommitResult,
   CompareDiff,
   ConflictEntry,
@@ -35,6 +36,7 @@ import type {
   RepoChangedPayload,
   RepoOpState,
   ResetMode,
+  RevertOutcome,
   SessionState,
   StashEntry,
   StatusSnapshot,
@@ -300,6 +302,30 @@ export const tauriIpc: IpcApi = {
 
   discardPaths(repoId: string, paths: string[]): Promise<void> {
     return invoke<void>('discard_paths', { repoId, paths });
+  },
+
+  cherrypickCommit(repoId: string, oid: string): Promise<CherrypickOutcome> {
+    return invoke<CherrypickOutcome>('cherrypick_commit', { repoId, oid });
+  },
+
+  cherrypickContinue(repoId: string): Promise<CherrypickOutcome> {
+    return invoke<CherrypickOutcome>('cherrypick_continue', { repoId });
+  },
+
+  cherrypickAbort(repoId: string): Promise<void> {
+    return invoke<void>('cherrypick_abort', { repoId });
+  },
+
+  revertCommit(repoId: string, oid: string): Promise<RevertOutcome> {
+    return invoke<RevertOutcome>('revert_commit', { repoId, oid });
+  },
+
+  revertContinue(repoId: string): Promise<RevertOutcome> {
+    return invoke<RevertOutcome>('revert_continue', { repoId });
+  },
+
+  revertAbort(repoId: string): Promise<void> {
+    return invoke<void>('revert_abort', { repoId });
   },
 
   listSubmodules(repoId: string): Promise<SubmoduleInfo[]> {
