@@ -354,6 +354,20 @@ export type RebaseOutcome =
   | { kind: 'rebased'; branch: string; head: string; steps: number }
   | { kind: 'conflicts'; paths: string[]; currentStep: number; totalSteps: number };
 
+/** Interactive-rebase per-op action (P23). Mirrors the Rust `RebaseAction`
+ *  serde enum EXACTLY. Wire: "pick" | "reword" | "squash" | "fixup" | "drop". */
+export type RebaseAction = 'pick' | 'reword' | 'squash' | 'fixup' | 'drop';
+
+/** One interactive-rebase todo-list entry (P23). Mirrors the Rust
+ *  `RebaseTodoOp` (camelCase). `oid` = the commit being replayed. `newMessage`
+ *  is REQUIRED for `reword`, OPTIONAL for `squash` (null → default concat),
+ *  null otherwise. */
+export interface RebaseTodoOp {
+  oid: string;
+  action: RebaseAction;
+  newMessage: string | null;
+}
+
 /** Cherry-pick outcome (P20). Mirrors the Rust `CherrypickOutcome` serde enum
  *  (tagged "kind", camelCase). `conflicts` pauses into RepoOpState.cherryPick. */
 export type CherrypickOutcome =
@@ -696,6 +710,20 @@ export interface IpcApi {
   /** Abort a paused rebase (worktree-destructive). Rejects noOperationInProgress
    *  | git | noRepo. */
   rebaseAbort(repoId: string): Promise<void>;
+  /** Default interactive-rebase todo list (all `pick`, oldest-first) for the
+   *  first-parent range `baseOid..HEAD`, seeding the plan editor. Rejects
+   *  git | noRepo. */
+  getInteractivePlan(repoId: string, baseOid: string): Promise<RebaseTodoOp[]>;
+  /** Start an interactive rebase of the current branch onto `ontoOid`, replaying
+   *  `todos` in the given order. Clean → `rebased`; conflict → `conflicts`
+   *  (pauses into RepoOpState.rebase, driven by the existing OpBanner +
+   *  rebaseContinue/Skip/Abort). Rejects operationInProgress | checkoutConflict
+   *  | configMissing | git | noRepo. */
+  startInteractiveRebase(
+    repoId: string,
+    ontoOid: string,
+    todos: RebaseTodoOp[],
+  ): Promise<RebaseOutcome>;
   /** Stash stack, index 0 (most recent) first. Rejects noRepo | git. */
   listStashes(repoId: string): Promise<StashEntry[]>;
   /** Stash the dirty worktree. message=null → git default. Rejects

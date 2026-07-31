@@ -33,6 +33,7 @@ import type {
   PullResult,
   PushResult,
   RebaseOutcome,
+  RebaseTodoOp,
   RecentRepo,
   RemoteInfo,
   RepoChangedPayload,
@@ -279,6 +280,20 @@ export const tauriIpc: IpcApi = {
 
   rebaseAbort(repoId: string): Promise<void> {
     return invoke<void>('rebase_abort', { repoId });
+  },
+
+  // P23b: interactive rebase — seed the plan, then start the replay. Continue/
+  // Skip/Abort reuse the plain rebase* wrappers above (the backend delegates).
+  getInteractivePlan(repoId: string, baseOid: string): Promise<RebaseTodoOp[]> {
+    return invoke<RebaseTodoOp[]>('get_interactive_plan', { repoId, baseOid });
+  },
+
+  startInteractiveRebase(
+    repoId: string,
+    ontoOid: string,
+    todos: RebaseTodoOp[],
+  ): Promise<RebaseOutcome> {
+    return invoke<RebaseOutcome>('start_interactive_rebase', { repoId, ontoOid, todos });
   },
 
   listStashes(repoId: string): Promise<StashEntry[]> {

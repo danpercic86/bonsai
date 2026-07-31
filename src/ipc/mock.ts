@@ -55,6 +55,7 @@ import type {
   PushResult,
   PaneWidths,
   RebaseOutcome,
+  RebaseTodoOp,
   RecentRepo,
   RemoteInfo,
   RepoChangedPayload,
@@ -194,6 +195,26 @@ const MERGE_README_TEXT = [
 // ('conflict')` convention, keyed on oid). Any other oid commits cleanly.
 const PICK_REVERT_CONFLICT_OID_SUFFIX = 'c0ffee';
 
+// P23b §7.2: interactive-rebase conflict demo. A Start pauses on a conflict when
+// EITHER `?rebase=conflict` is set (seeded per repo below) OR one of the plan's
+// replayed oids ends in this suffix (an explicit fixture marker) — mirroring the
+// cherry-pick/revert oid-suffix convention. The pause reuses the merge-conflict
+// fixture (src/auth.ts) and drives the EXISTING OpBanner rebase branch.
+const INTERACTIVE_REBASE_CONFLICT_OID_SUFFIX = PICK_REVERT_CONFLICT_OID_SUFFIX;
+
+/** P23b: pending interactive-rebase plan retained while paused on a conflict, so
+ *  the reused rebaseContinue/Skip/Abort can finish/restore the rewritten commits.
+ *  `rewritten` is newest-first (ready to unshift onto the mock graph). */
+interface InteractivePlan {
+  headName: string;
+  ontoOid: string;
+  rewritten: MockCommit[];
+  /** oids of the ORIGINAL range commits (base..old-HEAD) — removed from the mock
+   *  commit list on finish so the rewritten commits truly REPLACE them. */
+  originalOids: string[];
+  totalSteps: number;
+}
+
 // ---------------------------------------------------------------------------
 // P3e-c: per-repo state. Every stateful flow that used to live in module-level
 // singletons now lives inside a MockRepoState, one per open repoId. The map is
@@ -235,6 +256,12 @@ interface MockRepoState {
    *  Partial stage/unstage mutate `index`; getStatus/getWorkdirFileDiff derive
    *  the file's section membership + diffs from it. */
   mainRs: ThreeWay;
+  /** P23b: `?rebase=conflict` — startInteractiveRebase pauses on a conflict. */
+  interactiveConflictDemo: boolean;
+  /** P23b: pending interactive-rebase plan while paused on a conflict; null when
+   *  no interactive rebase is mid-flight. The reused rebaseContinue/Skip/Abort
+   *  key on this to finish (prepend the rewritten commits) or restore. */
+  interactive: InteractivePlan | null;
 }
 
 const repos = new Map<string /* repoId */, MockRepoState>();
@@ -532,6 +559,8 @@ function createRepoState(path: string): MockRepoState {
     submodules: seedSubmodules(kind, graphFixture),
     remotes: [{ name: 'origin', url: 'https://example.com/repo.git' }],
     mainRs: initialMainRs(),
+    interactiveConflictDemo: query('rebase') === 'conflict',
+    interactive: null,
   };
   seedOpState(state, repoOp(path));
   return state;
@@ -932,6 +961,89 @@ function finishRebase(state: MockRepoState, steps: number): RebaseOutcome {
   }));
   state.commits.unshift(...replayed);
   return { kind: 'rebased', branch: state.headBranch, head: state.headOid, steps };
+}
+
+/** P23b: first line of a (possibly multi-line) message. */
+function firstLine(msg: string): string {
+  return msg.split('\n', 1)[0] ?? '';
+}
+
+/**
+ * P23b §7.2: apply an interactive-rebase plan (execution order = oldest-first)
+ * to the mock commit list DETERMINISTICALLY, producing the rewritten commits.
+ * Drops `drop` rows; keeps the array order (reorder); combines `squash`/`fixup`
+ * into the preceding kept commit (squash uses `newMessage`'s first line when
+ * provided, else concatenates summaries; fixup keeps the predecessor's summary);
+ * `reword` applies its `newMessage`'s first line as the summary. Every rewritten
+ * commit gets a fresh oid (a rebase always rewrites). Returns NEWEST-first so the
+ * result is ready to unshift onto the graph.
+ */
+function applyInteractivePlan(
+  todos: RebaseTodoOp[],
+  summaryOf: (oid: string) => string,
+): MockCommit[] {
+  const result: MockCommit[] = []; // execution order (oldest-first)
+  for (const t of todos) {
+    if (t.action === 'drop') continue;
+    if (t.action === 'squash' || t.action === 'fixup') {
+      const prev = result[result.length - 1];
+      if (prev === undefined) {
+        // squash/fixup as the first applied row is invalid; the editor blocks it
+        // and the backend rejects it, but treat it as a pick here defensively.
+        result.push({ oid: randomOid(), summary: summaryOf(t.oid) });
+        continue;
+      }
+      if (t.action === 'squash') {
+        prev.summary =
+          t.newMessage !== null && t.newMessage.trim() !== ''
+            ? firstLine(t.newMessage)
+            : `${prev.summary}; ${summaryOf(t.oid)}`;
+      }
+      // fixup keeps the predecessor's summary. Either way the combined commit is
+      // rewritten → fresh oid.
+      prev.oid = randomOid();
+      continue;
+    }
+    // pick | reword
+    const summary =
+      t.action === 'reword' && t.newMessage !== null
+        ? firstLine(t.newMessage)
+        : summaryOf(t.oid);
+    result.push({ oid: randomOid(), summary });
+  }
+  return result.reverse(); // newest-first
+}
+
+/**
+ * P23b §7.2: finish (or skip-then-finish) a paused interactive rebase — clears
+ * the op + conflicted status and prepends the rewritten commits onto the graph
+ * so the harness shows the rewritten history. `dropCurrent` (Skip) drops the
+ * oldest remaining rewritten commit (the conflicting op).
+ */
+function finishInteractiveRebase(state: MockRepoState, dropCurrent: boolean): RebaseOutcome {
+  const plan = state.interactive;
+  state.opState = { kind: 'none' };
+  state.status.conflicted = [];
+  state.conflicts = [];
+  state.conflictTexts = new Map();
+  state.interactive = null;
+  if (plan === null) {
+    // Shouldn't happen (callers check first); fall back to a no-op finish.
+    return { kind: 'rebased', branch: state.headBranch, head: state.headOid, steps: 0 };
+  }
+  // Skip drops the current (conflicting) op — the oldest remaining rewritten row.
+  let rewritten = dropCurrent && plan.rewritten.length > 0 ? plan.rewritten.slice(0, -1) : plan.rewritten;
+  // Remove the original range commits (base..old-HEAD) so the rewritten commits
+  // REPLACE them rather than stacking a duplicate set on top (true rewrite).
+  const removed = new Set(plan.originalOids);
+  state.commits = state.commits.filter((c) => !removed.has(c.oid));
+  state.headOid = randomOid();
+  if (rewritten.length > 0) {
+    // The topmost row (newest-first index 0) is the new HEAD tip.
+    rewritten = rewritten.map((c, i) => (i === 0 ? { ...c, oid: state.headOid } : c));
+    state.commits.unshift(...rewritten);
+  }
+  return { kind: 'rebased', branch: plan.headName, head: state.headOid, steps: rewritten.length };
 }
 
 export const mockIpc: IpcApi = {
@@ -1906,6 +2018,10 @@ export const mockIpc: IpcApi = {
       };
       throw err;
     }
+    // P23b: an interactive rebase finishes by prepending its rewritten commits.
+    if (state.interactive !== null) {
+      return finishInteractiveRebase(state, false);
+    }
     // Advance the current step (so a mid-call getOpState would reflect it), then
     // finish: the seeded demo has no further conflict, so a single continue
     // completes the remaining steps (2/3 → done).
@@ -1920,6 +2036,10 @@ export const mockIpc: IpcApi = {
     if (state.opState.kind !== 'rebase') {
       const err: AppError = { kind: 'noOperationInProgress', message: 'no rebase in progress' };
       throw err;
+    }
+    // P23b: skip an interactive op — drop the current (conflicting) op, finish.
+    if (state.interactive !== null) {
+      return finishInteractiveRebase(state, true);
     }
     // Skip is allowed WITH conflicts — dropping the offending commit resolves it.
     const totalSteps = state.opState.totalSteps;
@@ -1937,11 +2057,156 @@ export const mockIpc: IpcApi = {
       const err: AppError = { kind: 'noOperationInProgress', message: 'no rebase in progress' };
       throw err;
     }
-    // Abort rewinds: restore the pre-rebase state, prepend NOTHING.
+    // Abort rewinds: restore the pre-rebase state, prepend NOTHING. For an
+    // interactive rebase this also drops the pending plan (the branch ref was
+    // never moved in the real engine).
     state.opState = { kind: 'none' };
     state.conflicts = [];
     state.conflictTexts = new Map();
     state.status.conflicted = [];
+    state.interactive = null;
+  },
+
+  // P23b §7.2: interactive-rebase plan seed + start. getInteractivePlan returns
+  // the commits `baseOid..HEAD` of the active mock layout as all-`pick` todos
+  // (oldest-first). startInteractiveRebase applies the plan deterministically
+  // (see applyInteractivePlan) and either finishes immediately (rewritten
+  // commits prepended) or pauses on a conflict that drives the EXISTING OpBanner.
+  async getInteractivePlan(repoId: string, baseOid: string): Promise<RebaseTodoOp[]> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    const layout =
+      state.graphFixture === '20k'
+        ? generateLayout20k()
+        : state.graphFixture === 'detached'
+          ? buildMockGraphDetached()
+          : prependCommits(buildMockGraph(), state.commits);
+    const idx = layout.nodes.findIndex((n) => n.id === baseOid);
+    if (idx === -1) {
+      const err: AppError = { kind: 'git', message: 'mock: base commit is not in the graph' };
+      throw err;
+    }
+    if (idx === 0) {
+      const err: AppError = {
+        kind: 'git',
+        message: `nothing to rebase: ${baseOid.slice(0, 7)} is HEAD`,
+      };
+      throw err;
+    }
+    // Rows above the base (indices 0..idx-1) are newer than it; the replayed
+    // range base..HEAD in execution (oldest-first) order is those rows reversed.
+    // Cap at the 3 nearest the base for a compact editor.
+    const slice = layout.nodes.slice(Math.max(0, idx - 3), idx);
+    const oldestFirst = slice.slice().reverse();
+    return oldestFirst.map((n) => ({ oid: n.id, action: 'pick', newMessage: null }));
+  },
+
+  async startInteractiveRebase(
+    repoId: string,
+    ontoOid: string,
+    todos: RebaseTodoOp[],
+  ): Promise<RebaseOutcome> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    if (state.opState.kind !== 'none') {
+      const err: AppError = {
+        kind: 'operationInProgress',
+        message: 'an operation is already in progress — commit or abort it first',
+      };
+      throw err;
+    }
+    const kept = todos.filter((t) => t.action !== 'drop');
+    if (kept.length === 0) {
+      const err: AppError = {
+        kind: 'git',
+        message: 'nothing to rebase: the plan drops every commit',
+      };
+      throw err;
+    }
+    if (kept[0].action !== 'pick' && kept[0].action !== 'reword') {
+      const err: AppError = { kind: 'git', message: 'a squash/fixup must follow a pick' };
+      throw err;
+    }
+    const layout =
+      state.graphFixture === '20k'
+        ? generateLayout20k()
+        : state.graphFixture === 'detached'
+          ? buildMockGraphDetached()
+          : prependCommits(buildMockGraph(), state.commits);
+    const summaryOf = (oid: string): string =>
+      layout.nodes.find((n) => n.id === oid)?.summary ?? `picked ${oid.slice(0, 7)}`;
+    const rewritten = applyInteractivePlan(todos, summaryOf);
+    const totalSteps = kept.length;
+    // Every replayed commit (base..old-HEAD) is rewritten → remove the originals
+    // from the mock commit list so the rewritten set replaces them on finish.
+    const originalOids = todos.map((t) => t.oid);
+
+    const conflictTriggered =
+      state.interactiveConflictDemo ||
+      todos.some(
+        (t) => t.action !== 'drop' && t.oid.endsWith(INTERACTIVE_REBASE_CONFLICT_OID_SUFFIX),
+      );
+    if (conflictTriggered) {
+      // Pause on a conflict: seed the merge-conflict fixture + op-state so the
+      // EXISTING OpBanner + conflict rows + rebaseContinue/Skip/Abort take over.
+      state.opState = {
+        kind: 'rebase',
+        headName: state.headBranch,
+        onto: ontoOid,
+        currentStep: 1,
+        totalSteps,
+      };
+      state.conflicts = [
+        {
+          path: 'src/auth.ts',
+          kind: 'bothModified',
+          hasBase: true,
+          hasOurs: true,
+          hasTheirs: true,
+        },
+      ];
+      state.conflictTexts = new Map();
+      state.conflictTexts.set('src/auth.ts', {
+        path: 'src/auth.ts',
+        kind: 'bothModified',
+        binary: false,
+        tooLarge: false,
+        missing: false,
+        text: MERGE_AUTH_TEXT,
+        ours: MERGE_AUTH_OURS,
+        theirs: MERGE_AUTH_THEIRS,
+      });
+      state.status.conflicted = [{ path: 'src/auth.ts', origPath: null, status: 'conflicted' }];
+      state.interactive = {
+        headName: state.headBranch,
+        ontoOid,
+        rewritten,
+        originalOids,
+        totalSteps,
+      };
+      return { kind: 'conflicts', paths: ['src/auth.ts'], currentStep: 1, totalSteps };
+    }
+
+    // Clean replay: remove the original range commits, then prepend the rewritten
+    // commits atop the graph (the top row carries the new HEAD tip) and finish.
+    const removedClean = new Set(originalOids);
+    state.commits = state.commits.filter((c) => !removedClean.has(c.oid));
+    state.headOid = randomOid();
+    const prepend =
+      rewritten.length > 0
+        ? rewritten.map((c, i) => (i === 0 ? { ...c, oid: state.headOid } : c))
+        : [];
+    if (prepend.length > 0) state.commits.unshift(...prepend);
+    const headBranch = state.branches.local.find((b) => b.name === state.headBranch);
+    if (headBranch !== undefined && headBranch.upstream !== null) {
+      headBranch.ahead = (headBranch.ahead ?? 0) + prepend.length;
+    }
+    return {
+      kind: 'rebased',
+      branch: state.headBranch,
+      head: state.headOid,
+      steps: prepend.length,
+    };
   },
 
   // Stateful stash mock (P9 §6.5). Indices are positional into the mutating

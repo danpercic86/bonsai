@@ -6,6 +6,7 @@ import { CommitPanel } from './CommitPanel';
 import { ComparePanel } from './ComparePanel';
 import { ConfirmDialog } from './ConfirmDialog';
 import { PromptDialog } from './PromptDialog';
+import { RebasePlanEditor } from './RebasePlanEditor';
 import { TagCreateDialog } from './TagCreateDialog';
 import { RemoteEditDialog } from './RemoteEditDialog';
 import { ContextMenu } from './ContextMenu';
@@ -55,6 +56,7 @@ import type {
   HeadInfo,
   LineSelection,
   ListView,
+  RebaseTodoOp,
   PaneWidths,
   RemoteInfo,
   RepoInfo,
@@ -214,6 +216,15 @@ export function RepoWorkspace({
   const [pendingRenameRemote, setPendingRenameRemote] = useState<{ name: string } | null>(null);
   const [pendingEditUrl, setPendingEditUrl] = useState<{ name: string; url: string } | null>(null);
   const [pendingRemoveRemote, setPendingRemoveRemote] = useState<string | null>(null);
+  // P23b: interactive-rebase plan editor. `rebasePlan` holds the seeded plan +
+  // display metadata; `rebasePlanError` shows a failed Start's error in-dialog.
+  const [rebasePlan, setRebasePlan] = useState<{
+    ontoOid: string;
+    ontoLabel: string;
+    initialTodos: RebaseTodoOp[];
+    summaries: Record<string, string>;
+  } | null>(null);
+  const [rebasePlanError, setRebasePlanError] = useState<string | null>(null);
   const dialogOpen =
     pendingDeleteBranch !== null ||
     pendingDeleteRemote !== null ||
@@ -226,7 +237,8 @@ export function RepoWorkspace({
     pendingAddRemote ||
     pendingRenameRemote !== null ||
     pendingEditUrl !== null ||
-    pendingRemoveRemote !== null;
+    pendingRemoveRemote !== null ||
+    rebasePlan !== null;
 
   const [graph, setGraph] = useState<GraphLayout | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
@@ -1749,6 +1761,60 @@ export function RepoWorkspace({
     }
   }
 
+  // ----- P23b: interactive rebase -----
+  // Seed the plan editor: fetch the default todo list (base..HEAD, all `pick`,
+  // oldest-first) and build a per-oid summaries map from the loaded graph nodes.
+  // On error → toast, no editor.
+  async function openRebasePlan(target: { ontoOid: string; ontoLabel: string }) {
+    try {
+      const initialTodos = await ipc.getInteractivePlan(repoId, target.ontoOid);
+      const nodes = graph?.nodes ?? [];
+      const summaries: Record<string, string> = {};
+      for (const t of initialTodos) {
+        summaries[t.oid] = nodes.find((n) => n.id === t.oid)?.summary ?? shortOid(t.oid);
+      }
+      setRebasePlanError(null);
+      setRebasePlan({ ...target, initialTodos, summaries });
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    }
+  }
+
+  // Start the interactive rebase. Success/conflict close the editor; a backend
+  // error keeps it open and surfaces the message in-dialog (plus a sticky toast).
+  // On Conflicts the existing OpBanner + rebaseContinue/Skip/Abort drive the rest.
+  async function handleStartInteractiveRebase(
+    ontoOid: string,
+    ontoLabel: string,
+    todos: RebaseTodoOp[],
+  ) {
+    setMutating(true);
+    try {
+      const res = await ipc.startInteractiveRebase(repoId, ontoOid, todos);
+      setRebasePlan(null);
+      setRebasePlanError(null);
+      // Interactive rebase only ever returns `rebased` or `conflicts`
+      // (contract §0 #11 — it always rewrites; no up-to-date/fast-forward path).
+      if (res.kind === 'rebased') {
+        pushToast('success', `Rebased onto ${ontoLabel} (${res.steps} commit(s))`);
+      } else if (res.kind === 'conflicts') {
+        pushToast(
+          'info',
+          `Rebase paused at step ${res.currentStep}/${res.totalSteps}: ` +
+            `${res.paths.length} conflict(s) to resolve`,
+        );
+      }
+      await refreshAll();
+    } catch (e) {
+      // Keep the editor open so the error is visible in-context (§8.1 scope).
+      const msg = errorMessage(e);
+      setRebasePlanError(msg);
+      pushToast('error', msg);
+    } finally {
+      setMutating(false);
+    }
+  }
+
   // ----- P20 §5/§6: cherry-pick + revert handling -----
   // An empty pick/revert (nothingToCommit) is an info, not an error toast (§8.1);
   // every other failure surfaces via the sticky error toast.
@@ -2009,6 +2075,13 @@ export function RepoWorkspace({
         disabled: gate,
         onSelect: () => void handleRebaseBranch(name),
       });
+      // P23b §8.2: interactive rebase of the current branch onto this ref's tip.
+      items.push({
+        label: `Rebase ${cur} onto ${name} (interactive)…`,
+        icon: <RebaseIcon />,
+        disabled: gate,
+        onSelect: () => void openRebasePlan({ ontoOid: tip, ontoLabel: name }),
+      });
     }
     if (!headUnborn) {
       items.push({
@@ -2240,6 +2313,14 @@ export function RepoWorkspace({
               icon: <RebaseIcon />,
               disabled: gate,
               onSelect: () => void handleRevert(oid),
+            },
+            // P23b §8.2: interactive rebase replaying THIS commit..HEAD onto the
+            // selected commit (it becomes the `onto` base). Gated like cherry-pick.
+            {
+              label: 'Interactive rebase from here…',
+              icon: <RebaseIcon />,
+              disabled: gate,
+              onSelect: () => void openRebasePlan({ ontoOid: oid, ontoLabel: shortOid(oid) }),
             },
           ]),
       ...resetMenuItems(oid),
@@ -3030,6 +3111,26 @@ export function RepoWorkspace({
           affected.
         </div>
       </ConfirmDialog>
+
+      {/* P23b: interactive-rebase plan editor. */}
+      <RebasePlanEditor
+        open={rebasePlan !== null}
+        ontoLabel={rebasePlan?.ontoLabel ?? ''}
+        ontoOid={rebasePlan?.ontoOid ?? ''}
+        initialTodos={rebasePlan?.initialTodos ?? []}
+        summaries={rebasePlan?.summaries ?? {}}
+        mutating={mutating}
+        error={rebasePlanError}
+        onCancel={() => {
+          setRebasePlan(null);
+          setRebasePlanError(null);
+        }}
+        onStart={(todos) => {
+          if (rebasePlan !== null) {
+            void handleStartInteractiveRebase(rebasePlan.ontoOid, rebasePlan.ontoLabel, todos);
+          }
+        }}
+      />
 
       {menu !== null && (
         <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={closeMenu} />

@@ -264,8 +264,32 @@ reveal-in-graph.
   restores-exact-tip, out-of-range-cursor, skip-before-squash-refused) + 7 lib; plain rebase_cli 18 still
   green; clippy clean. NO new AppError/RepoOpState wire.
 
-**Current step: P23b (plan-editor UI + IPC) and P23c (blame backend + oracle) running IN PARALLEL
-(frontend pnpm vs backend cargo — no contention).**
+- **P23c** (reviewer APPROVE, 0 must-fix) — git/blame.rs: BlameLine {oid, authorName/Email/Ts, summary,
+  origLineNo, finalLineNo, lineText} + FileHistoryEntry; blame_file (Repository::blame_file, at_oid=None→
+  HEAD, content read from THAT commit's tree not worktree, per-commit meta HashMap, binary/missing→Git,
+  MAX_BLAME_LINES) + file_history (revwalk topo+time, pathspec-restricted first-parent diff for touches,
+  best-effort single-rename follow via rename-detecting diff on first-appearance, limit→MAX_HISTORY).
+  2 commands + lib.rs. blame_cli 5 (per-line oid+author vs git blame --line-porcelain, at older commit,
+  --follow rename parity, error cases) + 3 unit + noRepo. clippy clean. NITs (optional): oracle twins
+  author_name not email; CRLF \r stripped (LF fixture); copies(true) in rename detect.
+
+- **P23b** (reviewer APPROVE, 2 SHOULD-FIX folded) — IPC (getInteractivePlan/startInteractiveRebase,
+  wire parity exact; continue/skip/abort reuse existing rebase methods) + RebaseTodoOp/RebaseAction types
+  + index; stateful mock (plan = real graph oids base..HEAD all-pick oldest-first; applyInteractivePlan
+  reorder/drop/squash/fixup/reword; conflict trigger ?rebase=conflict/c0ffee → opState=rebase + conflict
+  fixture, reused continue/skip/abort branch on state.interactive). New RebasePlanEditor.tsx (rows oldest→
+  newest, per-row action select, Up/Down reorder, reword/squash inline message, client validation mirrors
+  validate_todos: all-drop / squash-fixup-first / empty reword blocked). Entry: commit-menu "Interactive
+  rebase from here…" (selected commit = onto base) + branch-menu "Rebase onto … (interactive)", gated
+  born+attached HEAD + idle. Folded: removed dead upToDate/fastForwarded outcome cases; mock now removes
+  the replayed originals (true rewrite, no graph duplicates). pnpm build clean.
+- **P23 (rebase) AI GATE (frontend) verified (2026-07-31).** Browser harness (mock :1420): commit-menu
+  "Interactive rebase from here…" → editor "onto 0303030", 3 rows w/ pick/reword/squash/fixup/drop selects
+  + Up/Down + message; squash-as-first-row disables Start (validation); clean start (drop last) → "Rebased
+  onto 0303030 (2 commits)" + editor closes; ?rebase=conflict start → "Rebase paused at step 1/3" + OpBanner
+  Continue/Skip/Abort; zero console errors. Backend = rebase_interactive_cli 19.
+
+**Current step: P23d — blame/history frontend (BlameView/FileHistoryView + IPC + reveal-in-graph).**
 
 ### P22 — Tags & remotes management — **queued** (contract ready)
 Contract: docs/contracts/P22-tags-remotes.md (architect). Open decisions RESOLVED (orchestrator accepted
