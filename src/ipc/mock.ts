@@ -3046,7 +3046,9 @@ export const mockIpc: IpcApi = {
       name.includes('\\') ||
       [...name].some((c) => {
         const code = c.charCodeAt(0);
-        return code < 0x20 || code === 0x7f;
+        // C0 controls, plus DEL and the C1 range (0x7f–0x9f) to match Rust's
+        // char::is_control.
+        return code < 0x20 || (code >= 0x7f && code <= 0x9f);
       });
 
     if (badName) {

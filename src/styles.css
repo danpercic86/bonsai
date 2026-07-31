@@ -3202,3 +3202,262 @@ span.file-row-main {
   background: color-mix(in srgb, var(--accent) 70%, var(--text-1));
   width: 9px;
 }
+
+/* ===== P24d: AI-asset inventory / drift / context profiles ================ */
+
+/* Wide overlay card shared by the panel, the compare view, and the activation
+   dialog (carries .dialog-card too; raise specificity like .settings-card). */
+.dialog-card.ai-assets-card {
+  width: 720px;
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+}
+
+.asset-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.asset-drift-badge-row {
+  margin: 12px 0 4px;
+}
+
+.asset-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.asset-badge-ok {
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: var(--success);
+}
+
+.asset-badge-warn {
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  color: var(--warning);
+}
+
+.asset-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.asset-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.asset-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  text-align: left;
+}
+
+button.asset-row-clickable {
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+button.asset-row-clickable:hover {
+  border-color: var(--accent);
+}
+
+.asset-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.asset-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.asset-row-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.asset-row-path {
+  font-size: 12px;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+
+.asset-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.asset-chip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.asset-chip-canonical {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+.asset-chip-sync {
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: var(--success);
+}
+
+.asset-chip-drifted {
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  color: var(--warning);
+}
+
+.asset-chip-missing,
+.asset-chip-muted {
+  background: color-mix(in srgb, var(--text-3) 18%, transparent);
+  color: var(--text-3);
+}
+
+.asset-chip-active {
+  background: color-mix(in srgb, var(--success) 18%, transparent);
+  color: var(--success);
+}
+
+.asset-chip-new {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+/* --- Profile create/edit form --- */
+.asset-form {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-2);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.asset-form-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.asset-targets-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.asset-target {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.asset-target-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.asset-target-select {
+  flex: 1 1 auto;
+  min-width: 160px;
+}
+
+.asset-target-content {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* --- Two-pane text compare (drift row + activation preview) --- */
+.asset-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.asset-preview-target {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.asset-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.asset-compare-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.asset-compare-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+
+.asset-compare-body {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 40vh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.asset-compare-empty {
+  padding: 8px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-3);
+}

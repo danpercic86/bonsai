@@ -132,7 +132,11 @@ fn tmp_sibling(target: &Path) -> PathBuf {
 fn atomic_write(target: &Path, bytes: &[u8]) -> Result<(), AppError> {
     let tmp = tmp_sibling(target);
     std::fs::write(&tmp, bytes)?;
-    std::fs::rename(&tmp, target)?;
+    if let Err(e) = std::fs::rename(&tmp, target) {
+        // Best-effort cleanup so a failed rename leaves no `.bonsai-tmp` remnant.
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.into());
+    }
     Ok(())
 }
 

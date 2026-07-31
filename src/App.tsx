@@ -3,6 +3,7 @@ import { CloneDialog, deriveRepoName, joinRepoPath } from './components/CloneDia
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { RepoWorkspace } from './components/RepoWorkspace';
 import { SettingsPanel } from './components/SettingsPanel';
+import { AiAssetsPanel } from './components/AiAssetsPanel';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
 import { TabStrip } from './components/TabStrip';
 import type { TabMeta } from './components/TabStrip';
@@ -88,6 +89,8 @@ export default function App() {
 
   // P11c §3.2: Settings page + the live-preview knob state it drives.
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // P24d: AI-asset inventory / drift / context-profile overlay (active repo only).
+  const [aiAssetsOpen, setAiAssetsOpen] = useState(false);
   const [autoFetch, setAutoFetch] = useState<AutoFetchSettings>({
     enabled: false,
     intervalMinutes: 5,
@@ -593,12 +596,13 @@ export default function App() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (menuOpen) return;
+      if (aiAssetsOpen) setAiAssetsOpen(false);
       if (settingsOpen) setSettingsOpen(false);
       if (overlayOpen) setOverlayOpen(false);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [menuOpen, overlayOpen, settingsOpen]);
+  }, [menuOpen, overlayOpen, settingsOpen, aiAssetsOpen]);
 
   // Global shortcuts (§5.1): Ctrl+O open, ? overlay, Ctrl+Tab / Ctrl+Shift+Tab
   // cycle tabs, Ctrl+W close active tab.
@@ -654,7 +658,13 @@ export default function App() {
   }, [menuOpen, activeRepo, handleOpenRepository, closeTab]);
 
   const globalModalOpen =
-    overlayOpen || menuOpen || settingsOpen || consentOpen || mcpConsentOpen || mcpWriteConsentOpen;
+    overlayOpen ||
+    menuOpen ||
+    settingsOpen ||
+    aiAssetsOpen ||
+    consentOpen ||
+    mcpConsentOpen ||
+    mcpWriteConsentOpen;
 
   return (
     <ToastContext.Provider value={pushToast}>
@@ -693,6 +703,17 @@ export default function App() {
             >
               {listView === 'tree' ? '☰' : '⋔'}
             </button>
+            {activeRepo !== null && (
+              <button
+                type="button"
+                className="btn-icon ai-assets-toggle"
+                onClick={() => setAiAssetsOpen(true)}
+                title="AI Assets"
+                aria-label="AI Assets"
+              >
+                {'🤖'}
+              </button>
+            )}
             <button
               type="button"
               className="btn-icon settings-toggle"
@@ -810,6 +831,13 @@ export default function App() {
           onSetMcpAllowWrite={handleSetMcpAllowWrite}
           onRequestEnableMcpWrite={() => setMcpWriteConsentOpen(true)}
         />
+        {activeRepo !== null && (
+          <AiAssetsPanel
+            open={aiAssetsOpen}
+            onClose={() => setAiAssetsOpen(false)}
+            repoId={activeRepo}
+          />
+        )}
         <ConfirmDialog
           open={consentOpen}
           title="Enable AI features?"

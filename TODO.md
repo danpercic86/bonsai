@@ -51,7 +51,26 @@ manager + diff-preview-gated activation) → **P24e** (optional) AI translate he
   Reviewer NITs to FOLD INTO P24d: (1) remove .bonsai-tmp on rename-failure branch (profiles.rs
   atomic_write); (2) mock name-validation misses C1 controls U+0080-009F; (3) pre-existing mock bug:
   MOCK_ASSET_CONTENT keys use backslashes in single-quoted JS (corrupt to CR/TAB) → forward-slash them.
-**Current step:** P24b done (uncommitted) → committing → P24d UI (folds the 3 nits).
+- **P24d** (reviewer APPROVE-WITH-NITS, 0 must-fix; SHOULD-FIX + nits folded) — AI Assets overlay:
+  AiAssetsPanel (drift badge + managed/detected groups + sync chips + drift-row two-pane compare +
+  Refresh + repo-changed refresh), ProfileManager (list + active chip + create/edit form + targets
+  editor with managed-single-file dropdown + Load-from-current + delete-confirm + store hint),
+  ProfileActivateDialog (SAFETY GATE: previewProfile first, per-target current-vs-proposed compare,
+  Activate-&-write disabled until preview loads, success/info/error toasts). App.tsx header 🤖 button
+  (hidden when no repo) + globalModalOpen + Escape wiring. Reuse: simple TextComparePane (not DiffView
+  — DiffView is FileDiff/hunk-coupled). Folded: profiles.rs temp-cleanup on rename-fail; mock C1-control
+  validation; AiAssetsPanel fetchIdRef + compareIdRef stale-response guards; ProfileManager stable uid
+  keys + comment fix. tsc + build clean; profiles tests 12 green.
+- **P24d AI GATE PASSED (2026-08-01).** Browser harness (mock :1420, hidden pane → DOM/JS-driven real
+  onClick handlers): panel badge "1 file drifted"; CLAUDE.md=canonical, AGENTS.md=drifted, copilot=in
+  sync, GEMINI/windsurf/cursorrules=missing; detected group (.cursor/rules 2 files, .mcp.json, .claude);
+  drift-row → asset-compare shows AGENTS vs canonical CLAUDE; activate opus-rich → preview dialog (per-
+  target current/proposed, CLAUDE.md "changed") → write → AGENTS flips in-sync, opus-rich "active" chip,
+  copilot correctly re-drifts vs the NEW canonical (live recompute); New-profile blank form + Add-target
+  dropdown = exactly the 6 managed single-file assets + textarea + Load-from-current; cheap-terse
+  activate → success toast "Activated 'cheap-terse' — wrote 1 file"; ZERO console errors throughout.
+**Current step:** P24d done + AI gate passed → committing → tester (full regression + checklist), then
+optional P24e (AI translate helper) or close P24 milestone.
 
 ## P18–P23 — Feature batch (submodules, UI polish, public-release gap) — **in-progress** (2026-07-31)
 
