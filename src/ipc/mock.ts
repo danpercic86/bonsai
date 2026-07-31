@@ -552,6 +552,8 @@ const DEFAULT_UI_SETTINGS: UiSettings = {
   aiConsented: false,
   // Embedded MCP server (P16): consent gates the enable toggle.
   mcpConsented: false,
+  // MCP write consent (P16c): a separate, stronger gate for the write toggle.
+  mcpWriteConsented: false,
 };
 
 function clampPaneWidths(w: PaneWidths): PaneWidths {
@@ -640,6 +642,11 @@ function readUiSettings(): UiSettings {
       typeof parsed.mcpConsented === 'boolean'
         ? parsed.mcpConsented
         : DEFAULT_UI_SETTINGS.mcpConsented;
+    // P16c MCP write consent (additive): fall back to default.
+    const mcpWriteConsented =
+      typeof parsed.mcpWriteConsented === 'boolean'
+        ? parsed.mcpWriteConsented
+        : DEFAULT_UI_SETTINGS.mcpWriteConsented;
     return {
       theme,
       paneWidths,
@@ -650,6 +657,7 @@ function readUiSettings(): UiSettings {
       aiConflictAutonomy,
       aiConsented,
       mcpConsented,
+      mcpWriteConsented,
     };
   } catch {
     return structuredClone(DEFAULT_UI_SETTINGS);
@@ -1798,6 +1806,7 @@ export const mockIpc: IpcApi = {
       aiConflictAutonomy: patch.aiConflictAutonomy ?? current.aiConflictAutonomy,
       aiConsented: patch.aiConsented ?? current.aiConsented,
       mcpConsented: patch.mcpConsented ?? current.mcpConsented,
+      mcpWriteConsented: patch.mcpWriteConsented ?? current.mcpWriteConsented,
     };
     writeUiSettings(next);
     return next;
@@ -1828,8 +1837,22 @@ export const mockIpc: IpcApi = {
   async setMcpEnabled(enabled: boolean): Promise<McpStatus> {
     await delay(150);
     mockMcp.enabled = enabled;
+    // Disabling drops the running server's write gate too (a stopped server has
+    // no live tools); the setting itself persists via UI settings.
+    if (!enabled) mockMcp.allowWrite = false;
     const status = mcpStatusOf();
     // Notify any subscriber, like the backend's `mcp-server-changed` emit.
+    for (const cb of mockMcp.listeners) cb(status);
+    return status;
+  },
+
+  // P16c: flip the write-gate. When the server is running this mirrors the
+  // backend BOUNCE (toolCount 14 <-> 34) and re-emits the status; when stopped
+  // the flag is remembered so the next enable reflects it.
+  async setMcpAllowWrite(allowWrite: boolean): Promise<McpStatus> {
+    await delay(150);
+    mockMcp.allowWrite = allowWrite;
+    const status = mcpStatusOf();
     for (const cb of mockMcp.listeners) cb(status);
     return status;
   },

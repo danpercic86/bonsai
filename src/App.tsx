@@ -116,6 +116,10 @@ export default function App() {
   const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
   const [mcpConsented, setMcpConsented] = useState(false);
   const [mcpConsentOpen, setMcpConsentOpen] = useState(false);
+  // P16c: the write-gate has its own one-time consent (a stronger grant than
+  // read) and its own defer-to-dialog flow.
+  const [mcpWriteConsented, setMcpWriteConsented] = useState(false);
+  const [mcpWriteConsentOpen, setMcpWriteConsentOpen] = useState(false);
   // P11c §3.2: debounced settings persist — accumulates partial patches so a
   // burst of knob changes within the window all reach disk in one write.
   const settingsSaveTimerRef = useRef<number | null>(null);
@@ -271,6 +275,7 @@ export default function App() {
       if (patch.aiConflictAutonomy !== undefined) setAiConflictAutonomy(patch.aiConflictAutonomy);
       if (patch.aiConsented !== undefined) setAiConsented(patch.aiConsented);
       if (patch.mcpConsented !== undefined) setMcpConsented(patch.mcpConsented);
+      if (patch.mcpWriteConsented !== undefined) setMcpWriteConsented(patch.mcpWriteConsented);
       pendingSettingsPatchRef.current = { ...pendingSettingsPatchRef.current, ...patch };
       if (settingsSaveTimerRef.current !== null) {
         window.clearTimeout(settingsSaveTimerRef.current);
@@ -361,6 +366,30 @@ export default function App() {
     handleSetMcpEnabled(true);
   }, [handleSettingsChange, handleSetMcpEnabled]);
 
+  // P16c: flip the write-gate; the running server BOUNCES (stop+restart on the
+  // same token/port), so `mcpStatus` updates both from this resolve and the
+  // `mcp-server-changed` re-emit.
+  const handleSetMcpAllowWrite = useCallback(
+    (allowWrite: boolean) => {
+      ipc.setMcpAllowWrite(allowWrite).then(
+        (s) => setMcpStatus(s),
+        (e) =>
+          pushToast(
+            'error',
+            `Could not ${allowWrite ? 'enable' : 'disable'} MCP write access: ${errorMessage(e)}`,
+          ),
+      );
+    },
+    [pushToast],
+  );
+
+  // First enabling write records the stronger write consent, then flips the gate.
+  const handleConfirmMcpWriteConsent = useCallback(() => {
+    setMcpWriteConsentOpen(false);
+    handleSettingsChange({ mcpWriteConsented: true });
+    handleSetMcpAllowWrite(true);
+  }, [handleSettingsChange, handleSetMcpAllowWrite]);
+
   const handleSidebarResize = useCallback((delta: number) => {
     setPaneWidths((w) => ({ ...w, sidebar: clampLive(w.sidebar + delta, 'sidebar', w.rightPanel) }));
   }, []);
@@ -410,6 +439,7 @@ export default function App() {
         setAiConflictAutonomy(s.aiConflictAutonomy);
         setAiConsented(s.aiConsented);
         setMcpConsented(s.mcpConsented);
+        setMcpWriteConsented(s.mcpWriteConsented);
       } catch {
         // Non-fatal — keep defaults.
       }
@@ -545,7 +575,7 @@ export default function App() {
   }, [menuOpen, activeRepo, handleOpenRepository, closeTab]);
 
   const globalModalOpen =
-    overlayOpen || menuOpen || settingsOpen || consentOpen || mcpConsentOpen;
+    overlayOpen || menuOpen || settingsOpen || consentOpen || mcpConsentOpen || mcpWriteConsentOpen;
 
   return (
     <ToastContext.Provider value={pushToast}>
@@ -676,6 +706,9 @@ export default function App() {
           mcpConsented={mcpConsented}
           onSetMcpEnabled={handleSetMcpEnabled}
           onRequestEnableMcp={() => setMcpConsentOpen(true)}
+          mcpWriteConsented={mcpWriteConsented}
+          onSetMcpAllowWrite={handleSetMcpAllowWrite}
+          onRequestEnableMcpWrite={() => setMcpWriteConsentOpen(true)}
         />
         <ConfirmDialog
           open={consentOpen}
@@ -704,6 +737,21 @@ export default function App() {
             Claude Code) read <strong>any repository you have open in Bonsai</strong>. Access
             requires a secret token shown in Settings; nothing is exposed to the network. The server
             is read-only. Enable the MCP server?
+          </div>
+        </ConfirmDialog>
+        <ConfirmDialog
+          open={mcpWriteConsentOpen}
+          title="Allow AI to modify repositories?"
+          confirmLabel="Allow write access"
+          busy={false}
+          onConfirm={handleConfirmMcpWriteConsent}
+          onCancel={() => setMcpWriteConsentOpen(false)}
+        >
+          <div>
+            This grants the connected AI client the ability to <strong>modify</strong> any
+            repository you have open in Bonsai — staging, committing, merging, resolving conflicts,
+            and other write operations run without a per-action prompt. Changing this setting
+            restarts the server and drops any active connection. Allow write access?
           </div>
         </ConfirmDialog>
         <Toasts toasts={toasts} onDismiss={dismissToast} />

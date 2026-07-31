@@ -301,6 +301,10 @@ export const tauriIpc: IpcApi = {
     return invoke<McpStatus>('set_mcp_enabled', { enabled });
   },
 
+  setMcpAllowWrite(allowWrite: boolean): Promise<McpStatus> {
+    return invoke<McpStatus>('set_mcp_allow_write', { allowWrite });
+  },
+
   onMcpServerChanged(cb: (s: McpStatus) => void): Promise<Unsubscribe> {
     return listen<McpStatus>('mcp-server-changed', (e) => cb(e.payload));
   },

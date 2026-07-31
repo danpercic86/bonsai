@@ -176,8 +176,11 @@ pub struct UiSettings {
     pub ai_conflict_autonomy: AiAutonomy,
     /// One-time consent to send repo content to the local Claude CLI (P13).
     pub ai_consented: bool,
-    /// One-time consent to expose open repos to an external MCP client (P16).
+    /// One-time consent to expose open repos to an external MCP client for
+    /// reading (P16).
     pub mcp_consented: bool,
+    /// One-time consent to let an external MCP client modify open repos (P16c).
+    pub mcp_write_consented: bool,
 }
 
 /// Partial patch for `set_ui_settings` — only `Some(..)` fields are applied
@@ -198,6 +201,8 @@ pub struct UiSettingsPatch {
     pub ai_consented: Option<bool>,
     /// MCP consent (P16); patches independently.
     pub mcp_consented: Option<bool>,
+    /// MCP write consent (P16c); patches independently.
+    pub mcp_write_consented: Option<bool>,
 }
 
 /// Pure patch application: only `Some(..)` fields of `patch` mutate `s`; pane
@@ -232,6 +237,9 @@ fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     if let Some(mcp_consented) = patch.mcp_consented {
         s.mcp_consented = mcp_consented;
     }
+    if let Some(mcp_write_consented) = patch.mcp_write_consented {
+        s.mcp_write_consented = mcp_write_consented;
+    }
 }
 
 /// Current UI settings (theme + pane widths). Never rejects for a
@@ -252,6 +260,7 @@ pub async fn get_ui_settings(app: tauri::AppHandle) -> Result<UiSettings, AppErr
             ai_conflict_autonomy: s.ai_conflict_autonomy,
             ai_consented: s.ai_consented,
             mcp_consented: s.mcp_consented,
+            mcp_write_consented: s.mcp_write_consented,
         }
     })
     .await
@@ -283,6 +292,7 @@ pub async fn set_ui_settings(
             ai_conflict_autonomy: s.ai_conflict_autonomy,
             ai_consented: s.ai_consented,
             mcp_consented: s.mcp_consented,
+            mcp_write_consented: s.mcp_write_consented,
         })
     })
     .await
@@ -367,6 +377,19 @@ pub async fn set_mcp_enabled(
     enabled: bool,
 ) -> Result<crate::mcp::McpStatus, AppError> {
     crate::mcp::set_enabled(&app, &mcp_state, enabled).await
+}
+
+/// Flips the embedded-MCP write-gate (P16c §9). Persists `mcp_allow_write` and,
+/// if the server is running, BOUNCES it (stop + restart on the same token/port)
+/// so the 20 mutation tools (de)register and live sessions re-negotiate.
+/// Returns the resulting status; emits `mcp-server-changed`.
+#[tauri::command]
+pub async fn set_mcp_allow_write(
+    app: tauri::AppHandle,
+    mcp_state: tauri::State<'_, crate::mcp::McpServerState>,
+    allow_write: bool,
+) -> Result<crate::mcp::McpStatus, AppError> {
+    crate::mcp::set_allow_write(&app, &mcp_state, allow_write).await
 }
 
 /// Runtime-free core of `open_repo` (unit-testable without a Tauri app).

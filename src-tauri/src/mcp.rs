@@ -3,10 +3,13 @@
 //! Code) operates on the SAME live repos the user has open (`AppState.repos`),
 //! and the GUI live-updates via the existing `repo-changed` watcher.
 //!
-//! P16b is **read-only**: the write-gate is forced OFF here regardless of the
-//! persisted `mcp_allow_write` setting (write tools + the toggle are P16c). The
-//! server exposes the 14 read tools (P14's 12 + the two P16 repo-selection
-//! tools).
+//! The write-gate (`mcp_allow_write`) is a real, consented, default-OFF toggle
+//! (P16c): when OFF the server registers only the 14 read tools (P14's 12 + the
+//! two P16 repo-selection tools); when ON it also merges the 20 mutation tools
+//! (34 total). Any change to the gate BOUNCES the server (stop + restart on the
+//! SAME persisted token + port, D-5) so already-connected sessions are dropped
+//! and re-negotiate the new tool set — this is what revokes write from live
+//! sessions when the gate is turned OFF.
 //!
 //! Security (P16 §8, LOAD-BEARING): a bearer token (persisted, 32 CSPRNG bytes,
 //! base64url) is required on every request, ANY request carrying an `Origin`
@@ -93,7 +96,7 @@ pub struct McpServerState {
 pub struct McpStatus {
     /// Server running?
     pub enabled: bool,
-    /// Write tools registered? (Always `false` in P16b.)
+    /// Write tools registered? Reflects the running server's live gate (P16c).
     pub allow_write: bool,
     /// Bound port when running, else `None`.
     pub port: Option<u16>,
@@ -175,6 +178,56 @@ pub async fn set_enabled(
     }
 }
 
+/// Flip the write-gate (for `set_mcp_allow_write`, P16 §9 / D-5). Persists
+/// `mcp_allow_write`, then — if the server is running — BOUNCES it: tears down
+/// the current serve task (which drops its listener and all live sessions) and
+/// restarts on the SAME persisted token + port with the new gate, so clients
+/// reconnect and re-negotiate the now-14-or-34 tool set. When stopped, only the
+/// setting is persisted (the next `start` picks it up). Returns the resulting
+/// status; emits `mcp-server-changed`.
+///
+/// Turning the gate OFF is the security-relevant direction: the bounce fully
+/// tears down the old server (abort drops its listener + sessions) BEFORE the
+/// new read-only server binds, so no already-connected session keeps write.
+pub async fn set_allow_write(
+    app: &AppHandle,
+    mcp_state: &McpServerState,
+    allow_write: bool,
+) -> Result<McpStatus, AppError> {
+    // Persist the gate first so the (re)start below — and any future start when
+    // stopped — reads the new value.
+    let file = settings::settings_file(app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut s = settings::load_from(&file);
+        s.mcp_allow_write = allow_write;
+        settings::save_to(&file, &s)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))??;
+
+    // Take the running server (if any) out of the mutex and tear it down BEFORE
+    // rebinding — abort drops its listener + sessions.
+    let running = {
+        let mut g = mcp_state.inner.lock().map_err(pois)?;
+        g.take()
+    };
+    match running {
+        Some(r) => {
+            r.stop();
+            // Restart reuses the persisted token + port (D-4); `start` reads the
+            // just-persisted `mcp_allow_write` and `bind_listener` retries the
+            // same port to ride out the brief post-abort release window.
+            start(app, mcp_state).await
+        }
+        None => {
+            // Stopped: nothing to bounce; the setting is persisted for next start.
+            let status = stopped_status();
+            let _ = app.emit("mcp-server-changed", status.clone());
+            Ok(status)
+        }
+    }
+}
+
 /// Stop the server synchronously (app-exit hook — P16 §6.3). No settings write,
 /// no event: the app is going away.
 pub fn shutdown(mcp_state: &McpServerState) {
@@ -216,11 +269,25 @@ fn base64url_nopad(bytes: &[u8]) -> String {
 
 /// Bind `127.0.0.1:<preferred>`, falling back to an OS-chosen ephemeral port if
 /// the preferred one is busy (P16 §8.5).
+///
+/// On a write-gate BOUNCE (D-5) the previous serve task is aborted, which drops
+/// its listener and releases the port — but that teardown is asynchronous, so
+/// an immediate rebind of the same port can momentarily lose the race on
+/// Windows. To keep the persisted port stable (so the user's `claude mcp add`
+/// keeps working) the preferred port is retried a handful of times with a short
+/// delay BEFORE falling back to a fresh ephemeral port.
 async fn bind_listener(preferred: Option<u16>) -> Result<TcpListener, AppError> {
     if let Some(p) = preferred {
         if p != 0 {
-            if let Ok(l) = TcpListener::bind((Ipv4Addr::LOCALHOST, p)).await {
-                return Ok(l);
+            // ~5 attempts over ~250 ms rides out the brief post-abort release
+            // window without hanging enable if the port is genuinely taken.
+            for attempt in 0..5 {
+                if let Ok(l) = TcpListener::bind((Ipv4Addr::LOCALHOST, p)).await {
+                    return Ok(l);
+                }
+                if attempt < 4 {
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                }
             }
         }
     }
@@ -236,18 +303,16 @@ fn io_err(msg: &str) -> std::io::Error {
 async fn start(app: &AppHandle, mcp_state: &McpServerState) -> Result<McpStatus, AppError> {
     let file = settings::settings_file(app)?;
 
-    // Load the persisted token + preferred port (D-4).
+    // Load the persisted token + preferred port + write-gate (D-4 / P16c).
     let file_load = file.clone();
-    let (token_opt, port_opt) = tauri::async_runtime::spawn_blocking(move || {
+    let (token_opt, port_opt, allow_write) = tauri::async_runtime::spawn_blocking(move || {
         let s = settings::load_from(&file_load);
-        (s.mcp_token, s.mcp_port)
+        (s.mcp_token, s.mcp_port, s.mcp_allow_write)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?;
 
     let token = token_opt.unwrap_or_else(generate_token);
-    // P16b: write-gate forced OFF regardless of the persisted setting.
-    let allow_write = false;
 
     let listener = bind_listener(port_opt).await?;
     let actual_port = listener

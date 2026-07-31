@@ -122,8 +122,21 @@ bounce on write-gate change; D-6 no per-repo lock; D-7 defaults off + consent. C
   Origin + Host allowlist + constant-time bearer (subtle) + no CORS; write FORCED off (14 read tools).
   cargo build/clippy/test (mcp_stdio 14/34) + pnpm build green. Write-gate + 20 mutation tools = P16c.
 
-**Current step: P16b committed; browser-harness check of Settings MCP section, then P16c (write-gate
-toggle + mutation tools).**
+  Browser harness verified: "AI access (MCP server)" section renders; enable toggle raises an accurate
+  consent dialog → "Running on port 8765 · 14 tools (read-only)" with Server URL / Bearer token / Register
+  command surfaced; toggle off → Stopped; no console errors.
+
+- **P16c** (reviewer **APPROVE**, clean) — MCP write-gate toggle. `service_factory` now reads persisted
+  `mcp_allow_write` (default off) → 14↔34 tools; `set_mcp_allow_write` persists then BOUNCES the running
+  server (stop old listener + kill sessions BEFORE rebinding the SAME token/port; Windows bind-retry ~5×
+  over 250ms then ephemeral fallback with persist). Separate `mcp_write_consented` gate (stronger "modify"
+  wording, does NOT reuse read consent); write toggle disabled unless server enabled; status line
+  "34 tools (read + write)" vs "14 tools (read-only)". mcp_stdio still 14/34; clippy + pnpm build green.
+  Nits deferred: mock resets allowWrite on disable vs real persists (harness fidelity); P16d should assert
+  the write→off transport-level revoke.
+
+**Current step: P16d — integration test (in-process HTTP MCP client) + live-update demo + claude mcp add
+--transport http docs. This is the P16 AI-gate closer.**
 
 ## P14 — `bonsai-core` crate + standalone `bonsai-mcp` MCP server — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-30)
 

@@ -56,6 +56,15 @@ export interface SettingsPanelProps {
   /** Enabling without prior consent: App shows the MCP consent dialog and only
    *  starts the server (+ records consent) on confirm. */
   onRequestEnableMcp(): void;
+  /** One-time consent for the stronger write grant (P16c), distinct from the
+   *  read `mcpConsented`. */
+  mcpWriteConsented: boolean;
+  /** Flip the write-gate (P16c). Bounces the running server (stop+restart on the
+   *  same token/port) so the 20 mutation tools (de)register. */
+  onSetMcpAllowWrite(allowWrite: boolean): void;
+  /** Turning write ON without prior write-consent: App shows the write-consent
+   *  dialog and only flips the gate (+ records consent) on confirm. */
+  onRequestEnableMcpWrite(): void;
 }
 
 /** Best-effort clipboard copy (harness + native). Silent on failure — the
@@ -147,6 +156,9 @@ export function SettingsPanel({
   mcpConsented,
   onSetMcpEnabled,
   onRequestEnableMcp,
+  mcpWriteConsented,
+  onSetMcpAllowWrite,
+  onRequestEnableMcpWrite,
 }: SettingsPanelProps) {
   if (!open) return null;
 
@@ -172,6 +184,19 @@ export function SettingsPanel({
     }
     if (mcpConsented) onSetMcpEnabled(true);
     else onRequestEnableMcp();
+  };
+
+  // MCP write-gate (P16c): only meaningful while the server runs. Turning ON
+  // without the stronger write consent defers to App's write-consent dialog;
+  // turning OFF flips immediately. Either direction bounces the server.
+  const mcpAllowWrite = mcpStatus?.allowWrite ?? false;
+  const handleMcpWriteToggle = (checked: boolean): void => {
+    if (!checked) {
+      onSetMcpAllowWrite(false);
+      return;
+    }
+    if (mcpWriteConsented) onSetMcpAllowWrite(true);
+    else onRequestEnableMcpWrite();
   };
 
   return (
@@ -331,9 +356,9 @@ export function SettingsPanel({
         <section className="settings-section">
           <h3 className="settings-section-title">AI access (MCP server)</h3>
           <p className="settings-section-desc">
-            Run a local MCP server on 127.0.0.1 so an external AI client (e.g. Claude Code) can read
-            the repositories you have open in Bonsai. Access requires the token below; the server is
-            read-only.
+            Run a local MCP server on 127.0.0.1 so an external AI client (e.g. Claude Code) can work
+            with the repositories you have open in Bonsai. Access requires the token below. The
+            server is read-only unless you allow write access.
           </p>
           <label className="settings-checkbox">
             <input
@@ -344,9 +369,26 @@ export function SettingsPanel({
             <span>Enable MCP server</span>
           </label>
 
+          <label className={`settings-checkbox${mcpEnabled ? '' : ' is-disabled'}`}>
+            <input
+              type="checkbox"
+              checked={mcpAllowWrite}
+              disabled={!mcpEnabled}
+              onChange={(e) => handleMcpWriteToggle(e.target.checked)}
+            />
+            <span>Allow AI to modify repositories</span>
+          </label>
+          {mcpEnabled && (
+            <p className="settings-section-desc">
+              Adds staging, commit, merge, and conflict-resolution tools. Changing this restarts the
+              server and drops any active connection; the client reconnects automatically.
+            </p>
+          )}
+
           {mcpEnabled && mcpStatus !== null ? (
             <p className="settings-ai-status settings-ai-status-ok">
-              Running on port {mcpStatus.port} · {mcpStatus.toolCount} tools (read-only)
+              Running on port {mcpStatus.port} · {mcpStatus.toolCount} tools{' '}
+              {mcpStatus.allowWrite ? '(read + write)' : '(read-only)'}
             </p>
           ) : (
             <p className="settings-ai-status">Stopped.</p>

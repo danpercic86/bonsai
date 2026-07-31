@@ -217,9 +217,15 @@ pub struct Settings {
     /// Embedded MCP write-gate (P16). Default `false`. P16b forces the running
     /// server read-only regardless; P16c wires this to (re)register write tools.
     pub mcp_allow_write: bool,
-    /// One-time consent to expose open repos to an external MCP client (P16).
-    /// Defaults `false`; additive `#[serde(default)]`.
+    /// One-time consent to expose open repos to an external MCP client for
+    /// READING (P16). Defaults `false`; additive `#[serde(default)]`.
     pub mcp_consented: bool,
+    /// One-time consent to let an external MCP client MODIFY open repos (P16c).
+    /// A strictly stronger grant than `mcp_consented` (read) — kept as its own
+    /// flag so enabling write requires its own explicit confirmation and a
+    /// read-only consent never silently implies write. Defaults `false`;
+    /// additive `#[serde(default)]`.
+    pub mcp_write_consented: bool,
     /// Persisted bound port for the embedded MCP server (P16 §8.5, D-4).
     /// `None` until first enable; preferred on later runs (ephemeral fallback).
     pub mcp_port: Option<u16>,
@@ -247,6 +253,7 @@ impl Default for Settings {
             mcp_enabled: false,
             mcp_allow_write: false,
             mcp_consented: false,
+            mcp_write_consented: false,
             mcp_port: None,
             mcp_token: None,
         }

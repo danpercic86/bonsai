@@ -416,8 +416,11 @@ export interface UiSettings {
   aiEnabled: boolean;
   aiConflictAutonomy: AiAutonomy;
   aiConsented: boolean;
-  /** One-time consent to expose open repos to an external MCP client (P16). */
+  /** One-time consent to expose open repos to an external MCP client for
+   *  reading (P16). */
   mcpConsented: boolean;
+  /** One-time consent to let an external MCP client modify open repos (P16c). */
+  mcpWriteConsented: boolean;
 }
 
 export interface UiSettingsPatch {
@@ -432,6 +435,8 @@ export interface UiSettingsPatch {
   aiConsented?: boolean;
   // Embedded MCP server (P16).
   mcpConsented?: boolean;
+  // MCP write consent (P16c).
+  mcpWriteConsented?: boolean;
 }
 
 /** Embedded MCP server status for the Settings panel (P16). Mirrors the Rust
@@ -440,7 +445,7 @@ export interface UiSettingsPatch {
 export interface McpStatus {
   /** Server running? */
   enabled: boolean;
-  /** Write tools registered? (Always `false` in P16b.) */
+  /** Write tools registered? Reflects the running server's live gate (P16c). */
   allowWrite: boolean;
   /** Bound port when running, else `null`. */
   port: number | null;
@@ -658,6 +663,10 @@ export interface IpcApi {
   /** P16. Start/stop the embedded MCP server (read-only in P16b). Returns the
    *  resulting status; also fires `onMcpServerChanged`. */
   setMcpEnabled(enabled: boolean): Promise<McpStatus>;
+  /** P16c. Flip the write-gate; bounces the running server (stop+restart on the
+   *  same token/port) so the 20 mutation tools (de)register and live sessions
+   *  re-negotiate. Returns the resulting status; also fires `onMcpServerChanged`. */
+  setMcpAllowWrite(allowWrite: boolean): Promise<McpStatus>;
   /** P16. Fires on server start/stop/bounce; payload is the new status. */
   onMcpServerChanged(cb: (s: McpStatus) => void): Promise<Unsubscribe>;
 }
