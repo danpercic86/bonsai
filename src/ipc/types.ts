@@ -395,6 +395,17 @@ export interface AiAnalysis {
   costUsd: number | null;
 }
 
+/** Read-only branch/range summary result of aiSummarizeRange (P15c). Mirrors the
+ *  Rust `AiSummary`; summarizing writes nothing. `base`/`target` are echoed for
+ *  the panel header; `commitCount` is the number of commits listed (capped). */
+export interface AiSummary {
+  text: string;
+  base: string;
+  target: string;
+  commitCount: number;
+  costUsd: number | null;
+}
+
 export interface UiSettings {
   theme: Theme;
   paneWidths: PaneWidths;
@@ -608,6 +619,9 @@ export interface IpcApi {
   /** P15b. Explain or review a diff target (read-only prose). Writes nothing.
    *  Rejects aiUnavailable | aiFailed | nothingToCommit | git | invalidName | noRepo. */
   aiAnalyzeDiff(repoId: string, target: AiDiffTarget, mode: AiAnalysisMode): Promise<AiAnalysis>;
+  /** P15c. Summarize commits/diff unique to `target` vs `base` (read-only prose).
+   *  Rejects aiUnavailable | aiFailed | git | noRepo. */
+  aiSummarizeRange(repoId: string, base: string, target: string): Promise<AiSummary>;
   /** Persisted multi-tab session. Never rejects for a missing/corrupt file (empty). */
   getSession(): Promise<SessionState>;
   /** Writes the whole session (tabs change as a unit). Rejects io on save failure. */

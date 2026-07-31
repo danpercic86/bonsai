@@ -50,8 +50,15 @@ first; base auto-select main→master→HEAD→upstream; explain+review = one `a
   `rename="origPath"`; enum `rename_all` doesn't cascade) — locked by a non-vacuous round-trip test.
   Folded reviewer NIT 1 (added `nothingToCommit` to the two doc error lists). Green.
 
-**Current step: P15c — senior-dev implementing (ai_summary.rs + ai_summarize_range command + Sidebar
-branch context-menu action).**
+- **P15c** (reviewer APPROVE-WITH-NITS) — `git/ai_summary.rs` (`summarize_range`, merge-base range
+  `mb..target`, `AI_SUMMARY_MAX_COMMITS=200` + "(+N more)" note, empty-range→AiFailed before CLI) +
+  `ai_summarize_range` command + IPC/mock + Sidebar "Summarize branch…" (base main→master→HEAD→upstream,
+  reuses AiOutputPanel). diff.rs: 3 helpers → pub(crate) (surgical, no behavior change). Green.
+  Reviewer NIT 1 noted for later: checked-out (HEAD) branch has no context menu so can't be
+  summarized — a future graph-commit/HEAD affordance could cover it (contract's optional hook).
+
+**Current step: P15c committed; next = tester (CLI-stub integration suites for a/b/c) then browser-harness
+AI gate.**
 
 ## P16 — Embedded MCP server (Tier 3, shared live workspace) — **pending** (planned)
 

@@ -18,6 +18,7 @@ import {
   RebaseIcon,
   StashApplyIcon,
   StashPopIcon,
+  SummarizeIcon,
 } from './menuIcons';
 import { DiffOverlay } from './DiffOverlay';
 import type { DiffOverlayMeta } from './DiffOverlay';
@@ -820,6 +821,29 @@ export function RepoWorkspace({
     [repoId],
   );
 
+  // P15c: summarize the commits/diff unique to `target` vs `base` and show the
+  // prose in the AiOutputPanel. Read-only — writes nothing. Shares the same
+  // req-id guard as runAnalyze so a slow response can't clobber a newer request
+  // or a closed panel.
+  const runSummarize = useCallback(
+    (base: string, target: string) => {
+      const title = `Summary: ${base} → ${target}`;
+      const id = ++aiPanelReqId.current;
+      setAiPanel({ title, text: null, loading: true, error: null, costUsd: null });
+      ipc.aiSummarizeRange(repoId, base, target).then(
+        (res) => {
+          if (id !== aiPanelReqId.current) return;
+          setAiPanel({ title, text: res.text, loading: false, error: null, costUsd: res.costUsd });
+        },
+        (e: unknown) => {
+          if (id !== aiPanelReqId.current) return;
+          setAiPanel({ title, text: null, loading: false, error: errorMessage(e), costUsd: null });
+        },
+      );
+    },
+    [repoId],
+  );
+
   const closeAiPanel = useCallback(() => {
     aiPanelReqId.current += 1;
     setAiPanel(null);
@@ -1445,6 +1469,29 @@ export function RepoWorkspace({
         },
       },
     ];
+    // P15c: "Summarize branch…" (local branches only, AI-eligible only). Base
+    // selection is a frontend policy (§7.5): the repo's primary branch (main,
+    // else master, else the current HEAD branch) UNLESS the target IS that
+    // primary, in which case the base is the target's upstream. When no usable
+    // base can be resolved (primary missing, or target == primary with no
+    // upstream), the item is omitted.
+    if (kind === 'localBranch' && aiEligible) {
+      const localEntry = entry as BranchInfo;
+      const primary = snapshot.local.some((b) => b.name === 'main')
+        ? 'main'
+        : snapshot.local.some((b) => b.name === 'master')
+          ? 'master'
+          : (headBranch?.name ?? null);
+      const summaryBase = name === primary ? localEntry.upstream : primary;
+      if (summaryBase !== null && summaryBase !== name) {
+        items.push({
+          label: 'Summarize branch…',
+          icon: <SummarizeIcon />,
+          disabled: false,
+          onSelect: () => runSummarize(summaryBase, name),
+        });
+      }
+    }
     if (cur !== null) {
       items.push({
         label: `Merge ${name} into ${cur}`,

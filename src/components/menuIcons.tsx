@@ -105,6 +105,16 @@ export function DeleteIcon() {
   );
 }
 
+/** Summarize (P15c) — a four-point sparkle (AI affordance, matches the ✨
+ *  glyph used elsewhere for AI actions). */
+export function SummarizeIcon() {
+  return (
+    <svg {...svgProps}>
+      <path d="M8 2 L9.2 6.8 L14 8 L9.2 9.2 L8 14 L6.8 9.2 L2 8 L6.8 6.8 Z" />
+    </svg>
+  );
+}
+
 /** Stash Apply — the drawer/tray (echoes draw.ts drawStashIcon) with a down
  *  arrow going into the worktree. */
 export function StashApplyIcon() {

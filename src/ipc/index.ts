@@ -13,6 +13,7 @@ export type {
   AiAvailability,
   AiDiffTarget,
   AiResolveProposal,
+  AiSummary,
   AppError,
   ApplyStashOutcome,
   AutoFetchSettings,

@@ -8,6 +8,7 @@ import type {
   AiDiffTarget,
   AiAvailability,
   AiResolveProposal,
+  AiSummary,
   ApplyStashOutcome,
   BranchesSnapshot,
   CommitDiff,
@@ -205,6 +206,11 @@ export const tauriIpc: IpcApi = {
     mode: AiAnalysisMode,
   ): Promise<AiAnalysis> {
     return invoke<AiAnalysis>('ai_analyze_diff', { repoId, target, mode });
+  },
+
+  // P15c: summarize the commits/diff unique to `target` vs `base` (read-only prose).
+  aiSummarizeRange(repoId: string, base: string, target: string): Promise<AiSummary> {
+    return invoke<AiSummary>('ai_summarize_range', { repoId, base, target });
   },
 
   rebaseBranch(repoId: string, onto: string): Promise<RebaseOutcome> {

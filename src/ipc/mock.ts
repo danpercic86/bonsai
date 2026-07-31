@@ -20,6 +20,7 @@ import type {
   AiAvailability,
   AiDiffTarget,
   AiResolveProposal,
+  AiSummary,
   AppError,
   ApplyStashOutcome,
   BranchesSnapshot,
@@ -1509,6 +1510,33 @@ export const mockIpc: IpcApi = {
           'and a matching ai_summarize_range command that gathers base..target ' +
           'commits plus a diffstat and calls the local Claude CLI.';
     return { text, costUsd: 0.006 };
+  },
+
+  // P15c: summarize the commits/diff unique to `target` vs `base` (read-only
+  // prose). Writes NOTHING. Does NOT enforce the consent gate (matches
+  // aiAnalyzeDiff; the frontend gates the affordance). `?ai=off` simulates a
+  // missing CLI; else a canned summary echoing base/target.
+  async aiSummarizeRange(repoId: string, base: string, target: string): Promise<AiSummary> {
+    await delay(500);
+    requireRepo(repoId);
+    if (AI_OFF) {
+      const err: AppError = {
+        kind: 'aiFailed',
+        message: 'Claude Code CLI not found on PATH',
+      };
+      throw err;
+    }
+    return {
+      text:
+        'This branch introduces the P15 in-app AI features: commit-message ' +
+        'generation, explain/review of diffs, and branch/range summaries — three ' +
+        'thin consumers of the existing run_claude primitive. No new settings or ' +
+        'process code; all read-only.',
+      base,
+      target,
+      commitCount: 3,
+      costUsd: 0.008,
+    };
   },
 
   // Stateful rebase mock (P3d contract §7.2). A repo seeded with a rebase starts

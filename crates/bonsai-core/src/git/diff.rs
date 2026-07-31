@@ -162,7 +162,7 @@ fn map_status(delta: git2::Delta) -> FileStatus {
 
 /// §2.3: fixed diff options (context 3; untracked content included — harmless
 /// for tree-to-tree) restricted to `paths` when non-empty.
-fn build_diff_options(paths: &[&str]) -> git2::DiffOptions {
+pub(crate) fn build_diff_options(paths: &[&str]) -> git2::DiffOptions {
     let mut opts = git2::DiffOptions::new();
     opts.context_lines(3)
         .include_untracked(true)
@@ -182,7 +182,7 @@ fn build_diff_options(paths: &[&str]) -> git2::DiffOptions {
 
 /// Rename detection (renames only, no copies), applied AFTER the pathspec
 /// restriction so old+new rename sides pair into one delta.
-fn apply_find_similar(diff: &mut git2::Diff) -> Result<(), AppError> {
+pub(crate) fn apply_find_similar(diff: &mut git2::Diff) -> Result<(), AppError> {
     let mut find = git2::DiffFindOptions::new();
     find.renames(true);
     diff.find_similar(Some(&mut find))?;
@@ -351,7 +351,7 @@ fn collect_file_diff(diff: &git2::Diff) -> Result<Option<FileDiff>, AppError> {
 
 /// Header collection over an UNRESTRICTED diff: counts only, no content
 /// strings, no line budget (§2.3).
-fn collect_headers(diff: &git2::Diff) -> Result<Vec<FileDiffHeader>, AppError> {
+pub(crate) fn collect_headers(diff: &git2::Diff) -> Result<Vec<FileDiffHeader>, AppError> {
     let files: RefCell<Vec<FileDiffHeader>> = RefCell::new(Vec::new());
 
     let mut file_cb = |delta: git2::DiffDelta, _progress: f32| -> bool {
