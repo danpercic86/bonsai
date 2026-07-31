@@ -105,6 +105,16 @@ export function DeleteIcon() {
   );
 }
 
+/** Create tag here (P22) — a luggage/price tag with a punch hole. */
+export function TagIcon() {
+  return (
+    <svg {...svgProps}>
+      <path d="M7.5 2.5 H12 a1.5 1.5 0 0 1 1.5 1.5 V8.5 L8 14 L2 8 Z" />
+      <circle cx="10.5" cy="5.5" r="1" />
+    </svg>
+  );
+}
+
 /** Summarize (P15c) — a four-point sparkle (AI affordance, matches the ✨
  *  glyph used elsewhere for AI actions). */
 export function SummarizeIcon() {

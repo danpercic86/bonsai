@@ -34,6 +34,7 @@ import type {
   PushResult,
   RebaseOutcome,
   RecentRepo,
+  RemoteInfo,
   RepoChangedPayload,
   RepoOpState,
   ResetMode,
@@ -354,6 +355,46 @@ export const tauriIpc: IpcApi = {
 
   syncSubmodule(repoId: string, name: string): Promise<void> {
     return invoke<void>('sync_submodule', { repoId, name });
+  },
+
+  // P22: tags.
+  createTag(
+    repoId: string,
+    name: string,
+    targetOid: string,
+    message: string | null,
+    force: boolean,
+  ): Promise<void> {
+    return invoke<void>('create_tag', { repoId, name, targetOid, message, force });
+  },
+
+  deleteTag(repoId: string, name: string): Promise<void> {
+    return invoke<void>('delete_tag', { repoId, name });
+  },
+
+  pushTag(repoId: string, remote: string, tagName: string, force: boolean): Promise<void> {
+    return invoke<void>('push_tag', { repoId, remote, tagName, force });
+  },
+
+  // P22: remotes.
+  listRemotes(repoId: string): Promise<RemoteInfo[]> {
+    return invoke<RemoteInfo[]>('list_remotes', { repoId });
+  },
+
+  addRemote(repoId: string, name: string, url: string): Promise<void> {
+    return invoke<void>('add_remote', { repoId, name, url });
+  },
+
+  removeRemote(repoId: string, name: string): Promise<void> {
+    return invoke<void>('remove_remote', { repoId, name });
+  },
+
+  renameRemote(repoId: string, name: string, newName: string): Promise<void> {
+    return invoke<void>('rename_remote', { repoId, name, newName });
+  },
+
+  setRemoteUrl(repoId: string, name: string, url: string): Promise<void> {
+    return invoke<void>('set_remote_url', { repoId, name, url });
   },
 
   getRecentRepos(): Promise<RecentRepo[]> {

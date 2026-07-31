@@ -55,6 +55,7 @@ export type {
   RefLabel,
   PaneWidths,
   RemoteBranchInfo,
+  RemoteInfo,
   RepoChangedPayload,
   RepoInfo,
   RepoOpState,

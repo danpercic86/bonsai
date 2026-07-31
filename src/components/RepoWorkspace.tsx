@@ -6,6 +6,8 @@ import { CommitPanel } from './CommitPanel';
 import { ComparePanel } from './ComparePanel';
 import { ConfirmDialog } from './ConfirmDialog';
 import { PromptDialog } from './PromptDialog';
+import { TagCreateDialog } from './TagCreateDialog';
+import { RemoteEditDialog } from './RemoteEditDialog';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
 import {
@@ -19,6 +21,7 @@ import {
   StashApplyIcon,
   StashPopIcon,
   SummarizeIcon,
+  TagIcon,
 } from './menuIcons';
 import { DiffOverlay } from './DiffOverlay';
 import type { DiffOverlayMeta } from './DiffOverlay';
@@ -53,6 +56,7 @@ import type {
   LineSelection,
   ListView,
   PaneWidths,
+  RemoteInfo,
   RepoInfo,
   RepoOpState,
   ResetMode,
@@ -163,6 +167,9 @@ export function RepoWorkspace({
 
   const [submodules, setSubmodules] = useState<SubmoduleInfo[]>([]);
 
+  // P22 §7.1: configured remotes (name + fetch URL), refetched alongside branches.
+  const [remotes, setRemotes] = useState<RemoteInfo[]>([]);
+
   const [remoteOp, setRemoteOp] = useState<'fetch' | 'pull' | 'push' | null>(null);
 
   const [opState, setOpState] = useState<RepoOpState>({ kind: 'none' });
@@ -200,13 +207,26 @@ export function RepoWorkspace({
   const [amendMessage, setAmendMessage] = useState<string | null>(null);
   // P11 §1.4: "Create branch here" target commit → drives the PromptDialog.
   const [pendingCreateBranch, setPendingCreateBranch] = useState<{ oid: string } | null>(null);
+  // P22 §7.1: tag + remote management dialog state.
+  const [pendingCreateTag, setPendingCreateTag] = useState<{ oid: string } | null>(null);
+  const [pendingDeleteTag, setPendingDeleteTag] = useState<string | null>(null);
+  const [pendingAddRemote, setPendingAddRemote] = useState<boolean>(false);
+  const [pendingRenameRemote, setPendingRenameRemote] = useState<{ name: string } | null>(null);
+  const [pendingEditUrl, setPendingEditUrl] = useState<{ name: string; url: string } | null>(null);
+  const [pendingRemoveRemote, setPendingRemoveRemote] = useState<string | null>(null);
   const dialogOpen =
     pendingDeleteBranch !== null ||
     pendingDeleteRemote !== null ||
     pendingDropStash !== null ||
     pendingReset !== null ||
     pendingDiscard !== null ||
-    pendingCreateBranch !== null;
+    pendingCreateBranch !== null ||
+    pendingCreateTag !== null ||
+    pendingDeleteTag !== null ||
+    pendingAddRemote ||
+    pendingRenameRemote !== null ||
+    pendingEditUrl !== null ||
+    pendingRemoveRemote !== null;
 
   const [graph, setGraph] = useState<GraphLayout | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
@@ -252,6 +272,7 @@ export function RepoWorkspace({
   const branchesReqId = useRef(0);
   const stashesReqId = useRef(0);
   const submodulesReqId = useRef(0);
+  const remotesReqId = useRef(0);
   const commitDiffReqId = useRef(0);
   const fileDiffReqId = useRef(0);
   const opStateReqId = useRef(0);
@@ -593,6 +614,23 @@ export function RepoWorkspace({
     setSubmodules([]);
   }, []);
 
+  const refetchRemotes = useCallback(async () => {
+    const id = ++remotesReqId.current;
+    try {
+      const list = await ipc.listRemotes(repoId);
+      if (id !== remotesReqId.current) return;
+      setRemotes(list);
+    } catch {
+      if (id !== remotesReqId.current) return;
+      // Non-fatal: remotes are a secondary surface; keep the last-known list.
+    }
+  }, [repoId]);
+
+  const clearRemotes = useCallback(() => {
+    remotesReqId.current += 1;
+    setRemotes([]);
+  }, []);
+
   const clearGraph = useCallback(() => {
     graphReqId.current += 1;
     setGraph(null);
@@ -615,6 +653,7 @@ export function RepoWorkspace({
           refetchBranches(),
           refetchStashes(),
           refetchSubmodules(),
+          refetchRemotes(),
           refetchOpState(),
           refetchCompare(),
         ]);
@@ -624,6 +663,7 @@ export function RepoWorkspace({
         clearBranches();
         clearStashes();
         clearSubmodules();
+        clearRemotes();
         clearOpState();
         clearCompare();
       }
@@ -637,6 +677,7 @@ export function RepoWorkspace({
     refetchBranches,
     refetchStashes,
     refetchSubmodules,
+    refetchRemotes,
     refetchOpState,
     refetchCompare,
     clearStatus,
@@ -644,6 +685,7 @@ export function RepoWorkspace({
     clearBranches,
     clearStashes,
     clearSubmodules,
+    clearRemotes,
     clearOpState,
     clearCompare,
     pushToast,
@@ -660,6 +702,7 @@ export function RepoWorkspace({
     void refetchBranches();
     void refetchStashes();
     void refetchSubmodules();
+    void refetchRemotes();
     void refetchOpState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -736,6 +779,7 @@ export function RepoWorkspace({
         void refetchBranches();
         void refetchStashes();
         void refetchSubmodules();
+        void refetchRemotes();
         void refetchOpState();
         void refetchCompare();
       });
@@ -757,6 +801,7 @@ export function RepoWorkspace({
     refetchBranches,
     refetchStashes,
     refetchSubmodules,
+    refetchRemotes,
     refetchOpState,
     refetchCompare,
   ]);
@@ -774,6 +819,7 @@ export function RepoWorkspace({
         void refetchBranches();
         void refetchStashes();
         void refetchSubmodules();
+        void refetchRemotes();
         void refetchOpState();
         void refetchCompare();
       });
@@ -795,6 +841,7 @@ export function RepoWorkspace({
     refetchBranches,
     refetchStashes,
     refetchSubmodules,
+    refetchRemotes,
     refetchOpState,
     refetchCompare,
   ]);
@@ -1530,6 +1577,100 @@ export function RepoWorkspace({
     }
   }
 
+  // ----- P22: tag + remote management -----
+  // Create create/delete refetch branches (tag list, §2.0) + graph (pill).
+  async function handleCreateTag(oid: string, name: string, message: string | null) {
+    setMutating(true);
+    try {
+      await ipc.createTag(repoId, name, oid, message, /* force */ false);
+      pushToast('success', `Created tag ${name}`);
+      await Promise.all([refetchBranches(), refetchGraph()]);
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleDeleteTag(name: string) {
+    setMutating(true);
+    try {
+      await ipc.deleteTag(repoId, name);
+      pushToast('success', `Deleted tag ${name}`);
+      await Promise.all([refetchBranches(), refetchGraph()]);
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handlePushTag(remote: string, name: string) {
+    setMutating(true);
+    try {
+      await ipc.pushTag(repoId, remote, name, /* force */ false);
+      pushToast('success', `Pushed tag ${name} → ${remote}`);
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  // Add/remove/rename move remote-tracking refs (and thus graph pills), so those
+  // refetch remotes + branches + graph; set-url changes only the RemoteInfo list.
+  async function handleAddRemote(name: string, url: string) {
+    setMutating(true);
+    try {
+      await ipc.addRemote(repoId, name, url);
+      pushToast('success', `Added remote ${name}`);
+      await Promise.all([refetchRemotes(), refetchBranches(), refetchGraph()]);
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleRemoveRemote(name: string) {
+    setMutating(true);
+    try {
+      await ipc.removeRemote(repoId, name);
+      pushToast('success', `Removed remote ${name}`);
+      await Promise.all([refetchRemotes(), refetchBranches(), refetchGraph()]);
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleRenameRemote(name: string, newName: string) {
+    setMutating(true);
+    try {
+      await ipc.renameRemote(repoId, name, newName);
+      pushToast('success', `Renamed remote ${name} → ${newName}`);
+      await Promise.all([refetchRemotes(), refetchBranches(), refetchGraph()]);
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleSetRemoteUrl(name: string, url: string) {
+    setMutating(true);
+    try {
+      await ipc.setRemoteUrl(repoId, name, url);
+      pushToast('success', `Updated URL for ${name}`);
+      await refetchRemotes();
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
   // ----- P3d: rebase handling -----
   async function handleRebaseBranch(onto: string) {
     setMutating(true);
@@ -1963,6 +2104,77 @@ export function RepoWorkspace({
     setMenu({ x: clientX, y: clientY, items: submoduleMenuItems(sub) });
   }
 
+  // P22 §7.2: the shared tag menu — used by the graph tag pill AND the sidebar
+  // tag rows. Delete (ConfirmDialog) + Copy + one "Push tag to <remote>" per
+  // configured remote (§OPEN-7: 0 → no push item; 1 → single; >1 → one each).
+  function tagMenuItems(name: string): ContextMenuItem[] {
+    const gate = mutating || opActive;
+    const items: ContextMenuItem[] = [
+      {
+        label: 'Delete tag',
+        icon: <DeleteIcon />,
+        disabled: gate,
+        onSelect: () => setPendingDeleteTag(name),
+      },
+      {
+        label: 'Copy tag name',
+        icon: <CopyIcon />,
+        disabled: false,
+        onSelect: () => {
+          const p =
+            navigator.clipboard?.writeText(name) ??
+            Promise.reject(new Error('Clipboard unavailable'));
+          void p
+            .then(() => pushToast('success', 'Copied tag name'))
+            .catch((e) => pushToast('error', `Copy failed: ${errorMessage(e)}`));
+        },
+      },
+    ];
+    for (const r of remotes) {
+      items.push({
+        label: `Push tag to ${r.name}`,
+        icon: <TagIcon />,
+        disabled: gate,
+        onSelect: () => void handlePushTag(r.name, name),
+      });
+    }
+    return items;
+  }
+
+  // P22 §7.2: the configured-remote management menu (sidebar rows only).
+  function remoteMenuItems(name: string): ContextMenuItem[] {
+    const gate = mutating || opActive;
+    const url = remotes.find((r) => r.name === name)?.url ?? '';
+    return [
+      {
+        label: 'Rename…',
+        icon: <BranchIcon />,
+        disabled: gate,
+        onSelect: () => setPendingRenameRemote({ name }),
+      },
+      {
+        label: 'Edit URL…',
+        icon: <CompareIcon />,
+        disabled: gate,
+        onSelect: () => setPendingEditUrl({ name, url }),
+      },
+      {
+        label: 'Remove…',
+        icon: <DeleteIcon />,
+        disabled: gate,
+        onSelect: () => setPendingRemoveRemote(name),
+      },
+    ];
+  }
+
+  function handleTagContextMenu(name: string, clientX: number, clientY: number) {
+    setMenu({ x: clientX, y: clientY, items: tagMenuItems(name) });
+  }
+
+  function handleRemoteContextMenu(name: string, clientX: number, clientY: number) {
+    setMenu({ x: clientX, y: clientY, items: remoteMenuItems(name) });
+  }
+
   // P5 §5.2 / P6 §4.2: the commit-row menu — "Create branch here" + "Compare
   // with HEAD" (both read-only entry points; unavailable when HEAD is unborn,
   // §1.3). Factored out (P18b) so the whole-row ref fallback can reuse it.
@@ -1997,6 +2209,12 @@ export function RepoWorkspace({
         icon: <BranchIcon />,
         disabled: gate,
         onSelect: () => setPendingCreateBranch({ oid }),
+      },
+      {
+        label: 'Create tag here',
+        icon: <TagIcon />,
+        disabled: gate,
+        onSelect: () => setPendingCreateTag({ oid }),
       },
       {
         label: 'Compare with HEAD',
@@ -2040,7 +2258,9 @@ export function RepoWorkspace({
         if (m === null) return []; // malformed name → no menu (defensive)
         return stashMenuItems(Number(m[1]));
       }
-      if (r.kind === 'tag' || r.kind === 'head') return [];
+      if (r.kind === 'head') return [];
+      // P22 §7.2: the graph tag pill opens the same menu as the sidebar tag row.
+      if (r.kind === 'tag') return tagMenuItems(r.name);
       const kind = r.kind === 'remoteBranch' ? 'remoteBranch' : 'localBranch';
       const items = branchMenuItems(r.name, kind);
       if (items.length > 0) return items;
@@ -2312,6 +2532,10 @@ export function RepoWorkspace({
           onStashContextMenu={handleStashContextMenu}
           submodules={submodules}
           onSubmoduleContextMenu={handleSubmoduleContextMenu}
+          onTagContextMenu={handleTagContextMenu}
+          remotes={remotes}
+          onRemoteContextMenu={handleRemoteContextMenu}
+          onAddRemote={() => setPendingAddRemote(true)}
         />
         <PaneDivider side="sidebar" onResize={onSidebarResize} onResizeEnd={onPaneResizeEnd} />
         <main className="graph-pane">
@@ -2696,6 +2920,116 @@ export function RepoWorkspace({
         onSubmit={(v) => void handleCreateBranchHere(pendingCreateBranch!.oid, v.trim())}
         onCancel={() => setPendingCreateBranch(null)}
       />
+
+      {/* P22: create tag at the right-clicked commit. */}
+      <TagCreateDialog
+        open={pendingCreateTag !== null}
+        targetOid={pendingCreateTag?.oid ?? ''}
+        busy={mutating}
+        existingTags={branches?.tags ?? []}
+        onSubmit={(name, message) => {
+          const oid = pendingCreateTag?.oid ?? null;
+          setPendingCreateTag(null);
+          if (oid !== null) void handleCreateTag(oid, name, message);
+        }}
+        onCancel={() => setPendingCreateTag(null)}
+      />
+
+      {/* P22: delete tag (local only). */}
+      <ConfirmDialog
+        open={pendingDeleteTag !== null}
+        title="Delete tag"
+        confirmLabel="Delete tag"
+        busy={mutating}
+        onConfirm={() => {
+          const name = pendingDeleteTag;
+          setPendingDeleteTag(null);
+          if (name !== null) void handleDeleteTag(name);
+        }}
+        onCancel={() => setPendingDeleteTag(null)}
+      >
+        <div>Delete tag "<span className="mono">{pendingDeleteTag ?? ''}</span>"?</div>
+        <div className="dialog-body-note">
+          Deletes the local tag only; a tag already pushed to a remote is not removed there.
+        </div>
+      </ConfirmDialog>
+
+      {/* P22: add a new remote (name + url both editable). */}
+      <RemoteEditDialog
+        open={pendingAddRemote}
+        title="Add remote"
+        confirmLabel="Add remote"
+        busy={mutating}
+        existingNames={remotes.map((r) => r.name)}
+        onSubmit={(name, url) => {
+          setPendingAddRemote(false);
+          void handleAddRemote(name, url);
+        }}
+        onCancel={() => setPendingAddRemote(false)}
+      />
+
+      {/* P22: edit an existing remote's fetch URL (name read-only). */}
+      <RemoteEditDialog
+        open={pendingEditUrl !== null}
+        title="Edit remote URL"
+        confirmLabel="Save URL"
+        busy={mutating}
+        nameReadOnly
+        initialName={pendingEditUrl?.name}
+        initialUrl={pendingEditUrl?.url}
+        existingNames={remotes.map((r) => r.name)}
+        onSubmit={(_name, url) => {
+          const target = pendingEditUrl;
+          setPendingEditUrl(null);
+          if (target !== null) void handleSetRemoteUrl(target.name, url);
+        }}
+        onCancel={() => setPendingEditUrl(null)}
+      />
+
+      {/* P22: rename a remote (single-field → reuse PromptDialog). */}
+      <PromptDialog
+        open={pendingRenameRemote !== null}
+        title="Rename remote"
+        label="New remote name"
+        placeholder="origin"
+        initialValue={pendingRenameRemote?.name}
+        confirmLabel="Rename"
+        busy={mutating}
+        validate={(v) => {
+          const t = v.trim();
+          if (t === '') return 'Enter a remote name';
+          if (/\s/.test(t)) return 'Remote name cannot contain whitespace';
+          if (t !== pendingRenameRemote?.name && remotes.some((r) => r.name === t))
+            return 'A remote with that name already exists';
+          return null;
+        }}
+        onSubmit={(v) => {
+          const target = pendingRenameRemote;
+          setPendingRenameRemote(null);
+          if (target !== null) void handleRenameRemote(target.name, v.trim());
+        }}
+        onCancel={() => setPendingRenameRemote(null)}
+      />
+
+      {/* P22: remove a remote (drops its tracking refs locally). */}
+      <ConfirmDialog
+        open={pendingRemoveRemote !== null}
+        title="Remove remote"
+        confirmLabel="Remove remote"
+        busy={mutating}
+        onConfirm={() => {
+          const name = pendingRemoveRemote;
+          setPendingRemoveRemote(null);
+          if (name !== null) void handleRemoveRemote(name);
+        }}
+        onCancel={() => setPendingRemoveRemote(null)}
+      >
+        <div>Remove remote "<span className="mono">{pendingRemoveRemote ?? ''}</span>"?</div>
+        <div className="dialog-body-note">
+          Removes the remote and its remote-tracking branches from this repo. The server is not
+          affected.
+        </div>
+      </ConfirmDialog>
 
       {menu !== null && (
         <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={closeMenu} />

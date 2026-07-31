@@ -4,6 +4,7 @@ import type {
   BranchInfo,
   BranchesSnapshot,
   ListView,
+  RemoteInfo,
   StashEntry,
   SubmoduleInfo,
   SubmoduleStatus,
@@ -65,6 +66,15 @@ export interface SidebarProps {
   submodules: SubmoduleInfo[];
   /** Right-click a submodule row → open the shared context menu at the cursor. */
   onSubmoduleContextMenu(name: string, clientX: number, clientY: number): void;
+  /** P22 §6.1: right-click a tag row → open the shared context menu. */
+  onTagContextMenu(name: string, clientX: number, clientY: number): void;
+  /** P22 §6.2: configured remotes (name + fetch URL), rendered above the
+   *  remote-tracking-branch tree. */
+  remotes: RemoteInfo[];
+  /** Right-click a configured-remote row → open the shared context menu. */
+  onRemoteContextMenu(name: string, clientX: number, clientY: number): void;
+  /** "Add remote" header action → opens the RemoteEditDialog. */
+  onAddRemote(): void;
 }
 
 function SectionHeader({
@@ -179,13 +189,58 @@ function RemoteRow({
   );
 }
 
-function TagRow({ name, displayName }: { name: string; displayName?: string }) {
+function TagRow({
+  name,
+  displayName,
+  onContextMenu,
+}: {
+  name: string;
+  displayName?: string;
+  onContextMenu(name: string, clientX: number, clientY: number): void;
+}) {
   return (
-    <li className="branch-row branch-row-readonly">
+    <li
+      className="branch-row branch-row-readonly"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu(name, e.clientX, e.clientY);
+      }}
+    >
       <span className="branch-glyph">{'#'}</span>
       <span className="branch-name branch-name-muted" title={name}>
         {displayName ?? name}
       </span>
+    </li>
+  );
+}
+
+/** P22 §6.2: a configured-remote row (name + fetch URL), distinct from the
+ *  remote-tracking-branch rows. Right-click opens the manage menu. */
+function ConfiguredRemoteRow({
+  remote,
+  onContextMenu,
+}: {
+  remote: RemoteInfo;
+  onContextMenu(name: string, clientX: number, clientY: number): void;
+}) {
+  return (
+    <li
+      className="branch-row"
+      title={remote.url ?? ''}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu(remote.name, e.clientX, e.clientY);
+      }}
+    >
+      <span className="branch-glyph">{'☁'}</span>
+      <span className="branch-name" title={remote.name}>
+        {remote.name}
+      </span>
+      {remote.url !== null && (
+        <span className="branch-name branch-name-muted remote-url" title={remote.url}>
+          {remote.url}
+        </span>
+      )}
     </li>
   );
 }
@@ -290,6 +345,10 @@ export function Sidebar({
   onStashContextMenu,
   submodules,
   onSubmoduleContextMenu,
+  onTagContextMenu,
+  remotes,
+  onRemoteContextMenu,
+  onAddRemote,
 }: SidebarProps) {
   const [branchesCollapsed, setBranchesCollapsed] = useState(false);
   const [remotesCollapsed, setRemotesCollapsed] = useState(false);
@@ -480,31 +539,65 @@ export function Sidebar({
               label="Remotes"
               collapsed={remotesCollapsed}
               onToggle={() => setRemotesCollapsed((c) => !c)}
+              extra={
+                <button
+                  type="button"
+                  className="sidebar-add"
+                  aria-label="Add remote"
+                  title="Add remote"
+                  disabled={actionsDisabled}
+                  onClick={() => {
+                    setRemotesCollapsed(false);
+                    onAddRemote();
+                  }}
+                >
+                  {'+'}
+                </button>
+              }
             />
-            {!remotesCollapsed &&
-              (data.remote.length === 0 ? (
-                <p className="branch-muted">No remotes</p>
-              ) : treeMode ? (
-                <Tree
-                  nodes={remoteTree}
-                  leafKey={(l) => l.item.name}
-                  defaultCollapsed
-                  initiallyExpanded={[]}
-                  renderLeaf={(l) => (
-                    <RemoteRow
-                      name={l.item.name}
-                      displayName={l.name}
-                      onContextMenu={onContextMenu}
+            {!remotesCollapsed && (
+              <>
+                {/* P22 §6.2: configured remotes on top (each right-clickable for
+                    Rename / Edit URL / Remove), independent of tracking refs. */}
+                {remotes.length > 0 && (
+                  <ul className="branch-list">
+                    {remotes.map((r) => (
+                      <ConfiguredRemoteRow
+                        key={r.name}
+                        remote={r}
+                        onContextMenu={onRemoteContextMenu}
+                      />
+                    ))}
+                  </ul>
+                )}
+                {/* Existing remote-tracking-branch tree, unchanged. */}
+                {data.remote.length > 0 &&
+                  (treeMode ? (
+                    <Tree
+                      nodes={remoteTree}
+                      leafKey={(l) => l.item.name}
+                      defaultCollapsed
+                      initiallyExpanded={[]}
+                      renderLeaf={(l) => (
+                        <RemoteRow
+                          name={l.item.name}
+                          displayName={l.name}
+                          onContextMenu={onContextMenu}
+                        />
+                      )}
                     />
-                  )}
-                />
-              ) : (
-                <ul className="branch-list">
-                  {data.remote.map((r) => (
-                    <RemoteRow key={r.name} name={r.name} onContextMenu={onContextMenu} />
+                  ) : (
+                    <ul className="branch-list">
+                      {data.remote.map((r) => (
+                        <RemoteRow key={r.name} name={r.name} onContextMenu={onContextMenu} />
+                      ))}
+                    </ul>
                   ))}
-                </ul>
-              ))}
+                {remotes.length === 0 && data.remote.length === 0 && (
+                  <p className="branch-muted">No remotes</p>
+                )}
+              </>
+            )}
           </section>
 
           <section className="sidebar-section">
@@ -522,12 +615,14 @@ export function Sidebar({
                   leafKey={(l) => l.item}
                   defaultCollapsed
                   initiallyExpanded={[]}
-                  renderLeaf={(l) => <TagRow name={l.item} displayName={l.name} />}
+                  renderLeaf={(l) => (
+                    <TagRow name={l.item} displayName={l.name} onContextMenu={onTagContextMenu} />
+                  )}
                 />
               ) : (
                 <ul className="branch-list">
                   {data.tags.map((tag) => (
-                    <TagRow key={tag} name={tag} />
+                    <TagRow key={tag} name={tag} onContextMenu={onTagContextMenu} />
                   ))}
                 </ul>
               ))}

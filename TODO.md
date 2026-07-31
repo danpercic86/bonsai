@@ -204,7 +204,21 @@ prompt) + auth-fail inline error; init → unborn tab → first commit; idempote
   chain untouched. 5 commands + lib.rs. remote_mgmt_cli 5 (parity vs git remote -v/get-url/show-ref
   incl. rename moves tracking refs + all error paths) + 2 unit + noRepo. clippy + build clean.
 
-**Current step: P22c — implementing IPC triple + frontend for tags & remotes (senior-dev).**
+- **P22c** (reviewer APPROVE, 0 must-fix) — IPC triple (8 methods, wire parity exact incl. push_tag
+  remote/tagName; RemoteInfo url string|null) + index; stateful mock (createTag/deleteTag mutate
+  branches.tags, pushTag no-op + ?remote= error triggers, remotes list add/remove/rename/set-url mutate
+  + tracking-ref adjust, dup/missing throw). New TagCreateDialog (name + lightweight/annotated toggle →
+  message textarea) + RemoteEditDialog (name+url; nameReadOnly for Edit-URL); Rename reuses PromptDialog.
+  Sidebar: tag-row menu + configured-remote rows (top) + Add-remote (+); RepoWorkspace tagMenuItems
+  (Delete confirm / Copy / Push-per-remote) reachable from graph pill + sidebar, remoteMenuItems
+  (Rename/Edit-URL/Remove), "Create tag here" in commitMenuItems, remotes state + remotesReqId guard +
+  refetch in all batches. Both new files byte-clean (regex-corruption self-fixed). pnpm build clean.
+- **P22 AI GATE (frontend) verified (2026-07-31).** Browser harness (mock :1420): commit-row "Create tag
+  here" → dialog toggles message textarea on Annotated; Tags section lists tags, tag menu = Delete/Copy/
+  Push tag to origin; Remotes section shows origin+url + Add(+); Add-remote dialog → new upstream remote
+  appears; zero console errors. Backend AI gate = tags_cli 8 + remote_mgmt_cli 5.
+
+**Current step: P22 — committing P22c, then tester full regression + user checklist.**
 
 ### P22 — Tags & remotes management — **queued** (contract ready)
 Contract: docs/contracts/P22-tags-remotes.md (architect). Open decisions RESOLVED (orchestrator accepted

@@ -2511,6 +2511,39 @@ span.file-row-main {
   overflow-wrap: anywhere;
 }
 
+/* P22: TagCreateDialog / RemoteEditDialog — multi-field forms reuse
+   .dialog-label / .dialog-input, plus a checkbox row + a textarea variant. */
+.dialog-body > .dialog-label + .dialog-label,
+.dialog-body > .dialog-label + .dialog-checkbox-label,
+.dialog-body > .dialog-checkbox-label + .dialog-label {
+  margin-top: 12px;
+}
+
+.dialog-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.dialog-textarea {
+  height: auto;
+  padding: 8px 10px;
+  resize: vertical;
+  line-height: 1.4;
+}
+
+/* P22: configured-remote row — the fetch URL shown small + truncated. */
+.branch-name.remote-url {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+}
+
 /* P21: CloneDialog — destination row + determinate progress region. */
 .clone-dest-row {
   display: flex;

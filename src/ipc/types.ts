@@ -218,6 +218,14 @@ export interface RemoteBranchInfo {
   tip: string;
 }
 
+/** One configured remote (P22 §3.1). Mirrors the Rust `RemoteInfo` (camelCase). */
+export interface RemoteInfo {
+  /** Remote name, e.g. "origin". */
+  name: string;
+  /** Fetch URL; null if unreadable/non-UTF-8. */
+  url: string | null;
+}
+
 export interface BranchesSnapshot {
   /** Sorted case-insensitively by name. */
   local: BranchInfo[];
@@ -744,6 +752,33 @@ export interface IpcApi {
   updateSubmodule(repoId: string, name: string): Promise<void>;
   /** Copy the .gitmodules URL into config + the submodule remote. Rejects noRepo | invalidName | git. */
   syncSubmodule(repoId: string, name: string): Promise<void>;
+  // --- P22: tags ---
+  /** Create a tag at `targetOid`. `message` non-null ⇒ annotated (needs git identity),
+   *  null ⇒ lightweight. `force` overwrites (v1 UI passes false). Rejects
+   *  noRepo | invalidName | configMissing | git. */
+  createTag(
+    repoId: string,
+    name: string,
+    targetOid: string,
+    message: string | null,
+    force: boolean,
+  ): Promise<void>;
+  /** Delete a LOCAL tag (does not touch any remote). Rejects noRepo | invalidName | git. */
+  deleteTag(repoId: string, name: string): Promise<void>;
+  /** Push refs/tags/<tagName> to `remote`. `force` false in v1. Rejects
+   *  noRepo | noRemote | authFailed | networkError | pushRejected | git. */
+  pushTag(repoId: string, remote: string, tagName: string, force: boolean): Promise<void>;
+  // --- P22: remotes ---
+  /** Configured remotes (name + fetch URL). Rejects noRepo | git. */
+  listRemotes(repoId: string): Promise<RemoteInfo[]>;
+  /** Add a remote. Rejects noRepo | invalidName | git. */
+  addRemote(repoId: string, name: string, url: string): Promise<void>;
+  /** Remove a remote (drops its tracking refs). Rejects noRepo | noRemote | git. */
+  removeRemote(repoId: string, name: string): Promise<void>;
+  /** Rename a remote. Rejects noRepo | noRemote | invalidName | git. */
+  renameRemote(repoId: string, name: string, newName: string): Promise<void>;
+  /** Set a remote's fetch URL. Rejects noRepo | noRemote | git. */
+  setRemoteUrl(repoId: string, name: string, url: string): Promise<void>;
   /** Recent successfully-opened repos, most recent first, max 10. Never rejects
    *  for a missing/corrupt settings file (returns []). */
   getRecentRepos(): Promise<RecentRepo[]>;
