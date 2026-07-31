@@ -18,6 +18,7 @@ use bonsai_core::git::diff::{
 use bonsai_core::git::merge::{self, MergeOutcome};
 use bonsai_core::git::opstate::{read_op_state, RepoOpState};
 use bonsai_core::git::rebase::{self, RebaseOutcome};
+use bonsai_core::git::rebase_interactive::{self, RebaseTodoOp};
 use bonsai_core::git::discard::discard_paths as discard_paths_core;
 use bonsai_core::git::remote::{
     add_remote as add_remote_core, fetch_all, list_remotes as list_remotes_core, pull_ff,
@@ -1490,6 +1491,62 @@ async fn rebase_abort_inner(state: &AppState, repo_id: &str) -> Result<(), AppEr
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Returns the DEFAULT interactive-rebase plan (every commit `pick`, oldest-
+/// first) for `base..HEAD`, seeding the plan editor (P23 contract §7). Errors:
+/// `git` | `noRepo`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn get_interactive_plan(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    base_oid: String,
+) -> Result<Vec<RebaseTodoOp>, AppError> {
+    get_interactive_plan_inner(state.inner(), &repo_id, base_oid).await
+}
+
+/// Runtime-free core of `get_interactive_plan` (unit-testable without a Tauri app).
+async fn get_interactive_plan_inner(
+    state: &AppState,
+    repo_id: &str,
+    base_oid: String,
+) -> Result<Vec<RebaseTodoOp>, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        rebase_interactive::get_interactive_plan(&path, &base_oid)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Starts an interactive rebase of the current branch onto `onto_oid`, replaying
+/// `todos` in order (P23 contract §7). Continue/Skip/Abort reuse the existing
+/// `rebase_{continue,skip,abort}` commands via the core delegation. Errors:
+/// `operationInProgress` | `checkoutConflict` | `configMissing` | `git` |
+/// `noRepo`. Does NOT emit `repo-changed` — the frontend refetches imperatively.
+#[tauri::command]
+pub async fn start_interactive_rebase(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    onto_oid: String,
+    todos: Vec<RebaseTodoOp>,
+) -> Result<RebaseOutcome, AppError> {
+    start_interactive_rebase_inner(state.inner(), &repo_id, onto_oid, todos).await
+}
+
+/// Runtime-free core of `start_interactive_rebase` (unit-testable without a Tauri app).
+async fn start_interactive_rebase_inner(
+    state: &AppState,
+    repo_id: &str,
+    onto_oid: String,
+    todos: Vec<RebaseTodoOp>,
+) -> Result<RebaseOutcome, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        rebase_interactive::start_interactive_rebase(&path, &onto_oid, todos)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Enumerates the stash stack, index 0 (most recent) first (P9 contract §3).
 /// Errors: `git` | `noRepo`. Does NOT emit `repo-changed`.
 #[tauri::command]
@@ -2623,6 +2680,29 @@ mod tests {
 
         let err = tauri::async_runtime::block_on(rebase_abort_inner(&state, MISSING_ID))
             .expect_err("rebase_abort with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+    }
+
+    /// The P23 interactive-rebase commands return `NoRepo` for an unknown id.
+    #[test]
+    fn interactive_rebase_commands_require_an_open_repo() {
+        let state = AppState::default();
+
+        let err = tauri::async_runtime::block_on(get_interactive_plan_inner(
+            &state,
+            MISSING_ID,
+            "a".repeat(40),
+        ))
+        .expect_err("get_interactive_plan with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(start_interactive_rebase_inner(
+            &state,
+            MISSING_ID,
+            "a".repeat(40),
+            Vec::new(),
+        ))
+        .expect_err("start_interactive_rebase with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
 

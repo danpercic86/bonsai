@@ -5,6 +5,7 @@
 use std::path::Path;
 
 use crate::error::AppError;
+use crate::git::rebase_interactive;
 use crate::git::stage::open_workdir_repo;
 
 /// Wire: `{ "kind": "none" } | { "kind": "merge", "incoming": ..., "message": ... } | ...`
@@ -116,6 +117,22 @@ fn read_rebase_state(repo: &git2::Repository) -> RepoOpState {
 /// get_op_state must never error the refresh batch for them.
 pub fn read_op_state(workdir: &Path) -> Result<RepoOpState, AppError> {
     let mut repo = open_workdir_repo(workdir)?;
+
+    // A Bonsai interactive rebase wins over any transient CherryPick state:
+    // `repo.cherrypick` (used to materialize conflict markers) sets
+    // `repo.state() == CherryPick`, but our on-disk sequencer is authoritative
+    // (contract §4). Corrupt/missing state falls through to the normal switch.
+    if rebase_interactive::interactive_in_progress(&repo) {
+        if let Ok(s) = rebase_interactive::read_state(&repo) {
+            return Ok(RepoOpState::Rebase {
+                head_name: Some(s.head_name.clone()),
+                onto: Some(s.onto.clone()),
+                current_step: s.committed + 1,
+                total_steps: rebase_interactive::effective_total(&s),
+            });
+        }
+    }
+
     use git2::RepositoryState as S;
     Ok(match repo.state() {
         S::Clean => RepoOpState::None,

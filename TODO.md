@@ -249,7 +249,23 @@ dropdown + Up/Down + inline reword/squash message) + wiring (reuse OpBanner) →
 (blame_file + file_history) + blame_cli oracle → **P23d** blame/history IPC + BlameView/FileHistoryView +
 reveal-in-graph.
 
-**Current step: P23a — implementing interactive-rebase backend engine (senior-dev).**
+- **P23a** (reviewer REQUEST-CHANGES → re-review APPROVE after fixes) — rebase_interactive.rs: cherry-pick
+  replay on detached HEAD + on-disk JSON sequencer `.git/bonsai-rebase/state.json` (InteractiveState
+  version/headName/originalTip/onto/todos/cursor/committed/paused, atomic write); start (detach + drive),
+  drive (Pick/Reword/Squash/Fixup/Drop, conflict→persist+Conflicts{paths}), finish (move branch ref last +
+  reattach), continue/skip/abort delegated from rebase.rs when sequencer exists; opstate probes the Bonsai
+  file FIRST → unchanged RepoOpState::Rebase. get_interactive_plan seeds default all-pick. 2 new commands +
+  lib.rs; continue/skip/abort commands UNCHANGED (core delegates). Reviewer caught 3 SAFETY issues — ALL
+  FIXED + re-review APPROVE: M1 (continue out-of-range cursor → finish, no panic), M2 (unified
+  restore_to_original FORCE-resets branch ref to original_tip in every abort path incl. post-partial-finish;
+  finish keeps remove_state last so a failed finish stays abortable), S1 (squash/fixup with committed==0 →
+  Git error, never reparent onto base), N1 (empty-drop guard vs head_tree_id). rebase_interactive_cli 19
+  (reorder/squash/fixup/reword/drop tree+topology+message+author, conflict→continue≡git, skip, abort-
+  restores-exact-tip, out-of-range-cursor, skip-before-squash-refused) + 7 lib; plain rebase_cli 18 still
+  green; clippy clean. NO new AppError/RepoOpState wire.
+
+**Current step: P23b (plan-editor UI + IPC) and P23c (blame backend + oracle) running IN PARALLEL
+(frontend pnpm vs backend cargo — no contention).**
 
 ### P22 — Tags & remotes management — **queued** (contract ready)
 Contract: docs/contracts/P22-tags-remotes.md (architect). Open decisions RESOLVED (orchestrator accepted

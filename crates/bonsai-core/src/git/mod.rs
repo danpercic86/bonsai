@@ -12,6 +12,7 @@ pub mod discard;
 pub mod merge;
 pub mod opstate;
 pub mod rebase;
+pub mod rebase_interactive;
 pub mod remote;
 pub mod reset;
 pub mod repo;

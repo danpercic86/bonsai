@@ -347,6 +347,12 @@ pub fn rebase_branch(workdir: &Path, onto_name: &str) -> Result<RebaseOutcome, A
 pub fn rebase_continue(workdir: &Path) -> Result<RebaseOutcome, AppError> {
     let repo = open_workdir_repo(workdir)?;
 
+    // Delegate to the Bonsai interactive engine when its sequencer is present
+    // (contract §3) — the plain path below is unchanged.
+    if crate::git::rebase_interactive::interactive_in_progress(&repo) {
+        return crate::git::rebase_interactive::interactive_continue(workdir);
+    }
+
     if !is_rebase_state(repo.state()) {
         return Err(AppError::NoOperationInProgress(
             "no rebase in progress".to_string(),
@@ -408,6 +414,12 @@ pub fn rebase_continue(workdir: &Path) -> Result<RebaseOutcome, AppError> {
 pub fn rebase_skip(workdir: &Path) -> Result<RebaseOutcome, AppError> {
     let repo = open_workdir_repo(workdir)?;
 
+    // Delegate to the Bonsai interactive engine when its sequencer is present
+    // (contract §3) — the plain path below is unchanged.
+    if crate::git::rebase_interactive::interactive_in_progress(&repo) {
+        return crate::git::rebase_interactive::interactive_skip(workdir);
+    }
+
     if !is_rebase_state(repo.state()) {
         return Err(AppError::NoOperationInProgress(
             "no rebase in progress".to_string(),
@@ -461,6 +473,12 @@ pub fn rebase_skip(workdir: &Path) -> Result<RebaseOutcome, AppError> {
 /// worktree (destructive — the UI confirms first; backend guard §4.4).
 pub fn rebase_abort(workdir: &Path) -> Result<(), AppError> {
     let repo = open_workdir_repo(workdir)?;
+
+    // Delegate to the Bonsai interactive engine when its sequencer is present
+    // (contract §3) — the plain path below is unchanged.
+    if crate::git::rebase_interactive::interactive_in_progress(&repo) {
+        return crate::git::rebase_interactive::interactive_abort(workdir);
+    }
 
     if !is_rebase_state(repo.state()) {
         return Err(AppError::NoOperationInProgress(
