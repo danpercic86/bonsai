@@ -55,6 +55,7 @@ import type {
   PaneWidths,
   RepoInfo,
   RepoOpState,
+  ResetMode,
   StashEntry,
   StatusEntry,
   StatusSnapshot,
@@ -190,12 +191,21 @@ export function RepoWorkspace({
   const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(null);
   const [pendingDeleteRemote, setPendingDeleteRemote] = useState<string | null>(null);
   const [pendingDropStash, setPendingDropStash] = useState<number | null>(null);
+  // P20: destructive reset (all three modes confirm; hard warns extra) + discard.
+  const [pendingReset, setPendingReset] = useState<{ oid: string; mode: ResetMode } | null>(null);
+  const [pendingDiscard, setPendingDiscard] = useState<string[] | null>(null);
+  // P20: amend affordance. `amend` toggles the commit box into amend mode;
+  // `amendMessage` holds HEAD's message fetched once on toggle-on (prefill).
+  const [amend, setAmend] = useState(false);
+  const [amendMessage, setAmendMessage] = useState<string | null>(null);
   // P11 §1.4: "Create branch here" target commit → drives the PromptDialog.
   const [pendingCreateBranch, setPendingCreateBranch] = useState<{ oid: string } | null>(null);
   const dialogOpen =
     pendingDeleteBranch !== null ||
     pendingDeleteRemote !== null ||
     pendingDropStash !== null ||
+    pendingReset !== null ||
+    pendingDiscard !== null ||
     pendingCreateBranch !== null;
 
   const [graph, setGraph] = useState<GraphLayout | null>(null);
@@ -855,6 +865,70 @@ export function RepoWorkspace({
     try {
       await ipc.commit(repoId, message);
       await refreshAll();
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  // P20 §2: amend the current tip. Rethrows so CommitBox surfaces
+  // configMissing/emptyMessage in its own error banner (like handleCommit's
+  // implicit rethrow). On success, clear amend mode + refresh.
+  async function handleCommitAmend(message: string) {
+    setMutating(true);
+    try {
+      await ipc.commitAmend(repoId, message);
+      setAmend(false);
+      setAmendMessage(null);
+      await refreshAll();
+      pushToast('success', 'Amended last commit');
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  // P20 §2.3: toggle amend on/off. Toggling ON fetches HEAD's full message once
+  // (reusing getCommitDiff().details.message — no dedicated backend getter) so
+  // the box remounts prefilled. Toggling OFF drops back to the normal commit box.
+  async function handleToggleAmend(next: boolean) {
+    if (!next) {
+      setAmend(false);
+      setAmendMessage(null);
+      return;
+    }
+    if (head === null || head.unborn) return;
+    try {
+      const diff = await ipc.getCommitDiff(repoId, head.oid);
+      setAmendMessage(diff.details.message);
+      setAmend(true);
+    } catch (e) {
+      pushToast('error', `Could not load the last commit message: ${errorMessage(e)}`);
+    }
+  }
+
+  // P20 §3: reset the current branch (called after the shared ConfirmDialog).
+  async function handleResetBranch(oid: string, mode: ResetMode) {
+    setMutating(true);
+    try {
+      await ipc.resetBranch(repoId, oid, mode);
+      await refreshAll();
+      const branchLabel = headBranch?.name ?? 'HEAD';
+      pushToast('success', `Reset ${branchLabel} to ${shortOid(oid)} (${mode})`);
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  // P20 §4: discard unstaged edits to tracked files (called after ConfirmDialog).
+  async function handleDiscard(paths: string[]) {
+    setMutating(true);
+    try {
+      await ipc.discardPaths(repoId, paths);
+      await refreshAll();
+      pushToast('success', `Discarded changes to ${paths.length} file(s)`);
+    } catch (e) {
+      pushToast('error', errorMessage(e));
     } finally {
       setMutating(false);
     }
@@ -1704,6 +1778,8 @@ export function RepoWorkspace({
       onSelect: () =>
         kind === 'remoteBranch' ? setPendingDeleteRemote(name) : setPendingDeleteBranch(name),
     });
+    // P20 §3.3: reset the CURRENT branch to this ref's tip (gated internally).
+    items.push(...resetMenuItems(tip));
     return items;
   }
 
@@ -1784,6 +1860,28 @@ export function RepoWorkspace({
   // P5 §5.2 / P6 §4.2: the commit-row menu — "Create branch here" + "Compare
   // with HEAD" (both read-only entry points; unavailable when HEAD is unborn,
   // §1.3). Factored out (P18b) so the whole-row ref fallback can reuse it.
+  // P20 §3.3: the three "Reset <branch> to here" items, gated on an attached
+  // born HEAD, an idle repo, and a target that is not already the current tip.
+  // Hard is suffixed "…" (opens the extra-warning ConfirmDialog). Returns [] when
+  // reset is not offered (so callers can spread unconditionally).
+  function resetMenuItems(targetOid: string): ContextMenuItem[] {
+    if (head === null || head.unborn || head.detached) return [];
+    if (targetOid === head.oid) return [];
+    const gate = mutating || opActive;
+    const b = headBranch?.name ?? 'HEAD';
+    const make = (mode: ResetMode, label: string): ContextMenuItem => ({
+      label,
+      icon: <RebaseIcon />,
+      disabled: gate,
+      onSelect: () => setPendingReset({ oid: targetOid, mode }),
+    });
+    return [
+      make('soft', `Reset ${b} to here (soft)`),
+      make('mixed', `Reset ${b} to here (mixed)`),
+      make('hard', `Reset ${b} to here (hard)…`),
+    ];
+  }
+
   function commitMenuItems(oid: string): ContextMenuItem[] {
     if (head === null || head.unborn) return [];
     const gate = mutating || opActive;
@@ -1800,6 +1898,7 @@ export function RepoWorkspace({
         disabled: false,
         onSelect: () => handleCompareWithHead(oid),
       },
+      ...resetMenuItems(oid),
     ];
   }
 
@@ -2226,6 +2325,7 @@ export function RepoWorkspace({
                 aiAnalyzing={aiPanel?.loading === true}
                 onStage={(paths) => void handleStage(paths)}
                 onUnstage={(paths) => void handleUnstage(paths)}
+                onDiscard={(paths) => setPendingDiscard(paths)}
                 onReviewStaged={() =>
                   runAnalyze({ kind: 'staged' }, 'review', 'Review staged changes')
                 }
@@ -2234,16 +2334,56 @@ export function RepoWorkspace({
                 onToggleConflictView={handleToggleConflictView}
                 onAiResolve={(path) => void handleAiResolveConflict(path)}
               />
+              {opState.kind === 'none' && head !== null && !head.unborn && (
+                <div className="amend-affordance">
+                  <label className="amend-toggle">
+                    <input
+                      type="checkbox"
+                      checked={amend}
+                      disabled={mutating}
+                      onChange={(e) => void handleToggleAmend(e.target.checked)}
+                    />
+                    <span>Amend last commit</span>
+                  </label>
+                  {amend &&
+                    headBranch !== null &&
+                    headBranch.upstream !== null &&
+                    headBranch.ahead === 0 && (
+                      <div className="amend-push-warning" role="note">
+                        This commit is already pushed — amending rewrites published history.
+                      </div>
+                    )}
+                </div>
+              )}
               <CommitBox
-                key={opState.kind === 'merge' ? `merge:${opState.incoming}` : 'commit'}
+                key={
+                  amend
+                    ? 'amend'
+                    : opState.kind === 'merge'
+                      ? `merge:${opState.incoming}`
+                      : 'commit'
+                }
                 ref={commitBoxRef}
                 stagedCount={status?.staged.length ?? 0}
                 busy={mutating}
-                mode={opState.kind === 'merge' ? 'merge' : 'commit'}
-                initialMessage={opState.kind === 'merge' ? opState.message : undefined}
+                mode={opState.kind === 'merge' && !amend ? 'merge' : 'commit'}
+                initialMessage={
+                  amend
+                    ? (amendMessage ?? undefined)
+                    : opState.kind === 'merge'
+                      ? opState.message
+                      : undefined
+                }
                 conflictCount={conflicts.length}
-                blocked={opActive && opState.kind !== 'merge'}
-                onCommit={opState.kind === 'merge' ? handleCommitMerge : handleCommit}
+                blocked={!amend && opActive && opState.kind !== 'merge'}
+                amend={amend}
+                onCommit={
+                  amend
+                    ? handleCommitAmend
+                    : opState.kind === 'merge'
+                      ? handleCommitMerge
+                      : handleCommit
+                }
                 aiEligible={aiEligible}
                 onGenerate={handleGenerateCommitMessage}
               />
@@ -2333,6 +2473,52 @@ export function RepoWorkspace({
         <div>Drop <span className="mono">stash@{`{${pendingDropStash ?? 0}}`}</span>?</div>
         <div className="dialog-body-note">
           This permanently discards the stashed changes and cannot be undone.
+        </div>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pendingReset !== null}
+        title={pendingReset?.mode === 'hard' ? 'Hard reset' : 'Reset branch'}
+        confirmLabel={
+          pendingReset === null
+            ? 'Reset'
+            : `Reset (${pendingReset.mode})`
+        }
+        busy={mutating}
+        onConfirm={() => {
+          const p = pendingReset;
+          setPendingReset(null);
+          if (p !== null) void handleResetBranch(p.oid, p.mode);
+        }}
+        onCancel={() => setPendingReset(null)}
+      >
+        <div>
+          Move <span className="mono">{headBranch?.name ?? 'HEAD'}</span> to{' '}
+          <span className="mono">{shortOid(pendingReset?.oid ?? '')}</span> ({pendingReset?.mode})?
+        </div>
+        <div className="dialog-body-note">
+          Commits after the target are no longer on this branch (recoverable via the reflog).
+          {pendingReset?.mode === 'hard' && (
+            <> Uncommitted changes in your working tree will be permanently discarded.</>
+          )}
+        </div>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pendingDiscard !== null}
+        title="Discard changes"
+        confirmLabel="Discard changes"
+        busy={mutating}
+        onConfirm={() => {
+          const paths = pendingDiscard;
+          setPendingDiscard(null);
+          if (paths !== null) void handleDiscard(paths);
+        }}
+        onCancel={() => setPendingDiscard(null)}
+      >
+        <div>Discard changes to {pendingDiscard?.length ?? 0} file(s)?</div>
+        <div className="dialog-body-note">
+          This permanently reverts them to the last staged/committed version and cannot be undone.
         </div>
       </ConfirmDialog>
 

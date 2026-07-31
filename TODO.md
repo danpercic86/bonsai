@@ -88,9 +88,34 @@ list/init/update/sync round-trip on a real superproject cross-checked with `git 
 Open-in-tab opens the submodule as its own repo tab; the private-remote credential path (no in-app prompt).
 
 ### P20 — Daily essentials: amend, cherry-pick, revert, reset, discard — **in-progress**
-Contract: docs/contracts/P20-daily-essentials.md (architect to write).
+Contract: docs/contracts/P20-daily-essentials.md (architect). Open decisions RESOLVED (orchestrator
+accepted architect defaults): (1) discard restores worktree to the INDEX version (discards unstaged
+only); untracked-file deletion OUT of scope v1; (2) empty pick/revert → nothingToCommit (no
+--allow-empty); (3) Bonsai starts SINGLE picks only — CLI-started multi-commit sequences not advanced by
+*_continue (git2 has no sequencer). Cherry-pick/revert REUSE opstate.rs (already detect CherryPick/Revert,
+zero wire change) + conflict.rs + an actionable OpBanner (Continue gated on conflictCount===0, Abort via
+ConfirmDialog, no Skip). No AppError change. Amend push-guard frontend-derived (ahead===0 && upstream!==
+null); message prefill reuses getCommitDiff(head.oid).details.message. Sub-increments:
+- **P20a** — amend + reset + discard (no conflict machinery): commit.rs amend_commit, reset.rs, discard.rs
+  + commands + IPC + CommitBox Amend affordance + reset/discard context actions + ConfirmDialogs (hard
+  reset + discard). Oracle rows 1,6,7.
+- **P20b** — cherry-pick + revert: cherrypick.rs/revert.rs (Repository::cherrypick/revert, outcome
+  Committed{oid}|Conflicts{paths}, finalize_* mirroring finalize_merge_commit) + continue/abort commands
+  + OpBanner actionable extension + commit-row context actions. Oracle rows 2,3,4,5,8.
 
-**Current step: P20 — architect writing contract.**
+- **P20a** (reviewer APPROVE, 0 must-fix) — amend_commit (git2 Commit::amend — correct primitive over
+  the contract's rejected repo.commit pseudocode; preserves parents incl. merge, reuses author, fresh
+  committer), reset.rs (ResetMode soft/mixed/hard → Repository::reset), discard.rs (discard_paths:
+  empty-paths early return prevents whole-worktree clobber; force checkout_index to INDEX version,
+  tracked-only, validate_rel_path). 3 commands + lib.rs; IPC triple + index; CommitBox amend button +
+  RepoWorkspace amend affordance (prefill via getCommitDiff.details.message; push-warning ahead===0 &&
+  upstream); reset menu items (both commit + branch menus, gated) → shared pendingReset ConfirmDialog
+  (hard adds destructive warning); StatusPanel ↺ discard control (unstaged tracked rows only) → pending
+  discard ConfirmDialog. essentials_cli rows 1/6/7 (8 tests, incl. merge-amend + hard-reset-removes-file
+  + discard-preserves-staged) green; clippy + pnpm build clean. NITs (deferred, non-blocking): clear
+  amend state when opState leaves 'none' (backend already rejects amend-during-op); import ordering.
+
+**Current step: P20b — implementing cherry-pick + revert (senior-dev), then P20 milestone AI gate.**
 
 ## P17 — Interactive diff: File/Diff toggle + partial staging — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-31)
 

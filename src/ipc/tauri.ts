@@ -34,6 +34,7 @@ import type {
   RecentRepo,
   RepoChangedPayload,
   RepoOpState,
+  ResetMode,
   SessionState,
   StashEntry,
   StatusSnapshot,
@@ -287,6 +288,18 @@ export const tauriIpc: IpcApi = {
 
   dropStash(repoId: string, index: number): Promise<void> {
     return invoke<void>('drop_stash', { repoId, index });
+  },
+
+  commitAmend(repoId: string, message: string): Promise<CommitResult> {
+    return invoke<CommitResult>('commit_amend', { repoId, message });
+  },
+
+  resetBranch(repoId: string, oid: string, mode: ResetMode): Promise<void> {
+    return invoke<void>('reset_branch', { repoId, oid, mode });
+  },
+
+  discardPaths(repoId: string, paths: string[]): Promise<void> {
+    return invoke<void>('discard_paths', { repoId, paths });
   },
 
   listSubmodules(repoId: string): Promise<SubmoduleInfo[]> {

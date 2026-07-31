@@ -48,6 +48,7 @@ function FileRow({
   expanded,
   onAction,
   onToggle,
+  onDiscard,
   treeMode = false,
 }: {
   entry: StatusEntry;
@@ -59,6 +60,9 @@ function FileRow({
   expanded: boolean;
   onAction: (paths: string[]) => void;
   onToggle: () => void;
+  /** P20 §4.3: discard this row's unstaged edits (tracked rows only). Absent
+   *  (undefined) → no discard control (untracked rows, staged section). */
+  onDiscard?: (paths: string[]) => void;
   /** P3b: the tree supplies directory context — render only the basename
    *  (renames keep the full `orig → path` text; tooltips keep full paths). */
   treeMode?: boolean;
@@ -97,6 +101,18 @@ function FileRow({
           {pathEl}
         </span>
       )}
+      {onDiscard !== undefined && (
+        <button
+          type="button"
+          className="row-action row-action-discard"
+          title="Discard changes (restore to the staged/committed version)"
+          aria-label={`Discard changes to ${entry.path}`}
+          disabled={disabled}
+          onClick={() => onDiscard(entryPaths(entry))}
+        >
+          {'↺'}
+        </button>
+      )}
       {action !== null && (
         <button
           type="button"
@@ -127,6 +143,7 @@ function Section({
   extraAction,
   onAction,
   onToggleDiff,
+  onDiscard,
 }: {
   label: string;
   /** Diff-key prefix; null for the conflicts section (not expandable). */
@@ -149,6 +166,9 @@ function Section({
   extraAction?: ReactNode;
   onAction: (paths: string[]) => void;
   onToggleDiff: (section: WorkdirSection, entry: StatusEntry) => void;
+  /** P20 §4.3: discard a tracked row's unstaged edits. When provided, rows whose
+   *  resolved origin is `unstaged` get a discard control; untracked rows do not. */
+  onDiscard?: (paths: string[]) => void;
 }) {
   // P3b §5.1: tree placement by NEW path (origPath never affects placement).
   const nodes = useMemo(
@@ -159,6 +179,9 @@ function Section({
     const rowSection = sectionForEntry ? sectionForEntry(entry) : section;
     const key = rowSection !== null ? `${rowSection}:${entry.path}` : null;
     const expanded = key !== null && diffSlot !== null && diffSlot.key === key;
+    // P20 §4.3: offer discard only on tracked (unstaged-origin) rows.
+    const rowDiscard =
+      onDiscard !== undefined && rowSection === 'unstaged' ? onDiscard : undefined;
     return (
       <FileRow
         key={`${entry.status}:${entry.path}`}
@@ -168,6 +191,7 @@ function Section({
         expandable={expandable && section !== null}
         expanded={expanded}
         onAction={onAction}
+        onDiscard={rowDiscard}
         onToggle={() => {
           if (rowSection !== null) onToggleDiff(rowSection, entry);
         }}
@@ -408,6 +432,8 @@ export interface StatusPanelProps {
   aiAnalyzing: boolean;
   onStage(paths: string[]): void;
   onUnstage(paths: string[]): void;
+  /** P20 §4.3: discard unstaged edits to tracked Changes rows (App confirms). */
+  onDiscard(paths: string[]): void;
   /** P15b: request an AI review of the whole staged set. */
   onReviewStaged(): void;
   /** Toggle a row's diff in the center-pane overlay (App owns the fetch). */
@@ -434,6 +460,7 @@ export function StatusPanel({
   aiAnalyzing,
   onStage,
   onUnstage,
+  onDiscard,
   onReviewStaged,
   onToggleDiff,
   onResolveConflict,
@@ -528,6 +555,7 @@ export function StatusPanel({
             listView={listView}
             onAction={onStage}
             onToggleDiff={onToggleDiff}
+            onDiscard={onDiscard}
           />
           {snapshot.conflicted.length > 0 && (
             <ConflictsSection

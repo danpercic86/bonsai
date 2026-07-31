@@ -56,6 +56,7 @@ export type {
   RepoChangedPayload,
   RepoInfo,
   RepoOpState,
+  ResetMode,
   SessionState,
   StashEntry,
   StatusEntry,

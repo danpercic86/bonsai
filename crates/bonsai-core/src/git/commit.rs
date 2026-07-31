@@ -141,6 +141,82 @@ pub fn create_commit(workdir: &Path, message: &str) -> Result<CommitResult, AppE
     })
 }
 
+/// Blocking. Replaces HEAD with a new commit built from the current index, on
+/// HEAD's EXISTING parents (preserves merge parents), reusing HEAD's ORIGINAL
+/// author and stamping a fresh committer. `message` is the final message (the
+/// frontend prefills + lets the user edit HEAD's message). Mirrors
+/// `git commit --amend -m <message>` (P20 contract §2.1).
+pub fn amend_commit(workdir: &Path, message: &str) -> Result<CommitResult, AppError> {
+    let repo = open_workdir_repo(workdir)?;
+
+    // Amending mid-merge/rebase/pick is nonsense — refuse before any read.
+    if repo.state() != git2::RepositoryState::Clean {
+        return Err(AppError::OperationInProgress(
+            "an operation is in progress — finish or abort it first".to_string(),
+        ));
+    }
+
+    // HEAD commit to amend. Unborn / missing HEAD → nothing to amend.
+    let head_commit = match repo.head() {
+        Ok(h) => h.peel_to_commit()?,
+        Err(e)
+            if matches!(
+                e.code(),
+                git2::ErrorCode::UnbornBranch | git2::ErrorCode::NotFound
+            ) =>
+        {
+            return Err(AppError::Git(
+                "nothing to amend: the repository has no commits yet".to_string(),
+            ));
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    // Normalize line endings before trim, identical to `create_commit`.
+    let normalized = message.replace("\r\n", "\n").replace('\r', "\n");
+    let msg = normalized.trim();
+    if msg.is_empty() {
+        return Err(AppError::EmptyMessage);
+    }
+
+    // Fresh committer (ConfigMissing before any write); original author preserved.
+    let committer = resolve_signature(&repo.config()?.snapshot()?)?;
+    let author = head_commit.author().to_owned();
+
+    // Tree from the current index. NO NothingToCommit guard — a message-only
+    // amend (tree == HEAD's tree, 0 staged) is valid.
+    let mut index = repo.index()?;
+    let tree_oid = index.write_tree()?;
+    let tree = repo.find_tree(tree_oid)?;
+
+    // `Commit::amend` REPLACES the current commit onto its EXISTING parents
+    // (preserving merge parents) and moves HEAD to the new commit — unlike
+    // `repo.commit(Some("HEAD"), …)`, which would reject the amend because the
+    // new commit's first parent (HEAD^) is not the current tip.
+    let full = format!("{msg}\n");
+    let oid = head_commit.amend(
+        Some("HEAD"),
+        Some(&author),
+        Some(&committer),
+        None,
+        Some(&full),
+        Some(&tree),
+    )?;
+
+    let branch = repo
+        .head()
+        .ok()
+        .filter(|h| h.is_branch())
+        .and_then(|h| h.shorthand().map(String::from));
+    let summary = msg.lines().next().unwrap_or(msg).to_string();
+
+    Ok(CommitResult {
+        oid: oid.to_string(),
+        summary,
+        branch,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,6 +316,65 @@ mod tests {
         crate::git::stage::stage_paths(dir.path(), &["a.txt".to_string()]).expect("stage");
         let err = create_commit(dir.path(), "\r\n\r").expect_err("CR-only message");
         assert!(matches!(err, AppError::EmptyMessage), "got: {err:?}");
+    }
+
+    /// Amending an unborn HEAD refuses with a Git error before any write.
+    #[test]
+    fn amend_on_unborn_head_errors() {
+        let dir = crate::testutil::scratch_dir();
+        let repo = git2::Repository::init(dir.path()).expect("init repo");
+        {
+            let mut cfg = repo.config().expect("config");
+            cfg.set_str("user.name", "Test User").expect("name");
+            cfg.set_str("user.email", "test@example.com").expect("email");
+        }
+        let err = amend_commit(dir.path(), "msg").expect_err("unborn");
+        match err {
+            AppError::Git(m) => assert!(m.contains("no commits yet"), "got: {m}"),
+            other => panic!("expected Git, got {other:?}"),
+        }
+    }
+
+    /// A message-only amend (0 staged) succeeds, keeps the original author, and
+    /// preserves the parent set; an empty message is rejected.
+    #[test]
+    fn amend_message_only_preserves_author_and_parents() {
+        let dir = crate::testutil::scratch_dir();
+        let repo = git2::Repository::init(dir.path()).expect("init repo");
+        {
+            let mut cfg = repo.config().expect("config");
+            cfg.set_str("user.name", "Orig Author").expect("name");
+            cfg.set_str("user.email", "orig@example.com").expect("email");
+        }
+        std::fs::write(dir.path().join("a.txt"), "one\n").expect("write");
+        crate::git::stage::stage_paths(dir.path(), &["a.txt".to_string()]).expect("stage");
+        create_commit(dir.path(), "original subject").expect("commit");
+        let orig_tree = repo
+            .head()
+            .expect("head")
+            .peel_to_commit()
+            .expect("peel")
+            .tree_id();
+
+        // Empty message rejected.
+        let err = amend_commit(dir.path(), "   ").expect_err("empty");
+        assert!(matches!(err, AppError::EmptyMessage), "got: {err:?}");
+
+        // Change committer identity so we can prove author is preserved.
+        {
+            let mut cfg = repo.config().expect("config");
+            cfg.set_str("user.name", "New Committer").expect("name");
+            cfg.set_str("user.email", "new@example.com").expect("email");
+        }
+        let res = amend_commit(dir.path(), "amended subject").expect("amend");
+        assert_eq!(res.summary, "amended subject");
+
+        let head = repo.head().expect("head").peel_to_commit().expect("peel");
+        assert_eq!(head.tree_id(), orig_tree, "message-only amend keeps the tree");
+        assert_eq!(head.parent_count(), 0, "root commit parents preserved (0)");
+        assert_eq!(head.author().email(), Some("orig@example.com"));
+        assert_eq!(head.committer().email(), Some("new@example.com"));
+        assert_eq!(head.message(), Some("amended subject\n"));
     }
 
     #[test]

@@ -310,6 +310,9 @@ export interface CreateStashResult {
   created: boolean;
 }
 
+/** Reset mode (P20). Mirrors the Rust `ResetMode` serde enum (camelCase). */
+export type ResetMode = 'soft' | 'mixed' | 'hard';
+
 export interface CreateBranchHereResult {
   /** true when uncommitted work was auto-stashed and carried across. */
   stashed: boolean;
@@ -667,6 +670,16 @@ export interface IpcApi {
   popStash(repoId: string, index: number): Promise<ApplyStashOutcome>;
   /** Permanently discard stash `index` (UI confirms). Rejects git | noRepo. */
   dropStash(repoId: string, index: number): Promise<void>;
+  /** Amend HEAD with a new message + the current index (P20). Preserves HEAD's
+   *  parents + original author. Rejects operationInProgress | emptyMessage |
+   *  configMissing | git | noRepo. */
+  commitAmend(repoId: string, message: string): Promise<CommitResult>;
+  /** Move the current branch (HEAD) to `oid` in `mode` (P20). Hard is
+   *  destructive — the UI confirms first. Rejects operationInProgress | git | noRepo. */
+  resetBranch(repoId: string, oid: string, mode: ResetMode): Promise<void>;
+  /** Restore tracked worktree files to the index version, discarding unstaged
+   *  edits (P20). Destructive — the UI confirms first. Rejects other | git | noRepo. */
+  discardPaths(repoId: string, paths: string[]): Promise<void>;
   /** All submodules with classified status. Rejects noRepo | git. */
   listSubmodules(repoId: string): Promise<SubmoduleInfo[]>;
   /** Register `name` in .git/config (no worktree change). Rejects noRepo | invalidName | git. */

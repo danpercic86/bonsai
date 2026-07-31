@@ -18,6 +18,9 @@ export interface CommitBoxProps {
   conflictCount?: number;
   /** Non-merge op active (rebase/cherry-pick/revert): fully disabled. */
   blocked?: boolean;
+  /** P20: amend mode. Button label "Amend"; a message-only amend is valid, so
+   * `stagedCount === 0` does NOT disable submit. Merge mode is unaffected. */
+  amend?: boolean;
   /** P15a: gates the "✨ Generate" button (aiEnabled && aiConsented && installed). */
   aiEligible?: boolean;
   /** P15a: asks the backend for a proposed message; resolves the text to insert,
@@ -43,6 +46,7 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
     initialMessage,
     conflictCount = 0,
     blocked = false,
+    amend = false,
     aiEligible = false,
     onGenerate,
   },
@@ -63,7 +67,7 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
     busy ||
     submitting ||
     generating ||
-    (merge ? conflictCount > 0 : stagedCount === 0);
+    (merge ? conflictCount > 0 : amend ? false : stagedCount === 0);
 
   // P15a: the "✨ Generate" affordance (commit mode only). Disabled per contract
   // §5.5 when AI is ineligible, nothing is staged, or a mutation/generation runs.
@@ -189,7 +193,7 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
         disabled={disabled}
         onClick={() => void submit()}
       >
-        {submitting ? 'Committing…' : merge ? 'Commit merge' : 'Commit'}
+        {submitting ? 'Committing…' : merge ? 'Commit merge' : amend ? 'Amend' : 'Commit'}
       </button>
 
       <ConfirmDialog

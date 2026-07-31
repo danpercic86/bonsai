@@ -57,6 +57,7 @@ import type {
   RepoChangedPayload,
   RepoInfo,
   RepoOpState,
+  ResetMode,
   SessionState,
   StashEntry,
   StatusEntry,
@@ -1926,6 +1927,57 @@ export const mockIpc: IpcApi = {
     const state = requireRepo(repoId);
     state.stashes = state.stashes.filter((e) => e.index !== index);
     state.stashes.forEach((e, i) => (e.index = i));
+  },
+
+  async commitAmend(repoId: string, message: string): Promise<CommitResult> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    if (message.trim() === '') {
+      const err: AppError = { kind: 'emptyMessage', message: 'commit message is empty' };
+      throw err;
+    }
+    if (state.noConfig) {
+      const err: AppError = {
+        kind: 'configMissing',
+        message:
+          'git identity not configured: user.name and user.email are not set. ' +
+          'Run: git config --global user.name "Your Name" and ' +
+          'git config --global user.email "you@example.com"',
+      };
+      throw err;
+    }
+    // Amend rewrites the tip: new oid, staged content folded in, message-only
+    // amend allowed (no nothing-to-commit guard). Replace the top commit's
+    // summary in the synthetic lane-0 fixture rows.
+    state.status.staged = [];
+    state.headOid = randomOid();
+    const summary = message.trim().split('\n', 1)[0] ?? '';
+    if (state.commits.length > 0) {
+      state.commits[0] = { ...state.commits[0], oid: state.headOid, summary };
+    } else {
+      state.commits.unshift({ oid: state.headOid, summary });
+    }
+    return { oid: state.headOid, summary, branch: state.headBranch };
+  },
+
+  async resetBranch(repoId: string, oid: string, _mode: ResetMode): Promise<void> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    // Visual fidelity: drop synthetic lane-0 rows above the target (inclusive
+    // move of HEAD onto `oid`). A plain move of headOid is enough for the
+    // harness; guard against an unknown oid by leaving the list untouched.
+    const target = state.commits.findIndex((c) => c.oid === oid);
+    if (target > 0) {
+      state.commits = state.commits.slice(target);
+    }
+    state.headOid = oid;
+  },
+
+  async discardPaths(repoId: string, paths: string[]): Promise<void> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    const drop = new Set(paths);
+    state.status.unstaged = state.status.unstaged.filter((e) => !drop.has(e.path));
   },
 
   // Stateful submodule mock (P19 §5). init flips uninitialized→upToDate;

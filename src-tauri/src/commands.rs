@@ -7,7 +7,7 @@ use bonsai_core::git::ai_explain::{self, AiAnalysis, AiAnalysisMode, AiDiffTarge
 use bonsai_core::git::ai_resolve::{self, AiResolveProposal};
 use bonsai_core::git::ai_summary::{self, AiSummary};
 use bonsai_core::git::branches::{self, BranchesSnapshot, CreateBranchHereResult};
-use bonsai_core::git::commit::{create_commit, CommitResult};
+use bonsai_core::git::commit::{amend_commit, create_commit, CommitResult};
 use bonsai_core::git::conflict::{self, ConflictEntry, ConflictFile, ConflictResolution};
 use bonsai_core::git::diff::{
     commit_diff, commit_file_diff, compare_head_diff, compare_head_file_diff, workdir_file_diff,
@@ -16,8 +16,10 @@ use bonsai_core::git::diff::{
 use bonsai_core::git::merge::{self, MergeOutcome};
 use bonsai_core::git::opstate::{read_op_state, RepoOpState};
 use bonsai_core::git::rebase::{self, RebaseOutcome};
+use bonsai_core::git::discard::discard_paths as discard_paths_core;
 use bonsai_core::git::remote::{fetch_all, pull_ff, push_current, FetchResult, PullResult, PushResult};
 use bonsai_core::git::repo::{read_repo_info, RepoInfo};
+use bonsai_core::git::reset::{reset_branch as reset_branch_core, ResetMode};
 use bonsai_core::git::stage::{stage_paths, unstage_paths};
 use bonsai_core::git::stage_partial::{
     stage_partial as stage_partial_core, unstage_partial as unstage_partial_core, LineSelection,
@@ -1598,6 +1600,82 @@ async fn drop_stash_inner(
 ) -> Result<(), AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || stash::drop_stash(&path, index))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Amends the current HEAD commit with a new message + the current index
+/// (P20 contract §2). Preserves HEAD's parents + original author. Errors:
+/// `operationInProgress` | `git` | `emptyMessage` | `configMissing` | `noRepo`.
+/// Does NOT emit `repo-changed` — the frontend refetches.
+#[tauri::command]
+pub async fn commit_amend(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    message: String,
+) -> Result<CommitResult, AppError> {
+    commit_amend_inner(state.inner(), &repo_id, message).await
+}
+
+/// Runtime-free core of `commit_amend` (unit-testable without a Tauri app).
+async fn commit_amend_inner(
+    state: &AppState,
+    repo_id: &str,
+    message: String,
+) -> Result<CommitResult, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || amend_commit(&path, &message))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Moves the current branch (HEAD) to `oid` in the given `mode` (P20 contract
+/// §3). Hard is destructive — the UI confirms first. Errors:
+/// `operationInProgress` | `git` | `noRepo`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn reset_branch(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    oid: String,
+    mode: ResetMode,
+) -> Result<(), AppError> {
+    reset_branch_command_inner(state.inner(), &repo_id, oid, mode).await
+}
+
+/// Runtime-free core of `reset_branch` (unit-testable without a Tauri app).
+async fn reset_branch_command_inner(
+    state: &AppState,
+    repo_id: &str,
+    oid: String,
+    mode: ResetMode,
+) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || reset_branch_core(&path, &oid, mode))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Restores each tracked path's worktree content to the index version,
+/// discarding unstaged edits (P20 contract §4). Destructive — the UI confirms
+/// first. Errors: `other` (invalid path) | `git` | `noRepo`. Does NOT emit
+/// `repo-changed`.
+#[tauri::command]
+pub async fn discard_paths(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    paths: Vec<String>,
+) -> Result<(), AppError> {
+    discard_paths_inner(state.inner(), &repo_id, paths).await
+}
+
+/// Runtime-free core of `discard_paths` (unit-testable without a Tauri app).
+async fn discard_paths_inner(
+    state: &AppState,
+    repo_id: &str,
+    paths: Vec<String>,
+) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || discard_paths_core(&path, &paths))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
