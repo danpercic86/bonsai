@@ -218,7 +218,38 @@ prompt) + auth-fail inline error; init → unborn tab → first commit; idempote
   Push tag to origin; Remotes section shows origin+url + Add(+); Add-remote dialog → new upstream remote
   appears; zero console errors. Backend AI gate = tags_cli 8 + remote_mgmt_cli 5.
 
-**Current step: P22 — committing P22c, then tester full regression + user checklist.**
+- **P22 tester** — full regression PASS, no regressions/bugs: bonsai_lib 67, bonsai_core 157, tags_cli
+  8→**9** (push_annotated_tag_transfers_object), remote_mgmt_cli 5→**7** (rename-without-tracking-refs,
+  add-remote-name-collides-with-branch), all integration; clippy + build clean. Checklist:
+  docs/contracts/P22-user-checklist.md.
+- **P22 AI GATE PASSED (2026-07-31).** Commits: c385efd P22a · 4867a85 P22b · fd41bcc P22c. Backend
+  oracle (tags_cli + remote_mgmt_cli) + frontend harness (create-tag dialog, tag menu, remotes section +
+  add-remote round-trip) both verified.
+
+**P22 awaiting USER CHECKPOINT** (native pnpm tauri dev, per docs/contracts/P22-user-checklist.md): create
+lightweight+annotated tag (cat-file -t), delete tag, push tag to a real remote (credential helper, no
+prompt), add/rename/edit-url/remove remote cross-checked with git remote -v / branch -r.
+
+### P23 — Interactive rebase + Blame/File-history — **in-progress** (final milestone)
+Contract: docs/contracts/P23-interactive-rebase-blame.md (architect). Execution model: **Bonsai-owned
+cherry-pick replay on a detached HEAD** with an on-disk JSON sequencer at `.git/bonsai-rebase/state.json`
+(git2 has no sequencer; original branch ref untouched until finish → trivial safe abort; squash/fixup
+reparent to head.parent(0); reword/squash messages supplied UP FRONT — no message-prompt pause; only
+pause is conflict-on-apply). REUSE: conflict.rs + OpBanner + the existing rebase_continue/skip/abort
+commands (core gains a delegation branch when `.git/bonsai-rebase/` exists) → ZERO frontend/OpBanner
+change for the conflict flow; opstate probes the Bonsai state file FIRST and returns the unchanged
+RepoOpState::Rebase. No new AppError/RepoOpState wire. Open decisions RESOLVED (orchestrator accepted):
+(1) blame/history line-click → select-with-scroll if a graph revealRow handle is easy, else select-only
+(scroll → Polish); (2) file_history best-effort single-rename --follow + no-follow fallback; (3) v1
+reorder = Up/Down buttons (drag → Polish); (4) blame against committed HEAD only (atOid=None; dirty-
+worktree blame later); (5) `.git/bonsai-rebase/` coexisting with a terminal git rebase is an accepted v1
+edge. Sub-increments: **P23a** interactive-rebase engine (rebase_interactive.rs + rebase.rs delegation +
+opstate probe) + rebase_interactive_cli oracle → **P23b** IPC + RebasePlanEditor.tsx (per-row action
+dropdown + Up/Down + inline reword/squash message) + wiring (reuse OpBanner) → **P23c** blame.rs
+(blame_file + file_history) + blame_cli oracle → **P23d** blame/history IPC + BlameView/FileHistoryView +
+reveal-in-graph.
+
+**Current step: P23a — implementing interactive-rebase backend engine (senior-dev).**
 
 ### P22 — Tags & remotes management — **queued** (contract ready)
 Contract: docs/contracts/P22-tags-remotes.md (architect). Open decisions RESOLVED (orchestrator accepted

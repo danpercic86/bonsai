@@ -150,6 +150,56 @@ fn rename_remote_parity_and_errors() {
     }
 }
 
+/// Coverage gap: renaming a remote that has NO remote-tracking refs must still
+/// succeed (the git2 rename returns a non-default-refspec "problem" list which
+/// the contract says to log-and-ignore, §3.4) — it must not surface as an error.
+#[test]
+fn rename_remote_without_tracking_refs() {
+    require_git!();
+    let dir = init_repo();
+    let path = dir.path();
+
+    // Fresh remote, never fetched → zero refs/remotes/origin/* exist.
+    add_remote(path, "origin", URL_A).expect("add origin");
+    assert!(!git_ok(path, &["show-ref", "--verify", "refs/remotes/origin/main"]));
+
+    rename_remote(path, "origin", "upstream").expect("rename with no tracking refs must succeed");
+
+    let remotes = git(path, &["remote"]);
+    assert!(remotes.contains("upstream"), "no upstream: {remotes}");
+    assert!(!remotes.contains("origin"), "origin still present: {remotes}");
+    assert_eq!(git(path, &["remote", "get-url", "upstream"]), URL_A);
+}
+
+/// Coverage gap: remote names and branch names live in DIFFERENT ref namespaces
+/// (refs/remotes vs refs/heads), so adding a remote whose name equals an
+/// existing branch must NOT be rejected as a collision — parity with the CLI.
+#[test]
+fn add_remote_name_collides_with_branch() {
+    require_git!();
+    let dir = init_repo();
+    let path = dir.path();
+
+    // Create a real branch named "main" via a first commit.
+    std::fs::write(path.join("f.txt"), "x\n").expect("write");
+    git(path, &["add", "-A"]);
+    common::commit_fixed(path, "c1");
+    assert!(git_ok(path, &["show-ref", "--verify", "refs/heads/main"]));
+
+    // A remote also named "main" is legal (distinct namespace).
+    add_remote(path, "main", URL_A).expect("remote named like a branch must be allowed");
+
+    assert_eq!(git(path, &["remote", "get-url", "main"]), URL_A);
+    // The branch is untouched.
+    assert!(git_ok(path, &["show-ref", "--verify", "refs/heads/main"]));
+    // Equals the CLI twin.
+    git(path, &["remote", "add", "main2", URL_A]);
+    assert_eq!(
+        git(path, &["remote", "get-url", "main"]),
+        git(path, &["remote", "get-url", "main2"]),
+    );
+}
+
 // --------------------------------------------------------------- §8.2.4 seturl
 
 /// `set_remote_url` matches `git remote set-url`; missing → NoRemote.

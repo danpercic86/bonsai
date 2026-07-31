@@ -292,6 +292,46 @@ fn push_to_bare_remote() {
     std::fs::remove_dir_all(&bare).ok();
 }
 
+/// Coverage gap: pushing an ANNOTATED tag must transfer the tag OBJECT itself,
+/// not just a lightweight ref — the bare remote's `cat-file -t` must read `tag`
+/// (the existing push test only asserts ref presence). Peeled target + subject
+/// must also survive the transfer.
+#[test]
+fn push_annotated_tag_transfers_object() {
+    require_git!();
+    let (dir, c1, _c2) = repo_two_commits();
+    let path = dir.path();
+
+    let bare = dir.path().parent().expect("parent").join(format!(
+        "{}-annobj.git",
+        dir.path().file_name().unwrap().to_string_lossy()
+    ));
+    git(dir.path().parent().unwrap(), &["init", "--bare", "-b", "main", &path_str(&bare)]);
+    git(path, &["remote", "add", "origin", &path_str(&bare)]);
+    git(path, &["push", "origin", "main"]);
+
+    create_tag(path, "annrel", &c1, Some("annotated payload".to_string()), false)
+        .expect("create annotated tag");
+
+    push_tag(path, "origin", "annrel", false).expect("push annotated tag to bare");
+
+    // The bare remote holds a real TAG OBJECT, not a straight commit ref.
+    assert_eq!(
+        git(&bare, &["cat-file", "-t", "refs/tags/annrel"]),
+        "tag",
+        "annotated tag must transfer as a tag object on the remote"
+    );
+    // It peels to C1 and carries the subject across the wire.
+    assert_eq!(git(&bare, &["rev-parse", "refs/tags/annrel^{commit}"]), c1);
+    let subj = git(
+        &bare,
+        &["for-each-ref", "--format=%(contents:subject)", "refs/tags/annrel"],
+    );
+    assert_eq!(subj, "annotated payload", "tag message must survive the push");
+
+    std::fs::remove_dir_all(&bare).ok();
+}
+
 // ------------------------------------------------ §8.1.8 list_refs re-surfaces
 
 /// `branches::list_refs().tags` reflects create then delete — proving §2.0
