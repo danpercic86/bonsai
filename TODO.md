@@ -45,9 +45,20 @@ D:\Temp\bonsai-scratch, TMP/TEMP=D:\Temp for cargo, no concurrent test+clippy, m
   Delete), commit-only + current-branch(main) rows open the commit menu (Create branch here / Compare),
   WIP row opens nothing; zero console errors.
 
-**Current step: P18 AI gate passed — awaiting USER CHECKPOINT** (native pnpm tauri dev): settings dialog
-visibly wider; right-clicking anywhere on a branch row opens the branch menu, on a commit-only row the
-commit menu. Next: P19 (submodules).
+**P18 AI gate passed — awaiting USER CHECKPOINT** (native pnpm tauri dev): settings dialog visibly wider;
+right-clicking anywhere on a branch row opens the branch menu, on a commit-only row the commit menu.
+
+### P19 — Submodules (read + common ops) — **in-progress**
+Contract: docs/contracts/P19-submodules.md (architect). Open decisions RESOLVED (orchestrator accepted
+architect defaults): (1) backend returns both `path` (relative) + `absPath` (absolute); (2)
+SubmoduleIgnore::None (full dirtiness detection); (3) reuse AppError::Git for not-found (no new variant).
+Sub-increments: **P19a** Rust core `git/submodule.rs` (SubmoduleInfo + SubmoduleStatus classify_status +
+list/init/update/sync, credential reuse via pub(crate) acquire_cred) + 4 commands + lib.rs registration +
+submodule_cli.rs oracle; **P19b** IPC triple (types/tauri/mock stateful) + Submodules sidebar section +
+context menu (Init/Update/Sync/Open in new tab) + open-in-tab via existing openRepo flow.
+status.rs:89 .exclude_submodules(true) stays AS-IS.
+
+**Current step: P19a — implementing Rust core + commands + oracle tests (senior-dev).**
 
 ## P17 — Interactive diff: File/Diff toggle + partial staging — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-31)
 

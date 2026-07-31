@@ -68,7 +68,11 @@ pub fn run() {
             commands::set_active_repo,
             commands::get_mcp_status,
             commands::set_mcp_enabled,
-            commands::set_mcp_allow_write
+            commands::set_mcp_allow_write,
+            commands::list_submodules,
+            commands::init_submodule,
+            commands::update_submodule,
+            commands::sync_submodule
         ])
         .build(tauri::generate_context!())
         .expect("error while running Bonsai")

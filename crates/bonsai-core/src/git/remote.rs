@@ -115,7 +115,7 @@ pub(crate) fn next_cred_method(
 /// the attempt and falls through to the next method; exhaustion returns an
 /// error, which aborts the transport instead of looping. NEVER prompts;
 /// NEVER reads or stores passwords.
-fn acquire_cred(
+pub(crate) fn acquire_cred(
     config: &git2::Config,
     attempts: &RefCell<CredAttempts>,
     url: &str,
