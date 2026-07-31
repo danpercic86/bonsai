@@ -58,6 +58,7 @@ import type {
   StashEntry,
   StatusEntry,
   StatusSnapshot,
+  SubmoduleInfo,
   Unsubscribe,
 } from '../ipc';
 import { usePushToast } from '../ToastContext';
@@ -101,6 +102,9 @@ export interface RepoWorkspaceProps {
   onSidebarResize(delta: number): void;
   onRightPanelResize(delta: number): void;
   onPaneResizeEnd(): void;
+  /** P19 §6.5: open `path` in a new/focused tab (App.openTab). Used by the
+   *  submodule "Open in new tab" action; reuses the existing open-repo flow. */
+  onOpenRepoPath(path: string): void;
 }
 
 /** P3e §5.1: the entire per-repo state cluster + handlers + render tree, one
@@ -123,6 +127,7 @@ export function RepoWorkspace({
   onSidebarResize,
   onRightPanelResize,
   onPaneResizeEnd,
+  onOpenRepoPath,
 }: RepoWorkspaceProps) {
   const pushToast = usePushToast();
   const repoPath = repoId; // repoId == canonical workdir path (§2)
@@ -154,6 +159,8 @@ export function RepoWorkspace({
   const [branchesLoading, setBranchesLoading] = useState(false);
 
   const [stashes, setStashes] = useState<StashEntry[]>([]);
+
+  const [submodules, setSubmodules] = useState<SubmoduleInfo[]>([]);
 
   const [remoteOp, setRemoteOp] = useState<'fetch' | 'pull' | 'push' | null>(null);
 
@@ -234,6 +241,7 @@ export function RepoWorkspace({
   const graphReqId = useRef(0);
   const branchesReqId = useRef(0);
   const stashesReqId = useRef(0);
+  const submodulesReqId = useRef(0);
   const commitDiffReqId = useRef(0);
   const fileDiffReqId = useRef(0);
   const opStateReqId = useRef(0);
@@ -558,6 +566,23 @@ export function RepoWorkspace({
     setStashes([]);
   }, []);
 
+  const refetchSubmodules = useCallback(async () => {
+    const id = ++submodulesReqId.current;
+    try {
+      const list = await ipc.listSubmodules(repoId);
+      if (id !== submodulesReqId.current) return;
+      setSubmodules(list);
+    } catch {
+      if (id !== submodulesReqId.current) return;
+      // Non-fatal: submodules are a secondary surface; keep the last-known list.
+    }
+  }, [repoId]);
+
+  const clearSubmodules = useCallback(() => {
+    submodulesReqId.current += 1;
+    setSubmodules([]);
+  }, []);
+
   const clearGraph = useCallback(() => {
     graphReqId.current += 1;
     setGraph(null);
@@ -579,6 +604,7 @@ export function RepoWorkspace({
           refetchGraph(),
           refetchBranches(),
           refetchStashes(),
+          refetchSubmodules(),
           refetchOpState(),
           refetchCompare(),
         ]);
@@ -587,6 +613,7 @@ export function RepoWorkspace({
         clearGraph();
         clearBranches();
         clearStashes();
+        clearSubmodules();
         clearOpState();
         clearCompare();
       }
@@ -599,12 +626,14 @@ export function RepoWorkspace({
     refetchGraph,
     refetchBranches,
     refetchStashes,
+    refetchSubmodules,
     refetchOpState,
     refetchCompare,
     clearStatus,
     clearGraph,
     clearBranches,
     clearStashes,
+    clearSubmodules,
     clearOpState,
     clearCompare,
     pushToast,
@@ -620,6 +649,7 @@ export function RepoWorkspace({
     void refetchGraph();
     void refetchBranches();
     void refetchStashes();
+    void refetchSubmodules();
     void refetchOpState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -695,6 +725,7 @@ export function RepoWorkspace({
         void refetchGraph();
         void refetchBranches();
         void refetchStashes();
+        void refetchSubmodules();
         void refetchOpState();
         void refetchCompare();
       });
@@ -715,6 +746,7 @@ export function RepoWorkspace({
     refetchGraph,
     refetchBranches,
     refetchStashes,
+    refetchSubmodules,
     refetchOpState,
     refetchCompare,
   ]);
@@ -731,6 +763,7 @@ export function RepoWorkspace({
         void refetchGraph();
         void refetchBranches();
         void refetchStashes();
+        void refetchSubmodules();
         void refetchOpState();
         void refetchCompare();
       });
@@ -751,6 +784,7 @@ export function RepoWorkspace({
     refetchGraph,
     refetchBranches,
     refetchStashes,
+    refetchSubmodules,
     refetchOpState,
     refetchCompare,
   ]);
@@ -1379,6 +1413,49 @@ export function RepoWorkspace({
     }
   }
 
+  // ----- P19: submodule handling -----
+  // Init/update/sync are non-destructive to the superproject → no confirm
+  // dialog. refetchSubmodules suffices (submodule ops don't change the
+  // superproject status/graph in v1).
+  async function handleInitSubmodule(name: string) {
+    setMutating(true);
+    try {
+      await ipc.initSubmodule(repoId, name);
+      pushToast('success', `Initialized ${name}`);
+      await refetchSubmodules();
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleUpdateSubmodule(name: string) {
+    setMutating(true);
+    try {
+      await ipc.updateSubmodule(repoId, name);
+      pushToast('success', `Updated ${name}`);
+      await refetchSubmodules();
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleSyncSubmodule(name: string) {
+    setMutating(true);
+    try {
+      await ipc.syncSubmodule(repoId, name);
+      pushToast('success', `Synced URL for ${name}`);
+      await refetchSubmodules();
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
   // ----- P3d: rebase handling -----
   async function handleRebaseBranch(onto: string) {
     setMutating(true);
@@ -1660,6 +1737,48 @@ export function RepoWorkspace({
   // P9 §6.4: right-click a sidebar stash row → open the shared context menu.
   function handleStashContextMenu(index: number, clientX: number, clientY: number) {
     setMenu({ x: clientX, y: clientY, items: stashMenuItems(index) });
+  }
+
+  // P19 §6.4: submodule row menu. "Update" on an uninitialized row
+  // init-then-updates (backend §OPEN-4), so it is always enabled; "Init" is a
+  // no-op once initialized → disabled unless uninitialized. "Open in new tab"
+  // needs a checked-out worktree → disabled while uninitialized.
+  function submoduleMenuItems(sub: SubmoduleInfo): ContextMenuItem[] {
+    const gate = mutating || opActive;
+    return [
+      {
+        label: 'Init',
+        icon: <BranchIcon />,
+        disabled: gate || sub.status !== 'uninitialized',
+        onSelect: () => void handleInitSubmodule(sub.name),
+      },
+      {
+        label: 'Update',
+        icon: <StashApplyIcon />,
+        disabled: gate,
+        onSelect: () => void handleUpdateSubmodule(sub.name),
+      },
+      {
+        label: 'Sync',
+        icon: <RebaseIcon />,
+        disabled: gate,
+        onSelect: () => void handleSyncSubmodule(sub.name),
+      },
+      {
+        label: 'Open in new tab',
+        icon: <CompareIcon />,
+        disabled: sub.status === 'uninitialized',
+        onSelect: () => onOpenRepoPath(sub.absPath),
+      },
+    ];
+  }
+
+  // P19 §6.4: right-click a sidebar submodule row → open the shared context
+  // menu. Looks up the SubmoduleInfo by name from state.
+  function handleSubmoduleContextMenu(name: string, clientX: number, clientY: number) {
+    const sub = submodules.find((s) => s.name === name);
+    if (sub === undefined) return;
+    setMenu({ x: clientX, y: clientY, items: submoduleMenuItems(sub) });
   }
 
   // P5 §5.2 / P6 §4.2: the commit-row menu — "Create branch here" + "Compare
@@ -1966,6 +2085,8 @@ export function RepoWorkspace({
           stashes={stashes}
           onCreateStash={() => void handleCreateStash()}
           onStashContextMenu={handleStashContextMenu}
+          submodules={submodules}
+          onSubmoduleContextMenu={handleSubmoduleContextMenu}
         />
         <PaneDivider side="sidebar" onResize={onSidebarResize} onResizeEnd={onPaneResizeEnd} />
         <main className="graph-pane">

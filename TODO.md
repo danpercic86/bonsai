@@ -58,7 +58,28 @@ submodule_cli.rs oracle; **P19b** IPC triple (types/tauri/mock stateful) + Submo
 context menu (Init/Update/Sync/Open in new tab) + open-in-tab via existing openRepo flow.
 status.rs:89 .exclude_submodules(true) stays AS-IS.
 
-**Current step: P19a — implementing Rust core + commands + oracle tests (senior-dev).**
+- **P19a** (reviewer APPROVE, 0 must-fix) — commit 52272ad. git/submodule.rs (classify_status via
+  SubmoduleIgnore::None: WD_UNINITIALIZED→Uninitialized; INDEX_*|WD_MODIFIED→OutOfSync; WD_INDEX/WD/
+  UNTRACKED→ModifiedWorkdir; else UpToDate), list/init/update/sync keyed by name, credential reuse
+  (remote.rs acquire_cred→pub(crate)), 4 commands + lib.rs. submodule_cli 4 + 5 lib unit tests green,
+  clippy clean. NIT (deferred): WD_DELETED/WD_ADDED unhandled → a deleted-workdir submodule reads
+  UpToDate (rare).
+- **P19b** (reviewer APPROVE, 0 must-fix) — IPC triple (types/tauri/mock stateful: seeds vendor/libcore
+  uninitialized, vendor/theme upToDate, docs/spec outOfSync, tools/ci modifiedWorkdir) + index.ts
+  re-export; Sidebar "Submodules" section (name + status badge) + submoduleMenuItems (Init/Update/Sync/
+  Open-in-tab, gated: Init only when uninitialized, Open-in-tab disabled when uninitialized);
+  RepoWorkspace submodules state + submodulesReqId guard + refetch in all 4 batches + 3 handlers;
+  App onOpenRepoPath→openTab (reuses existing openRepo/tab flow, no new command); CSS badge pills.
+  pnpm build clean.
+- **P19 AI GATE (frontend) verified (2026-07-31).** Browser harness (mock :1420): Submodules section
+  renders 4 rows with badges not-initialized/up-to-date/out-of-sync/modified; context menu shows
+  Init/Update/Sync/Open-in-tab (Open-in-tab disabled for uninitialized); Init flips vendor/libcore →
+  up-to-date, Update flips docs/spec → up-to-date, other rows unchanged; zero console errors. Backend
+  AI gate = P19a CLI-oracle suite (green). Pending: tester full-regression + USER CHECKPOINT checklist.
+
+**Current step: P19 — committing P19b, then tester full regression + user checklist. USER CHECKPOINT
+pending** (native pnpm tauri dev on a real superproject: list/init/update/sync round-trip cross-checked
+with `git submodule status/update`; Open-in-tab opens the submodule as its own repo tab).
 
 ## P17 — Interactive diff: File/Diff toggle + partial staging — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-31)
 

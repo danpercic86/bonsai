@@ -2321,6 +2321,31 @@ span.file-row-main {
   color: var(--text-3);
 }
 
+/* P19 §6.2: submodule status pills — display-only, theme-aware intents.
+   Reuses .branch-badge sizing; adds a subtle tinted pill per status. */
+.submodule-badge-muted,
+.submodule-badge-ok,
+.submodule-badge-warn {
+  font-family: inherit;
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+
+.submodule-badge-muted {
+  color: var(--text-3);
+  background: color-mix(in srgb, var(--text-3) 12%, transparent);
+}
+
+.submodule-badge-ok {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+.submodule-badge-warn {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+
 .branch-muted {
   color: var(--text-3);
   font-size: 12px;

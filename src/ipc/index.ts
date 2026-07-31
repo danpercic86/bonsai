@@ -60,6 +60,8 @@ export type {
   StashEntry,
   StatusEntry,
   StatusSnapshot,
+  SubmoduleInfo,
+  SubmoduleStatus,
   Theme,
   UiSettings,
   UiSettingsPatch,

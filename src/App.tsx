@@ -648,6 +648,7 @@ export default function App() {
                 onSidebarResize={handleSidebarResize}
                 onRightPanelResize={handleRightPanelResize}
                 onPaneResizeEnd={handlePaneResizeEnd}
+                onOpenRepoPath={(path) => void openTab(path)}
               />
             </div>
           ))

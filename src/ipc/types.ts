@@ -289,6 +289,19 @@ export interface StashEntry {
   ts: number;         // seconds since epoch (UTC)
 }
 
+export type SubmoduleStatus = 'uninitialized' | 'upToDate' | 'outOfSync' | 'modifiedWorkdir';
+
+export interface SubmoduleInfo {
+  name: string;              // stable key for init/update/sync
+  path: string;              // repo-relative, forward slashes
+  absPath: string;           // absolute workdir path — feed to open-in-tab
+  url: string | null;
+  headOid: string | null;    // commit in superproject HEAD
+  indexOid: string | null;   // commit in superproject index
+  wtOid: string | null;      // commit checked out in the submodule (null if uninitialized)
+  status: SubmoduleStatus;
+}
+
 export type ApplyStashOutcome =
   | { kind: 'applied' }
   | { kind: 'conflicts'; paths: string[] };
@@ -654,6 +667,15 @@ export interface IpcApi {
   popStash(repoId: string, index: number): Promise<ApplyStashOutcome>;
   /** Permanently discard stash `index` (UI confirms). Rejects git | noRepo. */
   dropStash(repoId: string, index: number): Promise<void>;
+  /** All submodules with classified status. Rejects noRepo | git. */
+  listSubmodules(repoId: string): Promise<SubmoduleInfo[]>;
+  /** Register `name` in .git/config (no worktree change). Rejects noRepo | invalidName | git. */
+  initSubmodule(repoId: string, name: string): Promise<void>;
+  /** Init-if-needed + fetch + checkout the pinned commit. Rejects
+   *  noRepo | invalidName | authFailed | networkError | git. */
+  updateSubmodule(repoId: string, name: string): Promise<void>;
+  /** Copy the .gitmodules URL into config + the submodule remote. Rejects noRepo | invalidName | git. */
+  syncSubmodule(repoId: string, name: string): Promise<void>;
   /** Recent successfully-opened repos, most recent first, max 10. Never rejects
    *  for a missing/corrupt settings file (returns []). */
   getRecentRepos(): Promise<RecentRepo[]>;

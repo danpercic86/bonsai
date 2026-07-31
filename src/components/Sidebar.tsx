@@ -1,6 +1,13 @@
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { BranchInfo, BranchesSnapshot, ListView, StashEntry } from '../ipc';
+import type {
+  BranchInfo,
+  BranchesSnapshot,
+  ListView,
+  StashEntry,
+  SubmoduleInfo,
+  SubmoduleStatus,
+} from '../ipc';
 import { relativeDate } from '../graph/draw';
 import { errorMessage } from '../utils/errors';
 import { buildPathTree } from '../utils/pathTree';
@@ -54,6 +61,10 @@ export interface SidebarProps {
   onCreateStash(): void;
   /** Right-click a stash row → open the shared context menu at the cursor. */
   onStashContextMenu(index: number, clientX: number, clientY: number): void;
+  /** P19 §6.1: submodules with classified status. */
+  submodules: SubmoduleInfo[];
+  /** Right-click a submodule row → open the shared context menu at the cursor. */
+  onSubmoduleContextMenu(name: string, clientX: number, clientY: number): void;
 }
 
 function SectionHeader({
@@ -214,6 +225,41 @@ function StashRow({
   );
 }
 
+/** P19 §6.2: display-only status pill. Label + intent class per status. */
+const SUBMODULE_BADGE: Record<SubmoduleStatus, { label: string; intent: string }> = {
+  uninitialized: { label: 'not initialized', intent: 'submodule-badge-muted' },
+  upToDate: { label: 'up to date', intent: 'submodule-badge-ok' },
+  outOfSync: { label: 'out of sync', intent: 'submodule-badge-warn' },
+  modifiedWorkdir: { label: 'modified', intent: 'submodule-badge-warn' },
+};
+
+function SubmoduleRow({
+  sub,
+  onContextMenu,
+}: {
+  sub: SubmoduleInfo;
+  onContextMenu(name: string, clientX: number, clientY: number): void;
+}) {
+  const badge = SUBMODULE_BADGE[sub.status];
+  return (
+    <li
+      className="branch-row"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu(sub.name, e.clientX, e.clientY);
+      }}
+    >
+      <span className="branch-glyph">{'⊡'}</span>
+      <span className="branch-name" title={sub.path}>
+        {sub.name}
+      </span>
+      <span className={`branch-badge ${badge.intent}`} title={badge.label}>
+        {badge.label}
+      </span>
+    </li>
+  );
+}
+
 function SkeletonRows() {
   return (
     <div className="skeleton-group" aria-hidden="true">
@@ -242,6 +288,8 @@ export function Sidebar({
   stashes,
   onCreateStash,
   onStashContextMenu,
+  submodules,
+  onSubmoduleContextMenu,
 }: SidebarProps) {
   const [branchesCollapsed, setBranchesCollapsed] = useState(false);
   const [remotesCollapsed, setRemotesCollapsed] = useState(false);
@@ -249,6 +297,7 @@ export function Sidebar({
   // can be long); the other sections stay expanded. Local/ephemeral state.
   const [tagsCollapsed, setTagsCollapsed] = useState(true);
   const [stashesCollapsed, setStashesCollapsed] = useState(false);
+  const [submodulesCollapsed, setSubmodulesCollapsed] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createValue, setCreateValue] = useState('');
@@ -524,6 +573,27 @@ export function Sidebar({
                 </ul>
               ))}
           </section>
+
+          {submodules.length > 0 && (
+            <section className="sidebar-section">
+              <SectionHeader
+                label="Submodules"
+                collapsed={submodulesCollapsed}
+                onToggle={() => setSubmodulesCollapsed((c) => !c)}
+              />
+              {!submodulesCollapsed && (
+                <ul className="branch-list">
+                  {submodules.map((s) => (
+                    <SubmoduleRow
+                      key={s.name}
+                      sub={s}
+                      onContextMenu={onSubmoduleContextMenu}
+                    />
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
         </>
       )}
     </aside>

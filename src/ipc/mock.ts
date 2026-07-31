@@ -61,6 +61,7 @@ import type {
   StashEntry,
   StatusEntry,
   StatusSnapshot,
+  SubmoduleInfo,
   Theme,
   UiSettings,
   UiSettingsPatch,
@@ -216,6 +217,8 @@ interface MockRepoState {
   conflictTexts: Map<string, ConflictFile>;
   /** Stash stack, index 0 (most recent) first (P9 §6.5). */
   stashes: StashEntry[];
+  /** Submodules with classified status (P19 §5). Default repo only. */
+  submodules: SubmoduleInfo[];
   /** P17: the one live three-way (head/index/workdir) model file, `src/main.rs`.
    *  Partial stage/unstage mutate `index`; getStatus/getWorkdirFileDiff derive
    *  the file's section membership + diffs from it. */
@@ -419,6 +422,54 @@ function seedStashes(kind: RepoKind, graphFixture: GraphFixture): StashEntry[] {
   ];
 }
 
+/** Seed the DEFAULT repo's submodules so the sidebar section shows every badge
+ *  state (P19 §5). Non-default repos get []. */
+function seedSubmodules(kind: RepoKind, graphFixture: GraphFixture): SubmoduleInfo[] {
+  if (kind !== 'default' || graphFixture !== 'default') return [];
+  return [
+    {
+      name: 'vendor/libcore',
+      path: 'vendor/libcore',
+      absPath: '/mock/repo/vendor/libcore',
+      url: 'https://example.com/libcore.git',
+      headOid: fixtureOid(1),
+      indexOid: fixtureOid(1),
+      wtOid: null,
+      status: 'uninitialized',
+    },
+    {
+      name: 'vendor/theme',
+      path: 'vendor/theme',
+      absPath: '/mock/repo/vendor/theme',
+      url: 'https://example.com/theme.git',
+      headOid: fixtureOid(2),
+      indexOid: fixtureOid(2),
+      wtOid: fixtureOid(2),
+      status: 'upToDate',
+    },
+    {
+      name: 'docs/spec',
+      path: 'docs/spec',
+      absPath: '/mock/repo/docs/spec',
+      url: 'https://example.com/spec.git',
+      headOid: fixtureOid(4),
+      indexOid: fixtureOid(4),
+      wtOid: randomOid(),
+      status: 'outOfSync',
+    },
+    {
+      name: 'tools/ci',
+      path: 'tools/ci',
+      absPath: '/mock/repo/tools/ci',
+      url: 'https://example.com/ci.git',
+      headOid: fixtureOid(5),
+      indexOid: fixtureOid(5),
+      wtOid: fixtureOid(5),
+      status: 'modifiedWorkdir',
+    },
+  ];
+}
+
 /** Builds a fresh MockRepoState for a usable repo (default / detached / unborn). */
 function createRepoState(path: string): MockRepoState {
   const graphFixture = repoGraphFixture(path);
@@ -439,6 +490,7 @@ function createRepoState(path: string): MockRepoState {
     conflicts: [],
     conflictTexts: new Map(),
     stashes: seedStashes(kind, graphFixture),
+    submodules: seedSubmodules(kind, graphFixture),
     mainRs: initialMainRs(),
   };
   seedOpState(state, repoOp(path));
@@ -1874,6 +1926,44 @@ export const mockIpc: IpcApi = {
     const state = requireRepo(repoId);
     state.stashes = state.stashes.filter((e) => e.index !== index);
     state.stashes.forEach((e, i) => (e.index = i));
+  },
+
+  // Stateful submodule mock (P19 §5). init flips uninitialized→upToDate;
+  // update brings uninitialized/outOfSync→upToDate; sync is a config no-op.
+  async listSubmodules(repoId: string): Promise<SubmoduleInfo[]> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    return structuredClone(state.submodules);
+  },
+
+  async initSubmodule(repoId: string, name: string): Promise<void> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    const sub = state.submodules.find((s) => s.name === name);
+    // Unknown name → no-op (the mock list is authoritative; unreachable from UI).
+    if (sub !== undefined && sub.status === 'uninitialized') {
+      sub.status = 'upToDate';
+      sub.wtOid = sub.indexOid;
+    }
+  },
+
+  async updateSubmodule(repoId: string, name: string): Promise<void> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    const sub = state.submodules.find((s) => s.name === name);
+    // Init-then-update semantics — clears uninitialized / outOfSync.
+    if (sub !== undefined) {
+      sub.status = 'upToDate';
+      sub.wtOid = sub.indexOid;
+    }
+  },
+
+  async syncSubmodule(repoId: string, name: string): Promise<void> {
+    await delay(150);
+    // Sync mutates config (URL propagation), not the listed fields — no-op here.
+    // Validate the repo is open (mirrors the real command surface).
+    void name;
+    requireRepo(repoId);
   },
 
   async getRecentRepos(): Promise<RecentRepo[]> {

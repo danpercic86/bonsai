@@ -37,6 +37,7 @@ import type {
   SessionState,
   StashEntry,
   StatusSnapshot,
+  SubmoduleInfo,
   UiSettings,
   UiSettingsPatch,
   Unsubscribe,
@@ -286,6 +287,22 @@ export const tauriIpc: IpcApi = {
 
   dropStash(repoId: string, index: number): Promise<void> {
     return invoke<void>('drop_stash', { repoId, index });
+  },
+
+  listSubmodules(repoId: string): Promise<SubmoduleInfo[]> {
+    return invoke<SubmoduleInfo[]>('list_submodules', { repoId });
+  },
+
+  initSubmodule(repoId: string, name: string): Promise<void> {
+    return invoke<void>('init_submodule', { repoId, name });
+  },
+
+  updateSubmodule(repoId: string, name: string): Promise<void> {
+    return invoke<void>('update_submodule', { repoId, name });
+  },
+
+  syncSubmodule(repoId: string, name: string): Promise<void> {
+    return invoke<void>('sync_submodule', { repoId, name });
   },
 
   getRecentRepos(): Promise<RecentRepo[]> {
