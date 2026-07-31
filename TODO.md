@@ -74,7 +74,17 @@ forward slashes D:/Temp); NO concurrent cargo test + clippy; orchestrator makes 
   Reviewer S1 (toggle-everywhere gap): commit/compare render via DiffBrowser which lacks the toggle →
   addressed by P17d to honor the locked "toggle everywhere incl. commit/compare" decision.
 
-**Current step: P17c committed — starting P17d (File/Diff toggle in DiffBrowser for commit/compare).**
+- **P17d** (orchestrator self-reviewed; frontend-only, single file) — File/Diff toggle in DiffBrowser
+  (commit/compare stacked cards) to honor the locked "toggle everywhere". Local `mode` state + modeRef;
+  cache key now `${oid}:${path}:${mode}` (pump/enqueue/retry/render) so toggling genuinely refetches
+  whole-file vs 3-context; `mode` added to the enqueue effect deps; `.diff-view-toggle` markup (reuses
+  the P17c-verified component) in the browser header; DiffView gets only `viewMode` (read-only — NO
+  staging in commit/compare). Concurrency/unmount guards preserved. pnpm build green. NOTE: the mock
+  harness cannot open DiffBrowser (compare→"unknown commit" mock limit; commit→needs canvas selection,
+  blocked while the Browser pane is hidden — same limitation as P7/P10/P11g) → DiffBrowser toggle is a
+  USER CHECKPOINT visual item; the toggle component itself is P17c-harness-verified.
+
+**Current step: P17a–d committed; running Phase D (tester + AI-gate consolidation), then USER CHECKPOINT.**
 
 ## P15 — In-app AI features (Tier 1) — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-31)
 

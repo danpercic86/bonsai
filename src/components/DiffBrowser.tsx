@@ -58,10 +58,22 @@ export interface DiffBrowserProps {
 }
 
 export function DiffBrowser({ repoId, source, files, scope, listView, onClose }: DiffBrowserProps) {
+  // P17d §0.4/§5.2: File/Diff view toggle (locked "toggle everywhere"). Local
+  // state — the browser is its own surface and does not share
+  // RepoWorkspace.diffViewMode. `diff` (3-context hunks) is the default/current
+  // behavior; `file` fetches whole-file (fullContext) diffs. The mode is folded
+  // into the cache key so switching modes refetches instead of serving a
+  // stale-context payload; a modeRef lets the stable pump/enqueue callbacks read
+  // it without churning.
+  const [mode, setMode] = useState<'diff' | 'file'>('diff');
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+
   // §6.4: component-local cache + a bounded fetch queue. The cache is a ref so
   // async resolutions mutate it in place; `bump` forces the re-render that shows
   // the new content. Reading the ref during render is safe — every mutation is
-  // paired with a bump.
+  // paired with a bump. Keyed `${oid}:${path}:${mode}` (P17d) so diff-vs-file
+  // context variants never collide.
   const cacheRef = useRef<Map<string, CardState>>(new Map());
   const [, bump] = useReducer((n: number) => n + 1, 0);
   const queueRef = useRef<string[]>([]);
@@ -101,7 +113,8 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
       const path = queueRef.current.shift();
       if (path === undefined) break;
       const src = sourceRef.current;
-      const key = `${src.oid}:${path}`;
+      const fullContext = modeRef.current === 'file';
+      const key = `${src.oid}:${path}:${modeRef.current}`;
       const entry = cacheRef.current.get(key);
       if (entry === undefined || entry.state !== 'idle') continue; // superseded
       const header = filesRef.current.find((f) => f.path === path);
@@ -111,13 +124,19 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
       bump();
       const request =
         src.mode === 'commit'
-          ? ipc.getCommitFileDiff(repoIdRef.current, src.oid, header.path, header.origPath, false)
+          ? ipc.getCommitFileDiff(
+              repoIdRef.current,
+              src.oid,
+              header.path,
+              header.origPath,
+              fullContext,
+            )
           : ipc.compareWithHeadFileDiff(
               repoIdRef.current,
               src.oid,
               header.path,
               header.origPath,
-              false,
+              fullContext,
             );
       void request
         .then(
@@ -141,7 +160,7 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
   const enqueue = useCallback(
     (path: string) => {
       if (cancelledRef.current) return;
-      const key = `${sourceRef.current.oid}:${path}`;
+      const key = `${sourceRef.current.oid}:${path}:${modeRef.current}`;
       if (cacheRef.current.has(key)) return; // already queued/loading/ready/error
       cacheRef.current.set(key, { state: 'idle' });
       queueRef.current.push(path);
@@ -152,7 +171,7 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
 
   const retry = useCallback(
     (path: string) => {
-      cacheRef.current.delete(`${sourceRef.current.oid}:${path}`);
+      cacheRef.current.delete(`${sourceRef.current.oid}:${path}:${modeRef.current}`);
       enqueue(path);
     },
     [enqueue],
@@ -210,12 +229,17 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
   // pass, so enqueue() short-circuits on them (cache already has the key) and
   // never re-pumps. pump() is a stable useCallback([]) — calling it here is safe
   // and idempotent.
+  //
+  // P17d: `mode` is a dependency so toggling File/Diff re-enqueues every visible
+  // file under its new `${oid}:${path}:${mode}` cache key — a genuine refetch
+  // (whole-file vs 3-context payloads differ). Old-mode entries stay cached (and
+  // are simply looked up under the other key), so toggling back is instant.
   useEffect(() => {
     for (const f of visibleFiles) {
       if (!f.binary) enqueue(f.path);
     }
     pump(); // resume any drain stalled across a StrictMode remount
-  }, [visibleFiles, enqueue, pump]);
+  }, [visibleFiles, enqueue, pump, mode]);
 
   // The collapse-all/expand-all toggle operates on the CURRENT scope's visible
   // files: it reads as "all collapsed" only when every visible file is collapsed,
@@ -260,6 +284,24 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
             {allCollapsed ? 'Expand all' : 'Collapse all'}
           </button>
         )}
+        <div className="diff-view-toggle" role="group" aria-label="View mode">
+          <button
+            type="button"
+            className={mode === 'file' ? 'active' : ''}
+            aria-pressed={mode === 'file'}
+            onClick={() => setMode('file')}
+          >
+            File
+          </button>
+          <button
+            type="button"
+            className={mode === 'diff' ? 'active' : ''}
+            aria-pressed={mode === 'diff'}
+            onClick={() => setMode('diff')}
+          >
+            Diff
+          </button>
+        </div>
         <button
           type="button"
           className="btn-icon diff-browser-close"
@@ -278,7 +320,8 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
             <DiffCard
               key={f.path}
               header={f}
-              entry={f.binary ? undefined : cacheRef.current.get(`${source.oid}:${f.path}`)}
+              entry={f.binary ? undefined : cacheRef.current.get(`${source.oid}:${f.path}:${mode}`)}
+              viewMode={mode}
               onRetry={retry}
               collapsed={collapsed.has(f.path)}
               onToggle={toggleCollapsed}
@@ -295,6 +338,7 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
 function DiffCard({
   header,
   entry,
+  viewMode,
   onRetry,
   collapsed,
   onToggle,
@@ -302,6 +346,8 @@ function DiffCard({
   header: FileDiffHeader;
   /** undefined for binary headers (never fetched). */
   entry: CardState | undefined;
+  /** P17d: File/Diff render mode, forwarded read-only to the card's DiffView. */
+  viewMode: 'diff' | 'file';
   onRetry(path: string): void;
   collapsed: boolean;
   onToggle(path: string): void;
@@ -344,7 +390,7 @@ function DiffCard({
           removed from the DOM entirely — the whole point of this feature. */}
       {!collapsed && (
         <div className="diff-card-body">
-          <DiffCardBody header={header} entry={entry} onRetry={onRetry} />
+          <DiffCardBody header={header} entry={entry} viewMode={viewMode} onRetry={onRetry} />
         </div>
       )}
     </div>
@@ -354,10 +400,12 @@ function DiffCard({
 function DiffCardBody({
   header,
   entry,
+  viewMode,
   onRetry,
 }: {
   header: FileDiffHeader;
   entry: CardState | undefined;
+  viewMode: 'diff' | 'file';
   onRetry(path: string): void;
 }) {
   if (header.binary) return <div className="diff-placeholder">Binary file</div>;
@@ -379,5 +427,6 @@ function DiffCardBody({
     );
   }
   // §6.4: DiffView already handles binary / tooLarge / empty-hunks placeholders.
-  return <DiffView diff={entry.diff} />;
+  // P17d: read-only (no stageable/onStageLines/onStageHunk) — only viewMode.
+  return <DiffView diff={entry.diff} viewMode={viewMode} />;
 }
