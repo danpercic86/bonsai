@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AiOutputPanel } from './AiOutputPanel';
 import { CommitBox } from './CommitBox';
 import type { CommitBoxHandle } from './CommitBox';
 import { CommitPanel } from './CommitPanel';
@@ -32,8 +33,10 @@ import type { GraphCanvasHandle, GraphContextTarget, WipSummary } from '../graph
 import { effectiveMetrics } from '../graph/metrics';
 import { ipc } from '../ipc';
 import type {
+  AiAnalysisMode,
   AiAutonomy,
   AiAvailability,
+  AiDiffTarget,
   AiResolveProposal,
   AutoFetchSettings,
   BranchInfo,
@@ -157,6 +160,20 @@ export function RepoWorkspace({
   // P13 §8.3: path whose AI resolution is in flight (calls take seconds). Gates
   // the per-row ✨ AI button without freezing the whole panel like `mutating`.
   const [aiResolvingPath, setAiResolvingPath] = useState<string | null>(null);
+  // P15b: explain/review output panel (read-only prose). RepoWorkspace owns the
+  // ipc.aiAnalyzeDiff call + the panel's loading/error/result state; the panel is
+  // presentational. `null` => not shown. A req-id guards against a stale response
+  // overwriting a newer request or a closed panel.
+  const [aiPanel, setAiPanel] = useState<{
+    title: string;
+    text: string | null;
+    loading: boolean;
+    error: string | null;
+    costUsd: number | null;
+  } | null>(null);
+  const aiPanelReqId = useRef(0);
+  const aiPanelOpenRef = useRef(false);
+  aiPanelOpenRef.current = aiPanel !== null;
   const [abortConfirmOpen, setAbortConfirmOpen] = useState(false);
   const commitBoxRef = useRef<CommitBoxHandle>(null);
   // P6 §4.5: pending branch/remote deletes drive the two confirm dialogs; the
@@ -781,6 +798,55 @@ export function RepoWorkspace({
     const proposal = await ipc.generateCommitMessage(repoId);
     return proposal.message;
   }
+
+  // P15b: run an explain/review analysis of a diff target and show the prose in
+  // the AiOutputPanel. Read-only — writes nothing. Guarded by a req-id so a slow
+  // response can't clobber a newer request or a closed panel.
+  const runAnalyze = useCallback(
+    (target: AiDiffTarget, mode: AiAnalysisMode, title: string) => {
+      const id = ++aiPanelReqId.current;
+      setAiPanel({ title, text: null, loading: true, error: null, costUsd: null });
+      ipc.aiAnalyzeDiff(repoId, target, mode).then(
+        (res) => {
+          if (id !== aiPanelReqId.current) return;
+          setAiPanel({ title, text: res.text, loading: false, error: null, costUsd: res.costUsd });
+        },
+        (e: unknown) => {
+          if (id !== aiPanelReqId.current) return;
+          setAiPanel({ title, text: null, loading: false, error: errorMessage(e), costUsd: null });
+        },
+      );
+    },
+    [repoId],
+  );
+
+  const closeAiPanel = useCallback(() => {
+    aiPanelReqId.current += 1;
+    setAiPanel(null);
+  }, []);
+
+  // P15b: analyze the file diff currently open in the center-pane overlay. Only
+  // workdir kinds (staged/unstaged/untracked) map to a `workdirFile` target;
+  // `staged` is true only for the staged slot. `undefined` hides the affordance
+  // for AI-ineligible or non-workdir (commit/compare/conflict) overlays.
+  const overlayExplain = useMemo<(() => void) | undefined>(() => {
+    if (!aiEligible || overlayMeta === null) return undefined;
+    const meta = overlayMeta;
+    if (meta.kind !== 'staged' && meta.kind !== 'unstaged' && meta.kind !== 'untracked') {
+      return undefined;
+    }
+    return () =>
+      runAnalyze(
+        {
+          kind: 'workdirFile',
+          path: meta.path,
+          origPath: meta.origPath,
+          staged: meta.kind === 'staged',
+        },
+        'explain',
+        `Explain ${meta.path}`,
+      );
+  }, [aiEligible, overlayMeta, runAnalyze]);
 
   async function handleCreateBranch(name: string) {
     setBranchesError(null);
@@ -1512,6 +1578,11 @@ export function RepoWorkspace({
       // P11g-rev §4.7: layering, topmost first. The commit-mode DiffBrowser
       // overlay closes first; then the workdir single-file diffSlot; then
       // compare mode (which also closes its auto-open browser); then deselect.
+      // P15b: the AI output panel floats above everything — Esc dismisses it first.
+      if (aiPanelOpenRef.current) {
+        closeAiPanel();
+        return;
+      }
       if (commitBrowserOpenRef.current) {
         setCommitBrowserOpen(false);
         return;
@@ -1528,7 +1599,7 @@ export function RepoWorkspace({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [active, globalModalOpen, collapseDiffSlot, clearCompare]);
+  }, [active, globalModalOpen, collapseDiffSlot, clearCompare, closeAiPanel]);
 
   // Per-repo shortcut effect (active tab only, §5.1): refresh / fetch / pull /
   // push / graph nav. Global modals + this repo's own dialogs suppress it.
@@ -1765,6 +1836,17 @@ export function RepoWorkspace({
               onClose={collapseDiffSlot}
               onResolveConflictText={handleResolveConflictText}
               mutating={mutating}
+              onExplain={overlayExplain}
+            />
+          )}
+          {aiPanel !== null && (
+            <AiOutputPanel
+              title={aiPanel.title}
+              text={aiPanel.text}
+              loading={aiPanel.loading}
+              error={aiPanel.error}
+              costUsd={aiPanel.costUsd}
+              onClose={closeAiPanel}
             />
           )}
           {/* P11g-rev §4.5: all-files DiffBrowser (header + stacked scroll only)
@@ -1824,6 +1906,11 @@ export function RepoWorkspace({
               }}
               onSelectParent={handleSelectParent}
               onClose={() => setSelectedIndex(null)}
+              aiEligible={aiEligible}
+              onExplain={() => {
+                const oid = graph.nodes[selectedIndex].id;
+                runAnalyze({ kind: 'commit', oid }, 'explain', `Explain commit ${shortOid(oid)}`);
+              }}
             />
           ) : (
             <>
@@ -1837,8 +1924,12 @@ export function RepoWorkspace({
                 conflicts={conflicts}
                 aiEligible={aiEligible}
                 aiResolvingPath={aiResolvingPath}
+                aiAnalyzing={aiPanel?.loading === true}
                 onStage={(paths) => void handleStage(paths)}
                 onUnstage={(paths) => void handleUnstage(paths)}
+                onReviewStaged={() =>
+                  runAnalyze({ kind: 'staged' }, 'review', 'Review staged changes')
+                }
                 onToggleDiff={handleToggleWorkdirDiff}
                 onResolveConflict={(path, r) => void handleResolveConflict(path, r)}
                 onToggleConflictView={handleToggleConflictView}

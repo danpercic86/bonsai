@@ -7,8 +7,11 @@ export const ipc: IpcApi =
     : (await import('./tauri')).tauriIpc;
 
 export type {
+  AiAnalysis,
+  AiAnalysisMode,
   AiAutonomy,
   AiAvailability,
+  AiDiffTarget,
   AiResolveProposal,
   AppError,
   ApplyStashOutcome,

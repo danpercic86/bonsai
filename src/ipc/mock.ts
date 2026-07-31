@@ -14,8 +14,11 @@ import {
 import type { MockCommit } from './fixtures/graph';
 import { generateLayout20k } from './fixtures/graph20k';
 import type {
+  AiAnalysis,
+  AiAnalysisMode,
   AiAutonomy,
   AiAvailability,
+  AiDiffTarget,
   AiResolveProposal,
   AppError,
   ApplyStashOutcome,
@@ -1469,6 +1472,43 @@ export const mockIpc: IpcApi = {
         '- add context-menu entry',
       costUsd: 0.004,
     };
+  },
+
+  // P15b: explain/review a diff target (read-only prose). Writes NOTHING. Does
+  // NOT enforce the consent gate (matches aiResolveConflict; the frontend gates
+  // the affordances). `?ai=off` simulates a missing CLI; else canned prose keyed
+  // on `mode`, with a tiny per-target prefix so the panel shows what was analyzed.
+  async aiAnalyzeDiff(
+    repoId: string,
+    target: AiDiffTarget,
+    mode: AiAnalysisMode,
+  ): Promise<AiAnalysis> {
+    await delay(500);
+    requireRepo(repoId);
+    if (AI_OFF) {
+      const err: AppError = {
+        kind: 'aiFailed',
+        message: 'Claude Code CLI not found on PATH',
+      };
+      throw err;
+    }
+    let prefix = '';
+    if (target.kind === 'commit') {
+      prefix = `Commit ${target.oid.slice(0, 7)}: `;
+    } else if (target.kind === 'workdirFile') {
+      prefix = `${target.path}: `;
+    }
+    const text =
+      mode === 'review'
+        ? prefix +
+          'Review: no blocking issues. Consider a null-check on the new branch ' +
+          'lookup in Sidebar.tsx; the added revwalk is unbounded — confirm the ' +
+          'AI_SUMMARY_MAX_COMMITS cap is applied. Style LGTM.'
+        : prefix +
+          'This change adds a "Summarize branch" context-menu action in the sidebar ' +
+          'and a matching ai_summarize_range command that gathers base..target ' +
+          'commits plus a diffstat and calls the local Claude CLI.';
+    return { text, costUsd: 0.006 };
   },
 
   // Stateful rebase mock (P3d contract §7.2). A repo seeded with a rebase starts

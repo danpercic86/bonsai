@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import type {
   ConflictEntry,
   ConflictKind,
@@ -123,6 +124,7 @@ function Section({
   expandable,
   diffSlot,
   listView,
+  extraAction,
   onAction,
   onToggleDiff,
 }: {
@@ -143,6 +145,8 @@ function Section({
   expandable: boolean;
   diffSlot: DiffSlot | null;
   listView: ListView;
+  /** P15b: optional extra header control (e.g. the staged-section "✨ Review"). */
+  extraAction?: ReactNode;
   onAction: (paths: string[]) => void;
   onToggleDiff: (section: WorkdirSection, entry: StatusEntry) => void;
 }) {
@@ -191,6 +195,7 @@ function Section({
             {actionLabel}
           </button>
         )}
+        {extraAction}
       </div>
       {nodes !== null ? (
         <Tree
@@ -399,8 +404,12 @@ export interface StatusPanelProps {
   aiEligible: boolean;
   /** P13 §8.3: path whose AI resolution is in flight (per-path busy), or null. */
   aiResolvingPath: string | null;
+  /** P15b: true while an AI explain/review call is in flight — disables Review. */
+  aiAnalyzing: boolean;
   onStage(paths: string[]): void;
   onUnstage(paths: string[]): void;
+  /** P15b: request an AI review of the whole staged set. */
+  onReviewStaged(): void;
   /** Toggle a row's diff in the center-pane overlay (App owns the fetch). */
   onToggleDiff(section: WorkdirSection, entry: StatusEntry): void;
   /** P3c §8.2: resolve one conflicted path (no confirm — re-doable). */
@@ -422,8 +431,10 @@ export function StatusPanel({
   conflicts,
   aiEligible,
   aiResolvingPath,
+  aiAnalyzing,
   onStage,
   onUnstage,
+  onReviewStaged,
   onToggleDiff,
   onResolveConflict,
   onToggleConflictView,
@@ -488,6 +499,19 @@ export function StatusPanel({
             expandable
             diffSlot={diffSlot}
             listView={listView}
+            extraAction={
+              aiEligible && snapshot.staged.length > 0 ? (
+                <button
+                  type="button"
+                  className="section-action section-action-ai"
+                  disabled={aiAnalyzing}
+                  title="Review the staged changes with AI"
+                  onClick={onReviewStaged}
+                >
+                  {aiAnalyzing ? '✨ Reviewing…' : '✨ Review'}
+                </button>
+              ) : undefined
+            }
             onAction={onUnstage}
             onToggleDiff={onToggleDiff}
           />

@@ -1572,6 +1572,34 @@ span.file-row-main {
   opacity: 0.6;
 }
 
+/* P15b: AI explain/review output card. Floats over the graph pane, above the
+   single-file diff-overlay (z 5) so "Explain file" from a diff header is visible. */
+.ai-output-panel {
+  z-index: 7;
+}
+
+.ai-output-icon {
+  flex: none;
+  font-size: 13px;
+}
+
+.ai-output-cost {
+  font-family: var(--font-mono);
+}
+
+.ai-output-text {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-1);
+}
+
 .diff-view {
   background: var(--bg-0);
   border: 1px solid var(--border);

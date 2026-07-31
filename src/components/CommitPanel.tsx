@@ -67,6 +67,10 @@ export interface CommitPanelProps {
   onSelectParent(parentOrdinal: number): void;
   /** "×" button -> deselect. */
   onClose(): void;
+  /** P15b: AI enabled+consented+CLI installed — gates the "✨ Explain" button. */
+  aiEligible: boolean;
+  /** P15b: request an AI explanation of this commit (App owns the call). */
+  onExplain(): void;
 }
 
 export function CommitPanel({
@@ -79,6 +83,8 @@ export function CommitPanel({
   onSelectScope,
   onSelectParent,
   onClose,
+  aiEligible,
+  onExplain,
 }: CommitPanelProps) {
   const details = data?.details ?? null;
   const now = Math.floor(Date.now() / 1000);
@@ -89,6 +95,16 @@ export function CommitPanel({
       <div className="commit-panel-header">
         <div className="commit-panel-title">
           <div className="commit-summary">{details?.summary ?? node.summary}</div>
+          {aiEligible && (
+            <button
+              type="button"
+              className="btn-secondary commit-explain-button"
+              title="Explain this commit with AI"
+              onClick={onExplain}
+            >
+              {'✨ Explain'}
+            </button>
+          )}
           <button
             type="button"
             className="btn-icon commit-close"

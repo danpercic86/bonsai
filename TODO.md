@@ -39,8 +39,19 @@ Decisions confirmed by orchestrator (architect §7): empty inputs reuse AiFailed
 new error kind); P15c range = merge-base (mb..target); "✨ Generate" over a non-empty box confirms
 first; base auto-select main→master→HEAD→upstream; explain+review = one `ai_analyze_diff` command.
 
-**Current step: P15a — senior-dev implementing (payload.rs + ai_commit.rs + generate_commit_message
-command + IPC/mock + CommitBox button).**
+- **P15a** (reviewer APPROVE-WITH-NITS, 3 cosmetic nits deferred) — commit e592d75. Shared
+  `ai/payload.rs` renderer + `git/ai_commit.rs` `generate_commit_message` + command + IPC/mock +
+  CommitBox "✨ Generate". cargo build/clippy/test -p bonsai-core + pnpm build green.
+
+- **P15b** (reviewer APPROVE-WITH-NITS) — `git/ai_explain.rs` (`analyze_diff` over `AiDiffTarget`
+  commit/workdirFile/staged × explain/review) + `ai_analyze_diff` command + `AiOutputPanel.tsx` +
+  three triggers (explain-commit in CommitPanel, explain-file in DiffOverlay, review-staged in
+  StatusPanel). Senior-dev caught + fixed a contract serde bug (struct-variant field needs explicit
+  `rename="origPath"`; enum `rename_all` doesn't cascade) — locked by a non-vacuous round-trip test.
+  Folded reviewer NIT 1 (added `nothingToCommit` to the two doc error lists). Green.
+
+**Current step: P15c — senior-dev implementing (ai_summary.rs + ai_summarize_range command + Sidebar
+branch context-menu action).**
 
 ## P16 — Embedded MCP server (Tier 3, shared live workspace) — **pending** (planned)
 

@@ -3,6 +3,7 @@ use tauri::Emitter;
 use bonsai_core::ai::{self, AiAvailability, RunOpts};
 use bonsai_core::error::AppError;
 use bonsai_core::git::ai_commit::{self, CommitMessageProposal};
+use bonsai_core::git::ai_explain::{self, AiAnalysis, AiAnalysisMode, AiDiffTarget};
 use bonsai_core::git::ai_resolve::{self, AiResolveProposal};
 use bonsai_core::git::branches::{self, BranchesSnapshot, CreateBranchHereResult};
 use bonsai_core::git::commit::{create_commit, CommitResult};
@@ -1170,6 +1171,47 @@ async fn generate_commit_message_inner(
     let workdir = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || {
         ai_commit::generate_commit_message(&workdir, RunOpts::default())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Explains or reviews a diff target (P15b §5). Loads settings and REFUSES with
+/// `AiUnavailable` unless `ai_enabled && ai_consented` (the authoritative backend
+/// gate; the frontend also gates for UX). Read-only prose out — WRITES NOTHING.
+/// Errors: `aiUnavailable` | `aiFailed` | `nothingToCommit` | `git` | `invalidName` | `noRepo`.
+#[tauri::command]
+pub async fn ai_analyze_diff(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    target: AiDiffTarget,
+    mode: AiAnalysisMode,
+) -> Result<AiAnalysis, AppError> {
+    // Resolve the settings-file path at the AppHandle boundary so the inner stays
+    // runtime-free and unit-testable (mirrors `generate_commit_message`), then delegate.
+    let file = settings::settings_file(&app)?;
+    ai_analyze_diff_inner(state.inner(), &file, &repo_id, target, mode).await
+}
+
+/// Runtime-free core of `ai_analyze_diff` (unit-testable without a Tauri app).
+/// The consent gate is enforced HERE, BEFORE `repo_path`.
+async fn ai_analyze_diff_inner(
+    state: &AppState,
+    settings_file: &std::path::Path,
+    repo_id: &str,
+    target: AiDiffTarget,
+    mode: AiAnalysisMode,
+) -> Result<AiAnalysis, AppError> {
+    let s = settings::load_from(settings_file);
+    if !(s.ai_enabled && s.ai_consented) {
+        return Err(AppError::AiUnavailable(
+            "AI features are disabled or not yet consented to".to_string(),
+        ));
+    }
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        ai_explain::analyze_diff(&workdir, target, mode, RunOpts::default())
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -2376,6 +2418,47 @@ mod tests {
         settings::save_to(&file, &s).expect("save settings");
         let err = tauri::async_runtime::block_on(generate_commit_message_inner(
             &state, &file, MISSING_ID,
+        ))
+        .expect_err("no repo open must be NoRepo");
+        assert!(matches!(err, AppError::NoRepo), "got {err:?}");
+    }
+
+    /// P15b §5/§8.5: `ai_analyze_diff` enforces the same backend consent gate
+    /// BEFORE touching the repo: default settings (`ai_consented=false`) →
+    /// `AiUnavailable`; once enabled+consented, an unknown repo id → `NoRepo`
+    /// (the gate passed, `repo_path` then fails). No CLI needed.
+    #[test]
+    fn ai_analyze_diff_enforces_consent_gate_then_no_repo() {
+        let state = AppState::default();
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let file = dir.path().join("settings.json");
+
+        // No settings file → defaults → not consented → the gate refuses.
+        let err = tauri::async_runtime::block_on(ai_analyze_diff_inner(
+            &state,
+            &file,
+            MISSING_ID,
+            AiDiffTarget::Staged,
+            AiAnalysisMode::Review,
+        ))
+        .expect_err("disabled gate must refuse");
+        assert!(matches!(err, AppError::AiUnavailable(_)), "got {err:?}");
+
+        // Enable + consent; now the gate passes and the missing repo → NoRepo.
+        let s = settings::Settings {
+            ai_enabled: true,
+            ai_consented: true,
+            ..settings::Settings::default()
+        };
+        settings::save_to(&file, &s).expect("save settings");
+        let err = tauri::async_runtime::block_on(ai_analyze_diff_inner(
+            &state,
+            &file,
+            MISSING_ID,
+            AiDiffTarget::Commit {
+                oid: "0123456789abcdef0123456789abcdef01234567".to_string(),
+            },
+            AiAnalysisMode::Explain,
         ))
         .expect_err("no repo open must be NoRepo");
         assert!(matches!(err, AppError::NoRepo), "got {err:?}");

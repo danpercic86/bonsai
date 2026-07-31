@@ -157,6 +157,10 @@ export interface DiffOverlayProps {
   onResolveConflictText(path: string, content: string): Promise<void>;
   /** RepoWorkspace busy flag — disables the editor's Stage-resolved button. */
   mutating: boolean;
+  /** P15b: request an AI explanation of THIS file diff (workdir kinds only).
+   *  `undefined` hides the "✨ Explain" action (AI ineligible or a non-workdir
+   *  slot kind). App owns the aiAnalyzeDiff call + AiOutputPanel state. */
+  onExplain?(): void;
 }
 
 export function DiffOverlay({
@@ -165,6 +169,7 @@ export function DiffOverlay({
   onClose,
   onResolveConflictText,
   mutating,
+  onExplain,
 }: DiffOverlayProps) {
   const lang = detectLanguage(meta.path);
   return (
@@ -187,6 +192,16 @@ export function DiffOverlay({
           <span className="lang-chip" data-lang={lang.id}>{lang.label}</span>
         )}
         <span className="diff-overlay-kind">{KIND_LABEL[meta.kind]}</span>
+        {onExplain !== undefined && (
+          <button
+            type="button"
+            className="btn-secondary diff-explain-button"
+            title="Explain this change with AI"
+            onClick={onExplain}
+          >
+            {'✨ Explain'}
+          </button>
+        )}
         <button
           type="button"
           className="btn-icon diff-overlay-close"

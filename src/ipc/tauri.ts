@@ -3,6 +3,9 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import type {
+  AiAnalysis,
+  AiAnalysisMode,
+  AiDiffTarget,
   AiAvailability,
   AiResolveProposal,
   ApplyStashOutcome,
@@ -193,6 +196,15 @@ export const tauriIpc: IpcApi = {
   // P15a: generate a commit message from the staged diff (proposal only).
   generateCommitMessage(repoId: string): Promise<CommitMessageProposal> {
     return invoke<CommitMessageProposal>('generate_commit_message', { repoId });
+  },
+
+  // P15b: explain/review a diff target (read-only prose).
+  aiAnalyzeDiff(
+    repoId: string,
+    target: AiDiffTarget,
+    mode: AiAnalysisMode,
+  ): Promise<AiAnalysis> {
+    return invoke<AiAnalysis>('ai_analyze_diff', { repoId, target, mode });
   },
 
   rebaseBranch(repoId: string, onto: string): Promise<RebaseOutcome> {

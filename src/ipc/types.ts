@@ -379,6 +379,22 @@ export interface CommitMessageProposal {
   costUsd: number | null;
 }
 
+/** Explain (teammate-friendly summary) vs Review (risks/bugs/style) (P15b). */
+export type AiAnalysisMode = 'explain' | 'review';
+
+/** Diff source for aiAnalyzeDiff — discriminated on `kind` (P15b). */
+export type AiDiffTarget =
+  | { kind: 'commit'; oid: string }
+  | { kind: 'workdirFile'; path: string; origPath: string | null; staged: boolean }
+  | { kind: 'staged' };
+
+/** Read-only prose result of aiAnalyzeDiff (P15b). Mirrors the Rust
+ *  `AiAnalysis`; analysis writes nothing. */
+export interface AiAnalysis {
+  text: string;
+  costUsd: number | null;
+}
+
 export interface UiSettings {
   theme: Theme;
   paneWidths: PaneWidths;
@@ -589,6 +605,9 @@ export interface IpcApi {
   /** P15a. Generate a commit message from the staged diff. Never auto-commits.
    *  Rejects aiUnavailable | aiFailed | nothingToCommit | git | noRepo. */
   generateCommitMessage(repoId: string): Promise<CommitMessageProposal>;
+  /** P15b. Explain or review a diff target (read-only prose). Writes nothing.
+   *  Rejects aiUnavailable | aiFailed | nothingToCommit | git | invalidName | noRepo. */
+  aiAnalyzeDiff(repoId: string, target: AiDiffTarget, mode: AiAnalysisMode): Promise<AiAnalysis>;
   /** Persisted multi-tab session. Never rejects for a missing/corrupt file (empty). */
   getSession(): Promise<SessionState>;
   /** Writes the whole session (tabs change as a unit). Rejects io on save failure. */
