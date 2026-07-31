@@ -37,6 +37,35 @@ export const INITIAL_BRANCHES: BranchesSnapshot = {
       behind: null,
       tip: 'c'.repeat(40),
     },
+    // P25 §6.3: stale-cleanup demo locals. `feature/merged-a` and
+    // `feature/merged-b` are fully merged into `main` (classified `merged`);
+    // `feature/gone` has a configured upstream whose remote-tracking ref was
+    // deleted (classified `goneUpstream`). `experiment-unmerged` above is NEITHER
+    // → excluded from the stale report. Consumed by STALE_SEED in mock.ts.
+    {
+      name: 'feature/merged-a',
+      isHead: false,
+      upstream: 'origin/feature/merged-a',
+      ahead: 0,
+      behind: 3,
+      tip: '7'.repeat(40),
+    },
+    {
+      name: 'feature/merged-b',
+      isHead: false,
+      upstream: null,
+      ahead: null,
+      behind: null,
+      tip: '8'.repeat(40),
+    },
+    {
+      name: 'feature/gone',
+      isHead: false,
+      upstream: 'origin/feature/gone',
+      ahead: 4,
+      behind: 1,
+      tip: '9'.repeat(40),
+    },
     // §1.4: graph-fixture pill names (feat / exp / gh-pages / dev) get local
     // entries so their right-click menus resolve (branchMenuItems returns [] for
     // absent names). Appended in graph-pill order (matches existing fixture style).

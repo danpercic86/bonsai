@@ -34,6 +34,7 @@ use bonsai_core::git::repo::{read_repo_info, RepoInfo};
 use bonsai_core::git::reset::{reset_branch as reset_branch_core, ResetMode};
 use bonsai_core::git::revert::{self, RevertOutcome};
 use bonsai_core::git::stage::{stage_paths, unstage_paths};
+use bonsai_core::git::stale::{self, BranchDeleteResult, StaleReport};
 use bonsai_core::git::stage_partial::{
     stage_partial as stage_partial_core, unstage_partial as unstage_partial_core, LineSelection,
 };
@@ -998,6 +999,63 @@ async fn delete_remote_tracking_inner(
     tauri::async_runtime::spawn_blocking(move || branches::delete_remote_tracking(&path, &name))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Classifies local branches safe to delete (merged into `base` OR
+/// upstream-gone) — read-only, touches nothing (P25 §4.1). `base` auto-resolves
+/// when omitted. Pure git; NO consent gate. Errors: `git` | `noRepo`.
+#[tauri::command]
+pub async fn list_stale_branches(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    base: Option<String>,
+) -> Result<StaleReport, AppError> {
+    list_stale_branches_inner(state.inner(), &repo_id, base).await
+}
+
+/// Runtime-free core of `list_stale_branches` (unit-testable without a Tauri app).
+async fn list_stale_branches_inner(
+    state: &AppState,
+    repo_id: &str,
+    base: Option<String>,
+) -> Result<StaleReport, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        stale::find_stale_branches(&path, base.as_deref())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Batch-deletes the caller-supplied branch names that are STILL safe against a
+/// freshly-recomputed stale set — refusing the current branch, the base, and
+/// anything not re-verified as stale (P25 §4.3). Per-branch outcomes are DATA,
+/// never thrown; a partial batch returns `Ok(results)`. Pure git; NO consent
+/// gate. Does NOT emit `repo-changed` — the frontend refetches imperatively.
+/// Errors (whole-call): `git` (bad base) | `noRepo`.
+#[tauri::command]
+pub async fn delete_branches(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    names: Vec<String>,
+    base: Option<String>,
+) -> Result<Vec<BranchDeleteResult>, AppError> {
+    delete_branches_inner(state.inner(), &repo_id, names, base).await
+}
+
+/// Runtime-free core of `delete_branches` (unit-testable without a Tauri app).
+async fn delete_branches_inner(
+    state: &AppState,
+    repo_id: &str,
+    names: Vec<String>,
+    base: Option<String>,
+) -> Result<Vec<BranchDeleteResult>, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        stale::delete_branches(&path, &names, base.as_deref())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Fetches every configured remote, sequentially, fail-fast (M6 contract

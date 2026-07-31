@@ -237,6 +237,61 @@ export interface BranchesSnapshot {
   head: HeadInfo;
 }
 
+/** Why a branch is safe to delete (P25 §4.1). Bare-string enum. */
+export type StaleReason = 'merged' | 'goneUpstream';
+
+/** One local branch classified as stale (P25 §4.1). Mirrors Rust `StaleBranch`. */
+export interface StaleBranch {
+  name: string;
+  /** Full 40-hex tip oid. */
+  tip: string;
+  /** First line of the tip commit's message. */
+  lastCommitSummary: string;
+  /** Tip commit author name. */
+  lastCommitAuthor: string;
+  /** Tip committer time, epoch seconds. */
+  lastCommitTime: number;
+  /** Primary reason: 'merged' when merged (even if also gone), else 'goneUpstream'. */
+  reason: StaleReason;
+  /** Raw flags (a branch may be both). */
+  merged: boolean;
+  goneUpstream: boolean;
+  /** Configured upstream shorthand (e.g. "origin/feature"), if any — present even when gone. */
+  upstream: string | null;
+  /** Ahead/behind the BASE (best-effort; null on lookup error). ahead=0 when merged. */
+  ahead: number | null;
+  behind: number | null;
+  /** Always false in returned entries (the current branch is excluded); defensive wire field. */
+  isCurrent: boolean;
+}
+
+/** Read-only stale classification result (P25 §4.1). Mirrors Rust `StaleReport`. */
+export interface StaleReport {
+  /** Resolved base shorthand (e.g. "main" / "origin/main"). */
+  base: string;
+  /** Full 40-hex base commit oid. */
+  baseOid: string;
+  /** Stale candidates, case-insensitively sorted by name. Excludes base + current HEAD. */
+  branches: StaleBranch[];
+}
+
+/** Per-branch outcome of a batch delete (P25 §4.3). Bare-string enum. */
+export type BranchDeleteStatus =
+  | 'deleted'
+  | 'skippedCurrent'
+  | 'skippedBase'
+  | 'skippedNotStale'
+  | 'skippedNotFound'
+  | 'failed';
+
+/** One result row from `deleteBranches` (P25 §4.3). Mirrors Rust `BranchDeleteResult`. */
+export interface BranchDeleteResult {
+  name: string;
+  status: BranchDeleteStatus;
+  /** Human detail for skipped/failed rows; null when deleted. */
+  message: string | null;
+}
+
 export interface RemoteFetchResult {
   /** Remote name, e.g. "origin". */
   remote: string;
@@ -799,6 +854,13 @@ export interface IpcApi {
   /** Delete the LOCAL remote-tracking ref `name` (does NOT touch the server).
    *  Rejects branchNotFound | git | noRepo. */
   deleteRemoteBranch(repoId: string, name: string): Promise<void>;
+  /** Classify local branches safe to delete (merged into `base` OR upstream-gone).
+   *  Read-only; `base` auto-resolves when omitted. Rejects git | noRepo. */
+  listStaleBranches(repoId: string, base?: string): Promise<StaleReport>;
+  /** Batch-delete the given branch names that are STILL safe (server re-verifies
+   *  against a fresh stale set + not-current + not-base). Per-branch outcomes are
+   *  DATA, never thrown. Rejects git (bad base) | noRepo. */
+  deleteBranches(repoId: string, names: string[], base?: string): Promise<BranchDeleteResult[]>;
   /** Fetch ALL remotes. Rejects noRemote | authFailed | networkError | git | noRepo. */
   fetch(repoId: string): Promise<FetchResult>;
   /** Fetch upstream remote + fast-forward only. Rejects noUpstream | authFailed

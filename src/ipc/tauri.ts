@@ -18,6 +18,7 @@ import type {
   ProfilePreviewEntry,
   ProfileStore,
   BlameLine,
+  BranchDeleteResult,
   BranchesSnapshot,
   CloneProgress,
   CommitDiff,
@@ -50,6 +51,7 @@ import type {
   ResetMode,
   RevertOutcome,
   SessionState,
+  StaleReport,
   StashEntry,
   StatusSnapshot,
   SubmoduleInfo,
@@ -201,6 +203,14 @@ export const tauriIpc: IpcApi = {
 
   deleteRemoteBranch(repoId: string, name: string): Promise<void> {
     return invoke<void>('delete_remote_tracking', { repoId, name });
+  },
+
+  listStaleBranches(repoId: string, base?: string): Promise<StaleReport> {
+    return invoke<StaleReport>('list_stale_branches', { repoId, base });
+  },
+
+  deleteBranches(repoId: string, names: string[], base?: string): Promise<BranchDeleteResult[]> {
+    return invoke<BranchDeleteResult[]>('delete_branches', { repoId, names, base });
   },
 
   fetch(repoId: string): Promise<FetchResult> {

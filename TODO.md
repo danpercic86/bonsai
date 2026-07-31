@@ -53,7 +53,16 @@ client) + not-current + not-base; gone-upstream rows unchecked by default, merge
   AiOutputPanel titled "Review working tree" with mock review prose + cost. Branch-menu item = exact clone
   of the proven Summarize-branch item (menu render is a USER CHECKPOINT — synthetic contextmenu doesn't
   fire in the hidden pane). No reviewer agent (trivial write-free wiring); folded into P25 tester smoke.
-**Current step:** P25b done (uncommitted) → committing → P25c B4 stale-branch core+commands+IPC.
+- **P25c** (reviewer APPROVE, 0 must-fix; exhaustive delete-safety trace passed) — B4 core: new
+  git/stale.rs. find_stale_branches (merged = base contains all branch commits via graph_descendant_of
+  argument-order-correct + CLI-oracle-pinned; goneUpstream = upstream configured but remote-tracking ref
+  missing; base chain explicit→origin/HEAD→main→master→current→error; excludes base+current). delete_
+  branches: recomputes the safe set server-side (never trusts client), order current→base→notStale→
+  notFound→delete, direct git2 Branch::delete(), per-branch Failed is data not a whole-call error,
+  detached-HEAD-safe. 2 commands (no consent gate, pure git) + IPC triple + stateful mock. 9 tests incl.
+  git-branch-merged oracle + delete-safety survival assertions; lib 210 green; clippy + tsc + build clean.
+  Deviation (per orchestrator instruction): CLI oracle lives in stale.rs #[cfg(test)] not a tests/ file.
+**Current step:** P25c done (uncommitted) → committing → P25d B4 UI (StaleBranchesDialog + confirm).
 
 ## P24 — AI-asset management: context profiles + unified instruction editor — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-07-31)
 

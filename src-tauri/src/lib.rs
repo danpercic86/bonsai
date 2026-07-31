@@ -34,6 +34,8 @@ pub fn run() {
             commands::delete_branch,
             commands::checkout_remote,
             commands::delete_remote_tracking,
+            commands::list_stale_branches,
+            commands::delete_branches,
             commands::fetch,
             commands::pull,
             commands::push,

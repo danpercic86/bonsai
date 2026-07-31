@@ -76,6 +76,11 @@ import type {
   ResetMode,
   RevertOutcome,
   SessionState,
+  StaleBranch,
+  StaleReason,
+  StaleReport,
+  BranchDeleteResult,
+  BranchDeleteStatus,
   StashEntry,
   StatusEntry,
   StatusSnapshot,
@@ -1130,6 +1135,52 @@ function randomOid(): string {
   );
 }
 
+/**
+ * P25 §6.3: stale-branch classification seed. Maps a fixture local-branch name
+ * to the classification the backend would compute. Branches absent from this map
+ * (or the current HEAD / base) are never stale. `experiment-unmerged` is
+ * intentionally omitted (NEITHER merged nor gone → excluded from the report).
+ */
+const STALE_SEED: Record<
+  string,
+  { reason: StaleReason; merged: boolean; goneUpstream: boolean }
+> = {
+  'feature/merged-a': { reason: 'merged', merged: true, goneUpstream: false },
+  'feature/merged-b': { reason: 'merged', merged: true, goneUpstream: false },
+  'feature/gone': { reason: 'goneUpstream', merged: false, goneUpstream: true },
+};
+
+/**
+ * Recomputes the stale report from the live `state.branches.local`, mirroring the
+ * server rules: base = 'main', excludes the base and the current HEAD branch, and
+ * only surfaces branches still present that are classified in `STALE_SEED`. A
+ * prior `deleteBranches` that removed a local shrinks the report naturally.
+ */
+function buildStaleReport(state: MockRepoState): StaleReport {
+  const currentName = state.kind === 'detached' ? null : state.headBranch;
+  const branches: StaleBranch[] = state.branches.local
+    .filter((b) => b.name !== 'main' && b.name !== currentName && b.name in STALE_SEED)
+    .map((b) => {
+      const seed = STALE_SEED[b.name];
+      return {
+        name: b.name,
+        tip: b.tip,
+        lastCommitSummary: `work on ${b.name}`,
+        lastCommitAuthor: 'Ada Lovelace',
+        lastCommitTime: 1_720_000_000,
+        reason: seed.reason,
+        merged: seed.merged,
+        goneUpstream: seed.goneUpstream,
+        upstream: b.upstream,
+        ahead: seed.merged ? 0 : (b.ahead ?? 4),
+        behind: b.behind ?? 1,
+        isCurrent: false,
+      };
+    })
+    .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  return { base: 'main', baseOid: state.headOid, branches };
+}
+
 function matchesAny(entry: StatusEntry, paths: string[]): boolean {
   return paths.includes(entry.path) || (entry.origPath !== null && paths.includes(entry.origPath));
 }
@@ -1879,6 +1930,48 @@ export const mockIpc: IpcApi = {
       throw err;
     }
     state.branches.remote = state.branches.remote.filter((r) => r.name !== name);
+  },
+
+  // P25 §6.3: stale-branch cleanup. `listStaleBranches` recomputes the report
+  // from the live branch list; `deleteBranches` mirrors the server's re-verified
+  // safety rules and MUTATES `state.branches.local` for every deleted name so the
+  // harness shows rows disappear + a summary toast.
+  async listStaleBranches(repoId: string, _base?: string): Promise<StaleReport> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    return buildStaleReport(state);
+  },
+
+  async deleteBranches(
+    repoId: string,
+    names: string[],
+    _base?: string,
+  ): Promise<BranchDeleteResult[]> {
+    await delay(200);
+    const state = requireRepo(repoId);
+    const report = buildStaleReport(state);
+    const safe = new Set(report.branches.map((b) => b.name));
+    const currentName = state.kind === 'detached' ? null : state.headBranch;
+
+    const results: BranchDeleteResult[] = names.map((name) => {
+      if (name === currentName) {
+        return { name, status: 'skippedCurrent' as BranchDeleteStatus, message: 'checked-out branch' };
+      }
+      if (name === report.base) {
+        return { name, status: 'skippedBase' as BranchDeleteStatus, message: 'base branch' };
+      }
+      if (!safe.has(name)) {
+        return {
+          name,
+          status: 'skippedNotStale' as BranchDeleteStatus,
+          message: 'not detected as stale',
+        };
+      }
+      // Safe → remove it from the live branch list (mutating shrink).
+      state.branches.local = state.branches.local.filter((b) => b.name !== name);
+      return { name, status: 'deleted' as BranchDeleteStatus, message: null };
+    });
+    return results;
   },
 
   // Stateful remote mock (M6 contract §5). Failure triggers via `?remote=`

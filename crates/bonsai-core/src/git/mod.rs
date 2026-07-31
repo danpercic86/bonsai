@@ -20,6 +20,7 @@ pub mod repo;
 pub mod revert;
 pub mod stage;
 pub mod stage_partial;
+pub mod stale;
 pub mod stash;
 pub mod status;
 pub mod submodule;
