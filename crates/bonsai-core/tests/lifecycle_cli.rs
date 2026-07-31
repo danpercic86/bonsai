@@ -69,6 +69,42 @@ fn setup_origin() -> (tempfile::TempDir, PathBuf, PathBuf) {
     (dir, root, bare)
 }
 
+/// bare "origin.git" carrying MULTIPLE branches (`main`, `feature`) and
+/// MULTIPLE annotated tags (`v1.0` on main, `v2.0` on feature), all pushed via
+/// a seed clone. Returns (scratch dir, root, bare path). Used to prove a clone
+/// brings ALL refs, not just the default branch.
+fn setup_multi_ref_origin() -> (tempfile::TempDir, PathBuf, PathBuf) {
+    let dir = common::scratch_dir();
+    let root = dir.path().to_path_buf();
+
+    git(&root, &["init", "--bare", "-b", "main", "origin.git"]);
+    let bare = root.join("origin.git");
+
+    git(&root, &["clone", &path_str(&bare), "seed"]);
+    let seed = root.join("seed");
+    configure_identity(&seed);
+    git(&seed, &["checkout", "-B", "main"]);
+
+    // main: commit A, annotated tag v1.0.
+    std::fs::write(seed.join("hello.txt"), "hello A\n").expect("write hello.txt");
+    git(&seed, &["add", "-A"]);
+    commit_fixed(&seed, "commit A on main");
+    git(&seed, &["tag", "-a", "v1.0", "-m", "release 1.0"]);
+
+    // feature branch off main: commit C, annotated tag v2.0.
+    git(&seed, &["checkout", "-b", "feature"]);
+    std::fs::write(seed.join("feature.txt"), "feature C\n").expect("write feature.txt");
+    git(&seed, &["add", "-A"]);
+    commit_fixed(&seed, "commit C on feature");
+    git(&seed, &["tag", "-a", "v2.0", "-m", "release 2.0"]);
+
+    // Publish both branches and all tags.
+    git(&seed, &["push", "origin", "main", "feature"]);
+    git(&seed, &["push", "origin", "--tags"]);
+
+    (dir, root, bare)
+}
+
 /// A collecting progress sink: pushes each tick into a shared Vec. Uses a
 /// `Mutex` (not `RefCell`) so the closure satisfies the `Send` bound on the
 /// `clone_repo` sink even though the test drives it on a single thread.
@@ -139,6 +175,80 @@ fn clone_round_trip_and_progress() {
         ticks.last().expect("final tick").received_objects,
         total,
         "final tick must have received all objects",
+    );
+}
+
+/// Coverage gap: cloning a multi-branch / multi-tag origin brings ALL refs
+/// (every remote-tracking branch + every tag), not just the default branch.
+#[test]
+fn clone_brings_all_branches_and_tags() {
+    require_git!();
+    let (_dir, root, bare) = setup_multi_ref_origin();
+    let url = format!("file:///{}", path_str(&bare).replace('\\', "/"));
+    let work = root.join("work");
+
+    let out = clone_repo(&url, &work, |_p| {}).expect("clone_repo");
+    let info = read_repo_info(Path::new(&out)).expect("read_repo_info");
+    assert!(info.is_repo && !info.bare, "clone must be a usable repo");
+
+    // Both remote-tracking branches exist and point at the origin tips.
+    assert_eq!(
+        rev_parse(&work, "refs/remotes/origin/main"),
+        rev_parse(&bare, "main"),
+        "origin/main tracking ref must match origin",
+    );
+    assert_eq!(
+        rev_parse(&work, "refs/remotes/origin/feature"),
+        rev_parse(&bare, "feature"),
+        "origin/feature tracking ref must match origin",
+    );
+
+    // Both tags were fetched and resolve to the origin's tag objects.
+    let tags = git(&work, &["tag", "--list"]);
+    assert!(tags.contains("v1.0"), "tag v1.0 must be cloned: {tags:?}");
+    assert!(tags.contains("v2.0"), "tag v2.0 must be cloned: {tags:?}");
+    assert_eq!(
+        rev_parse(&work, "refs/tags/v1.0"),
+        rev_parse(&bare, "refs/tags/v1.0"),
+        "cloned tag v1.0 must match origin",
+    );
+    assert_eq!(
+        rev_parse(&work, "refs/tags/v2.0"),
+        rev_parse(&bare, "refs/tags/v2.0"),
+        "cloned tag v2.0 must match origin",
+    );
+
+    // The checked-out HEAD is the default branch (main), not feature.
+    assert_eq!(
+        rev_parse(&work, "HEAD"),
+        rev_parse(&bare, "main"),
+        "clone must check out the default branch (main)",
+    );
+}
+
+/// Coverage gap: cloning into a destination path that CONTAINS SPACES succeeds
+/// (Windows path-quoting / libgit2 path handling regression guard).
+#[test]
+fn clone_into_path_with_spaces_succeeds() {
+    require_git!();
+    let (_dir, root, bare) = setup_origin();
+    let url = format!("file:///{}", path_str(&bare).replace('\\', "/"));
+
+    let dest = root.join("my cloned repo");
+    let out = clone_repo(&url, &dest, |_p| {}).expect("clone into spaced path");
+
+    assert!(out.contains(' '), "returned workdir path must retain the space: {out:?}");
+    let info = read_repo_info(Path::new(&out)).expect("read_repo_info");
+    assert!(info.is_repo && !info.bare, "spaced-path clone must be a usable repo");
+    assert_eq!(
+        rev_parse(&dest, "HEAD"),
+        rev_parse(&bare, "main"),
+        "spaced-path clone HEAD must match origin main",
+    );
+    assert_eq!(
+        git(&dest, &["status", "--porcelain"]),
+        "",
+        "spaced-path clone worktree must be clean",
     );
 }
 

@@ -178,7 +178,17 @@ dest file/non-empty → AppError::Io; clone creds via Config::open_default(). Su
   repository… opens an unborn/empty repo tab; zero console errors. Backend AI gate = lifecycle_cli 7.
   Pending: tester full regression + USER CHECKPOINT (real network clone with credential helper).
 
-**Current step: P21 — tester running (full regression + user checklist). P22 contract ready.**
+- **P21 tester** — full regression PASS, no regressions/bugs: bonsai_lib 65, bonsai_core 154, lifecycle_cli
+  7→**9** (added clone_brings_all_branches_and_tags + clone_into_path_with_spaces), all integration; clippy
+  --workspace --tests clean; pnpm build clean. Checklist: docs/contracts/P21-user-checklist.md.
+- **P21 AI GATE PASSED (2026-07-31).** Commits: 24c1885 P21a · 263b135 P21b. lifecycle_cli oracle +
+  frontend harness (clone dialog derivation/progress/tab-open + init unborn tab) both verified.
+
+**P21 awaiting USER CHECKPOINT** (native pnpm tauri dev, per docs/contracts/P21-user-checklist.md): real
+public HTTPS clone (name preview, progress, auto-open tab) + private clone via credential helper (no in-app
+prompt) + auth-fail inline error; init → unborn tab → first commit; idempotent init-on-existing.
+
+**Current step: P22a — implementing tags backend (senior-dev).**
 
 ### P22 — Tags & remotes management — **queued** (contract ready)
 Contract: docs/contracts/P22-tags-remotes.md (architect). Open decisions RESOLVED (orchestrator accepted
