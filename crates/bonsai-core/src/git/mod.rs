@@ -12,6 +12,7 @@ pub mod rebase;
 pub mod remote;
 pub mod repo;
 pub mod stage;
+pub mod stage_partial;
 pub mod stash;
 pub mod status;
 

@@ -19,6 +19,9 @@ use bonsai_core::git::rebase::{self, RebaseOutcome};
 use bonsai_core::git::remote::{fetch_all, pull_ff, push_current, FetchResult, PullResult, PushResult};
 use bonsai_core::git::repo::{read_repo_info, RepoInfo};
 use bonsai_core::git::stage::{stage_paths, unstage_paths};
+use bonsai_core::git::stage_partial::{
+    stage_partial as stage_partial_core, unstage_partial as unstage_partial_core, LineSelection,
+};
 use bonsai_core::git::stash::{self, ApplyStashOutcome, CreateStashResult, StashEntry};
 use bonsai_core::git::status::{read_status, StatusSnapshot};
 use bonsai_core::graph::{compute_graph, GraphLayout};
@@ -624,8 +627,9 @@ pub async fn get_workdir_file_diff(
     path: String,
     orig_path: Option<String>,
     staged: bool,
+    full_context: bool,
 ) -> Result<FileDiff, AppError> {
-    get_workdir_file_diff_inner(state.inner(), &repo_id, path, orig_path, staged).await
+    get_workdir_file_diff_inner(state.inner(), &repo_id, path, orig_path, staged, full_context).await
 }
 
 /// Runtime-free core of `get_workdir_file_diff` (unit-testable without a Tauri app).
@@ -635,10 +639,73 @@ async fn get_workdir_file_diff_inner(
     path: String,
     orig_path: Option<String>,
     staged: bool,
+    full_context: bool,
 ) -> Result<FileDiff, AppError> {
     let workdir = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        workdir_file_diff(&workdir, &path, orig_path.as_deref(), staged)
+        workdir_file_diff(&workdir, &path, orig_path.as_deref(), staged, full_context)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Stages only the selected changed lines of one working-dir file (index moves
+/// toward the workdir; P17 §2.7). Empty selection is a no-op. Does NOT emit
+/// `repo-changed` — the frontend refetches imperatively.
+/// Errors: `noRepo` | `git` | `other` (stale/unsupported/invalid path).
+#[tauri::command]
+pub async fn stage_partial(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    path: String,
+    orig_path: Option<String>,
+    selection: Vec<LineSelection>,
+) -> Result<(), AppError> {
+    stage_partial_inner(state.inner(), &repo_id, path, orig_path, selection).await
+}
+
+/// Runtime-free core of `stage_partial` (unit-testable without a Tauri app).
+async fn stage_partial_inner(
+    state: &AppState,
+    repo_id: &str,
+    path: String,
+    orig_path: Option<String>,
+    selection: Vec<LineSelection>,
+) -> Result<(), AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        stage_partial_core(&workdir, &path, orig_path.as_deref(), &selection)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Unstages only the selected changed lines of one staged file (index moves
+/// toward HEAD; P17 §2.7). Empty selection is a no-op. Does NOT emit
+/// `repo-changed` — the frontend refetches imperatively.
+/// Errors: `noRepo` | `git` | `other` (stale/unsupported/invalid path).
+#[tauri::command]
+pub async fn unstage_partial(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    path: String,
+    orig_path: Option<String>,
+    selection: Vec<LineSelection>,
+) -> Result<(), AppError> {
+    unstage_partial_inner(state.inner(), &repo_id, path, orig_path, selection).await
+}
+
+/// Runtime-free core of `unstage_partial` (unit-testable without a Tauri app).
+async fn unstage_partial_inner(
+    state: &AppState,
+    repo_id: &str,
+    path: String,
+    orig_path: Option<String>,
+    selection: Vec<LineSelection>,
+) -> Result<(), AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        unstage_partial_core(&workdir, &path, orig_path.as_deref(), &selection)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -675,8 +742,9 @@ pub async fn get_commit_file_diff(
     oid: String,
     path: String,
     orig_path: Option<String>,
+    full_context: bool,
 ) -> Result<FileDiff, AppError> {
-    get_commit_file_diff_inner(state.inner(), &repo_id, oid, path, orig_path).await
+    get_commit_file_diff_inner(state.inner(), &repo_id, oid, path, orig_path, full_context).await
 }
 
 /// Runtime-free core of `get_commit_file_diff` (unit-testable without a Tauri app).
@@ -686,10 +754,11 @@ async fn get_commit_file_diff_inner(
     oid: String,
     path: String,
     orig_path: Option<String>,
+    full_context: bool,
 ) -> Result<FileDiff, AppError> {
     let workdir = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        commit_file_diff(&workdir, &oid, &path, orig_path.as_deref())
+        commit_file_diff(&workdir, &oid, &path, orig_path.as_deref(), full_context)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -725,8 +794,10 @@ pub async fn compare_with_head_file_diff(
     oid: String,
     path: String,
     orig_path: Option<String>,
+    full_context: bool,
 ) -> Result<FileDiff, AppError> {
-    compare_with_head_file_diff_inner(state.inner(), &repo_id, oid, path, orig_path).await
+    compare_with_head_file_diff_inner(state.inner(), &repo_id, oid, path, orig_path, full_context)
+        .await
 }
 
 /// Runtime-free core of `compare_with_head_file_diff`.
@@ -736,10 +807,11 @@ async fn compare_with_head_file_diff_inner(
     oid: String,
     path: String,
     orig_path: Option<String>,
+    full_context: bool,
 ) -> Result<FileDiff, AppError> {
     let workdir = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        compare_head_file_diff(&workdir, &oid, &path, orig_path.as_deref())
+        compare_head_file_diff(&workdir, &oid, &path, orig_path.as_deref(), full_context)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -1685,6 +1757,7 @@ mod tests {
             "file.txt".to_string(),
             None,
             false,
+            false,
         ))
         .expect_err("get_workdir_file_diff with no repo");
         assert!(matches!(err, AppError::NoRepo));
@@ -1701,8 +1774,41 @@ mod tests {
             oid,
             "file.txt".to_string(),
             None,
+            false,
         ))
         .expect_err("get_commit_file_diff with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+    }
+
+    /// The P17 partial-staging commands return `NoRepo` for an unknown id
+    /// (contract §6.2 scenario 15) — the gate is `repo_path` before any git2.
+    #[test]
+    fn partial_staging_commands_require_an_open_repo() {
+        let state = AppState::default();
+        let selection = vec![LineSelection {
+            kind: bonsai_core::git::diff::LineKind::Add,
+            old_no: None,
+            new_no: Some(1),
+        }];
+
+        let err = tauri::async_runtime::block_on(stage_partial_inner(
+            &state,
+            MISSING_ID,
+            "file.txt".to_string(),
+            None,
+            selection.clone(),
+        ))
+        .expect_err("stage_partial with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(unstage_partial_inner(
+            &state,
+            MISSING_ID,
+            "file.txt".to_string(),
+            None,
+            selection,
+        ))
+        .expect_err("unstage_partial with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
 
@@ -1727,6 +1833,7 @@ mod tests {
             oid,
             "file.txt".to_string(),
             None,
+            false,
         ))
         .expect_err("compare_with_head_file_diff with no repo");
         assert!(matches!(err, AppError::NoRepo));

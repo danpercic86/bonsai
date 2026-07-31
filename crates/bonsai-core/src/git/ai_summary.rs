@@ -111,7 +111,7 @@ pub fn summarize_range(
     let commit_count = u32::try_from(commit_lines.len()).unwrap_or(u32::MAX);
 
     // 4. Aggregate net diffstat: mb_tree (or empty) vs target_tree, headers only.
-    let mut diff_opts = build_diff_options(&[]);
+    let mut diff_opts = build_diff_options(&[], false);
     let mut diff =
         repo.diff_tree_to_tree(Some(&mb_tree), Some(&target_tree), Some(&mut diff_opts))?;
     apply_find_similar(&mut diff)?;

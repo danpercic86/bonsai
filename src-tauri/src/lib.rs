@@ -19,6 +19,8 @@ pub fn run() {
             commands::get_graph,
             commands::stage,
             commands::unstage,
+            commands::stage_partial,
+            commands::unstage_partial,
             commands::commit,
             commands::get_workdir_file_diff,
             commands::get_commit_diff,

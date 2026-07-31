@@ -17,8 +17,16 @@ use crate::git::status::FileStatus;
 /// iteration, `too_large: true`, `hunks: []` (all-or-nothing).
 pub const MAX_FILE_DIFF_LINES: usize = 5_000;
 
+/// Context (and interhunk) line count for a full-context "File View" diff
+/// (§2.6). A large FINITE value — `u32::MAX` overflows libgit2's xdiff context
+/// math. Comfortably larger than [`MAX_FILE_DIFF_LINES`], so any file that is
+/// not already `too_large` collapses to one whole-file hunk.
+const FULL_CONTEXT_LINES: u32 = 1_000_000;
+
 /// Kind of one diff line. Serialized as `"context" | "add" | "del"`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+/// `Deserialize` is derived so `stage_partial::LineSelection` (P17) can carry a
+/// `LineKind` across the wire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum LineKind {
     Context,
@@ -160,14 +168,32 @@ fn map_status(delta: git2::Delta) -> FileStatus {
     }
 }
 
-/// §2.3: fixed diff options (context 3; untracked content included — harmless
-/// for tree-to-tree) restricted to `paths` when non-empty.
-pub(crate) fn build_diff_options(paths: &[&str]) -> git2::DiffOptions {
+/// §2.3: fixed diff options (untracked content included — harmless for
+/// tree-to-tree) restricted to `paths` when non-empty.
+///
+/// `full_context` (P17 §2.6): `true` -> `context_lines(FULL_CONTEXT_LINES)`
+/// (one whole-file hunk, the File View — `u32::MAX` overflows libgit2's xdiff
+/// context math, so a large finite value is used); `false` -> `context_lines(3)`
+/// (the M4 default). Context amount never changes add/del line numbers, so a
+/// File-View selection maps onto the default-context partial-staging diff
+/// unchanged.
+pub(crate) fn build_diff_options(paths: &[&str], full_context: bool) -> git2::DiffOptions {
     let mut opts = git2::DiffOptions::new();
-    opts.context_lines(3)
+    // §2.6: `full_context` collapses the file to ONE whole-file hunk (File
+    // View). `u32::MAX` overflows libgit2's xdiff context arithmetic (it wraps
+    // to a tiny context and the file stays split); a large FINITE value is the
+    // working equivalent. `FULL_CONTEXT_LINES` (> the 5000-line cap) is enough
+    // to cover every file that is not already `too_large`. A matching
+    // `interhunk_lines` guarantees separated changes merge into one hunk (that
+    // merge is decided by the unchanged gap vs `interhunk_lines`, NOT context).
+    let ctx = if full_context { FULL_CONTEXT_LINES } else { 3 };
+    opts.context_lines(ctx)
         .include_untracked(true)
         .show_untracked_content(true)
         .recurse_untracked_dirs(true);
+    if full_context {
+        opts.interhunk_lines(FULL_CONTEXT_LINES);
+    }
     if !paths.is_empty() {
         // Explicit pathspecs are LITERAL paths from StatusEntry / headers, not
         // globs: without this a file named `a[bc].txt` would fnmatch other
@@ -190,7 +216,7 @@ pub(crate) fn apply_find_similar(diff: &mut git2::Diff) -> Result<(), AppError> 
 }
 
 /// HEAD tree, or `None` when HEAD is unborn (empty-tree diff side).
-fn head_tree(repo: &git2::Repository) -> Result<Option<git2::Tree<'_>>, AppError> {
+pub(crate) fn head_tree(repo: &git2::Repository) -> Result<Option<git2::Tree<'_>>, AppError> {
     match repo.head() {
         Ok(h) => Ok(Some(h.peel_to_tree()?)),
         Err(e)
@@ -222,7 +248,7 @@ struct Collect {
 /// Walks a (pathspec-restricted) diff and collects ONE file's hunks.
 /// `Ok(None)` when the diff contains no delta at all (pathspec matched
 /// nothing) — callers decide whether that is benign (§2.2).
-fn collect_file_diff(diff: &git2::Diff) -> Result<Option<FileDiff>, AppError> {
+pub(crate) fn collect_file_diff(diff: &git2::Diff) -> Result<Option<FileDiff>, AppError> {
     let state = RefCell::new(Collect {
         seen: false,
         path: String::new(),
@@ -435,7 +461,7 @@ fn commit_trees<'r>(
 }
 
 /// Pathspec list for one file: the path itself plus the rename OLD side.
-fn pathspecs<'a>(path: &'a str, orig_path: Option<&'a str>) -> Vec<&'a str> {
+pub(crate) fn pathspecs<'a>(path: &'a str, orig_path: Option<&'a str>) -> Vec<&'a str> {
     let mut paths = vec![path];
     if let Some(op) = orig_path {
         if op != path {
@@ -462,6 +488,7 @@ pub fn workdir_file_diff(
     path: &str,
     orig_path: Option<&str>,
     staged: bool,
+    full_context: bool,
 ) -> Result<FileDiff, AppError> {
     validate_rel_path(path)?;
     if let Some(op) = orig_path {
@@ -469,7 +496,7 @@ pub fn workdir_file_diff(
     }
     let repo = open_workdir_repo(workdir)?;
     let paths = pathspecs(path, orig_path);
-    let mut opts = build_diff_options(&paths);
+    let mut opts = build_diff_options(&paths, full_context);
     let mut diff = if staged {
         let old = head_tree(&repo)?;
         repo.diff_tree_to_index(old.as_ref(), None, Some(&mut opts))?
@@ -495,7 +522,7 @@ pub fn commit_diff(workdir: &Path, oid: &str) -> Result<CommitDiff, AppError> {
     let commit = repo.find_commit(git2::Oid::from_str(oid)?)?;
     let details = commit_details(&commit);
     let (old_tree, new_tree) = commit_trees(&commit)?;
-    let mut opts = build_diff_options(&[]);
+    let mut opts = build_diff_options(&[], false);
     let mut diff = repo.diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut opts))?;
     apply_find_similar(&mut diff)?;
     let files = collect_headers(&diff)?;
@@ -510,6 +537,7 @@ pub fn commit_file_diff(
     oid: &str,
     path: &str,
     orig_path: Option<&str>,
+    full_context: bool,
 ) -> Result<FileDiff, AppError> {
     validate_rel_path(path)?;
     if let Some(op) = orig_path {
@@ -519,7 +547,7 @@ pub fn commit_file_diff(
     let commit = repo.find_commit(git2::Oid::from_str(oid)?)?;
     let (old_tree, new_tree) = commit_trees(&commit)?;
     let paths = pathspecs(path, orig_path);
-    let mut opts = build_diff_options(&paths);
+    let mut opts = build_diff_options(&paths, full_context);
     let mut diff = repo.diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut opts))?;
     apply_find_similar(&mut diff)?;
     collect_file_diff(&diff)?
@@ -574,7 +602,7 @@ pub fn compare_head_diff(workdir: &Path, to_oid: &str) -> Result<CompareDiff, Ap
         oid: to_commit.id().to_string(),
         summary: to_commit.summary_bytes().map(lossy).unwrap_or_default(),
     };
-    let mut opts = build_diff_options(&[]);
+    let mut opts = build_diff_options(&[], false);
     let mut diff =
         repo.diff_tree_to_tree(old_tree.as_ref(), Some(&to_tree), Some(&mut opts))?;
     apply_find_similar(&mut diff)?;
@@ -589,6 +617,7 @@ pub fn compare_head_file_diff(
     to_oid: &str,
     path: &str,
     orig_path: Option<&str>,
+    full_context: bool,
 ) -> Result<FileDiff, AppError> {
     validate_rel_path(path)?;
     if let Some(op) = orig_path {
@@ -599,7 +628,7 @@ pub fn compare_head_file_diff(
     let to_tree = to_commit.tree()?;
     let (_from, old_tree) = head_endpoint(&repo)?;
     let paths = pathspecs(path, orig_path);
-    let mut opts = build_diff_options(&paths);
+    let mut opts = build_diff_options(&paths, full_context);
     let mut diff =
         repo.diff_tree_to_tree(old_tree.as_ref(), Some(&to_tree), Some(&mut opts))?;
     apply_find_similar(&mut diff)?;
@@ -715,7 +744,7 @@ mod tests {
         crate::git::commit::create_commit(dir.path(), "base").expect("commit");
 
         for staged in [false, true] {
-            let fd = workdir_file_diff(dir.path(), "a.txt", None, staged)
+            let fd = workdir_file_diff(dir.path(), "a.txt", None, staged, false)
                 .expect("clean path must not error");
             assert_eq!(fd.path, "a.txt");
             assert_eq!(fd.status, FileStatus::Modified);
@@ -752,7 +781,7 @@ mod tests {
             std::fs::write(dir.path().join(name), format!("{name} new\n")).expect("rewrite");
         }
 
-        let fd = workdir_file_diff(dir.path(), "a[ab].txt", None, false).expect("diff");
+        let fd = workdir_file_diff(dir.path(), "a[ab].txt", None, false, false).expect("diff");
         assert_eq!(fd.path, "a[ab].txt");
         assert_eq!(fd.status, FileStatus::Modified);
         assert_eq!(fd.hunks.len(), 1, "exactly one delta must match");
@@ -767,12 +796,12 @@ mod tests {
         let dir = crate::testutil::scratch_dir();
         git2::Repository::init(dir.path()).expect("init repo");
         for bad in ["", "../escape", "/abs", "a\\b"] {
-            let err = workdir_file_diff(dir.path(), bad, None, false)
+            let err = workdir_file_diff(dir.path(), bad, None, false, false)
                 .expect_err(&format!("must reject {bad:?}"));
             assert!(matches!(err, AppError::Other(m) if m.contains("invalid path")));
         }
         // orig_path is validated too.
-        let err = workdir_file_diff(dir.path(), "ok.txt", Some("../escape"), false)
+        let err = workdir_file_diff(dir.path(), "ok.txt", Some("../escape"), false, false)
             .expect_err("must reject bad orig_path");
         assert!(matches!(err, AppError::Other(m) if m.contains("invalid path")));
     }
@@ -948,7 +977,7 @@ mod tests {
         stage_paths(p, &["f.txt".into()]).expect("stage");
         create_commit(p, "B").expect("commit B");
 
-        let fd = compare_head_file_diff(p, &a, "f.txt", None).expect("file diff");
+        let fd = compare_head_file_diff(p, &a, "f.txt", None, false).expect("file diff");
         assert_eq!(fd.path, "f.txt");
         assert_eq!(fd.status, FileStatus::Modified);
         assert!(!fd.binary && !fd.too_large);

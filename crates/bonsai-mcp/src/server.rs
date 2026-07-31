@@ -478,6 +478,7 @@ impl BonsaiServer {
                     &args.oid,
                     &args.path,
                     args.orig_path.as_deref(),
+                    false,
                 )
             })
             .await
@@ -501,6 +502,7 @@ impl BonsaiServer {
                     &args.path,
                     args.orig_path.as_deref(),
                     args.staged,
+                    false,
                 )
             })
             .await
@@ -538,6 +540,7 @@ impl BonsaiServer {
                     &args.oid,
                     &args.path,
                     args.orig_path.as_deref(),
+                    false,
                 )
             })
             .await

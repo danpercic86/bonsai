@@ -16,6 +16,51 @@ that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e
 Every "awaiting USER CHECKPOINT" below is now CONFIRMED as of 2026-07-30. (P5/P6 were already
 confirmed earlier.)
 
+## P17 — Interactive diff: File/Diff toggle + partial staging — **in-progress** (2026-07-31)
+
+Source: user request (2026-07-31) — improve the commit/workdir diff view. Five asks: (1) File View
+(whole file + inline diff) vs Diff View (hunks only) toggle; (2) stage whole file (exists); (3) hunk
+staging; (4) line-by-line staging (+ gutter per changed line); (5) mouse-selection staging.
+Deliberately expands past the M4 "read-only, no hunk staging" lock. Plan:
+~/.claude/plans/i-want-an-improved-zesty-tarjan.md.
+Contract: **docs/contracts/P17-partial-staging.md** (architect to write).
+
+Locked decisions (user, 2026-07-31 AskUserQuestion): (a) SYMMETRIC — granular controls both stage
+and unstage; (b) mouse selection → FLOATING "Stage N lines" button near the selection; (c) granular
+staging in WORKDIR diffs only (unstaged/untracked→stage, staged→unstage; commit/compare stay
+read-only), File/Diff toggle available EVERYWHERE.
+
+Backend approach (design-vetted): BLOB RECONSTRUCTION, not patch-text synthesis. Frontend sends a
+selection = list of changed lines by coordinate {kind, oldNo, newNo}; backend recomputes the diff,
+reads RAW blob bytes (never the lossy wire content), splices line-slices by line number
+(terminator-preserving → CRLF/EOFNL exact), writes via Index::add_frombuffer (mode from an
+IndexEntry template). Stage: old=index,new=workdir. Unstage: old=HEAD,new=index. File View = same
+diff with context_lines(u32::MAX). Reject binary/too_large/rename/stale-selection.
+
+Sub-increments (each its own implement→review→commit loop):
+- **P17a** — Rust: crates/bonsai-core/src/git/stage_partial.rs (stage_partial/unstage_partial +
+  LineSelection), diff.rs full_context + pub(crate) collect_file_diff + Deserialize LineKind,
+  commands + registration, CLI-oracle + unit tests (partial stage ≡ git apply --cached).
+- **P17b** — IPC + mock: types.ts/tauri.ts (LineSelection, stagePartial/unstagePartial, fullContext),
+  mock.ts + fixtures three-way line model for the demo file (partial state visible in harness).
+- **P17c** — Frontend: DiffView interactive (File/Diff mode, gutter +/−, hunk button, mouse-selection
+  floating button), DiffOverlay File/Diff toggle + stageable, RepoWorkspace handlers + refetch, CSS.
+
+Rules: scratch repos under D:\Temp\bonsai-scratch only; TMP/TEMP=D:\Temp for cargo tests (Bash tool:
+forward slashes D:/Temp); NO concurrent cargo test + clippy; orchestrator makes all commits
+(`wip(P17): …`); mock.ts kept compiling with every IPC change.
+
+- **P17a** (reviewer APPROVE-WITH-NITS; 0 must-fix) — `stage_partial.rs` (blob reconstruction:
+  split_keep_terminator/reconstruct/assemble, both directions, guards, synthesize_entry) +
+  stage_partial/unstage_partial commands + `full_context` on the 3 file-diff getters
+  (`FULL_CONTEXT_LINES=1_000_000` + interhunk_lines — `u32::MAX` overflows libgit2 xdiff). Folded
+  SF-1: `should_remove` now presence-based (Stage→status==Deleted, Unstage→HEAD lacks path) not
+  byte-emptiness — an emptied tracked file stages an empty blob, not a spurious deletion; +2 pinning
+  tests. cargo test 13 unit + 18 CLI-oracle green (git apply --cached tree-equivalence + byte-exact
+  CRLF/no-newline); clippy --workspace --tests clean.
+
+**Current step: P17a committed — starting P17b (IPC + mock).**
+
 ## P15 — In-app AI features (Tier 1) — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-31)
 
 Source: user request (2026-07-31) — after P14 (Tier 2 MCP), build the remaining Tier 1 in-app AI
