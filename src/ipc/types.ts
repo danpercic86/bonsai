@@ -1123,6 +1123,20 @@ export interface IpcApi {
     kind: AgentAssetKind,
     name: string,
   ): Promise<AgentAsset>;
+  /** P26b. Create or overwrite an agent asset (atomic temp+rename, parent dirs
+   *  incl. the skill `<name>/` dir). Missing required fields don't block the
+   *  write — the returned inventory flags them `valid:false`. Returns the
+   *  refreshed inventory. Rejects invalidName | other | io | noRepo. */
+  saveAgentAsset(repoId: string, asset: AgentAssetInput): Promise<AgentAssetInventory>;
+  /** P26b. Delete one agent asset. A skill removes the whole
+   *  `.claude/skills/<name>/` directory; agent/command removes the single file.
+   *  A missing target is a no-op. Returns the refreshed inventory. Rejects
+   *  invalidName | io | noRepo. */
+  deleteAgentAsset(
+    repoId: string,
+    kind: AgentAssetKind,
+    name: string,
+  ): Promise<AgentAssetInventory>;
   /** P24. The context-profile store (lazy empty default when absent). Rejects
    *  other | io | noRepo. */
   listProfiles(repoId: string): Promise<ProfileStore>;

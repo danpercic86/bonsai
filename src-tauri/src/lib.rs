@@ -102,6 +102,8 @@ pub fn run() {
             commands::read_ai_asset,
             commands::list_agent_assets,
             commands::read_agent_asset,
+            commands::save_agent_asset,
+            commands::delete_agent_asset,
             commands::list_profiles,
             commands::save_profile,
             commands::delete_profile,

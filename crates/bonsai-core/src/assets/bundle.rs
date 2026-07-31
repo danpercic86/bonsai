@@ -100,6 +100,19 @@ pub struct AgentAssetInventory {
     pub assets: Vec<AgentAsset>,
 }
 
+/// The write payload for `save_agent_asset` (§3). No `path`/`exists`/`validation`
+/// — those are derived/computed by the backend. Deserialize only (comes off the
+/// wire from the editor). `frontmatter` is a flat ordered list, so a "complex"
+/// (multi-line YAML) payload cannot arrive; the editor keeps values single-line.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAssetInput {
+    pub kind: AgentAssetKind,
+    pub name: String,
+    pub frontmatter: Vec<FrontmatterField>,
+    pub body: String,
+}
+
 // ---------------------------------------------------------------------------
 // Per-kind spec (§3.1) — path layout + known/required frontmatter keys.
 // ---------------------------------------------------------------------------
@@ -549,6 +562,99 @@ pub fn read_agent_asset(
     load_asset(kind, name, rel, &full)
 }
 
+// ---------------------------------------------------------------------------
+// Write / delete (§5) — atomic temp+rename, mirroring `profiles.rs`.
+// ---------------------------------------------------------------------------
+
+/// Sibling temp path `<file>.bonsai-tmp` for an atomic write (mirrors the
+/// `profiles.rs` idiom — the temp lands in the SAME dir so `rename` is atomic).
+fn tmp_sibling(target: &Path) -> PathBuf {
+    let mut name = target
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
+    name.push(".bonsai-tmp");
+    target.with_file_name(name)
+}
+
+/// Atomically replace `target` with `bytes`: write a sibling temp file, then
+/// rename over the target (rename is atomic + replaces on both platforms). On a
+/// rename failure the temp is best-effort removed so no `.bonsai-tmp` remnant is
+/// left. The caller must ensure `target`'s parent dir exists.
+fn atomic_write(target: &Path, bytes: &[u8]) -> Result<(), AppError> {
+    let tmp = tmp_sibling(target);
+    std::fs::write(&tmp, bytes)?;
+    if let Err(e) = std::fs::rename(&tmp, target) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.into());
+    }
+    Ok(())
+}
+
+/// Blocking. Create or overwrite the asset described by `input` (§5). Validates
+/// the name (§4.4 → `InvalidName`) and the computed rel path stays in-workdir
+/// (`validate_rel_path` → `Other`, belt-and-suspenders); creates parent dirs
+/// (incl. the skill's `<name>/` dir); serializes (§4) + writes atomically
+/// (temp+rename). Returns the FRESH full inventory so the frontend re-selects the
+/// saved asset by (kind, name).
+///
+/// Validation warnings/required-field errors do NOT block the write (§5, §11
+/// row 9): a save with a missing required field still writes and the returned
+/// inventory flags it `valid:false` (recomputed by the re-scan). A "complex"
+/// payload cannot arrive — `AgentAssetInput.frontmatter` is a flat list.
+pub fn save_agent_asset(
+    workdir: &Path,
+    input: AgentAssetInput,
+) -> Result<AgentAssetInventory, AppError> {
+    validate_asset_name(&input.name)?;
+    let rel = rel_path(input.kind, &input.name);
+    // Belt-and-suspenders: the name charset already precludes escapes.
+    validate_rel_path(&rel)?;
+
+    let full = full_path(workdir, input.kind, &input.name);
+    if let Some(parent) = full.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let bytes = serialize_asset(&input.frontmatter, &input.body);
+    atomic_write(&full, bytes.as_bytes())?;
+
+    scan_agent_assets(workdir)
+}
+
+/// Blocking. Delete one asset by `(kind, name)` (§5). The name is validated
+/// (§4.4) + the computed rel path re-checked first. **Skill → remove the whole
+/// `.claude/skills/<name>/` directory recursively** (a skill IS its directory:
+/// SKILL.md + any supporting files — §8/OPEN-2; the UI confirm spells this out);
+/// **agent/command → remove the single `.md` file**. A missing target is a no-op
+/// `Ok`. Returns the fresh inventory. Every path is static-prefixed under
+/// `.claude/` in `workdir`, so nothing outside it is reachable.
+pub fn delete_agent_asset(
+    workdir: &Path,
+    kind: AgentAssetKind,
+    name: &str,
+) -> Result<AgentAssetInventory, AppError> {
+    validate_asset_name(name)?;
+    let rel = rel_path(kind, name);
+    validate_rel_path(&rel)?;
+
+    match kind {
+        AgentAssetKind::Skill => {
+            let dir = workdir.join(".claude").join("skills").join(name);
+            if dir.is_dir() {
+                std::fs::remove_dir_all(&dir)?;
+            }
+        }
+        AgentAssetKind::Agent | AgentAssetKind::Command => {
+            let full = full_path(workdir, kind, name);
+            if full.is_file() {
+                std::fs::remove_file(&full)?;
+            }
+        }
+    }
+
+    scan_agent_assets(workdir)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -845,5 +951,284 @@ mod tests {
         assert_eq!(serde_json::to_value(AgentAssetKind::Skill).unwrap(), "skill");
         assert_eq!(serde_json::to_value(AgentAssetKind::Command).unwrap(), "command");
         assert_eq!(serde_json::to_value(IssueSeverity::Warning).unwrap(), "warning");
+    }
+
+    // ---- P26b (write path) -------------------------------------------------
+
+    fn input(
+        kind: AgentAssetKind,
+        name: &str,
+        fm: &[(&str, &str)],
+        body: &str,
+    ) -> AgentAssetInput {
+        AgentAssetInput {
+            kind,
+            name: name.to_string(),
+            frontmatter: fm
+                .iter()
+                .map(|(k, v)| FrontmatterField {
+                    key: (*k).to_string(),
+                    value: (*v).to_string(),
+                })
+                .collect(),
+            body: body.to_string(),
+        }
+    }
+
+    // §11 row 7 — save creates a new skill (dir + SKILL.md), agent, command with
+    // byte-exact content; parent dirs created; no `.bonsai-tmp` remnant; re-scan
+    // lists them valid.
+    #[test]
+    fn save_creates_new_assets() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        let skill = input(
+            AgentAssetKind::Skill,
+            "code-review",
+            &[("name", "code-review"), ("description", "Reviews code")],
+            "\n# Code review\n",
+        );
+        let inv = save_agent_asset(root, skill.clone()).unwrap();
+        assert!(
+            inv.assets
+                .iter()
+                .any(|a| a.kind == AgentAssetKind::Skill && a.name == "code-review"),
+            "first save's returned inventory already lists the skill"
+        );
+
+        // Byte-exact on disk via serialize_asset; parent `<name>/` dir created.
+        let skill_path = root.join(".claude/skills/code-review/SKILL.md");
+        assert!(skill_path.is_file());
+        assert_eq!(
+            std::fs::read_to_string(&skill_path).unwrap(),
+            serialize_asset(&skill.frontmatter, &skill.body)
+        );
+        assert!(
+            !root
+                .join(".claude/skills/code-review/SKILL.md.bonsai-tmp")
+                .exists(),
+            "no temp remnant"
+        );
+
+        save_agent_asset(
+            root,
+            input(
+                AgentAssetKind::Agent,
+                "test-runner",
+                &[("name", "test-runner"), ("description", "Runs tests")],
+                "\nYou run tests.\n",
+            ),
+        )
+        .unwrap();
+        save_agent_asset(
+            root,
+            input(
+                AgentAssetKind::Command,
+                "changelog",
+                &[("description", "Update changelog")],
+                "\nUpdate for $ARGUMENTS.\n",
+            ),
+        )
+        .unwrap();
+        assert!(root.join(".claude/agents/test-runner.md").is_file());
+        assert!(root.join(".claude/commands/changelog.md").is_file());
+
+        // A fresh scan round-trips all three as valid + existing.
+        let final_inv = scan_agent_assets(root).unwrap();
+        assert_eq!(final_inv.assets.len(), 3);
+        assert!(final_inv
+            .assets
+            .iter()
+            .all(|a| a.exists && a.validation.valid));
+    }
+
+    // §11 row 7 — save EDITS (overwrites) an existing asset atomically.
+    #[test]
+    fn save_edits_existing_asset_atomically() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        save_agent_asset(
+            root,
+            input(
+                AgentAssetKind::Agent,
+                "test-runner",
+                &[("name", "test-runner"), ("description", "old")],
+                "\nold body\n",
+            ),
+        )
+        .unwrap();
+        let inv = save_agent_asset(
+            root,
+            input(
+                AgentAssetKind::Agent,
+                "test-runner",
+                &[("name", "test-runner"), ("description", "new")],
+                "\nnew body\n",
+            ),
+        )
+        .unwrap();
+        // Overwritten in place, not duplicated.
+        assert_eq!(inv.assets.len(), 1);
+        let a = read_agent_asset(root, AgentAssetKind::Agent, "test-runner").unwrap();
+        assert_eq!(
+            a.frontmatter
+                .iter()
+                .find(|f| f.key == "description")
+                .unwrap()
+                .value,
+            "new"
+        );
+        assert_eq!(a.body, "\nnew body\n");
+        assert!(!root.join(".claude/agents/test-runner.md.bonsai-tmp").exists());
+    }
+
+    // §11 row 8 — save preserves unknown/preserved frontmatter keys on edit.
+    #[test]
+    fn save_edit_preserves_unknown_keys() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        // Pre-drop an agent carrying an unknown `color: blue` key.
+        write(
+            root,
+            ".claude/agents/test-runner.md",
+            b"---\nname: test-runner\ndescription: old\ncolor: blue\n---\n\nbody\n",
+        );
+        // Load, edit `description`, carry every field (incl. `color`) through.
+        let loaded = read_agent_asset(root, AgentAssetKind::Agent, "test-runner").unwrap();
+        let mut fm = loaded.frontmatter.clone();
+        for f in fm.iter_mut() {
+            if f.key == "description" {
+                f.value = "updated".to_string();
+            }
+        }
+        save_agent_asset(
+            root,
+            AgentAssetInput {
+                kind: AgentAssetKind::Agent,
+                name: "test-runner".to_string(),
+                frontmatter: fm,
+                body: loaded.body.clone(),
+            },
+        )
+        .unwrap();
+
+        let re = read_agent_asset(root, AgentAssetKind::Agent, "test-runner").unwrap();
+        assert_eq!(
+            re.frontmatter.iter().find(|f| f.key == "color").unwrap().value,
+            "blue",
+            "unknown key survives the round-trip"
+        );
+        assert_eq!(
+            re.frontmatter
+                .iter()
+                .find(|f| f.key == "description")
+                .unwrap()
+                .value,
+            "updated"
+        );
+    }
+
+    // §11 row 9 — bad names reject (nothing written); a missing required field
+    // still WRITES and the inventory flags it invalid.
+    #[test]
+    fn save_rejects_bad_names_but_writes_missing_required() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        for bad in ["", "a/b", "a\\b", "..", "a:b", "-x"] {
+            let err = save_agent_asset(root, input(AgentAssetKind::Agent, bad, &[], "b"))
+                .unwrap_err();
+            assert!(
+                matches!(err, AppError::InvalidName(_)),
+                "name {bad:?} should be InvalidName"
+            );
+        }
+        // Nothing written by the rejected saves.
+        assert!(!root.join(".claude/agents").exists());
+
+        // Missing the required `description` -> still writes; flagged invalid.
+        let inv = save_agent_asset(
+            root,
+            input(
+                AgentAssetKind::Agent,
+                "incomplete",
+                &[("name", "incomplete")],
+                "\nbody\n",
+            ),
+        )
+        .unwrap();
+        assert!(root.join(".claude/agents/incomplete.md").is_file());
+        let a = inv.assets.iter().find(|a| a.name == "incomplete").unwrap();
+        assert!(!a.validation.valid);
+        assert!(a.validation.issues.iter().any(|i| i.severity
+            == IssueSeverity::Error
+            && i.message.contains("description")));
+    }
+
+    // §11 row 10 — delete removes the whole skill dir; agent/command remove just
+    // the file; others untouched; absent target is a no-op Ok.
+    #[test]
+    fn delete_removes_skill_dir_and_single_files() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        write(
+            root,
+            ".claude/skills/code-review/SKILL.md",
+            b"---\nname: code-review\n---\n\nbody\n",
+        );
+        // A supporting file beside SKILL.md must go with the dir.
+        write(root, ".claude/skills/code-review/helper.py", b"print('hi')\n");
+        write(
+            root,
+            ".claude/agents/test-runner.md",
+            b"---\nname: test-runner\ndescription: d\n---\n\nbody\n",
+        );
+        write(root, ".claude/commands/changelog.md", b"body\n");
+
+        // Skill delete -> the WHOLE `<name>/` dir is gone (incl. helper.py).
+        let inv = delete_agent_asset(root, AgentAssetKind::Skill, "code-review").unwrap();
+        assert!(!root.join(".claude/skills/code-review").exists());
+        assert!(inv.assets.iter().all(|a| a.name != "code-review"));
+        // Other assets untouched.
+        assert!(root.join(".claude/agents/test-runner.md").is_file());
+
+        // Agent delete -> just the file; the `agents/` dir remains.
+        delete_agent_asset(root, AgentAssetKind::Agent, "test-runner").unwrap();
+        assert!(!root.join(".claude/agents/test-runner.md").exists());
+        assert!(root.join(".claude/agents").is_dir());
+
+        // Command delete -> just the file; inventory now empty.
+        let inv2 = delete_agent_asset(root, AgentAssetKind::Command, "changelog").unwrap();
+        assert!(!root.join(".claude/commands/changelog.md").exists());
+        assert!(inv2.assets.is_empty());
+
+        // Deleting an absent asset is a no-op Ok.
+        let inv3 = delete_agent_asset(root, AgentAssetKind::Skill, "gone").unwrap();
+        assert!(inv3.assets.is_empty());
+    }
+
+    // §11 row 11 — path-escape defense: save + delete reject before any fs op.
+    #[test]
+    fn save_delete_reject_path_escapes() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        for bad in ["../x", "a/b", "a\\b", ".."] {
+            assert!(
+                matches!(
+                    save_agent_asset(root, input(AgentAssetKind::Skill, bad, &[], "b")),
+                    Err(AppError::InvalidName(_))
+                ),
+                "save({bad:?}) should reject"
+            );
+            assert!(
+                matches!(
+                    delete_agent_asset(root, AgentAssetKind::Agent, bad),
+                    Err(AppError::InvalidName(_))
+                ),
+                "delete({bad:?}) should reject"
+            );
+        }
+        // The name guard fires first, so nothing was created/removed.
+        assert!(!root.join(".claude").exists());
     }
 }

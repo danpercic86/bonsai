@@ -2,8 +2,9 @@ use tauri::Emitter;
 
 use bonsai_core::ai::{self, AiAvailability, RunOpts};
 use bonsai_core::assets::{
-    self, AgentAsset, AgentAssetInventory, AgentAssetKind, AiAssetInventory, AiGeneratedAsset,
-    AssetContent, ContextProfile, ProfileActivation, ProfilePreviewEntry, ProfileStore,
+    self, AgentAsset, AgentAssetInput, AgentAssetInventory, AgentAssetKind, AiAssetInventory,
+    AiGeneratedAsset, AssetContent, ContextProfile, ProfileActivation, ProfilePreviewEntry,
+    ProfileStore,
 };
 use bonsai_core::error::AppError;
 use bonsai_core::git::ai_commit::{self, CommitMessageProposal};
@@ -2417,6 +2418,60 @@ async fn read_agent_asset_inner(
 ) -> Result<AgentAsset, AppError> {
     let workdir = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || assets::read_agent_asset(&workdir, kind, &name))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Create or overwrite an agent asset under `repo_id` (P26 §5, write path).
+/// Validates the name + computed path; atomic temp+rename with parent-dir
+/// creation (incl. the skill's `<name>/` dir). Returns the refreshed inventory.
+/// Missing required fields do NOT block the write — they surface as `valid:false`
+/// in the returned inventory. No consent gate; no events/channels — the frontend
+/// refetches (and the watcher fires `repo-changed` on the `.claude/` write).
+#[tauri::command]
+pub async fn save_agent_asset(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    asset: AgentAssetInput,
+) -> Result<AgentAssetInventory, AppError> {
+    save_agent_asset_inner(state.inner(), &repo_id, asset).await
+}
+
+/// Runtime-free core of `save_agent_asset`.
+async fn save_agent_asset_inner(
+    state: &AppState,
+    repo_id: &str,
+    asset: AgentAssetInput,
+) -> Result<AgentAssetInventory, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || assets::save_agent_asset(&workdir, asset))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Delete one agent asset by `(kind, name)` under `repo_id` (P26 §5). A **skill**
+/// removes the whole `.claude/skills/<name>/` directory recursively (the UI
+/// confirm spells this out); an agent/command removes the single `.md`. A missing
+/// target is a no-op. Returns the refreshed inventory. No events/channels.
+#[tauri::command]
+pub async fn delete_agent_asset(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    kind: AgentAssetKind,
+    name: String,
+) -> Result<AgentAssetInventory, AppError> {
+    delete_agent_asset_inner(state.inner(), &repo_id, kind, name).await
+}
+
+/// Runtime-free core of `delete_agent_asset`.
+async fn delete_agent_asset_inner(
+    state: &AppState,
+    repo_id: &str,
+    kind: AgentAssetKind,
+    name: String,
+) -> Result<AgentAssetInventory, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || assets::delete_agent_asset(&workdir, kind, &name))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

@@ -17,9 +17,10 @@ pub mod profiles;
 pub mod taxonomy;
 
 pub use bundle::{
-    known_optional_keys, parse_frontmatter, read_agent_asset, rel_path, required_keys,
-    scan_agent_assets, serialize_asset, validate_asset_name, AgentAsset, AgentAssetInventory,
-    AgentAssetKind, AssetIssue, FrontmatterField, IssueSeverity, Validation,
+    delete_agent_asset, known_optional_keys, parse_frontmatter, read_agent_asset, rel_path,
+    required_keys, save_agent_asset, scan_agent_assets, serialize_asset, validate_asset_name,
+    AgentAsset, AgentAssetInput, AgentAssetInventory, AgentAssetKind, AssetIssue, FrontmatterField,
+    IssueSeverity, Validation,
 };
 pub use drift::{compute_drift, DriftEntry, DriftReport};
 pub use generate::{generate_asset, AiGeneratedAsset};

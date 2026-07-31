@@ -20,6 +20,7 @@ import type { MockCommit } from './fixtures/graph';
 import { generateLayout20k } from './fixtures/graph20k';
 import type {
   AgentAsset,
+  AgentAssetInput,
   AgentAssetInventory,
   AgentAssetKind,
   AiAnalysis,
@@ -34,6 +35,9 @@ import type {
   AppError,
   ApplyStashOutcome,
   AssetContent,
+  AssetIssue,
+  FrontmatterField,
+  Validation,
   ContextProfile,
   ProfileActivation,
   ProfilePreviewEntry,
@@ -471,6 +475,49 @@ function sortAgentAssets(assets: AgentAsset[]): AgentAsset[] {
   return [...assets].sort(
     (a, b) => AGENT_KIND_ORD[a.kind] - AGENT_KIND_ORD[b.kind] || a.name.localeCompare(b.name),
   );
+}
+
+/** Required frontmatter keys per kind (mirrors Rust `required_keys`, §3.1). */
+function agentRequiredKeys(kind: AgentAssetKind): string[] {
+  return kind === 'agent' ? ['name', 'description'] : [];
+}
+
+/** Recompute an asset's `Validation` on save, mirroring Rust `validate` (§4.5):
+ *  required-key Errors + lowercase-hyphen / name-mismatch / empty-body Warnings.
+ *  `complex` is never reachable — an `AgentAssetInput` is a flat field list. */
+function mockValidateAsset(
+  kind: AgentAssetKind,
+  name: string,
+  frontmatter: FrontmatterField[],
+  body: string,
+): Validation {
+  const issues: AssetIssue[] = [];
+  for (const key of agentRequiredKeys(kind)) {
+    const present = frontmatter.some((f) => f.key === key && f.value.trim() !== '');
+    if (!present) {
+      issues.push({ severity: 'error', message: `${kind} requires frontmatter field '${key}'` });
+    }
+  }
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) {
+    issues.push({
+      severity: 'warning',
+      message: 'name should be lowercase letters, digits, and hyphens',
+    });
+  }
+  if (kind === 'skill' || kind === 'agent') {
+    const nf = frontmatter.find((f) => f.key === 'name');
+    if (nf && nf.value !== '' && nf.value !== name) {
+      issues.push({
+        severity: 'warning',
+        message: `frontmatter name '${nf.value}' differs from the file name '${name}'`,
+      });
+    }
+  }
+  if ((kind === 'skill' || kind === 'command') && body.trim() === '') {
+    issues.push({ severity: 'warning', message: 'body is empty — nothing will run' });
+  }
+  const valid = !issues.some((i) => i.severity === 'error');
+  return { valid, issues };
 }
 
 /** Name safety mirror of Rust `validate_asset_name` (§4.4); throws `invalidName`. */
@@ -3307,6 +3354,48 @@ export const mockIpc: IpcApi = {
         issues: [{ severity: 'error', message: 'file does not exist' }],
       },
     };
+  },
+
+  // P26b: agent-asset write path (stateful upsert / delete).
+  async saveAgentAsset(repoId: string, asset: AgentAssetInput): Promise<AgentAssetInventory> {
+    await delay(120);
+    const state = requireRepo(repoId);
+    // Name guard fires first (throws invalidName on separators / `..` / bad
+    // charset) — mirrors the backend; validation issues do NOT block a save.
+    requireValidAssetName(asset.name);
+    const saved: AgentAsset = {
+      kind: asset.kind,
+      name: asset.name,
+      path: agentRelPath(asset.kind, asset.name),
+      exists: true,
+      frontmatter: structuredClone(asset.frontmatter),
+      body: asset.body,
+      validation: mockValidateAsset(asset.kind, asset.name, asset.frontmatter, asset.body),
+    };
+    const idx = state.agentAssets.findIndex(
+      (a) => a.kind === asset.kind && a.name === asset.name,
+    );
+    if (idx >= 0) {
+      state.agentAssets[idx] = saved;
+    } else {
+      state.agentAssets.push(saved);
+    }
+    return { assets: sortAgentAssets(structuredClone(state.agentAssets)) };
+  },
+
+  async deleteAgentAsset(
+    repoId: string,
+    kind: AgentAssetKind,
+    name: string,
+  ): Promise<AgentAssetInventory> {
+    await delay(120);
+    const state = requireRepo(repoId);
+    requireValidAssetName(name);
+    // Skill vs single-file removal is a no-op distinction in the mock (§6).
+    state.agentAssets = state.agentAssets.filter(
+      (a) => !(a.kind === kind && a.name === name),
+    );
+    return { assets: sortAgentAssets(structuredClone(state.agentAssets)) };
   },
 
   // P24b: context-profile store (stateful CRUD + preview + activate).

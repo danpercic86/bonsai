@@ -45,7 +45,16 @@ claudeDir taxonomy row stays managed:false (P26 is a separate managed surface, n
   description + a `release-notes` complex skill). 9 tests; lib 219 green; clippy + tsc + build clean.
   Reviewer verified NO false-negative in complex detection (the anti-lossy-rewrite property). Nits (cosmetic):
   mock localeCompare vs Rust str::cmp; CRLF→LF on serialize; add a nested-map complex test.
-**Current step:** P26a done (uncommitted) → committing → P26b write path.
+- **P26b** (reviewer APPROVE, 0 must-fix; path containment exhaustively traced) — write path. bundle.rs:
+  AgentAssetInput (flat frontmatter → complex impossible on write), save_agent_asset (validate name →
+  validate_rel_path → atomic temp+rename, create parent+skill dir, serialize_asset; WRITE-ANYWAY per
+  contract — invalid content writes + re-scan flags valid:false, only bad NAME hard-errors), delete_agent_
+  asset (skill → remove_dir_all `.claude/skills/<name>/` provably confined; agent/command → remove_file;
+  missing = no-op). 2 write commands + IPC + stateful mock. 6 tests (bundle 15 total); lib green; clippy +
+  tsc + build clean. Reviewer NITs to FOLD INTO P26c: (1) frontmatter field values must stay single-line
+  (editor: single-line inputs / strip embedded \n+`---` before save); (2) validate_asset_name should also
+  reject Windows reserved device names (CON/NUL/PRN/COM#/LPT#) + trailing dot/space (Windows is target).
+**Current step:** P26b done (uncommitted) → committing → P26c UI (AiAssetsPanel section + editor; folds nits).
 
 ## P25 — Cheap AI-automation wins: AI review (B1) + stale-branch cleanup (B4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-01)
 

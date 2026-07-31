@@ -4,6 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import type {
   AgentAsset,
+  AgentAssetInput,
   AgentAssetInventory,
   AgentAssetKind,
   AiAnalysis,
@@ -518,6 +519,18 @@ export const tauriIpc: IpcApi = {
     name: string,
   ): Promise<AgentAsset> {
     return invoke<AgentAsset>('read_agent_asset', { repoId, kind, name });
+  },
+
+  saveAgentAsset(repoId: string, asset: AgentAssetInput): Promise<AgentAssetInventory> {
+    return invoke<AgentAssetInventory>('save_agent_asset', { repoId, asset });
+  },
+
+  deleteAgentAsset(
+    repoId: string,
+    kind: AgentAssetKind,
+    name: string,
+  ): Promise<AgentAssetInventory> {
+    return invoke<AgentAssetInventory>('delete_agent_asset', { repoId, kind, name });
   },
 
   // P24: context-profile store (CRUD + preview + activate).
