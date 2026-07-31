@@ -59,7 +59,22 @@ forward slashes D:/Temp); NO concurrent cargo test + clippy; orchestrator makes 
   tests. cargo test 13 unit + 18 CLI-oracle green (git apply --cached tree-equivalence + byte-exact
   CRLF/no-newline); clippy --workspace --tests clean.
 
-**Current step: P17a committed — starting P17b (IPC + mock).**
+- **P17b** (reviewer APPROVE; 0 must/should-fix) — commit d441882. types.ts/tauri.ts LineSelection +
+  stagePartial/unstagePartial + fullContext on the 3 getters; mock src/main.rs three-way line model
+  (head/index/workdir) with reconstructLines (faithful port of Rust §2.4) so partial stage/unstage
+  visibly moves lines and the file shows in both sections. pnpm build green.
+- **P17c** (reviewer APPROVE; 0 must-fix) — DiffView interactive (File/Diff mode, per-line gutter
+  +/− "Stage/Unstage this line", hunk-header "Stage/Unstage hunk", mouse-range → floating "Stage N
+  lines" button), DiffOverlay File|Diff segmented toggle, RepoWorkspace diffViewMode + deriveStageable
+  + handleStageLines/handleStageHunk + fullContext fetcher wiring, CSS. pnpm build green. Orchestrator
+  harness-verified (mock :1420, hidden pane → DOM + synthetic events): File↔Diff toggle (whole file vs
+  hunks); "Stage this line" on unstaged main.rs moves the del to index (hunk -2,7→-2,6) and the file
+  shows in BOTH sections; staged main.rs shows "Unstage this line" (symmetric); Stage-hunk button;
+  mouse-drag surfaces floating "Unstage N lines"; data-hunk/data-line wired; zero console errors.
+  Reviewer S1 (toggle-everywhere gap): commit/compare render via DiffBrowser which lacks the toggle →
+  addressed by P17d to honor the locked "toggle everywhere incl. commit/compare" decision.
+
+**Current step: P17c committed — starting P17d (File/Diff toggle in DiffBrowser for commit/compare).**
 
 ## P15 — In-app AI features (Tier 1) — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-31)
 

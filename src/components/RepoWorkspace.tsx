@@ -50,6 +50,7 @@ import type {
   GraphLayout,
   GraphPrefs,
   HeadInfo,
+  LineSelection,
   ListView,
   PaneWidths,
   RepoInfo,
@@ -200,6 +201,12 @@ export function RepoWorkspace({
   const [commitDiffLoading, setCommitDiffLoading] = useState(false);
   const [commitDiffError, setCommitDiffError] = useState<string | null>(null);
   const [diffSlot, setDiffSlot] = useState<DiffSlot | null>(null);
+  // P17c: File vs Diff view for the center-pane diff overlay. Drives the
+  // `fullContext` arg of the primary overlay fetchers; read through a ref by the
+  // stable `refetchStatus` callback so toggling never re-creates it.
+  const [diffViewMode, setDiffViewMode] = useState<'diff' | 'file'>('diff');
+  const diffViewModeRef = useRef(diffViewMode);
+  diffViewModeRef.current = diffViewMode;
 
   // P5 §5.2: graph right-click context menu (position + prebuilt items).
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(
@@ -295,6 +302,27 @@ export function RepoWorkspace({
       kind: section,
     };
   }, [diffSlot, status]);
+
+  // Latest overlay meta read by the partial-staging handlers + the view-mode
+  // toggle without widening their (stable) callback deps.
+  const overlayMetaRef = useRef(overlayMeta);
+  overlayMetaRef.current = overlayMeta;
+
+  // P17c: which granular action the open overlay offers, or null (read-only).
+  // Workdir kinds only; renamed/binary/tooLarge/no-diff fall back to whole-file
+  // staging (the chevron +/− action), so no gutter/hunk/range controls render.
+  const stageable = useMemo<null | 'stage' | 'unstage'>(() => {
+    if (overlayMeta === null || diffSlot === null) return null;
+    let base: 'stage' | 'unstage';
+    if (overlayMeta.kind === 'unstaged' || overlayMeta.kind === 'untracked') base = 'stage';
+    else if (overlayMeta.kind === 'staged') base = 'unstage';
+    else return null;
+    const d = diffSlot.diff;
+    if (d === null || d.binary || d.tooLarge || d.status === 'renamed') return null;
+    return base;
+  }, [overlayMeta, diffSlot]);
+  const stageableRef = useRef(stageable);
+  stageableRef.current = stageable;
 
   const reportStatusError = useCallback((message: string) => {
     setStatusError({ id: ++statusErrorId.current, message });
@@ -435,7 +463,13 @@ export function RepoWorkspace({
           collapseDiffSlot();
         } else {
           void fetchDiffSlot(slot.key, () =>
-            ipc.getWorkdirFileDiff(repoId, entry.path, entry.origPath, section === 'staged', false),
+            ipc.getWorkdirFileDiff(
+              repoId,
+              entry.path,
+              entry.origPath,
+              section === 'staged',
+              diffViewModeRef.current === 'file',
+            ),
           );
         }
       }
@@ -791,6 +825,72 @@ export function RepoWorkspace({
       setMutating(false);
     }
   }
+
+  // P17c: switch File/Diff view. When a workdir file diff is open, re-fetch it
+  // with the new `fullContext` (File View = one whole-file hunk); the same key
+  // keeps the stale content visible during the swap. Conflict/ai-proposal slots
+  // are not FileDiffs (they use getConflict), so they need no refetch.
+  const handleSetViewMode = useCallback(
+    (m: 'diff' | 'file') => {
+      setDiffViewMode(m);
+      const meta = overlayMetaRef.current;
+      const slot = diffSlotRef.current;
+      if (slot === null || meta === null) return;
+      if (meta.kind === 'staged' || meta.kind === 'unstaged' || meta.kind === 'untracked') {
+        const staged = meta.kind === 'staged';
+        void fetchDiffSlot(slot.key, () =>
+          ipc.getWorkdirFileDiff(repoId, meta.path, meta.origPath, staged, m === 'file'),
+        );
+      }
+    },
+    [repoId, fetchDiffSlot],
+  );
+
+  // P17c: stage/unstage exactly `selection` (already Context-dropped) for the
+  // file open in the overlay. Direction + path/origPath come from the current
+  // stageable/overlay meta. Guarded by the `mutating` flag like handleStage.
+  // refetchStatus re-fetches the matching mode-A workdir slot by path in the new
+  // snapshot (honoring the current view mode), so no extra slot fetch is needed;
+  // a src/main.rs-style file persists in its section (and may now appear in both
+  // staged & unstaged). If the entry leaves its section, refetchStatus collapses.
+  const handleStageLines = useCallback(
+    async (selection: LineSelection[]) => {
+      if (selection.length === 0) return; // empty selection -> skip
+      if (mutatingRef.current) return;
+      const meta = overlayMetaRef.current;
+      const dir = stageableRef.current;
+      if (meta === null || dir === null) return;
+      setMutating(true);
+      try {
+        if (dir === 'stage') {
+          await ipc.stagePartial(repoId, meta.path, meta.origPath, selection);
+        } else {
+          await ipc.unstagePartial(repoId, meta.path, meta.origPath, selection);
+        }
+        await refetchStatus();
+      } catch (e) {
+        reportStatusError(errorMessage(e));
+      } finally {
+        setMutating(false);
+      }
+    },
+    [repoId, refetchStatus, reportStatusError],
+  );
+
+  // P17c: stage/unstage every add/del line of hunk `hunkIndex` from the open
+  // diff (Diff View hunk-header button). Builds the selection then delegates.
+  const handleStageHunk = useCallback(
+    (hunkIndex: number) => {
+      const d = diffSlotRef.current?.diff ?? null;
+      const hunk = d?.hunks[hunkIndex];
+      if (hunk === undefined) return;
+      const selection: LineSelection[] = hunk.lines
+        .filter((l) => l.kind === 'add' || l.kind === 'del')
+        .map((l) => ({ kind: l.kind, oldNo: l.oldNo, newNo: l.newNo }));
+      void handleStageLines(selection);
+    },
+    [handleStageLines],
+  );
 
   // P15a: ask the backend for a proposed commit message from the staged diff.
   // Returns the text for CommitBox to drop into its textarea; errors surface in
@@ -1381,7 +1481,13 @@ export function RepoWorkspace({
       return;
     }
     void fetchDiffSlot(key, () =>
-      ipc.getWorkdirFileDiff(repoId, entry.path, entry.origPath, section === 'staged', false),
+      ipc.getWorkdirFileDiff(
+        repoId,
+        entry.path,
+        entry.origPath,
+        section === 'staged',
+        diffViewMode === 'file',
+      ),
     );
   }
 
@@ -1884,6 +1990,11 @@ export function RepoWorkspace({
               onResolveConflictText={handleResolveConflictText}
               mutating={mutating}
               onExplain={overlayExplain}
+              viewMode={diffViewMode}
+              onSetViewMode={handleSetViewMode}
+              stageable={stageable}
+              onStageLines={handleStageLines}
+              onStageHunk={handleStageHunk}
             />
           )}
           {aiPanel !== null && (

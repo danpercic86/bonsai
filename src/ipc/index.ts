@@ -42,6 +42,7 @@ export type {
   Hunk,
   IpcApi,
   LineKind,
+  LineSelection,
   ListView,
   McpStatus,
   MergeOutcome,

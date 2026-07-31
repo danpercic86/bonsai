@@ -1601,6 +1601,7 @@ span.file-row-main {
 }
 
 .diff-view {
+  position: relative; /* P17c: anchors the .diff-stage-float action button */
   background: var(--bg-0);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -1611,12 +1612,38 @@ span.file-row-main {
 }
 
 .diff-hunk-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--text-3);
   background: var(--bg-2);
   padding: 2px 8px;
-  white-space: pre;
-  width: max-content;
   min-width: 100%;
+}
+
+.diff-hunk-header-text {
+  white-space: pre;
+  flex: 1;
+  min-width: 0;
+}
+
+/* P17c: right-aligned "Stage hunk" / "Unstage hunk" button (Diff View only). */
+.diff-hunk-stage-btn {
+  flex: none;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-1);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.diff-hunk-stage-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .diff-line {
@@ -1702,6 +1729,90 @@ span.file-row-main {
 
 .diff-slot-error {
   margin-bottom: 0;
+}
+
+/* ---------- P17c: interactive partial staging ---------- */
+
+/* Hover-revealed +/− control living in the 16px marker gutter. Idle it reads
+   as a dim marker glyph (--text-3); it brightens to --accent on row/self hover.
+   Keeps user-select:none so a mouse-range drag never selects the glyph. */
+.diff-gutter-btn {
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--text-3);
+  cursor: pointer;
+  user-select: none;
+}
+
+.diff-line:hover .diff-gutter-btn,
+.diff-gutter-btn:hover,
+.diff-gutter-btn:focus-visible {
+  color: var(--accent);
+}
+
+/* Active mouse-range rows: an accent wash LAYERED over the add/del tint (the
+   tint is a background-color; this is a background-image so both compose). */
+.diff-line-selected {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--accent) 14%, transparent),
+    color-mix(in srgb, var(--accent) 14%, transparent)
+  );
+}
+
+/* Floating "Stage N lines" / "Unstage N lines" button near the selection. */
+.diff-stage-float {
+  position: absolute;
+  right: 16px;
+  z-index: 7; /* above the diff body */
+}
+
+.diff-stage-float button {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--bg-0);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+}
+
+.diff-stage-float button:hover {
+  filter: brightness(1.08);
+}
+
+/* Segmented File | Diff control in the diff-overlay header. */
+.diff-view-toggle {
+  flex: none;
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.diff-view-toggle button {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.diff-view-toggle button + button {
+  border-left: 1px solid var(--border);
+}
+
+.diff-view-toggle button.active {
+  background: var(--bg-2);
+  color: var(--text-1);
 }
 
 /* ---------- All-files DiffBrowser (P11g §6) ---------- */

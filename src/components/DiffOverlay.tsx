@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import type { ConflictFile, FileStatus } from '../ipc';
+import type { ConflictFile, FileStatus, LineSelection } from '../ipc';
 import { DiffSlotView } from './DiffView';
 import type { DiffSlot } from './DiffView';
 import { detectLanguage } from '../utils/language';
@@ -161,6 +161,14 @@ export interface DiffOverlayProps {
    *  `undefined` hides the "✨ Explain" action (AI ineligible or a non-workdir
    *  slot kind). App owns the aiAnalyzeDiff call + AiOutputPanel state. */
   onExplain?(): void;
+  /** P17c: File/Diff toggle state (available for ALL kinds). */
+  viewMode: 'diff' | 'file';
+  onSetViewMode(m: 'diff' | 'file'): void;
+  /** P17c: partial-staging direction (null = read-only). App derives this from
+   *  the slot kind + loaded diff; forwarded to the DiffSlotView branch ONLY. */
+  stageable: null | 'stage' | 'unstage';
+  onStageLines(selection: LineSelection[]): void;
+  onStageHunk(hunkIndex: number): void;
 }
 
 export function DiffOverlay({
@@ -170,6 +178,11 @@ export function DiffOverlay({
   onResolveConflictText,
   mutating,
   onExplain,
+  viewMode,
+  onSetViewMode,
+  stageable,
+  onStageLines,
+  onStageHunk,
 }: DiffOverlayProps) {
   const lang = detectLanguage(meta.path);
   return (
@@ -202,6 +215,24 @@ export function DiffOverlay({
             {'✨ Explain'}
           </button>
         )}
+        <div className="diff-view-toggle" role="group" aria-label="View mode">
+          <button
+            type="button"
+            className={viewMode === 'file' ? 'active' : ''}
+            aria-pressed={viewMode === 'file'}
+            onClick={() => onSetViewMode('file')}
+          >
+            File
+          </button>
+          <button
+            type="button"
+            className={viewMode === 'diff' ? 'active' : ''}
+            aria-pressed={viewMode === 'diff'}
+            onClick={() => onSetViewMode('diff')}
+          >
+            Diff
+          </button>
+        </div>
         <button
           type="button"
           className="btn-icon diff-overlay-close"
@@ -226,7 +257,14 @@ export function DiffOverlay({
             mutating={mutating}
           />
         ) : (
-          <DiffSlotView slot={slot} onDismissError={onClose} />
+          <DiffSlotView
+            slot={slot}
+            onDismissError={onClose}
+            viewMode={viewMode}
+            stageable={stageable}
+            onStageLines={onStageLines}
+            onStageHunk={onStageHunk}
+          />
         )}
       </div>
     </div>
