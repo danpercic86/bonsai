@@ -20,7 +20,17 @@ REM   success_crlf    - result body uses CRLF (\r\n) line endings verbatim.
 REM   check_model     - echoes MODEL_IS_SONNET only when argv contains
 REM                     "--model sonnet"; otherwise an is_error envelope. Proves
 REM                     RunOpts::default() spawns --model sonnet (DEFAULT_MODEL).
+REM
+REM P15 tester mode:
+REM   dump_stdin      - writes the RECEIVED stdin payload VERBATIM to the file
+REM                     named by %BONSAI_STUB_STDIN_DUMP%, then emits the normal
+REM                     `success` envelope. Lets a test prove that the staged/diff
+REM                     lines actually reach the CLI's stdin (payload assembly).
+REM                     Uses the ABSOLUTE System32 find.exe so it drains stdin
+REM                     regardless of PATH ordering (a GNU `find` on PATH would
+REM                     not).
 setlocal
+if /i "%BONSAI_STUB_MODE%"=="dump_stdin"        goto :dump_stdin
 if /i "%BONSAI_STUB_MODE%"=="version"          goto :version
 if /i "%BONSAI_STUB_MODE%"=="nonzero"           goto :nonzero
 if /i "%BONSAI_STUB_MODE%"=="slow"              goto :slow
@@ -90,4 +100,13 @@ exit /b 0
 find /v "" >nul
 echo %* | findstr /C:"--model sonnet" >nul
 if errorlevel 1 (echo {"is_error":true,"result":"model was not sonnet","type":"result"}) else (echo {"result":"MODEL_IS_SONNET","is_error":false,"type":"result"})
+exit /b 0
+
+REM ---- P15 tester mode ----
+
+:dump_stdin
+REM Capture stdin VERBATIM to the dump file (absolute find.exe so it drains
+REM regardless of a GNU `find` earlier on PATH), then emit the success envelope.
+%SystemRoot%\System32\find.exe /v "" > "%BONSAI_STUB_STDIN_DUMP%"
+echo {"result":"MERGED_BODY_OK","is_error":false,"total_cost_usd":0.012,"session_id":"sess-abc","type":"result"}
 exit /b 0

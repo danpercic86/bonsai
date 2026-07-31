@@ -16,7 +16,7 @@ that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e
 Every "awaiting USER CHECKPOINT" below is now CONFIRMED as of 2026-07-30. (P5/P6 were already
 confirmed earlier.)
 
-## P15 — In-app AI features (Tier 1) — **in-progress** (2026-07-31)
+## P15 — In-app AI features (Tier 1) — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-31)
 
 Source: user request (2026-07-31) — after P14 (Tier 2 MCP), build the remaining Tier 1 in-app AI
 features from the analysis plan. P13 already shipped the reusable `bonsai_core::ai::run_claude`
@@ -57,8 +57,23 @@ first; base auto-select main→master→HEAD→upstream; explain+review = one `a
   Reviewer NIT 1 noted for later: checked-out (HEAD) branch has no context menu so can't be
   summarized — a future graph-commit/HEAD affordance could cover it (contract's optional hook).
 
-**Current step: P15c committed; next = tester (CLI-stub integration suites for a/b/c) then browser-harness
-AI gate.**
+- **P15 tester** — 3 CLI-stub integration suites under `crates/bonsai-core/tests/` (ai_commit_cli 3,
+  ai_explain_cli 5, ai_summary_cli 5 = 13 new; merge-base count cross-checked vs `git rev-list`).
+  Added a `dump_stdin` mode to `claude_stub.cmd` to assert payload content. Found + orchestrator FIXED
+  a contract/reality gap: bad-path on `analyze_diff` returned `Other`, not the documented `InvalidName`
+  — added the `validate_rel_path`→`InvalidName` guard in ai_explain.rs (mirrors ai_resolve.rs).
+- **P15 AI GATE PASSED (2026-07-31).** `cargo build/clippy(lib+tests)/test -p bonsai-core` all green;
+  `pnpm build` clean. Browser harness (`pnpm dev:mock`) verified: P15a Generate fills the commit box;
+  P15b Review-staged renders AiOutputPanel ("Review staged changes", $0.0060); P15c "Summarize branch…"
+  context item → panel "Summary: main → dev"; consent flow gates then enables (Enable→consent dialog→
+  active); `?ai=off` disables Generate + hides Review/Summarize; zero console errors. Commits: e592d75
+  P15a · f0a9a61 P15b · cab7a79 P15c · (tests+fix pending).
+
+**Current step: P15 AI gate passed; awaiting USER CHECKPOINT** — in native `pnpm tauri dev` with a real
+logged-in `claude` CLI: (1) stage real changes → Generate yields a sane message, edit+commit works;
+(2) select a commit → Explain gives a coherent summary; Review staged flags real issues; (3) right-click
+a feature branch → Summarize produces a sensible vs-base summary; (4) with claude absent/logged-out the
+affordances disable cleanly. Next milestone after checkpoint: P16 (Tier 3 embedded MCP).
 
 ## P16 — Embedded MCP server (Tier 3, shared live workspace) — **pending** (planned)
 

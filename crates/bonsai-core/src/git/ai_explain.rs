@@ -9,6 +9,7 @@ use crate::ai::payload;
 use crate::ai::{self, RunOpts};
 use crate::error::AppError;
 use crate::git::diff::{commit_diff, commit_file_diff, workdir_file_diff, FileDiff, LineKind};
+use crate::git::stage::validate_rel_path;
 use crate::git::status::read_status;
 
 /// System prompt (via `--append-system-prompt`) for EXPLAIN mode (contract
@@ -120,6 +121,12 @@ fn build_payload(workdir: &Path, target: &AiDiffTarget) -> Result<(String, Vec<F
             orig_path,
             staged,
         } => {
+            // Reject traversal/absolute paths up front and map to `InvalidName`
+            // (same guard + mapping as `ai_resolve.rs`), so the wire error kind
+            // matches the documented IPC contract rather than the bare `Other`
+            // that `validate_rel_path` yields — before any git tree access.
+            validate_rel_path(path)
+                .map_err(|_| AppError::InvalidName(format!("invalid path: {path}")))?;
             let fd = workdir_file_diff(workdir, path, orig_path.as_deref(), *staged)?;
             Ok((String::new(), vec![fd]))
         }
