@@ -305,7 +305,35 @@ reveal-in-graph.
   commit (CommitPanel → feat: polish 0101010); FileHistoryView lists 4 entries (oid/summary/author/relative);
   history-row click closes overlay + reveals; zero console errors. Backend = blame_cli 5.
 
-**Current step: P23 — committing P23d, then tester full regression + user checklist → P23 milestone AI gate.**
+- **P23 tester** — full workspace regression PASS, no regressions/bugs: bonsai_lib 69, bonsai_core 167,
+  rebase_interactive_cli 19→**20** (git-native-rebase-in-progress refused), blame_cli 5→**6** (single-commit
+  blame), plain rebase_cli 18 + merge/conflict/essentials all intact; clippy + build clean. Checklist:
+  docs/contracts/P23-user-checklist.md.
+- **P23 AI GATE PASSED (2026-07-31).** Commits: 5fd4f37 P23a · 8ce136d P23b · 418bddb P23c · e7a20f1 P23d.
+  Interactive-rebase (engine + plan editor, conflict→OpBanner, abort-restores-exact-tip) and blame/file-
+  history (BlameView/FileHistoryView + reveal-in-graph) all backend-oracle + frontend-harness verified.
+
+**P23 awaiting USER CHECKPOINT** (native pnpm tauri dev, per docs/contracts/P23-user-checklist.md):
+interactive rebase reorder/squash/fixup/reword/drop with git cross-checks; conflict→OpBanner→resolve→
+Continue; Abort restores the exact original branch tip; blame per-line vs git blame + click-to-reveal;
+file history vs git log --follow.
+
+## ★ BATCH COMPLETE (P18–P23) — ALL AI GATES PASSED, awaiting USER CHECKPOINTS (2026-07-31)
+
+The 4-ask feature batch is fully implemented, reviewed, tested, and AI-gate-verified:
+1. **Submodules** (P19) — read + init/update/sync + open-in-tab.
+2. **Wider settings dialog** (P18a).
+3. **Whole-row graph context menu** (P18b).
+4. **Public-release feature gap** — P20 daily essentials (amend/cherry-pick/revert/reset/discard),
+   P21 repo lifecycle (clone+init), P22 tags & remotes, P23 interactive rebase + blame/file-history.
+Deferred roadmap (documented, not built per user scope): reflog, worktrees, commit search/filter, LFS,
+commit signing, git config editing, force-push-with-lease, host/PR integration.
+Per-milestone USER CHECKPOINT checklists: docs/contracts/P{18-skip,19,20,21,22,23}-user-checklist.md
+(P18 is trivial-visual, folded into its TODO note). All backend features have CLI-oracle parity vs the
+real `git` CLI; all frontend surfaces harness-verified against the mock (native-only interactions —
+folder pickers, canvas drag, real credentials/network — remain USER CHECKPOINT items).
+
+**Current step: batch complete — awaiting user to run the native checkpoints.**
 
 ### P22 — Tags & remotes management — **queued** (contract ready)
 Contract: docs/contracts/P22-tags-remotes.md (architect). Open decisions RESOLVED (orchestrator accepted

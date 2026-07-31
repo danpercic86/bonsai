@@ -537,6 +537,50 @@ fn precondition_interactive_already_in_progress() {
     rebase_abort(d).expect("abort cleanup");
 }
 
+/// A git-NATIVE rebase already in progress (`repo.state() != Clean`, its own
+/// `.git/rebase-merge` sequencer, NOT the Bonsai one) must block a Bonsai
+/// interactive-rebase START with `OperationInProgress` (contract §2.4 step 3).
+/// This is the sibling of `precondition_interactive_already_in_progress`, which
+/// exercises the Bonsai-sequencer branch; here the guard is `repo.state()`.
+#[test]
+fn precondition_git_native_rebase_in_progress_is_refused() {
+    require_git!();
+    let dir = init_repo();
+    let d = dir.path();
+    script_conflict(d); // on `topic`; replaying it onto `main` conflicts on a.txt
+    let onto = rev(d, "main");
+    let topic_tip = rev(d, "topic");
+
+    // Kick off a git-native rebase that stops on a conflict, leaving a
+    // git-owned sequencer + a non-Clean repo state.
+    assert!(
+        !common::git_ok(d, &["rebase", "main"]),
+        "git rebase should stop with a conflict"
+    );
+    assert_ne!(
+        repo_state(d),
+        git2::RepositoryState::Clean,
+        "a git-native rebase must be in progress"
+    );
+    assert!(!has_bonsai_dir(d), "no Bonsai sequencer yet — the git-native one is separate");
+
+    // Bonsai interactive start must refuse via the repo.state() guard (§2.4 step 3).
+    let todos = vec![RebaseTodoOp {
+        oid: topic_tip,
+        action: RebaseAction::Pick,
+        new_message: None,
+    }];
+    assert!(matches!(
+        start_interactive_rebase(d, &onto, todos).expect_err("git-native op in progress"),
+        AppError::OperationInProgress(_)
+    ));
+    // A rejected start must not have written a Bonsai sequencer over the git one.
+    assert!(!has_bonsai_dir(d), "rejected start leaves no .git/bonsai-rebase");
+
+    // Clean up the git-native rebase (tempdir is dropped anyway).
+    let _ = common::git_ok(d, &["rebase", "--abort"]);
+}
+
 #[test]
 fn precondition_dirty_worktree_is_rejected() {
     require_git!();

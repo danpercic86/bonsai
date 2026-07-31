@@ -222,6 +222,39 @@ fn blame_error_cases() {
     assert!(matches!(err, AppError::Git(_)), "unknown -> Git, got {err:?}");
 }
 
+/// (extra) A file with a SINGLE commit: every line is attributed to that one
+/// commit / author with contiguous 1-based numbers, and its history is that one
+/// entry. Covers the degenerate one-hunk / one-commit blame path.
+#[test]
+fn blame_single_commit_file() {
+    require_git!();
+    let repo = init_repo();
+    let dir = repo.path();
+
+    write(dir, "solo.txt", "alpha\nbeta\ngamma\n");
+    commit_as(dir, "Alice", "alice@example.com", "c1: solo");
+    let c1 = git(dir, &["rev-parse", "HEAD"]);
+
+    let lines = blame_file(dir, "solo.txt", None).expect("blame ok");
+    let oracle = oracle_blame(dir, None, "solo.txt");
+    assert_eq!(lines.len(), oracle.len(), "matches oracle line count");
+    assert_eq!(lines.len(), 3, "three lines");
+    for (i, l) in lines.iter().enumerate() {
+        assert_eq!(l.final_line_no as usize, i + 1, "1-based contiguous");
+        assert_eq!(l.oid, c1, "all lines attributed to the sole commit");
+        assert_eq!(l.author_name, "Alice");
+    }
+    assert_eq!(lines[0].line_text, "alpha");
+    assert_eq!(lines[2].line_text, "gamma");
+
+    // History is exactly the one commit that introduced the file.
+    let hist = file_history(dir, "solo.txt", 0).expect("history ok");
+    assert_eq!(hist.len(), 1, "single-commit history");
+    assert_eq!(hist[0].oid, c1);
+    assert_eq!(hist[0].author_name, "Alice");
+    assert_eq!(hist[0].summary, "c1: solo");
+}
+
 // ------------------------------------------------------------ history tests
 
 /// (4) File history matches `git log --follow --oneline` across several edits
