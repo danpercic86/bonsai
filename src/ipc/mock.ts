@@ -25,6 +25,7 @@ import type {
   AiAutonomy,
   AiAvailability,
   AiDiffTarget,
+  AiGeneratedAsset,
   AiResolveProposal,
   AiSummary,
   AppError,
@@ -3125,5 +3126,39 @@ export const mockIpc: IpcApi = {
     });
     state.profiles.activeProfile = name;
     return { profile: name, results, store: structuredClone(state.profiles) };
+  },
+
+  // P24e: translate one instruction file into another agent's flavor. Writes
+  // NOTHING — returns canned proposed text after a delay. Gated on the mock's
+  // AI-off convention (mirrors generateCommitMessage's AI_OFF handling): `?ai=off`
+  // simulates disabled AI → aiUnavailable, else always succeed.
+  async aiGenerateAsset(
+    repoId: string,
+    sourceAssetId: string,
+    targetAgent: string,
+    guidance?: string,
+  ): Promise<AiGeneratedAsset> {
+    await delay(500);
+    requireRepo(repoId);
+    if (AI_OFF) {
+      const err: AppError = {
+        kind: 'aiUnavailable',
+        message: 'AI features are disabled — enable them in Settings',
+      };
+      throw err;
+    }
+    const guidanceLine =
+      guidance !== undefined && guidance.trim() !== ''
+        ? `\n\n> Guidance applied: ${guidance.trim()}`
+        : '';
+    return {
+      targetAgent,
+      content:
+        `# ${targetAgent} instructions\n\n` +
+        `…(translated from \`${sourceAssetId}\`)…\n\n` +
+        `Preserve the original guidance; adapt tone and format for ${targetAgent}.` +
+        guidanceLine +
+        '\n',
+    };
   },
 };

@@ -12,6 +12,7 @@ export type {
   AiAsset,
   AiAssetInventory,
   AiAutonomy,
+  AiGeneratedAsset,
   AiAvailability,
   AiDiffTarget,
   AiResolveProposal,

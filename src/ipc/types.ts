@@ -660,6 +660,13 @@ export interface ProfileActivation {
   store: ProfileStore;
 }
 
+/** P24e. The AI-translate helper's proposed instruction file. NOT written
+ *  anywhere — the user reviews it and pastes it into a profile target. */
+export interface AiGeneratedAsset {
+  targetAgent: string;
+  content: string;
+}
+
 export type Unsubscribe = () => void;
 
 export interface AppError {
@@ -1001,4 +1008,14 @@ export interface IpcApi {
   /** P24. Activate a profile: write each target's content to its mapped file,
    *  set `activeProfile`. The one write path. Rejects invalidName | other | io | noRepo. */
   activateProfile(repoId: string, name: string): Promise<ProfileActivation>;
+  /** P24e. Translate the `sourceAssetId` instruction file into `targetAgent`'s
+   *  flavor via the local `claude` CLI. Consent-gated. WRITES NOTHING — returns
+   *  proposed text the user reviews and saves into a profile target. Rejects
+   *  aiUnavailable | aiFailed | other | io | noRepo. */
+  aiGenerateAsset(
+    repoId: string,
+    sourceAssetId: string,
+    targetAgent: string,
+    guidance?: string,
+  ): Promise<AiGeneratedAsset>;
 }

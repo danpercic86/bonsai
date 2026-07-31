@@ -2,8 +2,8 @@ use tauri::Emitter;
 
 use bonsai_core::ai::{self, AiAvailability, RunOpts};
 use bonsai_core::assets::{
-    self, AiAssetInventory, AssetContent, ContextProfile, ProfileActivation, ProfilePreviewEntry,
-    ProfileStore,
+    self, AiAssetInventory, AiGeneratedAsset, AssetContent, ContextProfile, ProfileActivation,
+    ProfilePreviewEntry, ProfileStore,
 };
 use bonsai_core::error::AppError;
 use bonsai_core::git::ai_commit::{self, CommitMessageProposal};
@@ -2422,6 +2422,70 @@ async fn activate_profile_inner(
     tauri::async_runtime::spawn_blocking(move || assets::activate_profile(&workdir, &name))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Optional AI helper (P24e §6.8): translate the `source_asset_id` instruction
+/// file into `target_agent`'s flavor via the local `claude` CLI. Enforces the
+/// consent gate FIRST (before `repo_path`), exactly like `generate_commit_message`.
+/// WRITES NOTHING — returns proposed text the user reviews and saves into a
+/// profile target. Errors: `aiUnavailable` | `aiFailed` | `other` | `io` | `noRepo`.
+#[tauri::command]
+pub async fn ai_generate_asset(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    source_asset_id: String,
+    target_agent: String,
+    guidance: Option<String>,
+) -> Result<AiGeneratedAsset, AppError> {
+    // Resolve the settings-file path at the AppHandle boundary so the inner stays
+    // runtime-free (mirrors `generate_commit_message`), then delegate.
+    let file = settings::settings_file(&app)?;
+    ai_generate_asset_inner(state.inner(), &file, &repo_id, source_asset_id, target_agent, guidance)
+        .await
+}
+
+/// Runtime-free core of `ai_generate_asset`. The consent gate is enforced HERE,
+/// BEFORE `repo_path` (§6.8).
+async fn ai_generate_asset_inner(
+    state: &AppState,
+    settings_file: &std::path::Path,
+    repo_id: &str,
+    source_asset_id: String,
+    target_agent: String,
+    guidance: Option<String>,
+) -> Result<AiGeneratedAsset, AppError> {
+    let s = settings::load_from(settings_file);
+    if !(s.ai_enabled && s.ai_consented) {
+        return Err(AppError::AiUnavailable(
+            "AI features are disabled — enable them in Settings".to_string(),
+        ));
+    }
+    let workdir = repo_path(state, repo_id)?;
+    // Resolve the source asset id to its mapped file, then read its content. A
+    // missing/empty source is an error (nothing to translate) → `Other`.
+    let descriptor = assets::descriptor(&source_asset_id)
+        .ok_or_else(|| AppError::Other(format!("unknown asset id: '{source_asset_id}'")))?;
+    let src_path = descriptor.path.to_string();
+    let source_content = {
+        let workdir = workdir.clone();
+        tauri::async_runtime::spawn_blocking(move || assets::read_asset(&workdir, &src_path))
+            .await
+            .map_err(|e| AppError::Other(format!("task join error: {e}")))??
+    };
+    let content = match source_content.content {
+        Some(c) if !c.trim().is_empty() => c,
+        _ => {
+            return Err(AppError::Other(format!(
+                "source asset '{source_asset_id}' has no content to translate"
+            )))
+        }
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        assets::generate_asset(&workdir, &content, &target_agent, guidance.as_deref(), RunOpts::default())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 #[cfg(test)]

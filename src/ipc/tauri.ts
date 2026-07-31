@@ -8,6 +8,7 @@ import type {
   AiDiffTarget,
   AiAvailability,
   AiAssetInventory,
+  AiGeneratedAsset,
   AiResolveProposal,
   AiSummary,
   ApplyStashOutcome,
@@ -512,5 +513,21 @@ export const tauriIpc: IpcApi = {
 
   activateProfile(repoId: string, name: string): Promise<ProfileActivation> {
     return invoke<ProfileActivation>('activate_profile', { repoId, name });
+  },
+
+  // P24e: translate one instruction file into another agent's flavor. Writes
+  // NOTHING — returns proposed text the user reviews before saving.
+  aiGenerateAsset(
+    repoId: string,
+    sourceAssetId: string,
+    targetAgent: string,
+    guidance?: string,
+  ): Promise<AiGeneratedAsset> {
+    return invoke<AiGeneratedAsset>('ai_generate_asset', {
+      repoId,
+      sourceAssetId,
+      targetAgent,
+      guidance,
+    });
   },
 };

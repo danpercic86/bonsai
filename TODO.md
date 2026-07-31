@@ -69,8 +69,22 @@ manager + diff-preview-gated activation) → **P24e** (optional) AI translate he
   copilot correctly re-drifts vs the NEW canonical (live recompute); New-profile blank form + Add-target
   dropdown = exactly the 6 managed single-file assets + textarea + Load-from-current; cheap-terse
   activate → success toast "Activated 'cheap-terse' — wrote 1 file"; ZERO console errors throughout.
-**Current step:** P24d done + AI gate passed → committing → tester (full regression + checklist), then
-optional P24e (AI translate helper) or close P24 milestone.
+- **P24e** (reviewer APPROVE, 0 must-fix) — optional AI translate helper. assets/generate.rs:
+  generate_asset (single-line system+`-p` prompts, source piped via stdin, guidance newline-collapsed
+  for the .cmd shim) reusing ai::run_claude; WRITES NOTHING. ai_generate_asset command with the consent
+  gate FIRST (before repo_path, mirrors generate_commit_message_inner) → reads sourceAssetId via
+  read_asset → spawn_blocking. IPC triple + mock (canned, gated on ?ai=off). ProfileManager per-target
+  "Translate for <agent>…" button (source auto = canonical/first managed single-file; target agent =
+  row assetId's agent; fills the row textarea, no auto-save; disabled when aiEnabled false; aiUnavailable
+  → info toast). aiEnabled threaded App→panel→manager (enabled&&consented&&installed). 3 stub tests; lib
+  194 green; clippy + tsc + build clean. Nits (cosmetic, deferred): translate disables all rows in
+  flight; agent lookup recomputed 3×.
+- **P24e AI GATE PASSED (2026-08-01).** Backend: claude_stub.cmd success→proposed text, error→AiFailed,
+  wire camelCase (3 tests). Frontend harness: "Translate for Claude Code…" button fills the target
+  textarea with the mock canned translation, cycles Translating…→label, zero console errors. USER
+  CHECKPOINT (real claude CLI): translate produces a sane instruction file; AI-disabled blocks it.
+**Current step:** P24a/b/d/e all committed+AI-gated → tester (full regression + P24 checklist) → close
+P24 milestone (present AI gate, enumerate USER CHECKPOINT).
 
 ## P18–P23 — Feature batch (submodules, UI polish, public-release gap) — **in-progress** (2026-07-31)
 

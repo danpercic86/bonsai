@@ -22,6 +22,9 @@ export interface AiAssetsPanelProps {
   open: boolean;
   onClose(): void;
   repoId: string;
+  /** P24e: `aiEnabled && aiConsented && installed` — gates the profile editor's
+   *  "Translate…" button. Forwarded to ProfileManager. */
+  aiEnabled: boolean;
 }
 
 interface CompareState {
@@ -44,7 +47,7 @@ function syncChip(entry: DriftEntry, canonicalId: string | null) {
   return <span className="asset-chip asset-chip-drifted">drifted</span>;
 }
 
-export function AiAssetsPanel({ open, onClose, repoId }: AiAssetsPanelProps) {
+export function AiAssetsPanel({ open, onClose, repoId, aiEnabled }: AiAssetsPanelProps) {
   const [inventory, setInventory] = useState<AiAssetInventory | null>(null);
   const [profiles, setProfiles] = useState<ProfileStore | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -315,6 +318,7 @@ export function AiAssetsPanel({ open, onClose, repoId }: AiAssetsPanelProps) {
                 repoId={repoId}
                 store={profiles}
                 inventory={inventory}
+                aiEnabled={aiEnabled}
                 onStoreChange={setProfiles}
                 onActivated={handleActivated}
               />

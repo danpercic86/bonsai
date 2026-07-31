@@ -836,6 +836,7 @@ export default function App() {
             open={aiAssetsOpen}
             onClose={() => setAiAssetsOpen(false)}
             repoId={activeRepo}
+            aiEnabled={aiEnabled && aiConsented && aiAvailability?.installed === true}
           />
         )}
         <ConfirmDialog

@@ -6,15 +6,17 @@
 //! command layer wraps them in `spawn_blocking`.
 //!
 //! Sub-increment P24a covers taxonomy + inventory + drift + read. Profiles
-//! (P24b, `profiles.rs`) and the optional AI helper (P24e, `generate.rs`) land
-//! in later passes.
+//! (P24b, `profiles.rs`) and the optional AI helper (P24e, `generate.rs` — the
+//! only part that touches the `claude` CLI) land in later passes.
 
 pub mod drift;
+pub mod generate;
 pub mod inventory;
 pub mod profiles;
 pub mod taxonomy;
 
 pub use drift::{compute_drift, DriftEntry, DriftReport};
+pub use generate::{generate_asset, AiGeneratedAsset};
 pub use inventory::{
     normalize, read_asset, scan_inventory, AiAsset, AiAssetInventory, AssetContent, AssetFile,
 };

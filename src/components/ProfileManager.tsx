@@ -6,6 +6,7 @@
 import { useRef, useState } from 'react';
 import { ipc } from '../ipc';
 import type {
+  AiAsset,
   AiAssetInventory,
   ContextProfile,
   ProfileActivation,
@@ -21,6 +22,9 @@ export interface ProfileManagerProps {
   repoId: string;
   store: ProfileStore;
   inventory: AiAssetInventory;
+  /** P24e: `aiEnabled && aiConsented && installed` — gates the "Translate…"
+   *  button. The backend re-enforces the consent gate regardless. */
+  aiEnabled: boolean;
   /** After a save/delete: the updated store from the backend. */
   onStoreChange(store: ProfileStore): void;
   /** After a successful activation: refresh profiles + inventory. */
@@ -44,6 +48,7 @@ export function ProfileManager({
   repoId,
   store,
   inventory,
+  aiEnabled,
   onStoreChange,
   onActivated,
 }: ProfileManagerProps) {
@@ -67,10 +72,24 @@ export function ProfileManager({
 
   const [activateName, setActivateName] = useState<string | null>(null);
 
+  // P24e: the target row currently being translated (null => none). Guards the
+  // per-target button so a second click can't fire while a call is in flight.
+  const [translatingUid, setTranslatingUid] = useState<number | null>(null);
+
   // Single-file, managed descriptors are the only valid targets (OPEN #4).
   const singleFileAssets = inventory.assets.filter(
     (a) => a.kind === 'singleFile' && a.managed,
   );
+
+  // P24e: the SOURCE file the AI helper translates FROM. Default = the drift
+  // canonical (an existing comparable single-file), else the first existing
+  // managed single-file. `null` => nothing to translate from (button disabled).
+  const sourceAsset: AiAsset | null =
+    inventory.assets.find(
+      (a) => a.id === inventory.drift.canonicalId && a.exists,
+    ) ??
+    singleFileAssets.find((a) => a.exists) ??
+    null;
 
   const startCreate = (): void => {
     setDraft({ name: '', description: '', model: '', targets: [] });
@@ -133,6 +152,30 @@ export function ProfileManager({
       }
     } catch (e) {
       pushToast('error', errorMessage(e));
+    }
+  };
+
+  // P24e: translate the SOURCE instruction file into THIS target's agent flavor
+  // and fill the target's textarea with the proposed text (user reviews before
+  // Save). Writes nothing. Backend re-enforces the consent gate; on aiUnavailable
+  // we point the user at Settings.
+  const translateTarget = async (target: DraftTarget): Promise<void> => {
+    if (sourceAsset === null) return;
+    const targetAsset = inventory.assets.find((a) => a.id === target.assetId);
+    const targetAgent = targetAsset?.agent ?? target.assetId;
+    setTranslatingUid(target.uid);
+    try {
+      const result = await ipc.aiGenerateAsset(repoId, sourceAsset.id, targetAgent);
+      patchTarget(target, { content: result.content });
+      pushToast('success', `Translated ${sourceAsset.label} for ${targetAgent}`);
+    } catch (e) {
+      if (isAppError(e) && e.kind === 'aiUnavailable') {
+        pushToast('info', 'AI features are disabled — enable them in Settings');
+      } else {
+        pushToast('error', errorMessage(e));
+      }
+    } finally {
+      setTranslatingUid((cur) => (cur === target.uid ? null : cur));
     }
   };
 
@@ -319,6 +362,34 @@ export function ProfileManager({
                     onClick={() => void loadFromCurrent(target)}
                   >
                     Load from current file
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary settings-toggle-btn"
+                    // P24e: translate the source file into this target's agent
+                    // flavor. Disabled without AI, without a source file, or while
+                    // a translation is in flight.
+                    disabled={
+                      !aiEnabled || sourceAsset === null || translatingUid !== null
+                    }
+                    title={
+                      sourceAsset === null
+                        ? 'No existing instruction file to translate from'
+                        : !aiEnabled
+                          ? 'Enable AI features in Settings to use this'
+                          : `Translate ${sourceAsset.label} for ${
+                              inventory.assets.find((a) => a.id === target.assetId)?.agent ??
+                              target.assetId
+                            }`
+                    }
+                    onClick={() => void translateTarget(target)}
+                  >
+                    {translatingUid === target.uid
+                      ? 'Translating…'
+                      : `Translate for ${
+                          inventory.assets.find((a) => a.id === target.assetId)?.agent ??
+                          target.assetId
+                        }…`}
                   </button>
                   <button
                     type="button"
