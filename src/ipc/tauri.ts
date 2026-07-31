@@ -24,6 +24,7 @@ import type {
   FileDiff,
   GraphLayout,
   IpcApi,
+  LineSelection,
   McpStatus,
   MergeOutcome,
   OpenRepoResult,
@@ -84,8 +85,33 @@ export const tauriIpc: IpcApi = {
     path: string,
     origPath: string | null,
     staged: boolean,
+    fullContext: boolean,
   ): Promise<FileDiff> {
-    return invoke<FileDiff>('get_workdir_file_diff', { repoId, path, origPath, staged });
+    return invoke<FileDiff>('get_workdir_file_diff', {
+      repoId,
+      path,
+      origPath,
+      staged,
+      fullContext,
+    });
+  },
+
+  stagePartial(
+    repoId: string,
+    path: string,
+    origPath: string | null,
+    selection: LineSelection[],
+  ): Promise<void> {
+    return invoke<void>('stage_partial', { repoId, path, origPath, selection });
+  },
+
+  unstagePartial(
+    repoId: string,
+    path: string,
+    origPath: string | null,
+    selection: LineSelection[],
+  ): Promise<void> {
+    return invoke<void>('unstage_partial', { repoId, path, origPath, selection });
   },
 
   getCommitDiff(repoId: string, oid: string): Promise<CommitDiff> {
@@ -97,8 +123,9 @@ export const tauriIpc: IpcApi = {
     oid: string,
     path: string,
     origPath: string | null,
+    fullContext: boolean,
   ): Promise<FileDiff> {
-    return invoke<FileDiff>('get_commit_file_diff', { repoId, oid, path, origPath });
+    return invoke<FileDiff>('get_commit_file_diff', { repoId, oid, path, origPath, fullContext });
   },
 
   compareWithHead(repoId: string, oid: string): Promise<CompareDiff> {
@@ -110,8 +137,15 @@ export const tauriIpc: IpcApi = {
     oid: string,
     path: string,
     origPath: string | null,
+    fullContext: boolean,
   ): Promise<FileDiff> {
-    return invoke<FileDiff>('compare_with_head_file_diff', { repoId, oid, path, origPath });
+    return invoke<FileDiff>('compare_with_head_file_diff', {
+      repoId,
+      oid,
+      path,
+      origPath,
+      fullContext,
+    });
   },
 
   listBranches(repoId: string): Promise<BranchesSnapshot> {

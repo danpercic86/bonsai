@@ -435,7 +435,7 @@ export function RepoWorkspace({
           collapseDiffSlot();
         } else {
           void fetchDiffSlot(slot.key, () =>
-            ipc.getWorkdirFileDiff(repoId, entry.path, entry.origPath, section === 'staged'),
+            ipc.getWorkdirFileDiff(repoId, entry.path, entry.origPath, section === 'staged', false),
           );
         }
       }
@@ -1381,7 +1381,7 @@ export function RepoWorkspace({
       return;
     }
     void fetchDiffSlot(key, () =>
-      ipc.getWorkdirFileDiff(repoId, entry.path, entry.origPath, section === 'staged'),
+      ipc.getWorkdirFileDiff(repoId, entry.path, entry.origPath, section === 'staged', false),
     );
   }
 

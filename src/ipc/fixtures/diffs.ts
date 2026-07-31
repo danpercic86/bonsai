@@ -12,6 +12,7 @@ import type {
   FileStatus,
   GraphLayout,
   Hunk,
+  LineKind,
 } from '../types';
 import { buildMockGraph } from './graph';
 
@@ -73,27 +74,6 @@ function allAddHunk(lines: string[], noNewlineLast = false): Hunk {
 }
 
 // ---------- workdir diffs (mode A), keyed by exact path ----------
-
-const MAIN_RS: FileDiff = fileDiff('src/main.rs', 'modified', [
-  hunk(1, 6, 1, 7, [
-    ctx(1, 1, 'use std::path::PathBuf;'),
-    add(2, 'use std::sync::Arc;'),
-    ctx(2, 3, ''),
-    ctx(3, 4, 'fn main() {'),
-    del(4, '    let config = load_config();'),
-    add(5, '    let config = Arc::new(load_config());'),
-    ctx(5, 6, '    run(config);'),
-    ctx(6, 7, '}'),
-  ]),
-  hunk(20, 4, 21, 5, [
-    ctx(20, 21, 'fn load_config() -> Config {'),
-    ctx(21, 22, '    let path = PathBuf::from("bonsai.toml");'),
-    del(22, '    Config::from_file(&path)'),
-    add(23, '    Config::from_file(&path)'),
-    add(24, '        .unwrap_or_else(|_| Config::default())'),
-    ctx(23, 25, '}'),
-  ]),
-]);
 
 const APP_RS: FileDiff = fileDiff('src/app.rs', 'added', [
   allAddHunk([
@@ -223,7 +203,6 @@ const THEME_CSS: FileDiff = fileDiff('src/styles/theme.css', 'modified', [
 ]);
 
 const WORKDIR_DIFFS: Record<string, FileDiff> = {
-  'src/main.rs': MAIN_RS,
   'src/app.rs': APP_RS,
   'old-config.toml': OLD_CONFIG,
   'docs/getting-started.md': GETTING_STARTED,
@@ -480,4 +459,274 @@ export function mockCommitFileDiff(
   origPath: string | null,
 ): FileDiff {
   return COMMIT_FILE_DIFFS[path] ?? genericModified(path, origPath);
+}
+
+// ---------- P17: live three-way model for src/main.rs ----------
+//
+// Exactly one fixture file (`src/main.rs`) gets a three-way line-array model
+// (head / index / workdir). Its diffs and partial mutations are computed from
+// the arrays with the SAME reconstruction rule as the Rust backend (§2.4),
+// operating on string[] (line terminators are irrelevant here). Every other
+// file stays static and rejects partial staging.
+
+/** head / index / workdir line arrays for the one live model file. */
+export interface ThreeWay {
+  head: string[];
+  index: string[];
+  workdir: string[];
+}
+
+/**
+ * Seed for src/main.rs. `index != head` (a staged change: an added import line)
+ * AND `workdir != index` (an unstaged change: `Arc::new(...)` wrap) so the file
+ * appears in BOTH the staged and unstaged sections from first paint. Returns
+ * fresh arrays — callers own the copy.
+ */
+export function initialMainRs(): ThreeWay {
+  const head = [
+    'use std::path::PathBuf;',
+    '',
+    'fn main() {',
+    '    let config = load_config();',
+    '    run(config);',
+    '}',
+    '',
+    'fn load_config() -> Config {',
+    '    let path = PathBuf::from("bonsai.toml");',
+    '    Config::from_file(&path)',
+    '}',
+  ];
+  // Staged change: `use std::sync::Arc;` inserted after line 1.
+  const index = [
+    'use std::path::PathBuf;',
+    'use std::sync::Arc;',
+    '',
+    'fn main() {',
+    '    let config = load_config();',
+    '    run(config);',
+    '}',
+    '',
+    'fn load_config() -> Config {',
+    '    let path = PathBuf::from("bonsai.toml");',
+    '    Config::from_file(&path)',
+    '}',
+  ];
+  // Unstaged change on top of the index: wrap the config in `Arc::new(...)`.
+  const workdir = [
+    'use std::path::PathBuf;',
+    'use std::sync::Arc;',
+    '',
+    'fn main() {',
+    '    let config = Arc::new(load_config());',
+    '    run(config);',
+    '}',
+    '',
+    'fn load_config() -> Config {',
+    '    let path = PathBuf::from("bonsai.toml");',
+    '    Config::from_file(&path)',
+    '}',
+  ];
+  return { head, index, workdir };
+}
+
+interface DiffOp {
+  kind: LineKind;
+  oldNo: number | null;
+  newNo: number | null;
+  content: string;
+}
+
+/** Longest-common-subsequence edit script over two small line arrays. */
+function diffOps(oldLines: string[], newLines: string[]): DiffOp[] {
+  const n = oldLines.length;
+  const m = newLines.length;
+  // dp[i][j] = LCS length of oldLines[i..] vs newLines[j..].
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] =
+        oldLines[i] === newLines[j]
+          ? dp[i + 1][j + 1] + 1
+          : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const ops: DiffOp[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (oldLines[i] === newLines[j]) {
+      ops.push({ kind: 'context', oldNo: i + 1, newNo: j + 1, content: oldLines[i] });
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      ops.push({ kind: 'del', oldNo: i + 1, newNo: null, content: oldLines[i] });
+      i++;
+    } else {
+      ops.push({ kind: 'add', oldNo: null, newNo: j + 1, content: newLines[j] });
+      j++;
+    }
+  }
+  while (i < n) {
+    ops.push({ kind: 'del', oldNo: i + 1, newNo: null, content: oldLines[i] });
+    i++;
+  }
+  while (j < m) {
+    ops.push({ kind: 'add', oldNo: null, newNo: j + 1, content: newLines[j] });
+    j++;
+  }
+  return ops;
+}
+
+function opToLine(op: DiffOp): DiffLine {
+  return { kind: op.kind, oldNo: op.oldNo, newNo: op.newNo, content: op.content };
+}
+
+/** Group ops into hunks with `context` surrounding lines (Infinity => one hunk). */
+function opsToHunks(ops: DiffOp[], context: number): Hunk[] {
+  const changed: number[] = [];
+  ops.forEach((op, idx) => {
+    if (op.kind !== 'context') changed.push(idx);
+  });
+  if (changed.length === 0) return [];
+  const ranges: Array<[number, number]> = [];
+  for (const idx of changed) {
+    const lo = Math.max(0, idx - context);
+    const hi = Math.min(ops.length - 1, idx + context);
+    const last = ranges[ranges.length - 1];
+    if (last !== undefined && lo <= last[1] + 1) {
+      last[1] = Math.max(last[1], hi);
+    } else {
+      ranges.push([lo, hi]);
+    }
+  }
+  return ranges.map(([lo, hi]) => {
+    const slice = ops.slice(lo, hi + 1);
+    const lines = slice.map(opToLine);
+    const oldNos = slice.filter((o) => o.oldNo !== null).map((o) => o.oldNo as number);
+    const newNos = slice.filter((o) => o.newNo !== null).map((o) => o.newNo as number);
+    const oldStart = oldNos.length > 0 ? oldNos[0] : 0;
+    const newStart = newNos.length > 0 ? newNos[0] : 0;
+    return hunk(oldStart, oldNos.length, newStart, newNos.length, lines);
+  });
+}
+
+/**
+ * Minimal LCS line diff -> FileDiff. `fullContext` true -> one whole-file hunk
+ * (all lines as context); false -> 3 context lines around each change (possibly
+ * several hunks). `fullContext` never changes the add/del line numbering.
+ */
+export function lineDiff(
+  oldLines: string[],
+  newLines: string[],
+  path: string,
+  status: FileStatus,
+  fullContext: boolean,
+): FileDiff {
+  const ops = diffOps(oldLines, newLines);
+  const hunks = opsToHunks(ops, fullContext ? Number.POSITIVE_INFINITY : 3);
+  return fileDiff(path, status, hunks);
+}
+
+/**
+ * SAME reconstruction rule as the Rust backend (§2.4), on string[]. Returns the
+ * new `index` array given the freshly recomputed hunks + the selected add/del
+ * sets. `stage`: base = OLD (index) toward workdir. `unstage`: base = NEW
+ * (index) toward HEAD.
+ */
+export function reconstructLines(
+  dir: 'stage' | 'unstage',
+  hunks: Hunk[],
+  oldLines: string[],
+  newLines: string[],
+  selAdd: Set<number>,
+  selDel: Set<number>,
+): string[] {
+  const result: string[] = [];
+  if (dir === 'stage') {
+    let cursor = 1; // next OLD line not yet emitted
+    for (const h of hunks) {
+      while (cursor < h.oldStart) {
+        result.push(oldLines[cursor - 1]);
+        cursor++;
+      }
+      for (const line of h.lines) {
+        if (line.kind === 'context') {
+          result.push(oldLines[(line.oldNo as number) - 1]);
+          cursor = (line.oldNo as number) + 1;
+        } else if (line.kind === 'del') {
+          if (!selDel.has(line.oldNo as number)) result.push(oldLines[(line.oldNo as number) - 1]);
+          cursor = (line.oldNo as number) + 1;
+        } else {
+          // add
+          if (selAdd.has(line.newNo as number)) result.push(newLines[(line.newNo as number) - 1]);
+        }
+      }
+    }
+    while (cursor <= oldLines.length) {
+      result.push(oldLines[cursor - 1]);
+      cursor++;
+    }
+  } else {
+    let cursor = 1; // next NEW (index) line not yet emitted
+    for (const h of hunks) {
+      while (cursor < h.newStart) {
+        result.push(newLines[cursor - 1]);
+        cursor++;
+      }
+      for (const line of h.lines) {
+        if (line.kind === 'context') {
+          result.push(newLines[(line.newNo as number) - 1]);
+          cursor = (line.newNo as number) + 1;
+        } else if (line.kind === 'add') {
+          if (!selAdd.has(line.newNo as number)) result.push(newLines[(line.newNo as number) - 1]);
+          cursor = (line.newNo as number) + 1;
+        } else {
+          // del: restore the HEAD line when selected
+          if (selDel.has(line.oldNo as number)) result.push(oldLines[(line.oldNo as number) - 1]);
+        }
+      }
+    }
+    while (cursor <= newLines.length) {
+      result.push(newLines[cursor - 1]);
+      cursor++;
+    }
+  }
+  return result;
+}
+
+/**
+ * Collapse a static fixture to a single whole-file hunk for File View. Only the
+ * safe cases are merged: a diff that is already one hunk, or several PERFECTLY
+ * CONTIGUOUS hunks (no unknown gap between them). When a gap cannot be filled
+ * (the static fixture omits the intervening lines) the diff is returned
+ * unchanged — the harness only exercises File View interactivity on the live
+ * `src/main.rs` model, so exactness for static fixtures is not required.
+ */
+export function asFullContext(fd: FileDiff): FileDiff {
+  if (fd.binary || fd.tooLarge || fd.hunks.length <= 1) return fd;
+  for (let i = 1; i < fd.hunks.length; i++) {
+    const prev = fd.hunks[i - 1];
+    const cur = fd.hunks[i];
+    if (
+      cur.oldStart !== prev.oldStart + prev.oldLines ||
+      cur.newStart !== prev.newStart + prev.newLines
+    ) {
+      return fd; // unfillable gap
+    }
+  }
+  const first = fd.hunks[0];
+  const last = fd.hunks[fd.hunks.length - 1];
+  const lines = fd.hunks.flatMap((h) => h.lines);
+  return {
+    ...fd,
+    hunks: [
+      hunk(
+        first.oldStart,
+        last.oldStart + last.oldLines - first.oldStart,
+        first.newStart,
+        last.newStart + last.newLines - first.newStart,
+        lines,
+      ),
+    ],
+  };
 }

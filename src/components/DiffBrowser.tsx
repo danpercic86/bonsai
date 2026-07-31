@@ -111,8 +111,14 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
       bump();
       const request =
         src.mode === 'commit'
-          ? ipc.getCommitFileDiff(repoIdRef.current, src.oid, header.path, header.origPath)
-          : ipc.compareWithHeadFileDiff(repoIdRef.current, src.oid, header.path, header.origPath);
+          ? ipc.getCommitFileDiff(repoIdRef.current, src.oid, header.path, header.origPath, false)
+          : ipc.compareWithHeadFileDiff(
+              repoIdRef.current,
+              src.oid,
+              header.path,
+              header.origPath,
+              false,
+            );
       void request
         .then(
           (diff) => {

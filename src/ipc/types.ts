@@ -90,6 +90,15 @@ export interface GraphLayout {
 
 export type LineKind = 'context' | 'add' | 'del';
 
+/** One selected changed line for partial staging (P17). Context lines are
+ *  dropped before sending; the backend identifies an Add by `newNo` and a Del
+ *  by `oldNo`. Mirrors the Rust `LineSelection`. */
+export interface LineSelection {
+  kind: LineKind; // 'add' | 'del' (context dropped before sending)
+  oldNo: number | null;
+  newNo: number | null;
+}
+
 export interface DiffLine {
   kind: LineKind;
   /** Line number in the OLD file; `null` for add lines. */
@@ -522,16 +531,36 @@ export interface IpcApi {
     path: string,
     origPath: string | null,
     staged: boolean,
+    fullContext: boolean,
   ): Promise<FileDiff>;
   /** Commit details + per-file headers vs first parent. Rejects AppError ('noRepo', 'git'). */
   getCommitDiff(repoId: string, oid: string): Promise<CommitDiff>;
-  /** Hunks for one file of a commit's first-parent diff. */
+  /** Hunks for one file of a commit's first-parent diff. `fullContext` true ->
+   *  one whole-file hunk (File View). */
   getCommitFileDiff(
     repoId: string,
     oid: string,
     path: string,
     origPath: string | null,
+    fullContext: boolean,
   ): Promise<FileDiff>;
+  /** Stage only the selected changed lines of one working-dir file (index moves
+   *  toward the workdir). Empty selection is a no-op. Rejects AppError
+   *  ('noRepo' | 'git' | 'other'[stale/unsupported/invalid path]). */
+  stagePartial(
+    repoId: string,
+    path: string,
+    origPath: string | null,
+    selection: LineSelection[],
+  ): Promise<void>;
+  /** Unstage only the selected changed lines of one staged file (index moves
+   *  toward HEAD). Empty selection is a no-op. Same rejections. */
+  unstagePartial(
+    repoId: string,
+    path: string,
+    origPath: string | null,
+    selection: LineSelection[],
+  ): Promise<void>;
   /** Tree-vs-tree diff between HEAD (old) and `oid` (new): `git diff HEAD <oid>`.
    *  HEAD is resolved server-side (detached ok; unborn -> empty old tree). Empty
    *  `files` when `oid` IS HEAD. Rejects {@link AppError} (`noRepo`, `git`). */
@@ -543,6 +572,7 @@ export interface IpcApi {
     oid: string,
     path: string,
     origPath: string | null,
+    fullContext: boolean,
   ): Promise<FileDiff>;
   /** Local branches + remotes + tags + HEAD in one snapshot. Rejects noRepo | git. */
   listBranches(repoId: string): Promise<BranchesSnapshot>;

@@ -1,10 +1,15 @@
 import { INITIAL_BRANCHES, MOCK_OID } from './fixtures/branches';
 import {
+  asFullContext,
+  initialMainRs,
+  lineDiff,
   mockCommitDiff,
   mockCommitFileDiff,
   mockCompareDiff,
   mockWorkdirDiff,
+  reconstructLines,
 } from './fixtures/diffs';
+import type { ThreeWay } from './fixtures/diffs';
 import {
   buildMockGraph,
   buildMockGraphDetached,
@@ -39,6 +44,7 @@ import type {
   GraphLayout,
   GraphPrefs,
   IpcApi,
+  LineSelection,
   ListView,
   McpStatus,
   MergeOutcome,
@@ -83,7 +89,8 @@ function delay(ms = 150): Promise<void> {
 const INITIAL_STATUS: StatusSnapshot = {
   staged: [
     { path: 'src/app.rs', origPath: null, status: 'added' },
-    { path: 'src/main.rs', origPath: null, status: 'modified' },
+    // src/main.rs is model-derived (P17 three-way): getStatus appends it to the
+    // staged and/or unstaged sections from `state.mainRs`, not this snapshot.
     { path: 'docs/getting-started.md', origPath: 'docs/intro.md', status: 'renamed' },
     { path: 'src/shared/util.rs', origPath: null, status: 'modified' }, // also unstaged below
   ],
@@ -209,6 +216,10 @@ interface MockRepoState {
   conflictTexts: Map<string, ConflictFile>;
   /** Stash stack, index 0 (most recent) first (P9 §6.5). */
   stashes: StashEntry[];
+  /** P17: the one live three-way (head/index/workdir) model file, `src/main.rs`.
+   *  Partial stage/unstage mutate `index`; getStatus/getWorkdirFileDiff derive
+   *  the file's section membership + diffs from it. */
+  mainRs: ThreeWay;
 }
 
 const repos = new Map<string /* repoId */, MockRepoState>();
@@ -428,6 +439,7 @@ function createRepoState(path: string): MockRepoState {
     conflicts: [],
     conflictTexts: new Map(),
     stashes: seedStashes(kind, graphFixture),
+    mainRs: initialMainRs(),
   };
   seedOpState(state, repoOp(path));
   return state;
@@ -773,6 +785,28 @@ function sortByPath(entries: StatusEntry[]): void {
   entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
+/** P17: line-array equality for the three-way model (index vs head/workdir). */
+function linesEqual(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((l, i) => l === b[i]);
+}
+
+const MAIN_RS_PATH = 'src/main.rs';
+
+/** P17: split a wire selection into add (by newNo) / del (by oldNo) sets;
+ *  stray Context elements are ignored (kept in both directions). */
+function collectSelection(selection: LineSelection[]): {
+  selAdd: Set<number>;
+  selDel: Set<number>;
+} {
+  const selAdd = new Set<number>();
+  const selDel = new Set<number>();
+  for (const s of selection) {
+    if (s.kind === 'add' && s.newNo !== null) selAdd.add(s.newNo);
+    else if (s.kind === 'del' && s.oldNo !== null) selDel.add(s.oldNo);
+  }
+  return { selAdd, selDel };
+}
+
 /** Removes matching entries from `from` and returns them. */
 function takeMatching(from: StatusEntry[], paths: string[]): StatusEntry[] {
   const taken = from.filter((e) => matchesAny(e, paths));
@@ -861,7 +895,20 @@ export const mockIpc: IpcApi = {
     await delay(150);
     const state = requireRepo(repoId);
     // Fresh copy so callers can't mutate the fixture between fetches.
-    return structuredClone(state.status);
+    const snapshot = structuredClone(state.status);
+    // P17: append the model-derived src/main.rs rows. It shows in `staged` when
+    // the index differs from HEAD, and in `unstaged` when the workdir differs
+    // from the index — so a partial stage/unstage can put it in BOTH sections.
+    const { head, index, workdir } = state.mainRs;
+    if (!linesEqual(index, head)) {
+      snapshot.staged.push({ path: MAIN_RS_PATH, origPath: null, status: 'modified' });
+      sortByPath(snapshot.staged);
+    }
+    if (!linesEqual(workdir, index)) {
+      snapshot.unstaged.push({ path: MAIN_RS_PATH, origPath: null, status: 'modified' });
+      sortByPath(snapshot.unstaged);
+    }
+    return snapshot;
   },
 
   async stage(repoId: string, paths: string[]): Promise<void> {
@@ -888,6 +935,55 @@ export const mockIpc: IpcApi = {
     }
     sortByPath(state.status.unstaged);
     sortByPath(state.status.untracked);
+  },
+
+  // P17: partial (line-level) staging is modeled ONLY for the live src/main.rs
+  // three-way file. Any other path rejects (mirrors the backend rejecting
+  // non-model files). Both mutate `state.mainRs.index` via reconstructLines
+  // (the SAME rule as the Rust §2.4 reconstruction), return void, and DO NOT
+  // emit repo-changed (the frontend refetches imperatively).
+  async stagePartial(
+    repoId: string,
+    path: string,
+    _origPath: string | null,
+    selection: LineSelection[],
+  ): Promise<void> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    if (path !== MAIN_RS_PATH) {
+      const err: AppError = {
+        kind: 'other',
+        message: 'mock: partial staging is only modeled for src/main.rs',
+      };
+      throw err;
+    }
+    const { selAdd, selDel } = collectSelection(selection);
+    const { index, workdir } = state.mainRs;
+    // Stage: recompute index-vs-workdir and move the selected lines index->workdir.
+    const { hunks } = lineDiff(index, workdir, MAIN_RS_PATH, 'modified', false);
+    state.mainRs.index = reconstructLines('stage', hunks, index, workdir, selAdd, selDel);
+  },
+
+  async unstagePartial(
+    repoId: string,
+    path: string,
+    _origPath: string | null,
+    selection: LineSelection[],
+  ): Promise<void> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    if (path !== MAIN_RS_PATH) {
+      const err: AppError = {
+        kind: 'other',
+        message: 'mock: partial staging is only modeled for src/main.rs',
+      };
+      throw err;
+    }
+    const { selAdd, selDel } = collectSelection(selection);
+    const { head, index } = state.mainRs;
+    // Unstage: recompute head-vs-index and move the selected lines index->head.
+    const { hunks } = lineDiff(head, index, MAIN_RS_PATH, 'modified', false);
+    state.mainRs.index = reconstructLines('unstage', hunks, head, index, selAdd, selDel);
   },
 
   async commit(repoId: string, message: string): Promise<CommitResult> {
@@ -936,10 +1032,22 @@ export const mockIpc: IpcApi = {
     path: string,
     origPath: string | null,
     staged: boolean,
+    fullContext: boolean,
   ): Promise<FileDiff> {
     await delay(150);
-    requireRepo(repoId);
-    return structuredClone(mockWorkdirDiff(path, origPath, staged));
+    const state = requireRepo(repoId);
+    // P17: src/main.rs is the live three-way model — its diff is computed from
+    // the current head/index/workdir arrays (staged => head vs index; else
+    // index vs workdir), honoring fullContext (true => one whole-file hunk).
+    if (path === MAIN_RS_PATH) {
+      const { head, index, workdir } = state.mainRs;
+      const fd = staged
+        ? lineDiff(head, index, MAIN_RS_PATH, 'modified', fullContext)
+        : lineDiff(index, workdir, MAIN_RS_PATH, 'modified', fullContext);
+      return structuredClone(fd);
+    }
+    const base = mockWorkdirDiff(path, origPath, staged);
+    return structuredClone(fullContext ? asFullContext(base) : base);
   },
 
   async getCommitDiff(repoId: string, oid: string): Promise<CommitDiff> {
@@ -966,10 +1074,13 @@ export const mockIpc: IpcApi = {
     oid: string,
     path: string,
     origPath: string | null,
+    fullContext: boolean,
   ): Promise<FileDiff> {
     await delay(150);
     requireRepo(repoId);
-    return structuredClone(mockCommitFileDiff(oid, path, origPath));
+    // Commit diffs are read-only: honor fullContext with the best-effort collapse.
+    const base = mockCommitFileDiff(oid, path, origPath);
+    return structuredClone(fullContext ? asFullContext(base) : base);
   },
 
   async compareWithHead(repoId: string, oid: string): Promise<CompareDiff> {
@@ -1003,11 +1114,14 @@ export const mockIpc: IpcApi = {
     oid: string,
     path: string,
     origPath: string | null,
+    fullContext: boolean,
   ): Promise<FileDiff> {
     await delay(150);
     requireRepo(repoId);
     // A compare file diff has the same FileDiff shape — reuse the commit builder.
-    return structuredClone(mockCommitFileDiff(oid, path, origPath));
+    // Read-only: honor fullContext with the best-effort collapse.
+    const base = mockCommitFileDiff(oid, path, origPath);
+    return structuredClone(fullContext ? asFullContext(base) : base);
   },
 
   async getGraph(repoId: string): Promise<GraphLayout> {
