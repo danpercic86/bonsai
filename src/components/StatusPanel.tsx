@@ -476,6 +476,8 @@ export interface StatusPanelProps {
   onDiscard(paths: string[]): void;
   /** P15b: request an AI review of the whole staged set. */
   onReviewStaged(): void;
+  /** P25b: request an AI review of the WHOLE working tree (staged+unstaged+untracked). */
+  onReviewWorktree(): void;
   /** Toggle a row's diff in the center-pane overlay (App owns the fetch). */
   onToggleDiff(section: WorkdirSection, entry: StatusEntry): void;
   /** P3c §8.2: resolve one conflicted path (no confirm — re-doable). */
@@ -506,6 +508,7 @@ export function StatusPanel({
   onUnstage,
   onDiscard,
   onReviewStaged,
+  onReviewWorktree,
   onToggleDiff,
   onResolveConflict,
   onToggleConflictView,
@@ -601,6 +604,19 @@ export function StatusPanel({
             expandable
             diffSlot={diffSlot}
             listView={listView}
+            extraAction={
+              aiEligible ? (
+                <button
+                  type="button"
+                  className="section-action section-action-ai"
+                  disabled={aiAnalyzing}
+                  title="Review all changes with AI"
+                  onClick={onReviewWorktree}
+                >
+                  {aiAnalyzing ? '✨ Reviewing…' : '✨ Review'}
+                </button>
+              ) : undefined
+            }
             onAction={onStage}
             onToggleDiff={onToggleDiff}
             onDiscard={onDiscard}

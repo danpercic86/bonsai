@@ -2164,6 +2164,17 @@ export function RepoWorkspace({
           onSelect: () => runSummarize(summaryBase, name),
         });
       }
+      // P25b: "Review branch…" (local branches only, AI-eligible only). Reviews
+      // the branch's diff vs its auto-resolved base (backend resolves
+      // upstream→origin/HEAD→main→master), so no base is passed. Guarded by
+      // runAnalyze's req-id, hence disabled:false.
+      items.push({
+        label: 'Review branch…',
+        icon: <SummarizeIcon />,
+        disabled: false,
+        onSelect: () =>
+          runAnalyze({ kind: 'branch', name }, 'review', `Review branch ${name}`),
+      });
     }
     if (cur !== null) {
       items.push({
@@ -2900,6 +2911,9 @@ export function RepoWorkspace({
                 onDiscard={(paths) => setPendingDiscard(paths)}
                 onReviewStaged={() =>
                   runAnalyze({ kind: 'staged' }, 'review', 'Review staged changes')
+                }
+                onReviewWorktree={() =>
+                  runAnalyze({ kind: 'worktree' }, 'review', 'Review working tree')
                 }
                 onToggleDiff={handleToggleWorkdirDiff}
                 onResolveConflict={(path, r) => void handleResolveConflict(path, r)}

@@ -44,7 +44,16 @@ client) + not-current + not-base; gone-upstream rows unchecked by default, merge
   ai_analyze_diff Review path (0 new commands/types). TS union + mock extended. WRITE-FREE. lib 202 +
   ai_explain_cli 8 green; clippy + tsc + build clean. Nits (cosmetic): redundant untracked opts;
   empty-tree object write (benign, mirrors ai_summary); note says "256 KiB" vs actual cap−note.
-**Current step:** P25a done (uncommitted) → committing → P25b B1 UI.
+- **P25b** (frontend-only; harness-verified worktree, structural for branch item) — B1 UI reusing the
+  existing runAnalyze/AiOutputPanel. StatusPanel: new onReviewWorktree + "✨ Review all changes with AI"
+  button on the Changes section header (gated aiEligible, disabled while analyzing) → runAnalyze({kind:
+  'worktree'},'review','Review working tree'). RepoWorkspace branchMenuItems: "Review branch…" item after
+  "Summarize branch…" (localBranch && aiEligible) → runAnalyze({kind:'branch',name},'review',…), base
+  auto-resolved backend-side. tsc + build clean. Harness (mock :1420): "Review all changes with AI" opens
+  AiOutputPanel titled "Review working tree" with mock review prose + cost. Branch-menu item = exact clone
+  of the proven Summarize-branch item (menu render is a USER CHECKPOINT — synthetic contextmenu doesn't
+  fire in the hidden pane). No reviewer agent (trivial write-free wiring); folded into P25 tester smoke.
+**Current step:** P25b done (uncommitted) → committing → P25c B4 stale-branch core+commands+IPC.
 
 ## P24 — AI-asset management: context profiles + unified instruction editor — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-07-31)
 
