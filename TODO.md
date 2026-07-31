@@ -37,7 +37,17 @@ D:\Temp\bonsai-scratch, TMP/TEMP=D:\Temp for cargo, no concurrent test+clippy, m
   instead of falling through to commit; RepoWorkspace buildContextItems/handleGraphContextMenu —
   commit-menu fallback when a branch row's branchMenuItems is [] (current HEAD branch).
 
-**Current step: P18 — implementing P18a+P18b (senior-dev), then review + commit.**
+- **P18 AI GATE PASSED (2026-07-31).** Commit b9b6c69. Reviewer APPROVE-WITH-NITS (0 must-fix; kept
+  vite.config.ts out of the commit per the one SHOULD-FIX). pnpm build clean. Browser harness (mock
+  :1420, hidden pane → DOM + synthetic contextmenu events): (P18a) `.dialog-card.settings-card`
+  computed width = 560px, all 5 sections present; (P18b) synthetic right-click at x=420 (summary zone,
+  far past the 180px ref band) on the `feat`/`exp` branch rows opens the FULL branch menu (Checkout…
+  Delete), commit-only + current-branch(main) rows open the commit menu (Create branch here / Compare),
+  WIP row opens nothing; zero console errors.
+
+**Current step: P18 AI gate passed — awaiting USER CHECKPOINT** (native pnpm tauri dev): settings dialog
+visibly wider; right-clicking anywhere on a branch row opens the branch menu, on a commit-only row the
+commit menu. Next: P19 (submodules).
 
 ## P17 — Interactive diff: File/Diff toggle + partial staging — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-31)
 
