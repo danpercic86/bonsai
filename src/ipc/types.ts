@@ -478,11 +478,14 @@ export interface CommitMessageProposal {
 /** Explain (teammate-friendly summary) vs Review (risks/bugs/style) (P15b). */
 export type AiAnalysisMode = 'explain' | 'review';
 
-/** Diff source for aiAnalyzeDiff — discriminated on `kind` (P15b). */
+/** Diff source for aiAnalyzeDiff — discriminated on `kind` (P15b; P25 B1 adds
+ *  the `worktree` + `branch` review scopes). */
 export type AiDiffTarget =
   | { kind: 'commit'; oid: string }
   | { kind: 'workdirFile'; path: string; origPath: string | null; staged: boolean }
-  | { kind: 'staged' };
+  | { kind: 'staged' }
+  | { kind: 'worktree' } // P25 B1: whole working-tree change set
+  | { kind: 'branch'; name: string; base?: string | null }; // P25 B1: branch vs merge-base
 
 /** Read-only prose result of aiAnalyzeDiff (P15b). Mirrors the Rust
  *  `AiAnalysis`; analysis writes nothing. */

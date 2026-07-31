@@ -2218,6 +2218,31 @@ export const mockIpc: IpcApi = {
       prefix = `Commit ${target.oid.slice(0, 7)}: `;
     } else if (target.kind === 'workdirFile') {
       prefix = `${target.path}: `;
+    } else if (target.kind === 'worktree') {
+      prefix = 'Working tree: ';
+    } else if (target.kind === 'branch') {
+      prefix = `Branch ${target.name} vs main: `;
+    }
+    // P25 B1: worktree/branch review scopes get canned Review prose so the
+    // browser harness exercises the same AiOutputPanel plumbing.
+    if (mode === 'review' && target.kind === 'worktree') {
+      return {
+        text:
+          prefix +
+          'Review: 3 files changed; the new error path in commands.rs lacks a ' +
+          'test; otherwise LGTM.',
+        costUsd: 0.006,
+      };
+    }
+    if (mode === 'review' && target.kind === 'branch') {
+      return {
+        text:
+          prefix +
+          'Review: the branch adds a focused feature; consider squashing the ' +
+          'two fixup commits and adding a test for the new base-resolution path. ' +
+          'No correctness concerns spotted.',
+        costUsd: 0.006,
+      };
     }
     const text =
       mode === 'review'

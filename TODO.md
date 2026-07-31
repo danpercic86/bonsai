@@ -16,7 +16,37 @@ that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e
 Every "awaiting USER CHECKPOINT" below is now CONFIRMED as of 2026-07-30. (P5/P6 were already
 confirmed earlier.)
 
-## P24 — AI-asset management: context profiles + unified instruction editor — **in-progress** (2026-07-31)
+## P25 — Cheap AI-automation wins: AI review (B1) + stale-branch cleanup (B4) — **in-progress** (2026-08-01)
+
+Roadmap bucket #2 (`~/.claude/plans/if-we-think-about-eager-hoare.md`; memory:
+repo-management-vision). Started autonomously after P24 shipped (user away 8–10h). Two features, both
+extending SHIPPED primitives:
+- **B1 — AI review of the whole working tree / a branch.** Today `git/ai_explain.rs::analyze_diff`
+  supports Review mode over Staged / a single WorkdirFile / a Commit. B1 adds: review the ENTIRE
+  working-tree change set (all staged+unstaged together) and review a BRANCH (its diff vs merge-base
+  with the default/upstream branch) — surfacing issues before commit/push. WRITE-FREE (produces text).
+- **B4 — stale/merged-branch cleanup.** Detect local branches fully merged into the default branch
+  (and remote-tracking branches gone from the remote); list them; batch-delete behind explicit UI
+  confirmation. Reuses branches.rs + existing confirmation-gated delete.
+Autonomy rules unchanged: architect→senior-dev→reviewer→orchestrator-commits→tester→AI gate→USER
+CHECKPOINT; land safe/read-only first; gate every destructive/write path behind confirmation; scratch
+under D:\Temp\bonsai-scratch, TMP/TEMP=D:\Temp for cargo, no concurrent test+clippy, mock.ts kept
+compiling. Contract: docs/contracts/P25-ai-review-stale-branches.md (architect). Sub-increments:
+**P25a** B1 core+IPC (no new command) → **P25b** B1 UI → **P25c** B4 core+commands+IPC → **P25d** B4 UI.
+Key defaults (architect, accepted): B1 worktree = HEAD-tree vs workdir index-aware incl untracked; branch
+base auto = explicit→upstream→origin/HEAD→main→master→error; 256 KiB payload cap w/ truncation note. B4
+delete uses direct git2 Branch::delete() gated on a SERVER-SIDE freshly-recomputed safe set (never trusts
+client) + not-current + not-base; gone-upstream rows unchecked by default, merged pre-checked.
+
+- **P25a** (reviewer APPROVE, 0 must-fix) — B1 core: diff.rs collect_file_diffs (multi-file); ai_explain.rs
+  AiDiffTarget::Worktree + Branch{name,base?}, gather_worktree/gather_branch/resolve_branch_base,
+  MAX_REVIEW_PAYLOAD_BYTES 256 KiB cap (reserves note len, UTF-8-boundary safe). Reuses the EXISTING
+  ai_analyze_diff Review path (0 new commands/types). TS union + mock extended. WRITE-FREE. lib 202 +
+  ai_explain_cli 8 green; clippy + tsc + build clean. Nits (cosmetic): redundant untracked opts;
+  empty-tree object write (benign, mirrors ai_summary); note says "256 KiB" vs actual cap−note.
+**Current step:** P25a done (uncommitted) → committing → P25b B1 UI.
+
+## P24 — AI-asset management: context profiles + unified instruction editor — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-07-31)
 
 **Flagship of the "repository management system" roadmap** (approved 2026-07-31,
 `~/.claude/plans/if-we-think-about-eager-hoare.md`; memory: repo-management-vision).

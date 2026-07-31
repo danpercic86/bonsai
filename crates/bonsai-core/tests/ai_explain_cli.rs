@@ -158,6 +158,150 @@ fn workdir_file_and_staged_targets_build_nonempty_payload() {
     );
 }
 
+// ============================================================ P25 §9.3 Worktree + Branch review targets
+
+/// P25 §9.3: `analyze_diff(Worktree, Review)` over a scratch repo with an
+/// uncommitted change returns the stub body; a CLEAN worktree short-circuits to
+/// `AiFailed("no changes to analyze")` before any CLI spawn.
+#[test]
+fn worktree_target_reviews_and_empty_fails() {
+    require_git!();
+    let _g = env_lock();
+
+    let dir = init_repo();
+    let d = dir.path();
+    write(d, "a.txt", "one\n");
+    git(d, &["add", "-A"]);
+    commit_fixed(d, "base");
+
+    // Clean worktree → AiFailed BEFORE any CLI call (`nonzero` would surface
+    // loudly if the stub actually ran).
+    set_stub_mode("nonzero");
+    let err = analyze_diff(d, AiDiffTarget::Worktree, AiAnalysisMode::Review, RunOpts::default())
+        .expect_err("clean worktree must be AiFailed");
+    match err {
+        AppError::AiFailed(m) => assert_eq!(m, "no changes to analyze", "got: {m}"),
+        other => panic!("expected AiFailed('no changes to analyze'), got {other:?}"),
+    }
+
+    // A staged change + an unstaged edit + an untracked file → analyzable.
+    write(d, "a.txt", "one\nTWO_STAGED\n");
+    git(d, &["add", "a.txt"]);
+    write(d, "a.txt", "one\nTWO_STAGED\nTHREE_UNSTAGED\n");
+    write(d, "untracked.txt", "brand new\n");
+
+    set_stub_mode("success");
+    let analysis =
+        analyze_diff(d, AiDiffTarget::Worktree, AiAnalysisMode::Review, RunOpts::default())
+            .unwrap_or_else(|e| panic!("Worktree review should succeed: {e:?}"));
+    assert_eq!(analysis.text, STUB_BODY, "Worktree review returns the stub body");
+
+    // The assembled payload carries all three change kinds.
+    let dump = d.join("dump.txt");
+    std::env::set_var(CLAUDE_BIN_ENV, stub_path());
+    std::env::set_var(STUB_MODE_ENV, "dump_stdin");
+    std::env::set_var(STDIN_DUMP_ENV, &dump);
+    analyze_diff(d, AiDiffTarget::Worktree, AiAnalysisMode::Review, RunOpts::default())
+        .expect("Worktree dump → Ok");
+    std::env::remove_var(STDIN_DUMP_ENV);
+    let payload = std::fs::read_to_string(&dump).expect("stub wrote stdin dump");
+    for needle in ["+TWO_STAGED", "+THREE_UNSTAGED", "+brand new"] {
+        assert!(
+            payload.contains(needle),
+            "worktree payload should carry {needle:?}; got:\n{payload}"
+        );
+    }
+}
+
+/// P25 §9.3: `analyze_diff(Branch{name, base:None}, Review)` diffs the branch vs
+/// the merge-base with the auto-resolved base (here local `main`) and returns
+/// the stub body; the payload carries the branch-only change + the header.
+#[test]
+fn branch_target_reviews_via_stub() {
+    require_git!();
+    let _g = env_lock();
+
+    let dir = init_repo();
+    let d = dir.path();
+    write(d, "a.txt", "base\n");
+    git(d, &["add", "-A"]);
+    commit_fixed(d, "base");
+
+    // Diverge a feature branch with one branch-only file.
+    git(d, &["checkout", "-b", "feature"]);
+    write(d, "feature.txt", "feature work\n");
+    git(d, &["add", "-A"]);
+    commit_fixed(d, "feature work");
+    // Back to main so HEAD != feature (the branch review targets `feature` by name).
+    git(d, &["checkout", "main"]);
+
+    set_stub_mode("success");
+    let analysis = analyze_diff(
+        d,
+        AiDiffTarget::Branch {
+            name: "feature".to_string(),
+            base: None, // auto → local `main`
+        },
+        AiAnalysisMode::Review,
+        RunOpts::default(),
+    )
+    .unwrap_or_else(|e| panic!("Branch review should succeed: {e:?}"));
+    assert_eq!(analysis.text, STUB_BODY, "Branch review returns the stub body");
+
+    // Payload carries the merge-base header + the branch-only addition.
+    let dump = d.join("dump.txt");
+    std::env::set_var(CLAUDE_BIN_ENV, stub_path());
+    std::env::set_var(STUB_MODE_ENV, "dump_stdin");
+    std::env::set_var(STDIN_DUMP_ENV, &dump);
+    analyze_diff(
+        d,
+        AiDiffTarget::Branch {
+            name: "feature".to_string(),
+            base: None,
+        },
+        AiAnalysisMode::Review,
+        RunOpts::default(),
+    )
+    .expect("Branch dump → Ok");
+    std::env::remove_var(STDIN_DUMP_ENV);
+    let payload = std::fs::read_to_string(&dump).expect("stub wrote stdin dump");
+    assert!(
+        payload.contains("BRANCH feature vs main (merge-base)"),
+        "branch payload should carry the header; got:\n{payload}"
+    );
+    assert!(
+        payload.contains("+feature work"),
+        "branch payload should carry the branch-only change; got:\n{payload}"
+    );
+}
+
+/// P25 §9.3: an explicit `base` that cannot resolve maps to `Git` (bad ref);
+/// a bad branch `name` likewise → `Git`.
+#[test]
+fn branch_bad_ref_maps_to_git() {
+    require_git!();
+    let _g = env_lock();
+    set_stub_mode("nonzero"); // would surface loudly if a CLI call slipped through
+
+    let dir = init_repo();
+    let d = dir.path();
+    write(d, "a.txt", "base\n");
+    git(d, &["add", "-A"]);
+    commit_fixed(d, "base");
+
+    let err = analyze_diff(
+        d,
+        AiDiffTarget::Branch {
+            name: "does-not-exist".to_string(),
+            base: None,
+        },
+        AiAnalysisMode::Review,
+        RunOpts::default(),
+    )
+    .expect_err("bad branch name must be Git");
+    assert!(matches!(err, AppError::Git(_)), "got {err:?}");
+}
+
 // ============================================================ §8.3 (3) empty diff / bad oid / bad path
 
 #[test]

@@ -375,6 +375,181 @@ pub(crate) fn collect_file_diff(diff: &git2::Diff) -> Result<Option<FileDiff>, A
     }))
 }
 
+/// Multi-file collection state (P25 §2.1). Holds the finished `FileDiff`s plus
+/// the in-progress file's accumulator; each `file_cb` finalizes the previous
+/// file and resets the per-file budget/flags (the plural of [`Collect`]).
+struct MultiCollect {
+    files: Vec<FileDiff>,
+    started: bool,
+    path: String,
+    orig_path: Option<String>,
+    status: FileStatus,
+    binary: bool,
+    /// This file blew the per-file line budget: keep iterating (never abort the
+    /// whole diff) but drop its hunks and flag `too_large` at finalize.
+    overflow: bool,
+    hunks: Vec<Hunk>,
+    cur: Option<Hunk>,
+    emitted: usize,
+}
+
+impl MultiCollect {
+    fn new() -> Self {
+        MultiCollect {
+            files: Vec::new(),
+            started: false,
+            path: String::new(),
+            orig_path: None,
+            status: FileStatus::Modified,
+            binary: false,
+            overflow: false,
+            hunks: Vec::new(),
+            cur: None,
+            emitted: 0,
+        }
+    }
+
+    /// Finalize the in-progress file (if any) into `files`, then reset the
+    /// per-file accumulator for the next delta. All-or-nothing per file
+    /// (binary/too-large => empty hunks), exactly like the singular collector.
+    fn finish_current(&mut self) {
+        if !self.started {
+            return;
+        }
+        let (binary, too_large, hunks) = if self.binary {
+            (true, false, Vec::new())
+        } else if self.overflow {
+            (false, true, Vec::new())
+        } else {
+            if let Some(cur) = self.cur.take() {
+                self.hunks.push(cur);
+            }
+            (false, false, std::mem::take(&mut self.hunks))
+        };
+        self.files.push(FileDiff {
+            path: std::mem::take(&mut self.path),
+            orig_path: self.orig_path.take(),
+            status: self.status,
+            binary,
+            too_large,
+            hunks,
+        });
+        // Reset for the next file.
+        self.started = false;
+        self.status = FileStatus::Modified;
+        self.binary = false;
+        self.overflow = false;
+        self.hunks = Vec::new();
+        self.cur = None;
+        self.emitted = 0;
+    }
+}
+
+/// Walks a MULTI-FILE diff and collects one [`FileDiff`] (with hunks) per delta,
+/// in delta order (P25 §2.1). The plural of [`collect_file_diff`]: each new
+/// `file_cb` finalizes the previous file, `hunk_cb`/`line_cb` append to the
+/// current file, and the per-file [`MAX_FILE_DIFF_LINES`] budget resets per file
+/// (an overflowing file is flagged `too_large` with empty hunks, exactly like
+/// the singular fn — but iteration CONTINUES so sibling files still collect).
+/// Binary files come back `binary:true` with empty hunks. Never fails on a
+/// too-large file. Empty diff => empty `Vec`.
+pub(crate) fn collect_file_diffs(diff: &git2::Diff) -> Result<Vec<FileDiff>, AppError> {
+    let state = RefCell::new(MultiCollect::new());
+
+    let mut file_cb = |delta: git2::DiffDelta, _progress: f32| -> bool {
+        let mut s = state.borrow_mut();
+        s.finish_current();
+        s.started = true;
+        s.status = map_status(delta.status());
+        s.path = delta
+            .new_file()
+            .path_bytes()
+            .or_else(|| delta.old_file().path_bytes())
+            .map(lossy)
+            .unwrap_or_default();
+        s.orig_path = match delta.status() {
+            git2::Delta::Renamed | git2::Delta::Copied => delta.old_file().path_bytes().map(lossy),
+            _ => None,
+        };
+        if delta.flags().is_binary() {
+            s.binary = true;
+        }
+        true
+    };
+    let mut binary_cb = |_delta: git2::DiffDelta, _binary: git2::DiffBinary| -> bool {
+        state.borrow_mut().binary = true;
+        true
+    };
+    let mut hunk_cb = |_delta: git2::DiffDelta, hunk: git2::DiffHunk| -> bool {
+        let mut s = state.borrow_mut();
+        // Once over budget the file's hunks are discarded at finalize; skip
+        // allocating further hunk headers.
+        if s.overflow {
+            return true;
+        }
+        if let Some(prev) = s.cur.take() {
+            s.hunks.push(prev);
+        }
+        s.cur = Some(Hunk {
+            old_start: hunk.old_start(),
+            old_lines: hunk.old_lines(),
+            new_start: hunk.new_start(),
+            new_lines: hunk.new_lines(),
+            lines: Vec::new(),
+        });
+        true
+    };
+    let mut line_cb =
+        |_delta: git2::DiffDelta, _hunk: Option<git2::DiffHunk>, line: git2::DiffLine| -> bool {
+            let mut s = state.borrow_mut();
+            match line.origin() {
+                origin @ (' ' | '+' | '-') => {
+                    if s.emitted >= MAX_FILE_DIFF_LINES {
+                        // Over budget for THIS file: flag and stop appending, but
+                        // keep returning true so the foreach walks sibling files.
+                        s.overflow = true;
+                        return true;
+                    }
+                    let kind = match origin {
+                        ' ' => LineKind::Context,
+                        '+' => LineKind::Add,
+                        _ => LineKind::Del,
+                    };
+                    let dl = DiffLine {
+                        kind,
+                        old_no: line.old_lineno(),
+                        new_no: line.new_lineno(),
+                        content: normalize_content(line.content()),
+                        no_newline: false,
+                    };
+                    if let Some(cur) = s.cur.as_mut() {
+                        cur.lines.push(dl);
+                        s.emitted += 1;
+                    }
+                    true
+                }
+                '=' | '>' | '<' => {
+                    if let Some(last) = s.cur.as_mut().and_then(|c| c.lines.last_mut()) {
+                        last.no_newline = true;
+                    }
+                    true
+                }
+                _ => true, // 'F' | 'H' | 'B': ignore
+            }
+        };
+
+    diff.foreach(
+        &mut file_cb,
+        Some(&mut binary_cb),
+        Some(&mut hunk_cb),
+        Some(&mut line_cb),
+    )?;
+
+    let mut s = state.into_inner();
+    s.finish_current();
+    Ok(s.files)
+}
+
 /// Header collection over an UNRESTRICTED diff: counts only, no content
 /// strings, no line budget (§2.3).
 pub(crate) fn collect_headers(diff: &git2::Diff) -> Result<Vec<FileDiffHeader>, AppError> {
@@ -959,6 +1134,93 @@ mod tests {
         };
         let err = compare_head_diff(p, &tree_oid).expect_err("tree oid is not a commit");
         assert!(matches!(err, AppError::Git(_)));
+    }
+
+    /// Tree of the commit `oid` points at, for direct `collect_file_diffs` tests.
+    fn tree_of<'r>(repo: &'r git2::Repository, oid: &str) -> git2::Tree<'r> {
+        repo.find_commit(git2::Oid::from_str(oid).expect("oid"))
+            .expect("commit")
+            .tree()
+            .expect("tree")
+    }
+
+    /// P25 §2.1 / §9.1(2): a two-file tree-to-tree diff yields two `FileDiff`s
+    /// with correct paths/status/hunks, in delta order.
+    #[test]
+    fn collect_file_diffs_multi_file() {
+        let dir = init_scratch();
+        let p = dir.path();
+
+        std::fs::write(p.join("a.txt"), "a1\n").expect("write");
+        std::fs::write(p.join("b.txt"), "b1\n").expect("write");
+        stage_paths(p, &["a.txt".into(), "b.txt".into()]).expect("stage");
+        let base = create_commit(p, "base").expect("commit").oid;
+
+        std::fs::write(p.join("a.txt"), "a1 changed\n").expect("write");
+        std::fs::write(p.join("b.txt"), "b1 changed\n").expect("write");
+        stage_paths(p, &["a.txt".into(), "b.txt".into()]).expect("stage");
+        let head = create_commit(p, "head").expect("commit").oid;
+
+        let repo = git2::Repository::open(p).expect("open");
+        let old = tree_of(&repo, &base);
+        let new = tree_of(&repo, &head);
+        let mut opts = build_diff_options(&[], false);
+        let mut diff = repo
+            .diff_tree_to_tree(Some(&old), Some(&new), Some(&mut opts))
+            .expect("diff");
+        apply_find_similar(&mut diff).expect("find_similar");
+
+        let files = collect_file_diffs(&diff).expect("collect");
+        assert_eq!(files.len(), 2, "two changed files");
+        // Delta order is byte-sorted path order for tree-to-tree.
+        assert_eq!(files[0].path, "a.txt");
+        assert_eq!(files[1].path, "b.txt");
+        for fd in &files {
+            assert_eq!(fd.status, FileStatus::Modified);
+            assert!(!fd.binary && !fd.too_large);
+            assert_eq!(fd.hunks.len(), 1, "one hunk per file: {}", fd.path);
+        }
+        // Empty diff (tree vs itself) => empty Vec.
+        let mut same = repo
+            .diff_tree_to_tree(Some(&new), Some(&new), None)
+            .expect("same diff");
+        apply_find_similar(&mut same).expect("find_similar");
+        assert!(collect_file_diffs(&same).expect("collect").is_empty());
+    }
+
+    /// P25 §2.1 / §9.1(2): a too-large file is flagged `too_large` with empty
+    /// hunks while its siblings collect normally, all in one pass.
+    #[test]
+    fn collect_file_diffs_too_large_sibling() {
+        let dir = init_scratch();
+        let p = dir.path();
+
+        // A huge new file (> MAX_FILE_DIFF_LINES added lines) + a small sibling.
+        let big: String = (0..MAX_FILE_DIFF_LINES + 100)
+            .map(|i| format!("line {i}\n"))
+            .collect();
+        std::fs::write(p.join("big.txt"), &big).expect("write big");
+        std::fs::write(p.join("small.txt"), "small\n").expect("write small");
+        stage_paths(p, &["big.txt".into(), "small.txt".into()]).expect("stage");
+        let head = create_commit(p, "add files").expect("commit").oid;
+
+        let repo = git2::Repository::open(p).expect("open");
+        let new = tree_of(&repo, &head);
+        let mut opts = build_diff_options(&[], false);
+        // Root commit: diff vs empty (None old tree) => everything Added.
+        let mut diff = repo
+            .diff_tree_to_tree(None, Some(&new), Some(&mut opts))
+            .expect("diff");
+        apply_find_similar(&mut diff).expect("find_similar");
+
+        let files = collect_file_diffs(&diff).expect("collect");
+        assert_eq!(files.len(), 2);
+        let big = files.iter().find(|f| f.path == "big.txt").expect("big");
+        assert!(big.too_large, "big file over budget must be too_large");
+        assert!(big.hunks.is_empty(), "too_large => empty hunks");
+        let small = files.iter().find(|f| f.path == "small.txt").expect("small");
+        assert!(!small.too_large, "small sibling collects normally");
+        assert_eq!(small.hunks.len(), 1);
     }
 
     /// P5 §6.2: `compare_head_file_diff` hunks for one changed file. HEAD = B
