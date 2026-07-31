@@ -16,7 +16,7 @@ that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e
 Every "awaiting USER CHECKPOINT" below is now CONFIRMED as of 2026-07-30. (P5/P6 were already
 confirmed earlier.)
 
-## P17 — Interactive diff: File/Diff toggle + partial staging — **in-progress** (2026-07-31)
+## P17 — Interactive diff: File/Diff toggle + partial staging — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-31)
 
 Source: user request (2026-07-31) — improve the commit/workdir diff view. Five asks: (1) File View
 (whole file + inline diff) vs Diff View (hunks only) toggle; (2) stage whole file (exists); (3) hunk
@@ -84,7 +84,25 @@ forward slashes D:/Temp); NO concurrent cargo test + clippy; orchestrator makes 
   blocked while the Browser pane is hidden — same limitation as P7/P10/P11g) → DiffBrowser toggle is a
   USER CHECKPOINT visual item; the toggle component itself is P17c-harness-verified.
 
-**Current step: P17a–d committed; running Phase D (tester + AI-gate consolidation), then USER CHECKPOINT.**
+- **P17 tester** — full-workspace regression PASS (bonsai-core lib 136 + all integration incl.
+  stage_partial_cli 18→20; bonsai --lib 65; bonsai-mcp 5+5; clippy --workspace --tests clean); zero
+  regressions from the P17a shared-signature changes. Added 2 adversarial tests (crlf_no_final_newline,
+  stage_then_unstage_same_line_round_trips) — both green. No defects. Checklist:
+  docs/contracts/P17-user-checklist.md.
+- **P17 AI GATE PASSED (2026-07-31).** cargo test (all crates) + clippy --workspace --tests + pnpm build
+  green. Browser harness (mock :1420, hidden pane → DOM + synthetic events): File↔Diff toggle (whole
+  file vs hunks); "Stage this line" on unstaged src/main.rs moves the del into the index (hunk -2,7→-2,6)
+  and the file shows in BOTH Staged & Changes; staged side shows "Unstage this line" (symmetric); Stage
+  hunk button; mouse-drag → floating "Unstage N lines"; data-hunk/data-line wired; zero console errors.
+  Commits: 59342a0 P17a · d441882 P17b · 56c7a62 P17c · cdfa550 P17d · (tester pending).
+
+**Current step: P17 AI gate passed — awaiting USER CHECKPOINT** (native pnpm tauri dev on a scratch repo,
+per docs/contracts/P17-user-checklist.md): stage a single line / a hunk / a mouse-selected range and
+verify with `git diff --cached` + `git diff` that EXACTLY those lines moved and the remainder stayed
+unstaged; symmetric unstage; the File/Diff toggle on a selected COMMIT's diff and a Compare-with-HEAD
+diff (DiffBrowser — could NOT be harness-verified, hidden pane can't drive canvas commit-selection);
+edge checks (emptied tracked file → Modified not Deleted; CRLF no phantom ^M; binary/renamed →
+whole-file-only + toggle still shows). Next milestone after checkpoint: TBD.
 
 ## P15 — In-app AI features (Tier 1) — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-31)
 

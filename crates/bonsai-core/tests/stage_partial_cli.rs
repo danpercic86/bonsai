@@ -385,6 +385,62 @@ fn crlf() {
     );
 }
 
+// Scenario 7b (gap): CRLF *and* no-final-newline together. Committed file has
+// CRLF line separators AND no terminator on the last line; a partial stage of a
+// change touching that last line must keep every interior `\r\n` and reproduce
+// the missing final terminator exactly (byte-level). The existing `crlf` test
+// has a trailing CRLF newline and `no_newline_stage` is LF-only, so the
+// combination is otherwise unexercised.
+#[test]
+fn crlf_no_final_newline() {
+    require_git!();
+    let dir = init_repo();
+    let p = dir.path();
+    write(p, "f.txt", b"one\r\ntwo\r\nthree"); // CRLF, no final newline
+    git(p, &["add", "-A"]);
+    commit_fixed(p, "base");
+    write(p, "f.txt", b"one\r\ntwo\r\nTHREE"); // change the terminator-less last line
+
+    let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+    stage_partial(p, "f.txt", None, &all_changed(&fd)).expect("stage crlf/no-eol change");
+    assert_eq!(
+        staged_bytes(p, "f.txt"),
+        b"one\r\ntwo\r\nTHREE",
+        "CRLF interiors kept and last line still has no trailing newline"
+    );
+    assert_eq!(xy(p, "f.txt").as_deref(), Some("M "), "nothing left unstaged");
+}
+
+// Scenario (gap): cross-direction round-trip on the SAME line. Stage one added
+// line with `stage_partial`, then unstage that exact line with
+// `unstage_partial`; the index must return byte-exactly to HEAD and the file
+// drops back to a pure workdir change. No existing test composes the two
+// directions on the same coordinate.
+#[test]
+fn stage_then_unstage_same_line_round_trips() {
+    require_git!();
+    let dir = init_repo();
+    let p = dir.path();
+    write(p, "f.txt", b"a\nc\n");
+    git(p, &["add", "-A"]);
+    commit_fixed(p, "base");
+    write(p, "f.txt", b"a\nb\nc\n"); // add "b" at new line 2
+
+    // Stage exactly the added line.
+    let add_b = vec![LineSelection { kind: LineKind::Add, old_no: None, new_no: Some(2) }];
+    stage_partial(p, "f.txt", None, &add_b).expect("stage the add");
+    assert_eq!(staged_bytes(p, "f.txt"), b"a\nb\nc\n", "add staged");
+    assert_eq!(xy(p, "f.txt").as_deref(), Some("M "), "fully staged, workdir clean vs index");
+
+    // Now unstage the SAME line from the staged (HEAD -> index) diff.
+    let staged = workdir_file_diff(p, "f.txt", None, true, false).expect("staged diff");
+    let staged_add = hunk_changed(&staged, 0);
+    assert_eq!(staged_add.len(), 1, "one staged add to reverse");
+    unstage_partial(p, "f.txt", None, &staged_add).expect("unstage the same add");
+    assert_eq!(staged_bytes(p, "f.txt"), b"a\nc\n", "index restored byte-exactly to HEAD");
+    assert_eq!(xy(p, "f.txt").as_deref(), Some(" M"), "back to a pure workdir change");
+}
+
 // Scenario 8: untracked partial (index gains a partial blob) + full.
 #[test]
 fn untracked_partial_and_full() {
