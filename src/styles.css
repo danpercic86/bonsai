@@ -2422,6 +2422,18 @@ span.file-row-main {
   cursor: pointer;
 }
 
+/* Variant carrying an inline SVG glyph (14×14) instead of a text glyph. */
+.sidebar-add-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-add-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
 .sidebar-add:hover:not(:disabled) {
   background: var(--bg-2);
   color: var(--text-1);
@@ -3350,6 +3362,122 @@ button.asset-row-clickable:hover {
 .asset-chip-new {
   background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--accent);
+}
+
+/* --- P25d: stale-branch cleanup dialog --- */
+/* Carries .dialog-card too; raise specificity to widen past the 360px default. */
+.dialog-card.stale-card {
+  width: 560px;
+  max-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+}
+
+.stale-subhead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stale-selectall {
+  flex: none;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.stale-selectall:hover {
+  text-decoration: underline;
+}
+
+.stale-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stale-row {
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.stale-row:hover {
+  background: var(--bg-2);
+}
+
+.stale-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.stale-name {
+  font-size: 13px;
+  color: var(--text-1);
+  flex: none;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stale-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stale-time {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.stale-force-hint {
+  margin: 2px 0 0 24px;
+  font-size: 11px;
+  color: var(--warning);
+}
+
+/* §6.2: per-row outcome of the last delete (skipped/failed rows that came back). */
+.stale-outcome {
+  margin: 2px 0 0 24px;
+  font-size: 11px;
+}
+
+.stale-outcome-warn {
+  color: var(--warning);
+}
+
+.stale-outcome-error {
+  color: var(--danger);
+}
+
+/* Exact-name list inside the delete ConfirmDialog (the safety gate). */
+.confirm-name-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--text-2);
 }
 
 /* --- Profile create/edit form --- */

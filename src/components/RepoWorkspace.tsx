@@ -33,6 +33,7 @@ import type { DiffScope } from './DiffFileTree';
 import { OpBanner } from './OpBanner';
 import { PaneDivider } from './PaneDivider';
 import { Sidebar } from './Sidebar';
+import { StaleBranchesDialog } from './StaleBranchesDialog';
 import { StatusPanel } from './StatusPanel';
 import type { DiffSlot, WorkdirSection } from './StatusPanel';
 import { GraphCanvas } from '../graph/GraphCanvas';
@@ -223,6 +224,8 @@ export function RepoWorkspace({
   const [pendingRenameRemote, setPendingRenameRemote] = useState<{ name: string } | null>(null);
   const [pendingEditUrl, setPendingEditUrl] = useState<{ name: string; url: string } | null>(null);
   const [pendingRemoveRemote, setPendingRemoveRemote] = useState<string | null>(null);
+  // P25d: B4 stale-branch cleanup dialog (opened from the Branches header).
+  const [staleCleanupOpen, setStaleCleanupOpen] = useState(false);
   // P23b: interactive-rebase plan editor. `rebasePlan` holds the seeded plan +
   // display metadata; `rebasePlanError` shows a failed Start's error in-dialog.
   const [rebasePlan, setRebasePlan] = useState<{
@@ -266,6 +269,7 @@ export function RepoWorkspace({
     pendingRenameRemote !== null ||
     pendingEditUrl !== null ||
     pendingRemoveRemote !== null ||
+    staleCleanupOpen ||
     rebasePlan !== null;
 
   const [graph, setGraph] = useState<GraphLayout | null>(null);
@@ -2741,6 +2745,7 @@ export function RepoWorkspace({
           remotes={remotes}
           onRemoteContextMenu={handleRemoteContextMenu}
           onAddRemote={() => setPendingAddRemote(true)}
+          onCleanupBranches={() => setStaleCleanupOpen(true)}
         />
         <PaneDivider side="sidebar" onResize={onSidebarResize} onResizeEnd={onPaneResizeEnd} />
         <main className="graph-pane">
@@ -3135,6 +3140,15 @@ export function RepoWorkspace({
           This permanently reverts them to the last staged/committed version and cannot be undone.
         </div>
       </ConfirmDialog>
+
+      {/* P25d: B4 stale-branch cleanup. The nested ConfirmDialog inside lists the
+          exact names before any delete; onDeleted refetches branches + graph. */}
+      <StaleBranchesDialog
+        open={staleCleanupOpen}
+        onClose={() => setStaleCleanupOpen(false)}
+        repoId={repoId}
+        onDeleted={() => void Promise.all([refetchBranches(), refetchGraph()])}
+      />
 
       <PromptDialog
         open={pendingCreateBranch !== null}

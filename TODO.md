@@ -62,7 +62,19 @@ client) + not-current + not-base; gone-upstream rows unchecked by default, merge
   detached-HEAD-safe. 2 commands (no consent gate, pure git) + IPC triple + stateful mock. 9 tests incl.
   git-branch-merged oracle + delete-safety survival assertions; lib 210 green; clippy + tsc + build clean.
   Deviation (per orchestrator instruction): CLI oracle lives in stale.rs #[cfg(test)] not a tests/ file.
-**Current step:** P25c done (uncommitted) → committing → P25d B4 UI (StaleBranchesDialog + confirm).
+- **P25d** (reviewer APPROVE, 0 must-fix; 1 SHOULD-FIX + glyph nit folded) — B4 cleanup UI. New
+  StaleBranchesDialog (lists stale branches vs baseName; merged rows pre-checked, gone-upstream unchecked
+  + amber force-delete hint; empty state; cancelled-guard fetch; per-row outcome annotations for skipped/
+  failed after delete). SAFETY GATE: "Delete selected (N)" opens a nested ConfirmDialog listing the EXACT
+  names (Cancel-focused, no bypass path) → deleteBranches → summary toast (success/info/error by results)
+  → onDeleted refetches branches+graph → list shrinks. Sidebar Branches-header cleanup button (DeleteIcon
+  SVG, gated on branch list). RepoWorkspace staleCleanupOpen + globalModalOpen/Escape. tsc + build clean.
+- **P25d AI GATE PASSED (2026-08-01).** Harness (mock :1420): cleanup dialog opens with merged-a/merged-b
+  pre-checked + feature/gone unchecked (force-delete hint); "Delete selected (2)" → ConfirmDialog lists
+  feature/merged-a + feature/merged-b + "Delete 2"; confirm → "Deleted 2 branches" toast + both merged
+  rows disappear (stateful mock), leaving only feature/gone at "Delete selected (0)"; zero console errors.
+**Current step:** P25a-d all committed+AI-gated (after this commit) → tester (full regression + P25
+checklist) → close P25 milestone.
 
 ## P24 — AI-asset management: context profiles + unified instruction editor — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-07-31)
 

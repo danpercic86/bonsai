@@ -10,6 +10,7 @@ import type {
   SubmoduleStatus,
 } from '../ipc';
 import { relativeDate } from '../graph/draw';
+import { DeleteIcon } from './menuIcons';
 import { errorMessage } from '../utils/errors';
 import { buildPathTree } from '../utils/pathTree';
 import { Tree } from './Tree';
@@ -75,6 +76,9 @@ export interface SidebarProps {
   onRemoteContextMenu(name: string, clientX: number, clientY: number): void;
   /** "Add remote" header action → opens the RemoteEditDialog. */
   onAddRemote(): void;
+  /** P25d §6: "Clean up branches…" header action → opens the StaleBranchesDialog.
+   *  Rendered only when there is a branch list (data present, not unborn). */
+  onCleanupBranches?(): void;
 }
 
 function SectionHeader({
@@ -349,6 +353,7 @@ export function Sidebar({
   remotes,
   onRemoteContextMenu,
   onAddRemote,
+  onCleanupBranches,
 }: SidebarProps) {
   const [branchesCollapsed, setBranchesCollapsed] = useState(false);
   const [remotesCollapsed, setRemotesCollapsed] = useState(false);
@@ -435,19 +440,33 @@ export function Sidebar({
               onToggle={() => setBranchesCollapsed((c) => !c)}
               extra={
                 !data.head.unborn && (
-                  <button
-                    type="button"
-                    className="sidebar-add"
-                    aria-label="Create branch"
-                    title="Create branch"
-                    disabled={actionsDisabled}
-                    onClick={() => {
-                      setBranchesCollapsed(false);
-                      setCreateOpen(true);
-                    }}
-                  >
-                    {'+'}
-                  </button>
+                  <>
+                    {onCleanupBranches && (
+                      <button
+                        type="button"
+                        className="sidebar-add sidebar-add-icon"
+                        aria-label="Clean up branches…"
+                        title="Clean up branches…"
+                        disabled={actionsDisabled}
+                        onClick={() => onCleanupBranches()}
+                      >
+                        <DeleteIcon />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="sidebar-add"
+                      aria-label="Create branch"
+                      title="Create branch"
+                      disabled={actionsDisabled}
+                      onClick={() => {
+                        setBranchesCollapsed(false);
+                        setCreateOpen(true);
+                      }}
+                    >
+                      {'+'}
+                    </button>
+                  </>
                 )
               }
             />
