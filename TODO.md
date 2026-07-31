@@ -16,6 +16,29 @@ that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e
 Every "awaiting USER CHECKPOINT" below is now CONFIRMED as of 2026-07-30. (P5/P6 were already
 confirmed earlier.)
 
+## P18–P23 — Feature batch (submodules, UI polish, public-release gap) — **in-progress** (2026-07-31)
+
+Source: user request (2026-07-31), 4 asks. Approved plan:
+~/.claude/plans/1-add-support-for-fluffy-gizmo.md. Decisions locked (AskUserQuestion):
+submodules = read + common ops (list/status + init/update/sync + open-in-tab); settings = wider single
+column (~360→560px); feature gap = build ALL four bundles (daily essentials, repo lifecycle, tags &
+remotes, interactive rebase + blame). Sequencing: P18 (frontend polish) → P19 submodules → P20 daily
+essentials → P21 repo lifecycle → P22 tags & remotes → P23 interactive rebase + blame. Deferred roadmap
+(documented, not built now): reflog, worktrees, commit search/filter, LFS, commit signing, config
+editing, force-push-with-lease, host/PR integration. Standard loop per milestone (architect→senior-dev→
+reviewer→orchestrator commits→tester→AI gate→USER CHECKPOINT); guardrails: scratch under
+D:\Temp\bonsai-scratch, TMP/TEMP=D:\Temp for cargo, no concurrent test+clippy, mock.ts kept compiling.
+
+### P18 — UI polish (frontend-only): wider settings + whole-row context menu — **in-progress**
+- **P18a** — settings dialog wider: `.dialog-card.settings-card { width: 560px }` in src/styles.css
+  (higher specificity beats the later `.dialog-card{width:360px}`; keep max-width guard).
+- **P18b** — whole-row graph context menu: GraphCanvas.tsx handleContextMenu — when no pill precisely
+  hit AND row has a branch/remoteBranch ref, resolve to the preferred branch ref (groupRefs+targetRefOf)
+  instead of falling through to commit; RepoWorkspace buildContextItems/handleGraphContextMenu —
+  commit-menu fallback when a branch row's branchMenuItems is [] (current HEAD branch).
+
+**Current step: P18 — implementing P18a+P18b (senior-dev), then review + commit.**
+
 ## P17 — Interactive diff: File/Diff toggle + partial staging — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-31)
 
 Source: user request (2026-07-31) — improve the commit/workdir diff view. Five asks: (1) File View

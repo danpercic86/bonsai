@@ -1662,6 +1662,28 @@ export function RepoWorkspace({
     setMenu({ x: clientX, y: clientY, items: stashMenuItems(index) });
   }
 
+  // P5 §5.2 / P6 §4.2: the commit-row menu — "Create branch here" + "Compare
+  // with HEAD" (both read-only entry points; unavailable when HEAD is unborn,
+  // §1.3). Factored out (P18b) so the whole-row ref fallback can reuse it.
+  function commitMenuItems(oid: string): ContextMenuItem[] {
+    if (head === null || head.unborn) return [];
+    const gate = mutating || opActive;
+    return [
+      {
+        label: 'Create branch here',
+        icon: <BranchIcon />,
+        disabled: gate,
+        onSelect: () => setPendingCreateBranch({ oid }),
+      },
+      {
+        label: 'Compare with HEAD',
+        icon: <CompareIcon />,
+        disabled: false,
+        onSelect: () => handleCompareWithHead(oid),
+      },
+    ];
+  }
+
   // P5 §5.2 / P6 §4.2: build the right-click menu items for a graph target. Ref
   // pills delegate to the shared branchMenuItems builder; commit rows offer
   // "Compare with HEAD" (read-only; unavailable when HEAD is unborn).
@@ -1675,25 +1697,23 @@ export function RepoWorkspace({
         return stashMenuItems(Number(m[1]));
       }
       if (r.kind === 'tag' || r.kind === 'head') return [];
-      return branchMenuItems(r.name, r.kind === 'remoteBranch' ? 'remoteBranch' : 'localBranch');
+      const kind = r.kind === 'remoteBranch' ? 'remoteBranch' : 'localBranch';
+      const items = branchMenuItems(r.name, kind);
+      if (items.length > 0) return items;
+      // P18b: whole-row right-click resolved to a branch whose branch menu is
+      // empty — the current HEAD branch. Fall back to the commit menu (resolving
+      // the row's oid from the branch tip) so the row still opens a useful menu.
+      const snapshot = branches;
+      if (snapshot === null) return [];
+      const entry =
+        kind === 'localBranch'
+          ? snapshot.local.find((b) => b.name === r.name)
+          : snapshot.remote.find((b) => b.name === r.name);
+      if (entry === undefined) return [];
+      return commitMenuItems(entry.tip);
     }
-    // Commit row → Compare with HEAD (unavailable for unborn HEAD, §1.3).
-    if (head === null || head.unborn) return [];
-    const gate = mutating || opActive;
-    return [
-      {
-        label: 'Create branch here',
-        icon: <BranchIcon />,
-        disabled: gate,
-        onSelect: () => setPendingCreateBranch({ oid: target.oid }),
-      },
-      {
-        label: 'Compare with HEAD',
-        icon: <CompareIcon />,
-        disabled: false,
-        onSelect: () => handleCompareWithHead(target.oid),
-      },
-    ];
+    // Commit row → Create branch here + Compare with HEAD.
+    return commitMenuItems(target.oid);
   }
 
   function handleGraphContextMenu(target: GraphContextTarget, clientX: number, clientY: number) {

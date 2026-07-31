@@ -648,6 +648,13 @@ body {
   overflow-y: auto;
 }
 
+/* P18a: the settings card carries both .dialog-card and .settings-card; the
+   later-appearing .dialog-card { width: 360px } wins at equal specificity, so
+   raise specificity here to widen the settings dialog (max-width cap inherited). */
+.dialog-card.settings-card {
+  width: 560px;
+}
+
 .settings-section {
   margin-top: 20px;
 }

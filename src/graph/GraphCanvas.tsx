@@ -832,10 +832,26 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
           return;
         }
         // tag/head resolve to a ref whose branchMenuItems is [] → no menu opens;
-        // fall through to the commit target (matches today's behavior).
+        // fall through to the whole-row / commit target (matches today's behavior).
       }
     }
-    // Empty band OR the "+n" chip OR a non-ref entity → commit target.
+    // P18b: whole-row branch fallback. If no SPECIFIC pill was hit (e.g. the
+    // click landed on the dot/avatar/summary, or right of the ref band), but the
+    // row carries a branch/remoteBranch, open that branch's menu (the superset).
+    // Runs for ANY x — not gated on the ref band. Stash/tag/head-only rows and
+    // ref-less rows fall through to the commit target (the precise hit-test above
+    // already covered stash/tag pills inside the band).
+    if (node.refs !== undefined && node.refs.length > 0) {
+      for (const entity of groupRefs(node.refs)) {
+        if (entity.kind !== 'branch') continue;
+        const ref = targetRefOf(entity);
+        if (ref !== null) {
+          onContextMenu?.({ kind: 'ref', ref }, e.clientX, e.clientY);
+          return;
+        }
+      }
+    }
+    // Empty band OR the "+n" chip OR a non-branch entity → commit target.
     onContextMenu?.({ kind: 'commit', index: hit, oid: node.id }, e.clientX, e.clientY);
   };
 
