@@ -128,7 +128,26 @@ null); message prefill reuses getCommitDiff(head.oid).details.message. Sub-incre
   continue tree≡git, abort restore); clippy + pnpm build clean. NITs deferred: continue error handlers
   don't refreshAll (self-heals via watcher); mock *Continue conflicts-array asymmetry.
 
-**Current step: P20 — committing P20b, then tester full regression + user checklist + harness AI gate.**
+- **P20 tester** — full workspace regression PASS, no regressions/bugs: bonsai_lib 65, bonsai_core lib
+  153, essentials_cli 14, + new essentials_error_paths.rs 4 (detached-HEAD pick/revert error, reset
+  allowed on detached, amend-during-paused-op OperationInProgress), all other integration green; clippy
+  --workspace --tests clean; pnpm build clean. Checklist: docs/contracts/P20-user-checklist.md.
+- **P20 AI GATE PASSED (2026-07-31).** Commits: eb711c7 P20a · 9f771a8 P20b. Browser harness (mock :1420,
+  hidden pane → DOM + synthetic events): Amend affordance renders; 6 discard ↺ controls; commit-row menu
+  gains Cherry-pick/Revert/Reset(soft/mixed/hard…); branch rows carry them too; hard-reset ConfirmDialog
+  ("recoverable via the reflog … permanently discarded"); discard ConfirmDialog ("reverts to last staged/
+  committed … cannot be undone"); zero console errors. Amend toggle+prefill and cherry-pick/revert→OpBanner
+  conflict flow are USER CHECKPOINT items (controlled-input + conflict-editor compositing limits, per
+  P12/P13). Backend fully oracle-tested.
+
+**P20 awaiting USER CHECKPOINT** (native pnpm tauri dev, per docs/contracts/P20-user-checklist.md): amend
+rewrites the tip + push-warning; reset soft/mixed/hard (hard confirm); discard restores to index preserving
+a staged change; cherry-pick/revert clean + conflict→resolve→Continue (tree≡git) + Abort restores HEAD.
+
+### P21 — Repo lifecycle: clone + init — **in-progress**
+Contract: docs/contracts/P21-repo-lifecycle.md (architect to write).
+
+**Current step: P21 — architect writing contract.**
 
 ## P17 — Interactive diff: File/Diff toggle + partial staging — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-31)
 
