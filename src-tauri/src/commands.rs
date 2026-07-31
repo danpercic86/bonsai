@@ -6,6 +6,7 @@ use bonsai_core::git::ai_commit::{self, CommitMessageProposal};
 use bonsai_core::git::ai_explain::{self, AiAnalysis, AiAnalysisMode, AiDiffTarget};
 use bonsai_core::git::ai_resolve::{self, AiResolveProposal};
 use bonsai_core::git::ai_summary::{self, AiSummary};
+use bonsai_core::git::blame::{self, BlameLine, FileHistoryEntry};
 use bonsai_core::git::branches::{self, BranchesSnapshot, CreateBranchHereResult};
 use bonsai_core::git::cherrypick::{self, CherrypickOutcome};
 use bonsai_core::git::clone::{clone_repo as clone_repo_core, init_repo as init_repo_core, CloneProgress};
@@ -1547,6 +1548,59 @@ async fn start_interactive_rebase_inner(
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Per-line blame of `path` as of `at_oid` (`null`/omitted -> HEAD, P23
+/// contract §9.1/§10). Errors: `other` (bad path) | `git` | `noRepo`. Does NOT
+/// emit `repo-changed`.
+#[tauri::command]
+pub async fn blame_file(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    path: String,
+    at_oid: Option<String>,
+) -> Result<Vec<BlameLine>, AppError> {
+    blame_file_inner(state.inner(), &repo_id, path, at_oid).await
+}
+
+/// Runtime-free core of `blame_file` (unit-testable without a Tauri app).
+async fn blame_file_inner(
+    state: &AppState,
+    repo_id: &str,
+    path: String,
+    at_oid: Option<String>,
+) -> Result<Vec<BlameLine>, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || blame::blame_file(&workdir, &path, at_oid.as_deref()))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Commits that modified `path`, newest-first, best-effort following a single
+/// rename (P23 contract §9.2/§10). `limit == 0` -> the built-in `MAX_HISTORY`
+/// cap. Errors: `other` (bad path) | `git` | `noRepo`. Does NOT emit
+/// `repo-changed`.
+#[tauri::command]
+pub async fn file_history(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    path: String,
+    limit: u32,
+) -> Result<Vec<FileHistoryEntry>, AppError> {
+    file_history_inner(state.inner(), &repo_id, path, limit).await
+}
+
+/// Runtime-free core of `file_history` (unit-testable without a Tauri app).
+async fn file_history_inner(
+    state: &AppState,
+    repo_id: &str,
+    path: String,
+    limit: u32,
+) -> Result<Vec<FileHistoryEntry>, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || blame::file_history(&workdir, &path, limit))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Enumerates the stash stack, index 0 (most recent) first (P9 contract §3).
 /// Errors: `git` | `noRepo`. Does NOT emit `repo-changed`.
 #[tauri::command]
@@ -2463,6 +2517,30 @@ mod tests {
             false,
         ))
         .expect_err("get_commit_file_diff with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+    }
+
+    /// The P23c blame + file-history commands return `NoRepo` for an unknown id.
+    #[test]
+    fn blame_commands_require_an_open_repo() {
+        let state = AppState::default();
+
+        let err = tauri::async_runtime::block_on(blame_file_inner(
+            &state,
+            MISSING_ID,
+            "src/app.ts".to_string(),
+            None,
+        ))
+        .expect_err("blame_file with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(file_history_inner(
+            &state,
+            MISSING_ID,
+            "src/app.ts".to_string(),
+            200,
+        ))
+        .expect_err("file_history with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
 

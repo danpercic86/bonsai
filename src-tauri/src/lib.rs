@@ -62,6 +62,8 @@ pub fn run() {
             commands::rebase_abort,
             commands::get_interactive_plan,
             commands::start_interactive_rebase,
+            commands::blame_file,
+            commands::file_history,
             commands::list_stashes,
             commands::create_stash,
             commands::apply_stash,
