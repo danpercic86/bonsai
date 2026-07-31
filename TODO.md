@@ -73,8 +73,26 @@ client) + not-current + not-base; gone-upstream rows unchecked by default, merge
   pre-checked + feature/gone unchecked (force-delete hint); "Delete selected (2)" → ConfirmDialog lists
   feature/merged-a + feature/merged-b + "Delete 2"; confirm → "Deleted 2 branches" toast + both merged
   rows disappear (stateful mock), leaving only feature/gone at "Delete selected (0)"; zero console errors.
-**Current step:** P25a-d all committed+AI-gated (after this commit) → tester (full regression + P25
-checklist) → close P25 milestone.
+- **P25 tester** — full regression PASS, no bugs: bonsai-core lib 210 (incl. 8 stale:: + B1 ai_explain/
+  diff) + all integration (new stale_cli 3, ai_explain_cli 8, branches_cli 25, diff_cli 19, others 0
+  failed) + bonsai 69; clippy --workspace --tests clean; tsc + build clean. New crates/bonsai-core/tests/
+  stale_cli.rs: end-to-end destructive-path cross-check vs the real git CLI — merged set == `git branch
+  --merged main`, gone-upstream flagged; delete leaves the UNMERGED branch intact (key safety), base→
+  skippedBase, current→skippedCurrent survive, rerun idempotent. Checklist: docs/contracts/P25-user-
+  checklist.md. Clarification (not a bug): a bogus/already-deleted name → skippedNotStale (safe-set check
+  precedes the find_branch not-found check; skippedNotFound only via TOCTOU) — matches contract §4.3.
+- **P25 AI GATE PASSED (2026-08-01).** Commits: 17e2e8f P25a · ff3e094 P25b · 5d33a7e P25c · da53847 P25d.
+  Backend CLI/oracle suites + frontend browser harness (B1 worktree review renders; B4 select→confirm→
+  delete→rows-shrink) both verified; zero regressions. Roadmap bucket #2 delivered.
+
+**P25 awaiting USER CHECKPOINT** (native pnpm tauri dev, per docs/contracts/P25-user-checklist.md):
+B1 — with the real claude CLI + AI enabled, "✨ Review all changes with AI" reviews the whole working
+tree and "Review branch…" reviews a branch vs its auto base (256 KiB cap truncates huge diffs); AI-off
+hides them. B4 — "Clean up branches…" lists real stale branches vs the real base (merged pre-checked /
+gone unchecked), the confirm lists exact names, confirming deletes exactly that set (verify with `git
+branch`) and Cancel deletes nothing, current/base never offered. Test on a SCRATCH repo only.
+**Current step:** P25 DONE — AI gate passed, awaiting USER CHECKPOINT. Two roadmap milestones (P24, P25)
+complete this autonomous session.
 
 ## P24 — AI-asset management: context profiles + unified instruction editor — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-07-31)
 
