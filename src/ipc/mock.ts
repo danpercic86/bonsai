@@ -40,6 +40,7 @@ import type {
   GraphPrefs,
   IpcApi,
   ListView,
+  McpStatus,
   MergeOutcome,
   OpenRepoResult,
   PullResult,
@@ -549,6 +550,8 @@ const DEFAULT_UI_SETTINGS: UiSettings = {
   aiEnabled: true,
   aiConflictAutonomy: 'proposeReview',
   aiConsented: false,
+  // Embedded MCP server (P16): consent gates the enable toggle.
+  mcpConsented: false,
 };
 
 function clampPaneWidths(w: PaneWidths): PaneWidths {
@@ -632,7 +635,22 @@ function readUiSettings(): UiSettings {
       parsed.aiConflictAutonomy === 'autoResolve' ? 'autoResolve' : 'proposeReview';
     const aiConsented =
       typeof parsed.aiConsented === 'boolean' ? parsed.aiConsented : DEFAULT_UI_SETTINGS.aiConsented;
-    return { theme, paneWidths, listView, autoFetch, graph, aiEnabled, aiConflictAutonomy, aiConsented };
+    // P16 MCP consent (additive, like the AI fields): fall back to default.
+    const mcpConsented =
+      typeof parsed.mcpConsented === 'boolean'
+        ? parsed.mcpConsented
+        : DEFAULT_UI_SETTINGS.mcpConsented;
+    return {
+      theme,
+      paneWidths,
+      listView,
+      autoFetch,
+      graph,
+      aiEnabled,
+      aiConflictAutonomy,
+      aiConsented,
+      mcpConsented,
+    };
   } catch {
     return structuredClone(DEFAULT_UI_SETTINGS);
   }
@@ -644,6 +662,48 @@ function writeUiSettings(s: UiSettings): void {
   } catch {
     // Best-effort, like the backend's non-fatal save.
   }
+}
+
+// Embedded MCP server (P16). In-memory module state — no real socket; the
+// harness only verifies the Settings UI wiring. Fake but plausible port/token.
+const MOCK_MCP_PORT = 8765;
+const MOCK_MCP_TOKEN = 'mock-token-abc123';
+
+const mockMcp: {
+  enabled: boolean;
+  allowWrite: boolean;
+  activeRepo: string | null;
+  listeners: Set<(s: McpStatus) => void>;
+} = {
+  enabled: false,
+  allowWrite: false,
+  activeRepo: null,
+  listeners: new Set(),
+};
+
+function mcpStatusOf(): McpStatus {
+  const toolCount = mockMcp.allowWrite ? 34 : 14;
+  if (!mockMcp.enabled) {
+    return {
+      enabled: false,
+      allowWrite: false,
+      port: null,
+      url: null,
+      token: null,
+      claudeAddCommand: null,
+      toolCount,
+    };
+  }
+  const url = `http://127.0.0.1:${MOCK_MCP_PORT}/mcp`;
+  return {
+    enabled: true,
+    allowWrite: mockMcp.allowWrite,
+    port: MOCK_MCP_PORT,
+    url,
+    token: MOCK_MCP_TOKEN,
+    claudeAddCommand: `claude mcp add bonsai --transport http --header "Authorization: Bearer ${MOCK_MCP_TOKEN}" ${url}`,
+    toolCount,
+  };
 }
 
 /** Upsert at front, dedupe case-insensitively, cap 10 (mirrors record_recent). */
@@ -1737,6 +1797,7 @@ export const mockIpc: IpcApi = {
       aiEnabled: patch.aiEnabled ?? current.aiEnabled,
       aiConflictAutonomy: patch.aiConflictAutonomy ?? current.aiConflictAutonomy,
       aiConsented: patch.aiConsented ?? current.aiConsented,
+      mcpConsented: patch.mcpConsented ?? current.mcpConsented,
     };
     writeUiSettings(next);
     return next;
@@ -1750,5 +1811,33 @@ export const mockIpc: IpcApi = {
   async setSession(session: SessionState): Promise<void> {
     await delay(150);
     writeSession(session);
+  },
+
+  // P16: embedded MCP server. No real socket — the harness only proves the
+  // Settings UI wiring; canned status mirrors the Rust `McpStatus` shape.
+  async setActiveRepo(repoId: string | null): Promise<void> {
+    await delay(50);
+    mockMcp.activeRepo = repoId;
+  },
+
+  async getMcpStatus(): Promise<McpStatus> {
+    await delay(100);
+    return mcpStatusOf();
+  },
+
+  async setMcpEnabled(enabled: boolean): Promise<McpStatus> {
+    await delay(150);
+    mockMcp.enabled = enabled;
+    const status = mcpStatusOf();
+    // Notify any subscriber, like the backend's `mcp-server-changed` emit.
+    for (const cb of mockMcp.listeners) cb(status);
+    return status;
+  },
+
+  async onMcpServerChanged(cb: (s: McpStatus) => void): Promise<Unsubscribe> {
+    mockMcp.listeners.add(cb);
+    return () => {
+      mockMcp.listeners.delete(cb);
+    };
   },
 };

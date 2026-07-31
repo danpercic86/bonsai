@@ -43,6 +43,7 @@ export type {
   IpcApi,
   LineKind,
   ListView,
+  McpStatus,
   MergeOutcome,
   OpenRepoResult,
   RebaseOutcome,

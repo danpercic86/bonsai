@@ -1,13 +1,17 @@
 pub mod commands;
+pub mod mcp;
 pub mod settings;
 pub mod state;
 pub mod watcher;
+
+use tauri::Manager;
 
 pub fn run() {
     bonsai_core::git::relax_odb_hash_verification();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(state::AppState::default())
+        .manage(mcp::McpServerState::default())
         .invoke_handler(tauri::generate_handler![
             commands::open_repo,
             commands::close_repo,
@@ -58,8 +62,18 @@ pub fn run() {
             commands::create_stash,
             commands::apply_stash,
             commands::pop_stash,
-            commands::drop_stash
+            commands::drop_stash,
+            commands::set_active_repo,
+            commands::get_mcp_status,
+            commands::set_mcp_enabled
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Bonsai");
+        .build(tauri::generate_context!())
+        .expect("error while running Bonsai")
+        .run(|app, event| {
+            // Release the MCP port on exit (P16 §6.3): stop the embedded server
+            // before the app process goes away.
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                mcp::shutdown(&app.state::<mcp::McpServerState>());
+            }
+        });
 }

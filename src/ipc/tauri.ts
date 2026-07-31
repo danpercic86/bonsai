@@ -24,6 +24,7 @@ import type {
   FileDiff,
   GraphLayout,
   IpcApi,
+  McpStatus,
   MergeOutcome,
   OpenRepoResult,
   PullResult,
@@ -285,5 +286,22 @@ export const tauriIpc: IpcApi = {
 
   setSession(session: SessionState): Promise<void> {
     return invoke<void>('set_session', { session });
+  },
+
+  // P16: embedded MCP server.
+  setActiveRepo(repoId: string | null): Promise<void> {
+    return invoke<void>('set_active_repo', { repoId });
+  },
+
+  getMcpStatus(): Promise<McpStatus> {
+    return invoke<McpStatus>('get_mcp_status');
+  },
+
+  setMcpEnabled(enabled: boolean): Promise<McpStatus> {
+    return invoke<McpStatus>('set_mcp_enabled', { enabled });
+  },
+
+  onMcpServerChanged(cb: (s: McpStatus) => void): Promise<Unsubscribe> {
+    return listen<McpStatus>('mcp-server-changed', (e) => cb(e.payload));
   },
 };

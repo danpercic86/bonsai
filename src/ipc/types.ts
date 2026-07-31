@@ -416,6 +416,8 @@ export interface UiSettings {
   aiEnabled: boolean;
   aiConflictAutonomy: AiAutonomy;
   aiConsented: boolean;
+  /** One-time consent to expose open repos to an external MCP client (P16). */
+  mcpConsented: boolean;
 }
 
 export interface UiSettingsPatch {
@@ -428,6 +430,28 @@ export interface UiSettingsPatch {
   aiEnabled?: boolean;
   aiConflictAutonomy?: AiAutonomy;
   aiConsented?: boolean;
+  // Embedded MCP server (P16).
+  mcpConsented?: boolean;
+}
+
+/** Embedded MCP server status for the Settings panel (P16). Mirrors the Rust
+ *  `McpStatus`. `enabled` is the live runtime state; `port`/`url`/`token`/
+ *  `claudeAddCommand` are populated only while running. */
+export interface McpStatus {
+  /** Server running? */
+  enabled: boolean;
+  /** Write tools registered? (Always `false` in P16b.) */
+  allowWrite: boolean;
+  /** Bound port when running, else `null`. */
+  port: number | null;
+  /** e.g. "http://127.0.0.1:8765/mcp"; `null` when stopped. */
+  url: string | null;
+  /** Persisted bearer token; `null` when stopped. */
+  token: string | null;
+  /** Ready-to-paste `claude mcp add` line; `null` when stopped. */
+  claudeAddCommand: string | null;
+  /** 14 (read-only) or 34 (write enabled). */
+  toolCount: number;
 }
 
 /** Persisted multi-tab session: open tabs (in display order) + the active tab.
@@ -626,4 +650,14 @@ export interface IpcApi {
   getSession(): Promise<SessionState>;
   /** Writes the whole session (tabs change as a unit). Rejects io on save failure. */
   setSession(session: SessionState): Promise<void>;
+  /** P16. Tell the backend the focused-tab repoId (or null when none). Seeds new
+   *  embedded-MCP sessions; never disturbs an already-connected AI session. */
+  setActiveRepo(repoId: string | null): Promise<void>;
+  /** P16. Current embedded MCP server status for the Settings panel. */
+  getMcpStatus(): Promise<McpStatus>;
+  /** P16. Start/stop the embedded MCP server (read-only in P16b). Returns the
+   *  resulting status; also fires `onMcpServerChanged`. */
+  setMcpEnabled(enabled: boolean): Promise<McpStatus>;
+  /** P16. Fires on server start/stop/bounce; payload is the new status. */
+  onMcpServerChanged(cb: (s: McpStatus) => void): Promise<Unsubscribe>;
 }

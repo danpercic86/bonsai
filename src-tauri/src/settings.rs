@@ -211,6 +211,22 @@ pub struct Settings {
     /// Defaults `false`; additive `#[serde(default)]`; a legacy file without
     /// this key loads as `false`.
     pub ai_consented: bool,
+    /// Embedded MCP server enabled (P16). Default `false`; the server is
+    /// lazily started on user enable, never auto-started at launch.
+    pub mcp_enabled: bool,
+    /// Embedded MCP write-gate (P16). Default `false`. P16b forces the running
+    /// server read-only regardless; P16c wires this to (re)register write tools.
+    pub mcp_allow_write: bool,
+    /// One-time consent to expose open repos to an external MCP client (P16).
+    /// Defaults `false`; additive `#[serde(default)]`.
+    pub mcp_consented: bool,
+    /// Persisted bound port for the embedded MCP server (P16 §8.5, D-4).
+    /// `None` until first enable; preferred on later runs (ephemeral fallback).
+    pub mcp_port: Option<u16>,
+    /// Persisted bearer token for the embedded MCP server (P16 §8.2, D-4).
+    /// Generated on first enable and reused across runs so the user's
+    /// `claude mcp add` line keeps working. `None` until first enable.
+    pub mcp_token: Option<String>,
 }
 
 impl Default for Settings {
@@ -228,6 +244,11 @@ impl Default for Settings {
             ai_enabled: true,
             ai_conflict_autonomy: AiAutonomy::default(),
             ai_consented: false,
+            mcp_enabled: false,
+            mcp_allow_write: false,
+            mcp_consented: false,
+            mcp_port: None,
+            mcp_token: None,
         }
     }
 }

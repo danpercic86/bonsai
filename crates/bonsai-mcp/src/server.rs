@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use bonsai_core::error::AppError;
+use bonsai_core::git::repo::{read_repo_info, HeadInfo};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
@@ -60,13 +61,11 @@ impl SessionRepos {
     }
 
     /// Snapshot of open tabs (for `bonsai_list_repos`, P16b).
-    #[allow(dead_code)]
     pub(crate) fn open(&self) -> Vec<OpenRepo> {
         (self.list_open)()
     }
 
     /// The session's selected repoId, if any.
-    #[allow(dead_code)]
     pub(crate) fn selected_id(&self) -> Result<Option<String>, AppError> {
         Ok(self.selected.lock().map_err(pois)?.clone())
     }
@@ -86,7 +85,6 @@ impl SessionRepos {
 
     /// Validate `repo_id` is a currently-open tab, then select it for this
     /// session. Unknown / closed id -> `InvalidName`.
-    #[allow(dead_code)]
     pub(crate) fn select(&self, repo_id: &str) -> Result<(), AppError> {
         if !(self.list_open)().iter().any(|r| r.repo_id == repo_id) {
             return Err(AppError::InvalidName(format!(
@@ -372,6 +370,51 @@ fn parse_resolution(s: &str) -> Result<bonsai_core::git::conflict::ConflictResol
 }
 
 // ---------------------------------------------------------------------------
+// Repo-selection tool types (P16 §4b, D-2). Output/param types for the two
+// always-registered repo-management read tools.
+// ---------------------------------------------------------------------------
+
+/// One open repo as the AI sees it via `bonsai_list_repos` / `bonsai_select_repo`.
+///
+/// Output-only (serialized into a `CallToolResult`), so it needs `Serialize` but
+/// not `JsonSchema` — the latter would force `HeadInfo: JsonSchema` on
+/// `bonsai-core` for no benefit.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenRepoSummary {
+    /// Canonical workdir path string = the repoId used by `bonsai_select_repo`.
+    repo_id: String,
+    /// Canonical workdir path (same value; explicit for readability).
+    path: String,
+    /// HEAD summary (branch name / detached / unborn); `None` if unreadable.
+    head: Option<HeadInfo>,
+    /// True for the repo THIS session currently has selected.
+    selected: bool,
+}
+
+/// Argument for `bonsai_select_repo`: the repoId of an open Bonsai tab.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct SelectRepoArgs {
+    /// The repoId (canonical workdir path) of an open Bonsai tab, from
+    /// `bonsai_list_repos`.
+    repo_id: String,
+}
+
+/// Build an [`OpenRepoSummary`] for `repo`, reading its HEAD via `read_repo_info`
+/// (blocking git2 — call inside `spawn_blocking`). An unreadable HEAD yields
+/// `head: None` rather than failing the whole listing.
+fn summarize_repo(repo: &OpenRepo, selected: bool) -> OpenRepoSummary {
+    let head = read_repo_info(&repo.path).ok().and_then(|info| info.head);
+    OpenRepoSummary {
+        repo_id: repo.repo_id.clone(),
+        path: repo.path.to_string_lossy().into_owned(),
+        head,
+        selected,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Read tools (§7.1). Always registered; safe. Each wraps one core call.
 // ---------------------------------------------------------------------------
 
@@ -549,6 +592,78 @@ impl BonsaiServer {
         match self.run_blocking(bonsai_core::git::stash::list_stashes).await {
             Ok(v) => ok_json(&v),
             Err(e) => err_result(e),
+        }
+    }
+
+    /// Enumerate the repos the user has OPEN in Bonsai (P16 §4b, D-2). Each
+    /// summary carries a HEAD summary and a `selected` flag marking this
+    /// session's currently-selected repo. Standalone (`Fixed`) servers report
+    /// their single `--repo`; embedded (`Session`) servers snapshot the app's
+    /// open tabs.
+    #[tool]
+    async fn bonsai_list_repos(&self) -> CallToolResult {
+        match &self.workdir {
+            WorkdirSource::Fixed(p) => {
+                let repo = OpenRepo {
+                    repo_id: p.to_string_lossy().into_owned(),
+                    path: (**p).clone(),
+                };
+                match tokio::task::spawn_blocking(move || vec![summarize_repo(&repo, true)]).await {
+                    Ok(v) => ok_json(&v),
+                    Err(e) => err_result(AppError::Other(format!("task join error: {e}"))),
+                }
+            }
+            WorkdirSource::Session(s) => {
+                let selected = match s.selected_id() {
+                    Ok(v) => v,
+                    Err(e) => return err_result(e),
+                };
+                let open = s.open();
+                match tokio::task::spawn_blocking(move || {
+                    open.iter()
+                        .map(|r| {
+                            let is_sel = selected.as_deref() == Some(r.repo_id.as_str());
+                            summarize_repo(r, is_sel)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .await
+                {
+                    Ok(v) => ok_json(&v),
+                    Err(e) => err_result(AppError::Other(format!("task join error: {e}"))),
+                }
+            }
+        }
+    }
+
+    /// Set the CALLING SESSION's selected repo to `repoId` (P16 §4b, D-2).
+    /// Validates `repoId` against the currently-open set (unknown/closed →
+    /// `invalidName`); `Fixed` (standalone) servers reject selection. Returns
+    /// the now-selected repo's summary. Never disturbs other sessions or the
+    /// app's focused tab.
+    #[tool]
+    async fn bonsai_select_repo(
+        &self,
+        Parameters(args): Parameters<SelectRepoArgs>,
+    ) -> CallToolResult {
+        match &self.workdir {
+            WorkdirSource::Fixed(_) => err_result(AppError::Other(
+                "single-repo (standalone) server; repo selection unavailable".to_string(),
+            )),
+            WorkdirSource::Session(s) => {
+                if let Err(e) = s.select(&args.repo_id) {
+                    return err_result(e);
+                }
+                let repo = match s.open().into_iter().find(|r| r.repo_id == args.repo_id) {
+                    Some(r) => r,
+                    // Closed between select() and here — treat as no-repo.
+                    None => return err_result(AppError::NoRepo),
+                };
+                match tokio::task::spawn_blocking(move || summarize_repo(&repo, true)).await {
+                    Ok(v) => ok_json(&v),
+                    Err(e) => err_result(AppError::Other(format!("task join error: {e}"))),
+                }
+            }
         }
     }
 }

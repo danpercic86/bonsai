@@ -15,6 +15,7 @@ import type {
   AutoFetchSettings,
   GraphPrefs,
   ListView,
+  McpStatus,
   PaneWidths,
   RecentRepo,
   RepoInfo,
@@ -109,6 +110,12 @@ export default function App() {
   // Consent ConfirmDialog (opened by SettingsPanel's enable toggle when consent
   // has not yet been recorded).
   const [consentOpen, setConsentOpen] = useState(false);
+  // P16: embedded MCP server. `mcpStatus` is the live runtime state (from the
+  // backend, kept fresh via `mcp-server-changed`); `mcpConsented` is the
+  // one-time consent gate for the enable toggle; the dialog defers enabling.
+  const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
+  const [mcpConsented, setMcpConsented] = useState(false);
+  const [mcpConsentOpen, setMcpConsentOpen] = useState(false);
   // P11c §3.2: debounced settings persist — accumulates partial patches so a
   // burst of knob changes within the window all reach disk in one write.
   const settingsSaveTimerRef = useRef<number | null>(null);
@@ -156,6 +163,15 @@ export default function App() {
     if (!sessionReadyRef.current) return;
     persistSession(tabs.map((t) => t.repoId), activeRepo);
   }, [tabs, activeRepo, persistSession]);
+
+  // Tell the backend the focused-tab repoId (P16 §5) so new embedded-MCP
+  // sessions seed from it. Fires on tab activation, open, close, and once on
+  // startup after session restore (all funnel through `activeRepo`).
+  useEffect(() => {
+    void ipc.setActiveRepo(activeRepo).catch(() => {
+      // Non-fatal: only seeds new MCP sessions; the GUI is unaffected.
+    });
+  }, [activeRepo]);
 
   const refreshRecents = useCallback(async () => {
     try {
@@ -254,6 +270,7 @@ export default function App() {
       if (patch.aiEnabled !== undefined) setAiEnabled(patch.aiEnabled);
       if (patch.aiConflictAutonomy !== undefined) setAiConflictAutonomy(patch.aiConflictAutonomy);
       if (patch.aiConsented !== undefined) setAiConsented(patch.aiConsented);
+      if (patch.mcpConsented !== undefined) setMcpConsented(patch.mcpConsented);
       pendingSettingsPatchRef.current = { ...pendingSettingsPatchRef.current, ...patch };
       if (settingsSaveTimerRef.current !== null) {
         window.clearTimeout(settingsSaveTimerRef.current);
@@ -299,6 +316,50 @@ export default function App() {
     setConsentOpen(false);
     handleSettingsChange({ aiEnabled: true, aiConsented: true });
   }, [handleSettingsChange]);
+
+  // P16: load the embedded-MCP status once and stay live via `mcp-server-changed`.
+  useEffect(() => {
+    let unsub: (() => void) | null = null;
+    let cancelled = false;
+    ipc.getMcpStatus().then(
+      (s) => {
+        if (!cancelled) setMcpStatus(s);
+      },
+      () => {
+        // Non-fatal — the Settings section renders a stopped placeholder.
+      },
+    );
+    ipc.onMcpServerChanged((s) => setMcpStatus(s)).then(
+      (u) => {
+        if (cancelled) u();
+        else unsub = u;
+      },
+      () => {},
+    );
+    return () => {
+      cancelled = true;
+      if (unsub !== null) unsub();
+    };
+  }, []);
+
+  // P16: start/stop the embedded MCP server; keep `mcpStatus` in sync (the
+  // `mcp-server-changed` subscription also updates it, but this is immediate).
+  const handleSetMcpEnabled = useCallback(
+    (enabled: boolean) => {
+      ipc.setMcpEnabled(enabled).then(
+        (s) => setMcpStatus(s),
+        (e) => pushToast('error', `Could not ${enabled ? 'start' : 'stop'} MCP server: ${errorMessage(e)}`),
+      );
+    },
+    [pushToast],
+  );
+
+  // Enabling the MCP server the first time records consent, then starts it.
+  const handleConfirmMcpConsent = useCallback(() => {
+    setMcpConsentOpen(false);
+    handleSettingsChange({ mcpConsented: true });
+    handleSetMcpEnabled(true);
+  }, [handleSettingsChange, handleSetMcpEnabled]);
 
   const handleSidebarResize = useCallback((delta: number) => {
     setPaneWidths((w) => ({ ...w, sidebar: clampLive(w.sidebar + delta, 'sidebar', w.rightPanel) }));
@@ -348,6 +409,7 @@ export default function App() {
         setAiEnabled(s.aiEnabled);
         setAiConflictAutonomy(s.aiConflictAutonomy);
         setAiConsented(s.aiConsented);
+        setMcpConsented(s.mcpConsented);
       } catch {
         // Non-fatal — keep defaults.
       }
@@ -482,7 +544,8 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [menuOpen, activeRepo, handleOpenRepository, closeTab]);
 
-  const globalModalOpen = overlayOpen || menuOpen || settingsOpen || consentOpen;
+  const globalModalOpen =
+    overlayOpen || menuOpen || settingsOpen || consentOpen || mcpConsentOpen;
 
   return (
     <ToastContext.Provider value={pushToast}>
@@ -609,6 +672,10 @@ export default function App() {
           aiConsented={aiConsented}
           aiAvailability={aiAvailability}
           onRequestEnableAi={() => setConsentOpen(true)}
+          mcpStatus={mcpStatus}
+          mcpConsented={mcpConsented}
+          onSetMcpEnabled={handleSetMcpEnabled}
+          onRequestEnableMcp={() => setMcpConsentOpen(true)}
         />
         <ConfirmDialog
           open={consentOpen}
@@ -622,6 +689,21 @@ export default function App() {
             Bonsai will send the contents of conflicted files to the Claude Code CLI installed on
             this machine, under your Claude subscription. Nothing is sent to Bonsai's own servers,
             and no files are changed without your review. Enable AI features?
+          </div>
+        </ConfirmDialog>
+        <ConfirmDialog
+          open={mcpConsentOpen}
+          title="Enable MCP server?"
+          confirmLabel="Enable"
+          busy={false}
+          onConfirm={handleConfirmMcpConsent}
+          onCancel={() => setMcpConsentOpen(false)}
+        >
+          <div>
+            Bonsai will run a local MCP server on 127.0.0.1 that lets an external AI client (e.g.
+            Claude Code) read <strong>any repository you have open in Bonsai</strong>. Access
+            requires a secret token shown in Settings; nothing is exposed to the network. The server
+            is read-only. Enable the MCP server?
           </div>
         </ConfirmDialog>
         <Toasts toasts={toasts} onDismiss={dismissToast} />

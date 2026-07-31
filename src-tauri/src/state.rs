@@ -24,4 +24,10 @@ pub struct RepoEntry {
 #[derive(Default)]
 pub struct AppState {
     pub repos: Mutex<HashMap<String, RepoEntry>>,
+    /// The app's focused-tab repoId (or `None` when no repo is focused). Set by
+    /// the frontend on tab switch / open / close and once on startup after
+    /// session restore (P16 §5). Distinct from a per-MCP-session selection: this
+    /// only *seeds* a new embedded-MCP session's initial repo; the AI may then
+    /// re-point its own session without disturbing this value.
+    pub active_repo: Mutex<Option<String>>,
 }

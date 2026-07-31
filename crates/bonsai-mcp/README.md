@@ -30,7 +30,7 @@ for every tool call. Transport is stdio JSON-RPC.
 
 ### Safety model — read-only by default
 
-Without `--allow-write` the server registers **only the 12 read tools**; the 20 mutation
+Without `--allow-write` the server registers **only the 14 read tools**; the 20 mutation
 tools are genuinely not registered, so `tools/list` is truthful and a mutation call returns a
 JSON-RPC `-32602` ("tool not found") with no side effect. Pass `--allow-write` to opt in to
 mutations. Even then, every mutation goes through Bonsai's safety rails (fast-forward-only
@@ -59,6 +59,13 @@ the `AppError` `{ kind, message }` discriminant, so a client can branch on `kind
 | `bonsai_list_conflicts` | — | `Vec<ConflictEntry>` |
 | `bonsai_get_conflict` | `path` | `ConflictFile` |
 | `bonsai_list_stashes` | — | `Vec<StashEntry>` |
+| `bonsai_list_repos` | — | `[OpenRepoSummary]` |
+| `bonsai_select_repo` | `repoId` | `OpenRepoSummary` |
+
+The last two are repo-management (not git-mutation) tools, always registered. In the
+standalone stdio server they report/act on the single `--repo` (`bonsai_select_repo` is
+rejected as a single-repo server); the embedded HTTP server (P16) uses them for per-session
+selection across the app's open tabs.
 
 ## Mutation tools (only with `--allow-write`)
 

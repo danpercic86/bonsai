@@ -176,6 +176,8 @@ pub struct UiSettings {
     pub ai_conflict_autonomy: AiAutonomy,
     /// One-time consent to send repo content to the local Claude CLI (P13).
     pub ai_consented: bool,
+    /// One-time consent to expose open repos to an external MCP client (P16).
+    pub mcp_consented: bool,
 }
 
 /// Partial patch for `set_ui_settings` — only `Some(..)` fields are applied
@@ -194,6 +196,8 @@ pub struct UiSettingsPatch {
     pub ai_enabled: Option<bool>,
     pub ai_conflict_autonomy: Option<AiAutonomy>,
     pub ai_consented: Option<bool>,
+    /// MCP consent (P16); patches independently.
+    pub mcp_consented: Option<bool>,
 }
 
 /// Pure patch application: only `Some(..)` fields of `patch` mutate `s`; pane
@@ -225,6 +229,9 @@ fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     if let Some(ai_consented) = patch.ai_consented {
         s.ai_consented = ai_consented;
     }
+    if let Some(mcp_consented) = patch.mcp_consented {
+        s.mcp_consented = mcp_consented;
+    }
 }
 
 /// Current UI settings (theme + pane widths). Never rejects for a
@@ -244,6 +251,7 @@ pub async fn get_ui_settings(app: tauri::AppHandle) -> Result<UiSettings, AppErr
             ai_enabled: s.ai_enabled,
             ai_conflict_autonomy: s.ai_conflict_autonomy,
             ai_consented: s.ai_consented,
+            mcp_consented: s.mcp_consented,
         }
     })
     .await
@@ -274,6 +282,7 @@ pub async fn set_ui_settings(
             ai_enabled: s.ai_enabled,
             ai_conflict_autonomy: s.ai_conflict_autonomy,
             ai_consented: s.ai_consented,
+            mcp_consented: s.mcp_consented,
         })
     })
     .await
@@ -323,6 +332,41 @@ pub async fn set_session(app: tauri::AppHandle, session: SessionState) -> Result
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Records the frontend's focused-tab repoId (or `None` when no repo is
+/// focused). Lock-and-clone discipline like `repo_path`; poisoned lock →
+/// `Other`. This seeds a new embedded-MCP session's initial repo (P16 §5) — it
+/// does NOT change any already-connected AI session's selection.
+#[tauri::command]
+pub async fn set_active_repo(
+    state: tauri::State<'_, AppState>,
+    repo_id: Option<String>,
+) -> Result<(), AppError> {
+    *state
+        .active_repo
+        .lock()
+        .map_err(|_| AppError::Other("state lock poisoned".to_string()))? = repo_id;
+    Ok(())
+}
+
+/// Current embedded-MCP server status for the Settings panel (P16 §10.1).
+#[tauri::command]
+pub async fn get_mcp_status(
+    mcp_state: tauri::State<'_, crate::mcp::McpServerState>,
+) -> Result<crate::mcp::McpStatus, AppError> {
+    Ok(crate::mcp::status_of(&mcp_state))
+}
+
+/// Starts or stops the embedded MCP server (P16 §6). Read-only in P16b (the
+/// write-gate is P16c). Returns the resulting status; emits `mcp-server-changed`.
+#[tauri::command]
+pub async fn set_mcp_enabled(
+    app: tauri::AppHandle,
+    mcp_state: tauri::State<'_, crate::mcp::McpServerState>,
+    enabled: bool,
+) -> Result<crate::mcp::McpStatus, AppError> {
+    crate::mcp::set_enabled(&app, &mcp_state, enabled).await
 }
 
 /// Runtime-free core of `open_repo` (unit-testable without a Tauri app).

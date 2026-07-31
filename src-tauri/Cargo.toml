@@ -13,12 +13,18 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 bonsai-core = { path = "../crates/bonsai-core" }
+bonsai-mcp = { path = "../crates/bonsai-mcp" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 git2 = { workspace = true }
 notify = "8"
 serde = { workspace = true }
 serde_json = { workspace = true }
+rmcp = { version = "3.0.1", features = ["server", "macros", "transport-streamable-http-server"] }
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
+rand = "0.9"
+subtle = "2"
 
 [dev-dependencies]
 tempfile = { workspace = true }

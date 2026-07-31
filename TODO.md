@@ -112,8 +112,18 @@ bounce on write-gate change; D-6 no per-repo lock; D-7 defaults off + consent. C
   VERBATIM (Fixed path behavior-identical) + 5 new SessionRepos unit tests. clippy clean, workspace
   builds. Two cosmetic nits deferred to P16b (redundant dead_code allow on selected_id).
 
-**Current step: P16a committed; next = P16b (embedded HTTP server + active_repo + 2 D-2 tools + token,
-read-only, UI toggle).**
+- **P16b** (reviewer **APPROVE**, clean) — embedded read-only HTTP MCP server. `src-tauri/src/mcp.rs`
+  (McpServerState/McpStatus, lazy start/stop, per-session `service_factory` seeding from active_repo,
+  `StreamableHttpService` under axum `/mcp`, `auth_layer`); `AppState.active_repo` + `set_active_repo`;
+  the 2 D-2 read tools (`bonsai_list_repos`/`bonsai_select_repo`) in server.rs; `get_mcp_status`/
+  `set_mcp_enabled`; `mcp-server-changed`; RunEvent::ExitRequested shutdown; settings mcp_* fields;
+  frontend types/tauri/mock + Settings "AI access (MCP server)" section. rmcp 3.0.1 / axum 0.8.9 API
+  matched contract §2 (no fallback bridge). Security triad verified: 127.0.0.1-only bind + reject-any-
+  Origin + Host allowlist + constant-time bearer (subtle) + no CORS; write FORCED off (14 read tools).
+  cargo build/clippy/test (mcp_stdio 14/34) + pnpm build green. Write-gate + 20 mutation tools = P16c.
+
+**Current step: P16b committed; browser-harness check of Settings MCP section, then P16c (write-gate
+toggle + mutation tools).**
 
 ## P14 — `bonsai-core` crate + standalone `bonsai-mcp` MCP server — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-30)
 

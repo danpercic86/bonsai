@@ -29,7 +29,8 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
-/// The 12 read tools registered unconditionally (contract §7.1).
+/// The 14 read tools registered unconditionally (contract §7.1 + P16 §4b's two
+/// always-on repo-selection tools).
 const READ_TOOLS: &[&str] = &[
     "bonsai_get_graph",
     "bonsai_get_status",
@@ -43,6 +44,8 @@ const READ_TOOLS: &[&str] = &[
     "bonsai_list_conflicts",
     "bonsai_get_conflict",
     "bonsai_list_stashes",
+    "bonsai_list_repos",
+    "bonsai_select_repo",
 ];
 
 /// The 20 mutation tools registered only under `--allow-write` (contract §7.3).
@@ -379,7 +382,7 @@ fn tools_list_gating_read_only_vs_allow_write() {
     let repo = init_repo();
     build_linear_fixture(repo.path());
 
-    // Without --allow-write: exactly the 12 read tools, no mutation tools.
+    // Without --allow-write: exactly the 14 read tools, no mutation tools.
     let mut ro = McpClient::connect(repo.path(), false);
     let ro_names = ro.list_tool_names();
     assert_eq!(
@@ -400,13 +403,13 @@ fn tools_list_gating_read_only_vs_allow_write() {
     }
     drop(ro);
 
-    // With --allow-write: 12 read + 20 mutation = 32 tools.
+    // With --allow-write: 14 read + 20 mutation = 34 tools.
     let mut rw = McpClient::connect(repo.path(), true);
     let rw_names = rw.list_tool_names();
     assert_eq!(
         rw_names.len(),
         READ_TOOLS.len() + WRITE_TOOLS.len(),
-        "allow-write server must advertise 32 tools, got {}: {rw_names:?}",
+        "allow-write server must advertise 34 tools, got {}: {rw_names:?}",
         rw_names.len()
     );
     for t in READ_TOOLS.iter().chain(WRITE_TOOLS.iter()) {

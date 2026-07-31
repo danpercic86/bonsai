@@ -10,6 +10,7 @@ import type {
   AutoFetchSettings,
   GraphPrefs,
   ListView,
+  McpStatus,
   Theme,
   UiSettingsPatch,
 } from '../ipc';
@@ -46,6 +47,21 @@ export interface SettingsPanelProps {
   /** Enabling AI when consent has not yet been given: App shows the consent
    *  ConfirmDialog and only patches `{ aiEnabled, aiConsented }` on confirm. */
   onRequestEnableAi(): void;
+  // Embedded MCP server (P16). Live runtime status (null until first loaded);
+  // consent gate + start/stop are owned by App, like the AI section.
+  mcpStatus: McpStatus | null;
+  mcpConsented: boolean;
+  /** Start/stop the embedded MCP server (read-only in P16b). */
+  onSetMcpEnabled(enabled: boolean): void;
+  /** Enabling without prior consent: App shows the MCP consent dialog and only
+   *  starts the server (+ records consent) on confirm. */
+  onRequestEnableMcp(): void;
+}
+
+/** Best-effort clipboard copy (harness + native). Silent on failure — the
+ *  values are also visible for manual selection. */
+function copyText(text: string): void {
+  void navigator.clipboard?.writeText(text).catch(() => {});
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -127,6 +143,10 @@ export function SettingsPanel({
   aiConsented,
   aiAvailability,
   onRequestEnableAi,
+  mcpStatus,
+  mcpConsented,
+  onSetMcpEnabled,
+  onRequestEnableMcp,
 }: SettingsPanelProps) {
   if (!open) return null;
 
@@ -141,6 +161,18 @@ export function SettingsPanel({
     else onRequestEnableAi();
   };
   const aiActive = aiEnabled && aiConsented;
+
+  // MCP enable toggle (P16): enabling without consent defers to App's consent
+  // dialog; disabling stops immediately.
+  const mcpEnabled = mcpStatus?.enabled ?? false;
+  const handleMcpEnableToggle = (checked: boolean): void => {
+    if (!checked) {
+      onSetMcpEnabled(false);
+      return;
+    }
+    if (mcpConsented) onSetMcpEnabled(true);
+    else onRequestEnableMcp();
+  };
 
   return (
     <div
@@ -292,6 +324,96 @@ export function SettingsPanel({
             <p className="settings-ai-status settings-ai-status-warn" role="note">
               Claude Code CLI not found on PATH — install it and log in to use AI features
             </p>
+          )}
+        </section>
+
+        {/* --- AI access (MCP server) (P16 §10.5) --- */}
+        <section className="settings-section">
+          <h3 className="settings-section-title">AI access (MCP server)</h3>
+          <p className="settings-section-desc">
+            Run a local MCP server on 127.0.0.1 so an external AI client (e.g. Claude Code) can read
+            the repositories you have open in Bonsai. Access requires the token below; the server is
+            read-only.
+          </p>
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={mcpEnabled}
+              onChange={(e) => handleMcpEnableToggle(e.target.checked)}
+            />
+            <span>Enable MCP server</span>
+          </label>
+
+          {mcpEnabled && mcpStatus !== null ? (
+            <p className="settings-ai-status settings-ai-status-ok">
+              Running on port {mcpStatus.port} · {mcpStatus.toolCount} tools (read-only)
+            </p>
+          ) : (
+            <p className="settings-ai-status">Stopped.</p>
+          )}
+
+          {mcpEnabled && mcpStatus !== null && (
+            <>
+              <div className="settings-control">
+                <label className="settings-control-label" htmlFor="settings-mcp-url">
+                  Server URL
+                </label>
+                <div className="settings-control-inputs">
+                  <input
+                    id="settings-mcp-url"
+                    className="settings-number settings-mcp-field"
+                    type="text"
+                    readOnly
+                    value={mcpStatus.url ?? ''}
+                    onFocus={(e) => e.target.select()}
+                  />
+                  <button
+                    type="button"
+                    className="btn-secondary settings-toggle-btn"
+                    onClick={() => mcpStatus.url !== null && copyText(mcpStatus.url)}
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+
+              <div className="settings-control">
+                <label className="settings-control-label" htmlFor="settings-mcp-token">
+                  Bearer token
+                </label>
+                <div className="settings-control-inputs">
+                  <input
+                    id="settings-mcp-token"
+                    className="settings-number settings-mcp-field"
+                    type="text"
+                    readOnly
+                    value={mcpStatus.token ?? ''}
+                    onFocus={(e) => e.target.select()}
+                  />
+                  <button
+                    type="button"
+                    className="btn-secondary settings-toggle-btn"
+                    onClick={() => mcpStatus.token !== null && copyText(mcpStatus.token)}
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+
+              <div className="settings-row">
+                <span className="settings-control-label">Register with Claude Code</span>
+                <button
+                  type="button"
+                  className="btn-secondary settings-toggle-btn"
+                  disabled={mcpStatus.claudeAddCommand === null}
+                  onClick={() =>
+                    mcpStatus.claudeAddCommand !== null && copyText(mcpStatus.claudeAddCommand)
+                  }
+                >
+                  Copy command
+                </button>
+              </div>
+            </>
           )}
         </section>
       </div>
