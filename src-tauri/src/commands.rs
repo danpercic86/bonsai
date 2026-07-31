@@ -2,6 +2,7 @@ use tauri::Emitter;
 
 use bonsai_core::ai::{self, AiAvailability, RunOpts};
 use bonsai_core::error::AppError;
+use bonsai_core::git::ai_commit::{self, CommitMessageProposal};
 use bonsai_core::git::ai_resolve::{self, AiResolveProposal};
 use bonsai_core::git::branches::{self, BranchesSnapshot, CreateBranchHereResult};
 use bonsai_core::git::commit::{create_commit, CommitResult};
@@ -1131,6 +1132,44 @@ async fn ai_resolve_conflict_inner(
     let workdir = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || {
         ai_resolve::ai_resolve_conflict(&workdir, &path, RunOpts::default())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Generates a commit message from the staged diff (P15a §5). Loads settings and
+/// REFUSES with `AiUnavailable` unless `ai_enabled && ai_consented` (the
+/// authoritative backend gate; the frontend also gates for UX). WRITES NOTHING —
+/// the user edits the returned text in the commit box and commits separately.
+/// Errors: `aiUnavailable` | `aiFailed` | `nothingToCommit` | `git` | `noRepo`.
+#[tauri::command]
+pub async fn generate_commit_message(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<CommitMessageProposal, AppError> {
+    // Resolve the settings-file path at the AppHandle boundary so the inner stays
+    // runtime-free and unit-testable (mirrors `ai_resolve_conflict`), then delegate.
+    let file = settings::settings_file(&app)?;
+    generate_commit_message_inner(state.inner(), &file, &repo_id).await
+}
+
+/// Runtime-free core of `generate_commit_message` (unit-testable without a Tauri
+/// app). The consent gate is enforced HERE, BEFORE `repo_path`.
+async fn generate_commit_message_inner(
+    state: &AppState,
+    settings_file: &std::path::Path,
+    repo_id: &str,
+) -> Result<CommitMessageProposal, AppError> {
+    let s = settings::load_from(settings_file);
+    if !(s.ai_enabled && s.ai_consented) {
+        return Err(AppError::AiUnavailable(
+            "AI features are disabled or not yet consented to".to_string(),
+        ));
+    }
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        ai_commit::generate_commit_message(&workdir, RunOpts::default())
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -2306,6 +2345,37 @@ mod tests {
             &file,
             MISSING_ID,
             "a.txt".to_string(),
+        ))
+        .expect_err("no repo open must be NoRepo");
+        assert!(matches!(err, AppError::NoRepo), "got {err:?}");
+    }
+
+    /// P15a §8.5: `generate_commit_message` enforces the same backend consent
+    /// gate BEFORE touching the repo: default settings (`ai_consented=false`) →
+    /// `AiUnavailable`; once enabled+consented, an unknown repo id → `NoRepo`
+    /// (the gate passed, `repo_path` then fails). No CLI needed.
+    #[test]
+    fn generate_commit_message_enforces_consent_gate_then_no_repo() {
+        let state = AppState::default();
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let file = dir.path().join("settings.json");
+
+        // No settings file → defaults → not consented → the gate refuses.
+        let err = tauri::async_runtime::block_on(generate_commit_message_inner(
+            &state, &file, MISSING_ID,
+        ))
+        .expect_err("disabled gate must refuse");
+        assert!(matches!(err, AppError::AiUnavailable(_)), "got {err:?}");
+
+        // Enable + consent; now the gate passes and the missing repo → NoRepo.
+        let s = settings::Settings {
+            ai_enabled: true,
+            ai_consented: true,
+            ..settings::Settings::default()
+        };
+        settings::save_to(&file, &s).expect("save settings");
+        let err = tauri::async_runtime::block_on(generate_commit_message_inner(
+            &state, &file, MISSING_ID,
         ))
         .expect_err("no repo open must be NoRepo");
         assert!(matches!(err, AppError::NoRepo), "got {err:?}");

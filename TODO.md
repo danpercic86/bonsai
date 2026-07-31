@@ -16,6 +16,41 @@ that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e
 Every "awaiting USER CHECKPOINT" below is now CONFIRMED as of 2026-07-30. (P5/P6 were already
 confirmed earlier.)
 
+## P15 — In-app AI features (Tier 1) — **in-progress** (2026-07-31)
+
+Source: user request (2026-07-31) — after P14 (Tier 2 MCP), build the remaining Tier 1 in-app AI
+features from the analysis plan. P13 already shipped the reusable `bonsai_core::ai::run_claude`
+text-transform primitive + `check_availability` + the consent gate (`ai_enabled` / `ai_consented` /
+`ai_conflict_autonomy`) and ONE consumer (AI conflict resolution). P15 adds the other Tier 1 features,
+each reusing `run_claude` (build prompt+payload → call → return text) + a frontend affordance.
+Contract: **docs/contracts/P15-ai-features.md** (architect to write).
+
+Sub-increments (each its own implement→review→commit loop):
+- **P15a** — Commit-message generation: AI writes a commit message from the staged diff; button in the
+  commit box. Smallest lift, highest daily value.
+- **P15b** — Explain / review diffs: "explain this diff/commit" + "review my staged changes" fed the
+  typed diff data; surfaced in the diff panel.
+- **P15c** — Summarize branch / range: "what's unique to this branch" / "what happened between these
+  refs", from graph + compare data (+ small range-selection UI).
+
+Reuse the P13 consent gate + availability check for all three; no new AI infra expected.
+
+Decisions confirmed by orchestrator (architect §7): empty inputs reuse AiFailed/NothingToCommit (no
+new error kind); P15c range = merge-base (mb..target); "✨ Generate" over a non-empty box confirms
+first; base auto-select main→master→HEAD→upstream; explain+review = one `ai_analyze_diff` command.
+
+**Current step: P15a — senior-dev implementing (payload.rs + ai_commit.rs + generate_commit_message
+command + IPC/mock + CommitBox button).**
+
+## P16 — Embedded MCP server (Tier 3, shared live workspace) — **pending** (planned)
+
+Source: same user request (2026-07-31). In-app HTTP MCP server (rmcp streamable-http) targeting the
+ACTIVE repo tab, so an external client (Claude Code) operates on the same live repo the user sees; the
+existing `repo-changed` watcher makes the UI live-update as the AI acts. Reuses `bonsai-core` + the
+P14 tool bodies (factor the tool layer so the standalone bin and the embedded server share it). Open
+design points: active-repo selection (AppState.repos is a map), localhost bearer-token security, a
+UI write-gate toggle. Larger than any single P15 feature. Contract TBD after P15.
+
 ## P14 — `bonsai-core` crate + standalone `bonsai-mcp` MCP server — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-30)
 
 Source: user request (2026-07-30) — "analyze if it makes sense to integrate Bonsai into an AI (e.g.

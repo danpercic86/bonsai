@@ -8,6 +8,7 @@ import type {
   ApplyStashOutcome,
   BranchesSnapshot,
   CommitDiff,
+  CommitMessageProposal,
   CommitResult,
   CompareDiff,
   ConflictEntry,
@@ -187,6 +188,11 @@ export const tauriIpc: IpcApi = {
 
   aiResolveConflict(repoId: string, path: string): Promise<AiResolveProposal> {
     return invoke<AiResolveProposal>('ai_resolve_conflict', { repoId, path });
+  },
+
+  // P15a: generate a commit message from the staged diff (proposal only).
+  generateCommitMessage(repoId: string): Promise<CommitMessageProposal> {
+    return invoke<CommitMessageProposal>('generate_commit_message', { repoId });
   },
 
   rebaseBranch(repoId: string, onto: string): Promise<RebaseOutcome> {

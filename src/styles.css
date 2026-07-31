@@ -1432,6 +1432,17 @@ body {
   width: 100%;
 }
 
+/* P15a: commit-box header holding the "✨ Generate" affordance. */
+.commit-box-header {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.commit-generate-button {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
 /* ---------- Diff view (M4) ---------- */
 
 /* Row text area doubles as the accordion toggle (button for a11y). */

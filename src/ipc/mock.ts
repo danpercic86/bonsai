@@ -21,6 +21,7 @@ import type {
   ApplyStashOutcome,
   BranchesSnapshot,
   CommitDiff,
+  CommitMessageProposal,
   CommitResult,
   CompareDiff,
   ConflictEntry,
@@ -1439,6 +1440,35 @@ export const mockIpc: IpcApi = {
     // resolveConflictText (ProposeReview accept / AutoResolve).
     const proposedText = file !== undefined ? stripConflictMarkers(file.text) : '';
     return { path, proposedText, costUsd: 0.012 };
+  },
+
+  // P15a: propose a commit message from the staged diff. Writes NOTHING — the
+  // caller drops the text into the commit box to edit before committing. `?ai=off`
+  // simulates a missing CLI; an empty staged set → nothingToCommit (no CLI call).
+  async generateCommitMessage(repoId: string): Promise<CommitMessageProposal> {
+    await delay(500);
+    const state = requireRepo(repoId);
+    if (AI_OFF) {
+      const err: AppError = {
+        kind: 'aiFailed',
+        message: 'Claude Code CLI not found on PATH',
+      };
+      throw err;
+    }
+    if (state.status.staged.length === 0) {
+      const err: AppError = {
+        kind: 'nothingToCommit',
+        message: 'nothing to commit (index matches HEAD)',
+      };
+      throw err;
+    }
+    return {
+      message:
+        'feat(sidebar): add branch summary action\n\n' +
+        '- wire ai_summarize_range command\n' +
+        '- add context-menu entry',
+      costUsd: 0.004,
+    };
   },
 
   // Stateful rebase mock (P3d contract §7.2). A repo seeded with a rebase starts

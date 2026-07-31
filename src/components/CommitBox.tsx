@@ -1,5 +1,6 @@
 import { forwardRef, useImperativeHandle, useState } from 'react';
 import { isAppError } from '../utils/errors';
+import { ConfirmDialog } from './ConfirmDialog';
 
 export interface CommitBoxProps {
   stagedCount: number;
@@ -17,6 +18,11 @@ export interface CommitBoxProps {
   conflictCount?: number;
   /** Non-merge op active (rebase/cherry-pick/revert): fully disabled. */
   blocked?: boolean;
+  /** P15a: gates the "✨ Generate" button (aiEnabled && aiConsented && installed). */
+  aiEligible?: boolean;
+  /** P15a: asks the backend for a proposed message; resolves the text to insert,
+   * rejects with AppError. Never commits. */
+  onGenerate?(): Promise<string>;
 }
 
 /** Imperative submit hook so OpBanner's [Commit merge] triggers the same
@@ -37,12 +43,17 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
     initialMessage,
     conflictCount = 0,
     blocked = false,
+    aiEligible = false,
+    onGenerate,
   },
   ref,
 ) {
   const [message, setMessage] = useState(initialMessage ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<{ kind: string; text: string } | null>(null);
+  // P15a: AI commit-message generation (proposal only — never commits).
+  const [generating, setGenerating] = useState(false);
+  const [replaceConfirmOpen, setReplaceConfirmOpen] = useState(false);
 
   const merge = mode === 'merge';
   const firstLineLen = (message.split('\n', 1)[0] ?? '').length;
@@ -51,7 +62,42 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
     message.trim() === '' ||
     busy ||
     submitting ||
+    generating ||
     (merge ? conflictCount > 0 : stagedCount === 0);
+
+  // P15a: the "✨ Generate" affordance (commit mode only). Disabled per contract
+  // §5.5 when AI is ineligible, nothing is staged, or a mutation/generation runs.
+  const showGenerate = !merge && onGenerate !== undefined;
+  const generateDisabled =
+    blocked || !aiEligible || stagedCount === 0 || busy || generating || submitting;
+
+  async function runGenerate() {
+    if (onGenerate === undefined) return;
+    setGenerating(true);
+    try {
+      const msg = await onGenerate();
+      setMessage(msg); // REPLACES current text (contract §5.5)
+      setError(null);
+    } catch (e) {
+      if (isAppError(e)) {
+        setError({ kind: e.kind, text: e.message });
+      } else {
+        setError({ kind: 'other', text: e instanceof Error ? e.message : String(e) });
+      }
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  function onGenerateClick() {
+    if (generateDisabled) return;
+    // Non-empty box → confirm before replacing; empty → replace silently (§7.4).
+    if (message.trim() !== '') {
+      setReplaceConfirmOpen(true);
+    } else {
+      void runGenerate();
+    }
+  }
 
   async function submit() {
     if (disabled) return;
@@ -75,6 +121,25 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
 
   return (
     <div className="commit-box">
+      {showGenerate && (
+        <div className="commit-box-header">
+          <button
+            type="button"
+            className="btn-secondary commit-generate-button"
+            disabled={generateDisabled}
+            onClick={onGenerateClick}
+            title={
+              !aiEligible
+                ? 'Enable AI features in settings to generate a commit message'
+                : stagedCount === 0
+                  ? 'Stage changes to generate a commit message'
+                  : 'Generate a commit message from the staged changes'
+            }
+          >
+            {generating ? 'Generating…' : '✨ Generate'}
+          </button>
+        </div>
+      )}
       <textarea
         className="commit-message"
         rows={merge ? 5 : 3}
@@ -126,6 +191,20 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
       >
         {submitting ? 'Committing…' : merge ? 'Commit merge' : 'Commit'}
       </button>
+
+      <ConfirmDialog
+        open={replaceConfirmOpen}
+        title="Replace the current message?"
+        confirmLabel="Replace"
+        busy={generating}
+        onConfirm={() => {
+          setReplaceConfirmOpen(false);
+          void runGenerate();
+        }}
+        onCancel={() => setReplaceConfirmOpen(false)}
+      >
+        <div>The commit box already has text. Replace it with an AI-generated message?</div>
+      </ConfirmDialog>
     </div>
   );
 });

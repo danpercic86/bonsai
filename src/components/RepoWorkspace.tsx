@@ -774,6 +774,14 @@ export function RepoWorkspace({
     }
   }
 
+  // P15a: ask the backend for a proposed commit message from the staged diff.
+  // Returns the text for CommitBox to drop into its textarea; errors surface in
+  // the box's own error-banner (CommitBox catches). Never commits.
+  async function handleGenerateCommitMessage(): Promise<string> {
+    const proposal = await ipc.generateCommitMessage(repoId);
+    return proposal.message;
+  }
+
   async function handleCreateBranch(name: string) {
     setBranchesError(null);
     setMutating(true);
@@ -1846,6 +1854,8 @@ export function RepoWorkspace({
                 conflictCount={conflicts.length}
                 blocked={opActive && opState.kind !== 'merge'}
                 onCommit={opState.kind === 'merge' ? handleCommitMerge : handleCommit}
+                aiEligible={aiEligible}
+                onGenerate={handleGenerateCommitMessage}
               />
             </>
           )}

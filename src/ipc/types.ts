@@ -371,6 +371,14 @@ export interface AiResolveProposal {
   costUsd: number | null;
 }
 
+/** The model's proposed commit message from the staged diff (P15a).
+ *  Mirrors the Rust `CommitMessageProposal`; generation writes nothing. */
+export interface CommitMessageProposal {
+  /** Trimmed; may contain newlines (summary + body). */
+  message: string;
+  costUsd: number | null;
+}
+
 export interface UiSettings {
   theme: Theme;
   paneWidths: PaneWidths;
@@ -578,6 +586,9 @@ export interface IpcApi {
   /** Propose an AI merge resolution for one conflicted path (P13). Writes nothing.
    *  Rejects aiUnavailable | aiFailed | git | invalidName | noRepo. */
   aiResolveConflict(repoId: string, path: string): Promise<AiResolveProposal>;
+  /** P15a. Generate a commit message from the staged diff. Never auto-commits.
+   *  Rejects aiUnavailable | aiFailed | nothingToCommit | git | noRepo. */
+  generateCommitMessage(repoId: string): Promise<CommitMessageProposal>;
   /** Persisted multi-tab session. Never rejects for a missing/corrupt file (empty). */
   getSession(): Promise<SessionState>;
   /** Writes the whole session (tabs change as a unit). Rejects io on save failure. */

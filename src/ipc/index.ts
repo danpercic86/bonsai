@@ -17,6 +17,7 @@ export type {
   BranchInfo,
   CommitDetails,
   CommitDiff,
+  CommitMessageProposal,
   CommitResult,
   CompareDiff,
   CompareEndpoint,

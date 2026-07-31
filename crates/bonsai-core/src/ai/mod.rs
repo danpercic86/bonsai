@@ -2,6 +2,9 @@
 //! transform on the user's subscription session (no API key). Blocking;
 //! all callers invoke under spawn_blocking. (P13)
 
+/// Shared diff-payload renderer for the in-app AI features (P15).
+pub mod payload;
+
 use crate::error::AppError;
 use std::io::{Read, Write};
 use std::path::Path;
