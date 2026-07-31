@@ -19,6 +19,9 @@ import {
 import type { MockCommit } from './fixtures/graph';
 import { generateLayout20k } from './fixtures/graph20k';
 import type {
+  AgentAsset,
+  AgentAssetInventory,
+  AgentAssetKind,
   AiAnalysis,
   AiAnalysisMode,
   AiAssetInventory,
@@ -369,6 +372,128 @@ function recomputeDrift(inv: AiAssetInventory, canonical?: string): DriftReport 
   return { canonicalId, canonicalHash, entries, inSync };
 }
 
+// --- P26: agent-asset (skills / subagents / slash commands) fixture ---------
+
+/** Repo-relative path for an agent asset (mirrors Rust `rel_path`, §3.1). */
+function agentRelPath(kind: AgentAssetKind, name: string): string {
+  switch (kind) {
+    case 'skill':
+      return `.claude/skills/${name}/SKILL.md`;
+    case 'agent':
+      return `.claude/agents/${name}.md`;
+    case 'command':
+      return `.claude/commands/${name}.md`;
+  }
+}
+
+/** Seed agent-asset inventory (§6): one valid asset per kind, one invalid agent
+ *  (missing required `description`), and one skill flagged `complex` (multi-line
+ *  frontmatter, read-only). Kinds/names are pre-sorted (skill<agent<command). */
+const mockAgentAssets: AgentAsset[] = [
+  {
+    kind: 'skill',
+    name: 'code-review',
+    path: '.claude/skills/code-review/SKILL.md',
+    exists: true,
+    frontmatter: [
+      { key: 'name', value: 'code-review' },
+      { key: 'description', value: 'Reviews a diff for correctness and style' },
+    ],
+    body: '\n# Code review\n\nReview the staged changes.\n',
+    validation: { valid: true, issues: [] },
+  },
+  {
+    kind: 'skill',
+    name: 'release-notes',
+    path: '.claude/skills/release-notes/SKILL.md',
+    exists: true,
+    // Multi-line YAML the editor can't round-trip -> read-only Error.
+    frontmatter: [{ key: 'name', value: 'release-notes' }],
+    body: '\n# Release notes\n\nSummarize merged PRs.\n',
+    validation: {
+      valid: false,
+      issues: [
+        {
+          severity: 'error',
+          message:
+            "frontmatter uses multi-line YAML this editor can't safely round-trip — edit the file directly",
+        },
+      ],
+    },
+  },
+  {
+    kind: 'agent',
+    name: 'test-runner',
+    path: '.claude/agents/test-runner.md',
+    exists: true,
+    frontmatter: [
+      { key: 'name', value: 'test-runner' },
+      { key: 'description', value: 'Runs the test suite and triages failures' },
+      { key: 'tools', value: 'Bash, Read' },
+      { key: 'model', value: 'inherit' },
+    ],
+    body: '\nYou run the project test suite and report failures.\n',
+    validation: { valid: true, issues: [] },
+  },
+  {
+    kind: 'agent',
+    name: 'broken',
+    path: '.claude/agents/broken.md',
+    exists: true,
+    // Missing required `description` -> invalid.
+    frontmatter: [{ key: 'name', value: 'broken' }],
+    body: '\nAn incomplete subagent.\n',
+    validation: {
+      valid: false,
+      issues: [
+        { severity: 'error', message: "agent requires frontmatter field 'description'" },
+      ],
+    },
+  },
+  {
+    kind: 'command',
+    name: 'changelog',
+    path: '.claude/commands/changelog.md',
+    exists: true,
+    frontmatter: [
+      { key: 'description', value: 'Draft a changelog entry' },
+      { key: 'argument-hint', value: '<version>' },
+    ],
+    body: '\nDraft a changelog entry for $ARGUMENTS.\n',
+    validation: { valid: true, issues: [] },
+  },
+];
+
+/** Deterministic (kind order skill<agent<command, then name) sort, matching
+ *  `scan_agent_assets`. */
+const AGENT_KIND_ORD: Record<AgentAssetKind, number> = { skill: 0, agent: 1, command: 2 };
+function sortAgentAssets(assets: AgentAsset[]): AgentAsset[] {
+  return [...assets].sort(
+    (a, b) => AGENT_KIND_ORD[a.kind] - AGENT_KIND_ORD[b.kind] || a.name.localeCompare(b.name),
+  );
+}
+
+/** Name safety mirror of Rust `validate_asset_name` (§4.4); throws `invalidName`. */
+function requireValidAssetName(name: string): void {
+  const bad =
+    name.trim() === '' ||
+    name === '.' ||
+    name === '..' ||
+    name.startsWith('-') ||
+    name.includes('/') ||
+    name.includes('\\') ||
+    name.includes(':') ||
+    [...name].some((c) => {
+      const code = c.charCodeAt(0);
+      return code < 0x20 || (code >= 0x7f && code <= 0x9f);
+    }) ||
+    [...name].some((c) => !/[A-Za-z0-9._-]/.test(c));
+  if (bad) {
+    const err: AppError = { kind: 'invalidName', message: `invalid asset name: '${name}'` };
+    throw err;
+  }
+}
+
 // --- P24b: profiles fixture + stateful activation helpers -------------------
 
 /** The single-file (profile-target-eligible) descriptor ids → mapped repo path,
@@ -496,6 +621,9 @@ interface MockRepoState {
   assetContent: Record<string, string>;
   /** P24b: the context-profile store (stateful CRUD + activation). */
   profiles: ProfileStore;
+  /** P26: managed agent assets (skills / subagents / slash commands). Stateful
+   *  so P26b's create/edit/delete round-trips in the harness. */
+  agentAssets: AgentAsset[];
 }
 
 const repos = new Map<string /* repoId */, MockRepoState>();
@@ -798,6 +926,7 @@ function createRepoState(path: string): MockRepoState {
     inventory: structuredClone(mockInventory),
     assetContent: structuredClone(MOCK_ASSET_CONTENT),
     profiles: structuredClone(mockProfiles),
+    agentAssets: structuredClone(mockAgentAssets),
   };
   seedOpState(state, repoOp(path));
   return state;
@@ -3144,6 +3273,40 @@ export const mockIpc: IpcApi = {
     return content !== undefined
       ? { path, exists: true, content }
       : { path, exists: false, content: null };
+  },
+
+  // P26: agent-asset (skills / subagents / slash commands) read path.
+  async listAgentAssets(repoId: string): Promise<AgentAssetInventory> {
+    await delay(100);
+    const state = requireRepo(repoId);
+    return { assets: sortAgentAssets(structuredClone(state.agentAssets)) };
+  },
+
+  async readAgentAsset(
+    repoId: string,
+    kind: AgentAssetKind,
+    name: string,
+  ): Promise<AgentAsset> {
+    await delay(80);
+    const state = requireRepo(repoId);
+    requireValidAssetName(name);
+    const found = state.agentAssets.find((a) => a.kind === kind && a.name === name);
+    if (found) {
+      return structuredClone(found);
+    }
+    // A missing asset resolves to an `exists:false` shell (matches Rust §3).
+    return {
+      kind,
+      name,
+      path: agentRelPath(kind, name),
+      exists: false,
+      frontmatter: [],
+      body: '',
+      validation: {
+        valid: false,
+        issues: [{ severity: 'error', message: 'file does not exist' }],
+      },
+    };
   },
 
   // P24b: context-profile store (stateful CRUD + preview + activate).

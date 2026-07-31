@@ -673,6 +673,60 @@ export interface AssetContent {
   content: string | null;
 }
 
+// P26 — Agent-asset (skills / subagents / slash commands) manager. Mirrors the
+// Rust wire types in `crates/bonsai-core/src/assets/bundle.rs` exactly (camelCase;
+// bare-string enums).
+
+/** Which `.claude/` agent-asset kind. Bare-string serde enum on the Rust side. */
+export type AgentAssetKind = 'skill' | 'agent' | 'command';
+
+/** Severity of a validation finding. Bare-string serde enum on the Rust side. */
+export type IssueSeverity = 'error' | 'warning';
+
+/** One frontmatter entry; `value` is the verbatim opaque scalar after `key: `. */
+export interface FrontmatterField {
+  key: string;
+  value: string;
+}
+
+export interface AssetIssue {
+  severity: IssueSeverity;
+  message: string;
+}
+
+/** Validation verdict for one asset. `valid` iff no Error-severity issue. */
+export interface Validation {
+  valid: boolean;
+  issues: AssetIssue[];
+}
+
+export interface AgentAsset {
+  kind: AgentAssetKind;
+  /** Directory name (skill) or file stem (agent/command). */
+  name: string;
+  /** Repo-relative file path, forward slashes (e.g. `.claude/agents/foo.md`). */
+  path: string;
+  exists: boolean;
+  /** Parsed flat frontmatter, in file order, unknown keys preserved. */
+  frontmatter: FrontmatterField[];
+  /** Everything after the closing `---` fence (verbatim); whole file if none. */
+  body: string;
+  validation: Validation;
+}
+
+export interface AgentAssetInventory {
+  assets: AgentAsset[];
+}
+
+/** Save payload for `saveAgentAsset` (P26b) — no path/exists/validation, which
+ *  the backend derives/computes. */
+export interface AgentAssetInput {
+  kind: AgentAssetKind;
+  name: string;
+  frontmatter: FrontmatterField[];
+  body: string;
+}
+
 /** One profile target: which single-file asset to write, and its verbatim content. */
 export interface ProfileTarget {
   assetId: string;
@@ -1058,6 +1112,17 @@ export interface IpcApi {
   /** P24. Raw content of one AI-asset file (repo-relative path, validated inside
    *  the workdir). A missing file resolves `exists:false`. Rejects other | io | noRepo. */
   readAiAsset(repoId: string, path: string): Promise<AssetContent>;
+  /** P26. Managed inventory of the three `.claude/` agent-asset kinds (skills /
+   *  subagents / slash commands), parsed + validated. Empty when `.claude/` is
+   *  absent. Rejects io | noRepo. */
+  listAgentAssets(repoId: string): Promise<AgentAssetInventory>;
+  /** P26. One parsed agent asset by (kind, name); a missing file resolves to an
+   *  `exists:false` shell. Rejects invalidName | io | noRepo. */
+  readAgentAsset(
+    repoId: string,
+    kind: AgentAssetKind,
+    name: string,
+  ): Promise<AgentAsset>;
   /** P24. The context-profile store (lazy empty default when absent). Rejects
    *  other | io | noRepo. */
   listProfiles(repoId: string): Promise<ProfileStore>;

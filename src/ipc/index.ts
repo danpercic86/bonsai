@@ -7,6 +7,10 @@ export const ipc: IpcApi =
     : (await import('./tauri')).tauriIpc;
 
 export type {
+  AgentAsset,
+  AgentAssetInput,
+  AgentAssetInventory,
+  AgentAssetKind,
   AiAnalysis,
   AiAnalysisMode,
   AiAsset,
@@ -21,6 +25,7 @@ export type {
   ApplyStashOutcome,
   AssetContent,
   AssetFile,
+  AssetIssue,
   AssetKind,
   AutoFetchSettings,
   BlameLine,
@@ -49,6 +54,7 @@ export type {
   FileDiffHeader,
   FileHistoryEntry,
   FileStatus,
+  FrontmatterField,
   GraphEdge,
   GraphLayout,
   GraphNode,
@@ -56,6 +62,7 @@ export type {
   HeadInfo,
   Hunk,
   IpcApi,
+  IssueSeverity,
   LineKind,
   LineSelection,
   ListView,
@@ -95,4 +102,5 @@ export type {
   UiSettings,
   UiSettingsPatch,
   Unsubscribe,
+  Validation,
 } from './types';

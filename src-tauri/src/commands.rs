@@ -2,8 +2,8 @@ use tauri::Emitter;
 
 use bonsai_core::ai::{self, AiAvailability, RunOpts};
 use bonsai_core::assets::{
-    self, AiAssetInventory, AiGeneratedAsset, AssetContent, ContextProfile, ProfileActivation,
-    ProfilePreviewEntry, ProfileStore,
+    self, AgentAsset, AgentAssetInventory, AgentAssetKind, AiAssetInventory, AiGeneratedAsset,
+    AssetContent, ContextProfile, ProfileActivation, ProfilePreviewEntry, ProfileStore,
 };
 use bonsai_core::error::AppError;
 use bonsai_core::git::ai_commit::{self, CommitMessageProposal};
@@ -2368,6 +2368,55 @@ async fn read_ai_asset_inner(
 ) -> Result<AssetContent, AppError> {
     let workdir = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || assets::read_asset(&workdir, &path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Managed inventory of the three `.claude/` agent-asset kinds (skills /
+/// subagents / slash commands) under `repo_id` (P26 §5, read path). Parses +
+/// validates each; a missing `.claude/` yields an empty inventory. No events,
+/// no channels — the frontend refetches imperatively (and on `repo-changed`).
+#[tauri::command]
+pub async fn list_agent_assets(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<AgentAssetInventory, AppError> {
+    list_agent_assets_inner(state.inner(), &repo_id).await
+}
+
+/// Runtime-free core of `list_agent_assets` (unit-testable without a Tauri app).
+async fn list_agent_assets_inner(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<AgentAssetInventory, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || assets::scan_agent_assets(&workdir))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// One parsed agent asset by `(kind, name)` under `repo_id` (P26 §5, read path).
+/// The name is validated for filesystem safety; a missing file resolves to an
+/// `exists:false` shell (not an error).
+#[tauri::command]
+pub async fn read_agent_asset(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    kind: AgentAssetKind,
+    name: String,
+) -> Result<AgentAsset, AppError> {
+    read_agent_asset_inner(state.inner(), &repo_id, kind, name).await
+}
+
+/// Runtime-free core of `read_agent_asset` (unit-testable without a Tauri app).
+async fn read_agent_asset_inner(
+    state: &AppState,
+    repo_id: &str,
+    kind: AgentAssetKind,
+    name: String,
+) -> Result<AgentAsset, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || assets::read_agent_asset(&workdir, kind, &name))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

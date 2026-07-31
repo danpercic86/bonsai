@@ -100,6 +100,8 @@ pub fn run() {
             commands::set_remote_url,
             commands::list_ai_assets,
             commands::read_ai_asset,
+            commands::list_agent_assets,
+            commands::read_agent_asset,
             commands::list_profiles,
             commands::save_profile,
             commands::delete_profile,

@@ -16,7 +16,38 @@ that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e
 Every "awaiting USER CHECKPOINT" below is now CONFIRMED as of 2026-07-30. (P5/P6 were already
 confirmed earlier.)
 
-## P25 — Cheap AI-automation wins: AI review (B1) + stale-branch cleanup (B4) — **in-progress** (2026-08-01)
+## P26 — AI-asset management A3: skills / subagents / commands manager — **in-progress** (2026-08-01)
+
+Roadmap Theme A item **A3** (the #1-priority remaining item; `~/.claude/plans/
+if-we-think-about-eager-hoare.md`; memory: repo-management-vision). Direct continuation of the P24 flagship
+— promotes the currently "detected (not managed)" `.claude/` group (skills/agents/commands) into a MANAGED
+surface in the AI Assets panel: inventory the individual `.claude/skills/*/SKILL.md`, `.claude/agents/*.md`,
+`.claude/commands/*.md`, parse + validate their YAML frontmatter, and offer form-based create/edit/delete
+with templates. Reuses the P24 assets module + IPC-triple + AiAssetsPanel patterns. Started autonomously
+(user away 8–10h) after P24 + P25 shipped. Defer (later): invocation preview/execution, MCP config
+manager (A4), Copilot prompt/instructions dirs beyond inventory.
+Autonomy rules unchanged: architect→senior-dev→reviewer→orchestrator-commits→tester→AI gate→USER CHECKPOINT;
+land read-only inventory first, gate every file-WRITE (create/edit/delete of skill/agent/command files)
+behind explicit confirmation; scratch under D:\Temp\bonsai-scratch, TMP/TEMP=D:\Temp for cargo, no concurrent
+test+clippy, mock.ts kept compiling. Contract: docs/contracts/P26-skills-agents-manager.md (architect).
+Sub-increments: **P26a** core parse/validate/inventory + read cmds + IPC → **P26b** write path (create/edit/
+delete) + cmds + mock → **P26c** UI (AiAssetsPanel section + AgentAssetEditor) → **P26d** (optional) templates/
+advanced FM editor. Key defaults (architect, accepted; flag for user): skill delete = recursive `.claude/
+skills/<name>/` dir removal (confirm-gated); NO serde_yaml → complex/multi-line YAML frontmatter is READ-ONLY
++ flagged (never silently rewritten); comments in frontmatter dropped on save; module = assets/bundle.rs;
+claudeDir taxonomy row stays managed:false (P26 is a separate managed surface, not wired into P24 drift).
+
+- **P26a** (reviewer APPROVE, 0 must-fix) — assets/bundle.rs: AgentKind(skill|agent|command bare strings),
+  per-kind spec, hand-rolled `---`-fence frontmatter parser → ordered Vec<FrontmatterField> (unknown keys
+  preserved; complex/multi-line/block-list/nested → complex=true + Error → read-only; flat round-trips
+  byte-stable), validate (required fields per kind, name-mismatch, complex), scan_agent_assets +
+  read_agent_asset. 2 read commands + read-only IPC triple + mock seed (valid set + a `broken` agent missing
+  description + a `release-notes` complex skill). 9 tests; lib 219 green; clippy + tsc + build clean.
+  Reviewer verified NO false-negative in complex detection (the anti-lossy-rewrite property). Nits (cosmetic):
+  mock localeCompare vs Rust str::cmp; CRLF→LF on serialize; add a nested-map complex test.
+**Current step:** P26a done (uncommitted) → committing → P26b write path.
+
+## P25 — Cheap AI-automation wins: AI review (B1) + stale-branch cleanup (B4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-01)
 
 Roadmap bucket #2 (`~/.claude/plans/if-we-think-about-eager-hoare.md`; memory:
 repo-management-vision). Started autonomously after P24 shipped (user away 8–10h). Two features, both

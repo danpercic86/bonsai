@@ -3,6 +3,9 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import type {
+  AgentAsset,
+  AgentAssetInventory,
+  AgentAssetKind,
   AiAnalysis,
   AiAnalysisMode,
   AiDiffTarget,
@@ -502,6 +505,19 @@ export const tauriIpc: IpcApi = {
 
   readAiAsset(repoId: string, path: string): Promise<AssetContent> {
     return invoke<AssetContent>('read_ai_asset', { repoId, path });
+  },
+
+  // P26: agent-asset (skills / subagents / slash commands) read path.
+  listAgentAssets(repoId: string): Promise<AgentAssetInventory> {
+    return invoke<AgentAssetInventory>('list_agent_assets', { repoId });
+  },
+
+  readAgentAsset(
+    repoId: string,
+    kind: AgentAssetKind,
+    name: string,
+  ): Promise<AgentAsset> {
+    return invoke<AgentAsset>('read_agent_asset', { repoId, kind, name });
   },
 
   // P24: context-profile store (CRUD + preview + activate).

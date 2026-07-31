@@ -9,12 +9,18 @@
 //! (P24b, `profiles.rs`) and the optional AI helper (P24e, `generate.rs` — the
 //! only part that touches the `claude` CLI) land in later passes.
 
+pub mod bundle;
 pub mod drift;
 pub mod generate;
 pub mod inventory;
 pub mod profiles;
 pub mod taxonomy;
 
+pub use bundle::{
+    known_optional_keys, parse_frontmatter, read_agent_asset, rel_path, required_keys,
+    scan_agent_assets, serialize_asset, validate_asset_name, AgentAsset, AgentAssetInventory,
+    AgentAssetKind, AssetIssue, FrontmatterField, IssueSeverity, Validation,
+};
 pub use drift::{compute_drift, DriftEntry, DriftReport};
 pub use generate::{generate_asset, AiGeneratedAsset};
 pub use inventory::{
