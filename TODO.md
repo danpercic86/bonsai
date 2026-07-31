@@ -75,14 +75,45 @@ logged-in `claude` CLI: (1) stage real changes → Generate yields a sane messag
 a feature branch → Summarize produces a sensible vs-base summary; (4) with claude absent/logged-out the
 affordances disable cleanly. Next milestone after checkpoint: P16 (Tier 3 embedded MCP).
 
-## P16 — Embedded MCP server (Tier 3, shared live workspace) — **pending** (planned)
+## P16 — Embedded MCP server (Tier 3, shared live workspace) — **contract written, awaiting USER decisions** (2026-07-31)
 
 Source: same user request (2026-07-31). In-app HTTP MCP server (rmcp streamable-http) targeting the
 ACTIVE repo tab, so an external client (Claude Code) operates on the same live repo the user sees; the
-existing `repo-changed` watcher makes the UI live-update as the AI acts. Reuses `bonsai-core` + the
-P14 tool bodies (factor the tool layer so the standalone bin and the embedded server share it). Open
-design points: active-repo selection (AppState.repos is a map), localhost bearer-token security, a
-UI write-gate toggle. Larger than any single P15 feature. Contract TBD after P15.
+existing `repo-changed` watcher makes the UI live-update as the AI acts. Contract:
+**docs/contracts/P16-embedded-mcp.md**.
+
+Architect (2026-07-31) VERIFIED rmcp 3.0.1 has the HTTP transport (feature `transport-streamable-http-server`;
+`StreamableHttpService` mounted in axum via `nest_service("/mcp")`, `LocalSessionManager`) — NO version
+bump. Key factoring insight: rmcp's per-session `service_factory` builds a server per session, so the
+workdir must resolve at EACH tool call → a `WorkdirSource` enum (`Fixed` for standalone bin / `Dynamic`
+closing over `AppState.active_repo` for embedded) is the entire shared-code story (one field + one line
+in run_blocking). Sub-increments: P16a factor shared tool layer (bonsai-mcp lib+bin split); P16b embedded
+http server + active_repo + `set_active_repo` + bearer token, read-only, default-off UI toggle; P16c
+write-gate toggle + 20 mutation tools (bounce-on-change); P16d in-process http MCP client integration
+test + live-update demo + `claude mcp add --transport http` docs.
+
+OPEN DECISIONS (surfaced to user, awaiting answers before P16a starts): D-1 axum/token wiring in
+src-tauri/src/mcp.rs (rec); D-2 implicit active-tab, no repo-selection tools (rec); D-3 reject any
+request bearing an Origin header (rec); D-4 port/token persistence — persisted ephemeral port +
+persisted token in settings.json for a stable `claude mcp add` vs per-run token (SECURITY/UX, needs
+user); D-5 bounce server on allow_write change (rec); D-6 no per-repo serialization for P16 (rec);
+D-7 server default OFF + write default OFF + one-time consent (rec). New deps: axum, rand/getrandom,
+subtle — must build on the pinned Windows MSVC toolchain. First inbound network listener in the app →
+load-bearing security section (§8).
+
+All 7 decisions RESOLVED (contract §14): D-1 mcp.rs; **D-2 EXPOSE repo-selection tools** (list_repos/
+select_repo, per-session selection, 14 read/34 write); D-3 reject Origin; D-4 persist token+port; D-5
+bounce on write-gate change; D-6 no per-repo lock; D-7 defaults off + consent. Contract revised in place.
+
+- **P16a** (reviewer APPROVE-WITH-NITS) — `bonsai-mcp` lib+bin split; `WorkdirSource{Fixed,Session}` +
+  `SessionRepos` (per-session selection, resolve at call time → NoRepo/InvalidName, no panic);
+  `BonsaiServer.workdir` field-type change + `with_session` + private `with_source`; `run_blocking`
+  resolves before spawn_blocking. ZERO `#[tool]` bodies changed; the 5 `mcp_stdio.rs` tests pass
+  VERBATIM (Fixed path behavior-identical) + 5 new SessionRepos unit tests. clippy clean, workspace
+  builds. Two cosmetic nits deferred to P16b (redundant dead_code allow on selected_id).
+
+**Current step: P16a committed; next = P16b (embedded HTTP server + active_repo + 2 D-2 tools + token,
+read-only, UI toggle).**
 
 ## P14 — `bonsai-core` crate + standalone `bonsai-mcp` MCP server — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-30)
 

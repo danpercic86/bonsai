@@ -10,14 +10,12 @@
 //! and then serves JSON-RPC over stdio. Mutation tools (P14c) are gated behind
 //! `--allow-write`; P14b registers only the read set.
 
-mod server;
-
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use rmcp::ServiceExt;
 
-use server::BonsaiServer;
+use bonsai_mcp::server::BonsaiServer;
 
 /// Parsed startup configuration.
 struct ServerConfig {

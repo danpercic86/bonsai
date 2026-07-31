@@ -3,6 +3,10 @@ name = "bonsai-mcp"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "bonsai_mcp"
+path = "src/lib.rs"
+
 [[bin]]
 name = "bonsai-mcp"
 path = "src/main.rs"

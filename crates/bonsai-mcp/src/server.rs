@@ -8,7 +8,7 @@
 //! `AppError` `{ kind, message }` discriminant so the AI can branch on it.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use bonsai_core::error::AppError;
 use rmcp::handler::server::router::tool::ToolRouter;
@@ -18,47 +18,168 @@ use rmcp::model::{
 };
 use rmcp::{schemars, tool, tool_handler, tool_router, ServerHandler};
 
-/// The immutable server value. Holds only the canonical workdir path (every
-/// `bonsai_core` fn opens its own repo from it) plus the write-gate flag.
+/// Map a poisoned lock to a domain error rather than panicking.
+fn pois<T>(_: std::sync::PoisonError<T>) -> AppError {
+    AppError::Other("state lock poisoned".into())
+}
+
+/// One open repo as the embedded server sees it (repoId + canonical workdir).
+///
+/// The `repo_id` is the canonical workdir path string (the same value the
+/// embedded `bonsai_select_repo` tool accepts); `path` is that workdir as a
+/// `PathBuf` for the git tools.
+#[derive(Clone)]
+pub struct OpenRepo {
+    /// Stable identifier for the open tab (canonical workdir path string).
+    pub repo_id: String,
+    /// Canonical workdir path the git tools operate on.
+    pub path: PathBuf,
+}
+
+/// Per-SESSION repo state for the embedded server. Each MCP session gets its own
+/// instance (built by the embedded server's service factory), so `selected` is
+/// private to that session and never disturbs other sessions or the app's
+/// focused tab.
+pub struct SessionRepos {
+    /// This session's currently-selected repoId. Seeded at session open and
+    /// mutated only by `select` (the embedded `bonsai_select_repo` tool, P16b).
+    selected: Mutex<Option<String>>,
+    /// Snapshot the app's currently-open tabs. Cheap (no git2); called at every
+    /// workdir resolve / list / select.
+    list_open: Box<dyn Fn() -> Vec<OpenRepo> + Send + Sync>,
+}
+
+impl SessionRepos {
+    /// Build a per-session selection state seeded with `seed` (the focused
+    /// tab's repoId, or `None`), reading open tabs via `list_open`.
+    pub fn new(seed: Option<String>, list_open: Box<dyn Fn() -> Vec<OpenRepo> + Send + Sync>) -> Self {
+        SessionRepos {
+            selected: Mutex::new(seed),
+            list_open,
+        }
+    }
+
+    /// Snapshot of open tabs (for `bonsai_list_repos`, P16b).
+    #[allow(dead_code)]
+    pub(crate) fn open(&self) -> Vec<OpenRepo> {
+        (self.list_open)()
+    }
+
+    /// The session's selected repoId, if any.
+    #[allow(dead_code)]
+    pub(crate) fn selected_id(&self) -> Result<Option<String>, AppError> {
+        Ok(self.selected.lock().map_err(pois)?.clone())
+    }
+
+    /// Resolve the selected repo -> workdir at git-tool call time.
+    ///
+    /// `None` selected -> `NoRepo` ("call bonsai_select_repo"); selected but the
+    /// tab was closed since selection -> `NoRepo`.
+    pub(crate) fn resolve_workdir(&self) -> Result<PathBuf, AppError> {
+        let id = self.selected_id()?.ok_or(AppError::NoRepo)?;
+        (self.list_open)()
+            .into_iter()
+            .find(|r| r.repo_id == id)
+            .map(|r| r.path)
+            .ok_or(AppError::NoRepo)
+    }
+
+    /// Validate `repo_id` is a currently-open tab, then select it for this
+    /// session. Unknown / closed id -> `InvalidName`.
+    #[allow(dead_code)]
+    pub(crate) fn select(&self, repo_id: &str) -> Result<(), AppError> {
+        if !(self.list_open)().iter().any(|r| r.repo_id == repo_id) {
+            return Err(AppError::InvalidName(format!(
+                "repo '{repo_id}' is not an open tab"
+            )));
+        }
+        *self.selected.lock().map_err(pois)? = Some(repo_id.to_string());
+        Ok(())
+    }
+}
+
+/// Resolves the target repo workdir at each git-tool call. Two variants share
+/// the identical tool bodies: the standalone stdio server's fixed workdir and
+/// the embedded server's per-session selection over the app's open tabs.
+#[derive(Clone)]
+pub enum WorkdirSource {
+    /// Standalone stdio server: one fixed, pre-validated canonical workdir.
+    Fixed(Arc<PathBuf>),
+    /// Embedded server: per-session selection over the app's open tabs.
+    Session(Arc<SessionRepos>),
+}
+
+impl WorkdirSource {
+    /// Workdir for the git tools (locks a mutex + clones a `PathBuf` — no git2,
+    /// no `.await`). `Session` may surface `NoRepo` (nothing selected / closed
+    /// tab), which propagates through `run_blocking` into a clean error result.
+    pub fn resolve(&self) -> Result<PathBuf, AppError> {
+        match self {
+            WorkdirSource::Fixed(p) => Ok((**p).clone()),
+            WorkdirSource::Session(s) => s.resolve_workdir(),
+        }
+    }
+}
+
+/// The immutable server value. Holds the workdir source (every `bonsai_core` fn
+/// opens its own repo from the resolved path) plus the write-gate flag.
 ///
 /// `allow_write` is stored now even though P14b registers no mutation tools;
 /// P14c composes a write router into `tool_router` when it is `true`.
 #[derive(Clone)]
 pub struct BonsaiServer {
-    /// Canonical workdir path (from `bonsai_core::git::repo::read_repo_info().path`).
-    workdir: Arc<PathBuf>,
+    /// How the target workdir is resolved at each tool call (fixed or per-session).
+    workdir: WorkdirSource,
     /// Mutation tools are unregistered unless `true`. Default `false`.
     allow_write: bool,
     tool_router: ToolRouter<BonsaiServer>,
 }
 
 impl BonsaiServer {
-    /// Build a server over an already-validated canonical workdir path.
+    /// Build a standalone server over an already-validated canonical workdir
+    /// path (the stdio bin). Behavior-identical to the pre-P16a constructor.
     ///
     /// The read tools (§7.1) are always registered. The write/mutation tools
     /// (§7.3) are merged into `tool_router` **only** when `allow_write` is true,
     /// so `tools/list` truthfully advertises exactly what the server can do.
     pub fn new(workdir: PathBuf, allow_write: bool) -> Self {
+        Self::with_source(WorkdirSource::Fixed(Arc::new(workdir)), allow_write)
+    }
+
+    /// Build an embedded per-session server (called by the embedded server's
+    /// service factory, P16b). Resolves the workdir from `repos` at each call.
+    pub fn with_session(repos: Arc<SessionRepos>, allow_write: bool) -> Self {
+        Self::with_source(WorkdirSource::Session(repos), allow_write)
+    }
+
+    /// Shared constructor body: build the read router and merge the write router
+    /// when `allow_write`. Both public constructors funnel through here so the
+    /// tool-registration behavior is identical for `Fixed` and `Session`.
+    fn with_source(workdir: WorkdirSource, allow_write: bool) -> Self {
         let mut tool_router = Self::tool_router();
         if allow_write {
             tool_router.merge(Self::write_router());
         }
         Self {
-            workdir: Arc::new(workdir),
+            workdir,
             allow_write,
             tool_router,
         }
     }
 
-    /// Run a blocking `bonsai_core` call on a worker thread, cloning the
-    /// `Arc<PathBuf>` into the closure so no `!Send` git2 handle crosses
-    /// `.await`. Join failures map to `AppError::Other`.
+    /// Run a blocking `bonsai_core` call on a worker thread. The workdir is
+    /// resolved BEFORE spawning: for `Session` this may fail with `NoRepo`
+    /// (nothing selected / tab closed), and the `?` propagates it as the `Err`
+    /// of `run_blocking` — each tool body's `Err(e) => err_result(e)` arm then
+    /// turns it into a clean `CallToolResult { is_error: true }` (no panic).
+    /// The resolved `PathBuf` is moved into the closure so no `!Send` git2
+    /// handle crosses `.await`. Join failures map to `AppError::Other`.
     async fn run_blocking<T, F>(&self, f: F) -> Result<T, AppError>
     where
         T: Send + 'static,
         F: FnOnce(&Path) -> Result<T, AppError> + Send + 'static,
     {
-        let workdir = self.workdir.clone();
+        let workdir = self.workdir.resolve()?;
         tokio::task::spawn_blocking(move || f(workdir.as_path()))
             .await
             .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -744,5 +865,70 @@ impl ServerHandler for BonsaiServer {
                  status, and the ours/theirs/base conflict trio. Prefer these tools over parsing \
                  `git` output for graph topology, structured diffs, and conflict contents.{write_note}"
             ))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests for the per-session selection state (P16a). Pure: no rmcp, no
+// git2, no CLI — `list_open` is a closure over a fixed `Vec<OpenRepo>`.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn open(id: &str) -> OpenRepo {
+        OpenRepo {
+            repo_id: id.to_string(),
+            path: PathBuf::from(format!("/repo/{id}")),
+        }
+    }
+
+    /// A session over open tabs `a` and `b`, seeded with `seed`.
+    fn session(seed: Option<&str>) -> SessionRepos {
+        let repos = vec![open("a"), open("b")];
+        SessionRepos::new(
+            seed.map(str::to_string),
+            Box::new(move || repos.clone()),
+        )
+    }
+
+    #[test]
+    fn resolve_workdir_none_selected_is_no_repo() {
+        let s = session(None);
+        assert!(matches!(s.resolve_workdir(), Err(AppError::NoRepo)));
+    }
+
+    #[test]
+    fn resolve_workdir_selected_present_returns_that_path() {
+        let s = session(Some("b"));
+        assert_eq!(
+            s.resolve_workdir().expect("selected tab is open"),
+            PathBuf::from("/repo/b")
+        );
+    }
+
+    #[test]
+    fn resolve_workdir_selected_but_closed_is_no_repo() {
+        // Seed selects `b`, but the open set no longer contains it (tab closed).
+        let repos = vec![open("a")];
+        let s = SessionRepos::new(Some("b".to_string()), Box::new(move || repos.clone()));
+        assert!(matches!(s.resolve_workdir(), Err(AppError::NoRepo)));
+    }
+
+    #[test]
+    fn select_unknown_id_is_invalid_name() {
+        let s = session(None);
+        assert!(matches!(s.select("nope"), Err(AppError::InvalidName(_))));
+    }
+
+    #[test]
+    fn select_known_id_then_resolve_returns_right_path() {
+        let s = session(None);
+        s.select("a").expect("`a` is an open tab");
+        assert_eq!(
+            s.resolve_workdir().expect("just-selected tab resolves"),
+            PathBuf::from("/repo/a")
+        );
     }
 }
