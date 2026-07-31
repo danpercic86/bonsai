@@ -21,6 +21,7 @@ pub mod stage_partial;
 pub mod stash;
 pub mod status;
 pub mod submodule;
+pub mod tags;
 
 /// libgit2 re-hashes every object it inflates to verify its id (strict
 /// hash verification, on by default). Over a 31k-commit walk that is

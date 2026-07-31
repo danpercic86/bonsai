@@ -188,7 +188,15 @@ dest file/non-empty → AppError::Io; clone creds via Config::open_default(). Su
 public HTTPS clone (name preview, progress, auto-open tab) + private clone via credential helper (no in-app
 prompt) + auth-fail inline error; init → unborn tab → first commit; idempotent init-on-existing.
 
-**Current step: P22a — implementing tags backend (senior-dev).**
+- **P22a** (reviewer APPROVE, 0 must-fix) — git/tags.rs: create_tag (annotated Repository::tag + tagger
+  resolve_signature vs lightweight tag_lightweight; force overwrite; Reference::is_valid_name blocks bad
+  names/path escapes; ConfigMissing before mutation), delete_tag, push_tag (refs/tags/x:refs/tags/x, +
+  only on force, reuses push_current credential path + push_update_reference→PushRejected). All return ();
+  tags re-surface via list_refs. 3 commands + lib.rs; remote.rs UNCHANGED. tags_cli 8 (lightweight/
+  annotated parity vs git tag[-a], delete, push-to-bare-remote via show-ref, force-moves, dup/bad errors)
+  + unit + noRepo. clippy + build clean.
+
+**Current step: P22b — implementing remotes backend (senior-dev).**
 
 ### P22 — Tags & remotes management — **queued** (contract ready)
 Contract: docs/contracts/P22-tags-remotes.md (architect). Open decisions RESOLVED (orchestrator accepted
