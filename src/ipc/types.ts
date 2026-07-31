@@ -21,6 +21,19 @@ export interface OpenRepoResult {
   info: RepoInfo;
 }
 
+/** Streamed clone transfer progress (P21). Mirrors the Rust `CloneProgress`
+ *  EXACTLY (camelCase). One per git2 `transfer_progress` tick. The UI treats the
+ *  fraction as `receivedObjects/totalObjects` while `totalDeltas === 0`, else
+ *  `indexedDeltas/totalDeltas` (the resolving-deltas phase). */
+export interface CloneProgress {
+  receivedObjects: number;
+  totalObjects: number;
+  indexedDeltas: number;
+  totalDeltas: number;
+  /** u64 on the wire; safe as a JS number for realistic repos. */
+  receivedBytes: number;
+}
+
 export type FileStatus =
   | 'added'
   | 'modified'
@@ -537,6 +550,14 @@ export interface IpcApi {
    *  repo (isRepo && !bare) creates/refreshes a keyed entry; re-opening an
    *  already-open path focuses it (same `repoId`, no reset). Rejects {@link AppError}. */
   openRepo(path: string): Promise<OpenRepoResult>;
+  /** Clone `url` into `dest`, streaming progress via `onProgress`. Resolves to the
+   *  absolute workdir path of the clone (caller then opens it as a tab). The frontend
+   *  passes a plain callback; the Tauri impl bridges it through a `Channel`, the mock
+   *  invokes it directly. Rejects io | authFailed | networkError | git. */
+  cloneRepo(url: string, dest: string, onProgress: (p: CloneProgress) => void): Promise<string>;
+  /** Initialize (or open, if already a repo) a repository at `path`. Resolves to the
+   *  absolute workdir path. Rejects io | git. */
+  initRepo(path: string): Promise<string>;
   /** Close a repo and tear down its watcher. Idempotent (unknown id ⇒ resolves). */
   closeRepo(repoId: string): Promise<void>;
   /** Resolves to `null` when the user cancels the dialog. */

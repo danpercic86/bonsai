@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { CloneDialog, deriveRepoName, joinRepoPath } from './components/CloneDialog';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { RepoWorkspace } from './components/RepoWorkspace';
 import { SettingsPanel } from './components/SettingsPanel';
@@ -13,6 +14,7 @@ import type {
   AiAutonomy,
   AiAvailability,
   AutoFetchSettings,
+  CloneProgress,
   GraphPrefs,
   ListView,
   McpStatus,
@@ -130,6 +132,16 @@ export default function App() {
   const [activeRepo, setActiveRepo] = useState<string | null>(null);
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
+
+  // ----- Clone/init lifecycle (P21) -----
+  const [cloneOpen, setCloneOpen] = useState(false);
+  const [cloneDest, setCloneDest] = useState<string | null>(null);
+  const [cloneProgress, setCloneProgress] = useState<CloneProgress | null>(null);
+  const [cloneBusy, setCloneBusy] = useState(false);
+  const [cloneError, setCloneError] = useState<string | null>(null);
+  // Session token: a late progress tick / resolution from a cancelled (or
+  // superseded) clone must not write state for the current dialog session.
+  const cloneSessionRef = useRef(0);
 
   const dismissToast = useCallback((id: number) => {
     setToasts((cur) => cur.filter((t) => t.id !== id));
@@ -418,6 +430,73 @@ export default function App() {
     }
   }, [openTab]);
 
+  // ----- Clone (P21) -----
+  const handleCloneOpen = useCallback(() => {
+    cloneSessionRef.current += 1; // invalidate any in-flight clone's UI updates
+    setCloneDest(null);
+    setCloneProgress(null);
+    setCloneError(null);
+    setCloneBusy(false);
+    setCloneOpen(true);
+  }, []);
+
+  const handleCloneCancel = useCallback(() => {
+    // The backend clone keeps running (no cancellation in v1); we simply stop
+    // updating the UI — invalidate the session so late ticks are ignored.
+    cloneSessionRef.current += 1;
+    setCloneOpen(false);
+  }, []);
+
+  const handleClonePickDest = useCallback(async () => {
+    const path = await ipc.pickFolder();
+    if (path !== null) setCloneDest(path);
+  }, []);
+
+  const handleCloneSubmit = useCallback(
+    async (url: string) => {
+      if (cloneDest === null) return;
+      // Frontend derives the repo name from the URL and computes the full dest
+      // = <parent>/<name>; the backend clones INTO an empty/new dest.
+      const dest = joinRepoPath(cloneDest, deriveRepoName(url));
+      const session = cloneSessionRef.current + 1;
+      cloneSessionRef.current = session;
+      setCloneBusy(true);
+      setCloneError(null);
+      setCloneProgress(null);
+      try {
+        const path = await ipc.cloneRepo(url, dest, (p) => {
+          if (cloneSessionRef.current === session) setCloneProgress(p);
+        });
+        if (cloneSessionRef.current !== session) return; // cancelled/superseded
+        setCloneOpen(false);
+        await openTab(path);
+      } catch (e) {
+        if (cloneSessionRef.current === session) setCloneError(errorMessage(e));
+      } finally {
+        if (cloneSessionRef.current === session) setCloneBusy(false);
+      }
+    },
+    [cloneDest, openTab],
+  );
+
+  // New repository: folder picker → init → openTab (no dialog needed).
+  const handleInitRepository = useCallback(async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const path = await ipc.pickFolder();
+      if (path === null) return; // cancelled
+      const repoPath = await ipc.initRepo(path);
+      await openTab(repoPath);
+    } catch (e) {
+      const msg = errorMessage(e);
+      if (tabsRef.current.length > 0) pushToast('error', msg);
+      else setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, [openTab, pushToast]);
+
   // ----- Reopen-all-on-launch (§6.2) -----
   const launchedRef = useRef(false);
   useEffect(() => {
@@ -591,6 +670,8 @@ export default function App() {
             onClose={closeTab}
             onOpenPath={(path) => void openTab(path)}
             onBrowse={() => void handleOpenRepository()}
+            onClone={handleCloneOpen}
+            onInit={() => void handleInitRepository()}
             onMenuOpenChange={setMenuOpen}
           />
           <div className="header-toolbar">
@@ -657,14 +738,32 @@ export default function App() {
             <h1 className="empty-title">Bonsai</h1>
             <p className="empty-tagline">A tidy Git client</p>
             {error !== null && <div className="error-banner">{error}</div>}
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => void handleOpenRepository()}
-              disabled={loading}
-            >
-              {loading ? 'Opening…' : 'Open repository'}
-            </button>
+            <div className="empty-actions">
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => void handleOpenRepository()}
+                disabled={loading}
+              >
+                {loading ? 'Opening…' : 'Open repository'}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={handleCloneOpen}
+                disabled={loading}
+              >
+                {'Clone repository…'}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => void handleInitRepository()}
+                disabled={loading}
+              >
+                {'New repository…'}
+              </button>
+            </div>
             {recents.length > 0 && (
               <div className="recents-list">
                 <p className="section-label recents-label">Recent</p>
@@ -755,6 +854,16 @@ export default function App() {
             restarts the server and drops any active connection. Allow write access?
           </div>
         </ConfirmDialog>
+        <CloneDialog
+          open={cloneOpen}
+          busy={cloneBusy}
+          progress={cloneProgress}
+          error={cloneError}
+          dest={cloneDest}
+          onPickDest={() => void handleClonePickDest()}
+          onSubmit={(u) => void handleCloneSubmit(u)}
+          onCancel={handleCloneCancel}
+        />
         <Toasts toasts={toasts} onDismiss={dismissToast} />
       </div>
     </ToastContext.Provider>

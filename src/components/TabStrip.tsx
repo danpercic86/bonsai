@@ -25,6 +25,10 @@ export interface TabStripProps {
   onOpenPath(path: string): void;
   /** Folder picker. */
   onBrowse(): void;
+  /** Open the Clone-repository dialog. */
+  onClone(): void;
+  /** New repository (folder picker → init). */
+  onInit(): void;
   /** P3e §5.6: lifts menu-open like RepoSwitcher.onOpenChange — App suppresses
    *  global shortcuts while open and its Esc effect skips the consumed key. */
   onMenuOpenChange?(open: boolean): void;
@@ -42,6 +46,8 @@ export function TabStrip({
   onClose,
   onOpenPath,
   onBrowse,
+  onClone,
+  onInit,
   onMenuOpenChange,
 }: TabStripProps) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -149,6 +155,26 @@ export function TabStrip({
               }}
             >
               {'Browse…'}
+            </button>
+            <button
+              type="button"
+              className="repo-switcher-item"
+              onClick={() => {
+                close();
+                onClone();
+              }}
+            >
+              {'Clone repository…'}
+            </button>
+            <button
+              type="button"
+              className="repo-switcher-item"
+              onClick={() => {
+                close();
+                onInit();
+              }}
+            >
+              {'New repository…'}
             </button>
           </div>
         )}

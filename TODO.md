@@ -159,7 +159,26 @@ dest file/non-empty → AppError::Io; clone creds via Config::open_default(). Su
   parent-folder picker + URL→name derivation + progress bar) + New-repo folder picker; TabStrip + menu +
   empty-state entries; App handlers reusing openTab.
 
-**Current step: P21a — implementing clone/init backend + oracle tests (senior-dev).**
+- **P21a** (reviewer APPROVE, 0 must-fix) — commit 24c1885. git/clone.rs CloneProgress + clone_repo
+  (RepoBuilder+FetchOptions, shared M6 creds via Config::open_default, transfer_progress→FnMut; dest
+  non-empty/file pre-check → Io) + init_repo (idempotent open_ext NO_SEARCH else init); core tauri-free;
+  remote.rs UNCHANGED. 2 non-repo-scoped commands (clone_repo takes tauri::ipc::Channel<CloneProgress> —
+  FIRST channel usage, sent from spawn_blocking, dropped-channel-safe) + lib.rs. lifecycle_cli 7 green;
+  clippy + build clean.
+- **P21b** (reviewer APPROVE, 1 SHOULD-FIX folded) — IPC triple (CloneProgress + cloneRepo/initRepo;
+  tauri.ts wraps a new Channel<CloneProgress>; mock simulates 30 monotonic ticks + auth/network error
+  paths + returns openable/unborn paths) + index; CloneDialog.tsx (URL + parent-folder picker,
+  deriveRepoName/joinRepoPath → live "Will clone into parent/<name>", progress bar, in-dialog errors,
+  cloneSessionRef race guard); TabStrip + menu + empty-state "Clone repository…"/"New repository…";
+  App handlers reuse openTab. SHOULD-FIX folded: deriveRepoName now rejects `.`/`..`/all-dots →
+  'repository' (path-traversal guard). pnpm build clean.
+- **P21 AI GATE (frontend) verified (2026-07-31).** Browser harness (mock :1420): + menu + empty state
+  show Browse…/Clone/New; CloneDialog derives bar.git→bar and scp acme/widget.git→widget, live dest
+  preview, progress bar animates 5%→100%, success closes dialog + opens the cloned tab (active); New
+  repository… opens an unborn/empty repo tab; zero console errors. Backend AI gate = lifecycle_cli 7.
+  Pending: tester full regression + USER CHECKPOINT (real network clone with credential helper).
+
+**Current step: P21 — committing P21b, then tester full regression + user checklist.**
 
 ## P17 — Interactive diff: File/Diff toggle + partial staging — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-31)
 

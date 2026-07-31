@@ -30,6 +30,7 @@ import type {
   ApplyStashOutcome,
   BranchesSnapshot,
   CherrypickOutcome,
+  CloneProgress,
   CommitDiff,
   CommitMessageProposal,
   CommitResult,
@@ -965,6 +966,57 @@ export const mockIpc: IpcApi = {
       repos.set(repoId, state);
     }
     return { repoId, info: buildInfo(state, path) };
+  },
+
+  // P21: clone a remote repo, streaming a few monotonic progress ticks (an
+  // object-download phase then a delta-resolve phase, §2.1) so the harness bar
+  // animates end-to-end, then return a path the EXISTING openRepo can seed.
+  async cloneRepo(
+    url: string,
+    dest: string,
+    onProgress: (p: CloneProgress) => void,
+  ): Promise<string> {
+    // Failure triggers compose with the M6 messages: `authfail` / `network` in the
+    // URL throw the SAME AppErrors after a couple of ticks (exercise the in-dialog
+    // error path).
+    const failAuth = /authfail/i.test(url);
+    const failNet = /network/i.test(url);
+    const total = 20;
+    for (let i = 1; i <= total; i++) {
+      await delay(120);
+      onProgress({
+        receivedObjects: i,
+        totalObjects: total,
+        indexedDeltas: 0,
+        totalDeltas: 0,
+        receivedBytes: i * 4096,
+      });
+      if (i === 3 && failAuth) throwAuthFailed();
+      if (i === 3 && failNet) throwNetworkError();
+    }
+    for (let i = 1; i <= 10; i++) {
+      await delay(80);
+      onProgress({
+        receivedObjects: total,
+        totalObjects: total,
+        indexedDeltas: i,
+        totalDeltas: 10,
+        receivedBytes: total * 4096,
+      });
+    }
+    // The frontend already computed dest = <parent>/<name>; the real backend
+    // clones INTO dest and returns its workdir, so mirror that (return dest).
+    // openRepo then seeds a normal default repo (dest avoids the reserved
+    // 'error'|'not-a-repo'|'bare'|'unborn' substrings for typical URLs).
+    return dest;
+  },
+
+  // P21: init (or open) a repo at `path`. Return a path containing 'unborn' so
+  // createRepoState seeds an EMPTY (unborn) repo — honest: init makes a
+  // brand-new repo with no commits.
+  async initRepo(path: string): Promise<string> {
+    await delay(150);
+    return `${path}/new-unborn-repo`;
   },
 
   closeRepo(repoId: string): Promise<void> {

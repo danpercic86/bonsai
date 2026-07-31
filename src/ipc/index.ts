@@ -20,6 +20,7 @@ export type {
   BranchesSnapshot,
   BranchInfo,
   CherrypickOutcome,
+  CloneProgress,
   CommitDetails,
   CommitDiff,
   CommitMessageProposal,

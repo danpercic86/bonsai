@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -11,6 +11,7 @@ import type {
   AiSummary,
   ApplyStashOutcome,
   BranchesSnapshot,
+  CloneProgress,
   CommitDiff,
   CommitMessageProposal,
   CherrypickOutcome,
@@ -49,6 +50,17 @@ import type {
 export const tauriIpc: IpcApi = {
   openRepo(path: string): Promise<OpenRepoResult> {
     return invoke<OpenRepoResult>('open_repo', { path });
+  },
+
+  cloneRepo(url: string, dest: string, onProgress: (p: CloneProgress) => void): Promise<string> {
+    const channel = new Channel<CloneProgress>();
+    channel.onmessage = onProgress;
+    // Tauri auto-serializes the Channel as the `on_progress` command argument.
+    return invoke<string>('clone_repo', { url, dest, onProgress: channel });
+  },
+
+  initRepo(path: string): Promise<string> {
+    return invoke<string>('init_repo', { path });
   },
 
   closeRepo(repoId: string): Promise<void> {
