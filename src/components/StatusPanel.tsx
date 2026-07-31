@@ -49,6 +49,8 @@ function FileRow({
   onAction,
   onToggle,
   onDiscard,
+  onBlame,
+  onFileHistory,
   treeMode = false,
 }: {
   entry: StatusEntry;
@@ -63,6 +65,11 @@ function FileRow({
   /** P20 §4.3: discard this row's unstaged edits (tracked rows only). Absent
    *  (undefined) → no discard control (untracked rows, staged section). */
   onDiscard?: (paths: string[]) => void;
+  /** P23d: open per-line blame for this row's file. Absent → no blame control
+   *  (untracked rows — not in HEAD, nothing to blame). */
+  onBlame?: (path: string) => void;
+  /** P23d: open per-file commit history. Absent → no history control. */
+  onFileHistory?: (path: string) => void;
   /** P3b: the tree supplies directory context — render only the basename
    *  (renames keep the full `orig → path` text; tooltips keep full paths). */
   treeMode?: boolean;
@@ -100,6 +107,28 @@ function FileRow({
           <span className="file-badge mono">{BADGES[entry.status]}</span>
           {pathEl}
         </span>
+      )}
+      {onFileHistory !== undefined && (
+        <button
+          type="button"
+          className="row-action row-action-history"
+          title="Show file history"
+          aria-label={`Show history of ${entry.path}`}
+          onClick={() => onFileHistory(entry.path)}
+        >
+          {'🕑'}
+        </button>
+      )}
+      {onBlame !== undefined && (
+        <button
+          type="button"
+          className="row-action row-action-blame"
+          title="Blame (per-line authorship)"
+          aria-label={`Blame ${entry.path}`}
+          onClick={() => onBlame(entry.path)}
+        >
+          {'👁'}
+        </button>
       )}
       {onDiscard !== undefined && (
         <button
@@ -144,6 +173,8 @@ function Section({
   onAction,
   onToggleDiff,
   onDiscard,
+  onBlame,
+  onFileHistory,
 }: {
   label: string;
   /** Diff-key prefix; null for the conflicts section (not expandable). */
@@ -169,6 +200,10 @@ function Section({
   /** P20 §4.3: discard a tracked row's unstaged edits. When provided, rows whose
    *  resolved origin is `unstaged` get a discard control; untracked rows do not. */
   onDiscard?: (paths: string[]) => void;
+  /** P23d: open blame for a row's file (tracked rows only). */
+  onBlame?: (path: string) => void;
+  /** P23d: open file history for a row's file (tracked rows only). */
+  onFileHistory?: (path: string) => void;
 }) {
   // P3b §5.1: tree placement by NEW path (origPath never affects placement).
   const nodes = useMemo(
@@ -182,6 +217,9 @@ function Section({
     // P20 §4.3: offer discard only on tracked (unstaged-origin) rows.
     const rowDiscard =
       onDiscard !== undefined && rowSection === 'unstaged' ? onDiscard : undefined;
+    // P23d: blame/history need a committed version — offer them on tracked rows
+    // only (untracked files are not in HEAD).
+    const tracked = rowSection !== 'untracked';
     return (
       <FileRow
         key={`${entry.status}:${entry.path}`}
@@ -192,6 +230,8 @@ function Section({
         expanded={expanded}
         onAction={onAction}
         onDiscard={rowDiscard}
+        onBlame={tracked ? onBlame : undefined}
+        onFileHistory={tracked ? onFileHistory : undefined}
         onToggle={() => {
           if (rowSection !== null) onToggleDiff(rowSection, entry);
         }}
@@ -444,6 +484,10 @@ export interface StatusPanelProps {
   onToggleConflictView(path: string): void;
   /** P13 §8.3: request an AI resolution for one conflicted path. */
   onAiResolve(path: string): void;
+  /** P23d: open per-line blame for a tracked file (staged/unstaged rows). */
+  onBlame(path: string): void;
+  /** P23d: open per-file commit history for a tracked file. */
+  onFileHistory(path: string): void;
 }
 
 /** Pure presentational right-panel status view; all fetching lives in App. */
@@ -466,6 +510,8 @@ export function StatusPanel({
   onResolveConflict,
   onToggleConflictView,
   onAiResolve,
+  onBlame,
+  onFileHistory,
 }: StatusPanelProps) {
   const [dismissedErrorId, setDismissedErrorId] = useState<number | null>(null);
   const visibleError = error !== null && error.id !== dismissedErrorId ? error : null;
@@ -541,6 +587,8 @@ export function StatusPanel({
             }
             onAction={onUnstage}
             onToggleDiff={onToggleDiff}
+            onBlame={onBlame}
+            onFileHistory={onFileHistory}
           />
           <Section
             label="Changes"
@@ -556,6 +604,8 @@ export function StatusPanel({
             onAction={onStage}
             onToggleDiff={onToggleDiff}
             onDiscard={onDiscard}
+            onBlame={onBlame}
+            onFileHistory={onFileHistory}
           />
           {snapshot.conflicted.length > 0 && (
             <ConflictsSection

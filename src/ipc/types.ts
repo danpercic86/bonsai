@@ -368,6 +368,30 @@ export interface RebaseTodoOp {
   newMessage: string | null;
 }
 
+/** One blamed line (P23). Mirrors the Rust `BlameLine` (camelCase) EXACTLY.
+ *  `oid` is the 40-hex of the commit that last touched the line (resolves to a
+ *  graph node for reveal-in-graph); `authorTs` is seconds since epoch (UTC). */
+export interface BlameLine {
+  oid: string;
+  authorName: string;
+  authorEmail: string;
+  authorTs: number;
+  summary: string;
+  origLineNo: number;
+  finalLineNo: number;
+  lineText: string;
+}
+
+/** One commit that touched a file (P23). Mirrors the Rust `FileHistoryEntry`
+ *  (camelCase) EXACTLY. `authorTs` is seconds since epoch (UTC). */
+export interface FileHistoryEntry {
+  oid: string;
+  summary: string;
+  authorName: string;
+  authorEmail: string;
+  authorTs: number;
+}
+
 /** Cherry-pick outcome (P20). Mirrors the Rust `CherrypickOutcome` serde enum
  *  (tagged "kind", camelCase). `conflicts` pauses into RepoOpState.cherryPick. */
 export type CherrypickOutcome =
@@ -724,6 +748,12 @@ export interface IpcApi {
     ontoOid: string,
     todos: RebaseTodoOp[],
   ): Promise<RebaseOutcome>;
+  /** Per-line blame of `path` as of `atOid` (null → HEAD). Read-only. Rejects
+   *  other (bad path) | git (binary/unknown/too large/invalid oid) | noRepo. */
+  blameFile(repoId: string, path: string, atOid: string | null): Promise<BlameLine[]>;
+  /** Commits that touched `path`, newest-first, capped at `limit`. An unknown
+   *  path yields `[]` (not an error). Rejects other | git | noRepo. */
+  fileHistory(repoId: string, path: string, limit: number): Promise<FileHistoryEntry[]>;
   /** Stash stack, index 0 (most recent) first. Rejects noRepo | git. */
   listStashes(repoId: string): Promise<StashEntry[]>;
   /** Stash the dirty worktree. message=null → git default. Rejects

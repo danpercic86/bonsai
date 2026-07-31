@@ -26,6 +26,8 @@ import {
 } from './menuIcons';
 import { DiffOverlay } from './DiffOverlay';
 import type { DiffOverlayMeta } from './DiffOverlay';
+import { BlameView } from './BlameView';
+import { FileHistoryView } from './FileHistoryView';
 import { DiffBrowser } from './DiffBrowser';
 import type { DiffScope } from './DiffFileTree';
 import { OpBanner } from './OpBanner';
@@ -44,6 +46,7 @@ import type {
   AiDiffTarget,
   AiResolveProposal,
   AutoFetchSettings,
+  BlameLine,
   BranchInfo,
   BranchesSnapshot,
   CommitDiff,
@@ -51,6 +54,7 @@ import type {
   ConflictEntry,
   ConflictResolution,
   FileDiff,
+  FileHistoryEntry,
   GraphLayout,
   GraphPrefs,
   HeadInfo,
@@ -75,6 +79,9 @@ import { hasUnresolvedMarkers } from '../utils/conflictRegions';
 function shortOid(oid: string): string {
   return oid.slice(0, 7);
 }
+
+/** P23d: how many file-history entries to request (backend caps at MAX_HISTORY). */
+const MAX_HISTORY_UI = 200;
 
 function isUsableRepo(info: RepoInfo): boolean {
   return info.isRepo && !info.bare;
@@ -225,6 +232,27 @@ export function RepoWorkspace({
     summaries: Record<string, string>;
   } | null>(null);
   const [rebasePlanError, setRebasePlanError] = useState<string | null>(null);
+  // P23d: blame + file-history center-pane overlays. Each holds its own
+  // loading/error so the overlay can render skeletons then data. A req-id guards
+  // against a stale async response overwriting a newer request or a closed view.
+  const [blame, setBlame] = useState<{
+    path: string;
+    lines: BlameLine[];
+    loading: boolean;
+    error: string | null;
+  } | null>(null);
+  const [history, setHistory] = useState<{
+    path: string;
+    entries: FileHistoryEntry[];
+    loading: boolean;
+    error: string | null;
+  } | null>(null);
+  const blameReqId = useRef(0);
+  const historyReqId = useRef(0);
+  const blameOpenRef = useRef(false);
+  blameOpenRef.current = blame !== null;
+  const historyOpenRef = useRef(false);
+  historyOpenRef.current = history !== null;
   const dialogOpen =
     pendingDeleteBranch !== null ||
     pendingDeleteRemote !== null ||
@@ -678,6 +706,12 @@ export function RepoWorkspace({
         clearRemotes();
         clearOpState();
         clearCompare();
+        // P23d: drop any blame/history overlay + invalidate in-flight fetches so
+        // a stale overlay can't linger over the now-empty pane.
+        blameReqId.current += 1;
+        setBlame(null);
+        historyReqId.current += 1;
+        setHistory(null);
       }
     } catch (e) {
       pushToast('error', `Refresh failed: ${errorMessage(e)}`);
@@ -1815,6 +1849,75 @@ export function RepoWorkspace({
     }
   }
 
+  // ----- P23d: blame + file history -----
+  // Close helpers bump the matching reqId so a still-in-flight blameFile/
+  // fileHistory promise is dropped (its `reqId.current !== reqId` check fails)
+  // and the closed overlay can't pop back open.
+  const closeBlame = useCallback(() => {
+    blameReqId.current += 1;
+    setBlame(null);
+  }, []);
+  const closeHistory = useCallback(() => {
+    historyReqId.current += 1;
+    setHistory(null);
+  }, []);
+
+  // Reveal a commit in the graph by oid: reuse the select-by-oid path. Setting
+  // `selectedIndex` opens CommitPanel AND triggers GraphCanvas's §6.3 effect,
+  // which scrolls the row into the virtualized viewport — so this is select+
+  // scroll, no extra graph API needed. Close the blame/history overlay first so
+  // the revealed row is actually visible (the overlay covers the graph pane).
+  const revealCommitByOid = useCallback(
+    (oid: string) => {
+      const g = graphDataRef.current;
+      if (g === null) return;
+      const idx = g.nodes.findIndex((n) => n.id === oid);
+      if (idx < 0) {
+        pushToast('info', 'Commit not in the current view');
+        return;
+      }
+      if (compareRef.current !== null) clearCompare();
+      closeBlame();
+      closeHistory();
+      setSelectedIndex(idx);
+    },
+    [pushToast, clearCompare, closeBlame, closeHistory],
+  );
+
+  // Blame is against the committed HEAD version (atOid=null) in v1 (P23 OPEN #8
+  // + orchestrator decision). Cross-invalidate the sibling (history) so only one
+  // overlay is ever pending/open: bumping historyReqId drops any in-flight
+  // fileHistory response.
+  async function handleBlame(path: string) {
+    historyReqId.current += 1;
+    setHistory(null);
+    const reqId = ++blameReqId.current;
+    setBlame({ path, lines: [], loading: true, error: null });
+    try {
+      const lines = await ipc.blameFile(repoId, path, null);
+      if (blameReqId.current !== reqId) return;
+      setBlame({ path, lines, loading: false, error: null });
+    } catch (e) {
+      if (blameReqId.current !== reqId) return;
+      setBlame({ path, lines: [], loading: false, error: errorMessage(e) });
+    }
+  }
+
+  async function handleFileHistory(path: string) {
+    blameReqId.current += 1;
+    setBlame(null);
+    const reqId = ++historyReqId.current;
+    setHistory({ path, entries: [], loading: true, error: null });
+    try {
+      const entries = await ipc.fileHistory(repoId, path, MAX_HISTORY_UI);
+      if (historyReqId.current !== reqId) return;
+      setHistory({ path, entries, loading: false, error: null });
+    } catch (e) {
+      if (historyReqId.current !== reqId) return;
+      setHistory({ path, entries: [], loading: false, error: errorMessage(e) });
+    }
+  }
+
   // ----- P20 §5/§6: cherry-pick + revert handling -----
   // An empty pick/revert (nothingToCommit) is an info, not an error toast (§8.1);
   // every other failure surfaces via the sticky error toast.
@@ -2401,6 +2504,16 @@ export function RepoWorkspace({
         closeAiPanel();
         return;
       }
+      // P23d: blame / file-history overlays close before the diff/commit layers.
+      // Use the close helpers so the in-flight fetch reqId is invalidated too.
+      if (blameOpenRef.current) {
+        closeBlame();
+        return;
+      }
+      if (historyOpenRef.current) {
+        closeHistory();
+        return;
+      }
       if (commitBrowserOpenRef.current) {
         setCommitBrowserOpen(false);
         return;
@@ -2417,7 +2530,7 @@ export function RepoWorkspace({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [active, globalModalOpen, collapseDiffSlot, clearCompare, closeAiPanel]);
+  }, [active, globalModalOpen, collapseDiffSlot, clearCompare, closeAiPanel, closeBlame, closeHistory]);
 
   // Per-repo shortcut effect (active tab only, §5.1): refresh / fetch / pull /
   // push / graph nav. Global modals + this repo's own dialogs suppress it.
@@ -2668,6 +2781,29 @@ export function RepoWorkspace({
               onStageHunk={handleStageHunk}
             />
           )}
+          {/* P23d: blame + file-history overlays, layered over the graph like the
+              diff overlay. Only one of the two is ever set (each handler clears
+              the other); they render above DiffOverlay in the DOM. */}
+          {blame !== null && (
+            <BlameView
+              path={blame.path}
+              lines={blame.lines}
+              loading={blame.loading}
+              error={blame.error}
+              onClose={closeBlame}
+              onRevealCommit={revealCommitByOid}
+            />
+          )}
+          {history !== null && (
+            <FileHistoryView
+              path={history.path}
+              entries={history.entries}
+              loading={history.loading}
+              error={history.error}
+              onClose={closeHistory}
+              onRevealCommit={revealCommitByOid}
+            />
+          )}
           {aiPanel !== null && (
             <AiOutputPanel
               title={aiPanel.title}
@@ -2769,6 +2905,8 @@ export function RepoWorkspace({
                 onResolveConflict={(path, r) => void handleResolveConflict(path, r)}
                 onToggleConflictView={handleToggleConflictView}
                 onAiResolve={(path) => void handleAiResolveConflict(path)}
+                onBlame={(path) => void handleBlame(path)}
+                onFileHistory={(path) => void handleFileHistory(path)}
               />
               {opState.kind === 'none' && head !== null && !head.unborn && (
                 <div className="amend-affordance">

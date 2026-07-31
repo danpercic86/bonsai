@@ -28,6 +28,7 @@ import type {
   AiSummary,
   AppError,
   ApplyStashOutcome,
+  BlameLine,
   BranchesSnapshot,
   CherrypickOutcome,
   CloneProgress,
@@ -42,6 +43,7 @@ import type {
   CreateStashResult,
   FetchResult,
   FileDiff,
+  FileHistoryEntry,
   AutoFetchSettings,
   GraphLayout,
   GraphPrefs,
@@ -1045,6 +1047,57 @@ function finishInteractiveRebase(state: MockRepoState, dropCurrent: boolean): Re
   }
   return { kind: 'rebased', branch: plan.headName, head: state.headOid, steps: rewritten.length };
 }
+
+// P23d §10.2: blame/file-history fixtures. The oids mirror fixtures/graph.ts
+// `oid(row)` (row hex, 2 digits, repeated 20×) so reveal-in-graph resolves to a
+// real node in the default mock layout. Authors mirror that fixture's `author`
+// (even rows Ada, odd rows Grace). The keyed paths are REAL status rows
+// (`src/main.rs` shows in both Staged + Changes; `README.md` in Changes) so the
+// row-action buttons produce populated views; every other path → git error / [].
+const BLAME_FIXTURE_PATHS = new Set(['src/main.rs', 'README.md']);
+
+function mockNodeOid(row: number): string {
+  return row.toString(16).padStart(2, '0').repeat(20);
+}
+
+const BLAME_NOW = Math.floor(Date.now() / 1000);
+
+const MOCK_BLAME: BlameLine[] = (() => {
+  // (row, author, email, summary, lineText) per source line, grouped by commit
+  // so consecutive same-oid lines collapse in the gutter (GitHub-blame look).
+  const rows: Array<[number, string, string, string, string]> = [
+    [1, 'Grace Hopper', 'grace@example.com', 'feat: polish', "import { render } from './render';"],
+    [1, 'Grace Hopper', 'grace@example.com', 'feat: polish', ''],
+    [5, 'Grace Hopper', 'grace@example.com', 'core work 3', 'export function main() {'],
+    [5, 'Grace Hopper', 'grace@example.com', 'core work 3', '  const app = createApp();'],
+    [0, 'Ada Lovelace', 'ada@example.com', 'Merge feat and exp', '  app.mount("#root");'],
+    [0, 'Ada Lovelace', 'ada@example.com', 'Merge feat and exp', '  return app;'],
+    [5, 'Grace Hopper', 'grace@example.com', 'core work 3', '}'],
+  ];
+  return rows.map(([row, name, email, summary, text], i) => ({
+    oid: mockNodeOid(row),
+    authorName: name,
+    authorEmail: email,
+    authorTs: BLAME_NOW - row * 3600,
+    summary,
+    origLineNo: i + 1,
+    finalLineNo: i + 1,
+    lineText: text,
+  }));
+})();
+
+const MOCK_FILE_HISTORY: FileHistoryEntry[] = [
+  { row: 0, name: 'Ada Lovelace', email: 'ada@example.com', summary: 'Merge feat and exp' },
+  { row: 1, name: 'Grace Hopper', email: 'grace@example.com', summary: 'feat: polish' },
+  { row: 5, name: 'Grace Hopper', email: 'grace@example.com', summary: 'core work 3' },
+  { row: 8, name: 'Ada Lovelace', email: 'ada@example.com', summary: 'chore: history 19' },
+].map(({ row, name, email, summary }) => ({
+  oid: mockNodeOid(row),
+  summary,
+  authorName: name,
+  authorEmail: email,
+  authorTs: BLAME_NOW - row * 3600,
+}));
 
 export const mockIpc: IpcApi = {
   // Idempotent per repoId: a re-open focuses the existing tab (no state reset),
@@ -2207,6 +2260,28 @@ export const mockIpc: IpcApi = {
       head: state.headOid,
       steps: prepend.length,
     };
+  },
+
+  // P23d §10.2: per-line blame + per-file commit history. Canned fixtures for
+  // the designated path `src/app.ts` attributed to the deterministic mock graph
+  // commit oids (see fixtures/graph.ts `oid(row)`), so clicking a gutter block /
+  // history row reveals a REAL node in the graph. Any other path rejects
+  // (blame) / returns [] (history), matching the backend contract.
+  async blameFile(repoId: string, path: string, _atOid: string | null): Promise<BlameLine[]> {
+    await delay(150);
+    requireRepo(repoId);
+    if (!BLAME_FIXTURE_PATHS.has(path)) {
+      const err: AppError = { kind: 'git', message: `mock: no blame fixture for ${path}` };
+      throw err;
+    }
+    return structuredClone(MOCK_BLAME);
+  },
+
+  async fileHistory(repoId: string, path: string, limit: number): Promise<FileHistoryEntry[]> {
+    await delay(150);
+    requireRepo(repoId);
+    if (!BLAME_FIXTURE_PATHS.has(path)) return [];
+    return structuredClone(MOCK_FILE_HISTORY).slice(0, Math.max(0, limit) || MOCK_FILE_HISTORY.length);
   },
 
   // Stateful stash mock (P9 §6.5). Indices are positional into the mutating

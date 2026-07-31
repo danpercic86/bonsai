@@ -1626,6 +1626,136 @@ span.file-row-main {
   opacity: 0.6;
 }
 
+/* ---------- P23d: Blame view ---------- */
+
+.blame-view .diff-overlay-body,
+.file-history-view .diff-overlay-body {
+  padding: 0;
+}
+
+.blame-grid {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.blame-block {
+  display: flex;
+  align-items: stretch;
+}
+
+.blame-gutter {
+  flex: 0 0 232px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 2px 10px;
+  background: var(--bg-1);
+  border: none;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.blame-gutter:hover {
+  background: var(--bg-2);
+}
+
+.blame-oid {
+  flex: none;
+  color: var(--accent);
+}
+
+.blame-author {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blame-date {
+  flex: none;
+  color: var(--text-3);
+}
+
+.blame-code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.blame-line {
+  display: flex;
+  gap: 12px;
+  padding: 0 10px;
+}
+
+.blame-lineno {
+  flex: none;
+  min-width: 3ch;
+  text-align: right;
+  color: var(--text-3);
+  user-select: none;
+}
+
+.blame-text {
+  white-space: pre;
+  color: var(--text-1);
+}
+
+/* ---------- P23d: File history view ---------- */
+
+.file-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.file-history-main {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  width: 100%;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-1);
+}
+
+.file-history-main:hover {
+  background: var(--bg-1);
+}
+
+.file-history-oid {
+  flex: none;
+  color: var(--accent);
+}
+
+.file-history-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-history-author {
+  flex: none;
+  color: var(--text-2);
+}
+
+.file-history-date {
+  flex: none;
+  color: var(--text-3);
+}
+
 /* P15b: AI explain/review output card. Floats over the graph pane, above the
    single-file diff-overlay (z 5) so "Explain file" from a diff header is visible. */
 .ai-output-panel {

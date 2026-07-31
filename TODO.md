@@ -289,7 +289,23 @@ reveal-in-graph.
   onto 0303030 (2 commits)" + editor closes; ?rebase=conflict start → "Rebase paused at step 1/3" + OpBanner
   Continue/Skip/Abort; zero console errors. Backend = rebase_interactive_cli 19.
 
-**Current step: P23d — blame/history frontend (BlameView/FileHistoryView + IPC + reveal-in-graph).**
+- **P23d** (reviewer REQUEST-CHANGES → APPROVE after fixes) — IPC (blameFile/fileHistory, wire parity
+  exact) + BlameLine/FileHistoryEntry types + index; mock (blame/history for src/main.rs + README.md using
+  real graph-node oids so reveal resolves). New BlameView.tsx (groupBlocks collapses consecutive same-oid
+  lines → clickable gutter short-oid+author+relativeDate beside numbered monospace code) + FileHistoryView.tsx
+  (oid/summary/author/relative-time rows); StatusPanel threads onBlame/onFileHistory to tracked FileRows
+  (Staged+Changes, untracked excluded); RepoWorkspace blame/history overlay state + reqId stale-guards +
+  revealCommitByOid (reuses selectedIndex→existing scroll effect = select+scroll free). MUST-FIX FIXED:
+  stale-guard gap (close paths + cross-open now bump reqIds → a late response can't reopen a closed overlay,
+  no double-overlay); SHOULD-FIX: clear blame/history on unusable repo; NIT: reveal closes the overlay so
+  the graph scroll is visible. pnpm build clean.
+- **P23 (blame) AI GATE (frontend) verified (2026-07-31).** Browser harness (mock :1420): Blame/History
+  buttons on tracked rows; BlameView on src/main.rs shows commit-grouped gutter (0101010 Grace Hopper 1h /
+  0505050 5h / 0000000 Ada Lovelace now) + numbered code; clicking a gutter closes the overlay + selects the
+  commit (CommitPanel → feat: polish 0101010); FileHistoryView lists 4 entries (oid/summary/author/relative);
+  history-row click closes overlay + reveals; zero console errors. Backend = blame_cli 5.
+
+**Current step: P23 — committing P23d, then tester full regression + user checklist → P23 milestone AI gate.**
 
 ### P22 — Tags & remotes management — **queued** (contract ready)
 Contract: docs/contracts/P22-tags-remotes.md (architect). Open decisions RESOLVED (orchestrator accepted

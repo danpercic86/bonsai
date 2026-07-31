@@ -10,6 +10,7 @@ import type {
   AiResolveProposal,
   AiSummary,
   ApplyStashOutcome,
+  BlameLine,
   BranchesSnapshot,
   CloneProgress,
   CommitDiff,
@@ -24,6 +25,7 @@ import type {
   CreateStashResult,
   FetchResult,
   FileDiff,
+  FileHistoryEntry,
   GraphLayout,
   IpcApi,
   LineSelection,
@@ -294,6 +296,15 @@ export const tauriIpc: IpcApi = {
     todos: RebaseTodoOp[],
   ): Promise<RebaseOutcome> {
     return invoke<RebaseOutcome>('start_interactive_rebase', { repoId, ontoOid, todos });
+  },
+
+  // P23d: per-line blame + per-file commit history (read-only).
+  blameFile(repoId: string, path: string, atOid: string | null): Promise<BlameLine[]> {
+    return invoke<BlameLine[]>('blame_file', { repoId, path, atOid });
+  },
+
+  fileHistory(repoId: string, path: string, limit: number): Promise<FileHistoryEntry[]> {
+    return invoke<FileHistoryEntry[]>('file_history', { repoId, path, limit });
   },
 
   listStashes(repoId: string): Promise<StashEntry[]> {
