@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod assets;
 pub mod error;
 #[doc(hidden)]
 pub mod fixture;

@@ -16,6 +16,25 @@ that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e
 Every "awaiting USER CHECKPOINT" below is now CONFIRMED as of 2026-07-30. (P5/P6 were already
 confirmed earlier.)
 
+## P24 — AI-asset management: context profiles + unified instruction editor — **in-progress** (2026-07-31)
+
+**Flagship of the "repository management system" roadmap** (approved 2026-07-31,
+`~/.claude/plans/if-we-think-about-eager-hoare.md`; memory: repo-management-vision).
+Theme A (A2 + A1): manage the AI-asset layer — per-model/per-agent context profiles + generate/sync
+instruction files (CLAUDE.md / AGENTS.md / Cursor / Copilot / Windsurf) with drift detection. This is
+the white space no incumbent (GitKraken/GitButler) owns; Bonsai already sits on the repo and speaks MCP.
+
+**Autonomous session (user away 8–10h, 2026-07-31):** work the standard loop autonomously; accept
+sensible architect defaults and DOCUMENT them; land safe read-only slices first, gate every file-WRITE
+path behind explicit UI confirmation + a diff preview; leave all perceptual/native items as USER
+CHECKPOINT (never self-declare). Reuse shipped patterns: bonsai-core pure module + CLI/fs-oracle tests,
+IPC "triple" (types.ts/tauri.ts/mock.ts) + #[tauri::command] in commands.rs registered in lib.rs, new
+components under src/components/. Guardrails: scratch under D:\Temp\bonsai-scratch, TMP/TEMP=D:\Temp for
+cargo, no concurrent cargo test + clippy, mock.ts kept compiling, orchestrator makes ALL commits.
+
+Contract: docs/contracts/P24-ai-context-profiles.md (architect — pending).
+**Current step:** P24 kickoff — architect writing the contract.
+
 ## P18–P23 — Feature batch (submodules, UI polish, public-release gap) — **in-progress** (2026-07-31)
 
 Source: user request (2026-07-31), 4 asks. Approved plan:

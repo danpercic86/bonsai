@@ -7,9 +7,11 @@ import type {
   AiAnalysisMode,
   AiDiffTarget,
   AiAvailability,
+  AiAssetInventory,
   AiResolveProposal,
   AiSummary,
   ApplyStashOutcome,
+  AssetContent,
   BlameLine,
   BranchesSnapshot,
   CloneProgress,
@@ -476,5 +478,14 @@ export const tauriIpc: IpcApi = {
 
   onMcpServerChanged(cb: (s: McpStatus) => void): Promise<Unsubscribe> {
     return listen<McpStatus>('mcp-server-changed', (e) => cb(e.payload));
+  },
+
+  // P24: AI-asset inventory + drift.
+  listAiAssets(repoId: string, canonical?: string): Promise<AiAssetInventory> {
+    return invoke<AiAssetInventory>('list_ai_assets', { repoId, canonical });
+  },
+
+  readAiAsset(repoId: string, path: string): Promise<AssetContent> {
+    return invoke<AssetContent>('read_ai_asset', { repoId, path });
   },
 };

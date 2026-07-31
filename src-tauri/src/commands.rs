@@ -1,6 +1,7 @@
 use tauri::Emitter;
 
 use bonsai_core::ai::{self, AiAvailability, RunOpts};
+use bonsai_core::assets::{self, AiAssetInventory, AssetContent};
 use bonsai_core::error::AppError;
 use bonsai_core::git::ai_commit::{self, CommitMessageProposal};
 use bonsai_core::git::ai_explain::{self, AiAnalysis, AiAnalysisMode, AiDiffTarget};
@@ -2256,6 +2257,56 @@ async fn set_remote_url_inner(
 ) -> Result<(), AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || set_remote_url_core(&path, &name, &url))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Full AI-asset inventory + drift for `repo_id` (P24 contract §6.1). Optional
+/// `canonical` overrides the drift reference asset id. No events, no channels —
+/// the frontend refetches imperatively (and on the existing `repo-changed`).
+#[tauri::command]
+pub async fn list_ai_assets(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    canonical: Option<String>,
+) -> Result<AiAssetInventory, AppError> {
+    list_ai_assets_inner(state.inner(), &repo_id, canonical).await
+}
+
+/// Runtime-free core of `list_ai_assets` (unit-testable without a Tauri app).
+async fn list_ai_assets_inner(
+    state: &AppState,
+    repo_id: &str,
+    canonical: Option<String>,
+) -> Result<AiAssetInventory, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        assets::scan_inventory(&workdir, canonical.as_deref())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Raw content of one AI-asset file under `repo_id` (P24 §3, read path). The
+/// path is validated to stay inside the workdir; a missing file yields
+/// `exists:false` (not an error).
+#[tauri::command]
+pub async fn read_ai_asset(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    path: String,
+) -> Result<AssetContent, AppError> {
+    read_ai_asset_inner(state.inner(), &repo_id, path).await
+}
+
+/// Runtime-free core of `read_ai_asset` (unit-testable without a Tauri app).
+async fn read_ai_asset_inner(
+    state: &AppState,
+    repo_id: &str,
+    path: String,
+) -> Result<AssetContent, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || assets::read_asset(&workdir, &path))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

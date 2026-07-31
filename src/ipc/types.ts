@@ -562,6 +562,59 @@ export interface SessionState {
   activeRepo: string | null;
 }
 
+// P24 — AI-asset management (inventory + drift). Mirrors the Rust wire types
+// in `crates/bonsai-core/src/assets/` exactly (camelCase).
+
+/** Kind of an AI-asset target. Bare-string serde enum on the Rust side. */
+export type AssetKind = 'singleFile' | 'rulesDir' | 'config';
+
+export interface AssetFile {
+  path: string;
+  /** u64 on the wire; safe as a JS number here. */
+  size: number;
+  contentHash: string;
+  normalizedHash: string;
+  /** epoch seconds, or null when unavailable. */
+  modified: number | null;
+}
+
+export interface AiAsset {
+  id: string;
+  agent: string;
+  label: string;
+  kind: AssetKind;
+  path: string;
+  managed: boolean;
+  exists: boolean;
+  files: AssetFile[];
+}
+
+export interface DriftEntry {
+  assetId: string;
+  exists: boolean;
+  comparable: boolean;
+  normalizedHash: string | null;
+  inSync: boolean;
+}
+
+export interface DriftReport {
+  canonicalId: string | null;
+  canonicalHash: string | null;
+  entries: DriftEntry[];
+  inSync: boolean;
+}
+
+export interface AiAssetInventory {
+  assets: AiAsset[];
+  drift: DriftReport;
+}
+
+export interface AssetContent {
+  path: string;
+  exists: boolean;
+  content: string | null;
+}
+
 export type Unsubscribe = () => void;
 
 export interface AppError {
@@ -882,4 +935,10 @@ export interface IpcApi {
   setMcpAllowWrite(allowWrite: boolean): Promise<McpStatus>;
   /** P16. Fires on server start/stop/bounce; payload is the new status. */
   onMcpServerChanged(cb: (s: McpStatus) => void): Promise<Unsubscribe>;
+  /** P24. Full AI-asset inventory + drift for a repo. `canonical` optionally
+   *  overrides the drift reference asset id. Rejects io | noRepo. */
+  listAiAssets(repoId: string, canonical?: string): Promise<AiAssetInventory>;
+  /** P24. Raw content of one AI-asset file (repo-relative path, validated inside
+   *  the workdir). A missing file resolves `exists:false`. Rejects other | io | noRepo. */
+  readAiAsset(repoId: string, path: string): Promise<AssetContent>;
 }

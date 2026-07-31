@@ -21,6 +21,7 @@ import { generateLayout20k } from './fixtures/graph20k';
 import type {
   AiAnalysis,
   AiAnalysisMode,
+  AiAssetInventory,
   AiAutonomy,
   AiAvailability,
   AiDiffTarget,
@@ -28,6 +29,8 @@ import type {
   AiSummary,
   AppError,
   ApplyStashOutcome,
+  AssetContent,
+  DriftReport,
   BlameLine,
   BranchesSnapshot,
   CherrypickOutcome,
@@ -224,6 +227,136 @@ interface InteractivePlan {
 // singleton anymore. `openRepo` creates entries lazily; `closeRepo` deletes.
 // ---------------------------------------------------------------------------
 
+// P24 — AI-asset fixture (§7). CLAUDE.md / AGENTS.md / copilot exist; AGENTS.md
+// is DRIFTED (its own normalized hash) while copilot is IN SYNC with the
+// canonical `claude` (shared hash). One detected `.cursor/rules` dir with 2
+// members and `.mcp.json` are `managed:false`. Hashes are opaque 40-hex
+// placeholders — only their equality matters to the drift math.
+const HASH_CLAUDE = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const HASH_AGENTS = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const HASH_RAW = 'cccccccccccccccccccccccccccccccccccccccc';
+
+/** Canned file bodies served by `readAiAsset` for known paths (§7). */
+const MOCK_ASSET_CONTENT: Record<string, string> = {
+  'CLAUDE.md': '# CLAUDE.md\n\nProject instructions for Claude Code.\n',
+  'AGENTS.md': '# AGENTS.md\n\nProject instructions, OpenAI/Codex flavor (drifted).\n',
+  '.github/copilot-instructions.md':
+    '# CLAUDE.md\n\nProject instructions for Claude Code.\n',
+  '.cursor/rules/style.mdc': '---\ndescription: style\n---\n\nUse tabs.\n',
+  '.cursor/rules/testing.mdc': '---\ndescription: testing\n---\n\nWrite tests.\n',
+  '.mcp.json': '{\n  "mcpServers": {}\n}\n',
+};
+
+function mockAssetFile(
+  path: string,
+  contentHash: string,
+  normalizedHash: string,
+): { path: string; size: number; contentHash: string; normalizedHash: string; modified: number } {
+  const size = MOCK_ASSET_CONTENT[path]?.length ?? 0;
+  return { path, size, contentHash, normalizedHash, modified: 1_753_900_000 };
+}
+
+/** Seed inventory (drift recomputed on every `listAiAssets`, so `drift` here is
+ *  just the initial no-override view). */
+const mockInventory: AiAssetInventory = {
+  assets: [
+    {
+      id: 'claude',
+      agent: 'Claude Code',
+      label: 'CLAUDE.md',
+      kind: 'singleFile',
+      path: 'CLAUDE.md',
+      managed: true,
+      exists: true,
+      files: [mockAssetFile('CLAUDE.md', HASH_RAW, HASH_CLAUDE)],
+    },
+    {
+      id: 'agents',
+      agent: 'Codex/Cursor/Gemini/Zed',
+      label: 'AGENTS.md',
+      kind: 'singleFile',
+      path: 'AGENTS.md',
+      managed: true,
+      exists: true,
+      files: [mockAssetFile('AGENTS.md', HASH_RAW, HASH_AGENTS)],
+    },
+    {
+      id: 'copilot',
+      agent: 'GitHub Copilot',
+      label: 'copilot-instructions.md',
+      kind: 'singleFile',
+      path: '.github/copilot-instructions.md',
+      managed: true,
+      exists: true,
+      // Same normalized hash as claude -> IN SYNC.
+      files: [mockAssetFile('.github/copilot-instructions.md', HASH_RAW, HASH_CLAUDE)],
+    },
+    { id: 'gemini', agent: 'Gemini CLI', label: 'GEMINI.md', kind: 'singleFile', path: 'GEMINI.md', managed: true, exists: false, files: [] },
+    { id: 'windsurf', agent: 'Windsurf (legacy)', label: '.windsurfrules', kind: 'singleFile', path: '.windsurfrules', managed: true, exists: false, files: [] },
+    { id: 'cursorLegacy', agent: 'Cursor (legacy)', label: '.cursorrules', kind: 'singleFile', path: '.cursorrules', managed: true, exists: false, files: [] },
+    {
+      id: 'cursorRules',
+      agent: 'Cursor',
+      label: '.cursor/rules/',
+      kind: 'rulesDir',
+      path: '.cursor/rules',
+      managed: true,
+      exists: true,
+      files: [
+        mockAssetFile('.cursor/rules/style.mdc', HASH_RAW, HASH_RAW),
+        mockAssetFile('.cursor/rules/testing.mdc', HASH_RAW, HASH_RAW),
+      ],
+    },
+    { id: 'windsurfRules', agent: 'Windsurf', label: '.windsurf/rules/', kind: 'rulesDir', path: '.windsurf/rules', managed: true, exists: false, files: [] },
+    { id: 'copilotInstr', agent: 'GitHub Copilot', label: '.github/instructions/', kind: 'rulesDir', path: '.github/instructions', managed: false, exists: false, files: [] },
+    { id: 'copilotPrompts', agent: 'GitHub Copilot', label: '.github/prompts/', kind: 'rulesDir', path: '.github/prompts', managed: false, exists: false, files: [] },
+    { id: 'claudeDir', agent: 'Claude Code', label: '.claude/ (skills/agents/commands)', kind: 'config', path: '.claude', managed: false, exists: false, files: [] },
+    {
+      id: 'mcp',
+      agent: 'MCP clients',
+      label: '.mcp.json',
+      kind: 'config',
+      path: '.mcp.json',
+      managed: false,
+      exists: true,
+      files: [mockAssetFile('.mcp.json', HASH_RAW, HASH_RAW)],
+    },
+  ],
+  drift: {
+    canonicalId: 'claude',
+    canonicalHash: HASH_CLAUDE,
+    entries: [],
+    inSync: false,
+  },
+};
+
+/** Client-side mirror of the Rust drift algorithm (§4.3) so the `canonical`
+ *  override is demonstrable in the browser harness. */
+const COMPARABLE_IDS = ['claude', 'agents', 'copilot', 'gemini', 'windsurf', 'cursorLegacy'];
+function recomputeDrift(inv: AiAssetInventory, canonical?: string): DriftReport {
+  const byId = (id: string) => inv.assets.find((a) => a.id === id);
+  const exists = (id: string) => byId(id)?.exists ?? false;
+  const nhash = (id: string) => byId(id)?.files[0]?.normalizedHash ?? null;
+
+  let canonicalId: string | null = null;
+  if (canonical && COMPARABLE_IDS.includes(canonical) && exists(canonical)) {
+    canonicalId = canonical;
+  } else {
+    // Priority == table order for the comparable set.
+    canonicalId = COMPARABLE_IDS.find((id) => exists(id)) ?? null;
+  }
+  const canonicalHash = canonicalId ? nhash(canonicalId) : null;
+
+  const entries = COMPARABLE_IDS.map((id) => {
+    const ex = exists(id);
+    const normalizedHash = ex ? nhash(id) : null;
+    const inSync = ex && canonicalHash !== null && normalizedHash === canonicalHash;
+    return { assetId: id, exists: ex, comparable: true, normalizedHash, inSync };
+  });
+  const inSync = entries.filter((e) => e.exists).every((e) => e.inSync);
+  return { canonicalId, canonicalHash, entries, inSync };
+}
+
 /** How a repo's HEAD / graph are shaped (seeded once at open). */
 type RepoKind = 'default' | 'detached' | 'unborn';
 type GraphFixture = 'default' | '20k' | 'detached';
@@ -264,6 +397,8 @@ interface MockRepoState {
    *  no interactive rebase is mid-flight. The reused rebaseContinue/Skip/Abort
    *  key on this to finish (prepend the rewritten commits) or restore. */
   interactive: InteractivePlan | null;
+  /** P24: AI-asset inventory (drift recomputed per `listAiAssets` call). */
+  inventory: AiAssetInventory;
 }
 
 const repos = new Map<string /* repoId */, MockRepoState>();
@@ -563,6 +698,7 @@ function createRepoState(path: string): MockRepoState {
     mainRs: initialMainRs(),
     interactiveConflictDemo: query('rebase') === 'conflict',
     interactive: null,
+    inventory: structuredClone(mockInventory),
   };
   seedOpState(state, repoOp(path));
   return state;
@@ -2776,5 +2912,25 @@ export const mockIpc: IpcApi = {
     return () => {
       mockMcp.listeners.delete(cb);
     };
+  },
+
+  // P24: AI-asset inventory + drift. Drift is recomputed per call so the
+  // optional `canonical` override is demonstrable in the harness.
+  async listAiAssets(repoId: string, canonical?: string): Promise<AiAssetInventory> {
+    await delay(120);
+    const state = requireRepo(repoId);
+    return {
+      assets: structuredClone(state.inventory.assets),
+      drift: recomputeDrift(state.inventory, canonical),
+    };
+  },
+
+  async readAiAsset(repoId: string, path: string): Promise<AssetContent> {
+    await delay(80);
+    requireRepo(repoId);
+    const content = MOCK_ASSET_CONTENT[path];
+    return content !== undefined
+      ? { path, exists: true, content }
+      : { path, exists: false, content: null };
   },
 };
