@@ -77,9 +77,20 @@ status.rs:89 .exclude_submodules(true) stays AS-IS.
   up-to-date, Update flips docs/spec → up-to-date, other rows unchanged; zero console errors. Backend
   AI gate = P19a CLI-oracle suite (green). Pending: tester full-regression + USER CHECKPOINT checklist.
 
-**Current step: P19 — committing P19b, then tester full regression + user checklist. USER CHECKPOINT
-pending** (native pnpm tauri dev on a real superproject: list/init/update/sync round-trip cross-checked
-with `git submodule status/update`; Open-in-tab opens the submodule as its own repo tab).
+- **P19 tester** — full regression PASS, no regressions/bugs: bonsai-core lib 141 (incl. 5 submodule
+  unit) + all integration (submodule_cli 4, remote_cli 18, + all others 0 failed) + bonsai 65; clippy
+  --workspace --tests clean; pnpm build clean. Checklist: docs/contracts/P19-user-checklist.md.
+- **P19 AI GATE PASSED (2026-07-31).** Commits: 52272ad P19a · f99debe P19b. Backend CLI-oracle +
+  frontend harness both verified; zero regressions from the remote.rs shared-signature change.
+
+**P19 awaiting USER CHECKPOINT** (native pnpm tauri dev, per docs/contracts/P19-user-checklist.md):
+list/init/update/sync round-trip on a real superproject cross-checked with `git submodule status/update`;
+Open-in-tab opens the submodule as its own repo tab; the private-remote credential path (no in-app prompt).
+
+### P20 — Daily essentials: amend, cherry-pick, revert, reset, discard — **in-progress**
+Contract: docs/contracts/P20-daily-essentials.md (architect to write).
+
+**Current step: P20 — architect writing contract.**
 
 ## P17 — Interactive diff: File/Diff toggle + partial staging — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-31)
 
