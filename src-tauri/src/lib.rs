@@ -81,7 +81,9 @@ pub fn run() {
             commands::list_submodules,
             commands::init_submodule,
             commands::update_submodule,
-            commands::sync_submodule
+            commands::sync_submodule,
+            commands::clone_repo,
+            commands::init_repo
         ])
         .build(tauri::generate_context!())
         .expect("error while running Bonsai")

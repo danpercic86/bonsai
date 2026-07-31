@@ -8,6 +8,7 @@ use bonsai_core::git::ai_resolve::{self, AiResolveProposal};
 use bonsai_core::git::ai_summary::{self, AiSummary};
 use bonsai_core::git::branches::{self, BranchesSnapshot, CreateBranchHereResult};
 use bonsai_core::git::cherrypick::{self, CherrypickOutcome};
+use bonsai_core::git::clone::{clone_repo as clone_repo_core, init_repo as init_repo_core, CloneProgress};
 use bonsai_core::git::commit::{amend_commit, create_commit, CommitResult};
 use bonsai_core::git::conflict::{self, ConflictEntry, ConflictFile, ConflictResolution};
 use bonsai_core::git::diff::{
@@ -1902,6 +1903,37 @@ async fn sync_submodule_inner(
 ) -> Result<(), AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || submodule::sync_submodule(&path, &name))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Clones `url` into `dest`, streaming `CloneProgress` over `on_progress`.
+/// Returns the absolute workdir path of the clone (frontend then calls
+/// `open_repo`/openTab). NOT repo-scoped — it CREATES a repo (P21 §OPEN-2).
+/// Rejects io | authFailed | networkError | git.
+#[tauri::command]
+pub async fn clone_repo(
+    url: String,
+    dest: String,
+    on_progress: tauri::ipc::Channel<CloneProgress>,
+) -> Result<String, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        clone_repo_core(&url, std::path::Path::new(&dest), move |p| {
+            // Channel is Clone+Send+Sync+'static; a send failure means the
+            // frontend dropped the channel — ignore it, the clone completes.
+            let _ = on_progress.send(p);
+        })
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Initializes (or opens, if already a repo) a repository at `path`. Returns
+/// the absolute workdir path. NOT repo-scoped (P21 §OPEN-2/§OPEN-3).
+/// Rejects io | git.
+#[tauri::command]
+pub async fn init_repo(path: String) -> Result<String, AppError> {
+    tauri::async_runtime::spawn_blocking(move || init_repo_core(std::path::Path::new(&path)))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

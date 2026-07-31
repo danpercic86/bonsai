@@ -145,9 +145,21 @@ rewrites the tip + push-warning; reset soft/mixed/hard (hard confirm); discard r
 a staged change; cherry-pick/revert clean + conflict→resolve→Continue (tree≡git) + Abort restores HEAD.
 
 ### P21 — Repo lifecycle: clone + init — **in-progress**
-Contract: docs/contracts/P21-repo-lifecycle.md (architect to write).
+Contract: docs/contracts/P21-repo-lifecycle.md (architect). Clone progress via a Tauri
+Channel<CloneProgress> (first channel usage in src-tauri — establishes the precedent; no cancellation
+v1). Open decisions RESOLVED: (Q2/dest UX) GitKraken-style — FRONTEND picks a PARENT dir + derives the
+subfolder name from the URL (last path segment minus .git) → computes full dest=parent/<name>; backend
+clone_repo(url, dest) UNCHANGED (dest=final path, still errors if non-empty); (Q1) reuse existing
+pickFolder, proper dialog title deferred to Polish; init on an already-a-repo path opens idempotently;
+dest file/non-empty → AppError::Io; clone creds via Config::open_default(). Sub-increments:
+- **P21a** — backend: git/clone.rs (CloneProgress, clone_repo via RepoBuilder+FetchOptions reusing the M6
+  credential chain — NO remote.rs change; init_repo via Repository::init) + 2 non-repo-scoped commands
+  (clone_repo takes Channel<CloneProgress>) + lib.rs + lifecycle_cli.rs oracle (local file:// transport).
+- **P21b** — IPC triple (types/tauri Channel wiring/mock progress ticks/index) + CloneDialog.tsx (URL +
+  parent-folder picker + URL→name derivation + progress bar) + New-repo folder picker; TabStrip + menu +
+  empty-state entries; App handlers reusing openTab.
 
-**Current step: P21 — architect writing contract.**
+**Current step: P21a — implementing clone/init backend + oracle tests (senior-dev).**
 
 ## P17 — Interactive diff: File/Diff toggle + partial staging — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-31)
 

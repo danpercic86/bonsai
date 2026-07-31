@@ -4,6 +4,7 @@ pub mod ai_resolve;
 pub mod ai_summary;
 pub mod branches;
 pub mod cherrypick;
+pub mod clone;
 pub mod commit;
 pub mod conflict;
 pub mod diff;
