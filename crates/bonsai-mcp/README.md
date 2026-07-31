@@ -106,6 +106,55 @@ resulting **tree oid equals** a hand-resolved `git` CLI merge of the same histor
 
 ## Registering with Claude Code
 
+There are two ways to use Bonsai's Git surface from Claude Code:
+
+1. **Embedded HTTP server inside the Bonsai app** (recommended) — one server that
+   targets the repos you already have open as tabs, live-updating the GUI as the AI
+   acts. See "Embedded HTTP server (inside Bonsai)" below.
+2. **Standalone stdio server** (this crate's binary) — one server bound to a single
+   `--repo`, no running GUI required. See "Standalone stdio server" below.
+
+### Embedded HTTP server (inside Bonsai)
+
+The Bonsai desktop app hosts the same tool layer over **streamable-HTTP**, bound to
+`127.0.0.1:<port>`. Enable it from the app, then register the printed one-liner:
+
+1. In Bonsai, open **Settings → "AI access (MCP server)"** and turn the server **on**
+   (a one-time consent dialog explains that an external AI client will be able to read
+   — and, if you also enable write, modify — **any repo open in Bonsai**).
+2. Leave **"Allow AI to modify this repo"** OFF for read-only (the default: 14 read
+   tools). Turn it ON to expose the 20 mutation tools (34 total). Flipping this toggle
+   **bounces** the server (drops live sessions; the token/port stay stable), so clients
+   reconnect and re-negotiate the new tool set.
+3. Copy the ready-made registration line shown in Settings and run it, e.g.:
+
+   ```bash
+   claude mcp add bonsai --transport http \
+     --header "Authorization: Bearer <token>" \
+     http://127.0.0.1:<port>/mcp
+   ```
+
+   The `<port>` is persisted across app runs and the `<token>` is a persisted
+   32-byte (base64url) bearer, so this one-time registration keeps working.
+
+**Targeting a repo.** Unlike the stdio server (one fixed `--repo`), the embedded server
+serves whatever tabs are open. Each MCP session is **seeded** from the focused tab, then:
+
+- `bonsai_list_repos` enumerates the open tabs (each with a HEAD summary and a `selected`
+  flag), and
+- `bonsai_select_repo({ repoId })` re-points **this session** to any open tab.
+
+Git tools resolve the selected repo at call time; if nothing is selected (or the selected
+tab was closed) they return a clean `{ kind: "noRepo" }` error asking you to select one.
+
+**Security.** The endpoint requires the bearer token on **every** request (missing/wrong
+→ `401`), rejects any request carrying an `Origin` header (`403`, no browser is ever a
+legitimate client), and requires an exact loopback `Host` (`127.0.0.1:<port>` /
+`localhost:<port>` → else `403`); no CORS headers are ever emitted. See the P16 contract
+§8 and the `src-tauri/src/mcp.rs` integration test (`http_integration`) for the proof.
+
+### Standalone stdio server
+
 Build the binary, then register it (stdio):
 
 ```bash

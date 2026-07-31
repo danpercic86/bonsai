@@ -75,7 +75,7 @@ logged-in `claude` CLI: (1) stage real changes → Generate yields a sane messag
 a feature branch → Summarize produces a sensible vs-base summary; (4) with claude absent/logged-out the
 affordances disable cleanly. Next milestone after checkpoint: P16 (Tier 3 embedded MCP).
 
-## P16 — Embedded MCP server (Tier 3, shared live workspace) — **contract written, awaiting USER decisions** (2026-07-31)
+## P16 — Embedded MCP server (Tier 3, shared live workspace) — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-31)
 
 Source: same user request (2026-07-31). In-app HTTP MCP server (rmcp streamable-http) targeting the
 ACTIVE repo tab, so an external client (Claude Code) operates on the same live repo the user sees; the
@@ -135,8 +135,25 @@ bounce on write-gate change; D-6 no per-repo lock; D-7 defaults off + consent. C
   Nits deferred: mock resets allowWrite on disable vs real persists (harness fidelity); P16d should assert
   the write→off transport-level revoke.
 
-**Current step: P16d — integration test (in-process HTTP MCP client) + live-update demo + claude mcp add
---transport http docs. This is the P16 AI-gate closer.**
+- **P16d** — testability refactor (senior-dev: extracted AppHandle-free `spawn_server` core from mcp.rs;
+  `start()` now thin glue; security wiring relocated-not-changed; 57 tests stay green) + integration test
+  (tester: 7 `#[tokio::test]` in mcp.rs `http_integration`, hand-rolled reqwest streamable-HTTP client).
+  ALL 7 PASS: (1) 401 no/bad token + 403 Origin-present + 403 bad-Host + valid passes; (2) 14 tools +
+  get_graph == compute_graph; (3) 34 tools + full conflict flow tree-oid == git CLI oracle; (4) no
+  selection → noRepo; (5) select non-seed repo B → acts on B; (6) unknown→invalidName, closed→noRepo;
+  (7) write-off bounce re-negotiates to 14. README gained the embedded-HTTP `claude mcp add --transport
+  http` section. No app bugs.
+
+**P16 AI GATE PASSED (2026-07-31).** cargo test -p bonsai 64 + bonsai-mcp 5 green; clippy + pnpm build
+clean; browser harness verified the Settings MCP section (P16b). Commits: 3421603 P16a · d1714d8 P16b ·
+44c3ae8 P16c · (P16d pending). rmcp 3.0.1 streamable-HTTP, axum 0.8.9. Security: 127.0.0.1-only +
+reject-any-Origin + Host allowlist + constant-time bearer + no CORS; read-only + write both default off.
+
+**Current step: P16 AI gate passed; awaiting USER CHECKPOINT** — enable the server in Settings → "AI access
+(MCP server)", copy the `claude mcp add --transport http --header "Authorization: Bearer <token>"
+http://127.0.0.1:<port>/mcp` line, register with real Claude Code, confirm the bonsai_* tools appear incl.
+list/select_repo, the AI acts on the selected open tab, and (write on) an AI stage+commit/conflict-resolve
+makes the Bonsai GUI live-update via repo-changed — including on a non-focused tab.
 
 ## P14 — `bonsai-core` crate + standalone `bonsai-mcp` MCP server — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-30)
 

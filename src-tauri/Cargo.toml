@@ -28,3 +28,7 @@ subtle = "2"
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# P16d embedded-HTTP MCP integration test: a raw HTTP client to drive the
+# streamable-HTTP MCP endpoint (security POSTs + hand-rolled JSON-RPC/SSE).
+# `no_proxy` client is built in-test; default TLS is unused (plain 127.0.0.1).
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
