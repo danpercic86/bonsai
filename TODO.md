@@ -178,7 +178,21 @@ dest file/non-empty → AppError::Io; clone creds via Config::open_default(). Su
   repository… opens an unborn/empty repo tab; zero console errors. Backend AI gate = lifecycle_cli 7.
   Pending: tester full regression + USER CHECKPOINT (real network clone with credential helper).
 
-**Current step: P21 — committing P21b, then tester full regression + user checklist.**
+**Current step: P21 — tester running (full regression + user checklist). P22 contract ready.**
+
+### P22 — Tags & remotes management — **queued** (contract ready)
+Contract: docs/contracts/P22-tags-remotes.md (architect). Open decisions RESOLVED (orchestrator accepted
+defaults): (1) delete-tag-on-remote OUT of scope v1 (local delete only); (2) Remotes section renders
+configured-remote rows (new list_remotes/RemoteInfo) at top + the existing tracking-branch tree unchanged
+below; (3) no new AppError variant (dup tag/remote → git, frontend pre-validates); (4) two small dialogs
+(TagCreateDialog, RemoteEditDialog); Rename/Edit-URL reuse PromptDialog; (5) keep `force` through the
+stack (UI always sends false v1). Confirmed: branches::list_refs re-reads tag_names fresh each call
+(refetchBranches re-surfaces created/deleted tags — no new list_tags); M6 creds already pub(crate)
+(push_tag needs NO remote.rs change); list_remotes is NEW (Remotes section today only knows tracking
+branches). Sub-increments: **P22a** tags backend (tags.rs create/delete/push + 3 cmds + tags_cli) →
+**P22b** remotes backend (remote.rs RemoteInfo + list/add/remove/rename/set_url + 5 cmds + remote_mgmt_cli)
+→ **P22c** IPC triple + frontend (8 methods; Sidebar tag menu + configured-remote rows + Add; RepoWorkspace
+menus/handlers/dialogs). Launch P22a only after the P21 tester finishes (avoid concurrent cargo runs).
 
 ## P17 — Interactive diff: File/Diff toggle + partial staging — **AI GATE PASSED, awaiting USER CHECKPOINT** (2026-07-31)
 
