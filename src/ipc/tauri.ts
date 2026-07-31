@@ -12,6 +12,10 @@ import type {
   AiSummary,
   ApplyStashOutcome,
   AssetContent,
+  ContextProfile,
+  ProfileActivation,
+  ProfilePreviewEntry,
+  ProfileStore,
   BlameLine,
   BranchesSnapshot,
   CloneProgress,
@@ -487,5 +491,26 @@ export const tauriIpc: IpcApi = {
 
   readAiAsset(repoId: string, path: string): Promise<AssetContent> {
     return invoke<AssetContent>('read_ai_asset', { repoId, path });
+  },
+
+  // P24: context-profile store (CRUD + preview + activate).
+  listProfiles(repoId: string): Promise<ProfileStore> {
+    return invoke<ProfileStore>('list_profiles', { repoId });
+  },
+
+  saveProfile(repoId: string, profile: ContextProfile): Promise<ProfileStore> {
+    return invoke<ProfileStore>('save_profile', { repoId, profile });
+  },
+
+  deleteProfile(repoId: string, name: string): Promise<ProfileStore> {
+    return invoke<ProfileStore>('delete_profile', { repoId, name });
+  },
+
+  previewProfile(repoId: string, name: string): Promise<ProfilePreviewEntry[]> {
+    return invoke<ProfilePreviewEntry[]>('preview_profile', { repoId, name });
+  },
+
+  activateProfile(repoId: string, name: string): Promise<ProfileActivation> {
+    return invoke<ProfileActivation>('activate_profile', { repoId, name });
   },
 };

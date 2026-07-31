@@ -615,6 +615,51 @@ export interface AssetContent {
   content: string | null;
 }
 
+/** One profile target: which single-file asset to write, and its verbatim content. */
+export interface ProfileTarget {
+  assetId: string;
+  content: string;
+}
+
+export interface ContextProfile {
+  name: string;
+  description?: string | null;
+  model?: string | null;
+  targets: ProfileTarget[];
+}
+
+/** The on-disk store (`.bonsai/profiles.json`) and the wire shape of
+ *  list/save/delete/activate. */
+export interface ProfileStore {
+  version: number;
+  profiles: ContextProfile[];
+  activeProfile?: string | null;
+}
+
+export interface ProfilePreviewEntry {
+  assetId: string;
+  path: string;
+  current: string | null;
+  proposed: string;
+  changed: boolean;
+}
+
+/** What an activation did to one target's file. Bare-string serde enum on Rust. */
+export type TargetWriteAction = 'created' | 'written' | 'unchanged';
+
+export interface TargetWriteResult {
+  assetId: string;
+  path: string;
+  action: TargetWriteAction;
+}
+
+export interface ProfileActivation {
+  profile: string;
+  results: TargetWriteResult[];
+  /** The store after `activeProfile` was updated (frontend refreshes from this). */
+  store: ProfileStore;
+}
+
 export type Unsubscribe = () => void;
 
 export interface AppError {
@@ -941,4 +986,19 @@ export interface IpcApi {
   /** P24. Raw content of one AI-asset file (repo-relative path, validated inside
    *  the workdir). A missing file resolves `exists:false`. Rejects other | io | noRepo. */
   readAiAsset(repoId: string, path: string): Promise<AssetContent>;
+  /** P24. The context-profile store (lazy empty default when absent). Rejects
+   *  other | io | noRepo. */
+  listProfiles(repoId: string): Promise<ProfileStore>;
+  /** P24. Insert-or-replace a profile keyed by name, then persist. Rejects
+   *  invalidName (bad name / non-single-file target) | other | io | noRepo. */
+  saveProfile(repoId: string, profile: ContextProfile): Promise<ProfileStore>;
+  /** P24. Remove a profile (no-op if absent); clears `activeProfile` if matched.
+   *  Rejects other | io | noRepo. */
+  deleteProfile(repoId: string, name: string): Promise<ProfileStore>;
+  /** P24. Per-target before/after preview for an activation. Writes nothing.
+   *  Rejects other | io | noRepo. */
+  previewProfile(repoId: string, name: string): Promise<ProfilePreviewEntry[]>;
+  /** P24. Activate a profile: write each target's content to its mapped file,
+   *  set `activeProfile`. The one write path. Rejects invalidName | other | io | noRepo. */
+  activateProfile(repoId: string, name: string): Promise<ProfileActivation>;
 }

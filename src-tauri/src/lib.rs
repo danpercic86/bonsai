@@ -97,7 +97,12 @@ pub fn run() {
             commands::rename_remote,
             commands::set_remote_url,
             commands::list_ai_assets,
-            commands::read_ai_asset
+            commands::read_ai_asset,
+            commands::list_profiles,
+            commands::save_profile,
+            commands::delete_profile,
+            commands::preview_profile,
+            commands::activate_profile
         ])
         .build(tauri::generate_context!())
         .expect("error while running Bonsai")

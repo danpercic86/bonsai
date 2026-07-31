@@ -11,10 +11,16 @@
 
 pub mod drift;
 pub mod inventory;
+pub mod profiles;
 pub mod taxonomy;
 
 pub use drift::{compute_drift, DriftEntry, DriftReport};
 pub use inventory::{
     normalize, read_asset, scan_inventory, AiAsset, AiAssetInventory, AssetContent, AssetFile,
+};
+pub use profiles::{
+    activate_profile, delete_profile, list_profiles, preview_profile, save_profile,
+    validate_profile_name, ContextProfile, ProfileActivation, ProfilePreviewEntry, ProfileStore,
+    ProfileTarget, TargetWriteAction, TargetWriteResult,
 };
 pub use taxonomy::{descriptor, descriptors, AssetDescriptor, AssetKind};

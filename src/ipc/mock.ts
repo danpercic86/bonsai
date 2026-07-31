@@ -30,6 +30,12 @@ import type {
   AppError,
   ApplyStashOutcome,
   AssetContent,
+  ContextProfile,
+  ProfileActivation,
+  ProfilePreviewEntry,
+  ProfileStore,
+  TargetWriteAction,
+  TargetWriteResult,
   DriftReport,
   BlameLine,
   BranchesSnapshot,
@@ -357,6 +363,86 @@ function recomputeDrift(inv: AiAssetInventory, canonical?: string): DriftReport 
   return { canonicalId, canonicalHash, entries, inSync };
 }
 
+// --- P24b: profiles fixture + stateful activation helpers -------------------
+
+/** The single-file (profile-target-eligible) descriptor ids → mapped repo path,
+ *  mirroring the Rust taxonomy's SingleFile rows. Used to validate targets and
+ *  resolve preview/activation paths in the mock. */
+const SINGLE_FILE_PATHS: Record<string, string> = {
+  claude: 'CLAUDE.md',
+  agents: 'AGENTS.md',
+  copilot: '.github/copilot-instructions.md',
+  gemini: 'GEMINI.md',
+  windsurf: '.windsurfrules',
+  cursorLegacy: '.cursorrules',
+};
+
+/** Deterministic 40-hex mock hash of a string (FNV-1a → repeated to 40 chars).
+ *  Not git's SHA-1 — the mock only needs stable equality so drift recomputes
+ *  correctly after an activation writes new content. */
+function mockHash(content: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < content.length; i += 1) {
+    h ^= content.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  const hex = h.toString(16).padStart(8, '0');
+  return hex.repeat(5); // 8 * 5 = 40 hex chars
+}
+
+/** Rich profile body shared by `opus-rich`'s claude + agents targets, so both
+ *  land on the same normalized hash — after activation AGENTS.md flips in-sync. */
+const OPUS_RICH_BODY =
+  '# Project instructions (Opus-rich)\n\n' +
+  'Detailed, high-context guidance for a top-tier model. Explain rationale, ' +
+  'cover edge cases, and prefer thorough answers.\n';
+
+const CHEAP_TERSE_BODY =
+  '# Project instructions (terse)\n\nBe brief. Do the task. No preamble.\n';
+
+/** Seed profile store (§7): two profiles, no active profile yet. */
+const mockProfiles: ProfileStore = {
+  version: 1,
+  profiles: [
+    {
+      name: 'opus-rich',
+      description: 'Full-context instructions for a top-tier model.',
+      model: 'opus',
+      targets: [
+        { assetId: 'claude', content: OPUS_RICH_BODY },
+        { assetId: 'agents', content: OPUS_RICH_BODY },
+      ],
+    },
+    {
+      name: 'cheap-terse',
+      description: 'Minimal instructions for a cheap/fast model.',
+      model: 'haiku',
+      targets: [{ assetId: 'claude', content: CHEAP_TERSE_BODY }],
+    },
+  ],
+  activeProfile: null,
+};
+
+/** Mutate `state.inventory` so `assetId`'s mapped file now holds `content`
+ *  (exists:true, hashes derived from the content). Drift recomputes from these
+ *  hashes, giving the browser harness the full drift→activate→in-sync loop. */
+function applyMockWrite(state: MockRepoState, assetId: string, path: string, content: string): void {
+  state.assetContent[path] = content;
+  const asset = state.inventory.assets.find((a) => a.id === assetId);
+  if (asset) {
+    asset.exists = true;
+    asset.files = [
+      {
+        path,
+        size: content.length,
+        contentHash: mockHash(content),
+        normalizedHash: mockHash(content),
+        modified: 1_753_900_000,
+      },
+    ];
+  }
+}
+
 /** How a repo's HEAD / graph are shaped (seeded once at open). */
 type RepoKind = 'default' | 'detached' | 'unborn';
 type GraphFixture = 'default' | '20k' | 'detached';
@@ -399,6 +485,11 @@ interface MockRepoState {
   interactive: InteractivePlan | null;
   /** P24: AI-asset inventory (drift recomputed per `listAiAssets` call). */
   inventory: AiAssetInventory;
+  /** P24b: per-repo mapped-file content (seeded from the canned bodies), mutated
+   *  by `activateProfile` so preview/read/drift reflect writes. */
+  assetContent: Record<string, string>;
+  /** P24b: the context-profile store (stateful CRUD + activation). */
+  profiles: ProfileStore;
 }
 
 const repos = new Map<string /* repoId */, MockRepoState>();
@@ -699,6 +790,8 @@ function createRepoState(path: string): MockRepoState {
     interactiveConflictDemo: query('rebase') === 'conflict',
     interactive: null,
     inventory: structuredClone(mockInventory),
+    assetContent: structuredClone(MOCK_ASSET_CONTENT),
+    profiles: structuredClone(mockProfiles),
   };
   seedOpState(state, repoOp(path));
   return state;
@@ -2927,10 +3020,108 @@ export const mockIpc: IpcApi = {
 
   async readAiAsset(repoId: string, path: string): Promise<AssetContent> {
     await delay(80);
-    requireRepo(repoId);
-    const content = MOCK_ASSET_CONTENT[path];
+    const state = requireRepo(repoId);
+    const content = state.assetContent[path];
     return content !== undefined
       ? { path, exists: true, content }
       : { path, exists: false, content: null };
+  },
+
+  // P24b: context-profile store (stateful CRUD + preview + activate).
+  async listProfiles(repoId: string): Promise<ProfileStore> {
+    await delay(80);
+    const state = requireRepo(repoId);
+    return structuredClone(state.profiles);
+  },
+
+  async saveProfile(repoId: string, profile: ContextProfile): Promise<ProfileStore> {
+    await delay(120);
+    const state = requireRepo(repoId);
+    // Validate name: blank / leading '-' / path separators / control chars.
+    const name = profile.name;
+    const badName =
+      name.trim() === '' ||
+      name.startsWith('-') ||
+      name.includes('/') ||
+      name.includes('\\') ||
+      [...name].some((c) => {
+        const code = c.charCodeAt(0);
+        return code < 0x20 || code === 0x7f;
+      });
+
+    if (badName) {
+      const err: AppError = { kind: 'invalidName', message: `invalid profile name: '${name}'` };
+      throw err;
+    }
+    // Every target must be a single-file descriptor id.
+    for (const t of profile.targets) {
+      if (!(t.assetId in SINGLE_FILE_PATHS)) {
+        const err: AppError = {
+          kind: 'invalidName',
+          message: `invalid profile target asset: '${t.assetId}'`,
+        };
+        throw err;
+      }
+    }
+    const idx = state.profiles.profiles.findIndex((p) => p.name === name);
+    if (idx >= 0) {
+      state.profiles.profiles[idx] = structuredClone(profile);
+    } else {
+      state.profiles.profiles.push(structuredClone(profile));
+    }
+    return structuredClone(state.profiles);
+  },
+
+  async deleteProfile(repoId: string, name: string): Promise<ProfileStore> {
+    await delay(100);
+    const state = requireRepo(repoId);
+    state.profiles.profiles = state.profiles.profiles.filter((p) => p.name !== name);
+    if (state.profiles.activeProfile === name) {
+      state.profiles.activeProfile = null;
+    }
+    return structuredClone(state.profiles);
+  },
+
+  async previewProfile(repoId: string, name: string): Promise<ProfilePreviewEntry[]> {
+    await delay(120);
+    const state = requireRepo(repoId);
+    const profile = state.profiles.profiles.find((p) => p.name === name);
+    if (profile === undefined) {
+      const err: AppError = { kind: 'other', message: `profile '${name}' not found` };
+      throw err;
+    }
+    return profile.targets.map((t) => {
+      const path = SINGLE_FILE_PATHS[t.assetId] ?? t.assetId;
+      const current = state.assetContent[path] ?? null;
+      return { assetId: t.assetId, path, current, proposed: t.content, changed: current !== t.content };
+    });
+  },
+
+  async activateProfile(repoId: string, name: string): Promise<ProfileActivation> {
+    await delay(160);
+    const state = requireRepo(repoId);
+    const profile = state.profiles.profiles.find((p) => p.name === name);
+    if (profile === undefined) {
+      const err: AppError = { kind: 'other', message: `profile '${name}' not found` };
+      throw err;
+    }
+    const results: TargetWriteResult[] = profile.targets.map((t) => {
+      const path = SINGLE_FILE_PATHS[t.assetId] ?? t.assetId;
+      const current = state.assetContent[path];
+      let action: TargetWriteAction;
+      if (current === undefined) {
+        action = 'created';
+      } else if (current === t.content) {
+        action = 'unchanged';
+      } else {
+        action = 'written';
+      }
+      if (action !== 'unchanged') {
+        applyMockWrite(state, t.assetId, path, t.content);
+      }
+      return { assetId: t.assetId, path, action };
+    });
+    state.profiles.activeProfile = name;
+    return { profile: name, results, store: structuredClone(state.profiles) };
   },
 };

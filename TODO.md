@@ -32,8 +32,26 @@ IPC "triple" (types.ts/tauri.ts/mock.ts) + #[tauri::command] in commands.rs regi
 components under src/components/. Guardrails: scratch under D:\Temp\bonsai-scratch, TMP/TEMP=D:\Temp for
 cargo, no concurrent cargo test + clippy, mock.ts kept compiling, orchestrator makes ALL commits.
 
-Contract: docs/contracts/P24-ai-context-profiles.md (architect — pending).
-**Current step:** P24 kickoff — architect writing the contract.
+Contract: docs/contracts/P24-ai-context-profiles.md (architect). Sub-increments: **P24a** core
+assets module (taxonomy+inventory+drift+read) → **P24b** profiles store (CRUD+preview+activate write
+path) → **P24c** IPC/mock polish (may fold into a/b) → **P24d** UI (inventory/drift panel + profile
+manager + diff-preview-gated activation) → **P24e** (optional) AI translate helper.
+
+- **P24a** (reviewer APPROVE-WITH-NITS, 0 must-fix) — commit a139fbb. New pure crates/bonsai-core/
+  src/assets/ (taxonomy 12 rows, scan_inventory + read_asset, LOCKED normalize §4.2, drift vs
+  auto/override canonical), list_ai_assets/read_ai_asset commands + IPC triple + stateful mock
+  inventory fixture. 12 unit tests (git hash-object oracle, normalization, drift); full lib 179 green;
+  clippy + tsc + pnpm build clean. NITs (cosmetic, deferred): mock size uses UTF-16 length; hashing
+  oracle reuses git2 (contract-sanctioned). Also chore 35fdf6f (vite watcher ignores workspace target).
+- **P24b** (reviewer APPROVE-WITH-NITS, 0 must-fix) — assets/profiles.rs: .bonsai/profiles.json store
+  (lazy default, corrupt→Other, atomic temp+rename, version:1), ContextProfile/ProfileTarget CRUD,
+  preview_profile (writes nothing), activate_profile (validate-all-first, same-dir atomic write,
+  Created/Written/Unchanged, path-traversal safe) + 5 commands + IPC triple + stateful mock (activate
+  mutates inventory → drift recomputes). 12 tests; lib 191 green; clippy + tsc + build clean.
+  Reviewer NITs to FOLD INTO P24d: (1) remove .bonsai-tmp on rename-failure branch (profiles.rs
+  atomic_write); (2) mock name-validation misses C1 controls U+0080-009F; (3) pre-existing mock bug:
+  MOCK_ASSET_CONTENT keys use backslashes in single-quoted JS (corrupt to CR/TAB) → forward-slash them.
+**Current step:** P24b done (uncommitted) → committing → P24d UI (folds the 3 nits).
 
 ## P18–P23 — Feature batch (submodules, UI polish, public-release gap) — **in-progress** (2026-07-31)
 
