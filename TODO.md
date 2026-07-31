@@ -196,7 +196,15 @@ prompt) + auth-fail inline error; init → unborn tab → first commit; idempote
   annotated parity vs git tag[-a], delete, push-to-bare-remote via show-ref, force-moves, dup/bad errors)
   + unit + noRepo. clippy + build clean.
 
-**Current step: P22b — implementing remotes backend (senior-dev).**
+- **P22b** (reviewer APPROVE, 0 must-fix) — remote.rs additions: RemoteInfo{name,url:Option} +
+  list_remotes (Repository::remotes+find_remote, case-insensitive sort, non-UTF8/no-url tolerant),
+  add/remove/rename/set_remote_url (is_valid_name→InvalidName, Exists→Git, NotFound→NoRemote;
+  rename logs non-default-refspec StringArray + continues; set_remote_url pre-checks find_remote for
+  NoRemote parity since libgit2 writes unconditionally). Additive only — fetch/pull/push + credential
+  chain untouched. 5 commands + lib.rs. remote_mgmt_cli 5 (parity vs git remote -v/get-url/show-ref
+  incl. rename moves tracking refs + all error paths) + 2 unit + noRepo. clippy + build clean.
+
+**Current step: P22c — implementing IPC triple + frontend for tags & remotes (senior-dev).**
 
 ### P22 — Tags & remotes management — **queued** (contract ready)
 Contract: docs/contracts/P22-tags-remotes.md (architect). Open decisions RESOLVED (orchestrator accepted

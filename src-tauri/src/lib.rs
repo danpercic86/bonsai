@@ -86,7 +86,12 @@ pub fn run() {
             commands::init_repo,
             commands::create_tag,
             commands::delete_tag,
-            commands::push_tag
+            commands::push_tag,
+            commands::list_remotes,
+            commands::add_remote,
+            commands::remove_remote,
+            commands::rename_remote,
+            commands::set_remote_url
         ])
         .build(tauri::generate_context!())
         .expect("error while running Bonsai")

@@ -19,7 +19,11 @@ use bonsai_core::git::merge::{self, MergeOutcome};
 use bonsai_core::git::opstate::{read_op_state, RepoOpState};
 use bonsai_core::git::rebase::{self, RebaseOutcome};
 use bonsai_core::git::discard::discard_paths as discard_paths_core;
-use bonsai_core::git::remote::{fetch_all, pull_ff, push_current, FetchResult, PullResult, PushResult};
+use bonsai_core::git::remote::{
+    add_remote as add_remote_core, fetch_all, list_remotes as list_remotes_core, pull_ff,
+    push_current, remove_remote as remove_remote_core, rename_remote as rename_remote_core,
+    set_remote_url as set_remote_url_core, FetchResult, PullResult, PushResult, RemoteInfo,
+};
 use bonsai_core::git::repo::{read_repo_info, RepoInfo};
 use bonsai_core::git::reset::{reset_branch as reset_branch_core, ResetMode};
 use bonsai_core::git::revert::{self, RevertOutcome};
@@ -2025,6 +2029,126 @@ async fn push_tag_inner(
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+// ============================================================ P22 §3 remotes
+// management (list / add / remove / rename / set-url). Local-only config ops —
+// none emit `repo-changed`; the frontend refetches imperatively.
+
+/// Lists configured remotes (name + fetch URL, P22 contract §3.2). Errors:
+/// `noRepo` | `git`.
+#[tauri::command]
+pub async fn list_remotes(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<Vec<RemoteInfo>, AppError> {
+    list_remotes_inner(state.inner(), &repo_id).await
+}
+
+/// Runtime-free core of `list_remotes` (unit-testable without a Tauri app).
+async fn list_remotes_inner(state: &AppState, repo_id: &str) -> Result<Vec<RemoteInfo>, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || list_remotes_core(&path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Adds a remote (P22 contract §3.2). Errors: `noRepo` | `invalidName` | `git`.
+/// Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn add_remote(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    name: String,
+    url: String,
+) -> Result<(), AppError> {
+    add_remote_inner(state.inner(), &repo_id, name, url).await
+}
+
+/// Runtime-free core of `add_remote` (unit-testable without a Tauri app).
+async fn add_remote_inner(
+    state: &AppState,
+    repo_id: &str,
+    name: String,
+    url: String,
+) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || add_remote_core(&path, &name, &url))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Removes a remote and its remote-tracking refs (P22 contract §3.2). Errors:
+/// `noRepo` | `noRemote` | `git`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn remove_remote(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    name: String,
+) -> Result<(), AppError> {
+    remove_remote_inner(state.inner(), &repo_id, name).await
+}
+
+/// Runtime-free core of `remove_remote` (unit-testable without a Tauri app).
+async fn remove_remote_inner(
+    state: &AppState,
+    repo_id: &str,
+    name: String,
+) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || remove_remote_core(&path, &name))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Renames a remote (P22 contract §3.2). Errors:
+/// `noRepo` | `noRemote` | `invalidName` | `git`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn rename_remote(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    name: String,
+    new_name: String,
+) -> Result<(), AppError> {
+    rename_remote_inner(state.inner(), &repo_id, name, new_name).await
+}
+
+/// Runtime-free core of `rename_remote` (unit-testable without a Tauri app).
+async fn rename_remote_inner(
+    state: &AppState,
+    repo_id: &str,
+    name: String,
+    new_name: String,
+) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || rename_remote_core(&path, &name, &new_name))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Sets a remote's fetch URL (P22 contract §3.2). Errors:
+/// `noRepo` | `noRemote` | `git`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn set_remote_url(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    name: String,
+    url: String,
+) -> Result<(), AppError> {
+    set_remote_url_inner(state.inner(), &repo_id, name, url).await
+}
+
+/// Runtime-free core of `set_remote_url` (unit-testable without a Tauri app).
+async fn set_remote_url_inner(
+    state: &AppState,
+    repo_id: &str,
+    name: String,
+    url: String,
+) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || set_remote_url_core(&path, &name, &url))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2201,6 +2325,52 @@ mod tests {
             false,
         ))
         .expect_err("push_tag with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+    }
+
+    /// The P22 remote-management commands all return `NoRepo` for an unknown
+    /// id (§8.4).
+    #[test]
+    fn remote_mgmt_commands_require_an_open_repo() {
+        let state = AppState::default();
+
+        let err = tauri::async_runtime::block_on(list_remotes_inner(&state, MISSING_ID))
+            .expect_err("list_remotes with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(add_remote_inner(
+            &state,
+            MISSING_ID,
+            "backup".to_string(),
+            "https://example.com/repo.git".to_string(),
+        ))
+        .expect_err("add_remote with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(remove_remote_inner(
+            &state,
+            MISSING_ID,
+            "origin".to_string(),
+        ))
+        .expect_err("remove_remote with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(rename_remote_inner(
+            &state,
+            MISSING_ID,
+            "origin".to_string(),
+            "upstream".to_string(),
+        ))
+        .expect_err("rename_remote with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(set_remote_url_inner(
+            &state,
+            MISSING_ID,
+            "origin".to_string(),
+            "https://example.com/other.git".to_string(),
+        ))
+        .expect_err("set_remote_url with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
 

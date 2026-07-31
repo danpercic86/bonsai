@@ -65,6 +65,17 @@ pub enum PushResult {
     },
 }
 
+/// One configured remote (P22 contract §3.1). Wire: camelCase.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteInfo {
+    /// Remote name, e.g. "origin".
+    pub name: String,
+    /// Fetch URL from config. None if unreadable/non-UTF-8. (Push-URL not
+    /// surfaced in v1.)
+    pub url: Option<String>,
+}
+
 /// Sentinel in the git2 error raised when every credential source is
 /// exhausted — `map_remote_err` keys the `authFailed` mapping off it.
 pub(crate) const CRED_EXHAUSTED_MSG: &str = "bonsai: no usable credentials";
@@ -488,6 +499,127 @@ pub fn push_current(workdir: &Path) -> Result<PushResult, AppError> {
     })
 }
 
+// ============================================================ P22 §3 remotes
+// management (add / remove / rename / set-url / list). All LOCAL config ops —
+// no network, no credentials.
+
+/// Blocking. Enumerate configured remotes (name + fetch URL), sorted
+/// case-insensitively by name (P22 §3.2/§3.3). Empty repo / no remotes →
+/// `Ok(vec![])` (NOT an error — unlike `fetch_all`).
+pub fn list_remotes(workdir: &Path) -> Result<Vec<RemoteInfo>, AppError> {
+    let repo = open_repo_at(workdir)?;
+    let mut out = Vec::new();
+    for n in repo.remotes()?.iter() {
+        let name = match n {
+            Some(n) => n.to_string(),
+            None => {
+                eprintln!("bonsai: skipping remote with non-UTF-8 name");
+                continue;
+            }
+        };
+        let url = repo
+            .find_remote(&name)
+            .ok()
+            .and_then(|r| r.url().map(str::to_string));
+        out.push(RemoteInfo { name, url });
+    }
+    out.sort_by(|a, b| {
+        a.name
+            .to_lowercase()
+            .cmp(&b.name.to_lowercase())
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    Ok(out)
+}
+
+/// Blocking. Add remote `name` → `url` (`Repository::remote`, P22 §3.4).
+/// Errors: invalid name (`git2::Remote::is_valid_name`) → `InvalidName`;
+/// duplicate (Exists) → `Git("remote '<name>' already exists")`.
+pub fn add_remote(workdir: &Path, name: &str, url: &str) -> Result<(), AppError> {
+    if !git2::Remote::is_valid_name(name) {
+        return Err(AppError::InvalidName(format!("invalid remote name: '{name}'")));
+    }
+    let repo = open_repo_at(workdir)?;
+    let result = repo.remote(name, url).map(|_remote| ());
+    match result {
+        Ok(()) => Ok(()),
+        Err(e) if e.code() == git2::ErrorCode::Exists => {
+            Err(AppError::Git(format!("remote '{name}' already exists")))
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Blocking. Remove remote `name` (`Repository::remote_delete` — also drops its
+/// remote-tracking refs + config, P22 §3.4). Errors: not found → `NoRemote`.
+pub fn remove_remote(workdir: &Path, name: &str) -> Result<(), AppError> {
+    let repo = open_repo_at(workdir)?;
+    match repo.remote_delete(name) {
+        Ok(()) => Ok(()),
+        Err(e) if e.code() == git2::ErrorCode::NotFound => {
+            Err(AppError::NoRemote(format!("remote '{name}' not found")))
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Blocking. Rename remote `name` → `new_name` (`Repository::remote_rename` —
+/// moves `refs/remotes/<name>/*` and rewrites config, P22 §3.4). The returned
+/// non-default-refspec "problem" list is logged (`eprintln`) and ignored — a
+/// non-standard refspec that could not be auto-rewritten is not fatal to the
+/// rename. Errors: not found → `NoRemote`; invalid new name → `InvalidName`;
+/// new name exists → `Git("remote '<new_name>' already exists")`.
+pub fn rename_remote(workdir: &Path, name: &str, new_name: &str) -> Result<(), AppError> {
+    if !git2::Remote::is_valid_name(new_name) {
+        return Err(AppError::InvalidName(format!(
+            "invalid remote name: '{new_name}'"
+        )));
+    }
+    let repo = open_repo_at(workdir)?;
+    match repo.remote_rename(name, new_name) {
+        Ok(problems) => {
+            if !problems.is_empty() {
+                let listed: Vec<&str> = problems.iter().flatten().collect();
+                eprintln!(
+                    "bonsai: rename_remote('{name}' -> '{new_name}') left \
+                     non-default refspecs unmodified: {listed:?}"
+                );
+            }
+            Ok(())
+        }
+        Err(e) if e.code() == git2::ErrorCode::NotFound => {
+            Err(AppError::NoRemote(format!("remote '{name}' not found")))
+        }
+        Err(e) if e.code() == git2::ErrorCode::Exists => {
+            Err(AppError::Git(format!("remote '{new_name}' already exists")))
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Blocking. Set the FETCH url of remote `name` (`Repository::remote_set_url`,
+/// push=false, P22 §3.4). Errors: not found → `NoRemote`; invalid url → `Git`.
+pub fn set_remote_url(workdir: &Path, name: &str, url: &str) -> Result<(), AppError> {
+    let repo = open_repo_at(workdir)?;
+    // libgit2's `remote_set_url` writes the config key unconditionally (it does
+    // NOT error on a missing remote, unlike the `git` CLI), so pre-check
+    // existence to honor the contract's NoRemote mapping + CLI parity.
+    match repo.find_remote(name) {
+        Ok(_) => {}
+        Err(e) if e.code() == git2::ErrorCode::NotFound => {
+            return Err(AppError::NoRemote(format!("remote '{name}' not found")));
+        }
+        Err(e) => return Err(e.into()),
+    }
+    match repo.remote_set_url(name, url) {
+        Ok(()) => Ok(()),
+        Err(e) if e.code() == git2::ErrorCode::NotFound => {
+            Err(AppError::NoRemote(format!("remote '{name}' not found")))
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -535,6 +667,49 @@ mod tests {
             v,
             serde_json::json!({ "remotes": [{ "remote": "origin", "receivedObjects": 12, "updatedRefs": 1 }] })
         );
+    }
+
+    // ------------------------------------------------ §8.3 RemoteInfo shape
+
+    /// `RemoteInfo` serializes camelCase with `url: null` when absent.
+    #[test]
+    fn remote_info_wire_shape() {
+        let v = serde_json::to_value(RemoteInfo {
+            name: "origin".to_string(),
+            url: Some("https://example.com/repo.git".to_string()),
+        })
+        .expect("json");
+        assert_eq!(
+            v,
+            serde_json::json!({ "name": "origin", "url": "https://example.com/repo.git" })
+        );
+
+        let v = serde_json::to_value(RemoteInfo {
+            name: "origin".to_string(),
+            url: None,
+        })
+        .expect("json");
+        assert_eq!(v, serde_json::json!({ "name": "origin", "url": null }));
+    }
+
+    /// `list_remotes` sort: case-insensitive primary, exact tie-break.
+    #[test]
+    fn remote_info_sort_order() {
+        let mut v = [
+            RemoteInfo { name: "Zeta".to_string(), url: None },
+            RemoteInfo { name: "alpha".to_string(), url: None },
+            RemoteInfo { name: "Beta".to_string(), url: None },
+            RemoteInfo { name: "beta".to_string(), url: None },
+        ];
+        v.sort_by(|a, b| {
+            a.name
+                .to_lowercase()
+                .cmp(&b.name.to_lowercase())
+                .then_with(|| a.name.cmp(&b.name))
+        });
+        let names: Vec<&str> = v.iter().map(|r| r.name.as_str()).collect();
+        // case-insensitive order: alpha, Beta/beta (tie → 'B' < 'b'), Zeta.
+        assert_eq!(names, vec!["alpha", "Beta", "beta", "Zeta"]);
     }
 
     // ------------------------------------------------ §6.5 credential guard
