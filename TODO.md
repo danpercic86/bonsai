@@ -83,8 +83,27 @@ manager + diff-preview-gated activation) → **P24e** (optional) AI translate he
   wire camelCase (3 tests). Frontend harness: "Translate for Claude Code…" button fills the target
   textarea with the mock canned translation, cycles Translating…→label, zero console errors. USER
   CHECKPOINT (real claude CLI): translate produces a sane instruction file; AI-disabled blocks it.
-**Current step:** P24a/b/d/e all committed+AI-gated → tester (full regression + P24 checklist) → close
-P24 milestone (present AI gate, enumerate USER CHECKPOINT).
+- **P24 tester** — full regression PASS, no bugs: bonsai-core lib 194 + integration 280 (4 new
+  assets_cli) + bonsai 69 = 543 green; clippy --workspace --tests clean; tsc + pnpm build clean. New
+  crates/bonsai-core/tests/assets_cli.rs: real `git hash-object` oracle (external-binary, stronger than
+  the git2 unit oracle), activate-writes-real-files end-to-end (preview writes nothing, byte-exact
+  writes, no .bonsai-tmp remnant, re-activate Unchanged), drift-flips-after-activation, path-safety +
+  rules-dir member listing. Checklist: docs/contracts/P24-user-checklist.md (25 native steps).
+- **P24 AI GATE PASSED (2026-08-01).** Commits: a139fbb P24a · a457cdf P24b · 8af41c0 P24d · bffe021
+  P24e (+ chore 35fdf6f). Backend CLI/fs-oracle suites + frontend browser harness both verified; zero
+  regressions. Milestone = the flagship of the repo-management roadmap (Theme A: A1 unified instruction
+  inventory/drift + A2 per-model context profiles + optional AI translate).
+
+**P24 awaiting USER CHECKPOINT** (native pnpm tauri dev, per docs/contracts/P24-user-checklist.md):
+open a repo with real instruction files → 🤖 AI Assets panel lists them with correct drift chips; edit
+to drift AGENTS.md + Refresh flips the chip; create a profile (Load-from-current) → Activate shows an
+accurate per-target diff preview → confirm writes byte-exact real files (Cancel writes nothing) →
+re-activate reports no changes; .bonsai/profiles.json is created + commit-able; (P24e) with the real
+claude CLI + AI enabled, "Translate for &lt;agent&gt;" fills a sane file, disabled-AI blocks it. NOTE:
+activating a profile that rewrites the canonical (CLAUDE.md) makes previously-in-sync files show drifted
+— that is correct, not a bug.
+**Current step:** P24 DONE — AI gate passed, awaiting USER CHECKPOINT. Next: pick the following roadmap
+milestone (Theme A A3 skills/subagents manager, or Theme B B1/B4 cheap AI-automation wins).
 
 ## P18–P23 — Feature batch (submodules, UI polish, public-release gap) — **in-progress** (2026-07-31)
 
