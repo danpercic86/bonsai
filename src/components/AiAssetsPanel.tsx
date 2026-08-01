@@ -7,6 +7,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ipc } from '../ipc';
 import type {
+  AgentAsset,
+  AgentAssetInventory,
+  AgentAssetKind,
   AiAsset,
   AiAssetInventory,
   DriftEntry,
@@ -15,6 +18,7 @@ import type {
   Unsubscribe,
 } from '../ipc';
 import { errorMessage } from '../utils/errors';
+import { AgentAssetEditor } from './AgentAssetEditor';
 import { ProfileManager } from './ProfileManager';
 import { TextComparePane } from './ProfileActivateDialog';
 
@@ -37,6 +41,42 @@ interface CompareState {
   error: string | null;
 }
 
+/** The three agent-asset groups, in display order (skill<agent<command). */
+const AGENT_GROUPS: { kind: AgentAssetKind; title: string; newLabel: string }[] = [
+  { kind: 'skill', title: 'Skills', newLabel: 'New skill' },
+  { kind: 'agent', title: 'Subagents', newLabel: 'New subagent' },
+  { kind: 'command', title: 'Slash commands', newLabel: 'New command' },
+];
+
+/** True when the asset's frontmatter is complex (read-only). Keys off the
+ *  structural `complex` flag (authoritative); falls back to the legacy Error
+ *  message for resilience. */
+function isComplexAsset(asset: AgentAsset): boolean {
+  return (
+    asset.complex ||
+    asset.validation.issues.some(
+      (i) => i.severity === 'error' && i.message.includes('multi-line YAML'),
+    )
+  );
+}
+
+/** The validation chip for one agent asset (§7.1): complex read-only, green
+ *  valid, or amber N issue(s). */
+function agentValidationChip(asset: AgentAsset) {
+  if (isComplexAsset(asset)) {
+    return <span className="asset-chip asset-chip-muted">complex — read-only</span>;
+  }
+  if (asset.validation.valid) {
+    return <span className="asset-chip asset-chip-sync">valid</span>;
+  }
+  const count = asset.validation.issues.length;
+  return (
+    <span className="asset-chip asset-chip-drifted">
+      {count} issue{count === 1 ? '' : 's'}
+    </span>
+  );
+}
+
 /** The sync chip for one managed instruction file (§8.1). */
 function syncChip(entry: DriftEntry, canonicalId: string | null) {
   if (entry.assetId === canonicalId) {
@@ -49,10 +89,17 @@ function syncChip(entry: DriftEntry, canonicalId: string | null) {
 
 export function AiAssetsPanel({ open, onClose, repoId, aiEnabled }: AiAssetsPanelProps) {
   const [inventory, setInventory] = useState<AiAssetInventory | null>(null);
+  const [agentInventory, setAgentInventory] = useState<AgentAssetInventory | null>(null);
   const [profiles, setProfiles] = useState<ProfileStore | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [compare, setCompare] = useState<CompareState | null>(null);
+
+  // The agent-asset editor target (null => closed). `name: null` => create mode.
+  const [editorTarget, setEditorTarget] = useState<{
+    kind: AgentAssetKind;
+    name: string | null;
+  } | null>(null);
 
   // Monotonic request id: a fetch whose id no longer matches the latest issued
   // one is stale (repoId changed via Ctrl+Tab while the panel was open, or a
@@ -65,13 +112,15 @@ export function AiAssetsPanel({ open, onClose, repoId, aiEnabled }: AiAssetsPane
     setLoading(true);
     setError(null);
     try {
-      const [inv, store] = await Promise.all([
+      const [inv, store, agents] = await Promise.all([
         ipc.listAiAssets(repoId),
         ipc.listProfiles(repoId),
+        ipc.listAgentAssets(repoId),
       ]);
       if (fetchIdRef.current !== id) return;
       setInventory(inv);
       setProfiles(store);
+      setAgentInventory(agents);
     } catch (e) {
       if (fetchIdRef.current !== id) return;
       setError(errorMessage(e));
@@ -116,6 +165,13 @@ export function AiAssetsPanel({ open, onClose, repoId, aiEnabled }: AiAssetsPane
     },
     [refresh],
   );
+
+  // The editor returns the fresh inventory after a save/delete — swap it in
+  // directly (avoids a round-trip) and let the watcher's repo-changed refresh
+  // reconcile any external edits.
+  const handleAgentSaved = useCallback((inv: AgentAssetInventory): void => {
+    setAgentInventory(inv);
+  }, []);
 
   // Esc closes the compare sub-overlay first (capture + stopPropagation) so it
   // does not also close the whole panel via App's global Esc handler.
@@ -323,9 +379,72 @@ export function AiAssetsPanel({ open, onClose, repoId, aiEnabled }: AiAssetsPane
                 onActivated={handleActivated}
               />
             )}
+
+            {/* --- Agent assets (skills / subagents / slash commands) --- */}
+            <section className="settings-section">
+              <h3 className="settings-section-title">Agent assets</h3>
+              <p className="settings-section-desc">
+                Managed <span className="mono">.claude/</span> skills, subagents, and slash commands —
+                parsed and validated. Create, edit, or delete them below.
+              </p>
+              {AGENT_GROUPS.map((group) => {
+                const assets =
+                  agentInventory?.assets.filter((a) => a.kind === group.kind) ?? [];
+                return (
+                  <div className="agent-group" key={group.kind}>
+                    <div className="asset-section-head">
+                      <h4 className="asset-form-title">{group.title}</h4>
+                      <button
+                        type="button"
+                        className="btn-secondary settings-toggle-btn"
+                        onClick={() => setEditorTarget({ kind: group.kind, name: null })}
+                      >
+                        {group.newLabel}
+                      </button>
+                    </div>
+                    {assets.length === 0 ? (
+                      <p className="agent-group-empty">none yet</p>
+                    ) : (
+                      <ul className="asset-list">
+                        {assets.map((asset) => (
+                          <li key={`${asset.kind}:${asset.name}`}>
+                            <button
+                              type="button"
+                              className="asset-row asset-row-clickable"
+                              onClick={() =>
+                                setEditorTarget({ kind: asset.kind, name: asset.name })
+                              }
+                            >
+                              <div className="asset-row-main">
+                                <div className="asset-row-head">
+                                  <span className="asset-row-label">{asset.name}</span>
+                                  {agentValidationChip(asset)}
+                                </div>
+                                <span className="asset-row-path mono">{asset.path}</span>
+                              </div>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })}
+            </section>
           </>
         )}
       </div>
+
+      {/* Create/edit one agent asset (skill / subagent / slash command). */}
+      {editorTarget !== null && (
+        <AgentAssetEditor
+          repoId={repoId}
+          kind={editorTarget.kind}
+          name={editorTarget.name}
+          onSaved={handleAgentSaved}
+          onClose={() => setEditorTarget(null)}
+        />
+      )}
 
       {/* Read-only current-vs-canonical compare for a drifted row. */}
       {compare !== null && (

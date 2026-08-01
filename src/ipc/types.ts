@@ -711,6 +711,10 @@ export interface AgentAsset {
   frontmatter: FrontmatterField[];
   /** Everything after the closing `---` fence (verbatim); whole file if none. */
   body: string;
+  /** `true` when the frontmatter uses multi-line/sequence/nested YAML the flat
+   *  parser can't round-trip (§4.3). The structural signal the editor uses to
+   *  open the asset read-only; the backend also re-guards saves on it. */
+  complex: boolean;
   validation: Validation;
 }
 

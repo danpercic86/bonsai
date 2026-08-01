@@ -3534,6 +3534,110 @@ button.asset-row-clickable:hover {
   font-size: 12px;
 }
 
+/* --- P26c: agent assets (skills / subagents / slash commands) --- */
+.agent-group {
+  margin-top: 12px;
+}
+
+.agent-group-empty {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+  font-style: italic;
+}
+
+/* The create/edit editor is a wide card, like the AI-assets panel itself. */
+.dialog-card.agent-editor-card {
+  width: 640px;
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+}
+
+.asset-readonly-banner {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.asset-issue-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.asset-issue {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+}
+
+.asset-issue-error {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.asset-issue-warning {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+}
+
+.asset-field-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+.asset-editor-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.asset-editor-unknown {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.asset-unknown-row {
+  display: flex;
+  gap: 8px;
+}
+
+.asset-unknown-key {
+  flex: 0 0 200px;
+  font-family: var(--font-mono);
+}
+
+.asset-unknown-value {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.asset-editor-body {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* Delete sits on the left; Cancel/Save stay right-aligned. */
+.agent-editor-buttons {
+  align-items: center;
+}
+
+.agent-editor-delete {
+  margin-right: auto;
+}
+
 /* --- Two-pane text compare (drift row + activation preview) --- */
 .asset-preview-list {
   display: flex;

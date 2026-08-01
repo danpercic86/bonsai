@@ -89,6 +89,12 @@ pub struct AgentAsset {
     /// Everything after the closing `---` fence (verbatim); whole file if no
     /// fence.
     pub body: String,
+    /// `true` when the frontmatter uses multi-line / sequence / nested YAML the
+    /// flat parser cannot round-trip (§4.3). The authoritative, structural signal
+    /// the editor uses to open the asset read-only — a save that ignored it would
+    /// silently drop the un-parsed YAML, so `save_agent_asset` also re-guards on
+    /// this against the on-disk file.
+    pub complex: bool,
     pub validation: Validation,
 }
 
@@ -329,12 +335,29 @@ pub fn serialize_asset(frontmatter: &[FrontmatterField], body: &str) -> String {
 // Validation (§4.4, §4.5).
 // ---------------------------------------------------------------------------
 
+/// Windows reserved device names (case-insensitive). Rejected whether bare
+/// (`CON`) or with an extension (`CON.md`) — Windows treats `CON.md` as the
+/// device `CON`, so a scan would never find a file written under that name.
+const WINDOWS_RESERVED_NAMES: &[&str] = &[
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
 /// Validate an asset `name` for filesystem safety (§4.4). Rejects blank/`.`/`..`,
 /// a leading `-`, any of `/ \ :`, control chars, or any char outside
 /// `[A-Za-z0-9._-]` -> `InvalidName`. (This charset makes a path separator or a
-/// `..` component impossible.) "Not lowercase-hyphen" is NOT rejected here — it
-/// is only a Warning in `validate` (§4.5).
+/// `..` component impossible.) Also rejects Windows reserved device names
+/// (`CON`, `NUL`, `COM1`, …, matched on the base name before the first `.`,
+/// case-insensitive) and a trailing dot or space (Windows silently strips these,
+/// causing a scan/write name mismatch). "Not lowercase-hyphen" is NOT rejected
+/// here — it is only a Warning in `validate` (§4.5).
 pub fn validate_asset_name(name: &str) -> Result<(), AppError> {
+    // Base name = text before the first '.' (so `CON.md` still resolves to `CON`).
+    let base = name.split('.').next().unwrap_or(name);
+    let reserved = WINDOWS_RESERVED_NAMES
+        .iter()
+        .any(|r| base.eq_ignore_ascii_case(r));
+    let trailing_dot_or_space = name.ends_with('.') || name.ends_with(' ');
     let bad = name.trim().is_empty()
         || name == "."
         || name == ".."
@@ -345,7 +368,9 @@ pub fn validate_asset_name(name: &str) -> Result<(), AppError> {
         || name.chars().any(char::is_control)
         || name
             .chars()
-            .any(|c| !(c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')));
+            .any(|c| !(c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')))
+        || reserved
+        || trailing_dot_or_space;
     if bad {
         return Err(AppError::InvalidName(format!("invalid asset name: '{name}'")));
     }
@@ -453,6 +478,7 @@ fn load_asset(
         exists: true,
         frontmatter,
         body,
+        complex,
         validation,
     })
 }
@@ -553,6 +579,7 @@ pub fn read_agent_asset(
             exists: false,
             frontmatter: Vec::new(),
             body: String::new(),
+            complex: false,
             validation: Validation {
                 valid: false,
                 issues: vec![error_issue("file does not exist")],
@@ -612,6 +639,25 @@ pub fn save_agent_asset(
     validate_rel_path(&rel)?;
 
     let full = full_path(workdir, input.kind, &input.name);
+
+    // Structural fail-safe (SHOULD-FIX): never overwrite an existing file whose
+    // on-disk frontmatter is "complex" (multi-line/sequence/nested YAML the flat
+    // parser can't round-trip). Rebuilding from the editor's flat fields would
+    // silently drop that YAML. The backend is the authoritative barrier here, so
+    // a frontend guard failure (e.g. drifted Error text) can never cause a lossy
+    // rewrite. Creating a NEW asset, or overwriting a FLAT one, is unaffected.
+    if full.is_file() {
+        let existing = std::fs::read(&full)?;
+        let raw = String::from_utf8_lossy(&existing);
+        let (_, _, complex) = parse_frontmatter(&raw);
+        if complex {
+            return Err(AppError::Other(
+                "cannot overwrite complex YAML frontmatter from the editor — edit this file directly"
+                    .to_string(),
+            ));
+        }
+    }
+
     if let Some(parent) = full.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -886,6 +932,23 @@ mod tests {
         ));
     }
 
+    // Windows reserved device names + trailing dot/space are rejected; normal
+    // names still pass.
+    #[test]
+    fn validate_asset_name_rejects_windows_reserved() {
+        for bad in [
+            "CON", "con", "nul.md", "COM1", "lpt9", "PRN", "aux.txt", "foo.", "foo ", "bar.",
+        ] {
+            assert!(
+                matches!(validate_asset_name(bad), Err(AppError::InvalidName(_))),
+                "name {bad:?} should be InvalidName"
+            );
+        }
+        for good in ["my-skill", "code.review", "com", "com10", "lpt", "console"] {
+            validate_asset_name(good).unwrap_or_else(|e| panic!("must accept {good:?}: {e:?}"));
+        }
+    }
+
     // read_agent_asset: existing parsed; missing -> exists:false shell.
     #[test]
     fn read_agent_asset_existing_and_missing() {
@@ -934,6 +997,7 @@ mod tests {
         assert!(asset.get("exists").is_some());
         assert!(asset.get("frontmatter").is_some());
         assert!(asset.get("body").is_some());
+        assert_eq!(asset["complex"], false);
 
         let validation = &asset["validation"];
         assert_eq!(validation["valid"], false);
@@ -1081,6 +1145,74 @@ mod tests {
         );
         assert_eq!(a.body, "\nnew body\n");
         assert!(!root.join(".claude/agents/test-runner.md.bonsai-tmp").exists());
+    }
+
+    // SHOULD-FIX (data-loss fail-open): saving over an existing COMPLEX asset is
+    // refused with `Other` and leaves the file byte-unchanged; a flat overwrite
+    // and a fresh create are unaffected.
+    #[test]
+    fn save_refuses_overwriting_complex_asset() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        // An on-disk agent with multi-line (sequence) YAML the flat editor can't
+        // round-trip. Confirm the scan flags it `complex`.
+        let complex_bytes =
+            b"---\nname: fancy\ndescription: has a list\ntools:\n  - Read\n  - Bash\n---\n\nbody\n";
+        write(root, ".claude/agents/fancy.md", complex_bytes);
+        let loaded = read_agent_asset(root, AgentAssetKind::Agent, "fancy").unwrap();
+        assert!(loaded.complex, "sequence frontmatter must parse as complex");
+
+        // Attempting to overwrite it from the (flat) editor is refused, writes
+        // nothing, and the bytes on disk are untouched.
+        let err = save_agent_asset(
+            root,
+            input(
+                AgentAssetKind::Agent,
+                "fancy",
+                &[("name", "fancy"), ("description", "clobbered")],
+                "\nnew body\n",
+            ),
+        )
+        .unwrap_err();
+        assert!(matches!(err, AppError::Other(_)));
+        assert_eq!(
+            std::fs::read(root.join(".claude/agents/fancy.md")).unwrap(),
+            complex_bytes.to_vec(),
+            "the complex file must be byte-unchanged"
+        );
+
+        // Overwriting a FLAT existing asset still works.
+        write(
+            root,
+            ".claude/agents/plain.md",
+            b"---\nname: plain\ndescription: old\n---\n\nold\n",
+        );
+        save_agent_asset(
+            root,
+            input(
+                AgentAssetKind::Agent,
+                "plain",
+                &[("name", "plain"), ("description", "new")],
+                "\nnew\n",
+            ),
+        )
+        .unwrap();
+        let plain = read_agent_asset(root, AgentAssetKind::Agent, "plain").unwrap();
+        assert_eq!(plain.body, "\nnew\n");
+
+        // Creating a brand-new asset is unaffected.
+        save_agent_asset(
+            root,
+            input(
+                AgentAssetKind::Command,
+                "changelog",
+                &[("description", "d")],
+                "\nrun\n",
+            ),
+        )
+        .unwrap();
+        assert!(root.join(".claude/commands/changelog.md").is_file());
     }
 
     // §11 row 8 — save preserves unknown/preserved frontmatter keys on edit.

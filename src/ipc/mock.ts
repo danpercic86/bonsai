@@ -404,6 +404,7 @@ const mockAgentAssets: AgentAsset[] = [
       { key: 'description', value: 'Reviews a diff for correctness and style' },
     ],
     body: '\n# Code review\n\nReview the staged changes.\n',
+    complex: false,
     validation: { valid: true, issues: [] },
   },
   {
@@ -414,6 +415,7 @@ const mockAgentAssets: AgentAsset[] = [
     // Multi-line YAML the editor can't round-trip -> read-only Error.
     frontmatter: [{ key: 'name', value: 'release-notes' }],
     body: '\n# Release notes\n\nSummarize merged PRs.\n',
+    complex: true,
     validation: {
       valid: false,
       issues: [
@@ -437,6 +439,7 @@ const mockAgentAssets: AgentAsset[] = [
       { key: 'model', value: 'inherit' },
     ],
     body: '\nYou run the project test suite and report failures.\n',
+    complex: false,
     validation: { valid: true, issues: [] },
   },
   {
@@ -444,9 +447,10 @@ const mockAgentAssets: AgentAsset[] = [
     name: 'broken',
     path: '.claude/agents/broken.md',
     exists: true,
-    // Missing required `description` -> invalid.
+    // Missing required `description` -> invalid (but NOT complex — still editable).
     frontmatter: [{ key: 'name', value: 'broken' }],
     body: '\nAn incomplete subagent.\n',
+    complex: false,
     validation: {
       valid: false,
       issues: [
@@ -464,6 +468,7 @@ const mockAgentAssets: AgentAsset[] = [
       { key: 'argument-hint', value: '<version>' },
     ],
     body: '\nDraft a changelog entry for $ARGUMENTS.\n',
+    complex: false,
     validation: { valid: true, issues: [] },
   },
 ];
@@ -520,8 +525,17 @@ function mockValidateAsset(
   return { valid, issues };
 }
 
+/** Windows reserved device names (case-insensitive), matched on the base name
+ *  before the first `.` — mirrors Rust `WINDOWS_RESERVED_NAMES`. */
+const WINDOWS_RESERVED_NAMES = new Set([
+  'con', 'prn', 'aux', 'nul',
+  'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9',
+  'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9',
+]);
+
 /** Name safety mirror of Rust `validate_asset_name` (§4.4); throws `invalidName`. */
 function requireValidAssetName(name: string): void {
+  const base = name.split('.')[0];
   const bad =
     name.trim() === '' ||
     name === '.' ||
@@ -534,7 +548,10 @@ function requireValidAssetName(name: string): void {
       const code = c.charCodeAt(0);
       return code < 0x20 || (code >= 0x7f && code <= 0x9f);
     }) ||
-    [...name].some((c) => !/[A-Za-z0-9._-]/.test(c));
+    [...name].some((c) => !/[A-Za-z0-9._-]/.test(c)) ||
+    WINDOWS_RESERVED_NAMES.has(base.toLowerCase()) ||
+    name.endsWith('.') ||
+    name.endsWith(' ');
   if (bad) {
     const err: AppError = { kind: 'invalidName', message: `invalid asset name: '${name}'` };
     throw err;
@@ -3349,6 +3366,7 @@ export const mockIpc: IpcApi = {
       exists: false,
       frontmatter: [],
       body: '',
+      complex: false,
       validation: {
         valid: false,
         issues: [{ severity: 'error', message: 'file does not exist' }],
@@ -3363,6 +3381,19 @@ export const mockIpc: IpcApi = {
     // Name guard fires first (throws invalidName on separators / `..` / bad
     // charset) — mirrors the backend; validation issues do NOT block a save.
     requireValidAssetName(asset.name);
+    // Structural re-guard (mirrors the Rust save): refuse to overwrite an
+    // existing COMPLEX asset — rebuilding from flat fields would drop its YAML.
+    const existing = state.agentAssets.find(
+      (a) => a.kind === asset.kind && a.name === asset.name,
+    );
+    if (existing?.complex) {
+      const err: AppError = {
+        kind: 'other',
+        message:
+          'cannot overwrite complex YAML frontmatter from the editor — edit this file directly',
+      };
+      throw err;
+    }
     const saved: AgentAsset = {
       kind: asset.kind,
       name: asset.name,
@@ -3370,6 +3401,8 @@ export const mockIpc: IpcApi = {
       exists: true,
       frontmatter: structuredClone(asset.frontmatter),
       body: asset.body,
+      // A flat `AgentAssetInput` is never complex (single-line editor values).
+      complex: false,
       validation: mockValidateAsset(asset.kind, asset.name, asset.frontmatter, asset.body),
     };
     const idx = state.agentAssets.findIndex(

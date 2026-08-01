@@ -54,7 +54,26 @@ claudeDir taxonomy row stays managed:false (P26 is a separate managed surface, n
   tsc + build clean. Reviewer NITs to FOLD INTO P26c: (1) frontmatter field values must stay single-line
   (editor: single-line inputs / strip embedded \n+`---` before save); (2) validate_asset_name should also
   reject Windows reserved device names (CON/NUL/PRN/COM#/LPT#) + trailing dot/space (Windows is target).
-**Current step:** P26b done (uncommitted) → committing → P26c UI (AiAssetsPanel section + editor; folds nits).
+- **P26c** (reviewer APPROVE, 0 must-fix; SHOULD-FIX hardened + nits folded) — UI. AiAssetsPanel "Agent
+  assets" section: 3 groups (Skills/Subagents/Slash commands) with validation chips (valid / N issue(s) /
+  complex — read-only) + New-<kind> buttons, folded into the panel's request-guarded fetch. New
+  AgentAssetEditor (per-kind known-field single-line inputs + preserved unknown key/value + body textarea
+  + create-mode templates; complex assets open READ-ONLY w/ banner + Save disabled; single-line stripping
+  on all frontmatter key+value; save surfaces write-anyway validation issues; skill-delete ConfirmDialog
+  names the full .claude/skills/<name>/ dir removal). Folded: validate_asset_name rejects Windows reserved
+  device names (CON/NUL/COM#/LPT#) + trailing dot/space (Rust + mock mirror + test). HARDENED the reviewer
+  SHOULD-FIX (fail-open data-loss risk): added structural `complex: bool` on the AgentAsset wire type +
+  backend save-time re-guard (save_agent_asset refuses overwriting an on-disk complex file → Other, writes
+  nothing) so a frontend guard failure can never lossily rewrite complex YAML; frontend guard now keys off
+  the flag. bundle 17 tests; lib green; clippy + tsc + build clean.
+- **P26c AI GATE PASSED (2026-08-01).** Harness (mock :1420): Agent-assets section lists code-review(valid)/
+  release-notes(complex — read-only) skills, broken(1 issue)/test-runner(valid) agents, changelog(valid)
+  command; opening release-notes → editor read-only (8 inputs + Save disabled, complex banner); opening
+  broken → editable (Save enabled) surfacing "requires frontmatter field 'description'"; skill delete
+  confirm reads "permanently removes the entire .claude/skills/code-review/ directory and every file inside
+  it"; zero console errors.
+**Current step:** P26c done + AI gate passed → committing → tester (full regression + P26 checklist) →
+close P26 milestone.
 
 ## P25 — Cheap AI-automation wins: AI review (B1) + stale-branch cleanup (B4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-01)
 
