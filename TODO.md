@@ -72,8 +72,25 @@ claudeDir taxonomy row stays managed:false (P26 is a separate managed surface, n
   broken → editable (Save enabled) surfacing "requires frontmatter field 'description'"; skill delete
   confirm reads "permanently removes the entire .claude/skills/code-review/ directory and every file inside
   it"; zero console errors.
-**Current step:** P26c done + AI gate passed → committing → tester (full regression + P26 checklist) →
-close P26 milestone.
+- **P26 tester** — full regression PASS, no bugs: bonsai-core 518 (incl. 17 assets::bundle + 5 new
+  bundle_cli) + bonsai 69; clippy --workspace --tests clean; tsc + build clean. New crates/bonsai-core/
+  tests/bundle_cli.rs: create→scan→read round-trip (all 3 kinds), edit preserves unknown keys in order +
+  atomic (no .bonsai-tmp), the complex re-guard (block-list agent → flat overwrite returns Other + file
+  byte-UNCHANGED; new/flat saves still work), skill delete removes the whole dir (incl. siblings) vs
+  agent/command single-file, validation + Windows-reserved/`..` name safety through the fs. Checklist:
+  docs/contracts/P26-user-checklist.md.
+- **P26 AI GATE PASSED (2026-08-01).** Commits: ae5ecdf P26a · 1024571 P26b · 9b85263 P26c. Backend fs/
+  oracle suites + frontend browser harness both verified; zero regressions. Roadmap Theme A A3 delivered —
+  the "detected (not managed)" .claude/ group is now a managed create/edit/delete surface.
+
+**P26 awaiting USER CHECKPOINT** (native pnpm tauri dev, per docs/contracts/P26-user-checklist.md, on a
+SCRATCH repo — skill delete is a recursive dir removal): 🤖 AI Assets → "Agent assets" lists real .claude
+skills/agents/commands with valid / N-issue / complex-read-only chips; create via templates writes real
+files (missing-field still saves + flags); a complex-YAML asset opens read-only and cannot be overwritten
+(backend refuses); deleting a skill removes the whole .claude/skills/<name>/ dir after a confirm that names
+it, Cancel removes nothing.
+**Current step:** P26 DONE — AI gate passed, awaiting USER CHECKPOINT. THREE roadmap milestones (P24, P25,
+P26) complete this autonomous session.
 
 ## P25 — Cheap AI-automation wins: AI review (B1) + stale-branch cleanup (B4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-01)
 
