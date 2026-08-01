@@ -42,6 +42,7 @@ use bonsai_core::git::stage_partial::{
 use bonsai_core::git::stash::{self, ApplyStashOutcome, CreateStashResult, StashEntry};
 use bonsai_core::git::status::{read_status, StatusSnapshot};
 use bonsai_core::git::submodule::{self, SubmoduleInfo};
+use bonsai_core::git::worktree::{self, WorktreeInfo};
 use bonsai_core::git::tags;
 use bonsai_core::graph::{compute_graph, GraphLayout};
 use crate::settings::{
@@ -2082,6 +2083,28 @@ async fn sync_submodule_inner(
 ) -> Result<(), AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || submodule::sync_submodule(&path, &name))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Lists every worktree — the synthesized main row first, then each linked
+/// worktree — with resolved branch/oid/badges (P27 contract §3). Errors:
+/// `git` | `noRepo`. Does NOT emit `repo-changed` — the frontend refetches.
+#[tauri::command]
+pub async fn list_worktrees(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<Vec<WorktreeInfo>, AppError> {
+    list_worktrees_inner(state.inner(), &repo_id).await
+}
+
+/// Runtime-free core of `list_worktrees` (unit-testable without a Tauri app).
+async fn list_worktrees_inner(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<Vec<WorktreeInfo>, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || worktree::list_worktrees(&path))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

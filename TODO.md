@@ -16,7 +16,45 @@ that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e
 Every "awaiting USER CHECKPOINT" below is now CONFIRMED as of 2026-07-30. (P5/P6 were already
 confirmed earlier.)
 
-## P26 — AI-asset management A3: skills / subagents / commands manager — **in-progress** (2026-08-01)
+## P27 — Git power feature C1: worktree management — **in-progress** (2026-08-01)
+
+Roadmap Theme C item **C1** (roadmap #3; `~/.claude/plans/if-we-think-about-eager-hoare.md`;
+memory: repo-management-vision). Highest-demand power feature, already on Bonsai's deferred roadmap. Started
+autonomously after P24+P25+P26 shipped (user away 8–10h). Scoped CONSERVATIVELY to mirror the existing
+Submodules sidebar-section + open-in-tab pattern so it's fully harness-verifiable (no native folder picker
+in v1): list worktrees (path, branch, HEAD, locked, is-current, prunable), create a worktree for a branch at
+a DERIVED path (default `.worktrees/<branch>` beside the repo — no folder picker v1), remove (confirm-gated;
+libgit2 prune, refuse the main/current worktree), lock/unlock, open-in-tab via the existing openRepo/tab
+flow. Defer: custom-path picker (native dialog = USER CHECKPOINT), per-worktree AI contexts (ties Theme A,
+later), worktree-move. git2 has `Repository::worktrees()/worktree()/find_worktree()`, `Worktree::{validate,
+lock,unlock,is_locked,is_prunable,prune}`, `Repository::worktree(name,path,opts)` for create.
+Autonomy rules unchanged: architect→senior-dev→reviewer→orchestrator-commits→tester→AI gate→USER CHECKPOINT;
+read-only list first, gate destructive remove behind confirmation; scratch under D:\Temp\bonsai-scratch,
+TMP/TEMP=D:\Temp for cargo, no concurrent test+clippy, mock.ts kept compiling. Contract:
+docs/contracts/P27-worktrees.md (architect). Sub-increments: **P27a** core list + read cmd + IPC →
+**P27b** create/remove/lock/unlock cmds + IPC + stateful mock → **P27c** UI (Worktrees sidebar section +
+menu + New affordance + confirm). Key defaults (architect, accepted): create path = `<main_parent>/
+.worktrees/<slug>` (sanitized, collision-suffixed); remove refuses main/current/locked/DIRTY (data-loss
+guard) via git2 prune(valid+working_tree) + remove_dir_all fallback; lock/unlock; add returns the created
+WorktreeInfo. Deferred: native folder-picker custom path, create-new-branch, per-worktree AI contexts.
+
+- **P27a** (reviewer APPROVE, 0 must-fix) — git/worktree.rs: WorktreeInfo, list_worktrees (synthesizes the
+  MAIN row + linked rows via Repository::worktrees()/find_worktree; isCurrent vs opened workdir incl. from a
+  linked wt via commondir; branch/detached-oid, locked+reason, prunable/valid, stale→valid:false no-panic),
+  sanitize_slug + derive_worktree scaffolding (escape-safe BY CONSTRUCTION — no separator/`..` survives).
+  list_worktrees command + IPC listWorktrees + stateful mock seed (main+linked+locked+stale). 4 unit + 4
+  worktree_cli (git-worktree-list --porcelain oracle) green; clippy + tsc + build clean.
+  **P27b CARRY-FORWARDS (from P27a review):** (1) add a stale-worktree no-panic list test; (2) when
+  add_worktree actually creates dirs, promote derive_worktree's `debug_assert` containment to a RUNTIME check.
+- **PRE-EXISTING (not P27):** `remote_cli::pull_fast_forwards_ref_and_worktree` FAILS at the tip AND at
+  f451bb3 (verified via stash) — post-fast-forward `git status` shows `M hello.txt / M shared.txt` (Windows
+  CRLF/autocrlf artifact in the pull TEST, or a real dirty-worktree pull bug). Unrelated to P24–P27. Flagged
+  as a spawn_task chip (task_944fc6bf) for separate investigation. P25/P26 testers reported it green, so it's
+  environment/config-sensitive.
+**Current step:** P27a done + committed. **P27b (create/remove/lock/unlock — destructive) + P27c (UI) are
+QUEUED, not started** — resume here. (Autonomous session paused after P24+P25+P26 complete + P27a landed.)
+
+## P26 — AI-asset management A3: skills / subagents / commands manager — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-01)
 
 Roadmap Theme A item **A3** (the #1-priority remaining item; `~/.claude/plans/
 if-we-think-about-eager-hoare.md`; memory: repo-management-vision). Direct continuation of the P24 flagship

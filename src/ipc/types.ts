@@ -378,6 +378,22 @@ export interface SubmoduleInfo {
   status: SubmoduleStatus;
 }
 
+/** One worktree row (main or linked) — P27. Wire mirror of the Rust
+ *  `WorktreeInfo`. `headOid` is full 40-hex; the UI shortens to 7. */
+export interface WorktreeInfo {
+  name: string;               // stable key for remove/lock/unlock
+  absPath: string;            // absolute workdir path — feed to open-in-tab
+  relPath: string | null;     // repo-relative if under the main workdir, else null
+  branch: string | null;      // short branch name; null if detached/invalid
+  headOid: string | null;     // full 40-hex; UI shortens to 7
+  locked: boolean;
+  lockReason: string | null;
+  isMain: boolean;
+  isCurrent: boolean;
+  prunable: boolean;          // stale
+  valid: boolean;
+}
+
 export type ApplyStashOutcome =
   | { kind: 'applied' }
   | { kind: 'conflicts'; paths: string[] };
@@ -1038,6 +1054,9 @@ export interface IpcApi {
   updateSubmodule(repoId: string, name: string): Promise<void>;
   /** Copy the .gitmodules URL into config + the submodule remote. Rejects noRepo | invalidName | git. */
   syncSubmodule(repoId: string, name: string): Promise<void>;
+  // --- P27: worktrees ---
+  /** All worktrees (main first) with resolved branch/oid/badges. Rejects noRepo | git. */
+  listWorktrees(repoId: string): Promise<WorktreeInfo[]>;
   // --- P22: tags ---
   /** Create a tag at `targetOid`. `message` non-null ⇒ annotated (needs git identity),
    *  null ⇒ lightweight. `force` overwrites (v1 UI passes false). Rejects

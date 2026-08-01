@@ -96,6 +96,7 @@ import type {
   UiSettings,
   UiSettingsPatch,
   Unsubscribe,
+  WorktreeInfo,
 } from './types';
 import {
   AUTO_FETCH_INTERVAL_MAX,
@@ -666,6 +667,9 @@ interface MockRepoState {
   stashes: StashEntry[];
   /** Submodules with classified status (P19 §5). Default repo only. */
   submodules: SubmoduleInfo[];
+  /** Worktrees — main first, then linked (P27 §5). Default repo only. Mutated by
+   *  P27b's add/remove/lock/unlock ops. */
+  worktrees: WorktreeInfo[];
   /** Configured remotes (P22 §5.3). Seeded with `origin` for every usable repo. */
   remotes: RemoteInfo[];
   /** P17: the one live three-way (head/index/workdir) model file, `src/main.rs`.
@@ -962,6 +966,67 @@ function seedSubmodules(kind: RepoKind, graphFixture: GraphFixture): SubmoduleIn
   ];
 }
 
+/** Seed the DEFAULT repo's worktrees so the sidebar section shows every badge:
+ *  main+current, a clean linked, a locked linked, a stale/prunable linked
+ *  (P27 §5). Non-default repos get []. */
+function seedWorktrees(kind: RepoKind, graphFixture: GraphFixture): WorktreeInfo[] {
+  if (kind !== 'default' || graphFixture !== 'default') return [];
+  return [
+    {
+      name: 'repo',
+      absPath: '/mock/repo',
+      relPath: null,
+      branch: 'main',
+      headOid: fixtureOid(1),
+      locked: false,
+      lockReason: null,
+      isMain: true,
+      isCurrent: true,
+      prunable: false,
+      valid: true,
+    },
+    {
+      name: 'feature-login',
+      absPath: '/mock/.worktrees/feature-login',
+      relPath: null,
+      branch: 'feature/login',
+      headOid: fixtureOid(3),
+      locked: false,
+      lockReason: null,
+      isMain: false,
+      isCurrent: false,
+      prunable: false,
+      valid: true,
+    },
+    {
+      name: 'release-1.2',
+      absPath: '/mock/.worktrees/release-1.2',
+      relPath: null,
+      branch: 'release/1.2',
+      headOid: fixtureOid(4),
+      locked: true,
+      lockReason: 'pinned for QA',
+      isMain: false,
+      isCurrent: false,
+      prunable: false,
+      valid: true,
+    },
+    {
+      name: 'hotfix-stale',
+      absPath: '/mock/.worktrees/hotfix-stale',
+      relPath: null,
+      branch: null,
+      headOid: null,
+      locked: false,
+      lockReason: null,
+      isMain: false,
+      isCurrent: false,
+      prunable: true,
+      valid: false,
+    },
+  ];
+}
+
 /** Builds a fresh MockRepoState for a usable repo (default / detached / unborn). */
 function createRepoState(path: string): MockRepoState {
   const graphFixture = repoGraphFixture(path);
@@ -983,6 +1048,7 @@ function createRepoState(path: string): MockRepoState {
     conflictTexts: new Map(),
     stashes: seedStashes(kind, graphFixture),
     submodules: seedSubmodules(kind, graphFixture),
+    worktrees: seedWorktrees(kind, graphFixture),
     remotes: [{ name: 'origin', url: 'https://example.com/repo.git' }],
     mainRs: initialMainRs(),
     interactiveConflictDemo: query('rebase') === 'conflict',
@@ -3104,6 +3170,14 @@ export const mockIpc: IpcApi = {
     // Validate the repo is open (mirrors the real command surface).
     void name;
     requireRepo(repoId);
+  },
+
+  // Stateful worktree mock (P27 §5). P27a: read-only list; the mutating
+  // add/remove/lock/unlock ops land in P27b over this same slice.
+  async listWorktrees(repoId: string): Promise<WorktreeInfo[]> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    return structuredClone(state.worktrees);
   },
 
   // Stateful tags mock (P22 §5.3). create/delete mutate state.branches.tags so

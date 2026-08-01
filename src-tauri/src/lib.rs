@@ -88,6 +88,7 @@ pub fn run() {
             commands::init_submodule,
             commands::update_submodule,
             commands::sync_submodule,
+            commands::list_worktrees,
             commands::clone_repo,
             commands::init_repo,
             commands::create_tag,

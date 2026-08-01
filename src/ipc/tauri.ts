@@ -62,6 +62,7 @@ import type {
   UiSettings,
   UiSettingsPatch,
   Unsubscribe,
+  WorktreeInfo,
 } from './types';
 
 export const tauriIpc: IpcApi = {
@@ -402,6 +403,11 @@ export const tauriIpc: IpcApi = {
 
   syncSubmodule(repoId: string, name: string): Promise<void> {
     return invoke<void>('sync_submodule', { repoId, name });
+  },
+
+  // P27: worktrees.
+  listWorktrees(repoId: string): Promise<WorktreeInfo[]> {
+    return invoke<WorktreeInfo[]>('list_worktrees', { repoId });
   },
 
   // P22: tags.
