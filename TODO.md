@@ -16,7 +16,7 @@ that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e
 Every "awaiting USER CHECKPOINT" below is now CONFIRMED as of 2026-07-30. (P5/P6 were already
 confirmed earlier.)
 
-## P27 — Git power feature C1: worktree management — **in-progress** (2026-08-01)
+## P27 — Git power feature C1: worktree management — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-03)
 
 Roadmap Theme C item **C1** (roadmap #3; `~/.claude/plans/if-we-think-about-eager-hoare.md`;
 memory: repo-management-vision). Highest-demand power feature, already on Bonsai's deferred roadmap. Started
@@ -51,8 +51,48 @@ WorktreeInfo. Deferred: native folder-picker custom path, create-new-branch, per
   CRLF/autocrlf artifact in the pull TEST, or a real dirty-worktree pull bug). Unrelated to P24–P27. Flagged
   as a spawn_task chip (task_944fc6bf) for separate investigation. P25/P26 testers reported it green, so it's
   environment/config-sensitive.
-**Current step:** P27a done + committed. **P27b (create/remove/lock/unlock — destructive) + P27c (UI) are
-QUEUED, not started** — resume here. (Autonomous session paused after P24+P25+P26 complete + P27a landed.)
+- **P27b** (reviewer APPROVE, 0 must-fix; destructive-path safety trace passed) — commit b315a19. worktree.rs:
+  add_worktree (derived `.worktrees/<slug>`, collision-suffixed, returns WorktreeInfo, BranchNotFound /
+  already-checked-out → Git), remove_worktree (refuses main-by-name+path / current / locked / DIRTY
+  [staged+unstaged+untracked via is_dirty]; prune valid+working_tree WITHOUT locked(true) so a TOCTOU lock
+  still refuses; guarded remove_dir_all fallback on the git-owned path only), lock/unlock. CARRY-FORWARDS
+  LANDED: stale-list no-panic test; derive_worktree containment promoted to runtime ensure_contained (also
+  rejects container-as-leaf). 4 commands (P19 template) + IPC triple + stateful mock (refusal messages mirror
+  backend). worktree_cli 11 green; clippy + tsc + build clean. Reviewer SHOULD-FIX logged for the force/
+  prune-stale FOLLOW-UP: an invalid-but-present worktree (corrupt gitdir, dir intact) skips the dirty check
+  and can be pruned with working_tree(true) — matches contract pseudocode, known data-loss edge.
+- **P27c** (reviewer APPROVE, 0 must-fix; 1 SHOULD-FIX folded by orchestrator) — commit e392f26. Sidebar
+  Worktrees section (always shown, name+branch/detached, badges current/main/locked(title=reason)/stale via
+  existing badge classes, '+' New button); worktreeMenuItems: Open-in-tab (disabled current/stale) /
+  Lock…(PromptDialog reason) / Unlock / Remove… (disabled main/current/locked; ConfirmDialog names the exact
+  absPath + dirty-refusal note; backend refusals → error toast); WorktreeCreateDialog (branch select w/
+  checked-out disabled, display-only derived-path preview, in-dialog errors; FOLDED: Cancel/overlay/Esc
+  disabled while create in flight — no swallowed errors); RepoWorkspace worktrees state + reqId guard +
+  refetch in all 4 batches + dialogOpen wiring. ipc/index.ts WorktreeInfo re-export added. Deviations
+  (accepted): centered create dialog instead of context-menu branch picker; lock reason prompt added.
+- **P27c AI GATE PASSED (2026-08-03).** Harness (mock :1420, hidden pane → DOM-driven): 4 seeded rows w/
+  correct badges; '+' dialog (main "(checked out)" disabled, preview /mock/.worktrees/feature-sidebar) →
+  Create appends row; locked-row menu Lock/Remove disabled + Unlock flips badge; Remove feature-login →
+  confirm names exact dir, Cancel keeps row, confirm removes it; main row all items disabled; stale row
+  open-in-tab disabled; zero console errors.
+- **P27 tester** — full regression PASS, no bugs: bonsai_lib 69 + core unit 233 + worktree_cli 11→**14**
+  (add→list-from-inside flips isCurrent, dirty-refusal preserves content byte-for-byte, lock→refuse→unlock→
+  remove e2e, collision dirs proven on disk) + all ~35 integration suites 0 failed; clippy --workspace
+  --tests clean; tsc + build clean. NOTE: the flagged pre-existing remote_cli::pull_fast_forwards_ref_and_
+  worktree failure did NOT reproduce this run (remote_cli 18/18) — environment-sensitive, chip stays open.
+  Checklist: docs/contracts/P27-user-checklist.md.
+- **P27 AI GATE PASSED (2026-08-03).** Commits: e962ff1 P27a · b315a19 P27b · e392f26 P27c · 660591e tests.
+  Backend oracle suites + frontend browser harness both verified; zero regressions. Roadmap Theme C item C1
+  delivered (v1 scope; deferred: custom-path picker, create-new-branch, worktree-move, force-remove,
+  per-worktree AI contexts).
+
+**P27 awaiting USER CHECKPOINT** (native pnpm tauri dev, per docs/contracts/P27-user-checklist.md, SCRATCH
+repo only): Worktrees section lists real worktrees w/ badges vs `git worktree list`; '+' creates a real dir
+at `.worktrees/<slug>` (verify with CLI); Open-in-tab opens the worktree as its own tab; lock/unlock flip vs
+`git worktree list --porcelain`; Remove is confirm-gated, refuses main/current/locked/dirty with clear
+errors (dirty content intact), success really deletes the dir, Cancel removes nothing.
+**Current step:** P27 DONE — AI gate passed, awaiting USER CHECKPOINT (along with P24/P25/P26 + the P18–P23
+batch).
 
 ## P26 — AI-asset management A3: skills / subagents / commands manager — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-01)
 
