@@ -18,9 +18,14 @@ confirmed earlier.)
 
 ## P28 — Discard hunk + status-panel UX (double-click stage, section styling) — **in-progress** (2026-08-03)
 
-Current step: A done+committed (14c17c5, reviewer APPROVE, harness-verified). B (backend
-discard_partial, all cargo green) at reviewer; C (IPC+UI) at senior-dev in parallel. Then tester
-(CLI-oracle §6.2) → harness verify → commit. Plan (user-approved):
+Current step: **DONE (AI gate passed, awaiting USER CHECKPOINT).** A 14c17c5, B ec411de,
+C f98b285, tests d-next — all reviewer-APPROVE. AI-gate evidence: 13 unit + 9 CLI-oracle
+tests green (byte-for-byte vs git apply --reverse / git checkout --, index invariant),
+full bonsai-core suite green, clippy -D warnings clean, tsc+vite build green; harness:
+dbl-click stage+unstage verified, tints verified, discard-hunk flow verified end-to-end
+(button gated to unstaged, ConfirmDialog, mock state mutates, staged untouched).
+USER CHECKPOINT: in pnpm tauri dev — dbl-click feel, discard a real hunk, styling check.
+Plan (user-approved):
 `~/.claude/plans/1-discard-hunk-button-shimmering-harbor.md`.
 Scope (user-requested 2026-08-03):
 1. Discard hunk button in diff view (full stack: bonsai-core `discard_partial` reusing
