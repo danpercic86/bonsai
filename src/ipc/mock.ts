@@ -1,4 +1,19 @@
+import {
+  CHEAP_TERSE_BODY,
+  MOCK_ASSET_CONTENT,
+  OPUS_RICH_BODY,
+  mockAgentAssets,
+  mockInventory,
+  mockProfiles,
+} from './fixtures/aiAssets';
 import { INITIAL_BRANCHES, MOCK_OID } from './fixtures/branches';
+import {
+  MERGE_AUTH_OURS,
+  MERGE_AUTH_TEXT,
+  MERGE_AUTH_THEIRS,
+  MERGE_README_TEXT,
+} from './fixtures/conflicts';
+import { mockRepoHealth } from './fixtures/repoHealth';
 import {
   asFullContext,
   initialMainRs,
@@ -152,78 +167,6 @@ const INITIAL_STATUS: StatusSnapshot = {
   conflicted: [],
 };
 
-const MERGE_AUTH_TEXT = [
-  'import { hash } from "./crypto";',
-  '',
-  'export interface Session {',
-  '  user: string;',
-  '  token: string;',
-  '}',
-  '',
-  'export function login(user: string, password: string): Session {',
-  '<<<<<<< HEAD',
-  '  const token = hash(`${user}:${password}:v2`);',
-  '  return { user, token };',
-  '=======',
-  '  const token = hash(password + user);',
-  '  return { user: user.toLowerCase(), token };',
-  '>>>>>>> feature/login',
-  '}',
-  '',
-  'export function logout(session: Session): void {',
-  '  void session;',
-  '}',
-  '',
-].join('\n');
-
-// P12 §1.4: the OURS / THEIRS blob sides for MERGE_AUTH_TEXT's single conflict
-// region — the file with the region collapsed to its ours / theirs block
-// (markers removed). Hand-written to match MERGE_AUTH_TEXT above.
-const MERGE_AUTH_OURS = [
-  'import { hash } from "./crypto";',
-  '',
-  'export interface Session {',
-  '  user: string;',
-  '  token: string;',
-  '}',
-  '',
-  'export function login(user: string, password: string): Session {',
-  '  const token = hash(`${user}:${password}:v2`);',
-  '  return { user, token };',
-  '}',
-  '',
-  'export function logout(session: Session): void {',
-  '  void session;',
-  '}',
-  '',
-].join('\n');
-
-const MERGE_AUTH_THEIRS = [
-  'import { hash } from "./crypto";',
-  '',
-  'export interface Session {',
-  '  user: string;',
-  '  token: string;',
-  '}',
-  '',
-  'export function login(user: string, password: string): Session {',
-  '  const token = hash(password + user);',
-  '  return { user: user.toLowerCase(), token };',
-  '}',
-  '',
-  'export function logout(session: Session): void {',
-  '  void session;',
-  '}',
-  '',
-].join('\n');
-
-const MERGE_README_TEXT = [
-  '# Bonsai fixture',
-  '',
-  'Our side kept this README while feature/login deleted it.',
-  '',
-].join('\n');
-
 // P20 §8.4 demo trigger: a cherry-pick / revert of a commit whose oid ends in
 // this suffix pauses with a conflict (mirrors the mergeBranch `name.includes
 // ('conflict')` convention, keyed on oid). Any other oid commits cleanly.
@@ -255,109 +198,6 @@ interface InteractivePlan {
 // the single source of per-repo truth — there is NO module-level per-repo
 // singleton anymore. `openRepo` creates entries lazily; `closeRepo` deletes.
 // ---------------------------------------------------------------------------
-
-// P24 — AI-asset fixture (§7). CLAUDE.md / AGENTS.md / copilot exist; AGENTS.md
-// is DRIFTED (its own normalized hash) while copilot is IN SYNC with the
-// canonical `claude` (shared hash). One detected `.cursor/rules` dir with 2
-// members and `.mcp.json` are `managed:false`. Hashes are opaque 40-hex
-// placeholders — only their equality matters to the drift math.
-const HASH_CLAUDE = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-const HASH_AGENTS = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
-const HASH_RAW = 'cccccccccccccccccccccccccccccccccccccccc';
-
-/** Canned file bodies served by `readAiAsset` for known paths (§7). */
-const MOCK_ASSET_CONTENT: Record<string, string> = {
-  'CLAUDE.md': '# CLAUDE.md\n\nProject instructions for Claude Code.\n',
-  'AGENTS.md': '# AGENTS.md\n\nProject instructions, OpenAI/Codex flavor (drifted).\n',
-  '.github/copilot-instructions.md':
-    '# CLAUDE.md\n\nProject instructions for Claude Code.\n',
-  '.cursor/rules/style.mdc': '---\ndescription: style\n---\n\nUse tabs.\n',
-  '.cursor/rules/testing.mdc': '---\ndescription: testing\n---\n\nWrite tests.\n',
-  '.mcp.json': '{\n  "mcpServers": {}\n}\n',
-};
-
-function mockAssetFile(
-  path: string,
-  contentHash: string,
-  normalizedHash: string,
-): { path: string; size: number; contentHash: string; normalizedHash: string; modified: number } {
-  const size = MOCK_ASSET_CONTENT[path]?.length ?? 0;
-  return { path, size, contentHash, normalizedHash, modified: 1_753_900_000 };
-}
-
-/** Seed inventory (drift recomputed on every `listAiAssets`, so `drift` here is
- *  just the initial no-override view). */
-const mockInventory: AiAssetInventory = {
-  assets: [
-    {
-      id: 'claude',
-      agent: 'Claude Code',
-      label: 'CLAUDE.md',
-      kind: 'singleFile',
-      path: 'CLAUDE.md',
-      managed: true,
-      exists: true,
-      files: [mockAssetFile('CLAUDE.md', HASH_RAW, HASH_CLAUDE)],
-    },
-    {
-      id: 'agents',
-      agent: 'Codex/Cursor/Gemini/Zed',
-      label: 'AGENTS.md',
-      kind: 'singleFile',
-      path: 'AGENTS.md',
-      managed: true,
-      exists: true,
-      files: [mockAssetFile('AGENTS.md', HASH_RAW, HASH_AGENTS)],
-    },
-    {
-      id: 'copilot',
-      agent: 'GitHub Copilot',
-      label: 'copilot-instructions.md',
-      kind: 'singleFile',
-      path: '.github/copilot-instructions.md',
-      managed: true,
-      exists: true,
-      // Same normalized hash as claude -> IN SYNC.
-      files: [mockAssetFile('.github/copilot-instructions.md', HASH_RAW, HASH_CLAUDE)],
-    },
-    { id: 'gemini', agent: 'Gemini CLI', label: 'GEMINI.md', kind: 'singleFile', path: 'GEMINI.md', managed: true, exists: false, files: [] },
-    { id: 'windsurf', agent: 'Windsurf (legacy)', label: '.windsurfrules', kind: 'singleFile', path: '.windsurfrules', managed: true, exists: false, files: [] },
-    { id: 'cursorLegacy', agent: 'Cursor (legacy)', label: '.cursorrules', kind: 'singleFile', path: '.cursorrules', managed: true, exists: false, files: [] },
-    {
-      id: 'cursorRules',
-      agent: 'Cursor',
-      label: '.cursor/rules/',
-      kind: 'rulesDir',
-      path: '.cursor/rules',
-      managed: true,
-      exists: true,
-      files: [
-        mockAssetFile('.cursor/rules/style.mdc', HASH_RAW, HASH_RAW),
-        mockAssetFile('.cursor/rules/testing.mdc', HASH_RAW, HASH_RAW),
-      ],
-    },
-    { id: 'windsurfRules', agent: 'Windsurf', label: '.windsurf/rules/', kind: 'rulesDir', path: '.windsurf/rules', managed: true, exists: false, files: [] },
-    { id: 'copilotInstr', agent: 'GitHub Copilot', label: '.github/instructions/', kind: 'rulesDir', path: '.github/instructions', managed: false, exists: false, files: [] },
-    { id: 'copilotPrompts', agent: 'GitHub Copilot', label: '.github/prompts/', kind: 'rulesDir', path: '.github/prompts', managed: false, exists: false, files: [] },
-    { id: 'claudeDir', agent: 'Claude Code', label: '.claude/ (skills/agents/commands)', kind: 'config', path: '.claude', managed: false, exists: false, files: [] },
-    {
-      id: 'mcp',
-      agent: 'MCP clients',
-      label: '.mcp.json',
-      kind: 'config',
-      path: '.mcp.json',
-      managed: false,
-      exists: true,
-      files: [mockAssetFile('.mcp.json', HASH_RAW, HASH_RAW)],
-    },
-  ],
-  drift: {
-    canonicalId: 'claude',
-    canonicalHash: HASH_CLAUDE,
-    entries: [],
-    inSync: false,
-  },
-};
 
 /** Client-side mirror of the Rust drift algorithm (§4.3) so the `canonical`
  *  override is demonstrable in the browser harness. */
@@ -399,89 +239,6 @@ function agentRelPath(kind: AgentAssetKind, name: string): string {
       return `.claude/commands/${name}.md`;
   }
 }
-
-/** Seed agent-asset inventory (§6): one valid asset per kind, one invalid agent
- *  (missing required `description`), and one skill flagged `complex` (multi-line
- *  frontmatter, read-only). Kinds/names are pre-sorted (skill<agent<command). */
-const mockAgentAssets: AgentAsset[] = [
-  {
-    kind: 'skill',
-    name: 'code-review',
-    path: '.claude/skills/code-review/SKILL.md',
-    exists: true,
-    frontmatter: [
-      { key: 'name', value: 'code-review' },
-      { key: 'description', value: 'Reviews a diff for correctness and style' },
-    ],
-    body: '\n# Code review\n\nReview the staged changes.\n',
-    complex: false,
-    validation: { valid: true, issues: [] },
-  },
-  {
-    kind: 'skill',
-    name: 'release-notes',
-    path: '.claude/skills/release-notes/SKILL.md',
-    exists: true,
-    // Multi-line YAML the editor can't round-trip -> read-only Error.
-    frontmatter: [{ key: 'name', value: 'release-notes' }],
-    body: '\n# Release notes\n\nSummarize merged PRs.\n',
-    complex: true,
-    validation: {
-      valid: false,
-      issues: [
-        {
-          severity: 'error',
-          message:
-            "frontmatter uses multi-line YAML this editor can't safely round-trip — edit the file directly",
-        },
-      ],
-    },
-  },
-  {
-    kind: 'agent',
-    name: 'test-runner',
-    path: '.claude/agents/test-runner.md',
-    exists: true,
-    frontmatter: [
-      { key: 'name', value: 'test-runner' },
-      { key: 'description', value: 'Runs the test suite and triages failures' },
-      { key: 'tools', value: 'Bash, Read' },
-      { key: 'model', value: 'inherit' },
-    ],
-    body: '\nYou run the project test suite and report failures.\n',
-    complex: false,
-    validation: { valid: true, issues: [] },
-  },
-  {
-    kind: 'agent',
-    name: 'broken',
-    path: '.claude/agents/broken.md',
-    exists: true,
-    // Missing required `description` -> invalid (but NOT complex — still editable).
-    frontmatter: [{ key: 'name', value: 'broken' }],
-    body: '\nAn incomplete subagent.\n',
-    complex: false,
-    validation: {
-      valid: false,
-      issues: [
-        { severity: 'error', message: "agent requires frontmatter field 'description'" },
-      ],
-    },
-  },
-  {
-    kind: 'command',
-    name: 'changelog',
-    path: '.claude/commands/changelog.md',
-    exists: true,
-    frontmatter: [
-      { key: 'description', value: 'Draft a changelog entry' },
-      { key: 'argument-hint', value: '<version>' },
-    ],
-    body: '\nDraft a changelog entry for $ARGUMENTS.\n',
-    complex: false,
-    validation: { valid: true, issues: [] },
-  },
-];
 
 /** Deterministic (kind order skill<agent<command, then name) sort, matching
  *  `scan_agent_assets`. */
@@ -594,42 +351,6 @@ function mockHash(content: string): string {
   const hex = h.toString(16).padStart(8, '0');
   return hex.repeat(5); // 8 * 5 = 40 hex chars
 }
-
-/** Rich profile body shared by `opus-rich`'s claude + agents targets, so both
- *  land on the same normalized hash — after activation AGENTS.md flips in-sync. */
-const OPUS_RICH_BODY =
-  '# Project instructions (Opus-rich)\n\n' +
-  'Detailed, high-context guidance for a top-tier model. Explain rationale, ' +
-  'cover edge cases, and prefer thorough answers.\n';
-
-const CHEAP_TERSE_BODY =
-  '# Project instructions (terse)\n\nBe brief. Do the task. No preamble.\n';
-
-/** Seed profile store (§7 + P31 §6): two profiles, with per-worktree
- *  activations seeded — `@main` runs the rich profile, the `feature-login`
- *  linked worktree runs the terse one. `activeProfile` mirrors `@main` (D4). */
-const mockProfiles: ProfileStore = {
-  version: 2,
-  profiles: [
-    {
-      name: 'opus-rich',
-      description: 'Full-context instructions for a top-tier model.',
-      model: 'opus',
-      targets: [
-        { assetId: 'claude', content: OPUS_RICH_BODY },
-        { assetId: 'agents', content: OPUS_RICH_BODY },
-      ],
-    },
-    {
-      name: 'cheap-terse',
-      description: 'Minimal instructions for a cheap/fast model.',
-      model: 'haiku',
-      targets: [{ assetId: 'claude', content: CHEAP_TERSE_BODY }],
-    },
-  ],
-  activeProfile: 'opus-rich',
-  worktreeActivations: { '@main': 'opus-rich', 'feature-login': 'cheap-terse' },
-};
 
 /** Mutate `state.inventory` so `assetId`'s mapped file now holds `content`
  *  (exists:true, hashes derived from the content). Drift recomputes from these
@@ -1247,91 +968,6 @@ function buildInfo(state: MockRepoState, path: string): RepoInfo {
     isRepo: true,
     bare: false,
     head: { branchName: state.headBranch, oid: state.headOid, detached: false, unborn: false },
-  };
-}
-
-/** P29 §7 repo-health fixture: exercises EVERY warn state the panel renders —
- *  stale branches, ahead/behind, drifted assets, locked/prunable worktrees,
- *  out-of-sync/uninitialized submodules, large files, conflict + merge-op,
- *  stashes, and capped flags (commitCount + objectCount render `≥`). */
-function mockRepoHealth(): RepoHealth {
-  return {
-    stats: {
-      data: {
-        commitCount: 100_000,
-        commitCountCapped: true,
-        commitsLast30d: 342,
-        authorsLast30d: 4,
-        authorsTotal: 27,
-        objectCount: 500_000,
-        objectScanCapped: true,
-        largestBlobs: [
-          { oid: '9c1185a5c5e9fc54612808977ee8f548b2258d31', size: 50_331_648 },
-          { oid: '3f786850e387550fdab836ed7e6dc881de23001b', size: 22_020_096 },
-          { oid: '89e6c98d92887913cadf06b2adb97f26cde4849b', size: 9_437_184 },
-        ],
-        workdirFileCount: 12_873,
-        workdirBytes: 734_003_200,
-        workdirScanCapped: false,
-        largestFiles: [
-          { path: 'assets/design/master.psd', size: 96_468_992 },
-          { path: 'fixtures/repo-20k.bundle', size: 25_165_824 },
-          { path: 'docs/media/demo.mp4', size: 8_912_896 },
-        ],
-        largeFileCount: 2,
-        gitDirBytes: 182_452_224,
-        gitDirScanCapped: false,
-      },
-      error: null,
-      elapsedMs: 412,
-    },
-    branches: {
-      data: {
-        localCount: 14,
-        remoteCount: 22,
-        tagCount: 9,
-        currentBranch: 'main',
-        detached: false,
-        unborn: false,
-        ahead: 2,
-        behind: 5,
-        upstream: 'origin/main',
-        stale: { base: 'main', mergedCount: 3, goneUpstreamCount: 1 },
-        staleError: null,
-      },
-      error: null,
-      elapsedMs: 38,
-    },
-    workingState: {
-      data: {
-        staged: 2,
-        unstaged: 3,
-        untracked: 4,
-        conflicted: 1,
-        opState: { kind: 'merge', incoming: 'feature/x', message: "Merge branch 'feature/x'" },
-        stashCount: 2,
-        hasGitignore: true,
-      },
-      error: null,
-      elapsedMs: 21,
-    },
-    structure: {
-      data: {
-        submoduleCount: 3,
-        submodulesUninitialized: 1,
-        submodulesOutOfSync: 1,
-        submodulesModified: 0,
-        worktreeCount: 4,
-        worktreesLocked: 1,
-        worktreesPrunable: 1,
-        worktreesInvalid: 0,
-        assetDriftedCount: 2,
-        assetsInSync: false,
-      },
-      error: null,
-      elapsedMs: 9,
-    },
-    generatedAt: Math.floor(Date.now() / 1000),
   };
 }
 

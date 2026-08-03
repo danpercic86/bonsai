@@ -1,45 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AiOutputPanel } from './AiOutputPanel';
-import { CommitBox } from './CommitBox';
 import type { CommitBoxHandle } from './CommitBox';
-import { CommitPanel } from './CommitPanel';
-import { ComparePanel } from './ComparePanel';
-import { ConfirmDialog } from './ConfirmDialog';
-import { PromptDialog } from './PromptDialog';
-import { RebasePlanEditor } from './RebasePlanEditor';
-import { TagCreateDialog } from './TagCreateDialog';
-import { RemoteEditDialog } from './RemoteEditDialog';
-import { WorktreeCreateDialog } from './WorktreeCreateDialog';
-import { WorktreeContextDialog } from './WorktreeContextDialog';
-import { WhatChangedDialog } from './WhatChangedDialog';
-import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
-import {
-  BranchIcon,
-  CheckoutIcon,
-  CompareIcon,
-  CopyIcon,
-  DeleteIcon,
-  MergeIcon,
-  RebaseIcon,
-  StashApplyIcon,
-  StashPopIcon,
-  SummarizeIcon,
-  TagIcon,
-} from './menuIcons';
-import { DiffOverlay } from './DiffOverlay';
+import { WorkspaceToolbar } from './WorkspaceToolbar';
+import { WorkspaceDialogs } from './WorkspaceDialogs';
+import { WorkspaceGraphPane } from './WorkspaceGraphPane';
+import { WorkspaceRightPanel } from './WorkspaceRightPanel';
+import { MAX_HISTORY_UI, isUsableRepo, shortOid } from './workspaceUtils';
+import { createWorkspaceMenus } from './workspaceMenus';
 import type { DiffOverlayMeta } from './DiffOverlay';
-import { BlameView } from './BlameView';
-import { FileHistoryView } from './FileHistoryView';
-import { DiffBrowser } from './DiffBrowser';
 import type { DiffScope } from './DiffFileTree';
-import { OpBanner } from './OpBanner';
 import { PaneDivider } from './PaneDivider';
 import { Sidebar } from './Sidebar';
-import { StaleBranchesDialog } from './StaleBranchesDialog';
-import { StatusPanel } from './StatusPanel';
 import type { DiffSlot, WorkdirSection } from './StatusPanel';
-import { GraphCanvas } from '../graph/GraphCanvas';
 import type { GraphCanvasHandle, GraphContextTarget, WipSummary } from '../graph/GraphCanvas';
 import { effectiveMetrics } from '../graph/metrics';
 import { ipc } from '../ipc';
@@ -51,7 +23,6 @@ import type {
   AiDigestRange,
   AiResolveProposal,
   BlameLine,
-  BranchInfo,
   BranchesSnapshot,
   CommitDiff,
   CompareDiff,
@@ -81,35 +52,6 @@ import type {
 import { usePushToast } from '../ToastContext';
 import { errorMessage, isAppError } from '../utils/errors';
 import { hasUnresolvedMarkers } from '../utils/conflictRegions';
-
-function shortOid(oid: string): string {
-  return oid.slice(0, 7);
-}
-
-/** P23d: how many file-history entries to request (backend caps at MAX_HISTORY). */
-const MAX_HISTORY_UI = 200;
-
-/** P30 D11: compact "Xm" / "Xh" label for the auto-fetch status readout. */
-function minutesLabel(deltaMs: number): string {
-  const m = Math.round(Math.max(0, deltaMs) / 60_000);
-  if (m < 1) return '<1m';
-  if (m < 60) return `${m}m`;
-  return `${Math.round(m / 60)}h`;
-}
-
-function isUsableRepo(info: RepoInfo): boolean {
-  return info.isRepo && !info.bare;
-}
-
-/** P27 §6.5: display-only preview base for the derived worktree path —
- *  `<mainParent>/.worktrees` (the backend derives the authoritative path). */
-function worktreeContainerPreview(worktrees: WorktreeInfo[], repoId: string): string {
-  const main = worktrees.find((w) => w.isMain);
-  const base = (main?.absPath ?? repoId).replace(/\\/g, '/');
-  const cut = base.lastIndexOf('/');
-  const parent = cut > 0 ? base.slice(0, cut) : base;
-  return `${parent}/.worktrees`;
-}
 
 export interface RepoWorkspaceProps {
   /** Canonical workdir path (== repoId, P3e §2). */
@@ -2338,197 +2280,9 @@ export function RepoWorkspace({
     );
   }
 
-  // P6 §4.1: the single shared builder for a branch/remote-tracking ref menu,
-  // used identically by the graph pills AND the sidebar rows. Resolves tip +
-  // isHead from the current `branches` snapshot by name so the two surfaces can
-  // never diverge. Returns [] (menu does not open) when: no snapshot; the entry
-  // is missing; or the entry is the current local HEAD branch.
-  function branchMenuItems(
-    name: string,
-    kind: 'localBranch' | 'remoteBranch',
-  ): ContextMenuItem[] {
-    const snapshot = branches;
-    if (snapshot === null) return [];
-    const cur = headBranch?.name ?? null;
-    const gate = mutating || opActive;
-    const headUnborn = head === null || head.unborn;
-    const entry =
-      kind === 'localBranch'
-        ? snapshot.local.find((b) => b.name === name)
-        : snapshot.remote.find((r) => r.name === name);
-    if (entry === undefined) return [];
-    const isHead = kind === 'localBranch' ? (entry as BranchInfo).isHead : false;
-    if (isHead) return [];
-    const tip = entry.tip;
-    const items: ContextMenuItem[] = [
-      {
-        label: 'Checkout',
-        icon: <CheckoutIcon />,
-        disabled: gate,
-        onSelect: () =>
-          void (kind === 'remoteBranch'
-            ? handleCheckoutRemote(name)
-            : handleCheckoutBranch(name)),
-      },
-      {
-        label: 'Create branch here',
-        icon: <BranchIcon />,
-        disabled: gate,
-        onSelect: () => setPendingCreateBranch({ oid: tip }),
-      },
-      {
-        label: 'Copy branch name',
-        icon: <CopyIcon />,
-        disabled: false,
-        onSelect: () => {
-          const p =
-            navigator.clipboard?.writeText(name) ??
-            Promise.reject(new Error('Clipboard unavailable'));
-          void p
-            .then(() => pushToast('success', 'Copied branch name'))
-            .catch((e) => pushToast('error', `Copy failed: ${errorMessage(e)}`));
-        },
-      },
-    ];
-    // P15c: "Summarize branch…" (local branches only, AI-eligible only). Base
-    // selection is a frontend policy (§7.5): the repo's primary branch (main,
-    // else master, else the current HEAD branch) UNLESS the target IS that
-    // primary, in which case the base is the target's upstream. When no usable
-    // base can be resolved (primary missing, or target == primary with no
-    // upstream), the item is omitted.
-    if (kind === 'localBranch' && aiEligible) {
-      const localEntry = entry as BranchInfo;
-      const primary = snapshot.local.some((b) => b.name === 'main')
-        ? 'main'
-        : snapshot.local.some((b) => b.name === 'master')
-          ? 'master'
-          : (headBranch?.name ?? null);
-      const summaryBase = name === primary ? localEntry.upstream : primary;
-      if (summaryBase !== null && summaryBase !== name) {
-        items.push({
-          label: 'Summarize branch…',
-          icon: <SummarizeIcon />,
-          disabled: false,
-          onSelect: () => runSummarize(summaryBase, name),
-        });
-      }
-      // P25b: "Review branch…" (local branches only, AI-eligible only). Reviews
-      // the branch's diff vs its auto-resolved base (backend resolves
-      // upstream→origin/HEAD→main→master), so no base is passed. Guarded by
-      // runAnalyze's req-id, hence disabled:false.
-      items.push({
-        label: 'Review branch…',
-        icon: <SummarizeIcon />,
-        disabled: false,
-        onSelect: () =>
-          runAnalyze({ kind: 'branch', name }, 'review', `Review branch ${name}`),
-      });
-    }
-    if (cur !== null) {
-      items.push({
-        label: `Merge ${name} into ${cur}`,
-        icon: <MergeIcon />,
-        disabled: gate,
-        onSelect: () => void handleMergeBranch(name),
-      });
-      items.push({
-        label: `Rebase ${cur} onto ${name}`,
-        icon: <RebaseIcon />,
-        disabled: gate,
-        onSelect: () => void handleRebaseBranch(name),
-      });
-      // P23b §8.2: interactive rebase of the current branch onto this ref's tip.
-      items.push({
-        label: `Rebase ${cur} onto ${name} (interactive)…`,
-        icon: <RebaseIcon />,
-        disabled: gate,
-        onSelect: () => void openRebasePlan({ ontoOid: tip, ontoLabel: name }),
-      });
-    }
-    if (!headUnborn) {
-      items.push({
-        label: 'Compare with HEAD',
-        icon: <CompareIcon />,
-        disabled: false,
-        onSelect: () => handleCompareWithHead(tip),
-      });
-    }
-    items.push({
-      label: 'Delete',
-      icon: <DeleteIcon />,
-      disabled: gate,
-      onSelect: () =>
-        kind === 'remoteBranch' ? setPendingDeleteRemote(name) : setPendingDeleteBranch(name),
-    });
-    // P20 §3.3: reset the CURRENT branch to this ref's tip (gated internally).
-    items.push(...resetMenuItems(tip));
-    return items;
-  }
-
-  // P9 §6.4: build the right-click menu for a stash row. Apply/Pop need a clean,
-  // idle repo (gated on mutating || opActive); Drop is allowed mid-op (it only
-  // edits the stash reflog) → routes through the ConfirmDialog.
-  function stashMenuItems(index: number): ContextMenuItem[] {
-    const gate = mutating || opActive;
-    return [
-      {
-        label: 'Apply',
-        icon: <StashApplyIcon />,
-        disabled: gate,
-        onSelect: () => void handleApplyStash(index),
-      },
-      {
-        label: 'Pop',
-        icon: <StashPopIcon />,
-        disabled: gate,
-        onSelect: () => void handlePopStash(index),
-      },
-      {
-        label: 'Drop',
-        icon: <DeleteIcon />,
-        disabled: mutating,
-        onSelect: () => setPendingDropStash(index),
-      },
-    ];
-  }
-
   // P9 §6.4: right-click a sidebar stash row → open the shared context menu.
   function handleStashContextMenu(index: number, clientX: number, clientY: number) {
-    setMenu({ x: clientX, y: clientY, items: stashMenuItems(index) });
-  }
-
-  // P19 §6.4: submodule row menu. "Update" on an uninitialized row
-  // init-then-updates (backend §OPEN-4), so it is always enabled; "Init" is a
-  // no-op once initialized → disabled unless uninitialized. "Open in new tab"
-  // needs a checked-out worktree → disabled while uninitialized.
-  function submoduleMenuItems(sub: SubmoduleInfo): ContextMenuItem[] {
-    const gate = mutating || opActive;
-    return [
-      {
-        label: 'Init',
-        icon: <BranchIcon />,
-        disabled: gate || sub.status !== 'uninitialized',
-        onSelect: () => void handleInitSubmodule(sub.name),
-      },
-      {
-        label: 'Update',
-        icon: <StashApplyIcon />,
-        disabled: gate,
-        onSelect: () => void handleUpdateSubmodule(sub.name),
-      },
-      {
-        label: 'Sync',
-        icon: <RebaseIcon />,
-        disabled: gate,
-        onSelect: () => void handleSyncSubmodule(sub.name),
-      },
-      {
-        label: 'Open in new tab',
-        icon: <CompareIcon />,
-        disabled: sub.status === 'uninitialized',
-        onSelect: () => onOpenRepoPath(sub.absPath),
-      },
-    ];
+    setMenu({ x: clientX, y: clientY, items: menus.stashMenuItems(index) });
   }
 
   // P19 §6.4: right-click a sidebar submodule row → open the shared context
@@ -2536,45 +2290,7 @@ export function RepoWorkspace({
   function handleSubmoduleContextMenu(name: string, clientX: number, clientY: number) {
     const sub = submodules.find((s) => s.name === name);
     if (sub === undefined) return;
-    setMenu({ x: clientX, y: clientY, items: submoduleMenuItems(sub) });
-  }
-
-  // P27 §6.4: worktree row menu. Open-in-tab needs an intact working tree;
-  // Lock/Unlock apply to linked worktrees only; Remove is disabled for
-  // main/current/locked in the UI AND refused server-side (§2.6).
-  function worktreeMenuItems(wt: WorktreeInfo): ContextMenuItem[] {
-    const gate = mutating || opActive;
-    return [
-      {
-        label: 'Open in new tab',
-        icon: <CompareIcon />,
-        disabled: wt.isCurrent || !wt.valid,
-        onSelect: () => onOpenRepoPath(wt.absPath),
-      },
-      {
-        label: 'AI context…',
-        // Read-only matrix — always openable; per-row activation is gated
-        // inside the dialog (D6) and by the preview safety gate.
-        disabled: false,
-        onSelect: () => setWorktreeContextOpen(true),
-      },
-      {
-        label: 'Lock…',
-        disabled: gate || wt.isMain || wt.locked,
-        onSelect: () => setPendingWorktreeLock(wt.name),
-      },
-      {
-        label: 'Unlock',
-        disabled: gate || !wt.locked,
-        onSelect: () => void handleUnlockWorktree(wt.name),
-      },
-      {
-        label: 'Remove…',
-        icon: <DeleteIcon />,
-        disabled: gate || wt.isMain || wt.isCurrent || wt.locked,
-        onSelect: () => setPendingWorktreeRemove({ name: wt.name, absPath: wt.absPath }),
-      },
-    ];
+    setMenu({ x: clientX, y: clientY, items: menus.submoduleMenuItems(sub) });
   }
 
   // P27 §6.4: right-click a sidebar worktree row → open the shared context
@@ -2582,195 +2298,19 @@ export function RepoWorkspace({
   function handleWorktreeContextMenu(name: string, clientX: number, clientY: number) {
     const wt = worktrees.find((w) => w.name === name);
     if (wt === undefined) return;
-    setMenu({ x: clientX, y: clientY, items: worktreeMenuItems(wt) });
-  }
-
-  // P22 §7.2: the shared tag menu — used by the graph tag pill AND the sidebar
-  // tag rows. Delete (ConfirmDialog) + Copy + one "Push tag to <remote>" per
-  // configured remote (§OPEN-7: 0 → no push item; 1 → single; >1 → one each).
-  function tagMenuItems(name: string): ContextMenuItem[] {
-    const gate = mutating || opActive;
-    const items: ContextMenuItem[] = [
-      {
-        label: 'Delete tag',
-        icon: <DeleteIcon />,
-        disabled: gate,
-        onSelect: () => setPendingDeleteTag(name),
-      },
-      {
-        label: 'Copy tag name',
-        icon: <CopyIcon />,
-        disabled: false,
-        onSelect: () => {
-          const p =
-            navigator.clipboard?.writeText(name) ??
-            Promise.reject(new Error('Clipboard unavailable'));
-          void p
-            .then(() => pushToast('success', 'Copied tag name'))
-            .catch((e) => pushToast('error', `Copy failed: ${errorMessage(e)}`));
-        },
-      },
-    ];
-    for (const r of remotes) {
-      items.push({
-        label: `Push tag to ${r.name}`,
-        icon: <TagIcon />,
-        disabled: gate,
-        onSelect: () => void handlePushTag(r.name, name),
-      });
-    }
-    return items;
-  }
-
-  // P22 §7.2: the configured-remote management menu (sidebar rows only).
-  function remoteMenuItems(name: string): ContextMenuItem[] {
-    const gate = mutating || opActive;
-    const url = remotes.find((r) => r.name === name)?.url ?? '';
-    return [
-      {
-        label: 'Rename…',
-        icon: <BranchIcon />,
-        disabled: gate,
-        onSelect: () => setPendingRenameRemote({ name }),
-      },
-      {
-        label: 'Edit URL…',
-        icon: <CompareIcon />,
-        disabled: gate,
-        onSelect: () => setPendingEditUrl({ name, url }),
-      },
-      {
-        label: 'Remove…',
-        icon: <DeleteIcon />,
-        disabled: gate,
-        onSelect: () => setPendingRemoveRemote(name),
-      },
-    ];
+    setMenu({ x: clientX, y: clientY, items: menus.worktreeMenuItems(wt) });
   }
 
   function handleTagContextMenu(name: string, clientX: number, clientY: number) {
-    setMenu({ x: clientX, y: clientY, items: tagMenuItems(name) });
+    setMenu({ x: clientX, y: clientY, items: menus.tagMenuItems(name) });
   }
 
   function handleRemoteContextMenu(name: string, clientX: number, clientY: number) {
-    setMenu({ x: clientX, y: clientY, items: remoteMenuItems(name) });
-  }
-
-  // P5 §5.2 / P6 §4.2: the commit-row menu — "Create branch here" + "Compare
-  // with HEAD" (both read-only entry points; unavailable when HEAD is unborn,
-  // §1.3). Factored out (P18b) so the whole-row ref fallback can reuse it.
-  // P20 §3.3: the three "Reset <branch> to here" items, gated on an attached
-  // born HEAD, an idle repo, and a target that is not already the current tip.
-  // Hard is suffixed "…" (opens the extra-warning ConfirmDialog). Returns [] when
-  // reset is not offered (so callers can spread unconditionally).
-  function resetMenuItems(targetOid: string): ContextMenuItem[] {
-    if (head === null || head.unborn || head.detached) return [];
-    if (targetOid === head.oid) return [];
-    const gate = mutating || opActive;
-    const b = headBranch?.name ?? 'HEAD';
-    const make = (mode: ResetMode, label: string): ContextMenuItem => ({
-      label,
-      icon: <RebaseIcon />,
-      disabled: gate,
-      onSelect: () => setPendingReset({ oid: targetOid, mode }),
-    });
-    return [
-      make('soft', `Reset ${b} to here (soft)`),
-      make('mixed', `Reset ${b} to here (mixed)`),
-      make('hard', `Reset ${b} to here (hard)…`),
-    ];
-  }
-
-  function commitMenuItems(oid: string): ContextMenuItem[] {
-    if (head === null || head.unborn) return [];
-    const gate = mutating || opActive;
-    return [
-      {
-        label: 'Create branch here',
-        icon: <BranchIcon />,
-        disabled: gate,
-        onSelect: () => setPendingCreateBranch({ oid }),
-      },
-      {
-        label: 'Create tag here',
-        icon: <TagIcon />,
-        disabled: gate,
-        onSelect: () => setPendingCreateTag({ oid }),
-      },
-      {
-        label: 'Compare with HEAD',
-        icon: <CompareIcon />,
-        disabled: false,
-        onSelect: () => handleCompareWithHead(oid),
-      },
-      // P20 §5.2/§6: cherry-pick / revert onto the current branch. Gated on an
-      // attached born HEAD (excluded on detached HEAD, which the backend rejects
-      // — mirrors resetMenuItems) and an idle repo. On Conflicts the existing
-      // OpBanner/conflict flow takes over.
-      ...(head.detached
-        ? []
-        : [
-            {
-              label: 'Cherry-pick onto current',
-              icon: <RebaseIcon />,
-              disabled: gate,
-              onSelect: () => void handleCherrypick(oid),
-            },
-            {
-              label: 'Revert commit',
-              icon: <RebaseIcon />,
-              disabled: gate,
-              onSelect: () => void handleRevert(oid),
-            },
-            // P23b §8.2: interactive rebase replaying THIS commit..HEAD onto the
-            // selected commit (it becomes the `onto` base). Gated like cherry-pick.
-            {
-              label: 'Interactive rebase from here…',
-              icon: <RebaseIcon />,
-              disabled: gate,
-              onSelect: () => void openRebasePlan({ ontoOid: oid, ontoLabel: shortOid(oid) }),
-            },
-          ]),
-      ...resetMenuItems(oid),
-    ];
-  }
-
-  // P5 §5.2 / P6 §4.2: build the right-click menu items for a graph target. Ref
-  // pills delegate to the shared branchMenuItems builder; commit rows offer
-  // "Compare with HEAD" (read-only; unavailable when HEAD is unborn).
-  function buildContextItems(target: GraphContextTarget): ContextMenuItem[] {
-    if (target.kind === 'ref') {
-      const r = target.ref;
-      // P10 §5: a stash pill → Apply/Pop/Drop menu (parse the index from the name).
-      if (r.kind === 'stash') {
-        const m = /^stash@\{(\d+)\}$/.exec(r.name);
-        if (m === null) return []; // malformed name → no menu (defensive)
-        return stashMenuItems(Number(m[1]));
-      }
-      if (r.kind === 'head') return [];
-      // P22 §7.2: the graph tag pill opens the same menu as the sidebar tag row.
-      if (r.kind === 'tag') return tagMenuItems(r.name);
-      const kind = r.kind === 'remoteBranch' ? 'remoteBranch' : 'localBranch';
-      const items = branchMenuItems(r.name, kind);
-      if (items.length > 0) return items;
-      // P18b: whole-row right-click resolved to a branch whose branch menu is
-      // empty — the current HEAD branch. Fall back to the commit menu (resolving
-      // the row's oid from the branch tip) so the row still opens a useful menu.
-      const snapshot = branches;
-      if (snapshot === null) return [];
-      const entry =
-        kind === 'localBranch'
-          ? snapshot.local.find((b) => b.name === r.name)
-          : snapshot.remote.find((b) => b.name === r.name);
-      if (entry === undefined) return [];
-      return commitMenuItems(entry.tip);
-    }
-    // Commit row → Create branch here + Compare with HEAD.
-    return commitMenuItems(target.oid);
+    setMenu({ x: clientX, y: clientY, items: menus.remoteMenuItems(name) });
   }
 
   function handleGraphContextMenu(target: GraphContextTarget, clientX: number, clientY: number) {
-    const items = buildContextItems(target);
+    const items = menus.buildContextItems(target);
     if (items.length === 0) return; // no valid actions → menu does not open
     setMenu({ x: clientX, y: clientY, items });
   }
@@ -2783,7 +2323,7 @@ export function RepoWorkspace({
     clientX: number,
     clientY: number,
   ) {
-    const items = branchMenuItems(name, kind);
+    const items = menus.branchMenuItems(name, kind);
     if (items.length === 0) return;
     setMenu({ x: clientX, y: clientY, items });
   }
@@ -2930,6 +2470,51 @@ export function RepoWorkspace({
 
   const headBranch = branches?.local.find((b) => b.isHead) ?? null;
 
+  // P3e §menu-extraction: the context-menu item-array builders live in
+  // workspaceMenus.ts now; rebuild them each render over the current state +
+  // handlers so the produced arrays stay byte-identical to the old inline ones.
+  const menus = createWorkspaceMenus({
+    branches,
+    headBranch,
+    head,
+    mutating,
+    opActive,
+    aiEligible,
+    remotes,
+    pushToast,
+    handleCheckoutRemote,
+    handleCheckoutBranch,
+    setPendingCreateBranch,
+    runSummarize,
+    runAnalyze,
+    handleMergeBranch,
+    handleRebaseBranch,
+    openRebasePlan,
+    handleCompareWithHead,
+    setPendingDeleteRemote,
+    setPendingDeleteBranch,
+    handleApplyStash,
+    handlePopStash,
+    setPendingDropStash,
+    handleInitSubmodule,
+    handleUpdateSubmodule,
+    handleSyncSubmodule,
+    onOpenRepoPath,
+    setWorktreeContextOpen,
+    setPendingWorktreeLock,
+    handleUnlockWorktree,
+    setPendingWorktreeRemove,
+    setPendingDeleteTag,
+    handlePushTag,
+    setPendingRenameRemote,
+    setPendingEditUrl,
+    setPendingRemoveRemote,
+    setPendingCreateTag,
+    handleCherrypick,
+    handleRevert,
+    setPendingReset,
+  });
+
   // P11g-rev §4.4: resolve the DiffBrowser source labels + header list. Compare
   // mode AUTO-OPENS once data has loaded (≥1 file); commit mode is EXPLICIT-open
   // (gated on commitBrowserOpen). null → browser not rendered.
@@ -2960,95 +2545,26 @@ export function RepoWorkspace({
     return null;
   }, [compare, compareData, selectedIndex, graph, commitBrowserOpen, commitDiff, headBranch, clearCompare]);
 
-  const pushTitle =
-    headBranch === null
-      ? 'Push'
-      : headBranch.upstream !== null
-        ? `Push ${headBranch.name} to ${headBranch.upstream}`
-        : `Push ${headBranch.name} to origin/${headBranch.name} and set upstream`;
-
-  // P30 D11: small muted auto-fetch readout next to the Fetch control —
-  // "Fetched Xm ago", or the backoff notice with the retry estimate.
-  const autoFetchStatus = jobStatus.find((s) => s.job === 'autoFetch');
-  let autoFetchReadout: { text: string; title: string } | null = null;
-  if (autoFetchStatus !== undefined && autoFetchStatus.enabled) {
-    if (autoFetchStatus.inBackoff) {
-      const retry =
-        autoFetchStatus.nextRunMs !== null
-          ? ` — retrying in ${minutesLabel(autoFetchStatus.nextRunMs - jobNow)}`
-          : '';
-      autoFetchReadout = {
-        text: `Auto-fetch paused${retry}`,
-        title: autoFetchStatus.lastError ?? 'Auto-fetch is failing; retries are backed off',
-      };
-    } else if (autoFetchStatus.lastRunMs !== null && autoFetchStatus.lastOutcome !== null) {
-      autoFetchReadout = {
-        text: `Fetched ${minutesLabel(jobNow - autoFetchStatus.lastRunMs)} ago`,
-        title: `Background auto-fetch — last outcome: ${autoFetchStatus.lastOutcome}`,
-      };
-    }
-  }
-
   return (
     <>
-      <div className="workspace-toolbar">
-        <div className="toolbar-center">
-          <button
-            type="button"
-            className="toolbar-btn"
-            disabled={refreshing || mutating}
-            onClick={() => void handleFetch()}
-            title="Fetch all remotes (Ctrl+Shift+F)"
-          >
-            {remoteOp === 'fetch' ? 'Fetching…' : '↓ Fetch'}
-          </button>
-          {autoFetchReadout !== null && (
-            <span className="toolbar-job-status" title={autoFetchReadout.title}>
-              {autoFetchReadout.text}
-            </span>
-          )}
-          <button
-            type="button"
-            className="toolbar-btn"
-            disabled={refreshing || mutating || !canPullPush}
-            onClick={() => void handlePull()}
-            title="Pull (fast-forward only) (Ctrl+Shift+P)"
-          >
-            {remoteOp === 'pull' ? 'Pulling…' : '⇣ Pull'}
-          </button>
-          <button
-            type="button"
-            className="toolbar-btn"
-            disabled={refreshing || mutating || !canPullPush}
-            onClick={() => void handlePush()}
-            title={`${pushTitle} (Ctrl+Shift+U)`}
-          >
-            {remoteOp === 'push' ? 'Pushing…' : '↑ Push'}
-          </button>
-          {aiEligible && (
-            <button
-              type="button"
-              className="toolbar-btn"
-              disabled={aiPanel?.loading === true}
-              onClick={() => setWhatChangedOpen(true)}
-              title="AI digest of what changed over a range (read-only)"
-            >
-              ✨ What changed…
-            </button>
-          )}
-        </div>
-        <button
-          type="button"
-          className="btn-icon toolbar-refresh"
-          disabled={refreshing || statusLoading || graphLoading || mutating}
-          onClick={() => void handleRefresh()}
-          title="Refresh (Ctrl+R)"
-          aria-label="Refresh"
-        >
-          {'⟳'}
-        </button>
-      </div>
-      {(remoteOp !== null || refreshing) && <div className="header-progress" aria-hidden="true" />}
+      <WorkspaceToolbar
+        remoteOp={remoteOp}
+        refreshing={refreshing}
+        mutating={mutating}
+        statusLoading={statusLoading}
+        graphLoading={graphLoading}
+        canPullPush={canPullPush}
+        aiEligible={aiEligible}
+        aiPanelLoading={aiPanel?.loading === true}
+        headBranch={headBranch}
+        jobStatus={jobStatus}
+        jobNow={jobNow}
+        onFetch={() => void handleFetch()}
+        onPull={() => void handlePull()}
+        onPush={() => void handlePush()}
+        onWhatChanged={() => setWhatChangedOpen(true)}
+        onRefresh={() => void handleRefresh()}
+      />
 
       <div className="panes">
         <Sidebar
@@ -3079,663 +2595,188 @@ export function RepoWorkspace({
           onCleanupBranches={() => setStaleCleanupOpen(true)}
         />
         <PaneDivider side="sidebar" onResize={onSidebarResize} onResizeEnd={onPaneResizeEnd} />
-        <main className="graph-pane">
-          {graphError !== null && (
-            <div className="error-banner graph-error-banner">{graphError}</div>
-          )}
-          {graph !== null && graph.truncated && (
-            <div className="graph-truncated-banner">
-              History truncated to the most recent 100,000 commits
-            </div>
-          )}
-          {head?.unborn ? (
-            <div className="graph-pane-empty">
-              <p className="pane-empty">No commits yet</p>
-            </div>
-          ) : graph !== null ? (
-            <GraphCanvas
-              ref={graphRef}
-              layout={graph}
-              selectedIndex={selectedIndex}
-              onSelect={(i) => {
-                // Left-clicking any row exits Compare mode (P5 §5.4). Scope reset
-                // + commit-browser close are handled by the §4.2 effect
-                // (selectedIndex dep); selecting does NOT auto-open the browser
-                // (P11g-rev Change C asymmetry).
-                if (compare !== null) clearCompare();
-                setSelectedIndex(i);
-              }}
-              wip={wip}
-              themeVersion={themeVersion}
-              active={active}
-              onContextMenu={handleGraphContextMenu}
-              metrics={metrics}
-              metricsVersion={metricsVersion}
-            />
-          ) : null}
-          {diffSlot !== null && overlayMeta !== null && (
-            <DiffOverlay
-              slot={diffSlot}
-              meta={overlayMeta}
-              onClose={collapseDiffSlot}
-              onResolveConflictText={handleResolveConflictText}
-              mutating={mutating}
-              onExplain={overlayExplain}
-              viewMode={diffViewMode}
-              onSetViewMode={handleSetViewMode}
-              stageable={stageable}
-              onStageLines={handleStageLines}
-              onStageHunk={handleStageHunk}
-              onDiscardHunk={
-                // P28: unstaged tracked diffs only — never untracked (tracked-only
-                // discard) and never binary/tooLarge/renamed (stageable === null).
-                overlayMeta.kind === 'unstaged' && stageable === 'stage'
-                  ? handleDiscardHunk
-                  : undefined
-              }
-            />
-          )}
-          {/* P23d: blame + file-history overlays, layered over the graph like the
-              diff overlay. Only one of the two is ever set (each handler clears
-              the other); they render above DiffOverlay in the DOM. */}
-          {blame !== null && (
-            <BlameView
-              path={blame.path}
-              lines={blame.lines}
-              loading={blame.loading}
-              error={blame.error}
-              onClose={closeBlame}
-              onRevealCommit={revealCommitByOid}
-            />
-          )}
-          {history !== null && (
-            <FileHistoryView
-              path={history.path}
-              entries={history.entries}
-              loading={history.loading}
-              error={history.error}
-              onClose={closeHistory}
-              onRevealCommit={revealCommitByOid}
-            />
-          )}
-          {aiPanel !== null && (
-            <AiOutputPanel
-              title={aiPanel.title}
-              text={aiPanel.text}
-              loading={aiPanel.loading}
-              error={aiPanel.error}
-              costUsd={aiPanel.costUsd}
-              onClose={closeAiPanel}
-            />
-          )}
-          {/* P11g-rev §4.5: all-files DiffBrowser (header + stacked scroll only)
-              over the canvas. Compare mode auto-opens; commit mode is
-              explicit-open. The `key` on source.oid remounts fresh for a
-              DIFFERENT target/commit (clears cache+queue) but survives a refetch
-              of the SAME oid. */}
-          {diffBrowserView !== null && (
-            <DiffBrowser
-              key={`${diffBrowserView.source.mode}:${diffBrowserView.source.oid}`}
-              repoId={repoId}
-              source={diffBrowserView.source}
-              files={diffBrowserView.files}
-              scope={scope}
-              listView={listView}
-              onClose={diffBrowserView.onClose}
-            />
-          )}
-        </main>
+        <WorkspaceGraphPane
+          graphError={graphError}
+          graph={graph}
+          head={head}
+          graphRef={graphRef}
+          selectedIndex={selectedIndex}
+          compare={compare}
+          clearCompare={clearCompare}
+          setSelectedIndex={setSelectedIndex}
+          wip={wip}
+          themeVersion={themeVersion}
+          active={active}
+          onContextMenu={handleGraphContextMenu}
+          metrics={metrics}
+          metricsVersion={metricsVersion}
+          diffSlot={diffSlot}
+          overlayMeta={overlayMeta}
+          collapseDiffSlot={collapseDiffSlot}
+          onResolveConflictText={handleResolveConflictText}
+          mutating={mutating}
+          overlayExplain={overlayExplain}
+          diffViewMode={diffViewMode}
+          onSetViewMode={handleSetViewMode}
+          stageable={stageable}
+          onStageLines={handleStageLines}
+          onStageHunk={handleStageHunk}
+          onDiscardHunk={handleDiscardHunk}
+          blame={blame}
+          closeBlame={closeBlame}
+          revealCommitByOid={revealCommitByOid}
+          history={history}
+          closeHistory={closeHistory}
+          aiPanel={aiPanel}
+          closeAiPanel={closeAiPanel}
+          diffBrowserView={diffBrowserView}
+          repoId={repoId}
+          scope={scope}
+          listView={listView}
+        />
         <PaneDivider
           side="right-panel"
           onResize={onRightPanelResize}
           onResizeEnd={onPaneResizeEnd}
         />
-        <aside className="right-panel" style={{ width: paneWidths.rightPanel }}>
-          <OpBanner
-            op={opState}
-            conflictCount={conflicts.length}
-            mutating={mutating}
-            onCommitMerge={handleBannerCommitMerge}
-            onRebaseContinue={() => void handleRebaseContinue()}
-            onRebaseSkip={() => void handleRebaseSkip()}
-            onOpContinue={() =>
-              void (opState.kind === 'cherryPick'
-                ? handleCherrypickContinue()
-                : handleRevertContinue())
-            }
-            onAbort={() => setAbortConfirmOpen(true)}
-          />
-          {compare !== null ? (
-            <ComparePanel
-              data={compareData}
-              loading={compareLoading}
-              error={compareError}
-              headBranchName={headBranch?.name ?? null}
-              listView={listView}
-              scope={scope}
-              onSelectScope={setScope}
-              onClose={clearCompare}
-            />
-          ) : selectedIndex !== null && graph !== null ? (
-            <CommitPanel
-              node={graph.nodes[selectedIndex]}
-              data={commitDiff}
-              loading={commitDiffLoading}
-              error={commitDiffError}
-              listView={listView}
-              scope={scope}
-              onSelectScope={(s) => {
-                setScope(s);
-                setCommitBrowserOpen(true);
-              }}
-              onSelectParent={handleSelectParent}
-              onClose={() => setSelectedIndex(null)}
-              aiEligible={aiEligible}
-              onExplain={() => {
-                const oid = graph.nodes[selectedIndex].id;
-                runAnalyze({ kind: 'commit', oid }, 'explain', `Explain commit ${shortOid(oid)}`);
-              }}
-            />
-          ) : (
-            <>
-              <StatusPanel
-                snapshot={status}
-                loading={statusLoading}
-                error={statusError}
-                busy={mutating}
-                diffSlot={diffSlot}
-                listView={listView}
-                conflicts={conflicts}
-                aiEligible={aiEligible}
-                aiResolvingPath={aiResolvingPath}
-                aiAnalyzing={aiPanel?.loading === true}
-                onStage={(paths) => void handleStage(paths)}
-                onUnstage={(paths) => void handleUnstage(paths)}
-                onDiscard={(paths) => setPendingDiscard(paths)}
-                onReviewStaged={() =>
-                  runAnalyze({ kind: 'staged' }, 'review', 'Review staged changes')
-                }
-                onReviewWorktree={() =>
-                  runAnalyze({ kind: 'worktree' }, 'review', 'Review working tree')
-                }
-                onToggleDiff={handleToggleWorkdirDiff}
-                onResolveConflict={(path, r) => void handleResolveConflict(path, r)}
-                onToggleConflictView={handleToggleConflictView}
-                onAiResolve={(path) => void handleAiResolveConflict(path)}
-                onBlame={(path) => void handleBlame(path)}
-                onFileHistory={(path) => void handleFileHistory(path)}
-              />
-              {opState.kind === 'none' && head !== null && !head.unborn && (
-                <div className="amend-affordance">
-                  <label className="amend-toggle">
-                    <input
-                      type="checkbox"
-                      checked={amend}
-                      disabled={mutating}
-                      onChange={(e) => void handleToggleAmend(e.target.checked)}
-                    />
-                    <span>Amend last commit</span>
-                  </label>
-                  {amend &&
-                    headBranch !== null &&
-                    headBranch.upstream !== null &&
-                    headBranch.ahead === 0 && (
-                      <div className="amend-push-warning" role="note">
-                        This commit is already pushed — amending rewrites published history.
-                      </div>
-                    )}
-                </div>
-              )}
-              <CommitBox
-                key={
-                  amend
-                    ? 'amend'
-                    : opState.kind === 'merge'
-                      ? `merge:${opState.incoming}`
-                      : 'commit'
-                }
-                ref={commitBoxRef}
-                stagedCount={status?.staged.length ?? 0}
-                busy={mutating}
-                mode={opState.kind === 'merge' && !amend ? 'merge' : 'commit'}
-                initialMessage={
-                  amend
-                    ? (amendMessage ?? undefined)
-                    : opState.kind === 'merge'
-                      ? opState.message
-                      : undefined
-                }
-                conflictCount={conflicts.length}
-                blocked={!amend && opActive && opState.kind !== 'merge'}
-                amend={amend}
-                onCommit={
-                  amend
-                    ? handleCommitAmend
-                    : opState.kind === 'merge'
-                      ? handleCommitMerge
-                      : handleCommit
-                }
-                aiEligible={aiEligible}
-                onGenerate={handleGenerateCommitMessage}
-              />
-            </>
-          )}
-        </aside>
+        <WorkspaceRightPanel
+          rightPanelWidth={paneWidths.rightPanel}
+          opState={opState}
+          conflicts={conflicts}
+          mutating={mutating}
+          onCommitMerge={handleBannerCommitMerge}
+          onRebaseContinue={() => void handleRebaseContinue()}
+          onRebaseSkip={() => void handleRebaseSkip()}
+          onCherrypickContinue={() => void handleCherrypickContinue()}
+          onRevertContinue={() => void handleRevertContinue()}
+          onAbort={() => setAbortConfirmOpen(true)}
+          compare={compare}
+          compareData={compareData}
+          compareLoading={compareLoading}
+          compareError={compareError}
+          headBranch={headBranch}
+          listView={listView}
+          scope={scope}
+          setScope={setScope}
+          clearCompare={clearCompare}
+          selectedIndex={selectedIndex}
+          graph={graph}
+          commitDiff={commitDiff}
+          commitDiffLoading={commitDiffLoading}
+          commitDiffError={commitDiffError}
+          setCommitBrowserOpen={setCommitBrowserOpen}
+          onSelectParent={handleSelectParent}
+          setSelectedIndex={setSelectedIndex}
+          aiEligible={aiEligible}
+          runAnalyze={runAnalyze}
+          status={status}
+          statusLoading={statusLoading}
+          statusError={statusError}
+          diffSlot={diffSlot}
+          aiResolvingPath={aiResolvingPath}
+          aiPanelLoading={aiPanel?.loading === true}
+          onStage={(paths) => void handleStage(paths)}
+          onUnstage={(paths) => void handleUnstage(paths)}
+          onDiscard={(paths) => setPendingDiscard(paths)}
+          onToggleDiff={handleToggleWorkdirDiff}
+          onResolveConflict={(path, r) => void handleResolveConflict(path, r)}
+          onToggleConflictView={handleToggleConflictView}
+          onAiResolve={(path) => void handleAiResolveConflict(path)}
+          onBlame={(path) => void handleBlame(path)}
+          onFileHistory={(path) => void handleFileHistory(path)}
+          head={head}
+          amend={amend}
+          onToggleAmend={(next) => void handleToggleAmend(next)}
+          amendMessage={amendMessage}
+          commitBoxRef={commitBoxRef}
+          onCommitAmend={handleCommitAmend}
+          onCommitMergeSubmit={handleCommitMerge}
+          onCommit={handleCommit}
+          onGenerate={handleGenerateCommitMessage}
+        />
       </div>
 
-      <ConfirmDialog
-        open={abortConfirmOpen}
-        title={
-          opState.kind === 'rebase'
-            ? 'Abort rebase?'
-            : opState.kind === 'cherryPick'
-              ? 'Abort cherry-pick?'
-              : opState.kind === 'revert'
-                ? 'Abort revert?'
-                : 'Abort merge?'
-        }
-        confirmLabel={
-          opState.kind === 'rebase'
-            ? 'Abort rebase'
-            : opState.kind === 'cherryPick'
-              ? 'Abort cherry-pick'
-              : opState.kind === 'revert'
-                ? 'Abort revert'
-                : 'Abort merge'
-        }
-        busy={mutating}
-        onConfirm={() => {
-          const kind = opState.kind;
-          setAbortConfirmOpen(false);
-          if (kind === 'rebase') {
-            void handleRebaseAbort();
-          } else if (kind === 'cherryPick') {
-            void handleCherrypickAbort();
-          } else if (kind === 'revert') {
-            void handleRevertAbort();
-          } else {
-            void handleAbortMerge();
-          }
-        }}
-        onCancel={() => setAbortConfirmOpen(false)}
-      >
-        {opState.kind === 'rebase' ? (
-          <div>
-            This restores your branch and working tree to their pre-rebase state. Replayed commits
-            and conflict resolutions will be lost.
-          </div>
-        ) : opState.kind === 'cherryPick' || opState.kind === 'revert' ? (
-          <div>
-            This resets your branch and working tree to HEAD. The in-progress{' '}
-            {opState.kind === 'cherryPick' ? 'cherry-pick' : 'revert'} and any conflict resolutions
-            will be lost.
-          </div>
-        ) : (
-          <div>
-            This restores the files touched by the merge to their pre-merge state. Conflict
-            resolutions will be lost.
-          </div>
-        )}
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={pendingDeleteBranch !== null}
-        title="Delete branch"
-        confirmLabel="Delete branch"
-        busy={mutating}
-        onConfirm={() => {
-          const name = pendingDeleteBranch;
-          setPendingDeleteBranch(null);
-          if (name !== null) void handleDeleteBranch(name);
-        }}
-        onCancel={() => setPendingDeleteBranch(null)}
-      >
-        <div>Delete branch "<span className="mono">{pendingDeleteBranch ?? ''}</span>"?</div>
-        <div className="dialog-body-note">
-          The branch is fully merged, but this cannot be undone from Bonsai.
-        </div>
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={pendingDeleteRemote !== null}
-        title="Delete remote-tracking reference"
-        confirmLabel="Delete reference"
-        busy={mutating}
-        onConfirm={() => {
-          const name = pendingDeleteRemote;
-          setPendingDeleteRemote(null);
-          if (name !== null) void handleDeleteRemoteTracking(name);
-        }}
-        onCancel={() => setPendingDeleteRemote(null)}
-      >
-        <div>Delete the remote-tracking reference "<span className="mono">{pendingDeleteRemote ?? ''}</span>"?</div>
-        <div className="dialog-body-note">
-          This removes only Bonsai's local copy of the remote branch. It does NOT delete the branch on
-          the server — a future fetch may recreate it.
-        </div>
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={pendingDropStash !== null}
-        title="Drop stash"
-        confirmLabel="Drop stash"
-        busy={mutating}
-        onConfirm={() => {
-          const i = pendingDropStash;
-          setPendingDropStash(null);
-          if (i !== null) void handleDropStash(i);
-        }}
-        onCancel={() => setPendingDropStash(null)}
-      >
-        <div>Drop <span className="mono">stash@{`{${pendingDropStash ?? 0}}`}</span>?</div>
-        <div className="dialog-body-note">
-          This permanently discards the stashed changes and cannot be undone.
-        </div>
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={pendingReset !== null}
-        title={pendingReset?.mode === 'hard' ? 'Hard reset' : 'Reset branch'}
-        confirmLabel={
-          pendingReset === null
-            ? 'Reset'
-            : `Reset (${pendingReset.mode})`
-        }
-        busy={mutating}
-        onConfirm={() => {
-          const p = pendingReset;
-          setPendingReset(null);
-          if (p !== null) void handleResetBranch(p.oid, p.mode);
-        }}
-        onCancel={() => setPendingReset(null)}
-      >
-        <div>
-          Move <span className="mono">{headBranch?.name ?? 'HEAD'}</span> to{' '}
-          <span className="mono">{shortOid(pendingReset?.oid ?? '')}</span> ({pendingReset?.mode})?
-        </div>
-        <div className="dialog-body-note">
-          Commits after the target are no longer on this branch (recoverable via the reflog).
-          {pendingReset?.mode === 'hard' && (
-            <> Uncommitted changes in your working tree will be permanently discarded.</>
-          )}
-        </div>
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={pendingDiscard !== null}
-        title="Discard changes"
-        confirmLabel="Discard changes"
-        busy={mutating}
-        onConfirm={() => {
-          const paths = pendingDiscard;
-          setPendingDiscard(null);
-          if (paths !== null) void handleDiscard(paths);
-        }}
-        onCancel={() => setPendingDiscard(null)}
-      >
-        <div>Discard changes to {pendingDiscard?.length ?? 0} file(s)?</div>
-        <div className="dialog-body-note">
-          This permanently reverts them to the last staged/committed version and cannot be undone.
-        </div>
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={pendingHunkDiscard !== null}
-        title="Discard hunk?"
-        confirmLabel="Discard hunk"
-        busy={mutating}
-        onConfirm={() => {
-          const pending = pendingHunkDiscard;
-          setPendingHunkDiscard(null);
-          if (pending !== null) void handleConfirmHunkDiscard(pending);
-        }}
-        onCancel={() => setPendingHunkDiscard(null)}
-      >
-        <div>
-          Discard this hunk in <span className="mono">{pendingHunkDiscard?.path ?? ''}</span>?
-        </div>
-        <div className="dialog-body-note">
-          The change in this hunk is permanently reverted in your working tree and cannot be
-          undone. Staged changes are not affected.
-        </div>
-      </ConfirmDialog>
-
-      {/* P25d: B4 stale-branch cleanup. The nested ConfirmDialog inside lists the
-          exact names before any delete; onDeleted refetches branches + graph. */}
-      <StaleBranchesDialog
-        open={staleCleanupOpen}
-        onClose={() => setStaleCleanupOpen(false)}
+      <WorkspaceDialogs
         repoId={repoId}
-        onDeleted={() => void Promise.all([refetchBranches(), refetchGraph()])}
-      />
-
-      <PromptDialog
-        open={pendingCreateBranch !== null}
-        title="Create branch here"
-        label="Branch name"
-        placeholder="feature/my-branch"
-        confirmLabel="Create branch"
-        busy={mutating}
-        validate={(v) => {
-          const t = v.trim();
-          if (t === '' || t.startsWith('-')) return 'Enter a valid branch name';
-          if (branches?.local.some((b) => b.name === t) === true)
-            return 'A branch with that name already exists';
-          return null;
-        }}
-        onSubmit={(v) => void handleCreateBranchHere(pendingCreateBranch!.oid, v.trim())}
-        onCancel={() => setPendingCreateBranch(null)}
-      />
-
-      {/* P22: create tag at the right-clicked commit. */}
-      <TagCreateDialog
-        open={pendingCreateTag !== null}
-        targetOid={pendingCreateTag?.oid ?? ''}
-        busy={mutating}
-        existingTags={branches?.tags ?? []}
-        onSubmit={(name, message) => {
-          const oid = pendingCreateTag?.oid ?? null;
-          setPendingCreateTag(null);
-          if (oid !== null) void handleCreateTag(oid, name, message);
-        }}
-        onCancel={() => setPendingCreateTag(null)}
-      />
-
-      {/* P22: delete tag (local only). */}
-      <ConfirmDialog
-        open={pendingDeleteTag !== null}
-        title="Delete tag"
-        confirmLabel="Delete tag"
-        busy={mutating}
-        onConfirm={() => {
-          const name = pendingDeleteTag;
-          setPendingDeleteTag(null);
-          if (name !== null) void handleDeleteTag(name);
-        }}
-        onCancel={() => setPendingDeleteTag(null)}
-      >
-        <div>Delete tag "<span className="mono">{pendingDeleteTag ?? ''}</span>"?</div>
-        <div className="dialog-body-note">
-          Deletes the local tag only; a tag already pushed to a remote is not removed there.
-        </div>
-      </ConfirmDialog>
-
-      {/* P22: add a new remote (name + url both editable). */}
-      <RemoteEditDialog
-        open={pendingAddRemote}
-        title="Add remote"
-        confirmLabel="Add remote"
-        busy={mutating}
-        existingNames={remotes.map((r) => r.name)}
-        onSubmit={(name, url) => {
-          setPendingAddRemote(false);
-          void handleAddRemote(name, url);
-        }}
-        onCancel={() => setPendingAddRemote(false)}
-      />
-
-      {/* P22: edit an existing remote's fetch URL (name read-only). */}
-      <RemoteEditDialog
-        open={pendingEditUrl !== null}
-        title="Edit remote URL"
-        confirmLabel="Save URL"
-        busy={mutating}
-        nameReadOnly
-        initialName={pendingEditUrl?.name}
-        initialUrl={pendingEditUrl?.url}
-        existingNames={remotes.map((r) => r.name)}
-        onSubmit={(_name, url) => {
-          const target = pendingEditUrl;
-          setPendingEditUrl(null);
-          if (target !== null) void handleSetRemoteUrl(target.name, url);
-        }}
-        onCancel={() => setPendingEditUrl(null)}
-      />
-
-      {/* P22: rename a remote (single-field → reuse PromptDialog). */}
-      <PromptDialog
-        open={pendingRenameRemote !== null}
-        title="Rename remote"
-        label="New remote name"
-        placeholder="origin"
-        initialValue={pendingRenameRemote?.name}
-        confirmLabel="Rename"
-        busy={mutating}
-        validate={(v) => {
-          const t = v.trim();
-          if (t === '') return 'Enter a remote name';
-          if (/\s/.test(t)) return 'Remote name cannot contain whitespace';
-          if (t !== pendingRenameRemote?.name && remotes.some((r) => r.name === t))
-            return 'A remote with that name already exists';
-          return null;
-        }}
-        onSubmit={(v) => {
-          const target = pendingRenameRemote;
-          setPendingRenameRemote(null);
-          if (target !== null) void handleRenameRemote(target.name, v.trim());
-        }}
-        onCancel={() => setPendingRenameRemote(null)}
-      />
-
-      {/* P22: remove a remote (drops its tracking refs locally). */}
-      <ConfirmDialog
-        open={pendingRemoveRemote !== null}
-        title="Remove remote"
-        confirmLabel="Remove remote"
-        busy={mutating}
-        onConfirm={() => {
-          const name = pendingRemoveRemote;
-          setPendingRemoveRemote(null);
-          if (name !== null) void handleRemoveRemote(name);
-        }}
-        onCancel={() => setPendingRemoveRemote(null)}
-      >
-        <div>Remove remote "<span className="mono">{pendingRemoveRemote ?? ''}</span>"?</div>
-        <div className="dialog-body-note">
-          Removes the remote and its remote-tracking branches from this repo. The server is not
-          affected.
-        </div>
-      </ConfirmDialog>
-
-      {/* P28 §7: "What changed" range picker → runDigest → AiOutputPanel. */}
-      <WhatChangedDialog
-        open={whatChangedOpen}
-        branchNames={[
-          ...(branches?.local.map((b) => b.name) ?? []),
-          ...(branches?.remote.map((b) => b.name) ?? []),
-        ]}
-        currentBranch={headBranch?.name ?? null}
-        onSubmit={(range, title) => {
-          setWhatChangedOpen(false);
-          runDigest(range, title);
-        }}
-        onCancel={() => setWhatChangedOpen(false)}
-      />
-
-      {/* P27 §6.5: new worktree — branch picker + derived-path preview. */}
-      <WorktreeCreateDialog
-        open={newWorktreeOpen}
-        busy={mutating}
-        localBranches={branches?.local.map((b) => b.name) ?? []}
-        usedBranches={worktrees.map((w) => w.branch).filter((b): b is string => b !== null)}
-        container={worktreeContainerPreview(worktrees, repoId)}
-        onSubmit={handleAddWorktree}
-        onCancel={() => setNewWorktreeOpen(false)}
-      />
-
-      {/* P31 §7: worktree × AI-context matrix. Activation inside routes through
-          the ProfileActivateDialog preview gate; the matrix refetches itself. */}
-      <WorktreeContextDialog
-        open={worktreeContextOpen}
-        repoId={repoId}
-        onClose={() => setWorktreeContextOpen(false)}
-      />
-
-      {/* P27 §6.4: lock a worktree with an optional reason. */}
-      <PromptDialog
-        open={pendingWorktreeLock !== null}
-        title="Lock worktree"
-        label="Reason (optional)"
-        placeholder="pinned for QA"
-        confirmLabel="Lock"
-        busy={mutating}
-        onSubmit={(v) => {
-          const name = pendingWorktreeLock;
-          setPendingWorktreeLock(null);
-          if (name !== null) {
-            const reason = v.trim();
-            void handleLockWorktree(name, reason === '' ? undefined : reason);
-          }
-        }}
-        onCancel={() => setPendingWorktreeLock(null)}
-      />
-
-      {/* P27 §6.6: remove a worktree — names the exact directory deleted. */}
-      <ConfirmDialog
-        open={pendingWorktreeRemove !== null}
-        title="Remove worktree"
-        confirmLabel="Remove worktree"
-        busy={mutating}
-        onConfirm={() => {
-          const target = pendingWorktreeRemove;
-          setPendingWorktreeRemove(null);
-          if (target !== null) void handleRemoveWorktree(target.name);
-        }}
-        onCancel={() => setPendingWorktreeRemove(null)}
-      >
-        <div>
-          Remove worktree "<span className="mono">{pendingWorktreeRemove?.name ?? ''}</span>"?
-        </div>
-        <div className="dialog-body-note">
-          This permanently deletes the directory{' '}
-          <span className="mono">{pendingWorktreeRemove?.absPath ?? ''}</span> from disk. Bonsai
-          refuses if the worktree has uncommitted changes.
-        </div>
-      </ConfirmDialog>
-
-      {/* P23b: interactive-rebase plan editor. */}
-      <RebasePlanEditor
-        open={rebasePlan !== null}
-        ontoLabel={rebasePlan?.ontoLabel ?? ''}
-        ontoOid={rebasePlan?.ontoOid ?? ''}
-        initialTodos={rebasePlan?.initialTodos ?? []}
-        summaries={rebasePlan?.summaries ?? {}}
         mutating={mutating}
-        error={rebasePlanError}
-        onCancel={() => {
-          setRebasePlan(null);
-          setRebasePlanError(null);
-        }}
-        onStart={(todos) => {
-          if (rebasePlan !== null) {
-            void handleStartInteractiveRebase(rebasePlan.ontoOid, rebasePlan.ontoLabel, todos);
-          }
-        }}
+        opState={opState}
+        headBranch={headBranch}
+        branches={branches}
+        remotes={remotes}
+        worktrees={worktrees}
+        abortConfirmOpen={abortConfirmOpen}
+        setAbortConfirmOpen={setAbortConfirmOpen}
+        handleRebaseAbort={() => void handleRebaseAbort()}
+        handleCherrypickAbort={() => void handleCherrypickAbort()}
+        handleRevertAbort={() => void handleRevertAbort()}
+        handleAbortMerge={() => void handleAbortMerge()}
+        pendingDeleteBranch={pendingDeleteBranch}
+        setPendingDeleteBranch={setPendingDeleteBranch}
+        handleDeleteBranch={(name) => void handleDeleteBranch(name)}
+        pendingDeleteRemote={pendingDeleteRemote}
+        setPendingDeleteRemote={setPendingDeleteRemote}
+        handleDeleteRemoteTracking={(name) => void handleDeleteRemoteTracking(name)}
+        pendingDropStash={pendingDropStash}
+        setPendingDropStash={setPendingDropStash}
+        handleDropStash={(index) => void handleDropStash(index)}
+        pendingReset={pendingReset}
+        setPendingReset={setPendingReset}
+        handleResetBranch={(oid, mode) => void handleResetBranch(oid, mode)}
+        pendingDiscard={pendingDiscard}
+        setPendingDiscard={setPendingDiscard}
+        handleDiscard={(paths) => void handleDiscard(paths)}
+        pendingHunkDiscard={pendingHunkDiscard}
+        setPendingHunkDiscard={setPendingHunkDiscard}
+        handleConfirmHunkDiscard={(pending) => void handleConfirmHunkDiscard(pending)}
+        staleCleanupOpen={staleCleanupOpen}
+        setStaleCleanupOpen={setStaleCleanupOpen}
+        refetchBranches={refetchBranches}
+        refetchGraph={refetchGraph}
+        pendingCreateBranch={pendingCreateBranch}
+        setPendingCreateBranch={setPendingCreateBranch}
+        handleCreateBranchHere={(oid, name) => void handleCreateBranchHere(oid, name)}
+        pendingCreateTag={pendingCreateTag}
+        setPendingCreateTag={setPendingCreateTag}
+        handleCreateTag={(oid, name, message) => void handleCreateTag(oid, name, message)}
+        pendingDeleteTag={pendingDeleteTag}
+        setPendingDeleteTag={setPendingDeleteTag}
+        handleDeleteTag={(name) => void handleDeleteTag(name)}
+        pendingAddRemote={pendingAddRemote}
+        setPendingAddRemote={setPendingAddRemote}
+        handleAddRemote={(name, url) => void handleAddRemote(name, url)}
+        pendingEditUrl={pendingEditUrl}
+        setPendingEditUrl={setPendingEditUrl}
+        handleSetRemoteUrl={(name, url) => void handleSetRemoteUrl(name, url)}
+        pendingRenameRemote={pendingRenameRemote}
+        setPendingRenameRemote={setPendingRenameRemote}
+        handleRenameRemote={(name, newName) => void handleRenameRemote(name, newName)}
+        pendingRemoveRemote={pendingRemoveRemote}
+        setPendingRemoveRemote={setPendingRemoveRemote}
+        handleRemoveRemote={(name) => void handleRemoveRemote(name)}
+        whatChangedOpen={whatChangedOpen}
+        setWhatChangedOpen={setWhatChangedOpen}
+        runDigest={runDigest}
+        newWorktreeOpen={newWorktreeOpen}
+        setNewWorktreeOpen={setNewWorktreeOpen}
+        handleAddWorktree={handleAddWorktree}
+        worktreeContextOpen={worktreeContextOpen}
+        setWorktreeContextOpen={setWorktreeContextOpen}
+        pendingWorktreeLock={pendingWorktreeLock}
+        setPendingWorktreeLock={setPendingWorktreeLock}
+        handleLockWorktree={(name, reason) => void handleLockWorktree(name, reason)}
+        pendingWorktreeRemove={pendingWorktreeRemove}
+        setPendingWorktreeRemove={setPendingWorktreeRemove}
+        handleRemoveWorktree={(name) => void handleRemoveWorktree(name)}
+        rebasePlan={rebasePlan}
+        setRebasePlan={setRebasePlan}
+        rebasePlanError={rebasePlanError}
+        setRebasePlanError={setRebasePlanError}
+        handleStartInteractiveRebase={(ontoOid, ontoLabel, todos) =>
+          void handleStartInteractiveRebase(ontoOid, ontoLabel, todos)
+        }
+        menu={menu}
+        closeMenu={closeMenu}
       />
-
-      {menu !== null && (
-        <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={closeMenu} />
-      )}
     </>
   );
 }
