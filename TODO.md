@@ -16,9 +16,9 @@ that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e
 Every "awaiting USER CHECKPOINT" below is now CONFIRMED as of 2026-07-30. (P5/P6 were already
 confirmed earlier.)
 
-## P28 — Discard hunk + status-panel UX (double-click stage, section styling) — **in-progress** (2026-08-03)
+## P28 — Discard hunk + status-panel UX (double-click stage, section styling) — **DONE (USER CHECKPOINT CONFIRMED 2026-08-03)**
 
-Current step: **DONE (AI gate passed, awaiting USER CHECKPOINT).** A 14c17c5, B ec411de,
+Current step: **complete** — USER CHECKPOINT confirmed in native app 2026-08-03 (all three items). A 14c17c5, B ec411de,
 C f98b285, tests d-next — all reviewer-APPROVE. AI-gate evidence: 13 unit + 9 CLI-oracle
 tests green (byte-for-byte vs git apply --reverse / git checkout --, index invariant),
 full bonsai-core suite green, clippy -D warnings clean, tsc+vite build green; harness:
