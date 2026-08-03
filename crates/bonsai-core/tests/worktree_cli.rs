@@ -290,6 +290,10 @@ fn add_worktree_sanitizes_and_suffixes_collisions() {
         canon(Path::new(&collided.abs_path)),
         canon(&fx.root.join(".worktrees").join("feature-2"))
     );
+    // Both collision-sibling directories REALLY exist on disk (canon() falls
+    // back lexically, so set-equality alone does not prove existence).
+    assert!(fx.root.join(".worktrees").join("feature").is_dir());
+    assert!(fx.root.join(".worktrees").join("feature-2").is_dir());
 
     assert_eq!(
         sut_worktree_paths(&list_worktrees(&fx.main).expect("list")),
@@ -394,6 +398,100 @@ fn remove_worktree_refusals() {
         cli_worktree_paths(&fx.main)
     );
     assert_eq!(cli_worktree_paths(&fx.main).len(), 2);
+}
+
+/// E2E: `add_worktree`, then open the CREATED worktree as its own repo and
+/// list from inside it — `is_current` flips to the new row, the main row is
+/// still synthesized (via commondir), and the oracle path set matches when
+/// queried from inside the worktree too.
+#[test]
+fn add_then_list_from_inside_new_worktree_flips_current() {
+    require_git!();
+    let fx = setup();
+    let row = add_worktree(&fx.main, "feature").expect("add");
+    let wt_dir = PathBuf::from(&row.abs_path);
+
+    // From the MAIN repo the new row is NOT current.
+    let from_main = list_worktrees(&fx.main).expect("list from main");
+    let r = from_main.iter().find(|r| r.name == row.name).expect("row");
+    assert!(!r.is_current);
+    assert!(from_main.iter().find(|r| r.is_main).expect("main").is_current);
+
+    // From INSIDE the created worktree, is_current flips.
+    let from_wt = list_worktrees(&wt_dir).expect("list from inside worktree");
+    assert_eq!(from_wt.len(), 2);
+    let main_row = from_wt.iter().find(|r| r.is_main).expect("main row");
+    assert!(!main_row.is_current, "main must not be current here");
+    assert_eq!(canon(Path::new(&main_row.abs_path)), canon(&fx.main));
+    let cur = from_wt.iter().find(|r| r.is_current).expect("current row");
+    assert!(!cur.is_main);
+    assert_eq!(cur.name, row.name);
+    assert_eq!(cur.branch.as_deref(), Some("feature"));
+
+    // Oracle holds when queried from inside the worktree as well.
+    assert_eq!(sut_worktree_paths(&from_wt), cli_worktree_paths(&wt_dir));
+}
+
+/// §OPEN-3 data-loss pin: a dirty-refused remove leaves the dirty file's
+/// CONTENT byte-for-byte intact (both an untracked file and a modified
+/// tracked file).
+#[test]
+fn remove_refusal_preserves_dirty_file_content() {
+    require_git!();
+    let fx = setup();
+    let feat = add_worktree(&fx.main, "feature").expect("add");
+    let feat_dir = PathBuf::from(&feat.abs_path);
+
+    let untracked = feat_dir.join("precious.txt");
+    std::fs::write(&untracked, "precious untracked bytes\n").expect("write untracked");
+    let tracked = feat_dir.join("a.txt");
+    std::fs::write(&tracked, "modified tracked bytes\n").expect("write tracked");
+
+    match remove_worktree(&fx.main, &feat.name) {
+        Err(AppError::Git(msg)) => assert!(msg.contains("uncommitted"), "{msg}"),
+        other => panic!("expected Git refusal for dirty, got {other:?}"),
+    }
+
+    assert_eq!(
+        std::fs::read_to_string(&untracked).expect("untracked survives"),
+        "precious untracked bytes\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&tracked).expect("tracked survives"),
+        "modified tracked bytes\n"
+    );
+    // Still listed by both sides.
+    assert_eq!(
+        sut_worktree_paths(&list_worktrees(&fx.main).expect("list")),
+        cli_worktree_paths(&fx.main)
+    );
+}
+
+/// §OPEN-4 end-to-end: lock → remove refused → unlock → remove succeeds; the
+/// directory is gone and the porcelain oracle no longer lists it.
+#[test]
+fn unlock_then_remove_succeeds_end_to_end() {
+    require_git!();
+    let fx = setup();
+    let feat = add_worktree(&fx.main, "feature").expect("add");
+    let feat_dir = PathBuf::from(&feat.abs_path);
+
+    lock_worktree(&fx.main, &feat.name, Some("hold")).expect("lock");
+    match remove_worktree(&fx.main, &feat.name) {
+        Err(AppError::Git(msg)) => assert!(msg.contains("locked"), "{msg}"),
+        other => panic!("expected locked refusal, got {other:?}"),
+    }
+    assert!(feat_dir.is_dir(), "refusal must not delete anything");
+
+    unlock_worktree(&fx.main, &feat.name).expect("unlock");
+    remove_worktree(&fx.main, &feat.name).expect("remove after unlock");
+
+    assert!(!feat_dir.exists(), "working directory must be deleted");
+    let cli = cli_worktree_paths(&fx.main);
+    assert_eq!(cli.len(), 1, "oracle must only list main: {cli:?}");
+    let rows = list_worktrees(&fx.main).expect("list");
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].is_main);
 }
 
 /// §7.2 #7: remove happy path — a clean, unlocked, non-current worktree is
