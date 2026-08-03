@@ -50,6 +50,10 @@ export interface ProfileActivateDialogProps {
   repoId: string;
   /** Profile to activate; null when the dialog is closed. */
   name: string | null;
+  /** P31 §7: target worktree KEY (`"@main"` | linked name). When set, preview
+   *  and activation route to the per-worktree commands and the header names the
+   *  worktree; when absent the P24 open-tab path is unchanged. */
+  worktreeName?: string | null;
   onClose(): void;
   /** Fired after a successful activation with the backend result (its `store`
    *  carries the updated `activeProfile`; the parent also refetches inventory). */
@@ -60,13 +64,20 @@ export function ProfileActivateDialog({
   open,
   repoId,
   name,
+  worktreeName = null,
   onClose,
   onActivated,
 }: ProfileActivateDialogProps) {
   const pushToast = usePushToast();
   const [preview, setPreview] = useState<ProfilePreviewEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // P31: eligibility / dirty-target failures on confirm stay IN the dialog
+  // (nothing was written; the preview is still valid context for the message).
+  const [activateError, setActivateError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Bumped after a confirm failure to force a fresh preview — the user must
+  // re-confirm against the CURRENT diff, never the pre-failure one.
+  const [previewNonce, setPreviewNonce] = useState(0);
 
   // Load the preview each time the dialog opens for a profile. previewProfile
   // writes nothing; the Activate button is gated on `preview !== null`.
@@ -77,7 +88,10 @@ export function ProfileActivateDialog({
     setLoadError(null);
     (async () => {
       try {
-        const entries = await ipc.previewProfile(repoId, name);
+        const entries =
+          worktreeName !== null
+            ? await ipc.previewWorktreeProfile(repoId, worktreeName, name)
+            : await ipc.previewProfile(repoId, name);
         if (!cancelled) setPreview(entries);
       } catch (e) {
         if (!cancelled) setLoadError(errorMessage(e));
@@ -86,7 +100,13 @@ export function ProfileActivateDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, repoId, name]);
+  }, [open, repoId, name, worktreeName, previewNonce]);
+
+  // Clear the confirm-failure banner only on open/profile change, not on the
+  // nonce-driven re-preview (the banner explains WHY the preview reloaded).
+  useEffect(() => {
+    if (open) setActivateError(null);
+  }, [open, repoId, name, worktreeName]);
 
   // Esc closes (capture phase + stopPropagation, mirroring ConfirmDialog).
   useEffect(() => {
@@ -104,18 +124,35 @@ export function ProfileActivateDialog({
 
   const activate = async (): Promise<void> => {
     setBusy(true);
+    setActivateError(null);
     try {
-      const activation = await ipc.activateProfile(repoId, name);
+      const activation =
+        worktreeName !== null
+          ? await ipc.activateWorktreeProfile(repoId, worktreeName, name)
+          : await ipc.activateProfile(repoId, name);
       const written = activation.results.filter((r) => r.action !== 'unchanged').length;
+      const where = worktreeName !== null ? ` in ${worktreeName}` : '';
       if (written === 0) {
         pushToast('info', 'No changes — files already match the profile');
       } else {
-        pushToast('success', `Activated '${name}' — wrote ${written} file${written === 1 ? '' : 's'}`);
+        pushToast(
+          'success',
+          `Activated '${name}'${where} — wrote ${written} file${written === 1 ? '' : 's'}`,
+        );
       }
       onActivated(activation);
       onClose();
     } catch (e) {
-      pushToast('error', errorMessage(e));
+      // P31 §7: dirty-target / eligibility refusals surface in-dialog for the
+      // worktree path (nothing written); the legacy tab path keeps its toast.
+      if (worktreeName !== null) {
+        setActivateError(errorMessage(e));
+        // Force a re-preview: confirm stays disabled (preview === null) until
+        // the user sees the diff that reflects the post-failure state.
+        setPreviewNonce((n) => n + 1);
+      } else {
+        pushToast('error', errorMessage(e));
+      }
     } finally {
       setBusy(false);
     }
@@ -132,10 +169,20 @@ export function ProfileActivateDialog({
         className="dialog-card ai-assets-card"
         role="dialog"
         aria-modal="true"
-        aria-label={`Activate ${name}`}
+        aria-label={
+          worktreeName !== null ? `Activate ${name} in ${worktreeName}` : `Activate ${name}`
+        }
       >
         <div className="shortcut-header">
-          <h2 className="dialog-title shortcut-title">Activate “{name}”</h2>
+          <h2 className="dialog-title shortcut-title">
+            {worktreeName !== null ? (
+              <>
+                Activate “{name}” in <span className="mono">{worktreeName}</span>
+              </>
+            ) : (
+              <>Activate “{name}”</>
+            )}
+          </h2>
           <button
             type="button"
             className="btn-icon shortcut-close"
@@ -149,8 +196,16 @@ export function ProfileActivateDialog({
         </div>
 
         <p className="settings-section-desc">
-          Review each target below. Confirming writes these files; Cancel writes nothing.
+          {worktreeName !== null
+            ? `Review each target below — files are written inside worktree ${worktreeName}. Confirming writes these files; Cancel writes nothing.`
+            : 'Review each target below. Confirming writes these files; Cancel writes nothing.'}
         </p>
+
+        {activateError !== null && (
+          <div className="error-banner" role="alert">
+            {activateError}
+          </div>
+        )}
 
         {loadError !== null ? (
           <div className="error-banner" role="alert">

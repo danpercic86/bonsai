@@ -21,6 +21,7 @@ import { errorMessage } from '../utils/errors';
 import { AgentAssetEditor } from './AgentAssetEditor';
 import { ProfileManager } from './ProfileManager';
 import { TextComparePane } from './ProfileActivateDialog';
+import { WorktreeContextDialog } from './WorktreeContextDialog';
 
 export interface AiAssetsPanelProps {
   open: boolean;
@@ -100,6 +101,9 @@ export function AiAssetsPanel({ open, onClose, repoId, aiEnabled }: AiAssetsPane
     kind: AgentAssetKind;
     name: string | null;
   } | null>(null);
+
+  // P31 §7: the worktree × AI-context matrix (second entry point, D8b).
+  const [worktreeCtxOpen, setWorktreeCtxOpen] = useState(false);
 
   // Monotonic request id: a fetch whose id no longer matches the latest issued
   // one is stale (repoId changed via Ctrl+Tab while the panel was open, or a
@@ -249,6 +253,14 @@ export function AiAssetsPanel({ open, onClose, repoId, aiEnabled }: AiAssetsPane
         <div className="shortcut-header">
           <h2 className="dialog-title shortcut-title">AI Assets</h2>
           <div className="asset-header-actions">
+            <button
+              type="button"
+              className="btn-secondary settings-toggle-btn"
+              title="Per-worktree AI contexts"
+              onClick={() => setWorktreeCtxOpen(true)}
+            >
+              Worktrees
+            </button>
             <button
               type="button"
               className="btn-secondary settings-toggle-btn"
@@ -445,6 +457,15 @@ export function AiAssetsPanel({ open, onClose, repoId, aiEnabled }: AiAssetsPane
           onClose={() => setEditorTarget(null)}
         />
       )}
+
+      {/* P31 §7: worktree × AI-context matrix. An activation there may have
+          written into THIS worktree — refresh the inventory + store. */}
+      <WorktreeContextDialog
+        open={worktreeCtxOpen}
+        repoId={repoId}
+        onClose={() => setWorktreeCtxOpen(false)}
+        onActivated={() => void refresh()}
+      />
 
       {/* Read-only current-vs-canonical compare for a drifted row. */}
       {compare !== null && (

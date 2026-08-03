@@ -10,6 +10,7 @@ import { RebasePlanEditor } from './RebasePlanEditor';
 import { TagCreateDialog } from './TagCreateDialog';
 import { RemoteEditDialog } from './RemoteEditDialog';
 import { WorktreeCreateDialog } from './WorktreeCreateDialog';
+import { WorktreeContextDialog } from './WorktreeContextDialog';
 import { WhatChangedDialog } from './WhatChangedDialog';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
@@ -269,6 +270,8 @@ export function RepoWorkspace({
     absPath: string;
   } | null>(null);
   const [pendingWorktreeLock, setPendingWorktreeLock] = useState<string | null>(null);
+  // P31 §7: the worktree × AI-context matrix (opened from the worktree menu).
+  const [worktreeContextOpen, setWorktreeContextOpen] = useState(false);
   // P23b: interactive-rebase plan editor. `rebasePlan` holds the seeded plan +
   // display metadata; `rebasePlanError` shows a failed Start's error in-dialog.
   const [rebasePlan, setRebasePlan] = useState<{
@@ -318,6 +321,7 @@ export function RepoWorkspace({
     whatChangedOpen ||
     pendingWorktreeRemove !== null ||
     pendingWorktreeLock !== null ||
+    worktreeContextOpen ||
     rebasePlan !== null;
 
   const [graph, setGraph] = useState<GraphLayout | null>(null);
@@ -2548,6 +2552,13 @@ export function RepoWorkspace({
         onSelect: () => onOpenRepoPath(wt.absPath),
       },
       {
+        label: 'AI context…',
+        // Read-only matrix — always openable; per-row activation is gated
+        // inside the dialog (D6) and by the preview safety gate.
+        disabled: false,
+        onSelect: () => setWorktreeContextOpen(true),
+      },
+      {
         label: 'Lock…',
         disabled: gate || wt.isMain || wt.locked,
         onSelect: () => setPendingWorktreeLock(wt.name),
@@ -3650,6 +3661,14 @@ export function RepoWorkspace({
         container={worktreeContainerPreview(worktrees, repoId)}
         onSubmit={handleAddWorktree}
         onCancel={() => setNewWorktreeOpen(false)}
+      />
+
+      {/* P31 §7: worktree × AI-context matrix. Activation inside routes through
+          the ProfileActivateDialog preview gate; the matrix refetches itself. */}
+      <WorktreeContextDialog
+        open={worktreeContextOpen}
+        repoId={repoId}
+        onClose={() => setWorktreeContextOpen(false)}
       />
 
       {/* P27 §6.4: lock a worktree with an optional reason. */}

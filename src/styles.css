@@ -3848,3 +3848,33 @@ button.asset-row-clickable:hover {
 .health-section-error {
   margin-top: 8px;
 }
+
+/* ---- P31: worktree × AI-context matrix (WorktreeContextDialog) ---- */
+
+.wtctx-row {
+  align-items: flex-start;
+}
+
+.wtctx-branch {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.wtctx-status {
+  margin-top: 2px;
+}
+
+.wtctx-blocked {
+  font-size: 11px;
+  color: var(--text-3);
+  font-style: italic;
+}
+
+.wtctx-actions {
+  align-items: center;
+}
+
+.wtctx-select {
+  min-width: 130px;
+  max-width: 180px;
+}
