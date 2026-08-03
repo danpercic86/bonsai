@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CloneProgress } from '../ipc';
+import { formatBytes } from '../utils/format';
 
 /**
  * Derive the destination folder name from a clone URL: the last path segment
@@ -186,11 +187,4 @@ export function CloneDialog({
       </div>
     </div>
   );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const kib = bytes / 1024;
-  if (kib < 1024) return `${kib.toFixed(1)} KiB`;
-  return `${(kib / 1024).toFixed(1)} MiB`;
 }

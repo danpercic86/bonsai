@@ -4,6 +4,7 @@ import { ConfirmDialog } from './components/ConfirmDialog';
 import { RepoWorkspace } from './components/RepoWorkspace';
 import { SettingsPanel } from './components/SettingsPanel';
 import { AiAssetsPanel } from './components/AiAssetsPanel';
+import { RepoHealthPanel } from './components/RepoHealthPanel';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
 import { TabStrip } from './components/TabStrip';
 import type { TabMeta } from './components/TabStrip';
@@ -91,6 +92,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   // P24d: AI-asset inventory / drift / context-profile overlay (active repo only).
   const [aiAssetsOpen, setAiAssetsOpen] = useState(false);
+  // P29c: read-only repo-health overlay (active repo only).
+  const [healthOpen, setHealthOpen] = useState(false);
   const [autoFetch, setAutoFetch] = useState<AutoFetchSettings>({
     enabled: false,
     intervalMinutes: 5,
@@ -596,13 +599,14 @@ export default function App() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (menuOpen) return;
+      if (healthOpen) setHealthOpen(false);
       if (aiAssetsOpen) setAiAssetsOpen(false);
       if (settingsOpen) setSettingsOpen(false);
       if (overlayOpen) setOverlayOpen(false);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [menuOpen, overlayOpen, settingsOpen, aiAssetsOpen]);
+  }, [menuOpen, overlayOpen, settingsOpen, aiAssetsOpen, healthOpen]);
 
   // Global shortcuts (§5.1): Ctrl+O open, ? overlay, Ctrl+Tab / Ctrl+Shift+Tab
   // cycle tabs, Ctrl+W close active tab.
@@ -662,6 +666,7 @@ export default function App() {
     menuOpen ||
     settingsOpen ||
     aiAssetsOpen ||
+    healthOpen ||
     consentOpen ||
     mcpConsentOpen ||
     mcpWriteConsentOpen;
@@ -712,6 +717,17 @@ export default function App() {
                 aria-label="AI Assets"
               >
                 {'🤖'}
+              </button>
+            )}
+            {activeRepo !== null && (
+              <button
+                type="button"
+                className="btn-icon repo-health-toggle"
+                onClick={() => setHealthOpen(true)}
+                title="Health"
+                aria-label="Health"
+              >
+                {'📊'}
               </button>
             )}
             <button
@@ -837,6 +853,13 @@ export default function App() {
             onClose={() => setAiAssetsOpen(false)}
             repoId={activeRepo}
             aiEnabled={aiEnabled && aiConsented && aiAvailability?.installed === true}
+          />
+        )}
+        {activeRepo !== null && (
+          <RepoHealthPanel
+            open={healthOpen}
+            onClose={() => setHealthOpen(false)}
+            repoId={activeRepo}
           />
         )}
         <ConfirmDialog
