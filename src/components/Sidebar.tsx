@@ -8,6 +8,7 @@ import type {
   StashEntry,
   SubmoduleInfo,
   SubmoduleStatus,
+  WorktreeInfo,
 } from '../ipc';
 import { relativeDate } from '../graph/draw';
 import { DeleteIcon } from './menuIcons';
@@ -67,6 +68,12 @@ export interface SidebarProps {
   submodules: SubmoduleInfo[];
   /** Right-click a submodule row → open the shared context menu at the cursor. */
   onSubmoduleContextMenu(name: string, clientX: number, clientY: number): void;
+  /** P27 §6.1: worktrees (main first) with resolved branch/badges. */
+  worktrees: WorktreeInfo[];
+  /** Right-click a worktree row → open the shared context menu at the cursor. */
+  onWorktreeContextMenu(name: string, clientX: number, clientY: number): void;
+  /** Click the section "+" → open the new-worktree branch picker dialog. */
+  onNewWorktree(): void;
   /** P22 §6.1: right-click a tag row → open the shared context menu. */
   onTagContextMenu(name: string, clientX: number, clientY: number): void;
   /** P22 §6.2: configured remotes (name + fetch URL), rendered above the
@@ -319,6 +326,54 @@ function SubmoduleRow({
   );
 }
 
+/** P27 §6.2: display-only badge pills for a worktree row. A row may show more
+ *  than one (e.g. current + main). Reuses the P19 badge intent classes. */
+function worktreeBadges(wt: WorktreeInfo): { label: string; intent: string; title?: string }[] {
+  const out: { label: string; intent: string; title?: string }[] = [];
+  if (wt.isCurrent) out.push({ label: 'current', intent: 'submodule-badge-ok' });
+  if (wt.isMain) out.push({ label: 'main', intent: 'submodule-badge-muted' });
+  if (wt.locked)
+    out.push({ label: 'locked', intent: 'submodule-badge-warn', title: wt.lockReason ?? 'locked' });
+  if (wt.prunable || !wt.valid) out.push({ label: 'stale', intent: 'submodule-badge-warn' });
+  return out;
+}
+
+function WorktreeRow({
+  wt,
+  onContextMenu,
+}: {
+  wt: WorktreeInfo;
+  onContextMenu(name: string, clientX: number, clientY: number): void;
+}) {
+  return (
+    <li
+      className="branch-row"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu(wt.name, e.clientX, e.clientY);
+      }}
+    >
+      <span className="branch-glyph">{'⌥'}</span>
+      <span className="branch-name" title={wt.absPath}>
+        {wt.name}
+      </span>
+      {wt.valid && (
+        <span
+          className="branch-name branch-name-muted"
+          title={wt.branch ?? 'detached HEAD'}
+        >
+          {wt.branch ?? 'detached'}
+        </span>
+      )}
+      {worktreeBadges(wt).map((b) => (
+        <span key={b.label} className={`branch-badge ${b.intent}`} title={b.title ?? b.label}>
+          {b.label}
+        </span>
+      ))}
+    </li>
+  );
+}
+
 function SkeletonRows() {
   return (
     <div className="skeleton-group" aria-hidden="true">
@@ -349,6 +404,9 @@ export function Sidebar({
   onStashContextMenu,
   submodules,
   onSubmoduleContextMenu,
+  worktrees,
+  onWorktreeContextMenu,
+  onNewWorktree,
   onTagContextMenu,
   remotes,
   onRemoteContextMenu,
@@ -362,6 +420,7 @@ export function Sidebar({
   const [tagsCollapsed, setTagsCollapsed] = useState(true);
   const [stashesCollapsed, setStashesCollapsed] = useState(false);
   const [submodulesCollapsed, setSubmodulesCollapsed] = useState(false);
+  const [worktreesCollapsed, setWorktreesCollapsed] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createValue, setCreateValue] = useState('');
@@ -708,6 +767,41 @@ export function Sidebar({
               )}
             </section>
           )}
+
+          {/* P27 §6.1: Worktrees — always shown when a repo is open (the main
+              row is always present in real repos). */}
+          <section className="sidebar-section">
+            <SectionHeader
+              label="Worktrees"
+              collapsed={worktreesCollapsed}
+              onToggle={() => setWorktreesCollapsed((c) => !c)}
+              extra={
+                <button
+                  type="button"
+                  className="sidebar-add"
+                  aria-label="New worktree"
+                  title="New worktree"
+                  disabled={actionsDisabled}
+                  onClick={() => {
+                    setWorktreesCollapsed(false);
+                    onNewWorktree();
+                  }}
+                >
+                  {'+'}
+                </button>
+              }
+            />
+            {!worktreesCollapsed &&
+              (worktrees.length === 0 ? (
+                <p className="branch-muted">No worktrees</p>
+              ) : (
+                <ul className="branch-list">
+                  {worktrees.map((w) => (
+                    <WorktreeRow key={w.name} wt={w} onContextMenu={onWorktreeContextMenu} />
+                  ))}
+                </ul>
+              ))}
+          </section>
         </>
       )}
     </aside>

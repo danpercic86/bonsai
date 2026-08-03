@@ -9,6 +9,7 @@ import { PromptDialog } from './PromptDialog';
 import { RebasePlanEditor } from './RebasePlanEditor';
 import { TagCreateDialog } from './TagCreateDialog';
 import { RemoteEditDialog } from './RemoteEditDialog';
+import { WorktreeCreateDialog } from './WorktreeCreateDialog';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
 import {
@@ -72,6 +73,7 @@ import type {
   StatusSnapshot,
   SubmoduleInfo,
   Unsubscribe,
+  WorktreeInfo,
 } from '../ipc';
 import { usePushToast } from '../ToastContext';
 import { errorMessage, isAppError } from '../utils/errors';
@@ -86,6 +88,16 @@ const MAX_HISTORY_UI = 200;
 
 function isUsableRepo(info: RepoInfo): boolean {
   return info.isRepo && !info.bare;
+}
+
+/** P27 §6.5: display-only preview base for the derived worktree path —
+ *  `<mainParent>/.worktrees` (the backend derives the authoritative path). */
+function worktreeContainerPreview(worktrees: WorktreeInfo[], repoId: string): string {
+  const main = worktrees.find((w) => w.isMain);
+  const base = (main?.absPath ?? repoId).replace(/\\/g, '/');
+  const cut = base.lastIndexOf('/');
+  const parent = cut > 0 ? base.slice(0, cut) : base;
+  return `${parent}/.worktrees`;
 }
 
 export interface RepoWorkspaceProps {
@@ -177,6 +189,9 @@ export function RepoWorkspace({
 
   const [submodules, setSubmodules] = useState<SubmoduleInfo[]>([]);
 
+  // P27 §6.3: worktrees (main first), refetched alongside submodules.
+  const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([]);
+
   // P22 §7.1: configured remotes (name + fetch URL), refetched alongside branches.
   const [remotes, setRemotes] = useState<RemoteInfo[]>([]);
 
@@ -226,6 +241,14 @@ export function RepoWorkspace({
   const [pendingRemoveRemote, setPendingRemoveRemote] = useState<string | null>(null);
   // P25d: B4 stale-branch cleanup dialog (opened from the Branches header).
   const [staleCleanupOpen, setStaleCleanupOpen] = useState(false);
+  // P27 §6.5/§6.6: worktree dialogs — create (branch picker), remove confirm
+  // (names the directory to delete), lock reason prompt.
+  const [newWorktreeOpen, setNewWorktreeOpen] = useState(false);
+  const [pendingWorktreeRemove, setPendingWorktreeRemove] = useState<{
+    name: string;
+    absPath: string;
+  } | null>(null);
+  const [pendingWorktreeLock, setPendingWorktreeLock] = useState<string | null>(null);
   // P23b: interactive-rebase plan editor. `rebasePlan` holds the seeded plan +
   // display metadata; `rebasePlanError` shows a failed Start's error in-dialog.
   const [rebasePlan, setRebasePlan] = useState<{
@@ -270,6 +293,9 @@ export function RepoWorkspace({
     pendingEditUrl !== null ||
     pendingRemoveRemote !== null ||
     staleCleanupOpen ||
+    newWorktreeOpen ||
+    pendingWorktreeRemove !== null ||
+    pendingWorktreeLock !== null ||
     rebasePlan !== null;
 
   const [graph, setGraph] = useState<GraphLayout | null>(null);
@@ -316,6 +342,7 @@ export function RepoWorkspace({
   const branchesReqId = useRef(0);
   const stashesReqId = useRef(0);
   const submodulesReqId = useRef(0);
+  const worktreesReqId = useRef(0);
   const remotesReqId = useRef(0);
   const commitDiffReqId = useRef(0);
   const fileDiffReqId = useRef(0);
@@ -658,6 +685,23 @@ export function RepoWorkspace({
     setSubmodules([]);
   }, []);
 
+  const refetchWorktrees = useCallback(async () => {
+    const id = ++worktreesReqId.current;
+    try {
+      const list = await ipc.listWorktrees(repoId);
+      if (id !== worktreesReqId.current) return;
+      setWorktrees(list);
+    } catch {
+      if (id !== worktreesReqId.current) return;
+      // Non-fatal: worktrees are a secondary surface; keep the last-known list.
+    }
+  }, [repoId]);
+
+  const clearWorktrees = useCallback(() => {
+    worktreesReqId.current += 1;
+    setWorktrees([]);
+  }, []);
+
   const refetchRemotes = useCallback(async () => {
     const id = ++remotesReqId.current;
     try {
@@ -697,6 +741,7 @@ export function RepoWorkspace({
           refetchBranches(),
           refetchStashes(),
           refetchSubmodules(),
+          refetchWorktrees(),
           refetchRemotes(),
           refetchOpState(),
           refetchCompare(),
@@ -707,6 +752,7 @@ export function RepoWorkspace({
         clearBranches();
         clearStashes();
         clearSubmodules();
+        clearWorktrees();
         clearRemotes();
         clearOpState();
         clearCompare();
@@ -727,6 +773,7 @@ export function RepoWorkspace({
     refetchBranches,
     refetchStashes,
     refetchSubmodules,
+    refetchWorktrees,
     refetchRemotes,
     refetchOpState,
     refetchCompare,
@@ -735,6 +782,7 @@ export function RepoWorkspace({
     clearBranches,
     clearStashes,
     clearSubmodules,
+    clearWorktrees,
     clearRemotes,
     clearOpState,
     clearCompare,
@@ -752,6 +800,7 @@ export function RepoWorkspace({
     void refetchBranches();
     void refetchStashes();
     void refetchSubmodules();
+    void refetchWorktrees();
     void refetchRemotes();
     void refetchOpState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -829,6 +878,7 @@ export function RepoWorkspace({
         void refetchBranches();
         void refetchStashes();
         void refetchSubmodules();
+        void refetchWorktrees();
         void refetchRemotes();
         void refetchOpState();
         void refetchCompare();
@@ -851,6 +901,7 @@ export function RepoWorkspace({
     refetchBranches,
     refetchStashes,
     refetchSubmodules,
+    refetchWorktrees,
     refetchRemotes,
     refetchOpState,
     refetchCompare,
@@ -869,6 +920,7 @@ export function RepoWorkspace({
         void refetchBranches();
         void refetchStashes();
         void refetchSubmodules();
+        void refetchWorktrees();
         void refetchRemotes();
         void refetchOpState();
         void refetchCompare();
@@ -891,6 +943,7 @@ export function RepoWorkspace({
     refetchBranches,
     refetchStashes,
     refetchSubmodules,
+    refetchWorktrees,
     refetchRemotes,
     refetchOpState,
     refetchCompare,
@@ -1627,6 +1680,67 @@ export function RepoWorkspace({
     }
   }
 
+  // ----- P27: worktree handling -----
+  // Create/lock/unlock/remove never change the CURRENT repo's status/graph
+  // (remove refuses the open worktree server-side) → refetchWorktrees suffices.
+
+  // Called by WorktreeCreateDialog; rethrows so the dialog shows the error
+  // inline and stays open (success closes it here + toasts the derived path).
+  async function handleAddWorktree(branch: string): Promise<void> {
+    setMutating(true);
+    try {
+      const wt = await ipc.addWorktree(repoId, branch);
+      pushToast('success', `Created worktree for ${branch} at ${wt.absPath}`);
+      setNewWorktreeOpen(false);
+      await refetchWorktrees();
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  // Called after the lock-reason PromptDialog (empty reason → no reason).
+  async function handleLockWorktree(name: string, reason: string | undefined) {
+    setMutating(true);
+    try {
+      await ipc.lockWorktree(repoId, name, reason);
+      pushToast('success', `Locked worktree ${name}`);
+      await refetchWorktrees();
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleUnlockWorktree(name: string) {
+    setMutating(true);
+    try {
+      await ipc.unlockWorktree(repoId, name);
+      pushToast('success', `Unlocked worktree ${name}`);
+      await refetchWorktrees();
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  // Called AFTER the ConfirmDialog naming the directory. The backend
+  // independently refuses main/current/locked/dirty (P27 §2.6) — its message
+  // surfaces via the error toast.
+  async function handleRemoveWorktree(name: string) {
+    setMutating(true);
+    try {
+      await ipc.removeWorktree(repoId, name);
+      pushToast('success', `Removed worktree ${name}`);
+      await refetchWorktrees();
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
   // ----- P22: tag + remote management -----
   // Create create/delete refetch branches (tag list, §2.0) + graph (pill).
   async function handleCreateTag(oid: string, name: string, message: string | null) {
@@ -2295,6 +2409,45 @@ export function RepoWorkspace({
     setMenu({ x: clientX, y: clientY, items: submoduleMenuItems(sub) });
   }
 
+  // P27 §6.4: worktree row menu. Open-in-tab needs an intact working tree;
+  // Lock/Unlock apply to linked worktrees only; Remove is disabled for
+  // main/current/locked in the UI AND refused server-side (§2.6).
+  function worktreeMenuItems(wt: WorktreeInfo): ContextMenuItem[] {
+    const gate = mutating || opActive;
+    return [
+      {
+        label: 'Open in new tab',
+        icon: <CompareIcon />,
+        disabled: wt.isCurrent || !wt.valid,
+        onSelect: () => onOpenRepoPath(wt.absPath),
+      },
+      {
+        label: 'Lock…',
+        disabled: gate || wt.isMain || wt.locked,
+        onSelect: () => setPendingWorktreeLock(wt.name),
+      },
+      {
+        label: 'Unlock',
+        disabled: gate || !wt.locked,
+        onSelect: () => void handleUnlockWorktree(wt.name),
+      },
+      {
+        label: 'Remove…',
+        icon: <DeleteIcon />,
+        disabled: gate || wt.isMain || wt.isCurrent || wt.locked,
+        onSelect: () => setPendingWorktreeRemove({ name: wt.name, absPath: wt.absPath }),
+      },
+    ];
+  }
+
+  // P27 §6.4: right-click a sidebar worktree row → open the shared context
+  // menu. Looks up the WorktreeInfo by name from state.
+  function handleWorktreeContextMenu(name: string, clientX: number, clientY: number) {
+    const wt = worktrees.find((w) => w.name === name);
+    if (wt === undefined) return;
+    setMenu({ x: clientX, y: clientY, items: worktreeMenuItems(wt) });
+  }
+
   // P22 §7.2: the shared tag menu — used by the graph tag pill AND the sidebar
   // tag rows. Delete (ConfirmDialog) + Copy + one "Push tag to <remote>" per
   // configured remote (§OPEN-7: 0 → no push item; 1 → single; >1 → one each).
@@ -2741,6 +2894,9 @@ export function RepoWorkspace({
           onStashContextMenu={handleStashContextMenu}
           submodules={submodules}
           onSubmoduleContextMenu={handleSubmoduleContextMenu}
+          worktrees={worktrees}
+          onWorktreeContextMenu={handleWorktreeContextMenu}
+          onNewWorktree={() => setNewWorktreeOpen(true)}
           onTagContextMenu={handleTagContextMenu}
           remotes={remotes}
           onRemoteContextMenu={handleRemoteContextMenu}
@@ -3275,6 +3431,59 @@ export function RepoWorkspace({
         <div className="dialog-body-note">
           Removes the remote and its remote-tracking branches from this repo. The server is not
           affected.
+        </div>
+      </ConfirmDialog>
+
+      {/* P27 §6.5: new worktree — branch picker + derived-path preview. */}
+      <WorktreeCreateDialog
+        open={newWorktreeOpen}
+        busy={mutating}
+        localBranches={branches?.local.map((b) => b.name) ?? []}
+        usedBranches={worktrees.map((w) => w.branch).filter((b): b is string => b !== null)}
+        container={worktreeContainerPreview(worktrees, repoId)}
+        onSubmit={handleAddWorktree}
+        onCancel={() => setNewWorktreeOpen(false)}
+      />
+
+      {/* P27 §6.4: lock a worktree with an optional reason. */}
+      <PromptDialog
+        open={pendingWorktreeLock !== null}
+        title="Lock worktree"
+        label="Reason (optional)"
+        placeholder="pinned for QA"
+        confirmLabel="Lock"
+        busy={mutating}
+        onSubmit={(v) => {
+          const name = pendingWorktreeLock;
+          setPendingWorktreeLock(null);
+          if (name !== null) {
+            const reason = v.trim();
+            void handleLockWorktree(name, reason === '' ? undefined : reason);
+          }
+        }}
+        onCancel={() => setPendingWorktreeLock(null)}
+      />
+
+      {/* P27 §6.6: remove a worktree — names the exact directory deleted. */}
+      <ConfirmDialog
+        open={pendingWorktreeRemove !== null}
+        title="Remove worktree"
+        confirmLabel="Remove worktree"
+        busy={mutating}
+        onConfirm={() => {
+          const target = pendingWorktreeRemove;
+          setPendingWorktreeRemove(null);
+          if (target !== null) void handleRemoveWorktree(target.name);
+        }}
+        onCancel={() => setPendingWorktreeRemove(null)}
+      >
+        <div>
+          Remove worktree "<span className="mono">{pendingWorktreeRemove?.name ?? ''}</span>"?
+        </div>
+        <div className="dialog-body-note">
+          This permanently deletes the directory{' '}
+          <span className="mono">{pendingWorktreeRemove?.absPath ?? ''}</span> from disk. Bonsai
+          refuses if the worktree has uncommitted changes.
         </div>
       </ConfirmDialog>
 

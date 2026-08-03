@@ -103,4 +103,5 @@ export type {
   UiSettingsPatch,
   Unsubscribe,
   Validation,
+  WorktreeInfo,
 } from './types';
