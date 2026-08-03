@@ -506,6 +506,13 @@ body {
   cursor: default;
 }
 
+/* P30 D11: small muted background-job readout next to the Fetch control. */
+.toolbar-job-status {
+  color: var(--text-3);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 /* ---------- Toast stack (P1 §5.2) ---------- */
 
 .toast-stack {

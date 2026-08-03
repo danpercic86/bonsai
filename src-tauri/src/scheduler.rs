@@ -17,7 +17,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use bonsai_core::git::opstate::{read_op_state, RepoOpState};
 use bonsai_core::git::remote::fetch_all;
@@ -62,6 +62,10 @@ pub struct JobRuntime {
     pub last_outcome: Option<JobOutcome>,
     pub last_error: Option<String>,
     pub consecutive_failures: u32,
+    /// P30a review N1: `true` once a `Skipped` event has been emitted for the
+    /// CURRENT in-flight run — later ticks stay quiet until that run finishes
+    /// (otherwise a slow fetch produces a Skipped event every 15 s).
+    pub skip_signaled: bool,
 }
 
 /// Global scheduler config snapshot (mirrors the `Settings` fields, D7).
@@ -112,13 +116,24 @@ impl std::ops::Deref for SchedulerState {
     }
 }
 
+/// Locks a scheduler mutex, RECOVERING from poisoning (P30a review S1).
+///
+/// Rationale: the scheduler is an unattended background subsystem — if a job
+/// future ever panicked while holding a lock, a `return`-on-poison here would
+/// permanently wedge every later tick (and leak `running = true`, blocking
+/// the job forever) with no user-visible signal. Our guarded data (config
+/// copy + per-job bookkeeping) stays structurally valid at every await/panic
+/// point (plain field writes, no multi-step invariants), so continuing with
+/// the possibly-mid-update values is strictly safer than dying silently.
+pub(crate) fn lock_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 /// Replaces the config snapshot (called from `set_ui_settings` after persist
 /// and once at startup, D7). Interval/enable changes take effect on the next
 /// tick; runtime records (backoff, lastRun) are intentionally preserved.
 pub fn apply_config(state: &SchedulerState, cfg: JobsConfig) {
-    if let Ok(mut c) = state.cfg.lock() {
-        *c = cfg;
-    }
+    *lock_recover(&state.cfg) = cfg;
 }
 
 // ---------------------------------------------------------------------------
@@ -212,8 +227,10 @@ pub struct JobStatusChangedPayload {
     pub job: JobKind,
     pub outcome: JobOutcome,
     /// autoFetch success only.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_refs: Option<u32>,
     /// failed only.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     pub consecutive_failures: u32,
     pub in_backoff: bool,
@@ -274,15 +291,11 @@ pub(crate) fn tick_once(
     now_ms: i64,
     emit: &EmitFn,
 ) -> Vec<tauri::async_runtime::JoinHandle<()>> {
-    let cfg = match sched.cfg.lock() {
-        Ok(c) => *c,
-        Err(_) => return Vec::new(),
-    };
+    // S1: poison-recovering locks — a panicked job future must not silently
+    // kill the scheduler (see `lock_recover`).
+    let cfg = *lock_recover(&sched.cfg);
     let mut handles = Vec::new();
-    let mut jobs = match sched.jobs.lock() {
-        Ok(j) => j,
-        Err(_) => return Vec::new(),
-    };
+    let mut jobs = lock_recover(&sched.jobs);
 
     // Prune bookkeeping for repos that are no longer open.
     jobs.retain(|(repo_id, _), _| repos.iter().any(|(id, _)| id == repo_id));
@@ -308,6 +321,12 @@ pub(crate) fn tick_once(
             ) {
                 PlanDecision::Wait { .. } => {}
                 PlanDecision::SkipOverlap => {
+                    // N1: signal only the FIRST skip of a given in-flight
+                    // run — a slow fetch must not emit Skipped every tick.
+                    if entry.skip_signaled {
+                        continue;
+                    }
+                    entry.skip_signaled = true;
                     // D4: record + signal, count no failure, don't touch
                     // last_run (the job stays due; the running run's own
                     // completion re-baselines it).
@@ -333,6 +352,7 @@ pub(crate) fn tick_once(
                 }
                 PlanDecision::Run => {
                     entry.running = true;
+                    entry.skip_signaled = false;
                     handles.push(tauri::async_runtime::spawn(execute_job(
                         sched.clone(),
                         repo_id.clone(),
@@ -412,12 +432,11 @@ async fn execute_job(
 
     // Bookkeeping under the lock; events emitted after it is released.
     let (payload, repo_changed) = {
-        let mut jobs = match sched.jobs.lock() {
-            Ok(j) => j,
-            Err(_) => return,
-        };
+        // S1: recover from poisoning — bailing here would leak running=true.
+        let mut jobs = lock_recover(&sched.jobs);
         let entry = jobs.entry((repo_id.clone(), job)).or_default();
         entry.running = false;
+        entry.skip_signaled = false; // N1: next overlap may signal again
         entry.last_run_ms = Some(now_ms);
 
         let (outcome, updated_refs, error, entered_backoff, repo_changed) = match result {
@@ -486,23 +505,17 @@ pub(crate) fn start_job_now(
     emit: EmitFn,
 ) -> Result<tauri::async_runtime::JoinHandle<()>, bonsai_core::error::AppError> {
     use bonsai_core::error::AppError;
-    let (enabled, base_ms) = {
-        let cfg = sched
-            .cfg
-            .lock()
-            .map_err(|_| AppError::Other("scheduler lock poisoned".to_string()))?;
-        cfg.job_params(job)
-    };
+    // S1: poison-recovering locks (see `lock_recover`) — run-now must keep
+    // working even after some job future panicked.
+    let (enabled, base_ms) = lock_recover(&sched.cfg).job_params(job);
     {
-        let mut jobs = sched
-            .jobs
-            .lock()
-            .map_err(|_| AppError::Other("scheduler lock poisoned".to_string()))?;
+        let mut jobs = lock_recover(&sched.jobs);
         let entry = jobs.entry((repo_id.to_string(), job)).or_default();
         if entry.running {
             return Err(AppError::Other("job already running".to_string()));
         }
         entry.running = true;
+        entry.skip_signaled = false;
     }
     Ok(tauri::async_runtime::spawn(execute_job(
         sched.clone(),
@@ -923,7 +936,93 @@ mod tests {
             let entry = &jobs[&("work".to_string(), JobKind::AutoFetch)];
             assert_eq!(entry.last_outcome, Some(JobOutcome::Skipped));
             assert!(entry.running, "flag untouched by the skip");
+            assert!(entry.skip_signaled, "first skip recorded");
         }
+
+        // N1: further due ticks during the SAME in-flight run stay quiet —
+        // only the first skip of a given run is signaled.
+        drive_tick(&repos, &sched, 2 * MIN, &emit);
+        drive_tick(&repos, &sched, 3 * MIN, &emit);
+        assert_eq!(job_statuses(&events).len(), 1, "no repeat Skipped events");
+
+        // The run completes (flag cleared) → the job runs for real, which
+        // resets skip_signaled; a NEW overlapping run may signal once again.
+        sched
+            .jobs
+            .lock()
+            .expect("jobs lock")
+            .get_mut(&("work".to_string(), JobKind::AutoFetch))
+            .expect("entry")
+            .running = false;
+        drive_tick(&repos, &sched, 4 * MIN, &emit); // real run → Success
+        let statuses = job_statuses(&events);
+        assert_eq!(statuses.len(), 2);
+        assert_eq!(statuses[1].outcome, JobOutcome::Success);
+        {
+            let mut jobs = sched.jobs.lock().expect("jobs lock");
+            let entry = jobs
+                .get_mut(&("work".to_string(), JobKind::AutoFetch))
+                .expect("entry");
+            assert!(!entry.skip_signaled, "cleared by run completion");
+            entry.running = true; // simulate the next slow run
+        }
+        drive_tick(&repos, &sched, 6 * MIN, &emit);
+        let statuses = job_statuses(&events);
+        assert_eq!(statuses.len(), 3);
+        assert_eq!(statuses[2].outcome, JobOutcome::Skipped);
+    }
+
+    /// S1: a poisoned scheduler mutex must not wedge the loop — locks recover
+    /// via `PoisonError::into_inner` and ticks keep working.
+    #[test]
+    fn poisoned_locks_recover() {
+        let dir = scratch_dir();
+        let (work, _bare, _other) = fetch_fixture(dir.path());
+
+        let sched = sched_with_auto_fetch(1);
+        // Poison both mutexes by panicking while holding them.
+        let s = sched.clone();
+        let _ = std::thread::spawn(move || {
+            let _cfg = s.cfg.lock().expect("cfg lock");
+            let _jobs = s.jobs.lock().expect("jobs lock");
+            panic!("poison");
+        })
+        .join();
+        assert!(sched.cfg.lock().is_err(), "cfg poisoned");
+        assert!(sched.jobs.lock().is_err(), "jobs poisoned");
+
+        // apply_config still works.
+        apply_config(
+            &sched,
+            JobsConfig {
+                auto_fetch: AutoFetch {
+                    enabled: true,
+                    interval_minutes: 1,
+                },
+                health_refresh: HealthRefresh {
+                    enabled: false,
+                    interval_minutes: 30,
+                },
+            },
+        );
+
+        // Ticks still schedule and complete runs.
+        let (emit, events) = collecting_emitter();
+        let repos = vec![("work".to_string(), work.clone())];
+        drive_tick(&repos, &sched, 0, &emit); // baseline
+        drive_tick(&repos, &sched, MIN, &emit); // runs despite poison
+        let statuses = job_statuses(&events);
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].outcome, JobOutcome::Success);
+
+        // run-now also still works on the poisoned state.
+        let (emit2, events2) = collecting_emitter();
+        let handle = start_job_now(&sched, "work", work, JobKind::AutoFetch, 2 * MIN, emit2)
+            .expect("run-now recovers");
+        tauri::async_runtime::block_on(async {
+            let _ = handle.await;
+        });
+        assert_eq!(job_statuses(&events2).len(), 1);
     }
 
     /// Failure escalation: a broken remote URL fails each run; the 3rd
@@ -1009,6 +1108,7 @@ mod tests {
                     last_outcome: Some(JobOutcome::Failed),
                     last_error: Some("boom".to_string()),
                     consecutive_failures: 5,
+                    skip_signaled: false,
                 },
             );
         }

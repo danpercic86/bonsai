@@ -65,7 +65,11 @@ import type {
   AutoFetchSettings,
   GraphLayout,
   GraphPrefs,
+  HealthRefreshSettings,
   IpcApi,
+  JobKind,
+  JobStatus,
+  JobStatusChangedPayload,
   LineSelection,
   ListView,
   McpStatus,
@@ -107,6 +111,8 @@ import {
   AVATAR_RADIUS_MIN,
   DOT_RADIUS_MAX,
   DOT_RADIUS_MIN,
+  HEALTH_REFRESH_INTERVAL_MAX,
+  HEALTH_REFRESH_INTERVAL_MIN,
   LANE_WIDTH_MAX,
   LANE_WIDTH_MIN,
   ROW_HEIGHT_MAX,
@@ -1295,6 +1301,8 @@ const DEFAULT_UI_SETTINGS: UiSettings = {
   paneWidths: { sidebar: 240, rightPanel: 380 },
   listView: 'tree',
   autoFetch: { enabled: false, intervalMinutes: 5 },
+  // P30: backend-scheduler healthRefresh signal; disabled by default.
+  healthRefresh: { enabled: false, intervalMinutes: 30 },
   graph: { dotRadius: 4, avatarRadius: 10, rowHeight: 32, laneWidth: 16 },
   // AI assistance (P13): enabled by default, but consent gates the feature.
   aiEnabled: true,
@@ -1320,6 +1328,17 @@ function clampAutoFetch(a: AutoFetchSettings): AutoFetchSettings {
     intervalMinutes: Math.min(
       AUTO_FETCH_INTERVAL_MAX,
       Math.max(AUTO_FETCH_INTERVAL_MIN, a.intervalMinutes),
+    ),
+  };
+}
+
+/** Mirrors Rust `clamp_health_refresh` (settings.rs, P30). */
+function clampHealthRefresh(h: HealthRefreshSettings): HealthRefreshSettings {
+  return {
+    enabled: h.enabled,
+    intervalMinutes: Math.min(
+      HEALTH_REFRESH_INTERVAL_MAX,
+      Math.max(HEALTH_REFRESH_INTERVAL_MIN, h.intervalMinutes),
     ),
   };
 }
@@ -1362,6 +1381,17 @@ function readUiSettings(): UiSettings {
           ? parsed.autoFetch.intervalMinutes
           : DEFAULT_UI_SETTINGS.autoFetch.intervalMinutes,
     });
+    // P30 healthRefresh (additive, like autoFetch): fall back to defaults.
+    const healthRefresh = clampHealthRefresh({
+      enabled:
+        typeof parsed.healthRefresh?.enabled === 'boolean'
+          ? parsed.healthRefresh.enabled
+          : DEFAULT_UI_SETTINGS.healthRefresh.enabled,
+      intervalMinutes:
+        typeof parsed.healthRefresh?.intervalMinutes === 'number'
+          ? parsed.healthRefresh.intervalMinutes
+          : DEFAULT_UI_SETTINGS.healthRefresh.intervalMinutes,
+    });
     const graph = clampGraphPrefs({
       dotRadius:
         typeof parsed.graph?.dotRadius === 'number'
@@ -1402,6 +1432,7 @@ function readUiSettings(): UiSettings {
       paneWidths,
       listView,
       autoFetch,
+      healthRefresh,
       graph,
       aiEnabled,
       aiConflictAutonomy,
@@ -1421,6 +1452,152 @@ function writeUiSettings(s: UiSettings): void {
     // Best-effort, like the backend's non-fatal save.
   }
 }
+
+// ---------------------------------------------------------------------------
+// P30 §7: background-job mock harness. Stateful per-repo JobStatus + synthetic
+// ticks that treat **intervalMinutes as SECONDS** (documented test-speed shim
+// so the harness shows activity without waiting minutes). The fixture repo
+// simulates failure escalation (backoff) when localStorage
+// `bonsaiMockJobFail=1` is set — exactly one backoff toast at failure 3.
+// ---------------------------------------------------------------------------
+
+const MOCK_JOB_FAIL_KEY = 'bonsaiMockJobFail';
+const BACKOFF_THRESHOLD = 3; // mirrors scheduler.rs
+const BACKOFF_MAX_FACTOR = 8;
+
+/** Listener registries: the mock's stand-in for the Tauri event system. */
+const repoChangedListeners = new Set<(p: RepoChangedPayload) => void>();
+const jobStatusListeners = new Set<(p: JobStatusChangedPayload) => void>();
+
+const jobStatuses = new Map<string, JobStatus[]>();
+
+/** Lazy per-repo seed (contract §7): autoFetch success 2 min ago,
+ *  healthRefresh disabled/never run. */
+function seedJobStatuses(repoId: string): JobStatus[] {
+  let list = jobStatuses.get(repoId);
+  if (list === undefined) {
+    list = [
+      {
+        job: 'autoFetch',
+        enabled: false,
+        lastRunMs: Date.now() - 2 * 60_000,
+        lastOutcome: 'success',
+        lastError: null,
+        consecutiveFailures: 0,
+        inBackoff: false,
+        nextRunMs: null,
+      },
+      {
+        job: 'healthRefresh',
+        enabled: false,
+        lastRunMs: null,
+        lastOutcome: null,
+        lastError: null,
+        consecutiveFailures: 0,
+        inBackoff: false,
+        nextRunMs: null,
+      },
+    ];
+    jobStatuses.set(repoId, list);
+  }
+  return list;
+}
+
+/** Mirrors scheduler.rs `effective_interval_ms` (base for failures 0–2,
+ *  base*2^(f-2) for ≥3, capped at 8×). */
+function mockEffectiveIntervalMs(baseMs: number, failures: number): number {
+  if (failures < BACKOFF_THRESHOLD) return baseMs;
+  const factor = Math.min(BACKOFF_MAX_FACTOR, 2 ** (failures - (BACKOFF_THRESHOLD - 1)));
+  return baseMs * factor;
+}
+
+function mockJobFailEnabled(): boolean {
+  try {
+    return window.localStorage.getItem(MOCK_JOB_FAIL_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Completes one synthetic job run for `repoId`: updates the stateful status,
+ *  dispatches `job-status-changed`, then `repo-changed` on refreshing
+ *  successes — the same ordering/shape as the Rust scheduler. */
+function completeMockJobRun(repoId: string, job: JobKind): void {
+  const state = repos.get(repoId);
+  if (state === undefined) return;
+  const settings = readUiSettings();
+  const cfg = job === 'autoFetch' ? settings.autoFetch : settings.healthRefresh;
+  const entry = seedJobStatuses(repoId).find((s) => s.job === job);
+  if (entry === undefined) return;
+
+  // Failure shim: only autoFetch on the fixture repo escalates.
+  const failed =
+    job === 'autoFetch' && mockJobFailEnabled() && state.path.includes('bonsai-fixture');
+  const now = Date.now();
+  const failures = failed ? entry.consecutiveFailures + 1 : 0;
+  const inBackoff = failures >= BACKOFF_THRESHOLD;
+  const enteredBackoff = failed && failures === BACKOFF_THRESHOLD;
+  // Test-speed shim: intervalMinutes as SECONDS.
+  const nextRunMs = cfg.enabled
+    ? now + mockEffectiveIntervalMs(cfg.intervalMinutes * 1000, failures)
+    : null;
+  const updatedRefs = !failed && job === 'autoFetch' ? 2 : undefined;
+  const error = failed ? 'mock: could not connect to origin (bonsaiMockJobFail=1)' : undefined;
+
+  entry.enabled = cfg.enabled;
+  entry.lastRunMs = now;
+  entry.lastOutcome = failed ? 'failed' : 'success';
+  entry.lastError = error ?? null;
+  entry.consecutiveFailures = failures;
+  entry.inBackoff = inBackoff;
+  entry.nextRunMs = nextRunMs;
+
+  const payload: JobStatusChangedPayload = {
+    repoId,
+    job,
+    outcome: failed ? 'failed' : 'success',
+    updatedRefs,
+    error,
+    consecutiveFailures: failures,
+    inBackoff,
+    enteredBackoff,
+    tsMs: now,
+    nextRunMs,
+  };
+  for (const cb of jobStatusListeners) cb(payload);
+  // Rust emits repo-changed on autoFetch success with updatedRefs > 0 and on
+  // every healthRefresh success.
+  if (!failed && (job === 'healthRefresh' || (updatedRefs ?? 0) > 0)) {
+    const rc: RepoChangedPayload = { repoId, reason: 'fs' };
+    for (const cb of repoChangedListeners) cb(rc);
+  }
+}
+
+const jobTimers: { autoFetch: number | null; healthRefresh: number | null } = {
+  autoFetch: null,
+  healthRefresh: null,
+};
+
+/** (Re)arms the synthetic tick timers from the given settings — called at
+ *  module init and after every setUiSettings round-trip. */
+function applyMockJobTimers(s: UiSettings): void {
+  for (const job of ['autoFetch', 'healthRefresh'] as const) {
+    const timer = jobTimers[job];
+    if (timer !== null) {
+      window.clearInterval(timer);
+      jobTimers[job] = null;
+    }
+    const cfg = job === 'autoFetch' ? s.autoFetch : s.healthRefresh;
+    if (cfg.enabled) {
+      jobTimers[job] = window.setInterval(() => {
+        for (const repoId of repos.keys()) completeMockJobRun(repoId, job);
+      }, cfg.intervalMinutes * 1000); // minutes-as-seconds shim
+    }
+  }
+}
+
+// Arm timers from persisted settings so a reload keeps ticking.
+applyMockJobTimers(readUiSettings());
 
 // Embedded MCP server (P16). In-memory module state — no real socket; the
 // harness only verifies the Settings UI wiring. Fake but plausible port/token.
@@ -3627,10 +3804,40 @@ export const mockIpc: IpcApi = {
     return list;
   },
 
-  // The mock never emits repo-changed (no backend watcher in the browser
-  // harness); resolves to a no-op unsubscribe.
-  async onRepoChanged(_cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe> {
-    return () => {};
+  // No backend watcher in the browser harness, but the P30 mock job ticks
+  // dispatch repo-changed through this registry (contract §7).
+  async onRepoChanged(cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe> {
+    repoChangedListeners.add(cb);
+    return () => {
+      repoChangedListeners.delete(cb);
+    };
+  },
+
+  // P30: background-job status surface (mock harness §7).
+  async getJobStatus(repoId: string): Promise<JobStatus[]> {
+    await delay(80);
+    requireRepo(repoId);
+    const settings = readUiSettings();
+    // Reflect the CURRENT config's enabled flags, like the Rust command.
+    return seedJobStatuses(repoId).map((s) => ({
+      ...s,
+      enabled: (s.job === 'autoFetch' ? settings.autoFetch : settings.healthRefresh).enabled,
+    }));
+  },
+
+  async runJobNow(repoId: string, job: JobKind): Promise<void> {
+    await delay(80);
+    requireRepo(repoId);
+    // Mock runs are instant, so the D10 overlap rejection never triggers here;
+    // fire the same synthetic completion the timers use.
+    completeMockJobRun(repoId, job);
+  },
+
+  async onJobStatusChanged(cb: (p: JobStatusChangedPayload) => void): Promise<Unsubscribe> {
+    jobStatusListeners.add(cb);
+    return () => {
+      jobStatusListeners.delete(cb);
+    };
   },
 
   // Real browser focus event so the harness exercises the refocus-refetch path.
@@ -3654,6 +3861,10 @@ export const mockIpc: IpcApi = {
       listView: patch.listView ?? current.listView,
       autoFetch:
         patch.autoFetch !== undefined ? clampAutoFetch(patch.autoFetch) : current.autoFetch,
+      healthRefresh:
+        patch.healthRefresh !== undefined
+          ? clampHealthRefresh(patch.healthRefresh)
+          : current.healthRefresh,
       graph: patch.graph !== undefined ? clampGraphPrefs(patch.graph) : current.graph,
       aiEnabled: patch.aiEnabled ?? current.aiEnabled,
       aiConflictAutonomy: patch.aiConflictAutonomy ?? current.aiConflictAutonomy,
@@ -3662,6 +3873,8 @@ export const mockIpc: IpcApi = {
       mcpWriteConsented: patch.mcpWriteConsented ?? current.mcpWriteConsented,
     };
     writeUiSettings(next);
+    // P30 §7: config round-trip re-arms the synthetic job tick timers.
+    applyMockJobTimers(next);
     return next;
   },
 

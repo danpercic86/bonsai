@@ -61,6 +61,7 @@ import type {
   GraphLayout,
   GraphPrefs,
   HeadInfo,
+  JobStatus,
   LineSelection,
   ListView,
   RebaseTodoOp,
@@ -86,6 +87,14 @@ function shortOid(oid: string): string {
 
 /** P23d: how many file-history entries to request (backend caps at MAX_HISTORY). */
 const MAX_HISTORY_UI = 200;
+
+/** P30 D11: compact "Xm" / "Xh" label for the auto-fetch status readout. */
+function minutesLabel(deltaMs: number): string {
+  const m = Math.round(Math.max(0, deltaMs) / 60_000);
+  if (m < 1) return '<1m';
+  if (m < 60) return `${m}m`;
+  return `${Math.round(m / 60)}h`;
+}
 
 function isUsableRepo(info: RepoInfo): boolean {
   return info.isRepo && !info.bare;
@@ -173,6 +182,11 @@ export function RepoWorkspace({
   const [statusError, setStatusError] = useState<{ id: number; message: string } | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  // P30 D11: background-job status readout (fed by get_job_status on mount +
+  // live job-status-changed events); jobNow re-renders the relative label.
+  const [jobStatus, setJobStatus] = useState<JobStatus[]>([]);
+  const [jobNow, setJobNow] = useState(() => Date.now());
   const [mutating, setMutating] = useState(false);
   // P11e §5: latest `mutating` read by the auto-fetch interval callback WITHOUT
   // resetting the timer on every mutation (it depends only on the settings).
@@ -959,8 +973,74 @@ export function RepoWorkspace({
 
   // P30 §6: the P11e frontend auto-fetch timer is GONE — auto-fetch now runs
   // in the Rust scheduler for ALL open repos (scheduler.rs); data refresh
-  // arrives via the emitted `repo-changed`. Status readout + backoff toast
-  // land in P30b via the `job-status-changed` event.
+  // arrives via the emitted `repo-changed`. This block only renders status
+  // (D11 readout) + toasts — it must NOT double-refresh.
+  useEffect(() => {
+    let cancelled = false;
+    const unsubs: Unsubscribe[] = [];
+    // Initial snapshot on mount (D11).
+    void ipc
+      .getJobStatus(repoId)
+      .then((list) => {
+        if (!cancelled) setJobStatus(list);
+      })
+      .catch(() => {
+        // Non-fatal: the readout simply stays hidden until the first event.
+      });
+    const subscribe = async () => {
+      const off = await ipc.onJobStatusChanged((p) => {
+        if (p.repoId !== repoId) return;
+        setJobStatus((prev) => {
+          // Upsert: the mount snapshot may predate the user enabling the job
+          // (or may have failed) — a run event implies the job is enabled.
+          const updated = {
+            job: p.job,
+            enabled: true,
+            lastRunMs: p.tsMs,
+            lastOutcome: p.outcome,
+            lastError: p.error ?? null,
+            consecutiveFailures: p.consecutiveFailures,
+            inBackoff: p.inBackoff,
+            nextRunMs: p.nextRunMs,
+          };
+          return prev.some((s) => s.job === p.job)
+            ? prev.map((s) => (s.job === p.job ? { ...s, ...updated } : s))
+            : [...prev, updated];
+        });
+        // SINGLE toast on the 2→3 failure transition (D6) — individual
+        // background failures stay silent (D9).
+        if (p.enteredBackoff) {
+          pushToast('warning', 'Auto-fetch failing — backing off');
+        }
+        // §6.2: the quiet "Fetched N refs" success toast (data refresh itself
+        // arrives via the scheduler's repo-changed emit).
+        if (
+          p.job === 'autoFetch' &&
+          p.outcome === 'success' &&
+          p.updatedRefs !== undefined &&
+          p.updatedRefs > 0
+        ) {
+          pushToast('info', `Fetched ${p.updatedRefs} ref${p.updatedRefs === 1 ? '' : 's'}`);
+        }
+      });
+      if (cancelled) {
+        off();
+        return;
+      }
+      unsubs.push(off);
+    };
+    void subscribe();
+    return () => {
+      cancelled = true;
+      for (const unsub of unsubs) unsub();
+    };
+  }, [repoId, pushToast]);
+
+  // Keep the relative-time readout fresh (30 s granularity is plenty).
+  useEffect(() => {
+    const id = window.setInterval(() => setJobNow(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   // Manual refresh (button + Ctrl+R/F5).
   const handleRefresh = useCallback(async () => {
@@ -2876,6 +2956,28 @@ export function RepoWorkspace({
         ? `Push ${headBranch.name} to ${headBranch.upstream}`
         : `Push ${headBranch.name} to origin/${headBranch.name} and set upstream`;
 
+  // P30 D11: small muted auto-fetch readout next to the Fetch control —
+  // "Fetched Xm ago", or the backoff notice with the retry estimate.
+  const autoFetchStatus = jobStatus.find((s) => s.job === 'autoFetch');
+  let autoFetchReadout: { text: string; title: string } | null = null;
+  if (autoFetchStatus !== undefined && autoFetchStatus.enabled) {
+    if (autoFetchStatus.inBackoff) {
+      const retry =
+        autoFetchStatus.nextRunMs !== null
+          ? ` — retrying in ${minutesLabel(autoFetchStatus.nextRunMs - jobNow)}`
+          : '';
+      autoFetchReadout = {
+        text: `Auto-fetch paused${retry}`,
+        title: autoFetchStatus.lastError ?? 'Auto-fetch is failing; retries are backed off',
+      };
+    } else if (autoFetchStatus.lastRunMs !== null && autoFetchStatus.lastOutcome !== null) {
+      autoFetchReadout = {
+        text: `Fetched ${minutesLabel(jobNow - autoFetchStatus.lastRunMs)} ago`,
+        title: `Background auto-fetch — last outcome: ${autoFetchStatus.lastOutcome}`,
+      };
+    }
+  }
+
   return (
     <>
       <div className="workspace-toolbar">
@@ -2889,6 +2991,11 @@ export function RepoWorkspace({
           >
             {remoteOp === 'fetch' ? 'Fetching…' : '↓ Fetch'}
           </button>
+          {autoFetchReadout !== null && (
+            <span className="toolbar-job-status" title={autoFetchReadout.title}>
+              {autoFetchReadout.text}
+            </span>
+          )}
           <button
             type="button"
             className="toolbar-btn"

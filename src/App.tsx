@@ -18,6 +18,7 @@ import type {
   AutoFetchSettings,
   CloneProgress,
   GraphPrefs,
+  HealthRefreshSettings,
   ListView,
   McpStatus,
   PaneWidths,
@@ -97,6 +98,11 @@ export default function App() {
   const [autoFetch, setAutoFetch] = useState<AutoFetchSettings>({
     enabled: false,
     intervalMinutes: 5,
+  });
+  // P30: healthRefresh background job (backend scheduler; Settings UI only).
+  const [healthRefresh, setHealthRefresh] = useState<HealthRefreshSettings>({
+    enabled: false,
+    intervalMinutes: 30,
   });
   const [graph, setGraph] = useState<GraphPrefs>({
     dotRadius: 4,
@@ -285,6 +291,7 @@ export default function App() {
   const handleSettingsChange = useCallback(
     (patch: UiSettingsPatch) => {
       if (patch.autoFetch !== undefined) setAutoFetch(patch.autoFetch);
+      if (patch.healthRefresh !== undefined) setHealthRefresh(patch.healthRefresh);
       if (patch.graph !== undefined) {
         setGraph(patch.graph);
         setMetricsVersion((v) => v + 1);
@@ -518,6 +525,7 @@ export default function App() {
         setThemeVersion((v) => v + 1);
         setListView(s.listView);
         setAutoFetch(s.autoFetch);
+        setHealthRefresh(s.healthRefresh);
         setGraph(s.graph);
         setMetricsVersion((v) => v + 1);
         setAiEnabled(s.aiEnabled);
@@ -829,6 +837,7 @@ export default function App() {
           theme={theme}
           listView={listView}
           autoFetch={autoFetch}
+          healthRefresh={healthRefresh}
           graph={graph}
           onChange={handleSettingsChange}
           onToggleTheme={toggleTheme}

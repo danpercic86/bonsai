@@ -613,6 +613,52 @@ export interface AutoFetchSettings {
   intervalMinutes: number;
 }
 
+/** Periodic read-only refresh signal (P30 §5). OFF by default; interval in
+ *  minutes. Mirrors the Rust `HealthRefresh`. */
+export interface HealthRefreshSettings {
+  enabled: boolean;
+  intervalMinutes: number;
+}
+
+// ---- P30: background-job scheduler (mirrors scheduler.rs / commands.rs) ----
+
+/** The two Rust-side background jobs (P30 §5). */
+export type JobKind = 'autoFetch' | 'healthRefresh';
+
+/** Outcome of one job run. `skipped` = overlap guard; `suppressed` = an
+ *  operation (merge/rebase/…) was in progress. */
+export type JobOutcome = 'success' | 'failed' | 'suppressed' | 'skipped';
+
+/** One background job's status for the UI readout (P30 §3). */
+export interface JobStatus {
+  job: JobKind;
+  enabled: boolean;
+  lastRunMs: number | null;
+  lastOutcome: JobOutcome | null;
+  lastError: string | null;
+  consecutiveFailures: number;
+  inBackoff: boolean;
+  /** Estimate; null when disabled (or never seen by the loop yet). */
+  nextRunMs: number | null;
+}
+
+/** Payload of the `job-status-changed` event (P30 §4). */
+export interface JobStatusChangedPayload {
+  repoId: string;
+  job: JobKind;
+  outcome: JobOutcome;
+  /** autoFetch success only. */
+  updatedRefs?: number;
+  /** failed only. */
+  error?: string;
+  consecutiveFailures: number;
+  inBackoff: boolean;
+  /** true exactly on the 2→3 failure transition — toast ONLY then (D6). */
+  enteredBackoff: boolean;
+  tsMs: number;
+  nextRunMs: number | null;
+}
+
 /** Graph geometry knobs (P11 §2.3) — pure render geometry, not layout math. */
 export interface GraphPrefs {
   dotRadius: number;
@@ -695,6 +741,8 @@ export interface UiSettings {
   paneWidths: PaneWidths;
   listView: ListView;
   autoFetch: AutoFetchSettings;
+  /** P30: periodic read-only refresh signal (backend scheduler). */
+  healthRefresh: HealthRefreshSettings;
   graph: GraphPrefs;
   // AI assistance (P13).
   aiEnabled: boolean;
@@ -712,6 +760,8 @@ export interface UiSettingsPatch {
   paneWidths?: PaneWidths;
   listView?: ListView;
   autoFetch?: AutoFetchSettings;
+  /** Whole-struct patch, like autoFetch (P30 D7). */
+  healthRefresh?: HealthRefreshSettings;
   graph?: GraphPrefs;
   // AI assistance (P13).
   aiEnabled?: boolean;
@@ -1233,6 +1283,15 @@ export interface IpcApi {
   onRepoChanged(cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe>;
   /** Fires when the app window regains focus. */
   onWindowFocus(cb: () => void): Promise<Unsubscribe>;
+  /** P30. Background-job status for one open repo — exactly 2 entries
+   *  (autoFetch, healthRefresh). Rejects noRepo. */
+  getJobStatus(repoId: string): Promise<JobStatus[]>;
+  /** P30 D10. Fire-and-forget manual run: resolves once the job STARTS; the
+   *  result arrives via onJobStatusChanged. Ignores backoff delay. Rejects
+   *  noRepo | other("job already running"). */
+  runJobNow(repoId: string, job: JobKind): Promise<void>;
+  /** P30. Fires on every job completion/skip; small push signal. */
+  onJobStatusChanged(cb: (p: JobStatusChangedPayload) => void): Promise<Unsubscribe>;
   /** Current UI settings (theme + pane widths). Never rejects for a missing/corrupt file. */
   getUiSettings(): Promise<UiSettings>;
   /** Applies a partial patch (only defined fields) and returns the resulting settings. */

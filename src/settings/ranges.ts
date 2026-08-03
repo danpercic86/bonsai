@@ -9,6 +9,10 @@
 export const AUTO_FETCH_INTERVAL_MIN = 1;
 export const AUTO_FETCH_INTERVAL_MAX = 120;
 
+// P30: healthRefresh background job (settings.rs HEALTH_REFRESH_INTERVAL_*).
+export const HEALTH_REFRESH_INTERVAL_MIN = 1;
+export const HEALTH_REFRESH_INTERVAL_MAX = 240;
+
 export const DOT_RADIUS_MIN = 2;
 export const DOT_RADIUS_MAX = 10;
 

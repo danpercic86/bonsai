@@ -41,6 +41,9 @@ import type {
   FileHistoryEntry,
   GraphLayout,
   IpcApi,
+  JobKind,
+  JobStatus,
+  JobStatusChangedPayload,
   LineSelection,
   McpStatus,
   MergeOutcome,
@@ -503,6 +506,19 @@ export const tauriIpc: IpcApi = {
     return getCurrentWindow().onFocusChanged(({ payload: focused }) => {
       if (focused) cb();
     });
+  },
+
+  // P30: background-job scheduler.
+  getJobStatus(repoId: string): Promise<JobStatus[]> {
+    return invoke<JobStatus[]>('get_job_status', { repoId });
+  },
+
+  runJobNow(repoId: string, job: JobKind): Promise<void> {
+    return invoke<void>('run_job_now', { repoId, job });
+  },
+
+  onJobStatusChanged(cb: (p: JobStatusChangedPayload) => void): Promise<Unsubscribe> {
+    return listen<JobStatusChangedPayload>('job-status-changed', (e) => cb(e.payload));
   },
 
   getUiSettings(): Promise<UiSettings> {

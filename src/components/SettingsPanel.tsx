@@ -9,6 +9,7 @@ import type {
   AiAvailability,
   AutoFetchSettings,
   GraphPrefs,
+  HealthRefreshSettings,
   ListView,
   McpStatus,
   Theme,
@@ -17,6 +18,8 @@ import type {
 import {
   AUTO_FETCH_INTERVAL_MAX,
   AUTO_FETCH_INTERVAL_MIN,
+  HEALTH_REFRESH_INTERVAL_MAX,
+  HEALTH_REFRESH_INTERVAL_MIN,
   AVATAR_RADIUS_MAX,
   AVATAR_RADIUS_MIN,
   LANE_WIDTH_MAX,
@@ -31,6 +34,8 @@ export interface SettingsPanelProps {
   theme: Theme;
   listView: ListView;
   autoFetch: AutoFetchSettings;
+  /** P30: periodic read-only refresh signal (backend scheduler). */
+  healthRefresh: HealthRefreshSettings;
   graph: GraphPrefs;
   /** Fires on ANY change with a partial patch; App debounces the persist +
    *  updates its own state so consumers re-render live. */
@@ -143,6 +148,7 @@ export function SettingsPanel({
   theme,
   listView,
   autoFetch,
+  healthRefresh,
   graph,
   onChange,
   onToggleTheme,
@@ -220,10 +226,13 @@ export function SettingsPanel({
           </button>
         </div>
 
-        {/* --- Auto-fetch --- */}
+        {/* --- Background jobs (P30 §6) --- */}
         <section className="settings-section">
-          <h3 className="settings-section-title">Auto-fetch</h3>
-          <p className="settings-section-desc">Fetch the active repository automatically.</p>
+          <h3 className="settings-section-title">Background jobs</h3>
+          <p className="settings-section-desc">
+            Runs in the background for all open repositories. Auto-fetch never pulls, pushes, or
+            prompts for credentials.
+          </p>
           <label className="settings-checkbox">
             <input
               type="checkbox"
@@ -241,6 +250,28 @@ export function SettingsPanel({
             unit="minutes"
             disabled={!autoFetch.enabled}
             onChange={(v) => onChange({ autoFetch: { ...autoFetch, intervalMinutes: v } })}
+          />
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={healthRefresh.enabled}
+              onChange={(e) =>
+                onChange({ healthRefresh: { ...healthRefresh, enabled: e.target.checked } })
+              }
+            />
+            <span>Refresh status &amp; health periodically</span>
+          </label>
+          <NumberSlider
+            id="settings-health-refresh-interval"
+            label="Interval"
+            value={healthRefresh.intervalMinutes}
+            min={HEALTH_REFRESH_INTERVAL_MIN}
+            max={HEALTH_REFRESH_INTERVAL_MAX}
+            unit="minutes"
+            disabled={!healthRefresh.enabled}
+            onChange={(v) =>
+              onChange({ healthRefresh: { ...healthRefresh, intervalMinutes: v } })
+            }
           />
         </section>
 
