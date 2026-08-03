@@ -273,6 +273,231 @@ fn empty_range_errors_before_cli_spawn() {
     }
 }
 
+// ============================================================ gap tests (tester pass)
+
+/// BetweenRefs accepts a TAG as `from` and a SHORT hex oid as `to` — both go
+/// through `revparse_single`, matching `git log <tag>..<short>`.
+#[test]
+fn between_refs_accepts_tag_and_short_oid() {
+    require_git!();
+    let _g = env_lock();
+
+    let dir = repo_with_feature();
+    let d = dir.path();
+    git(d, &["tag", "v1", "main"]);
+    let feature_short = git(d, &["rev-parse", "--short=7", "feature"]);
+
+    let payload = digest_dump(
+        d,
+        AiDigestRange::BetweenRefs {
+            from: "v1".to_string(),
+            to: feature_short.clone(),
+        },
+    );
+    let ours = payload_short7s(&payload);
+    let range = format!("v1..{feature_short}");
+    let oracle: Vec<String> = git(d, &["log", "--format=%H", &range])
+        .lines()
+        .map(|h| h[..7].to_string())
+        .collect();
+    assert_eq!(ours, oracle, "tag..short-oid must match `git log {range}`");
+    assert_eq!(ours.len(), 2);
+    assert!(
+        payload.contains(&format!("RANGE v1..{feature_short} (2 commits)")),
+        "{payload}"
+    );
+}
+
+/// Builds a repo with a merge: main = base → (side merged in) → tip.
+/// First-parent HEAD walk = [tip, merge, base]; full walk also has `side`.
+fn repo_with_merge(now: i64) -> tempfile::TempDir {
+    let dir = init_repo();
+    let d = dir.path();
+    let day = 86_400i64;
+    let commit_at = |name: &str, secs: i64| {
+        write(d, name, name);
+        git(d, &["add", "-A"]);
+        let date = format!("{secs} +0000");
+        git_env(
+            d,
+            &["commit", "-m", name],
+            &[
+                ("GIT_AUTHOR_DATE", date.as_str()),
+                ("GIT_COMMITTER_DATE", date.as_str()),
+            ],
+        );
+    };
+    commit_at("base.txt", now - 6 * day);
+    git(d, &["checkout", "-b", "side"]);
+    commit_at("side.txt", now - 5 * day);
+    git(d, &["checkout", "main"]);
+    let date = format!("{} +0000", now - 2 * day);
+    git_env(
+        d,
+        &["merge", "--no-ff", "-m", "merge side", "side"],
+        &[
+            ("GIT_AUTHOR_DATE", date.as_str()),
+            ("GIT_COMMITTER_DATE", date.as_str()),
+        ],
+    );
+    commit_at("tip.txt", now - day);
+    dir
+}
+
+/// On a branchy history, lastDays walks FIRST-PARENT only: the merge commit is
+/// listed but the side-branch commit is NOT, matching
+/// `git log --first-parent --since=<cutoff>`. BetweenRefs over the same span
+/// (full walk) DOES include the side commit — the two walks differ.
+#[test]
+fn last_days_is_first_parent_on_merge_history() {
+    require_git!();
+    let _g = env_lock();
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_secs() as i64;
+    let dir = repo_with_merge(now);
+    let d = dir.path();
+    let side_short = &git(d, &["rev-parse", "side"])[..7];
+
+    // lastDays 7: everything is in-window; first-parent excludes `side`.
+    let payload = digest_dump(d, AiDigestRange::LastDays { days: 7 });
+    let ours = payload_short7s(&payload);
+    let cutoff = (now - 7 * 86_400).to_string();
+    let since = format!("--since={cutoff}");
+    let oracle: Vec<String> = git(d, &["log", "--first-parent", &since, "--format=%H", "HEAD"])
+        .lines()
+        .map(|h| h[..7].to_string())
+        .collect();
+    assert_eq!(ours, oracle, "lastDays must match first-parent git log");
+    assert!(
+        !ours.contains(&side_short.to_string()),
+        "side-branch commit must NOT appear in a first-parent walk: {ours:?}"
+    );
+    assert_eq!(ours.len(), 3, "tip, merge, base");
+
+    // BetweenRefs base..HEAD (full walk) includes the side commit.
+    let base = git(d, &["rev-list", "--max-parents=0", "HEAD"]);
+    let payload = digest_dump(
+        d,
+        AiDigestRange::BetweenRefs {
+            from: base,
+            to: "HEAD".to_string(),
+        },
+    );
+    let full = payload_short7s(&payload);
+    assert!(
+        full.contains(&side_short.to_string()),
+        "betweenRefs full walk must include the side commit: {full:?}"
+    );
+}
+
+/// Unicode commit subjects survive into the COMMITS metadata verbatim.
+#[test]
+fn unicode_subject_appears_in_commits_meta() {
+    require_git!();
+    let _g = env_lock();
+
+    let dir = init_repo();
+    let d = dir.path();
+    write(d, "a.txt", "base\n");
+    git(d, &["add", "-A"]);
+    commit_fixed(d, "base");
+    git(d, &["checkout", "-b", "feature"]);
+    write(d, "u.txt", "unicode\n");
+    git(d, &["add", "-A"]);
+    let subject = "盆栽 digest — naïve café ✨";
+    // git CLI on Windows can mangle non-ASCII argv; commit via git2 instead.
+    {
+        let repo = git2::Repository::open(d).expect("open");
+        let mut index = repo.index().expect("index");
+        index
+            .add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
+            .expect("add");
+        index.write().expect("index write");
+        let tree = repo.find_tree(index.write_tree().expect("tree")).expect("t");
+        let sig = git2::Signature::new(
+            "Ünï Author",
+            "uni@example.com",
+            &git2::Time::new(1_700_000_000, 0),
+        )
+        .expect("sig");
+        let parent = repo.head().expect("head").peel_to_commit().expect("c");
+        repo.commit(Some("HEAD"), &sig, &sig, subject, &tree, &[&parent])
+            .expect("commit");
+    }
+
+    let payload = digest_dump(
+        d,
+        AiDigestRange::BetweenRefs {
+            from: "main".to_string(),
+            to: "feature".to_string(),
+        },
+    );
+    assert!(payload.contains(subject), "unicode subject lost:\n{payload}");
+    assert!(payload.contains("Ünï Author"), "unicode author lost:\n{payload}");
+}
+
+/// End-to-end 200-commit cap: 250 commits built via git2 (NEVER 250 CLI
+/// calls) → payload lists exactly 200 metadata lines + "... and 50 more
+/// commits", and the DIFF section still follows the capped metadata.
+#[test]
+fn digest_payload_caps_metadata_at_200_commits() {
+    require_git!();
+    let _g = env_lock();
+
+    let dir = init_repo();
+    let d = dir.path();
+    {
+        let repo = git2::Repository::open(d).expect("open");
+        let sig_at = |secs: i64| {
+            git2::Signature::new("Bulk Bot", "bulk@example.com", &git2::Time::new(secs, 0))
+                .expect("sig")
+        };
+        let t0 = 1_700_000_000i64;
+        let mut parent: Option<git2::Oid> = None;
+        for i in 0..251 {
+            // per-commit unique tree via a single evolving blob
+            let blob = repo.blob(format!("content {i}\n").as_bytes()).expect("blob");
+            let mut tb = repo.treebuilder(None).expect("tb");
+            tb.insert("f.txt", blob, 0o100644).expect("insert");
+            let tree = repo.find_tree(tb.write().expect("w")).expect("t");
+            let sig = sig_at(t0 + i);
+            let parents: Vec<git2::Commit> = parent
+                .map(|p| vec![repo.find_commit(p).expect("p")])
+                .unwrap_or_default();
+            let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
+            let oid = repo
+                .commit(Some("HEAD"), &sig, &sig, &format!("bulk {i}"), &tree, &parent_refs)
+                .expect("commit");
+            if i == 0 {
+                // Anchor `from` at the root so the range holds exactly 250.
+                repo.branch("start", &repo.find_commit(oid).expect("c"), true)
+                    .expect("branch");
+            }
+            parent = Some(oid);
+        }
+    }
+
+    let payload = digest_dump(
+        d,
+        AiDigestRange::BetweenRefs {
+            from: "start".to_string(),
+            to: "HEAD".to_string(),
+        },
+    );
+    let listed = payload_short7s(&payload);
+    assert_eq!(listed.len(), 200, "exactly MAX_DIGEST_COMMITS metadata lines");
+    assert!(
+        payload.contains("... and 50 more commits"),
+        "overflow note missing:\n{}",
+        &payload[..payload.len().min(2000)]
+    );
+    assert!(payload.contains("RANGE start..HEAD (250 commits)"), "header count");
+    assert!(payload.contains("\n\nDIFF\n"), "DIFF section must follow the capped meta");
+}
+
 /// A bad ref maps to `Git`; days=0 maps to `InvalidName` — both before any
 /// CLI spawn.
 #[test]
