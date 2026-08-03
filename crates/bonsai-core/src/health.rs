@@ -233,17 +233,22 @@ fn collect_stats_with_caps(workdir: &Path, caps: StatsCaps) -> Result<StatsSecti
                 break;
             }
             commit_count += 1;
-            let commit = repo.find_commit(oid)?;
-            let email = commit
-                .author()
-                .email()
-                .unwrap_or("(non-utf8)")
-                .to_string();
-            if commit.time().seconds() >= cutoff_30d {
-                commits_last_30d += 1;
-                authors_30d.insert(email.clone());
+            // Degrade gracefully on an unreadable/corrupt commit object: the
+            // commit is still counted, only author/date extraction is skipped
+            // (P29a review carry-forward — one bad object must not sink the
+            // whole stats section).
+            if let Ok(commit) = repo.find_commit(oid) {
+                let email = commit
+                    .author()
+                    .email()
+                    .unwrap_or("(non-utf8)")
+                    .to_string();
+                if commit.time().seconds() >= cutoff_30d {
+                    commits_last_30d += 1;
+                    authors_30d.insert(email.clone());
+                }
+                authors_all.insert(email);
             }
-            authors_all.insert(email);
         }
     }
 
@@ -1013,6 +1018,49 @@ mod tests {
         assert!(health.branches.data.is_none() && health.branches.error.is_some());
         assert!(health.working_state.error.is_some());
         assert!(health.structure.error.is_some());
+    }
+
+    /// MIXED state with a REAL failing collector (P29a review carry-forward):
+    /// deleting a parent commit's loose object makes the stats revwalk error
+    /// mid-iteration, while branches / workingState / structure (which only
+    /// need refs, the HEAD commit + its tree, and fs facts) still succeed.
+    ///
+    /// Note the companion carry-forward (health.rs `find_commit` degrade):
+    /// a missing object aborts the revwalk ITERATOR itself (`oid?`), before
+    /// `find_commit` runs, so the `if let Ok` path cannot be reached with a
+    /// plain missing-object fixture — the degrade is covered by review, this
+    /// test pins the section-isolation behavior around the same failure.
+    #[test]
+    fn mixed_state_real_collector_failure() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        init(d);
+        let c0 = commit(d, "C0", &[("a.txt", "a\n")]);
+        commit(d, "C1", &[("b.txt", "b\n")]);
+
+        // Remove C0's loose commit object; clear read-only first (Windows
+        // loose objects are written read-only).
+        let hex = c0.to_string();
+        let obj = d.join(".git/objects").join(&hex[..2]).join(&hex[2..]);
+        let mut perms = std::fs::metadata(&obj).expect("object exists").permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+        std::fs::set_permissions(&obj, perms).expect("clear readonly");
+        std::fs::remove_file(&obj).expect("delete loose object");
+
+        let health = collect_repo_health(d);
+        assert!(
+            health.stats.data.is_none() && health.stats.error.is_some(),
+            "stats must fail on the missing parent object (error: {:?})",
+            health.stats.error
+        );
+        assert!(health.branches.data.is_some(), "{:?}", health.branches.error);
+        assert!(
+            health.working_state.data.is_some(),
+            "{:?}",
+            health.working_state.error
+        );
+        assert!(health.structure.data.is_some(), "{:?}", health.structure.error);
     }
 
     // ------------------------------------------------------- perf ceiling (§5)

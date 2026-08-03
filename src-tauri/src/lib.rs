@@ -95,6 +95,7 @@ pub fn run() {
             commands::remove_worktree,
             commands::lock_worktree,
             commands::unlock_worktree,
+            commands::get_repo_health,
             commands::clone_repo,
             commands::init_repo,
             commands::create_tag,

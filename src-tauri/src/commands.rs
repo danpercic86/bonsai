@@ -46,6 +46,7 @@ use bonsai_core::git::submodule::{self, SubmoduleInfo};
 use bonsai_core::git::worktree::{self, WorktreeInfo};
 use bonsai_core::git::tags;
 use bonsai_core::graph::{compute_graph, GraphLayout};
+use bonsai_core::health::{collect_repo_health, RepoHealth};
 use crate::settings::{
     self, clamp_auto_fetch, clamp_graph_prefs, clamp_pane_widths, AiAutonomy, AutoFetch,
     GraphPrefs, ListView, PaneWidths, RecentRepo, ThemeChoice,
@@ -2281,6 +2282,26 @@ async fn unlock_worktree_inner(
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Collects all four repo-health sections in ONE round-trip (P29 contract
+/// §D2/§D4). Per-section failures are folded into `Section.error` inside the
+/// payload; the command itself errors only for `noRepo` (unknown id) or a
+/// join failure. READ-ONLY — never emits `repo-changed`.
+#[tauri::command]
+pub async fn get_repo_health(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<RepoHealth, AppError> {
+    get_repo_health_inner(state.inner(), &repo_id).await
+}
+
+/// Runtime-free core of `get_repo_health` (unit-testable without a Tauri app).
+async fn get_repo_health_inner(state: &AppState, repo_id: &str) -> Result<RepoHealth, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || collect_repo_health(&path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))
+}
+
 /// Clones `url` into `dest`, streaming `CloneProgress` over `on_progress`.
 /// Returns the absolute workdir path of the clone (frontend then calls
 /// `open_repo`/openTab). NOT repo-scoped — it CREATES a repo (P21 §OPEN-2).
@@ -2923,6 +2944,37 @@ mod tests {
         tauri::async_runtime::block_on(get_status_inner(&state, &a.repo_id))
             .expect("repo A still open after a failed open");
         assert_eq!(repo_count(&state), 1);
+    }
+
+    /// `get_repo_health` errors only for an unknown id (`NoRepo`, P29 §D4);
+    /// on an open repo it resolves with all four sections carrying data —
+    /// section-level failures never reject the command.
+    #[test]
+    fn get_repo_health_requires_open_repo() {
+        let state = AppState::default();
+        let err = tauri::async_runtime::block_on(get_repo_health_inner(&state, MISSING_ID))
+            .expect_err("unknown id must be NoRepo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let dir = init_repo_with_identity();
+        let opened = open(&state, dir.path()).expect("open repo");
+        write_stage_commit(&state, &opened.repo_id, dir.path(), "a.txt", "a\n", "C0");
+        let health =
+            tauri::async_runtime::block_on(get_repo_health_inner(&state, &opened.repo_id))
+                .expect("health never errors for an open repo");
+        assert!(health.stats.data.is_some(), "{:?}", health.stats.error);
+        assert!(health.branches.data.is_some(), "{:?}", health.branches.error);
+        assert!(
+            health.working_state.data.is_some(),
+            "{:?}",
+            health.working_state.error
+        );
+        assert!(health.structure.data.is_some(), "{:?}", health.structure.error);
+        assert_eq!(
+            health.stats.data.as_ref().map(|s| s.commit_count),
+            Some(1)
+        );
+        assert!(health.generated_at > 0);
     }
 
     /// `get_graph` with an unknown id returns `NoRepo`; after opening an

@@ -52,6 +52,7 @@ import type {
   RecentRepo,
   RemoteInfo,
   RepoChangedPayload,
+  RepoHealth,
   RepoOpState,
   ResetMode,
   RevertOutcome,
@@ -439,6 +440,11 @@ export const tauriIpc: IpcApi = {
 
   unlockWorktree(repoId: string, name: string): Promise<void> {
     return invoke<void>('unlock_worktree', { repoId, name });
+  },
+
+  // P29: repo health.
+  getRepoHealth(repoId: string): Promise<RepoHealth> {
+    return invoke<RepoHealth>('get_repo_health', { repoId });
   },
 
   // P22: tags.
