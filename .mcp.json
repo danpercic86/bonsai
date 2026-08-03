@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "jbcontext": {
+      "type": "stdio",
+      "command": "jbcontext",
+      "args": [
+        "mcp"
+      ],
+      "env": {}
+    },
+    "bonsai": {
+      "type": "stdio",
+      "command": "D:/Repos/Playground/bonsai/target/release/bonsai-mcp.exe",
+      "args": [
+        "--allow-write"
+      ],
+      "env": {}
+    }
+  }
+}

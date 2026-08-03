@@ -20,10 +20,15 @@ resolution reliable.
 ## Usage
 
 ```text
-bonsai-mcp --repo <path-to-a-non-bare-git-repo> [--allow-write]
+bonsai-mcp [--repo <path-to-a-non-bare-git-repo>] [--allow-write]
 ```
 
-On startup the server opens and validates `--repo` via
+`--repo` is optional: when omitted the server uses the **current working directory**, so a
+`.mcp.json` entry at the repo root needs no path (the client launches the server with its
+cwd set to the project root). Note that the path is used as-is (no upward discovery), so a
+bare `bonsai-mcp` only finds a repo when the cwd is the repo root itself.
+
+On startup the server opens and validates the resolved repo path via
 `bonsai_core::git::repo::read_repo_info` (must be a git repo and non-bare); on failure it
 prints to stderr and exits non-zero **before** serving. The canonical workdir path is used
 for every tool call. Transport is stdio JSON-RPC.

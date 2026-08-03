@@ -3,12 +3,14 @@
 //! stashes) to AI assistants. Register with:
 //!
 //! ```text
-//! claude mcp add bonsai -- <abs path>/bonsai-mcp.exe --repo <repo> [--allow-write]
+//! claude mcp add bonsai -- <abs path>/bonsai-mcp.exe [--repo <repo>] [--allow-write]
 //! ```
 //!
-//! Startup opens+validates the `--repo` path once (non-bare git repo required)
-//! and then serves JSON-RPC over stdio. Mutation tools (P14c) are gated behind
-//! `--allow-write`; P14b registers only the read set.
+//! Startup opens+validates the repo path once (non-bare git repo required) and
+//! then serves JSON-RPC over stdio. `--repo` is optional: when omitted the
+//! server uses the current working directory (so a `.mcp.json` entry at the repo
+//! root needs no path). Mutation tools (P14c) are gated behind `--allow-write`;
+//! P14b registers only the read set.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -23,10 +25,12 @@ struct ServerConfig {
     allow_write: bool,
 }
 
-/// Parse `--repo <path>` (required) and `--allow-write` (flag) from argv.
+/// Parse `--repo <path>` (optional) and `--allow-write` (flag) from argv.
 ///
-/// Hand-rolled to avoid a heavy CLI dependency. Returns a usage string on any
-/// malformed / missing argument.
+/// Hand-rolled to avoid a heavy CLI dependency. When `--repo` is omitted the
+/// current working directory is used (convenient for a `.mcp.json` entry living
+/// at the repo root, which the client launches with cwd = repo root). Returns a
+/// usage string on any malformed argument.
 fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<ServerConfig, String> {
     let mut repo: Option<PathBuf> = None;
     let mut allow_write = false;
@@ -42,20 +46,22 @@ fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<ServerConfig, S
             }
             "--allow-write" => allow_write = true,
             "-h" | "--help" => {
-                return Err("usage: bonsai-mcp --repo <path> [--allow-write]".to_string());
+                return Err("usage: bonsai-mcp [--repo <path>] [--allow-write]".to_string());
             }
             other => {
                 return Err(format!(
-                    "unexpected argument: {other}\nusage: bonsai-mcp --repo <path> [--allow-write]"
+                    "unexpected argument: {other}\nusage: bonsai-mcp [--repo <path>] [--allow-write]"
                 ));
             }
         }
     }
 
-    let repo = repo.ok_or_else(|| {
-        "missing required --repo <path>\nusage: bonsai-mcp --repo <path> [--allow-write]"
-            .to_string()
-    })?;
+    let repo = match repo {
+        Some(path) => path,
+        None => std::env::current_dir().map_err(|e| {
+            format!("--repo not given and the current directory is unavailable: {e}")
+        })?,
+    };
 
     Ok(ServerConfig { repo, allow_write })
 }
