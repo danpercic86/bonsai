@@ -10,6 +10,7 @@ import { RebasePlanEditor } from './RebasePlanEditor';
 import { TagCreateDialog } from './TagCreateDialog';
 import { RemoteEditDialog } from './RemoteEditDialog';
 import { WorktreeCreateDialog } from './WorktreeCreateDialog';
+import { WhatChangedDialog } from './WhatChangedDialog';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
 import {
@@ -46,6 +47,7 @@ import type {
   AiAutonomy,
   AiAvailability,
   AiDiffTarget,
+  AiDigestRange,
   AiResolveProposal,
   AutoFetchSettings,
   BlameLine,
@@ -250,6 +252,8 @@ export function RepoWorkspace({
   // P27 §6.5/§6.6: worktree dialogs — create (branch picker), remove confirm
   // (names the directory to delete), lock reason prompt.
   const [newWorktreeOpen, setNewWorktreeOpen] = useState(false);
+  // P28 §7: "✨ What changed…" digest range picker (opened from the toolbar).
+  const [whatChangedOpen, setWhatChangedOpen] = useState(false);
   const [pendingWorktreeRemove, setPendingWorktreeRemove] = useState<{
     name: string;
     absPath: string;
@@ -301,6 +305,7 @@ export function RepoWorkspace({
     pendingRemoveRemote !== null ||
     staleCleanupOpen ||
     newWorktreeOpen ||
+    whatChangedOpen ||
     pendingWorktreeRemove !== null ||
     pendingWorktreeLock !== null ||
     rebasePlan !== null;
@@ -1233,6 +1238,28 @@ export function RepoWorkspace({
       const id = ++aiPanelReqId.current;
       setAiPanel({ title, text: null, loading: true, error: null, costUsd: null });
       ipc.aiSummarizeRange(repoId, base, target).then(
+        (res) => {
+          if (id !== aiPanelReqId.current) return;
+          setAiPanel({ title, text: res.text, loading: false, error: null, costUsd: res.costUsd });
+        },
+        (e: unknown) => {
+          if (id !== aiPanelReqId.current) return;
+          setAiPanel({ title, text: null, loading: false, error: errorMessage(e), costUsd: null });
+        },
+      );
+    },
+    [repoId],
+  );
+
+  // P28 §7: digest "what changed" over a range and show the prose in the
+  // AiOutputPanel. Read-only — writes nothing. Shares the same req-id guard as
+  // runAnalyze so a slow response can't clobber a newer request or a closed
+  // panel. `title` is range-derived, built by WhatChangedDialog.
+  const runDigest = useCallback(
+    (range: AiDigestRange, title: string) => {
+      const id = ++aiPanelReqId.current;
+      setAiPanel({ title, text: null, loading: true, error: null, costUsd: null });
+      ipc.aiDigest(repoId, range).then(
         (res) => {
           if (id !== aiPanelReqId.current) return;
           setAiPanel({ title, text: res.text, loading: false, error: null, costUsd: res.costUsd });
@@ -2905,6 +2932,17 @@ export function RepoWorkspace({
           >
             {remoteOp === 'push' ? 'Pushing…' : '↑ Push'}
           </button>
+          {aiEligible && (
+            <button
+              type="button"
+              className="toolbar-btn"
+              disabled={aiPanel?.loading === true}
+              onClick={() => setWhatChangedOpen(true)}
+              title="AI digest of what changed over a range (read-only)"
+            >
+              ✨ What changed…
+            </button>
+          )}
         </div>
         <button
           type="button"
@@ -3505,6 +3543,21 @@ export function RepoWorkspace({
           affected.
         </div>
       </ConfirmDialog>
+
+      {/* P28 §7: "What changed" range picker → runDigest → AiOutputPanel. */}
+      <WhatChangedDialog
+        open={whatChangedOpen}
+        branchNames={[
+          ...(branches?.local.map((b) => b.name) ?? []),
+          ...(branches?.remote.map((b) => b.name) ?? []),
+        ]}
+        currentBranch={headBranch?.name ?? null}
+        onSubmit={(range, title) => {
+          setWhatChangedOpen(false);
+          runDigest(range, title);
+        }}
+        onCancel={() => setWhatChangedOpen(false)}
+      />
 
       {/* P27 §6.5: new worktree — branch picker + derived-path preview. */}
       <WorktreeCreateDialog

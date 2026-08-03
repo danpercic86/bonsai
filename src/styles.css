@@ -2710,6 +2710,26 @@ span.file-row-main {
   cursor: pointer;
 }
 
+/* P28: WhatChangedDialog — horizontal radio mode picker above the fields. */
+.dialog-radio-group {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.dialog-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.dialog-body > .dialog-radio-group + .dialog-label {
+  margin-top: 0;
+}
+
 .dialog-textarea {
   height: auto;
   padding: 8px 10px;
