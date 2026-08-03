@@ -667,9 +667,6 @@ interface MockRepoState {
   stashes: StashEntry[];
   /** Submodules with classified status (P19 §5). Default repo only. */
   submodules: SubmoduleInfo[];
-  /** Worktrees — main first, then linked (P27 §5). Default repo only. Mutated by
-   *  P27b's add/remove/lock/unlock ops. */
-  worktrees: WorktreeInfo[];
   /** Configured remotes (P22 §5.3). Seeded with `origin` for every usable repo. */
   remotes: RemoteInfo[];
   /** P17: the one live three-way (head/index/workdir) model file, `src/main.rs`.
@@ -967,8 +964,9 @@ function seedSubmodules(kind: RepoKind, graphFixture: GraphFixture): SubmoduleIn
 }
 
 /** Seed the DEFAULT repo's worktrees so the sidebar section shows every badge:
- *  main+current, a clean linked, a locked linked, a stale/prunable linked
- *  (P27 §5). Non-default repos get []. */
+ *  main, a clean linked, a locked linked, a stale/prunable linked (P27 §5).
+ *  Stored rows carry `isCurrent: false`; the flag is computed per viewing repo
+ *  at list time (listWorktrees) since all tabs share one repository. */
 function seedWorktrees(kind: RepoKind, graphFixture: GraphFixture): WorktreeInfo[] {
   if (kind !== 'default' || graphFixture !== 'default') return [];
   return [
@@ -981,7 +979,7 @@ function seedWorktrees(kind: RepoKind, graphFixture: GraphFixture): WorktreeInfo
       locked: false,
       lockReason: null,
       isMain: true,
-      isCurrent: true,
+      isCurrent: false,
       prunable: false,
       valid: true,
     },
@@ -1027,6 +1025,21 @@ function seedWorktrees(kind: RepoKind, graphFixture: GraphFixture): WorktreeInfo
   ];
 }
 
+/** Module-level worktree list shared across all default-kind repo states —
+ *  matches native, where every open tab views the same repository, so
+ *  add/remove/lock/unlock are visible in every tab. Lazily seeded. */
+let sharedWorktrees: WorktreeInfo[] | null = null;
+
+/** The worktree list backing a repo state: the shared list for default repos,
+ *  a throwaway empty list otherwise (non-default repos have no worktrees). */
+function worktreesFor(state: MockRepoState): WorktreeInfo[] {
+  if (state.kind !== 'default' || state.graphFixture !== 'default') return [];
+  if (sharedWorktrees === null) {
+    sharedWorktrees = seedWorktrees('default', 'default');
+  }
+  return sharedWorktrees;
+}
+
 /** Builds a fresh MockRepoState for a usable repo (default / detached / unborn). */
 function createRepoState(path: string): MockRepoState {
   const graphFixture = repoGraphFixture(path);
@@ -1048,7 +1061,6 @@ function createRepoState(path: string): MockRepoState {
     conflictTexts: new Map(),
     stashes: seedStashes(kind, graphFixture),
     submodules: seedSubmodules(kind, graphFixture),
-    worktrees: seedWorktrees(kind, graphFixture),
     remotes: [{ name: 'origin', url: 'https://example.com/repo.git' }],
     mainRs: initialMainRs(),
     interactiveConflictDemo: query('rebase') === 'conflict',
@@ -1059,6 +1071,28 @@ function createRepoState(path: string): MockRepoState {
     agentAssets: structuredClone(mockAgentAssets),
   };
   seedOpState(state, repoOp(path));
+  // P27 §5 fidelity: opening a linked worktree's path checks out THAT
+  // worktree's branch — mirror it by pointing HEAD (and the branches snapshot)
+  // at the row's branch. Skipped for the stale row (branch === null).
+  const wtRow = worktreesFor(state).find((w) => !w.isMain && w.absPath === path);
+  if (wtRow !== undefined && wtRow.branch !== null) {
+    state.headBranch = wtRow.branch;
+    state.headOid = wtRow.headOid ?? MOCK_OID;
+    for (const b of state.branches.local) b.isHead = false;
+    const local = state.branches.local.find((b) => b.name === wtRow.branch);
+    if (local !== undefined) {
+      local.isHead = true;
+    } else {
+      state.branches.local.push({
+        name: wtRow.branch,
+        isHead: true,
+        upstream: null,
+        ahead: null,
+        behind: null,
+        tip: wtRow.headOid ?? MOCK_OID,
+      });
+    }
+  }
   return state;
 }
 
@@ -3173,17 +3207,35 @@ export const mockIpc: IpcApi = {
   },
 
   // Stateful worktree mock (P27 §5): list + add/remove/lock/unlock over the
-  // seeded slice. Refusal errors mirror the backend's messages so the harness
-  // exercises the toast path.
+  // shared module-level list (all default-kind tabs view one repository, so
+  // mutations show up everywhere). Refusal errors mirror the backend's
+  // messages so the harness exercises the toast path.
   async listWorktrees(repoId: string): Promise<WorktreeInfo[]> {
     await delay(150);
     const state = requireRepo(repoId);
-    return structuredClone(state.worktrees);
+    const rows = worktreesFor(state);
+    // `isCurrent` is per viewing repo: the row whose path this tab has open,
+    // falling back to the main row when no row matches.
+    const hasMatch = rows.some((w) => w.absPath === state.path);
+    return rows.map((w) => ({
+      ...structuredClone(w),
+      isCurrent: hasMatch ? w.absPath === state.path : w.isMain,
+    }));
   },
 
   async addWorktree(repoId: string, branch: string): Promise<WorktreeInfo> {
     await delay(150);
     const state = requireRepo(repoId);
+    const worktrees = worktreesFor(state);
+    // Non-default fixtures have no worktree list — refuse rather than push into
+    // a throwaway [] and report a success that listWorktrees never shows.
+    if (state.kind !== 'default' || state.graphFixture !== 'default') {
+      const err: AppError = {
+        kind: 'git',
+        message: 'mock: this fixture repo does not support worktrees',
+      };
+      throw err;
+    }
     if (branch.trim() === '') {
       const err: AppError = { kind: 'invalidName', message: 'branch name is empty' };
       throw err;
@@ -3202,14 +3254,14 @@ export const mockIpc: IpcApi = {
       };
       throw err;
     }
-    if (state.worktrees.some((w) => w.branch === branch)) {
+    if (worktrees.some((w) => w.branch === branch)) {
       const err: AppError = {
         kind: 'git',
         message: `branch '${branch}' is already checked out in another worktree`,
       };
       throw err;
     }
-    const taken = new Set(state.worktrees.map((w) => w.name));
+    const taken = new Set(worktrees.map((w) => w.name));
     let name = slug;
     for (let i = 2; taken.has(name); i += 1) name = `${slug}-${i}`;
     const row: WorktreeInfo = {
@@ -3225,24 +3277,25 @@ export const mockIpc: IpcApi = {
       prunable: false,
       valid: true,
     };
-    state.worktrees.push(row);
+    worktrees.push(row);
     return structuredClone(row);
   },
 
   async removeWorktree(repoId: string, name: string): Promise<void> {
     await delay(150);
     const state = requireRepo(repoId);
-    const idx = state.worktrees.findIndex((w) => w.name === name);
+    const worktrees = worktreesFor(state);
+    const idx = worktrees.findIndex((w) => w.name === name);
     if (idx === -1) {
       const err: AppError = { kind: 'git', message: `worktree '${name}' not found` };
       throw err;
     }
-    const wt = state.worktrees[idx];
+    const wt = worktrees[idx];
     if (wt.isMain) {
       const err: AppError = { kind: 'git', message: 'cannot remove the main worktree' };
       throw err;
     }
-    if (wt.isCurrent) {
+    if (wt.absPath === state.path) {
       const err: AppError = {
         kind: 'git',
         message: 'cannot remove the worktree you currently have open',
@@ -3254,13 +3307,13 @@ export const mockIpc: IpcApi = {
       throw err;
     }
     // Dirty is not modeled in the mock — the seeded rows are clean.
-    state.worktrees.splice(idx, 1);
+    worktrees.splice(idx, 1);
   },
 
   async lockWorktree(repoId: string, name: string, reason?: string): Promise<void> {
     await delay(150);
     const state = requireRepo(repoId);
-    const wt = state.worktrees.find((w) => w.name === name);
+    const wt = worktreesFor(state).find((w) => w.name === name);
     if (wt === undefined || wt.isMain) {
       const err: AppError = { kind: 'git', message: `worktree '${name}' not found` };
       throw err;
@@ -3277,7 +3330,7 @@ export const mockIpc: IpcApi = {
   async unlockWorktree(repoId: string, name: string): Promise<void> {
     await delay(150);
     const state = requireRepo(repoId);
-    const wt = state.worktrees.find((w) => w.name === name);
+    const wt = worktreesFor(state).find((w) => w.name === name);
     if (wt === undefined || wt.isMain) {
       const err: AppError = { kind: 'git', message: `worktree '${name}' not found` };
       throw err;
