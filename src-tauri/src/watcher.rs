@@ -132,6 +132,20 @@ mod tests {
     use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
     use std::time::Instant;
 
+    /// Serializes the fixture-based watcher tests. Each spawns a real
+    /// ReadDirectoryChangesW watcher whose stale `git2::init` events are
+    /// flushed lazily; under parallel load concurrent watcher fixtures delay
+    /// each other's flushes past the pre-test drain window (flake seen at
+    /// 1.5 s AND 2.5 s — widening further is not the fix, one-at-a-time is).
+    /// Poison-recovered so one failing test can't error out the rest.
+    static WATCHER_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn serialize_watcher_test() -> std::sync::MutexGuard<'static, ()> {
+        WATCHER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     /// git2-init'd repo in a temp dir; returns (tempdir, workdir path).
     fn fixture_repo() -> (tempfile::TempDir, std::path::PathBuf) {
         let dir = tempfile::TempDir::new().unwrap();
@@ -168,6 +182,7 @@ mod tests {
 
     #[test]
     fn fires_once_after_touch() {
+        let _serial = serialize_watcher_test();
         let (_dir, workdir) = fixture_repo();
         let (_handle, rx) = watch_into_channel(&workdir);
 
@@ -186,6 +201,7 @@ mod tests {
 
     #[test]
     fn storm_coalesces() {
+        let _serial = serialize_watcher_test();
         let (_dir, workdir) = fixture_repo();
         let (_handle, rx) = watch_into_channel(&workdir);
 
@@ -213,6 +229,7 @@ mod tests {
 
     #[test]
     fn git_internals_filtered() {
+        let _serial = serialize_watcher_test();
         let (_dir, workdir) = fixture_repo();
         let (_handle, rx) = watch_into_channel(&workdir);
 
@@ -234,6 +251,7 @@ mod tests {
 
     #[test]
     fn drop_is_clean() {
+        let _serial = serialize_watcher_test();
         let (_dir, workdir) = fixture_repo();
         let (handle, rx) = watch_into_channel(&workdir);
 
