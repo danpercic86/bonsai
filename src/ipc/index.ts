@@ -19,6 +19,7 @@ export type {
   AiGeneratedAsset,
   AiAvailability,
   AiDiffTarget,
+  AiDigestRange,
   AiResolveProposal,
   AiSummary,
   AppError,

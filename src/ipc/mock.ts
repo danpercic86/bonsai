@@ -29,6 +29,7 @@ import type {
   AiAutonomy,
   AiAvailability,
   AiDiffTarget,
+  AiDigestRange,
   AiGeneratedAsset,
   AiResolveProposal,
   AiSummary,
@@ -2668,6 +2669,39 @@ export const mockIpc: IpcApi = {
           'and a matching ai_summarize_range command that gathers base..target ' +
           'commits plus a diffstat and calls the local Claude CLI.';
     return { text, costUsd: 0.006 };
+  },
+
+  // P28: AI "what changed" digest over a selectable range (read-only prose).
+  // Writes NOTHING. Does NOT enforce the consent gate (matches aiAnalyzeDiff;
+  // the frontend gates the affordance). `?ai=off` simulates a missing CLI;
+  // else canned prose keyed on `range.kind`, echoing the range so the harness
+  // shows what was digested.
+  async aiDigest(repoId: string, range: AiDigestRange): Promise<AiAnalysis> {
+    await delay(700);
+    requireRepo(repoId);
+    if (AI_OFF) {
+      const err: AppError = {
+        kind: 'aiFailed',
+        message: 'Claude Code CLI not found on PATH',
+      };
+      throw err;
+    }
+    let text: string;
+    if (range.kind === 'betweenRefs') {
+      text =
+        `Digest ${range.from}..${range.to}: Over this range the team landed the ` +
+        'worktrees feature (sidebar section, create dialog, lifecycle commands) and ' +
+        'hardened the AI review path; most churn is in src-tauri/src and src/components.';
+    } else if (range.kind === 'lastDays') {
+      text =
+        `Digest, last ${range.days} day(s): Mostly polish — mock-harness fixes and ` +
+        'docs updates; one behavioral change in the watcher debounce.';
+    } else {
+      text =
+        `Digest since ${range.oid.slice(0, 7)}: Two workstreams — worktree UX and ` +
+        'stale-branch cleanup — plus test scaffolding.';
+    }
+    return { text, costUsd: 0.01 };
   },
 
   // P15c: summarize the commits/diff unique to `target` vs `base` (read-only

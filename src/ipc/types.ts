@@ -558,6 +558,15 @@ export type AiDiffTarget =
   | { kind: 'worktree' } // P25 B1: whole working-tree change set
   | { kind: 'branch'; name: string; base?: string | null }; // P25 B1: branch vs merge-base
 
+/** Which range to digest for aiDigest — discriminated on `kind` (P28).
+ *  betweenRefs = merge-base range (`from...to` narrative); lastDays =
+ *  first-parent commits on HEAD within the window (days >= 1); sinceCommit =
+ *  sugar for betweenRefs{from: oid, to: 'HEAD'}. */
+export type AiDigestRange =
+  | { kind: 'betweenRefs'; from: string; to: string }
+  | { kind: 'lastDays'; days: number }
+  | { kind: 'sinceCommit'; oid: string };
+
 /** Read-only prose result of aiAnalyzeDiff (P15b). Mirrors the Rust
  *  `AiAnalysis`; analysis writes nothing. */
 export interface AiAnalysis {
@@ -1129,6 +1138,9 @@ export interface IpcApi {
   /** P15b. Explain or review a diff target (read-only prose). Writes nothing.
    *  Rejects aiUnavailable | aiFailed | nothingToCommit | git | invalidName | noRepo. */
   aiAnalyzeDiff(repoId: string, target: AiDiffTarget, mode: AiAnalysisMode): Promise<AiAnalysis>;
+  /** P28. AI "what changed" digest over a selectable range (read-only prose).
+   *  Writes nothing. Rejects aiUnavailable | aiFailed | git | invalidName | noRepo. */
+  aiDigest(repoId: string, range: AiDigestRange): Promise<AiAnalysis>;
   /** P15c. Summarize commits/diff unique to `target` vs `base` (read-only prose).
    *  Rejects aiUnavailable | aiFailed | git | noRepo. */
   aiSummarizeRange(repoId: string, base: string, target: string): Promise<AiSummary>;

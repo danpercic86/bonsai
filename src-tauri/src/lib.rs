@@ -58,6 +58,7 @@ pub fn run() {
             commands::generate_commit_message,
             commands::ai_analyze_diff,
             commands::ai_summarize_range,
+            commands::ai_digest,
             commands::rebase_branch,
             commands::rebase_continue,
             commands::rebase_skip,

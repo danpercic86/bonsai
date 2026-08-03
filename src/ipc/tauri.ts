@@ -10,6 +10,7 @@ import type {
   AiAnalysis,
   AiAnalysisMode,
   AiDiffTarget,
+  AiDigestRange,
   AiAvailability,
   AiAssetInventory,
   AiGeneratedAsset,
@@ -292,6 +293,11 @@ export const tauriIpc: IpcApi = {
     mode: AiAnalysisMode,
   ): Promise<AiAnalysis> {
     return invoke<AiAnalysis>('ai_analyze_diff', { repoId, target, mode });
+  },
+
+  // P28: AI "what changed" digest over a selectable range (read-only prose).
+  aiDigest(repoId: string, range: AiDigestRange): Promise<AiAnalysis> {
+    return invoke<AiAnalysis>('ai_digest', { repoId, range });
   },
 
   // P15c: summarize the commits/diff unique to `target` vs `base` (read-only prose).

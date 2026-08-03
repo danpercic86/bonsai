@@ -39,6 +39,18 @@ const EXPLAIN_PROMPT: &str = "Explain the change provided on standard input.";
 /// The `-p` positional prompt for REVIEW mode (contract §4.2, verbatim). (P15)
 const REVIEW_PROMPT: &str = "Review the change provided on standard input.";
 
+/// Max commits listed in the digest metadata header (P28 Decision #5). Lines
+/// beyond the cap collapse to "... and N more commits"; the diff still spans
+/// the WHOLE range (byte-capped separately by `cap_review_payload`).
+pub const MAX_DIGEST_COMMITS: usize = 200;
+
+/// System prompt for the "what changed" digest (P28 §2, verbatim). SINGLE line
+/// — Windows `claude.cmd` argv constraint, same rule as the P15 prompts.
+const DIGEST_SYSTEM_PROMPT: &str = "You are a senior engineer writing a change digest for a teammate returning to a repository. Standard input contains a commit list (short hash, date, author, subject) followed by the corresponding combined diff. Write a clear plain-English digest of what changed over this range: a two or three sentence executive summary first, then the main themes or workstreams as short groups, citing file or area names and mentioning authors when several people contributed. Prefer narrative over per-commit listing; skip trivial churn. Output prose only — no markdown code fences.";
+
+/// The `-p` positional prompt for the digest (P28 §2, verbatim single line).
+const DIGEST_PROMPT: &str = "Summarize what changed in the range provided on standard input.";
+
 /// Which diff to analyze. `#[serde(tag="kind", rename_all="camelCase")]` — this
 /// is a COMMAND INPUT (Deserialize); TS mirror is a discriminated union (§5).
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -70,6 +82,21 @@ pub enum AiDiffTarget {
         #[serde(default)]
         base: Option<String>,
     },
+}
+
+/// Which range to digest (P28 §2). COMMAND INPUT (Deserialize); the TS mirror
+/// is a discriminated union (§5.2).
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum AiDigestRange {
+    /// Commits in `to` but not `from` (merge-base range, `from...to` narrative).
+    /// Both accept any revparse-able ref/oid (branch, remote-tracking, tag, hex).
+    BetweenRefs { from: String, to: String },
+    /// First-parent commits on the current branch (HEAD) with committer time
+    /// within the last `days` days. days >= 1 (0 => InvalidName).
+    LastDays { days: u32 },
+    /// Commits in HEAD but not `oid` — sugar for BetweenRefs{from: oid, to: "HEAD"}.
+    SinceCommit { oid: String },
 }
 
 /// Explain (teammate-friendly summary) vs Review (risks/bugs/style).
@@ -335,6 +362,213 @@ pub fn analyze_diff(
     })
 }
 
+// ============================================================ P28 digest
+
+/// Formats an epoch-seconds timestamp as `YYYY-MM-DD` (UTC). Civil-from-days
+/// algorithm (Howard Hinnant) — no chrono dependency.
+fn epoch_to_ymd(secs: i64) -> String {
+    let days = secs.div_euclid(86_400);
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097); // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
+    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// One digest metadata line: `- {short7} {YYYY-MM-DD} {author_name}  {subject}`
+/// (P28 §4.3). Lossy UTF-8; date from `commit.time()` (UTC).
+fn commit_meta_line(commit: &git2::Commit<'_>) -> String {
+    let short7: String = commit.id().to_string().chars().take(7).collect();
+    let date = epoch_to_ymd(commit.time().seconds());
+    let author = commit.author();
+    let name = String::from_utf8_lossy(author.name_bytes()).into_owned();
+    let subject = String::from_utf8_lossy(commit.summary_bytes().unwrap_or(b"")).into_owned();
+    format!("- {short7} {date} {name}  {subject}")
+}
+
+/// Joins metadata lines newest-first, capping at [`MAX_DIGEST_COMMITS`] lines
+/// and collapsing the overflow to `... and N more commits` (P28 Decision #5).
+fn format_commit_meta(lines: &[String]) -> String {
+    if lines.len() <= MAX_DIGEST_COMMITS {
+        return lines.join("\n");
+    }
+    let mut out = lines[..MAX_DIGEST_COMMITS].join("\n");
+    out.push_str(&format!(
+        "\n... and {} more commits",
+        lines.len() - MAX_DIGEST_COMMITS
+    ));
+    out
+}
+
+/// Resolves a digest range to `(header_note, commits_newest_first, old_tree,
+/// new_tree)` per P28 §3. `old_tree == None` means "empty tree" (unrelated
+/// histories, or a lastDays window covering the whole history).
+fn resolve_digest_range<'r>(
+    repo: &'r git2::Repository,
+    range: &AiDigestRange,
+) -> Result<
+    (
+        String,
+        Vec<git2::Commit<'r>>,
+        Option<git2::Tree<'r>>,
+        git2::Tree<'r>,
+    ),
+    AppError,
+> {
+    match range {
+        // SinceCommit is pure sugar for BetweenRefs{from: oid, to: "HEAD"} (Decision #2).
+        AiDigestRange::SinceCommit { oid } => resolve_digest_range(
+            repo,
+            &AiDigestRange::BetweenRefs {
+                from: oid.clone(),
+                to: "HEAD".to_string(),
+            },
+        ),
+        AiDigestRange::BetweenRefs { from, to } => {
+            let from_c = repo.revparse_single(from)?.peel_to_commit()?;
+            let to_c = repo.revparse_single(to)?.peel_to_commit()?;
+
+            let mb = repo.merge_base(from_c.id(), to_c.id()).ok();
+            let unrelated = mb.is_none();
+
+            let mut walk = repo.revwalk()?;
+            walk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)?;
+            walk.push(to_c.id())?;
+            if let Some(oid) = mb {
+                walk.hide(oid)?;
+            }
+            let mut commits = Vec::new();
+            for oid in walk {
+                commits.push(repo.find_commit(oid?)?);
+            }
+
+            let old_tree = match mb {
+                Some(oid) => Some(repo.find_commit(oid)?.tree()?),
+                None => None,
+            };
+            let new_tree = to_c.tree()?;
+
+            let mut header = format!("RANGE {from}..{to} ({} commits)", commits.len());
+            if unrelated {
+                header.push_str(
+                    "\nNOTE: this branch and its base have no common ancestor (unrelated \
+                     histories); the diff is the full branch contents versus an empty base.",
+                );
+            }
+            Ok((header, commits, old_tree, new_tree))
+        }
+        AiDigestRange::LastDays { days } => {
+            if *days == 0 {
+                return Err(AppError::InvalidName("days must be >= 1".to_string()));
+            }
+            let days = (*days).min(3650); // clamp, no error (P28 §3)
+            let head = repo.head()?.peel_to_commit()?;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            let cutoff = now - i64::from(days) * 86_400;
+
+            // First-parent walk, newest first; stop at the first commit older
+            // than the cutoff — that commit's tree anchors the range diff.
+            // First-parent order is monotone enough; a single stale-dated commit
+            // INSIDE the window is an accepted edge case (P28 §3 step 4).
+            let mut walk = repo.revwalk()?;
+            walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+            walk.simplify_first_parent()?;
+            walk.push(head.id())?;
+            let mut commits = Vec::new();
+            let mut boundary: Option<git2::Commit<'r>> = None;
+            for oid in walk {
+                let commit = repo.find_commit(oid?)?;
+                if commit.time().seconds() >= cutoff {
+                    commits.push(commit);
+                } else {
+                    boundary = Some(commit);
+                    break;
+                }
+            }
+
+            let old_tree = match &boundary {
+                Some(b) => Some(b.tree()?),
+                None => None, // whole history in the window → diff vs empty tree
+            };
+            let new_tree = head.tree()?;
+
+            let branch = repo
+                .head()?
+                .shorthand()
+                .map(str::to_string)
+                .unwrap_or_else(|| "HEAD (detached)".to_string());
+            let header = format!(
+                "RANGE last {days} day(s) on {branch} ({} commits)",
+                commits.len()
+            );
+            Ok((header, commits, old_tree, new_tree))
+        }
+    }
+}
+
+/// Blocking. Resolves the range, gathers commit metadata + the range diff,
+/// renders the payload, and asks the CLI for a digest (P28 §4). Read-only;
+/// WRITES NOTHING. Errors: `aiFailed` (empty range / CLI failure) | `git`
+/// (bad ref, unborn HEAD for HEAD-anchored ranges) | `invalidName` (days == 0)
+/// | (`aiUnavailable` via the command-layer gate).
+pub fn digest_changes(
+    workdir: &Path,
+    range: AiDigestRange,
+    opts: RunOpts,
+) -> Result<AiAnalysis, AppError> {
+    let repo = open_workdir_repo(workdir)?;
+    let (header_note, commits, old_tree, new_tree) = resolve_digest_range(&repo, &range)?;
+
+    // Range diff: exactly the gather_branch pipeline (P28 §3).
+    let mut opts_diff = build_diff_options(&[], false);
+    let mut diff = repo.diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut opts_diff))?;
+    apply_find_similar(&mut diff)?;
+    let files = collect_file_diffs(&diff)?;
+
+    // Empty range (no commits AND no diff content) → no CLI call (Decision #7).
+    // Commits with an empty diff (e.g. a revert pair) still digest: the metadata
+    // alone is a valid narrative.
+    if commits.is_empty() && !has_analyzable_content(&files) {
+        return Err(AppError::AiFailed(
+            "no changes in the selected range".to_string(),
+        ));
+    }
+
+    // Metadata header (newest first, capped), then the rendered diff, then ONE
+    // combined byte-cap over the whole string — truncation only eats diff tail.
+    let meta_lines: Vec<String> = commits.iter().map(commit_meta_line).collect();
+    let meta = format_commit_meta(&meta_lines);
+    let rendered = payload::render_file_diffs(&files);
+    let payload_text = cap_review_payload(format!(
+        "{header_note}\n\nCOMMITS\n{meta}\n\nDIFF\n{}",
+        rendered.text
+    ));
+
+    let result = ai::run_claude(
+        workdir,
+        DIGEST_PROMPT,
+        Some(&payload_text),
+        RunOpts {
+            system_prompt: Some(DIGEST_SYSTEM_PROMPT.to_string()),
+            ..opts
+        },
+    )?;
+
+    Ok(AiAnalysis {
+        text: result.text,
+        cost_usd: result.cost_usd,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -349,6 +583,8 @@ mod tests {
             REVIEW_SYSTEM_PROMPT,
             EXPLAIN_PROMPT,
             REVIEW_PROMPT,
+            DIGEST_SYSTEM_PROMPT,
+            DIGEST_PROMPT,
         ] {
             assert!(!s.contains('\n'), "prompt must be single-line: {s:?}");
             assert!(!s.contains('\r'), "prompt must be single-line: {s:?}");
@@ -690,5 +926,234 @@ mod tests {
         assert!(matches!(explain, AiAnalysisMode::Explain));
         let review: AiAnalysisMode = serde_json::from_str(r#""review""#).expect("review");
         assert!(matches!(review, AiAnalysisMode::Review));
+    }
+
+    // ---- P28 digest tests -----------------------------------------------------
+
+    /// §10.1(1): `AiDigestRange` deserializes the exact TS JSON per variant.
+    #[test]
+    fn digest_range_deserializes_each_variant() {
+        let br: AiDigestRange =
+            serde_json::from_str(r#"{"kind":"betweenRefs","from":"main","to":"feature"}"#)
+                .expect("betweenRefs");
+        match br {
+            AiDigestRange::BetweenRefs { from, to } => {
+                assert_eq!(from, "main");
+                assert_eq!(to, "feature");
+            }
+            other => panic!("expected BetweenRefs, got {other:?}"),
+        }
+
+        let ld: AiDigestRange =
+            serde_json::from_str(r#"{"kind":"lastDays","days":7}"#).expect("lastDays");
+        match ld {
+            AiDigestRange::LastDays { days } => assert_eq!(days, 7),
+            other => panic!("expected LastDays, got {other:?}"),
+        }
+
+        let sc: AiDigestRange =
+            serde_json::from_str(r#"{"kind":"sinceCommit","oid":"deadbeef"}"#).expect("sinceCommit");
+        match sc {
+            AiDigestRange::SinceCommit { oid } => assert_eq!(oid, "deadbeef"),
+            other => panic!("expected SinceCommit, got {other:?}"),
+        }
+    }
+
+    /// Sanity for the no-chrono civil-date conversion.
+    #[test]
+    fn epoch_to_ymd_known_dates() {
+        assert_eq!(epoch_to_ymd(0), "1970-01-01");
+        assert_eq!(epoch_to_ymd(1_767_225_600), "2026-01-01"); // 2026-01-01T00:00:00Z
+        assert_eq!(epoch_to_ymd(951_782_400), "2000-02-29"); // leap day
+    }
+
+    /// §10.1(6): 250 synthetic metas → 200 lines + "... and 50 more commits".
+    #[test]
+    fn format_commit_meta_caps_at_200() {
+        let lines: Vec<String> = (0..250).map(|i| format!("- {i:07} line")).collect();
+        let out = format_commit_meta(&lines);
+        assert_eq!(out.lines().count(), MAX_DIGEST_COMMITS + 1);
+        assert!(out.ends_with("... and 50 more commits"), "got tail: {out:?}");
+        assert!(out.starts_with("- 0000000 line"));
+        // Under the cap: joined verbatim, no overflow note.
+        let small = format_commit_meta(&lines[..3]);
+        assert_eq!(small.lines().count(), 3);
+        assert!(!small.contains("more commits"));
+    }
+
+    /// git2-only fixture helpers: commits with controlled committer times and
+    /// per-commit unique trees (no workdir writes needed).
+    fn tree_with<'r>(repo: &'r git2::Repository, key: &str) -> git2::Tree<'r> {
+        let blob = repo.blob(key.as_bytes()).expect("blob");
+        let mut tb = repo.treebuilder(None).expect("treebuilder");
+        tb.insert("f.txt", blob, 0o100644).expect("insert");
+        let oid = tb.write().expect("tree write");
+        repo.find_tree(oid).expect("find tree")
+    }
+
+    fn commit_at(
+        repo: &git2::Repository,
+        update_ref: Option<&str>,
+        msg: &str,
+        secs: i64,
+        parents: &[&git2::Commit<'_>],
+    ) -> git2::Oid {
+        let sig = git2::Signature::new("Test User", "test@example.com", &git2::Time::new(secs, 0))
+            .expect("signature");
+        let tree = tree_with(repo, msg);
+        repo.commit(update_ref, &sig, &sig, msg, &tree, parents)
+            .expect("commit")
+    }
+
+    /// Builds the §10.1(2) fixture: `main` = A→B, `feature` = B→C→D, HEAD on
+    /// feature. Returns (dir, [a, b, c, d]).
+    fn digest_fixture() -> (tempfile::TempDir, [git2::Oid; 4]) {
+        let dir = init_scratch();
+        let repo = git2::Repository::open(dir.path()).expect("open");
+        let t = 1_700_000_000i64;
+        let a = commit_at(&repo, None, "A", t, &[]);
+        let a_c = repo.find_commit(a).expect("A");
+        let b = commit_at(&repo, None, "B", t + 10, &[&a_c]);
+        let b_c = repo.find_commit(b).expect("B");
+        let c = commit_at(&repo, None, "C", t + 20, &[&b_c]);
+        let c_c = repo.find_commit(c).expect("C");
+        let d = commit_at(&repo, None, "D", t + 30, &[&c_c]);
+        let d_c = repo.find_commit(d).expect("D");
+        repo.branch("main", &b_c, true).expect("main");
+        repo.branch("feature", &d_c, true).expect("feature");
+        repo.set_head("refs/heads/feature").expect("head");
+        drop((a_c, b_c, c_c, d_c));
+        (dir, [a, b, c, d])
+    }
+
+    /// §10.1(2): BetweenRefs{main, feature} → exactly [D, C] newest-first,
+    /// old_tree = B's tree; header carries the count.
+    #[test]
+    fn between_refs_walk_yields_range_commits_and_merge_base_tree() {
+        let (dir, [_a, b, c, d]) = digest_fixture();
+        let repo = git2::Repository::open(dir.path()).expect("open");
+        let range = AiDigestRange::BetweenRefs {
+            from: "main".to_string(),
+            to: "feature".to_string(),
+        };
+        let (header, commits, old_tree, new_tree) =
+            resolve_digest_range(&repo, &range).expect("resolve");
+        let ids: Vec<git2::Oid> = commits.iter().map(|c| c.id()).collect();
+        assert_eq!(ids, vec![d, c], "newest-first D then C");
+        let b_tree = repo.find_commit(b).expect("B").tree().expect("tree").id();
+        assert_eq!(old_tree.expect("old tree").id(), b_tree);
+        assert_eq!(new_tree.id(), repo.find_commit(d).expect("D").tree().expect("t").id());
+        assert!(header.contains("RANGE main..feature (2 commits)"), "got {header}");
+        assert!(!header.contains("no common ancestor"));
+    }
+
+    /// §10.1(2): `from == to` → zero commits → `digest_changes` returns
+    /// `AiFailed("no changes in the selected range")` BEFORE any CLI call.
+    #[test]
+    fn empty_range_fails_before_cli() {
+        let (dir, _) = digest_fixture();
+        let err = digest_changes(
+            dir.path(),
+            AiDigestRange::BetweenRefs {
+                from: "feature".to_string(),
+                to: "feature".to_string(),
+            },
+            RunOpts::default(),
+        )
+        .expect_err("empty range must fail");
+        match err {
+            AppError::AiFailed(m) => assert_eq!(m, "no changes in the selected range"),
+            other => panic!("expected AiFailed, got {other:?}"),
+        }
+    }
+
+    /// §10.1(3): SinceCommit{B} ≡ BetweenRefs{B, HEAD} → [D, C].
+    #[test]
+    fn since_commit_is_between_refs_to_head() {
+        let (dir, [_a, b, c, d]) = digest_fixture();
+        let repo = git2::Repository::open(dir.path()).expect("open");
+        let range = AiDigestRange::SinceCommit { oid: b.to_string() };
+        let (_h, commits, old_tree, _new) = resolve_digest_range(&repo, &range).expect("resolve");
+        let ids: Vec<git2::Oid> = commits.iter().map(|cm| cm.id()).collect();
+        assert_eq!(ids, vec![d, c]);
+        assert_eq!(
+            old_tree.expect("old tree").id(),
+            repo.find_commit(b).expect("B").tree().expect("t").id()
+        );
+    }
+
+    /// §10.1(4): unrelated histories → no hide (full `to` history), old_tree
+    /// None (empty tree), header carries the no-common-ancestor note.
+    #[test]
+    fn unrelated_histories_diff_vs_empty_tree_with_note() {
+        let (dir, [a, b, c, d]) = digest_fixture();
+        let repo = git2::Repository::open(dir.path()).expect("open");
+        let r = commit_at(&repo, None, "ROOT2", 1_700_000_100, &[]);
+        let r_c = repo.find_commit(r).expect("R");
+        repo.branch("other", &r_c, true).expect("other");
+
+        let range = AiDigestRange::BetweenRefs {
+            from: "other".to_string(),
+            to: "feature".to_string(),
+        };
+        let (header, commits, old_tree, _new) = resolve_digest_range(&repo, &range).expect("resolve");
+        let ids: Vec<git2::Oid> = commits.iter().map(|cm| cm.id()).collect();
+        assert_eq!(ids, vec![d, c, b, a], "full feature history, newest first");
+        assert!(old_tree.is_none(), "unrelated → empty-tree base");
+        assert!(header.contains("no common ancestor"), "got {header}");
+    }
+
+    /// §10.1(5): lastDays first-parent walk with controlled committer times —
+    /// commits at now−1d/−2d/−10d; days=7 collects the two recent, boundary =
+    /// the 10-day-old commit; days=0 → InvalidName; all-in-window → old_tree None.
+    #[test]
+    fn last_days_walk_cutoff_and_boundary() {
+        let dir = init_scratch();
+        let repo = git2::Repository::open(dir.path()).expect("open");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_secs() as i64;
+        let day = 86_400i64;
+        let old = commit_at(&repo, Some("HEAD"), "old-10d", now - 10 * day, &[]);
+        let old_c = repo.find_commit(old).expect("old");
+        let mid = commit_at(&repo, Some("HEAD"), "mid-2d", now - 2 * day, &[&old_c]);
+        let mid_c = repo.find_commit(mid).expect("mid");
+        let new = commit_at(&repo, Some("HEAD"), "new-1d", now - day, &[&mid_c]);
+
+        let (header, commits, old_tree, new_tree) =
+            resolve_digest_range(&repo, &AiDigestRange::LastDays { days: 7 }).expect("resolve");
+        let ids: Vec<git2::Oid> = commits.iter().map(|cm| cm.id()).collect();
+        assert_eq!(ids, vec![new, mid], "two in-window commits, newest first");
+        assert_eq!(
+            old_tree.expect("boundary tree").id(),
+            old_c.tree().expect("t").id(),
+            "boundary = the 10-day-old commit's tree"
+        );
+        assert_eq!(new_tree.id(), repo.find_commit(new).expect("n").tree().expect("t").id());
+        assert!(header.contains("last 7 day(s)"), "got {header}");
+        assert!(header.contains("(2 commits)"), "got {header}");
+
+        // days=0 → InvalidName, before any repo access matters.
+        let err = resolve_digest_range(&repo, &AiDigestRange::LastDays { days: 0 })
+            .expect_err("days=0 must fail");
+        assert!(matches!(err, AppError::InvalidName(_)), "got {err:?}");
+
+        // Whole history inside the window → old_tree None (diff vs empty tree).
+        let (_h, commits, old_tree, _n) =
+            resolve_digest_range(&repo, &AiDigestRange::LastDays { days: 30 }).expect("resolve");
+        assert_eq!(commits.len(), 3);
+        assert!(old_tree.is_none(), "all-in-window → empty-tree base");
+    }
+
+    /// The metadata line format: `- {short7} {YYYY-MM-DD} {author}  {subject}`.
+    #[test]
+    fn commit_meta_line_format() {
+        let (dir, [_a, _b, _c, d]) = digest_fixture();
+        let repo = git2::Repository::open(dir.path()).expect("open");
+        let d_c = repo.find_commit(d).expect("D");
+        let line = commit_meta_line(&d_c);
+        let short7: String = d.to_string().chars().take(7).collect();
+        assert_eq!(line, format!("- {short7} 2023-11-14 Test User  D"));
     }
 }
