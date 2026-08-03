@@ -8,3 +8,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tempfile = "3"
+
+# Vendored libgit2 at -O0 makes graph walks (merge-base / descendant-of) ~10x
+# slower, which breaks the P29 health perf-ceiling test that must run in the
+# ordinary (dev) test suite. Optimize ONLY the C library in dev; Rust crates
+# keep full debug info.
+[profile.dev.package.libgit2-sys]
+opt-level = 2

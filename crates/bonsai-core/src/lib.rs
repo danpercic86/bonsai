@@ -5,5 +5,6 @@ pub mod error;
 pub mod fixture;
 pub mod git;
 pub mod graph;
+pub mod health;
 #[cfg(test)]
 pub mod testutil;
