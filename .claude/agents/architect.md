@@ -36,3 +36,7 @@ Hold these invariants in every design:
 Write tight, implementable specs. No prose bloat, no implementation bodies. If a requirement
 is ambiguous, state the options and your recommendation in the contract file, and flag it for
 the orchestrator. End by reporting the contract file path back.
+
+Token discipline: use `Grep`/partial reads to inspect prior contracts and code — do not read
+whole large files or re-read what you have already seen. Your report back to the orchestrator
+is just the contract file path plus any flagged ambiguities, not the contract's contents.

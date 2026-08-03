@@ -21,7 +21,16 @@ Check, in priority order:
    spawn_blocking? IPC payloads compact (no per-commit round-trips, no raw objects)?
 4. Safety: watcher paired with manual refresh + refocus rescan? No `unwrap`/panics on repo or
    user input? No destructive Git op without explicit UI confirmation?
-5. Nits: naming, dead code, error surfacing.
+5. File-size / single-responsibility: flag any file growing into a god-file (soft limit
+   ~500 lines; container components may exceed only if the bulk is state+effects+handlers and
+   the render body is extracted into child files). New UI/fixtures must be their own files, not
+   appended to a large one. A file that should have been split is a SHOULD-FIX.
+6. Nits: naming, dead code, error surfacing.
 
 Output a prioritized list: MUST-FIX / SHOULD-FIX / NIT, then a verdict — "approve" or
 "request changes". Be specific: cite file and line.
+
+Token discipline: review from `git diff HEAD` and targeted `Grep`/partial reads — do not read
+whole large files unless the diff demands it, and never re-read a file already in context.
+Report ONLY the prioritized list + verdict with `file:line` citations; never paste file
+bodies or the full diff back — the orchestrator already has them.

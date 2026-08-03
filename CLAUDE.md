@@ -65,6 +65,17 @@ scrolling over large histories (target: **20k+ commits without jank**).
   signals; **channels** = streaming large/incremental data.
 - git2 is blocking → wrap heavy calls in `spawn_blocking`.
 - The commit graph is rendered on canvas and virtualized to visible rows.
+- **File-size / single-responsibility discipline (enforce in every review).** Split code into
+  small, specialised files so no module becomes a god-file that every session must read in full.
+  A React view is a container (state, effects, IPC handlers) that composes small presentational
+  child components — each panel/dialog/section in its own file. Rust modules stay focused
+  (one concern per file); large static fixture/data tables live in their own `fixtures/*`
+  modules, separate from logic. **Soft limit ~500 lines per file** (container components may run
+  larger when the bulk is genuinely state+effects+handlers, but their render body must be
+  extracted). When a file crosses the limit, split it in the same increment rather than letting
+  it grow — this is what keeps whole-file reads cheap and avoids repeating the RepoWorkspace.tsx
+  bloat. New UI or fixtures must be created as their own files, never appended to an existing
+  large one.
 - The `notify` watcher is **always** paired with a manual refresh button and a rescan on window focus
   (it misses events on Windows), and its events are **debounced** (~300 ms) — Git operations fire
   event storms.
@@ -73,38 +84,15 @@ scrolling over large histories (target: **20k+ commits without jank**).
   serves fixture data (canned `GraphLayout`, status lists, diffs). Real Tauri `invoke` otherwise.
   This is how the orchestrator visually verifies the UI (screenshots of the canvas graph, console
   frame timing) — the AI cannot see the native Tauri window. senior-dev keeps the mock layer
-  compiling and updated with every IPC change.
+  compiling and updated with every IPC change. **Verify frugally:** prefer targeted
+  `read_console_messages` / `get_page_text` / `read_page` checks and batch `javascript_tool`
+  calls; take a screenshot only for the final visual proof, not at every step (the harness loop
+  is a heavy token sink otherwise).
 
-## Suggested project layout
+## Project layout & reference contracts
 
-```
-src/                  React frontend (Vite)
-  ipc/                typed wrappers over invoke()/listen(); mock.ts (VITE_MOCK_IPC harness)
-  graph/              canvas renderer for the precomputed layout
-  components/
-src-tauri/            Rust backend
-  src/lib.rs          builder, generate_handler!, .manage(state)
-  src/commands.rs     #[tauri::command] API surface
-  src/git/            git2 wrappers: status, log, diff, commit, branches, remotes
-  src/graph.rs        lane/edge layout engine
-  src/watcher.rs      notify -> emit("repo-changed")
-  Cargo.toml
-  tauri.conf.json
-docs/contracts/       architect's per-milestone contract files (M<N>-<slug>.md)
-TODO.md               running milestone status + current step (session resume source of truth)
-```
-
-## Reference contracts (starting point — architect may refine)
-
-```rust
-struct GraphNode { id: String, lane: u32, row: u32, parents: Vec<String>, refs: Vec<RefLabel> }
-struct GraphEdge { from: String, to: String, lane: u32 }
-struct GraphLayout { nodes: Vec<GraphNode>, edges: Vec<GraphEdge>, lane_count: u32 }
-// commands: open_repo(path), get_status(), get_graph(), get_diff(path),
-//           stage(path), unstage(path), commit(msg), list_branches(),
-//           checkout(name), create_branch(name), fetch(), pull(), push()
-// events: "repo-changed"    channels: streamed large diffs / batched log
-```
+See `docs/architecture-reference.md` for the directory layout and the reference Rust/IPC
+contract shapes. The authoritative per-milestone contracts live in `docs/contracts/`.
 
 ## Gate verification — AI gates vs USER CHECKPOINTs
 
@@ -118,56 +106,14 @@ Every milestone gate splits into two kinds of checks:
   passed itself: present the AI-gate evidence, then explicitly ask the user to run
   `pnpm tauri dev` and confirm. A milestone is done only when both halves pass.
 
-## Milestones (MVP-first; one at a time, each with a passing gate)
+## Milestones
 
-- **M0 — Scaffold.** Tauri v2 + React/Vite/TS project that opens a window via `pnpm tauri dev` on
-  Windows; a folder picker (use `tauri-plugin-dialog` and grant its capability in
-  `src-tauri/capabilities/`); Rust detects whether the folder is a Git repo and reads HEAD. Pin the
-  toolchain (`rust-toolchain.toml`, `packageManager` in package.json). Architect also delivers a
-  one-page UI reference spec (the 3-pane layout from Product decisions, lane color palette,
-  spacing, typography, dark/light) reused by all later milestones.
-  *AI gate:* project compiles (`cargo check`, `pnpm build`); browser harness renders; a Rust unit
-  test opens a fixture repo and reads HEAD. *USER CHECKPOINT:* window opens via `pnpm tauri dev`,
-  folder picker selects a repo, HEAD shown.
-- **M1 — Working-directory status.** Show staged / unstaged / untracked files via git2; auto-refresh
-  via notify + manual refresh + refocus rescan.
-  *AI gate:* Rust tests compare output to `git status --porcelain` on scratch repos; harness renders
-  the file lists from mock data. *USER CHECKPOINT:* auto-refresh + manual refresh + refocus rescan
-  behave correctly in the native app.
-- **M2 — Commit graph (centerpiece).** Rust computes `GraphLayout` from a commit walk; React renders
-  the GitKraken-style canvas graph, virtualized, with ref pills. Run as four sub-increments, each
-  its own implement→review loop:
-  - **M2a** — layout engine + unit tests (pure Rust, no UI).
-  - **M2b** — canvas rendering of a static precomputed layout (verified by browser-harness
-    screenshot).
-  - **M2c** — virtualization, scrolling, ref pills, HiDPI canvas scaling.
-  - **M2d** — perf gate: fixture generator + criterion benchmark.
-  *AI gate:* lane/edge unit tests pass on tricky fixture histories; harness screenshots show correct
-  lanes, curved fork/merge edges, dots, and ref pills; a scripted generator (git2 or
-  `git fast-import` — NOT 20k CLI commits) builds a synthetic 20k+ commit fixture repo; criterion
-  shows layout < 500 ms for 20k commits; harness scroll test over the 20k layout logs rAF frame
-  timings to the console with no sustained frames > 33 ms. *USER CHECKPOINT:* scrolling the 20k repo
-  in the native app feels smooth.
-- **M3 — Stage / unstage / commit.** *AI gate:* Rust tests verify results against the `git` CLI on
-  scratch repos. *USER CHECKPOINT:* stage/unstage/commit round-trip in the native app.
-- **M4 — Diff view.** Via git2, unified or side-by-side: working-dir diffs (unstaged vs index,
-  staged vs HEAD) AND commit diffs (selected graph node vs first parent, with commit details in the
-  right panel). *AI gate:* diff output matches `git diff` / `git show` in tests; harness renders
-  both diff kinds from mock data. *USER CHECKPOINT:* selecting a commit in the graph shows its
-  details + changes in the native app.
-- **M5 — Branches.** List, create, checkout, delete; show current branch/HEAD.
-  *AI gate:* verified against the CLI in tests; code review confirms destructive ops require UI
-  confirmation. *USER CHECKPOINT:* branch operations + confirmation dialog work in the native app.
-- **M6 — Remotes.** Fetch / pull (fast-forward only, per Product decisions) / push with credential
-  handling. Credential strategy: use git2's
-  `CredentialHelper` (delegates to Git's configured helper, i.e. Windows Credential Manager) first,
-  then SSH agent for ssh URLs; never prompt for or store raw passwords ourselves. Confirm this with
-  the user at milestone start before implementing.
-  *AI gate:* fetch/pull/push round-trip works against a **local bare repo** (`git init --bare`,
-  added as a `file://` remote on the scratch repo) — no network or credentials needed, fully
-  autonomous. *USER CHECKPOINT:* one round-trip against a real network remote with the credential
-  helper.
-- **Polish.** Keyboard shortcuts, error toasts, empty/loading states, GitButler-clean styling.
+The MVP milestones **M0–M6** (scaffold, status, commit graph, stage/commit, diff, branches,
+remotes) plus initial Polish are **shipped**. Their per-milestone AI-gate vs USER CHECKPOINT
+breakdown is archived in `docs/history/milestones-mvp.md`. Current work follows the
+repo-management roadmap (P24+); the running status board is `TODO.md`.
+
+The workflow loop below applies to every milestone, past and present.
 
 ## Workflow loop — run this for every milestone
 
@@ -220,6 +166,12 @@ review.
 - Any destructive Git operation in the app must require **explicit UI confirmation**.
 - **Commit after each green milestone.**
 - Prefer small compiling increments; run `cargo check`/`clippy` and `tsc`/`build` frequently.
+- **Token discipline (keeps you under usage limits).** Prefer `Grep` and partial `Read`
+  (offset+limit) over whole-file reads; never re-read a file already in this session's context.
+  When delegating, pass contract and source **file paths**, not pasted file contents — subagents
+  open files themselves. Require concise subagent reports (changed-files summary, MUST-FIX list,
+  pass/fail + numbers), never full file bodies or diffs echoed back. Keep single UI/fixture files
+  small enough to read in a targeted range rather than in full.
 - If a decision is ambiguous or you're blocked, **ask the user — do not guess.**
 
 ## Environment (Windows prerequisites — verify first)
@@ -245,3 +197,87 @@ all verified against a scratch repo, with automated tests covering the graph-lay
   code and fixtures; never edits application code to make a test pass.
 
 To begin or resume, follow `.claude/orchestrator-kickoff.md`.
+
+<!-- jbcontext-instructions-start -->
+# Tools
+
+## Code discovery: context-explorer first
+
+When a task requires finding or understanding code whose location you don't
+already know, your FIRST code-discovery step MUST be:
+
+Task(subagent_type='context-explorer',
+     description=<short label>,
+     prompt=<1-2 sentence intent describing what to find>)
+
+Start there instead of opening with your own `grep`/`glob`/`bash` searches or
+git history: the subagent runs the semantic exploration in its own context and
+hands back concrete `file:line` references, so you don't burn your context
+re-reading the same files.
+
+This governs *how* you begin code discovery — not whether every task needs it.
+Do NOT call context-explorer when the task doesn't involve locating code:
+
+- the task names the exact file, class, or symbol — open it or grep directly;
+- the relevant file is already open or identified;
+- the work is a git operation (rebase, merge, commit), a test/build run,
+  shell/statusline/config setup, or a review of a diff you already have.
+
+Invoking context-explorer as a formality "to get started" on such tasks wastes
+a subagent round and returns irrelevant findings. It is a research step, not a
+gate to clear — skip it and proceed directly.
+
+When you do use it, the subagent runs up to 3 semantic searches in its own
+context (restricted to `jbcontext search` via `Bash` and `Read` only) and
+returns a short report:
+
+Searched: <one-line summary>
+Findings:
+- <relative/path>:<line> — <description>
+- ...
+Notes: <confidence; whether keyword grep would be more direct here>
+
+Use its findings if they look useful, or ignore them entirely if `Notes:` flags
+the task as keyword-based. You retain full freedom for the rest of the run.
+
+## Semantic Code Search (jbcontext)
+
+You have access to `jbcontext search` for searching the codebase semantically.
+It finds code by meaning, not just keywords.
+
+### Usage
+
+```bash
+jbcontext search "<detailed and descriptive query>"
+jbcontext search -p <path> "<query>"  # <path> must be relative to the project root
+```
+
+### Query Tips
+
+- Be descriptive: "function that validates user email addresses" > "email"
+- Include context: "error handling middleware for HTTP requests with logging"
+- Specify what you're looking for: "React component that renders a modal dialog"
+
+### Single-Shot Policy
+
+Use `jbcontext search` as a semantic bootstrap when the relevant file or subsystem is still unknown.
+
+- If no relevant file is open yet, start with one `jbcontext search`.
+- Make the first query specific to the issue's named feature, class, method, config flag, or behavior when available.
+- After the first search, open at least one returned file and inspect it locally.
+- If the first hit is relevant but incomplete, inspect neighboring files locally in that same directory or subsystem before any semantic retry.
+- After the first relevant file or path is known, prefer direct file reads and exact search to inspect nearby code.
+- If a semantic retry is still needed, use `jbcontext search -p <path> ...` with the directory of the best first hit.
+
+### Examples
+
+```bash
+# Find authentication-related code
+jbcontext search "user authentication login flow"
+
+# Narrow to specific directory
+jbcontext search -p src/auth "JWT token validation"
+```
+
+Use `jbcontext search` once to get the initial pointer, then inspect nearby code locally. If that still fails, do a narrowed retry with `-p`.
+<!-- jbcontext-instructions-end -->
