@@ -88,7 +88,7 @@ pub fn list_worktrees(workdir: &Path) -> Result<Vec<WorktreeInfo>, AppError> {
 /// open. If the current repo is itself a linked worktree, derive it from the
 /// shared common dir (`<main>/.git` → parent). Non-bare assumed
 /// (`open_workdir_repo`).
-fn main_workdir(repo: &git2::Repository) -> Result<PathBuf, AppError> {
+pub(crate) fn main_workdir(repo: &git2::Repository) -> Result<PathBuf, AppError> {
     if repo.is_worktree() {
         // commondir == "<main>/.git" (possibly trailing sep) → parent is <main>.
         strip_dotgit_parent(repo.commondir())
@@ -195,7 +195,7 @@ fn read_head(repo: &git2::Repository) -> (Option<String>, Option<String>) {
 /// Best-effort canonicalization for path EQUALITY only (both sides go through
 /// this, so a `\\?\` prefix or symlink resolution is consistent). Falls back to
 /// the lexical path when the target does not exist (e.g. a stale worktree dir).
-fn canonical(p: &Path) -> PathBuf {
+pub(crate) fn canonical(p: &Path) -> PathBuf {
     std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
 }
 

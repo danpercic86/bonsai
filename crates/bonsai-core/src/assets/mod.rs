@@ -15,6 +15,7 @@ pub mod generate;
 pub mod inventory;
 pub mod profiles;
 pub mod taxonomy;
+pub mod worktree_context;
 
 pub use bundle::{
     delete_agent_asset, known_optional_keys, parse_frontmatter, read_agent_asset, rel_path,
@@ -28,8 +29,11 @@ pub use inventory::{
     normalize, read_asset, scan_inventory, AiAsset, AiAssetInventory, AssetContent, AssetFile,
 };
 pub use profiles::{
-    activate_profile, delete_profile, list_profiles, preview_profile, save_profile,
-    validate_profile_name, ContextProfile, ProfileActivation, ProfilePreviewEntry, ProfileStore,
-    ProfileTarget, TargetWriteAction, TargetWriteResult,
+    activate_profile, activate_profile_for_worktree, delete_profile, list_profiles,
+    preview_profile, preview_profile_for_worktree, resolve_store_root, save_profile,
+    validate_profile_name, worktree_key_for, ContextProfile, ProfileActivation,
+    ProfilePreviewEntry, ProfileStore, ProfileTarget, TargetWriteAction, TargetWriteResult,
+    MAIN_WORKTREE_KEY,
 };
 pub use taxonomy::{descriptor, descriptors, AssetDescriptor, AssetKind};
+pub use worktree_context::{list_worktree_contexts, WorktreeContextStatus};
