@@ -3172,12 +3172,122 @@ export const mockIpc: IpcApi = {
     requireRepo(repoId);
   },
 
-  // Stateful worktree mock (P27 §5). P27a: read-only list; the mutating
-  // add/remove/lock/unlock ops land in P27b over this same slice.
+  // Stateful worktree mock (P27 §5): list + add/remove/lock/unlock over the
+  // seeded slice. Refusal errors mirror the backend's messages so the harness
+  // exercises the toast path.
   async listWorktrees(repoId: string): Promise<WorktreeInfo[]> {
     await delay(150);
     const state = requireRepo(repoId);
     return structuredClone(state.worktrees);
+  },
+
+  async addWorktree(repoId: string, branch: string): Promise<WorktreeInfo> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    if (branch.trim() === '') {
+      const err: AppError = { kind: 'invalidName', message: 'branch name is empty' };
+      throw err;
+    }
+    // Mirror §2.4: sanitize to a slug, then collision-suffix against existing
+    // worktree names. (Branch existence is not enforced — the mock list is
+    // authoritative; the real backend rejects unknown branches.)
+    const slug = branch
+      .replace(/[^A-Za-z0-9._-]+/g, '-')
+      .replace(/-{2,}/g, '-')
+      .replace(/^[-.]+|[-.]+$/g, '');
+    if (slug === '' || slug.includes('..')) {
+      const err: AppError = {
+        kind: 'invalidName',
+        message: `cannot derive a worktree name from branch '${branch}'`,
+      };
+      throw err;
+    }
+    if (state.worktrees.some((w) => w.branch === branch)) {
+      const err: AppError = {
+        kind: 'git',
+        message: `branch '${branch}' is already checked out in another worktree`,
+      };
+      throw err;
+    }
+    const taken = new Set(state.worktrees.map((w) => w.name));
+    let name = slug;
+    for (let i = 2; taken.has(name); i += 1) name = `${slug}-${i}`;
+    const row: WorktreeInfo = {
+      name,
+      absPath: `/mock/.worktrees/${name}`,
+      relPath: null,
+      branch,
+      headOid: randomOid(),
+      locked: false,
+      lockReason: null,
+      isMain: false,
+      isCurrent: false,
+      prunable: false,
+      valid: true,
+    };
+    state.worktrees.push(row);
+    return structuredClone(row);
+  },
+
+  async removeWorktree(repoId: string, name: string): Promise<void> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    const idx = state.worktrees.findIndex((w) => w.name === name);
+    if (idx === -1) {
+      const err: AppError = { kind: 'git', message: `worktree '${name}' not found` };
+      throw err;
+    }
+    const wt = state.worktrees[idx];
+    if (wt.isMain) {
+      const err: AppError = { kind: 'git', message: 'cannot remove the main worktree' };
+      throw err;
+    }
+    if (wt.isCurrent) {
+      const err: AppError = {
+        kind: 'git',
+        message: 'cannot remove the worktree you currently have open',
+      };
+      throw err;
+    }
+    if (wt.locked) {
+      const err: AppError = { kind: 'git', message: 'worktree is locked; unlock it first' };
+      throw err;
+    }
+    // Dirty is not modeled in the mock — the seeded rows are clean.
+    state.worktrees.splice(idx, 1);
+  },
+
+  async lockWorktree(repoId: string, name: string, reason?: string): Promise<void> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    const wt = state.worktrees.find((w) => w.name === name);
+    if (wt === undefined || wt.isMain) {
+      const err: AppError = { kind: 'git', message: `worktree '${name}' not found` };
+      throw err;
+    }
+    if (wt.locked) {
+      const err: AppError = { kind: 'git', message: 'worktree is already locked' };
+      throw err;
+    }
+    wt.locked = true;
+    const trimmed = reason?.trim() ?? '';
+    wt.lockReason = trimmed === '' ? null : trimmed;
+  },
+
+  async unlockWorktree(repoId: string, name: string): Promise<void> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    const wt = state.worktrees.find((w) => w.name === name);
+    if (wt === undefined || wt.isMain) {
+      const err: AppError = { kind: 'git', message: `worktree '${name}' not found` };
+      throw err;
+    }
+    if (!wt.locked) {
+      const err: AppError = { kind: 'git', message: 'worktree is not locked' };
+      throw err;
+    }
+    wt.locked = false;
+    wt.lockReason = null;
   },
 
   // Stateful tags mock (P22 §5.3). create/delete mutate state.branches.tags so

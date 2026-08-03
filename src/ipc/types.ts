@@ -1057,6 +1057,17 @@ export interface IpcApi {
   // --- P27: worktrees ---
   /** All worktrees (main first) with resolved branch/oid/badges. Rejects noRepo | git. */
   listWorktrees(repoId: string): Promise<WorktreeInfo[]>;
+  /** Create a worktree for the EXISTING local branch `branch` at a derived
+   *  `<parent>/.worktrees/<slug>` path. Returns the created row. Rejects
+   *  noRepo | invalidName | branchNotFound | git | io. */
+  addWorktree(repoId: string, branch: string): Promise<WorktreeInfo>;
+  /** Remove worktree `name` (refuses main/current/locked/dirty; deletes the
+   *  directory from disk). Rejects noRepo | invalidName | git | io. */
+  removeWorktree(repoId: string, name: string): Promise<void>;
+  /** Lock worktree `name` with an optional reason. Rejects noRepo | invalidName | git. */
+  lockWorktree(repoId: string, name: string, reason?: string): Promise<void>;
+  /** Unlock worktree `name`. Rejects noRepo | invalidName | git. */
+  unlockWorktree(repoId: string, name: string): Promise<void>;
   // --- P22: tags ---
   /** Create a tag at `targetOid`. `message` non-null ⇒ annotated (needs git identity),
    *  null ⇒ lightweight. `force` overwrites (v1 UI passes false). Rejects

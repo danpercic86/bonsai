@@ -2109,6 +2109,105 @@ async fn list_worktrees_inner(
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Creates a linked worktree for the EXISTING local branch `branch` at a
+/// derived `<parent>/.worktrees/<slug>` path; returns the created row (P27
+/// contract §3). Errors: `noRepo` | `invalidName` | `branchNotFound` | `git` |
+/// `io`. Does NOT emit `repo-changed` — the frontend refetches.
+#[tauri::command]
+pub async fn add_worktree(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    branch: String,
+) -> Result<WorktreeInfo, AppError> {
+    add_worktree_inner(state.inner(), &repo_id, branch).await
+}
+
+/// Runtime-free core of `add_worktree` (unit-testable without a Tauri app).
+async fn add_worktree_inner(
+    state: &AppState,
+    repo_id: &str,
+    branch: String,
+) -> Result<WorktreeInfo, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || worktree::add_worktree(&path, &branch))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Removes linked worktree `name` — refuses main/current/locked/dirty, then
+/// prunes admin files + working directory (P27 contract §3). Errors: `noRepo`
+/// | `invalidName` | `git` | `io`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn remove_worktree(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    name: String,
+) -> Result<(), AppError> {
+    remove_worktree_inner(state.inner(), &repo_id, name).await
+}
+
+/// Runtime-free core of `remove_worktree` (unit-testable without a Tauri app).
+async fn remove_worktree_inner(
+    state: &AppState,
+    repo_id: &str,
+    name: String,
+) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || worktree::remove_worktree(&path, &name))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Locks linked worktree `name` with an optional reason (P27 contract §3).
+/// Errors: `noRepo` | `invalidName` | `git`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn lock_worktree(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    name: String,
+    reason: Option<String>,
+) -> Result<(), AppError> {
+    lock_worktree_inner(state.inner(), &repo_id, name, reason).await
+}
+
+/// Runtime-free core of `lock_worktree` (unit-testable without a Tauri app).
+async fn lock_worktree_inner(
+    state: &AppState,
+    repo_id: &str,
+    name: String,
+    reason: Option<String>,
+) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        worktree::lock_worktree(&path, &name, reason.as_deref())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Unlocks linked worktree `name` (P27 contract §3). Errors: `noRepo` |
+/// `invalidName` | `git`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn unlock_worktree(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    name: String,
+) -> Result<(), AppError> {
+    unlock_worktree_inner(state.inner(), &repo_id, name).await
+}
+
+/// Runtime-free core of `unlock_worktree` (unit-testable without a Tauri app).
+async fn unlock_worktree_inner(
+    state: &AppState,
+    repo_id: &str,
+    name: String,
+) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || worktree::unlock_worktree(&path, &name))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Clones `url` into `dest`, streaming `CloneProgress` over `on_progress`.
 /// Returns the absolute workdir path of the clone (frontend then calls
 /// `open_repo`/openTab). NOT repo-scoped — it CREATES a repo (P21 §OPEN-2).

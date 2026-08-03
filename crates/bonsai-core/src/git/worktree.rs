@@ -1,4 +1,6 @@
-//! Worktree support (P27 contract §2). P27a: read-only list.
+//! Worktree support (P27 contract §2). P27a: read-only list; P27b: the
+//! mutating ops (`add_worktree` / `remove_worktree` / `lock_worktree` /
+//! `unlock_worktree`).
 //!
 //! Pure git2 logic, no Tauri types (runtime-free core → unit/CLI-testable
 //! without the Tauri "test" feature, same rule as submodule/stash/remote).
@@ -215,8 +217,6 @@ fn dir_basename(p: &Path) -> String {
 /// `..`-containing result with `InvalidName` (git branch names cannot contain
 /// `..`, but we reject defensively — mirrors `validate_rel_path`, `stage.rs:33`).
 ///
-/// Consumed by `derive_worktree` (P27b's `add_worktree`); landed in P27a.
-#[allow(dead_code)] // wired into add_worktree in P27b; exercised by unit tests now
 pub(crate) fn sanitize_slug(branch: &str) -> Result<String, AppError> {
     let replaced: String = branch
         .chars()
@@ -247,9 +247,6 @@ pub(crate) fn sanitize_slug(branch: &str) -> Result<String, AppError> {
 /// `find_worktree(name)` succeeds) append `-2`, `-3`, … up to `-99`, else a
 /// `Git` error. Because the leaf is a sanitized slug joined onto a fixed
 /// container, no separators or `..` reach libgit2.
-///
-/// Consumed by `add_worktree` in P27b; landed (with tests) in P27a.
-#[allow(dead_code)] // wired into add_worktree in P27b; exercised by unit tests now
 pub(crate) fn derive_worktree(
     main_dir: &Path,
     repo: &git2::Repository,
@@ -264,14 +261,183 @@ pub(crate) fn derive_worktree(
         let path = container.join(&n);
         let name_taken = repo.find_worktree(&n).is_ok();
         if !path.exists() && !name_taken {
-            // Containment defense: `path` MUST stay under `container`.
-            debug_assert!(path.starts_with(&container));
+            // Containment defense (RUNTIME — add_worktree creates this dir):
+            // the derived leaf MUST stay inside the `.worktrees/` container.
+            ensure_contained(&path, &container)?;
             return Ok((n, path));
         }
     }
     Err(AppError::Git(format!(
         "could not derive a free worktree path for '{branch}'"
     )))
+}
+
+/// RUNTIME path-containment defense: `path` must be lexically inside
+/// `container` (the fixed `.worktrees/` dir). The leaf comes from a sanitized
+/// slug so this should never fire; it exists so a sanitizer regression can
+/// never create a directory outside the container.
+fn ensure_contained(path: &Path, container: &Path) -> Result<(), AppError> {
+    if path.starts_with(container) && path != container {
+        Ok(())
+    } else {
+        Err(AppError::Git(format!(
+            "derived worktree path '{}' escapes the .worktrees container",
+            path.display()
+        )))
+    }
+}
+
+/// Blocking. Create a linked worktree checking out the EXISTING local branch
+/// `branch` at a derived path (§2.4/§2.5). Returns the created row (§OPEN-2).
+/// Errors: `InvalidName` (blank/unsluggable) | `BranchNotFound` | `Git` (branch
+/// already checked out elsewhere / collision exhausted / libgit2) | `Io`.
+pub fn add_worktree(workdir: &Path, branch: &str) -> Result<WorktreeInfo, AppError> {
+    let repo = open_workdir_repo(workdir)?;
+    if branch.trim().is_empty() {
+        return Err(AppError::InvalidName("branch name is empty".to_string()));
+    }
+    let br = repo
+        .find_branch(branch, git2::BranchType::Local)
+        .map_err(|e| match e.code() {
+            git2::ErrorCode::NotFound => {
+                AppError::BranchNotFound(format!("branch '{branch}' not found"))
+            }
+            _ => e.into(),
+        })?;
+    let reference = br.get(); // &Reference (borrows repo)
+
+    let main_dir = main_workdir(&repo)?;
+    let (name, path) = derive_worktree(&main_dir, &repo, branch)?;
+    // Ensure the `.worktrees/` container exists (Io on failure). derive_worktree
+    // guarantees `path` has a parent (it joined a leaf onto the container).
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let mut opts = git2::WorktreeAddOptions::new();
+    opts.reference(Some(reference)); // check out THIS existing branch
+
+    // libgit2 refuses a branch already checked out in another worktree → Git,
+    // surfaced with its own message ("already checked out ...").
+    repo.worktree(&name, &path, Some(&opts))
+        .map_err(|e| AppError::Git(e.message().to_string()))?;
+
+    let wt = repo.find_worktree(&name)?;
+    let cur = repo
+        .workdir()
+        .map(canonical)
+        .ok_or_else(|| AppError::Git("repository has no working directory".to_string()))?;
+    build_linked_row(&wt, &main_dir, &cur) // return the created row (§OPEN-2)
+}
+
+/// Blocking. Remove linked worktree `name` (§2.6): refuse main / current /
+/// locked / dirty, then prune (admin files + working directory), with a guarded
+/// `remove_dir_all` fallback if the directory survives.
+/// Errors: `InvalidName` (blank) | `Git` (refusals / not found / libgit2) | `Io`.
+pub fn remove_worktree(workdir: &Path, name: &str) -> Result<(), AppError> {
+    let repo = open_workdir_repo(workdir)?;
+    if name.trim().is_empty() {
+        return Err(AppError::InvalidName("worktree name is empty".to_string()));
+    }
+    let main_dir = main_workdir(&repo)?;
+    let cur = repo
+        .workdir()
+        .map(canonical)
+        .ok_or_else(|| AppError::Git("repository has no working directory".to_string()))?;
+
+    // 1. Refuse the MAIN worktree by NAME (its basename is not a real linked
+    //    name; also guard by path below in case a linked name collides).
+    if name == dir_basename(&main_dir) && repo.find_worktree(name).is_err() {
+        return Err(AppError::Git("cannot remove the main worktree".to_string()));
+    }
+    let wt = repo.find_worktree(name).map_err(|e| match e.code() {
+        git2::ErrorCode::NotFound => AppError::Git(format!("worktree '{name}' not found")),
+        _ => e.into(),
+    })?;
+    let wt_path = wt.path().to_path_buf();
+
+    // 2. Refuse current / main by PATH (defense-in-depth).
+    if canonical(&wt_path) == cur {
+        return Err(AppError::Git(
+            "cannot remove the worktree you currently have open".to_string(),
+        ));
+    }
+    if canonical(&wt_path) == canonical(&main_dir) {
+        return Err(AppError::Git("cannot remove the main worktree".to_string()));
+    }
+    // 3. Refuse LOCKED (no force in v1, §OPEN-4).
+    if matches!(wt.is_locked()?, git2::WorktreeLockStatus::Locked(_)) {
+        return Err(AppError::Git(
+            "worktree is locked; unlock it first".to_string(),
+        ));
+    }
+    // 4. Refuse DIRTY (§OPEN-3): data-loss guard — libgit2's prune does not
+    //    check dirtiness.
+    if wt.validate().is_ok() {
+        if let Ok(wt_repo) = git2::Repository::open_from_worktree(&wt) {
+            if is_dirty(&wt_repo)? {
+                return Err(AppError::Git(
+                    "worktree has uncommitted changes; commit or stash them first".to_string(),
+                ));
+            }
+        }
+    }
+    // 5. Prune: remove admin files AND the working directory recursively.
+    //    NOT locked(true): we refused locked above.
+    let mut opts = git2::WorktreePruneOptions::new();
+    opts.valid(true).working_tree(true);
+    wt.prune(Some(&mut opts))?;
+
+    // 6. Guarded fallback: only the exact worktree path we just pruned.
+    if wt_path.exists() {
+        std::fs::remove_dir_all(&wt_path)?;
+    }
+    Ok(())
+}
+
+/// True when the repo has any status entry that is not CURRENT (staged,
+/// unstaged, or untracked — ignored files excluded). Runtime-free; no
+/// dependency on `status.rs`.
+fn is_dirty(repo: &git2::Repository) -> Result<bool, AppError> {
+    let mut opts = git2::StatusOptions::new();
+    opts.include_untracked(true).include_ignored(false);
+    let statuses = repo.statuses(Some(&mut opts))?;
+    Ok(statuses
+        .iter()
+        .any(|e| e.status() != git2::Status::CURRENT))
+}
+
+/// Find linked worktree `name`, mapping blank → `InvalidName` and not-found →
+/// a precise `Git` error (shared by lock/unlock).
+fn open_linked(repo: &git2::Repository, name: &str) -> Result<git2::Worktree, AppError> {
+    if name.trim().is_empty() {
+        return Err(AppError::InvalidName("worktree name is empty".to_string()));
+    }
+    repo.find_worktree(name).map_err(|e| match e.code() {
+        git2::ErrorCode::NotFound => AppError::Git(format!("worktree '{name}' not found")),
+        _ => e.into(),
+    })
+}
+
+/// Blocking. Lock linked worktree `name` with an optional reason (§2.7).
+/// An empty/blank reason is treated as no reason. The main worktree cannot be
+/// locked (it is never a linked worktree → precise `Git` not-found error).
+/// Errors: `InvalidName` | `Git` (not found / already locked / libgit2).
+pub fn lock_worktree(workdir: &Path, name: &str, reason: Option<&str>) -> Result<(), AppError> {
+    let repo = open_workdir_repo(workdir)?;
+    let wt = open_linked(&repo, name)?;
+    let reason = reason.map(str::trim).filter(|r| !r.is_empty());
+    wt.lock(reason)?; // already-locked → libgit2 Git error
+    Ok(())
+}
+
+/// Blocking. Unlock linked worktree `name` (§2.7).
+/// Errors: `InvalidName` | `Git` (not found / not locked / libgit2).
+pub fn unlock_worktree(workdir: &Path, name: &str) -> Result<(), AppError> {
+    let repo = open_workdir_repo(workdir)?;
+    let wt = open_linked(&repo, name)?;
+    wt.unlock()?; // not-locked → libgit2 Git error
+    Ok(())
 }
 
 #[cfg(test)]
@@ -359,6 +525,49 @@ mod tests {
         assert_eq!(name2, "feature-login-2");
         assert_eq!(path2, container.join("feature-login-2"));
         assert!(path2.starts_with(&container));
+    }
+
+    /// §2.4 runtime containment: paths outside (or equal to) the container are
+    /// rejected with a `Git` error, never silently accepted.
+    #[test]
+    fn ensure_contained_runtime_check() {
+        let container = Path::new("/repo/.worktrees");
+        assert!(ensure_contained(Path::new("/repo/.worktrees/feat"), container).is_ok());
+        // The container itself is not a valid leaf.
+        match ensure_contained(container, container) {
+            Err(AppError::Git(_)) => {}
+            other => panic!("expected Git error for container itself, got {other:?}"),
+        }
+        for escapee in ["/repo/elsewhere", "/repo", "/other/.worktrees/feat"] {
+            match ensure_contained(Path::new(escapee), container) {
+                Err(AppError::Git(_)) => {}
+                other => panic!("expected Git error for {escapee:?}, got {other:?}"),
+            }
+        }
+    }
+
+    /// §2.9: blank args are rejected up-front with `InvalidName`.
+    #[test]
+    fn blank_args_are_invalid_name() {
+        let dir = crate::testutil::scratch_dir();
+        let repo_dir = dir.path().join("repo");
+        git2::Repository::init(&repo_dir).expect("init");
+        match add_worktree(&repo_dir, "   ") {
+            Err(AppError::InvalidName(_)) => {}
+            other => panic!("expected InvalidName for blank branch, got {other:?}"),
+        }
+        match remove_worktree(&repo_dir, "") {
+            Err(AppError::InvalidName(_)) => {}
+            other => panic!("expected InvalidName for blank name, got {other:?}"),
+        }
+        match lock_worktree(&repo_dir, " ", None) {
+            Err(AppError::InvalidName(_)) => {}
+            other => panic!("expected InvalidName for blank name, got {other:?}"),
+        }
+        match unlock_worktree(&repo_dir, "") {
+            Err(AppError::InvalidName(_)) => {}
+            other => panic!("expected InvalidName for blank name, got {other:?}"),
+        }
     }
 
     /// A branch whose sanitized slug is empty is rejected before any path work.

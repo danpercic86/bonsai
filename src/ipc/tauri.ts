@@ -410,6 +410,22 @@ export const tauriIpc: IpcApi = {
     return invoke<WorktreeInfo[]>('list_worktrees', { repoId });
   },
 
+  addWorktree(repoId: string, branch: string): Promise<WorktreeInfo> {
+    return invoke<WorktreeInfo>('add_worktree', { repoId, branch });
+  },
+
+  removeWorktree(repoId: string, name: string): Promise<void> {
+    return invoke<void>('remove_worktree', { repoId, name });
+  },
+
+  lockWorktree(repoId: string, name: string, reason?: string): Promise<void> {
+    return invoke<void>('lock_worktree', { repoId, name, reason: reason ?? null });
+  },
+
+  unlockWorktree(repoId: string, name: string): Promise<void> {
+    return invoke<void>('unlock_worktree', { repoId, name });
+  },
+
   // P22: tags.
   createTag(
     repoId: string,

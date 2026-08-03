@@ -1,10 +1,8 @@
-//! P27a CLI-oracle worktree tests (contract §7) — READ-ONLY `list_worktrees`.
-//!
-//! Fixtures are built with the `git` CLI (`git worktree add` / `lock`), so the
-//! P27b mutating ops are NOT exercised here; those get their own create/remove/
-//! lock/unlock coverage in P27b. The load-bearing oracle is that the SET of
-//! worktree paths reported by `list_worktrees` equals the set parsed from
-//! `git worktree list --porcelain`.
+//! P27 CLI-oracle worktree tests (contract §7): the P27a read-only list plus
+//! the P27b mutating ops (`add`/`remove`/`lock`/`unlock`), each cross-checked
+//! against `git worktree list --porcelain`. The load-bearing oracle is that the
+//! SET of worktree paths reported by `list_worktrees` equals the set parsed
+//! from the porcelain output after every operation.
 //!
 //! Every test skips (passes with a note) if `git` is not on PATH. All scratch
 //! repos live under `D:\Temp\bonsai-scratch` (never the system temp).
@@ -14,7 +12,10 @@ mod common;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use bonsai_core::git::worktree::{list_worktrees, WorktreeInfo};
+use bonsai_core::error::AppError;
+use bonsai_core::git::worktree::{
+    add_worktree, list_worktrees, lock_worktree, remove_worktree, unlock_worktree, WorktreeInfo,
+};
 use common::{commit_fixed, git, git_ok};
 
 macro_rules! require_git {
@@ -214,4 +215,204 @@ fn list_reports_locked_worktree() {
 
     // Still consistent with the oracle.
     assert_eq!(sut_worktree_paths(&rows), cli_worktree_paths(&fx.main));
+}
+
+/// P27a carry-forward: a STALE worktree (its directory deleted out-of-band)
+/// never panics the list — the row survives with `valid==false` (or prunable)
+/// and null branch/oid.
+#[test]
+fn list_stale_worktree_does_not_panic() {
+    require_git!();
+    let fx = setup();
+    let wt_feature = fx.root.join("wt-feature");
+    git(&fx.main, &["worktree", "add", wt_feature.to_str().unwrap(), "feature"]);
+    std::fs::remove_dir_all(&wt_feature).expect("delete worktree dir");
+
+    let rows = list_worktrees(&fx.main).expect("list must not fail on stale worktree");
+    assert_eq!(rows.len(), 2, "main + stale linked, got {rows:?}");
+    let stale = rows.iter().find(|r| !r.is_main).expect("stale row");
+    assert!(
+        stale.prunable || !stale.valid,
+        "deleted dir must show prunable/invalid: {stale:?}"
+    );
+    assert_eq!(stale.branch, None);
+    assert_eq!(stale.head_oid, None);
+}
+
+/// §7.2 #2: `add_worktree("feature")` creates a worktree at
+/// `<parent>/.worktrees/feature`, returns the created row, and matches the
+/// porcelain oracle + the worktree's real HEAD.
+#[test]
+fn add_worktree_happy_path() {
+    require_git!();
+    let fx = setup();
+
+    let row = add_worktree(&fx.main, "feature").expect("add");
+    assert!(!row.is_main);
+    assert!(!row.is_current);
+    assert!(row.valid);
+    assert_eq!(row.branch.as_deref(), Some("feature"));
+    assert_eq!(row.name, "feature");
+
+    let expected = fx.root.join(".worktrees").join("feature");
+    assert_eq!(canon(Path::new(&row.abs_path)), canon(&expected));
+    assert!(expected.is_dir(), "worktree dir must exist on disk");
+
+    // Oracle: git sees two worktrees, and the new one has HEAD == feature.
+    let rows = list_worktrees(&fx.main).expect("list");
+    assert_eq!(rows.len(), 2);
+    assert_eq!(sut_worktree_paths(&rows), cli_worktree_paths(&fx.main));
+    let head = git(&expected, &["rev-parse", "--abbrev-ref", "HEAD"]);
+    assert_eq!(head.trim(), "feature");
+}
+
+/// §7.2 #3: sanitizer (`feat/x` → `feat-x`) + collision suffix (`-2` when the
+/// slug is already taken by an existing worktree).
+#[test]
+fn add_worktree_sanitizes_and_suffixes_collisions() {
+    require_git!();
+    let fx = setup();
+    git(&fx.main, &["branch", "feat/x"]);
+    // A branch whose slug collides with `feature` ("feature+" → "feature").
+    git(&fx.main, &["branch", "feature+"]);
+
+    let slugged = add_worktree(&fx.main, "feat/x").expect("add feat/x");
+    assert_eq!(slugged.name, "feat-x");
+    assert_eq!(
+        canon(Path::new(&slugged.abs_path)),
+        canon(&fx.root.join(".worktrees").join("feat-x"))
+    );
+
+    add_worktree(&fx.main, "feature").expect("add feature");
+    let collided = add_worktree(&fx.main, "feature+").expect("add feature+");
+    assert_eq!(collided.name, "feature-2", "collision must suffix -2");
+    assert_eq!(
+        canon(Path::new(&collided.abs_path)),
+        canon(&fx.root.join(".worktrees").join("feature-2"))
+    );
+
+    assert_eq!(
+        sut_worktree_paths(&list_worktrees(&fx.main).expect("list")),
+        cli_worktree_paths(&fx.main)
+    );
+}
+
+/// §7.2 #4: nonexistent branch → BranchNotFound; a branch already checked out
+/// in another worktree (here: `main`, checked out in the main worktree) → Git.
+#[test]
+fn add_worktree_refusals() {
+    require_git!();
+    let fx = setup();
+
+    match add_worktree(&fx.main, "no-such-branch") {
+        Err(AppError::BranchNotFound(_)) => {}
+        other => panic!("expected BranchNotFound, got {other:?}"),
+    }
+    match add_worktree(&fx.main, "main") {
+        Err(AppError::Git(_)) => {}
+        other => panic!("expected Git error for already-checked-out branch, got {other:?}"),
+    }
+    // Nothing was created.
+    assert_eq!(list_worktrees(&fx.main).expect("list").len(), 1);
+    assert!(!fx.root.join(".worktrees").join("main").exists());
+}
+
+/// §7.2 #5: lock (with reason) / unlock round-trip, cross-checked with the
+/// porcelain `locked` attribute.
+#[test]
+fn lock_unlock_round_trip() {
+    require_git!();
+    let fx = setup();
+    let row = add_worktree(&fx.main, "feature").expect("add");
+
+    lock_worktree(&fx.main, &row.name, Some("pinned for QA")).expect("lock");
+    let rows = list_worktrees(&fx.main).expect("list");
+    let feat = rows.iter().find(|r| r.name == row.name).expect("row");
+    assert!(feat.locked);
+    assert_eq!(feat.lock_reason.as_deref(), Some("pinned for QA"));
+    let porcelain = git(&fx.main, &["worktree", "list", "--porcelain"]);
+    assert!(porcelain.contains("locked"), "oracle must show locked:\n{porcelain}");
+
+    unlock_worktree(&fx.main, &row.name).expect("unlock");
+    let rows = list_worktrees(&fx.main).expect("list");
+    let feat = rows.iter().find(|r| r.name == row.name).expect("row");
+    assert!(!feat.locked);
+    assert_eq!(feat.lock_reason, None);
+    let porcelain = git(&fx.main, &["worktree", "list", "--porcelain"]);
+    assert!(!porcelain.contains("locked"), "oracle must be unlocked:\n{porcelain}");
+
+    // Blank/unknown names are refused.
+    match lock_worktree(&fx.main, "no-such-wt", None) {
+        Err(AppError::Git(_)) => {}
+        other => panic!("expected Git not-found, got {other:?}"),
+    }
+}
+
+/// §7.2 #6: remove refusals — main, current, locked, dirty. None delete
+/// anything from disk.
+#[test]
+fn remove_worktree_refusals() {
+    require_git!();
+    let fx = setup();
+    let feat = add_worktree(&fx.main, "feature").expect("add");
+    let feat_dir = PathBuf::from(&feat.abs_path);
+
+    // Main (by its basename, "main").
+    match remove_worktree(&fx.main, "main") {
+        Err(AppError::Git(msg)) => assert!(msg.contains("main worktree"), "{msg}"),
+        other => panic!("expected Git refusal for main, got {other:?}"),
+    }
+    // Current: opened FROM the linked worktree, removing itself.
+    match remove_worktree(&feat_dir, &feat.name) {
+        Err(AppError::Git(msg)) => assert!(msg.contains("currently have open"), "{msg}"),
+        other => panic!("expected Git refusal for current, got {other:?}"),
+    }
+    // Locked.
+    lock_worktree(&fx.main, &feat.name, None).expect("lock");
+    match remove_worktree(&fx.main, &feat.name) {
+        Err(AppError::Git(msg)) => assert!(msg.contains("locked"), "{msg}"),
+        other => panic!("expected Git refusal for locked, got {other:?}"),
+    }
+    unlock_worktree(&fx.main, &feat.name).expect("unlock");
+    // Dirty (an untracked file counts).
+    std::fs::write(feat_dir.join("scratch.txt"), "wip\n").expect("write");
+    match remove_worktree(&fx.main, &feat.name) {
+        Err(AppError::Git(msg)) => assert!(msg.contains("uncommitted"), "{msg}"),
+        other => panic!("expected Git refusal for dirty, got {other:?}"),
+    }
+    // Unknown name.
+    match remove_worktree(&fx.main, "no-such-wt") {
+        Err(AppError::Git(_)) => {}
+        other => panic!("expected Git not-found, got {other:?}"),
+    }
+
+    // Nothing was deleted; the oracle still lists both worktrees.
+    assert!(fx.main.is_dir());
+    assert!(feat_dir.is_dir());
+    assert_eq!(
+        sut_worktree_paths(&list_worktrees(&fx.main).expect("list")),
+        cli_worktree_paths(&fx.main)
+    );
+    assert_eq!(cli_worktree_paths(&fx.main).len(), 2);
+}
+
+/// §7.2 #7: remove happy path — a clean, unlocked, non-current worktree is
+/// pruned: directory gone AND no longer in the porcelain oracle.
+#[test]
+fn remove_worktree_happy_path() {
+    require_git!();
+    let fx = setup();
+    let feat = add_worktree(&fx.main, "feature").expect("add");
+    let feat_dir = PathBuf::from(&feat.abs_path);
+    assert!(feat_dir.is_dir());
+
+    remove_worktree(&fx.main, &feat.name).expect("remove");
+
+    assert!(!feat_dir.exists(), "working directory must be deleted");
+    let cli = cli_worktree_paths(&fx.main);
+    assert_eq!(cli.len(), 1, "oracle must no longer list it: {cli:?}");
+    let rows = list_worktrees(&fx.main).expect("list");
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].is_main);
+    assert_eq!(sut_worktree_paths(&rows), cli);
 }
