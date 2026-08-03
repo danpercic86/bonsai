@@ -148,6 +148,15 @@ export const tauriIpc: IpcApi = {
     return invoke<void>('unstage_partial', { repoId, path, origPath, selection });
   },
 
+  discardPartial(
+    repoId: string,
+    path: string,
+    origPath: string | null,
+    selection: LineSelection[],
+  ): Promise<void> {
+    return invoke<void>('discard_partial', { repoId, path, origPath, selection });
+  },
+
   getCommitDiff(repoId: string, oid: string): Promise<CommitDiff> {
     return invoke<CommitDiff>('get_commit_diff', { repoId, oid });
   },

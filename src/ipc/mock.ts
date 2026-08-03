@@ -1868,6 +1868,33 @@ export const mockIpc: IpcApi = {
     state.mainRs.index = reconstructLines('unstage', hunks, head, index, selAdd, selDel);
   },
 
+  // P28: partial discard — same three-way model, but the WORKDIR moves toward
+  // the INDEX (side-substituted 'unstage': old=index, new=workdir). The index
+  // is never touched; getStatus derives the unstaged row from workdir !== index,
+  // so a full discard clears the row naturally. No repo-changed emit.
+  async discardPartial(
+    repoId: string,
+    path: string,
+    _origPath: string | null,
+    selection: LineSelection[],
+  ): Promise<void> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    if (path !== MAIN_RS_PATH) {
+      const err: AppError = {
+        kind: 'other',
+        message: 'mock: partial discard is only modeled for src/main.rs',
+      };
+      throw err;
+    }
+    const { selAdd, selDel } = collectSelection(selection);
+    const { index, workdir } = state.mainRs;
+    // Discard: recompute index-vs-workdir and revert the selected lines in the
+    // workdir toward the index ('unstage' = base NEW side, undo toward OLD).
+    const { hunks } = lineDiff(index, workdir, MAIN_RS_PATH, 'modified', false);
+    state.mainRs.workdir = reconstructLines('unstage', hunks, index, workdir, selAdd, selDel);
+  },
+
   async commit(repoId: string, message: string): Promise<CommitResult> {
     await delay(150);
     const state = requireRepo(repoId);

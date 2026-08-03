@@ -169,6 +169,9 @@ export interface DiffOverlayProps {
   stageable: null | 'stage' | 'unstage';
   onStageLines(selection: LineSelection[]): void;
   onStageHunk(hunkIndex: number): void;
+  /** P28: set ONLY for unstaged tracked diffs (never untracked/staged/commit);
+   *  forwarded to the DiffSlotView branch only. */
+  onDiscardHunk?(hunkIndex: number): void;
 }
 
 export function DiffOverlay({
@@ -183,6 +186,7 @@ export function DiffOverlay({
   stageable,
   onStageLines,
   onStageHunk,
+  onDiscardHunk,
 }: DiffOverlayProps) {
   const lang = detectLanguage(meta.path);
   return (
@@ -264,6 +268,7 @@ export function DiffOverlay({
             stageable={stageable}
             onStageLines={onStageLines}
             onStageHunk={onStageHunk}
+            onDiscardHunk={onDiscardHunk}
           />
         )}
       </div>

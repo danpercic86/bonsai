@@ -1851,6 +1851,25 @@ span.file-row-main {
   color: var(--accent);
 }
 
+/* P28: danger sibling of .diff-hunk-stage-btn (same size/placement). */
+.diff-hunk-discard-btn {
+  flex: none;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-1);
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.diff-hunk-discard-btn:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .diff-line {
   display: grid;
   grid-template-columns: 40px 40px 16px auto;

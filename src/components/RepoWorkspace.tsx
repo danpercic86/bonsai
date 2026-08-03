@@ -226,6 +226,12 @@ export function RepoWorkspace({
   // P20: destructive reset (all three modes confirm; hard warns extra) + discard.
   const [pendingReset, setPendingReset] = useState<{ oid: string; mode: ResetMode } | null>(null);
   const [pendingDiscard, setPendingDiscard] = useState<string[] | null>(null);
+  // P28: pending "Discard hunk" confirmation (unstaged diffs only).
+  const [pendingHunkDiscard, setPendingHunkDiscard] = useState<{
+    path: string;
+    origPath: string | null;
+    hunkIndex: number;
+  } | null>(null);
   // P20: amend affordance. `amend` toggles the commit box into amend mode;
   // `amendMessage` holds HEAD's message fetched once on toggle-on (prefill).
   const [amend, setAmend] = useState(false);
@@ -285,6 +291,7 @@ export function RepoWorkspace({
     pendingDropStash !== null ||
     pendingReset !== null ||
     pendingDiscard !== null ||
+    pendingHunkDiscard !== null ||
     pendingCreateBranch !== null ||
     pendingCreateTag !== null ||
     pendingDeleteTag !== null ||
@@ -1148,6 +1155,43 @@ export function RepoWorkspace({
       void handleStageLines(selection);
     },
     [handleStageLines],
+  );
+
+  // P28: request a hunk discard — just arms the ConfirmDialog (destructive ops
+  // always confirm first). Passed to DiffOverlay only for unstaged tracked
+  // diffs (see the render-site gating), so meta here is the unstaged file.
+  const handleDiscardHunk = useCallback((hunkIndex: number) => {
+    const meta = overlayMetaRef.current;
+    if (meta === null) return;
+    setPendingHunkDiscard({ path: meta.path, origPath: meta.origPath, hunkIndex });
+  }, []);
+
+  // P28: confirmed hunk discard — build the LineSelection from the open diff's
+  // hunk (same rule as handleStageHunk) and revert it in the worktree, then
+  // refetch like handleStageLines does. Guarded by `mutating`.
+  const handleConfirmHunkDiscard = useCallback(
+    async (pending: { path: string; origPath: string | null; hunkIndex: number }) => {
+      if (mutatingRef.current) return;
+      // The slot must still show the file the dialog was armed for.
+      if (overlayMetaRef.current?.path !== pending.path) return;
+      const d = diffSlotRef.current?.diff ?? null;
+      const hunk = d?.hunks[pending.hunkIndex];
+      if (hunk === undefined) return; // stale click; diff changed underneath
+      const selection: LineSelection[] = hunk.lines
+        .filter((l) => l.kind === 'add' || l.kind === 'del')
+        .map((l) => ({ kind: l.kind, oldNo: l.oldNo, newNo: l.newNo }));
+      if (selection.length === 0) return;
+      setMutating(true);
+      try {
+        await ipc.discardPartial(repoId, pending.path, pending.origPath, selection);
+        await refetchStatus();
+      } catch (e) {
+        reportStatusError(errorMessage(e));
+      } finally {
+        setMutating(false);
+      }
+    },
+    [repoId, refetchStatus, reportStatusError],
   );
 
   // P15a: ask the backend for a proposed commit message from the staged diff.
@@ -2951,6 +2995,13 @@ export function RepoWorkspace({
               stageable={stageable}
               onStageLines={handleStageLines}
               onStageHunk={handleStageHunk}
+              onDiscardHunk={
+                // P28: unstaged tracked diffs only — never untracked (tracked-only
+                // discard) and never binary/tooLarge/renamed (stageable === null).
+                overlayMeta.kind === 'unstaged' && stageable === 'stage'
+                  ? handleDiscardHunk
+                  : undefined
+              }
             />
           )}
           {/* P23d: blame + file-history overlays, layered over the graph like the
@@ -3294,6 +3345,27 @@ export function RepoWorkspace({
         <div>Discard changes to {pendingDiscard?.length ?? 0} file(s)?</div>
         <div className="dialog-body-note">
           This permanently reverts them to the last staged/committed version and cannot be undone.
+        </div>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pendingHunkDiscard !== null}
+        title="Discard hunk?"
+        confirmLabel="Discard hunk"
+        busy={mutating}
+        onConfirm={() => {
+          const pending = pendingHunkDiscard;
+          setPendingHunkDiscard(null);
+          if (pending !== null) void handleConfirmHunkDiscard(pending);
+        }}
+        onCancel={() => setPendingHunkDiscard(null)}
+      >
+        <div>
+          Discard this hunk in <span className="mono">{pendingHunkDiscard?.path ?? ''}</span>?
+        </div>
+        <div className="dialog-body-note">
+          The change in this hunk is permanently reverted in your working tree and cannot be
+          undone. Staged changes are not affected.
         </div>
       </ConfirmDialog>
 

@@ -23,6 +23,9 @@ export interface DiffViewProps {
   onStageLines?(selection: LineSelection[]): void;
   /** Stage/unstage every add/del line of hunk `hunkIndex` (Diff View header button). */
   onStageHunk?(hunkIndex: number): void;
+  /** P28: discard every add/del line of hunk `hunkIndex` in the WORKTREE. Rendered
+   *  only when provided AND stageable === 'stage' (unstaged diffs). */
+  onDiscardHunk?(hunkIndex: number): void;
 }
 
 /**
@@ -62,6 +65,7 @@ export const DiffView = memo(function DiffView({
   stageable = null,
   onStageLines,
   onStageHunk,
+  onDiscardHunk,
 }: DiffViewProps) {
   // P4e Step 2: detect the file language and lazily load its grammar. Hooks
   // run unconditionally at the top; the binary/too-large/empty short-circuits
@@ -273,6 +277,15 @@ export const DiffView = memo(function DiffView({
                 {stageable === 'stage' ? 'Stage hunk' : 'Unstage hunk'}
               </button>
             )}
+            {stageable === 'stage' && onDiscardHunk !== undefined && (
+              <button
+                type="button"
+                className="diff-hunk-discard-btn"
+                onClick={() => onDiscardHunk(hi)}
+              >
+                {'Discard hunk'}
+              </button>
+            )}
           </div>
           {h.lines.map((line, li) => lineRow(hi, li, line))}
         </Fragment>
@@ -291,6 +304,8 @@ export interface DiffSlotViewProps {
   stageable?: null | 'stage' | 'unstage';
   onStageLines?(selection: LineSelection[]): void;
   onStageHunk?(hunkIndex: number): void;
+  /** P28: forwarded to DiffView (danger hunk-header discard button). */
+  onDiscardHunk?(hunkIndex: number): void;
 }
 
 /** Loading / error / ready body under an expanded file row (contract §4.2).
@@ -303,6 +318,7 @@ export function DiffSlotView({
   stageable,
   onStageLines,
   onStageHunk,
+  onDiscardHunk,
 }: DiffSlotViewProps) {
   if (slot.state === 'loading' && slot.diff === null) {
     return (
@@ -336,6 +352,7 @@ export function DiffSlotView({
         stageable={stageable}
         onStageLines={onStageLines}
         onStageHunk={onStageHunk}
+        onDiscardHunk={onDiscardHunk}
       />
     </div>
   ) : null;

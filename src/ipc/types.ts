@@ -893,6 +893,16 @@ export interface IpcApi {
     origPath: string | null,
     selection: LineSelection[],
   ): Promise<void>;
+  /** Discard the selected changed lines of one tracked working-dir file: the
+   *  WORKTREE moves toward the INDEX; the index is never modified. DESTRUCTIVE —
+   *  callers must confirm first. Empty selection is a no-op. Rejects AppError
+   *  ('noRepo' | 'git'[untracked] | 'other'[stale/unsupported/invalid path]). */
+  discardPartial(
+    repoId: string,
+    path: string,
+    origPath: string | null,
+    selection: LineSelection[],
+  ): Promise<void>;
   /** Tree-vs-tree diff between HEAD (old) and `oid` (new): `git diff HEAD <oid>`.
    *  HEAD is resolved server-side (detached ok; unborn -> empty old tree). Empty
    *  `files` when `oid` IS HEAD. Rejects {@link AppError} (`noRepo`, `git`). */
