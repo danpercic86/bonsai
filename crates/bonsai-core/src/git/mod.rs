@@ -10,6 +10,7 @@ pub mod commit;
 pub mod conflict;
 pub mod diff;
 pub mod discard;
+pub mod discard_partial;
 pub mod merge;
 pub mod opstate;
 pub mod rebase;

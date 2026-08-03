@@ -39,7 +39,7 @@ pub struct LineSelection {
 
 /// Which way the selected lines move. Encoded by the command, not a wire arg.
 #[derive(Clone, Copy)]
-enum Direction {
+pub(crate) enum Direction {
     /// Index moves toward the workdir (old = index, new = workdir).
     Stage,
     /// Index moves toward HEAD (old = HEAD, new = index).
@@ -71,7 +71,7 @@ pub fn unstage_partial(
 /// The stale-selection error (§2.5): a coordinate absent from the freshly
 /// recomputed diff, a pathspec that matched nothing, or a byte range that no
 /// longer lines up (a TOCTOU race between the diff and the blob read).
-fn stale() -> AppError {
+pub(crate) fn stale() -> AppError {
     AppError::Other("selection is stale; refresh the diff".to_string())
 }
 
@@ -235,7 +235,7 @@ fn apply_partial(
 }
 
 /// Stage-0 index blob bytes for `path`, or `b""` when there is no entry.
-fn index_blob_bytes(
+pub(crate) fn index_blob_bytes(
     repo: &git2::Repository,
     index: &git2::Index,
     path: &Path,
@@ -320,7 +320,7 @@ fn mode_for(full: &Path) -> u32 {
 
 /// Splits `bytes` into line slices, each KEEPING its trailing `\n`; only the
 /// last slice may lack one. `b""` -> `vec![]` (§2.4).
-fn split_keep_terminator(bytes: &[u8]) -> Vec<&[u8]> {
+pub(crate) fn split_keep_terminator(bytes: &[u8]) -> Vec<&[u8]> {
     let mut out = Vec::new();
     let mut start = 0usize;
     for (i, &b) in bytes.iter().enumerate() {
@@ -338,7 +338,7 @@ fn split_keep_terminator(bytes: &[u8]) -> Vec<&[u8]> {
 /// Indexes a 1-based line-number slice, mapping any out-of-range / missing
 /// number to a stale-selection error rather than panicking (defends the rare
 /// TOCTOU race between the recomputed diff and the blob read).
-fn nth<'a>(lines: &[&'a [u8]], n: Option<u32>) -> Result<&'a [u8], AppError> {
+pub(crate) fn nth<'a>(lines: &[&'a [u8]], n: Option<u32>) -> Result<&'a [u8], AppError> {
     let n = n.ok_or_else(stale)?;
     let idx = (n as usize).checked_sub(1).ok_or_else(stale)?;
     lines.get(idx).copied().ok_or_else(stale)
@@ -350,7 +350,7 @@ fn nth<'a>(lines: &[&'a [u8]], n: Option<u32>) -> Result<&'a [u8], AppError> {
 /// changes applied. **Unstage** = NEW (index) with selected changes undone
 /// (adds removed, dels restored from HEAD) and unselected changes kept. Both
 /// fill inter-hunk gaps from the base side by 1-based line number.
-fn reconstruct<'a>(
+pub(crate) fn reconstruct<'a>(
     dir: Direction,
     hunks: &[Hunk],
     old_lines: &[&'a [u8]],
@@ -442,7 +442,7 @@ fn reconstruct<'a>(
 /// EOF in its SOURCE file but is now interior) gets a single `\n`; the final
 /// slice keeps its own terminator state (§2.4). This is what makes CRLF +
 /// no-EOF-newline byte-exact.
-fn assemble(lines: &[&[u8]]) -> Vec<u8> {
+pub(crate) fn assemble(lines: &[&[u8]]) -> Vec<u8> {
     let mut out = Vec::new();
     let last = lines.len().wrapping_sub(1);
     for (i, s) in lines.iter().enumerate() {

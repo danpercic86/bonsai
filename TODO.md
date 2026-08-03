@@ -18,8 +18,9 @@ confirmed earlier.)
 
 ## P28 — Discard hunk + status-panel UX (double-click stage, section styling) — **in-progress** (2026-08-03)
 
-Current step: increment A (double-click + Staged/Changes styling) at senior-dev; architect writing
-docs/contracts/P28-discard-hunk.md in parallel. Plan (user-approved):
+Current step: A done+committed (14c17c5, reviewer APPROVE, harness-verified). B (backend
+discard_partial, all cargo green) at reviewer; C (IPC+UI) at senior-dev in parallel. Then tester
+(CLI-oracle §6.2) → harness verify → commit. Plan (user-approved):
 `~/.claude/plans/1-discard-hunk-button-shimmering-harbor.md`.
 Scope (user-requested 2026-08-03):
 1. Discard hunk button in diff view (full stack: bonsai-core `discard_partial` reusing
@@ -30,6 +31,11 @@ Scope (user-requested 2026-08-03):
 3. Subtle tint + accent header differentiating Staged vs Changes sections (user chose option 1).
 Increments: A = items 2+3 (frontend only) → review → commit. B = item 1 backend+command,
 C = item 1 IPC+UI → review → tester (CLI-oracle tests) → commit.
+Reviewer follow-up notes (non-blocking, contract-conformant): (1) §2.4 normalize_terminators
+rewrites ALL bare-LF lines in a CRLF-majority file under autocrlf=true (mixed-ending files get
+silently normalized; defeats no-op guarantee there) — provenance-aware fix candidate for a
+follow-up; (2) contract §6.1.4 renamed guard is unreachable via diff_index_to_workdir (rename
+states reject as "stale" instead — still zero writes).
 Acceptance (AI gate): cargo suite green (sequential, TMP=D:\Temp), pnpm build, harness: tint
 screenshot, dbl-click stage/unstage vs mock, discard hunk mutates mock state behind ConfirmDialog.
 Acceptance (USER CHECKPOINT): native app — dbl-click feel, real discard hunk, styling check.

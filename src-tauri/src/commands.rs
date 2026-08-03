@@ -26,6 +26,7 @@ use bonsai_core::git::opstate::{read_op_state, RepoOpState};
 use bonsai_core::git::rebase::{self, RebaseOutcome};
 use bonsai_core::git::rebase_interactive::{self, RebaseTodoOp};
 use bonsai_core::git::discard::discard_paths as discard_paths_core;
+use bonsai_core::git::discard_partial::discard_partial as discard_partial_core;
 use bonsai_core::git::remote::{
     add_remote as add_remote_core, fetch_all, list_remotes as list_remotes_core, pull_ff,
     push_current, remove_remote as remove_remote_core, rename_remote as rename_remote_core,
@@ -726,6 +727,38 @@ async fn unstage_partial_inner(
     let workdir = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || {
         unstage_partial_core(&workdir, &path, orig_path.as_deref(), &selection)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Discards the selected changed lines of one tracked working-dir file: the
+/// WORKTREE moves toward the INDEX; the index is never modified (P28 §2.1).
+/// DESTRUCTIVE — the UI confirms first. Empty selection is a no-op. Does NOT
+/// emit `repo-changed` — the frontend refetches imperatively.
+/// Errors: `noRepo` | `git` (untracked) | `other` (stale/unsupported/invalid path).
+#[tauri::command]
+pub async fn discard_partial(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    path: String,
+    orig_path: Option<String>,
+    selection: Vec<LineSelection>,
+) -> Result<(), AppError> {
+    discard_partial_inner(state.inner(), &repo_id, path, orig_path, selection).await
+}
+
+/// Runtime-free core of `discard_partial` (unit-testable without a Tauri app).
+async fn discard_partial_inner(
+    state: &AppState,
+    repo_id: &str,
+    path: String,
+    orig_path: Option<String>,
+    selection: Vec<LineSelection>,
+) -> Result<(), AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        discard_partial_core(&workdir, &path, orig_path.as_deref(), &selection)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -3085,6 +3118,27 @@ mod tests {
             selection,
         ))
         .expect_err("unstage_partial with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+    }
+
+    /// The P28 partial-discard command returns `NoRepo` for an unknown id —
+    /// the gate is `repo_path` before any git2 work.
+    #[test]
+    fn discard_partial_command_requires_an_open_repo() {
+        let state = AppState::default();
+        let selection = vec![LineSelection {
+            kind: bonsai_core::git::diff::LineKind::Add,
+            old_no: None,
+            new_no: Some(1),
+        }];
+        let err = tauri::async_runtime::block_on(discard_partial_inner(
+            &state,
+            MISSING_ID,
+            "file.txt".to_string(),
+            None,
+            selection,
+        ))
+        .expect_err("discard_partial with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
 
