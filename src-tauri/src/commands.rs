@@ -47,9 +47,11 @@ use bonsai_core::git::worktree::{self, WorktreeInfo};
 use bonsai_core::git::tags;
 use bonsai_core::graph::{compute_graph, GraphLayout};
 use bonsai_core::health::{collect_repo_health, RepoHealth};
+use crate::scheduler::{self, JobKind, JobOutcome, SchedulerState};
 use crate::settings::{
-    self, clamp_auto_fetch, clamp_graph_prefs, clamp_pane_widths, AiAutonomy, AutoFetch,
-    GraphPrefs, ListView, PaneWidths, RecentRepo, ThemeChoice,
+    self, clamp_auto_fetch, clamp_graph_prefs, clamp_health_refresh, clamp_pane_widths,
+    AiAutonomy, AutoFetch, GraphPrefs, HealthRefresh, ListView, PaneWidths, RecentRepo,
+    ThemeChoice,
 };
 use crate::state::{AppState, RepoEntry};
 use crate::watcher::spawn_watcher;
@@ -194,6 +196,8 @@ pub struct UiSettings {
     pub pane_widths: PaneWidths,
     pub list_view: ListView,
     pub auto_fetch: AutoFetch,
+    /// Health-refresh background job (P30 D7).
+    pub health_refresh: HealthRefresh,
     pub graph: GraphPrefs,
     /// AI features master toggle (P13).
     pub ai_enabled: bool,
@@ -219,6 +223,8 @@ pub struct UiSettingsPatch {
     /// Whole-struct patch (like `pane_widths`): the frontend sends the entire
     /// nested object when any sub-field changes.
     pub auto_fetch: Option<AutoFetch>,
+    /// Whole-struct patch, like `auto_fetch` (P30 D7).
+    pub health_refresh: Option<HealthRefresh>,
     pub graph: Option<GraphPrefs>,
     /// AI settings (P13); each patches independently.
     pub ai_enabled: Option<bool>,
@@ -246,6 +252,9 @@ fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     }
     if let Some(auto_fetch) = patch.auto_fetch {
         s.auto_fetch = clamp_auto_fetch(auto_fetch);
+    }
+    if let Some(health_refresh) = patch.health_refresh {
+        s.health_refresh = clamp_health_refresh(health_refresh);
     }
     if let Some(graph) = patch.graph {
         s.graph = clamp_graph_prefs(graph);
@@ -280,6 +289,7 @@ pub async fn get_ui_settings(app: tauri::AppHandle) -> Result<UiSettings, AppErr
             pane_widths: s.pane_widths,
             list_view: s.list_view,
             auto_fetch: s.auto_fetch,
+            health_refresh: s.health_refresh,
             graph: s.graph,
             ai_enabled: s.ai_enabled,
             ai_conflict_autonomy: s.ai_conflict_autonomy,
@@ -300,10 +310,11 @@ pub async fn get_ui_settings(app: tauri::AppHandle) -> Result<UiSettings, AppErr
 #[tauri::command]
 pub async fn set_ui_settings(
     app: tauri::AppHandle,
+    sched: tauri::State<'_, SchedulerState>,
     patch: UiSettingsPatch,
 ) -> Result<UiSettings, AppError> {
     let file = settings::settings_file(&app)?;
-    tauri::async_runtime::spawn_blocking(move || {
+    let ui = tauri::async_runtime::spawn_blocking(move || -> Result<UiSettings, AppError> {
         let mut s = settings::load_from(&file);
         apply_patch(&mut s, patch);
         settings::save_to(&file, &s)?;
@@ -312,6 +323,7 @@ pub async fn set_ui_settings(
             pane_widths: s.pane_widths,
             list_view: s.list_view,
             auto_fetch: s.auto_fetch,
+            health_refresh: s.health_refresh,
             graph: s.graph,
             ai_enabled: s.ai_enabled,
             ai_conflict_autonomy: s.ai_conflict_autonomy,
@@ -321,7 +333,17 @@ pub async fn set_ui_settings(
         })
     })
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))??;
+    // P30 D7: push the (already clamped + persisted) job config into the
+    // scheduler so interval/enable changes take effect on the next tick.
+    scheduler::apply_config(
+        &sched,
+        scheduler::JobsConfig {
+            auto_fetch: ui.auto_fetch,
+            health_refresh: ui.health_refresh,
+        },
+    );
+    Ok(ui)
 }
 
 /// Persisted multi-tab session (P3e §6.1): the open tabs (in display order,
@@ -1169,6 +1191,98 @@ async fn get_op_state_inner(state: &AppState, repo_id: &str) -> Result<RepoOpSta
     tauri::async_runtime::spawn_blocking(move || read_op_state(&path))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// One background job's status for the UI readout (P30 contract §3).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JobStatus {
+    pub job: JobKind,
+    pub enabled: bool,
+    pub last_run_ms: Option<i64>,
+    pub last_outcome: Option<JobOutcome>,
+    pub last_error: Option<String>,
+    pub consecutive_failures: u32,
+    pub in_backoff: bool,
+    /// Estimate; `None` when disabled (or never seen by the loop yet).
+    pub next_run_ms: Option<i64>,
+}
+
+/// Background-job status for one open repo — exactly 2 entries (autoFetch,
+/// healthRefresh). Errors: `noRepo` for an unknown repoId (P30 §3).
+#[tauri::command]
+pub async fn get_job_status(
+    state: tauri::State<'_, AppState>,
+    sched: tauri::State<'_, SchedulerState>,
+    repo_id: String,
+) -> Result<Vec<JobStatus>, AppError> {
+    get_job_status_inner(state.inner(), &sched, &repo_id)
+}
+
+/// Runtime-free core of `get_job_status` (unit-testable without a Tauri app).
+fn get_job_status_inner(
+    state: &AppState,
+    sched: &SchedulerState,
+    repo_id: &str,
+) -> Result<Vec<JobStatus>, AppError> {
+    repo_path(state, repo_id)?; // NoRepo gate only
+    let cfg = *sched
+        .cfg
+        .lock()
+        .map_err(|_| AppError::Other("scheduler lock poisoned".to_string()))?;
+    let jobs = sched
+        .jobs
+        .lock()
+        .map_err(|_| AppError::Other("scheduler lock poisoned".to_string()))?;
+    Ok([JobKind::AutoFetch, JobKind::HealthRefresh]
+        .into_iter()
+        .map(|job| {
+            let (enabled, base_ms) = cfg.job_params(job);
+            let rt = jobs
+                .get(&(repo_id.to_string(), job))
+                .cloned()
+                .unwrap_or_default();
+            JobStatus {
+                job,
+                enabled,
+                last_run_ms: rt.last_run_ms,
+                last_outcome: rt.last_outcome,
+                last_error: rt.last_error,
+                consecutive_failures: rt.consecutive_failures,
+                in_backoff: rt.consecutive_failures >= scheduler::BACKOFF_THRESHOLD,
+                next_run_ms: scheduler::next_run_estimate_ms(
+                    enabled,
+                    base_ms,
+                    rt.last_run_ms,
+                    rt.consecutive_failures,
+                ),
+            }
+        })
+        .collect())
+}
+
+/// Manual "run now" (P30 D10): fire-and-forget — `Ok(())` once the job is
+/// started; the result arrives via `job-status-changed`. Ignores backoff
+/// delay; suppression + backoff-reset rules apply as for a scheduled run.
+/// Errors: `noRepo` | `Other("job already running")`.
+#[tauri::command]
+pub async fn run_job_now(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    sched: tauri::State<'_, SchedulerState>,
+    repo_id: String,
+    job: JobKind,
+) -> Result<(), AppError> {
+    let path = repo_path(state.inner(), &repo_id)?;
+    scheduler::start_job_now(
+        &sched,
+        &repo_id,
+        path,
+        job,
+        scheduler::unix_now_ms(),
+        scheduler::emitter_for(app),
+    )
+    .map(|_handle| ()) // detached (fire-and-forget)
 }
 
 /// Merges a local or remote-tracking branch into the current branch (P3c

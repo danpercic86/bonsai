@@ -108,6 +108,39 @@ impl Default for AutoFetch {
     }
 }
 
+/// Health-refresh background job preference (P30 D7/D12). OFF by default;
+/// interval in minutes. A pure `repo-changed` signal job — no git work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct HealthRefresh {
+    pub enabled: bool,
+    pub interval_minutes: u32,
+}
+
+impl Default for HealthRefresh {
+    fn default() -> Self {
+        HealthRefresh {
+            enabled: false,
+            interval_minutes: 30,
+        }
+    }
+}
+
+pub const HEALTH_REFRESH_INTERVAL_MIN: u32 = 1;
+pub const HEALTH_REFRESH_INTERVAL_MAX: u32 = 240;
+
+/// Clamps the health-refresh interval to its documented range; called by both
+/// `load_from` (defend a hand-edited file) and the setter command (P30 D12,
+/// mirrors [`clamp_auto_fetch`]).
+pub fn clamp_health_refresh(h: HealthRefresh) -> HealthRefresh {
+    HealthRefresh {
+        enabled: h.enabled,
+        interval_minutes: h
+            .interval_minutes
+            .clamp(HEALTH_REFRESH_INTERVAL_MIN, HEALTH_REFRESH_INTERVAL_MAX),
+    }
+}
+
 /// Graph geometry knobs (P11). Defaults EQUAL the frontend METRICS defaults
 /// (dot 4 / avatar 10 / row 32 / lane 16) — the "no override" baseline.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -196,6 +229,9 @@ pub struct Settings {
     /// Auto-fetch preference (P11). Additive `#[serde(default)]`; a legacy file
     /// without this key loads with `AutoFetch::default()`.
     pub auto_fetch: AutoFetch,
+    /// Health-refresh background job (P30). Additive `#[serde(default)]`; a
+    /// legacy file without this key loads with `HealthRefresh::default()`.
+    pub health_refresh: HealthRefresh,
     /// Graph geometry knobs (P11). Additive `#[serde(default)]`; a legacy file
     /// without this key loads with `GraphPrefs::default()`.
     pub graph: GraphPrefs,
@@ -246,6 +282,7 @@ impl Default for Settings {
             open_repos: Vec::new(),
             active_repo: None,
             auto_fetch: AutoFetch::default(),
+            health_refresh: HealthRefresh::default(),
             graph: GraphPrefs::default(),
             ai_enabled: true,
             ai_conflict_autonomy: AiAutonomy::default(),
@@ -272,6 +309,7 @@ pub fn load_from(file: &Path) -> Settings {
     // values (contract §2.1).
     s.pane_widths = clamp_pane_widths(s.pane_widths);
     s.auto_fetch = clamp_auto_fetch(s.auto_fetch);
+    s.health_refresh = clamp_health_refresh(s.health_refresh);
     s.graph = clamp_graph_prefs(s.graph);
     s
 }
@@ -859,6 +897,84 @@ mod tests {
         std::fs::write(&file, json).expect("write unknown-theme settings.json");
 
         assert_eq!(load_from(&file), Settings::default());
+    }
+
+    /// `clamp_health_refresh` clamps below-min/above-max intervals, passes
+    /// in-range through, and carries `enabled` untouched (P30 D12).
+    #[test]
+    fn clamp_health_refresh_clamps_range() {
+        assert_eq!(
+            clamp_health_refresh(HealthRefresh {
+                enabled: true,
+                interval_minutes: 0,
+            }),
+            HealthRefresh {
+                enabled: true,
+                interval_minutes: HEALTH_REFRESH_INTERVAL_MIN,
+            }
+        );
+        assert_eq!(
+            clamp_health_refresh(HealthRefresh {
+                enabled: false,
+                interval_minutes: 9999,
+            }),
+            HealthRefresh {
+                enabled: false,
+                interval_minutes: HEALTH_REFRESH_INTERVAL_MAX,
+            }
+        );
+        let in_range = HealthRefresh {
+            enabled: true,
+            interval_minutes: 60,
+        };
+        assert_eq!(clamp_health_refresh(in_range), in_range);
+    }
+
+    /// Non-default `health_refresh` round-trips; a pre-P30 file without the
+    /// key loads the default; an out-of-range on-disk value is clamped on
+    /// load (P30 §3 — serde back-compat guarantee for the new field).
+    #[test]
+    fn health_refresh_roundtrip_backcompat_and_clamp() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let s = Settings {
+            health_refresh: HealthRefresh {
+                enabled: true,
+                interval_minutes: 45,
+            },
+            ..Default::default()
+        };
+        save_to(&file, &s).expect("save settings");
+        assert_eq!(load_from(&file), s);
+        let raw = std::fs::read_to_string(&file).expect("read settings.json");
+        assert!(raw.contains("\"healthRefresh\""));
+
+        // Pre-P30 file (no healthRefresh key) → default, other fields kept.
+        let legacy = r#"{
+            "version": 1,
+            "recentRepos": [],
+            "theme": "light",
+            "autoFetch": { "enabled": true, "intervalMinutes": 15 }
+        }"#;
+        std::fs::write(&file, legacy).expect("write legacy settings.json");
+        let loaded = load_from(&file);
+        assert_eq!(loaded.health_refresh, HealthRefresh::default());
+        assert!(loaded.auto_fetch.enabled);
+        assert_eq!(loaded.theme, ThemeChoice::Light);
+
+        // Out-of-range on-disk value is clamped on load.
+        let corrupt = r#"{
+            "version": 1,
+            "recentRepos": [],
+            "healthRefresh": { "enabled": true, "intervalMinutes": 0 }
+        }"#;
+        std::fs::write(&file, corrupt).expect("write corrupt settings.json");
+        let loaded = load_from(&file);
+        assert_eq!(
+            loaded.health_refresh.interval_minutes,
+            HEALTH_REFRESH_INTERVAL_MIN
+        );
+        assert!(loaded.health_refresh.enabled);
     }
 
     /// Save/load a `Settings` with non-default AI fields round-trips exactly

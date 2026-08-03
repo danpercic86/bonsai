@@ -49,7 +49,6 @@ import type {
   AiDiffTarget,
   AiDigestRange,
   AiResolveProposal,
-  AutoFetchSettings,
   BlameLine,
   BranchInfo,
   BranchesSnapshot,
@@ -120,8 +119,6 @@ export interface RepoWorkspaceProps {
   graph: GraphPrefs;
   /** P11d §4.3: bumped by App on every graph-knob change → GraphCanvas re-measure. */
   metricsVersion: number;
-  /** P11e §5: auto-fetch preference; drives the active-tab-only interval timer. */
-  autoFetch: AutoFetchSettings;
   /** P13 §8: AI assistance settings + CLI health (App owns these + consent). */
   aiEnabled: boolean;
   aiConflictAutonomy: AiAutonomy;
@@ -148,7 +145,6 @@ export function RepoWorkspace({
   globalModalOpen,
   graph: graphPrefs,
   metricsVersion,
-  autoFetch,
   aiEnabled,
   aiConflictAutonomy,
   aiConsented,
@@ -961,31 +957,10 @@ export function RepoWorkspace({
     refetchCompare,
   ]);
 
-  // P11e §5: auto-fetch timer — ACTIVE tab only, OFF by default. Gated on
-  // `active && autoFetch.enabled`; the interval reschedules only when the tab
-  // activation or the settings change (NOT on every mutation — `mutating` is read
-  // through `mutatingRef`). A tick skips while a mutation is in flight; otherwise
-  // it fetches and, only when refs actually moved, refreshes + shows a quiet info
-  // toast. No-ops are silent; errors surface as a quiet warning (never a banner).
-  useEffect(() => {
-    if (!active || !autoFetch.enabled) return;
-    const tick = () => {
-      if (mutatingRef.current) return;
-      void ipc
-        .fetch(repoId)
-        .then((res) => {
-          const updated = res.remotes.reduce((n, r) => n + r.updatedRefs, 0);
-          if (updated > 0) {
-            void refreshAllRef.current();
-            pushToast('info', `Fetched ${updated} ref${updated === 1 ? '' : 's'}`);
-          }
-        })
-        .catch((e) => pushToast('warning', `Auto-fetch failed: ${errorMessage(e)}`));
-    };
-    const id = window.setInterval(tick, autoFetch.intervalMinutes * 60000);
-    return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, autoFetch.enabled, autoFetch.intervalMinutes, repoId]);
+  // P30 §6: the P11e frontend auto-fetch timer is GONE — auto-fetch now runs
+  // in the Rust scheduler for ALL open repos (scheduler.rs); data refresh
+  // arrives via the emitted `repo-changed`. Status readout + backoff toast
+  // land in P30b via the `job-status-changed` event.
 
   // Manual refresh (button + Ctrl+R/F5).
   const handleRefresh = useCallback(async () => {

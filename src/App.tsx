@@ -758,7 +758,6 @@ export default function App() {
                 globalModalOpen={globalModalOpen}
                 graph={graph}
                 metricsVersion={metricsVersion}
-                autoFetch={autoFetch}
                 aiEnabled={aiEnabled}
                 aiConflictAutonomy={aiConflictAutonomy}
                 aiConsented={aiConsented}

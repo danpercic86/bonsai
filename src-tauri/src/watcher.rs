@@ -158,9 +158,11 @@ mod tests {
         // The quiet window must comfortably exceed the 300 ms debounce so a
         // stale burst has fully discharged before the test body runs; 1.5 s
         // (up from 700 ms) because heavy parallel-test load (M4 grew the lib
-        // suite) delays the lazy flush enough to slip past a shorter drain.
+        // suite) delays the lazy flush enough to slip past a shorter drain;
+        // 2.5 s (P30) because the scheduler integration tests added git-CLI
+        // heavy parallel load that delayed the flush past 1.5 s again.
         std::thread::sleep(Duration::from_millis(500));
-        while rx.recv_timeout(Duration::from_millis(1500)).is_ok() {}
+        while rx.recv_timeout(Duration::from_millis(2500)).is_ok() {}
         (handle, rx)
     }
 

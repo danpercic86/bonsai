@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod mcp;
+pub mod scheduler;
 pub mod settings;
 pub mod state;
 pub mod watcher;
@@ -12,6 +13,34 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(state::AppState::default())
         .manage(mcp::McpServerState::default())
+        .manage(scheduler::SchedulerState::default())
+        .setup(|app| {
+            // P30: seed the scheduler config from persisted settings, then
+            // start the ONE global tick loop (D2). Settings-load failure is
+            // non-fatal — the scheduler just starts with defaults (disabled).
+            let handle = app.handle().clone();
+            let sched = app.state::<scheduler::SchedulerState>();
+            match settings::settings_file(&handle) {
+                Ok(file) => {
+                    let s = settings::load_from(&file);
+                    scheduler::apply_config(
+                        &sched,
+                        scheduler::JobsConfig {
+                            auto_fetch: s.auto_fetch,
+                            health_refresh: s.health_refresh,
+                        },
+                    );
+                }
+                Err(e) => {
+                    eprintln!("bonsai: cannot resolve settings file (non-fatal): {e}");
+                }
+            }
+            tauri::async_runtime::spawn(scheduler::run_scheduler(
+                handle,
+                std::time::Duration::from_secs(scheduler::TICK_SECONDS),
+            ));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::open_repo,
             commands::close_repo,
@@ -46,6 +75,8 @@ pub fn run() {
             commands::get_session,
             commands::set_session,
             commands::get_op_state,
+            commands::get_job_status,
+            commands::run_job_now,
             commands::merge_branch,
             commands::commit_merge,
             commands::abort_merge,

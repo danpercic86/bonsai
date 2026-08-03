@@ -22,7 +22,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 rmcp = { version = "3.0.1", features = ["server", "macros", "transport-streamable-http-server"] }
 axum = "0.8"
-tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
 rand = "0.9"
 subtle = "2"
 
