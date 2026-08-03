@@ -30,7 +30,254 @@ last fetch / between refs / last N days), reusing run_claude + the ai_analyze_di
 patterns and the existing AiOutputPanel; write-free; 256 KiB payload cap like P25. Standard loop;
 guardrails unchanged (D:\Temp\bonsai-scratch, TMP/TEMP=D:\Temp, no concurrent test+clippy, mock.ts
 compiling, orchestrator commits).
-**Current step:** P28 — architect writing docs/contracts/P28-what-changed-digest.md.
+Contract: docs/contracts/P28-what-changed-digest.md (architect, defaults accepted): NEW ai_digest
+command + AiDigestRange (betweenRefs merge-base `from...to` w/ unrelated-histories fallback;
+sinceCommit = sugar for betweenRefs{from,to:HEAD}; lastDays first-parent committer-time cutoff);
+payload = RANGE header + ≤200 commit-meta lines + diff → existing 256 KiB cap; result = AiAnalysis;
+errors = existing AppError kinds; empty range → AiFailed before CLI. Mock aiDigest canned per range
+kind + ?ai=off gate. UI: toolbar "✨ What changed…" → WhatChangedDialog (3-mode picker) → runDigest →
+AiOutputPanel. Sub-increments: **P28a** core+cmd+IPC triple+tests → **P28b** UI.
+- **P28a** (reviewer APPROVE, 0 must-fix) — commit 70f8182. ai_explain.rs: AiDigestRange (serde
+  kind-tagged camelCase), resolve_digest_range (betweenRefs merge-base TOPOLOGICAL|TIME + empty-tree
+  unrelated-histories fallback; sinceCommit → BetweenRefs{oid,HEAD}; lastDays first-parent
+  committer-time cutoff + boundary tree, days=0→InvalidName, clamp 3650), digest_changes (empty range
+  → AiFailed BEFORE CLI; RANGE/COMMITS(≤200 + overflow)/DIFF payload → cap_review_payload; WRITE-FREE
+  verified — no ODB writes). ai_digest command (consent gate first) + IPC triple + mock (?ai=off gate).
+  8 unit + 6 ai_digest_cli oracle tests (git-log oracles); workspace 656 green; clippy/tsc/build clean.
+  NITs (cosmetic, deferred): detached-HEAD label dead branch (contract quirk); unrelated-histories note
+  wording drift vs gather_branch; stub-fixture coupling.
+- **P28b** (reviewer APPROVE, 0 must-fix; 1 SHOULD-FIX + plural nit folded by orchestrator) — commit
+  a524f5b. WhatChangedDialog.tsx (3 radio modes, to=current-branch default, days=7 min 1, branch
+  datalist, first-submit validation, capture-phase Esc + overlay cancel); RepoWorkspace runDigest
+  (sibling of runAnalyze, shared aiPanelReqId guard) + toolbar "✨ What changed…" gated aiEligible +
+  whatChangedOpen in globalModalOpen; dialog-radio CSS. FOLDED: focus effect keyed [open,mode] (reopen
+  focus loss) + "last 1 day" pluralization. tsc + build clean.
+- **P28b AI GATE (frontend) PASSED (2026-08-03).** Harness (mock, hidden pane → DOM/JS-driven):
+  toolbar button appears only when aiEligible (localStorage consent) and vanishes under ?ai=off;
+  dialog defaults correct (betweenRefs checked, to=main, focus lands on from-input); empty submit →
+  "Enter both refs" + dialog stays; betweenRefs feature/sidebar..main → AiOutputPanel "What changed:
+  feature/sidebar..main" + canned prose + $0.01; lastDays 1 → title "last 1 day" (singular); since
+  abc1234def → "What changed since abc1234"; Esc closes; zero console errors.
+- **P28 tester** — full regression PASS, no bugs: bonsai 71 + core lib 255 + ai_digest_cli 6→**10**
+  (tag/short-oid refs; first-parent-vs-full-walk divergence on merge history; unicode subjects/authors
+  verbatim in COMMITS; 250-commit git2 fixture → exactly 200 meta lines + "... and 50 more") + all
+  ~35 integration suites 0 failed (remote_cli 18/18 — the tracked pull flake did NOT reproduce);
+  clippy --workspace --tests clean; tsc + build clean. Checklist: docs/contracts/P28-user-checklist.md.
+- **P28 AI GATE PASSED (2026-08-03).** Commits: 70f8182 P28a · a524f5b P28b · 8611cc9 tests. Backend
+  oracle suites + frontend browser harness both verified; zero regressions. Roadmap B3 delivered.
+
+**P28 awaiting USER CHECKPOINT** (native pnpm tauri dev, per docs/contracts/P28-user-checklist.md,
+real claude CLI): digest between real refs / last-7-days / since a pasted oid produce sane prose;
+AI-disabled hides the toolbar button; huge range shows the truncation note; digest writes nothing.
+**Current step:** P28 DONE (AI gate passed, awaiting USER CHECKPOINT).
+
+## P29 — D1 repo-health dashboard — **in-progress** (2026-08-03)
+
+Second of the four approved P28-scope features. READ-ONLY health overlay panel. Contract:
+docs/contracts/P29-repo-health.md (architect, defaults accepted): new crates/bonsai-core/src/health.rs,
+RepoHealth = 4 independent Section<T>{data,error,elapsedMs} sections (stats/branches/workingState/
+structure — one failing section can't sink the panel); single get_repo_health command, sequential
+collectors in one spawn_blocking; perf caps REVWALK_CAP 100k / ODB_SCAN_CAP 500k header-only /
+200k-entry dir walks / top-10 heaps / 10 MiB large-file threshold, `capped` flags rendered as ≥;
+reuse find_stale_branches/status/opstate/list_worktrees/list_submodules/scan_inventory/ahead-behind.
+D6 trim (FLAG FOR USER): largest pack blobs = oid+size only (no blob→path history walk); worktree
+largest files DO get paths. Sub-increments: **P29a** core+tests → **P29b** cmd+IPC+mock (-err repo-id
+harness hook) → **P29c** RepoHealthPanel overlay (mirrors AiAssetsPanel).
+- **P29a** (reviewer APPROVE, 0 must-fix; 3 deviations ACCEPTED) — commit 2ac2f35. health.rs (~1080
+  lines): full §4 wire types, 6 caps as consts w/ capped-only-on-overflow semantics, ODB read_header-
+  only scan, top-10 min-heaps, D4 never-errs fold, READ-ONLY trace clean (no ODB/index/fs writes in
+  production paths), reuse verified (stale/status/opstate/worktrees/submodules/scan_inventory,
+  no duplicated logic). ACCEPTED deviations: (1) Cargo.toml [profile.dev.package.libgit2-sys]
+  opt-level=2 (perf bound at -O0 impossible; one-time rebuild); (2) perf test warm-up + best-of-3
+  (perf_gate precedent; 31k fixture total 1733 ms < 2 s); (3) section-isolation via injected-Err +
+  non-repo dir. 11 new health unit tests (rev-list/for-each-ref oracles); core lib 266 + all 36
+  integration suites green; clippy clean.
+  **P29b CARRY-FORWARDS:** (1) add a mixed-state section test (one real collector fails, three
+  succeed) at the command layer or via collect_stats_with_caps on a sabotaged repo; (2) SHOULD-FIX
+  health.rs:236 — find_commit failure inside revwalk sinks the whole stats section; degrade to
+  count-and-skip on unreadable commits.
+- **P29b** (reviewer APPROVE, 0 must-fix; wire parity verified field-by-field) — commit bc89616.
+  get_repo_health command (repo_path→spawn_blocking, NoRepo-only surface, list_worktrees pattern) +
+  registration + test; IPC triple (9 TS types mirror Rust serde 1:1 incl. RepoOpState reuse); mock
+  fixture covers every §7 warn state (stale 3/1, ahead 2/behind 5, capped counts, 2 large files,
+  drift 2, locked+prunable worktree, out-of-sync submodule, merge opState, stash 2) + `-err` repo-id
+  hook (stats section → error envelope). CARRY-FORWARDS LANDED: find_commit degrade (count-and-skip,
+  documented as organically unreachable — revwalk iterator errors first) + mixed_state_real_collector_
+  failure test (deleted loose object → stats errors, 3 sections live). core health 12 tests + bonsai
+  72 green; clippy/tsc/build clean.
+- **P29c** (reviewer APPROVE, 0 must-fix; 1 SHOULD-FIX folded by orchestrator) — commit 1402c99.
+  RepoHealthPanel.tsx (AiAssetsPanel-pattern overlay: fetchIdRef stale guard, fetch on open/repoId
+  change, repo-changed refresh only-while-open/this-repo, Refresh, per-section skeleton + inline
+  error-banner w/o hiding siblings, capped→"≥"+chip, warn/ok chips via existing asset-chip classes);
+  📊 header button (icon-only w/ title/aria "Health", mirrors 🤖 — accepted deviation) + healthOpen
+  in globalModalOpen/Escape; utils/format.ts formatBytes extracted from CloneDialog + GiB (CloneDialog
+  ≥1 GiB now renders GiB — accepted improvement). FOLDED: "unknown" chip when ahead/behind null
+  (upstream present but graph_ahead_behind failed). tsc + build clean.
+- **P29c AI GATE PASSED (2026-08-03).** Harness (mock, hidden pane → DOM/JS-driven): 📊 opens panel;
+  all 4 sections + "generated just now"; every §7 warn chip renders (capped ×3, 2 large, ↑2/↓5,
+  3 merged/1 gone, 1 conflicted, merge-in-progress, 1 uninitialized/1 out-of-sync submodule,
+  1 locked/1 prunable worktree, 2 files drifted); ≥ rendered for capped counts; `-err` repo id →
+  stats section shows inline "simulated slow scan failed" while the other 3 sections render data;
+  Esc closes. Console: only a stale HMR dep-array artifact from the live-edit session (App Esc
+  effect legitimately grew 4→5 deps under Fast Refresh); count did NOT grow across a hard reload +
+  fresh panel exercise — zero real errors.
+- **P29 tester** — full regression PASS, no bugs: workspace **681 passed, 0 failed** (bonsai 72 +
+  core lib 267 + NEW health_cli 8 + all suites; both known flakes passed this run); clippy clean;
+  tsc + build clean. health_cli.rs: rev-list/count-objects/porcelain/stash/for-each-ref/left-right/
+  worktree-porcelain oracles + 3 edge repos (unborn/detached/gitdir-only, no panics) + the §6
+  READ-ONLY invariant (status/refs/HEAD/stash/index byte-identical before/after). WATCH ITEMS:
+  (1) perf headroom thin — branches section (find_stale_branches) dominates, worst-of-3 1986 ms vs
+  2000 ms budget; consider a stale-subscan budget in a follow-up; (2) doc-level deviation: unborn
+  repo returns currentBranch Some(symbolic target)+unborn:true vs contract's None — behavior pinned
+  by test, amend contract wording later (more useful as-is).
+- **P29 AI GATE PASSED (2026-08-03).** Commits: 2ac2f35 P29a · bc89616 P29b · 1402c99 P29c ·
+  61bdbdc tests. Backend oracle suites + frontend harness both verified; zero regressions.
+  Roadmap D1 delivered.
+
+**P29 awaiting USER CHECKPOINT** (native pnpm tauri dev, per docs/contracts/P29-user-checklist.md):
+📊 panel on a real repo shows sane numbers vs git CLI; responsive on a big repo; Refresh +
+repo-changed refresh work; opening the panel changes nothing (`git status` identical).
+**Current step:** P29 DONE (AI gate passed, awaiting USER CHECKPOINT).
+
+## P30 — B5 background-job scheduler — **in-progress** (2026-08-03)
+
+Third of the four approved P28-scope features. v1 jobs strictly NON-DESTRUCTIVE: auto-fetch +
+read-only health/status refresh; suppressed while opstate != none; no-overlap; backoff after 3
+failures (base*2^(f-2), cap 8x); background fetch NEVER prompts (silent-fail into backoff).
+Contract: docs/contracts/P30-scheduler.md (architect, defaults accepted; FLAGGED FOR USER:
+(1) job config is GLOBAL not per-repo — reuses existing Settings.auto_fetch machinery;
+(2) behavior change: auto-fetch now covers ALL open tabs, not just the active one). Design:
+SUBSUMES the P11e frontend timer (RepoWorkspace.tsx:964-988 setInterval deleted) → one global
+tokio 15s coarse tick loop in src-tauri/src/scheduler.rs, membership from AppState.repos each
+tick, pure time-injected planner plan(...)→Run|SkipOverlap|Wait, new sibling health_refresh
+setting; commands get_job_status/run_job_now; config via existing get/set_ui_settings; new
+job-status-changed event (enteredBackoff → single toast) + existing repo-changed for refresh;
+mock ticks minutes-as-seconds + failure shim. Sub-increments: **P30a** Rust core+cmds+tests →
+**P30b** IPC triple + Settings/status UI + mock.
+- **P30a** (reviewer APPROVE, 0 must-fix; safety trace passed) — commit 467be65. scheduler.rs: pure
+  planner (due/first-sight D13/backoff 2^(f-2) cap 8x/overlap), SchedulerState(Arc<Inner>+Deref —
+  accepted deviation, detached futures need 'static), tick_once w/ injectable emitter+time, execute_
+  job (opstate suppression → fetch_all ONLY — reviewer independently confirmed no-prompt: acquire_
+  cred helper→agent→default once each → CRED_EXHAUSTED, no prune/merge/push anywhere), job-status-
+  changed (enteredBackoff exactly on 2→3), run_job_now/get_job_status commands; settings
+  health_refresh sibling w/ serde back-compat + double clamp; P11e frontend timer DELETED (autoFetch
+  prop chain removed; App keeps Settings ownership). bonsai 87 green ×2; clippy/tsc/build clean.
+  Watcher test drain 1.5s→2.5s (test-only, accepted; if a 3rd bump is ever needed, serialize the
+  fixture instead).
+  **P30b CARRY-FORWARDS:** (S1 SHOULD-FIX) poisoned-mutex paths silently kill the scheduler + leak
+  running=true (scheduler.rs:277-285, 415-417, apply_config:119) → recover via PoisonError::into_
+  inner(); (N1) per-tick Skipped event chatter during a slow fetch → emit only first skip;
+  (§6.2 gap) "Fetched N refs" toast gone until P30b lands the status surface.
+- **P30b** (reviewer REQUEST-CHANGES → orchestrator folded the MUST-FIX + SHOULD-FIX + NIT, gates
+  re-run green) — commit cb2f802. IPC triple (JobStatus/JobStatusChangedPayload/HealthRefreshSettings,
+  onJobStatusChanged on IpcApi — accepted house-pattern deviation); SettingsPanel "Background jobs"
+  (autoFetch + healthRefresh, §6.3 all-open-repos help text); RepoWorkspace D11 readout ("Fetched Xm
+  ago" / "Auto-fetch paused — retrying in Xm") + single enteredBackoff toast + restored "Fetched N
+  refs" toast; mock minutes-as-seconds ticks + bonsaiMockJobFail shim + onRepoChanged real registry.
+  CARRY-FORWARDS LANDED: S1 lock_recover all scheduler sites + poisoned_locks_recover test; N1
+  first-skip-only emission. ORCHESTRATOR FOLDS (from review): MUST-FIX get_job_status_inner now uses
+  pub(crate) lock_recover (poison no longer bricks the command forever); SHOULD-FIX event handler
+  upserts (readout self-heals when the mount snapshot predates enabling or failed) + enabled:true on
+  event; NIT serde skip_serializing_if on updatedRefs/error. bonsai 88 green; clippy/tsc/build clean.
+- **P30b AI GATE PASSED (2026-08-03).** Harness (mock, minutes-as-seconds): Background-jobs settings
+  round-trip through localStorage (autoFetch on/5m, healthRefresh off/30); ticks fire "Fetched 2 refs"
+  toast + readout "Fetched <1m ago"; bonsaiMockJobFail=1 → readout "Auto-fetch paused — retrying in
+  1m" + error tooltip; shim off → recovers to "Fetched <1m ago"; zero new console errors (only the
+  2 stale HMR dep-array entries from the live-edit session). NOTE: earlier duplicate toasts were a
+  stale two-tab session (one workspace per tab, each toasts — expected), verified single after reload.
+- **P30 tester** — full regression PASS, no P30 bugs: bonsai_lib 91/92 (scheduler 14→**18**: legacy
+  settings through apply_config; repo closed mid-flight → no ghost running/no panic; vanished remote
+  → Failed into backoff without wedging; run-now w/o remotes → Failed "no remotes configured" —
+  NOTE: a remoteless repo with autoFetch on accumulates silent backoff, by design) + core 267 + all
+  41 integration suites green; clippy/tsc/build clean. FLAKE (pre-existing category, NOT P30):
+  watcher fires_once_after_touch / git_internals_filtered fail only under full-parallel load (stale
+  debounced event escapes the 2.5s drain); pass 5/5 isolated. Flagged as chip task_07e392f9 —
+  serialize the watcher fixture, do NOT widen the drain again. Checklist:
+  docs/contracts/P30-user-checklist.md.
+- **P30 AI GATE PASSED (2026-08-03).** Commits: 467be65 P30a · cb2f802 P30b · 4bad505 tests.
+  Planner/backoff/no-overlap/suppression state machine + local-bare-remote integration + browser
+  harness all verified; zero regressions. Roadmap B5 delivered (v1: non-destructive jobs only).
+
+**P30 awaiting USER CHECKPOINT** (native pnpm tauri dev, per docs/contracts/P30-user-checklist.md):
+10-min real network auto-fetch via credential helper with NO prompt storms; offline → exactly one
+backoff toast + paused readout, recovery when back online; settings persist across restart;
+all-open-tabs fetch; idle CPU sane; suppression during a conflicted merge (SCRATCH repo).
+**Current step:** P30 DONE (AI gate passed, awaiting USER CHECKPOINT).
+
+**Watcher flake fix (chip task_07e392f9, user-initiated) — DONE (2026-08-03), commit 1af2c3a:**
+fixture-based watcher tests serialized via a static poison-recovering mutex (is_relevant_rules
+stays parallel); drain window NOT widened per reviewer guidance. 10 consecutive green
+`cargo test -p bonsai --lib` runs post-fix. Caveat: the first post-edit run failed 2 tests whose
+names went uncaptured (before 10× green); if the lib suite ever fails again under load, capture
+names first — do not assume watcher.
+
+## P31 — per-worktree AI contexts — **in-progress** (2026-08-03)
+
+Fourth/last of the approved P28-scope features (Theme A tie-in deferred from P27). Contract:
+docs/contracts/P31-worktree-ai-contexts.md (architect, defaults accepted incl. the two flagged
+judgment calls: in-store worktreeActivations map (not sidecar) + BLOCK on dirty tracked targets /
+allow untracked overwrites). Design: profiles SHARED in main worktree's .bonsai/profiles.json
+(commondir().parent() resolution; worktree.rs main_workdir → pub(crate)); schema v2 adds
+worktreeActivations BTreeMap keyed by git worktree NAME ("@main" reserved; v1 loads unchanged,
+v2 stamped on next save, legacy activeProfile mirrors "@main"); ONE write path activate_profile_
+for_worktree (activate_profile becomes wrapper); guards: locked/prunable/invalid refusal + dirty-
+target block + P24 path containment; 3 new commands list_worktree_contexts/preview_worktree_
+profile/activate_worktree_profile; WorktreeContextDialog matrix + ProfileActivateDialog
+worktreeName ext; P29 drift-rollup integration deferred (D9). Sub-increments: **P31a** core+tests
+→ **P31b** commands+IPC+mock → **P31c** UI.
+- **P31a** (reviewer APPROVE, 0 must-fix; both deviations accepted) — commit f0122ae. profiles.rs
+  schema v2 (worktreeActivations BTreeMap serde-default/skip-empty, version stamped only in persist,
+  reads never rewrite — v1 byte-safety tested), "@main" key + legacy mirror both directions + stale-
+  key GC, resolve_store_root (commondir), worktree_key_for (gitdir-basename + find_worktree +
+  canonical fallback, move-stable), single write path activate_profile_for_worktree (legacy fns →
+  wrappers), ensure_eligible invalid→prunable→locked, ensure_targets_clean w/ ACCEPTED bytes-equal
+  exemption (raw-bytes compare: CRLF drift can only over-block; equal bytes → loop writes nothing —
+  provably un-losable; needed for §9.3 idempotency); worktree_context.rs list_worktree_contexts
+  matrix. 13 new tests; core lib 280 + integration green; clippy clean.
+  **P31b CARRY-FORWARDS:** (1) SHOULD-FIX gitignored targets false-block — Status::IGNORED must be
+  treated like WT_NEW (teams gitignore AI instruction files; use intersect-style tracked-modified
+  checks, also covers NIT 5); (2) SHOULD-FIX D5 wrappers' unwrap_or(@main) silently retargets a
+  linked worktree whose identity fails to resolve — fall back to @main only when open_repo_at fails,
+  propagate identity errors for real repos.
+- **P31b** (reviewer APPROVE, 0 must-fix; 1 SHOULD-FIX folded by orchestrator) — commit 5b8af5f.
+  3 commands (house pattern, preview-is-the-gate posture matching P24) + registration + round-trip
+  test; IPC triple (WorktreeContextStatus parity pinned by serde snapshot test; worktreeActivations
+  optional Record); stateful mock (shared per-worktree file maps; seeds feature-login drifted+missing
+  / release-1.2 locked / hotfix-stale invalid; refusal strings byte-identical to backend; activation
+  flips only the target row; legacy activateProfile records under the tab's key). CARRY-FORWARDS
+  LANDED: intersect-style tracked-dirty guard (IGNORED/WT_NEW never block) + calling_worktree_key
+  (@main fallback only for non-openable dirs, identity errors propagate). ORCHESTRATOR FOLD:
+  CONFLICTED added to the tracked-dirty set (mid-merge target = most losable). Accepted deviation:
+  no D7 dirty-target mock fixture (core fs-oracle covers it; backlog note). core 282 + bonsai 93
+  green; clippy/tsc/build clean.
+- **P31c** (reviewer APPROVE, 0 must-fix; 1 SHOULD-FIX folded by orchestrator) — commit 39b8850.
+  WorktreeContextDialog (matrix: badges/active-profile/drift chips/blockedReason; per-row select +
+  Activate gated EXCLUSIVELY through ProfileActivateDialog — reviewer traced no bypass path; reqId
+  guards; Esc bow-out while gate is up); ProfileActivateDialog worktreeName routing (legacy tab path
+  byte-identical; worktree confirm errors in-dialog); entry points: worktree menu "AI context…" +
+  AiAssetsPanel "Worktrees" button (nested, onActivated→refresh, no re-open loop). FOLDED: preview
+  nonce — a confirm failure clears + refetches the preview so re-confirm is always against the
+  post-failure diff (banner persists across the reload). tsc + build clean. NOTE: dfea4c6 briefly
+  mixed in unrelated staged .claude churn (stashed-skills deletions staged outside this session) —
+  reset + recommitted clean as 39b8850; the churn is back to UNSTAGED, still awaiting user decision.
+- **P31c AI GATE PASSED (2026-08-03).** Harness (mock, hidden pane → DOM/JS-driven): AiAssetsPanel
+  "Worktrees" → matrix w/ 4 seeded rows (@main active opus-rich; feature-login active cheap-terse +
+  1 drifted/4 missing; release-1.2 locked → disabled + "pinned for QA"; hotfix-stale invalid →
+  disabled); locked/invalid Activate buttons disabled; Activate feature-login → preview gate
+  "Activate opus-rich in feature-login" w/ per-target Current/Proposed diffs → confirm flips ONLY
+  that row (active opus-rich, missing 4→3), gate closes; @main activation round-trip after the fold
+  also green; sidebar "AI context…" menu item verified structurally (synthetic contextmenu doesn't
+  fire in the hidden pane — USER CHECKPOINT). Zero console errors.
+- **Tester (2026-08-03)** — commit 52689d9. New `crates/bonsai-core/tests/worktree_context_cli.rs`
+  (5 fs-oracle tests against the REAL git CLI: two-worktree end-to-end w/ byte-exact files +
+  porcelain-status oracle + v2 store JSON + matrix; `git worktree lock --reason` refusal until
+  unlock; dirty tracked target zero-write refusal; REAL merge-conflict CONFLICTED block w/
+  markers byte-preserved; activation from inside a linked worktree records `wt-a` key, never
+  `@main`) + `docs/contracts/P31-user-checklist.md`. Note: the tester agent was interrupted by a
+  session restart — deliverables verified + run by the orchestrator: new suite 5/5 green, full
+  `cargo test --workspace` exit 0, `pnpm build` (tsc + vite) green.
+**Current step:** P31 DONE (AI gate passed, awaiting USER CHECKPOINT). P28–P31 all at USER
+CHECKPOINT — see docs/contracts/P28..P31-user-checklist.md.
 
 ## P28 — Discard hunk + status-panel UX (double-click stage, section styling) — **DONE (USER CHECKPOINT CONFIRMED 2026-08-03)**
 
