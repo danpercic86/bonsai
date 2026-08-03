@@ -161,6 +161,18 @@ pub fn resolve_store_root(workdir: &Path) -> PathBuf {
     }
 }
 
+/// The worktree key the D5 wrappers operate under. `"@main"` ONLY when the
+/// workdir is not an openable git repo (pure-P24 fallback on a plain folder);
+/// for real repos, identity-resolution failures PROPAGATE — a linked worktree
+/// whose identity cannot be established must never be silently retargeted to
+/// the main worktree's activation slot.
+fn calling_worktree_key(workdir: &Path) -> Result<String, AppError> {
+    if open_repo_at(workdir).is_err() {
+        return Ok(MAIN_WORKTREE_KEY.to_string());
+    }
+    worktree_key_for(workdir)
+}
+
 /// P31 D3. `"@main"` for the main worktree, else the linked worktree's NAME.
 /// `Err(Git)` when `workdir` is not a git worktree at all or its identity
 /// cannot be established.
@@ -267,8 +279,27 @@ fn ensure_targets_clean(wt_root: &Path, targets: &[(&str, &[u8])]) -> Result<(),
             Err(e) if e.code() == git2::ErrorCode::NotFound => continue,
             Err(e) => return Err(e.into()),
         };
-        if status == git2::Status::CURRENT || status == git2::Status::WT_NEW {
-            continue; // clean, or untracked (a prior uncommitted activation)
+        // Block only when the file is TRACKED and modified: intersect against
+        // the tracked-modified flags rather than exact-equality checks, so
+        // untracked files (WT_NEW) and gitignored files (IGNORED) never block —
+        // both mean "git has no committed version to protect" — and combined
+        // flag sets (e.g. WT_NEW | IGNORED) are handled correctly.
+        let tracked_dirty = status.intersects(
+            git2::Status::INDEX_NEW
+                | git2::Status::INDEX_MODIFIED
+                | git2::Status::INDEX_DELETED
+                | git2::Status::INDEX_RENAMED
+                | git2::Status::INDEX_TYPECHANGE
+                | git2::Status::WT_MODIFIED
+                | git2::Status::WT_DELETED
+                | git2::Status::WT_RENAMED
+                | git2::Status::WT_TYPECHANGE
+                // A conflicted target (worktree mid-merge) holds unmerged
+                // content with no committed safety net — most losable of all.
+                | git2::Status::CONFLICTED,
+        );
+        if !tracked_dirty {
+            continue; // clean, untracked, or ignored — nothing of git's to lose
         }
         // Tracked + dirty: allow only the no-op case (bytes already match).
         let full = wt_root.join(rel);
@@ -429,7 +460,7 @@ pub fn preview_profile(
     workdir: &Path,
     name: &str,
 ) -> Result<Vec<ProfilePreviewEntry>, AppError> {
-    let key = worktree_key_for(workdir).unwrap_or_else(|_| MAIN_WORKTREE_KEY.to_string());
+    let key = calling_worktree_key(workdir)?;
     preview_profile_for_worktree(workdir, &key, name)
 }
 
@@ -479,7 +510,7 @@ pub fn preview_profile_for_worktree(
 /// tab records its activation in the shared map automatically; non-repo dirs
 /// keep pure-P24 behavior on `workdir` directly.
 pub fn activate_profile(workdir: &Path, name: &str) -> Result<ProfileActivation, AppError> {
-    let key = worktree_key_for(workdir).unwrap_or_else(|_| MAIN_WORKTREE_KEY.to_string());
+    let key = calling_worktree_key(workdir)?;
     activate_profile_for_worktree(workdir, &key, name)
 }
 
@@ -1062,6 +1093,60 @@ mod tests {
         let act = activate_profile_for_worktree(&main, "feature-x", "q").unwrap();
         assert_eq!(act.results[0].action, TargetWriteAction::Written);
         assert_eq!(std::fs::read(wx.join("GEMINI.md")).unwrap(), b"# new\n");
+    }
+
+    // Carry-forward (a): a GITIGNORED target file never blocks activation —
+    // like untracked, git holds no committed version of it to protect.
+    #[test]
+    fn gitignored_target_does_not_block_activation() {
+        let (_dir, main, wx, _wy) = git_fixture();
+        // GEMINI.md is ignored in the target worktree and holds stale content.
+        std::fs::write(wx.join(".gitignore"), b"GEMINI.md\n").unwrap();
+        std::fs::write(wx.join("GEMINI.md"), b"# old ignored\n").unwrap();
+        save_profile(&main, profile("p", vec![target("gemini", "# fresh\n")])).unwrap();
+
+        let act = activate_profile_for_worktree(&main, "feature-x", "p").unwrap();
+        assert_eq!(act.results[0].action, TargetWriteAction::Written);
+        assert_eq!(std::fs::read(wx.join("GEMINI.md")).unwrap(), b"# fresh\n");
+    }
+
+    // Carry-forward (b): the D5 wrappers fall back to "@main" ONLY for
+    // non-repo dirs. A real linked worktree whose identity cannot be resolved
+    // propagates the error instead of silently retargeting MAIN.
+    #[test]
+    fn wrapper_propagates_identity_errors_for_real_repos() {
+        let (_dir, main, wx, _wy) = git_fixture();
+        save_profile(&main, profile("p", vec![target("gemini", "# g\n")])).unwrap();
+
+        // Break feature-x's identity while keeping its repo openable: move the
+        // admin dir OUT of `.git/worktrees/` and repoint the worktree's `.git`
+        // file at it. The repo still opens (the gitdir layout is intact), but
+        // `find_worktree(<basename>)` fails (not registered under worktrees/)
+        // and the canonical-path fallback scan finds no registered worktrees.
+        let admin_old = main.join(".git").join("worktrees").join("feature-x");
+        let admin_new = main.join(".git").join("ghost");
+        std::fs::rename(&admin_old, &admin_new).unwrap();
+        std::fs::write(
+            wx.join(".git"),
+            format!("gitdir: {}\n", admin_new.display()),
+        )
+        .unwrap();
+
+        // Precondition: the worktree still opens as a repo, but its identity
+        // cannot be established.
+        assert!(open_repo_at(&wx).is_ok(), "worktree repo must still open");
+        assert!(worktree_key_for(&wx).is_err());
+
+        let err = activate_profile(&wx, "p").unwrap_err();
+        assert!(matches!(err, AppError::Git(_)), "got {err:?}");
+        // Nothing was written anywhere, and no activation was recorded.
+        assert!(!main.join("GEMINI.md").exists());
+        assert!(!wx.join("GEMINI.md").exists());
+        assert!(list_profiles(&main).unwrap().worktree_activations.is_empty());
+        assert!(matches!(
+            preview_profile(&wx, "p").unwrap_err(),
+            AppError::Git(_)
+        ));
     }
 
     // §9.5 — D6 eligibility: locked / invalid worktrees refuse preview AND activate.

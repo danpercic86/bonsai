@@ -929,7 +929,11 @@ export interface ContextProfile {
 export interface ProfileStore {
   version: number;
   profiles: ContextProfile[];
+  /** LEGACY mirror of `worktreeActivations["@main"]` (P31 D4). */
   activeProfile?: string | null;
+  /** P31 D3/D4: worktree key (`"@main"` | linked worktree name) → the profile
+   *  last activated INTO that worktree. Omitted by serde when empty. */
+  worktreeActivations?: Record<string, string>;
 }
 
 export interface ProfilePreviewEntry {
@@ -954,6 +958,33 @@ export interface ProfileActivation {
   results: TargetWriteResult[];
   /** The store after `activeProfile` was updated (frontend refreshes from this). */
   store: ProfileStore;
+}
+
+/** P31 §4. One row of the worktree × AI-context matrix. Wire mirror of the
+ *  Rust `WorktreeContextStatus`. */
+export interface WorktreeContextStatus {
+  /** Store key + command argument: `"@main"` | linked worktree name (D3). */
+  worktreeKey: string;
+  /** Display name (main basename / linked name). */
+  name: string;
+  /** Absolute path, forward slashes. */
+  absPath: string;
+  branch: string | null;
+  isMain: boolean;
+  isCurrent: boolean;
+  locked: boolean;
+  prunable: boolean;
+  valid: boolean;
+  /** From `worktreeActivations` (v1 legacy `activeProfile` folded in for `"@main"`). */
+  activeProfile: string | null;
+  /** D10: drift entries `comparable && exists && !inSync` in THIS worktree. */
+  driftedCount: number;
+  /** Comparable descriptors with `exists === false` in THIS worktree. */
+  missingCount: number;
+  /** D6: `valid && !prunable && !locked`. */
+  activatable: boolean;
+  /** Human-readable reason when `!activatable`, else null. */
+  blockedReason: string | null;
 }
 
 /** P24e. The AI-translate helper's proposed instruction file. NOT written
@@ -1377,6 +1408,25 @@ export interface IpcApi {
   /** P24. Activate a profile: write each target's content to its mapped file,
    *  set `activeProfile`. The one write path. Rejects invalidName | other | io | noRepo. */
   activateProfile(repoId: string, name: string): Promise<ProfileActivation>;
+  /** P31. The worktree × AI-context matrix: every worktree row with its active
+   *  profile + drift/missing counts. Read-only. Rejects git | other | io | noRepo. */
+  listWorktreeContexts(repoId: string): Promise<WorktreeContextStatus[]>;
+  /** P31. Per-target preview for activating `name` onto worktree `worktreeKey`.
+   *  Writes nothing; enforces D6 eligibility (locked/invalid/prunable → git).
+   *  Rejects git | other | io | noRepo. */
+  previewWorktreeProfile(
+    repoId: string,
+    worktreeKey: string,
+    name: string,
+  ): Promise<ProfilePreviewEntry[]>;
+  /** P31. Activate `name` onto worktree `worktreeKey` — the one write path,
+   *  UI-gated behind confirm + preview. D6 eligibility + D7 dirty-target guard.
+   *  Rejects invalidName | git | other | io | noRepo. */
+  activateWorktreeProfile(
+    repoId: string,
+    worktreeKey: string,
+    name: string,
+  ): Promise<ProfileActivation>;
   /** P24e. Translate the `sourceAssetId` instruction file into `targetAgent`'s
    *  flavor via the local `claude` CLI. Consent-gated. WRITES NOTHING — returns
    *  proposed text the user reviews and saves into a profile target. Rejects

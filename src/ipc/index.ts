@@ -118,5 +118,6 @@ export type {
   Unsubscribe,
   Validation,
   WorkingStateSection,
+  WorktreeContextStatus,
   WorktreeInfo,
 } from './types';

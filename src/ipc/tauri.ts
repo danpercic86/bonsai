@@ -67,6 +67,7 @@ import type {
   UiSettings,
   UiSettingsPatch,
   Unsubscribe,
+  WorktreeContextStatus,
   WorktreeInfo,
 } from './types';
 
@@ -611,6 +612,35 @@ export const tauriIpc: IpcApi = {
 
   activateProfile(repoId: string, name: string): Promise<ProfileActivation> {
     return invoke<ProfileActivation>('activate_profile', { repoId, name });
+  },
+
+  // P31: per-worktree AI contexts (matrix + worktree-targeted preview/activate).
+  listWorktreeContexts(repoId: string): Promise<WorktreeContextStatus[]> {
+    return invoke<WorktreeContextStatus[]>('list_worktree_contexts', { repoId });
+  },
+
+  previewWorktreeProfile(
+    repoId: string,
+    worktreeKey: string,
+    name: string,
+  ): Promise<ProfilePreviewEntry[]> {
+    return invoke<ProfilePreviewEntry[]>('preview_worktree_profile', {
+      repoId,
+      worktreeKey,
+      name,
+    });
+  },
+
+  activateWorktreeProfile(
+    repoId: string,
+    worktreeKey: string,
+    name: string,
+  ): Promise<ProfileActivation> {
+    return invoke<ProfileActivation>('activate_worktree_profile', {
+      repoId,
+      worktreeKey,
+      name,
+    });
   },
 
   // P24e: translate one instruction file into another agent's flavor. Writes

@@ -148,6 +148,9 @@ pub fn run() {
             commands::delete_profile,
             commands::preview_profile,
             commands::activate_profile,
+            commands::list_worktree_contexts,
+            commands::preview_worktree_profile,
+            commands::activate_worktree_profile,
             commands::ai_generate_asset
         ])
         .build(tauri::generate_context!())

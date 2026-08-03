@@ -4,7 +4,7 @@ use bonsai_core::ai::{self, AiAvailability, RunOpts};
 use bonsai_core::assets::{
     self, AgentAsset, AgentAssetInput, AgentAssetInventory, AgentAssetKind, AiAssetInventory,
     AiGeneratedAsset, AssetContent, ContextProfile, ProfileActivation, ProfilePreviewEntry,
-    ProfileStore,
+    ProfileStore, WorktreeContextStatus,
 };
 use bonsai_core::error::AppError;
 use bonsai_core::git::ai_commit::{self, CommitMessageProposal};
@@ -2913,6 +2913,87 @@ async fn activate_profile_inner(
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Per-worktree AI-context matrix: every worktree row joined with its active
+/// profile + drift/missing counts (P31 §5). Read-only. Errors: `noRepo` |
+/// `git` | `other` | `io`.
+#[tauri::command]
+pub async fn list_worktree_contexts(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<Vec<WorktreeContextStatus>, AppError> {
+    list_worktree_contexts_inner(state.inner(), &repo_id).await
+}
+
+/// Runtime-free core of `list_worktree_contexts` (unit-testable without a Tauri app).
+async fn list_worktree_contexts_inner(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<Vec<WorktreeContextStatus>, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || assets::list_worktree_contexts(&workdir))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Per-target before/after preview for activating profile `name` onto
+/// WORKTREE `worktree_key` (P31 §5). Writes nothing — the UI's diff-preview
+/// safety gate. Enforces D6 eligibility (locked/invalid/prunable → `git`).
+/// Errors: `noRepo` | `git` | `other` | `io`.
+#[tauri::command]
+pub async fn preview_worktree_profile(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    worktree_key: String,
+    name: String,
+) -> Result<Vec<ProfilePreviewEntry>, AppError> {
+    preview_worktree_profile_inner(state.inner(), &repo_id, worktree_key, name).await
+}
+
+/// Runtime-free core of `preview_worktree_profile`.
+async fn preview_worktree_profile_inner(
+    state: &AppState,
+    repo_id: &str,
+    worktree_key: String,
+    name: String,
+) -> Result<Vec<ProfilePreviewEntry>, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        assets::preview_profile_for_worktree(&workdir, &worktree_key, &name)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Activate profile `name` onto WORKTREE `worktree_key` — THE one write path
+/// (P31 §4), UI-gated behind confirm + preview like `activate_profile`. The
+/// core enforces D6 eligibility and the D7 dirty-target guard (all targets
+/// checked before any write). Errors: `noRepo` | `invalidName` | `git` |
+/// `other` | `io`.
+#[tauri::command]
+pub async fn activate_worktree_profile(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    worktree_key: String,
+    name: String,
+) -> Result<ProfileActivation, AppError> {
+    activate_worktree_profile_inner(state.inner(), &repo_id, worktree_key, name).await
+}
+
+/// Runtime-free core of `activate_worktree_profile`.
+async fn activate_worktree_profile_inner(
+    state: &AppState,
+    repo_id: &str,
+    worktree_key: String,
+    name: String,
+) -> Result<ProfileActivation, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        assets::activate_profile_for_worktree(&workdir, &worktree_key, &name)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Optional AI helper (P24e §6.8): translate the `source_asset_id` instruction
 /// file into `target_agent`'s flavor via the local `claude` CLI. Enforces the
 /// consent gate FIRST (before `repo_path`), exactly like `generate_commit_message`.
@@ -4304,5 +4385,100 @@ mod tests {
         ))
         .expect_err("no repo open must be NoRepo");
         assert!(matches!(err, AppError::NoRepo), "got {err:?}");
+    }
+
+    /// P31 §5: the three worktree-context commands resolve the repo by id
+    /// (`NoRepo` for unknown ids) and round-trip against the core: the matrix
+    /// carries the `@main` row, preview is read-only, and activation writes
+    /// the target file + records the activation.
+    #[test]
+    fn worktree_context_commands_round_trip() {
+        let state = AppState::default();
+
+        for res in [
+            tauri::async_runtime::block_on(list_worktree_contexts_inner(&state, MISSING_ID))
+                .map(|_| ()),
+            tauri::async_runtime::block_on(preview_worktree_profile_inner(
+                &state,
+                MISSING_ID,
+                "@main".to_string(),
+                "p".to_string(),
+            ))
+            .map(|_| ()),
+            tauri::async_runtime::block_on(activate_worktree_profile_inner(
+                &state,
+                MISSING_ID,
+                "@main".to_string(),
+                "p".to_string(),
+            ))
+            .map(|_| ()),
+        ] {
+            assert!(matches!(res.expect_err("unknown id"), AppError::NoRepo));
+        }
+
+        let dir = init_repo_with_identity();
+        let opened = open(&state, dir.path()).expect("open repo");
+        let id = &opened.repo_id;
+        write_stage_commit(&state, id, dir.path(), "a.txt", "a\n", "C0");
+        bonsai_core::assets::save_profile(
+            dir.path(),
+            bonsai_core::assets::ContextProfile {
+                name: "p".to_string(),
+                description: None,
+                model: None,
+                targets: vec![bonsai_core::assets::ProfileTarget {
+                    asset_id: "claude".to_string(),
+                    content: "# from command\n".to_string(),
+                }],
+            },
+        )
+        .expect("save profile");
+
+        // Matrix: single main row, keyed "@main", activatable, no activation yet.
+        let rows = tauri::async_runtime::block_on(list_worktree_contexts_inner(&state, id))
+            .expect("matrix");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].worktree_key, "@main");
+        assert!(rows[0].is_main && rows[0].activatable);
+        assert_eq!(rows[0].active_profile, None);
+
+        // Preview writes nothing.
+        let preview = tauri::async_runtime::block_on(preview_worktree_profile_inner(
+            &state,
+            id,
+            "@main".to_string(),
+            "p".to_string(),
+        ))
+        .expect("preview");
+        assert_eq!(preview.len(), 1);
+        assert!(preview[0].changed);
+        assert!(!dir.path().join("CLAUDE.md").exists());
+
+        // Activate writes the target + records the "@main" activation.
+        let act = tauri::async_runtime::block_on(activate_worktree_profile_inner(
+            &state,
+            id,
+            "@main".to_string(),
+            "p".to_string(),
+        ))
+        .expect("activate");
+        assert_eq!(act.profile, "p");
+        assert_eq!(
+            std::fs::read(dir.path().join("CLAUDE.md")).expect("read CLAUDE.md"),
+            b"# from command\n"
+        );
+        let rows = tauri::async_runtime::block_on(list_worktree_contexts_inner(&state, id))
+            .expect("matrix after activation");
+        assert_eq!(rows[0].active_profile.as_deref(), Some("p"));
+
+        // Unknown worktree key surfaces the core's Git error.
+        let err = tauri::async_runtime::block_on(activate_worktree_profile_inner(
+            &state,
+            id,
+            "nope".to_string(),
+            "p".to_string(),
+        ))
+        .expect_err("unknown worktree key");
+        assert!(matches!(err, AppError::Git(m) if m.contains("not found")));
     }
 }

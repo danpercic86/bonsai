@@ -102,6 +102,7 @@ import type {
   UiSettings,
   UiSettingsPatch,
   Unsubscribe,
+  WorktreeContextStatus,
   WorktreeInfo,
 } from './types';
 import {
@@ -604,9 +605,11 @@ const OPUS_RICH_BODY =
 const CHEAP_TERSE_BODY =
   '# Project instructions (terse)\n\nBe brief. Do the task. No preamble.\n';
 
-/** Seed profile store (§7): two profiles, no active profile yet. */
+/** Seed profile store (§7 + P31 §6): two profiles, with per-worktree
+ *  activations seeded — `@main` runs the rich profile, the `feature-login`
+ *  linked worktree runs the terse one. `activeProfile` mirrors `@main` (D4). */
 const mockProfiles: ProfileStore = {
-  version: 1,
+  version: 2,
   profiles: [
     {
       name: 'opus-rich',
@@ -624,7 +627,8 @@ const mockProfiles: ProfileStore = {
       targets: [{ assetId: 'claude', content: CHEAP_TERSE_BODY }],
     },
   ],
-  activeProfile: null,
+  activeProfile: 'opus-rich',
+  worktreeActivations: { '@main': 'opus-rich', 'feature-login': 'cheap-terse' },
 };
 
 /** Mutate `state.inventory` so `assetId`'s mapped file now holds `content`
@@ -1046,6 +1050,122 @@ function worktreesFor(state: MockRepoState): WorktreeInfo[] {
     sharedWorktrees = seedWorktrees('default', 'default');
   }
   return sharedWorktrees;
+}
+
+// --- P31 §6: per-worktree instruction files (worktreeKey → relPath → content).
+// Module-level shared like `sharedWorktrees` — all default tabs view the same
+// repository, so an activation into a linked worktree is visible from every
+// tab's matrix. `@main` is NOT stored here: the main worktree's files live in
+// each tab's `state.assetContent`/`state.inventory` (the P24 mock map), so
+// `@main` activations keep flipping the AiAssetsPanel drift chips.
+// Seeds: feature-login has a locally-tweaked (drifted) CLAUDE.md and is
+// missing AGENTS.md; release-1.2 is locked (files never scanned);
+// hotfix-stale is invalid (empty).
+let sharedWorktreeFiles: Map<string, Record<string, string>> | null = null;
+
+function worktreeFilesFor(key: string): Record<string, string> {
+  if (sharedWorktreeFiles === null) {
+    sharedWorktreeFiles = new Map<string, Record<string, string>>([
+      [
+        'feature-login',
+        {
+          'CLAUDE.md': '# CLAUDE.md\n\nfeature-login local tweaks (drifted).\n',
+          'GEMINI.md': CHEAP_TERSE_BODY,
+        },
+      ],
+      ['release-1.2', { 'CLAUDE.md': OPUS_RICH_BODY }],
+      ['hotfix-stale', {}],
+    ]);
+  }
+  const seeded = sharedWorktreeFiles;
+  let files = seeded.get(key);
+  if (files === undefined) {
+    files = {};
+    seeded.set(key, files);
+  }
+  return files;
+}
+
+/** Drift/missing counts over a worktree's file map — the same math as
+ *  `recomputeDrift` (canonical = first existing comparable doc), but comparing
+ *  content directly instead of hashes (equivalent for the mock). */
+function worktreeDriftCounts(files: Record<string, string>): {
+  drifted: number;
+  missing: number;
+} {
+  const content = (id: string): string | undefined => files[SINGLE_FILE_PATHS[id]];
+  const canonicalId = COMPARABLE_IDS.find((id) => content(id) !== undefined) ?? null;
+  const canonical = canonicalId === null ? null : content(canonicalId);
+  let drifted = 0;
+  let missing = 0;
+  for (const id of COMPARABLE_IDS) {
+    const c = content(id);
+    if (c === undefined) missing += 1;
+    else if (canonical !== null && c !== canonical) drifted += 1;
+  }
+  return { drifted, missing };
+}
+
+/** The calling tab's own worktree key (D5): the linked row whose path this
+ *  tab has open, else `"@main"`. */
+function tabWorktreeKey(state: MockRepoState): string {
+  const row = worktreesFor(state).find((w) => !w.isMain && w.absPath === state.path);
+  return row === undefined ? '@main' : row.name;
+}
+
+/** D6 eligibility guard for the worktree-targeted preview/activate mocks:
+ *  throws the backend's refusal messages for unknown / invalid / prunable /
+ *  locked worktrees; returns the row otherwise. `"@main"` maps to the main
+ *  row, which is always eligible. */
+function requireEligibleWorktree(state: MockRepoState, worktreeKey: string): WorktreeInfo {
+  const rows = worktreesFor(state);
+  if (worktreeKey === '@main') {
+    // The main worktree is always eligible — synthesize a row for fixtures
+    // without a worktree list (mirrors the backend, where "@main" resolves on
+    // any repo).
+    return (
+      rows.find((w) => w.isMain) ?? {
+        name: 'repo',
+        absPath: state.path,
+        relPath: null,
+        branch: state.headBranch,
+        headOid: state.headOid,
+        locked: false,
+        lockReason: null,
+        isMain: true,
+        isCurrent: true,
+        prunable: false,
+        valid: true,
+      }
+    );
+  }
+  const row = rows.find((w) => !w.isMain && w.name === worktreeKey);
+  if (row === undefined) {
+    const err: AppError = { kind: 'git', message: `worktree '${worktreeKey}' not found` };
+    throw err;
+  }
+  if (!row.valid) {
+    const err: AppError = {
+      kind: 'git',
+      message: `worktree '${worktreeKey}' is invalid (its working directory is missing or broken)`,
+    };
+    throw err;
+  }
+  if (row.prunable) {
+    const err: AppError = {
+      kind: 'git',
+      message: `worktree '${worktreeKey}' is stale (prunable); prune or repair it first`,
+    };
+    throw err;
+  }
+  if (row.locked) {
+    const err: AppError = {
+      kind: 'git',
+      message: `worktree '${worktreeKey}' is locked; unlock it first`,
+    };
+    throw err;
+  }
+  return row;
 }
 
 /** Builds a fresh MockRepoState for a usable repo (default / detached / unborn). */
@@ -4138,7 +4258,145 @@ export const mockIpc: IpcApi = {
       }
       return { assetId: t.assetId, path, action };
     });
-    state.profiles.activeProfile = name;
+    // D5: record the activation under the TAB'S OWN worktree key; the legacy
+    // `activeProfile` field mirrors only the "@main" entry (P31 D4).
+    const key = tabWorktreeKey(state);
+    state.profiles.worktreeActivations = {
+      ...state.profiles.worktreeActivations,
+      [key]: name,
+    };
+    if (key === '@main') {
+      state.profiles.activeProfile = name;
+    } else {
+      // Keep the shared per-worktree file map in step so the matrix agrees.
+      const files = worktreeFilesFor(key);
+      for (const t of profile.targets) {
+        files[SINGLE_FILE_PATHS[t.assetId] ?? t.assetId] = t.content;
+      }
+    }
+    return { profile: name, results, store: structuredClone(state.profiles) };
+  },
+
+  // P31 §6: per-worktree AI contexts. The matrix derives "@main" counts from
+  // the tab's stateful inventory (same math as listAiAssets) and linked-row
+  // counts from the shared per-worktree file maps; activation mutates ONLY the
+  // target worktree's map, so a re-list flips that row's chips alone.
+  async listWorktreeContexts(repoId: string): Promise<WorktreeContextStatus[]> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    const rows = worktreesFor(state);
+    const hasMatch = rows.some((w) => w.absPath === state.path);
+    return rows.map((w) => {
+      const key = w.isMain ? '@main' : w.name;
+      const activatable = w.valid && !w.prunable && !w.locked;
+      let blockedReason: string | null = null;
+      if (!w.valid) {
+        blockedReason = 'worktree is invalid (working directory missing or broken)';
+      } else if (w.prunable) {
+        blockedReason = 'worktree is stale (prunable)';
+      } else if (w.locked) {
+        blockedReason =
+          w.lockReason === null ? 'worktree is locked' : `worktree is locked: ${w.lockReason}`;
+      }
+      let drifted = 0;
+      let missing = 0;
+      if (activatable) {
+        if (w.isMain) {
+          const entries = recomputeDrift(state.inventory).entries;
+          drifted = entries.filter((e) => e.comparable && e.exists && !e.inSync).length;
+          missing = entries.filter((e) => e.comparable && !e.exists).length;
+        } else {
+          ({ drifted, missing } = worktreeDriftCounts(worktreeFilesFor(key)));
+        }
+      }
+      return {
+        worktreeKey: key,
+        name: w.name,
+        absPath: w.absPath,
+        branch: w.branch,
+        isMain: w.isMain,
+        isCurrent: hasMatch ? w.absPath === state.path : w.isMain,
+        locked: w.locked,
+        prunable: w.prunable,
+        valid: w.valid,
+        activeProfile: state.profiles.worktreeActivations?.[key] ?? null,
+        driftedCount: drifted,
+        missingCount: missing,
+        activatable,
+        blockedReason,
+      };
+    });
+  },
+
+  async previewWorktreeProfile(
+    repoId: string,
+    worktreeKey: string,
+    name: string,
+  ): Promise<ProfilePreviewEntry[]> {
+    await delay(120);
+    const state = requireRepo(repoId);
+    const profile = state.profiles.profiles.find((p) => p.name === name);
+    if (profile === undefined) {
+      const err: AppError = { kind: 'other', message: `profile '${name}' not found` };
+      throw err;
+    }
+    const row = requireEligibleWorktree(state, worktreeKey); // D6
+    const files = row.isMain ? state.assetContent : worktreeFilesFor(worktreeKey);
+    return profile.targets.map((t) => {
+      const path = SINGLE_FILE_PATHS[t.assetId] ?? t.assetId;
+      const current = files[path] ?? null;
+      return {
+        assetId: t.assetId,
+        path,
+        current,
+        proposed: t.content,
+        changed: current !== t.content,
+      };
+    });
+  },
+
+  async activateWorktreeProfile(
+    repoId: string,
+    worktreeKey: string,
+    name: string,
+  ): Promise<ProfileActivation> {
+    await delay(160);
+    const state = requireRepo(repoId);
+    const profile = state.profiles.profiles.find((p) => p.name === name);
+    if (profile === undefined) {
+      const err: AppError = { kind: 'other', message: `profile '${name}' not found` };
+      throw err;
+    }
+    const row = requireEligibleWorktree(state, worktreeKey); // D6
+    const files = row.isMain ? state.assetContent : worktreeFilesFor(worktreeKey);
+    const results: TargetWriteResult[] = profile.targets.map((t) => {
+      const path = SINGLE_FILE_PATHS[t.assetId] ?? t.assetId;
+      const current = files[path];
+      let action: TargetWriteAction;
+      if (current === undefined) {
+        action = 'created';
+      } else if (current === t.content) {
+        action = 'unchanged';
+      } else {
+        action = 'written';
+      }
+      if (action !== 'unchanged') {
+        if (row.isMain) {
+          // Keep the tab's inventory in step so AiAssetsPanel chips flip too.
+          applyMockWrite(state, t.assetId, path, t.content);
+        } else {
+          files[path] = t.content;
+        }
+      }
+      return { assetId: t.assetId, path, action };
+    });
+    state.profiles.worktreeActivations = {
+      ...state.profiles.worktreeActivations,
+      [worktreeKey]: name,
+    };
+    if (worktreeKey === '@main') {
+      state.profiles.activeProfile = name; // legacy mirror (D4)
+    }
     return { profile: name, results, store: structuredClone(state.profiles) };
   },
 
