@@ -16,6 +16,22 @@ that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e
 Every "awaiting USER CHECKPOINT" below is now CONFIRMED as of 2026-07-30. (P5/P6 were already
 confirmed earlier.)
 
+**USER CHECKPOINT BATCH CONFIRMED (2026-08-03):** the user confirmed ALL remaining pending
+checkpoints — the P18–P23 batch, P24, P25, P26, and P27. Every "awaiting USER CHECKPOINT" below is
+now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved plan
+`~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
+P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
+
+## P28 — AI "what changed" digest (roadmap B3) — **in-progress** (2026-08-03)
+
+First of the four approved P28-scope features (B3 → D1 → B5 → per-worktree contexts; plan
+`what-are-the-next-quiet-marble.md`). AI-generated digest of what changed over a range (since
+last fetch / between refs / last N days), reusing run_claude + the ai_analyze_diff/ai_summary
+patterns and the existing AiOutputPanel; write-free; 256 KiB payload cap like P25. Standard loop;
+guardrails unchanged (D:\Temp\bonsai-scratch, TMP/TEMP=D:\Temp, no concurrent test+clippy, mock.ts
+compiling, orchestrator commits).
+**Current step:** P28 — architect writing docs/contracts/P28-what-changed-digest.md.
+
 ## P28 — Discard hunk + status-panel UX (double-click stage, section styling) — **DONE (USER CHECKPOINT CONFIRMED 2026-08-03)**
 
 Current step: **complete** — USER CHECKPOINT confirmed in native app 2026-08-03 (all three items). A 14c17c5, B ec411de,
@@ -120,8 +136,7 @@ repo only): Worktrees section lists real worktrees w/ badges vs `git worktree li
 at `.worktrees/<slug>` (verify with CLI); Open-in-tab opens the worktree as its own tab; lock/unlock flip vs
 `git worktree list --porcelain`; Remove is confirm-gated, refuses main/current/locked/dirty with clear
 errors (dirty content intact), success really deletes the dir, Cancel removes nothing.
-**Current step:** P27 DONE — AI gate passed, awaiting USER CHECKPOINT (along with P24/P25/P26 + the P18–P23
-batch).
+**Current step:** P27 DONE — USER CHECKPOINT CONFIRMED 2026-08-03. Milestone fully closed.
 
 ## P26 — AI-asset management A3: skills / subagents / commands manager — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-01)
 
