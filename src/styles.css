@@ -1194,6 +1194,27 @@ body {
 
 .status-section {
   min-width: 0;
+  padding: 6px 8px 8px;
+  border-radius: 8px;
+}
+
+/* Subtle Staged vs Changes differentiation: faint tint panel + accented header.
+   color-mix over the theme vars keeps both dark and light themes correct. */
+
+.status-section--staged {
+  background: color-mix(in srgb, var(--success) 6%, transparent);
+}
+
+.status-section--staged > .section-label {
+  color: color-mix(in srgb, var(--success) 75%, var(--text-1));
+}
+
+.status-section--changes {
+  background: color-mix(in srgb, var(--text-3) 5%, transparent);
+}
+
+.status-section--changes > .section-label {
+  color: color-mix(in srgb, var(--warning) 45%, var(--text-3));
 }
 
 .file-list {

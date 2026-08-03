@@ -16,6 +16,24 @@ that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e
 Every "awaiting USER CHECKPOINT" below is now CONFIRMED as of 2026-07-30. (P5/P6 were already
 confirmed earlier.)
 
+## P28 — Discard hunk + status-panel UX (double-click stage, section styling) — **in-progress** (2026-08-03)
+
+Current step: increment A (double-click + Staged/Changes styling) at senior-dev; architect writing
+docs/contracts/P28-discard-hunk.md in parallel. Plan (user-approved):
+`~/.claude/plans/1-discard-hunk-button-shimmering-harbor.md`.
+Scope (user-requested 2026-08-03):
+1. Discard hunk button in diff view (full stack: bonsai-core `discard_partial` reusing
+   stage_partial reconstruct with sides swapped, write to worktree; command + IPC + mock;
+   danger button in DiffView hunk header, unstaged only, ConfirmDialog).
+2. Double-click file row stages/unstages (symmetric, user-confirmed); folder dbl-click already
+   exists in tree view (P3f).
+3. Subtle tint + accent header differentiating Staged vs Changes sections (user chose option 1).
+Increments: A = items 2+3 (frontend only) → review → commit. B = item 1 backend+command,
+C = item 1 IPC+UI → review → tester (CLI-oracle tests) → commit.
+Acceptance (AI gate): cargo suite green (sequential, TMP=D:\Temp), pnpm build, harness: tint
+screenshot, dbl-click stage/unstage vs mock, discard hunk mutates mock state behind ConfirmDialog.
+Acceptance (USER CHECKPOINT): native app — dbl-click feel, real discard hunk, styling check.
+
 ## P27 — Git power feature C1: worktree management — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-03)
 
 Roadmap Theme C item **C1** (roadmap #3; `~/.claude/plans/if-we-think-about-eager-hoare.md`;

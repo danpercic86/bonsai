@@ -5,7 +5,9 @@ export default defineConfig({
   plugins: [react()],
   clearScreen: false,
   server: {
-    port: 1420,
+    // PORT override lets a second dev server (e.g. another agent session) pick
+    // a free port; 1420 stays the default that tauri.conf.json expects.
+    port: Number(process.env.PORT) || 1420,
     strictPort: true,
     watch: {
       // Never watch the Rust workspace — cargo builds churn the target dir

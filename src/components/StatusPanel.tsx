@@ -75,7 +75,17 @@ function FileRow({
   treeMode?: boolean;
 }) {
   const isRename = entry.origPath !== null;
-  const title = isRename ? `${entry.origPath} → ${entry.path}` : entry.path;
+  const pathTitle = isRename ? `${entry.origPath} → ${entry.path}` : entry.path;
+  // P3f dir-row precedent (Tree.tsx onDoubleClick → onActivateDir): double-click
+  // acts; the two single-click toggles cancel out on the diff overlay.
+  const actionHint = disabled
+    ? null
+    : action === 'stage'
+      ? 'Double-click to stage'
+      : action === 'unstage'
+        ? 'Double-click to unstage'
+        : null;
+  const title = actionHint !== null ? `${pathTitle} — ${actionHint}` : pathTitle;
   const { dir, name } = splitPath(entry.path);
   const pathEl = isRename ? (
     <span className="file-path mono file-rename">
@@ -98,6 +108,9 @@ function FileRow({
           className="file-row-main"
           aria-expanded={expanded}
           onClick={onToggle}
+          onDoubleClick={
+            action !== null && !disabled ? () => onAction(entryPaths(entry)) : undefined
+          }
         >
           <span className="file-badge mono">{BADGES[entry.status]}</span>
           {pathEl}
@@ -170,6 +183,7 @@ function Section({
   diffSlot,
   listView,
   extraAction,
+  variant,
   onAction,
   onToggleDiff,
   onDiscard,
@@ -177,6 +191,8 @@ function Section({
   onFileHistory,
 }: {
   label: string;
+  /** Visual modifier: tints the section so Staged vs Changes read differently. */
+  variant: 'staged' | 'changes';
   /** Diff-key prefix; null for the conflicts section (not expandable). */
   section: WorkdirSection | null;
   /** P4c: per-entry origin resolver (Changes section merges unstaged +
@@ -240,7 +256,7 @@ function Section({
     );
   };
   return (
-    <section className="status-section">
+    <section className={`status-section status-section--${variant}`}>
       <div
         className={
           danger ? 'section-header section-label section-label-danger' : 'section-header section-label'
@@ -567,6 +583,7 @@ export function StatusPanel({
         <>
           <Section
             label="Staged"
+            variant="staged"
             section="staged"
             entries={snapshot.staged}
             rowAction="unstage"
@@ -595,6 +612,7 @@ export function StatusPanel({
           />
           <Section
             label="Changes"
+            variant="changes"
             section="unstaged"
             sectionForEntry={(e) => originByPath.get(e.path) ?? 'unstaged'}
             entries={changes}

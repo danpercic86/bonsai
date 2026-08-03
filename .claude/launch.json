@@ -5,7 +5,8 @@
       "name": "bonsai-mock",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["dev:mock"],
-      "port": 1420
+      "port": 1420,
+      "autoPort": true
     }
   ]
 }
