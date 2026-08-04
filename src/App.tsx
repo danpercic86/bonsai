@@ -12,6 +12,9 @@ import { TabStrip } from './components/TabStrip';
 import type { TabMeta } from './components/TabStrip';
 import { Toasts } from './components/Toasts';
 import type { Toast, ToastTone } from './components/Toasts';
+import { UpdateNotification } from './components/UpdateNotification';
+import { UpdateDialog } from './components/UpdateDialog';
+import { useUpdateController } from './hooks/useUpdateController';
 import { ToastContext } from './ToastContext';
 import { ipc } from './ipc';
 import type {
@@ -154,6 +157,11 @@ export default function App() {
   // read) and its own defer-to-dialog flow.
   const [mcpWriteConsented, setMcpWriteConsented] = useState(false);
   const [mcpWriteConsentOpen, setMcpWriteConsentOpen] = useState(false);
+  // P42b: auto-check-for-updates-on-launch preference (persisted; default OFF).
+  const [autoCheckUpdates, setAutoCheckUpdates] = useState(false);
+  // P42b: the update state machine (check/notify/download/restart) lives here so
+  // App only wires the notification, dialog, and Settings section to it.
+  const update = useUpdateController();
   // P11c §3.2: debounced settings persist — accumulates partial patches so a
   // burst of knob changes within the window all reach disk in one write.
   const settingsSaveTimerRef = useRef<number | null>(null);
@@ -350,6 +358,7 @@ export default function App() {
       if (patch.aiConsented !== undefined) setAiConsented(patch.aiConsented);
       if (patch.mcpConsented !== undefined) setMcpConsented(patch.mcpConsented);
       if (patch.mcpWriteConsented !== undefined) setMcpWriteConsented(patch.mcpWriteConsented);
+      if (patch.autoCheckUpdates !== undefined) setAutoCheckUpdates(patch.autoCheckUpdates);
       pendingSettingsPatchRef.current = { ...pendingSettingsPatchRef.current, ...patch };
       if (settingsSaveTimerRef.current !== null) {
         window.clearTimeout(settingsSaveTimerRef.current);
@@ -600,7 +609,15 @@ export default function App() {
         setAiConsented(s.aiConsented);
         setMcpConsented(s.mcpConsented);
         setMcpWriteConsented(s.mcpWriteConsented);
+        setAutoCheckUpdates(s.autoCheckUpdates);
         if (!s.onboardingSeen) showOnboard = true;
+        // P42b D4: auto-check on launch when the setting is on. A `?update=`
+        // query (harness) forces one too, mirroring `?onboarding=1`. Silent —
+        // only an AVAILABLE result surfaces (the notification); up-to-date and
+        // errors are swallowed so launch stays quiet.
+        const forceUpdateCheck =
+          new URLSearchParams(window.location.search).get('update') !== null;
+        if (s.autoCheckUpdates || forceUpdateCheck) void update.check(true);
       } catch {
         // Non-fatal — keep defaults.
       }
@@ -751,7 +768,8 @@ export default function App() {
     onboardingOpen ||
     consentOpen ||
     mcpConsentOpen ||
-    mcpWriteConsentOpen;
+    mcpWriteConsentOpen ||
+    update.dialogOpen;
 
   return (
     <ToastContext.Provider value={pushToast}>
@@ -906,6 +924,11 @@ export default function App() {
           configInitialFocus={configFocus}
           onRegisterMcp={handleRegisterMcp}
           onShowOnboarding={showOnboarding}
+          updateCurrentVersion={update.currentVersion}
+          autoCheckUpdates={autoCheckUpdates}
+          updateState={update.state}
+          onCheckUpdate={() => void update.check(false)}
+          onOpenUpdateDialog={update.openDialog}
         />
         {activeRepo !== null && (
           <AiAssetsPanel
@@ -976,6 +999,20 @@ export default function App() {
           onSubmit={(u) => void handleCloneSubmit(u)}
           onCancel={handleCloneCancel}
         />
+        <UpdateDialog
+          open={update.dialogOpen}
+          state={update.state}
+          onDownload={update.download}
+          onRestart={update.restart}
+          onClose={update.closeDialog}
+        />
+        {update.notificationVisible && update.state.status === 'available' && (
+          <UpdateNotification
+            version={update.state.info.version ?? ''}
+            onView={update.openDialog}
+            onDismiss={update.dismissNotification}
+          />
+        )}
         <Toasts toasts={toasts} onDismiss={dismissToast} />
       </div>
     </ToastContext.Provider>

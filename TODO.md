@@ -52,7 +52,17 @@ mock-seam UI flows (available→notify→progress→restart; up-to-date; error) 
   tests) + IPC-triple (checkForUpdate/downloadAndInstallUpdate/relaunchApp, updateFailed AppError) +
   ?update= mock seam. cargo check/clippy + settings 29 + tsc + build clean. Nits (cosmetic): heuristic
   error-message mapping; mock error-mode only covers check-time.
-**Current step:** P42a committed. Next: P42b (Update UI + settings section + auto-check) → harness → P42 tester.
+- **P42b** (reviewer APPROVE, 0 must-fix; INV-3 verified — launch only checks/notifies, download+install
+  +restart all explicit user actions) — useUpdateController hook (idle→checking→available|upToDate|error→
+  downloading→readyToRestart) + UpdateNotification banner + UpdateDialog (version+notes→Download&install→
+  progress→Restart now/Later; Esc/backdrop disabled mid-download; error+Retry) + SettingsUpdatesSection
+  (current version, Check for updates, auto-check-on-launch toggle) + App auto-check-on-launch (gated
+  autoCheckUpdates || ?update=). AI GATE PASSED (fresh tab :1420, zero console): ?update=available →
+  banner→dialog→0.7→4.7MB progress→"Update ready…Restart now"; ?update=none → "You're up to date";
+  ?update=error → inline "could not reach the update endpoint". tsc + build clean. Nits (cosmetic, left):
+  infoRef not cleared on check-error; focus fallback; dead class; unreachable idle fallback text.
+**Current step:** P42a+b committed & harness-passed. Next: P42 tester + unsigned `pnpm tauri build` gate
+(background+poll, dev key for updater artifacts) → commit milestone. This is the last session milestone.
 
 ## P43 — first-run onboarding + empty-state polish (Productization) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 

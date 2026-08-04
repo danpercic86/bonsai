@@ -18,8 +18,10 @@ import type {
   UiSettingsPatch,
 } from '../ipc';
 import { type McpScope } from '../lib/mcpAddCommand';
+import type { UpdateUiState } from '../hooks/useUpdateController';
 import { SettingsGitConfigSection } from './SettingsGitConfigSection';
 import { SettingsMcpSection } from './SettingsMcpSection';
+import { SettingsUpdatesSection } from './SettingsUpdatesSection';
 import {
   AUTO_FETCH_INTERVAL_MAX,
   AUTO_FETCH_INTERVAL_MIN,
@@ -89,6 +91,17 @@ export interface SettingsPanelProps {
   /** P43a: re-open the first-run onboarding overlay ("Show welcome tour").
    *  Does not reset the seen flag. */
   onShowOnboarding(): void;
+  // Software updates (P42b). State + IPC owned by App/useUpdateController.
+  /** App version from the last check; `null` until one resolves. */
+  updateCurrentVersion: string | null;
+  /** Auto-check-for-updates-on-launch preference (persists via `onChange`). */
+  autoCheckUpdates: boolean;
+  /** Shared update state — drives the inline result line + dialog affordance. */
+  updateState: UpdateUiState;
+  /** Run a manual (non-silent) update check. */
+  onCheckUpdate(): void;
+  /** Open the UpdateDialog (release notes + download flow). */
+  onOpenUpdateDialog(): void;
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -182,6 +195,11 @@ export function SettingsPanel({
   configInitialFocus,
   onRegisterMcp,
   onShowOnboarding,
+  updateCurrentVersion,
+  autoCheckUpdates,
+  updateState,
+  onCheckUpdate,
+  onOpenUpdateDialog,
 }: SettingsPanelProps) {
   // In-flight scope for the "Add" registration buttons — disables a button while
   // its `claude mcp add` run is pending. Hooks run unconditionally (before the
@@ -269,6 +287,16 @@ export function SettingsPanel({
             </button>
           </div>
         </section>
+
+        {/* --- Updates (P42b) --- */}
+        <SettingsUpdatesSection
+          currentVersion={updateCurrentVersion}
+          autoCheckUpdates={autoCheckUpdates}
+          onToggleAutoCheck={(v) => onChange({ autoCheckUpdates: v })}
+          checkState={updateState}
+          onCheck={onCheckUpdate}
+          onOpenDialog={onOpenUpdateDialog}
+        />
 
         {/* --- Background jobs (P30 §6) --- */}
         <section className="settings-section">
