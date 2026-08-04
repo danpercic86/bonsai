@@ -25,7 +25,29 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
-## P39 — git bisect (Git completeness, Phase 1) — **in-progress** (2026-08-04)
+## P40 — git config editing (Git completeness, Phase 1) — **in-progress** (2026-08-04)
+
+Git-completeness milestone #4. Read/edit git config in-app: curated identity/behavior keys (user.name/
+email, core.autocrlf, init.defaultBranch, pull.ff|rebase) + arbitrary `section.key` entries, at Local
+(repo) and Global levels; a Settings section; and close the long-standing "identity unset" gap (a "Set
+identity…" button on the commit-error banner opens Settings). Contract: `docs/contracts/P40-config-editing.md`
+(architect). Approach: runtime-free `git/config.rs` over git2 0.21 `Config` (read_config→ConfigView =
+curated effective+level + advanced list; set_config/unset_config, validated server-side, Local|Global);
+self-contained `SettingsGitConfigSection.tsx` keeps SettingsPanel lean; no new AppError (reuse Git/
+InvalidName); no events. Accepted architect defaults: Local+Global (System read-only/out); curated form +
+advanced list; last-value read (multivar edit deferred); "Set identity…" button. **Load-bearing test risk
+(flag to tester):** Global writes touch the real ~/.gitconfig — the config_cli oracle MUST redirect
+GIT_CONFIG_GLOBAL/HOME to a scratch dir under D:\Temp\bonsai-scratch + git2::opts::set_search_path, and
+prove the dev's real global config is untouched. **Verify at P40a:** the architect reused SettingsPanel's
+existing `repoPath` prop as the config `repoId` — confirm that value is what the config commands resolve
+via `repo_path` (repo_id==path). Sub-increments: **P40a** core config.rs + 3 cmds + IPC + fixtures/mock +
+config_cli oracle → **P40b** Settings UI + identity-gap linkage (App/RepoWorkspace/CommitBox). Guardrails
+unchanged (scratch D:\Temp\bonsai-scratch, TMP/TEMP=D:\Temp on Windows, no concurrent test+clippy, mock.ts
+compiling, orchestrator commits).
+
+**Current step:** P40a — senior-dev implementing config.rs + 3 cmds + IPC + mock + config_cli oracle.
+
+## P39 — git bisect (Git completeness, Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 
 Git-completeness milestone #3. Binary-search for the regression-introducing commit: start (mark
 good+bad), mark good/bad/skip the checked-out midpoint, reset (abort → original HEAD/branch); the
@@ -79,8 +101,22 @@ as a separate cross-engine task (task_d8879761), not fixed here to keep the two 
   canvas dots) NOR stage a real in-progress op — same documented limit that made P20's OpBanner flow +
   P25b's canvas menu USER CHECKPOINT. AI gate here = reviewer static APPROVE + tsc/build clean + P39a
   engine oracle (3 vs real git bisect) + 14 unit + stateful mock (driveMockBisect converges to found).
-**Current step:** P39a+b committed. Next: P39 tester (engine regression + user checklist), then commit
-the green milestone → P40 (config editing).
+- **P39 tester** — full workspace regression PASS, zero regressions (`cargo test --workspace` exit 0;
+  bonsai-core lib 363 incl. bisect unit 14; remote_cli flaky test passed); clippy --workspace --tests
+  clean; tsc + build clean. Strengthened bisect_cli → 5 (added: reset-from-mid-bisect restores the EXACT
+  pre-bisect tip + re-attaches `main` + clean status, cross-checked with git rev-parse — the #1 safety
+  property; mark/skip after a real `git checkout --detach` errors via ensure_on_current + state
+  byte-unchanged). Checklist: docs/contracts/P39-user-checklist.md.
+- **P39 AI GATE PASSED (2026-08-04).** Commits: 86501b8 P39a · 25507f8 P39b (+ tester closeout). Engine
+  oracle vs real `git bisect` (5) + 14 unit + reviewer static UI approve; interactive canvas→OpBanner
+  flow deferred to USER CHECKPOINT (hidden-pane limit). Git-completeness Phase 1 milestone #3 delivered.
+
+**P39 awaiting USER CHECKPOINT** (native pnpm tauri dev on a SCRATCH repo with a known first-bad commit,
+per docs/contracts/P39-user-checklist.md): two-click canvas start (mark BAD → mark GOOD) → OpBanner
+"Bisecting, N revisions left"; Good/Bad converges to "found first bad <oid>" with HEAD there
+(cross-check git rev-parse); Skip works; Reset returns HEAD/branch to the original tip. This flow is the
+USER CHECKPOINT because the canvas commit-menu + in-progress OpBanner aren't drivable in the AI harness.
+**Current step:** P39 DONE (AI gate passed, awaiting USER CHECKPOINT). Next: P40 (config editing).
 
 ## P38 — reflog viewer + restore (Git completeness, Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 

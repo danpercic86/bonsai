@@ -23,7 +23,10 @@ mod common;
 use std::collections::HashSet;
 use std::path::Path;
 
-use bonsai_core::git::bisect::{bisect_mark, bisect_skip, start_bisect, BisectOutcome};
+use bonsai_core::error::AppError;
+use bonsai_core::git::bisect::{
+    bisect_mark, bisect_reset, bisect_skip, get_bisect_state, start_bisect, BisectOutcome,
+};
 use common::{commit_fixed, git, init_repo};
 
 macro_rules! require_git {
@@ -230,4 +233,113 @@ fn skip_a_midpoint_still_converges_to_git_first_bad() {
     }
     assert!(skipped_once, "a midpoint was skipped");
     assert_eq!(answer.expect("converged"), git_first_bad, "skip still finds git's first-bad");
+}
+
+// ============================================================ reset safety
+
+/// The #1 safety property: `bisect_reset` from mid-bisect must re-attach the
+/// ORIGINAL branch at the EXACT pre-bisect tip with a clean worktree. Cross-
+/// checked with `git rev-parse` (oid) and `git rev-parse --abbrev-ref` (branch).
+#[test]
+fn reset_from_mid_bisect_restores_original_branch_and_tip() {
+    require_git!();
+    let dir = init_repo();
+    let d = dir.path();
+    let n = 16;
+    let bug_at = 9;
+    let oids = build_linear_bug(d, n, bug_at);
+    let bad = oids[n - 1].clone();
+    let good = oids[0].clone();
+
+    // Record the exact pre-bisect state (attached branch `main` at the tip).
+    let orig_head = rev(d, "HEAD");
+    let orig_branch = git(d, &["rev-parse", "--abbrev-ref", "HEAD"]);
+    assert_eq!(orig_head, oids[n - 1], "pre-bisect HEAD is the tip");
+    assert_eq!(orig_branch, "main");
+
+    // Start, then answer a couple of midpoints (detaching HEAD across each).
+    let mut outcome = start_bisect(d, &bad, std::slice::from_ref(&good)).expect("start");
+    let mut marks = 0;
+    while marks < 2 {
+        match outcome {
+            BisectOutcome::Testing { .. } => {
+                // We are on a DETACHED HEAD mid-bisect (the risky state).
+                assert!(git(d, &["rev-parse", "--abbrev-ref", "HEAD"]) == "HEAD");
+                let bad_here = worktree_is_bad(d);
+                outcome = bisect_mark(d, !bad_here).expect("mark");
+                marks += 1;
+            }
+            BisectOutcome::Found { .. } => break,
+            BisectOutcome::CannotDetermine { skipped } => {
+                panic!("unexpected cannotDetermine: {skipped:?}")
+            }
+        }
+    }
+
+    // Reset mid-bisect and cross-check the restore against git itself.
+    bisect_reset(d).expect("reset");
+    assert_eq!(rev(d, "HEAD"), orig_head, "HEAD oid restored to the pre-bisect tip");
+    assert_eq!(
+        git(d, &["rev-parse", "--abbrev-ref", "HEAD"]),
+        orig_branch,
+        "original branch re-attached (not left detached)"
+    );
+    assert_eq!(git(d, &["status", "--porcelain"]), "", "worktree is clean after reset");
+    assert!(get_bisect_state(d).expect("query").is_none(), "no bisect state remains");
+    // A fresh bisect can be started again after a clean reset.
+    start_bisect(d, &bad, std::slice::from_ref(&good)).expect("restart after reset");
+    bisect_reset(d).expect("final cleanup reset");
+}
+
+// ============================================================ ensure_on_current guard (e2e)
+
+/// End-to-end `ensure_on_current` guard: if the user moves HEAD off the current
+/// midpoint via a REAL `git checkout` mid-bisect, `mark`/`skip` must ERROR and
+/// leave the on-disk state file byte-for-byte unchanged (no silent corruption of
+/// the search). Uses the git CLI (not an internal git2 checkout) to mirror the
+/// real-world footgun.
+#[test]
+fn mark_after_external_checkout_errors_and_leaves_state_unchanged() {
+    require_git!();
+    let dir = init_repo();
+    let d = dir.path();
+    let n = 16;
+    let bug_at = 9;
+    let oids = build_linear_bug(d, n, bug_at);
+    let bad = oids[n - 1].clone();
+    let good = oids[0].clone();
+
+    let start = start_bisect(d, &bad, std::slice::from_ref(&good)).expect("start");
+    let midpoint = match start {
+        BisectOutcome::Testing { current, .. } => current,
+        other => panic!("expected Testing on start, got {other:?}"),
+    };
+    assert_eq!(rev(d, "HEAD"), midpoint, "engine detached HEAD onto the midpoint");
+
+    let before = get_bisect_state(d).expect("state").expect("in progress");
+
+    // Move HEAD OFF the midpoint with the real git CLI (clean detached checkout).
+    // The good boundary (oids[0], hidden) and bad tip (oids[n-1], excluded) are
+    // never a testable midpoint, so `good` here is guaranteed != midpoint.
+    assert_ne!(good, midpoint);
+    git(d, &["checkout", "--detach", &good]);
+    assert_ne!(rev(d, "HEAD"), midpoint, "HEAD is off the midpoint");
+
+    // Both mark and skip must refuse with the guard error.
+    match bisect_mark(d, true).expect_err("mark off-midpoint must fail") {
+        AppError::Git(m) => assert!(m.contains("not on the bisect commit"), "got: {m}"),
+        other => panic!("expected Git guard error, got {other:?}"),
+    }
+    match bisect_skip(d).expect_err("skip off-midpoint must fail") {
+        AppError::Git(m) => assert!(m.contains("not on the bisect commit"), "got: {m}"),
+        other => panic!("expected Git guard error, got {other:?}"),
+    }
+
+    // The persisted search state is untouched by the rejected calls.
+    let after = get_bisect_state(d).expect("state").expect("still in progress");
+    assert_eq!(before, after, "rejected mark/skip left the bisect state unchanged");
+
+    // Cleanup: never leave the scratch repo mid-bisect on a detached HEAD.
+    bisect_reset(d).expect("cleanup reset");
+    assert!(get_bisect_state(d).expect("query").is_none());
 }
