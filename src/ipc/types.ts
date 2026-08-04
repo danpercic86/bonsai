@@ -875,6 +875,8 @@ export interface UiSettings {
   mcpConsented: boolean;
   /** One-time consent to let an external MCP client modify open repos (P16c). */
   mcpWriteConsented: boolean;
+  /** P43: first-run onboarding has been shown+dismissed. Defaults false. */
+  onboardingSeen: boolean;
 }
 
 export interface UiSettingsPatch {
@@ -893,6 +895,8 @@ export interface UiSettingsPatch {
   mcpConsented?: boolean;
   // MCP write consent (P16c).
   mcpWriteConsented?: boolean;
+  // First-run onboarding (P43).
+  onboardingSeen?: boolean;
 }
 
 /** Embedded MCP server status for the Settings panel (P16). Mirrors the Rust

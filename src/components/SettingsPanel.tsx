@@ -86,6 +86,9 @@ export interface SettingsPanelProps {
    *  run settles so the panel can clear its in-flight state (App still owns the
    *  success/error toast). */
   onRegisterMcp(scope: McpScope): Promise<void>;
+  /** P43a: re-open the first-run onboarding overlay ("Show welcome tour").
+   *  Does not reset the seen flag. */
+  onShowOnboarding(): void;
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -178,6 +181,7 @@ export function SettingsPanel({
   repoPath,
   configInitialFocus,
   onRegisterMcp,
+  onShowOnboarding,
 }: SettingsPanelProps) {
   // In-flight scope for the "Add" registration buttons — disables a button while
   // its `claude mcp add` run is pending. Hooks run unconditionally (before the
@@ -250,6 +254,21 @@ export function SettingsPanel({
             {'×'}
           </button>
         </div>
+
+        {/* --- Getting started (P43a) --- */}
+        <section className="settings-section">
+          <h3 className="settings-section-title">Getting started</h3>
+          <div className="settings-row">
+            <span className="settings-control-label">First-run tour</span>
+            <button
+              type="button"
+              className="btn-secondary settings-toggle-btn"
+              onClick={onShowOnboarding}
+            >
+              {'Show welcome tour'}
+            </button>
+          </div>
+        </section>
 
         {/* --- Background jobs (P30 §6) --- */}
         <section className="settings-section">

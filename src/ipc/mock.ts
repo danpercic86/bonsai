@@ -1124,6 +1124,8 @@ const DEFAULT_UI_SETTINGS: UiSettings = {
   mcpConsented: false,
   // MCP write consent (P16c): a separate, stronger gate for the write toggle.
   mcpWriteConsented: false,
+  // P43: onboarding unseen by default so a fresh browser harness shows it.
+  onboardingSeen: false,
 };
 
 function clampPaneWidths(w: PaneWidths): PaneWidths {
@@ -1239,6 +1241,11 @@ function readUiSettings(): UiSettings {
       typeof parsed.mcpWriteConsented === 'boolean'
         ? parsed.mcpWriteConsented
         : DEFAULT_UI_SETTINGS.mcpWriteConsented;
+    // P43 onboarding seen (additive): fall back to default (false ⇒ show).
+    const onboardingSeen =
+      typeof parsed.onboardingSeen === 'boolean'
+        ? parsed.onboardingSeen
+        : DEFAULT_UI_SETTINGS.onboardingSeen;
     return {
       theme,
       paneWidths,
@@ -1251,6 +1258,7 @@ function readUiSettings(): UiSettings {
       aiConsented,
       mcpConsented,
       mcpWriteConsented,
+      onboardingSeen,
     };
   } catch {
     return structuredClone(DEFAULT_UI_SETTINGS);
@@ -4030,6 +4038,7 @@ export const mockIpc: IpcApi = {
       aiConsented: patch.aiConsented ?? current.aiConsented,
       mcpConsented: patch.mcpConsented ?? current.mcpConsented,
       mcpWriteConsented: patch.mcpWriteConsented ?? current.mcpWriteConsented,
+      onboardingSeen: patch.onboardingSeen ?? current.onboardingSeen,
     };
     writeUiSettings(next);
     // P30 §7: config round-trip re-arms the synthetic job tick timers.

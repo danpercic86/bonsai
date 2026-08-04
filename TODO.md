@@ -25,6 +25,42 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
+## P43 — first-run onboarding + empty-state polish (Productization) — **in-progress** (2026-08-04)
+
+Productization milestone. User decision (2026-08-04): **skip P41 LFS (niche) and P42 packaging (needs
+signing secrets) for now → build P43 onboarding.** Goal: a guided first-run experience (welcome →
+identity check reusing P40 config → open/clone a repo via existing flows → brief feature tour of the
+commit graph + AI-assets panel + health dashboard) plus tightened empty states (no-repo-open, empty/
+unborn-HEAD repo). Frontend-mostly; a small persisted "seen onboarding" flag. Contract:
+docs/contracts/P43-onboarding.md (architect). Guardrails unchanged (mock.ts compiling, orchestrator
+commits, browser-harness AI gate). P41 (LFS) + P42 (packaging/signing/auto-update) DEFERRED, not dropped.
+
+Contract: docs/contracts/P43-onboarding.md (architect). Accepted defaults incl. the STEP REORDER
+(Welcome → Open/Clone → Identity → Tour) — identity-first is impossible without new backend since P40
+config is repo-scoped (no repoId before a repo opens); reorder = zero backend, reuses P40 getConfig/
+setConfig(global) once a repo is open. Persistence = new additive `onboarding_seen: bool` on the UI
+settings (settings.rs #[serde(default)] + get/set_ui_settings mapping — NO new command); overlay surface;
+static tour cards; Settings "Show welcome tour" re-trigger + ?onboarding=1 harness seam; additive
+empty-state extract. Sub-increments: **P43a** overlay + step machine + persistence + re-trigger + mock
+seam (the one backend field) → **P43b** empty-state polish (extract EmptyState.tsx). Note: P42 (auto-
+update) architect running in parallel (design-only) — P42a implementer must NOT run concurrently with
+P43a/b (both edit SettingsPanel/commands/types/mock); sequence P43 fully, then P42.
+
+- **P43a** (reviewer APPROVE, 0 must-fix) — OnboardingOverlay + OnboardingSteps (Welcome→Open/Clone→
+  Identity→Tour, reuses App open/clone/init + P40 getConfig/setConfig global) + onboarding_seen persisted
+  field (settings.rs #[serde(default)] back-compat + 2 unit tests, get/set_ui_settings mapping) + App
+  startup gate (!onboardingSeen || ?onboarding=1) + Settings "Show welcome tour" re-trigger. Harness
+  (mock :1420): full flow Welcome→Open/Clone("✓ alpha-repo is open")→Identity(reads global name/email)→
+  Tour(graph/AI/health cards)→Finish closes; re-trigger reopens. BUT harness caught a React
+  setState-in-render error (OnboardingOverlay updates App during render — auto-advance/reset logic);
+  fixed: onClose() was called inside a setStep updater (runs during render) → moved to the click handler
+  (OnboardingOverlay goNext/goBack). AI GATE PASSED — re-verified in a FRESH browser tab (the original
+  tab's console buffer was stale across HMR/reloads, showing phantom errors): full flow Welcome→Open/Clone
+  →Identity→Tour→Finish + Settings re-trigger, ZERO console errors. cross-reload persistence (onboarding_
+  seen prevents re-show) = USER CHECKPOINT (mock resets per load; reviewer verified the logic statically).
+  Reviewer nits left (cosmetic): Esc no-return; dual identity forward paths; idempotent re-persist.
+**Current step:** P43a committed & AI-gate-passed. Next: P43b (empty-state polish) → P43 tester → P42.
+
 ## P40 — git config editing (Git completeness, Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 
 Git-completeness milestone #4. Read/edit git config in-app: curated identity/behavior keys (user.name/

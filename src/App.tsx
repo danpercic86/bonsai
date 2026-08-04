@@ -5,6 +5,7 @@ import { RepoWorkspace } from './components/RepoWorkspace';
 import { SettingsPanel } from './components/SettingsPanel';
 import { AiAssetsPanel } from './components/AiAssetsPanel';
 import { RepoHealthPanel } from './components/RepoHealthPanel';
+import { OnboardingOverlay } from './components/OnboardingOverlay';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
 import { TabStrip } from './components/TabStrip';
 import type { TabMeta } from './components/TabStrip';
@@ -98,10 +99,21 @@ export default function App() {
     setConfigFocus('identity');
     setSettingsOpen(true);
   }, []);
+  // P43a: re-open the onboarding overlay (Settings "Show welcome tour"); does
+  // NOT reset the seen flag.
+  const showOnboarding = useCallback(() => {
+    setSettingsOpen(false);
+    setConfigFocus(null);
+    setOnboardingOpen(true);
+  }, []);
   // P24d: AI-asset inventory / drift / context-profile overlay (active repo only).
   const [aiAssetsOpen, setAiAssetsOpen] = useState(false);
   // P29c: read-only repo-health overlay (active repo only).
   const [healthOpen, setHealthOpen] = useState(false);
+  // P43a: first-run onboarding overlay. Opened at startup when `onboardingSeen`
+  // is false (or `?onboarding=1`); re-openable from Settings. Dismissal persists
+  // `onboardingSeen: true` so it does not reappear.
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [autoFetch, setAutoFetch] = useState<AutoFetchSettings>({
     enabled: false,
     intervalMinutes: 5,
@@ -215,6 +227,15 @@ export default function App() {
       // Non-fatal — recents are best-effort UI sugar.
     }
   }, []);
+
+  // P43a: close onboarding (Skip/Finish/Esc/✕) and persist `onboardingSeen` so
+  // it does not reappear on the next launch.
+  const closeOnboarding = useCallback(() => {
+    setOnboardingOpen(false);
+    void ipc
+      .setUiSettings({ onboardingSeen: true })
+      .catch((e) => pushToast('error', `Could not save onboarding state: ${errorMessage(e)}`));
+  }, [pushToast]);
 
   /** Open (or focus) a repo as a tab (§5.2). Non-usable opens surface an error
    *  (empty-state error when no tabs, else a toast) and add no tab. */
@@ -555,6 +576,11 @@ export default function App() {
   useEffect(() => {
     if (launchedRef.current) return;
     launchedRef.current = true;
+    // P43a: `?onboarding=1` force-shows the overlay regardless of the flag —
+    // the repeatable harness trigger + manual re-find path.
+    const forceOnboarding =
+      new URLSearchParams(window.location.search).get('onboarding') === '1';
+    let showOnboard = forceOnboarding;
     (async () => {
       // UI settings first (theme/panes/listView).
       try {
@@ -573,9 +599,11 @@ export default function App() {
         setAiConsented(s.aiConsented);
         setMcpConsented(s.mcpConsented);
         setMcpWriteConsented(s.mcpWriteConsented);
+        if (!s.onboardingSeen) showOnboard = true;
       } catch {
         // Non-fatal — keep defaults.
       }
+      if (showOnboard) setOnboardingOpen(true);
 
       let recentsList: RecentRepo[] = [];
       try {
@@ -647,6 +675,7 @@ export default function App() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (menuOpen) return;
+      if (onboardingOpen) closeOnboarding();
       if (healthOpen) setHealthOpen(false);
       if (aiAssetsOpen) setAiAssetsOpen(false);
       if (settingsOpen) {
@@ -657,7 +686,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [menuOpen, overlayOpen, settingsOpen, aiAssetsOpen, healthOpen]);
+  }, [menuOpen, overlayOpen, settingsOpen, aiAssetsOpen, healthOpen, onboardingOpen, closeOnboarding]);
 
   // Global shortcuts (§5.1): Ctrl+O open, ? overlay, Ctrl+Tab / Ctrl+Shift+Tab
   // cycle tabs, Ctrl+W close active tab.
@@ -718,6 +747,7 @@ export default function App() {
     settingsOpen ||
     aiAssetsOpen ||
     healthOpen ||
+    onboardingOpen ||
     consentOpen ||
     mcpConsentOpen ||
     mcpWriteConsentOpen;
@@ -875,6 +905,17 @@ export default function App() {
         )}
 
         <ShortcutOverlay open={overlayOpen} onClose={() => setOverlayOpen(false)} />
+        <OnboardingOverlay
+          open={onboardingOpen}
+          onClose={closeOnboarding}
+          activeRepo={activeRepo}
+          recents={recents}
+          loading={loading}
+          onOpenRepository={() => void handleOpenRepository()}
+          onCloneOpen={handleCloneOpen}
+          onInitRepository={() => void handleInitRepository()}
+          onOpenRecent={(path) => void openTab(path)}
+        />
         <SettingsPanel
           open={settingsOpen}
           onClose={() => {
@@ -904,6 +945,7 @@ export default function App() {
           repoPath={activeRepo}
           configInitialFocus={configFocus}
           onRegisterMcp={handleRegisterMcp}
+          onShowOnboarding={showOnboarding}
         />
         {activeRepo !== null && (
           <AiAssetsPanel

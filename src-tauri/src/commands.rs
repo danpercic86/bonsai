@@ -239,6 +239,8 @@ pub struct UiSettings {
     pub mcp_consented: bool,
     /// One-time consent to let an external MCP client modify open repos (P16c).
     pub mcp_write_consented: bool,
+    /// P43: first-run onboarding has been shown+dismissed.
+    pub onboarding_seen: bool,
 }
 
 /// Partial patch for `set_ui_settings` — only `Some(..)` fields are applied
@@ -263,6 +265,8 @@ pub struct UiSettingsPatch {
     pub mcp_consented: Option<bool>,
     /// MCP write consent (P16c); patches independently.
     pub mcp_write_consented: Option<bool>,
+    /// P43: first-run onboarding seen flag; patches independently.
+    pub onboarding_seen: Option<bool>,
 }
 
 /// Pure patch application: only `Some(..)` fields of `patch` mutate `s`; pane
@@ -303,6 +307,9 @@ fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     if let Some(mcp_write_consented) = patch.mcp_write_consented {
         s.mcp_write_consented = mcp_write_consented;
     }
+    if let Some(onboarding_seen) = patch.onboarding_seen {
+        s.onboarding_seen = onboarding_seen;
+    }
 }
 
 /// Current UI settings (theme + pane widths). Never rejects for a
@@ -325,6 +332,7 @@ pub async fn get_ui_settings(app: tauri::AppHandle) -> Result<UiSettings, AppErr
             ai_consented: s.ai_consented,
             mcp_consented: s.mcp_consented,
             mcp_write_consented: s.mcp_write_consented,
+            onboarding_seen: s.onboarding_seen,
         }
     })
     .await
@@ -359,6 +367,7 @@ pub async fn set_ui_settings(
             ai_consented: s.ai_consented,
             mcp_consented: s.mcp_consented,
             mcp_write_consented: s.mcp_write_consented,
+            onboarding_seen: s.onboarding_seen,
         })
     })
     .await

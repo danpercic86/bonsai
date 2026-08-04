@@ -269,6 +269,9 @@ pub struct Settings {
     /// Generated on first enable and reused across runs so the user's
     /// `claude mcp add` line keeps working. `None` until first enable.
     pub mcp_token: Option<String>,
+    /// P43: first-run onboarding shown+dismissed. Additive `#[serde(default)]`;
+    /// a legacy settings.json without this key loads as `false` (⇒ show once).
+    pub onboarding_seen: bool,
 }
 
 impl Default for Settings {
@@ -293,6 +296,7 @@ impl Default for Settings {
             mcp_write_consented: false,
             mcp_port: None,
             mcp_token: None,
+            onboarding_seen: false,
         }
     }
 }
@@ -1031,5 +1035,48 @@ mod tests {
         assert_eq!(loaded.theme, ThemeChoice::Light);
         assert_eq!(loaded.list_view, ListView::Flat);
         assert_eq!(loaded.recent_repos.len(), 1);
+    }
+
+    /// An old `settings.json` written before P43 (no `onboardingSeen` key) loads
+    /// with the default (`false` ⇒ show onboarding once) and preserves existing
+    /// fields — the additive-field guarantee for the P43 setting specifically,
+    /// mirroring `old_settings_file_without_ai_fields_loads_defaults`.
+    #[test]
+    fn old_settings_file_without_onboarding_seen_loads_default() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let json = r#"{
+            "version": 1,
+            "recentRepos": [ { "path": "D:\\Repos\\legacy", "lastOpened": 123 } ],
+            "theme": "light",
+            "paneWidths": { "sidebar": 300, "rightPanel": 400 },
+            "listView": "flat"
+        }"#;
+        std::fs::write(&file, json).expect("write pre-P43 settings.json");
+
+        let loaded = load_from(&file);
+        assert!(!loaded.onboarding_seen);
+        // Existing fields untouched.
+        assert_eq!(loaded.theme, ThemeChoice::Light);
+        assert_eq!(loaded.list_view, ListView::Flat);
+        assert_eq!(loaded.recent_repos.len(), 1);
+    }
+
+    /// A non-default `onboarding_seen` round-trips and serializes to the
+    /// documented camelCase key (P43 §6).
+    #[test]
+    fn onboarding_seen_roundtrip() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let s = Settings {
+            onboarding_seen: true,
+            ..Default::default()
+        };
+        save_to(&file, &s).expect("save settings");
+        let loaded = load_from(&file);
+        assert_eq!(loaded, s);
+        assert!(loaded.onboarding_seen);
+        let raw = std::fs::read_to_string(&file).expect("read settings.json");
+        assert!(raw.contains("\"onboardingSeen\": true"));
     }
 }
