@@ -272,6 +272,10 @@ pub struct Settings {
     /// P43: first-run onboarding shown+dismissed. Additive `#[serde(default)]`;
     /// a legacy settings.json without this key loads as `false` (⇒ show once).
     pub onboarding_seen: bool,
+    /// P42 D4: auto-check for updates on launch. Default `false` (privacy — no
+    /// surprise outbound call before opt-in). Additive `#[serde(default)]`; a
+    /// legacy file without this key loads as `false`.
+    pub auto_check_updates: bool,
 }
 
 impl Default for Settings {
@@ -297,6 +301,7 @@ impl Default for Settings {
             mcp_port: None,
             mcp_token: None,
             onboarding_seen: false,
+            auto_check_updates: false,
         }
     }
 }
@@ -1078,5 +1083,48 @@ mod tests {
         assert!(loaded.onboarding_seen);
         let raw = std::fs::read_to_string(&file).expect("read settings.json");
         assert!(raw.contains("\"onboardingSeen\": true"));
+    }
+
+    /// An old `settings.json` written before P42 (no `autoCheckUpdates` key)
+    /// loads with the default (`false` ⇒ no auto-check on launch) and preserves
+    /// existing fields — the additive-field guarantee for the P42 setting
+    /// specifically, mirroring `old_settings_file_without_onboarding_seen_loads_default`.
+    #[test]
+    fn old_settings_file_without_auto_check_updates_loads_default() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let json = r#"{
+            "version": 1,
+            "recentRepos": [ { "path": "D:\\Repos\\legacy", "lastOpened": 123 } ],
+            "theme": "light",
+            "paneWidths": { "sidebar": 300, "rightPanel": 400 },
+            "listView": "flat"
+        }"#;
+        std::fs::write(&file, json).expect("write pre-P42 settings.json");
+
+        let loaded = load_from(&file);
+        assert!(!loaded.auto_check_updates);
+        // Existing fields untouched.
+        assert_eq!(loaded.theme, ThemeChoice::Light);
+        assert_eq!(loaded.list_view, ListView::Flat);
+        assert_eq!(loaded.recent_repos.len(), 1);
+    }
+
+    /// A non-default `auto_check_updates` round-trips and serializes to the
+    /// documented camelCase key (P42 D4).
+    #[test]
+    fn auto_check_updates_roundtrip() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let s = Settings {
+            auto_check_updates: true,
+            ..Default::default()
+        };
+        save_to(&file, &s).expect("save settings");
+        let loaded = load_from(&file);
+        assert_eq!(loaded, s);
+        assert!(loaded.auto_check_updates);
+        let raw = std::fs::read_to_string(&file).expect("read settings.json");
+        assert!(raw.contains("\"autoCheckUpdates\": true"));
     }
 }

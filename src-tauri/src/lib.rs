@@ -11,6 +11,11 @@ pub fn run() {
     bonsai_core::git::relax_odb_hash_verification();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // P42: auto-update (updater is desktop-only) + process (relaunch after
+        // install). React drives these ONLY through the IpcApi wrapper (INV-1);
+        // no custom updater command — the JS plugin holds the Update handle.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(state::AppState::default())
         .manage(mcp::McpServerState::default())
         .manage(scheduler::SchedulerState::default())

@@ -16,6 +16,8 @@ bonsai-core = { path = "../crates/bonsai-core" }
 bonsai-mcp = { path = "../crates/bonsai-mcp" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 git2 = { workspace = true }
 notify = "8"
 serde = { workspace = true }

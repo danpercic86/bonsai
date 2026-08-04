@@ -26,6 +26,24 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
+    "createUpdaterArtifacts": true,
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "windows": {
+      "certificateThumbprint": null,
+      "nsis": {
+        "installMode": "perMachine"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/OWNER/REPO/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk2NzNFOTM4QjUyODA1MUIKUldRYkJTaTFPT2x6bHZFTnI0a0ZvN2FicHNqdEVvOFVvUXM0USt1a1FhUThmTnhkMDFOcHhSU1cK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

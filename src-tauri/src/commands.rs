@@ -241,6 +241,8 @@ pub struct UiSettings {
     pub mcp_write_consented: bool,
     /// P43: first-run onboarding has been shown+dismissed.
     pub onboarding_seen: bool,
+    /// P42 D4: auto-check for updates on launch (default false).
+    pub auto_check_updates: bool,
 }
 
 /// Partial patch for `set_ui_settings` — only `Some(..)` fields are applied
@@ -267,6 +269,8 @@ pub struct UiSettingsPatch {
     pub mcp_write_consented: Option<bool>,
     /// P43: first-run onboarding seen flag; patches independently.
     pub onboarding_seen: Option<bool>,
+    /// P42 D4: auto-check-updates-on-launch flag; patches independently.
+    pub auto_check_updates: Option<bool>,
 }
 
 /// Pure patch application: only `Some(..)` fields of `patch` mutate `s`; pane
@@ -310,6 +314,9 @@ fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     if let Some(onboarding_seen) = patch.onboarding_seen {
         s.onboarding_seen = onboarding_seen;
     }
+    if let Some(auto_check_updates) = patch.auto_check_updates {
+        s.auto_check_updates = auto_check_updates;
+    }
 }
 
 /// Current UI settings (theme + pane widths). Never rejects for a
@@ -333,6 +340,7 @@ pub async fn get_ui_settings(app: tauri::AppHandle) -> Result<UiSettings, AppErr
             mcp_consented: s.mcp_consented,
             mcp_write_consented: s.mcp_write_consented,
             onboarding_seen: s.onboarding_seen,
+            auto_check_updates: s.auto_check_updates,
         }
     })
     .await
@@ -368,6 +376,7 @@ pub async fn set_ui_settings(
             mcp_consented: s.mcp_consented,
             mcp_write_consented: s.mcp_write_consented,
             onboarding_seen: s.onboarding_seen,
+            auto_check_updates: s.auto_check_updates,
         })
     })
     .await

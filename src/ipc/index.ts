@@ -125,6 +125,8 @@ export type {
   UiSettings,
   UiSettingsPatch,
   Unsubscribe,
+  UpdateCheckResult,
+  UpdateProgress,
   Validation,
   WorkingStateSection,
   WorktreeContextStatus,

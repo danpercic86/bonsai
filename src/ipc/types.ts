@@ -858,6 +858,27 @@ export interface AiSummary {
   costUsd: number | null;
 }
 
+/** Result of IpcApi.checkForUpdate (P42). `available` false ⇒ up to date;
+ *  version/notes/date populated only when available. currentVersion is always set. */
+export interface UpdateCheckResult {
+  available: boolean;
+  currentVersion: string;
+  /** Target version when available, else null. */
+  version: string | null;
+  /** Release notes (may be markdown/plain), else null. */
+  notes: string | null;
+  /** Publish date string from the manifest, else null. */
+  date: string | null;
+}
+
+/** Streamed progress of downloadAndInstallUpdate (P42). Bytes are cumulative. */
+export interface UpdateProgress {
+  phase: 'started' | 'downloading' | 'finished';
+  downloadedBytes: number;
+  /** Total size when the manifest/server provides it, else null. */
+  contentLength: number | null;
+}
+
 export interface UiSettings {
   theme: Theme;
   paneWidths: PaneWidths;
@@ -877,6 +898,8 @@ export interface UiSettings {
   mcpWriteConsented: boolean;
   /** P43: first-run onboarding has been shown+dismissed. Defaults false. */
   onboardingSeen: boolean;
+  /** P42: auto-check for updates on launch. Defaults false. */
+  autoCheckUpdates: boolean;
 }
 
 export interface UiSettingsPatch {
@@ -897,6 +920,8 @@ export interface UiSettingsPatch {
   mcpWriteConsented?: boolean;
   // First-run onboarding (P43).
   onboardingSeen?: boolean;
+  // Auto-check-updates-on-launch (P42).
+  autoCheckUpdates?: boolean;
 }
 
 /** Embedded MCP server status for the Settings panel (P16). Mirrors the Rust
@@ -1144,7 +1169,8 @@ export interface AppError {
     | 'noOperationInProgress'
     | 'unresolvedConflicts'
     | 'aiUnavailable'
-    | 'aiFailed';
+    | 'aiFailed'
+    | 'updateFailed';
   message: string;
 }
 
@@ -1631,4 +1657,19 @@ export interface IpcApi {
     targetAgent: string,
     guidance?: string,
   ): Promise<AiGeneratedAsset>;
+  /** P42. Check the configured endpoint for a newer release. Resolves with
+   *  availability + version metadata. Rejects AppError (`networkError`
+   *  offline/unreachable, `updateFailed` bad signature/manifest). No-op safe to
+   *  call repeatedly. */
+  checkForUpdate(): Promise<UpdateCheckResult>;
+  /** P42. Download + install the update discovered by the most recent
+   *  checkForUpdate, streaming byte progress via `onProgress`. Resolves when the
+   *  installer has applied the update; the app must then call relaunchApp() to
+   *  restart. Rejects `noOperationInProgress` if no update was found first,
+   *  `networkError`/`updateFailed` on transfer/verify failure. */
+  downloadAndInstallUpdate(onProgress: (p: UpdateProgress) => void): Promise<void>;
+  /** P42. Restart the app to complete a finished update (tauri-plugin-process).
+   *  Never resolves in practice (process exits). In the mock it is a logged
+   *  no-op. */
+  relaunchApp(): Promise<void>;
 }

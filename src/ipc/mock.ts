@@ -132,6 +132,8 @@ import type {
   UiSettings,
   UiSettingsPatch,
   Unsubscribe,
+  UpdateCheckResult,
+  UpdateProgress,
   WorktreeContextStatus,
   WorktreeInfo,
   CopyCandidate,
@@ -472,6 +474,18 @@ function query(name: string): string | null {
 // composable with `?op=merge` / `?fixture=`. Availability probes honour it;
 // aiResolveConflict is independent (it gates on the conflict kind, not this).
 const AI_OFF = query('ai') === 'off';
+
+// P42 (INV-2): the update flow's harness seam. `?update=available|none|error`
+// read once at module init (mirrors AI_OFF). Default (absent/other) ⇒ 'none'.
+const UPDATE_MODE = ((): 'available' | 'none' | 'error' => {
+  const q = query('update');
+  return q === 'available' || q === 'error' ? q : 'none';
+})();
+const MOCK_CURRENT_VERSION = '0.1.0';
+const MOCK_NEXT_VERSION = '0.2.0';
+/** Set true by a successful `checkForUpdate` in `available` mode; gates
+ *  `downloadAndInstallUpdate` (mirrors the real `pendingUpdate` handle). */
+let mockUpdateReady = false;
 
 /** Strips Git conflict markers, keeping BOTH sides' body lines — a plausible
  *  markerless merged body for the mock AI proposal (P13, derived from the
@@ -1126,6 +1140,8 @@ const DEFAULT_UI_SETTINGS: UiSettings = {
   mcpWriteConsented: false,
   // P43: onboarding unseen by default so a fresh browser harness shows it.
   onboardingSeen: false,
+  // P42: auto-check-updates-on-launch OFF by default (privacy / opt-in).
+  autoCheckUpdates: false,
 };
 
 function clampPaneWidths(w: PaneWidths): PaneWidths {
@@ -1246,6 +1262,11 @@ function readUiSettings(): UiSettings {
       typeof parsed.onboardingSeen === 'boolean'
         ? parsed.onboardingSeen
         : DEFAULT_UI_SETTINGS.onboardingSeen;
+    // P42 auto-check-updates (additive): fall back to default (false).
+    const autoCheckUpdates =
+      typeof parsed.autoCheckUpdates === 'boolean'
+        ? parsed.autoCheckUpdates
+        : DEFAULT_UI_SETTINGS.autoCheckUpdates;
     return {
       theme,
       paneWidths,
@@ -1259,6 +1280,7 @@ function readUiSettings(): UiSettings {
       mcpConsented,
       mcpWriteConsented,
       onboardingSeen,
+      autoCheckUpdates,
     };
   } catch {
     return structuredClone(DEFAULT_UI_SETTINGS);
@@ -4039,6 +4061,7 @@ export const mockIpc: IpcApi = {
       mcpConsented: patch.mcpConsented ?? current.mcpConsented,
       mcpWriteConsented: patch.mcpWriteConsented ?? current.mcpWriteConsented,
       onboardingSeen: patch.onboardingSeen ?? current.onboardingSeen,
+      autoCheckUpdates: patch.autoCheckUpdates ?? current.autoCheckUpdates,
     };
     writeUiSettings(next);
     // P30 §7: config round-trip re-arms the synthetic job tick timers.
@@ -4489,5 +4512,62 @@ export const mockIpc: IpcApi = {
         guidanceLine +
         '\n',
     };
+  },
+
+  // P42 (INV-2): stateful update seam keyed on `?update=available|none|error`.
+  async checkForUpdate(): Promise<UpdateCheckResult> {
+    await delay(400);
+    if (UPDATE_MODE === 'error') {
+      mockUpdateReady = false;
+      const err: AppError = {
+        kind: 'networkError',
+        message: 'mock: could not reach the update endpoint (?update=error)',
+      };
+      throw err;
+    }
+    if (UPDATE_MODE === 'available') {
+      mockUpdateReady = true;
+      return {
+        available: true,
+        currentVersion: MOCK_CURRENT_VERSION,
+        version: MOCK_NEXT_VERSION,
+        notes: '- Mock release notes\n- Harness fixture',
+        date: '2026-08-04',
+      };
+    }
+    mockUpdateReady = false;
+    return {
+      available: false,
+      currentVersion: MOCK_CURRENT_VERSION,
+      version: null,
+      notes: null,
+      date: null,
+    };
+  },
+
+  async downloadAndInstallUpdate(onProgress: (p: UpdateProgress) => void): Promise<void> {
+    if (!mockUpdateReady) {
+      const err: AppError = {
+        kind: 'noOperationInProgress',
+        message: 'No update found — call checkForUpdate first',
+      };
+      throw err;
+    }
+    const contentLength = 5_000_000;
+    onProgress({ phase: 'started', downloadedBytes: 0, contentLength });
+    const ticks = 15;
+    const chunk = Math.ceil(contentLength / ticks);
+    let downloadedBytes = 0;
+    for (let i = 0; i < ticks; i += 1) {
+      await delay(120);
+      downloadedBytes = Math.min(contentLength, downloadedBytes + chunk);
+      onProgress({ phase: 'downloading', downloadedBytes, contentLength });
+    }
+    onProgress({ phase: 'finished', downloadedBytes: contentLength, contentLength });
+  },
+
+  async relaunchApp(): Promise<void> {
+    // No reload — keeps harness state so the flow stays inspectable (D1/INV-2).
+    console.info('[mock] relaunch');
   },
 };

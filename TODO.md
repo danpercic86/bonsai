@@ -25,6 +25,35 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
+## P42 — packaging + auto-update (Productization) — **in-progress** (2026-08-04)
+
+Productization milestone. **User explicitly requested auto-updates (2026-08-04, "do not forget about
+auto updates").** Tauri v2 updater plugin + a check-for-update/update-available/download-install flow,
+WRAPPED behind Bonsai's IPC-triple (INV-1: React never calls @tauri-apps/plugin-updater directly →
+harness-verifiable via a `?update=available|none|error` mock seam) + per-OS packaging config. Contract:
+docs/contracts/P42-packaging-autoupdate.md (architect). Accepted defaults: updater logic lives in
+tauri.ts driving the JS plugin (NOT a Rust command — Tauri v2's flow is stateful JS-side); GitHub
+Releases as the placeholder endpoint host; pubkey-in-config / private-key-in-CI-secret split; Windows
+installMode=passive; no separate release-doc (folded into the user-checklist); new AppError `updateFailed`
++ additive `auto_check_updates` settings field. Sub-increments: **P42a** config + plugin registration +
+capabilities + settings field + IPC-triple + mock seam (generate updater keypair — pubkey committed,
+private key GITIGNORED + user generates their own for prod) → **P42b** UI (UpdateNotification/UpdateDialog/
+SettingsUpdatesSection + auto-check-on-launch + harness verification).
+**USER CHECKPOINT (I must NOT self-pass):** real endpoint URL; updater private key + code-signing
+(Authenticode/notarization) secrets; the full SIGNED download→install→relaunch round-trip; native
+installer smoke per OS. **AI gate:** cargo/clippy/tsc/pnpm build clean + settings test; unsigned
+`pnpm tauri build` emits updater artifacts (background + poll — NEVER conclude from a timeout); the
+mock-seam UI flows (available→notify→progress→restart; up-to-date; error) in the harness.
+
+- **P42a** (reviewer APPROVE, 0 must-fix; SECURITY clean — committed pubkey decodes to a genuine minisign
+  public key, private key gitignored + not tracked, INV-1 boundary verified only tauri.ts imports the
+  plugin) — updater/process plugins + capabilities + config (createUpdaterArtifacts, windows installMode
+  passive, OWNER/REPO endpoint placeholder, signing placeholders) + auto_check_updates settings field (2
+  tests) + IPC-triple (checkForUpdate/downloadAndInstallUpdate/relaunchApp, updateFailed AppError) +
+  ?update= mock seam. cargo check/clippy + settings 29 + tsc + build clean. Nits (cosmetic): heuristic
+  error-message mapping; mock error-mode only covers check-time.
+**Current step:** P42a committed. Next: P42b (Update UI + settings section + auto-check) → harness → P42 tester.
+
 ## P43 — first-run onboarding + empty-state polish (Productization) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 
 Productization milestone. User decision (2026-08-04): **skip P41 LFS (niche) and P42 packaging (needs
