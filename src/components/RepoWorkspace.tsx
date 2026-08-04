@@ -1380,14 +1380,34 @@ export function RepoWorkspace({
     }
   }
 
+  // P33: dirty-safe switch — auto-stash → switch → auto fast-forward (no fetch)
+  // → re-apply stash. Never hard-fails on a dirty tree; a conflicted re-apply is
+  // a SUCCESS (stash retained at stash@{0}). The upstream label for the FF toast
+  // is a stable branch property, read from the current branches snapshot.
   async function handleCheckoutBranch(name: string) {
     setBranchesError(null);
     setMutating(true);
     try {
-      await ipc.checkoutBranch(repoId, name);
+      const res = await ipc.checkoutBranch(repoId, name);
       await refreshAll();
+      if (res.apply?.kind === 'conflicts') {
+        pushToast(
+          'warning',
+          `Switched to ${name}; your changes were carried over with conflicts and kept safe at stash@{0} — resolve them in the status panel`,
+        );
+      } else {
+        let msg = `Switched to ${name}`;
+        const extras: string[] = [];
+        if (res.stashed) extras.push('stashed & re-applied');
+        if (res.fastForwarded) {
+          const upstreamLabel = branches?.local.find((b) => b.name === name)?.upstream ?? 'upstream';
+          extras.push(`fast-forwarded to ${upstreamLabel}`);
+        }
+        if (extras.length > 0) msg += ` (${extras.join(', ')})`;
+        pushToast('success', msg);
+      }
     } catch (e) {
-      setBranchesError(errorMessage(e));
+      pushToast('error', errorMessage(e));
     } finally {
       setMutating(false);
     }

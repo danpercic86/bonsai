@@ -544,6 +544,16 @@ export interface CreateBranchHereResult {
   apply: ApplyStashOutcome | null;
 }
 
+/** Result of a dirty-safe branch switch (P33). */
+export interface CheckoutResult {
+  /** true when uncommitted work was auto-stashed and carried across. */
+  stashed: boolean;
+  /** true when the switched-to branch was fast-forwarded to its upstream. */
+  fastForwarded: boolean;
+  /** Present only when `stashed`; null otherwise (serde None → null). */
+  apply: ApplyStashOutcome | null;
+}
+
 export type MergeOutcome =
   | { kind: 'upToDate' }
   | { kind: 'fastForwarded'; branch: string; to: string; stashed: boolean }
@@ -1147,9 +1157,12 @@ export interface IpcApi {
    *  uncommitted work across the checkout. Rejects invalidName | branchExists
    *  | operationInProgress | configMissing | checkoutConflict | git | noRepo. */
   createBranchHere(repoId: string, name: string, oid: string): Promise<CreateBranchHereResult>;
-  /** Safe checkout of a LOCAL branch. Rejects
-   *  branchNotFound | checkoutConflict | git | noRepo. */
-  checkoutBranch(repoId: string, name: string): Promise<void>;
+  /** Dirty-safe checkout of a LOCAL branch (P33): auto-stash → switch → auto
+   *  fast-forward to upstream (no fetch) → re-apply stash. A conflicted re-apply
+   *  is a SUCCESS carrying `apply: {kind:'conflicts'}` (stash retained). Rejects
+   *  branchNotFound | operationInProgress | configMissing | checkoutConflict |
+   *  git | noRepo. */
+  checkoutBranch(repoId: string, name: string): Promise<CheckoutResult>;
   /** Delete a LOCAL, fully merged, non-current branch. Rejects
    *  branchNotFound | unmergedBranch | git | noRepo. */
   deleteBranch(repoId: string, name: string): Promise<void>;

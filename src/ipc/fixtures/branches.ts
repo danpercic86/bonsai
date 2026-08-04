@@ -5,8 +5,10 @@ export const MOCK_OID = '9fceb02d0ae598e95dc970b74767f19372d61af8';
 
 /**
  * M5 contract §5: initial branch snapshot for the stateful mock.
- * - `fix/watcher-debounce` is the designated dirty-checkout branch
- *   (checkoutBranch throws checkoutConflict on it).
+ * - `fix/watcher-debounce` is the designated dirty-checkout branch: per P33
+ *   auto-stash, checking it out over a dirty tree carries the work across and
+ *   yields a conflicted re-apply (apply: Conflicts, stash retained) — it no
+ *   longer throws checkoutConflict.
  * - `experiment-unmerged` is the designated unmerged branch
  *   (deleteBranch throws unmergedBranch on it).
  */

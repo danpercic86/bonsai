@@ -34,6 +34,7 @@ import type {
   ConflictEntry,
   ConflictFile,
   ConflictResolution,
+  CheckoutResult,
   CreateBranchHereResult,
   CreateStashResult,
   FetchResult,
@@ -212,8 +213,8 @@ export const tauriIpc: IpcApi = {
     return invoke<CreateBranchHereResult>('create_branch_here', { repoId, name, oid });
   },
 
-  checkoutBranch(repoId: string, name: string): Promise<void> {
-    return invoke<void>('checkout_branch', { repoId, name });
+  checkoutBranch(repoId: string, name: string): Promise<CheckoutResult> {
+    return invoke<CheckoutResult>('checkout_branch', { repoId, name });
   },
 
   deleteBranch(repoId: string, name: string): Promise<void> {

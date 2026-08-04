@@ -79,7 +79,11 @@ checkout_branch_autostash(workdir, name):
         return Err(e)
 
     // 3. AUTO FAST-FORWARD (no fetch). Skip silently on any non-FF condition.
-    fast_forwarded = try_ff_to_upstream(&repo, name)?   // see 1.4; returns bool
+    //    BEST-EFFORT / INFALLIBLE: the switch already succeeded and the work is
+    //    stashed here, so the FF MUST NOT propagate errors — an Err before step 4
+    //    would strand the stash. `try_ff_to_upstream` returns plain `bool`; any
+    //    internal libgit2 error collapses to `false` (no `?`).
+    fast_forwarded = try_ff_to_upstream(&repo, name)    // see 1.4; returns bool, infallible
 
     // 4. Re-apply carried work iff stashed. Conflicts is a SUCCESS return.
     if stashed:
@@ -98,6 +102,16 @@ switch would move the wrong branch; doing it after re-apply could conflict the
 FF checkout against the just-restored dirty worktree.
 
 ### 1.4 The no-fetch fast-forward helper
+
+**Best-effort / infallible (data-safety):** when this runs, the branch switch
+has already succeeded and any carried work lives in `stash@{0}` awaiting the
+step-4 `pop_stash`. The FF is a pure convenience, so it MUST NOT propagate
+errors — an `Err` here returns before `pop_stash` and silently strands the
+user's stash. Return plain `bool`: collapse EVERY internal libgit2 error
+(graph math, `find_object`, `checkout_tree`, `find_reference`, `set_target`)
+to `false`, leaving the ref untouched, rather than an `Err`. The call site uses
+no `?`. (The pseudocode below still shows `?`/`Result` for the primitive shapes;
+read every `Err(..) => return Err(..)` as `=> return false`.)
 
 Resolve the upstream oid from the **already-present remote-tracking ref** — no
 network. Use the same primitives `list_refs` uses to compute ahead/behind

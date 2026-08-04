@@ -12,7 +12,7 @@ use bonsai_core::git::ai_explain::{self, AiAnalysis, AiAnalysisMode, AiDiffTarge
 use bonsai_core::git::ai_resolve::{self, AiResolveProposal};
 use bonsai_core::git::ai_summary::{self, AiSummary};
 use bonsai_core::git::blame::{self, BlameLine, FileHistoryEntry};
-use bonsai_core::git::branches::{self, BranchesSnapshot, CreateBranchHereResult};
+use bonsai_core::git::branches::{self, BranchesSnapshot, CheckoutResult, CreateBranchHereResult};
 use bonsai_core::git::cherrypick::{self, CherrypickOutcome};
 use bonsai_core::git::clone::{clone_repo as clone_repo_core, init_repo as init_repo_core, CloneProgress};
 use bonsai_core::git::commit::{amend_commit, create_commit, CommitResult};
@@ -966,14 +966,17 @@ async fn create_branch_here_inner(
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
-/// Safe checkout of a LOCAL branch (M5 contract §2.5 — never force).
-/// Errors: `branchNotFound` | `checkoutConflict` | `git` | `noRepo`.
+/// Dirty-safe checkout of a LOCAL branch (P33): auto-stash -> switch -> auto FF
+/// to upstream (no fetch) -> re-apply stash. A conflicted re-apply is a SUCCESS
+/// carrying `apply: Some(conflicts)` (stash retained). Errors: `branchNotFound`
+/// | `operationInProgress` | `configMissing` | `checkoutConflict` | `git` |
+/// `noRepo`. Does NOT emit `repo-changed` (frontend calls refreshAll).
 #[tauri::command]
 pub async fn checkout_branch(
     state: tauri::State<'_, AppState>,
     repo_id: String,
     name: String,
-) -> Result<(), AppError> {
+) -> Result<CheckoutResult, AppError> {
     checkout_branch_inner(state.inner(), &repo_id, name).await
 }
 
@@ -982,9 +985,9 @@ async fn checkout_branch_inner(
     state: &AppState,
     repo_id: &str,
     name: String,
-) -> Result<(), AppError> {
+) -> Result<CheckoutResult, AppError> {
     let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || branches::checkout_branch(&path, &name))
+    tauri::async_runtime::spawn_blocking(move || branches::checkout_branch_autostash(&path, &name))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

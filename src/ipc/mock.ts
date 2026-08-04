@@ -72,6 +72,7 @@ import type {
   ConflictEntry,
   ConflictFile,
   ConflictResolution,
+  CheckoutResult,
   CreateBranchHereResult,
   CreateStashResult,
   FetchResult,
@@ -2168,7 +2169,10 @@ export const mockIpc: IpcApi = {
     return { stashed: true, apply: { kind: 'applied' } };
   },
 
-  async checkoutBranch(repoId: string, name: string): Promise<void> {
+  // P33: dirty-safe switch — auto-stash → switch → auto fast-forward (no fetch)
+  // → re-apply stash. Never hard-fails on a dirty tree; a conflicted re-apply is
+  // a SUCCESS carrying `apply: {kind:'conflicts'}` (stash RETAINED).
+  async checkoutBranch(repoId: string, name: string): Promise<CheckoutResult> {
     await delay(150);
     const state = requireRepo(repoId);
     const branch = state.branches.local.find((b) => b.name === name);
@@ -2176,16 +2180,14 @@ export const mockIpc: IpcApi = {
       const err: AppError = { kind: 'branchNotFound', message: `branch '${name}' not found` };
       throw err;
     }
-    // Designated dirty-checkout branch (contract §5).
-    if (name === 'fix/watcher-debounce') {
-      const err: AppError = {
-        kind: 'checkoutConflict',
-        message:
-          "cannot switch to 'fix/watcher-debounce': local changes would be overwritten. " +
-          'Commit or discard them first.',
-      };
-      throw err;
-    }
+    const s = state.status;
+    const dirty =
+      s.staged.length > 0 ||
+      s.unstaged.length > 0 ||
+      s.untracked.length > 0 ||
+      s.conflicted.length > 0;
+
+    // Move HEAD to the target branch (unset previous head).
     for (const b of state.branches.local) b.isHead = false;
     branch.isHead = true;
     state.headBranch = name;
@@ -2193,6 +2195,28 @@ export const mockIpc: IpcApi = {
     // TODO(polish): move the HEAD/branch pills in the mock graph fixture too
     // (contract §5 decision: fixtures stay decoupled from branch state —
     // harness proof is the sidebar dot + header branch name).
+
+    // Auto fast-forward: only when the target tracks an upstream and is strictly
+    // behind (behind>0 && ahead==0). `feature/merged-a` is the deterministic FF
+    // fixture (ahead 0, behind 3). Diverged (feature/sidebar) or up-to-date
+    // (main) → no FF.
+    const fastForwarded =
+      branch.upstream != null && (branch.behind ?? 0) > 0 && (branch.ahead ?? 0) === 0;
+    if (fastForwarded) {
+      branch.behind = 0;
+    }
+
+    if (!dirty) return { stashed: false, fastForwarded, apply: null };
+
+    // Carried work across the switch. `fix/watcher-debounce` is the designated
+    // conflicted re-apply fixture (contract §4.3): worktree stays dirty (stash
+    // RETAINED) with a synthetic conflict entry.
+    if (name === 'fix/watcher-debounce') {
+      upsert(s.conflicted, { path: 'src/app.ts', origPath: null, status: 'conflicted' });
+      return { stashed: true, fastForwarded, apply: { kind: 'conflicts', paths: ['src/app.ts'] } };
+    }
+    // Clean carry-over: the changes moved with us — status preserved as-is.
+    return { stashed: true, fastForwarded, apply: { kind: 'applied' } };
   },
 
   async deleteBranch(repoId: string, name: string): Promise<void> {
