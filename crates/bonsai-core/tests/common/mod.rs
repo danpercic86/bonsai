@@ -1,9 +1,11 @@
 //! Shared helpers for the M3 CLI-oracle integration tests.
 //!
-//! HARD RULE (M3 contract §6.0): C: is critically full — every scratch repo
-//! lives under `D:\Temp\bonsai-scratch`, never the system temp. This mirrors
-//! `src/testutil.rs` (a `#[cfg(test)]` lib module cannot be linked from
-//! integration binaries, so the helper is duplicated here).
+//! HARD RULE (M3 contract §6.0): on Windows, C: is critically full — every
+//! scratch repo lives under `D:\Temp\bonsai-scratch`, never the system temp.
+//! On macOS/Linux there is no such constraint, so scratch dirs fall back to
+//! `std::env::temp_dir()/bonsai-scratch`. This mirrors `src/testutil.rs` (a
+//! `#[cfg(test)]` lib module cannot be linked from integration binaries, so
+//! the helper is duplicated here).
 
 #![allow(dead_code)] // each test binary uses a subset of these helpers
 
@@ -14,14 +16,24 @@ use std::process::Command;
 /// base oids (M3 contract §6.2).
 pub const FIXED_DATE: &str = "2026-01-02T03:04:05+0000";
 
-/// Creates a scratch temp dir under `D:\Temp\bonsai-scratch` (created if
+#[cfg(windows)]
+fn scratch_root() -> std::path::PathBuf {
+    Path::new("D:\\Temp\\bonsai-scratch").to_path_buf()
+}
+
+#[cfg(not(windows))]
+fn scratch_root() -> std::path::PathBuf {
+    std::env::temp_dir().join("bonsai-scratch")
+}
+
+/// Creates a scratch temp dir under the platform scratch root (created if
 /// absent). Use this — never `TempDir::new()` — for every fixture.
 pub fn scratch_dir() -> tempfile::TempDir {
-    let root = Path::new("D:\\Temp\\bonsai-scratch");
-    std::fs::create_dir_all(root).expect("create scratch root");
+    let root = scratch_root();
+    std::fs::create_dir_all(&root).expect("create scratch root");
     tempfile::Builder::new()
         .prefix("bonsai-")
-        .tempdir_in(root)
+        .tempdir_in(&root)
         .expect("scratch dir")
 }
 

@@ -7,9 +7,12 @@ Environment: Rust 1.97.1 stable-msvc, VS Build Tools 2022 17.14, pnpm 11.17.0, N
 Cargo not on default PATH — `$HOME/.cargo/bin`. Browser harness: `pnpm dev:mock` (port 1420).
 Avoid tauri "test" feature on this machine (STATUS_ENTRYPOINT_NOT_FOUND); use runtime-free
 inner functions for command tests.
-**USER MANDATE (2026-07-28): never use C: for temp/scratch/mock repos — C: is critically full.
-Use `D:\Temp\bonsai-scratch`; when running cargo tests set TMP/TEMP to `D:\Temp` (tempfile
-honors them). Include this in every subagent prompt that runs tests or creates repos.**
+**USER MANDATE (2026-07-28, updated 2026-08-04 for cross-platform support): on Windows, never use
+C: for temp/scratch/mock repos — C: is critically full. Use `D:\Temp\bonsai-scratch`; when running
+cargo tests set TMP/TEMP to `D:\Temp` (tempfile honors them). On macOS/Linux, `scratch_dir()` now
+falls back to the OS temp dir (`std::env::temp_dir()/bonsai-scratch`) automatically — no special
+handling needed there. Include the Windows-specific guidance in every subagent prompt that runs
+tests or creates repos only when running on a Windows machine.**
 
 **USER CHECKPOINT BATCH CONFIRMED (2026-07-30):** the user confirmed in native `pnpm tauri dev`
 that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e, P7f, P3f, P8, P9.

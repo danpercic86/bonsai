@@ -6,7 +6,7 @@
 
 ## Your role (main session = orchestrator)
 
-You are the orchestrator for building a working local Git client on a Windows machine. You own the
+You are the orchestrator for building a working local Git client. You own the
 plan and the integration; you delegate specialised work to subagents and verify the result. You do
 **not** personally write large chunks of code — you route implementation to `senior-dev`, design to
 `architect`, review to `reviewer`, and testing to `tester`, then integrate and check.
@@ -24,7 +24,7 @@ Do not assume a subagent remembers earlier work.
 
 ## What we're building
 
-**Bonsai** — a fast, native-feeling desktop Git client for Windows. The name is used everywhere:
+**Bonsai** — a fast, native-feeling cross-platform desktop Git client. The name is used everywhere:
 window title "Bonsai", `productName: "Bonsai"` and identifier `com.bonsai.app` in `tauri.conf.json`,
 npm package `bonsai`, Rust crate `bonsai`. Clean, minimal, GitButler-inspired UI feel,
 with a **GitKraken-style commit graph as the centerpiece**: multi-colored branch lanes, smooth curved
@@ -153,11 +153,13 @@ review.
   (`pnpm dev` + `VITE_MOCK_IPC=1`) for UI verification; the native window is for USER CHECKPOINTs.
 - Build large fixture repos with git2 or `git fast-import`, never thousands of `git commit` calls.
 
-## Windows shell discipline
+## Shell discipline
 
-- Pick ONE shell dialect per command: the Bash tool is Git Bash (POSIX — `/d/...` paths, `$VAR`);
-  PowerShell is a separate tool with its own syntax. Never mix them in one command.
-- Quote all Windows paths; expect spaces. Line endings are normalized to LF via `.gitattributes`.
+- On Windows: pick ONE shell dialect per command — the Bash tool is Git Bash (POSIX — `/d/...`
+  paths, `$VAR`); PowerShell is a separate tool with its own syntax. Never mix them in one command.
+  Quote all Windows paths; expect spaces.
+- On macOS/Linux: the Bash tool is a normal POSIX shell — no dialect-mixing concern.
+- Line endings are normalized to LF via `.gitattributes` on every platform.
 
 ## Guardrails
 
@@ -174,16 +176,20 @@ review.
   small enough to read in a targeted range rather than in full.
 - If a decision is ambiguous or you're blocked, **ask the user — do not guess.**
 
-## Environment (Windows prerequisites — verify first)
+## Environment (prerequisites — verify first)
 
-Rust (rustup + MSVC build tools, which also give the C toolchain the `git2` crate needs to vendor
-libgit2), Node LTS + pnpm, WebView2 (bundled on Windows 11), and the Tauri CLI.
+Common to all platforms: Rust (rustup), Node LTS + pnpm, and the Tauri CLI. Per-OS toolchain for
+the C compiler `git2` needs to vendor libgit2, plus the native webview:
+- **Windows:** MSVC build tools; WebView2 (bundled on Windows 11).
+- **macOS:** Xcode Command Line Tools; system WebKit (no extra install).
+- **Linux:** a C toolchain (e.g. `build-essential`) + `webkit2gtk` dev packages.
 
 ## Definition of done (v1)
 
-Runs on Windows via `pnpm tauri dev` and a release build; can open a repo, view a GitKraken-style
-commit graph, see status, stage/unstage, commit, view diffs, manage branches, and fetch/pull/push —
-all verified against a scratch repo, with automated tests covering the graph-layout algorithm.
+Runs on Windows, macOS, and Linux via `pnpm tauri dev` and a release build; can open a repo, view a
+GitKraken-style commit graph, see status, stage/unstage, commit, view diffs, manage branches, and
+fetch/pull/push — all verified against a scratch repo, with automated tests covering the
+graph-layout algorithm.
 
 ## Subagents (`.claude/agents/`)
 
