@@ -46,7 +46,25 @@ get_bisect_state cmd). Sub-increments: **P39a** bisect.rs engine + midpoint/rese
 Guardrails unchanged (scratch D:\Temp\bonsai-scratch, TMP/TEMP=D:\Temp on Windows, no concurrent
 test+clippy, mock.ts compiling, orchestrator commits).
 
-**Current step:** P39a — senior-dev implementing bisect engine + opstate + cmds + IPC + mock + oracle.
+**Current step:** P39a implemented (gates green: bisect unit 13 + bisect_cli 3 + opstate 6 + no-repo cmd
+1, clippy/tsc/build clean). Deviations (all sound): oracle uses a manual git bisect good/bad loop (same
+first-bad, hermetic on Windows, no sh); on convergence HEAD is checked out at first-bad (more correct —
+last-tested ≠ culprit when the final mark is good); commands don't emit repo-changed (mirror rebase step
+cmds, progress rides get_op_state). Reviewer APPROVE (0 must-fix, 2 should-fix, 3 nits). Safety path (reset always restores original HEAD/
+branch from every state) verified sound. Folding SHOULD-FIX #1 (add HEAD==state.current guard to
+bisect_mark/skip — contract §2, prevents recording good/bad against the wrong commit if HEAD moved
+externally); SHOULD-FIX #2 (force-checkout untracked clobber, inherited from rebase precedent) → spawned
+as a separate cross-engine task (task_d8879761), not fixed here to keep the two engines consistent.
+- **P39a** (reviewer APPROVE, 0 must-fix; SHOULD-FIX #1 folded) — bisect.rs on-disk state machine
+  (.git/bonsai-bisect/state.json, atomic write) + positional midpoint + detached-HEAD checkout + dirty
+  guard + start/mark/skip/reset/get_state; RepoOpState::Bisect + opstate probe-first; 4 cmds + IPC +
+  stateful mock + bisect_cli oracle (final first-bad vs real `git bisect`). Folded: `ensure_on_current`
+  HEAD==state.current guard on mark/skip (rejects recording a verdict against the wrong commit if HEAD
+  moved; test asserts state byte-identical). Deviations (sound): manual git bisect good/bad oracle loop
+  (hermetic); checkout first-bad on convergence (more correct); no repo-changed (progress rides
+  get_op_state). bisect unit 14 + bisect_cli 3 + opstate 6 + no-repo cmd 1; clippy/tsc/build clean.
+  SHOULD-FIX #2 (force-checkout untracked clobber, inherited from rebase) → task_d8879761.
+**Current step:** P39b — senior-dev implementing OpBanner bisect arm + two-click entry + Reset confirm.
 
 ## P38 — reflog viewer + restore (Git completeness, Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 

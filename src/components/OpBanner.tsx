@@ -39,6 +39,10 @@ export function OpBanner({
 }: OpBannerProps) {
   if (op.kind === 'none') return null;
 
+  // P39a: the bisect banner arm is implemented in P39b; for now the engine +
+  // opstate exist without a dedicated banner (narrows op.kind off 'bisect').
+  if (op.kind === 'bisect') return null;
+
   if (op.kind === 'merge') {
     return (
       <div className="op-banner" role="status">

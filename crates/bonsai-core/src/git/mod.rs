@@ -2,6 +2,7 @@ pub mod ai_commit;
 pub mod ai_explain;
 pub mod ai_resolve;
 pub mod ai_summary;
+pub mod bisect;
 pub mod blame;
 pub mod branches;
 pub mod cherrypick;

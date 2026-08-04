@@ -321,7 +321,31 @@ export type RepoOpState =
       totalSteps: number;
     }
   | { kind: 'cherryPick' }
-  | { kind: 'revert' };
+  | { kind: 'revert' }
+  | {
+      kind: 'bisect';
+      /** oid under test now; null in the terminal `found` phase. */
+      current: string | null;
+      /** the bounding known-bad commit. */
+      bad: string;
+      /** known-good boundary commits. */
+      good: string[];
+      /** skipped (untestable) commits. */
+      skipped: string[];
+      /** culprit once converged; null while still searching. */
+      firstBad: string | null;
+      /** testable candidates left. */
+      revisionsRemaining: number;
+      /** ~log2(revisionsRemaining). */
+      estimatedSteps: number;
+    };
+
+/** Outcome of startBisect / bisectMark / bisectSkip (P39). Mirrors the Rust
+ *  `BisectOutcome` serde enum (tagged "kind", camelCase). */
+export type BisectOutcome =
+  | { kind: 'testing'; current: string; revisionsRemaining: number; estimatedSteps: number }
+  | { kind: 'found'; firstBad: string }
+  | { kind: 'cannotDetermine'; skipped: string[] };
 
 export type ConflictKind =
   | 'bothModified'
@@ -1269,6 +1293,20 @@ export interface IpcApi {
     ontoOid: string,
     todos: RebaseTodoOp[],
   ): Promise<RebaseOutcome>;
+  /** Start a git bisect: `bad` = known-bad commit, `good` = one or more
+   *  known-good ancestors. Detaches HEAD onto the first midpoint; progress
+   *  surfaces via getOpState (RepoOpState.bisect). Rejects operationInProgress
+   *  | git | noRepo. */
+  startBisect(repoId: string, bad: string, good: string[]): Promise<BisectOutcome>;
+  /** Mark the current bisect midpoint good (`isGood: true`) or bad, then pick
+   *  the next midpoint or converge. Rejects noOperationInProgress | git | noRepo. */
+  bisectMark(repoId: string, isGood: boolean): Promise<BisectOutcome>;
+  /** Skip the current (untestable) bisect midpoint. Rejects
+   *  noOperationInProgress | git | noRepo. */
+  bisectSkip(repoId: string): Promise<BisectOutcome>;
+  /** Abort/finish a bisect: restore the original HEAD/branch + worktree
+   *  (destructive — confirm first). Rejects noOperationInProgress | git | noRepo. */
+  bisectReset(repoId: string): Promise<void>;
   /** Per-line blame of `path` as of `atOid` (null → HEAD). Read-only. Rejects
    *  other (bad path) | git (binary/unknown/too large/invalid oid) | noRepo. */
   blameFile(repoId: string, path: string, atOid: string | null): Promise<BlameLine[]>;

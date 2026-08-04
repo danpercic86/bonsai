@@ -49,6 +49,10 @@ function opStateLabel(op: RepoOpState): string | null {
       return 'cherry-pick in progress';
     case 'revert':
       return 'revert in progress';
+    case 'bisect':
+      return op.firstBad === null
+        ? `bisect in progress (${op.revisionsRemaining} left)`
+        : 'bisect found first bad commit';
   }
 }
 

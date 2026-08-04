@@ -18,6 +18,7 @@ import type {
   AiSummary,
   ApplyStashOutcome,
   AssetContent,
+  BisectOutcome,
   ContextProfile,
   ProfileActivation,
   ProfilePreviewEntry,
@@ -348,6 +349,24 @@ export const tauriIpc: IpcApi = {
     todos: RebaseTodoOp[],
   ): Promise<RebaseOutcome> {
     return invoke<RebaseOutcome>('start_interactive_rebase', { repoId, ontoOid, todos });
+  },
+
+  // P39: git bisect — start + mark/skip/reset. Progress rides on get_op_state
+  // (RepoOpState.bisect); the frontend refetches after each mutation.
+  startBisect(repoId: string, bad: string, good: string[]): Promise<BisectOutcome> {
+    return invoke<BisectOutcome>('start_bisect', { repoId, bad, good });
+  },
+
+  bisectMark(repoId: string, isGood: boolean): Promise<BisectOutcome> {
+    return invoke<BisectOutcome>('bisect_mark', { repoId, isGood });
+  },
+
+  bisectSkip(repoId: string): Promise<BisectOutcome> {
+    return invoke<BisectOutcome>('bisect_skip', { repoId });
+  },
+
+  bisectReset(repoId: string): Promise<void> {
+    return invoke<void>('bisect_reset', { repoId });
   },
 
   // P23d: per-line blame + per-file commit history (read-only).

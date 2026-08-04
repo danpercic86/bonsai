@@ -67,6 +67,7 @@ import type {
   CherrypickOutcome,
   CloneProgress,
   CommitDiff,
+  BisectOutcome,
   CommitMessageProposal,
   CommitResult,
   CompareDiff,
@@ -197,6 +198,22 @@ interface InteractivePlan {
    *  commit list on finish so the rewritten commits truly REPLACE them. */
   originalOids: string[];
   totalSteps: number;
+}
+
+/** P39: stateful git-bisect mock. `chain` is a synthetic linear candidate list
+ *  oldest→newest (index 0 = the seeded good bound, last = the seeded bad bound).
+ *  `lo`/`hi` are the moving known-good / known-bad boundary indices; the testable
+ *  window is the strictly-between indices minus `skipped`. When the window
+ *  collapses the bad bound (`chain[hi]`) is the first-bad commit. */
+interface MockBisect {
+  chain: string[];
+  lo: number;
+  hi: number;
+  /** chain index under test, or null in a terminal (found / cannotDetermine) phase. */
+  current: number | null;
+  /** skipped candidate oids. */
+  skipped: string[];
+  firstBad: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -419,6 +436,8 @@ interface MockRepoState {
    *  no interactive rebase is mid-flight. The reused rebaseContinue/Skip/Abort
    *  key on this to finish (prepend the rewritten commits) or restore. */
   interactive: InteractivePlan | null;
+  /** P39: in-progress git-bisect state; null when no bisect is active. */
+  bisect: MockBisect | null;
   /** P24: AI-asset inventory (drift recomputed per `listAiAssets` call). */
   inventory: AiAssetInventory;
   /** P24b: per-repo mapped-file content (seeded from the canned bodies), mutated
@@ -936,6 +955,7 @@ function createRepoState(path: string): MockRepoState {
     mainRs: initialMainRs(),
     interactiveConflictDemo: query('rebase') === 'conflict',
     interactive: null,
+    bisect: null,
     inventory: structuredClone(mockInventory),
     assetContent: structuredClone(MOCK_ASSET_CONTENT),
     profiles: structuredClone(mockProfiles),
@@ -1660,6 +1680,75 @@ function finishInteractiveRebase(state: MockRepoState, dropCurrent: boolean): Re
     state.commits.unshift(...rewritten);
   }
   return { kind: 'rebased', branch: plan.headName, head: state.headOid, steps: rewritten.length };
+}
+
+// -------------------------------------------------------------------- P39 bisect
+//
+// Stateful, deterministic binary search over a synthetic candidate chain so the
+// harness walks start → mark → found with the banner counts halving each step.
+
+/** Number of untested candidates strictly between the good/bad bounds, minus
+ *  skipped ones (== the `revisionsRemaining` the banner shows). */
+function bisectTestable(mb: MockBisect): number[] {
+  const out: number[] = [];
+  for (let i = mb.lo + 1; i < mb.hi; i++) {
+    if (!mb.skipped.includes(mb.chain[i])) out.push(i);
+  }
+  return out;
+}
+
+/** ceil(log2(remaining)); 0 when remaining ≤ 1 — mirrors the Rust estimate. */
+function bisectSteps(remaining: number): number {
+  if (remaining <= 1) return 0;
+  return Math.ceil(Math.log2(remaining));
+}
+
+/** Projects the mock bisect state onto the RepoOpState.bisect wire shape and
+ *  stores it as the repo's opState (what getOpState returns). */
+function bisectProject(state: MockRepoState, mb: MockBisect): void {
+  const remaining = mb.firstBad === null ? bisectTestable(mb).length : 0;
+  state.opState = {
+    kind: 'bisect',
+    current: mb.current === null ? null : mb.chain[mb.current],
+    bad: mb.chain[mb.hi],
+    good: [mb.chain[mb.lo]],
+    skipped: [...mb.skipped],
+    firstBad: mb.firstBad,
+    revisionsRemaining: remaining,
+    estimatedSteps: bisectSteps(remaining),
+  };
+}
+
+/** Picks the next midpoint (or converges) and returns the outcome, mutating the
+ *  mock bisect + opState. Shared by start / mark / skip. */
+function driveMockBisect(state: MockRepoState, mb: MockBisect): BisectOutcome {
+  const testable = bisectTestable(mb);
+  if (testable.length === 0) {
+    mb.current = null;
+    // Any skipped candidate still between the bounds → cannot determine.
+    const unresolved = mb.chain
+      .slice(mb.lo + 1, mb.hi)
+      .some((oid) => mb.skipped.includes(oid));
+    if (unresolved) {
+      bisectProject(state, mb);
+      return { kind: 'cannotDetermine', skipped: [...mb.skipped] };
+    }
+    // Converge: the bad bound is the first-bad commit.
+    mb.firstBad = mb.chain[mb.hi];
+    bisectProject(state, mb);
+    return { kind: 'found', firstBad: mb.firstBad };
+  }
+  const mid = testable[Math.floor(testable.length / 2)];
+  mb.current = mid;
+  mb.firstBad = null;
+  bisectProject(state, mb);
+  const remaining = testable.length;
+  return {
+    kind: 'testing',
+    current: mb.chain[mid],
+    revisionsRemaining: remaining,
+    estimatedSteps: bisectSteps(remaining),
+  };
 }
 
 // P23d §10.2: blame/file-history fixtures. The oids mirror fixtures/graph.ts
@@ -3065,6 +3154,83 @@ export const mockIpc: IpcApi = {
       head: state.headOid,
       steps: prepend.length,
     };
+  },
+
+  // P39: git bisect — a deterministic binary search over a synthetic candidate
+  // chain seeded between the bad and good commits. Progress rides on getOpState
+  // (RepoOpState.bisect); mark/skip narrow the window to a `found` result.
+  async startBisect(repoId: string, bad: string, good: string[]): Promise<BisectOutcome> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    if (state.opState.kind !== 'none') {
+      const err: AppError = {
+        kind: 'operationInProgress',
+        message: 'an operation is already in progress — commit or abort it first',
+      };
+      throw err;
+    }
+    if (good.length === 0 || good[0] === bad) {
+      const err: AppError = {
+        kind: 'git',
+        message: 'nothing to bisect: good and bad must differ',
+      };
+      throw err;
+    }
+    // Seed a 6-commit-wide candidate chain: good, s1..s6, bad (oldest→newest).
+    const middle = Array.from({ length: 6 }, (_, i) =>
+      (i + 1).toString(16).padStart(40, '0'),
+    );
+    const chain = [good[0], ...middle, bad];
+    const mb: MockBisect = {
+      chain,
+      lo: 0,
+      hi: chain.length - 1,
+      current: null,
+      skipped: [],
+      firstBad: null,
+    };
+    state.bisect = mb;
+    return driveMockBisect(state, mb);
+  },
+
+  async bisectMark(repoId: string, isGood: boolean): Promise<BisectOutcome> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    const mb = state.bisect;
+    if (mb === null || mb.current === null) {
+      const err: AppError = { kind: 'noOperationInProgress', message: 'no bisect in progress' };
+      throw err;
+    }
+    if (isGood) {
+      mb.lo = mb.current;
+    } else {
+      mb.hi = mb.current;
+    }
+    return driveMockBisect(state, mb);
+  },
+
+  async bisectSkip(repoId: string): Promise<BisectOutcome> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    const mb = state.bisect;
+    if (mb === null || mb.current === null) {
+      const err: AppError = { kind: 'noOperationInProgress', message: 'no bisect in progress' };
+      throw err;
+    }
+    const oid = mb.chain[mb.current];
+    if (!mb.skipped.includes(oid)) mb.skipped.push(oid);
+    return driveMockBisect(state, mb);
+  },
+
+  async bisectReset(repoId: string): Promise<void> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    if (state.bisect === null) {
+      const err: AppError = { kind: 'noOperationInProgress', message: 'no bisect in progress' };
+      throw err;
+    }
+    state.opState = { kind: 'none' };
+    state.bisect = null;
   },
 
   // P23d §10.2: per-line blame + per-file commit history. Canned fixtures for

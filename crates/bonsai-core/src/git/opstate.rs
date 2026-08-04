@@ -5,6 +5,7 @@
 use std::path::Path;
 
 use crate::error::AppError;
+use crate::git::bisect;
 use crate::git::rebase_interactive;
 use crate::git::stage::open_workdir_repo;
 
@@ -37,6 +38,22 @@ pub enum RepoOpState {
     },
     CherryPick,
     Revert,
+    Bisect {
+        /// oid under test now; None in the terminal `found` phase.
+        current: Option<String>,
+        /// the bounding known-bad commit.
+        bad: String,
+        /// known-good boundary commits.
+        good: Vec<String>,
+        /// skipped (untestable) commits.
+        skipped: Vec<String>,
+        /// culprit once converged; None while still searching.
+        first_bad: Option<String>,
+        /// testable candidates left.
+        revisions_remaining: u32,
+        /// ~log2(revisions_remaining).
+        estimated_steps: u32,
+    },
 }
 
 /// Extracts the incoming name from the first line of a MERGE_MSG: the text
@@ -118,6 +135,23 @@ fn read_rebase_state(repo: &git2::Repository) -> RepoOpState {
 pub fn read_op_state(workdir: &Path) -> Result<RepoOpState, AppError> {
     let mut repo = open_workdir_repo(workdir)?;
 
+    // A Bonsai bisect wins over the native switch: git2 does not report a bisect
+    // state and the `_ => None` arm would swallow it. Probe our on-disk file FIRST
+    // (contract §6); corrupt/missing state falls through to the normal switch.
+    if bisect::bisect_in_progress(&repo) {
+        if let Ok(Some(p)) = bisect::get_bisect_state(workdir) {
+            return Ok(RepoOpState::Bisect {
+                current: p.current,
+                bad: p.bad,
+                good: p.good,
+                skipped: p.skipped,
+                first_bad: p.first_bad,
+                revisions_remaining: p.revisions_remaining,
+                estimated_steps: p.estimated_steps,
+            });
+        }
+    }
+
     // A Bonsai interactive rebase wins over any transient CherryPick state:
     // `repo.cherrypick` (used to materialize conflict markers) sets
     // `repo.state() == CherryPick`, but our on-disk sequencer is authoritative
@@ -193,6 +227,30 @@ mod tests {
 
         let v = serde_json::to_value(RepoOpState::Revert).expect("json");
         assert_eq!(v, serde_json::json!({ "kind": "revert" }));
+
+        let v = serde_json::to_value(RepoOpState::Bisect {
+            current: Some("a".repeat(40)),
+            bad: "b".repeat(40),
+            good: vec!["c".repeat(40)],
+            skipped: Vec::new(),
+            first_bad: None,
+            revisions_remaining: 3,
+            estimated_steps: 2,
+        })
+        .expect("json");
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "kind": "bisect",
+                "current": "a".repeat(40),
+                "bad": "b".repeat(40),
+                "good": ["c".repeat(40)],
+                "skipped": [],
+                "firstBad": null,
+                "revisionsRemaining": 3,
+                "estimatedSteps": 2
+            })
+        );
     }
 
     // ------------------------------------------- MERGE_MSG incoming parsing
