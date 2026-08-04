@@ -501,6 +501,25 @@ body {
   cursor: default;
 }
 
+/* P37b: Push split-button — primary Push + a caret opening more push actions. */
+.toolbar-split {
+  display: inline-flex;
+  align-items: center;
+}
+
+.toolbar-split-main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.toolbar-caret {
+  padding: 0 6px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: 1px solid var(--border);
+  font-size: 10px;
+}
+
 /* P30 D11: small muted background-job readout next to the Fetch control. */
 .toolbar-job-status {
   color: var(--text-3);

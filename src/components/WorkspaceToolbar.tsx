@@ -1,4 +1,6 @@
+import { useRef, useState } from 'react';
 import { minutesLabel } from './workspaceUtils';
+import { ContextMenu } from './ContextMenu';
 import type { BranchInfo, JobStatus } from '../ipc';
 
 export interface WorkspaceToolbarProps {
@@ -8,6 +10,8 @@ export interface WorkspaceToolbarProps {
   statusLoading: boolean;
   graphLoading: boolean;
   canPullPush: boolean;
+  /** P37b: force-push is enabled only when the current branch has an upstream. */
+  canForcePush: boolean;
   aiEligible: boolean;
   aiPanelLoading: boolean;
   headBranch: BranchInfo | null;
@@ -16,6 +20,8 @@ export interface WorkspaceToolbarProps {
   onFetch(): void;
   onPull(): void;
   onPush(): void;
+  /** P37b: opens the force-push-with-lease confirm dialog. */
+  onForcePush(): void;
   onWhatChanged(): void;
   onRefresh(): void;
 }
@@ -30,6 +36,7 @@ export function WorkspaceToolbar({
   statusLoading,
   graphLoading,
   canPullPush,
+  canForcePush,
   aiEligible,
   aiPanelLoading,
   headBranch,
@@ -38,9 +45,20 @@ export function WorkspaceToolbar({
   onFetch,
   onPull,
   onPush,
+  onForcePush,
   onWhatChanged,
   onRefresh,
 }: WorkspaceToolbarProps) {
+  // P37b: anchor for the Push caret dropdown (positioned at the caret's rect).
+  const caretRef = useRef<HTMLButtonElement>(null);
+  const [pushMenu, setPushMenu] = useState<{ x: number; y: number } | null>(null);
+
+  const openPushMenu = () => {
+    const rect = caretRef.current?.getBoundingClientRect();
+    if (rect === undefined) return;
+    setPushMenu({ x: rect.left, y: rect.bottom + 2 });
+  };
+
   const pushTitle =
     headBranch === null
       ? 'Push'
@@ -97,15 +115,33 @@ export function WorkspaceToolbar({
           >
             {remoteOp === 'pull' ? 'Pulling…' : '⇣ Pull'}
           </button>
-          <button
-            type="button"
-            className="toolbar-btn"
-            disabled={refreshing || mutating || !canPullPush}
-            onClick={() => onPush()}
-            title={`${pushTitle} (Ctrl+Shift+U)`}
-          >
-            {remoteOp === 'push' ? 'Pushing…' : '↑ Push'}
-          </button>
+          <span className="toolbar-split">
+            <button
+              type="button"
+              className="toolbar-btn toolbar-split-main"
+              disabled={refreshing || mutating || !canPullPush}
+              onClick={() => onPush()}
+              title={`${pushTitle} (Ctrl+Shift+U)`}
+            >
+              {remoteOp === 'push' ? 'Pushing…' : '↑ Push'}
+            </button>
+            <button
+              ref={caretRef}
+              type="button"
+              className="toolbar-btn toolbar-caret"
+              disabled={refreshing || mutating || !canForcePush}
+              onClick={() => openPushMenu()}
+              aria-label="More push actions"
+              aria-haspopup="menu"
+              title={
+                canForcePush
+                  ? 'More push actions'
+                  : "Force-push needs a branch with an upstream."
+              }
+            >
+              ▾
+            </button>
+          </span>
           {aiEligible && (
             <button
               type="button"
@@ -130,6 +166,19 @@ export function WorkspaceToolbar({
         </button>
       </div>
       {(remoteOp !== null || refreshing) && <div className="header-progress" aria-hidden="true" />}
+      {pushMenu !== null && (
+        <ContextMenu
+          x={pushMenu.x}
+          y={pushMenu.y}
+          items={[
+            {
+              label: 'Force-push with lease…',
+              onSelect: () => onForcePush(),
+            },
+          ]}
+          onClose={() => setPushMenu(null)}
+        />
+      )}
     </>
   );
 }

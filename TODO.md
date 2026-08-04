@@ -52,10 +52,24 @@ TOCTOU window — libgit2 can't do the server-side atomic CAS real `git --force-
 strictly safer than bare force-push. Sub-increments: **P37a** backend+command+IPC+mock+CLI-oracle →
 **P37b** UI (toolbar split-button + confirm dialog).
 
-**Current step:** P37a implemented (all gates green: force_push_cli 5/5, remote unit 19/19, clippy/tsc/
-build clean); one necessary deviation (upstream check via config keys not `branch.upstream()` — git2
-0.21's upstream() also needs the tracking ref, so config keys correctly split NoUpstream vs
-PushRejected/"Fetch first"). Awaiting reviewer.
+- **P37a** (reviewer APPROVE, 0 must-fix; lease safety property verified directly) — committed `b2013ac`.
+  force_push_with_lease + force_push command + IPC triple + mock + force_push_cli 5/5. Nits (cosmetic,
+  per-spec): mock omits upToDate outcome (§5.3); lease-message strings duplicated Rust↔mock.
+- **P37b** (reviewer APPROVE, 0 must-fix) — UI. WorkspaceToolbar Push split-button + caret →
+  ContextMenu "Force-push with lease…"; RepoWorkspace pendingForcePush/handleForcePush/doForcePush
+  (mirrors pushCurrentBranch; PushRejected → "— fetch and retry" hint) + canForcePush gating
+  (canPullPush && headBranch.upstream != null); WorkspaceDialogs danger ConfirmDialog naming
+  branch+remote, warning it rewrites published history + documenting the client-side-lease limitation;
+  styles.css split-button. tsc + build clean. Nits (cosmetic, left): dead `busy` prop on the confirm
+  (dialog closes before remoteOp flips); upToDate toast 'info' vs push's 'success'.
+- **P37b AI GATE PASSED (2026-08-04).** Browser harness (mock :1420, hidden pane → DOM/JS-driven real
+  handlers): Push split-button caret reveals "Force-push with lease…"; confirm dialog reads "Force-push
+  with lease? This rewrites the published history of main on origin…" + the client-side race-window
+  note vs `git push --force-with-lease`; confirm → "Force-pushed main → origin/main" toast (mock
+  advances the remote-tracking tip); `?remote=leasefail` → error toast "force-push refused: 'origin/
+  main' has moved on the remote since you last fetched … — fetch and retry"; zero console errors.
+**Current step:** P37a+b committed & AI-gate-passed. Next: P37 tester (full regression + user
+checklist), then commit the green milestone → P38 (reflog).
 
 ## P36 — six UX/safety fixes (worktree checkout guard, bulk discard, tab UX) — **DONE**
 

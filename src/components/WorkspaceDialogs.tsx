@@ -91,6 +91,13 @@ export interface WorkspaceDialogsProps {
   handleConfirmCommitPush(): void;
   handleCancelCommitPush(): void;
 
+  /** P37b: force-push-with-lease confirm gate. */
+  pendingForcePush: boolean;
+  setPendingForcePush: (v: boolean) => void;
+  doForcePush(): void;
+  /** Drives the confirm button's busy state while the push is in flight. */
+  remoteOp: 'fetch' | 'pull' | 'push' | null;
+
   pendingHunkDiscard: { path: string; origPath: string | null; hunkIndex: number } | null;
   setPendingHunkDiscard: (v: { path: string; origPath: string | null; hunkIndex: number } | null) => void;
   handleConfirmHunkDiscard(pending: { path: string; origPath: string | null; hunkIndex: number }): void;
@@ -211,6 +218,10 @@ export function WorkspaceDialogs({
   pendingCommitPush,
   handleConfirmCommitPush,
   handleCancelCommitPush,
+  pendingForcePush,
+  setPendingForcePush,
+  doForcePush,
+  remoteOp,
   pendingHunkDiscard,
   setPendingHunkDiscard,
   handleConfirmHunkDiscard,
@@ -478,6 +489,29 @@ export function WorkspaceDialogs({
         </div>
         <div className="dialog-body-note">
           The commit is created first, then pushed.
+        </div>
+      </ConfirmDialog>
+
+      {/* P37b: force-push with lease — names branch + remote, warns it rewrites
+          published history, and documents the client-side-lease limitation. */}
+      <ConfirmDialog
+        open={pendingForcePush}
+        title="Force-push with lease?"
+        confirmLabel="Force-push"
+        busy={remoteOp === 'push'}
+        onConfirm={doForcePush}
+        onCancel={() => setPendingForcePush(false)}
+      >
+        <div>
+          This rewrites the published history of{' '}
+          <span className="mono">{headBranch?.name ?? 'HEAD'}</span> on{' '}
+          <span className="mono">{headBranch?.upstream?.split('/')[0] ?? 'origin'}</span>. Continue?
+        </div>
+        <div className="dialog-body-note">
+          Bonsai first checks the remote hasn&apos;t moved since your last fetch and refuses if
+          someone else pushed — strictly safer than a plain force-push. Note this is a client-side
+          check with a small race window, not the atomic server-side guarantee of{' '}
+          <span className="mono">git push --force-with-lease</span>.
         </div>
       </ConfirmDialog>
 

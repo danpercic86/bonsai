@@ -206,6 +206,8 @@ export function RepoWorkspace({
   const commitPushResolver = useRef<{ resolve: () => void; reject: (e: unknown) => void } | null>(
     null,
   );
+  // P37b: force-push-with-lease confirm gate (targets the current branch).
+  const [pendingForcePush, setPendingForcePush] = useState(false);
   // P28: pending "Discard hunk" confirmation (unstaged diffs only).
   const [pendingHunkDiscard, setPendingHunkDiscard] = useState<{
     path: string;
@@ -1613,6 +1615,32 @@ export function RepoWorkspace({
     await pushCurrentBranch();
   }
 
+  // P37b: force-push with lease. Opens a danger confirm first; on confirm,
+  // force_push refuses (pushRejected) if the remote moved since our last fetch.
+  function handleForcePush() {
+    setPendingForcePush(true);
+  }
+
+  async function doForcePush() {
+    setPendingForcePush(false);
+    beginRemoteOp('push');
+    try {
+      const res = await ipc.forcePush(repoId);
+      if (res.kind === 'upToDate') {
+        pushToast('info', 'Already up to date');
+      } else {
+        pushToast('success', `Force-pushed ${res.branch} → ${res.remote}/${res.branch}`);
+      }
+      await Promise.all([refetchBranches(), refetchGraph()]);
+    } catch (e) {
+      // Any pushRejected from a force-push resolves the same way: fetch first.
+      const hint = isAppError(e) && e.kind === 'pushRejected' ? ' — fetch and retry' : '';
+      pushToast('error', errorMessage(e) + hint);
+    } finally {
+      endRemoteOp();
+    }
+  }
+
   // ----- P3c: merge + conflict handling -----
   async function handleMergeBranch(name: string) {
     setMutating(true);
@@ -2651,6 +2679,8 @@ export function RepoWorkspace({
   ]);
 
   const headBranch = branches?.local.find((b) => b.isHead) ?? null;
+  // P37b: force-push needs a normal-push-capable HEAD with a configured upstream.
+  const canForcePush = canPullPush && headBranch?.upstream != null;
 
   // P3e §menu-extraction: the context-menu item-array builders live in
   // workspaceMenus.ts now; rebuild them each render over the current state +
@@ -2736,6 +2766,7 @@ export function RepoWorkspace({
         statusLoading={statusLoading}
         graphLoading={graphLoading}
         canPullPush={canPullPush}
+        canForcePush={canForcePush}
         aiEligible={aiEligible}
         aiPanelLoading={aiPanel?.loading === true}
         headBranch={headBranch}
@@ -2744,6 +2775,7 @@ export function RepoWorkspace({
         onFetch={() => void handleFetch()}
         onPull={() => void handlePull()}
         onPush={() => void handlePush()}
+        onForcePush={() => handleForcePush()}
         onWhatChanged={() => setWhatChangedOpen(true)}
         onRefresh={() => void handleRefresh()}
       />
@@ -2920,6 +2952,10 @@ export function RepoWorkspace({
         pendingCommitPush={pendingCommitPush}
         handleConfirmCommitPush={handleConfirmCommitPush}
         handleCancelCommitPush={handleCancelCommitPush}
+        pendingForcePush={pendingForcePush}
+        setPendingForcePush={setPendingForcePush}
+        doForcePush={() => void doForcePush()}
+        remoteOp={remoteOp}
         pendingHunkDiscard={pendingHunkDiscard}
         setPendingHunkDiscard={setPendingHunkDiscard}
         handleConfirmHunkDiscard={(pending) => void handleConfirmHunkDiscard(pending)}
