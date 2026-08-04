@@ -25,7 +25,7 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
-## P40 — git config editing (Git completeness, Phase 1) — **in-progress** (2026-08-04)
+## P40 — git config editing (Git completeness, Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 
 Git-completeness milestone #4. Read/edit git config in-app: curated identity/behavior keys (user.name/
 email, core.autocrlf, init.defaultBranch, pull.ff|rebase) + arbitrary `section.key` entries, at Local
@@ -73,8 +73,23 @@ ensure_no_untracked_collision guard in both rebase+bisect engines, incl. type-sw
   refetch (view always refreshed unconditionally → no stale display); addEntry error nit. Re-verified in
   harness: email draft survives the name-write refetch (alice@dev.io preserved); section renders+editable
   post-fold; zero console errors. tsc + build clean.
-**Current step:** P40a+b committed & AI-gate-passed. Next: P40 tester (regression + user checklist), then
-commit the green milestone. THEN PAUSE for user P41 (LFS) scope decision.
+- **P40 tester** — full workspace regression PASS, zero regressions (`cargo test --workspace` exit 0;
+  bonsai-core lib 373 incl. 10 config unit; src-tauri lib 95; remote_cli flaky test passed); clippy
+  --workspace --tests clean; tsc + build clean. Strengthened config_cli (appended to the single
+  isolated-global fn to avoid a set_search_path race): Local-overrides-Global effective; unset falls
+  back to Global; advanced multivar→last; malformed key rejected. **Real ~/.gitconfig untouched (md5
+  identical before/after).** Checklist: docs/contracts/P40-user-checklist.md.
+- **P40 AI GATE PASSED (2026-08-04).** Commits: 9ca9b3f P40a · cf174ff P40b (+ tester closeout). Backend
+  config oracle (Local + isolated-Global) + frontend browser harness both verified; zero regressions.
+  Git-completeness Phase 1 milestone #4 delivered.
+
+**P40 awaiting USER CHECKPOINT** (native pnpm tauri dev on a SCRATCH repo, per docs/contracts/
+P40-user-checklist.md): Settings → Git config shows Identity/Behaviour/Advanced + Local/Global toggle
+with real values; set Local user.name/email (cross-check `git config --local`, hint clears); Global set
+edits the REAL ~/.gitconfig (warned — use a throwaway); advanced add/edit/remove; identity-gap commit
+block → "Set identity…" → unblock; invalid key rejected inline.
+**Current step:** P40 DONE (AI gate passed, awaiting USER CHECKPOINT). Four Git-completeness milestones
+(P37-P40) landed. PAUSED for user P41 (LFS) scope decision.
 
 ## P39 — git bisect (Git completeness, Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 

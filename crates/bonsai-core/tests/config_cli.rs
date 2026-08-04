@@ -157,6 +157,85 @@ fn config_oracle_local_and_isolated_global() {
         "global target_value must be the isolated global write"
     );
 
+    // ================================ Added coverage: P40 §9 test-plan gaps ================================
+    // These extend the single isolated-global test fn (process-global search
+    // path is already wired above) so no new fn can race it.
+
+    // (a) A Local key OVERRIDES a Global value: effective is the Local value at
+    //     Local level, while the Global value still exists at its own level.
+    //     Cross-check the CLI --get at each level independently.
+    assert_eq!(
+        git(path, &["config", "--local", "--get", "user.name"]),
+        "Local Person",
+        "local user.name must exist at Local"
+    );
+    assert_eq!(
+        git_get_env(path, &["config", "--global", "--get", "user.name"], &genv).as_deref(),
+        Some("Global Person"),
+        "global user.name must coexist at Global"
+    );
+    let oview = read_config(path, ConfigLevelArg::Local).expect("read local override");
+    let oname = oview
+        .curated
+        .iter()
+        .find(|c| c.key == "user.name")
+        .expect("user.name curated");
+    assert_eq!(oname.effective_value.as_deref(), Some("Local Person"));
+    assert_eq!(oname.effective_level, Some(ConfigLevelName::Local));
+    assert_eq!(oname.target_value.as_deref(), Some("Local Person"));
+
+    // (c) An Advanced multivar key collapses to the LAST value (contract §2/§4.2).
+    git(path, &["config", "--local", "--add", "custom.multi", "first"]);
+    git(path, &["config", "--local", "--add", "custom.multi", "second"]);
+    git(path, &["config", "--local", "--add", "custom.multi", "third"]);
+    let mview = read_config(path, ConfigLevelArg::Local).expect("read multivar");
+    let multi = mview
+        .advanced
+        .iter()
+        .find(|e| e.name == "custom.multi")
+        .expect("custom.multi must appear in advanced");
+    assert_eq!(
+        multi.value, "third",
+        "multivar must collapse to the LAST value"
+    );
+
+    // (d) Malformed keys are rejected server-side by set_config; nothing lands.
+    for bad in ["nosection", "", "  ", ".leadingdot", "trailing."] {
+        match set_config(path, ConfigLevelArg::Local, bad, "x") {
+            Err(AppError::InvalidName(_)) => {}
+            other => panic!("expected InvalidName for {bad:?}, got {other:?}"),
+        }
+    }
+
+    // (b) Unsetting the Local key falls back to the Global effective value; the
+    //     Global value itself survives the Local unset.
+    unset_config(path, ConfigLevelArg::Local, "user.name").expect("unset local user.name");
+    assert!(
+        !git_ok(path, &["config", "--local", "--get", "user.name"]),
+        "user.name must be unset at Local after unset_config"
+    );
+    assert_eq!(
+        git_get_env(path, &["config", "--global", "--get", "user.name"], &genv).as_deref(),
+        Some("Global Person"),
+        "Global value must survive the Local unset"
+    );
+    let fview = read_config(path, ConfigLevelArg::Local).expect("read after local unset");
+    let fname = fview
+        .curated
+        .iter()
+        .find(|c| c.key == "user.name")
+        .expect("user.name curated");
+    assert_eq!(
+        fname.effective_value.as_deref(),
+        Some("Global Person"),
+        "effective value must fall back to the Global level"
+    );
+    assert_eq!(fname.effective_level, Some(ConfigLevelName::Global));
+    assert_eq!(
+        fname.target_value, None,
+        "no Local target value remains after unset"
+    );
+
     // Best-effort cleanup of the process-global override so no later binary
     // in the same process inherits it.
     // SAFETY: same single-fn, no concurrent config access.
