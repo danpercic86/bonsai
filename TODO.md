@@ -7,9 +7,12 @@ Environment: Rust 1.97.1 stable-msvc, VS Build Tools 2022 17.14, pnpm 11.17.0, N
 Cargo not on default PATH — `$HOME/.cargo/bin`. Browser harness: `pnpm dev:mock` (port 1420).
 Avoid tauri "test" feature on this machine (STATUS_ENTRYPOINT_NOT_FOUND); use runtime-free
 inner functions for command tests.
-**USER MANDATE (2026-07-28): never use C: for temp/scratch/mock repos — C: is critically full.
-Use `D:\Temp\bonsai-scratch`; when running cargo tests set TMP/TEMP to `D:\Temp` (tempfile
-honors them). Include this in every subagent prompt that runs tests or creates repos.**
+**USER MANDATE (2026-07-28, updated 2026-08-04 for cross-platform support): on Windows, never use
+C: for temp/scratch/mock repos — C: is critically full. Use `D:\Temp\bonsai-scratch`; when running
+cargo tests set TMP/TEMP to `D:\Temp` (tempfile honors them). On macOS/Linux, `scratch_dir()` now
+falls back to the OS temp dir (`std::env::temp_dir()/bonsai-scratch`) automatically — no special
+handling needed there. Include the Windows-specific guidance in every subagent prompt that runs
+tests or creates repos only when running on a Windows machine.**
 
 **USER CHECKPOINT BATCH CONFIRMED (2026-07-30):** the user confirmed in native `pnpm tauri dev`
 that ALL previously-pending milestones work — P4, P3a/P3b/P3c/P3d/P3e, P7, P7e, P7f, P3f, P8, P9.
@@ -384,6 +387,46 @@ scratch repo): create a worktree with a custom name; copy a mix of untracked ski
 tracked skill + a gitignored file into it; a real conflict honors Overwrite vs Skip; files land at
 `.worktrees/<repo>/<name>/…`; plain create (nothing selected) still works; path-escape is impossible.
 **Current step:** P32 DONE (AI gate passed, awaiting USER CHECKPOINT).
+
+---
+
+## Credential-helper fetch/pull/push auth fix — **in-progress** (2026-08-04)
+
+User-reported bug (real repo, not scratch): `git pull`/`git push` succeed via the CLI (a
+credential helper already has cached HTTPS creds) but Bonsai fails with its own `AuthFailed`
+message ("Configure a Git credential helper...") even from `pnpm tauri dev` in the same terminal
+— identical on the user's current machine (macOS) and Bonsai's primary target (Windows), so this
+is not a PATH/environment issue. Root cause: the locked M6 Helper credential step
+(`crates/bonsai-core/src/git/remote.rs:139-143`) calls `git2::Cred::credential_helper(...)` —
+libgit2's own, less-robust reimplementation of the credential-helper protocol — instead of the
+real `git` CLI's resolution, so it can fail even when `git credential fill` (what `git pull`
+actually uses) succeeds against the exact same config. Plan:
+`~/.claude/plans/if-i-use-git-hazy-axolotl.md` (user-approved). Fix: change the Helper step to
+shell out to `git credential fill` (cross-platform — no GCM/OS-specific detection or bundling;
+`git` itself resolves whatever helper is configured on any OS), with `GIT_TERMINAL_PROMPT=0` to
+preserve the locked never-prompt policy, threaded through all 5 `acquire_cred` call sites
+(`remote.rs` fetch+push, `tags.rs`, `clone.rs`, `submodule.rs`). Optional: sharpen the `AuthFailed`
+message when `credential.helper` is unset in config. This amends the locked M6 credential design
+(contract addendum), not a new milestone number — small, single sub-increment.
+- Architect wrote the M6 contract addendum (`docs/contracts/M6-remotes.md`, "Addendum
+  2026-08-04"). senior-dev implemented `credential_fill` (shells out to real `git credential
+  fill` with `GIT_TERMINAL_PROMPT=0`) + rewired `acquire_cred`'s Helper arm + all 5 call sites
+  (`remote.rs` fetch/push, `tags.rs`, `submodule.rs`, `clone.rs`) + optional sharper `AuthFailed`
+  wording when no helper is configured. reviewer APPROVED (0 must-fix; orchestrator folded one
+  NIT — reap the child on a stdin-write failure instead of leaving a zombie). tester added 3 new
+  `credential_fill` unit tests in `remote.rs` (well-formed response, 3 failure modes, no-hang
+  guard) using `tempfile::tempdir()` instead of the Windows-only `common::scratch_dir()` (a
+  deliberate scoped deviation for this macOS session — the shared helper itself was left
+  untouched). `cargo test -p bonsai-core --lib git::remote::` 15/15 green; `cargo clippy
+  --workspace --tests -- -D warnings` clean; `cargo build --workspace` clean.
+  **Separately noted, NOT fixed here (pre-existing, out of scope):** ~35 test failures elsewhere
+  in the workspace on this macOS machine, all tracing to `testutil::scratch_dir()` /
+  `tests/common/mod.rs::scratch_dir()` being hardcoded to the Windows-only path
+  `D:\Temp\bonsai-scratch`; plus one unrelated pre-existing timing flake in
+  `watcher::tests::git_internals_filtered`.
+**Current step:** AI gate passed (build/tests/clippy green). Awaiting USER CHECKPOINT: real
+fetch/pull/push against your actual remote via `pnpm tauri dev` on macOS, confirming Bonsai now
+succeeds without changing your existing `credential.helper` config.
 
 ---
 

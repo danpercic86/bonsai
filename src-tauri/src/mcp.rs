@@ -666,14 +666,26 @@ mod http_integration {
         Command::new("git").arg("--version").output().is_ok()
     }
 
-    /// Scratch dir under `D:\Temp\bonsai-scratch` (MEMORY rule — never C:, never
-    /// the system temp).
+    /// Scratch dir under `D:\Temp\bonsai-scratch` on Windows (MEMORY rule —
+    /// never C:, never the system temp). On macOS/Linux there is no such
+    /// constraint, so scratch dirs fall back to
+    /// `std::env::temp_dir()/bonsai-scratch`.
+    #[cfg(windows)]
+    fn scratch_root() -> std::path::PathBuf {
+        std::path::PathBuf::from("D:\\Temp\\bonsai-scratch")
+    }
+
+    #[cfg(not(windows))]
+    fn scratch_root() -> std::path::PathBuf {
+        std::env::temp_dir().join("bonsai-scratch")
+    }
+
     fn scratch_dir() -> tempfile::TempDir {
-        let root = Path::new("D:\\Temp\\bonsai-scratch");
-        std::fs::create_dir_all(root).expect("create scratch root");
+        let root = scratch_root();
+        std::fs::create_dir_all(&root).expect("create scratch root");
         tempfile::Builder::new()
             .prefix("bonsai-http-mcp-")
-            .tempdir_in(root)
+            .tempdir_in(&root)
             .expect("scratch dir")
     }
 

@@ -10,7 +10,9 @@
 //! helper → SSH agent → default. NEVER prompt for or store passwords.
 
 use std::cell::{Cell, RefCell};
+use std::io::Write;
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 use crate::error::AppError;
 use crate::git::repo::read_head_info;
@@ -122,12 +124,74 @@ pub(crate) fn next_cred_method(
     None
 }
 
+/// Resolves HTTPS credentials via the user's REAL configured credential
+/// helper by shelling out to `git credential fill` — NOT libgit2's own
+/// reimplementation (see addendum preamble). `repo_path`: cwd for the child
+/// process when `Some`, so repo-local `credential.helper` config resolves
+/// exactly like the `git` CLI does (it also reads cwd's repo config); `None`
+/// when no repo exists yet (clone, §A.3) — global/system config still
+/// resolves without a cwd, matching what `git clone` itself does before a
+/// repo exists.
+///
+/// NEVER prompts (`GIT_TERMINAL_PROMPT=0` is set unconditionally on the
+/// child — a cache miss must fail fast, not block on an interactive
+/// prompt — this preserves the locked never-prompt policy, §2.2). NEVER
+/// panics. Returns `None` on ANY failure path: binary not found / spawn
+/// error, non-zero exit status, I/O error writing stdin, stdout not valid
+/// UTF-8, or `username`/`password` missing or empty in the parsed output.
+/// The caller (`acquire_cred`, §A.2) treats `None` exactly like the old
+/// `Cred::credential_helper(..).is_err()` branch: fall through to the next
+/// credential method.
+fn credential_fill(repo_path: Option<&Path>, url: &str) -> Option<(String, String)> {
+    let mut cmd = Command::new("git");
+    cmd.args(["credential", "fill"])
+        .env("GIT_TERMINAL_PROMPT", "0") // REQUIRED — never block on a prompt
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null()); // discarded — never logged, never in an error path
+    if let Some(p) = repo_path {
+        cmd.current_dir(p);
+    }
+
+    let mut child = cmd.spawn().ok()?;
+    let write_ok = child
+        .stdin
+        .as_mut()
+        .is_some_and(|stdin| stdin.write_all(format!("url={url}\n\n").as_bytes()).is_ok());
+    if !write_ok {
+        let _ = child.wait(); // reap the child instead of leaving it a zombie
+        return None;
+    }
+
+    // wait_with_output closes stdin (EOF) before waiting, so the child sees
+    // the full request even though we haven't dropped our handle explicitly.
+    let output = child.wait_with_output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8(output.stdout).ok()?;
+
+    let (mut username, mut password) = (None, None);
+    for line in stdout.lines() {
+        let Some((key, value)) = line.split_once('=') else { continue };
+        match key {
+            "username" => username = Some(value.to_string()),
+            "password" => password = Some(value.to_string()),
+            _ => {} // ignore unknown keys (protocol/host/path/url echo, etc.)
+        }
+    }
+    match (username, password) {
+        (Some(u), Some(p)) if !u.is_empty() && !p.is_empty() => Some((u, p)),
+        _ => None,
+    }
+}
+
 /// Credentials callback body (contract §2.2). Construction failure consumes
 /// the attempt and falls through to the next method; exhaustion returns an
 /// error, which aborts the transport instead of looping. NEVER prompts;
 /// NEVER reads or stores passwords.
 pub(crate) fn acquire_cred(
-    config: &git2::Config,
+    repo_path: Option<&Path>,
     attempts: &RefCell<CredAttempts>,
     url: &str,
     username_from_url: Option<&str>,
@@ -137,9 +201,17 @@ pub(crate) fn acquire_cred(
         let method = next_cred_method(&mut attempts.borrow_mut(), allowed);
         match method {
             Some(CredMethod::Helper) => {
-                if let Ok(cred) = git2::Cred::credential_helper(config, url, username_from_url) {
-                    return Ok(cred);
+                if let Some((user, pass)) = credential_fill(repo_path, url) {
+                    if let Ok(cred) = git2::Cred::userpass_plaintext(&user, &pass) {
+                        return Ok(cred);
+                    }
+                    // userpass_plaintext failing is theoretical (string-only
+                    // validation) — treat identically to a construction
+                    // failure: the guard already marked Helper as tried, so
+                    // the loop's next iteration moves on to SshAgent.
                 }
+                // credential_fill returned None (no cached credentials / any
+                // failure mode, §A.1) -> same fall-through as before.
             }
             Some(CredMethod::SshAgent) => {
                 if let Ok(cred) =
@@ -169,11 +241,25 @@ pub(crate) fn acquire_cred(
 /// evaluated top-down, first match wins).
 pub(crate) fn map_remote_err(e: git2::Error, context: &str) -> AppError {
     let auth_msg = || {
-        format!(
-            "authentication failed for '{context}': no usable credentials. \
-             Configure a Git credential helper (e.g. Git Credential Manager) for \
-             HTTPS remotes, or run an SSH agent for SSH remotes."
-        )
+        let helper_configured = git2::Config::open_default()
+            .ok()
+            .and_then(|c| c.get_string("credential.helper").ok())
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false); // covers Err(NotFound) (unset) and any other lookup failure
+
+        if helper_configured {
+            format!(
+                "authentication failed for '{context}': the configured credential helper has no \
+                 cached credentials for this remote. Run the equivalent git command in a terminal \
+                 once to (re-)authenticate, or run an SSH agent for SSH remotes."
+            )
+        } else {
+            format!(
+                "authentication failed for '{context}': no usable credentials and no Git credential \
+                 helper is configured. Configure one (e.g. Git Credential Manager) for HTTPS \
+                 remotes, or run an SSH agent for SSH remotes."
+            )
+        }
     };
     if e.class() == git2::ErrorClass::Callback && e.message().contains(CRED_EXHAUSTED_MSG) {
         return AppError::AuthFailed(auth_msg());
@@ -224,14 +310,13 @@ fn fetch_remote(repo: &git2::Repository, name: &str) -> Result<RemoteFetchResult
         Err(e) => return Err(e.into()),
     };
 
-    let config = repo.config()?;
     let attempts = RefCell::new(CredAttempts::default());
     let updated = Cell::new(0u32);
 
     let received = {
         let mut callbacks = git2::RemoteCallbacks::new();
         callbacks.credentials(|url, username_from_url, allowed| {
-            acquire_cred(&config, &attempts, url, username_from_url, allowed)
+            acquire_cred(repo.workdir(), &attempts, url, username_from_url, allowed)
         });
         callbacks.update_tips(|_refname, old, new| {
             if old != new {
@@ -461,7 +546,7 @@ pub fn push_current(workdir: &Path) -> Result<PushResult, AppError> {
 
         let mut callbacks = git2::RemoteCallbacks::new();
         callbacks.credentials(|url, username_from_url, allowed| {
-            acquire_cred(&config, &attempts, url, username_from_url, allowed)
+            acquire_cred(repo.workdir(), &attempts, url, username_from_url, allowed)
         });
         callbacks.push_update_reference(|_refname, status| {
             if let Some(msg) = status {
@@ -842,5 +927,172 @@ mod tests {
             AppError::Git(m) => assert_eq!(m, "something odd"),
             other => panic!("expected Git, got {other:?}"),
         }
+    }
+
+    // --------------- credential_fill (2026-08-04 addendum §A.6, macOS/Linux)
+    //
+    // NOTE: unlike the rest of this suite, these fixtures use plain
+    // `tempfile::tempdir()` rather than `crate::testutil::scratch_dir()` —
+    // `scratch_dir()` is hardcoded to the Windows-only `D:\Temp\bonsai-scratch`
+    // path and panics on macOS/Linux. This substitution is scoped to this
+    // block only; `scratch_dir()` itself is untouched.
+
+    fn have_git() -> bool {
+        Command::new("git").arg("--version").output().is_ok()
+    }
+
+    /// Writes an executable POSIX shell script fixture (the shape real `git`
+    /// invokes a `credential.helper` value as, on every platform including
+    /// via Git Bash's `sh` on Windows) and returns its path as the string a
+    /// `credential.helper` config value expects.
+    fn write_helper_script(dir: &Path, name: &str, body: &str) -> String {
+        let path = dir.join(name);
+        std::fs::write(&path, body).expect("write helper script");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&path).expect("metadata").permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&path, perms).expect("chmod +x");
+        }
+        #[cfg(windows)]
+        {
+            // No-op placeholder: this test file only needs to pass on
+            // macOS/Linux for now (see module note above); left here so a
+            // future Windows CI run doesn't need a cfg-gap fix to compile.
+        }
+        path.to_string_lossy().to_string()
+    }
+
+    /// Inits a scratch git repo via the real `git` CLI (so repo-local
+    /// `credential.helper` config resolves the same way it would for a real
+    /// caller) and returns the owning tempdir.
+    fn credfill_init_repo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let out = Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(dir.path())
+            .output()
+            .expect("spawn git init");
+        assert!(
+            out.status.success(),
+            "git init failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        dir
+    }
+
+    fn set_credential_helper(repo_dir: &Path, helper: &str) {
+        let out = Command::new("git")
+            .args(["config", "credential.helper", helper])
+            .current_dir(repo_dir)
+            .output()
+            .expect("spawn git config");
+        assert!(
+            out.status.success(),
+            "git config credential.helper failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// fixtures/good-helper.sh — responds to `git credential fill` with fixed creds.
+    const GOOD_HELPER: &str = "#!/bin/sh\n\
+        cat > /dev/null\n\
+        echo \"username=bonsai-test-user\"\n\
+        echo \"password=bonsai-test-pass\"\n";
+
+    /// fixtures/bad-exit-helper.sh — simulates a broken helper.
+    const BAD_EXIT_HELPER: &str = "#!/bin/sh\ncat > /dev/null\nexit 1\n";
+
+    /// fixtures/partial-helper.sh — responds but omits password (simulates a
+    /// helper that recognizes the request but has no cached secret).
+    const PARTIAL_HELPER: &str =
+        "#!/bin/sh\ncat > /dev/null\necho \"username=bonsai-test-user\"\n";
+
+    /// (a) Well-formed helper response round-trips through `credential_fill`.
+    #[test]
+    fn credential_fill_well_formed_response() {
+        if !have_git() {
+            return;
+        }
+        let dir = credfill_init_repo();
+        let helper = write_helper_script(dir.path(), "good-helper.sh", GOOD_HELPER);
+        set_credential_helper(dir.path(), &helper);
+
+        let result = credential_fill(Some(dir.path()), "https://example.com/repo.git");
+        assert_eq!(
+            result,
+            Some(("bonsai-test-user".to_string(), "bonsai-test-pass".to_string()))
+        );
+    }
+
+    /// (b) All three failure modes fall through to `None` without panicking
+    /// or hanging: non-zero exit, a nonexistent helper binary, and a
+    /// well-formed-but-incomplete response (missing `password=`).
+    #[test]
+    fn credential_fill_failure_modes_return_none() {
+        if !have_git() {
+            return;
+        }
+        let start = std::time::Instant::now();
+
+        let dir = credfill_init_repo();
+        let helper = write_helper_script(dir.path(), "bad-exit-helper.sh", BAD_EXIT_HELPER);
+        set_credential_helper(dir.path(), &helper);
+        assert_eq!(
+            credential_fill(Some(dir.path()), "https://example.com/repo.git"),
+            None,
+            "non-zero exit helper must yield None"
+        );
+
+        let dir2 = credfill_init_repo();
+        set_credential_helper(dir2.path(), "/path/does/not/exist");
+        assert_eq!(
+            credential_fill(Some(dir2.path()), "https://example.com/repo.git"),
+            None,
+            "nonexistent helper binary must yield None, not panic"
+        );
+
+        let dir3 = credfill_init_repo();
+        let helper3 = write_helper_script(dir3.path(), "partial-helper.sh", PARTIAL_HELPER);
+        set_credential_helper(dir3.path(), &helper3);
+        assert_eq!(
+            credential_fill(Some(dir3.path()), "https://example.com/repo.git"),
+            None,
+            "response missing password= must yield None"
+        );
+
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(5),
+            "failure-mode cases took too long — possible hang"
+        );
+    }
+
+    /// (c) `GIT_TERMINAL_PROMPT=0` prevents an interactive-prompt hang when
+    /// no `credential.helper` is configured at all. This bounds the hang
+    /// empirically via wall-clock timing (a genuinely interactive prompt
+    /// would block indefinitely, not merely run slow) — combined with the
+    /// source-level `.env("GIT_TERMINAL_PROMPT", "0")` on `credential_fill`'s
+    /// one `Command::new("git")` construction, this is the practical
+    /// verification available without spawning and killing a truly-hung
+    /// child process.
+    #[test]
+    fn credential_fill_no_helper_configured_does_not_hang() {
+        if !have_git() {
+            return;
+        }
+        let dir = credfill_init_repo();
+
+        let start = std::time::Instant::now();
+        let result = credential_fill(
+            Some(dir.path()),
+            "https://example-nonexistent-host.invalid/repo.git",
+        );
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(5),
+            "credential_fill took too long — possible interactive-prompt hang \
+             (GIT_TERMINAL_PROMPT not honored?)"
+        );
+        assert_eq!(result, None);
     }
 }

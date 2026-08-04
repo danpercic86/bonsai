@@ -73,8 +73,9 @@ pub fn clone_repo(
         }
     }
 
-    // 2. Credentials: no repo yet -> default (global+system) config (§OPEN-5).
-    let config = git2::Config::open_default()?;
+    // 2. Credentials: no repo yet -> `credential_fill(None, url)` falls back to
+    // global/system git config with no cwd override, matching what `git clone`
+    // itself does before a repo exists (§OPEN-5).
     let attempts = RefCell::new(CredAttempts::default());
     // Shared mutable sink for the FnMut callback. libgit2 invokes the callbacks
     // synchronously on THIS thread, so RefCell (not Mutex) is correct.
@@ -83,7 +84,7 @@ pub fn clone_repo(
     // 3. Callbacks mirror remote.rs::fetch_remote, ADDING transfer_progress.
     let mut callbacks = git2::RemoteCallbacks::new();
     callbacks.credentials(|url, username_from_url, allowed| {
-        acquire_cred(&config, &attempts, url, username_from_url, allowed)
+        acquire_cred(None, &attempts, url, username_from_url, allowed)
     });
     callbacks.transfer_progress(|stats: git2::Progress| {
         (on_progress.borrow_mut())(CloneProgress {

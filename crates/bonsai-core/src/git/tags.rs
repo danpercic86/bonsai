@@ -137,13 +137,12 @@ pub fn push_tag(
         Err(e) => return Err(e.into()),
     };
 
-    let config = repo.config()?;
     let attempts = RefCell::new(CredAttempts::default());
     let rejected: RefCell<Option<String>> = RefCell::new(None);
     {
         let mut callbacks = git2::RemoteCallbacks::new();
         callbacks.credentials(|url, username_from_url, allowed| {
-            acquire_cred(&config, &attempts, url, username_from_url, allowed)
+            acquire_cred(repo.workdir(), &attempts, url, username_from_url, allowed)
         });
         callbacks.push_update_reference(|_refname, status| {
             if let Some(msg) = status {
