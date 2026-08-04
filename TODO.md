@@ -42,7 +42,15 @@ gets exactly ONE fresh re-fill before falling through. **Warm-on-open WIRED** (o
 beyond contract §16): outer `open_repo` command enumerates HTTPS remotes and calls
 `cred_cache::warm` fire-and-forget so the first op is warm too.
 
-**Current step:** contract written (architect); implementing (senior-dev).
+**Current step:** DONE + committed (`129ba99`). AI gate green — clippy `-D warnings` clean,
+`cargo test -p bonsai-core cred` 19 pass (11 cred_cache incl. panic-recovery + single-flight, 8
+remote.rs state-machine), src-tauri compiles; reviewer approved (0 must-fix, 2 NIT hardenings
+folded). Follow-up (`b2ef361`): the `credential_fill_*` tests were popping the real GCM GUI on
+Windows (they let git fall through to the inherited system/global helper) — made them hermetic
+(reset the helper list per test repo) + cross-platform (`!`-inline sh fixtures); all 3 now pass
+with no prompt, so `cargo test -p bonsai-core` is fully green. **Awaiting USER CHECKPOINT:** real HTTPS remote w/ GCM —
+first fetch resolves via helper; 2nd+ ops visibly faster (git-credential-manager does NOT relaunch,
+check Task Manager); externally rotate/expire the cred → next op recovers (evict+refill), not fail.
 
 ## UX fix batch (user-found issues, 2026-08-04) — **awaiting USER CHECKPOINT**
 
