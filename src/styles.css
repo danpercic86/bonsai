@@ -1918,6 +1918,87 @@ span.file-row-main {
   color: var(--text-3);
 }
 
+/* P38: reflog viewer overlay — a sibling read overlay to blame/file-history.
+   Each row shows the ref@{N} index, the old→new oid transition, the reflog
+   message, committer, and relative time, plus a kebab of restore actions. */
+.reflog-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.reflog-row {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.reflog-row:hover {
+  background: var(--bg-1);
+}
+
+.reflog-main {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-1);
+}
+
+.reflog-index {
+  flex: none;
+  color: var(--text-2);
+}
+
+.reflog-oids {
+  flex: none;
+}
+
+.reflog-oid-old,
+.reflog-oid-arrow {
+  color: var(--text-3);
+}
+
+.reflog-oid-root {
+  color: var(--text-3);
+  font-style: italic;
+}
+
+.reflog-oid-new {
+  color: var(--accent);
+}
+
+.reflog-message {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reflog-author {
+  flex: none;
+  color: var(--text-2);
+}
+
+.reflog-date {
+  flex: none;
+  color: var(--text-3);
+}
+
+.reflog-actions {
+  flex: none;
+  margin-right: 6px;
+  font-size: 16px;
+  line-height: 1;
+}
+
 /* P15b: AI explain/review output card. Floats over the graph pane, above the
    single-file diff-overlay (z 5) so "Explain file" from a diff header is visible. */
 .ai-output-panel {

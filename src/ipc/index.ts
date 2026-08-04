@@ -83,6 +83,7 @@ export type {
   RecentRepo,
   RefKind,
   RefLabel,
+  ReflogEntry,
   PaneWidths,
   ProfileActivation,
   ProfilePreviewEntry,

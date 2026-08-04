@@ -40,6 +40,7 @@ import type {
   ListView,
   RebaseTodoOp,
   PaneWidths,
+  ReflogEntry,
   RemoteInfo,
   RepoInfo,
   RepoOpState,
@@ -265,12 +266,28 @@ export function RepoWorkspace({
     loading: boolean;
     error: string | null;
   } | null>(null);
+  // P38: reflog viewer overlay — a sibling read overlay with its own req-id
+  // stale-guard. Restore actions reuse the shared create-branch / reset dialogs.
+  const [reflog, setReflog] = useState<{
+    refName: string;
+    entries: ReflogEntry[];
+    loading: boolean;
+    error: string | null;
+  } | null>(null);
   const blameReqId = useRef(0);
   const historyReqId = useRef(0);
+  const reflogReqId = useRef(0);
   const blameOpenRef = useRef(false);
   blameOpenRef.current = blame !== null;
   const historyOpenRef = useRef(false);
   historyOpenRef.current = history !== null;
+  const reflogOpenRef = useRef(false);
+  reflogOpenRef.current = reflog !== null;
+  const reflogRef = useRef(reflog);
+  reflogRef.current = reflog;
+  // Set when a restore is armed from the reflog overlay, so the completion
+  // effect knows to re-fetch the (now stale) reflog after refreshAll.
+  const reflogRestoreRef = useRef(false);
   const dialogOpen =
     pendingDeleteBranch !== null ||
     pendingDeleteRemote !== null ||
@@ -2261,6 +2278,33 @@ export function RepoWorkspace({
     historyReqId.current += 1;
     setHistory(null);
   }, []);
+  const closeReflog = useCallback(() => {
+    reflogReqId.current += 1;
+    setReflog(null);
+  }, []);
+
+  // P38 §7.2: open the reflog overlay for "HEAD" or a local branch name. Cross-
+  // invalidate the sibling blame/history overlays so only one read overlay is
+  // ever open, then fetch behind the reflogReqId stale-guard.
+  const openReflog = useCallback(
+    async (refName: string) => {
+      blameReqId.current += 1;
+      setBlame(null);
+      historyReqId.current += 1;
+      setHistory(null);
+      const reqId = ++reflogReqId.current;
+      setReflog({ refName, entries: [], loading: true, error: null });
+      try {
+        const entries = await ipc.readReflog(repoId, refName);
+        if (reflogReqId.current !== reqId) return;
+        setReflog({ refName, entries, loading: false, error: null });
+      } catch (e) {
+        if (reflogReqId.current !== reqId) return;
+        setReflog({ refName, entries: [], loading: false, error: errorMessage(e) });
+      }
+    },
+    [repoId],
+  );
 
   // Reveal a commit in the graph by oid: reuse the select-by-oid path. Setting
   // `selectedIndex` opens CommitPanel AND triggers GraphCanvas's §6.3 effect,
@@ -2279,9 +2323,10 @@ export function RepoWorkspace({
       if (compareRef.current !== null) clearCompare();
       closeBlame();
       closeHistory();
+      closeReflog();
       setSelectedIndex(idx);
     },
-    [pushToast, clearCompare, closeBlame, closeHistory],
+    [pushToast, clearCompare, closeBlame, closeHistory, closeReflog],
   );
 
   // Blame is against the committed HEAD version (atOid=null) in v1 (P23 OPEN #8
@@ -2291,6 +2336,8 @@ export function RepoWorkspace({
   async function handleBlame(path: string) {
     historyReqId.current += 1;
     setHistory(null);
+    reflogReqId.current += 1;
+    setReflog(null);
     const reqId = ++blameReqId.current;
     setBlame({ path, lines: [], loading: true, error: null });
     try {
@@ -2306,6 +2353,8 @@ export function RepoWorkspace({
   async function handleFileHistory(path: string) {
     blameReqId.current += 1;
     setBlame(null);
+    reflogReqId.current += 1;
+    setReflog(null);
     const reqId = ++historyReqId.current;
     setHistory({ path, entries: [], loading: true, error: null });
     try {
@@ -2317,6 +2366,21 @@ export function RepoWorkspace({
       setHistory({ path, entries: [], loading: false, error: errorMessage(e) });
     }
   }
+
+  // P38 §7.2: after a restore armed from the reflog overlay completes (mutating
+  // falls back to false), the reflog is stale (HEAD moved / a branch was created)
+  // — re-fetch it so the new "reset: moving to …" entry appears. refreshAll (run
+  // by the shared reset/create-branch handlers) has already updated graph+branches.
+  const prevMutatingRef = useRef(mutating);
+  useEffect(() => {
+    const was = prevMutatingRef.current;
+    prevMutatingRef.current = mutating;
+    if (was && !mutating && reflogRestoreRef.current) {
+      reflogRestoreRef.current = false;
+      const open = reflogRef.current;
+      if (open !== null) void openReflog(open.refName);
+    }
+  }, [mutating, openReflog]);
 
   // ----- P20 §5/§6: cherry-pick + revert handling -----
   // An empty pick/revert (nothingToCommit) is an info, not an error toast (§8.1);
@@ -2569,6 +2633,10 @@ export function RepoWorkspace({
         closeHistory();
         return;
       }
+      if (reflogOpenRef.current) {
+        closeReflog();
+        return;
+      }
       if (commitBrowserOpenRef.current) {
         setCommitBrowserOpen(false);
         return;
@@ -2585,7 +2653,16 @@ export function RepoWorkspace({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [active, globalModalOpen, collapseDiffSlot, clearCompare, closeAiPanel, closeBlame, closeHistory]);
+  }, [
+    active,
+    globalModalOpen,
+    collapseDiffSlot,
+    clearCompare,
+    closeAiPanel,
+    closeBlame,
+    closeHistory,
+    closeReflog,
+  ]);
 
   // Per-repo shortcut effect (active tab only, §5.1): refresh / fetch / pull /
   // push / graph nav. Global modals + this repo's own dialogs suppress it.
@@ -2725,7 +2802,26 @@ export function RepoWorkspace({
     handleCherrypick,
     handleRevert,
     setPendingReset,
+    onViewReflog: (name: string) => void openReflog(name),
   });
+
+  // P38 §7.2/§7.3: reflog restore wiring. Both actions arm the SHARED dialogs
+  // (create-branch PromptDialog / reset ConfirmDialog) — no new mutation path.
+  // Reset is offered only on an attached, born HEAD (same predicate as
+  // resetMenuItems); otherwise the view hides the reset actions.
+  const reflogCanReset = head !== null && !head.unborn && !head.detached;
+  const reflogResetLabel = headBranch?.name ?? 'HEAD';
+  const onReflogCreateBranch = useCallback((newOid: string) => {
+    reflogRestoreRef.current = true;
+    setPendingCreateBranch({ oid: newOid });
+  }, []);
+  const onReflogReset = useCallback(
+    (newOid: string, mode: ResetMode) => {
+      reflogRestoreRef.current = true;
+      setPendingReset({ oid: newOid, mode });
+    },
+    [],
+  );
 
   // P11g-rev §4.4: resolve the DiffBrowser source labels + header list. Compare
   // mode AUTO-OPENS once data has loaded (≥1 file); commit mode is EXPLICIT-open
@@ -2777,6 +2873,8 @@ export function RepoWorkspace({
         onPush={() => void handlePush()}
         onForcePush={() => handleForcePush()}
         onWhatChanged={() => setWhatChangedOpen(true)}
+        onViewHeadReflog={() => void openReflog('HEAD')}
+        headBorn={head !== null && !head.unborn}
         onRefresh={() => void handleRefresh()}
       />
 
@@ -2841,6 +2939,12 @@ export function RepoWorkspace({
           revealCommitByOid={revealCommitByOid}
           history={history}
           closeHistory={closeHistory}
+          reflog={reflog}
+          closeReflog={closeReflog}
+          reflogBusy={mutating}
+          reflogResetLabel={reflogResetLabel}
+          onReflogCreateBranch={onReflogCreateBranch}
+          onReflogReset={reflogCanReset ? onReflogReset : undefined}
           aiPanel={aiPanel}
           closeAiPanel={closeAiPanel}
           diffBrowserView={diffBrowserView}

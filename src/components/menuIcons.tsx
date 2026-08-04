@@ -153,3 +153,16 @@ export function StashPopIcon() {
     </svg>
   );
 }
+
+/** History / reflog (P38) — a clock face with a counter-clockwise rewind arrow. */
+export function HistoryIcon() {
+  return (
+    <svg {...svgProps}>
+      <circle cx="8" cy="8.5" r="5" />
+      {/* clock hands */}
+      <path d="M8 5.5 V8.5 L10 10" />
+      {/* rewind arrowhead at the top-left of the dial */}
+      <path d="M3.4 5 L3.2 7.4 L5.6 7.2" />
+    </svg>
+  );
+}

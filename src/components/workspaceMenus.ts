@@ -6,6 +6,7 @@ import {
   CompareIcon,
   CopyIcon,
   DeleteIcon,
+  HistoryIcon,
   MergeIcon,
   RebaseIcon,
   StashApplyIcon,
@@ -73,6 +74,7 @@ export interface WorkspaceMenuDeps {
   handleCherrypick(oid: string): void;
   handleRevert(oid: string): void;
   setPendingReset(v: { oid: string; mode: ResetMode }): void;
+  onViewReflog(refName: string): void;
 }
 
 export interface WorkspaceMenus {
@@ -133,6 +135,7 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     handleCherrypick,
     handleRevert,
     setPendingReset,
+    onViewReflog,
   } = deps;
 
   // P6 §4.1: the single shared builder for a branch/remote-tracking ref menu,
@@ -187,6 +190,16 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
         },
       },
     ];
+    // P38 §7.3: view this branch's reflog (local branches only — remote-tracking
+    // reflogs are out of v1 scope). Read-only, so never gated.
+    if (kind === 'localBranch') {
+      items.push({
+        label: 'View reflog',
+        icon: createElement(HistoryIcon),
+        disabled: false,
+        onSelect: () => onViewReflog(name),
+      });
+    }
     // P15c: "Summarize branch…" (local branches only, AI-eligible only). Base
     // selection is a frontend policy (§7.5): the repo's primary branch (main,
     // else master, else the current HEAD branch) UNLESS the target IS that

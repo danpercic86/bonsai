@@ -23,6 +23,10 @@ export interface WorkspaceToolbarProps {
   /** P37b: opens the force-push-with-lease confirm dialog. */
   onForcePush(): void;
   onWhatChanged(): void;
+  /** P38: opens the HEAD reflog overlay (recovery net). Enabled on a born repo. */
+  onViewHeadReflog(): void;
+  /** True once HEAD points at a commit (not unborn) — gates the reflog button. */
+  headBorn: boolean;
   onRefresh(): void;
 }
 
@@ -47,6 +51,8 @@ export function WorkspaceToolbar({
   onPush,
   onForcePush,
   onWhatChanged,
+  onViewHeadReflog,
+  headBorn,
   onRefresh,
 }: WorkspaceToolbarProps) {
   // P37b: anchor for the Push caret dropdown (positioned at the caret's rect).
@@ -153,6 +159,15 @@ export function WorkspaceToolbar({
               ✨ What changed…
             </button>
           )}
+          <button
+            type="button"
+            className="toolbar-btn"
+            disabled={!headBorn}
+            onClick={() => onViewHeadReflog()}
+            title="View the HEAD reflog (recover prior positions after reset/rebase/amend)"
+          >
+            ↺ Reflog
+          </button>
         </div>
         <button
           type="button"

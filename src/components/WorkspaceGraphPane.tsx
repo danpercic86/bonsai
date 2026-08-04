@@ -5,10 +5,18 @@ import { DiffBrowser } from './DiffBrowser';
 import { DiffOverlay } from './DiffOverlay';
 import type { DiffOverlayMeta } from './DiffOverlay';
 import { FileHistoryView } from './FileHistoryView';
+import { ReflogView } from './ReflogView';
 import type { DiffSlot } from './StatusPanel';
 import { GraphCanvas } from '../graph/GraphCanvas';
 import type { GraphCanvasHandle } from '../graph/GraphCanvas';
-import type { BlameLine, FileHistoryEntry, GraphLayout, HeadInfo } from '../ipc';
+import type {
+  BlameLine,
+  FileHistoryEntry,
+  GraphLayout,
+  HeadInfo,
+  ReflogEntry,
+  ResetMode,
+} from '../ipc';
 
 type GraphCanvasProps = ComponentProps<typeof GraphCanvas>;
 type DiffOverlayProps = ComponentProps<typeof DiffOverlay>;
@@ -53,6 +61,18 @@ export interface WorkspaceGraphPaneProps {
     error: string | null;
   } | null;
   closeHistory(): void;
+  reflog: {
+    refName: string;
+    entries: ReflogEntry[];
+    loading: boolean;
+    error: string | null;
+  } | null;
+  closeReflog(): void;
+  reflogBusy: boolean;
+  reflogResetLabel: string;
+  onReflogCreateBranch(newOid: string): void;
+  /** Undefined when reset is not allowed (detached/unborn HEAD) → view hides it. */
+  onReflogReset?: (newOid: string, mode: ResetMode) => void;
   aiPanel: {
     title: string;
     text: string | null;
@@ -108,6 +128,12 @@ export function WorkspaceGraphPane({
   revealCommitByOid,
   history,
   closeHistory,
+  reflog,
+  closeReflog,
+  reflogBusy,
+  reflogResetLabel,
+  onReflogCreateBranch,
+  onReflogReset,
   aiPanel,
   closeAiPanel,
   diffBrowserView,
@@ -193,6 +219,22 @@ export function WorkspaceGraphPane({
           error={history.error}
           onClose={closeHistory}
           onRevealCommit={revealCommitByOid}
+        />
+      )}
+      {/* P38: reflog overlay — a sibling read overlay to blame/history. Only
+          one read overlay is ever open (openReflog clears blame/history). */}
+      {reflog !== null && (
+        <ReflogView
+          refName={reflog.refName}
+          entries={reflog.entries}
+          loading={reflog.loading}
+          error={reflog.error}
+          busy={reflogBusy}
+          resetBranchLabel={reflogResetLabel}
+          onClose={closeReflog}
+          onRevealCommit={revealCommitByOid}
+          onCreateBranch={onReflogCreateBranch}
+          onReset={onReflogReset}
         />
       )}
       {aiPanel !== null && (

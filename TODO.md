@@ -43,9 +43,22 @@ local-only reflogs v1; soft/mixed/hard reset parity (reuse resetMenuItems); auto
 restore actions. Guardrails unchanged (scratch D:\Temp\bonsai-scratch, TMP/TEMP=D:\Temp on Windows, no
 concurrent test+clippy, mock.ts compiling, orchestrator commits).
 
-**Current step:** P38a implemented (gates green: 5 unit + reflog_cli 3 + no-repo cmd test 1, clippy/tsc/
-build clean); deviation: core no-repo test asserts AppError::Git (true open_workdir_repo behavior, per
-blame precedent) w/ NoRepo covered at the command layer. Awaiting reviewer.
+- **P38a** (reviewer APPROVE, 0 must-fix; index/oid/cap/resolution/read-only all verified) — committed
+  `bd84774`. reflog.rs read module + read_reflog cmd + IPC triple + MOCK_HEAD_REFLOG fixture (oids
+  overlap graph nodes) + reflog_cli oracle 3 + 5 unit + 1 no-repo cmd. Nits (cosmetic): import ordering.
+- **P38b** (reviewer APPROVE, 0 must-fix; safety invariant verified — restore actions only arm the
+  shared create-branch/reset dialogs, hard→destructive confirm, newOid target, (root) never a target) —
+  ReflogView overlay (index badge, old→new oid, message, committer, relative time, reveal-in-graph,
+  per-row kebab) + RepoWorkspace overlay state/reqId-guard/Esc-layering/auto-refetch-after-restore +
+  toolbar "↺ Reflog" (HEAD) + branch-menu "View reflog" + HistoryIcon. Deviation (improvement):
+  onReset widened to (newOid, mode) → soft/mixed/hard parity. Nits (cosmetic, left): reflogRestoreRef
+  not cleared on dialog-cancel (idempotent extra refetch); dead `index` in menu state. tsc + build clean.
+- **P38b AI GATE PASSED (2026-08-04).** Browser harness (mock :1420, orchestrator-driven): toolbar
+  "↺ Reflog" → overlay lists HEAD@{0..5} (reset/amend/rebase/commit/pull/initial, (root) on the initial
+  old oid); row kebab → Create branch here + Reset main to this soft/mixed/hard…; Create branch here →
+  branch-name prompt; Reset (hard) → destructive "Reset (hard)" confirm; zero console errors.
+**Current step:** P38a+b committed & AI-gate-passed. Next: P38 tester (regression + user checklist),
+then commit the green milestone → P39 (bisect).
 
 ## P37 — force-push-with-lease (Git completeness, Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 
