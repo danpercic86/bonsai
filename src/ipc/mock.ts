@@ -1401,7 +1401,6 @@ function mcpStatusOf(): McpStatus {
       port: null,
       url: null,
       token: null,
-      claudeAddCommand: null,
       toolCount,
     };
   }
@@ -1412,7 +1411,6 @@ function mcpStatusOf(): McpStatus {
     port: MOCK_MCP_PORT,
     url,
     token: MOCK_MCP_TOKEN,
-    claudeAddCommand: `claude mcp add bonsai --transport http --header "Authorization: Bearer ${MOCK_MCP_TOKEN}" ${url}`,
     toolCount,
   };
 }
@@ -3813,6 +3811,15 @@ export const mockIpc: IpcApi = {
     return () => {
       mockMcp.listeners.delete(cb);
     };
+  },
+
+  // P16: the harness has no real `claude` CLI, so registration is a no-op that
+  // resolves after a short delay (App shows a success toast).
+  async registerMcpWithClaude(
+    _scope: 'user' | 'local',
+    _repoPath: string | null,
+  ): Promise<void> {
+    await delay(150);
   },
 
   // P24: AI-asset inventory + drift. Drift is recomputed per call so the

@@ -1,9 +1,15 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
   clearScreen: false,
+  test: {
+    // Node environment is enough — the helpers under test are pure string logic.
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
+  },
   server: {
     // PORT override lets a second dev server (e.g. another agent session) pick
     // a free port; 1420 stays the default that tauri.conf.json expects.

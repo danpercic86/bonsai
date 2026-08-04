@@ -826,8 +826,8 @@ export interface UiSettingsPatch {
 }
 
 /** Embedded MCP server status for the Settings panel (P16). Mirrors the Rust
- *  `McpStatus`. `enabled` is the live runtime state; `port`/`url`/`token`/
- *  `claudeAddCommand` are populated only while running. */
+ *  `McpStatus`. `enabled` is the live runtime state; `port`/`url`/`token` are
+ *  populated only while running. */
 export interface McpStatus {
   /** Server running? */
   enabled: boolean;
@@ -839,8 +839,6 @@ export interface McpStatus {
   url: string | null;
   /** Persisted bearer token; `null` when stopped. */
   token: string | null;
-  /** Ready-to-paste `claude mcp add` line; `null` when stopped. */
-  claudeAddCommand: string | null;
   /** 14 (read-only) or 34 (write enabled). */
   toolCount: number;
 }
@@ -1443,6 +1441,13 @@ export interface IpcApi {
   setMcpAllowWrite(allowWrite: boolean): Promise<McpStatus>;
   /** P16. Fires on server start/stop/bounce; payload is the new status. */
   onMcpServerChanged(cb: (s: McpStatus) => void): Promise<Unsubscribe>;
+  /** P16. Registers the running embedded MCP server with the local `claude` CLI
+   *  via `claude mcp add`. `scope` is `'user'` (global) or `'local'` (the open
+   *  repo, private). `repoPath` sets the child cwd (required for a meaningful
+   *  `local` registration; may be `null` for `user`). Rejects `aiUnavailable`
+   *  (CLI not on PATH) | `aiFailed` (non-zero exit / timeout) | `other` (server
+   *  not running). */
+  registerMcpWithClaude(scope: 'user' | 'local', repoPath: string | null): Promise<void>;
   /** P24. Full AI-asset inventory + drift for a repo. `canonical` optionally
    *  overrides the drift reference asset id. Rejects io | noRepo. */
   listAiAssets(repoId: string, canonical?: string): Promise<AiAssetInventory>;

@@ -440,6 +440,37 @@ pub async fn set_mcp_allow_write(
     crate::mcp::set_allow_write(&app, &mcp_state, allow_write).await
 }
 
+/// Registers Bonsai's running embedded MCP server with the local `claude` CLI
+/// (P16). Reads the live `url` + `token` from the running server (errors if the
+/// server is not enabled). `scope` is `"user"` (register globally) or `"local"`
+/// (register in the open repo, private/not committed). cwd = `repo_path` when
+/// given (required for a meaningful `local` registration), else the process cwd.
+/// The `claude mcp add` argv is built in `bonsai-core` as an argument list, so
+/// the variadic `--header` cannot swallow the URL. Errors:
+/// `aiUnavailable` | `aiFailed` | `other`.
+#[tauri::command]
+pub async fn register_mcp_with_claude(
+    scope: String,
+    repo_path: Option<String>,
+    mcp_state: tauri::State<'_, crate::mcp::McpServerState>,
+) -> Result<(), AppError> {
+    let status = crate::mcp::status_of(&mcp_state);
+    let (url, token) = match (status.url, status.token) {
+        (Some(u), Some(t)) => (u, t),
+        _ => return Err(AppError::Other("MCP server is not running".to_string())),
+    };
+    let cwd = match repo_path {
+        Some(p) => std::path::PathBuf::from(p),
+        None => std::env::current_dir()
+            .map_err(|e| AppError::Other(format!("could not resolve current dir: {e}")))?,
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        ai::register_with_claude(&url, &token, &scope, &cwd)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Runtime-free core of `open_repo` (unit-testable without a Tauri app).
 /// `make_on_change` is given the resolved `repo_id` and returns the watcher
 /// callback for that repo; the command wires it to an app-wide

@@ -332,6 +332,72 @@ pub fn run_claude(
     })
 }
 
+/// Wall-clock cap for the one-shot `claude mcp add` registration call (P16).
+pub const REGISTER_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Blocking. Registers Bonsai's embedded MCP server with the local `claude` CLI
+/// by spawning `claude mcp add ...` as an ARGUMENT LIST (no shell — so the
+/// variadic `--header` cannot swallow the URL as it does in a hand-typed line).
+/// `cwd` is the child's working dir, which determines where a `local`-scoped
+/// registration is written. Respects `CLAUDE_BIN_ENV`.
+///
+/// Argv (name + URL BEFORE the variadic `--header`, which is LAST):
+///   claude mcp add --transport http --scope <scope> bonsai <url>
+///          --header "Authorization: Bearer <token>"
+///
+/// Errors: spawn `NotFound` -> `AiUnavailable`; non-zero exit / timeout ->
+/// `AiFailed(<stderr tail>)` (mirrors `run_claude`). (P16)
+pub fn register_with_claude(
+    url: &str,
+    token: &str,
+    scope: &str,
+    cwd: &Path,
+) -> Result<(), AppError> {
+    let bin = resolve_bin();
+    let mut cmd = Command::new(&bin);
+    cmd.current_dir(cwd)
+        .arg("mcp")
+        .arg("add")
+        .arg("--transport")
+        .arg("http")
+        .arg("--scope")
+        .arg(scope)
+        .arg("bonsai")
+        .arg(url)
+        .arg("--header")
+        .arg(format!("Authorization: Bearer {token}"));
+
+    let output = match run_process(cmd, REGISTER_TIMEOUT, None) {
+        Ok(o) => o,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(AppError::AiUnavailable(format!(
+                "Claude Code CLI not found: {e}"
+            )));
+        }
+        Err(e) => return Err(AppError::AiUnavailable(e.to_string())),
+    };
+
+    if output.timed_out {
+        return Err(AppError::AiFailed(format!(
+            "claude mcp add timed out after {}s",
+            REGISTER_TIMEOUT.as_secs()
+        )));
+    }
+
+    if !output.success {
+        let stderr_str = String::from_utf8_lossy(&output.stderr);
+        let trimmed = stderr_str.trim();
+        let msg = if trimmed.is_empty() {
+            "claude mcp add exited with a non-zero status".to_string()
+        } else {
+            trimmed.chars().take(500).collect::<String>()
+        };
+        return Err(AppError::AiFailed(msg));
+    }
+
+    Ok(())
+}
+
 /// Blocking, never errors. Spawns `<bin> --version` (`AVAILABILITY_TIMEOUT`);
 /// returns a populated `AiAvailability`. Respects `CLAUDE_BIN_ENV`. (P13)
 pub fn check_availability() -> AiAvailability {

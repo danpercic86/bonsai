@@ -528,10 +528,14 @@ export interface McpStatus {
   port: number | null;     // bound port when running, else null
   url: string | null;      // e.g. "http://127.0.0.1:8765/mcp"
   token: string | null;    // persisted bearer; null when stopped
-  claudeAddCommand: string | null; // ready-to-paste registration line (null when stopped)
   toolCount: number;       // 14 (read-only) or 34 (write enabled)
 }
 ```
+There is **no** `claudeAddCommand` field. The frontend builds the ready-to-paste
+`claude mcp add` line itself via `src/lib/mcpAddCommand.ts` (`buildClaudeAddCommand`),
+because the CLI's `-H, --header` flag is variadic — the server name + URL must come
+**before** `--header`, which must be **last**. The helper takes an `McpScope`
+(`'user'` | `'local'`) and the running server's `url`/`token`.
 Add to `IpcApi` + `tauri.ts`:
 ```ts
 setActiveRepo(repoId: string | null): Promise<void>;
@@ -543,9 +547,10 @@ onMcpServerChanged(cb: (s: McpStatus) => void): Promise<Unsubscribe>;
 `tauri.ts` maps to `invoke('set_active_repo', { repoId })` etc. and
 `listen<McpStatus>('mcp-server-changed', ...)`.
 
-Rust `McpStatus` (serde `rename_all = "camelCase"`) in `src-tauri/src/mcp.rs` mirrors the TS shape;
-`claudeAddCommand` is built server-side:
-`claude mcp add bonsai --transport http --header "Authorization: Bearer <token>" http://127.0.0.1:<port>/mcp`.
+Rust `McpStatus` (serde `rename_all = "camelCase"`) in `src-tauri/src/mcp.rs` mirrors the TS shape
+(no `claude_add_command` field). Registration is a separate command, `register_mcp_with_claude`,
+which runs `claude mcp add` for a given scope; the copy-to-clipboard variant of the same line is
+produced client-side by `buildClaudeAddCommand` (`src/lib/mcpAddCommand.ts`).
 
 ### 10.4 Mock IPC (`src/ipc/mock.ts`) — MANDATORY
 Implement all four commands + the event so the harness (`VITE_MOCK_IPC=1`) renders the Settings toggle,
@@ -553,15 +558,18 @@ status, URL, token:
 - Module state `{ enabled, allowWrite, activeRepo }`.
 - `setActiveRepo` stores `activeRepo` → `void`.
 - `getMcpStatus`/`setMcpEnabled`/`setMcpAllowWrite` mutate state and return a canned `McpStatus` (fake port
-  `8765`, fake token `"mock-token-abc123"`, `toolCount` 14 or 34, plausible `url`/`claudeAddCommand`).
+  `8765`, fake token `"mock-token-abc123"`, `toolCount` 14 or 34, plausible `url`).
   `set*` also invokes any registered `onMcpServerChanged` callback.
 - No real socket — the harness proves UI wiring; the actual server is exercised by the §12 AI-gate test.
 
 ### 10.5 SettingsPanel additions (`src/components/SettingsPanel.tsx`)
 A new **"AI access (MCP server)"** section: enable toggle (with consent dialog); "Allow AI to modify this
 repo" toggle (disabled unless enabled; warns it bounces the connection); status line (running/stopped + port
-+ `toolCount`); read-only URL + token fields with copy buttons; a copy button for the full
-`claudeAddCommand`; subscribe to `onMcpServerChanged` to stay live.
++ `toolCount`); read-only URL + token fields with copy buttons; and two registration scopes —
+**Globally** (`user`) and **This repository** (`local`, gated on an open repo) — each with a Run
+action (Tauri `register_mcp_with_claude`) and a Copy action (client-side `buildClaudeAddCommand`).
+Subscribe to `onMcpServerChanged` to stay live. The presentational block lives in
+`src/components/SettingsMcpSection.tsx`; `SettingsPanel` remains the container.
 
 ---
 
@@ -699,7 +707,7 @@ pub struct McpRunning { pub port: u16, pub token: String, pub allow_write: bool,
 pub struct McpStatus {
     pub enabled: bool, pub allow_write: bool, pub port: Option<u16>,
     pub url: Option<String>, pub token: Option<String>,
-    pub claude_add_command: Option<String>, pub tool_count: u32,   // 14 or 34
+    pub tool_count: u32,   // 14 or 34 (no claude_add_command field; built client-side)
 }
 
 // src-tauri/src/commands.rs (NEW #[tauri::command] async fns)

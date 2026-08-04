@@ -4,6 +4,8 @@
 // Every control fires `onChange` with a partial patch — App updates its own
 // state immediately (live preview) and debounces the persist.
 
+import { useState } from 'react';
+
 import type {
   AiAutonomy,
   AiAvailability,
@@ -15,6 +17,8 @@ import type {
   Theme,
   UiSettingsPatch,
 } from '../ipc';
+import { type McpScope } from '../lib/mcpAddCommand';
+import { SettingsMcpSection } from './SettingsMcpSection';
 import {
   AUTO_FETCH_INTERVAL_MAX,
   AUTO_FETCH_INTERVAL_MIN,
@@ -70,12 +74,14 @@ export interface SettingsPanelProps {
   /** Turning write ON without prior write-consent: App shows the write-consent
    *  dialog and only flips the gate (+ records consent) on confirm. */
   onRequestEnableMcpWrite(): void;
-}
-
-/** Best-effort clipboard copy (harness + native). Silent on failure — the
- *  values are also visible for manual selection. */
-function copyText(text: string): void {
-  void navigator.clipboard?.writeText(text).catch(() => {});
+  /** Path of the currently-open repo, or `null` when none is open. Gates the
+   *  "This repository" (`local`-scope) registration row. */
+  repoPath: string | null;
+  /** Run `claude mcp add` for the running server at the given scope (P16).
+   *  `'user'` = global, `'local'` = the open repo (private). Resolves when the
+   *  run settles so the panel can clear its in-flight state (App still owns the
+   *  success/error toast). */
+  onRegisterMcp(scope: McpScope): Promise<void>;
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -165,7 +171,14 @@ export function SettingsPanel({
   mcpWriteConsented,
   onSetMcpAllowWrite,
   onRequestEnableMcpWrite,
+  repoPath,
+  onRegisterMcp,
 }: SettingsPanelProps) {
+  // In-flight scope for the "Add" registration buttons — disables a button while
+  // its `claude mcp add` run is pending. Hooks run unconditionally (before the
+  // `open` early-return below).
+  const [mcpRegistering, setMcpRegistering] = useState<McpScope | null>(null);
+
   if (!open) return null;
 
   // Enabling requires one-time consent (§8.1): turning ON without consent defers
@@ -203,6 +216,13 @@ export function SettingsPanel({
     }
     if (mcpWriteConsented) onSetMcpAllowWrite(true);
     else onRequestEnableMcpWrite();
+  };
+
+  // Run `claude mcp add` for one scope, holding the in-flight scope so its "Add"
+  // button disables until the run settles (App owns the toast).
+  const handleRegister = (scope: McpScope): void => {
+    setMcpRegistering(scope);
+    void onRegisterMcp(scope).finally(() => setMcpRegistering(null));
   };
 
   return (
@@ -384,111 +404,16 @@ export function SettingsPanel({
         </section>
 
         {/* --- AI access (MCP server) (P16 §10.5) --- */}
-        <section className="settings-section">
-          <h3 className="settings-section-title">AI access (MCP server)</h3>
-          <p className="settings-section-desc">
-            Run a local MCP server on 127.0.0.1 so an external AI client (e.g. Claude Code) can work
-            with the repositories you have open in Bonsai. Access requires the token below. The
-            server is read-only unless you allow write access.
-          </p>
-          <label className="settings-checkbox">
-            <input
-              type="checkbox"
-              checked={mcpEnabled}
-              onChange={(e) => handleMcpEnableToggle(e.target.checked)}
-            />
-            <span>Enable MCP server</span>
-          </label>
-
-          <label className={`settings-checkbox${mcpEnabled ? '' : ' is-disabled'}`}>
-            <input
-              type="checkbox"
-              checked={mcpAllowWrite}
-              disabled={!mcpEnabled}
-              onChange={(e) => handleMcpWriteToggle(e.target.checked)}
-            />
-            <span>Allow AI to modify repositories</span>
-          </label>
-          {mcpEnabled && (
-            <p className="settings-section-desc">
-              Adds staging, commit, merge, and conflict-resolution tools. Changing this restarts the
-              server and drops any active connection; the client reconnects automatically.
-            </p>
-          )}
-
-          {mcpEnabled && mcpStatus !== null ? (
-            <p className="settings-ai-status settings-ai-status-ok">
-              Running on port {mcpStatus.port} · {mcpStatus.toolCount} tools{' '}
-              {mcpStatus.allowWrite ? '(read + write)' : '(read-only)'}
-            </p>
-          ) : (
-            <p className="settings-ai-status">Stopped.</p>
-          )}
-
-          {mcpEnabled && mcpStatus !== null && (
-            <>
-              <div className="settings-control">
-                <label className="settings-control-label" htmlFor="settings-mcp-url">
-                  Server URL
-                </label>
-                <div className="settings-control-inputs">
-                  <input
-                    id="settings-mcp-url"
-                    className="settings-number settings-mcp-field"
-                    type="text"
-                    readOnly
-                    value={mcpStatus.url ?? ''}
-                    onFocus={(e) => e.target.select()}
-                  />
-                  <button
-                    type="button"
-                    className="btn-secondary settings-toggle-btn"
-                    onClick={() => mcpStatus.url !== null && copyText(mcpStatus.url)}
-                  >
-                    Copy
-                  </button>
-                </div>
-              </div>
-
-              <div className="settings-control">
-                <label className="settings-control-label" htmlFor="settings-mcp-token">
-                  Bearer token
-                </label>
-                <div className="settings-control-inputs">
-                  <input
-                    id="settings-mcp-token"
-                    className="settings-number settings-mcp-field"
-                    type="text"
-                    readOnly
-                    value={mcpStatus.token ?? ''}
-                    onFocus={(e) => e.target.select()}
-                  />
-                  <button
-                    type="button"
-                    className="btn-secondary settings-toggle-btn"
-                    onClick={() => mcpStatus.token !== null && copyText(mcpStatus.token)}
-                  >
-                    Copy
-                  </button>
-                </div>
-              </div>
-
-              <div className="settings-row">
-                <span className="settings-control-label">Register with Claude Code</span>
-                <button
-                  type="button"
-                  className="btn-secondary settings-toggle-btn"
-                  disabled={mcpStatus.claudeAddCommand === null}
-                  onClick={() =>
-                    mcpStatus.claudeAddCommand !== null && copyText(mcpStatus.claudeAddCommand)
-                  }
-                >
-                  Copy command
-                </button>
-              </div>
-            </>
-          )}
-        </section>
+        <SettingsMcpSection
+          mcpStatus={mcpStatus}
+          mcpEnabled={mcpEnabled}
+          mcpAllowWrite={mcpAllowWrite}
+          repoPath={repoPath}
+          mcpRegistering={mcpRegistering}
+          onToggleEnabled={handleMcpEnableToggle}
+          onToggleAllowWrite={handleMcpWriteToggle}
+          onRegister={handleRegister}
+        />
       </div>
     </div>
   );

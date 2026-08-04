@@ -104,22 +104,12 @@ pub struct McpStatus {
     pub url: Option<String>,
     /// Persisted bearer token; `None` when stopped.
     pub token: Option<String>,
-    /// Ready-to-paste `claude mcp add` line; `None` when stopped.
-    pub claude_add_command: Option<String>,
     /// 14 (read-only) or 34 (write enabled).
     pub tool_count: u32,
 }
 
 fn endpoint_url(port: u16) -> String {
     format!("http://127.0.0.1:{port}/mcp")
-}
-
-/// The one-time `claude mcp add` registration line (P16 §10.3).
-fn claude_add_command(port: u16, token: &str) -> String {
-    format!(
-        "claude mcp add bonsai --transport http --header \"Authorization: Bearer {token}\" {}",
-        endpoint_url(port)
-    )
 }
 
 fn running_status(r: &McpRunning) -> McpStatus {
@@ -129,7 +119,6 @@ fn running_status(r: &McpRunning) -> McpStatus {
         port: Some(r.port),
         url: Some(endpoint_url(r.port)),
         token: Some(r.token.clone()),
-        claude_add_command: Some(claude_add_command(r.port, &r.token)),
         tool_count: tool_count(r.allow_write),
     }
 }
@@ -141,7 +130,6 @@ fn stopped_status() -> McpStatus {
         port: None,
         url: None,
         token: None,
-        claude_add_command: None,
         tool_count: READ_TOOL_COUNT,
     }
 }
@@ -556,14 +544,6 @@ mod tests {
     fn tool_count_reflects_write_gate() {
         assert_eq!(tool_count(false), 14);
         assert_eq!(tool_count(true), 34);
-    }
-
-    #[test]
-    fn claude_add_command_shape() {
-        let cmd = claude_add_command(8765, "TOK");
-        assert!(cmd.contains("--transport http"));
-        assert!(cmd.contains("Authorization: Bearer TOK"));
-        assert!(cmd.contains("http://127.0.0.1:8765/mcp"));
     }
 }
 

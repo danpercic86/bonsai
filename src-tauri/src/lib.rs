@@ -117,6 +117,7 @@ pub fn run() {
             commands::get_mcp_status,
             commands::set_mcp_enabled,
             commands::set_mcp_allow_write,
+            commands::register_mcp_with_claude,
             commands::list_submodules,
             commands::init_submodule,
             commands::update_submodule,

@@ -582,6 +582,10 @@ export const tauriIpc: IpcApi = {
     return listen<McpStatus>('mcp-server-changed', (e) => cb(e.payload));
   },
 
+  registerMcpWithClaude(scope: 'user' | 'local', repoPath: string | null): Promise<void> {
+    return invoke('register_mcp_with_claude', { scope, repoPath });
+  },
+
   // P24: AI-asset inventory + drift.
   listAiAssets(repoId: string, canonical?: string): Promise<AiAssetInventory> {
     return invoke<AiAssetInventory>('list_ai_assets', { repoId, canonical });

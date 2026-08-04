@@ -384,6 +384,19 @@ export default function App() {
     [pushToast],
   );
 
+  // P16: run `claude mcp add` for the running server at the chosen scope. Returns
+  // the promise so SettingsPanel can clear its in-flight state when it settles.
+  const handleRegisterMcp = useCallback(
+    (scope: 'user' | 'local'): Promise<void> =>
+      ipc.registerMcpWithClaude(scope, activeRepo).then(
+        () => pushToast('success', `Registered bonsai with Claude Code (${scope})`),
+        (e) => {
+          pushToast('error', `Could not register: ${errorMessage(e)}`);
+        },
+      ),
+    [pushToast, activeRepo],
+  );
+
   // Enabling the MCP server the first time records consent, then starts it.
   const handleConfirmMcpConsent = useCallback(() => {
     setMcpConsentOpen(false);
@@ -854,6 +867,8 @@ export default function App() {
           mcpWriteConsented={mcpWriteConsented}
           onSetMcpAllowWrite={handleSetMcpAllowWrite}
           onRequestEnableMcpWrite={() => setMcpWriteConsentOpen(true)}
+          repoPath={activeRepo}
+          onRegisterMcp={handleRegisterMcp}
         />
         {activeRepo !== null && (
           <AiAssetsPanel
