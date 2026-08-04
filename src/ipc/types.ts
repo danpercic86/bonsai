@@ -620,6 +620,20 @@ export interface FileHistoryEntry {
   authorTs: number;
 }
 
+/** One reflog entry (P38 §4.2). Mirrors the Rust `ReflogEntry` (camelCase)
+ *  EXACTLY. `index` is the N in `<ref>@{N}` (0 == newest). `oldOid`/`newOid`
+ *  are full 40-hex (the UI shortens); a 40-zero `oldOid` marks the ref root.
+ *  `committerTs` is seconds since epoch (UTC). */
+export interface ReflogEntry {
+  index: number;
+  oldOid: string;
+  newOid: string;
+  committerName: string;
+  committerEmail: string;
+  committerTs: number;
+  message: string;
+}
+
 /** Cherry-pick outcome (P20). Mirrors the Rust `CherrypickOutcome` serde enum
  *  (tagged "kind", camelCase). `conflicts` pauses into RepoOpState.cherryPick. */
 export type CherrypickOutcome =
@@ -1261,6 +1275,9 @@ export interface IpcApi {
   /** Commits that touched `path`, newest-first, capped at `limit`. An unknown
    *  path yields `[]` (not an error). Rejects other | git | noRepo. */
   fileHistory(repoId: string, path: string, limit: number): Promise<FileHistoryEntry[]>;
+  /** Reflog for `refName` ("HEAD" or a local branch name), newest-first, capped.
+   *  A never-updated ref yields `[]` (not an error). Read-only. Rejects git | noRepo. */
+  readReflog(repoId: string, refName: string): Promise<ReflogEntry[]>;
   /** Stash stack, index 0 (most recent) first. Rejects noRepo | git. */
   listStashes(repoId: string): Promise<StashEntry[]>;
   /** Stash the worktree per `scope`. message=null → git default. created:false ==

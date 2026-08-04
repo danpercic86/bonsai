@@ -99,6 +99,7 @@ pub fn run() {
             commands::start_interactive_rebase,
             commands::blame_file,
             commands::file_history,
+            commands::read_reflog,
             commands::list_stashes,
             commands::create_stash,
             commands::apply_stash,

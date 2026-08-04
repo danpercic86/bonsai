@@ -13,6 +13,7 @@ import {
   MERGE_AUTH_THEIRS,
   MERGE_README_TEXT,
 } from './fixtures/conflicts';
+import { MOCK_BRANCH_REFLOGS, MOCK_HEAD_REFLOG } from './fixtures/reflog';
 import { mockRepoHealth } from './fixtures/repoHealth';
 import {
   asFullContext,
@@ -98,6 +99,7 @@ import type {
   RebaseOutcome,
   RebaseTodoOp,
   RecentRepo,
+  ReflogEntry,
   RemoteInfo,
   RepoChangedPayload,
   RepoHealth,
@@ -3085,6 +3087,17 @@ export const mockIpc: IpcApi = {
     requireRepo(repoId);
     if (!BLAME_FIXTURE_PATHS.has(path)) return [];
     return structuredClone(MOCK_FILE_HISTORY).slice(0, Math.max(0, limit) || MOCK_FILE_HISTORY.length);
+  },
+
+  // P38: reflog read (stateful-read, mirrors fileHistory). HEAD returns the
+  // seeded recovery story; a known local branch returns its reflog; any other
+  // ref → [] (never-updated ref), matching the backend contract.
+  async readReflog(repoId: string, refName: string): Promise<ReflogEntry[]> {
+    await delay(120);
+    requireRepo(repoId);
+    if (refName === 'HEAD') return structuredClone(MOCK_HEAD_REFLOG);
+    const branch = MOCK_BRANCH_REFLOGS[refName];
+    return branch ? structuredClone(branch) : [];
   },
 
   // Stateful stash mock (P9 §6.5). Indices are positional into the mutating

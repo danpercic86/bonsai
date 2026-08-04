@@ -57,6 +57,7 @@ import type {
   RecentRepo,
   RemoteInfo,
   RepoChangedPayload,
+  ReflogEntry,
   RepoHealth,
   RepoOpState,
   ResetMode,
@@ -356,6 +357,10 @@ export const tauriIpc: IpcApi = {
 
   fileHistory(repoId: string, path: string, limit: number): Promise<FileHistoryEntry[]> {
     return invoke<FileHistoryEntry[]>('file_history', { repoId, path, limit });
+  },
+
+  readReflog(repoId: string, refName: string): Promise<ReflogEntry[]> {
+    return invoke<ReflogEntry[]>('read_reflog', { repoId, refName });
   },
 
   listStashes(repoId: string): Promise<StashEntry[]> {

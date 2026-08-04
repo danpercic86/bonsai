@@ -12,6 +12,7 @@ use bonsai_core::git::ai_explain::{self, AiAnalysis, AiAnalysisMode, AiDiffTarge
 use bonsai_core::git::ai_resolve::{self, AiResolveProposal};
 use bonsai_core::git::ai_summary::{self, AiSummary};
 use bonsai_core::git::blame::{self, BlameLine, FileHistoryEntry};
+use bonsai_core::git::reflog::{self, ReflogEntry};
 use bonsai_core::git::branches::{self, BranchesSnapshot, CheckoutResult, CreateBranchHereResult};
 use bonsai_core::git::cherrypick::{self, CherrypickOutcome};
 use bonsai_core::git::clone::{clone_repo as clone_repo_core, init_repo as init_repo_core, CloneProgress};
@@ -1929,6 +1930,31 @@ async fn file_history_inner(
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Reflog for `ref_name` ("HEAD" or a local branch name), newest-first, capped
+/// at `MAX_REFLOG_ENTRIES`. A never-updated ref yields `[]` (not an error).
+/// Read-only (P38 contract §5.1). Errors: `git` | `noRepo`. Does NOT emit
+/// `repo-changed`.
+#[tauri::command]
+pub async fn read_reflog(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    ref_name: String,
+) -> Result<Vec<ReflogEntry>, AppError> {
+    read_reflog_inner(state.inner(), &repo_id, ref_name).await
+}
+
+/// Runtime-free core of `read_reflog` (unit-testable without a Tauri app).
+async fn read_reflog_inner(
+    state: &AppState,
+    repo_id: &str,
+    ref_name: String,
+) -> Result<Vec<ReflogEntry>, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || reflog::read_reflog(&workdir, &ref_name))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Enumerates the stash stack, index 0 (most recent) first (P9 contract §3).
 /// Errors: `git` | `noRepo`. Does NOT emit `repo-changed`.
 #[tauri::command]
@@ -3565,6 +3591,20 @@ mod tests {
             200,
         ))
         .expect_err("file_history with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+    }
+
+    /// The P38 reflog command returns `NoRepo` for an unknown id.
+    #[test]
+    fn read_reflog_requires_an_open_repo() {
+        let state = AppState::default();
+
+        let err = tauri::async_runtime::block_on(read_reflog_inner(
+            &state,
+            MISSING_ID,
+            "HEAD".to_string(),
+        ))
+        .expect_err("read_reflog with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
 

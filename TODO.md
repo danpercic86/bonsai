@@ -25,7 +25,29 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
-## P37 — force-push-with-lease (Git completeness, Phase 1) — **in-progress** (2026-08-04)
+## P38 — reflog viewer + restore (Git completeness, Phase 1) — **in-progress** (2026-08-04)
+
+Git-completeness milestone #2. The safety net for force-push (P37) / rebase (P23) / amend (P20) /
+reset: read HEAD + per-branch reflog, present entries (short oid, old→new, message, committer/time,
+`<ref>@{N}` index), and offer confirm-gated recovery — **"Create branch here"** + **"Reset current
+branch to this"**. Contract: `docs/contracts/P38-reflog.md` (architect). Approach: runtime-free
+read-only `git/reflog.rs` returning `Vec<ReflogEntry>` (cap `MAX_REFLOG_ENTRIES=2000`), one read cmd
+`read_reflog` (spawn_blocking, no repo-changed); restore actions are PURE REUSE of the shipped
+`create_branch_here` / `reset_branch` commands via existing PromptDialog / reset ConfirmDialog — zero
+new mutation code (explicit invariant). git2 0.21: `Repository::reflog(name)`, index 0 = newest →
+`<ref>@{N}` == iteration index; branch refs get `refs/heads/` prefix; never-updated ref → empty Vec
+(NotFound mapped, not an error). No new AppError/events/channels. Accepted architect defaults:
+local-only reflogs v1; soft/mixed/hard reset parity (reuse resetMenuItems); auto-refetch after restore;
+`message().unwrap_or("")` fallback. Sub-increments: **P38a** core+cmd+IPC+mock+`reflog_cli.rs` oracle →
+**P38b** ReflogView overlay + entry points (branch-menu "View reflog", toolbar "View HEAD reflog") +
+restore actions. Guardrails unchanged (scratch D:\Temp\bonsai-scratch, TMP/TEMP=D:\Temp on Windows, no
+concurrent test+clippy, mock.ts compiling, orchestrator commits).
+
+**Current step:** P38a implemented (gates green: 5 unit + reflog_cli 3 + no-repo cmd test 1, clippy/tsc/
+build clean); deviation: core no-repo test asserts AppError::Git (true open_workdir_repo behavior, per
+blame precedent) w/ NoRepo covered at the command layer. Awaiting reviewer.
+
+## P37 — force-push-with-lease (Git completeness, Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 
 New phase (approved plan `~/.claude/plans/if-we-think-about-eager-hoare.md`): the 4-theme roadmap is
 ~90% shipped, so the next phase is **Git completeness (parity) + productization**. User decision
