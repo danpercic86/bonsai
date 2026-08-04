@@ -279,6 +279,30 @@ worktreeName ext; P29 drift-rollup integration deferred (D9). Sub-increments: **
 **Current step:** P31 DONE (AI gate passed, awaiting USER CHECKPOINT). P28–P31 all at USER
 CHECKPOINT — see docs/contracts/P28..P31-user-checklist.md.
 
+## P32 — named worktrees + copy uncommitted changes (extends P27) — **in-progress** (2026-08-04)
+
+Approved plan `~/.claude/plans/was-it-intended-to-serene-biscuit.md`. Three changes:
+(A) worktree dir moves to `<parent>/.worktrees/<repo-name>/<worktree-name>` — per-repo grouping +
+a user-editable NAME decoupled from the branch (default = branch; a worktree's HEAD is independent,
+so name ≠ branch); (B) on create, let the user pick which uncommitted / gitignored files to copy
+into the new worktree, with pre-flight conflict detection (three-way CONTENT compare: base = main
+HEAD blob, target = selected-branch blob, source = main workdir bytes → `clean` if target absent or
+== base, else `conflict`) and per-file Overwrite/Skip (NO 3-way merge — raw file-content copy, since
+the crate has no `Repository::apply` primitive and diff text is lossy).
+Acceptance: worktrees land under `.worktrees/<repo>/<name>`; default name == branch keeps CLI-oracle
+tests valid; custom name honored; selected untracked/gitignored/tracked files copy in; conflicts
+detected and Overwrite/Skip honored; containment guard blocks path escape; deletions/renames handled
+per B5; all gates green (cargo test sequential, clippy, tsc, build, browser harness).
+Guardrails unchanged (D:\Temp\bonsai-scratch, TMP/TEMP=D:\Temp, no concurrent test+clippy, mock.ts
+compiling, orchestrator commits). Sub-increments: **P32a** Part A (path+name) → **P32b** Part B
+backend (worktree_copy.rs) → **P32c** Part B commands+IPC+UI.
+Contract: docs/contracts/P27-worktrees.md `# P32 extension` (architect done; 4 flagged decisions
+ACCEPTED as orchestrator: (1) name collision → `-N` suffix + dialog advisory, preview shows resolved
+name; (2) source = currently-open repo workdir & its HEAD ("copy what you're looking at"), not
+strictly main_workdir; (3) no size cap v1; (4) non-transactional copy v1). ensure_contained →
+pub(crate) for the copy guard.
+**Current step:** P32a (Part A) — senior-dev implementing path+name backend + IPC + dialog name field.
+
 ---
 
 ## Archive

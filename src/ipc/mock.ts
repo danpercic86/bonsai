@@ -718,7 +718,7 @@ function seedWorktrees(kind: RepoKind, graphFixture: GraphFixture): WorktreeInfo
     },
     {
       name: 'feature-login',
-      absPath: '/mock/.worktrees/feature-login',
+      absPath: '/mock/.worktrees/repo/feature-login',
       relPath: null,
       branch: 'feature/login',
       headOid: fixtureOid(3),
@@ -731,7 +731,7 @@ function seedWorktrees(kind: RepoKind, graphFixture: GraphFixture): WorktreeInfo
     },
     {
       name: 'release-1.2',
-      absPath: '/mock/.worktrees/release-1.2',
+      absPath: '/mock/.worktrees/repo/release-1.2',
       relPath: null,
       branch: 'release/1.2',
       headOid: fixtureOid(4),
@@ -744,7 +744,7 @@ function seedWorktrees(kind: RepoKind, graphFixture: GraphFixture): WorktreeInfo
     },
     {
       name: 'hotfix-stale',
-      absPath: '/mock/.worktrees/hotfix-stale',
+      absPath: '/mock/.worktrees/repo/hotfix-stale',
       relPath: null,
       branch: null,
       headOid: null,
@@ -3303,7 +3303,7 @@ export const mockIpc: IpcApi = {
     }));
   },
 
-  async addWorktree(repoId: string, branch: string): Promise<WorktreeInfo> {
+  async addWorktree(repoId: string, branch: string, name: string): Promise<WorktreeInfo> {
     await delay(150);
     const state = requireRepo(repoId);
     const worktrees = worktreesFor(state);
@@ -3320,20 +3320,23 @@ export const mockIpc: IpcApi = {
       const err: AppError = { kind: 'invalidName', message: 'branch name is empty' };
       throw err;
     }
-    // Mirror §2.4: sanitize to a slug, then collision-suffix against existing
-    // worktree names. (Branch existence is not enforced — the mock list is
-    // authoritative; the real backend rejects unknown branches.)
-    const slug = branch
+    // P32 Part A: the slug source is the user-editable `name` (defaults to the
+    // branch when blank), NOT the branch. Sanitize, then collision-suffix
+    // against existing worktree names. (Branch existence is not enforced — the
+    // mock list is authoritative; the real backend rejects unknown branches.)
+    const nameSrc = name.trim() === '' ? branch : name;
+    const slug = nameSrc
       .replace(/[^A-Za-z0-9._-]+/g, '-')
       .replace(/-{2,}/g, '-')
       .replace(/^[-.]+|[-.]+$/g, '');
     if (slug === '' || slug.includes('..')) {
       const err: AppError = {
         kind: 'invalidName',
-        message: `cannot derive a worktree name from branch '${branch}'`,
+        message: `cannot derive a worktree name from '${nameSrc}'`,
       };
       throw err;
     }
+    // The branch-uniqueness guard keys off `branch`, independent of `name`.
     if (worktrees.some((w) => w.branch === branch)) {
       const err: AppError = {
         kind: 'git',
@@ -3341,12 +3344,15 @@ export const mockIpc: IpcApi = {
       };
       throw err;
     }
+    // Nested per-repo container: `.worktrees/<repo-name>/<leaf>`, where the
+    // repo name is the main row's on-disk basename.
+    const repoName = worktrees.find((w) => w.isMain)?.name ?? 'repo';
     const taken = new Set(worktrees.map((w) => w.name));
-    let name = slug;
-    for (let i = 2; taken.has(name); i += 1) name = `${slug}-${i}`;
+    let leaf = slug;
+    for (let i = 2; taken.has(leaf); i += 1) leaf = `${slug}-${i}`;
     const row: WorktreeInfo = {
-      name,
-      absPath: `/mock/.worktrees/${name}`,
+      name: leaf,
+      absPath: `/mock/.worktrees/${repoName}/${leaf}`,
       relPath: null,
       branch,
       headOid: randomOid(),

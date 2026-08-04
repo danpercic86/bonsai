@@ -242,33 +242,36 @@ pub(crate) fn sanitize_slug(branch: &str) -> Result<String, AppError> {
     Ok(trimmed.to_string())
 }
 
-/// Derived worktree name/path for `branch` (§OPEN-1): `name == slug`,
-/// `path == <main_parent>/.worktrees/<slug>`. On collision (dir exists OR
-/// `find_worktree(name)` succeeds) append `-2`, `-3`, … up to `-99`, else a
-/// `Git` error. Because the leaf is a sanitized slug joined onto a fixed
-/// container, no separators or `..` reach libgit2.
+/// Derived worktree name/path (§OPEN-1 + P32 Part A): the slug is sourced from
+/// the user-editable `name`, and the container gains a per-repo level →
+/// `<main_parent>/.worktrees/<repo-name>/<name-slug>` where `<repo-name>` is
+/// `dir_basename(main_dir)`. On collision (dir exists OR `find_worktree(name)`
+/// succeeds) append `-2`, `-3`, … up to `-99`, else a `Git` error. Because the
+/// leaf is a sanitized slug joined onto a fixed container, no separators or `..`
+/// reach libgit2.
 pub(crate) fn derive_worktree(
     main_dir: &Path,
     repo: &git2::Repository,
-    branch: &str,
+    name: &str,
 ) -> Result<(String, PathBuf), AppError> {
-    let base = sanitize_slug(branch)?; // Err(InvalidName) if empty / ".."
+    let base = sanitize_slug(name)?; // Err(InvalidName) if empty / ".."
     let container = main_dir
         .parent()
         .ok_or_else(|| AppError::Git("repo has no parent directory".to_string()))?
-        .join(".worktrees");
+        .join(".worktrees")
+        .join(dir_basename(main_dir)); // NEW (P32 Part A): per-repo level
     for n in std::iter::once(base.clone()).chain((2..=99).map(|i| format!("{base}-{i}"))) {
         let path = container.join(&n);
         let name_taken = repo.find_worktree(&n).is_ok();
         if !path.exists() && !name_taken {
             // Containment defense (RUNTIME — add_worktree creates this dir):
-            // the derived leaf MUST stay inside the `.worktrees/` container.
+            // the derived leaf MUST stay inside the `.worktrees/<repo>/` container.
             ensure_contained(&path, &container)?;
             return Ok((n, path));
         }
     }
     Err(AppError::Git(format!(
-        "could not derive a free worktree path for '{branch}'"
+        "could not derive a free worktree path for '{name}'"
     )))
 }
 
@@ -276,7 +279,7 @@ pub(crate) fn derive_worktree(
 /// `container` (the fixed `.worktrees/` dir). The leaf comes from a sanitized
 /// slug so this should never fire; it exists so a sanitizer regression can
 /// never create a directory outside the container.
-fn ensure_contained(path: &Path, container: &Path) -> Result<(), AppError> {
+pub(crate) fn ensure_contained(path: &Path, container: &Path) -> Result<(), AppError> {
     if path.starts_with(container) && path != container {
         Ok(())
     } else {
@@ -288,10 +291,15 @@ fn ensure_contained(path: &Path, container: &Path) -> Result<(), AppError> {
 }
 
 /// Blocking. Create a linked worktree checking out the EXISTING local branch
-/// `branch` at a derived path (§2.4/§2.5). Returns the created row (§OPEN-2).
-/// Errors: `InvalidName` (blank/unsluggable) | `BranchNotFound` | `Git` (branch
-/// already checked out elsewhere / collision exhausted / libgit2) | `Io`.
-pub fn add_worktree(workdir: &Path, branch: &str) -> Result<WorktreeInfo, AppError> {
+/// `branch` (§2.4/§2.5). The on-disk name/slug is driven by the user-editable
+/// `name` (P32 Part A) — decoupled from `branch`; a blank/whitespace `name`
+/// defaults to `branch` (callers may pass the branch as the name). The path is
+/// derived as `<main_parent>/.worktrees/<repo-name>/<name-slug>`. Returns the
+/// created row (§OPEN-2).
+/// Errors: `InvalidName` (blank/unsluggable branch or name) | `BranchNotFound` |
+/// `Git` (branch already checked out elsewhere / collision exhausted / libgit2)
+/// | `Io`.
+pub fn add_worktree(workdir: &Path, branch: &str, name: &str) -> Result<WorktreeInfo, AppError> {
     let repo = open_workdir_repo(workdir)?;
     if branch.trim().is_empty() {
         return Err(AppError::InvalidName("branch name is empty".to_string()));
@@ -307,7 +315,10 @@ pub fn add_worktree(workdir: &Path, branch: &str) -> Result<WorktreeInfo, AppErr
     let reference = br.get(); // &Reference (borrows repo)
 
     let main_dir = main_workdir(&repo)?;
-    let (name, path) = derive_worktree(&main_dir, &repo, branch)?;
+    // A blank name defaults to the branch (the UI auto-syncs name → branch until
+    // the user edits it, but a caller may also pass the branch verbatim).
+    let name_src = if name.trim().is_empty() { branch } else { name };
+    let (name, path) = derive_worktree(&main_dir, &repo, name_src)?;
     // Ensure the `.worktrees/` container exists (Io on failure). derive_worktree
     // guarantees `path` has a parent (it joined a leaf onto the container).
     if let Some(parent) = path.parent() {
@@ -511,7 +522,11 @@ mod tests {
         let repo_dir = dir.path().join("repo");
         let repo = git2::Repository::init(&repo_dir).expect("init");
         let main_dir = repo.workdir().expect("workdir").to_path_buf();
-        let container = main_dir.parent().expect("parent").join(".worktrees");
+        let container = main_dir
+            .parent()
+            .expect("parent")
+            .join(".worktrees")
+            .join(dir_basename(&main_dir));
 
         // First derivation: exact slug.
         let (name, path) = derive_worktree(&main_dir, &repo, "feature/login").expect("derive");
@@ -552,7 +567,7 @@ mod tests {
         let dir = crate::testutil::scratch_dir();
         let repo_dir = dir.path().join("repo");
         git2::Repository::init(&repo_dir).expect("init");
-        match add_worktree(&repo_dir, "   ") {
+        match add_worktree(&repo_dir, "   ", "   ") {
             Err(AppError::InvalidName(_)) => {}
             other => panic!("expected InvalidName for blank branch, got {other:?}"),
         }

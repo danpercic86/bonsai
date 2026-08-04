@@ -430,8 +430,8 @@ export const tauriIpc: IpcApi = {
     return invoke<WorktreeInfo[]>('list_worktrees', { repoId });
   },
 
-  addWorktree(repoId: string, branch: string): Promise<WorktreeInfo> {
-    return invoke<WorktreeInfo>('add_worktree', { repoId, branch });
+  addWorktree(repoId: string, branch: string, name: string): Promise<WorktreeInfo> {
+    return invoke<WorktreeInfo>('add_worktree', { repoId, branch, name });
   },
 
   removeWorktree(repoId: string, name: string): Promise<void> {

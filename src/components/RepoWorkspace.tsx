@@ -1758,10 +1758,10 @@ export function RepoWorkspace({
 
   // Called by WorktreeCreateDialog; rethrows so the dialog shows the error
   // inline and stays open (success closes it here + toasts the derived path).
-  async function handleAddWorktree(branch: string): Promise<void> {
+  async function handleAddWorktree(branch: string, name: string): Promise<void> {
     setMutating(true);
     try {
-      const wt = await ipc.addWorktree(repoId, branch);
+      const wt = await ipc.addWorktree(repoId, branch, name);
       pushToast('success', `Created worktree for ${branch} at ${wt.absPath}`);
       setNewWorktreeOpen(false);
       await refetchWorktrees();

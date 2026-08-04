@@ -886,8 +886,8 @@ mod tests {
         let commit = repo.find_commit(head).unwrap();
         repo.branch("feature/x", &commit, false).unwrap();
         repo.branch("feature/y", &commit, false).unwrap();
-        let wx = crate::git::worktree::add_worktree(&repo_dir, "feature/x").unwrap();
-        let wy = crate::git::worktree::add_worktree(&repo_dir, "feature/y").unwrap();
+        let wx = crate::git::worktree::add_worktree(&repo_dir, "feature/x", "feature/x").unwrap();
+        let wy = crate::git::worktree::add_worktree(&repo_dir, "feature/y", "feature/y").unwrap();
         assert_eq!(wx.name, "feature-x");
         assert_eq!(wy.name, "feature-y");
         (

@@ -100,7 +100,7 @@ export interface WorkspaceDialogsProps {
 
   newWorktreeOpen: boolean;
   setNewWorktreeOpen: (v: boolean) => void;
-  handleAddWorktree(branch: string): Promise<void>;
+  handleAddWorktree(branch: string, name: string): Promise<void>;
 
   worktreeContextOpen: boolean;
   setWorktreeContextOpen: (v: boolean) => void;

@@ -2294,17 +2294,20 @@ async fn list_worktrees_inner(
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
-/// Creates a linked worktree for the EXISTING local branch `branch` at a
-/// derived `<parent>/.worktrees/<slug>` path; returns the created row (P27
-/// contract §3). Errors: `noRepo` | `invalidName` | `branchNotFound` | `git` |
-/// `io`. Does NOT emit `repo-changed` — the frontend refetches.
+/// Creates a linked worktree checking out the EXISTING local branch `branch` at
+/// a derived `<parent>/.worktrees/<repo-name>/<name-slug>` path; the on-disk
+/// `name` is user-editable and decoupled from `branch` (P32 Part A — a blank
+/// `name` defaults to `branch`). Returns the created row (P27 contract §3).
+/// Errors: `noRepo` | `invalidName` | `branchNotFound` | `git` | `io`. Does NOT
+/// emit `repo-changed` — the frontend refetches.
 #[tauri::command]
 pub async fn add_worktree(
     state: tauri::State<'_, AppState>,
     repo_id: String,
     branch: String,
+    name: String,
 ) -> Result<WorktreeInfo, AppError> {
-    add_worktree_inner(state.inner(), &repo_id, branch).await
+    add_worktree_inner(state.inner(), &repo_id, branch, name).await
 }
 
 /// Runtime-free core of `add_worktree` (unit-testable without a Tauri app).
@@ -2312,9 +2315,10 @@ async fn add_worktree_inner(
     state: &AppState,
     repo_id: &str,
     branch: String,
+    name: String,
 ) -> Result<WorktreeInfo, AppError> {
     let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || worktree::add_worktree(&path, &branch))
+    tauri::async_runtime::spawn_blocking(move || worktree::add_worktree(&path, &branch, &name))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

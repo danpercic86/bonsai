@@ -239,22 +239,22 @@ fn list_stale_worktree_does_not_panic() {
     assert_eq!(stale.head_oid, None);
 }
 
-/// §7.2 #2: `add_worktree("feature")` creates a worktree at
-/// `<parent>/.worktrees/feature`, returns the created row, and matches the
+/// §7.2 #2: `add_worktree("feature", "feature")` creates a worktree at
+/// `<parent>/.worktrees/main/feature`, returns the created row, and matches the
 /// porcelain oracle + the worktree's real HEAD.
 #[test]
 fn add_worktree_happy_path() {
     require_git!();
     let fx = setup();
 
-    let row = add_worktree(&fx.main, "feature").expect("add");
+    let row = add_worktree(&fx.main, "feature", "feature").expect("add");
     assert!(!row.is_main);
     assert!(!row.is_current);
     assert!(row.valid);
     assert_eq!(row.branch.as_deref(), Some("feature"));
     assert_eq!(row.name, "feature");
 
-    let expected = fx.root.join(".worktrees").join("feature");
+    let expected = fx.root.join(".worktrees").join("main").join("feature");
     assert_eq!(canon(Path::new(&row.abs_path)), canon(&expected));
     assert!(expected.is_dir(), "worktree dir must exist on disk");
 
@@ -264,6 +264,42 @@ fn add_worktree_happy_path() {
     assert_eq!(sut_worktree_paths(&rows), cli_worktree_paths(&fx.main));
     let head = git(&expected, &["rev-parse", "--abbrev-ref", "HEAD"]);
     assert_eq!(head.trim(), "feature");
+}
+
+/// P32 Part A (§A.0/A.5): the worktree NAME is decoupled from the checked-out
+/// BRANCH. Creating with `branch="feature"` but a custom `name="my-feature-wt"`
+/// puts the dir leaf at `.worktrees/main/my-feature-wt` while the worktree still
+/// has `feature` checked out. The porcelain oracle still matches the SUT paths.
+#[test]
+fn add_worktree_name_decoupled_from_branch() {
+    require_git!();
+    let fx = setup();
+
+    let row = add_worktree(&fx.main, "feature", "my-feature-wt").expect("add");
+
+    // (a) the on-disk leaf uses the NAME (under the per-repo `.worktrees/main/`),
+    //     not the branch.
+    assert_eq!(row.name, "my-feature-wt");
+    let expected = fx
+        .root
+        .join(".worktrees")
+        .join("main")
+        .join("my-feature-wt");
+    assert_eq!(canon(Path::new(&row.abs_path)), canon(&expected));
+    assert!(expected.is_dir(), "name-derived worktree dir must exist");
+    // The branch-named leaf must NOT have been used.
+    assert!(!fx.root.join(".worktrees").join("main").join("feature").exists());
+
+    // (b) the checked-out branch is still `feature` — via the returned row AND the
+    //     git CLI porcelain oracle.
+    assert_eq!(row.branch.as_deref(), Some("feature"));
+    let head = git(&expected, &["rev-parse", "--abbrev-ref", "HEAD"]);
+    assert_eq!(head.trim(), "feature");
+
+    // (c) the SUT path set still matches `git worktree list --porcelain`.
+    let rows = list_worktrees(&fx.main).expect("list");
+    assert_eq!(rows.len(), 2);
+    assert_eq!(sut_worktree_paths(&rows), cli_worktree_paths(&fx.main));
 }
 
 /// §7.2 #3: sanitizer (`feat/x` → `feat-x`) + collision suffix (`-2` when the
@@ -276,24 +312,24 @@ fn add_worktree_sanitizes_and_suffixes_collisions() {
     // A branch whose slug collides with `feature` ("feature+" → "feature").
     git(&fx.main, &["branch", "feature+"]);
 
-    let slugged = add_worktree(&fx.main, "feat/x").expect("add feat/x");
+    let slugged = add_worktree(&fx.main, "feat/x", "feat/x").expect("add feat/x");
     assert_eq!(slugged.name, "feat-x");
     assert_eq!(
         canon(Path::new(&slugged.abs_path)),
-        canon(&fx.root.join(".worktrees").join("feat-x"))
+        canon(&fx.root.join(".worktrees").join("main").join("feat-x"))
     );
 
-    add_worktree(&fx.main, "feature").expect("add feature");
-    let collided = add_worktree(&fx.main, "feature+").expect("add feature+");
+    add_worktree(&fx.main, "feature", "feature").expect("add feature");
+    let collided = add_worktree(&fx.main, "feature+", "feature+").expect("add feature+");
     assert_eq!(collided.name, "feature-2", "collision must suffix -2");
     assert_eq!(
         canon(Path::new(&collided.abs_path)),
-        canon(&fx.root.join(".worktrees").join("feature-2"))
+        canon(&fx.root.join(".worktrees").join("main").join("feature-2"))
     );
     // Both collision-sibling directories REALLY exist on disk (canon() falls
     // back lexically, so set-equality alone does not prove existence).
-    assert!(fx.root.join(".worktrees").join("feature").is_dir());
-    assert!(fx.root.join(".worktrees").join("feature-2").is_dir());
+    assert!(fx.root.join(".worktrees").join("main").join("feature").is_dir());
+    assert!(fx.root.join(".worktrees").join("main").join("feature-2").is_dir());
 
     assert_eq!(
         sut_worktree_paths(&list_worktrees(&fx.main).expect("list")),
@@ -308,17 +344,19 @@ fn add_worktree_refusals() {
     require_git!();
     let fx = setup();
 
-    match add_worktree(&fx.main, "no-such-branch") {
+    match add_worktree(&fx.main, "no-such-branch", "no-such-branch") {
         Err(AppError::BranchNotFound(_)) => {}
         other => panic!("expected BranchNotFound, got {other:?}"),
     }
-    match add_worktree(&fx.main, "main") {
+    match add_worktree(&fx.main, "main", "main") {
         Err(AppError::Git(_)) => {}
         other => panic!("expected Git error for already-checked-out branch, got {other:?}"),
     }
-    // Nothing was created.
+    // Nothing was created. (The per-repo `.worktrees/main/` container may be
+    // pre-created by add_worktree before the checkout refusal fires; the load-
+    // bearing check is that no worktree LEAF was created for the refused add.)
     assert_eq!(list_worktrees(&fx.main).expect("list").len(), 1);
-    assert!(!fx.root.join(".worktrees").join("main").exists());
+    assert!(!fx.root.join(".worktrees").join("main").join("main").exists());
 }
 
 /// §7.2 #5: lock (with reason) / unlock round-trip, cross-checked with the
@@ -327,7 +365,7 @@ fn add_worktree_refusals() {
 fn lock_unlock_round_trip() {
     require_git!();
     let fx = setup();
-    let row = add_worktree(&fx.main, "feature").expect("add");
+    let row = add_worktree(&fx.main, "feature", "feature").expect("add");
 
     lock_worktree(&fx.main, &row.name, Some("pinned for QA")).expect("lock");
     let rows = list_worktrees(&fx.main).expect("list");
@@ -358,7 +396,7 @@ fn lock_unlock_round_trip() {
 fn remove_worktree_refusals() {
     require_git!();
     let fx = setup();
-    let feat = add_worktree(&fx.main, "feature").expect("add");
+    let feat = add_worktree(&fx.main, "feature", "feature").expect("add");
     let feat_dir = PathBuf::from(&feat.abs_path);
 
     // Main (by its basename, "main").
@@ -408,7 +446,7 @@ fn remove_worktree_refusals() {
 fn add_then_list_from_inside_new_worktree_flips_current() {
     require_git!();
     let fx = setup();
-    let row = add_worktree(&fx.main, "feature").expect("add");
+    let row = add_worktree(&fx.main, "feature", "feature").expect("add");
     let wt_dir = PathBuf::from(&row.abs_path);
 
     // From the MAIN repo the new row is NOT current.
@@ -439,7 +477,7 @@ fn add_then_list_from_inside_new_worktree_flips_current() {
 fn remove_refusal_preserves_dirty_file_content() {
     require_git!();
     let fx = setup();
-    let feat = add_worktree(&fx.main, "feature").expect("add");
+    let feat = add_worktree(&fx.main, "feature", "feature").expect("add");
     let feat_dir = PathBuf::from(&feat.abs_path);
 
     let untracked = feat_dir.join("precious.txt");
@@ -473,7 +511,7 @@ fn remove_refusal_preserves_dirty_file_content() {
 fn unlock_then_remove_succeeds_end_to_end() {
     require_git!();
     let fx = setup();
-    let feat = add_worktree(&fx.main, "feature").expect("add");
+    let feat = add_worktree(&fx.main, "feature", "feature").expect("add");
     let feat_dir = PathBuf::from(&feat.abs_path);
 
     lock_worktree(&fx.main, &feat.name, Some("hold")).expect("lock");
@@ -500,7 +538,7 @@ fn unlock_then_remove_succeeds_end_to_end() {
 fn remove_worktree_happy_path() {
     require_git!();
     let fx = setup();
-    let feat = add_worktree(&fx.main, "feature").expect("add");
+    let feat = add_worktree(&fx.main, "feature", "feature").expect("add");
     let feat_dir = PathBuf::from(&feat.abs_path);
     assert!(feat_dir.is_dir());
 

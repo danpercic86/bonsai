@@ -19,12 +19,15 @@ export function isUsableRepo(info: RepoInfo): boolean {
   return info.isRepo && !info.bare;
 }
 
-/** P27 §6.5: display-only preview base for the derived worktree path —
- *  `<mainParent>/.worktrees` (the backend derives the authoritative path). */
+/** P27 §6.5 + P32 Part A: display-only preview base for the derived worktree
+ *  path — `<mainParent>/.worktrees/<repo-name>` (the backend derives the
+ *  authoritative path). `<repo-name>` is the main worktree's directory
+ *  basename, nesting each repo's worktrees in its own container. */
 export function worktreeContainerPreview(worktrees: WorktreeInfo[], repoId: string): string {
   const main = worktrees.find((w) => w.isMain);
   const base = (main?.absPath ?? repoId).replace(/\\/g, '/');
   const cut = base.lastIndexOf('/');
   const parent = cut > 0 ? base.slice(0, cut) : base;
-  return `${parent}/.worktrees`;
+  const repoName = cut >= 0 ? base.slice(cut + 1) : base;
+  return `${parent}/.worktrees/${repoName}`;
 }

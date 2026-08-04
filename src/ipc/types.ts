@@ -1262,10 +1262,12 @@ export interface IpcApi {
   // --- P27: worktrees ---
   /** All worktrees (main first) with resolved branch/oid/badges. Rejects noRepo | git. */
   listWorktrees(repoId: string): Promise<WorktreeInfo[]>;
-  /** Create a worktree for the EXISTING local branch `branch` at a derived
-   *  `<parent>/.worktrees/<slug>` path. Returns the created row. Rejects
-   *  noRepo | invalidName | branchNotFound | git | io. */
-  addWorktree(repoId: string, branch: string): Promise<WorktreeInfo>;
+  /** Create a worktree checking out `branch`, at a derived
+   *  `<parent>/.worktrees/<repo>/<name-slug>` path. `name` is the user-editable
+   *  on-disk label (defaults to the branch in the UI, decoupled from it —
+   *  P32 Part A; a blank `name` defaults to `branch`). Returns the created row.
+   *  Rejects noRepo | invalidName | branchNotFound | git | io. */
+  addWorktree(repoId: string, branch: string, name: string): Promise<WorktreeInfo>;
   /** Remove worktree `name` (refuses main/current/locked/dirty; deletes the
    *  directory from disk). Rejects noRepo | invalidName | git | io. */
   removeWorktree(repoId: string, name: string): Promise<void>;

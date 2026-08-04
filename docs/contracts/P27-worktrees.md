@@ -47,6 +47,9 @@ that version's rustdoc (§2 cites each).
    assertion (§2.4). *(Alternative: `<main_parent>/<repo-name>-<slug>` flat siblings — rejected:
    clutters the parent and complicates the containment check. If the user prefers flat siblings, only
    §2.4's `derive_path` changes.)*
+   > **SUPERSEDED by P32 Part A** — the path is now
+   > `<main_parent>/.worktrees/<repo-name>/<name-slug>` (per-repo container + user-chosen name). See
+   > the **P32 extension** section below; §2.4 additions marked there.
 2. **`add_worktree` return type.** → **Recommend it returns the created `WorktreeInfo`** (not `()`),
    because the backend OWNS the derived path/name and the UI must show it (success toast) and be able
    to offer "open it now". This is a deliberate, justified deviation from P19's "return `()` + refetch"
@@ -328,6 +331,10 @@ fn derive_worktree(main_dir: &Path, repo: &git2::Repository, branch: &str)
     Err(AppError::Git(format!("could not derive a free worktree path for '{branch}'")))
 }
 ```
+
+> **P32 Part A update:** `derive_worktree`'s slug source becomes the user-editable `name` (not the
+> `branch`) and the container gains a `<repo-name>` level → `.worktrees/<repo-name>/<name-slug>`. The
+> collision loop / `find_worktree` check / `ensure_contained` are unchanged. See **P32 extension §A.2**.
 
 `sanitize_slug` rejects an empty/`..`-containing result with `AppError::InvalidName`. Because we build
 the leaf from a sanitized slug and join it onto a fixed container, no separators or `..` reach
@@ -760,6 +767,10 @@ function newWorktreeMenuItems(): ContextMenuItem[] {
 This reuses `ContextMenu` (already the app's menu primitive) → fully harness-verifiable with no new UI
 component. (A richer "New worktree" dialog previewing the derived path is a Polish enhancement.)
 
+> **Note:** superseded by the `WorktreeCreateDialog.tsx` modal (a Polish follow-up that shipped after
+> P27c). **P32 Part B** extends that dialog. The `<ContextMenu>` branch-picker described here was the
+> original v1 affordance.
+
 ### 6.6 Remove confirm + open-in-tab
 
 - **Confirm**: add `pendingWorktreeRemove: { name: string; absPath: string } | null` state (mirror the
@@ -906,3 +917,576 @@ removed.
 - Remove (confirm dialog naming the path) deletes the directory and prunes it — cross-checked with
   `git worktree list`; a dirty/locked/current/main worktree is refused with a clear message.
 - "Open in new tab" opens the worktree as its own repo tab in the existing multi-repo flow.
+
+---
+---
+
+# P32 extension — per-repo container + named worktrees + copy selected uncommitted changes
+
+> Extends P27. **Nothing above is deleted;** the superseded bits are marked in place (OPEN-1, §2.4,
+> §6.5). Plan of record: `~/.claude/plans/was-it-intended-to-serene-biscuit.md`. Two parts:
+> **A** decouples the worktree *name* from the *branch* and nests worktrees under a per-repo container;
+> **B** lets the user copy chosen uncommitted / gitignored files from the open checkout into the new
+> worktree, with conflict detection + per-file Overwrite/Skip.
+>
+> **Key mechanism (from the plan):** the crate has **no `Repository::apply` / patch primitive** and its
+> diff text is lossy, so the transfer is a **raw file-content copy** (source workdir bytes → worktree
+> path). "Conflict" is a *content* decision (base vs target blob), never a failed patch apply — no patch
+> plumbing is introduced.
+
+## Part A — `.worktrees/<repo-name>/<name-slug>`
+
+### A.0 Name / branch decoupling (rationale)
+
+A worktree's HEAD is **independent** of the directory it lives in — you can `git switch` inside a
+worktree at will; git only forbids the **same branch** being checked out in two worktrees at once. So
+the *name* (the on-disk leaf) is decoupled from the *branch*:
+
+- **`branch`** still drives the initial checkout (`WorktreeAddOptions::reference`). Uniqueness across
+  worktrees is enforced by libgit2 (already an error today).
+- **`name`** is a user-editable label that drives the directory leaf/slug. It **defaults to the branch
+  name** in the UI (auto-synced until the user edits it), but may be anything sluggable.
+
+This lets a user create, e.g., `.worktrees/bonsai/experiment` checked out to `feature/login`.
+
+### A.1 New path formula
+
+```
+<main_parent>/.worktrees/<repo-name>/<name-slug>
+```
+- `<main_parent>` = `main_workdir(repo).parent()` (unchanged base).
+- `<repo-name>`   = `dir_basename(main_workdir(repo))` — a real on-disk directory name, injection-free.
+- `<name-slug>`   = `sanitize_slug(name)` — slug now sourced from **`name`**, not `branch`.
+
+The container is nested one level deeper than P27; `std::fs::create_dir_all(path.parent())` already
+creates the intermediate `<repo-name>` directory (no extra mkdir needed). Sibling repos sharing one
+parent no longer collide.
+
+### A.2 Updated signatures (`crates/bonsai-core/src/git/worktree.rs`)
+
+```rust
+/// Derived worktree name/path: name-slug leaf under a per-repo container.
+/// `name-slug == sanitize_slug(name)`;
+/// `path == <main_parent>/.worktrees/<dir_basename(main_dir)>/<name-slug>`.
+/// Collision loop / find_worktree check / ensure_contained UNCHANGED.
+pub(crate) fn derive_worktree(main_dir: &Path, repo: &git2::Repository, name: &str)
+    -> Result<(String, PathBuf), AppError>;
+```
+
+Only two lines change inside `derive_worktree` vs P27 §2.4:
+- rename the param `branch` → `name` (the `sanitize_slug` call and the "-N" collision loop are
+  otherwise identical — the slug source is now the name);
+- the container gains the repo-name segment:
+  ```rust
+  let container = main_dir
+      .parent()
+      .ok_or_else(|| AppError::Git("repo has no parent directory".to_string()))?
+      .join(".worktrees")
+      .join(dir_basename(main_dir));   // NEW: per-repo level
+  ```
+  `ensure_contained(&path, &container)` still guards the leaf against the (now deeper) container — the
+  containment check is unchanged and still fires on any `..`/separator regression.
+
+```rust
+/// `branch` drives the checkout (opts.reference); `name` drives the path/slug.
+/// A blank `branch` → InvalidName; a blank/unsluggable `name` → InvalidName
+/// (surfaced by sanitize_slug via derive_worktree). Returns the created row.
+pub fn add_worktree(workdir: &Path, branch: &str, name: &str) -> Result<WorktreeInfo, AppError>;
+```
+
+Inside `add_worktree` the only changes vs P27 §2.5:
+- validate `branch` blank (unchanged) AND rely on `derive_worktree(&main_dir, &repo, name)` (was
+  `branch`) to reject a blank/unsluggable `name`;
+- everything else (find_branch, `opts.reference(Some(reference))`, `repo.worktree(&name, &path, …)`,
+  `build_linked_row`) is byte-for-byte the same. `find_worktree` / `ensure_contained` unchanged.
+
+> **Decoupling note for senior-dev:** libgit2 still errors if `branch` is already checked out in
+> another worktree — this refusal is on the *branch*, independent of `name`. Two worktrees may have
+> different names but you still cannot check out the same branch twice.
+
+### A.3 IPC change — thread `name`
+
+- **Command** `src-tauri/src/commands.rs`: `add_worktree(repoId, branch, name)` — add the `name: String`
+  arg to both the `#[tauri::command]` wrapper and `add_worktree_inner`, then
+  `spawn_blocking(move || worktree::add_worktree(&path, &branch, &name))`.
+- **`types.ts`** `IpcApi.addWorktree`:
+  ```ts
+  /** Create a worktree checking out `branch`, at a derived
+   *  `<parent>/.worktrees/<repo>/<name-slug>` path (name defaults to the branch,
+   *  user-editable). Returns the created row.
+   *  Rejects noRepo | invalidName | branchNotFound | git | io. */
+  addWorktree(repoId: string, branch: string, name: string): Promise<WorktreeInfo>;
+  ```
+- **`tauri.ts`**:
+  ```ts
+  addWorktree(repoId: string, branch: string, name: string): Promise<WorktreeInfo> {
+    return invoke<WorktreeInfo>('add_worktree', { repoId, branch, name });
+  },
+  ```
+- **`mock.ts`** `addWorktree(repoId, branch, name)`: slug from **`name`** (same regex), collision-suffix
+  against existing names; the branch-already-checked-out guard still keys off `branch`; nested container
+  path `` `/mock/.worktrees/${repoName}/${slugName}` `` where `repoName = dir_basename(state.path)`
+  (e.g. `repo`). Update the seed rows' `absPath` to the nested form
+  (`/mock/.worktrees/repo/<leaf>`) so the preview matches.
+
+### A.4 Path-safety invariant + OPEN-1 / §2.4 (updated in place above)
+
+The **Path safety** bullet in §1 now reads: the derived create path is sanitized (§2.4 + A.2) and
+asserted to stay inside the controlled `.worktrees/<repo-name>/` container. Both `<repo-name>` (a real
+on-disk basename) and `<name-slug>` (sanitizer output) are injection-free; `ensure_contained` guards
+the leaf against the deeper container. OPEN-1 and §2.4 carry inline "SUPERSEDED / P32 update" markers
+pointing here.
+
+### A5 Tests (`crates/bonsai-core/tests/worktree_cli.rs`) — path expectations gain a `<repo-name>` level
+
+Fixture main repo is `root/main`, so `<repo-name> == "main"`; expected `.worktrees/...` paths gain a
+`.join("main")` segment. Since the default name == branch, the branch-named leaves stay valid. **Add a
+case** passing an explicit custom `name` distinct from the branch and asserting the leaf uses the name
+while `git -C <path> rev-parse --abbrev-ref HEAD` still equals the `branch`. Oracle comparisons vs
+`git worktree list --porcelain` remain valid.
+
+### Part A acceptance criteria
+
+- `derive_worktree(main_dir, repo, name)` yields `<main_parent>/.worktrees/<basename(main_dir)>/<slug(name)>`;
+  collision loop still appends `-2..-99`; `ensure_contained` still rejects escapes.
+- `add_worktree(workdir, branch, name)` checks out `branch` but places it at the name-derived path;
+  a name distinct from the branch is honored; `branch` uniqueness still enforced by libgit2.
+- Two sibling repos under one parent create worktrees in **separate** `<repo-name>` sub-containers.
+- IPC `addWorktree(repoId, branch, name)` threaded through command + `types.ts` + `tauri.ts` + `mock.ts`;
+  mock preview/seed paths use the nested form.
+- `cargo check`/`clippy`, `cargo test --test worktree_cli`, `pnpm build`/`tsc` all clean.
+
+---
+
+## Part B — copy selected uncommitted changes into the new worktree
+
+### B.1 New module `crates/bonsai-core/src/git/worktree_copy.rs`
+
+Register `pub mod worktree_copy;` in `crates/bonsai-core/src/git/mod.rs` (alphabetical: after
+`worktree`). Pure git2 + `std::fs`; runtime-free (`&Path`/`&str`/wire structs only). Reuses
+`status::read_status`, `worktree::{add_worktree, main_workdir, ensure_contained}` — **make
+`ensure_contained` `pub(crate)`** in `worktree.rs` (currently private) so the copy guard reuses it
+verbatim rather than duplicating.
+
+#### B.1.1 Wire types (serde; enums lowercase like `FileStatus`, structs camelCase)
+
+```rust
+/// Which status list a copy candidate came from. Wire: lowercase
+/// ("staged" | "unstaged" | "untracked" | "ignored"), matching FileStatus's repr.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CopyGroup {
+    Staged,
+    Unstaged,
+    Untracked,
+    Ignored,
+}
+
+/// One file the user may copy into the new worktree.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CopyCandidate {
+    /// Repo-relative path, forward slashes (StatusEntry.path convention).
+    pub path: String,
+    pub group: CopyGroup,
+}
+
+/// Conflict verdict for a selected path against the target branch. Wire:
+/// lowercase ("clean" | "conflict").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CopyVerdict {
+    Clean,
+    Conflict,
+}
+
+/// Result of classify_copy for one path.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CopyPlanEntry {
+    pub path: String,
+    pub verdict: CopyVerdict,
+}
+
+/// What to do with one selected path at create time. Wire: lowercase
+/// ("copy" | "skip"). "Overwrite" in the UI == `copy` on a conflict.
+/// DESERIALIZED (command input) → also derive Deserialize.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CopyAction {
+    Copy,
+    Skip,
+}
+
+/// One user decision, sent to add_worktree_with_changes.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CopySelection {
+    pub path: String,
+    pub action: CopyAction,
+}
+```
+
+> `CopySelection` / `CopyAction` are the only **input** types → they add `Deserialize`. The others are
+> output-only (`Serialize`).
+
+#### B.1.2 `list_copy_candidates`
+
+```rust
+/// Blocking. Enumerate every uncommitted or gitignored file eligible to copy
+/// into a new worktree. Deletions are EXCLUDED (v1). Groups:
+///   staged     = read_status().staged   (index vs HEAD, non-deleted)
+///   unstaged   = read_status().unstaged (workdir vs index, non-deleted)
+///   untracked  = read_status().untracked
+///   ignored    = a SECOND status pass with include_ignored(true) (read_status
+///                uses include_ignored(false)) → entries where status.is_ignored()
+/// Renames contribute the NEW path only (orig_path ignored, B5).
+/// Returns candidates ordered staged, unstaged, untracked, ignored; each group
+/// byte-sorted by path.
+pub fn list_copy_candidates(workdir: &Path) -> Result<Vec<CopyCandidate>, AppError>;
+```
+
+Implementation notes:
+- staged/unstaged/untracked: call `status::read_status(workdir)` and map each `StatusEntry` to a
+  `CopyCandidate`, **skipping** `FileStatus::Deleted` in staged/unstaged. Use `entry.path` (the new
+  path for renames).
+- ignored: open the repo (`open_workdir_repo`) and run a dedicated `git2` status pass:
+  ```rust
+  let mut opts = git2::StatusOptions::new();
+  opts.include_untracked(true)
+      .recurse_untracked_dirs(true)
+      .include_ignored(true)
+      .include_unmodified(false);
+  for e in repo.statuses(Some(&mut opts))?.iter() {
+      if e.status().is_ignored() {
+          // path: e.path() lossy → forward slashes.
+          out.push(CopyCandidate { path: <lossy(e.path())>, group: CopyGroup::Ignored });
+      }
+  }
+  ```
+  (A file both tracked-and-ignored cannot occur; ignored entries are disjoint from the read_status
+  lists.)
+
+#### B.1.3 `classify_copy`
+
+```rust
+/// Blocking. Conflict-classify `paths` against the target `branch`, BEFORE the
+/// worktree exists (the target tree is readable from the shared ODB). For each
+/// path a three-way CONTENT comparison:
+///   base   = blob bytes at `path` in the SOURCE repo's HEAD tree   (None if absent)
+///   target = blob bytes at `path` in `branch`'s commit tree        (None if absent)
+///   source = the current workdir bytes (what will be written on copy)
+/// Verdict:
+///   Clean    if target.is_none()  OR  target == base   (copying source faithfully
+///            applies the user's change on top of an unchanged base)
+///   Conflict otherwise (target diverged from base → copying would overwrite it)
+/// `source` is not needed for the verdict (base vs target decides it); it is
+/// documented for completeness and is the bytes written in B.1.4. Untracked /
+/// gitignored files (base None, usually target None) are Clean.
+/// Order/length mirror `paths`.
+pub fn classify_copy(workdir: &Path, branch: &str, paths: &[String])
+    -> Result<Vec<CopyPlanEntry>, AppError>;
+```
+
+Resolving trees / reading a blob (git2 0.20.4):
+```rust
+let repo = open_workdir_repo(workdir)?;
+// base tree: source HEAD (None-tolerant on unborn HEAD → treat all base as None)
+let base_tree = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
+// target tree: the selected local branch's commit tree
+let br = repo.find_branch(branch, git2::BranchType::Local).map_err(|e| match e.code() {
+    git2::ErrorCode::NotFound => AppError::BranchNotFound(format!("branch '{branch}' not found")),
+    _ => e.into(),
+})?;
+let target_tree = br.get().peel_to_commit()?.tree()?;
+
+// helper: bytes at `rel` in `tree`, None when the path is absent (or not a blob).
+fn blob_bytes(repo: &git2::Repository, tree: &git2::Tree, rel: &str)
+    -> Result<Option<Vec<u8>>, AppError>
+{
+    match tree.get_path(Path::new(rel)) {
+        Ok(entry) => match entry.to_object(repo)?.peel_to_blob() {
+            Ok(b) => Ok(Some(b.content().to_vec())),
+            Err(_) => Ok(None),   // path is a directory / submodule → treat as absent
+        },
+        Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+```
+Then per path: `base = base_tree.as_ref().map(|t| blob_bytes(&repo,t,p)).transpose()?.flatten()`;
+`target = blob_bytes(&repo,&target_tree,p)?`; verdict = `if target.is_none() || target == base
+{ Clean } else { Conflict }`.
+
+**Missing-on-a-side behavior:** `base None` (new/untracked/ignored) with any `target` → the rule reduces
+to `target.is_none()` → Clean when target absent, else Conflict (the branch has a file the user's new
+file would clobber). `target None` → always Clean.
+
+#### B.1.4 `add_worktree_with_changes`
+
+```rust
+/// Blocking. Create the worktree via add_worktree(workdir, branch, name), then
+/// copy each `action == Copy` selection's SOURCE workdir bytes into the worktree
+/// at the same relative path. `Skip` selections (incl. Skip-on-conflict) are not
+/// written. Empty `selections` == a plain add_worktree.
+/// Each destination is guarded by ensure_contained(&dest, &wt_root) (reused from
+/// worktree.rs) so no path escapes the worktree. Parents are created
+/// (create_dir_all) before write. Binary files copy as raw bytes.
+/// Errors: everything add_worktree can return, plus Io (read source / create_dir /
+/// write) and Git (a selection path escaping the worktree root).
+pub fn add_worktree_with_changes(
+    workdir: &Path,
+    branch: &str,
+    name: &str,
+    selections: &[CopySelection],
+) -> Result<WorktreeInfo, AppError>;
+```
+
+Sequence:
+1. `let info = worktree::add_worktree(workdir, branch, name)?;` — the created row (owns the real leaf
+   path even when the name was suffixed).
+2. `let wt_root = PathBuf::from(&info.abs_path);` — abs_path is forward-slash normalized;
+   `PathBuf::from` accepts `/` on Windows. `let src_root = <source workdir>` (see B.1.5).
+3. For each `sel` with `action == Copy`:
+   - reject an absolute or `..`-bearing `sel.path` up front (defense; candidates are repo-relative);
+   - `let dest = wt_root.join(&sel.path);`  `ensure_contained(&dest, &wt_root)?;`
+   - `let bytes = std::fs::read(src_root.join(&sel.path))?;` (Io on failure)
+   - `if let Some(parent) = dest.parent() { std::fs::create_dir_all(parent)?; }`
+   - `std::fs::write(&dest, bytes)?;`
+4. `Ok(info)`.
+
+Copy happens **after** worktree creation but is best-effort-ordered; a failed copy returns the error
+(the worktree already exists — acceptable in v1; the row was created and the user sees the error toast).
+
+#### B.1.5 Source root (flagged decision — see Flags)
+
+Source bytes are read from the **currently-open repo's workdir** (`workdir`, the checkout the user is
+copying FROM), consistent with `list_copy_candidates(workdir)`. When the open repo is the main worktree
+(the normal case) this equals `main_workdir(repo)`. Recommendation: use `workdir` directly as
+`src_root` (simplest, matches the candidate source). `classify_copy`'s `base` is likewise the open
+repo's HEAD.
+
+### B.2 Tauri commands (`src-tauri/src/commands.rs`) + registration
+
+Add `use bonsai_core::git::worktree_copy::{self, CopyCandidate, CopyPlanEntry, CopySelection};`. Three
+new commands, each `#[tauri::command] pub async fn` → runtime-free `_inner` → `repo_path(state,
+repo_id)?` → `spawn_blocking`, none emitting `repo-changed`:
+
+```rust
+// list_copy_candidates(repoId) -> Vec<CopyCandidate>        errors: noRepo | git
+#[tauri::command] pub async fn list_copy_candidates(state, repo_id: String)
+    -> Result<Vec<CopyCandidate>, AppError>;
+async fn list_copy_candidates_inner(...) {
+    spawn_blocking(move || worktree_copy::list_copy_candidates(&path))
+}
+
+// preview_worktree_copy(repoId, branch, paths) -> Vec<CopyPlanEntry>
+//     errors: noRepo | branchNotFound | git
+#[tauri::command] pub async fn preview_worktree_copy(
+    state, repo_id: String, branch: String, paths: Vec<String>)
+    -> Result<Vec<CopyPlanEntry>, AppError>;
+async fn preview_worktree_copy_inner(...) {
+    spawn_blocking(move || worktree_copy::classify_copy(&path, &branch, &paths))
+}
+
+// add_worktree_with_changes(repoId, branch, name, selections) -> WorktreeInfo
+//     errors: noRepo | invalidName | branchNotFound | git | io
+#[tauri::command] pub async fn add_worktree_with_changes(
+    state, repo_id: String, branch: String, name: String, selections: Vec<CopySelection>)
+    -> Result<WorktreeInfo, AppError>;
+async fn add_worktree_with_changes_inner(...) {
+    spawn_blocking(move || worktree_copy::add_worktree_with_changes(&path, &branch, &name, &selections))
+}
+```
+
+Register all three in `src-tauri/src/lib.rs` `generate_handler!` after `commands::unlock_worktree`
+(add trailing comma):
+```rust
+        commands::unlock_worktree,
+        commands::list_copy_candidates,
+        commands::preview_worktree_copy,
+        commands::add_worktree_with_changes
+```
+
+### B.3 Frontend IPC triple
+
+**`types.ts`** (near `WorktreeInfo`):
+```ts
+export type CopyGroup = 'staged' | 'unstaged' | 'untracked' | 'ignored';
+export type CopyVerdict = 'clean' | 'conflict';
+export type CopyAction = 'copy' | 'skip';
+export interface CopyCandidate { path: string; group: CopyGroup; }
+export interface CopyPlanEntry { path: string; verdict: CopyVerdict; }
+export interface CopySelection { path: string; action: CopyAction; }
+```
+`IpcApi` additions:
+```ts
+/** Uncommitted + gitignored files eligible to copy into a new worktree
+ *  (deletions excluded). Rejects noRepo | git. */
+listCopyCandidates(repoId: string): Promise<CopyCandidate[]>;
+/** Classify `paths` against `branch` (clean/conflict) BEFORE creating the
+ *  worktree. Rejects noRepo | branchNotFound | git. */
+previewWorktreeCopy(repoId: string, branch: string, paths: string[]): Promise<CopyPlanEntry[]>;
+/** Create the worktree (branch/name per Part A) then copy each `copy` selection
+ *  in; `skip` selections are not written; empty == plain create.
+ *  Rejects noRepo | invalidName | branchNotFound | git | io. */
+addWorktreeWithChanges(
+  repoId: string, branch: string, name: string, selections: CopySelection[],
+): Promise<WorktreeInfo>;
+```
+**`tauri.ts`**:
+```ts
+listCopyCandidates(repoId: string): Promise<CopyCandidate[]> {
+  return invoke<CopyCandidate[]>('list_copy_candidates', { repoId });
+},
+previewWorktreeCopy(repoId: string, branch: string, paths: string[]): Promise<CopyPlanEntry[]> {
+  return invoke<CopyPlanEntry[]>('preview_worktree_copy', { repoId, branch, paths });
+},
+addWorktreeWithChanges(repoId, branch, name, selections): Promise<WorktreeInfo> {
+  return invoke<WorktreeInfo>('add_worktree_with_changes', { repoId, branch, name, selections });
+},
+```
+(import the new types alongside `WorktreeInfo`.)
+
+### B.4 Mock behavior (`src/ipc/mock.ts`)
+
+Add a small per-repo fixture so the harness renders every group + a conflict. Only the **default**
+fixture returns candidates (others → `[]`).
+
+- `listCopyCandidates(repoId)` → clone of a seeded fixture, e.g.:
+  ```ts
+  [ { path: '.claude/skills/new-skill.md',  group: 'untracked' },
+    { path: '.claude/skills/edited.md',     group: 'unstaged'  },
+    { path: 'src/staged-change.ts',         group: 'staged'    },
+    { path: '.env.local',                   group: 'ignored'   } ]
+  ```
+- `previewWorktreeCopy(repoId, branch, paths)` → return `{ path, verdict }` per input path; mark a
+  deterministic subset `conflict` (e.g. any path also present in a seeded `branchFiles[branch]` set, or
+  simply `src/staged-change.ts` → `conflict`, the rest `clean`) so the dialog shows a badge + toggle.
+  Reject with a shaped `branchNotFound` error when `branch` is unknown (optional; keep parity with real
+  backend by accepting any branch in the mock like `addWorktree` does).
+- `addWorktreeWithChanges(repoId, branch, name, selections)` → same guards + row-push as `addWorktree`
+  (Part A path/name), ignore the file bytes (no real FS in the browser), return the created row. The
+  `selections` argument is accepted but only its length is observable (used to vary the success toast in
+  the harness).
+
+No new events/channels; reuse the shaped-error helper.
+
+### B.5 UI — extend `src/components/WorktreeCreateDialog.tsx`
+
+Additive changes (keep the file well under the 500-line soft limit; extract the candidate list into a
+small presentational child `WorktreeCopyList.tsx` if the dialog grows past ~250 lines):
+
+1. **Name field** (new text `<input>`):
+   - defaults to the selected branch; **auto-syncs** to the branch while the user has not manually
+     edited the name (`nameTouched` flag; set on first change). Once touched, changing the branch no
+     longer overwrites the name.
+   - The derived-path preview mirror becomes `${container}/${slugify(name)}` where `container` is now
+     the nested `<mainParent>/.worktrees/<repo-name>` (parent passes the repo-name-included container).
+   - **Name-in-use flag:** compare `slugify(name)` against existing worktree leaf names (parent passes
+     `usedNames: string[]`); when it collides, show an inline advisory note ("name in use — the backend
+     will append `-N`"). This is advisory only; the backend's collision loop still suffixes (see Flag 1).
+2. **Candidate checkboxes** (after branch pick): call `listCopyCandidates(repoId)`; render grouped,
+   collapsible sections **Staged / Unstaged / Untracked / Gitignored**, every box **unchecked by
+   default**. A "select all in group" affordance is optional.
+3. **Preview**: on any change to the checked set OR the branch, call
+   `previewWorktreeCopy(repoId, branch, checkedPaths)`; badge each `conflict` file. Each conflict gets an
+   explicit **Overwrite / Skip** toggle, defaulting to **Skip** (safe). Clean files map to `copy`.
+4. **Submit**:
+   - Build `selections: CopySelection[]` = for each checked candidate, `{ path, action }` where a clean
+     file → `copy`, a conflict → the toggle value (default `skip`).
+   - If any selection has `action === 'copy'` → `addWorktreeWithChanges(repoId, branch, name,
+     selections)`; **otherwise** (nothing checked, or every conflict left Skip and no clean files
+     checked) → `addWorktree(repoId, branch, name)`.
+   - On success the parent toasts + closes (existing flow).
+5. Props gain: `container` now the nested form; `usedNames: string[]`; plus IPC callbacks threaded via
+   the parent (`RepoWorkspace`) — `listCopyCandidates`, `previewWorktreeCopy` — OR pass `repoId` + the
+   `ipc` handle following the file's existing pattern (senior-dev picks the lighter wiring consistent
+   with the current `onSubmit` prop shape).
+
+`RepoWorkspace.tsx`: `onSubmit` for the dialog now calls the two-path submit above; keep
+`refetchWorktrees()` after success. The existing `WorktreeCreateDialogProps.onSubmit(branch)` widens to
+carry `name` + `selections` (or the dialog calls the ipc directly and `onSubmit` becomes a
+success/refresh callback — senior-dev's choice, kept minimal).
+
+### B5 — Edge cases (v1)
+
+- **Deletions excluded** entirely from candidates (staged/unstaged `Deleted` skipped; nothing to copy).
+- **Renames** → candidate is the **new** path only; `StatusEntry.orig_path` ignored.
+- **Binary files** → copied as **raw bytes** (`fs::read`/`fs::write`), no text handling.
+- **Skip-on-conflict** → the file is simply **not written**; the worktree keeps the target branch's
+  version.
+- **Untracked / gitignored** → base None, usually target None → `clean`; copied verbatim.
+- A candidate whose source file vanished between listing and copy → `Io` error on `fs::read` (rare; the
+  worktree already exists).
+
+### Part B acceptance criteria
+
+- `list_copy_candidates` returns the four groups; deletions excluded; the ignored group comes from a
+  second `include_ignored(true)` pass; renames surface the new path.
+- `classify_copy` returns `clean` when the target branch lacks the path or its blob equals base, else
+  `conflict`; runs against the shared ODB **before** worktree creation; unknown branch → `branchNotFound`.
+- `add_worktree_with_changes` creates the worktree (Part A path), copies every `copy` selection's source
+  bytes to the guarded destination, skips `skip`, and returns the created row; empty selection behaves
+  exactly like `add_worktree`; a path escaping the worktree root → `git` error.
+- Three commands registered + IPC triple + mock implemented; `mock` renders candidates + at least one
+  `conflict` for the harness.
+- Dialog: name field (default=branch, auto-sync until edited, nested path preview, name-in-use advisory),
+  grouped candidate checkboxes (default unchecked), conflict badge + Overwrite/Skip toggle (default
+  Skip), submit routes to `addWorktreeWithChanges` or `addWorktree`.
+- `cargo check`/`clippy`, `cargo test`, `pnpm build`/`tsc`, and the browser harness screenshot all clean.
+
+---
+
+## P32 sub-increment breakdown
+
+### P32a — Part A (per-repo container + named worktrees)
+- `worktree.rs`: `derive_worktree(main_dir, repo, name)` container `.join(dir_basename(main_dir))` +
+  slug-from-name; `add_worktree(workdir, branch, name)`; update doc comments. Make `ensure_contained`
+  `pub(crate)` (needed by P32b, land it here).
+- `commands.rs`: `add_worktree` gains `name`; `mock.ts`/`tauri.ts`/`types.ts`
+  `addWorktree(repoId, branch, name)`; nested mock seed/preview paths.
+- `WorktreeCreateDialog.tsx` + `RepoWorkspace.tsx`: add the name field (default=branch, auto-sync,
+  nested preview, name-in-use advisory) and thread `name` to `onSubmit`/`addWorktree`.
+- Update `worktree_cli.rs` path expectations (`+ "main"` segment) + a custom-name case.
+- **Acceptance:** Part A criteria above.
+
+### P32b — Part B backend (`worktree_copy.rs` + unit tests)
+- New module: wire types (B.1.1), `list_copy_candidates`, `classify_copy`, `add_worktree_with_changes`;
+  `git/mod.rs` registration; `#[cfg(test)]` wire-shape (camelCase / lowercase reprs) + a `blob_bytes` /
+  verdict unit test.
+- Extend `worktree_cli.rs` (or a new `worktree_copy_cli.rs`): untracked + gitignored → clean, lands in
+  the worktree; tracked target==base → clean, copied bytes match source; tracked target diverges →
+  conflict, `skip` keeps target's version / `copy` overwrites; containment guard rejects a crafted
+  escaping selection path.
+- **Acceptance:** the three fns behave per criteria; `cargo test` green; `clippy` clean.
+
+### P32c — Part B commands + IPC + UI
+- `commands.rs` three commands + `_inner`s; `lib.rs` registration.
+- `types.ts` / `tauri.ts` / `mock.ts` triple + fixture candidates/verdicts.
+- `WorktreeCreateDialog.tsx`: grouped candidate checkboxes, `previewWorktreeCopy` → conflict badge +
+  Overwrite/Skip toggle (default Skip), submit → `addWorktreeWithChanges` (or `addWorktree` when nothing
+  is copied); optional `WorktreeCopyList.tsx` child.
+- **Acceptance:** browser harness shows grouped candidates + a conflict badge with a working
+  Overwrite/Skip toggle; submit routes correctly; `pnpm build`/`tsc` clean.
+
+---
+
+## Flagged decisions (orchestrator: confirm with user; plan defaults otherwise accepted)
+
+1. **Name collision → suffix, UI advisory only.** The backend's existing `-2..-99` collision loop keeps
+   deriving a *free* leaf, so a user-typed name already in use is silently suffixed. The dialog only
+   *advises* ("name in use — will append -N"); it does **not** block submit. *Recommend keep* (matches
+   Part A path derivation, no new error). Alternative: reject a duplicate name with `InvalidName` and
+   force the user to change it — more friction, not in the plan.
+2. **Source root = the open repo's workdir** (`workdir`), not strictly `main_workdir(repo)`. In the
+   normal case (app has the main worktree open) these are identical. If the app ever has a *linked*
+   worktree open and the user copies from it, source bytes come from that open checkout (what the user
+   sees), and `classify_copy`'s `base` is that checkout's HEAD. *Recommend keep* (intuitive: copy what
+   you're looking at). Flagged because the plan's prose says "main workdir/main HEAD".
+3. **No size cap on copied files.** Binary/large files copy as raw bytes with no warning (plan B5).
+   *Recommend keep for v1;* a >N MiB confirm is a Polish add.
+4. **Copy failure after worktree creation is non-transactional.** If a `copy` write fails mid-way, the
+   worktree already exists and some files may be copied; the command returns the `Io`/`Git` error and
+   the UI toasts it. *Recommend keep* (rollback/cleanup deferred); the created worktree is listable and
+   removable normally.
