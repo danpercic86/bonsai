@@ -1912,8 +1912,9 @@ pub async fn apply_stash(
     state: tauri::State<'_, AppState>,
     repo_id: String,
     index: usize,
+    skip_reserved: bool,
 ) -> Result<ApplyStashOutcome, AppError> {
-    apply_stash_inner(state.inner(), &repo_id, index).await
+    apply_stash_inner(state.inner(), &repo_id, index, skip_reserved).await
 }
 
 /// Runtime-free core of `apply_stash` (unit-testable without a Tauri app).
@@ -1921,9 +1922,10 @@ async fn apply_stash_inner(
     state: &AppState,
     repo_id: &str,
     index: usize,
+    skip_reserved: bool,
 ) -> Result<ApplyStashOutcome, AppError> {
     let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || stash::apply_stash(&path, index))
+    tauri::async_runtime::spawn_blocking(move || stash::apply_stash(&path, index, skip_reserved))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
@@ -1936,8 +1938,9 @@ pub async fn pop_stash(
     state: tauri::State<'_, AppState>,
     repo_id: String,
     index: usize,
+    skip_reserved: bool,
 ) -> Result<ApplyStashOutcome, AppError> {
-    pop_stash_inner(state.inner(), &repo_id, index).await
+    pop_stash_inner(state.inner(), &repo_id, index, skip_reserved).await
 }
 
 /// Runtime-free core of `pop_stash` (unit-testable without a Tauri app).
@@ -1945,9 +1948,10 @@ async fn pop_stash_inner(
     state: &AppState,
     repo_id: &str,
     index: usize,
+    skip_reserved: bool,
 ) -> Result<ApplyStashOutcome, AppError> {
     let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || stash::pop_stash(&path, index))
+    tauri::async_runtime::spawn_blocking(move || stash::pop_stash(&path, index, skip_reserved))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

@@ -355,6 +355,20 @@ struct StashIndexArgs {
     index: usize,
 }
 
+/// A stash-stack index plus the reserved-path skip flag for apply/pop.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct StashApplyArgs {
+    /// Zero-based index into the stash stack (0 = most recent).
+    index: usize,
+    /// When true, apply everything except Windows-reserved paths (e.g. `NUL`)
+    /// that cannot be written to the working tree. Defaults to false; the first
+    /// attempt (false) returns a `reservedPaths` outcome listing the offending
+    /// paths so the caller can retry with `skipReserved: true`.
+    #[serde(default)]
+    skip_reserved: bool,
+}
+
 /// Map the string `resolution` tool argument to the core `ConflictResolution`
 /// enum without adding a `schemars` dependency to `bonsai-core`.
 fn parse_resolution(s: &str) -> Result<bonsai_core::git::conflict::ConflictResolution, AppError> {
@@ -921,13 +935,20 @@ impl BonsaiServer {
     }
 
     /// Apply a stash without dropping it; conflicts reported as typed paths.
+    ///
+    /// If the stash contains Windows-reserved paths (e.g. `NUL`) that cannot be
+    /// checked out, the first attempt (`skipReserved` false/omitted) applies
+    /// nothing and returns a `reservedPaths` outcome listing them; retry with
+    /// `skipReserved: true` to apply the rest, yielding `appliedSkippingReserved`.
     #[tool]
     async fn bonsai_apply_stash(
         &self,
-        Parameters(args): Parameters<StashIndexArgs>,
+        Parameters(args): Parameters<StashApplyArgs>,
     ) -> CallToolResult {
         match self
-            .run_blocking(move |wd| bonsai_core::git::stash::apply_stash(wd, args.index))
+            .run_blocking(move |wd| {
+                bonsai_core::git::stash::apply_stash(wd, args.index, args.skip_reserved)
+            })
             .await
         {
             Ok(v) => ok_json(&v),
@@ -936,13 +957,21 @@ impl BonsaiServer {
     }
 
     /// Apply a stash and drop it on clean success only.
+    ///
+    /// If the stash contains Windows-reserved paths (e.g. `NUL`) that cannot be
+    /// checked out, the first attempt (`skipReserved` false/omitted) applies
+    /// nothing and returns a `reservedPaths` outcome listing them; retry with
+    /// `skipReserved: true` to apply the rest (`appliedSkippingReserved`). When
+    /// any path is skipped the stash is KEPT (not dropped) so nothing is lost.
     #[tool]
     async fn bonsai_pop_stash(
         &self,
-        Parameters(args): Parameters<StashIndexArgs>,
+        Parameters(args): Parameters<StashApplyArgs>,
     ) -> CallToolResult {
         match self
-            .run_blocking(move |wd| bonsai_core::git::stash::pop_stash(wd, args.index))
+            .run_blocking(move |wd| {
+                bonsai_core::git::stash::pop_stash(wd, args.index, args.skip_reserved)
+            })
             .await
         {
             Ok(v) => ok_json(&v),

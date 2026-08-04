@@ -528,7 +528,15 @@ export interface StructureSection {
 
 export type ApplyStashOutcome =
   | { kind: 'applied' }
-  | { kind: 'conflicts'; paths: string[] };
+  | { kind: 'conflicts'; paths: string[] }
+  /** Blocked pre-apply: the stash contains Windows-reserved paths (e.g. `NUL`)
+   *  that cannot be checked out. Nothing was applied and the stash is retained.
+   *  Retry with `skipReserved: true` to apply everything except these. */
+  | { kind: 'reservedPaths'; paths: string[] }
+  /** Applied everything except the listed Windows-reserved paths, which could
+   *  not be restored. For pop, the stash is KEPT (not dropped) so the reserved
+   *  blobs are not lost. */
+  | { kind: 'appliedSkippingReserved'; skipped: string[] };
 
 export interface CreateStashResult {
   created: boolean;
@@ -1262,10 +1270,15 @@ export interface IpcApi {
     message: string | null,
     scope: StashScope,
   ): Promise<CreateStashResult>;
-  /** Apply stash `index` WITHOUT dropping. Rejects operationInProgress | git | noRepo. */
-  applyStash(repoId: string, index: number): Promise<ApplyStashOutcome>;
-  /** Apply + drop on clean success (retained on conflict). Rejects operationInProgress | git | noRepo. */
-  popStash(repoId: string, index: number): Promise<ApplyStashOutcome>;
+  /** Apply stash `index` WITHOUT dropping. Rejects operationInProgress | git | noRepo.
+   *  `skipReserved`: on first attempt (false) a stash containing Windows-reserved
+   *  paths returns `reservedPaths` and applies nothing; retry with true to apply
+   *  everything except those (`appliedSkippingReserved`). */
+  applyStash(repoId: string, index: number, skipReserved: boolean): Promise<ApplyStashOutcome>;
+  /** Apply + drop on clean success (retained on conflict). Rejects operationInProgress | git | noRepo.
+   *  `skipReserved`: as for `applyStash`; when any reserved path is skipped the
+   *  stash is KEPT (not dropped) so the reserved blobs are not lost. */
+  popStash(repoId: string, index: number, skipReserved: boolean): Promise<ApplyStashOutcome>;
   /** Permanently discard stash `index` (UI confirms). Rejects git | noRepo. */
   dropStash(repoId: string, index: number): Promise<void>;
   /** Amend HEAD with a new message + the current index (P20). Preserves HEAD's

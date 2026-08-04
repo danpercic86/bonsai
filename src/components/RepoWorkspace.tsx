@@ -181,6 +181,13 @@ export function RepoWorkspace({
   const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(null);
   const [pendingDeleteRemote, setPendingDeleteRemote] = useState<string | null>(null);
   const [pendingDropStash, setPendingDropStash] = useState<number | null>(null);
+  // Reserved-path recovery: a stash apply/pop hit Windows-reserved paths (e.g.
+  // `NUL`). Arms a ConfirmDialog offering to apply the rest, skipping those.
+  const [pendingReservedStash, setPendingReservedStash] = useState<{
+    index: number;
+    op: 'apply' | 'pop';
+    paths: string[];
+  } | null>(null);
   // P20: destructive reset (all three modes confirm; hard warns extra) + discard.
   const [pendingReset, setPendingReset] = useState<{ oid: string; mode: ResetMode } | null>(null);
   const [pendingDiscard, setPendingDiscard] = useState<string[] | null>(null);
@@ -258,6 +265,7 @@ export function RepoWorkspace({
     pendingDeleteBranch !== null ||
     pendingDeleteRemote !== null ||
     pendingDropStash !== null ||
+    pendingReservedStash !== null ||
     pendingReset !== null ||
     pendingDiscard !== null ||
     pendingHunkDiscard !== null ||
@@ -1753,16 +1761,31 @@ export function RepoWorkspace({
     }
   }
 
-  async function handleApplyStash(index: number) {
+  async function handleApplyStash(index: number, skipReserved = false) {
     setMutating(true);
     try {
-      const res = await ipc.applyStash(repoId, index);
-      if (res.kind === 'applied') pushToast('success', `Applied stash@{${index}}`);
-      else
-        pushToast(
-          'info',
-          `Stash applied with ${res.paths.length} conflict(s) to resolve — the stash is kept (stash@{${index}}).`,
-        );
+      const res = await ipc.applyStash(repoId, index, skipReserved);
+      switch (res.kind) {
+        case 'applied':
+          pushToast('success', `Applied stash@{${index}}`);
+          break;
+        case 'conflicts':
+          pushToast(
+            'info',
+            `Stash applied with ${res.paths.length} conflict(s) to resolve — the stash is kept (stash@{${index}}).`,
+          );
+          break;
+        case 'reservedPaths':
+          // Not an error: offer to apply everything except the un-writable paths.
+          setPendingReservedStash({ index, op: 'apply', paths: res.paths });
+          return; // skip refreshAll; nothing changed and the dialog is now up
+        case 'appliedSkippingReserved':
+          pushToast(
+            'success',
+            `Applied stash@{${index}} — skipped ${res.skipped.length} file(s) Windows can't restore: ${res.skipped.join(', ')}`,
+          );
+          break;
+      }
       await refreshAll();
     } catch (e) {
       pushToast('error', errorMessage(e));
@@ -1771,17 +1794,32 @@ export function RepoWorkspace({
     }
   }
 
-  async function handlePopStash(index: number) {
+  async function handlePopStash(index: number, skipReserved = false) {
     setMutating(true);
     try {
-      const res = await ipc.popStash(repoId, index);
-      if (res.kind === 'applied') pushToast('success', `Popped stash@{${index}}`);
-      else
-        pushToast(
-          'error',
-          `Pop hit ${res.paths.length} conflict(s); your changes are still on the stash (stash@{${index}}). ` +
-            'Resolve the conflicts, then drop it.',
-        );
+      const res = await ipc.popStash(repoId, index, skipReserved);
+      switch (res.kind) {
+        case 'applied':
+          pushToast('success', `Popped stash@{${index}}`);
+          break;
+        case 'conflicts':
+          pushToast(
+            'error',
+            `Pop hit ${res.paths.length} conflict(s); your changes are still on the stash (stash@{${index}}). ` +
+              'Resolve the conflicts, then drop it.',
+          );
+          break;
+        case 'reservedPaths':
+          setPendingReservedStash({ index, op: 'pop', paths: res.paths });
+          return; // skip refreshAll; nothing changed and the dialog is now up
+        case 'appliedSkippingReserved':
+          pushToast(
+            'success',
+            `Applied stash@{${index}} — skipped ${res.skipped.length} file(s) Windows can't restore: ${res.skipped.join(', ')}. ` +
+              'The stash was kept because those files could not be restored.',
+          );
+          break;
+      }
       await refreshAll();
     } catch (e) {
       pushToast('error', errorMessage(e));
@@ -2826,6 +2864,10 @@ export function RepoWorkspace({
         pendingDropStash={pendingDropStash}
         setPendingDropStash={setPendingDropStash}
         handleDropStash={(index) => void handleDropStash(index)}
+        pendingReservedStash={pendingReservedStash}
+        setPendingReservedStash={setPendingReservedStash}
+        handleApplyStashSkipping={(index) => void handleApplyStash(index, true)}
+        handlePopStashSkipping={(index) => void handlePopStash(index, true)}
         pendingReset={pendingReset}
         setPendingReset={setPendingReset}
         handleResetBranch={(oid, mode) => void handleResetBranch(oid, mode)}

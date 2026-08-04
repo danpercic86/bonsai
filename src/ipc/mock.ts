@@ -644,13 +644,28 @@ function seedStashes(kind: RepoKind, graphFixture: GraphFixture): StashEntry[] {
       ts: now - 7200,
     },
     {
+      // Flagged (message contains 'reserved') so applyStash/popStash exercise the
+      // Windows reserved-path recovery flow: first attempt → `reservedPaths`,
+      // retry with skipReserved → `appliedSkippingReserved`. See RESERVED_STASH_*.
       index: 2,
-      message: 'WIP on main: experiment with lane colors',
+      message: 'WIP on main: aspire host scaffolding (reserved-name files)',
       oid: randomOid(),
       baseOid: fixtureOid(6), // `core work 2` — carries stash@{2}
       ts: now - 10800,
     },
   ];
+}
+
+/** Mock-only marker: a stash whose message contains this substring is treated as
+ *  containing a Windows-reserved path that cannot be checked out (mirrors the
+ *  `'conflict'` demo-trigger convention). */
+const RESERVED_STASH_MARKER = 'reserved';
+/** The reserved path reported/skipped for a flagged fixture stash. */
+const RESERVED_STASH_PATHS = ['src/Aspire.AppHost/NUL'];
+
+/** True when this stash entry is the seeded reserved-path fixture. */
+function stashHasReserved(entry: StashEntry | undefined): boolean {
+  return entry !== undefined && entry.message.includes(RESERVED_STASH_MARKER);
 }
 
 /** Seed the DEFAULT repo's submodules so the sidebar section shows every badge
@@ -3084,7 +3099,11 @@ export const mockIpc: IpcApi = {
     return { created: true };
   },
 
-  async applyStash(repoId: string, index: number): Promise<ApplyStashOutcome> {
+  async applyStash(
+    repoId: string,
+    index: number,
+    skipReserved: boolean,
+  ): Promise<ApplyStashOutcome> {
     await delay(150);
     const state = requireRepo(repoId);
     const entry = state.stashes.find((e) => e.index === index);
@@ -3092,17 +3111,36 @@ export const mockIpc: IpcApi = {
     if (entry !== undefined && entry.message.includes('conflict')) {
       return { kind: 'conflicts', paths: ['src/app.ts'] };
     }
+    // Windows reserved-path recovery flow (mirrors the core preflight): first
+    // attempt is blocked and applies nothing; retry with skipReserved applies the
+    // rest, leaving the stack unchanged either way (apply never drops).
+    if (stashHasReserved(entry)) {
+      return skipReserved
+        ? { kind: 'appliedSkippingReserved', skipped: [...RESERVED_STASH_PATHS] }
+        : { kind: 'reservedPaths', paths: [...RESERVED_STASH_PATHS] };
+    }
     // Apply leaves the stack unchanged.
     return { kind: 'applied' };
   },
 
-  async popStash(repoId: string, index: number): Promise<ApplyStashOutcome> {
+  async popStash(
+    repoId: string,
+    index: number,
+    skipReserved: boolean,
+  ): Promise<ApplyStashOutcome> {
     await delay(150);
     const state = requireRepo(repoId);
     const entry = state.stashes.find((e) => e.index === index);
     // Conflict trigger: the entry is RETAINED (libgit2 only drops on clean pop).
     if (entry !== undefined && entry.message.includes('conflict')) {
       return { kind: 'conflicts', paths: ['src/app.ts'] };
+    }
+    // Reserved-path flow: first attempt blocked; a skipping retry applies the
+    // rest but KEEPS the stash (lossless — the reserved blobs live only here).
+    if (stashHasReserved(entry)) {
+      return skipReserved
+        ? { kind: 'appliedSkippingReserved', skipped: [...RESERVED_STASH_PATHS] }
+        : { kind: 'reservedPaths', paths: [...RESERVED_STASH_PATHS] };
     }
     // Clean pop: remove the entry, then re-index the survivors.
     state.stashes = state.stashes.filter((e) => e.index !== index);

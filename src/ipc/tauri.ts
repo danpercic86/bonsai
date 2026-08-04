@@ -366,12 +366,12 @@ export const tauriIpc: IpcApi = {
     return invoke<CreateStashResult>('create_stash', { repoId, message, scope });
   },
 
-  applyStash(repoId: string, index: number): Promise<ApplyStashOutcome> {
-    return invoke<ApplyStashOutcome>('apply_stash', { repoId, index });
+  applyStash(repoId: string, index: number, skipReserved: boolean): Promise<ApplyStashOutcome> {
+    return invoke<ApplyStashOutcome>('apply_stash', { repoId, index, skipReserved });
   },
 
-  popStash(repoId: string, index: number): Promise<ApplyStashOutcome> {
-    return invoke<ApplyStashOutcome>('pop_stash', { repoId, index });
+  popStash(repoId: string, index: number, skipReserved: boolean): Promise<ApplyStashOutcome> {
+    return invoke<ApplyStashOutcome>('pop_stash', { repoId, index, skipReserved });
   },
 
   dropStash(repoId: string, index: number): Promise<void> {

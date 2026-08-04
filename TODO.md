@@ -39,6 +39,18 @@ verified (tests + browser harness `pnpm dev:mock`, no console errors). Plan:
   staged-only is a hand-rolled libgit2 stash that FOLDS mixed staged+unstaged files (user decision),
   keeps the durable stash on failed mutation, single reflog entry (no stack corruption), captures
   `rm --cached`. New `StashSplitButton` in staging panel. 14 tests. commit e200aed.
+- **#5 stash apply/pop reserved-name recovery (Windows)** — DONE (uncommitted; awaiting user stage).
+  Applying a stash whose untracked `^3` tree holds a Windows reserved device-name path (e.g.
+  `.../NUL`) failed with a raw libgit2 `cannot checkout to invalid path` and aborted the whole apply.
+  New `is_windows_reserved` + `stash_path_sets` detect reserved leaf paths; `apply_stash`/`pop_stash`
+  gain `skip_reserved: bool`. First attempt returns `ApplyStashOutcome::ReservedPaths{paths}` (nothing
+  applied, stash retained); a skip retry applies everything except the reserved LEAF paths via a
+  `CheckoutBuilder` `.path()` allowlist (`disable_pathspec_match(true)`) + post-apply guard, returning
+  `AppliedSkippingReserved{skipped}`. Pop stays lossless (never drops when skipping). Threaded through
+  Tauri commands, bonsai-mcp tools (`skip_reserved` arg), IPC/mock, and a RepoWorkspace confirm-retry
+  dialog. Mechanism verified against vendored libgit2 1.9.6 (two-phase checkout shares the pathspec;
+  untracked phase drops `disable_pathspec_match` → leaf-only enumeration is load-bearing). 27 core
+  tests (incl. 2 Linux-CI-gated real-NUL end-to-end); browser-harness AI gate passed.
 - Contracts: docs/contracts/P33-checkout-autostash.md, P34-stash-scopes.md (commit de8746d).
 - **USER CHECKPOINT (native `pnpm tauri dev`):** (a) switch repo tabs → no console flicker;
   (b) Commit & Push on a no-upstream branch confirms then pushes, one-click when upstream set;

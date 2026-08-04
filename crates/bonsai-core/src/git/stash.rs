@@ -47,6 +47,15 @@ pub enum ApplyStashOutcome {
     /// entry is RETAINED (libgit2 does not drop on GIT_ECONFLICT). `paths` =
     /// sorted conflicted paths (the set `list_conflicts` returns).
     Conflicts { paths: Vec<String> },
+    /// Blocked pre-apply: the stash holds blobs at Windows-reserved paths (e.g.
+    /// `.../NUL`) that NTFS cannot write. Nothing was applied and the stash is
+    /// RETAINED. `paths` = the sorted reserved paths, to name in the UI prompt.
+    ReservedPaths { paths: Vec<String> },
+    /// Applied with `skip_reserved`: every non-reserved change was restored but
+    /// these Windows-reserved paths could NOT be written back. On pop the stash
+    /// is RETAINED (the reserved blobs live only in the stash). `skipped` =
+    /// sorted reserved paths.
+    AppliedSkippingReserved { skipped: Vec<String> },
 }
 
 /// Result of create_stash.
@@ -393,24 +402,193 @@ fn make_index_entry(path: &Path, blob: git2::Oid, mode: u32) -> Result<git2::Ind
     })
 }
 
+/// True if `component` is a Windows reserved device name that NTFS cannot use
+/// as a path component: `CON`, `PRN`, `AUX`, `NUL`, `COM1..=COM9`, `LPT1..=LPT9`.
+/// Windows strips trailing dots/spaces and resolves the STEM before the first
+/// `.`, case-insensitively — so `NUL`, `nul`, `NUL.txt`, `NUL.`, and `NUL `
+/// (trailing space) all count, while `NULl`, `NULL2`, `COM`/`COM0`/`COM10`, and
+/// `LPT0` do not.
+fn is_windows_reserved(component: &str) -> bool {
+    let trimmed = component.trim_end_matches(['.', ' ']);
+    let stem = trimmed.split('.').next().unwrap_or(trimmed);
+    let upper = stem.to_ascii_uppercase();
+    match upper.as_str() {
+        "CON" | "PRN" | "AUX" | "NUL" => true,
+        _ => {
+            // COM1..=COM9 / LPT1..=LPT9 — a 3-letter prefix + exactly one 1-9 digit.
+            let prefix = if let Some(rest) = upper.strip_prefix("COM") {
+                Some(rest)
+            } else {
+                upper.strip_prefix("LPT")
+            };
+            match prefix {
+                Some(rest) if rest.len() == 1 => {
+                    matches!(rest.as_bytes()[0], b'1'..=b'9')
+                }
+                _ => false,
+            }
+        }
+    }
+}
+
+/// Resolve the stash commit oid for `index` the same way `list_stashes` does:
+/// the stash stack IS the `refs/stash` reflog, and entry `index`'s `id_new()`
+/// is the stash commit oid. Missing entry → AppError::Git.
+fn stash_commit_oid(repo: &git2::Repository, index: usize) -> Result<git2::Oid, AppError> {
+    let reflog = repo.reflog("refs/stash")?;
+    let entry = reflog
+        .get(index)
+        .ok_or_else(|| AppError::Git(format!("stash reflog entry {index} missing")))?;
+    Ok(entry.id_new())
+}
+
+/// The full changed+untracked LEAF path set of stash `index`, split into
+/// `(reserved, allowed)`. Sources:
+///
+/// - tracked: `commit.parent(0)` tree vs `commit` tree diff — each delta's
+///   `new_file().path()` (utf8; None skipped);
+/// - untracked: if `parent_count() >= 3`, `commit.parent(2)`'s tree walked
+///   pre-order, every BLOB entry's full path (directory entries skipped).
+///
+/// Only leaf blob paths are collected — never a directory prefix. This matters
+/// because `git_stash_apply`'s untracked-checkout phase reassigns
+/// `checkout_strategy = SAFE | DONT_UPDATE_INDEX`, silently dropping our
+/// `disable_pathspec_match(true)`, so `.path()` entries are treated as pathspec
+/// PATTERNS there; listing only leaves means no allowed prefix can glob-match a
+/// reserved leaf like `.../NUL`. The deduped-sorted union is split by whether
+/// ANY `/`-component is `is_windows_reserved`: `reserved` drives detection,
+/// `allowed` is the checkout allowlist for a skip-apply.
+fn stash_path_sets(
+    repo: &git2::Repository,
+    index: usize,
+) -> Result<(Vec<String>, Vec<String>), AppError> {
+    let oid = stash_commit_oid(repo, index)?;
+    let commit = repo.find_commit(oid)?;
+
+    let mut paths: Vec<String> = Vec::new();
+
+    // Tracked changes: parent(0) tree → stash tree.
+    let stash_tree = commit.tree()?;
+    let base_tree = commit.parent(0)?.tree()?;
+    let diff = repo.diff_tree_to_tree(Some(&base_tree), Some(&stash_tree), None)?;
+    for delta in diff.deltas() {
+        if let Some(p) = delta.new_file().path().and_then(|p| p.to_str()) {
+            paths.push(p.to_string());
+        }
+    }
+
+    // Untracked commit (stash@{N}^3) — present only when created with
+    // INCLUDE_UNTRACKED. Walk its tree pre-order, collecting blob paths.
+    if commit.parent_count() >= 3 {
+        let untracked_tree = commit.parent(2)?.tree()?;
+        untracked_tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+            if entry.kind() == Some(git2::ObjectType::Blob) {
+                if let Some(name) = entry.name() {
+                    paths.push(format!("{root}{name}"));
+                }
+            }
+            git2::TreeWalkResult::Ok
+        })?;
+    }
+
+    paths.sort();
+    paths.dedup();
+
+    let (reserved, allowed): (Vec<String>, Vec<String>) = paths
+        .into_iter()
+        .partition(|p| p.split('/').any(is_windows_reserved));
+    Ok((reserved, allowed))
+}
+
+/// Build the SAFE `StashApplyOptions` for a skip-reserved apply: a checkout
+/// allowlist of exactly the `allowed` paths (pathspec match disabled so only the
+/// listed paths are written). The reserved paths are simply left out, so both
+/// libgit2 checkout phases skip them.
+fn skip_reserved_opts(allowed: &[String]) -> git2::StashApplyOptions<'_> {
+    let mut co = git2::build::CheckoutBuilder::new();
+    co.disable_pathspec_match(true);
+    for p in allowed {
+        co.path(p);
+    }
+    let mut opts = git2::StashApplyOptions::new();
+    opts.checkout_options(co);
+    opts
+}
+
 /// Blocking. Apply stash `index` WITHOUT dropping it. Precondition: state Clean
 /// else OperationInProgress. Conflicts → Ok(Conflicts{paths}) (stash retained).
-pub fn apply_stash(workdir: &Path, index: usize) -> Result<ApplyStashOutcome, AppError> {
+///
+/// `skip_reserved == false`: if the stash holds Windows-reserved paths, return
+/// `ReservedPaths` WITHOUT applying anything (nothing mutated); otherwise apply
+/// exactly as before. `skip_reserved == true`: apply with a checkout allowlist
+/// that skips the reserved paths and return `AppliedSkippingReserved` on clean
+/// success.
+pub fn apply_stash(
+    workdir: &Path,
+    index: usize,
+    skip_reserved: bool,
+) -> Result<ApplyStashOutcome, AppError> {
     let mut repo = open_workdir_repo(workdir)?;
     require_clean(&repo)?;
 
-    let mut opts = git2::StashApplyOptions::new(); // SAFE default; NO REINSTATE_INDEX (OPEN Q#4)
+    if !skip_reserved {
+        // Preflight: block (mutate nothing) if reserved paths are present.
+        let (reserved, _allowed) = stash_path_sets(&repo, index)?;
+        if !reserved.is_empty() {
+            return Ok(ApplyStashOutcome::ReservedPaths { paths: reserved });
+        }
+        let mut opts = git2::StashApplyOptions::new(); // SAFE default; NO REINSTATE_INDEX (OPEN Q#4)
+        return match repo.stash_apply(index, Some(&mut opts)) {
+            Ok(()) => {
+                // This libgit2 may report a CONTENT conflict as Ok(()) with markers
+                // in the worktree + conflict entries in the index. Inspect the index
+                // rather than trusting the return code (P8 lesson).
+                if repo.index()?.has_conflicts() {
+                    Ok(ApplyStashOutcome::Conflicts {
+                        paths: conflict_paths(workdir)?,
+                    })
+                } else {
+                    Ok(ApplyStashOutcome::Applied)
+                }
+            }
+            Err(e) if e.code() == git2::ErrorCode::Conflict => Ok(ApplyStashOutcome::Conflicts {
+                paths: conflict_paths(workdir)?,
+            }),
+            Err(e) => Err(e.into()),
+        };
+    }
+
+    // skip_reserved: apply with an allowlist that omits the reserved paths.
+    let (reserved, allowed) = stash_path_sets(&repo, index)?;
+    if allowed.is_empty() {
+        // EVERY path is reserved. libgit2 treats a zero-length checkout pathspec
+        // as "match everything", so passing an empty allowlist would re-attempt
+        // the reserved checkout and surface a raw error. Nothing to apply →
+        // short-circuit. Apply never drops, so the stash is retained regardless.
+        return Ok(ApplyStashOutcome::AppliedSkippingReserved { skipped: reserved });
+    }
+    let mut opts = skip_reserved_opts(&allowed);
     match repo.stash_apply(index, Some(&mut opts)) {
         Ok(()) => {
-            // This libgit2 may report a CONTENT conflict as Ok(()) with markers
-            // in the worktree + conflict entries in the index. Inspect the index
-            // rather than trusting the return code (P8 lesson).
             if repo.index()?.has_conflicts() {
                 Ok(ApplyStashOutcome::Conflicts {
                     paths: conflict_paths(workdir)?,
                 })
             } else {
-                Ok(ApplyStashOutcome::Applied)
+                // POST-APPLY GUARD: the untracked-checkout phase reassigns the
+                // checkout strategy and silently drops `disable_pathspec_match`,
+                // so verify no reserved path actually materialized on disk. If
+                // one did (e.g. a sibling filename with pathspec metacharacters
+                // glob-matched it, or rename detection produced an unexpected
+                // path), fail loudly. The stash was never dropped → still lossless.
+                for p in &reserved {
+                    if workdir.join(p).exists() {
+                        return Err(AppError::Git(format!(
+                            "stash apply could not skip reserved path {p} cleanly; stash retained"
+                        )));
+                    }
+                }
+                Ok(ApplyStashOutcome::AppliedSkippingReserved { skipped: reserved })
             }
         }
         Err(e) if e.code() == git2::ErrorCode::Conflict => Ok(ApplyStashOutcome::Conflicts {
@@ -428,27 +606,81 @@ pub fn apply_stash(workdir: &Path, index: usize) -> Result<ApplyStashOutcome, Ap
 /// conditional `stash_drop` so WE control dropping. A naive `stash_pop` would
 /// silently drop the entry on this libgit2's false-clean content conflict —
 /// data loss.
-pub fn pop_stash(workdir: &Path, index: usize) -> Result<ApplyStashOutcome, AppError> {
+///
+/// `skip_reserved == false`: if the stash holds Windows-reserved paths, return
+/// `ReservedPaths` WITHOUT applying/dropping anything. Otherwise apply + drop on
+/// clean success as before. `skip_reserved == true`: apply skipping the reserved
+/// paths; because those blobs live ONLY in the stash, a skip-apply must stay
+/// lossless — return `AppliedSkippingReserved` and RETAIN the stash (do NOT drop).
+pub fn pop_stash(
+    workdir: &Path,
+    index: usize,
+    skip_reserved: bool,
+) -> Result<ApplyStashOutcome, AppError> {
     let mut repo = open_workdir_repo(workdir)?;
     require_clean(&repo)?;
 
-    let mut opts = git2::StashApplyOptions::new(); // SAFE default; NO REINSTATE_INDEX (OPEN Q#4)
+    if !skip_reserved {
+        // Preflight: block (mutate nothing, never drop) on reserved paths.
+        let (reserved, _allowed) = stash_path_sets(&repo, index)?;
+        if !reserved.is_empty() {
+            return Ok(ApplyStashOutcome::ReservedPaths { paths: reserved });
+        }
+        let mut opts = git2::StashApplyOptions::new(); // SAFE default; NO REINSTATE_INDEX (OPEN Q#4)
+        return match repo.stash_apply(index, Some(&mut opts)) {
+            Ok(()) => {
+                if repo.index()?.has_conflicts() {
+                    // Conflicted re-apply: LEAVE the stash on the stack (do NOT
+                    // drop) → retained for the user to resolve.
+                    Ok(ApplyStashOutcome::Conflicts {
+                        paths: conflict_paths(workdir)?,
+                    })
+                } else {
+                    // Clean apply → now drop, equivalent to a clean pop.
+                    repo.stash_drop(index)?;
+                    Ok(ApplyStashOutcome::Applied)
+                }
+            }
+            // A checkout-level conflict means nothing droppable was applied →
+            // stash retained.
+            Err(e) if e.code() == git2::ErrorCode::Conflict => Ok(ApplyStashOutcome::Conflicts {
+                paths: conflict_paths(workdir)?,
+            }),
+            Err(e) => Err(e.into()),
+        };
+    }
+
+    // skip_reserved: apply the non-reserved paths. Because the skipped blobs
+    // survive ONLY in the stash, we must NOT drop — pop stays lossless here.
+    let (reserved, allowed) = stash_path_sets(&repo, index)?;
+    if allowed.is_empty() {
+        // EVERY path is reserved. libgit2 treats a zero-length checkout pathspec
+        // as "match everything", so passing an empty allowlist would re-attempt
+        // the reserved checkout and surface a raw error. Nothing to apply →
+        // short-circuit. Do NOT drop: the reserved blobs live only in the stash,
+        // so retaining it keeps pop lossless.
+        return Ok(ApplyStashOutcome::AppliedSkippingReserved { skipped: reserved });
+    }
+    let mut opts = skip_reserved_opts(&allowed);
     match repo.stash_apply(index, Some(&mut opts)) {
         Ok(()) => {
             if repo.index()?.has_conflicts() {
-                // Conflicted re-apply: LEAVE the stash on the stack (do NOT
-                // drop) → retained for the user to resolve.
                 Ok(ApplyStashOutcome::Conflicts {
                     paths: conflict_paths(workdir)?,
                 })
             } else {
-                // Clean apply → now drop, equivalent to a clean pop.
-                repo.stash_drop(index)?;
-                Ok(ApplyStashOutcome::Applied)
+                // POST-APPLY GUARD (see apply_stash): reserved paths must not exist.
+                for p in &reserved {
+                    if workdir.join(p).exists() {
+                        return Err(AppError::Git(format!(
+                            "stash apply could not skip reserved path {p} cleanly; stash retained"
+                        )));
+                    }
+                }
+                // RETAIN the stash: the reserved blobs are unrecoverable if dropped.
+                Ok(ApplyStashOutcome::AppliedSkippingReserved { skipped: reserved })
             }
         }
-        // A checkout-level conflict means nothing droppable was applied →
-        // stash retained.
         Err(e) if e.code() == git2::ErrorCode::Conflict => Ok(ApplyStashOutcome::Conflicts {
             paths: conflict_paths(workdir)?,
         }),
@@ -512,8 +744,44 @@ mod tests {
             })
         );
 
+        let v = serde_json::to_value(ApplyStashOutcome::ReservedPaths {
+            paths: vec!["src/Aspire.AppHost/NUL".to_string()],
+        })
+        .expect("json");
+        assert_eq!(
+            v,
+            serde_json::json!({ "kind": "reservedPaths", "paths": ["src/Aspire.AppHost/NUL"] })
+        );
+
+        let v = serde_json::to_value(ApplyStashOutcome::AppliedSkippingReserved {
+            skipped: vec!["src/Aspire.AppHost/NUL".to_string()],
+        })
+        .expect("json");
+        assert_eq!(
+            v,
+            serde_json::json!({ "kind": "appliedSkippingReserved", "skipped": ["src/Aspire.AppHost/NUL"] })
+        );
+
         let v = serde_json::to_value(CreateStashResult { created: true }).expect("json");
         assert_eq!(v, serde_json::json!({ "created": true }));
+    }
+
+    /// `is_windows_reserved` truth table: the reserved device names (any case,
+    /// with a trailing dot/space or an extension) match; near-misses do not.
+    #[test]
+    fn is_windows_reserved_truth_table() {
+        for yes in [
+            "NUL", "nul", "Nul", "NUL.txt", "NUL.", "NUL ", "CON", "PRN", "AUX", "COM1", "com9",
+            "LPT1", "LPT9",
+        ] {
+            assert!(is_windows_reserved(yes), "{yes:?} must be reserved");
+        }
+        for no in [
+            "NULl", "NULL2", "README", "COM", "COM0", "COM10", "LPT0", "LPT10", "NULfile",
+            "myNUL", "",
+        ] {
+            assert!(!is_windows_reserved(no), "{no:?} must NOT be reserved");
+        }
     }
 
     // ============================================================ P9 §8 matrix
@@ -609,7 +877,7 @@ mod tests {
         assert_eq!(list[0].base_oid, head, "base_oid must == HEAD at stash time");
         assert!(!list[0].message.is_empty(), "default message must be non-empty");
 
-        let outcome = apply_stash(d, 0).expect("apply");
+        let outcome = apply_stash(d, 0, false).expect("apply");
         assert_eq!(outcome, ApplyStashOutcome::Applied, "clean apply");
         assert_eq!(s9_read(d, "a.txt"), "edited\n", "edit restored to worktree");
 
@@ -631,7 +899,7 @@ mod tests {
         assert!(res.created);
         assert_eq!(s9_read(d, "a.txt"), "base\n");
 
-        let outcome = pop_stash(d, 0).expect("pop");
+        let outcome = pop_stash(d, 0, false).expect("pop");
         assert_eq!(outcome, ApplyStashOutcome::Applied, "clean pop");
         assert_eq!(s9_read(d, "a.txt"), "edited\n", "edit restored to worktree");
 
@@ -679,7 +947,7 @@ mod tests {
         let list = list_stashes(d).expect("list");
         assert_eq!(list.len(), 1);
 
-        let outcome = pop_stash(d, 0).expect("pop");
+        let outcome = pop_stash(d, 0, false).expect("pop");
         assert_eq!(outcome, ApplyStashOutcome::Applied);
         assert!(
             d.join("untracked.txt").exists(),
@@ -717,7 +985,7 @@ mod tests {
         let dir = s9_conflict_fixture();
         let d = dir.path();
 
-        let outcome = pop_stash(d, 0).expect("pop");
+        let outcome = pop_stash(d, 0, false).expect("pop");
         assert_eq!(
             outcome,
             ApplyStashOutcome::Conflicts {
@@ -752,7 +1020,7 @@ mod tests {
         let dir = s9_conflict_fixture();
         let d = dir.path();
 
-        let outcome = apply_stash(d, 0).expect("apply");
+        let outcome = apply_stash(d, 0, false).expect("apply");
         assert_eq!(
             outcome,
             ApplyStashOutcome::Conflicts {
@@ -846,11 +1114,11 @@ mod tests {
             Err(AppError::OperationInProgress(_)) => {}
             other => panic!("create_stash: expected OperationInProgress, got {other:?}"),
         }
-        match apply_stash(d, 0) {
+        match apply_stash(d, 0, false) {
             Err(AppError::OperationInProgress(_)) => {}
             other => panic!("apply_stash: expected OperationInProgress, got {other:?}"),
         }
-        match pop_stash(d, 0) {
+        match pop_stash(d, 0, false) {
             Err(AppError::OperationInProgress(_)) => {}
             other => panic!("pop_stash: expected OperationInProgress, got {other:?}"),
         }
@@ -1018,7 +1286,7 @@ mod tests {
         assert_eq!(list_stashes(d).expect("list").len(), 1);
 
         // Round-trip restores the untracked file too.
-        let outcome = pop_stash(d, 0).expect("pop");
+        let outcome = pop_stash(d, 0, false).expect("pop");
         assert_eq!(outcome, ApplyStashOutcome::Applied);
         assert!(d.join("u.txt").exists(), "untracked restored on pop");
         assert_eq!(s9_read(d, "u.txt"), "untracked\n");
@@ -1078,7 +1346,7 @@ mod tests {
         assert_eq!(list_stashes(d).expect("list").len(), 1);
 
         // Pop restores the staged content as an UNSTAGED edit (F-1: no reinstate).
-        let outcome = pop_stash(d, 0).expect("pop");
+        let outcome = pop_stash(d, 0, false).expect("pop");
         assert_eq!(outcome, ApplyStashOutcome::Applied);
         assert_eq!(s9_read(d, "a.txt"), "a-staged\n", "staged content restored");
         p34_assert_index_clean(d);
@@ -1112,7 +1380,7 @@ mod tests {
         p34_assert_index_clean(d);
         assert_eq!(list_stashes(d).expect("list").len(), 1);
 
-        let outcome = pop_stash(d, 0).expect("pop");
+        let outcome = pop_stash(d, 0, false).expect("pop");
         assert_eq!(outcome, ApplyStashOutcome::Applied);
         assert_eq!(
             s9_read(d, "b.txt"),
@@ -1196,7 +1464,7 @@ mod tests {
         p34_assert_index_clean(d);
         assert_eq!(list_stashes(d).expect("list").len(), 1);
 
-        let outcome = pop_stash(d, 0).expect("pop");
+        let outcome = pop_stash(d, 0, false).expect("pop");
         assert_eq!(outcome, ApplyStashOutcome::Applied);
         assert!(d.join("new.txt").exists(), "pop restores the added file");
         assert_eq!(s9_read(d, "new.txt"), "new\n", "added content restored");
@@ -1226,7 +1494,7 @@ mod tests {
         p34_assert_index_clean(d);
         assert_eq!(list_stashes(d).expect("list").len(), 1);
 
-        let outcome = pop_stash(d, 0).expect("pop");
+        let outcome = pop_stash(d, 0, false).expect("pop");
         assert_eq!(outcome, ApplyStashOutcome::Applied);
         assert!(
             !d.join("del.txt").exists(),
@@ -1263,7 +1531,7 @@ mod tests {
         assert_eq!(list_stashes(d).expect("list").len(), 1);
 
         // Pop reintroduces the deletion (proves the deletion was in the entry).
-        let outcome = pop_stash(d, 0).expect("pop");
+        let outcome = pop_stash(d, 0, false).expect("pop");
         assert_eq!(outcome, ApplyStashOutcome::Applied);
         assert!(
             !d.join("rm.txt").exists(),
@@ -1315,7 +1583,7 @@ mod tests {
         assert!(after[0].message.contains("native-stash"));
 
         // apply-by-index resolves the survivor (restores a.txt's native edit).
-        let outcome = apply_stash(d, 0).expect("apply survivor");
+        let outcome = apply_stash(d, 0, false).expect("apply survivor");
         assert_eq!(outcome, ApplyStashOutcome::Applied);
         assert_eq!(s9_read(d, "a.txt"), "a-native\n", "native edit re-applied");
     }
@@ -1386,5 +1654,313 @@ mod tests {
             before.len(),
             "rejected create must not mutate the stash stack"
         );
+    }
+
+    // =============================================== P33b reserved-name recovery
+    // Coverage for the Windows-reserved-path stash-apply fix (is_windows_reserved
+    // already truth-tabled above; wire shapes already covered). Three tiers:
+    //   A  stash_path_sets partitioning on SYNTHESIZED trees (cross-platform, no
+    //      real files — a `NUL` blob lives purely in the object DB);
+    //   B  the real git_stash_apply skip path, exercised end-to-end with an actual
+    //      on-disk `NUL` file (legal only on non-Windows → #[cfg(not(windows))]);
+    //   C  Windows detection + reflog-resolution via a fully synthesized stash
+    //      commit (a real `NUL` file cannot exist on NTFS → #[cfg(windows)]).
+
+    /// Build a tree from LEAF paths (forward-slash separators) via an in-memory
+    /// index — each becomes a blob entry, nested paths produce nested subtrees.
+    /// Synthesizes a stash's `^3` untracked tree (or a tracked stash tree) with a
+    /// reserved-name blob (e.g. `NUL`) that never touches the working directory,
+    /// so it lives purely in the object DB even on Windows.
+    fn rs_leaf_tree(repo: &git2::Repository, leaves: &[&str]) -> git2::Oid {
+        let mut idx = git2::Index::new().expect("in-memory index");
+        for p in leaves {
+            let blob = repo.blob(format!("content:{p}\n").as_bytes()).expect("blob");
+            let entry = make_index_entry(Path::new(p), blob, 0o100644).expect("entry");
+            idx.add(&entry).expect("add");
+        }
+        idx.write_tree_to(repo).expect("write tree")
+    }
+
+    /// Register `oid` as stash@{0}: force-update `refs/stash` and guarantee EXACTLY
+    /// one reflog entry (mirrors create_staged_stash's log-once wiring — libgit2
+    /// auto-logs only when the reflog file already exists). This is what
+    /// stash_commit_oid / stash_path_sets / list_stashes resolve via reflog.get(0).
+    fn rs_register_stash(repo: &git2::Repository, oid: git2::Oid, msg: &str) {
+        let before = repo.reflog("refs/stash").map(|r| r.len()).unwrap_or(0);
+        repo.reference("refs/stash", oid, true, msg)
+            .expect("force refs/stash");
+        let after = repo.reflog("refs/stash").map(|r| r.len()).unwrap_or(0);
+        if after == before {
+            let sig = git2::Signature::now("Test User", "test@example.com").expect("sig");
+            let mut reflog = repo.reflog("refs/stash").expect("reflog");
+            reflog.append(oid, &sig, Some(msg)).expect("append");
+            reflog.write().expect("write reflog");
+        }
+    }
+
+    /// Synthesize + register a git-shaped 3-parent stash whose stash tree == base's
+    /// tree (no tracked delta) and whose `^3` untracked tree holds `untracked`
+    /// leaves. Parents: [base, index-commit, untracked-commit], mirroring git's
+    /// `stash_save --include-untracked` object shape.
+    fn rs_synth_untracked_stash(
+        repo: &git2::Repository,
+        base: &git2::Commit,
+        untracked: &[&str],
+        msg: &str,
+    ) -> git2::Oid {
+        let sig = git2::Signature::now("Test User", "test@example.com").expect("sig");
+        let base_tree = base.tree().expect("base tree");
+        let untracked_tree = repo
+            .find_tree(rs_leaf_tree(repo, untracked))
+            .expect("untracked tree");
+        let untracked_commit = repo
+            .find_commit(
+                repo.commit(None, &sig, &sig, "untracked files on synthetic", &untracked_tree, &[base])
+                    .expect("untracked commit"),
+            )
+            .expect("find untracked commit");
+        let index_commit = repo
+            .find_commit(
+                repo.commit(None, &sig, &sig, "index on synthetic", &base_tree, &[base])
+                    .expect("index commit"),
+            )
+            .expect("find index commit");
+        let stash_oid = repo
+            .commit(
+                None,
+                &sig,
+                &sig,
+                msg,
+                &base_tree,
+                &[base, &index_commit, &untracked_commit],
+            )
+            .expect("stash commit");
+        rs_register_stash(repo, stash_oid, msg);
+        stash_oid
+    }
+
+    // ---- Tier A.1: partition an untracked ^3 tree (reserved vs allowed) --------
+
+    #[test]
+    fn rs_a_untracked_reserved_partition() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        let repo = s9_init(d);
+        s9_commit(d, "base", &[("a.txt", "base\n")]);
+        let base = repo.head().expect("HEAD").peel_to_commit().expect("base");
+
+        // ^3 untracked tree: three reserved leaves + three benign look-alikes.
+        rs_synth_untracked_stash(
+            &repo,
+            &base,
+            &[
+                "src/x/NUL",
+                "a/b/PRN",
+                "COM1",
+                "src/x/keep.txt",
+                "NULl",
+                "readme.md",
+            ],
+            "WIP on main: synthetic reserved stash",
+        );
+
+        let (reserved, allowed) = stash_path_sets(&repo, 0).expect("path sets");
+        assert_eq!(
+            reserved,
+            vec![
+                "COM1".to_string(),
+                "a/b/PRN".to_string(),
+                "src/x/NUL".to_string(),
+            ],
+            "reserved must be the sorted device-name leaves only"
+        );
+        for benign in ["NULl", "readme.md", "src/x/keep.txt"] {
+            assert!(
+                allowed.contains(&benign.to_string()),
+                "{benign} must be in the allowed set, got {allowed:?}"
+            );
+        }
+        // Leaf paths only — no directory prefixes ever leak into either set.
+        for p in reserved.iter().chain(allowed.iter()) {
+            assert!(
+                !matches!(p.as_str(), "src" | "src/x" | "a" | "a/b"),
+                "directory prefix leaked into a path set: {p}"
+            );
+        }
+    }
+
+    // ---- Tier A.2: a 2-parent stash has no ^3 → untracked walk skipped --------
+
+    #[test]
+    fn rs_a_two_parent_stash_no_reserved() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        let repo = s9_init(d);
+        s9_commit(d, "base", &[("a.txt", "base\n")]);
+        let base = repo.head().expect("HEAD").peel_to_commit().expect("base");
+        let base_tree = base.tree().expect("base tree");
+        let sig = git2::Signature::now("Test User", "test@example.com").expect("sig");
+
+        // stash tree = base + one benign tracked add; parents = [base, index] (NO ^3).
+        let stash_tree = {
+            let mut tb = repo.treebuilder(Some(&base_tree)).expect("treebuilder");
+            let blob = repo.blob(b"tracked\n").expect("blob");
+            tb.insert("tracked.txt", blob, 0o100644).expect("insert");
+            repo.find_tree(tb.write().expect("tree oid")).expect("tree")
+        };
+        let index_commit = repo
+            .find_commit(
+                repo.commit(None, &sig, &sig, "index on synthetic", &base_tree, &[&base])
+                    .expect("index commit"),
+            )
+            .expect("find index commit");
+        let stash_oid = repo
+            .commit(
+                None,
+                &sig,
+                &sig,
+                "WIP two-parent (no untracked)",
+                &stash_tree,
+                &[&base, &index_commit],
+            )
+            .expect("stash commit");
+        rs_register_stash(&repo, stash_oid, "WIP two-parent (no untracked)");
+
+        let (reserved, allowed) = stash_path_sets(&repo, 0).expect("path sets");
+        assert!(
+            reserved.is_empty(),
+            "parent_count 2 → no ^3 walk → no reserved paths, got {reserved:?}"
+        );
+        assert_eq!(
+            allowed,
+            vec!["tracked.txt".to_string()],
+            "only the tracked leaf is collected"
+        );
+    }
+
+    // ---- Tier B: real-NUL end-to-end (the definitive skip test) ---------------
+    // `NUL` is a legal filename off Windows, so these exercise the actual
+    // git_stash_apply checkout path. Compiled + run on Linux CI; cfg'd out here.
+
+    #[cfg(not(windows))]
+    fn rs_b_tempdir() -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix("bonsai-nul-")
+            .tempdir()
+            .expect("tempdir")
+    }
+
+    /// Build a scratch repo with an untracked `dir/NUL` + `dir/keep.txt` AND a
+    /// tracked modification, then `stash push -u`. Returns the live TempDir.
+    #[cfg(not(windows))]
+    fn rs_b_nul_stash_fixture() -> tempfile::TempDir {
+        let dir = rs_b_tempdir();
+        let d = dir.path();
+        s9_init(d);
+        s9_commit(d, "base", &[("tracked.txt", "base\n")]);
+
+        std::fs::create_dir_all(d.join("dir")).expect("mkdir");
+        std::fs::write(d.join("dir/NUL"), "nul-content\n").expect("write NUL");
+        std::fs::write(d.join("dir/keep.txt"), "keep\n").expect("write keep");
+        std::fs::write(d.join("tracked.txt"), "modified\n").expect("modify tracked");
+
+        let res = create_stash(d, None, StashScope::AllWithUntracked).expect("create_stash -u");
+        assert!(res.created, "dirty tree + untracked NUL must stash");
+        dir
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn rs_b_apply_reserved_then_skip() {
+        let dir = rs_b_nul_stash_fixture();
+        let d = dir.path();
+
+        // Attempt 1: skip_reserved=false → blocked, nothing applied, stash retained.
+        match apply_stash(d, 0, false).expect("apply(false)") {
+            ApplyStashOutcome::ReservedPaths { paths } => assert!(
+                paths.iter().any(|p| p == "dir/NUL"),
+                "ReservedPaths must name dir/NUL, got {paths:?}"
+            ),
+            other => panic!("expected ReservedPaths, got {other:?}"),
+        }
+        assert_eq!(s9_read(d, "tracked.txt"), "base\n", "tracked mod NOT applied");
+        assert!(!d.join("dir/keep.txt").exists(), "benign untracked NOT applied");
+        assert_eq!(list_stashes(d).expect("list").len(), 1, "stash retained");
+
+        // Attempt 2: skip_reserved=true → applies everything but the NUL leaf.
+        match apply_stash(d, 0, true).expect("apply(true)") {
+            ApplyStashOutcome::AppliedSkippingReserved { skipped } => assert!(
+                skipped.iter().any(|p| p == "dir/NUL"),
+                "skipped must name dir/NUL, got {skipped:?}"
+            ),
+            other => panic!("expected AppliedSkippingReserved, got {other:?}"),
+        }
+        assert_eq!(s9_read(d, "dir/keep.txt"), "keep\n", "benign untracked restored");
+        assert_eq!(s9_read(d, "tracked.txt"), "modified\n", "tracked mod restored");
+        assert!(!d.join("dir/NUL").exists(), "reserved NUL NOT restored");
+        assert_eq!(
+            list_stashes(d).expect("list").len(),
+            1,
+            "apply must NOT drop the stash"
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn rs_b_pop_skip_retains_stash() {
+        let dir = rs_b_nul_stash_fixture();
+        let d = dir.path();
+
+        match pop_stash(d, 0, true).expect("pop(true)") {
+            ApplyStashOutcome::AppliedSkippingReserved { skipped } => assert!(
+                skipped.iter().any(|p| p == "dir/NUL"),
+                "skipped must name dir/NUL, got {skipped:?}"
+            ),
+            other => panic!("expected AppliedSkippingReserved, got {other:?}"),
+        }
+        assert_eq!(s9_read(d, "dir/keep.txt"), "keep\n", "benign untracked restored");
+        assert_eq!(s9_read(d, "tracked.txt"), "modified\n", "tracked mod restored");
+        assert!(!d.join("dir/NUL").exists(), "reserved NUL NOT restored");
+        assert_eq!(
+            list_stashes(d).expect("list").len(),
+            1,
+            "DATA SAFETY: pop+skip must RETAIN the stash (reserved blobs live only there)"
+        );
+    }
+
+    // ---- Tier C: Windows synthetic-stash detection (no real NUL possible) ------
+
+    #[cfg(windows)]
+    #[test]
+    fn rs_c_windows_synthetic_reserved_detection() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        let repo = s9_init(d);
+        s9_commit(d, "base", &[("a.txt", "base\n")]);
+        let base = repo.head().expect("HEAD").peel_to_commit().expect("base");
+
+        // ^3 untracked tree: an un-writable NUL blob + a benign keep.txt. The whole
+        // stash is synthesized in the object DB — no file ever hits NTFS.
+        rs_synth_untracked_stash(
+            &repo,
+            &base,
+            &["dir/NUL", "dir/keep.txt"],
+            "WIP on main: synthetic NUL stash",
+        );
+
+        // The `false` path validates Windows detection + reflog resolution without
+        // needing the un-writable file: preflight blocks, mutating nothing.
+        match apply_stash(d, 0, false).expect("apply(false)") {
+            ApplyStashOutcome::ReservedPaths { paths } => assert!(
+                paths.iter().any(|p| p == "dir/NUL"),
+                "ReservedPaths must name dir/NUL, got {paths:?}"
+            ),
+            other => panic!("expected ReservedPaths, got {other:?}"),
+        }
+        assert!(
+            !d.join("dir/keep.txt").exists(),
+            "preflight must not write anything"
+        );
+        assert_eq!(list_stashes(d).expect("list").len(), 1, "stash retained");
     }
 }
