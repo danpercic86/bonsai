@@ -125,15 +125,29 @@ export function TabStrip({
               setDropTarget(null);
             }}
           >
-            <button
-              type="button"
+            {/* Label is a role=button span, NOT a native <button>: a
+                <button> child swallows the mousedown and prevents the
+                draggable `.tab` ancestor from ever starting a reorder drag
+                (Chromium/WebView2 form-control drag suppression). */}
+            <span
               className="tab-label"
-              disabled={disabled}
-              onClick={() => onSelect(t.repoId)}
+              role="button"
+              tabIndex={disabled ? -1 : 0}
+              aria-disabled={disabled}
+              onClick={() => {
+                if (!disabled) onSelect(t.repoId);
+              }}
+              onKeyDown={(e) => {
+                if (disabled) return;
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelect(t.repoId);
+                }
+              }}
               title={t.path}
             >
               {folderName(t.path)}
-            </button>
+            </span>
             <button
               type="button"
               className="tab-close"

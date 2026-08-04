@@ -900,6 +900,10 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 160px;
+  /* Non-form-control label (see TabStrip.tsx): keep it from being text-selected
+     while dragging the tab to reorder. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .tab-active .tab-label {
@@ -907,7 +911,7 @@ body {
   font-weight: 600;
 }
 
-.tab-label:disabled {
+.tab-label[aria-disabled='true'] {
   cursor: default;
 }
 
