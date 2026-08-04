@@ -80,6 +80,8 @@ export interface WorkspaceRightPanelProps {
   onCommitAmend: CommitBoxProps['onCommit'];
   onCommitMergeSubmit: CommitBoxProps['onCommit'];
   onCommit: CommitBoxProps['onCommit'];
+  /** Normal-commit path only: commit then push (threaded to CommitBox's split control). */
+  onCommitAndPush: CommitBoxProps['onCommitAndPush'];
   onGenerate: CommitBoxProps['onGenerate'];
 }
 
@@ -140,6 +142,7 @@ export function WorkspaceRightPanel({
   onCommitAmend,
   onCommitMergeSubmit,
   onCommit,
+  onCommitAndPush,
   onGenerate,
 }: WorkspaceRightPanelProps) {
   return (
@@ -266,6 +269,7 @@ export function WorkspaceRightPanel({
                   ? onCommitMergeSubmit
                   : onCommit
             }
+            onCommitAndPush={amend || opState.kind === 'merge' ? undefined : onCommitAndPush}
             aiEligible={aiEligible}
             onGenerate={onGenerate}
           />

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CommitBoxHandle } from './CommitBox';
+import { COMMIT_PUSH_CANCELED } from './commitPushSignal';
 import type { ContextMenuItem } from './ContextMenu';
 import { WorkspaceToolbar } from './WorkspaceToolbar';
 import { WorkspaceDialogs } from './WorkspaceDialogs';
@@ -182,6 +183,13 @@ export function RepoWorkspace({
   // P20: destructive reset (all three modes confirm; hard warns extra) + discard.
   const [pendingReset, setPendingReset] = useState<{ oid: string; mode: ResetMode } | null>(null);
   const [pendingDiscard, setPendingDiscard] = useState<string[] | null>(null);
+  // Commit & Push: when HEAD has no upstream, the message is parked here while a
+  // ConfirmDialog asks to set upstream. The pending promise (resolves the
+  // CommitBox submit) is held in commitPushResolver.
+  const [pendingCommitPush, setPendingCommitPush] = useState<string | null>(null);
+  const commitPushResolver = useRef<{ resolve: () => void; reject: (e: unknown) => void } | null>(
+    null,
+  );
   // P28: pending "Discard hunk" confirmation (unstaged diffs only).
   const [pendingHunkDiscard, setPendingHunkDiscard] = useState<{
     path: string;
@@ -1034,6 +1042,63 @@ export function RepoWorkspace({
     }
   }
 
+  // Commit & Push (normal commit box, primary button). If the current branch has
+  // no upstream, gate on a ConfirmDialog first; otherwise commit + push directly.
+  // Returned promise mirrors handleCommit: rejects on commit failure (CommitBox
+  // keeps the message + shows the error), resolves once the commit lands (a push
+  // failure is surfaced as a toast, never rolled back).
+  async function handleCommitAndPush(message: string): Promise<void> {
+    if (headBranch !== null && headBranch.upstream === null) {
+      // Park the message + defer resolution until the dialog is answered.
+      return new Promise<void>((resolve, reject) => {
+        commitPushResolver.current = { resolve, reject };
+        setPendingCommitPush(message);
+      });
+    }
+    await doCommitAndPush(message);
+  }
+
+  // The actual commit-then-push. Commit errors rethrow (surfaced by CommitBox);
+  // push errors are toasted and the commit is kept.
+  async function doCommitAndPush(message: string): Promise<void> {
+    setMutating(true);
+    try {
+      await ipc.commit(repoId, message);
+    } finally {
+      setMutating(false);
+    }
+    await refreshAll();
+    await pushCurrentBranch();
+  }
+
+  function handleConfirmCommitPush() {
+    const message = pendingCommitPush;
+    const resolver = commitPushResolver.current;
+    commitPushResolver.current = null;
+    setPendingCommitPush(null);
+    if (message === null) {
+      resolver?.resolve();
+      return;
+    }
+    void (async () => {
+      try {
+        await doCommitAndPush(message);
+        resolver?.resolve();
+      } catch (e) {
+        resolver?.reject(e);
+      }
+    })();
+  }
+
+  function handleCancelCommitPush() {
+    const resolver = commitPushResolver.current;
+    commitPushResolver.current = null;
+    setPendingCommitPush(null);
+    // No commit performed. Reject with the cancellation sentinel so CommitBox
+    // leaves the typed message intact and shows no error banner.
+    resolver?.reject(COMMIT_PUSH_CANCELED);
+  }
+
   // P20 §2: amend the current tip. Rethrows so CommitBox surfaces
   // configMissing/emptyMessage in its own error banner (like handleCommit's
   // implicit rethrow). On success, clear amend mode + refresh.
@@ -1453,7 +1518,9 @@ export function RepoWorkspace({
     }
   }
 
-  async function handlePush() {
+  // Shared push of the current branch (toast + refresh). Used by the Push
+  // toolbar action and by Commit & Push. Never throws — push errors are toasted.
+  async function pushCurrentBranch() {
     beginRemoteOp('push');
     try {
       const res = await ipc.push(repoId);
@@ -1472,6 +1539,10 @@ export function RepoWorkspace({
     } finally {
       endRemoteOp();
     }
+  }
+
+  async function handlePush() {
+    await pushCurrentBranch();
   }
 
   // ----- P3c: merge + conflict handling -----
@@ -2703,6 +2774,7 @@ export function RepoWorkspace({
           onCommitAmend={handleCommitAmend}
           onCommitMergeSubmit={handleCommitMerge}
           onCommit={handleCommit}
+          onCommitAndPush={headBranch ? (m) => handleCommitAndPush(m) : undefined}
           onGenerate={handleGenerateCommitMessage}
         />
       </div>
@@ -2736,6 +2808,9 @@ export function RepoWorkspace({
         pendingDiscard={pendingDiscard}
         setPendingDiscard={setPendingDiscard}
         handleDiscard={(paths) => void handleDiscard(paths)}
+        pendingCommitPush={pendingCommitPush}
+        handleConfirmCommitPush={handleConfirmCommitPush}
+        handleCancelCommitPush={handleCancelCommitPush}
         pendingHunkDiscard={pendingHunkDiscard}
         setPendingHunkDiscard={setPendingHunkDiscard}
         handleConfirmHunkDiscard={(pending) => void handleConfirmHunkDiscard(pending)}

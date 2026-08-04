@@ -1514,6 +1514,21 @@ body {
   width: 100%;
 }
 
+/* Commit & Push split control: primary grows, secondary hugs its label. */
+.commit-button-row {
+  display: flex;
+  gap: 8px;
+}
+
+.commit-button-row .commit-button {
+  flex: 1 1 auto;
+}
+
+.commit-button-secondary {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 /* P15a: commit-box header holding the "✨ Generate" affordance. */
 .commit-box-header {
   display: flex;

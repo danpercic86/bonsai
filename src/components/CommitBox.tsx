@@ -1,6 +1,7 @@
 import { forwardRef, useImperativeHandle, useState } from 'react';
 import { isAppError } from '../utils/errors';
 import { ConfirmDialog } from './ConfirmDialog';
+import { COMMIT_PUSH_CANCELED } from './commitPushSignal';
 
 export interface CommitBoxProps {
   stagedCount: number;
@@ -8,6 +9,11 @@ export interface CommitBoxProps {
   busy: boolean;
   /** Resolves on success (box clears its textarea); rejects with AppError on failure. */
   onCommit(message: string): Promise<void>;
+  /** Normal-commit-mode only: commit then push the current branch. When provided
+   * (and not merge/amend), the box renders a split control — primary
+   * "Commit & Push" (this) + secondary "Commit" (onCommit). Same resolve/reject
+   * contract as onCommit. */
+  onCommitAndPush?: (message: string) => Promise<void>;
   /** P3c §8.4: 'merge' repurposes the box as the merge-message editor —
    * prefilled once (App remounts via key on the merge transition), button
    * label "Commit merge", submit routed to commitMerge by the parent. */
@@ -42,6 +48,7 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
     stagedCount,
     busy,
     onCommit,
+    onCommitAndPush,
     mode = 'commit',
     initialMessage,
     conflictCount = 0,
@@ -53,7 +60,8 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
   ref,
 ) {
   const [message, setMessage] = useState(initialMessage ?? '');
-  const [submitting, setSubmitting] = useState(false);
+  // null = idle; otherwise which control is in flight (label + shared disable).
+  const [submitting, setSubmitting] = useState<null | 'commit' | 'commitPush'>(null);
   const [error, setError] = useState<{ kind: string; text: string } | null>(null);
   // P15a: AI commit-message generation (proposal only — never commits).
   const [generating, setGenerating] = useState(false);
@@ -65,15 +73,19 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
     blocked ||
     message.trim() === '' ||
     busy ||
-    submitting ||
+    submitting !== null ||
     generating ||
     (merge ? conflictCount > 0 : amend ? false : stagedCount === 0);
+
+  // Normal commit mode only: the split Commit & Push / Commit control. Narrowed
+  // to a defined action here so the render needs no redundant undefined guard.
+  const splitAction = !merge && !amend ? onCommitAndPush : undefined;
 
   // P15a: the "✨ Generate" affordance (commit mode only). Disabled per contract
   // §5.5 when AI is ineligible, nothing is staged, or a mutation/generation runs.
   const showGenerate = !merge && onGenerate !== undefined;
   const generateDisabled =
-    blocked || !aiEligible || stagedCount === 0 || busy || generating || submitting;
+    blocked || !aiEligible || stagedCount === 0 || busy || generating || submitting !== null;
 
   async function runGenerate() {
     if (onGenerate === undefined) return;
@@ -103,25 +115,34 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
     }
   }
 
-  async function submit() {
+  // Shared submit path: validation gate + message reset on success + error
+  // surfacing (on reject the message is preserved so the user can retry).
+  async function runSubmit(kind: 'commit' | 'commitPush', action: (m: string) => Promise<void>) {
     if (disabled) return;
-    setSubmitting(true);
+    setSubmitting(kind);
     try {
-      await onCommit(message);
+      await action(message);
       setMessage('');
       setError(null);
     } catch (e) {
+      // Set-upstream dialog dismissed: nothing was committed. Leave the typed
+      // message + any existing error untouched, no new error banner.
+      if (e === COMMIT_PUSH_CANCELED) return;
       if (isAppError(e)) {
         setError({ kind: e.kind, text: e.message });
       } else {
         setError({ kind: 'other', text: e instanceof Error ? e.message : String(e) });
       }
     } finally {
-      setSubmitting(false);
+      setSubmitting(null);
     }
   }
 
-  useImperativeHandle(ref, () => ({ submit: () => void submit() }));
+  function submit() {
+    void runSubmit('commit', onCommit);
+  }
+
+  useImperativeHandle(ref, () => ({ submit: () => submit() }));
 
   return (
     <div className="commit-box">
@@ -154,12 +175,12 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
         // P1 §4.4: only the in-flight commit locks the textarea — typing keeps
         // focus while stage/unstage runs (Windows focus-drop fix). The Commit
         // button below still gates on `busy`.
-        disabled={submitting || blocked}
+        disabled={submitting !== null || blocked}
         onChange={(e) => setMessage(e.target.value)}
         onKeyDown={(e) => {
           if (e.ctrlKey && e.key === 'Enter') {
             e.preventDefault();
-            void submit();
+            submit();
           }
         }}
       />
@@ -187,14 +208,35 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
           </button>
         </div>
       )}
-      <button
-        type="button"
-        className="btn-primary commit-button"
-        disabled={disabled}
-        onClick={() => void submit()}
-      >
-        {submitting ? 'Committing…' : merge ? 'Commit merge' : amend ? 'Amend' : 'Commit'}
-      </button>
+      {splitAction ? (
+        <div className="commit-button-row">
+          <button
+            type="button"
+            className="btn-primary commit-button"
+            disabled={disabled}
+            onClick={() => void runSubmit('commitPush', splitAction)}
+          >
+            {submitting === 'commitPush' ? 'Committing & Pushing…' : 'Commit & Push'}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary commit-button-secondary"
+            disabled={disabled}
+            onClick={() => submit()}
+          >
+            {submitting === 'commit' ? 'Committing…' : 'Commit'}
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="btn-primary commit-button"
+          disabled={disabled}
+          onClick={() => submit()}
+        >
+          {submitting !== null ? 'Committing…' : merge ? 'Commit merge' : amend ? 'Amend' : 'Commit'}
+        </button>
+      )}
 
       <ConfirmDialog
         open={replaceConfirmOpen}

@@ -58,6 +58,11 @@ export interface WorkspaceDialogsProps {
   setPendingDiscard: (v: string[] | null) => void;
   handleDiscard(paths: string[]): void;
 
+  /** Commit & Push: parked message (branch has no upstream) → confirm set-upstream. */
+  pendingCommitPush: string | null;
+  handleConfirmCommitPush(): void;
+  handleCancelCommitPush(): void;
+
   pendingHunkDiscard: { path: string; origPath: string | null; hunkIndex: number } | null;
   setPendingHunkDiscard: (v: { path: string; origPath: string | null; hunkIndex: number } | null) => void;
   handleConfirmHunkDiscard(pending: { path: string; origPath: string | null; hunkIndex: number }): void;
@@ -168,6 +173,9 @@ export function WorkspaceDialogs({
   pendingDiscard,
   setPendingDiscard,
   handleDiscard,
+  pendingCommitPush,
+  handleConfirmCommitPush,
+  handleCancelCommitPush,
   pendingHunkDiscard,
   setPendingHunkDiscard,
   handleConfirmHunkDiscard,
@@ -373,6 +381,24 @@ export function WorkspaceDialogs({
         <div>Discard changes to {pendingDiscard?.length ?? 0} file(s)?</div>
         <div className="dialog-body-note">
           This permanently reverts them to the last staged/committed version and cannot be undone.
+        </div>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pendingCommitPush !== null}
+        title="Set upstream and push?"
+        confirmLabel="Commit & Push"
+        confirmVariant="primary"
+        busy={mutating}
+        onConfirm={handleConfirmCommitPush}
+        onCancel={handleCancelCommitPush}
+      >
+        <div>
+          Push <strong>{headBranch?.name ?? 'HEAD'}</strong> to origin/
+          {headBranch?.name ?? 'HEAD'} and set it as its upstream?
+        </div>
+        <div className="dialog-body-note">
+          The commit is created first, then pushed.
         </div>
       </ConfirmDialog>
 

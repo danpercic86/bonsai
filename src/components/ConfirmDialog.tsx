@@ -6,8 +6,11 @@ export interface ConfirmDialogProps {
   title: string;
   /** Body content; branch names rendered in <span className="mono">. */
   children: ReactNode;
-  /** Rendered as the danger-styled button. */
   confirmLabel: string;
+  /** Visual style of the confirm button. Defaults to 'danger' so existing
+   * (destructive) call sites are unchanged; use 'primary' for non-destructive
+   * confirmations (e.g. set-upstream & push). */
+  confirmVariant?: 'danger' | 'primary';
   busy: boolean;
   onConfirm(): void;
   onCancel(): void;
@@ -23,6 +26,7 @@ export function ConfirmDialog({
   title,
   children,
   confirmLabel,
+  confirmVariant = 'danger',
   busy,
   onConfirm,
   onCancel,
@@ -63,7 +67,12 @@ export function ConfirmDialog({
           <button type="button" className="btn-secondary" ref={cancelRef} onClick={onCancel}>
             Cancel
           </button>
-          <button type="button" className="btn-danger" disabled={busy} onClick={onConfirm}>
+          <button
+            type="button"
+            className={confirmVariant === 'primary' ? 'btn-primary' : 'btn-danger'}
+            disabled={busy}
+            onClick={onConfirm}
+          >
             {confirmLabel}
           </button>
         </div>
