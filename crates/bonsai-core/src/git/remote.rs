@@ -152,6 +152,14 @@ fn credential_fill(repo_path: Option<&Path>, url: &str) -> Option<(String, Strin
     if let Some(p) = repo_path {
         cmd.current_dir(p);
     }
+    #[cfg(windows)]
+    {
+        // Suppress the console window git.exe would otherwise flash for every
+        // fetch/pull/push/clone credential resolution (mirrors ai/mod.rs).
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
 
     let mut child = cmd.spawn().ok()?;
     let write_ok = child
