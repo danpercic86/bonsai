@@ -645,6 +645,196 @@ pub fn push_current(workdir: &Path) -> Result<PushResult, AppError> {
     })
 }
 
+/// Lease failure: the remote advanced (or its ref was deleted) since the last
+/// fetch (P37 §3.2).
+fn lease_moved_msg(remote: &str, branch: &str) -> String {
+    format!(
+        "force-push refused: '{remote}/{branch}' has moved on the remote since you last \
+         fetched — someone may have pushed. Fetch and review before force-pushing again."
+    )
+}
+
+/// Lease failure: no remote-tracking ref to lease against (P37 §3.2).
+fn lease_no_baseline_msg(remote: &str, branch: &str) -> String {
+    format!(
+        "cannot force-push with lease: no remote-tracking ref for '{remote}/{branch}'. \
+         Fetch first so Bonsai knows the remote's current tip."
+    )
+}
+
+/// Blocking. Force-push the current branch to its configured upstream WITH A
+/// LEASE: refuse if the remote branch moved past the oid we last fetched
+/// (someone else pushed), otherwise force-update it. For republishing a
+/// rewritten history (amend / interactive rebase). NEVER a bare force.
+///
+/// Requires a configured upstream (unlike `push_current`, which can create
+/// origin/<branch>). Lease baseline = the remote-tracking ref
+/// `refs/remotes/<remote>/<branch>` (git's default --force-with-lease). Live
+/// remote oid read via connect_auth(Push)+list() (ls-remote) BEFORE any push.
+///
+/// Errors: unborn/detached/no-name -> `Git`; no upstream -> `NoUpstream`;
+/// no remote-tracking baseline -> `PushRejected` (fetch first); remote moved
+/// (live != baseline, or remote ref deleted) -> `PushRejected` (lease failed);
+/// remote missing -> `NoRemote`; connect/list/push git2 errors -> via
+/// `map_remote_err` (`AuthFailed` / `NetworkError` / `PushRejected` / `Git`);
+/// server-side ref rejection -> `PushRejected`.
+pub fn force_push_with_lease(workdir: &Path) -> Result<PushResult, AppError> {
+    let repo = open_repo_at(workdir)?;
+
+    let head = read_head_info(&repo)?;
+    if head.unborn {
+        return Err(AppError::Git(
+            "cannot force-push: repository has no commits yet".to_string(),
+        ));
+    }
+    if head.detached {
+        return Err(AppError::Git(
+            "cannot force-push: HEAD is detached".to_string(),
+        ));
+    }
+    let name = head
+        .branch_name
+        .ok_or_else(|| AppError::Git("cannot force-push: HEAD has no branch name".to_string()))?;
+    let refname = format!("refs/heads/{name}");
+
+    let branch = repo.find_branch(&name, git2::BranchType::Local)?;
+    let local_tip = branch
+        .get()
+        .target()
+        .ok_or_else(|| AppError::Git(format!("branch '{name}' has no target commit")))?;
+
+    // Upstream is REQUIRED (force-with-lease republishes an existing upstream).
+    // Determine it from CONFIG (branch.<name>.remote + .merge), NOT
+    // `branch.upstream()`: the latter also requires the remote-tracking ref to
+    // exist, which would conflate "no upstream configured" (-> NoUpstream) with
+    // "configured but never fetched" (the no-baseline PushRejected below).
+    let no_upstream = || {
+        AppError::NoUpstream(format!(
+            "cannot force-push: '{name}' has no upstream; use a normal push"
+        ))
+    };
+    let remote_buf = match repo.branch_upstream_remote(&refname) {
+        Ok(b) => b,
+        Err(e) if e.code() == git2::ErrorCode::NotFound => return Err(no_upstream()),
+        Err(e) => return Err(e.into()),
+    };
+    let remote_name = remote_buf
+        .as_str()
+        .ok()
+        .ok_or_else(|| AppError::Git("upstream remote name is not valid UTF-8".to_string()))?
+        .to_string();
+    // branch.<name>.merge already IS "refs/heads/<x>".
+    let config = repo.config()?;
+    let remote_ref = match config.get_string(&format!("branch.{name}.merge")) {
+        Ok(s) => s,
+        Err(e) if e.code() == git2::ErrorCode::NotFound => return Err(no_upstream()),
+        Err(e) => return Err(e.into()),
+    };
+    let remote_branch = remote_ref
+        .strip_prefix("refs/heads/")
+        .unwrap_or(remote_ref.as_str())
+        .to_string();
+
+    // --- lease baseline: the remote-tracking ref we last fetched ---
+    let tracking = format!("refs/remotes/{remote_name}/{remote_branch}");
+    let expected = repo
+        .find_reference(&tracking)
+        .ok()
+        .and_then(|r| r.target());
+    let expected = match expected {
+        Some(oid) => oid,
+        None => {
+            return Err(AppError::PushRejected(lease_no_baseline_msg(
+                &remote_name,
+                &remote_branch,
+            )));
+        }
+    };
+
+    if expected == local_tip {
+        // Baseline already equals the local tip: nothing to force.
+        return Ok(PushResult::UpToDate {
+            remote: remote_name,
+            branch: name,
+        });
+    }
+
+    let mut remote = match repo.find_remote(&remote_name) {
+        Ok(r) => r,
+        Err(e) if e.code() == git2::ErrorCode::NotFound => {
+            return Err(AppError::NoRemote(format!(
+                "remote '{remote_name}' not found"
+            )));
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    // Shared across the connect (lease check) and the push.
+    let attempts = RefCell::new(CredAttempts::default());
+
+    // --- (1) lease check: read the LIVE remote oid via ls-remote ---
+    {
+        let mut cb = git2::RemoteCallbacks::new();
+        cb.credentials(|url, username_from_url, allowed| {
+            acquire_cred(repo.workdir(), &attempts, url, username_from_url, allowed)
+        });
+        remote
+            .connect_auth(git2::Direction::Push, Some(cb), None)
+            .map_err(|e| map_remote_err(e, &remote_name))?;
+    }
+    let actual = remote
+        .list()
+        .map_err(|e| map_remote_err(e, &remote_name))?
+        .iter()
+        .find(|h| h.name() == remote_ref)
+        .map(git2::RemoteHead::oid);
+    // Some(x)==Some(x); an absent remote ref => None != Some(expected) => refuse.
+    if actual != Some(expected) {
+        let _ = remote.disconnect();
+        return Err(AppError::PushRejected(lease_moved_msg(
+            &remote_name,
+            &remote_branch,
+        )));
+    }
+
+    // --- (2) lease holds: force-push over the same connection ---
+    let rejected: RefCell<Option<String>> = RefCell::new(None);
+    {
+        let mut cb = git2::RemoteCallbacks::new();
+        cb.credentials(|url, username_from_url, allowed| {
+            acquire_cred(repo.workdir(), &attempts, url, username_from_url, allowed)
+        });
+        cb.push_update_reference(|_refname, status| {
+            if let Some(msg) = status {
+                *rejected.borrow_mut() = Some(msg.to_string());
+            }
+            Ok(())
+        });
+
+        let mut opts = git2::PushOptions::new();
+        opts.remote_callbacks(cb);
+
+        // Leading '+' = force.
+        let refspec = format!("+{refname}:{remote_ref}");
+        remote
+            .push(&[refspec.as_str()], Some(&mut opts))
+            .map_err(|e| map_remote_err(e, &remote_name))?;
+    }
+    let _ = remote.disconnect();
+
+    if let Some(msg) = rejected.into_inner() {
+        return Err(AppError::PushRejected(format!(
+            "push rejected by remote: {msg}"
+        )));
+    }
+
+    Ok(PushResult::Pushed {
+        remote: remote_name,
+        branch: name,
+        set_upstream: false,
+    })
+}
+
 // ============================================================ P22 §3 remotes
 // management (add / remove / rename / set-url / list). All LOCAL config ops —
 // no network, no credentials.
@@ -813,6 +1003,21 @@ mod tests {
             v,
             serde_json::json!({ "remotes": [{ "remote": "origin", "receivedObjects": 12, "updatedRefs": 1 }] })
         );
+    }
+
+    // -------------------------------------- P37 §3.2 lease message helpers
+
+    /// The lease messages interpolate the remote and branch names.
+    #[test]
+    fn lease_messages_interpolate_remote_and_branch() {
+        let moved = lease_moved_msg("origin", "main");
+        assert!(moved.contains("'origin/main'"), "{moved}");
+        assert!(moved.contains("moved"), "{moved}");
+        assert!(moved.contains("Fetch"), "{moved}");
+
+        let no_baseline = lease_no_baseline_msg("upstream", "topic");
+        assert!(no_baseline.contains("'upstream/topic'"), "{no_baseline}");
+        assert!(no_baseline.contains("Fetch first"), "{no_baseline}");
     }
 
     // ------------------------------------------------ §8.3 RemoteInfo shape

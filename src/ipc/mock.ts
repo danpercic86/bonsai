@@ -2462,6 +2462,38 @@ export const mockIpc: IpcApi = {
     return { kind: 'upToDate', remote: 'origin', branch: branch.name };
   },
 
+  // P37: force-push the current branch WITH A LEASE. `?remote=leasefail` drives
+  // the refusal path (the remote moved since the last fetch); otherwise the
+  // lease holds and the remote-tracking tip advances to the local tip.
+  async forcePush(repoId: string): Promise<PushResult> {
+    await delay(400);
+    const state = requireRepo(repoId);
+    if (state.remoteTrigger === 'authfail') throwAuthFailed();
+    if (state.remoteTrigger === 'network') throwNetworkError();
+    if (state.remoteTrigger === 'leasefail') {
+      const err: AppError = {
+        kind: 'pushRejected',
+        message:
+          "force-push refused: 'origin/" +
+          state.headBranch +
+          "' has moved on the remote since you last fetched — someone may have pushed. " +
+          'Fetch and review before force-pushing again.',
+      };
+      throw err;
+    }
+    const branch = state.branches.local.find((b) => b.name === state.headBranch);
+    if (branch === undefined || branch.upstream === null) {
+      const err: AppError = { kind: 'noUpstream', message: 'cannot force-push: no upstream' };
+      throw err;
+    }
+    // Lease held: force-update the remote-tracking tip to the local tip.
+    branch.ahead = 0;
+    branch.behind = 0;
+    const rt = state.branches.remote.find((r) => r.name === branch.upstream);
+    if (rt !== undefined) rt.tip = branch.tip;
+    return { kind: 'pushed', remote: 'origin', branch: branch.name, setUpstream: false };
+  },
+
   // Stateful op-state mock (P3c contract §7.2). A repo seeded with a merge/rebase
   // (via `?op=` or a path substring) starts paused; mergeBranch/rebaseBranch are
   // the clean-op demo paths.

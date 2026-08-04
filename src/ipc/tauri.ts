@@ -250,6 +250,10 @@ export const tauriIpc: IpcApi = {
     return invoke<PushResult>('push', { repoId });
   },
 
+  forcePush(repoId: string): Promise<PushResult> {
+    return invoke<PushResult>('force_push', { repoId });
+  },
+
   getOpState(repoId: string): Promise<RepoOpState> {
     return invoke<RepoOpState>('get_op_state', { repoId });
   },

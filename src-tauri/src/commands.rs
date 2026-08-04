@@ -30,8 +30,9 @@ use bonsai_core::git::discard::{
 };
 use bonsai_core::git::discard_partial::discard_partial as discard_partial_core;
 use bonsai_core::git::remote::{
-    add_remote as add_remote_core, fetch_all, list_remotes as list_remotes_core, pull_ff,
-    push_current, remove_remote as remove_remote_core, rename_remote as rename_remote_core,
+    add_remote as add_remote_core, fetch_all, force_push_with_lease,
+    list_remotes as list_remotes_core, pull_ff, push_current,
+    remove_remote as remove_remote_core, rename_remote as rename_remote_core,
     set_remote_url as set_remote_url_core, FetchResult, PullResult, PushResult, RemoteInfo,
 };
 use bonsai_core::git::repo::{read_repo_info, RepoInfo};
@@ -1229,6 +1230,25 @@ pub async fn push(
 async fn push_inner(state: &AppState, repo_id: &str) -> Result<PushResult, AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || push_current(&path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Force-push the current branch to its upstream WITH A LEASE (P37). Refuses if
+/// the remote moved since the last fetch. Errors: `noUpstream` | `noRemote` |
+/// `authFailed` | `networkError` | `pushRejected` | `git` | `noRepo`.
+#[tauri::command]
+pub async fn force_push(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<PushResult, AppError> {
+    force_push_inner(state.inner(), &repo_id).await
+}
+
+/// Runtime-free core of `force_push` (unit-testable without a Tauri app).
+async fn force_push_inner(state: &AppState, repo_id: &str) -> Result<PushResult, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || force_push_with_lease(&path))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
@@ -3695,6 +3715,10 @@ mod tests {
 
         let err = tauri::async_runtime::block_on(push_inner(&state, MISSING_ID))
             .expect_err("push with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(force_push_inner(&state, MISSING_ID))
+            .expect_err("force_push with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
 

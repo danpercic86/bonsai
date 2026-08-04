@@ -1202,6 +1202,10 @@ export interface IpcApi {
   /** Push current branch (sets upstream to origin/<branch> when none). Rejects
    *  noRemote | authFailed | networkError | pushRejected | git | noRepo. */
   push(repoId: string): Promise<PushResult>;
+  /** Force-push the current branch to its upstream WITH A LEASE (P37). Refuses
+   *  (pushRejected) if the remote moved since the last fetch. Rejects
+   *  noUpstream | noRemote | authFailed | networkError | pushRejected | git | noRepo. */
+  forcePush(repoId: string): Promise<PushResult>;
   /** Current operation state (merge/rebase/...). Part of the refresh batch.
    *  Rejects noRepo | git. */
   getOpState(repoId: string): Promise<RepoOpState>;

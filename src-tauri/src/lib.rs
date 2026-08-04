@@ -68,6 +68,7 @@ pub fn run() {
             commands::fetch,
             commands::pull,
             commands::push,
+            commands::force_push,
             commands::get_recent_repos,
             commands::remove_recent_repo,
             commands::get_ui_settings,

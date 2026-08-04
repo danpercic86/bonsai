@@ -25,6 +25,38 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
+## P37 — force-push-with-lease (Git completeness, Phase 1) — **in-progress** (2026-08-04)
+
+New phase (approved plan `~/.claude/plans/if-we-think-about-eager-hoare.md`): the 4-theme roadmap is
+~90% shipped, so the next phase is **Git completeness (parity) + productization**. User decision
+(2026-08-04): lead with Git completeness, close-out first (close-out was already done — #5 committed
+`bf152be`, P36 done+confirmed, git2 bumped to 0.21). Sequence: **P37 force-push-with-lease → P38
+reflog → P39 bisect → P40 config editing → P41 LFS (optional) → P42 packaging/signing/auto-update →
+P43 onboarding**. Parked for a later phase: forge/PR integration (GitHub/GitLab/Azure), security &
+compliance (B6/D3), the cohesion pass.
+
+**P37 goal:** safe force-push (`--force-with-lease` equivalent) so the already-shipped rebase (P23) /
+amend (P20) can be published without clobbering a remote that moved unexpectedly. Extends the
+`git/remote.rs` push path (must respect the recent credential rework — auth resolves through real git
+`credential fill` + the P35 in-process cred cache — and git2 0.21.0). Confirm-gated in the UI; refuses
+when the remote ref advanced past the expected oid. No new AppError variant unless justified.
+Standard loop; guardrails unchanged (scratch under `D:\Temp\bonsai-scratch`, TMP/TEMP=D:\Temp for
+cargo on Windows, no concurrent test+clippy, mock.ts kept compiling, orchestrator makes all commits).
+
+Contract: `docs/contracts/P37-force-push-with-lease.md` (architect). Approach: libgit2 `Remote::push`
+`+`-force refspec + manual ls-remote lease pre-check (reuses `acquire_cred`/P35 cred cache exactly
+like `tags.rs::push_tag`); lease baseline = remote-tracking ref oid (backend-derived); no new
+AppError (reuse `PushRejected`); one `force_push` command; UI = toolbar Push split-button caret.
+KNOWN LIMITATION (documented in confirm dialog, accepted): client-side compare-and-swap with a small
+TOCTOU window — libgit2 can't do the server-side atomic CAS real `git --force-with-lease` gets; still
+strictly safer than bare force-push. Sub-increments: **P37a** backend+command+IPC+mock+CLI-oracle →
+**P37b** UI (toolbar split-button + confirm dialog).
+
+**Current step:** P37a implemented (all gates green: force_push_cli 5/5, remote unit 19/19, clippy/tsc/
+build clean); one necessary deviation (upstream check via config keys not `branch.upstream()` — git2
+0.21's upstream() also needs the tracking ref, so config keys correctly split NoUpstream vs
+PushRejected/"Fetch first"). Awaiting reviewer.
+
 ## P36 — six UX/safety fixes (worktree checkout guard, bulk discard, tab UX) — **DONE**
 
 **Goal:** six reported issues. (1) **Data-loss fix:** `checkout_branch_autostash` has no
