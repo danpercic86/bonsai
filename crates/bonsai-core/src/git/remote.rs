@@ -15,6 +15,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use crate::error::AppError;
+use crate::git::cred_cache::{self, Resolved};
 use crate::git::repo::read_head_info;
 
 /// Per-remote fetch outcome (contract §2.1).
@@ -91,26 +92,44 @@ pub(crate) enum CredMethod {
     Default,
 }
 
+/// Helper-arm state across libgit2 callback re-invocations within ONE
+/// operation (P35 §9). `acquire_cred` owns all transitions; `next_cred_method`
+/// only READS it for eligibility.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum HelperState {
+    #[default]
+    Untried,
+    /// First Helper attempt returned a CACHED entry; ONE cache-bypassing re-fill
+    /// is still permitted (the invalidation-on-rejection path).
+    RetryAllowed,
+    /// Helper exhausted: a fresh fill was attempted (miss or bypass), a cache-hit
+    /// cred failed to construct, or resolve returned None.
+    Done,
+}
+
 /// One-shot attempt flags. A fresh `CredAttempts` per remote operation.
 #[derive(Debug, Default)]
 pub(crate) struct CredAttempts {
-    helper: bool,
+    helper: HelperState,
     agent: bool,
     default_: bool,
 }
 
-/// Returns the next untried method compatible with `allowed`, marking it
-/// tried. Order: Helper (USER_PASS_PLAINTEXT) -> SshAgent (SSH_KEY) ->
-/// Default (DEFAULT). `None` => every compatible method has been tried (or
-/// none is compatible). Each method is attempted AT MOST ONCE per operation —
-/// libgit2 re-invokes the credentials callback after every auth failure, and
-/// this guard is what stops the retry loop.
+/// Returns the next untried method compatible with `allowed`, marking
+/// `agent`/`default_` tried. Order: Helper (USER_PASS_PLAINTEXT) -> SshAgent
+/// (SSH_KEY) -> Default (DEFAULT). `None` => every compatible method has been
+/// tried (or none is compatible). SshAgent/Default are each attempted AT MOST
+/// ONCE per operation. Helper eligibility is driven by `HelperState`; this fn
+/// does NOT mutate `helper` — `acquire_cred` sets it (RetryAllowed on a first
+/// cache-hit, else Done) after every Helper attempt, which is what stops the
+/// retry loop.
 pub(crate) fn next_cred_method(
     attempts: &mut CredAttempts,
     allowed: git2::CredentialType,
 ) -> Option<CredMethod> {
-    if allowed.contains(git2::CredentialType::USER_PASS_PLAINTEXT) && !attempts.helper {
-        attempts.helper = true;
+    if allowed.contains(git2::CredentialType::USER_PASS_PLAINTEXT)
+        && attempts.helper != HelperState::Done
+    {
         return Some(CredMethod::Helper);
     }
     if allowed.contains(git2::CredentialType::SSH_KEY) && !attempts.agent {
@@ -142,7 +161,7 @@ pub(crate) fn next_cred_method(
 /// The caller (`acquire_cred`, §A.2) treats `None` exactly like the old
 /// `Cred::credential_helper(..).is_err()` branch: fall through to the next
 /// credential method.
-fn credential_fill(repo_path: Option<&Path>, url: &str) -> Option<(String, String)> {
+pub(crate) fn credential_fill(repo_path: Option<&Path>, url: &str) -> Option<(String, String)> {
     let mut cmd = Command::new("git");
     cmd.args(["credential", "fill"])
         .env("GIT_TERMINAL_PROMPT", "0") // REQUIRED — never block on a prompt
@@ -209,17 +228,36 @@ pub(crate) fn acquire_cred(
         let method = next_cred_method(&mut attempts.borrow_mut(), allowed);
         match method {
             Some(CredMethod::Helper) => {
-                if let Some((user, pass)) = credential_fill(repo_path, url) {
-                    if let Ok(cred) = git2::Cred::userpass_plaintext(&user, &pass) {
-                        return Ok(cred);
-                    }
-                    // userpass_plaintext failing is theoretical (string-only
-                    // validation) — treat identically to a construction
-                    // failure: the guard already marked Helper as tried, so
-                    // the loop's next iteration moves on to SshAgent.
+                // A second Helper attempt is permitted ONLY after a first
+                // cache HIT (RetryAllowed); it evicts + forces a fresh re-fill
+                // (invalidation on rejection, §9).
+                let bypass = attempts.borrow().helper == HelperState::RetryAllowed;
+                if bypass {
+                    cred_cache::evict(url);
                 }
-                // credential_fill returned None (no cached credentials / any
-                // failure mode, §A.1) -> same fall-through as before.
+                match cred_cache::resolve(repo_path, url, bypass) {
+                    Some(Resolved {
+                        creds: (user, pass),
+                        from_cache,
+                    }) => {
+                        if let Ok(cred) = git2::Cred::userpass_plaintext(&user, &pass) {
+                            // Only a FIRST-attempt cache hit earns a retry; a
+                            // fresh fill (miss or bypass) is terminal.
+                            attempts.borrow_mut().helper = if from_cache && !bypass {
+                                HelperState::RetryAllowed
+                            } else {
+                                HelperState::Done
+                            };
+                            return Ok(cred);
+                        }
+                        // userpass_plaintext failing is theoretical (string-only
+                        // validation) — treat as a construction failure: mark
+                        // Helper Done so the loop moves on to SshAgent.
+                        attempts.borrow_mut().helper = HelperState::Done;
+                    }
+                    // No cached creds / fill failed (§A.1) -> fall through.
+                    None => attempts.borrow_mut().helper = HelperState::Done,
+                }
             }
             Some(CredMethod::SshAgent) => {
                 if let Ok(cred) =
@@ -808,7 +846,9 @@ mod tests {
     // ------------------------------------------------ §6.5 credential guard
 
     /// All three sources allowed → Helper, SshAgent, Default, then None
-    /// forever (idempotent exhaustion).
+    /// forever (idempotent exhaustion). `next_cred_method` no longer mutates
+    /// `helper`, so the test drives that transition manually between calls,
+    /// exactly as `acquire_cred` does (P35 §11).
     #[test]
     fn cred_guard_full_sequence() {
         let allowed = git2::CredentialType::USER_PASS_PLAINTEXT
@@ -816,6 +856,7 @@ mod tests {
             | git2::CredentialType::DEFAULT;
         let mut attempts = CredAttempts::default();
         assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::Helper));
+        attempts.helper = HelperState::Done; // simulate a fresh fill (terminal)
         assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::SshAgent));
         assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::Default));
         assert_eq!(next_cred_method(&mut attempts, allowed), None);
@@ -839,15 +880,71 @@ mod tests {
         assert_eq!(next_cred_method(&mut attempts, allowed), None);
     }
 
-    /// Each method at most once, even across repeat calls with a single
-    /// allowed type.
+    /// Helper is exhausted once `acquire_cred` marks it `Done` (a fresh fill),
+    /// even across repeat calls with only USER_PASS_PLAINTEXT allowed.
     #[test]
     fn cred_guard_single_method_once() {
         let allowed = git2::CredentialType::USER_PASS_PLAINTEXT;
         let mut attempts = CredAttempts::default();
         assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::Helper));
+        attempts.helper = HelperState::Done; // fresh fill (miss/bypass) is terminal
         assert_eq!(next_cred_method(&mut attempts, allowed), None);
         assert_eq!(next_cred_method(&mut attempts, allowed), None);
+    }
+
+    // ---------------------------------- P35 §9/§14.10 HelperState machine
+
+    /// (10a) Cache HIT then server rejection → Helper attempted TWICE (the 2nd
+    /// a cache-bypassing re-fill), then falls through to SshAgent → Default.
+    #[test]
+    fn cred_state_hit_then_reject_allows_one_bypass_retry() {
+        let allowed = git2::CredentialType::USER_PASS_PLAINTEXT
+            | git2::CredentialType::SSH_KEY
+            | git2::CredentialType::DEFAULT;
+        let mut attempts = CredAttempts::default();
+        // 1st Helper attempt returns a CACHED entry.
+        assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::Helper));
+        attempts.helper = HelperState::RetryAllowed;
+        // Server rejects -> libgit2 re-invokes -> Helper eligible ONCE more (bypass).
+        assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::Helper));
+        attempts.helper = HelperState::Done; // bypass fresh fill is terminal
+        // Rejected again -> fall through to SshAgent, then Default, then None.
+        assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::SshAgent));
+        assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::Default));
+        assert_eq!(next_cred_method(&mut attempts, allowed), None);
+    }
+
+    /// (10b) Fresh MISS then rejection → Helper is NOT retried.
+    #[test]
+    fn cred_state_fresh_miss_not_retried() {
+        let allowed = git2::CredentialType::USER_PASS_PLAINTEXT
+            | git2::CredentialType::SSH_KEY
+            | git2::CredentialType::DEFAULT;
+        let mut attempts = CredAttempts::default();
+        assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::Helper));
+        attempts.helper = HelperState::Done; // fresh fill (from_cache=false) -> terminal
+        assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::SshAgent));
+        assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::Default));
+        assert_eq!(next_cred_method(&mut attempts, allowed), None);
+    }
+
+    /// (10c) Exhaustion (nothing allowed) returns the CRED_EXHAUSTED sentinel
+    /// error WITHOUT touching the cache (Helper arm never reached).
+    #[test]
+    fn cred_exhaustion_returns_sentinel_error() {
+        let attempts = RefCell::new(CredAttempts::default());
+        let err = match acquire_cred(
+            None,
+            &attempts,
+            "https://example.com/repo.git",
+            None,
+            git2::CredentialType::empty(),
+        ) {
+            Ok(_) => panic!("expected exhaustion error, got a credential"),
+            Err(e) => e,
+        };
+        assert_eq!(err.class(), git2::ErrorClass::Callback);
+        assert!(err.message().contains(CRED_EXHAUSTED_MSG));
     }
 
     // -------------------------------------------------- §6.6 map_remote_err

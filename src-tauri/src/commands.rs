@@ -155,6 +155,28 @@ pub async fn open_repo(
                 eprintln!("bonsai: cannot resolve settings file (non-fatal): {e}");
             }
         }
+
+        // Warm-on-open (P35 §16): pre-fill the in-process HTTPS credential
+        // cache for this repo's remotes so the first fetch/pull/push does not
+        // pay the cold `git credential fill` (e.g. GCM) spawn cost. This is a
+        // fire-and-forget, best-effort step: it runs `list_remotes` (blocking
+        // git2, hence off the async path), warms only http(s) remotes, is NEVER
+        // awaited, and its failure is silently ignored — the open must stay fast
+        // and never block on (or fail because of) credential resolution.
+        let warm_workdir = info.path.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let workdir = std::path::Path::new(&warm_workdir);
+            let Ok(remotes) = bonsai_core::git::remote::list_remotes(workdir) else {
+                return;
+            };
+            for remote in remotes {
+                let Some(url) = remote.url else { continue };
+                let lower = url.to_ascii_lowercase();
+                if lower.starts_with("https://") || lower.starts_with("http://") {
+                    bonsai_core::git::cred_cache::warm(Some(workdir), &url);
+                }
+            }
+        });
     }
     Ok(result)
 }

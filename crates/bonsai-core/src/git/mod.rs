@@ -8,6 +8,7 @@ pub mod cherrypick;
 pub mod clone;
 pub mod commit;
 pub mod conflict;
+pub mod cred_cache;
 pub mod diff;
 pub mod discard;
 pub mod discard_partial;

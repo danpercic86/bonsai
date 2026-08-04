@@ -25,6 +25,25 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
+## P35 — in-process HTTPS credential cache — **in-progress**
+
+**Goal:** the M6 credential fix (`4e4b8f4`, shell out to `git credential fill`) made every
+fetch/pull/push/clone slow on Windows — each call cold-starts `git-credential-manager.exe` (.NET).
+Add an in-process, app-lifetime credential cache (TTL backstop + stale-while-revalidate refresh +
+invalidation-on-rejection) so we resolve through the REAL helper at most once per host per session,
+keeping resolution semantically identical. User asked for both app-lifetime + TTL, plus a cache
+warmer. Contract: `docs/contracts/P35-credential-cache.md` (15 AI-gate acceptance criteria).
+
+**Design (locked):** new module `crates/bonsai-core/src/git/cred_cache.rs`; key = scheme://host;
+`CRED_TTL=10min`, refresh at 80%; `std::sync::LazyLock<Mutex<HashMap>> + Condvar` single-flight;
+background refresh via `std::thread` (no tokio); injectable-filler test seam (no git spawn in tests,
+cross-platform). `CredAttempts.helper` → `HelperState` machine so a stale cache-hit that's rejected
+gets exactly ONE fresh re-fill before falling through. **Warm-on-open WIRED** (orchestrator decision,
+beyond contract §16): outer `open_repo` command enumerates HTTPS remotes and calls
+`cred_cache::warm` fire-and-forget so the first op is warm too.
+
+**Current step:** contract written (architect); implementing (senior-dev).
+
 ## UX fix batch (user-found issues, 2026-08-04) — **awaiting USER CHECKPOINT**
 
 Branch `fix/ux-issues-batch`. Four issues the user hit in the app. All committed, AI-gate
