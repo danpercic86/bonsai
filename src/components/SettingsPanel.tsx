@@ -18,6 +18,7 @@ import type {
   UiSettingsPatch,
 } from '../ipc';
 import { type McpScope } from '../lib/mcpAddCommand';
+import { SettingsGitConfigSection } from './SettingsGitConfigSection';
 import { SettingsMcpSection } from './SettingsMcpSection';
 import {
   AUTO_FETCH_INTERVAL_MAX,
@@ -77,6 +78,9 @@ export interface SettingsPanelProps {
   /** Path of the currently-open repo, or `null` when none is open. Gates the
    *  "This repository" (`local`-scope) registration row. */
   repoPath: string | null;
+  /** P40b: when 'identity', the Git-config section scrolls/focuses its Identity
+   *  sub-section on open (commit-error "Set identity…" linkage). */
+  configInitialFocus?: 'identity' | null;
   /** Run `claude mcp add` for the running server at the given scope (P16).
    *  `'user'` = global, `'local'` = the open repo (private). Resolves when the
    *  run settles so the panel can clear its in-flight state (App still owns the
@@ -172,6 +176,7 @@ export function SettingsPanel({
   onSetMcpAllowWrite,
   onRequestEnableMcpWrite,
   repoPath,
+  configInitialFocus,
   onRegisterMcp,
 }: SettingsPanelProps) {
   // In-flight scope for the "Add" registration buttons — disables a button while
@@ -352,6 +357,9 @@ export function SettingsPanel({
             </button>
           </div>
         </section>
+
+        {/* --- Git config (P40b) --- */}
+        <SettingsGitConfigSection repoId={repoPath} initialFocus={configInitialFocus} />
 
         {/* --- AI assistance (P13 §8.1) --- */}
         <section className="settings-section">

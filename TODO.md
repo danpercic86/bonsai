@@ -61,7 +61,20 @@ ensure_no_untracked_collision guard in both rebase+bisect engines, incl. type-sw
   gap demos e2e). Global-config isolation verified (real ~/.gitconfig untouched). config 10 unit + 1 oracle
   + no-repo cmd 1; clippy/tsc/build clean. Deviations (documented): NotFound→NoRepo; no set_bool (tri-state
   enums); Worktree→Local.
-**Current step:** P40b — senior-dev implementing SettingsGitConfigSection + identity-gap linkage.
+- **P40b** (reviewer APPROVE, 0 must-fix) — SettingsGitConfigSection.tsx (level toggle Local|Global,
+  Identity + Behaviour curated selects + Advanced add/edit/remove, own reqId guard, save-on-blur/change,
+  inline validation) + SettingsPanel section + identity-gap linkage (CommitBox "Set identity…" on
+  configMissing → App configFocus → Settings focused on Identity). AI GATE PASSED (harness, mock :1420):
+  GIT CONFIG renders; editing user.name at Local persists + inherited hint clears; ?fixture=noconfig
+  commit → identity error banner + "Set identity…" → opens Settings on Identity input; zero console
+  errors. Folding 1 should-fix (post-write refetch clobbered an unsaved sibling field mid-edit in the
+  name→email path — preserve focused/dirty drafts) + 1 nit before commit.
+  Folded (reviewer should-fix): mergeDraftsPreservingEdits preserves focused/dirty drafts on post-write
+  refetch (view always refreshed unconditionally → no stale display); addEntry error nit. Re-verified in
+  harness: email draft survives the name-write refetch (alice@dev.io preserved); section renders+editable
+  post-fold; zero console errors. tsc + build clean.
+**Current step:** P40a+b committed & AI-gate-passed. Next: P40 tester (regression + user checklist), then
+commit the green milestone. THEN PAUSE for user P41 (LFS) scope decision.
 
 ## P39 — git bisect (Git completeness, Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 

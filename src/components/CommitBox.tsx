@@ -32,6 +32,9 @@ export interface CommitBoxProps {
   /** P15a: asks the backend for a proposed message; resolves the text to insert,
    * rejects with AppError. Never commits. */
   onGenerate?(): Promise<string>;
+  /** P40b: open Settings → Git config focused on Identity. When provided, a
+   * "Set identity…" button appears beside a `configMissing` commit error. */
+  onOpenIdentitySettings?: () => void;
 }
 
 /** Imperative submit hook so OpBanner's [Commit merge] triggers the same
@@ -56,6 +59,7 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
     amend = false,
     aiEligible = false,
     onGenerate,
+    onOpenIdentitySettings,
   },
   ref,
 ) {
@@ -198,6 +202,15 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
           <span className="error-banner-text">
             {error.kind === 'configMissing' ? `Set your Git identity: ${error.text}` : error.text}
           </span>
+          {error.kind === 'configMissing' && onOpenIdentitySettings !== undefined && (
+            <button
+              type="button"
+              className="btn-secondary commit-error-action"
+              onClick={() => onOpenIdentitySettings()}
+            >
+              Set identity…
+            </button>
+          )}
           <button
             type="button"
             className="error-dismiss"

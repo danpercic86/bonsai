@@ -88,6 +88,8 @@ export interface RepoWorkspaceProps {
   /** P19 §6.5: open `path` in a new/focused tab (App.openTab). Used by the
    *  submodule "Open in new tab" action; reuses the existing open-repo flow. */
   onOpenRepoPath(path: string): void;
+  /** P40b: open Settings → Git config → Identity (commit-error linkage). */
+  onOpenIdentitySettings(): void;
 }
 
 /** P3e §5.1: the entire per-repo state cluster + handlers + render tree, one
@@ -110,6 +112,7 @@ export function RepoWorkspace({
   onRightPanelResize,
   onPaneResizeEnd,
   onOpenRepoPath,
+  onOpenIdentitySettings,
 }: RepoWorkspaceProps) {
   const pushToast = usePushToast();
   const repoPath = repoId; // repoId == canonical workdir path (§2)
@@ -3120,6 +3123,7 @@ export function RepoWorkspace({
           onCommit={handleCommit}
           onCommitAndPush={headBranch ? (m) => handleCommitAndPush(m) : undefined}
           onGenerate={handleGenerateCommitMessage}
+          onOpenIdentitySettings={onOpenIdentitySettings}
         />
       </div>
 

@@ -92,6 +92,9 @@ export interface WorkspaceRightPanelProps {
   /** Normal-commit path only: commit then push (threaded to CommitBox's split control). */
   onCommitAndPush: CommitBoxProps['onCommitAndPush'];
   onGenerate: CommitBoxProps['onGenerate'];
+  /** P40b: open Settings → Git config → Identity from a `configMissing` commit
+   *  error banner. */
+  onOpenIdentitySettings: CommitBoxProps['onOpenIdentitySettings'];
 }
 
 /** P3e: the right panel — op banner + the compare / commit-details / status
@@ -158,6 +161,7 @@ export function WorkspaceRightPanel({
   onCommit,
   onCommitAndPush,
   onGenerate,
+  onOpenIdentitySettings,
 }: WorkspaceRightPanelProps) {
   return (
     <aside className="right-panel" style={{ width: rightPanelWidth }}>
@@ -306,6 +310,7 @@ export function WorkspaceRightPanel({
             onCommitAndPush={amend || opState.kind === 'merge' ? undefined : onCommitAndPush}
             aiEligible={aiEligible}
             onGenerate={onGenerate}
+            onOpenIdentitySettings={onOpenIdentitySettings}
           />
         </>
       )}

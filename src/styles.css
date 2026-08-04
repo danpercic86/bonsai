@@ -774,6 +774,74 @@ body {
   min-width: 72px;
 }
 
+.settings-toggle-btn.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---------- Settings: Git config (P40b) ---------- */
+
+.settings-config-group {
+  margin-top: 12px;
+}
+
+.settings-config-subtitle {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+
+.settings-config-field,
+.settings-config-select {
+  width: 200px;
+}
+
+.settings-config-hint {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.settings-config-warn {
+  color: var(--warn, #b8860b);
+}
+
+.settings-config-error {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--danger, #d9534f);
+}
+
+.settings-config-advanced-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.settings-config-advanced-name {
+  flex: 1 1 120px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-1);
+}
+
+.settings-config-add-row {
+  margin-top: 12px;
+}
+
+.commit-error-action {
+  flex: none;
+  margin-left: 8px;
+}
+
 /* ---------- Settings: AI assistance (P13 §8.1) ---------- */
 
 .settings-radio-group {

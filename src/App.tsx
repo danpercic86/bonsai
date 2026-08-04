@@ -91,6 +91,13 @@ export default function App() {
 
   // P11c §3.2: Settings page + the live-preview knob state it drives.
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // P40b: when opened from a `configMissing` commit error, focus the Git-config
+  // Identity sub-section; cleared when the panel closes.
+  const [configFocus, setConfigFocus] = useState<'identity' | null>(null);
+  const openIdentitySettings = useCallback(() => {
+    setConfigFocus('identity');
+    setSettingsOpen(true);
+  }, []);
   // P24d: AI-asset inventory / drift / context-profile overlay (active repo only).
   const [aiAssetsOpen, setAiAssetsOpen] = useState(false);
   // P29c: read-only repo-health overlay (active repo only).
@@ -642,7 +649,10 @@ export default function App() {
       if (menuOpen) return;
       if (healthOpen) setHealthOpen(false);
       if (aiAssetsOpen) setAiAssetsOpen(false);
-      if (settingsOpen) setSettingsOpen(false);
+      if (settingsOpen) {
+        setSettingsOpen(false);
+        setConfigFocus(null);
+      }
       if (overlayOpen) setOverlayOpen(false);
     };
     window.addEventListener('keydown', onKeyDown);
@@ -807,6 +817,7 @@ export default function App() {
                 onRightPanelResize={handleRightPanelResize}
                 onPaneResizeEnd={handlePaneResizeEnd}
                 onOpenRepoPath={(path) => void openTab(path)}
+                onOpenIdentitySettings={openIdentitySettings}
               />
             </div>
           ))
@@ -866,7 +877,10 @@ export default function App() {
         <ShortcutOverlay open={overlayOpen} onClose={() => setOverlayOpen(false)} />
         <SettingsPanel
           open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => {
+            setSettingsOpen(false);
+            setConfigFocus(null);
+          }}
           theme={theme}
           listView={listView}
           autoFetch={autoFetch}
@@ -888,6 +902,7 @@ export default function App() {
           onSetMcpAllowWrite={handleSetMcpAllowWrite}
           onRequestEnableMcpWrite={() => setMcpWriteConsentOpen(true)}
           repoPath={activeRepo}
+          configInitialFocus={configFocus}
           onRegisterMcp={handleRegisterMcp}
         />
         {activeRepo !== null && (
