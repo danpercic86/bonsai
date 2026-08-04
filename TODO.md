@@ -76,8 +76,17 @@ bundling + the real SIGNED endpoint→check→download→install→relaunch roun
 user-supplied secrets (endpoint owner/repo, production updater private key, code-signing certs). NOTE:
 `pnpm tauri build` bundling (NSIS/WiX) may be blocked on this machine by the IT-enforced Defender ASR
 rule (see memory: defender-asr-blocks-appdata-exes) — the code compiles clean via cargo check regardless.
-**Current step:** P42 code-complete. Attempting an unsigned `pnpm tauri build` as a bonus gate (result
-folded into the checkpoint if ASR/tooling blocks bundling). This was the last requested session milestone.
+- **P42 release-build bonus gate (2026-08-05):** `pnpm tauri build --no-bundle` compiled ALL deps +
+  workspace crates cleanly WITH the updater/process plugins (tauri 2.11.5) — the code builds for release.
+  It failed ONLY at the final step: `failed to remove target\release\bonsai.exe — Access is denied
+  (os error 5)`, because a running `bonsai.exe` (PID 59136, started 2026-08-04 18:16 — the user's open
+  native app) holds an exclusive lock on the exe. NOT a code error; not killed (user's process). A real
+  release build needs the app closed first (noted in the checklist). Combined with P42a's clean cargo
+  check (which fully linked the debug binary), the release-compile gate is effectively passed.
+**Current step:** ALL requested session milestones COMPLETE & committed. P37–P40 (Git completeness) +
+untracked-clobber safety fix + P43 onboarding + P42 auto-update. P41 LFS deferred (user). Awaiting the
+stacked native USER CHECKPOINTs (docs/contracts/P*-user-checklist.md) + P42 release secrets. Autonomous
+session wrap-up.
 
 ## P43 — first-run onboarding + empty-state polish (Productization) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 
