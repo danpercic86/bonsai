@@ -1034,39 +1034,47 @@ mod tests {
         }
     }
 
-    // --------------- credential_fill (2026-08-04 addendum §A.6, macOS/Linux)
+    // --------------- credential_fill (2026-08-04 addendum §A.6)
     //
     // NOTE: unlike the rest of this suite, these fixtures use plain
     // `tempfile::tempdir()` rather than `crate::testutil::scratch_dir()` —
     // `scratch_dir()` is hardcoded to the Windows-only `D:\Temp\bonsai-scratch`
     // path and panics on macOS/Linux. This substitution is scoped to this
     // block only; `scratch_dir()` itself is untouched.
+    //
+    // Hermeticity: every test repo FIRST resets `credential.helper` to empty
+    // (git's documented way to clear the inherited system/global helper list,
+    // e.g. Git Credential Manager) so `credential_fill` can never fall through
+    // to a real credential manager and pop an interactive GUI/terminal prompt
+    // during `cargo test`. Fixtures are `!`-prefixed inline shell commands,
+    // which git runs via its bundled `sh` on every platform (including
+    // Git-for-Windows) — no executable bit, shebang, or `.sh` file needed.
 
     fn have_git() -> bool {
         Command::new("git").arg("--version").output().is_ok()
     }
 
-    /// Writes an executable POSIX shell script fixture (the shape real `git`
-    /// invokes a `credential.helper` value as, on every platform including
-    /// via Git Bash's `sh` on Windows) and returns its path as the string a
-    /// `credential.helper` config value expects.
-    fn write_helper_script(dir: &Path, name: &str, body: &str) -> String {
-        let path = dir.join(name);
-        std::fs::write(&path, body).expect("write helper script");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&path).expect("metadata").permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(&path, perms).expect("chmod +x");
-        }
-        #[cfg(windows)]
-        {
-            // No-op placeholder: this test file only needs to pass on
-            // macOS/Linux for now (see module note above); left here so a
-            // future Windows CI run doesn't need a cfg-gap fix to compile.
-        }
-        path.to_string_lossy().to_string()
+    /// `git config --add <key> <value>` against the repo, asserting success.
+    fn git_config_add(repo_dir: &Path, key: &str, value: &str) {
+        let out = Command::new("git")
+            .args(["config", "--add", key, value])
+            .current_dir(repo_dir)
+            .output()
+            .expect("spawn git config");
+        assert!(
+            out.status.success(),
+            "git config --add {key} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// Clears any inherited (system/global — e.g. Git Credential Manager)
+    /// `credential.helper` entries for this repo by prepending an empty value,
+    /// git's documented way to reset the helper list. Without this, real `git`
+    /// consults the system helper FIRST and pops an interactive prompt for the
+    /// unknown test hosts during `cargo test`.
+    fn reset_credential_helpers(repo_dir: &Path) {
+        git_config_add(repo_dir, "credential.helper", "");
     }
 
     /// Inits a scratch git repo via the real `git` CLI (so repo-local
@@ -1087,32 +1095,25 @@ mod tests {
         dir
     }
 
+    /// Resets inherited helpers, then registers `helper` as the SOLE helper.
+    /// `helper` is a `!`-prefixed inline shell command (run via git's bundled
+    /// `sh` on every platform, including Git-for-Windows), so no executable
+    /// bit / shebang handling is needed and the fixtures are cross-platform.
     fn set_credential_helper(repo_dir: &Path, helper: &str) {
-        let out = Command::new("git")
-            .args(["config", "credential.helper", helper])
-            .current_dir(repo_dir)
-            .output()
-            .expect("spawn git config");
-        assert!(
-            out.status.success(),
-            "git config credential.helper failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+        reset_credential_helpers(repo_dir);
+        git_config_add(repo_dir, "credential.helper", helper);
     }
 
-    /// fixtures/good-helper.sh — responds to `git credential fill` with fixed creds.
-    const GOOD_HELPER: &str = "#!/bin/sh\n\
-        cat > /dev/null\n\
-        echo \"username=bonsai-test-user\"\n\
-        echo \"password=bonsai-test-pass\"\n";
+    /// Inline `!`-helper: responds to `git credential fill` with fixed creds.
+    const GOOD_HELPER: &str =
+        "!f() { echo username=bonsai-test-user; echo password=bonsai-test-pass; }; f";
 
-    /// fixtures/bad-exit-helper.sh — simulates a broken helper.
-    const BAD_EXIT_HELPER: &str = "#!/bin/sh\ncat > /dev/null\nexit 1\n";
+    /// Inline `!`-helper: simulates a broken helper (non-zero exit, no output).
+    const BAD_EXIT_HELPER: &str = "!f() { exit 1; }; f";
 
-    /// fixtures/partial-helper.sh — responds but omits password (simulates a
-    /// helper that recognizes the request but has no cached secret).
-    const PARTIAL_HELPER: &str =
-        "#!/bin/sh\ncat > /dev/null\necho \"username=bonsai-test-user\"\n";
+    /// Inline `!`-helper: responds but omits the password (simulates a helper
+    /// that recognizes the request but has no cached secret).
+    const PARTIAL_HELPER: &str = "!f() { echo username=bonsai-test-user; }; f";
 
     /// (a) Well-formed helper response round-trips through `credential_fill`.
     #[test]
@@ -1121,8 +1122,7 @@ mod tests {
             return;
         }
         let dir = credfill_init_repo();
-        let helper = write_helper_script(dir.path(), "good-helper.sh", GOOD_HELPER);
-        set_credential_helper(dir.path(), &helper);
+        set_credential_helper(dir.path(), GOOD_HELPER);
 
         let result = credential_fill(Some(dir.path()), "https://example.com/repo.git");
         assert_eq!(
@@ -1142,8 +1142,7 @@ mod tests {
         let start = std::time::Instant::now();
 
         let dir = credfill_init_repo();
-        let helper = write_helper_script(dir.path(), "bad-exit-helper.sh", BAD_EXIT_HELPER);
-        set_credential_helper(dir.path(), &helper);
+        set_credential_helper(dir.path(), BAD_EXIT_HELPER);
         assert_eq!(
             credential_fill(Some(dir.path()), "https://example.com/repo.git"),
             None,
@@ -1159,16 +1158,19 @@ mod tests {
         );
 
         let dir3 = credfill_init_repo();
-        let helper3 = write_helper_script(dir3.path(), "partial-helper.sh", PARTIAL_HELPER);
-        set_credential_helper(dir3.path(), &helper3);
+        set_credential_helper(dir3.path(), PARTIAL_HELPER);
         assert_eq!(
             credential_fill(Some(dir3.path()), "https://example.com/repo.git"),
             None,
             "response missing password= must yield None"
         );
 
+        // Generous ceiling: this case spawns ~9 `git` processes (3 repos ×
+        // init + 2 config + fill), which is slow on Windows. The point is to
+        // catch an interactive-prompt HANG, which blocks indefinitely — 30s
+        // separates "slow subprocess spawns" from "hung waiting on input".
         assert!(
-            start.elapsed() < std::time::Duration::from_secs(5),
+            start.elapsed() < std::time::Duration::from_secs(30),
             "failure-mode cases took too long — possible hang"
         );
     }
@@ -1187,14 +1189,20 @@ mod tests {
             return;
         }
         let dir = credfill_init_repo();
+        // Clear the inherited system/global helper (e.g. GCM) so this "no
+        // helper" case truly has none, instead of silently consulting a real
+        // credential manager and popping a prompt.
+        reset_credential_helpers(dir.path());
 
         let start = std::time::Instant::now();
         let result = credential_fill(
             Some(dir.path()),
             "https://example-nonexistent-host.invalid/repo.git",
         );
+        // A genuine interactive prompt blocks indefinitely; 15s tolerates a
+        // slow Windows `git init` + fill while still flagging a real hang.
         assert!(
-            start.elapsed() < std::time::Duration::from_secs(5),
+            start.elapsed() < std::time::Duration::from_secs(15),
             "credential_fill took too long — possible interactive-prompt hang \
              (GIT_TERMINAL_PROMPT not honored?)"
         );
