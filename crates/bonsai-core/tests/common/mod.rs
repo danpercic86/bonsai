@@ -51,6 +51,31 @@ pub fn file_url(path: &Path) -> String {
     }
 }
 
+/// Path to the committed `claude` CLI stub used by the P13/P15 AI-integration
+/// tests, selected via `BONSAI_CLAUDE_BIN`. Windows runs the `.cmd` stub
+/// directly (`Command::new` routes `.cmd` through cmd.exe automatically);
+/// macOS/Linux use the POSIX `.sh` twin, with the executable bit forced on at
+/// test time — git doesn't reliably preserve the mode bit across
+/// clones/platforms.
+pub fn claude_stub_path() -> std::path::PathBuf {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    if cfg!(windows) {
+        fixtures.join("claude_stub.cmd")
+    } else {
+        let path = fixtures.join("claude_stub.sh");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = std::fs::metadata(&path) {
+                let mut perms = meta.permissions();
+                perms.set_mode(perms.mode() | 0o111);
+                let _ = std::fs::set_permissions(&path, perms);
+            }
+        }
+        path
+    }
+}
+
 pub fn have_git() -> bool {
     Command::new("git").arg("--version").output().is_ok()
 }
