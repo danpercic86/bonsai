@@ -544,8 +544,12 @@ mod tests {
     use super::*;
     use std::process::Command;
 
+    /// Pins the initial branch to "main" via `initial_head` rather than
+    /// relying on `init.defaultBranch` — libgit2 falls back to "master" when
+    /// that config is unset, which this fixture's fixed "main" refs assume.
     fn init(dir: &Path) -> git2::Repository {
-        let repo = git2::Repository::init(dir).expect("init repo");
+        let repo = git2::Repository::init_opts(dir, git2::RepositoryInitOptions::new().initial_head("main"))
+            .expect("init repo");
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test User").expect("name");
         cfg.set_str("user.email", "test@example.com").expect("email");
