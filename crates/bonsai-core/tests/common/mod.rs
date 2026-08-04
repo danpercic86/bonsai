@@ -37,6 +37,20 @@ pub fn scratch_dir() -> tempfile::TempDir {
         .expect("scratch dir")
 }
 
+/// Builds a `file://` URL for a local path. On POSIX the path already starts
+/// with `/`, so `file://` + path gives the correct 3-slash form; prepending a
+/// bare `file:///` unconditionally (as Windows drive paths need) double-slashes
+/// it into `file:////...`, which libgit2 rejects as "not a valid local file
+/// URI" even though the real `git` CLI tolerates it.
+pub fn file_url(path: &Path) -> String {
+    let s = path.display().to_string().replace('\\', "/");
+    if s.starts_with('/') {
+        format!("file://{s}")
+    } else {
+        format!("file:///{s}")
+    }
+}
+
 pub fn have_git() -> bool {
     Command::new("git").arg("--version").output().is_ok()
 }
