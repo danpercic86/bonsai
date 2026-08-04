@@ -18,6 +18,7 @@ use bonsai_core::git::branches::{self, BranchesSnapshot, CheckoutResult, CreateB
 use bonsai_core::git::cherrypick::{self, CherrypickOutcome};
 use bonsai_core::git::clone::{clone_repo as clone_repo_core, init_repo as init_repo_core, CloneProgress};
 use bonsai_core::git::commit::{amend_commit, create_commit, CommitResult};
+use bonsai_core::git::config::{self, ConfigLevelArg, ConfigView};
 use bonsai_core::git::conflict::{self, ConflictEntry, ConflictFile, ConflictResolution};
 use bonsai_core::git::diff::{
     commit_diff, commit_file_diff, compare_head_diff, compare_head_file_diff, workdir_file_diff,
@@ -2044,6 +2045,81 @@ async fn read_reflog_inner(
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Read the config view for `level` ("local" | "global") of `repo_id`: curated
+/// keys (effective value + level + target-level value) + advanced entries at the
+/// target level. Read-only (P40 §5.1). Errors: `git` | `noRepo`. Does NOT emit
+/// `repo-changed`.
+#[tauri::command]
+pub async fn get_config(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    level: ConfigLevelArg,
+) -> Result<ConfigView, AppError> {
+    get_config_inner(state.inner(), &repo_id, level).await
+}
+
+async fn get_config_inner(
+    state: &AppState,
+    repo_id: &str,
+    level: ConfigLevelArg,
+) -> Result<ConfigView, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || config::read_config(&workdir, level))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Write `value` to `key` at `level` of `repo_id`. Validated server-side (key
+/// shape, enum value). Errors: `invalidName` | `git` | `noRepo`. Does NOT emit
+/// `repo-changed` (the Settings section re-fetches — P40 §5.1).
+#[tauri::command]
+pub async fn set_config(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    level: ConfigLevelArg,
+    key: String,
+    value: String,
+) -> Result<(), AppError> {
+    set_config_inner(state.inner(), &repo_id, level, key, value).await
+}
+
+async fn set_config_inner(
+    state: &AppState,
+    repo_id: &str,
+    level: ConfigLevelArg,
+    key: String,
+    value: String,
+) -> Result<(), AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || config::set_config(&workdir, level, &key, &value))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Remove `key` at `level` of `repo_id` (idempotent). Errors: `invalidName` |
+/// `git` | `noRepo`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn unset_config(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    level: ConfigLevelArg,
+    key: String,
+) -> Result<(), AppError> {
+    unset_config_inner(state.inner(), &repo_id, level, key).await
+}
+
+async fn unset_config_inner(
+    state: &AppState,
+    repo_id: &str,
+    level: ConfigLevelArg,
+    key: String,
+) -> Result<(), AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || config::unset_config(&workdir, level, &key))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Enumerates the stash stack, index 0 (most recent) first (P9 contract §3).
 /// Errors: `git` | `noRepo`. Does NOT emit `repo-changed`.
 #[tauri::command]
@@ -3694,6 +3770,40 @@ mod tests {
             "HEAD".to_string(),
         ))
         .expect_err("read_reflog with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+    }
+
+    /// The P40 config commands return `NoRepo` for an unknown id (the gate is
+    /// `repo_path` before any git2 — never touches global config).
+    #[test]
+    fn config_commands_require_an_open_repo() {
+        let state = AppState::default();
+
+        let err = tauri::async_runtime::block_on(get_config_inner(
+            &state,
+            MISSING_ID,
+            ConfigLevelArg::Local,
+        ))
+        .expect_err("get_config with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(set_config_inner(
+            &state,
+            MISSING_ID,
+            ConfigLevelArg::Global,
+            "user.name".to_string(),
+            "Nobody".to_string(),
+        ))
+        .expect_err("set_config with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(unset_config_inner(
+            &state,
+            MISSING_ID,
+            ConfigLevelArg::Global,
+            "user.name".to_string(),
+        ))
+        .expect_err("unset_config with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
 

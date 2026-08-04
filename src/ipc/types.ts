@@ -658,6 +658,38 @@ export interface ReflogEntry {
   message: string;
 }
 
+/** Write-target level (P40). System is never a write target. */
+export type ConfigLevelArg = 'local' | 'global';
+/** Where a value actually lives (read result). */
+export type ConfigLevelName = 'local' | 'global' | 'system' | 'other';
+export type ConfigValueKind = 'text' | 'bool' | 'enum';
+
+/** A curated key with effective value + the value set at the target level (P40
+ *  §4.2). Mirrors the Rust `CuratedEntry` (camelCase). `targetValue == null` +
+ *  `effectiveValue != null` => the value is inherited from `effectiveLevel`. */
+export interface CuratedConfigEntry {
+  key: string;
+  kind: ConfigValueKind;
+  enumValues: string[];
+  effectiveValue: string | null;
+  effectiveLevel: ConfigLevelName | null;
+  targetValue: string | null;
+}
+
+/** An arbitrary section.key entry at the target level (P40 Advanced list). */
+export interface ConfigEntry {
+  name: string;
+  value: string;
+  level: ConfigLevelName;
+}
+
+/** Result of getConfig for one target level (P40 §4.2). */
+export interface ConfigView {
+  targetLevel: ConfigLevelArg;
+  curated: CuratedConfigEntry[];
+  advanced: ConfigEntry[];
+}
+
 /** Cherry-pick outcome (P20). Mirrors the Rust `CherrypickOutcome` serde enum
  *  (tagged "kind", camelCase). `conflicts` pauses into RepoOpState.cherryPick. */
 export type CherrypickOutcome =
@@ -1316,6 +1348,14 @@ export interface IpcApi {
   /** Reflog for `refName` ("HEAD" or a local branch name), newest-first, capped.
    *  A never-updated ref yields `[]` (not an error). Read-only. Rejects git | noRepo. */
   readReflog(repoId: string, refName: string): Promise<ReflogEntry[]>;
+  /** Config view for `level` of `repoId`: curated keys (effective value + level
+   *  + target-level value) + advanced entries. Read-only. Rejects git | noRepo. */
+  getConfig(repoId: string, level: ConfigLevelArg): Promise<ConfigView>;
+  /** Write `value` to `key` at `level`. Validated server-side (key shape, enum
+   *  value). Rejects invalidName | git | noRepo. Does NOT emit repo-changed. */
+  setConfig(repoId: string, level: ConfigLevelArg, key: string, value: string): Promise<void>;
+  /** Remove `key` at `level` (idempotent). Rejects invalidName | git | noRepo. */
+  unsetConfig(repoId: string, level: ConfigLevelArg, key: string): Promise<void>;
   /** Stash stack, index 0 (most recent) first. Rejects noRepo | git. */
   listStashes(repoId: string): Promise<StashEntry[]>;
   /** Stash the worktree per `scope`. message=null → git default. created:false ==

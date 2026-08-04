@@ -14,6 +14,14 @@ import {
   MERGE_README_TEXT,
 } from './fixtures/conflicts';
 import { MOCK_BRANCH_REFLOGS, MOCK_HEAD_REFLOG } from './fixtures/reflog';
+import {
+  buildConfigView,
+  hasIdentity,
+  makeMockConfigStore,
+  validateEnumOrThrow,
+  validateKeyOrThrow,
+  type MockConfigStore,
+} from './fixtures/config';
 import { mockRepoHealth } from './fixtures/repoHealth';
 import {
   asFullContext,
@@ -67,6 +75,8 @@ import type {
   CherrypickOutcome,
   CloneProgress,
   CommitDiff,
+  ConfigLevelArg,
+  ConfigView,
   BisectOutcome,
   CommitMessageProposal,
   CommitResult,
@@ -406,8 +416,10 @@ interface MockRepoState {
   kind: RepoKind;
   /** Which fixture getGraph/getCommitDiff serve for this repo. */
   graphFixture: GraphFixture;
-  /** `?fixture=noconfig` — commit() rejects with configMissing. */
-  noConfig: boolean;
+  /** P40: stateful per-level git-config store (Local | Global). commit()
+   *  consults it for identity so the identity-gap fix demos end-to-end. The
+   *  `?fixture=noconfig` intent lives in how this is seeded (identity dropped). */
+  config: MockConfigStore;
   /** `?remote=` failure trigger (authfail | network | rejected | conflict). */
   remoteTrigger: string | null;
 
@@ -938,7 +950,9 @@ function createRepoState(path: string): MockRepoState {
     path,
     kind,
     graphFixture,
-    noConfig: query('fixture') === 'noconfig',
+    // Seed a WORKING identity by default; `?fixture=noconfig` drops it so the
+    // commit-error / Set-identity flow is demoable (P40 §6.3).
+    config: makeMockConfigStore(query('fixture') !== 'noconfig'),
     remoteTrigger: query('remote'),
     status: structuredClone(INITIAL_STATUS),
     headOid: MOCK_OID,
@@ -2032,8 +2046,10 @@ export const mockIpc: IpcApi = {
       throw err;
     }
     // Signature resolution happens before the nothing-to-commit check in the
-    // backend (contract §2.4 steps 4→6) — mirror that precedence here.
-    if (state.noConfig) {
+    // backend (contract §2.4 steps 4→6) — mirror that precedence here. P40:
+    // read identity from the config store so setting it in Settings clears
+    // this error end-to-end (the `?fixture=noconfig` store starts empty).
+    if (!hasIdentity(state.config)) {
       const err: AppError = {
         kind: 'configMissing',
         message:
@@ -3266,6 +3282,35 @@ export const mockIpc: IpcApi = {
     return branch ? structuredClone(branch) : [];
   },
 
+  // P40: stateful config store per repo (Local | Global). Validation mirrors
+  // the Rust §4.5 shape checks so the harness exercises client + server-shaped
+  // `invalidName` errors identically.
+  async getConfig(repoId: string, level: ConfigLevelArg): Promise<ConfigView> {
+    await delay(80);
+    const state = requireRepo(repoId);
+    return buildConfigView(state.config, level);
+  },
+
+  async setConfig(
+    repoId: string,
+    level: ConfigLevelArg,
+    key: string,
+    value: string,
+  ): Promise<void> {
+    await delay(80);
+    const state = requireRepo(repoId);
+    validateKeyOrThrow(key);
+    validateEnumOrThrow(key, value);
+    state.config[level][key.trim()] = value.trim();
+  },
+
+  async unsetConfig(repoId: string, level: ConfigLevelArg, key: string): Promise<void> {
+    await delay(80);
+    const state = requireRepo(repoId);
+    validateKeyOrThrow(key);
+    delete state.config[level][key.trim()];
+  },
+
   // Stateful stash mock (P9 §6.5). Indices are positional into the mutating
   // stack: every create/pop/drop re-indexes so index 0 stays the most recent.
   async listStashes(repoId: string): Promise<StashEntry[]> {
@@ -3380,7 +3425,7 @@ export const mockIpc: IpcApi = {
       const err: AppError = { kind: 'emptyMessage', message: 'commit message is empty' };
       throw err;
     }
-    if (state.noConfig) {
+    if (!hasIdentity(state.config)) {
       const err: AppError = {
         kind: 'configMissing',
         message:

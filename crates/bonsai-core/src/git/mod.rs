@@ -8,6 +8,7 @@ pub mod branches;
 pub mod cherrypick;
 pub mod clone;
 pub mod commit;
+pub mod config;
 pub mod conflict;
 pub mod cred_cache;
 pub mod diff;

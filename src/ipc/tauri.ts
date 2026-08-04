@@ -59,6 +59,8 @@ import type {
   RemoteInfo,
   RepoChangedPayload,
   ReflogEntry,
+  ConfigLevelArg,
+  ConfigView,
   RepoHealth,
   RepoOpState,
   ResetMode,
@@ -380,6 +382,18 @@ export const tauriIpc: IpcApi = {
 
   readReflog(repoId: string, refName: string): Promise<ReflogEntry[]> {
     return invoke<ReflogEntry[]>('read_reflog', { repoId, refName });
+  },
+
+  getConfig(repoId: string, level: ConfigLevelArg): Promise<ConfigView> {
+    return invoke<ConfigView>('get_config', { repoId, level });
+  },
+
+  setConfig(repoId: string, level: ConfigLevelArg, key: string, value: string): Promise<void> {
+    return invoke<void>('set_config', { repoId, level, key, value });
+  },
+
+  unsetConfig(repoId: string, level: ConfigLevelArg, key: string): Promise<void> {
+    return invoke<void>('unset_config', { repoId, level, key });
   },
 
   listStashes(repoId: string): Promise<StashEntry[]> {

@@ -45,7 +45,23 @@ config_cli oracle → **P40b** Settings UI + identity-gap linkage (App/RepoWorks
 unchanged (scratch D:\Temp\bonsai-scratch, TMP/TEMP=D:\Temp on Windows, no concurrent test+clippy, mock.ts
 compiling, orchestrator commits).
 
-**Current step:** P40a — senior-dev implementing config.rs + 3 cmds + IPC + mock + config_cli oracle.
+**Current step:** P40a implemented (gates green: config unit 10 + config_cli 1 + no-repo cmd 1, clippy/
+tsc/build clean; global-config isolation verified — real ~/.gitconfig untouched). Deviations (documented):
+unit test asserts target_value None not effective (hermetic — effective inherits dev's real global);
+no set_bool (curated enums are tri-state strings); open_repo NotFound→NoRepo. Reviewer APPROVE (0 must-fix). Folding 1 should-fix (test hermeticity: assert target_value not effective
+for pull.ff — avoids spurious failure if dev has pull.ff global) + 2 nits (map_level Worktree comment;
+remove dead mock noConfig field) before commit.
+(Landed in parallel: user-requested untracked-clobber safety fix — commit 46a34d4, task #9 DONE: shared
+ensure_no_untracked_collision guard in both rebase+bisect engines, incl. type-swap dir→blob case.)
+- **P40a** (reviewer APPROVE, 0 must-fix; 1 should-fix + 2 nits folded) — config.rs (read/set/unset_config
+  over git2 Config; curated effective+level+target + advanced list; Local|Global via open_target +
+  find_global fallback; server-side validate_key/validate_curated_value; multivar→last) + RepoOpState... no,
+  + 3 cmds + IPC triple + fixtures/config.ts stateful store + config_cli oracle (Local + isolated-Global
+  via GIT_CONFIG_GLOBAL/HOME + set_search_path). Mock commit()/commitAmend() gate on hasIdentity (identity
+  gap demos e2e). Global-config isolation verified (real ~/.gitconfig untouched). config 10 unit + 1 oracle
+  + no-repo cmd 1; clippy/tsc/build clean. Deviations (documented): NotFound→NoRepo; no set_bool (tri-state
+  enums); Worktree→Local.
+**Current step:** P40b — senior-dev implementing SettingsGitConfigSection + identity-gap linkage.
 
 ## P39 — git bisect (Git completeness, Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 
