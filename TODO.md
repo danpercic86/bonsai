@@ -25,7 +25,7 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
-## P36 — six UX/safety fixes (worktree checkout guard, bulk discard, tab UX) — **in-progress**
+## P36 — six UX/safety fixes (worktree checkout guard, bulk discard, tab UX) — **DONE**
 
 **Goal:** six reported issues. (1) **Data-loss fix:** `checkout_branch_autostash` has no
 worktree-occupancy guard, so git2 silently moves HEAD onto a branch already checked out in another
@@ -53,9 +53,9 @@ incl. the data-loss assertion: refusal creates no stash, HEAD unchanged, dirty+u
 preserved); clippy clean. Browser harness verified: no "Bonsai" label, `+` seats 4px after last
 tab (`.tab-scroll` now `flex:0 1 auto`), draggable tabs, "Discard all" + 36 folder hover buttons,
 confirm dialog reads "Revert 6 files and permanently delete 3 files?". Contract:
-`docs/contracts/P36-ux-safety-fixes.md`. Committed. **Awaiting USER CHECKPOINT** (native
-`pnpm tauri dev`): worktree-checkout refusal + no data loss on a real repo/worktree; bulk discard
-removes modified+new; tab drag-reorder feel.
+`docs/contracts/P36-ux-safety-fixes.md`. Committed (`704139b`). **USER CHECKPOINT CONFIRMED
+(2026-08-04):** the user verified worktree-checkout refusal + no data loss, bulk discard, and tab
+drag-reorder in the native app. P36 fully DONE.
 
 ## P35 — in-process HTTPS credential cache — **in-progress**
 
