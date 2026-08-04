@@ -22,6 +22,30 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
+## UX fix batch (user-found issues, 2026-08-04) — **awaiting USER CHECKPOINT**
+
+Branch `fix/ux-issues-batch`. Four issues the user hit in the app. All committed, AI-gate
+verified (tests + browser harness `pnpm dev:mock`, no console errors). Plan:
+`~/.claude/plans/issues-that-i-found-silly-popcorn.md`.
+- **#2 console flicker on repo-tab switch** — DONE. `run_process` (ai/mod.rs) spawned the `claude`
+  `.cmd` shim without `CREATE_NO_WINDOW`; added the Windows-gated creation flag. commit 3f8e605.
+- **#3 Commit split button** — DONE. Normal mode shows primary "Commit & Push" + secondary
+  "Commit"; no-upstream branch confirms via dialog then pushes+sets upstream; cancel preserves the
+  typed message; detached/unborn HEAD falls back to single Commit. commit 934a351.
+- **#4 auto-stash branch switch** — DONE. New `checkout_branch_autostash` (stash → switch →
+  best-effort no-fetch FF to upstream when behind>0&&ahead==0 → re-apply; stash kept on conflict).
+  Repurposed the `checkout_branch` command/IPC to return `CheckoutResult`. 12 tests. commit 6c8a41a.
+- **#1 stash scopes + staging-area button** — DONE. `StashScope { All | AllWithUntracked | Staged }`;
+  staged-only is a hand-rolled libgit2 stash that FOLDS mixed staged+unstaged files (user decision),
+  keeps the durable stash on failed mutation, single reflog entry (no stack corruption), captures
+  `rm --cached`. New `StashSplitButton` in staging panel. 14 tests. commit e200aed.
+- Contracts: docs/contracts/P33-checkout-autostash.md, P34-stash-scopes.md (commit de8746d).
+- **USER CHECKPOINT (native `pnpm tauri dev`):** (a) switch repo tabs → no console flicker;
+  (b) Commit & Push on a no-upstream branch confirms then pushes, one-click when upstream set;
+  (c) switch branches with local changes → auto-stash/switch/re-apply; conflict keeps stash;
+  branch behind upstream fast-forwards; (d) staging-area stash button + 3 scopes, staged-only
+  leaves unstaged work in place.
+
 ## P28 — AI "what changed" digest (roadmap B3) — **in-progress** (2026-08-03)
 
 First of the four approved P28-scope features (B3 → D1 → B5 → per-worktree contexts; plan
