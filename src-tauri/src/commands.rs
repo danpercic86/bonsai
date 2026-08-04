@@ -4665,6 +4665,47 @@ mod tests {
         assert!(s.ai_consented);
     }
 
+    /// `onboarding_seen` patches partially like every other field (P43 §6):
+    /// the default is `false`; a `Some(true)` patch flips it while leaving
+    /// unrelated fields untouched; and a subsequent empty patch (the common
+    /// case where the frontend saves an unrelated pref) does NOT reset it back
+    /// to `false` — pinning the "apply only when Some" property for the field
+    /// the AI harness can't verify (the mock store resets per browser load).
+    #[test]
+    fn set_ui_settings_patch_onboarding_seen_is_partial() {
+        let mut s = settings::Settings::default();
+        // Default: onboarding not yet seen (⇒ show once).
+        assert!(!s.onboarding_seen);
+
+        // Only `onboarding_seen` changes; unrelated fields untouched.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                onboarding_seen: Some(true),
+                ..Default::default()
+            },
+        );
+        assert!(s.onboarding_seen);
+        assert_eq!(s.theme, ThemeChoice::default());
+        assert!(s.ai_enabled);
+
+        // An empty patch (frontend saving some other pref) must NOT clear the
+        // persisted flag — this is what keeps onboarding from reappearing.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                theme: Some(ThemeChoice::Light),
+                ..Default::default()
+            },
+        );
+        assert!(s.onboarding_seen);
+        assert_eq!(s.theme, ThemeChoice::Light);
+
+        // A totally empty patch is equally non-destructive.
+        apply_patch(&mut s, UiSettingsPatch::default());
+        assert!(s.onboarding_seen);
+    }
+
     /// `ai_resolve_conflict` enforces the backend consent gate (§9.6) BEFORE
     /// touching the repo: default settings (`ai_consented=false`) → `AiUnavailable`
     /// even with no repo open; once enabled+consented, an unknown repo id →

@@ -25,7 +25,7 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
-## P43 — first-run onboarding + empty-state polish (Productization) — **in-progress** (2026-08-04)
+## P43 — first-run onboarding + empty-state polish (Productization) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 
 Productization milestone. User decision (2026-08-04): **skip P41 LFS (niche) and P42 packaging (needs
 signing secrets) for now → build P43 onboarding.** Goal: a guided first-run experience (welcome →
@@ -67,7 +67,22 @@ P43a/b (both edit SettingsPanel/commands/types/mock); sequence P43 fully, then P
   console errors. tsc + build clean. Nits (cosmetic, left): folderName duplicated App↔EmptyState;
   onOpenIdentitySettings required-vs-optional mismatch. Unborn-card visual = USER CHECKPOINT (mock can't
   easily stage an unborn repo).
-**Current step:** P43a+b committed & AI-gate-passed. Next: P43 tester → then P42 (auto-update).
+- **P43 tester** — full workspace regression PASS, zero regressions: `cargo test --workspace` 854 passed
+  / 0 failed / 2 ignored (perf_gate); remote_cli flaky test passed; clippy --workspace --tests clean; tsc
+  + build clean. Added `set_ui_settings_patch_onboarding_seen_is_partial` (apply_patch overwrites only
+  when Some → a later empty patch doesn't reset onboardingSeen; the backend half of no-reappear).
+  Checklist: docs/contracts/P43-user-checklist.md.
+- **P43 AI GATE PASSED (2026-08-04).** Commits: 4b657d3 P43a · 761dcd2 P43b (+ tester closeout). Frontend
+  browser harness (fresh tab, zero console) + backend settings tests both verified. Productization
+  milestone #1 (onboarding + empty states) delivered.
+
+**P43 awaiting USER CHECKPOINT** (native pnpm tauri dev, per docs/contracts/P43-user-checklist.md): first
+launch (or onboarding_seen:false) shows the overlay; Welcome→Open/Clone→Identity(set global user.name/
+email, `git config --global` cross-check)→Tour→Finish; RESTART → onboarding does NOT reappear (real
+settings.json onboardingSeen:true — the key checkpoint the AI harness can't verify); Settings "Show
+welcome tour" reopens; ?onboarding=1 force-shows; no-repo EmptyState + unborn "first commit" card render.
+**Current step:** P43 DONE. Onboarding shipped. Next: P42 (auto-update — user-requested; the last
+in-flight milestone this session).
 
 ## P40 — git config editing (Git completeness, Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 
