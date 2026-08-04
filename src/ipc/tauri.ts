@@ -37,6 +37,7 @@ import type {
   CheckoutResult,
   CreateBranchHereResult,
   CreateStashResult,
+  StashScope,
   FetchResult,
   FileDiff,
   FileHistoryEntry,
@@ -360,9 +361,9 @@ export const tauriIpc: IpcApi = {
   createStash(
     repoId: string,
     message: string | null,
-    includeUntracked: boolean,
+    scope: StashScope,
   ): Promise<CreateStashResult> {
-    return invoke<CreateStashResult>('create_stash', { repoId, message, includeUntracked });
+    return invoke<CreateStashResult>('create_stash', { repoId, message, scope });
   },
 
   applyStash(repoId: string, index: number): Promise<ApplyStashOutcome> {

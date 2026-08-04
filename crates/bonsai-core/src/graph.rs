@@ -1009,7 +1009,7 @@ mod tests {
             let c1 = commit_file(&repo, "f.txt", "v1", "C1"); // HEAD tip == base
             std::fs::write(dir.path().join("f.txt"), "v2-dirty").expect("dirty");
             let res =
-                crate::git::stash::create_stash(dir.path(), None, false).expect("create_stash");
+                crate::git::stash::create_stash(dir.path(), None, crate::git::stash::StashScope::All).expect("create_stash");
             assert!(res.created, "worktree was dirty → a stash must be created");
 
             let l = compute_graph(dir.path()).expect("compute_graph");
@@ -1072,11 +1072,11 @@ mod tests {
             let c1 = commit_file(&repo, "f.txt", "v1", "C1"); // base, HEAD stays
 
             std::fs::write(dir.path().join("f.txt"), "edit-a").expect("dirty a");
-            assert!(crate::git::stash::create_stash(dir.path(), None, false)
+            assert!(crate::git::stash::create_stash(dir.path(), None, crate::git::stash::StashScope::All)
                 .expect("create_stash a")
                 .created); // becomes stash@{1}
             std::fs::write(dir.path().join("f.txt"), "edit-b").expect("dirty b");
-            assert!(crate::git::stash::create_stash(dir.path(), None, false)
+            assert!(crate::git::stash::create_stash(dir.path(), None, crate::git::stash::StashScope::All)
                 .expect("create_stash b")
                 .created); // stash@{0}
 
@@ -1140,7 +1140,7 @@ mod tests {
             let x = commit_file(&repo, "f.txt", "vX", "X"); // base-to-be
             std::fs::write(dir.path().join("f.txt"), "vX-dirty").expect("dirty");
             let res =
-                crate::git::stash::create_stash(dir.path(), None, false).expect("create_stash");
+                crate::git::stash::create_stash(dir.path(), None, crate::git::stash::StashScope::All).expect("create_stash");
             assert!(res.created);
 
             // Return to main and delete `temp` → X unreachable from any branch.

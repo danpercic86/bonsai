@@ -5,6 +5,7 @@ import { CommitPanel } from './CommitPanel';
 import { ComparePanel } from './ComparePanel';
 import { OpBanner } from './OpBanner';
 import { StatusPanel } from './StatusPanel';
+import { StashSplitButton } from './StashSplitButton';
 import { shortOid } from './workspaceUtils';
 import type {
   AiAnalysisMode,
@@ -14,6 +15,7 @@ import type {
   HeadInfo,
   ListView,
   RepoOpState,
+  StashScope,
 } from '../ipc';
 
 type OpBannerProps = ComponentProps<typeof OpBanner>;
@@ -71,6 +73,8 @@ export interface WorkspaceRightPanelProps {
   onAiResolve: StatusPanelProps['onAiResolve'];
   onBlame: StatusPanelProps['onBlame'];
   onFileHistory: StatusPanelProps['onFileHistory'];
+  /** P34: stash the worktree per scope (staging-panel split button + sidebar). */
+  onCreateStash(scope: StashScope): void;
 
   head: HeadInfo | null;
   amend: boolean;
@@ -134,6 +138,7 @@ export function WorkspaceRightPanel({
   onAiResolve,
   onBlame,
   onFileHistory,
+  onCreateStash,
   head,
   amend,
   onToggleAmend,
@@ -219,6 +224,22 @@ export function WorkspaceRightPanel({
             onBlame={onBlame}
             onFileHistory={onFileHistory}
           />
+          {opState.kind === 'none' && head !== null && !head.unborn && (
+            <StashSplitButton
+              disabled={
+                mutating ||
+                ((status?.staged.length ?? 0) === 0 &&
+                  (status?.unstaged.length ?? 0) === 0 &&
+                  (status?.untracked.length ?? 0) === 0)
+              }
+              stagedCount={status?.staged.length ?? 0}
+              hasTrackedChanges={
+                (status?.staged.length ?? 0) > 0 || (status?.unstaged.length ?? 0) > 0
+              }
+              hasUntracked={(status?.untracked.length ?? 0) > 0}
+              onStash={onCreateStash}
+            />
+          )}
           {opState.kind === 'none' && head !== null && !head.unborn && (
             <div className="amend-affordance">
               <label className="amend-toggle">

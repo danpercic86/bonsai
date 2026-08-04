@@ -534,6 +534,13 @@ export interface CreateStashResult {
   created: boolean;
 }
 
+/** Which changes a createStash call captures. Mirrors Rust `StashScope` (camelCase).
+ *  - `all`: staged + unstaged tracked changes (untracked left in place).
+ *  - `allWithUntracked`: adds untracked files.
+ *  - `staged`: only the staged (index-vs-HEAD) paths; mixed files are folded whole,
+ *    unstaged-only paths and untracked files are left untouched. */
+export type StashScope = 'all' | 'allWithUntracked' | 'staged';
+
 /** Reset mode (P20). Mirrors the Rust `ResetMode` serde enum (camelCase). */
 export type ResetMode = 'soft' | 'mixed' | 'hard';
 
@@ -1245,12 +1252,15 @@ export interface IpcApi {
   fileHistory(repoId: string, path: string, limit: number): Promise<FileHistoryEntry[]>;
   /** Stash stack, index 0 (most recent) first. Rejects noRepo | git. */
   listStashes(repoId: string): Promise<StashEntry[]>;
-  /** Stash the dirty worktree. message=null → git default. Rejects
-   *  operationInProgress | configMissing | git | noRepo. created:false == nothing to stash. */
+  /** Stash the worktree per `scope`. message=null → git default. created:false ==
+   *  nothing in that scope to stash (NOT an error). `scope: 'staged'` captures only
+   *  index-vs-HEAD paths (mixed files folded whole), leaving unstaged-only edits and
+   *  untracked files in the worktree. Rejects operationInProgress | configMissing |
+   *  git | noRepo. */
   createStash(
     repoId: string,
     message: string | null,
-    includeUntracked: boolean,
+    scope: StashScope,
   ): Promise<CreateStashResult>;
   /** Apply stash `index` WITHOUT dropping. Rejects operationInProgress | git | noRepo. */
   applyStash(repoId: string, index: number): Promise<ApplyStashOutcome>;

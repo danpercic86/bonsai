@@ -40,7 +40,7 @@ use bonsai_core::git::stale::{self, BranchDeleteResult, StaleReport};
 use bonsai_core::git::stage_partial::{
     stage_partial as stage_partial_core, unstage_partial as unstage_partial_core, LineSelection,
 };
-use bonsai_core::git::stash::{self, ApplyStashOutcome, CreateStashResult, StashEntry};
+use bonsai_core::git::stash::{self, ApplyStashOutcome, CreateStashResult, StashEntry, StashScope};
 use bonsai_core::git::status::{read_status, StatusSnapshot};
 use bonsai_core::git::submodule::{self, SubmoduleInfo};
 use bonsai_core::git::worktree::{self, WorktreeInfo};
@@ -1884,9 +1884,9 @@ pub async fn create_stash(
     state: tauri::State<'_, AppState>,
     repo_id: String,
     message: Option<String>,
-    include_untracked: bool,
+    scope: StashScope,
 ) -> Result<CreateStashResult, AppError> {
-    create_stash_inner(state.inner(), &repo_id, message, include_untracked).await
+    create_stash_inner(state.inner(), &repo_id, message, scope).await
 }
 
 /// Runtime-free core of `create_stash` (unit-testable without a Tauri app).
@@ -1894,11 +1894,11 @@ async fn create_stash_inner(
     state: &AppState,
     repo_id: &str,
     message: Option<String>,
-    include_untracked: bool,
+    scope: StashScope,
 ) -> Result<CreateStashResult, AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        stash::create_stash(&path, message.as_deref(), include_untracked)
+        stash::create_stash(&path, message.as_deref(), scope)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?

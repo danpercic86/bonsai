@@ -45,6 +45,7 @@ import type {
   RepoOpState,
   ResetMode,
   StashEntry,
+  StashScope,
   StatusEntry,
   StatusSnapshot,
   SubmoduleInfo,
@@ -1733,14 +1734,16 @@ export function RepoWorkspace({
     }
   }
 
-  // ----- P9: stash handling -----
-  async function handleCreateStash() {
+  // ----- P9 / P34: stash handling (scope-aware) -----
+  async function handleCreateStash(scope: StashScope) {
     setMutating(true);
     try {
-      const res = await ipc.createStash(repoId, null, /* includeUntracked */ true);
+      const res = await ipc.createStash(repoId, null, scope);
+      const successCopy =
+        scope === 'staged' ? 'Stashed staged changes' : 'Changes stashed';
       pushToast(
         res.created ? 'success' : 'info',
-        res.created ? 'Changes stashed' : 'Nothing to stash — working tree is clean',
+        res.created ? successCopy : 'Nothing to stash — working tree is clean',
       );
       await refreshAll(); // status + graph (pills) + stashes
     } catch (e) {
@@ -2683,7 +2686,7 @@ export function RepoWorkspace({
           width={paneWidths.sidebar}
           listView={listView}
           stashes={stashes}
-          onCreateStash={() => void handleCreateStash()}
+          onCreateStash={() => void handleCreateStash('allWithUntracked')}
           onStashContextMenu={handleStashContextMenu}
           submodules={submodules}
           onSubmoduleContextMenu={handleSubmoduleContextMenu}
@@ -2786,6 +2789,7 @@ export function RepoWorkspace({
           onAiResolve={(path) => void handleAiResolveConflict(path)}
           onBlame={(path) => void handleBlame(path)}
           onFileHistory={(path) => void handleFileHistory(path)}
+          onCreateStash={(scope) => void handleCreateStash(scope)}
           head={head}
           amend={amend}
           onToggleAmend={(next) => void handleToggleAmend(next)}

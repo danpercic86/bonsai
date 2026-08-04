@@ -906,11 +906,12 @@ impl BonsaiServer {
     ) -> CallToolResult {
         match self
             .run_blocking(move |wd| {
-                bonsai_core::git::stash::create_stash(
-                    wd,
-                    args.message.as_deref(),
-                    args.include_untracked,
-                )
+                let scope = if args.include_untracked {
+                    bonsai_core::git::stash::StashScope::AllWithUntracked
+                } else {
+                    bonsai_core::git::stash::StashScope::All
+                };
+                bonsai_core::git::stash::create_stash(wd, args.message.as_deref(), scope)
             })
             .await
         {

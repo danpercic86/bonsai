@@ -272,7 +272,8 @@ pub fn create_branch_here(
     //    → created:false) AND the mid-merge/rebase guard (OperationInProgress).
     //    `configMissing` may surface here (stash authors a commit) — let it
     //    propagate. `stashed == true` means work must be re-applied afterwards.
-    let stashed = stash::create_stash(workdir, None, /* include_untracked */ true)?.created;
+    let stashed =
+        stash::create_stash(workdir, None, stash::StashScope::AllWithUntracked)?.created;
 
     // 4. Create the branch ref at the resolved commit. On failure, restore the
     //    stashed work onto the original branch (best-effort) before returning.
@@ -414,7 +415,8 @@ pub fn checkout_branch_autostash(
     // 1. Auto-stash. `create_stash` owns the dirty-vs-clean decision (clean tree
     //    → created:false) AND the mid-merge/rebase guard (OperationInProgress).
     //    `configMissing` may surface here (stash authors a commit) — propagate.
-    let stashed = stash::create_stash(workdir, None, /* include_untracked */ true)?.created;
+    let stashed =
+        stash::create_stash(workdir, None, stash::StashScope::AllWithUntracked)?.created;
 
     // 2. SAFE checkout. On ANY failure, restore stash (best-effort) then return.
     //    Post-stash the worktree is clean, so a real conflict here is defensive.

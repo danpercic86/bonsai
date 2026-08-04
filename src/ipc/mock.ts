@@ -75,6 +75,7 @@ import type {
   CheckoutResult,
   CreateBranchHereResult,
   CreateStashResult,
+  StashScope,
   FetchResult,
   FileDiff,
   FileHistoryEntry,
@@ -3043,13 +3044,21 @@ export const mockIpc: IpcApi = {
   async createStash(
     repoId: string,
     _message: string | null,
-    _includeUntracked: boolean,
+    scope: StashScope,
   ): Promise<CreateStashResult> {
     await delay(150);
     const state = requireRepo(repoId);
     const s = state.status;
-    // Nothing to stash when the worktree is clean (no tracked/untracked changes).
-    if (s.staged.length === 0 && s.unstaged.length === 0 && s.untracked.length === 0) {
+    // "Nothing to stash" is scope-specific (mirrors the Rust created:false rule).
+    // The mock is file-level coarse: it cannot split a path that is both staged and
+    // unstaged; for `staged` it simply clears `staged` and leaves `unstaged` intact.
+    const nothing =
+      scope === 'staged'
+        ? s.staged.length === 0
+        : scope === 'all'
+          ? s.staged.length === 0 && s.unstaged.length === 0
+          : s.staged.length === 0 && s.unstaged.length === 0 && s.untracked.length === 0;
+    if (nothing) {
       return { created: false };
     }
     // Push a new stash@{0} and re-index the rest (+1).
@@ -3067,10 +3076,11 @@ export const mockIpc: IpcApi = {
       baseOid: headNodeId,
       ts: Math.floor(Date.now() / 1000),
     });
-    // The worktree comes back clean (INCLUDE_UNTRACKED semantics).
+    // Post-state per scope: `staged` clears only staged; `all` clears tracked
+    // (staged+unstaged) but keeps untracked; `allWithUntracked` clears everything.
     s.staged = [];
-    s.unstaged = [];
-    s.untracked = [];
+    if (scope !== 'staged') s.unstaged = [];
+    if (scope === 'allWithUntracked') s.untracked = [];
     return { created: true };
   },
 

@@ -1461,6 +1461,76 @@ body {
   border-top: none;
 }
 
+/* P34: staging-panel stash split button. */
+.stash-split {
+  position: relative;
+  flex: none;
+  border-top: 1px solid var(--border);
+  background: var(--bg-1);
+  padding: 8px 12px 0;
+}
+
+.stash-split + .amend-affordance {
+  border-top: none;
+}
+
+.stash-split-row {
+  display: flex;
+  gap: 0;
+}
+
+.stash-split-primary {
+  flex: 1 1 auto;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.stash-split-caret {
+  flex: none;
+  width: 32px;
+  padding: 0;
+  border-left: none;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.stash-split-menu {
+  position: absolute;
+  z-index: 20;
+  right: 12px;
+  bottom: calc(100% - 4px);
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  padding: 4px;
+  gap: 2px;
+}
+
+.stash-split-menu-item {
+  text-align: left;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.stash-split-menu-item:hover:not(:disabled) {
+  background: var(--bg-1);
+}
+
+.stash-split-menu-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .commit-box {
   flex: none;
   border-top: 1px solid var(--border);

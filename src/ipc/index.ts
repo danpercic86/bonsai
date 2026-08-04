@@ -50,6 +50,7 @@ export type {
   ConflictResolution,
   ContextProfile,
   CreateStashResult,
+  StashScope,
   DiffLine,
   DriftEntry,
   DriftReport,
