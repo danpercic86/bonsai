@@ -47,10 +47,31 @@ beyond contract §16): outer `open_repo` command enumerates HTTPS remotes and ca
 remote.rs state-machine), src-tauri compiles; reviewer approved (0 must-fix, 2 NIT hardenings
 folded). Follow-up (`b2ef361`): the `credential_fill_*` tests were popping the real GCM GUI on
 Windows (they let git fall through to the inherited system/global helper) — made them hermetic
-(reset the helper list per test repo) + cross-platform (`!`-inline sh fixtures); all 3 now pass
-with no prompt, so `cargo test -p bonsai-core` is fully green. **Awaiting USER CHECKPOINT:** real HTTPS remote w/ GCM —
+(reset the helper list per test repo) + cross-platform (`!`-inline sh fixtures). b2ef361
+cleared the inherited GCM helper, but git's *askpass* GUI ("Username for '<url>'") still popped on
+the failure-mode / no-helper cases — `GIT_TERMINAL_PROMPT=0` gates only the terminal, not askpass.
+**Fixed in `f77adb2`:** `credential_fill` now also neutralizes askpass (`-c core.askpass=` +
+env_remove `GIT_ASKPASS`/`SSH_ASKPASS`) — a production fix too, since P35 warm-on-open fires
+`credential_fill` in the background on repo open. All `credential_fill_*` tests now pass prompt-free. **Awaiting USER CHECKPOINT:** real HTTPS remote w/ GCM —
 first fetch resolves via helper; 2nd+ ops visibly faster (git-credential-manager does NOT relaunch,
 check Task Manager); externally rotate/expire the cred → next op recovers (evict+refill), not fail.
+
+## Security: git2 0.20.4 → 0.21.0 (2026-08-04) — **DONE (branch `chore/git2-0.21`)**
+
+`cargo audit` flagged two *unsound* advisories in git2 0.20.4 (used directly, ships on all
+platforms): RUSTSEC-2026-0183 (`Remote::list()` UB) + RUSTSEC-2026-0184 (`BlameHunk` signature UB),
+both fixed in git2 0.21.0. Bumped in `7a6ade2`. 0.21 is breaking two ways, both handled:
+(a) it dropped `ssh`/`https`/`cred` from default features → re-enabled `["https","ssh"]`,
+`default-features=false`, dropped `cred` (we shell out to `git credential fill`, not git2's
+CredentialHelper); (b) string accessors `Option<&str>` → `Result<&str>` / `Result<Option<&str>>`
+— migrated ~62 sites via `.ok()` / `.ok().flatten()` (behavior-preserving: non-UTF-8/absent → None
+as before); `Oid::zero()` → `Oid::ZERO_SHA1`. AI gate: `cargo clippy --workspace --all-targets -D
+warnings` clean; full suite green; `cargo audit` now **0 vulnerabilities**.
+Remaining audit noise (informational, not fixable here): glib 0.18 unsound (RUSTSEC-2024-0429,
+MODERATE — the Dependabot alert) is a Linux-only transitive dep pinned by wry/tauri's gtk-rs 0.18
+stack, absent from Win/macOS builds and on an unreached path → **dismiss on GitHub as "vulnerable
+code isn't actually used"**; plus 16 unmaintained (gtk-rs / unic-*). Note: `perf_ceiling_on_20k_fixture`
+can flake under full-suite CPU contention (~2.05s vs 2.0s budget); passes standalone at ~1.9s.
 
 ## UX fix batch (user-found issues, 2026-08-04) — **awaiting USER CHECKPOINT**
 
