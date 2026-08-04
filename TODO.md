@@ -327,7 +327,27 @@ pub(crate) for the copy guard.
   omit unless Overwrite). FOLDED: preview-failure no longer silently copies (previewFailed → needs-
   decision, default Skip + inline advisory); prune conflictActions on uncheck; _inner doc wording.
   Orchestrator self-verified the submit safety path. cargo check + pnpm build exit 0.
-**Current step:** P32c committed; tester (worktree_copy fs-oracle suite) + browser-harness AI gate next.
+- **P32 tester** — full regression PASS, no bugs. New crates/bonsai-core/tests/worktree_copy_cli.rs
+  (11 fs-oracle tests: classify unborn-HEAD/equal-vs-diverged/dir-treated-absent/BranchNotFound;
+  add_worktree_with_changes copy-writes-workdir-bytes / skip-keeps-branch-version / containment guard
+  rejects ../+absolute+C:-prefix / empty=plain; list ignored-vs-untracked / staged+unstaged-same-path /
+  rename-new-path+delete-excluded). cargo test --workspace all passed (perf_gate 2 ignored by design;
+  no watcher/remote flake); clippy --workspace --tests clean; tsc+build clean. Checklist:
+  docs/contracts/P32-user-checklist.md.
+- **P32 FRONTEND AI GATE PASSED (2026-08-04).** Browser harness (pnpm dev:mock, DOM/accessibility-tree
+  verified — pane not displayed so no screenshot): New-worktree dialog path preview
+  /mock/.worktrees/repo/feature-sidebar (per-repo nested + name-slug); Name defaults to branch; 4
+  candidate groups unchecked by default; checking seeded conflict src/staged-change.ts → "conflict" chip
+  + Overwrite/Skip toggle; checking a clean untracked file → NO toggle; zero console errors.
+- **P32 AI GATE PASSED (2026-08-04).** Commits: 6a62828 P32a · 9821279 P32b · a02cbb0 P32c · tests
+  pending. Backend fs-oracle suite + frontend harness both verified; zero regressions. Named worktrees
+  + per-repo container + copy-uncommitted-changes-with-conflict-detection delivered.
+
+**P32 awaiting USER CHECKPOINT** (native pnpm tauri dev, per docs/contracts/P32-user-checklist.md, real
+scratch repo): create a worktree with a custom name; copy a mix of untracked skill files + an edited
+tracked skill + a gitignored file into it; a real conflict honors Overwrite vs Skip; files land at
+`.worktrees/<repo>/<name>/…`; plain create (nothing selected) still works; path-escape is impossible.
+**Current step:** P32 DONE (AI gate passed, awaiting USER CHECKPOINT).
 
 ---
 
