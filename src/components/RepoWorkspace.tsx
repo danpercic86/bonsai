@@ -3057,6 +3057,7 @@ export function RepoWorkspace({
           repoId={repoId}
           scope={scope}
           listView={listView}
+          onOpenIdentitySettings={onOpenIdentitySettings}
         />
         <PaneDivider
           side="right-panel"

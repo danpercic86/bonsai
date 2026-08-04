@@ -1331,6 +1331,36 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 24px;
+}
+
+/* P43b: friendlier unborn-HEAD ("no commits yet") card. */
+.graph-pane-empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 340px;
+  text-align: center;
+}
+
+.graph-pane-empty-mark {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.graph-pane-empty-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.graph-pane-empty .pane-empty {
+  line-height: 1.5;
+}
+
+.graph-pane-empty-identity {
+  margin-top: 4px;
 }
 
 .graph-error-banner {
@@ -1426,6 +1456,21 @@ body {
   padding: 24px;
 }
 
+/* P43b: no-repo landing hero — mark + title + tagline + sub-headline. */
+.empty-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.empty-mark {
+  font-size: 40px;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
 .empty-title {
   margin: 0;
   font-size: 20px;
@@ -1435,6 +1480,14 @@ body {
 .empty-tagline {
   margin: 0;
   color: var(--text-3);
+}
+
+.empty-subhead {
+  margin: 4px 0 0;
+  max-width: 360px;
+  color: var(--text-3);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 /* P21: the empty-state open/clone/new action row. */

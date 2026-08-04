@@ -59,7 +59,15 @@ P43a/b (both edit SettingsPanel/commands/types/mock); sequence P43 fully, then P
   →Identity→Tour→Finish + Settings re-trigger, ZERO console errors. cross-reload persistence (onboarding_
   seen prevents re-show) = USER CHECKPOINT (mock resets per load; reviewer verified the logic statically).
   Reviewer nits left (cosmetic): Esc no-return; dual identity forward paths; idempotent re-persist.
-**Current step:** P43a committed & AI-gate-passed. Next: P43b (empty-state polish) → P43 tester → P42.
+- **P43b** (reviewer APPROVE, 0 must-fix) — EmptyState.tsx extracted from App (behavior-preserving:
+  same Open/Clone/New handlers + recents + error/loading; friendlier hero, no dead-end identity CTA) +
+  friendlier unborn-HEAD card in WorkspaceGraphPane (first-commit hint + "Set your Git identity" button
+  reusing the wired onOpenIdentitySettings, valid since a repo is open) + styles. AI GATE PASSED (fresh
+  tab :1420): no-repo EmptyState renders "🌱 Bonsai · A tidy Git client" + 3 actions + recents; zero
+  console errors. tsc + build clean. Nits (cosmetic, left): folderName duplicated App↔EmptyState;
+  onOpenIdentitySettings required-vs-optional mismatch. Unborn-card visual = USER CHECKPOINT (mock can't
+  easily stage an unborn repo).
+**Current step:** P43a+b committed & AI-gate-passed. Next: P43 tester → then P42 (auto-update).
 
 ## P40 — git config editing (Git completeness, Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 

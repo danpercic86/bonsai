@@ -90,6 +90,9 @@ export interface WorkspaceGraphPaneProps {
   repoId: string;
   scope: DiffBrowserProps['scope'];
   listView: DiffBrowserProps['listView'];
+  /** P43b: unborn-HEAD empty state offers a shortcut to set Git identity
+   *  (a repo is open here, so SettingsPanel's repo-scoped identity works). */
+  onOpenIdentitySettings(): void;
 }
 
 /** P3e: the center graph pane — error/truncated banners, the virtualized
@@ -140,6 +143,7 @@ export function WorkspaceGraphPane({
   repoId,
   scope,
   listView,
+  onOpenIdentitySettings,
 }: WorkspaceGraphPaneProps) {
   return (
     <main className="graph-pane">
@@ -153,7 +157,23 @@ export function WorkspaceGraphPane({
       )}
       {head?.unborn ? (
         <div className="graph-pane-empty">
-          <p className="pane-empty">No commits yet</p>
+          <div className="graph-pane-empty-card">
+            <span className="graph-pane-empty-mark" aria-hidden="true">
+              {'🌱'}
+            </span>
+            <p className="graph-pane-empty-title">No commits yet</p>
+            <p className="pane-empty">
+              Stage your changes and write your first commit in the panel on the right — it will
+              appear here as the root of your history.
+            </p>
+            <button
+              type="button"
+              className="btn-secondary graph-pane-empty-identity"
+              onClick={onOpenIdentitySettings}
+            >
+              Set your Git identity
+            </button>
+          </div>
         </div>
       ) : graph !== null ? (
         <GraphCanvas

@@ -6,6 +6,7 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { AiAssetsPanel } from './components/AiAssetsPanel';
 import { RepoHealthPanel } from './components/RepoHealthPanel';
 import { OnboardingOverlay } from './components/OnboardingOverlay';
+import { EmptyState } from './components/EmptyState';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
 import { TabStrip } from './components/TabStrip';
 import type { TabMeta } from './components/TabStrip';
@@ -852,56 +853,15 @@ export default function App() {
             </div>
           ))
         ) : (
-          <div className="empty-state">
-            <h1 className="empty-title">Bonsai</h1>
-            <p className="empty-tagline">A tidy Git client</p>
-            {error !== null && <div className="error-banner">{error}</div>}
-            <div className="empty-actions">
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={() => void handleOpenRepository()}
-                disabled={loading}
-              >
-                {loading ? 'Opening…' : 'Open repository'}
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={handleCloneOpen}
-                disabled={loading}
-              >
-                {'Clone repository…'}
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => void handleInitRepository()}
-                disabled={loading}
-              >
-                {'New repository…'}
-              </button>
-            </div>
-            {recents.length > 0 && (
-              <div className="recents-list">
-                <p className="section-label recents-label">Recent</p>
-                {recents.map((r) => (
-                  <button
-                    key={r.path}
-                    type="button"
-                    className="recents-item"
-                    disabled={loading}
-                    onClick={() => void openTab(r.path)}
-                  >
-                    <span className="recents-item-name">{folderName(r.path)}</span>
-                    <span className="recents-item-path" title={r.path}>
-                      {r.path}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <EmptyState
+            loading={loading}
+            error={error}
+            recents={recents}
+            onOpenRepository={() => void handleOpenRepository()}
+            onCloneOpen={handleCloneOpen}
+            onInitRepository={() => void handleInitRepository()}
+            onOpenRecent={(path) => void openTab(path)}
+          />
         )}
 
         <ShortcutOverlay open={overlayOpen} onClose={() => setOverlayOpen(false)} />
