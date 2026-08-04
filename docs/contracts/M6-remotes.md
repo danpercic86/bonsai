@@ -152,6 +152,10 @@ credentials(url, username_from_url, allowed):
 const CRED_EXHAUSTED_MSG: &str = "bonsai: no usable credentials";
 ```
 
+> **Superseded 2026-08-04** — the `Some(Helper)` arm above (`Cred::credential_helper`) is replaced
+> by a call to `credential_fill` per the addendum at the bottom of this file. The guard
+> (`next_cred_method`/`CredMethod`/`CredAttempts`) is UNCHANGED.
+
 Key properties: each method is attempted **at most once per operation** (construction failure
 consumes the attempt — `continue` re-enters the loop, it never resets flags); when everything is
 exhausted the callback returns an error, which aborts the transport instead of looping. NEVER
@@ -181,6 +185,10 @@ Additionally (not via `map_remote_err`): `repo.find_remote(name)` → `ErrorCode
 `AppError::NoRemote(...)`, and a `push_update_reference` callback that receives
 `status: Some(msg)` maps to `AppError::PushRejected(format!("push rejected by remote: {msg}. \
 Bonsai v1 never force-pushes — fetch/pull first."))` (§2.6 step 6).
+
+> **Optional refinement 2026-08-04** — see addendum §A.5 for a precisely-worded, opt-in variant
+> of the `authFailed` message that distinguishes "no helper configured" from "helper configured
+> but has no cached credentials for this remote."
 
 ### 2.4 `fetch_all`
 
@@ -650,3 +658,300 @@ networkError banner, not a hang or crash.
   graph variants.
 - **Mock `commit()` now bumps the current branch's ahead count** — minimal coupling, buys the
   natural commit→push harness story (unlike graph-fixture coupling, this is one integer).
+
+---
+
+## Addendum 2026-08-04 — Helper step delegates to real `git credential fill`
+
+**Bug:** libgit2's `Cred::credential_helper` (§2.2 old Helper arm) is libgit2's OWN
+reimplementation of the credential-helper protocol. It can fail to correctly invoke some
+configured helpers even when the user's actual `git` CLI resolves the identical config
+successfully (confirmed: `git pull`/`git push` succeed from the very terminal Bonsai is launched
+from; Bonsai fails with the generic `authFailed` message). Root cause is libgit2's internal
+implementation, not PATH/env/config on the user's machine.
+
+**Fix:** the Helper step shells out to the REAL `git credential fill` — the same resolution the
+CLI itself uses — instead of asking libgit2 to reimplement it. Everything else in §2.2/§2.3
+(guard, method order, exhaustion, error mapping) is UNCHANGED. No OS branching: `git` resolves
+whatever helper is configured for the platform it runs on (GCM, `osxkeychain`, `wincred`,
+`libsecret`, `store`, ...) — Bonsai does not need to know which.
+
+No new crate dependency — `std::process::Command` (already `std`) is sufficient.
+
+### A.1 New function — `credential_fill`
+
+```rust
+use std::io::Write;
+use std::process::{Command, Stdio};
+
+/// Resolves HTTPS credentials via the user's REAL configured credential
+/// helper by shelling out to `git credential fill` — NOT libgit2's own
+/// reimplementation (see addendum preamble). `repo_path`: cwd for the child
+/// process when `Some`, so repo-local `credential.helper` config resolves
+/// exactly like the `git` CLI does (it also reads cwd's repo config); `None`
+/// when no repo exists yet (clone, §A.3) — global/system config still
+/// resolves without a cwd, matching what `git clone` itself does before a
+/// repo exists.
+///
+/// NEVER prompts (`GIT_TERMINAL_PROMPT=0` is set unconditionally on the
+/// child — a cache miss must fail fast, not block on an interactive
+/// prompt — this preserves the locked never-prompt policy, §2.2). NEVER
+/// panics. Returns `None` on ANY failure path: binary not found / spawn
+/// error, non-zero exit status, I/O error writing stdin, stdout not valid
+/// UTF-8, or `username`/`password` missing or empty in the parsed output.
+/// The caller (`acquire_cred`, §A.2) treats `None` exactly like the old
+/// `Cred::credential_helper(..).is_err()` branch: fall through to the next
+/// credential method.
+fn credential_fill(repo_path: Option<&Path>, url: &str) -> Option<(String, String)> {
+    let mut cmd = Command::new("git");
+    cmd.args(["credential", "fill"])
+        .env("GIT_TERMINAL_PROMPT", "0") // REQUIRED — never block on a prompt
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null()); // discarded — never logged, never in an error path
+    if let Some(p) = repo_path {
+        cmd.current_dir(p);
+    }
+
+    let mut child = cmd.spawn().ok()?;
+    {
+        let stdin = child.stdin.as_mut()?;
+        stdin.write_all(format!("url={url}\n\n").as_bytes()).ok()?;
+    } // stdin dropped here -> EOF sent to the child before we wait on it
+
+    let output = child.wait_with_output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8(output.stdout).ok()?;
+
+    let (mut username, mut password) = (None, None);
+    for line in stdout.lines() {
+        let Some((key, value)) = line.split_once('=') else { continue };
+        match key {
+            "username" => username = Some(value.to_string()),
+            "password" => password = Some(value.to_string()),
+            _ => {} // ignore unknown keys (protocol/host/path/url echo, etc.)
+        }
+    }
+    match (username, password) {
+        (Some(u), Some(p)) if !u.is_empty() && !p.is_empty() => Some((u, p)),
+        _ => None,
+    }
+}
+```
+
+**Exact parsing rules** (for the tester + reviewer to check byte-for-byte):
+- Each stdout line is split on the FIRST `=` only (`str::split_once('=')`).
+- A line with no `=` is ignored (not an error).
+- Any key other than `username`/`password` is ignored (the helper may echo back `protocol=`,
+  `host=`, `path=`, `url=`, or emit nothing else at all).
+- Both `username` AND `password` must have been seen, and both non-empty after trimming (`!=
+  ""`), or the function returns `None`. Do NOT trim the values themselves before returning —
+  only the emptiness check is a `!is_empty()` on the raw parsed value (a helper is not expected
+  to pad with whitespace; do not silently rewrite what it returns).
+
+### A.2 `acquire_cred` — new signature and Helper arm
+
+`config: &git2::Config` is DROPPED from the signature (after this change nothing in the function
+body needs it — the SshAgent and Default arms never used it, and Helper no longer does either).
+`repo_path: Option<&Path>` is added as the new first parameter:
+
+```rust
+pub(crate) fn acquire_cred(
+    repo_path: Option<&Path>,
+    attempts: &RefCell<CredAttempts>,
+    url: &str,
+    username_from_url: Option<&str>,
+    allowed: git2::CredentialType,
+) -> Result<git2::Cred, git2::Error> {
+    loop {
+        let method = next_cred_method(&mut attempts.borrow_mut(), allowed);
+        match method {
+            Some(CredMethod::Helper) => {
+                if let Some((user, pass)) = credential_fill(repo_path, url) {
+                    if let Ok(cred) = git2::Cred::userpass_plaintext(&user, &pass) {
+                        return Ok(cred);
+                    }
+                    // userpass_plaintext failing is theoretical (string-only
+                    // validation) — treat identically to a construction
+                    // failure: the guard already marked Helper as tried, so
+                    // the loop's next iteration moves on to SshAgent.
+                }
+                // credential_fill returned None (no cached credentials / any
+                // failure mode, §A.1) -> same fall-through as before.
+            }
+            Some(CredMethod::SshAgent) => { /* UNCHANGED */ }
+            Some(CredMethod::Default) => { /* UNCHANGED */ }
+            None => { /* UNCHANGED — CRED_EXHAUSTED_MSG error */ }
+        }
+    }
+}
+```
+
+`next_cred_method`, `CredMethod`, `CredAttempts`, `CRED_EXHAUSTED_MSG`, the SshAgent arm, the
+Default arm, and the exhaustion arm are BYTE-FOR-BYTE UNCHANGED — only the Helper arm's body and
+the function's parameter list change.
+
+### A.3 Call sites (all 5, confirmed by reading each file)
+
+| Site | File:~line | What's in scope | New call |
+|---|---|---|---|
+| `fetch_remote` | `remote.rs:~233` | `repo: &git2::Repository` in scope | `acquire_cred(repo.workdir(), &attempts, url, username_from_url, allowed)`. The `let config = repo.config()?;` line (currently `remote.rs:227`) becomes DEAD (its only use was this call) — DELETE it. |
+| `push_current` | `remote.rs:~463` | `repo` in scope; `config` ALSO still needed later in this function for `config.get_string(&format!("branch.{name}.merge"))` (§2.6 step 2) | `acquire_cred(repo.workdir(), &attempts, url, username_from_url, allowed)`. KEEP `let config = repo.config()?;` — it is still used elsewhere in `push_current`. |
+| `tags.rs` `push_tag` | `tags.rs:~144` | `repo: git2::Repository` (from `open_repo_at(workdir)`) in scope; `config` (`tags.rs:140`) is used ONLY for this call in the whole function | `acquire_cred(repo.workdir(), &attempts, url, username_from_url, allowed)`. DELETE the now-dead `let config = repo.config()?;` at `tags.rs:140`. |
+| `submodule.rs` `update_submodule` | `submodule.rs:~157` | `repo: git2::Repository` (from `open_workdir_repo(workdir)`) in scope; `config` (`submodule.rs:154`) is used ONLY for this call | `acquire_cred(repo.workdir(), &attempts, url, username_from_url, allowed)`. DELETE the now-dead `let config = repo.config()?;` at `submodule.rs:154`. |
+| `clone.rs` `clone_repo` | `clone.rs:~85` | NO repo exists yet — the destination doesn't exist until the clone succeeds; `let config = git2::Config::open_default()?;` (`clone.rs:77`) was only ever used for this call | `acquire_cred(None, &attempts, url, username_from_url, allowed)`. DELETE the now-dead `let config = git2::Config::open_default()?;` at `clone.rs:77`. Update the adjacent comment ("2. Credentials: no repo yet -> default (global+system) config (§OPEN-5)") to note `credential_fill(None, url)` similarly falls back to global/system git config with no cwd override — matching what `git clone` itself does before a repo exists. |
+
+`git2::Repository::workdir()` returns `Option<&Path>` — pass it straight through, no
+`unwrap`/`expect` (a bare repo would yield `None`, which is fine: `credential_fill` simply omits
+`current_dir`, same as the clone case).
+
+### A.4 Safety requirements (explicit, testable — reviewer MUST-FIX if any fail)
+
+1. **No interactive prompt, ever.** `credential_fill` sets `GIT_TERMINAL_PROMPT=0`
+   UNCONDITIONALLY on every child process it spawns — not behind a flag, not only when a helper
+   is absent. Reviewer: grep the diff for exactly one `Command::new("git")` construction site and
+   confirm `.env("GIT_TERMINAL_PROMPT", "0")` is on it.
+2. **No panic on any subprocess failure mode.** Every fallible step inside `credential_fill` uses
+   `?`/`.ok()?`/`match` inside a function returning `Option<...>` — NO `.unwrap()`, `.expect()`,
+   or indexing that could panic anywhere in the function body. Binary-not-found, spawn failure,
+   non-zero exit, stdin write failure, non-UTF-8 stdout, and missing/empty fields ALL fall
+   through to `None` without unwinding.
+3. **Credentials never logged.** No `eprintln!`/`println!`/`tracing::*`/`dbg!` anywhere in
+   `credential_fill` or the Helper arm of `acquire_cred` prints `url`, `username`, `password`, or
+   raw subprocess stdout. The child's stderr is `Stdio::null()` — discarded, never captured into
+   any variable, error, or log. `map_remote_err`'s messages (§2.3) interpolate only `context`
+   (remote name) and `e.message()` (libgit2's own diagnostic text) — neither can contain
+   plaintext credentials since libgit2 never receives them in the failure case. Reviewer: grep
+   the diff for `pass`/`password`/`user`/`stdout` reaching any `format!`/print/error string
+   outside `credential_fill`'s own return value.
+4. **Fall-through semantics preserved exactly.** SshAgent and Default arms of `acquire_cred`, and
+   `next_cred_method`/`CredMethod`/`CredAttempts`, are untouched — Helper still consumes its
+   one-shot attempt (via `next_cred_method`) regardless of whether `credential_fill` succeeds or
+   returns `None`, so SSH agent and Default still get exactly one chance each afterward, same as
+   before this change.
+
+### A.5 OPTIONAL — sharper `authFailed` wording when no helper is configured
+
+Not required for the fix; nice-to-have only. Self-contained — NO signature change to
+`map_remote_err` (it stays `fn(e: git2::Error, context: &str) -> AppError`). Inside the existing
+`auth_msg` closure (`remote.rs:171-177`), check whether a credential helper is configured at all
+via a fresh `git2::Config::open_default()` (advisory only — this reads global/system config,
+which is an acceptable approximation for wording purposes even though the real resolution is
+repo-local; it does NOT affect the actual credential flow, which already correctly uses
+`repo_path`/cwd via `git credential fill`):
+
+```rust
+let auth_msg = || {
+    let helper_configured = git2::Config::open_default()
+        .ok()
+        .and_then(|c| c.get_string("credential.helper").ok())
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false); // covers Err(NotFound) (unset) and any other lookup failure
+
+    if helper_configured {
+        format!(
+            "authentication failed for '{context}': the configured credential helper has no \
+             cached credentials for this remote. Run the equivalent git command in a terminal \
+             once to (re-)authenticate, or run an SSH agent for SSH remotes."
+        )
+    } else {
+        format!(
+            "authentication failed for '{context}': no usable credentials and no Git credential \
+             helper is configured. Configure one (e.g. Git Credential Manager) for HTTPS \
+             remotes, or run an SSH agent for SSH remotes."
+        )
+    }
+};
+```
+
+These are the ONLY two variants — do not improvise a third. If implemented, update the §6.6
+`map_cred_exhausted_to_auth_failed` test's message assertions accordingly (it currently checks
+for the substring `"credential helper"`, which both variants above still contain — verify, don't
+assume).
+
+### A.6 Test requirements (for the tester)
+
+Existing `next_cred_method` / `map_remote_err` unit tests (`remote.rs:715-845`, i.e. §6.5/§6.6)
+are UNCHANGED by this addendum and MUST still pass as-is (unless A.5 is implemented, in which
+case only the message-substring assertion needs revisiting per A.5's last paragraph — the test
+STRUCTURE is unchanged).
+
+**Fixture: fake credential-helper scripts.** Use `common::scratch_dir()` (the existing
+`D:\Temp\bonsai-scratch` helper, per §6 preamble — this project's test suite targets Windows;
+do not introduce a second scratch-dir convention). Real `git` invokes a `credential.helper`
+value as a shell command (`sh -c "<helper> $*"`) on every platform it runs on, including via
+Git Bash's `sh` on Windows — so a POSIX shell script is the right fixture format (not a
+`.bat`/`.ps1`, which `git` would not invoke the same way; not Python, to avoid a second runtime
+dependency in the test fixture). Write these into the scratch dir per test:
+
+```sh
+#!/bin/sh
+# fixtures/good-helper.sh — responds to `git credential fill` with fixed creds.
+cat > /dev/null    # drain stdin (the "url=...\n\n" payload), then respond
+echo "username=bonsai-test-user"
+echo "password=bonsai-test-pass"
+```
+
+```sh
+#!/bin/sh
+# fixtures/bad-exit-helper.sh — simulates a broken helper.
+cat > /dev/null
+exit 1
+```
+
+```sh
+#!/bin/sh
+# fixtures/partial-helper.sh — responds but omits password (simulates a
+# helper that recognizes the request but has no cached secret).
+cat > /dev/null
+echo "username=bonsai-test-user"
+```
+
+`chmod +x` each script after writing (`std::os::unix::fs::PermissionsExt` — guard with
+`#[cfg(unix)]`/skip on Windows if the CI runner cannot chmod, since Git for Windows invokes the
+script via its own `sh` regardless of the executable bit in some configurations; if this turns
+out to be flaky on the Windows runner, document the workaround rather than silently skipping the
+test). Wire up per test via `git(dir, &["config", "credential.helper", script_path])` in a
+scratch repo (repo-local — this is what makes `repo_path` threading in §A.3 meaningful to test).
+
+Required cases:
+
+**(a) Well-formed response.** Repo-local `credential.helper` = `good-helper.sh`. Call
+`credential_fill(Some(repo_dir), "https://example.com/repo.git")` directly (unit/integration test
+in `remote.rs` or a new `credential_fill_cli.rs` under `tests/`, per the project's existing
+`#[cfg(test)]`-in-lib vs. `tests/` split — follow whichever `remote_cli.rs` already uses for
+similarly-scoped local-only tests). Assert `Some(("bonsai-test-user".into(),
+"bonsai-test-pass".into()))`.
+
+**(b) Failure modes fall through to `None` without panicking or hanging** (assert each completes,
+via `Instant`, within a few seconds — see (c) for the exact pattern):
+   - `credential.helper` = `bad-exit-helper.sh` → `None`.
+   - `credential.helper` = `/path/does/not/exist` (nonexistent binary) → `None` (git itself fails
+     to invoke it; our function must not panic on that failure either).
+   - `credential.helper` = `partial-helper.sh` (missing `password=`) → `None`.
+
+**(c) `GIT_TERMINAL_PROMPT=0` prevents a hang.** In a scratch repo with NO `credential.helper`
+configured at all (unset — the platform default resolves to nothing usable in the test sandbox)
+call `credential_fill(Some(repo_dir), "https://example-nonexistent-host.invalid/repo.git")` and
+assert it returns within a generous bound using wall-clock timing (we cannot literally wait for
+"would have hung" — this is the practical proxy):
+
+```rust
+let start = std::time::Instant::now();
+let result = credential_fill(Some(repo_dir), "https://example-nonexistent-host.invalid/repo.git");
+assert!(start.elapsed() < std::time::Duration::from_secs(5), "credential_fill took too long — \
+    possible interactive-prompt hang (GIT_TERMINAL_PROMPT not honored?)");
+assert_eq!(result, None);
+```
+
+Document in the test's doc comment that this bounds a hang empirically (a genuinely interactive
+prompt would block indefinitely, not merely run slow) rather than proving non-blocking behavior
+by construction — combined with the source-level check in §A.4 item 1, this is the practical
+verification available without spawning and killing a truly-hung child process.
+
+**(d) Regression guard.** `remote.rs:720-780` (`cred_guard_full_sequence`,
+`cred_guard_ssh_only`, `cred_guard_empty_allowed`, `cred_guard_single_method_once`) and
+`remote.rs:762-845` (`map_remote_err` tests) still compile and pass unmodified — `cargo test` in
+CI is sufficient proof; no new assertions needed for these specifically.

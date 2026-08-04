@@ -151,11 +151,10 @@ pub fn update_submodule(workdir: &Path, name: &str) -> Result<(), AppError> {
     let repo = open_workdir_repo(workdir)?;
     let mut sm = open_submodule(&repo, name)?;
 
-    let config = repo.config()?;
     let attempts = RefCell::new(CredAttempts::default());
     let mut callbacks = git2::RemoteCallbacks::new();
     callbacks.credentials(|url, username_from_url, allowed| {
-        acquire_cred(&config, &attempts, url, username_from_url, allowed)
+        acquire_cred(repo.workdir(), &attempts, url, username_from_url, allowed)
     });
 
     let mut fo = git2::FetchOptions::new();
