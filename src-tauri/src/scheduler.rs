@@ -700,6 +700,21 @@ mod tests {
             .expect("scratch dir")
     }
 
+    /// Builds a `file://` URL for a local path. On POSIX the path already
+    /// starts with `/`, so `file://` + path gives the correct 3-slash form;
+    /// prepending a bare `file:///` unconditionally (as Windows drive paths
+    /// need) double-slashes it into `file:////...`, which libgit2 rejects as
+    /// "not a valid local file URI" even though the real `git` CLI tolerates
+    /// it — that mismatch masked as widespread scheduler test failures.
+    fn file_url(path: &std::path::Path) -> String {
+        let s = path.display().to_string().replace('\\', "/");
+        if s.starts_with('/') {
+            format!("file://{s}")
+        } else {
+            format!("file:///{s}")
+        }
+    }
+
     fn git(dir: &std::path::Path, args: &[&str]) {
         let out = Command::new("git")
             .current_dir(dir)
@@ -802,7 +817,7 @@ mod tests {
         init_repo(&work);
         commit_file(&work, "a.txt", "one\n", "c1");
         git(root, &["init", "--bare", "-b", "main", "remote.git"]);
-        let bare_url = format!("file:///{}", bare.display().to_string().replace('\\', "/"));
+        let bare_url = file_url(&bare);
         git(&work, &["remote", "add", "origin", &bare_url]);
         git(&work, &["push", "-u", "origin", "main"]);
         git(root, &["clone", &bare_url, "other"]);
@@ -1044,14 +1059,11 @@ mod tests {
     fn backoff_progression_and_reset_on_success() {
         let dir = scratch_dir();
         let (work, bare, _other) = fetch_fixture(dir.path());
-        let bare_url = format!("file:///{}", bare.display().to_string().replace('\\', "/"));
+        let bare_url = file_url(&bare);
 
         // Point origin at a nonexistent path → every fetch fails.
         let missing = dir.path().join("missing.git");
-        let missing_url = format!(
-            "file:///{}",
-            missing.display().to_string().replace('\\', "/")
-        );
+        let missing_url = file_url(&missing);
         git(&work, &["remote", "set-url", "origin", &missing_url]);
 
         let sched = sched_with_auto_fetch(1);

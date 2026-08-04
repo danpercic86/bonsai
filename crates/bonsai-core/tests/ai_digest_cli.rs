@@ -40,7 +40,7 @@ fn env_lock() -> MutexGuard<'static, ()> {
 }
 
 fn stub_path() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/claude_stub.cmd")
+    common::claude_stub_path()
 }
 
 fn set_stub_mode(mode: &str) {

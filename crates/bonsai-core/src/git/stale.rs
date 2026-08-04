@@ -390,9 +390,13 @@ mod tests {
     use std::process::Command;
 
     /// Init a scratch repo with a deterministic identity + autocrlf off
-    /// (== branches.rs `cbh_init`).
+    /// (== branches.rs `cbh_init`). Pins the initial branch to "main" via
+    /// `initial_head` rather than relying on `init.defaultBranch` — libgit2
+    /// falls back to "master" when that config is unset, which these fixtures
+    /// (and the base-resolution assertions below) assume is "main".
     fn init(dir: &Path) -> git2::Repository {
-        let repo = git2::Repository::init(dir).expect("init repo");
+        let repo = git2::Repository::init_opts(dir, git2::RepositoryInitOptions::new().initial_head("main"))
+            .expect("init repo");
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test User").expect("name");
         cfg.set_str("user.email", "test@example.com").expect("email");

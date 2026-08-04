@@ -46,7 +46,7 @@ fn env_lock() -> MutexGuard<'static, ()> {
 }
 
 fn stub_path() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/claude_stub.cmd")
+    common::claude_stub_path()
 }
 
 /// Point the AI layer at the committed stub in an arbitrary `BONSAI_STUB_MODE`.

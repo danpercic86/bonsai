@@ -120,7 +120,7 @@ fn collect_sink(ticks: &Mutex<Vec<CloneProgress>>) -> impl FnMut(CloneProgress) 
 fn clone_round_trip_and_progress() {
     require_git!();
     let (_dir, root, bare) = setup_origin();
-    let url = format!("file:///{}", path_str(&bare).replace('\\', "/"));
+    let url = common::file_url(&bare);
     let work = root.join("work");
 
     let ticks = Mutex::new(Vec::new());
@@ -184,7 +184,7 @@ fn clone_round_trip_and_progress() {
 fn clone_brings_all_branches_and_tags() {
     require_git!();
     let (_dir, root, bare) = setup_multi_ref_origin();
-    let url = format!("file:///{}", path_str(&bare).replace('\\', "/"));
+    let url = common::file_url(&bare);
     let work = root.join("work");
 
     let out = clone_repo(&url, &work, |_p| {}).expect("clone_repo");
@@ -232,7 +232,7 @@ fn clone_brings_all_branches_and_tags() {
 fn clone_into_path_with_spaces_succeeds() {
     require_git!();
     let (_dir, root, bare) = setup_origin();
-    let url = format!("file:///{}", path_str(&bare).replace('\\', "/"));
+    let url = common::file_url(&bare);
 
     let dest = root.join("my cloned repo");
     let out = clone_repo(&url, &dest, |_p| {}).expect("clone into spaced path");
@@ -259,7 +259,7 @@ fn clone_into_path_with_spaces_succeeds() {
 fn clone_into_non_empty_dir_is_io_error() {
     require_git!();
     let (_dir, root, bare) = setup_origin();
-    let url = format!("file:///{}", path_str(&bare).replace('\\', "/"));
+    let url = common::file_url(&bare);
 
     let dest = root.join("occupied");
     std::fs::create_dir(&dest).expect("mkdir occupied");
@@ -278,7 +278,7 @@ fn clone_into_non_empty_dir_is_io_error() {
 fn clone_into_a_file_is_io_error() {
     require_git!();
     let (_dir, root, bare) = setup_origin();
-    let url = format!("file:///{}", path_str(&bare).replace('\\', "/"));
+    let url = common::file_url(&bare);
 
     let dest = root.join("afile");
     std::fs::write(&dest, "i am a file\n").expect("write file");
@@ -292,7 +292,7 @@ fn clone_into_a_file_is_io_error() {
 fn clone_into_empty_dir_succeeds() {
     require_git!();
     let (_dir, root, bare) = setup_origin();
-    let url = format!("file:///{}", path_str(&bare).replace('\\', "/"));
+    let url = common::file_url(&bare);
 
     let dest = root.join("empty");
     std::fs::create_dir(&dest).expect("mkdir empty");

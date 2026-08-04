@@ -37,6 +37,45 @@ pub fn scratch_dir() -> tempfile::TempDir {
         .expect("scratch dir")
 }
 
+/// Builds a `file://` URL for a local path. On POSIX the path already starts
+/// with `/`, so `file://` + path gives the correct 3-slash form; prepending a
+/// bare `file:///` unconditionally (as Windows drive paths need) double-slashes
+/// it into `file:////...`, which libgit2 rejects as "not a valid local file
+/// URI" even though the real `git` CLI tolerates it.
+pub fn file_url(path: &Path) -> String {
+    let s = path.display().to_string().replace('\\', "/");
+    if s.starts_with('/') {
+        format!("file://{s}")
+    } else {
+        format!("file:///{s}")
+    }
+}
+
+/// Path to the committed `claude` CLI stub used by the P13/P15 AI-integration
+/// tests, selected via `BONSAI_CLAUDE_BIN`. Windows runs the `.cmd` stub
+/// directly (`Command::new` routes `.cmd` through cmd.exe automatically);
+/// macOS/Linux use the POSIX `.sh` twin, with the executable bit forced on at
+/// test time — git doesn't reliably preserve the mode bit across
+/// clones/platforms.
+pub fn claude_stub_path() -> std::path::PathBuf {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    if cfg!(windows) {
+        fixtures.join("claude_stub.cmd")
+    } else {
+        let path = fixtures.join("claude_stub.sh");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = std::fs::metadata(&path) {
+                let mut perms = meta.permissions();
+                perms.set_mode(perms.mode() | 0o111);
+                let _ = std::fs::set_permissions(&path, perms);
+            }
+        }
+        path
+    }
+}
+
 pub fn have_git() -> bool {
     Command::new("git").arg("--version").output().is_ok()
 }
