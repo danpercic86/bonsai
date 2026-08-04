@@ -152,9 +152,10 @@ pub(crate) fn next_cred_method(
 /// resolves without a cwd, matching what `git clone` itself does before a
 /// repo exists.
 ///
-/// NEVER prompts (`GIT_TERMINAL_PROMPT=0` is set unconditionally on the
-/// child — a cache miss must fail fast, not block on an interactive
-/// prompt — this preserves the locked never-prompt policy, §2.2). NEVER
+/// NEVER prompts: `GIT_TERMINAL_PROMPT=0` gates the terminal prompt and
+/// `-c core.askpass=` + `env_remove` of GIT_ASKPASS/SSH_ASKPASS neutralize the
+/// askpass GUI path, so a cache miss fails fast instead of blocking on an
+/// interactive prompt — this preserves the locked never-prompt policy, §2.2). NEVER
 /// panics. Returns `None` on ANY failure path: binary not found / spawn
 /// error, non-zero exit status, I/O error writing stdin, stdout not valid
 /// UTF-8, or `username`/`password` missing or empty in the parsed output.
@@ -163,8 +164,19 @@ pub(crate) fn next_cred_method(
 /// credential method.
 pub(crate) fn credential_fill(repo_path: Option<&Path>, url: &str) -> Option<(String, String)> {
     let mut cmd = Command::new("git");
-    cmd.args(["credential", "fill"])
+    // Never block on an interactive prompt. GIT_TERMINAL_PROMPT=0 only gates the
+    // *terminal* prompt; git also has an askpass path (a GUI dialog on Git for
+    // Windows — "Username for '<url>'") reached via the GIT_ASKPASS / SSH_ASKPASS
+    // env vars or `core.askpass` config. Neutralize all of them so a cache miss
+    // fails fast instead of popping a window: `-c core.askpass=` overrides any
+    // configured askpass, and env_remove clears the env-level ones (Git for
+    // Windows sets GIT_ASKPASS). env_remove affects ONLY this child, so parallel
+    // tests stay hermetic. With no askpass and no terminal prompt, git returns an
+    // error and we fall through to None — the locked never-prompt policy (§2.2).
+    cmd.args(["-c", "core.askpass=", "credential", "fill"])
         .env("GIT_TERMINAL_PROMPT", "0") // REQUIRED — never block on a prompt
+        .env_remove("GIT_ASKPASS")
+        .env_remove("SSH_ASKPASS")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null()); // discarded — never logged, never in an error path
