@@ -25,7 +25,30 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
-## P38 — reflog viewer + restore (Git completeness, Phase 1) — **in-progress** (2026-08-04)
+## P39 — git bisect (Git completeness, Phase 1) — **in-progress** (2026-08-04)
+
+Git-completeness milestone #3. Binary-search for the regression-introducing commit: start (mark
+good+bad), mark good/bad/skip the checked-out midpoint, reset (abort → original HEAD/branch); the
+engine checks out each midpoint and, on convergence, reports the first-bad commit. In-progress OpBanner
+shows revisions-left. Contract: `docs/contracts/P39-bisect.md` (architect). Approach: **Bonsai-owned
+on-disk state machine** (git2 has NO bisect sequencer) — versioned JSON `.git/bonsai-bisect/state.json`
+(atomic write, re-read each IPC call), mirroring the P23 interactive-rebase engine. Simpler than rebase:
+the original branch ref NEVER moves (only a detached HEAD slides across midpoints) → reset is a pure
+re-attach. Midpoint = positional split over `revwalk().push(bad).hide(good)`. New `RepoOpState::Bisect`
+variant (probe-first in opstate.rs, mirrored in TS). No new AppError (reuse OperationInProgress/
+NoOperationInProgress). Accepted architect defaults: two-click context-menu entry (mark-bad→mark-good);
+positional midpoint — oracle asserts FINAL first-bad equality + midpoint-set membership (mathematically
+sound: any correct bisect over a monotonic good→bad range converges to the same culprit regardless of
+midpoint choice), NOT the exact intermediate sequence; progress rides existing get_op_state (no separate
+get_bisect_state cmd). Sub-increments: **P39a** bisect.rs engine + midpoint/reset + RepoOpState::Bisect
++ opstate probe + 4 cmds + IPC + stateful mock + `bisect_cli.rs` oracle (vs real `git bisect run`) →
+**P39b** OpBanner bisect arm (Good/Bad/Skip/Reset + found + counts) + two-click entry + Reset confirm.
+Guardrails unchanged (scratch D:\Temp\bonsai-scratch, TMP/TEMP=D:\Temp on Windows, no concurrent
+test+clippy, mock.ts compiling, orchestrator commits).
+
+**Current step:** P39a — senior-dev implementing bisect engine + opstate + cmds + IPC + mock + oracle.
+
+## P38 — reflog viewer + restore (Git completeness, Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 
 Git-completeness milestone #2. The safety net for force-push (P37) / rebase (P23) / amend (P20) /
 reset: read HEAD + per-branch reflog, present entries (short oid, old→new, message, committer/time,
@@ -57,8 +80,21 @@ concurrent test+clippy, mock.ts compiling, orchestrator commits).
   "↺ Reflog" → overlay lists HEAD@{0..5} (reset/amend/rebase/commit/pull/initial, (root) on the initial
   old oid); row kebab → Create branch here + Reset main to this soft/mixed/hard…; Create branch here →
   branch-name prompt; Reset (hard) → destructive "Reset (hard)" confirm; zero console errors.
-**Current step:** P38a+b committed & AI-gate-passed. Next: P38 tester (regression + user checklist),
-then commit the green milestone → P39 (bisect).
+- **P38 tester** — full workspace regression PASS, zero regressions: `cargo test --workspace` 813
+  passed / 0 failed / 2 ignored (M2 perf-gate, unrelated); remote_cli flaky test PASSED; clippy
+  --workspace --tests clean; tsc + build clean. Strengthened reflog_cli → 6 (added: cap-to-newest-2000
+  via a synthesized over-cap .git/logs/HEAD, full branch reflog vs `git log -g main`, reset old/new-oid
+  direction). Checklist: docs/contracts/P38-user-checklist.md. No impl/contract discrepancies.
+- **P38 AI GATE PASSED (2026-08-04).** Commits: bd84774 P38a · 0d5c340 P38b (+ tester closeout).
+  Backend reflog oracle + frontend browser harness both verified; zero regressions. Git-completeness
+  Phase 1 milestone #2 delivered.
+
+**P38 awaiting USER CHECKPOINT** (native pnpm tauri dev on a SCRATCH repo, per docs/contracts/
+P38-user-checklist.md): after commit/amend/hard-reset/rebase, toolbar ↺ Reflog shows entries matching
+`git reflog`; "Create branch here" on an older entry creates the branch at its newOid; "Reset (hard)"
+moves the branch there after the destructive confirm (Cancel = no-op); branch-menu "View reflog" works;
+a no-reflog branch shows an empty placeholder, not an error.
+**Current step:** P38 DONE (AI gate passed, awaiting USER CHECKPOINT). Next: P39 (bisect).
 
 ## P37 — force-push-with-lease (Git completeness, Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 
