@@ -78,6 +78,12 @@ pub fn spawn_watcher(
     workdir: &Path,
     on_change: Box<dyn Fn() + Send + 'static>,
 ) -> Result<WatcherHandle, AppError> {
+    // Canonicalize: macOS FSEvents resolves symlinks in the paths it reports
+    // (e.g. `/var/...` -> `/private/var/...`, true of every macOS temp dir),
+    // so comparing against an unresolved `workdir` silently breaks the
+    // `.git`-internals filter below — every event looks "outside .git".
+    let workdir = std::fs::canonicalize(workdir)
+        .map_err(|e| AppError::Other(format!("failed to resolve {}: {e}", workdir.display())))?;
     let git_dir = workdir.join(".git");
     let (tx, rx) = mpsc::channel::<()>();
 
@@ -93,7 +99,7 @@ pub fn spawn_watcher(
     .map_err(|e| AppError::Other(format!("failed to create file watcher: {e}")))?;
 
     watcher
-        .watch(workdir, notify::RecursiveMode::Recursive)
+        .watch(&workdir, notify::RecursiveMode::Recursive)
         .map_err(|e| AppError::Other(format!("failed to watch {}: {e}", workdir.display())))?;
 
     let debounce_thread = std::thread::Builder::new()
