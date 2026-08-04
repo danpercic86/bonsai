@@ -4715,6 +4715,58 @@ mod tests {
         assert!(s.onboarding_seen);
     }
 
+    /// `auto_check_updates` (P42 D4/INV-4) patches partially like every other
+    /// bool field: the default is `false`; a `Some(true)` patch flips it while
+    /// leaving unrelated fields untouched; and a subsequent unrelated patch (or
+    /// an empty one) does NOT reset it — pinning the "apply only when Some"
+    /// property for the auto-check-on-launch flag the AI harness can't verify
+    /// (the mock settings store resets per browser load). Mirrors
+    /// `set_ui_settings_patch_onboarding_seen_is_partial`.
+    #[test]
+    fn set_ui_settings_patch_auto_check_updates_is_partial() {
+        let mut s = settings::Settings::default();
+        // Default: auto-check OFF (D4 — no surprise outbound call on launch).
+        assert!(!s.auto_check_updates);
+
+        // Only `auto_check_updates` changes; unrelated fields untouched.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                auto_check_updates: Some(true),
+                ..Default::default()
+            },
+        );
+        assert!(s.auto_check_updates);
+        assert_eq!(s.theme, ThemeChoice::default());
+        assert!(!s.onboarding_seen);
+
+        // An unrelated patch (frontend saving some other pref) must NOT clear
+        // the persisted flag.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                theme: Some(ThemeChoice::Light),
+                ..Default::default()
+            },
+        );
+        assert!(s.auto_check_updates);
+        assert_eq!(s.theme, ThemeChoice::Light);
+
+        // A totally empty patch is equally non-destructive.
+        apply_patch(&mut s, UiSettingsPatch::default());
+        assert!(s.auto_check_updates);
+
+        // And it can be explicitly turned back off via `Some(false)`.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                auto_check_updates: Some(false),
+                ..Default::default()
+            },
+        );
+        assert!(!s.auto_check_updates);
+    }
+
     /// `ai_resolve_conflict` enforces the backend consent gate (§9.6) BEFORE
     /// touching the repo: default settings (`ai_consented=false`) → `AiUnavailable`
     /// even with no repo open; once enabled+consented, an unknown repo id →

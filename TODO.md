@@ -25,7 +25,7 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
-## P42 — packaging + auto-update (Productization) — **in-progress** (2026-08-04)
+## P42 — packaging + auto-update (Productization) — **DONE (code AI-gate passed, awaiting USER CHECKPOINT)** (2026-08-05)
 
 Productization milestone. **User explicitly requested auto-updates (2026-08-04, "do not forget about
 auto updates").** Tauri v2 updater plugin + a check-for-update/update-available/download-install flow,
@@ -61,8 +61,23 @@ mock-seam UI flows (available→notify→progress→restart; up-to-date; error) 
   banner→dialog→0.7→4.7MB progress→"Update ready…Restart now"; ?update=none → "You're up to date";
   ?update=error → inline "could not reach the update endpoint". tsc + build clean. Nits (cosmetic, left):
   infoRef not cleared on check-error; focus fallback; dead class; unreachable idle fallback text.
-**Current step:** P42a+b committed & harness-passed. Next: P42 tester + unsigned `pnpm tauri build` gate
-(background+poll, dev key for updater artifacts) → commit milestone. This is the last session milestone.
+- **P42 tester** — full workspace regression PASS, zero regressions (bonsai_lib 101, bonsai_core 373, all
+  integration 0 failed; remote_cli flaky test passed); clippy clean; tsc + build clean. Added
+  set_ui_settings_patch_auto_check_updates_is_partial. Private-key security re-confirmed (git ls-files
+  .tauri empty; gitignored). Checklist: docs/contracts/P42-user-checklist.md (Part A user-provides:
+  endpoint + production updater keypair→CI secrets + code-signing certs; Part B native round-trip).
+- **P42 CODE AI GATE PASSED (2026-08-05).** Commits: 67fe3bc P42a · b1cfeac P42b (+ tester closeout).
+  cargo check/test/clippy + tsc + build all clean; full auto-update UI browser-harness-verified (available
+  →download→ready→restart / up-to-date / error, zero console errors). Updater plugin + config + IPC-triple
+  + UI all reviewer-APPROVED. Productization milestone #2 (auto-update) delivered at the code level.
+
+**P42 awaiting USER CHECKPOINT** (per docs/contracts/P42-user-checklist.md): the `pnpm tauri build`
+bundling + the real SIGNED endpoint→check→download→install→relaunch round-trip, all of which need
+user-supplied secrets (endpoint owner/repo, production updater private key, code-signing certs). NOTE:
+`pnpm tauri build` bundling (NSIS/WiX) may be blocked on this machine by the IT-enforced Defender ASR
+rule (see memory: defender-asr-blocks-appdata-exes) — the code compiles clean via cargo check regardless.
+**Current step:** P42 code-complete. Attempting an unsigned `pnpm tauri build` as a bonus gate (result
+folded into the checkpoint if ASR/tooling blocks bundling). This was the last requested session milestone.
 
 ## P43 — first-run onboarding + empty-state polish (Productization) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 
