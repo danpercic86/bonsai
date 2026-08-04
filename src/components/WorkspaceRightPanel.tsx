@@ -67,6 +67,7 @@ export interface WorkspaceRightPanelProps {
   onStage: StatusPanelProps['onStage'];
   onUnstage: StatusPanelProps['onUnstage'];
   onDiscard: StatusPanelProps['onDiscard'];
+  onDiscardForce: StatusPanelProps['onDiscardForce'];
   onToggleDiff: StatusPanelProps['onToggleDiff'];
   onResolveConflict: StatusPanelProps['onResolveConflict'];
   onToggleConflictView: StatusPanelProps['onToggleConflictView'];
@@ -132,6 +133,7 @@ export function WorkspaceRightPanel({
   onStage,
   onUnstage,
   onDiscard,
+  onDiscardForce,
   onToggleDiff,
   onResolveConflict,
   onToggleConflictView,
@@ -211,6 +213,7 @@ export function WorkspaceRightPanel({
             onStage={onStage}
             onUnstage={onUnstage}
             onDiscard={onDiscard}
+            onDiscardForce={onDiscardForce}
             onReviewStaged={() =>
               runAnalyze({ kind: 'staged' }, 'review', 'Review staged changes')
             }

@@ -390,6 +390,10 @@ export const tauriIpc: IpcApi = {
     return invoke<void>('discard_paths', { repoId, paths });
   },
 
+  discardPathsForce(repoId: string, paths: string[]): Promise<void> {
+    return invoke<void>('discard_paths_force', { repoId, paths });
+  },
+
   cherrypickCommit(repoId: string, oid: string): Promise<CherrypickOutcome> {
     return invoke<CherrypickOutcome>('cherrypick_commit', { repoId, oid });
   },

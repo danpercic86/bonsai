@@ -2,7 +2,8 @@
 ///
 /// Serialized as `{ "kind": "git" | "io" | "other" | "noRepo" | "emptyMessage"
 /// | "configMissing" | "nothingToCommit" | "branchExists" | "invalidName"
-/// | "checkoutConflict" | "unmergedBranch" | "branchNotFound"
+/// | "checkoutConflict" | "branchCheckedOutElsewhere"
+/// | "unmergedBranch" | "branchNotFound"
 /// | "noRemote" | "noUpstream" | "authFailed" | "networkError"
 /// | "pushRejected" | "operationInProgress" | "noOperationInProgress"
 /// | "unresolvedConflicts" | "aiUnavailable" | "aiFailed",
@@ -29,6 +30,8 @@ pub enum AppError {
     InvalidName(String),
     #[error("{0}")]
     CheckoutConflict(String),
+    #[error("{0}")]
+    BranchCheckedOutElsewhere(String),
     #[error("{0}")]
     UnmergedBranch(String),
     #[error("{0}")]
@@ -69,6 +72,7 @@ impl AppError {
             AppError::BranchExists(_) => "branchExists",
             AppError::InvalidName(_) => "invalidName",
             AppError::CheckoutConflict(_) => "checkoutConflict",
+            AppError::BranchCheckedOutElsewhere(_) => "branchCheckedOutElsewhere",
             AppError::UnmergedBranch(_) => "unmergedBranch",
             AppError::BranchNotFound(_) => "branchNotFound",
             AppError::NoRemote(_) => "noRemote",
@@ -93,6 +97,7 @@ impl AppError {
             | AppError::BranchExists(m)
             | AppError::InvalidName(m)
             | AppError::CheckoutConflict(m)
+            | AppError::BranchCheckedOutElsewhere(m)
             | AppError::UnmergedBranch(m)
             | AppError::BranchNotFound(m)
             | AppError::NoRemote(m)

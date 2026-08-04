@@ -191,6 +191,14 @@ export function RepoWorkspace({
   // P20: destructive reset (all three modes confirm; hard warns extra) + discard.
   const [pendingReset, setPendingReset] = useState<{ oid: string; mode: ResetMode } | null>(null);
   const [pendingDiscard, setPendingDiscard] = useState<string[] | null>(null);
+  // Bulk "Discard all" (panel + folder): reverts modified tracked files AND
+  // deletes new/untracked files. Carries per-kind counts so the confirm dialog
+  // can warn precisely about permanent deletion of new files.
+  const [pendingDiscardForce, setPendingDiscardForce] = useState<{
+    paths: string[];
+    modified: number;
+    created: number;
+  } | null>(null);
   // Commit & Push: when HEAD has no upstream, the message is parked here while a
   // ConfirmDialog asks to set upstream. The pending promise (resolves the
   // CommitBox submit) is held in commitPushResolver.
@@ -268,6 +276,7 @@ export function RepoWorkspace({
     pendingReservedStash !== null ||
     pendingReset !== null ||
     pendingDiscard !== null ||
+    pendingDiscardForce !== null ||
     pendingHunkDiscard !== null ||
     pendingCreateBranch !== null ||
     pendingCreateTag !== null ||
@@ -1165,6 +1174,36 @@ export function RepoWorkspace({
       await ipc.discardPaths(repoId, paths);
       await refreshAll();
       pushToast('success', `Discarded changes to ${paths.length} file(s)`);
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  // Bulk "Discard all": partition the requested paths into modified (tracked)
+  // vs created (untracked) using the current status snapshot so the confirm
+  // dialog can warn about the permanent deletion of new files, then arm it.
+  function requestDiscardForce(paths: string[]) {
+    if (paths.length === 0) return;
+    const untracked = new Set((status?.untracked ?? []).map((e) => e.path));
+    let modified = 0;
+    let created = 0;
+    for (const p of paths) {
+      if (untracked.has(p)) created += 1;
+      else modified += 1;
+    }
+    setPendingDiscardForce({ paths, modified, created });
+  }
+
+  // Force-discard: reverts modified tracked files to the index AND deletes
+  // new/untracked files (called after the ConfirmDialog).
+  async function handleDiscardForce(paths: string[]) {
+    setMutating(true);
+    try {
+      await ipc.discardPathsForce(repoId, paths);
+      await refreshAll();
+      pushToast('success', `Discarded ${paths.length} file(s)`);
     } catch (e) {
       pushToast('error', errorMessage(e));
     } finally {
@@ -2821,6 +2860,7 @@ export function RepoWorkspace({
           onStage={(paths) => void handleStage(paths)}
           onUnstage={(paths) => void handleUnstage(paths)}
           onDiscard={(paths) => setPendingDiscard(paths)}
+          onDiscardForce={(paths) => requestDiscardForce(paths)}
           onToggleDiff={handleToggleWorkdirDiff}
           onResolveConflict={(path, r) => void handleResolveConflict(path, r)}
           onToggleConflictView={handleToggleConflictView}
@@ -2874,6 +2914,9 @@ export function RepoWorkspace({
         pendingDiscard={pendingDiscard}
         setPendingDiscard={setPendingDiscard}
         handleDiscard={(paths) => void handleDiscard(paths)}
+        pendingDiscardForce={pendingDiscardForce}
+        setPendingDiscardForce={setPendingDiscardForce}
+        handleDiscardForce={(paths) => void handleDiscardForce(paths)}
         pendingCommitPush={pendingCommitPush}
         handleConfirmCommitPush={handleConfirmCommitPush}
         handleCancelCommitPush={handleCancelCommitPush}

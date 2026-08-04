@@ -3,8 +3,10 @@
 //! Pure git2 logic, no Tauri types. Restores tracked worktree files to their
 //! INDEX version (`git checkout -- <paths>` / `git restore --worktree`),
 //! discarding unstaged edits and recreating unstaged deletions; staged content
-//! is untouched. Destructive — the UI confirms first. Untracked files are out
-//! of scope (the backend errors defensively on an untracked path).
+//! is untouched. Destructive — the UI confirms first. The per-file `discard_paths`
+//! is tracked-only (errors defensively on an untracked path); the bulk
+//! `discard_paths_force` (P36) additionally DELETES untracked/new files from disk,
+//! so a folder/section "Discard all" can fully clean the working tree.
 
 use std::path::Path;
 
@@ -50,6 +52,65 @@ pub fn discard_paths(workdir: &Path, paths: &[String]) -> Result<(), AppError> {
     }
     // None target == the repo's current index.
     repo.checkout_index(None, Some(&mut cb))?;
+    Ok(())
+}
+
+/// Blocking. Force-discard a mixed set of paths:
+///   - TRACKED paths (present in the index) are restored to their INDEX content
+///     via `checkout_index` + per-path `CheckoutBuilder` (identical mechanism to
+///     `discard_paths`) — reverts unstaged edits, recreates unstaged deletions.
+///     Staged content is untouched.
+///   - UNTRACKED paths (absent from the index) are DELETED from disk
+///     (`std::fs::remove_file`).
+///
+/// All-or-nothing validation up-front (like `discard_paths`): every path is
+/// `validate_rel_path`-checked before any mutation. Empty `paths` is a no-op
+/// `Ok(())` — `checkout_index` is NEVER reached with a zero-`.path()`
+/// (match-all) pathspec. Destructive — the UI confirms first.
+pub fn discard_paths_force(workdir: &Path, paths: &[String]) -> Result<(), AppError> {
+    // 1. Empty guard FIRST (same match-all-clobber guarantee as `discard_paths`).
+    if paths.is_empty() {
+        return Ok(());
+    }
+    // 2. Validate all paths before touching the repo or filesystem.
+    for p in paths {
+        validate_rel_path(p)?;
+    }
+
+    let repo = open_workdir_repo(workdir)?;
+    let index = repo.index()?;
+
+    // 3. Partition by index membership.
+    let mut tracked: Vec<&String> = Vec::new();
+    let mut untracked: Vec<&String> = Vec::new();
+    for p in paths {
+        if index.get_path(Path::new(p), 0).is_some() {
+            tracked.push(p);
+        } else {
+            untracked.push(p);
+        }
+    }
+
+    // 4a. Delete untracked files first. Tolerate already-gone (NotFound); a
+    //     missing untracked file is the desired end state.
+    for p in &untracked {
+        if let Err(e) = std::fs::remove_file(workdir.join(p)) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                return Err(AppError::Io(e.to_string()));
+            }
+        }
+    }
+
+    // 4b. Restore tracked files. The `!tracked.is_empty()` guard preserves the
+    //     "at least one .path()" invariant so this branch can never match-all-clobber.
+    if !tracked.is_empty() {
+        let mut cb = git2::build::CheckoutBuilder::new();
+        cb.force().remove_untracked(false);
+        for p in &tracked {
+            cb.path(p.as_str());
+        }
+        repo.checkout_index(None, Some(&mut cb))?;
+    }
     Ok(())
 }
 
@@ -121,5 +182,115 @@ mod tests {
         commit(d, "base", &[("a.txt", "base\n")]);
         let err = discard_paths(d, &["../evil".to_string()]).expect_err("escape");
         assert!(matches!(err, AppError::Other(_)), "got: {err:?}");
+    }
+
+    // -------------------------------------- P36 §2.1: discard_paths_force
+
+    /// A modified TRACKED file is reverted to its index content.
+    #[test]
+    fn force_modified_tracked_reverts_to_index() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        init(d);
+        commit(d, "base", &[("a.txt", "base\n")]);
+        std::fs::write(d.join("a.txt"), "edited\n").expect("edit");
+
+        discard_paths_force(d, &["a.txt".to_string()]).expect("force discard");
+        assert_eq!(
+            std::fs::read_to_string(d.join("a.txt")).expect("read"),
+            "base\n",
+            "tracked file restored to index content"
+        );
+    }
+
+    /// An UNTRACKED file is deleted from disk.
+    #[test]
+    fn force_untracked_file_deleted() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        init(d);
+        commit(d, "base", &[("a.txt", "base\n")]);
+        std::fs::write(d.join("untracked.txt"), "new\n").expect("write untracked");
+
+        discard_paths_force(d, &["untracked.txt".to_string()]).expect("force discard");
+        assert!(
+            !d.join("untracked.txt").exists(),
+            "untracked file deleted from disk"
+        );
+    }
+
+    /// A mixed set (one modified tracked + one untracked) handled in one call.
+    #[test]
+    fn force_mixed_set() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        init(d);
+        commit(d, "base", &[("a.txt", "base\n")]);
+        std::fs::write(d.join("a.txt"), "edited\n").expect("edit tracked");
+        std::fs::write(d.join("new.txt"), "new\n").expect("write untracked");
+
+        discard_paths_force(d, &["a.txt".to_string(), "new.txt".to_string()])
+            .expect("force discard");
+        assert_eq!(
+            std::fs::read_to_string(d.join("a.txt")).expect("read"),
+            "base\n",
+            "tracked file reverted"
+        );
+        assert!(!d.join("new.txt").exists(), "untracked file deleted");
+    }
+
+    /// Empty `paths` is a no-op `Ok(())` and does NOT clobber the whole worktree —
+    /// a pre-existing unstaged edit survives (mirror of `discard_empty_is_noop`).
+    #[test]
+    fn force_empty_is_noop() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        init(d);
+        commit(d, "base", &[("a.txt", "base\n")]);
+        std::fs::write(d.join("a.txt"), "edited\n").expect("edit");
+
+        discard_paths_force(d, &[]).expect("empty force discard is Ok");
+        assert_eq!(
+            std::fs::read_to_string(d.join("a.txt")).expect("read"),
+            "edited\n",
+            "empty batch must not clobber the worktree"
+        );
+    }
+
+    /// An already-gone untracked path in the list is tolerated (`Ok`); other
+    /// listed paths are still processed.
+    #[test]
+    fn force_already_gone_untracked_tolerated() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        init(d);
+        commit(d, "base", &[("a.txt", "base\n")]);
+        std::fs::write(d.join("real.txt"), "new\n").expect("write untracked");
+
+        // "ghost.txt" is absent from index AND disk → NotFound is tolerated.
+        discard_paths_force(d, &["ghost.txt".to_string(), "real.txt".to_string()])
+            .expect("missing untracked tolerated");
+        assert!(!d.join("ghost.txt").exists(), "ghost still absent");
+        assert!(!d.join("real.txt").exists(), "real.txt still deleted");
+    }
+
+    /// An invalid/escaping path rejects the whole batch before any mutation.
+    #[test]
+    fn force_invalid_path_rejected() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        init(d);
+        commit(d, "base", &[("a.txt", "base\n")]);
+        std::fs::write(d.join("a.txt"), "edited\n").expect("edit");
+
+        let err = discard_paths_force(d, &["../evil".to_string(), "a.txt".to_string()])
+            .expect_err("escape rejected");
+        assert!(matches!(err, AppError::Other(_)), "got: {err:?}");
+        // Nothing mutated: the dirty tracked file is untouched.
+        assert_eq!(
+            std::fs::read_to_string(d.join("a.txt")).expect("read"),
+            "edited\n",
+            "invalid batch must not mutate anything"
+        );
     }
 }

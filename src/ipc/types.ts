@@ -1058,6 +1058,7 @@ export interface AppError {
     | 'branchExists'
     | 'invalidName'
     | 'checkoutConflict'
+    | 'branchCheckedOutElsewhere'
     | 'unmergedBranch'
     | 'branchNotFound'
     | 'noRemote'
@@ -1289,6 +1290,10 @@ export interface IpcApi {
   /** Restore tracked worktree files to the index version, discarding unstaged
    *  edits (P20). Destructive — the UI confirms first. Rejects other | git | noRepo. */
   discardPaths(repoId: string, paths: string[]): Promise<void>;
+  /** Force-discard a mixed set: tracked paths restored to the index version,
+   *  untracked paths deleted from disk (P36). Destructive — the UI confirms
+   *  first. Rejects other (invalid path) | io | git | noRepo. */
+  discardPathsForce(repoId: string, paths: string[]): Promise<void>;
   /** Cherry-pick a single commit onto the current branch (P20). Clean →
    *  committed; conflict → pauses into RepoOpState.cherryPick. Rejects
    *  operationInProgress | git | checkoutConflict | configMissing |

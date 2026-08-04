@@ -25,7 +25,9 @@ use bonsai_core::git::merge::{self, MergeOutcome};
 use bonsai_core::git::opstate::{read_op_state, RepoOpState};
 use bonsai_core::git::rebase::{self, RebaseOutcome};
 use bonsai_core::git::rebase_interactive::{self, RebaseTodoOp};
-use bonsai_core::git::discard::discard_paths as discard_paths_core;
+use bonsai_core::git::discard::{
+    discard_paths as discard_paths_core, discard_paths_force as discard_paths_force_core,
+};
 use bonsai_core::git::discard_partial::discard_partial as discard_partial_core;
 use bonsai_core::git::remote::{
     add_remote as add_remote_core, fetch_all, list_remotes as list_remotes_core, pull_ff,
@@ -2105,6 +2107,30 @@ async fn discard_paths_inner(
 ) -> Result<(), AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || discard_paths_core(&path, &paths))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Force-discards a mixed set: tracked paths restored to index, untracked paths
+/// deleted from disk. Destructive — the UI confirms first. Errors: `other`
+/// (invalid path) | `io` | `git` | `noRepo`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn discard_paths_force(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    paths: Vec<String>,
+) -> Result<(), AppError> {
+    discard_paths_force_inner(state.inner(), &repo_id, paths).await
+}
+
+/// Runtime-free core of `discard_paths_force` (unit-testable without a Tauri app).
+async fn discard_paths_force_inner(
+    state: &AppState,
+    repo_id: &str,
+    paths: Vec<String>,
+) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || discard_paths_force_core(&path, &paths))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

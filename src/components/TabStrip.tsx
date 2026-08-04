@@ -23,6 +23,9 @@ export interface TabStripProps {
   onClose(repoId: string): void;
   /** Open (or focus) a recents path — adds/focuses a tab. */
   onOpenPath(path: string): void;
+  /** Reorder tabs by drag-and-drop (issue 4): move tab at `fromIndex` to
+   *  `toIndex` in display order. */
+  onReorder(fromIndex: number, toIndex: number): void;
   /** Folder picker. */
   onBrowse(): void;
   /** Open the Clone-repository dialog. */
@@ -45,12 +48,17 @@ export function TabStrip({
   onSelect,
   onClose,
   onOpenPath,
+  onReorder,
   onBrowse,
   onClone,
   onInit,
   onMenuOpenChange,
 }: TabStripProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  // Drag-and-drop reorder (issue 4): source index recorded on drag start, and
+  // the index the pointer is currently hovering (drop target) for CSS feedback.
+  const dragFrom = useRef<number | null>(null);
+  const [dropTarget, setDropTarget] = useState<number | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const close = () => {
@@ -85,8 +93,38 @@ export function TabStrip({
   return (
     <div className="tab-strip" ref={rootRef}>
       <div className="tab-scroll">
-        {tabs.map((t) => (
-          <div key={t.repoId} className={`tab${t.repoId === activeRepo ? ' tab-active' : ''}`}>
+        {tabs.map((t, index) => (
+          <div
+            key={t.repoId}
+            className={
+              `tab${t.repoId === activeRepo ? ' tab-active' : ''}` +
+              `${dropTarget === index ? ' tab-drop-target' : ''}`
+            }
+            draggable
+            onDragStart={(e) => {
+              dragFrom.current = index;
+              e.dataTransfer.effectAllowed = 'move';
+              // Some browsers require data to be set for the drag to begin.
+              e.dataTransfer.setData('text/plain', String(index));
+            }}
+            onDragOver={(e) => {
+              if (dragFrom.current === null) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+              if (dropTarget !== index) setDropTarget(index);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              const from = dragFrom.current;
+              if (from !== null && from !== index) onReorder(from, index);
+              dragFrom.current = null;
+              setDropTarget(null);
+            }}
+            onDragEnd={() => {
+              dragFrom.current = null;
+              setDropTarget(null);
+            }}
+          >
             <button
               type="button"
               className="tab-label"

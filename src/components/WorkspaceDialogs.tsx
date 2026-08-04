@@ -22,6 +22,20 @@ import type {
   WorktreeInfo,
 } from '../ipc';
 
+/** Modified-vs-new confirm copy for the bulk "Discard all" dialog. Phrases for
+ *  the mixed / modified-only / new-only cases so the permanent deletion of new
+ *  (untracked) files is always spelled out. */
+function discardForceQuestion(
+  pending: { modified: number; created: number } | null,
+): string {
+  const modified = pending?.modified ?? 0;
+  const created = pending?.created ?? 0;
+  const files = (n: number) => `${n} ${n === 1 ? 'file' : 'files'}`;
+  if (created === 0) return `Revert ${files(modified)}?`;
+  if (modified === 0) return `Permanently delete ${files(created)}?`;
+  return `Revert ${files(modified)} and permanently delete ${files(created)}?`;
+}
+
 export interface WorkspaceDialogsProps {
   repoId: string;
   mutating: boolean;
@@ -64,6 +78,13 @@ export interface WorkspaceDialogsProps {
   pendingDiscard: string[] | null;
   setPendingDiscard: (v: string[] | null) => void;
   handleDiscard(paths: string[]): void;
+
+  /** Bulk "Discard all": counts drive the modified-vs-new confirm copy. */
+  pendingDiscardForce: { paths: string[]; modified: number; created: number } | null;
+  setPendingDiscardForce: (
+    v: { paths: string[]; modified: number; created: number } | null,
+  ) => void;
+  handleDiscardForce(paths: string[]): void;
 
   /** Commit & Push: parked message (branch has no upstream) → confirm set-upstream. */
   pendingCommitPush: string | null;
@@ -184,6 +205,9 @@ export function WorkspaceDialogs({
   pendingDiscard,
   setPendingDiscard,
   handleDiscard,
+  pendingDiscardForce,
+  setPendingDiscardForce,
+  handleDiscardForce,
   pendingCommitPush,
   handleConfirmCommitPush,
   handleCancelCommitPush,
@@ -421,6 +445,22 @@ export function WorkspaceDialogs({
         <div className="dialog-body-note">
           This permanently reverts them to the last staged/committed version and cannot be undone.
         </div>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pendingDiscardForce !== null}
+        title="Discard all changes"
+        confirmLabel="Discard all"
+        busy={mutating}
+        onConfirm={() => {
+          const p = pendingDiscardForce;
+          setPendingDiscardForce(null);
+          if (p !== null) void handleDiscardForce(p.paths);
+        }}
+        onCancel={() => setPendingDiscardForce(null)}
+      >
+        <div>{discardForceQuestion(pendingDiscardForce)}</div>
+        <div className="dialog-body-note">This cannot be undone.</div>
       </ConfirmDialog>
 
       <ConfirmDialog

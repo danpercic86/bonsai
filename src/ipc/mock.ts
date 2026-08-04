@@ -2189,6 +2189,15 @@ export const mockIpc: IpcApi = {
   async checkoutBranch(repoId: string, name: string): Promise<CheckoutResult> {
     await delay(150);
     const state = requireRepo(repoId);
+    // P36: deterministic worktree-collision refusal — a reserved fixture branch
+    // name simulates the branch being checked out in another worktree.
+    if (name === '__wt_locked__') {
+      const err: AppError = {
+        kind: 'branchCheckedOutElsewhere',
+        message: `branch '${name}' is already checked out at '/repo/.worktrees/${name}'`,
+      };
+      throw err;
+    }
     const branch = state.branches.local.find((b) => b.name === name);
     if (branch === undefined) {
       const err: AppError = { kind: 'branchNotFound', message: `branch '${name}' not found` };
@@ -3202,6 +3211,17 @@ export const mockIpc: IpcApi = {
     const state = requireRepo(repoId);
     const drop = new Set(paths);
     state.status.unstaged = state.status.unstaged.filter((e) => !drop.has(e.path));
+  },
+
+  // P36: force-discard a mixed set — tracked paths reverted (dropped from
+  // unstaged) AND untracked paths deleted (dropped from untracked), mirroring the
+  // backend split so the Changes panel reflects a bulk force-discard.
+  async discardPathsForce(repoId: string, paths: string[]): Promise<void> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    const drop = new Set(paths);
+    state.status.unstaged = state.status.unstaged.filter((e) => !drop.has(e.path));
+    state.status.untracked = state.status.untracked.filter((e) => !drop.has(e.path));
   },
 
   // P20 §5/§8.4: cherry-pick. An oid ending in the demo suffix pauses with a

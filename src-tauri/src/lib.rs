@@ -106,6 +106,7 @@ pub fn run() {
             commands::commit_amend,
             commands::reset_branch,
             commands::discard_paths,
+            commands::discard_paths_force,
             commands::discard_partial,
             commands::cherrypick_commit,
             commands::cherrypick_continue,

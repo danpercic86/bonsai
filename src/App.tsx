@@ -258,6 +258,26 @@ export default function App() {
     });
   }, []);
 
+  // P3e §5.6 (issue 4): reorder open tabs by drag-and-drop. Immutable array
+  // move; the tabs-change effect persists the new order via setSession.
+  const reorderTabs = useCallback((from: number, to: number) => {
+    setTabs((cur) => {
+      if (
+        from === to ||
+        from < 0 ||
+        to < 0 ||
+        from >= cur.length ||
+        to >= cur.length
+      ) {
+        return cur;
+      }
+      const next = cur.slice();
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  }, []);
+
   const commitPaneWidths = useCallback(() => {
     if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
     saveTimerRef.current = window.setTimeout(() => {
@@ -696,7 +716,6 @@ export default function App() {
     <ToastContext.Provider value={pushToast}>
       <div className="app">
         <header className="header">
-          <span className="app-name">Bonsai</span>
           <TabStrip
             tabs={tabs}
             activeRepo={activeRepo}
@@ -704,6 +723,7 @@ export default function App() {
             disabled={loading}
             onSelect={setActiveRepo}
             onClose={closeTab}
+            onReorder={reorderTabs}
             onOpenPath={(path) => void openTab(path)}
             onBrowse={() => void handleOpenRepository()}
             onClone={handleCloneOpen}

@@ -130,11 +130,6 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
-.app-name {
-  font-size: 14px;
-  font-weight: 600;
-}
-
 .header-repo {
   display: flex;
   align-items: baseline;
@@ -867,7 +862,7 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
@@ -885,6 +880,12 @@ body {
 
 .tab-active {
   background: var(--bg-2);
+}
+
+/* Drag-over insertion marker (issue 4): accent bar on the left edge of the
+   tab the pointer is hovering during a reorder drag. */
+.tab-drop-target {
+  box-shadow: inset 2px 0 0 0 var(--accent);
 }
 
 .tab-label {
@@ -1314,6 +1315,26 @@ body {
   white-space: nowrap;
 }
 
+/* Folder-level bulk action buttons (stage/unstage/discard-all): revealed only
+   while the dir row is hovered, kept visible when any button is keyboard-focused
+   (focus-within) for accessibility. Mirrors the per-row .row-action pattern. */
+.tree-dir-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 4px;
+}
+
+.tree-dir-actions .row-action {
+  opacity: 0;
+}
+
+.tree-dir-row:hover .tree-dir-actions .row-action,
+.tree-dir-row:focus-within .tree-dir-actions .row-action {
+  opacity: 1;
+}
+
 .file-name {
   color: var(--text-1);
 }
@@ -1388,6 +1409,11 @@ body {
 .section-action:disabled {
   cursor: default;
   opacity: 0.6;
+}
+
+/* Bulk "Discard all" header button: danger tint on hover to match row discard. */
+.section-action-discard:hover:not(:disabled) {
+  color: var(--danger, #e5534b);
 }
 
 /* Hover-revealed row buttons (M3 §4.2): invisible until the row is hovered or

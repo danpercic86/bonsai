@@ -29,6 +29,11 @@ export interface TreeProps<T> {
   onActivateDir?(leaves: TreeLeaf<T>[]): void;
   /** P3f §1: title on the dir toggle button for discoverability. */
   dirActionHint?: string;
+  /** Optional inline folder-level action buttons rendered inside the dir row
+   *  (after the toggle). Given the folder's descendant leaves; the caller
+   *  decides what to render (e.g. stage/discard-all). Tree stays generic —
+   *  branch/tag Trees pass nothing. Revealed on hover via CSS. */
+  renderDirActions?(leaves: TreeLeaf<T>[]): ReactNode;
 }
 
 function collectLeaves<T>(node: Extract<TreeNode<T>, { kind: 'dir' }>, out: TreeLeaf<T>[]): void {
@@ -84,6 +89,12 @@ function renderNodes<T>(
               {node.name}
             </span>
           </button>
+          {props.renderDirActions !== undefined &&
+            (() => {
+              const leaves: TreeLeaf<T>[] = [];
+              collectLeaves(node, leaves);
+              return props.renderDirActions(leaves);
+            })()}
         </div>
         {expanded && (
           <ul

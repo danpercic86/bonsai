@@ -9,6 +9,7 @@ use std::path::Path;
 use crate::error::AppError;
 use crate::git::repo::{read_head_info, HeadInfo};
 use crate::git::stash;
+use crate::git::worktree;
 
 /// One local branch in the sidebar snapshot.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -388,9 +389,10 @@ pub struct CheckoutResult {
 /// never lossy). Composes existing primitives; mirrors `create_branch_here`
 /// minus the branch creation, plus the auto-FF step.
 ///
-/// Errors: `branchNotFound` | `operationInProgress` (via `create_stash`) |
-/// `configMissing` (via `create_stash`) | `checkoutConflict` (defensive, via
-/// `checkout_branch`) | `git` | `noRepo`.
+/// Errors: `branchNotFound` | `branchCheckedOutElsewhere` |
+/// `operationInProgress` (via `create_stash`) | `configMissing` (via
+/// `create_stash`) | `checkoutConflict` (defensive, via `checkout_branch`) |
+/// `git` | `noRepo`.
 pub fn checkout_branch_autostash(
     workdir: &Path,
     name: &str,
@@ -411,6 +413,15 @@ pub fn checkout_branch_autostash(
             fast_forwarded: false,
             apply: None,
         });
+    }
+
+    // 0b. Refuse if the branch is checked out in ANOTHER worktree (git-like:
+    //     "fatal: '<b>' is already checked out at '<path>'"). Runs before any
+    //     side effect, so a refusal changes nothing.
+    if let Some(other) = worktree::branch_checked_out_elsewhere(workdir, name)? {
+        return Err(AppError::BranchCheckedOutElsewhere(format!(
+            "branch '{name}' is already checked out at '{other}'"
+        )));
     }
 
     // 1. Auto-stash. `create_stash` owns the dirty-vs-clean decision (clean tree
@@ -1728,6 +1739,95 @@ mod checkout_autostash_tests {
             applied["apply"],
             json!({ "kind": "applied" }),
             "Applied serializes to a kind:applied object"
+        );
+    }
+
+    // ------------------------------------- P36 §1.3: worktree-collision guard
+
+    /// §1.3 data-loss guard: checking out a branch that is checked out in ANOTHER
+    /// worktree is refused with `BranchCheckedOutElsewhere` BEFORE any side effect
+    /// — no stash created, HEAD unchanged, and a dirty working state (a modified
+    /// tracked file + an untracked file) is left exactly as-is on disk.
+    #[test]
+    fn cbh_autostash_refuses_branch_in_other_worktree() {
+        use crate::git::worktree::add_worktree;
+
+        let dir = crate::testutil::scratch_dir();
+        // Init in a subdir so the derived `.worktrees/` container has a unique
+        // parent (mirrors worktree.rs's derive tests).
+        let repo_dir = dir.path().join("repo");
+        let d = repo_dir.as_path();
+        ca_init(d);
+        ca_commit(d, "base", &[("a.txt", "base\n")]);
+        create_branch(d, "feature").expect("create feature");
+        let created = add_worktree(d, "feature", "feature").expect("add worktree on feature");
+
+        // Dirty the MAIN worktree: a modified TRACKED file + an UNTRACKED file.
+        std::fs::write(d.join("a.txt"), "dirty\n").expect("edit tracked");
+        std::fs::write(d.join("new.txt"), "brand new\n").expect("add untracked");
+
+        let head_before = ca_head_oid(d);
+        let branch_before = ca_head_branch(d);
+        assert!(
+            list_stashes(d).expect("list stashes").is_empty(),
+            "no stash before the call"
+        );
+
+        let err = checkout_branch_autostash(d, "feature").expect_err("must refuse");
+        match &err {
+            AppError::BranchCheckedOutElsewhere(m) => {
+                assert!(m.contains("already checked out at"), "git-like message: {m}");
+                assert!(
+                    m.contains(&created.abs_path),
+                    "message names the linked worktree path ({}): {m}",
+                    created.abs_path
+                );
+                assert!(m.contains("feature"), "message names the branch: {m}");
+            }
+            other => panic!("expected BranchCheckedOutElsewhere, got {other:?}"),
+        }
+
+        // The refusal mutated NOTHING.
+        assert!(
+            list_stashes(d).expect("list stashes").is_empty(),
+            "no stash created on refusal"
+        );
+        assert_eq!(ca_head_oid(d), head_before, "HEAD oid unchanged");
+        assert_eq!(ca_head_branch(d), branch_before, "HEAD branch unchanged");
+        assert_eq!(
+            ca_read(d, "a.txt"),
+            "dirty\n",
+            "modified tracked file preserved on disk"
+        );
+        assert_eq!(
+            ca_read(d, "new.txt"),
+            "brand new\n",
+            "untracked file preserved on disk"
+        );
+    }
+
+    /// §1.3: a branch NOT checked out elsewhere still checks out normally even
+    /// while a linked worktree (on a DIFFERENT branch) exists.
+    #[test]
+    fn cbh_autostash_succeeds_for_branch_not_elsewhere() {
+        use crate::git::worktree::add_worktree;
+
+        let dir = crate::testutil::scratch_dir();
+        let repo_dir = dir.path().join("repo");
+        let d = repo_dir.as_path();
+        ca_init(d);
+        ca_commit(d, "base", &[("a.txt", "base\n")]);
+        create_branch(d, "feature").expect("create feature");
+        add_worktree(d, "feature", "feature").expect("add worktree on feature");
+        // A FREE branch: exists, not checked out in any worktree.
+        create_branch(d, "free").expect("create free");
+
+        let res = checkout_branch_autostash(d, "free").expect("checkout free must succeed");
+        assert!(!res.stashed, "clean worktree must not stash");
+        assert_eq!(
+            ca_head_branch(d).as_deref(),
+            Some("free"),
+            "switched to the free branch"
         );
     }
 }

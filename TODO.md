@@ -25,6 +25,38 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
+## P36 — six UX/safety fixes (worktree checkout guard, bulk discard, tab UX) — **in-progress**
+
+**Goal:** six reported issues. (1) **Data-loss fix:** `checkout_branch_autostash` has no
+worktree-occupancy guard, so git2 silently moves HEAD onto a branch already checked out in another
+worktree (corrupt dual-checkout → lost untracked files). Refuse it git-style, mutating nothing.
+(2) "Discard all" control in the Changes panel. (3) Folder-level bulk actions (hover buttons) in the
+tree view. (4) Drag-to-reorder repo tabs. (5) Remove redundant "Bonsai" label left of the tabs.
+(6) Seat the "+" button next to the last tab (not far-right).
+
+**Decisions (user, 2026-08-04):** (1) block-with-message on worktree collision; (2/3) bulk/folder
+discard reverts modified tracked files AND deletes untracked/new files, behind a confirm dialog;
+(3) folder actions = inline hover buttons. Plan:
+`~/.claude/plans/i-have-the-following-playful-koala.md` (approved).
+
+**Acceptance criteria:**
+- `checkout_branch_autostash` returns `Err(BranchCheckedOutElsewhere(<path>))` when the target branch
+  is checked out in another worktree; no stash created, HEAD unchanged, workdir untouched.
+- New `discard_paths_force`: tracked→restore from index, untracked→delete file, mixed→both,
+  empty→no-op (no match-all clobber), invalid path→reject.
+- Changes panel "Discard all" header button + folder hover stage/discard buttons; confirm dialog
+  warns when new files will be permanently deleted.
+- Tabs drag-reorder and persist across reload; no "Bonsai" label; "+" sits after the last tab.
+
+**Current step:** AI gate PASSED. reviewer APPROVED (0 must-fix). tester 37/37 green (13 new,
+incl. the data-loss assertion: refusal creates no stash, HEAD unchanged, dirty+untracked files
+preserved); clippy clean. Browser harness verified: no "Bonsai" label, `+` seats 4px after last
+tab (`.tab-scroll` now `flex:0 1 auto`), draggable tabs, "Discard all" + 36 folder hover buttons,
+confirm dialog reads "Revert 6 files and permanently delete 3 files?". Contract:
+`docs/contracts/P36-ux-safety-fixes.md`. Committed. **Awaiting USER CHECKPOINT** (native
+`pnpm tauri dev`): worktree-checkout refusal + no data loss on a real repo/worktree; bulk discard
+removes modified+new; tab drag-reorder feel.
+
 ## P35 — in-process HTTPS credential cache — **in-progress**
 
 **Goal:** the M6 credential fix (`4e4b8f4`, shell out to `git credential fill`) made every

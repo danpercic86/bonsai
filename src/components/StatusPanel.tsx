@@ -11,6 +11,7 @@ import type {
 } from '../ipc';
 import { buildPathTree } from '../utils/pathTree';
 import type { DiffSlot } from './DiffView';
+import { DirRowActions } from './DirRowActions';
 import { Tree } from './Tree';
 
 export type { DiffSlot } from './DiffView';
@@ -187,6 +188,7 @@ function Section({
   onAction,
   onToggleDiff,
   onDiscard,
+  onDiscardForce,
   onBlame,
   onFileHistory,
 }: {
@@ -216,6 +218,10 @@ function Section({
   /** P20 §4.3: discard a tracked row's unstaged edits. When provided, rows whose
    *  resolved origin is `unstaged` get a discard control; untracked rows do not. */
   onDiscard?: (paths: string[]) => void;
+  /** Bulk force-discard: reverts modified tracked files AND deletes new/untracked
+   *  files. Changes section only — drives the "Discard all" header button and the
+   *  folder-level discard hover button. App confirms before the IPC call. */
+  onDiscardForce?: (paths: string[]) => void;
   /** P23d: open blame for a row's file (tracked rows only). */
   onBlame?: (path: string) => void;
   /** P23d: open file history for a row's file (tracked rows only). */
@@ -275,6 +281,17 @@ function Section({
             {actionLabel}
           </button>
         )}
+        {variant === 'changes' && onDiscardForce !== undefined && entries.length > 0 && (
+          <button
+            type="button"
+            className="section-action section-action-discard"
+            disabled={disabled}
+            title="Discard all changes (reverts modified files and deletes new files)"
+            onClick={() => onDiscardForce(entries.flatMap(entryPaths))}
+          >
+            Discard all
+          </button>
+        )}
         {extraAction}
       </div>
       {nodes !== null ? (
@@ -286,6 +303,20 @@ function Section({
           dirActionHint={
             rowAction === 'unstage' ? 'Double-click to unstage all' : 'Double-click to stage all'
           }
+          renderDirActions={(leaves) => {
+            const paths = leaves.flatMap((l) => entryPaths(l.item));
+            return variant === 'changes' ? (
+              <DirRowActions
+                disabled={disabled}
+                onStage={() => onAction(paths)}
+                onDiscard={
+                  onDiscardForce !== undefined ? () => onDiscardForce(paths) : undefined
+                }
+              />
+            ) : (
+              <DirRowActions disabled={disabled} onUnstage={() => onAction(paths)} />
+            );
+          }}
         />
       ) : (
         <ul className="file-list">{entries.map((entry) => renderRow(entry, false))}</ul>
@@ -490,6 +521,10 @@ export interface StatusPanelProps {
   onUnstage(paths: string[]): void;
   /** P20 §4.3: discard unstaged edits to tracked Changes rows (App confirms). */
   onDiscard(paths: string[]): void;
+  /** Bulk force-discard for the Changes section: reverts modified tracked files
+   *  AND deletes new/untracked files. Drives the "Discard all" header button and
+   *  folder-level discard hover buttons (App confirms before the IPC call). */
+  onDiscardForce(paths: string[]): void;
   /** P15b: request an AI review of the whole staged set. */
   onReviewStaged(): void;
   /** P25b: request an AI review of the WHOLE working tree (staged+unstaged+untracked). */
@@ -523,6 +558,7 @@ export function StatusPanel({
   onStage,
   onUnstage,
   onDiscard,
+  onDiscardForce,
   onReviewStaged,
   onReviewWorktree,
   onToggleDiff,
@@ -638,6 +674,7 @@ export function StatusPanel({
             onAction={onStage}
             onToggleDiff={onToggleDiff}
             onDiscard={onDiscard}
+            onDiscardForce={onDiscardForce}
             onBlame={onBlame}
             onFileHistory={onFileHistory}
           />
