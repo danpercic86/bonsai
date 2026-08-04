@@ -68,8 +68,22 @@ strictly safer than bare force-push. Sub-increments: **P37a** backend+command+IP
   note vs `git push --force-with-lease`; confirm → "Force-pushed main → origin/main" toast (mock
   advances the remote-tracking tip); `?remote=leasefail` → error toast "force-push refused: 'origin/
   main' has moved on the remote since you last fetched … — fetch and retry"; zero console errors.
-**Current step:** P37a+b committed & AI-gate-passed. Next: P37 tester (full regression + user
-checklist), then commit the green milestone → P38 (reflog).
+- **P37 tester** — full workspace regression PASS, zero regressions: bonsai-core lib 344 + src-tauri
+  (bonsai_lib) 92 + force_push_cli 9 (5 orig + 4 added: nested-branch lease, real history-drop verified
+  on the bare origin via merge-base, detached-HEAD reject, unborn-HEAD reject) + remote_cli 18 (the
+  known-flaky pull_fast_forwards_ref_and_worktree PASSED, did not flake) + bonsai_mcp 10 + all other
+  integration green; clippy --workspace --tests clean; tsc + build clean. Checklist:
+  docs/contracts/P37-user-checklist.md.
+- **P37 AI GATE PASSED (2026-08-04).** Commits: b2013ac P37a · 0b05b93 P37b (+ this tester closeout).
+  Backend ls-remote-lease oracle suite + frontend browser harness both verified; zero regressions.
+  Git-completeness Phase 1 milestone #1 delivered.
+
+**P37 awaiting USER CHECKPOINT** (native pnpm tauri dev on a SCRATCH repo w/ a bare origin, per
+docs/contracts/P37-user-checklist.md): rewrite local history (rebase/amend) → force-push-with-lease
+succeeds (verify origin via `git ls-remote`/`git log`); teammate advances the origin ref → lease
+REFUSED ("has moved / fetch first"), origin unchanged; after fetch, retry succeeds; the caret is
+disabled on a branch with no upstream.
+**Current step:** P37 DONE (AI gate passed, awaiting USER CHECKPOINT). Next: P38 (reflog viewer).
 
 ## P36 — six UX/safety fixes (worktree checkout guard, bulk discard, tab UX) — **DONE**
 

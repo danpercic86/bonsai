@@ -238,3 +238,139 @@ fn no_baseline_refuses_with_fetch_hint() {
     }
     assert_eq!(origin_main(&f), x, "origin main must be unchanged");
 }
+
+// ---------------------------------------- §8.F nested branch name lease (extra)
+
+/// F. A nested/slashed branch name (`feature/x`) with a configured upstream:
+/// the lease must resolve `refs/remotes/origin/feature/x` correctly and the
+/// force-push must succeed, moving `refs/heads/feature/x` on origin. Guards the
+/// `strip_prefix("refs/heads/")` + tracking-ref interpolation for slashed refs.
+#[test]
+fn lease_succeeds_on_nested_branch_name() {
+    require_git!();
+    let f = init_origin_and_clone();
+
+    // Create feature/x tracking origin/feature/x (initial content = X).
+    git(&f.work, &["checkout", "-b", "feature/x"]);
+    std::fs::write(f.work.join("feat.txt"), "x\n").expect("write feat.txt");
+    git(&f.work, &["add", "-A"]);
+    commit_fixed(&f.work, "feature base");
+    git(&f.work, &["push", "-u", "origin", "feature/x"]);
+
+    let nested_tip = |f: &Fixture| git(&f.bare, &["rev-parse", "refs/heads/feature/x"]);
+    let x = nested_tip(&f);
+
+    // Rewrite feature/x -> Z (amend), no third-party push.
+    let z = rewrite_head(&f.work, "z-nested");
+    assert_ne!(z, x, "the rewrite must differ from the original tip");
+
+    let res = force_push_with_lease(&f.work).expect("lease should hold on nested branch");
+    match res {
+        PushResult::Pushed {
+            remote,
+            branch,
+            set_upstream,
+        } => {
+            assert_eq!(remote, "origin");
+            assert_eq!(branch, "feature/x");
+            assert!(!set_upstream);
+        }
+        other => panic!("expected Pushed, got {other:?}"),
+    }
+    assert_eq!(
+        nested_tip(&f),
+        z,
+        "origin feature/x must move to the rewritten tip"
+    );
+}
+
+// ---------------------- §8.G force-push drops a commit the remote had (extra)
+
+/// G. A real non-fast-forward history rewrite that DROPS a commit the remote
+/// already had. origin/main = Y (two commits X<-Y). Locally reset --hard to X
+/// and build a fresh commit Z on top of X (Y is no longer an ancestor). Lease
+/// holds (remote-tracking == live == Y), so the force-push must land Z on
+/// origin and Y must no longer be reachable from origin/main.
+#[test]
+fn force_push_drops_a_remote_commit() {
+    require_git!();
+    let f = init_origin_and_clone();
+    let x = origin_main(&f); // first commit "initial"
+
+    // Add a second commit Y and push it so origin/main == Y (tracked).
+    std::fs::write(f.work.join("second.txt"), "second\n").expect("write second.txt");
+    git(&f.work, &["add", "-A"]);
+    commit_fixed(&f.work, "second");
+    git(&f.work, &["push", "origin", "main"]);
+    let y = origin_main(&f);
+    assert_ne!(x, y);
+
+    // Drop Y locally: reset --hard to X, then build a divergent commit Z on X.
+    git(&f.work, &["reset", "--hard", &x]);
+    std::fs::write(f.work.join("third.txt"), "third\n").expect("write third.txt");
+    git(&f.work, &["add", "-A"]);
+    commit_fixed(&f.work, "replacement");
+    let z = head_oid(&f.work);
+    assert_ne!(z, y);
+
+    let res = force_push_with_lease(&f.work).expect("lease should hold");
+    assert!(matches!(res, PushResult::Pushed { .. }), "got {res:?}");
+
+    // Oracle: origin/main == Z, its parent == X, and Y is no longer reachable.
+    assert_eq!(origin_main(&f), z, "origin main must be the replacement tip Z");
+    let z_parent = git(&f.bare, &["rev-parse", "refs/heads/main^"]);
+    assert_eq!(z_parent, x, "Z's parent must be X (Y was dropped)");
+    let reachable = git_ancestor(&f.bare, &y, "refs/heads/main");
+    assert!(!reachable, "dropped commit Y must not be an ancestor of origin/main");
+}
+
+// ------------------------------------------ §8.H detached HEAD error (extra)
+
+/// H. Detached HEAD (checkout a raw oid) has no branch to lease → `Git` error.
+#[test]
+fn detached_head_is_rejected() {
+    require_git!();
+    let f = init_origin_and_clone();
+    let tip = head_oid(&f.work);
+    git(&f.work, &["checkout", &tip]); // detach
+
+    let err = force_push_with_lease(&f.work).expect_err("detached HEAD must error");
+    match err {
+        AppError::Git(m) => assert!(
+            m.to_lowercase().contains("detached"),
+            "message must mention 'detached': {m}"
+        ),
+        other => panic!("expected Git, got {other:?}"),
+    }
+    // Nothing pushed: origin unchanged.
+    assert_eq!(origin_main(&f), tip, "origin main must be unchanged");
+}
+
+// ------------------------------------------------ §8.I unborn HEAD (extra)
+
+/// I. A fresh repo with no commits (unborn HEAD) → `Git` error, before any
+/// network work. No remote required — the unborn guard fires first.
+#[test]
+fn unborn_head_is_rejected() {
+    require_git!();
+    let dir = common::scratch_dir();
+    let repo = dir.path().join("empty");
+    std::fs::create_dir_all(&repo).expect("mkdir empty");
+    git(&repo, &["init", "-b", "main"]);
+    configure_identity(&repo);
+
+    let err = force_push_with_lease(&repo).expect_err("unborn HEAD must error");
+    match err {
+        AppError::Git(m) => assert!(
+            m.to_lowercase().contains("no commits"),
+            "message must mention 'no commits': {m}"
+        ),
+        other => panic!("expected Git, got {other:?}"),
+    }
+}
+
+/// True if `ancestor` is reachable from `ref_name` in `repo` (git merge-base
+/// --is-ancestor exit 0). Used to prove a dropped commit is gone.
+fn git_ancestor(repo: &Path, ancestor: &str, ref_name: &str) -> bool {
+    common::git_ok(repo, &["merge-base", "--is-ancestor", ancestor, ref_name])
+}
