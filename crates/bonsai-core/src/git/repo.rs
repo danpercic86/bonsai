@@ -78,6 +78,8 @@ pub(crate) fn read_head_info(repo: &git2::Repository) -> Result<HeadInfo, AppErr
             let head_ref = repo.find_reference("HEAD")?;
             let branch_name = head_ref
                 .symbolic_target()
+                .ok()
+                .flatten()
                 .map(|t| t.strip_prefix("refs/heads/").unwrap_or(t).to_string());
             return Ok(HeadInfo {
                 branch_name,
@@ -97,7 +99,7 @@ pub(crate) fn read_head_info(repo: &git2::Repository) -> Result<HeadInfo, AppErr
     let branch_name = if detached {
         None
     } else {
-        head.shorthand().map(|s| s.to_string())
+        head.shorthand().ok().map(|s| s.to_string())
     };
 
     Ok(HeadInfo {
@@ -147,7 +149,7 @@ mod tests {
     /// Reads the default branch name from the fixture's symbolic HEAD target.
     fn head_branch_name(repo: &git2::Repository) -> String {
         let head_ref = repo.find_reference("HEAD").expect("find HEAD");
-        let target = head_ref.symbolic_target().expect("symbolic HEAD");
+        let target = head_ref.symbolic_target().ok().flatten().expect("symbolic HEAD");
         target
             .strip_prefix("refs/heads/")
             .unwrap_or(target)

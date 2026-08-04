@@ -409,6 +409,7 @@ pub fn fetch_all(workdir: &Path) -> Result<FetchResult, AppError> {
     let names: Vec<String> = repo
         .remotes()?
         .iter()
+        .map(|n| n.ok().flatten())
         .filter_map(|n| match n {
             Some(n) => Some(n.to_string()),
             None => {
@@ -464,6 +465,7 @@ pub fn pull_ff(workdir: &Path) -> Result<PullResult, AppError> {
     let remote_buf = repo.branch_upstream_remote(&refname)?;
     let remote_name = remote_buf
         .as_str()
+        .ok()
         .ok_or_else(|| AppError::Git("upstream remote name is not valid UTF-8".to_string()))?
         .to_string();
 
@@ -556,6 +558,7 @@ pub fn push_current(workdir: &Path) -> Result<PushResult, AppError> {
         let remote_buf = repo.branch_upstream_remote(&refname)?;
         let remote_name = remote_buf
             .as_str()
+            .ok()
             .ok_or_else(|| AppError::Git("upstream remote name is not valid UTF-8".to_string()))?
             .to_string();
         // branch.<name>.merge already IS "refs/heads/<x>" (contract §2.6).
@@ -652,7 +655,7 @@ pub fn push_current(workdir: &Path) -> Result<PushResult, AppError> {
 pub fn list_remotes(workdir: &Path) -> Result<Vec<RemoteInfo>, AppError> {
     let repo = open_repo_at(workdir)?;
     let mut out = Vec::new();
-    for n in repo.remotes()?.iter() {
+    for n in repo.remotes()?.iter().map(|n| n.ok().flatten()) {
         let name = match n {
             Some(n) => n.to_string(),
             None => {
@@ -663,7 +666,7 @@ pub fn list_remotes(workdir: &Path) -> Result<Vec<RemoteInfo>, AppError> {
         let url = repo
             .find_remote(&name)
             .ok()
-            .and_then(|r| r.url().map(str::to_string));
+            .and_then(|r| r.url().ok().map(str::to_string));
         out.push(RemoteInfo { name, url });
     }
     out.sort_by(|a, b| {
@@ -722,7 +725,7 @@ pub fn rename_remote(workdir: &Path, name: &str, new_name: &str) -> Result<(), A
     match repo.remote_rename(name, new_name) {
         Ok(problems) => {
             if !problems.is_empty() {
-                let listed: Vec<&str> = problems.iter().flatten().collect();
+                let listed: Vec<&str> = problems.iter().filter_map(Result::ok).flatten().collect();
                 eprintln!(
                     "bonsai: rename_remote('{name}' -> '{new_name}') left \
                      non-default refspecs unmodified: {listed:?}"

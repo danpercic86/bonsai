@@ -504,6 +504,7 @@ fn resolve_digest_range<'r>(
             let branch = repo
                 .head()?
                 .shorthand()
+                .ok()
                 .map(str::to_string)
                 .unwrap_or_else(|| "HEAD (detached)".to_string());
             let header = format!(

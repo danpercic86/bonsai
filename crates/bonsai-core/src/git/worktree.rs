@@ -70,7 +70,7 @@ pub fn list_worktrees(workdir: &Path) -> Result<Vec<WorktreeInfo>, AppError> {
     let mut out = Vec::new();
     out.push(build_main_row(&main_dir, &cur)?); // synthesized main row, FIRST
 
-    for name in repo.worktrees()?.iter() {
+    for name in repo.worktrees()?.iter().map(|name| name.ok().flatten()) {
         let name = match name {
             Some(n) => n,
             None => {
@@ -135,6 +135,8 @@ fn build_linked_row(
 ) -> Result<WorktreeInfo, AppError> {
     let name = wt
         .name()
+        .ok()
+        .flatten()
         .ok_or_else(|| AppError::Git("worktree has non-UTF-8 name".to_string()))?;
     let path = wt.path(); // absolute
     let valid = wt.validate().is_ok();
@@ -180,7 +182,7 @@ fn read_head(repo: &git2::Repository) -> (Option<String>, Option<String>) {
     match repo.head() {
         Ok(head) => {
             let branch = if head.is_branch() {
-                head.shorthand().map(str::to_string)
+                head.shorthand().ok().map(str::to_string)
             } else {
                 None // detached HEAD
             };

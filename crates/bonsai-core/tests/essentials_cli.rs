@@ -119,14 +119,14 @@ fn essentials_1_amend_matches_cli() {
         "amend must preserve HEAD's original parent"
     );
     // Original author preserved (from the fixed-date CLI commit); message updated.
-    assert_eq!(head.author().name(), Some("Test User"));
-    assert_eq!(head.author().email(), Some("test@example.com"));
+    assert_eq!(head.author().name().ok(), Some("Test User"));
+    assert_eq!(head.author().email().ok(), Some("test@example.com"));
     assert_eq!(
         head.author().when().seconds(),
         orig_author_at,
         "amend preserves the original author time"
     );
-    assert_eq!(head.message(), Some("amended subject\n"));
+    assert_eq!(head.message().ok(), Some("amended subject\n"));
 }
 
 /// A message-only amend (0 staged) keeps the tree and preserves author.
@@ -394,8 +394,8 @@ fn essentials_2_cherrypick_clean_matches_cli() {
         main_a,
         "HEAD advanced onto the former main tip"
     );
-    assert_eq!(head.message(), Some("add feature\n"), "picked message reused");
-    assert_eq!(head.author().name(), Some("Test User"));
+    assert_eq!(head.message().ok(), Some("add feature\n"), "picked message reused");
+    assert_eq!(head.author().name().ok(), Some("Test User"));
     assert_eq!(
         head.author().when().seconds(),
         pick_author_at,
@@ -496,10 +496,10 @@ fn essentials_4_revert_clean_matches_cli() {
     let repo = git2::Repository::open(a).expect("open A");
     let head = repo.head().expect("head").peel_to_commit().expect("peel");
     let expected = format!("Revert \"second\"\n\nThis reverts commit {c2_a}.\n");
-    assert_eq!(head.message(), Some(expected.as_str()), "byte-exact revert message");
+    assert_eq!(head.message().ok(), Some(expected.as_str()), "byte-exact revert message");
     // The revert is authored as YOU (current signature), not the reverted author.
-    assert_eq!(head.author().name(), Some("Test User"));
-    assert_eq!(head.committer().name(), Some("Test User"));
+    assert_eq!(head.author().name().ok(), Some("Test User"));
+    assert_eq!(head.committer().name().ok(), Some("Test User"));
     assert_eq!(repo_state(a), git2::RepositoryState::Clean);
 }
 

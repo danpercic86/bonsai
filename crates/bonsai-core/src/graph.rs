@@ -230,7 +230,7 @@ fn collect_refs(
             head_oid = head.target();
             detached = repo.head_detached()?;
             if !detached {
-                head_branch = head.shorthand().map(str::to_string);
+                head_branch = head.shorthand().ok().map(str::to_string);
             }
         }
         Err(e)
@@ -296,7 +296,7 @@ fn collect_refs(
     let mut tags: Vec<(String, git2::Oid)> = Vec::new();
     for entry in repo.references_glob("refs/tags/*")? {
         let reference = entry?;
-        let name = match reference.shorthand() {
+        let name = match reference.shorthand().ok() {
             Some(s) => s.to_string(),
             None => continue, // non-UTF-8 ref name: skip
         };

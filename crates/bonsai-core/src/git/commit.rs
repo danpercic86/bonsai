@@ -131,7 +131,7 @@ pub fn create_commit(workdir: &Path, message: &str) -> Result<CommitResult, AppE
         .head()
         .ok()
         .filter(|h| h.is_branch())
-        .and_then(|h| h.shorthand().map(String::from));
+        .and_then(|h| h.shorthand().ok().map(String::from));
     let summary = msg.lines().next().unwrap_or(msg).to_string();
 
     Ok(CommitResult {
@@ -207,7 +207,7 @@ pub fn amend_commit(workdir: &Path, message: &str) -> Result<CommitResult, AppEr
         .head()
         .ok()
         .filter(|h| h.is_branch())
-        .and_then(|h| h.shorthand().map(String::from));
+        .and_then(|h| h.shorthand().ok().map(String::from));
     let summary = msg.lines().next().unwrap_or(msg).to_string();
 
     Ok(CommitResult {
@@ -294,7 +294,7 @@ mod tests {
         let head_message = |expect: &str| {
             let head = repo.head().expect("HEAD");
             let commit = head.peel_to_commit().expect("HEAD commit");
-            assert_eq!(commit.message(), Some(expect));
+            assert_eq!(commit.message().ok(), Some(expect));
         };
 
         // CRLF input (Windows textarea), incl. a trailing lone \r.
@@ -372,9 +372,9 @@ mod tests {
         let head = repo.head().expect("head").peel_to_commit().expect("peel");
         assert_eq!(head.tree_id(), orig_tree, "message-only amend keeps the tree");
         assert_eq!(head.parent_count(), 0, "root commit parents preserved (0)");
-        assert_eq!(head.author().email(), Some("orig@example.com"));
-        assert_eq!(head.committer().email(), Some("new@example.com"));
-        assert_eq!(head.message(), Some("amended subject\n"));
+        assert_eq!(head.author().email().ok(), Some("orig@example.com"));
+        assert_eq!(head.committer().email().ok(), Some("new@example.com"));
+        assert_eq!(head.message().ok(), Some("amended subject\n"));
     }
 
     #[test]
@@ -384,7 +384,7 @@ mod tests {
             ("user.email", "test@example.com"),
         ]);
         let sig = resolve_signature(&cfg).expect("signature");
-        assert_eq!(sig.name(), Some("Test User"));
-        assert_eq!(sig.email(), Some("test@example.com"));
+        assert_eq!(sig.name().ok(), Some("Test User"));
+        assert_eq!(sig.email().ok(), Some("test@example.com"));
     }
 }

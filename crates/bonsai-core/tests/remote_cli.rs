@@ -176,6 +176,7 @@ fn fetch_covers_all_remotes_in_order() {
         .remotes()
         .expect("remotes")
         .iter()
+        .filter_map(Result::ok)
         .flatten()
         .map(str::to_string)
         .collect();

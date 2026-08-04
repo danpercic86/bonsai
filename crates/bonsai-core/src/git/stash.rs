@@ -280,7 +280,7 @@ fn create_staged_stash(
     // ---- build the git-standard stash object graph (unreferenced commits) ---
     let branch = current_branch_label(repo);
     let short = short_hex(head_commit.id());
-    let summary = head_commit.summary().unwrap_or("").to_string();
+    let summary = head_commit.summary().ok().flatten().unwrap_or("").to_string();
     let i_msg = format!("index on {branch}: {short} {summary}");
     let default_w = format!("WIP on {branch}: {short} {summary}");
     let w_msg = message.unwrap_or(default_w.as_str());
@@ -483,7 +483,7 @@ fn stash_path_sets(
         let untracked_tree = commit.parent(2)?.tree()?;
         untracked_tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
             if entry.kind() == Some(git2::ObjectType::Blob) {
-                if let Some(name) = entry.name() {
+                if let Ok(name) = entry.name() {
                     paths.push(format!("{root}{name}"));
                 }
             }

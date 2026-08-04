@@ -441,7 +441,7 @@ fn finalize_merge_commit(
         .head()
         .ok()
         .filter(|h| h.is_branch())
-        .and_then(|h| h.shorthand().map(String::from));
+        .and_then(|h| h.shorthand().ok().map(String::from));
     let summary = msg.lines().next().unwrap_or(msg).to_string();
     Ok(CommitResult {
         oid: oid.to_string(),
@@ -1037,7 +1037,7 @@ mod tests {
         let statuses = repo.statuses(Some(&mut so)).expect("statuses");
         let entry = statuses
             .iter()
-            .find(|e| e.path() == Some("unrelated.txt"))
+            .find(|e| e.path().ok() == Some("unrelated.txt"))
             .expect("unrelated.txt must show a pending change");
         assert!(
             entry.status().contains(git2::Status::WT_MODIFIED),

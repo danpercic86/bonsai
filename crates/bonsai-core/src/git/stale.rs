@@ -136,6 +136,7 @@ fn resolve_stale_base<'r>(
             if let Ok(commit) = resolved.peel_to_commit() {
                 let shorthand = resolved
                     .shorthand()
+                    .ok()
                     .map(str::to_string)
                     .unwrap_or_else(|| "origin/HEAD".to_string());
                 return Ok((shorthand, commit));
@@ -268,7 +269,7 @@ pub fn find_stale_branches(workdir: &Path, base: Option<&str>) -> Result<StaleRe
         };
 
         let commit = repo.find_commit(tip)?;
-        let last_commit_summary = commit.summary().unwrap_or("").to_string();
+        let last_commit_summary = commit.summary().ok().flatten().unwrap_or("").to_string();
         let last_commit_author = commit.author().name().unwrap_or("").to_string();
         let last_commit_time = commit.time().seconds();
 

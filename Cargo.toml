@@ -3,7 +3,12 @@ members = ["src-tauri", "crates/bonsai-core", "crates/bonsai-mcp"]
 resolver = "2"
 
 [workspace.dependencies]
-git2 = "0.20"
+# git2 0.21 dropped `ssh`, `https`, and `cred` from its default features, so we
+# opt back into the transports we use. `cred` (git2's own CredentialHelper) is
+# intentionally NOT enabled: credential resolution shells out to the real
+# `git credential fill` (see git/remote.rs), and `ssh_key_from_agent` +
+# `userpass_plaintext` don't need it.
+git2 = { version = "0.21", default-features = false, features = ["https", "ssh"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

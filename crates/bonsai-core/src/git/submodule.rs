@@ -95,7 +95,7 @@ pub fn list_submodules(workdir: &Path) -> Result<Vec<SubmoduleInfo>, AppError> {
     let mut out = Vec::new();
     for sm in repo.submodules()? {
         // Skip non-UTF-8 names (cannot key status; log + skip, like fetch_all).
-        let name = match sm.name() {
+        let name = match sm.name().ok() {
             Some(n) => n.to_string(),
             None => {
                 eprintln!("bonsai: skipping submodule with non-UTF-8 name");
@@ -109,7 +109,7 @@ pub fn list_submodules(workdir: &Path) -> Result<Vec<SubmoduleInfo>, AppError> {
             name,
             path: rel,
             abs_path: abs,
-            url: sm.url().map(str::to_string),
+            url: sm.url().ok().flatten().map(str::to_string),
             head_oid: sm.head_id().map(|o| o.to_string()),
             index_oid: sm.index_id().map(|o| o.to_string()),
             wt_oid: sm.workdir_id().map(|o| o.to_string()),

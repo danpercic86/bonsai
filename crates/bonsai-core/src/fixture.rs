@@ -293,7 +293,7 @@ mod tests {
         let mut names: Vec<String> = repo
             .references()
             .expect("refs")
-            .filter_map(|r| r.ok().and_then(|r| r.name().map(str::to_owned)))
+            .filter_map(|r| r.ok().and_then(|r| r.name().ok().map(str::to_owned)))
             .filter(|n| n != "HEAD")
             .collect();
         names.sort();

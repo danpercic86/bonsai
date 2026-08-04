@@ -194,7 +194,7 @@ pub fn worktree_key_for(workdir: &Path) -> Result<String, AppError> {
     }
     // Fallback: match by canonical workdir path against the worktree list.
     let cur = canonical(workdir);
-    for n in repo.worktrees()?.iter().flatten() {
+    for n in repo.worktrees()?.iter().filter_map(Result::ok).flatten() {
         if let Ok(wt) = repo.find_worktree(n) {
             if canonical(wt.path()) == cur {
                 return Ok(n.to_string());

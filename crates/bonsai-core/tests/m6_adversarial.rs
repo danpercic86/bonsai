@@ -177,6 +177,7 @@ fn fetch_fail_fast_broken_remote_leaves_valid_remote_untouched() {
         .remotes()
         .expect("remotes")
         .iter()
+        .filter_map(Result::ok)
         .flatten()
         .map(str::to_string)
         .collect();

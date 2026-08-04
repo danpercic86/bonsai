@@ -71,6 +71,6 @@ fn commit_without_identity_fails_then_local_identity_fixes_it() {
     let head = repo.head().expect("HEAD born");
     let commit = head.peel_to_commit().expect("HEAD commit");
     assert_eq!(commit.id().to_string(), res.oid);
-    assert_eq!(commit.author().name(), Some("Local User"));
-    assert_eq!(commit.author().email(), Some("local@example.com"));
+    assert_eq!(commit.author().name().ok(), Some("Local User"));
+    assert_eq!(commit.author().email().ok(), Some("local@example.com"));
 }

@@ -134,7 +134,7 @@ pub fn list_refs(workdir: &Path) -> Result<BranchesSnapshot, AppError> {
     for item in repo.branches(Some(git2::BranchType::Remote))? {
         let (branch, _) = item?;
         // Skip symbolic entries — that is "<remote>/HEAD".
-        if branch.get().symbolic_target().is_some() {
+        if branch.get().symbolic_target().ok().flatten().is_some() {
             continue;
         }
         let name = match branch.name()? {
@@ -158,6 +158,7 @@ pub fn list_refs(workdir: &Path) -> Result<BranchesSnapshot, AppError> {
     let mut tags: Vec<String> = repo
         .tag_names(None)?
         .iter()
+        .filter_map(Result::ok)
         .flatten()
         .map(str::to_string)
         .collect();
@@ -772,7 +773,7 @@ mod create_branch_here_tests {
         if !head.is_branch() {
             return None;
         }
-        head.shorthand().map(str::to_string)
+        head.shorthand().ok().map(str::to_string)
     }
 
     fn cbh_read(dir: &Path, name: &str) -> String {
@@ -1175,7 +1176,7 @@ mod checkout_autostash_tests {
         if !head.is_branch() {
             return None;
         }
-        head.shorthand().map(str::to_string)
+        head.shorthand().ok().map(str::to_string)
     }
 
     /// Full 40-hex oid of LOCAL branch `name`'s tip.

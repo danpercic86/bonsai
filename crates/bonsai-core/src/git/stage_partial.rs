@@ -292,7 +292,7 @@ fn synthesize_entry(path: &str, wd: &Path) -> git2::IndexEntry {
         uid: 0,
         gid: 0,
         file_size: 0,
-        id: git2::Oid::zero(),
+        id: git2::Oid::ZERO_SHA1,
         flags: 0,
         flags_extended: 0,
         path: path.as_bytes().to_vec(),
