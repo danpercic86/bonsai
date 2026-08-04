@@ -301,7 +301,24 @@ ACCEPTED as orchestrator: (1) name collision → `-N` suffix + dialog advisory, 
 name; (2) source = currently-open repo workdir & its HEAD ("copy what you're looking at"), not
 strictly main_workdir; (3) no size cap v1; (4) non-transactional copy v1). ensure_contained →
 pub(crate) for the copy guard.
-**Current step:** P32a (Part A) — senior-dev implementing path+name backend + IPC + dialog name field.
+- **P32a** (reviewer APPROVE, 3 preview-only NITs; NIT-1 folded) — commit 6a62828. derive_worktree(name)
+  nests container under dir_basename(main); add_worktree(workdir, branch, name) — branch drives
+  checkout, blank name→branch; ensure_contained→pub(crate); command+IPC addWorktree(repoId,branch,name);
+  WorktreeCreateDialog editable Name field (default=branch, auto-sync until dirty, path preview slugs
+  name, "name in use" advisory, slugify mirrors backend '..' reject). worktree_cli.rs: 3-arg + <repo>
+  segment + name-decoupled case → 15 passed. NITs left: usedNameSlugs approximates from branch slugs;
+  degenerate no-slash preview path.
+- **P32b** (reviewer APPROVE, 0 must-fix; 1 SHOULD-FIX contract-sync folded) — commit pending.
+  New crates/bonsai-core/src/git/worktree_copy.rs (~330 lines): CopyGroup/Verdict/Action enums +
+  CopyCandidate/PlanEntry/Selection; list_copy_candidates (read_status + 2nd include_ignored pass,
+  deletions excluded, groups disjoint, renames→new path), classify_copy (base=HEAD blob vs
+  target=branch-tree blob, Clean iff target None or ==base, else Conflict; unborn-HEAD safe;
+  dir/submodule→None; BranchNotFound), add_worktree_with_changes (create via add_worktree, per-Copy
+  guarded write: is_unsafe_rel + ensure_contained, NotFound-source skipped, non-transactional). 4
+  smoke tests + clippy clean. FOLDED: synced contract text (missing-source = skip, not Io) at
+  P27-worktrees.md B.1.4/B5. NITs: staged+unstaged same path = 2 candidates (idempotent copy);
+  2nd repo open for ignored pass. Reviewer's tester oracle list captured for P32b tests.
+**Current step:** P32c (Part B commands+IPC+UI) — pending P32b commit.
 
 ---
 

@@ -1250,7 +1250,9 @@ Sequence:
 3. For each `sel` with `action == Copy`:
    - reject an absolute or `..`-bearing `sel.path` up front (defense; candidates are repo-relative);
    - `let dest = wt_root.join(&sel.path);`  `ensure_contained(&dest, &wt_root)?;`
-   - `let bytes = std::fs::read(src_root.join(&sel.path))?;` (Io on failure)
+   - `let bytes = match std::fs::read(src_root.join(&sel.path)) { … }` — a source that vanished
+     mid-flow (`io::ErrorKind::NotFound`, e.g. an untracked file removed after selection) is
+     **skipped**, not an error; any other IO error propagates as `Io`.
    - `if let Some(parent) = dest.parent() { std::fs::create_dir_all(parent)?; }`
    - `std::fs::write(&dest, bytes)?;`
 4. `Ok(info)`.
@@ -1417,8 +1419,8 @@ success/refresh callback — senior-dev's choice, kept minimal).
 - **Skip-on-conflict** → the file is simply **not written**; the worktree keeps the target branch's
   version.
 - **Untracked / gitignored** → base None, usually target None → `clean`; copied verbatim.
-- A candidate whose source file vanished between listing and copy → `Io` error on `fs::read` (rare; the
-  worktree already exists).
+- A candidate whose source file vanished between listing and copy (`NotFound`) → **skipped**, not an
+  error (rare; the worktree already exists). Any other IO failure propagates as `Io`.
 
 ### Part B acceptance criteria
 
