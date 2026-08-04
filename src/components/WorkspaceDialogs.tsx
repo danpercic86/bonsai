@@ -51,6 +51,8 @@ export interface WorkspaceDialogsProps {
   handleCherrypickAbort(): void;
   handleRevertAbort(): void;
   handleAbortMerge(): void;
+  /** P39b: leave bisect + restore the original branch/worktree (confirm-gated). */
+  handleBisectReset(): void;
 
   pendingDeleteBranch: string | null;
   setPendingDeleteBranch: (v: string | null) => void;
@@ -190,6 +192,7 @@ export function WorkspaceDialogs({
   abortConfirmOpen,
   setAbortConfirmOpen,
   handleRebaseAbort,
+  handleBisectReset,
   handleCherrypickAbort,
   handleRevertAbort,
   handleAbortMerge,
@@ -279,20 +282,24 @@ export function WorkspaceDialogs({
         title={
           opState.kind === 'rebase'
             ? 'Abort rebase?'
-            : opState.kind === 'cherryPick'
-              ? 'Abort cherry-pick?'
-              : opState.kind === 'revert'
-                ? 'Abort revert?'
-                : 'Abort merge?'
+            : opState.kind === 'bisect'
+              ? 'Reset bisect?'
+              : opState.kind === 'cherryPick'
+                ? 'Abort cherry-pick?'
+                : opState.kind === 'revert'
+                  ? 'Abort revert?'
+                  : 'Abort merge?'
         }
         confirmLabel={
           opState.kind === 'rebase'
             ? 'Abort rebase'
-            : opState.kind === 'cherryPick'
-              ? 'Abort cherry-pick'
-              : opState.kind === 'revert'
-                ? 'Abort revert'
-                : 'Abort merge'
+            : opState.kind === 'bisect'
+              ? 'Reset bisect'
+              : opState.kind === 'cherryPick'
+                ? 'Abort cherry-pick'
+                : opState.kind === 'revert'
+                  ? 'Abort revert'
+                  : 'Abort merge'
         }
         busy={mutating}
         onConfirm={() => {
@@ -300,6 +307,8 @@ export function WorkspaceDialogs({
           setAbortConfirmOpen(false);
           if (kind === 'rebase') {
             void handleRebaseAbort();
+          } else if (kind === 'bisect') {
+            void handleBisectReset();
           } else if (kind === 'cherryPick') {
             void handleCherrypickAbort();
           } else if (kind === 'revert') {
@@ -314,6 +323,11 @@ export function WorkspaceDialogs({
           <div>
             This restores your branch and working tree to their pre-rebase state. Replayed commits
             and conflict resolutions will be lost.
+          </div>
+        ) : opState.kind === 'bisect' ? (
+          <div>
+            This ends the bisect and restores your original branch and working tree. The recorded
+            good/bad marks will be discarded.
           </div>
         ) : opState.kind === 'cherryPick' || opState.kind === 'revert' ? (
           <div>

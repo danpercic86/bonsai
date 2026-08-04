@@ -36,6 +36,10 @@ export interface WorkspaceRightPanelProps {
   onCherrypickContinue(): void;
   onRevertContinue(): void;
   onAbort(): void;
+  /** P39b: bisect Good/Bad + Skip; Reset reuses onAbort's confirm. */
+  onBisectMark: OpBannerProps['onBisectMark'];
+  onBisectSkip: OpBannerProps['onBisectSkip'];
+  bisectSummaries: OpBannerProps['bisectSummaries'];
 
   compare: { oid: string } | null;
   compareData: ComparePanelProps['data'];
@@ -105,6 +109,9 @@ export function WorkspaceRightPanel({
   onCherrypickContinue,
   onRevertContinue,
   onAbort,
+  onBisectMark,
+  onBisectSkip,
+  bisectSummaries,
   compare,
   compareData,
   compareLoading,
@@ -165,6 +172,9 @@ export function WorkspaceRightPanel({
           void (opState.kind === 'cherryPick' ? onCherrypickContinue() : onRevertContinue())
         }
         onAbort={onAbort}
+        onBisectMark={onBisectMark}
+        onBisectSkip={onBisectSkip}
+        bisectSummaries={bisectSummaries}
       />
       {compare !== null ? (
         <ComparePanel

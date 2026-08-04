@@ -1,4 +1,5 @@
 import type { RepoOpState } from '../ipc';
+import { shortOid } from './workspaceUtils';
 
 // P3c §8.1 / P3d §8.1: operation-state banner at the top of the right panel.
 // Merge mode is actionable (Commit merge / Abort); rebase mode is actionable
@@ -23,8 +24,16 @@ export interface OpBannerProps {
   onRebaseSkip(): void;
   /** Cherry-pick / revert mode: finalize the resolved op (P20 §8.2). */
   onOpContinue(): void;
-  /** Opens the Abort ConfirmDialog (App owns it) — merge, rebase, pick, revert. */
+  /** Opens the Abort ConfirmDialog (App owns it) — merge, rebase, pick, revert.
+   *  P39b: also the bisect Reset confirm. */
   onAbort(): void;
+  /** Bisect mode (P39b): mark the current midpoint good (`true`) or bad. */
+  onBisectMark(isGood: boolean): void;
+  /** Bisect mode (P39b): skip the current (untestable) midpoint. */
+  onBisectSkip(): void;
+  /** Bisect mode (P39b): oid → commit summary, for the first-bad / current
+   *  rows (resolved from the loaded graph; missing oids fall back to shortOid). */
+  bisectSummaries?: Record<string, string>;
 }
 
 export function OpBanner({
@@ -36,12 +45,88 @@ export function OpBanner({
   onRebaseSkip,
   onOpContinue,
   onAbort,
+  onBisectMark,
+  onBisectSkip,
+  bisectSummaries,
 }: OpBannerProps) {
   if (op.kind === 'none') return null;
 
-  // P39a: the bisect banner arm is implemented in P39b; for now the engine +
-  // opstate exist without a dedicated banner (narrows op.kind off 'bisect').
-  if (op.kind === 'bisect') return null;
+  // P39b: git-bisect banner. Not conflict-driven → ignores conflictCount. Three
+  // phases: in-progress (current set, no first-bad) → Good/Bad/Skip/Reset;
+  // found (first-bad set) → the culprit + Reset; cannot-determine (current set,
+  // firstBad null, no testable revisions) surfaces the same in-progress controls
+  // (Reset only path — the toast from the command result explains it).
+  if (op.kind === 'bisect') {
+    if (op.firstBad !== null) {
+      const sum = bisectSummaries?.[op.firstBad];
+      return (
+        <div className="op-banner" role="status">
+          <div className="op-banner-text">
+            <span className="op-banner-title">Bisect found first bad commit</span>
+            <span className="op-banner-sub">
+              {shortOid(op.firstBad)}
+              {sum ? ` — ${sum}` : ''}
+            </span>
+          </div>
+          <div className="op-banner-actions">
+            <button
+              type="button"
+              className="btn-danger op-banner-btn"
+              disabled={mutating}
+              onClick={onAbort}
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="op-banner" role="status">
+        <div className="op-banner-text">
+          <span className="op-banner-title">Bisecting</span>
+          <span className="op-banner-sub">
+            {op.revisionsRemaining} revision{op.revisionsRemaining === 1 ? '' : 's'} left, ~
+            {op.estimatedSteps} step{op.estimatedSteps === 1 ? '' : 's'}
+          </span>
+        </div>
+        <div className="op-banner-actions">
+          <button
+            type="button"
+            className="btn-primary op-banner-btn"
+            disabled={mutating}
+            onClick={() => onBisectMark(true)}
+          >
+            Good
+          </button>
+          <button
+            type="button"
+            className="btn-primary op-banner-btn"
+            disabled={mutating}
+            onClick={() => onBisectMark(false)}
+          >
+            Bad
+          </button>
+          <button
+            type="button"
+            className="btn-secondary op-banner-btn"
+            disabled={mutating}
+            onClick={onBisectSkip}
+          >
+            Skip
+          </button>
+          <button
+            type="button"
+            className="btn-danger op-banner-btn"
+            disabled={mutating}
+            onClick={onAbort}
+          >
+            Reset
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (op.kind === 'merge') {
     return (

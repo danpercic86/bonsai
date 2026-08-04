@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import type { ContextMenuItem } from './ContextMenu';
 import {
+  BisectIcon,
   BranchIcon,
   CheckoutIcon,
   CompareIcon,
@@ -75,6 +76,12 @@ export interface WorkspaceMenuDeps {
   handleRevert(oid: string): void;
   setPendingReset(v: { oid: string; mode: ResetMode }): void;
   onViewReflog(refName: string): void;
+  // P39b: two-click bisect entry. `pendingBisectBad` = the oid already marked
+  // BAD (null when none pending); `bisectActive` hides the entry mid-bisect.
+  pendingBisectBad: string | null;
+  bisectActive: boolean;
+  handleMarkBisectBad(oid: string): void;
+  handleStartBisect(bad: string, good: string): void;
 }
 
 export interface WorkspaceMenus {
@@ -136,6 +143,10 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     handleRevert,
     setPendingReset,
     onViewReflog,
+    pendingBisectBad,
+    bisectActive,
+    handleMarkBisectBad,
+    handleStartBisect,
   } = deps;
 
   // P6 §4.1: the single shared builder for a branch/remote-tracking ref menu,
@@ -511,6 +522,30 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
               disabled: gate,
               onSelect: () => void openRebasePlan({ ontoOid: oid, ontoLabel: shortOid(oid) }),
             },
+            // P39b §8: two-click git-bisect start. First mark a BAD commit
+            // (records the oid + hints), then on an OLDER commit "Mark GOOD &
+            // start bisect" begins the search. Hidden while a bisect is already
+            // running (the OpBanner drives it then). The good item is enabled
+            // only once a bad is pending; picking a non-ancestor good surfaces
+            // the backend error.
+            ...(bisectActive
+              ? []
+              : [
+                  {
+                    label: 'Start bisect: mark this BAD',
+                    icon: createElement(BisectIcon),
+                    disabled: gate,
+                    onSelect: () => handleMarkBisectBad(oid),
+                  },
+                  {
+                    label: 'Mark GOOD & start bisect',
+                    icon: createElement(BisectIcon),
+                    disabled: gate || pendingBisectBad === null || pendingBisectBad === oid,
+                    onSelect: () => {
+                      if (pendingBisectBad !== null) handleStartBisect(pendingBisectBad, oid);
+                    },
+                  },
+                ]),
           ]),
       ...resetMenuItems(oid),
     ];

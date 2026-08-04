@@ -64,7 +64,23 @@ as a separate cross-engine task (task_d8879761), not fixed here to keep the two 
   (hermetic); checkout first-bad on convergence (more correct); no repo-changed (progress rides
   get_op_state). bisect unit 14 + bisect_cli 3 + opstate 6 + no-repo cmd 1; clippy/tsc/build clean.
   SHOULD-FIX #2 (force-checkout untracked clobber, inherited from rebase) → task_d8879761.
-**Current step:** P39b — senior-dev implementing OpBanner bisect arm + two-click entry + Reset confirm.
+- **P39b** (reviewer APPROVE, 0 must-fix) — OpBanner bisect arm (testing: revisions-left/~steps +
+  Good/Bad/Skip/Reset; found: first-bad short-oid + summary + Reset; cannotDetermine handled) +
+  RepoWorkspace handlers (start/mark/skip/reset → IPC → refreshAll, errors→toast) + two-click
+  commitMenuItems entry ("Start bisect: mark this BAD" → pending-bad; "Mark GOOD & start bisect" gated
+  on a distinct pending bad → startBisect(bad,[good])) + bisect-specific Reset ConfirmDialog + BisectIcon.
+  Reviewer statically verified arg order, distinct-bad gate, hidden-mid-bisect, dispatch+error toasts,
+  OpBanner rendering, confirm copy. tsc + build clean. Nits (cosmetic): bisectSummaries maps unused
+  current oid; cannotDetermine leaves Good/Bad enabled (per contract — bounces off backend guard);
+  RepoWorkspace.tsx now 3224 lines (pre-existing god-file, future extraction).
+- **P39b AI GATE (partial — canvas/op-flow is USER CHECKPOINT).** The two-click START lives in the
+  canvas commit context menu and the controls in the in-progress OpBanner; the hidden browser pane can
+  NOT drive a canvas contextmenu (coordinate clicks need a screenshot; synthetic contextmenu doesn't hit
+  canvas dots) NOR stage a real in-progress op — same documented limit that made P20's OpBanner flow +
+  P25b's canvas menu USER CHECKPOINT. AI gate here = reviewer static APPROVE + tsc/build clean + P39a
+  engine oracle (3 vs real git bisect) + 14 unit + stateful mock (driveMockBisect converges to found).
+**Current step:** P39a+b committed. Next: P39 tester (engine regression + user checklist), then commit
+the green milestone → P40 (config editing).
 
 ## P38 — reflog viewer + restore (Git completeness, Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
 

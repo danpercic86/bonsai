@@ -33,6 +33,7 @@ import type {
   FileDiff,
   FileHistoryEntry,
   GraphLayout,
+  BisectOutcome,
   GraphPrefs,
   HeadInfo,
   JobStatus,
@@ -221,6 +222,9 @@ export function RepoWorkspace({
   const [amendMessage, setAmendMessage] = useState<string | null>(null);
   // P11 §1.4: "Create branch here" target commit → drives the PromptDialog.
   const [pendingCreateBranch, setPendingCreateBranch] = useState<{ oid: string } | null>(null);
+  // P39b: two-click bisect start. Holds the oid marked BAD (via the commit menu)
+  // while the user picks an older known-GOOD commit; cleared on start / cancel.
+  const [pendingBisectBad, setPendingBisectBad] = useState<string | null>(null);
   // P22 §7.1: tag + remote management dialog state.
   const [pendingCreateTag, setPendingCreateTag] = useState<{ oid: string } | null>(null);
   const [pendingDeleteTag, setPendingDeleteTag] = useState<string | null>(null);
@@ -2488,6 +2492,84 @@ export function RepoWorkspace({
     }
   }
 
+  // ----- P39b: git bisect -----
+  // Surface a start/mark/skip outcome as a toast; the banner (RepoOpState.bisect,
+  // refetched by refreshAll) renders the live progress + controls.
+  function reportBisectOutcome(res: BisectOutcome) {
+    if (res.kind === 'found') {
+      pushToast('success', `Bisect found first bad commit ${shortOid(res.firstBad)}`);
+    } else if (res.kind === 'cannotDetermine') {
+      pushToast(
+        'info',
+        `Bisect cannot determine the culprit: only skipped commits remain (${res.skipped.length}). Reset to finish.`,
+      );
+    } else {
+      pushToast(
+        'info',
+        `Bisecting: ${res.revisionsRemaining} revision(s) left, ~${res.estimatedSteps} step(s)`,
+      );
+    }
+  }
+
+  // Two-click start: the commit menu recorded a BAD oid; `good` is an older
+  // commit picked as known-good. Backend guards non-ancestor good / same oid /
+  // dirty worktree → surface its error and keep the pending-bad so the user can
+  // retry with a different good.
+  async function handleStartBisect(bad: string, good: string) {
+    setMutating(true);
+    try {
+      const res = await ipc.startBisect(repoId, bad, [good]);
+      setPendingBisectBad(null);
+      reportBisectOutcome(res);
+      await refreshAll();
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleBisectMark(isGood: boolean) {
+    setMutating(true);
+    try {
+      const res = await ipc.bisectMark(repoId, isGood);
+      reportBisectOutcome(res);
+      await refreshAll();
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function handleBisectSkip() {
+    setMutating(true);
+    try {
+      const res = await ipc.bisectSkip(repoId);
+      reportBisectOutcome(res);
+      await refreshAll();
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  // Reset = leave bisect + re-checkout the original branch/worktree. Confirm-
+  // gated (routed through the shared Abort ConfirmDialog).
+  async function handleBisectReset() {
+    setMutating(true);
+    try {
+      await ipc.bisectReset(repoId);
+      await refreshAll();
+      pushToast('success', 'Bisect reset');
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
   function handleToggleConflictView(path: string) {
     const key = `conflict:${path}`;
     if (diffSlotRef.current?.key === key) {
@@ -2803,7 +2885,28 @@ export function RepoWorkspace({
     handleRevert,
     setPendingReset,
     onViewReflog: (name: string) => void openReflog(name),
+    pendingBisectBad,
+    bisectActive: opState.kind === 'bisect',
+    handleMarkBisectBad: (oid: string) => {
+      setPendingBisectBad(oid);
+      pushToast('info', 'Bisect: now pick an older known-GOOD commit to start');
+    },
+    handleStartBisect: (bad: string, good: string) => void handleStartBisect(bad, good),
   });
+
+  // P39b: short summaries for the bisect banner's first-bad / current oids,
+  // resolved from the loaded graph (missing → the banner falls back to shortOid).
+  const bisectSummaries: Record<string, string> | undefined = (() => {
+    if (opState.kind !== 'bisect') return undefined;
+    const map: Record<string, string> = {};
+    const nodes = graph?.nodes ?? [];
+    for (const oid of [opState.current, opState.firstBad]) {
+      if (oid === null) continue;
+      const s = nodes.find((n) => n.id === oid)?.summary;
+      if (s !== undefined) map[oid] = s;
+    }
+    return map;
+  })();
 
   // P38 §7.2/§7.3: reflog restore wiring. Both actions arm the SHARED dialogs
   // (create-branch PromptDialog / reset ConfirmDialog) — no new mutation path.
@@ -2968,6 +3071,9 @@ export function RepoWorkspace({
           onCherrypickContinue={() => void handleCherrypickContinue()}
           onRevertContinue={() => void handleRevertContinue()}
           onAbort={() => setAbortConfirmOpen(true)}
+          onBisectMark={(isGood) => void handleBisectMark(isGood)}
+          onBisectSkip={() => void handleBisectSkip()}
+          bisectSummaries={bisectSummaries}
           compare={compare}
           compareData={compareData}
           compareLoading={compareLoading}
@@ -3031,6 +3137,7 @@ export function RepoWorkspace({
         handleCherrypickAbort={() => void handleCherrypickAbort()}
         handleRevertAbort={() => void handleRevertAbort()}
         handleAbortMerge={() => void handleAbortMerge()}
+        handleBisectReset={() => void handleBisectReset()}
         pendingDeleteBranch={pendingDeleteBranch}
         setPendingDeleteBranch={setPendingDeleteBranch}
         handleDeleteBranch={(name) => void handleDeleteBranch(name)}

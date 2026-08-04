@@ -29,6 +29,7 @@ export type {
   AssetIssue,
   AssetKind,
   AutoFetchSettings,
+  BisectOutcome,
   BlameLine,
   BlobStat,
   BranchDeleteResult,

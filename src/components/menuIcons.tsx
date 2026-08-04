@@ -154,6 +154,21 @@ export function StashPopIcon() {
   );
 }
 
+/** Bisect (P39) — a range bar with a midpoint marker (binary search split). */
+export function BisectIcon() {
+  return (
+    <svg {...svgProps}>
+      {/* good..bad range endpoints */}
+      <circle cx="3" cy="8" r="1.5" />
+      <circle cx="13" cy="8" r="1.5" />
+      {/* baseline between them */}
+      <path d="M4.5 8 H11.5" />
+      {/* midpoint split marker */}
+      <path d="M8 3.5 V12.5" />
+    </svg>
+  );
+}
+
 /** History / reflog (P38) — a clock face with a counter-clockwise rewind arrow. */
 export function HistoryIcon() {
   return (
