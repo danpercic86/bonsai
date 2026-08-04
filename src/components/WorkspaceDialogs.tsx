@@ -14,6 +14,7 @@ import type {
   AiDigestRange,
   BranchInfo,
   BranchesSnapshot,
+  CopySelection,
   RebaseTodoOp,
   RemoteInfo,
   RepoOpState,
@@ -100,7 +101,7 @@ export interface WorkspaceDialogsProps {
 
   newWorktreeOpen: boolean;
   setNewWorktreeOpen: (v: boolean) => void;
-  handleAddWorktree(branch: string, name: string): Promise<void>;
+  handleAddWorktree(branch: string, name: string, selections: CopySelection[]): Promise<void>;
 
   worktreeContextOpen: boolean;
   setWorktreeContextOpen: (v: boolean) => void;
@@ -552,6 +553,7 @@ export function WorkspaceDialogs({
       <WorktreeCreateDialog
         open={newWorktreeOpen}
         busy={mutating}
+        repoId={repoId}
         localBranches={branches?.local.map((b) => b.name) ?? []}
         usedBranches={worktrees.map((w) => w.branch).filter((b): b is string => b !== null)}
         container={worktreeContainerPreview(worktrees, repoId)}

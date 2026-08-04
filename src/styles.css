@@ -2744,6 +2744,94 @@ span.file-row-main {
   line-height: 1.4;
 }
 
+/* P32 Part B: copy-uncommitted-files list inside the new-worktree dialog. */
+.wt-copy-list {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.wt-copy-group {
+  margin-top: 8px;
+}
+
+.wt-copy-group-header {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  margin-bottom: 4px;
+}
+
+.wt-copy-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+}
+
+.wt-copy-check {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wt-copy-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wt-copy-conflict {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.wt-copy-chip {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.wt-copy-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.wt-copy-toggle button {
+  font-size: 11px;
+  padding: 2px 8px;
+  border: none;
+  background: var(--bg-2);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.wt-copy-toggle button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.wt-copy-toggle-on {
+  background: var(--accent) !important;
+  color: #fff !important;
+}
+
+.wt-copy-warn {
+  color: var(--warning, var(--danger));
+}
+
 /* P23b: interactive-rebase plan editor — wider card, a reorderable row list. */
 .rebase-plan-card {
   width: 560px;

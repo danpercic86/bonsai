@@ -120,4 +120,10 @@ export type {
   WorkingStateSection,
   WorktreeContextStatus,
   WorktreeInfo,
+  CopyGroup,
+  CopyVerdict,
+  CopyAction,
+  CopyCandidate,
+  CopyPlanEntry,
+  CopySelection,
 } from './types';

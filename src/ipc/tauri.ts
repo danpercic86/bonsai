@@ -69,6 +69,9 @@ import type {
   Unsubscribe,
   WorktreeContextStatus,
   WorktreeInfo,
+  CopyCandidate,
+  CopyPlanEntry,
+  CopySelection,
 } from './types';
 
 export const tauriIpc: IpcApi = {
@@ -444,6 +447,24 @@ export const tauriIpc: IpcApi = {
 
   unlockWorktree(repoId: string, name: string): Promise<void> {
     return invoke<void>('unlock_worktree', { repoId, name });
+  },
+
+  // P32 Part B: copy uncommitted changes into a new worktree.
+  listCopyCandidates(repoId: string): Promise<CopyCandidate[]> {
+    return invoke<CopyCandidate[]>('list_copy_candidates', { repoId });
+  },
+
+  previewWorktreeCopy(repoId: string, branch: string, paths: string[]): Promise<CopyPlanEntry[]> {
+    return invoke<CopyPlanEntry[]>('preview_worktree_copy', { repoId, branch, paths });
+  },
+
+  addWorktreeWithChanges(
+    repoId: string,
+    branch: string,
+    name: string,
+    selections: CopySelection[],
+  ): Promise<WorktreeInfo> {
+    return invoke<WorktreeInfo>('add_worktree_with_changes', { repoId, branch, name, selections });
   },
 
   // P29: repo health.

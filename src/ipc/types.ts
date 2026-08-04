@@ -394,6 +394,33 @@ export interface WorktreeInfo {
   valid: boolean;
 }
 
+// --- P32 Part B: copy uncommitted changes into a new worktree ---------------
+
+/** Which status list a copy candidate came from (wire mirror of Rust
+ *  `CopyGroup`). */
+export type CopyGroup = 'staged' | 'unstaged' | 'untracked' | 'ignored';
+/** Conflict verdict for a selected path against the target branch. */
+export type CopyVerdict = 'clean' | 'conflict';
+/** What to do with one selected path at create time ("Overwrite" in the UI ==
+ *  `copy` on a conflict). */
+export type CopyAction = 'copy' | 'skip';
+
+/** One file the user may copy into the new worktree. */
+export interface CopyCandidate {
+  path: string; // repo-relative, forward slashes
+  group: CopyGroup;
+}
+/** Result of `previewWorktreeCopy` for one path. */
+export interface CopyPlanEntry {
+  path: string;
+  verdict: CopyVerdict;
+}
+/** One user decision, sent to `addWorktreeWithChanges`. */
+export interface CopySelection {
+  path: string;
+  action: CopyAction;
+}
+
 // --- P29: repo health -------------------------------------------------------
 
 /** P29. Per-section envelope: exactly one of `data`/`error` is set. Section
@@ -1275,6 +1302,22 @@ export interface IpcApi {
   lockWorktree(repoId: string, name: string, reason?: string): Promise<void>;
   /** Unlock worktree `name`. Rejects noRepo | invalidName | git. */
   unlockWorktree(repoId: string, name: string): Promise<void>;
+  /** Uncommitted + gitignored files eligible to copy into a new worktree
+   *  (deletions excluded), grouped staged/unstaged/untracked/ignored.
+   *  Rejects noRepo | git. */
+  listCopyCandidates(repoId: string): Promise<CopyCandidate[]>;
+  /** Classify `paths` against `branch` (clean/conflict) BEFORE creating the
+   *  worktree. Rejects noRepo | branchNotFound | git. */
+  previewWorktreeCopy(repoId: string, branch: string, paths: string[]): Promise<CopyPlanEntry[]>;
+  /** Create the worktree (branch/name per Part A) then copy each `copy`
+   *  selection in; `skip` selections are not written; empty == plain create.
+   *  Rejects noRepo | invalidName | branchNotFound | git | io. */
+  addWorktreeWithChanges(
+    repoId: string,
+    branch: string,
+    name: string,
+    selections: CopySelection[],
+  ): Promise<WorktreeInfo>;
   // --- P29: repo health ---
   /** All four repo-health sections in one round-trip (READ-ONLY). Per-section
    *  failures land in `Section.error` inside the payload; the call itself

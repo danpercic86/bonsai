@@ -318,7 +318,16 @@ pub(crate) for the copy guard.
   smoke tests + clippy clean. FOLDED: synced contract text (missing-source = skip, not Io) at
   P27-worktrees.md B.1.4/B5. NITs: staged+unstaged same path = 2 candidates (idempotent copy);
   2nd repo open for ignored pass. Reviewer's tester oracle list captured for P32b tests.
-**Current step:** P32c (Part B commands+IPC+UI) — pending P32b commit.
+- **P32c** (reviewer APPROVE, 0 must-fix; 1 SHOULD-FIX + 2 NITs folded) — commit pending. 3 commands
+  (list_copy_candidates / preview_worktree_copy / add_worktree_with_changes, _inner + spawn_blocking +
+  repo_path, registered) + IPC triple + barrel re-export; mock spans 4 groups w/ seeded conflict
+  src/staged-change.ts. UI: NEW WorktreeCopyCandidates.tsx (grouped checkboxes, conflict/unchecked
+  chip, Overwrite/Skip toggle) + WorktreeCreateDialog container (fetch on open, debounced preview via
+  previewIdRef guard, submit builds CopySelection[]: verified-clean→copy, conflict-or-previewFailed→
+  omit unless Overwrite). FOLDED: preview-failure no longer silently copies (previewFailed → needs-
+  decision, default Skip + inline advisory); prune conflictActions on uncheck; _inner doc wording.
+  Orchestrator self-verified the submit safety path. cargo check + pnpm build exit 0.
+**Current step:** P32c committed; tester (worktree_copy fs-oracle suite) + browser-harness AI gate next.
 
 ---
 

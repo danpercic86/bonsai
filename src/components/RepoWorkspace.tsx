@@ -28,6 +28,7 @@ import type {
   CompareDiff,
   ConflictEntry,
   ConflictResolution,
+  CopySelection,
   FileDiff,
   FileHistoryEntry,
   GraphLayout,
@@ -1758,11 +1759,21 @@ export function RepoWorkspace({
 
   // Called by WorktreeCreateDialog; rethrows so the dialog shows the error
   // inline and stays open (success closes it here + toasts the derived path).
-  async function handleAddWorktree(branch: string, name: string): Promise<void> {
+  async function handleAddWorktree(
+    branch: string,
+    name: string,
+    selections: CopySelection[],
+  ): Promise<void> {
     setMutating(true);
     try {
-      const wt = await ipc.addWorktree(repoId, branch, name);
-      pushToast('success', `Created worktree for ${branch} at ${wt.absPath}`);
+      // Route to the copy-aware command only when there is something to copy;
+      // an empty plan is a plain create (P32 Part B).
+      const wt =
+        selections.length > 0
+          ? await ipc.addWorktreeWithChanges(repoId, branch, name, selections)
+          : await ipc.addWorktree(repoId, branch, name);
+      const copied = selections.length > 0 ? ` (+${selections.length} file(s) copied)` : '';
+      pushToast('success', `Created worktree for ${branch} at ${wt.absPath}${copied}`);
       setNewWorktreeOpen(false);
       await refetchWorktrees();
     } finally {

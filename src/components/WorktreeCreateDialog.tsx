@@ -1,9 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ipc } from '../ipc';
+import type { CopyAction, CopyCandidate, CopySelection, CopyVerdict } from '../ipc';
 import { errorMessage } from '../utils/errors';
+import { WorktreeCopyCandidates } from './WorktreeCopyCandidates';
 
 export interface WorktreeCreateDialogProps {
   open: boolean;
   busy: boolean;
+  /** Repo whose uncommitted/gitignored files can be copied into the worktree. */
+  repoId: string;
   /** Local branch names (backend order). */
   localBranches: string[];
   /** Branches already checked out in some worktree — rendered disabled (a
@@ -15,8 +20,9 @@ export interface WorktreeCreateDialogProps {
   container: string;
   /** Resolves on success (parent closes the dialog + toasts); rejects with
    *  AppError → shown inline, dialog stays open. `name` is the user-editable
-   *  on-disk label (defaults to the branch, decoupled from it — P32 Part A). */
-  onSubmit(branch: string, name: string): Promise<void>;
+   *  on-disk label (defaults to the branch, decoupled from it — P32 Part A).
+   *  `selections` are the `copy` decisions (empty → plain create; P32 Part B). */
+  onSubmit(branch: string, name: string, selections: CopySelection[]): Promise<void>;
   onCancel(): void;
 }
 
@@ -44,6 +50,7 @@ function slugify(branch: string): string {
 export function WorktreeCreateDialog({
   open,
   busy,
+  repoId,
   localBranches,
   usedBranches,
   container,
@@ -58,6 +65,22 @@ export function WorktreeCreateDialog({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // P32 Part B: copy uncommitted/gitignored files into the new worktree.
+  const [candidates, setCandidates] = useState<CopyCandidate[]>([]);
+  const [candidatesLoading, setCandidatesLoading] = useState(false);
+  const [candidatesError, setCandidatesError] = useState<string | null>(null);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  // Conflict verdict per checked path (from previewWorktreeCopy).
+  const [verdictByPath, setVerdictByPath] = useState<Map<string, CopyVerdict>>(new Map());
+  // Overwrite/Skip decision per conflicted path; absent → Skip (safe default).
+  const [conflictActions, setConflictActions] = useState<Record<string, CopyAction>>({});
+  // True when the last conflict-preview call failed → every checked path has an
+  // UNKNOWN verdict and must be treated like a conflict (explicit decision,
+  // default Skip) so we never silently overwrite the target branch.
+  const [previewFailed, setPreviewFailed] = useState(false);
+  // Monotonic id: a stale preview response (older selection/branch) is dropped.
+  const previewIdRef = useRef(0);
+
   const used = new Set(usedBranches);
   const eligible = localBranches.filter((b) => !used.has(b));
 
@@ -71,9 +94,89 @@ export function WorktreeCreateDialog({
     setNameDirty(false);
     setError(null);
     setSubmitting(false);
+    setChecked(new Set());
+    setVerdictByPath(new Map());
+    setConflictActions({});
+    setPreviewFailed(false);
     selectRef.current?.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Fetch copy candidates once per open (they depend on the repo, not the
+  // branch). Empty list → the section simply doesn't render.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setCandidatesLoading(true);
+    setCandidatesError(null);
+    setCandidates([]);
+    ipc
+      .listCopyCandidates(repoId)
+      .then((rows) => {
+        if (!cancelled) setCandidates(rows);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setCandidatesError(errorMessage(e));
+      })
+      .finally(() => {
+        if (!cancelled) setCandidatesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, repoId]);
+
+  // Re-classify whenever the checked set OR the branch changes. A reqId guard
+  // drops stale responses; an empty selection short-circuits to no verdicts.
+  useEffect(() => {
+    if (!open) return;
+    const paths = [...checked];
+    const id = (previewIdRef.current += 1);
+    if (paths.length === 0 || branch === '') {
+      setVerdictByPath(new Map());
+      setPreviewFailed(false);
+      return;
+    }
+    ipc
+      .previewWorktreeCopy(repoId, branch, paths)
+      .then((entries) => {
+        if (previewIdRef.current !== id) return;
+        setVerdictByPath(new Map(entries.map((e) => [e.path, e.verdict])));
+        setPreviewFailed(false);
+      })
+      .catch(() => {
+        // Preview failed → verdicts are UNKNOWN. Rather than silently copy
+        // (which could overwrite a divergent target-branch file), mark the whole
+        // selection as needing an explicit decision (default Skip). The user can
+        // still flip individual files to Overwrite.
+        if (previewIdRef.current !== id) return;
+        setVerdictByPath(new Map());
+        setPreviewFailed(true);
+      });
+  }, [open, repoId, branch, checked]);
+
+  const toggleChecked = useCallback((path: string) => {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+        // Drop any stale Overwrite/Skip choice so it can't resurface if the file
+        // is re-checked later (it would re-default to Skip).
+        setConflictActions((actions) => {
+          if (!(path in actions)) return actions;
+          const { [path]: _drop, ...rest } = actions;
+          return rest;
+        });
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
+
+  const setAction = useCallback((path: string, action: CopyAction) => {
+    setConflictActions((prev) => ({ ...prev, [path]: action }));
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -122,9 +225,20 @@ export function WorktreeCreateDialog({
           onSubmit={(e) => {
             e.preventDefault();
             if (!canSubmit) return;
+            // Build the copy plan. A checked path is "verified clean" only when
+            // the preview succeeded AND returned a non-conflict verdict → always
+            // copy. A conflict OR an unknown verdict (previewFailed) needs an
+            // explicit Overwrite choice; default Skip → omitted (not written).
+            // The Set already de-dupes a path appearing in two groups.
+            const selections: CopySelection[] = [];
+            for (const path of checked) {
+              const needsDecision = previewFailed || verdictByPath.get(path) === 'conflict';
+              const action = needsDecision ? conflictActions[path] ?? 'skip' : 'copy';
+              if (action === 'copy') selections.push({ path, action: 'copy' });
+            }
             setSubmitting(true);
             setError(null);
-            onSubmit(branch, effectiveName).catch((err: unknown) => {
+            onSubmit(branch, effectiveName, selections).catch((err: unknown) => {
               setError(errorMessage(err));
               setSubmitting(false);
             });
@@ -188,6 +302,25 @@ export function WorktreeCreateDialog({
             {nameInUse && (
               <p className="dialog-body-note">
                 Name in use — will create <span className="mono">{nameSlug}-2</span>.
+              </p>
+            )}
+            <WorktreeCopyCandidates
+              candidates={candidates}
+              loading={candidatesLoading}
+              error={candidatesError}
+              checked={checked}
+              verdictByPath={verdictByPath}
+              previewFailed={previewFailed}
+              conflictActions={conflictActions}
+              disabled={inFlight}
+              onToggle={toggleChecked}
+              onSetAction={setAction}
+            />
+            {previewFailed && (
+              <p className="dialog-body-note wt-copy-warn">
+                Couldn&apos;t check for conflicts against{' '}
+                <span className="mono">{branch}</span> — choose Overwrite per file
+                to copy it anyway; unselected files are skipped.
               </p>
             )}
             {error !== null && <p className="dialog-error">{error}</p>}

@@ -44,6 +44,7 @@ use bonsai_core::git::stash::{self, ApplyStashOutcome, CreateStashResult, StashE
 use bonsai_core::git::status::{read_status, StatusSnapshot};
 use bonsai_core::git::submodule::{self, SubmoduleInfo};
 use bonsai_core::git::worktree::{self, WorktreeInfo};
+use bonsai_core::git::worktree_copy::{self, CopyCandidate, CopyPlanEntry, CopySelection};
 use bonsai_core::git::tags;
 use bonsai_core::graph::{compute_graph, GraphLayout};
 use bonsai_core::health::{collect_repo_health, RepoHealth};
@@ -2395,6 +2396,90 @@ async fn unlock_worktree_inner(
     tauri::async_runtime::spawn_blocking(move || worktree::unlock_worktree(&path, &name))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Lists uncommitted + gitignored files eligible to copy into a new worktree
+/// (P32 Part B). Groups: staged / unstaged / untracked / ignored; deletions
+/// excluded. Errors: `noRepo` | `git`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn list_copy_candidates(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<Vec<CopyCandidate>, AppError> {
+    list_copy_candidates_inner(state.inner(), &repo_id).await
+}
+
+/// Runs the blocking core of `list_copy_candidates` under the async runtime
+/// (testable directly under a tokio runtime, no Tauri app required).
+async fn list_copy_candidates_inner(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<Vec<CopyCandidate>, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || worktree_copy::list_copy_candidates(&path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Classifies `paths` against target `branch` (clean/conflict) BEFORE creating
+/// the worktree (P32 Part B). Errors: `noRepo` | `branchNotFound` | `git`. Does
+/// NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn preview_worktree_copy(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    branch: String,
+    paths: Vec<String>,
+) -> Result<Vec<CopyPlanEntry>, AppError> {
+    preview_worktree_copy_inner(state.inner(), &repo_id, branch, paths).await
+}
+
+/// Runs the blocking core of `preview_worktree_copy` under the async runtime
+/// (testable directly under a tokio runtime, no Tauri app required).
+async fn preview_worktree_copy_inner(
+    state: &AppState,
+    repo_id: &str,
+    branch: String,
+    paths: Vec<String>,
+) -> Result<Vec<CopyPlanEntry>, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        worktree_copy::classify_copy(&path, &branch, &paths)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Creates the worktree (Part A branch/name), then copies each `copy` selection's
+/// source bytes into it; `skip` selections are not written; empty behaves like a
+/// plain `add_worktree` (P32 Part B). Errors: `noRepo` | `invalidName` |
+/// `branchNotFound` | `git` | `io`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn add_worktree_with_changes(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    branch: String,
+    name: String,
+    selections: Vec<CopySelection>,
+) -> Result<WorktreeInfo, AppError> {
+    add_worktree_with_changes_inner(state.inner(), &repo_id, branch, name, selections).await
+}
+
+/// Runs the blocking core of `add_worktree_with_changes` under the async runtime
+/// (testable directly under a tokio runtime, no Tauri app required).
+async fn add_worktree_with_changes_inner(
+    state: &AppState,
+    repo_id: &str,
+    branch: String,
+    name: String,
+    selections: Vec<CopySelection>,
+) -> Result<WorktreeInfo, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        worktree_copy::add_worktree_with_changes(&path, &branch, &name, &selections)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Collects all four repo-health sections in ONE round-trip (P29 contract

@@ -119,6 +119,9 @@ import type {
   Unsubscribe,
   WorktreeContextStatus,
   WorktreeInfo,
+  CopyCandidate,
+  CopyPlanEntry,
+  CopySelection,
 } from './types';
 import {
   AUTO_FETCH_INTERVAL_MAX,
@@ -3427,6 +3430,54 @@ export const mockIpc: IpcApi = {
     }
     wt.locked = false;
     wt.lockReason = null;
+  },
+
+  // P32 Part B: copy uncommitted changes into a new worktree. Only the default
+  // fixture surfaces candidates; every other fixture returns []. The
+  // deterministic seeded conflict is `src/staged-change.ts` (see below), so the
+  // harness always exercises the badge + Overwrite/Skip toggle.
+  async listCopyCandidates(repoId: string): Promise<CopyCandidate[]> {
+    await delay(120);
+    const state = requireRepo(repoId);
+    if (state.kind !== 'default' || state.graphFixture !== 'default') return [];
+    const fixture: CopyCandidate[] = [
+      { path: '.claude/skills/new-skill.md', group: 'untracked' },
+      { path: '.claude/skills/edited.md', group: 'unstaged' },
+      { path: 'src/staged-change.ts', group: 'staged' },
+      { path: '.env.local', group: 'ignored' },
+    ];
+    return structuredClone(fixture);
+  },
+
+  async previewWorktreeCopy(
+    repoId: string,
+    branch: string,
+    paths: string[],
+  ): Promise<CopyPlanEntry[]> {
+    await delay(120);
+    requireRepo(repoId);
+    if (branch.trim() === '') {
+      const err: AppError = { kind: 'branchNotFound', message: 'branch name is empty' };
+      throw err;
+    }
+    // Deterministic conflict: `src/staged-change.ts` (a tracked file the target
+    // branch also modified) always conflicts; everything else is clean.
+    return paths.map((path) => ({
+      path,
+      verdict: path === 'src/staged-change.ts' ? 'conflict' : 'clean',
+    }));
+  },
+
+  async addWorktreeWithChanges(
+    repoId: string,
+    branch: string,
+    name: string,
+    selections: CopySelection[],
+  ): Promise<WorktreeInfo> {
+    // Same guards + row-push as addWorktree; the byte copy is a no-op in the
+    // browser mock. `selections` length is observable for the success toast.
+    void selections;
+    return this.addWorktree(repoId, branch, name);
   },
 
   // P29: repo health. Static warn-heavy fixture (§7) with a fresh generatedAt
