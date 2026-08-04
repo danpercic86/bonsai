@@ -120,6 +120,78 @@ pub fn unstage_paths(workdir: &Path, paths: &[String]) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Data-loss guard shared by the interactive-rebase and bisect engines. Both
+/// bring the worktree to a target tree with a `.force()` checkout (needed to
+/// update tracked files across divergent trees), but a forced checkout silently
+/// OVERWRITES an untracked working-tree file whose path collides with a file in
+/// the target tree. This refuses that case, restoring git's own "would be
+/// overwritten by checkout" protection. Call it immediately BEFORE the force
+/// checkout.
+///
+/// Only UNTRACKED, non-ignored files are guarded: tracked files are the force
+/// checkout's job to update, and git itself overwrites IGNORED collisions, so
+/// those are intentionally left to `.force()`. Runtime-free (git2 + std only).
+pub(crate) fn ensure_no_untracked_collision(
+    repo: &git2::Repository,
+    target_tree: &git2::Tree,
+) -> Result<(), AppError> {
+    let mut sopts = git2::StatusOptions::new();
+    sopts
+        .include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .include_ignored(false);
+    let statuses = repo.statuses(Some(&mut sopts))?;
+    for entry in statuses.iter() {
+        if !entry.status().contains(git2::Status::WT_NEW) {
+            continue;
+        }
+        // Untracked rows are on the index→workdir side; fall back to the raw
+        // entry path. git stores tree paths with '/' separators, which
+        // `Tree::get_path` matches directly.
+        let path = entry
+            .index_to_workdir()
+            .and_then(|d| d.new_file().path().map(|p| p.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| String::from_utf8_lossy(entry.path_bytes()).into_owned());
+        if target_path_collides(target_tree, &path) {
+            return Err(AppError::Git(format!(
+                "untracked working-tree file '{path}' would be overwritten by checkout; \
+                 remove or stash it first"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// True iff checking out `target_tree` would overwrite/delete the untracked
+/// worktree file at `path`. Two ways this happens:
+/// 1. **Direct** — the exact `path` exists in the target tree (blob, or a tree
+///    that replaces the untracked file with a directory).
+/// 2. **Type-swap** — an ANCESTOR prefix of `path` (e.g. `foo` for
+///    `foo/bar.txt`) is a BLOB in the target tree. The checkout replaces that
+///    directory with a file, deleting everything under it, including this
+///    untracked file. `get_path(path)` alone misses this: traversing a blob as
+///    an interior component returns Err, a false negative.
+fn target_path_collides(target_tree: &git2::Tree, path: &str) -> bool {
+    if target_tree.get_path(Path::new(path)).is_ok() {
+        return true;
+    }
+    let components: Vec<&str> = path.split('/').collect();
+    let mut prefix = String::new();
+    // Proper ancestor prefixes only (exclude the full path, handled above).
+    for comp in &components[..components.len().saturating_sub(1)] {
+        if !prefix.is_empty() {
+            prefix.push('/');
+        }
+        prefix.push_str(comp);
+        if let Ok(entry) = target_tree.get_path(Path::new(&prefix)) {
+            if entry.kind() == Some(git2::ObjectType::Blob) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

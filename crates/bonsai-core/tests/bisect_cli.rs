@@ -343,3 +343,64 @@ fn mark_after_external_checkout_errors_and_leaves_state_unchanged() {
     bisect_reset(d).expect("cleanup reset");
     assert!(get_bisect_state(d).expect("query").is_none());
 }
+
+// ============================================================ untracked-collision guard
+
+/// DATA-LOSS SAFETY: an untracked, non-ignored worktree file whose path collides
+/// with a file present in the midpoint commit's tree must NOT be silently
+/// clobbered by the force checkout onto that midpoint. Start must refuse,
+/// preserve the untracked file byte-for-byte, and leave NO bisect state (HEAD
+/// stays on the original branch/tip).
+#[test]
+fn start_refuses_when_untracked_file_would_be_clobbered_by_midpoint_checkout() {
+    require_git!();
+    let dir = init_repo();
+    let d = dir.path();
+
+    // c0 = good; c1 = the sole testable midpoint (tracks foo.txt); c2 = bad
+    // (removes foo.txt). The midpoint's tree carries foo.txt, HEAD (c2) does not.
+    write(d, "a.txt", "a\n");
+    git(d, &["add", "-A"]);
+    commit_fixed(d, "c0");
+    let c0 = rev(d, "HEAD");
+
+    write(d, "foo.txt", "from-midpoint\n");
+    write(d, "m1.txt", "m1\n");
+    git(d, &["add", "-A"]);
+    commit_fixed(d, "c1");
+
+    git(d, &["rm", "foo.txt"]);
+    write(d, "m2.txt", "m2\n");
+    git(d, &["add", "-A"]);
+    commit_fixed(d, "c2");
+    let c2 = rev(d, "HEAD");
+
+    // Untracked foo.txt in the worktree collides with the midpoint (c1) tree.
+    write(d, "foo.txt", "UNTRACKED-LOCAL\n");
+
+    match start_bisect(d, &c2, std::slice::from_ref(&c0)).expect_err("collision must refuse") {
+        AppError::Git(m) => assert!(
+            m.contains("would be overwritten by checkout") && m.contains("foo.txt"),
+            "got: {m}"
+        ),
+        other => panic!("expected Git, got {other:?}"),
+    }
+
+    // The untracked file is untouched, no bisect started, HEAD/branch unmoved.
+    assert_eq!(
+        std::fs::read_to_string(d.join("foo.txt")).expect("read foo.txt"),
+        "UNTRACKED-LOCAL\n",
+        "untracked file was clobbered"
+    );
+    assert!(get_bisect_state(d).expect("query").is_none(), "a refused start left bisect state");
+    assert!(
+        !d.join(".git").join("bonsai-bisect").exists(),
+        "a refused start must leave no bisect state dir"
+    );
+    assert_eq!(rev(d, "HEAD"), c2, "HEAD still at the original tip");
+    assert_eq!(
+        git(d, &["rev-parse", "--abbrev-ref", "HEAD"]),
+        "main",
+        "still on the original branch (not detached)"
+    );
+}

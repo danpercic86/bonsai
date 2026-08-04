@@ -25,7 +25,7 @@ use crate::git::commit::resolve_signature;
 use crate::git::conflict::list_conflicts;
 use crate::git::rebase::RebaseOutcome;
 use crate::git::repo::read_head_info;
-use crate::git::stage::open_workdir_repo;
+use crate::git::stage::{ensure_no_untracked_collision, open_workdir_repo};
 
 /// Per-op action. Wire: `"pick" | "reword" | "squash" | "fixup" | "drop"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -306,6 +306,11 @@ pub fn start_interactive_rebase(
     )?;
 
     validate_todos(&repo, &todos)?;
+
+    // Data-loss guard: refuse before writing any state if the force checkout onto
+    // `onto` would clobber an untracked, non-ignored worktree file. Placed BEFORE
+    // write_state so a refusal leaves no `.git/bonsai-rebase/` behind.
+    ensure_no_untracked_collision(&repo, &onto.tree()?)?;
 
     let original_tip = head_commit.id();
     drop(head_commit);

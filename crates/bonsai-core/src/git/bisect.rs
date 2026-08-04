@@ -14,7 +14,7 @@ use std::path::Path;
 
 use crate::error::AppError;
 use crate::git::repo::read_head_info;
-use crate::git::stage::open_workdir_repo;
+use crate::git::stage::{ensure_no_untracked_collision, open_workdir_repo};
 
 /// Persisted bisect progress. Re-read on every IPC call; deleted on reset.
 /// NEVER held across calls. Wire-internal only (the frontend sees the
@@ -180,6 +180,9 @@ fn ensure_on_current(
 /// Clean detached checkout onto `target` (worktree already verified clean).
 fn checkout_commit(repo: &git2::Repository, target: git2::Oid) -> Result<(), AppError> {
     let commit = repo.find_commit(target)?;
+    // Data-loss guard: refuse before touching HEAD if the force checkout would
+    // clobber an untracked, non-ignored worktree file present in the target tree.
+    ensure_no_untracked_collision(repo, &commit.tree()?)?;
     repo.set_head_detached(target)?;
     let mut co = git2::build::CheckoutBuilder::new();
     co.force();
@@ -399,7 +402,20 @@ pub fn start_bisect(
     }
 
     write_state(&repo, &state)?;
-    drive(&repo, &mut state)
+    // The first checkout happens inside `drive`. If it refuses (e.g. an untracked
+    // file would be clobbered by the midpoint checkout — the guard fires BEFORE
+    // `set_head_detached`, so HEAD/worktree are untouched), drop the just-written
+    // state so Start stays atomic: either the bisect begins or nothing does.
+    // NOTE: this assumes a first-drive failure is pre-checkout — on Start every
+    // fallible step (`pick_next`, the collision guard, `find_commit`) runs before
+    // `set_head_detached`, so HEAD has not moved when we roll the state back.
+    match drive(&repo, &mut state) {
+        Ok(outcome) => Ok(outcome),
+        Err(e) => {
+            remove_state(&repo);
+            Err(e)
+        }
+    }
 }
 
 // ---------------------------------------------------------------- mark / skip

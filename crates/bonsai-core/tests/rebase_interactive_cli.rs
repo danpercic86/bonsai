@@ -872,3 +872,101 @@ fn skip_making_squash_first_applied_is_refused() {
     assert_eq!(repo_state(d), git2::RepositoryState::Clean);
     assert!(!has_bonsai_dir(d));
 }
+
+// ------------------------------------------------ untracked-collision data-loss guard
+
+/// DATA-LOSS SAFETY: an untracked, non-ignored worktree file whose path collides
+/// with a file present in the `onto` tree must NOT be silently clobbered by the
+/// force checkout that seeds the replay. Start must refuse, preserve the
+/// untracked file byte-for-byte, and write no rebase state (HEAD/branch intact).
+#[test]
+fn start_refuses_when_untracked_file_would_be_clobbered_by_onto_checkout() {
+    require_git!();
+    let dir = init_repo();
+    let d = dir.path();
+
+    // c0 tracks foo.txt; c1 removes it. onto = c0, whose tree still carries foo.txt.
+    write(d, "a.txt", "a\n");
+    write(d, "foo.txt", "from-onto\n");
+    git(d, &["add", "-A"]);
+    commit_fixed(d, "c0");
+    let c0 = rev(d, "HEAD");
+
+    git(d, &["rm", "foo.txt"]);
+    write(d, "b.txt", "b\n");
+    git(d, &["add", "-A"]);
+    commit_fixed(d, "c1");
+    let c1 = rev(d, "HEAD");
+
+    // Untracked foo.txt in the worktree collides with c0's tree.
+    write(d, "foo.txt", "UNTRACKED-LOCAL\n");
+
+    let todos = vec![RebaseTodoOp {
+        oid: c1.clone(),
+        action: RebaseAction::Pick,
+        new_message: None,
+    }];
+    match start_interactive_rebase(d, &c0, todos).expect_err("collision must refuse") {
+        AppError::Git(m) => assert!(
+            m.contains("would be overwritten by checkout") && m.contains("foo.txt"),
+            "got: {m}"
+        ),
+        other => panic!("expected Git, got {other:?}"),
+    }
+
+    // The untracked file is untouched, no rebase started, branch/HEAD unmoved.
+    assert_eq!(read_str(d, "foo.txt"), "UNTRACKED-LOCAL\n", "untracked file was clobbered");
+    assert!(!has_bonsai_dir(d), "a refused start must leave no rebase state");
+    assert_eq!(rev(d, "HEAD"), c1, "HEAD still at the original tip");
+    assert_eq!(symbolic_head(d), "refs/heads/main", "still on the original branch");
+    assert_eq!(repo_state(d), git2::RepositoryState::Clean);
+}
+
+/// DATA-LOSS SAFETY (type-swap): an untracked file nested UNDER a directory whose
+/// path is a BLOB in the `onto` tree must also be caught. The force checkout
+/// replaces the directory with the file, deleting the untracked file inside it —
+/// yet `get_path("foo/bar.txt")` traverses the blob `foo` and returns Err, so the
+/// naive direct check would miss it. Start must still refuse.
+#[test]
+fn start_refuses_when_untracked_file_nested_under_a_target_blob() {
+    require_git!();
+    let dir = init_repo();
+    let d = dir.path();
+
+    // c0 tracks a BLOB at `foo`; c1 removes it. onto = c0.
+    write(d, "a.txt", "a\n");
+    write(d, "foo", "i-am-a-file\n");
+    git(d, &["add", "-A"]);
+    commit_fixed(d, "c0");
+    let c0 = rev(d, "HEAD");
+
+    git(d, &["rm", "foo"]);
+    write(d, "b.txt", "b\n");
+    git(d, &["add", "-A"]);
+    commit_fixed(d, "c1");
+    let c1 = rev(d, "HEAD");
+
+    // Untracked file nested in a NEW dir `foo/` — collides with c0's blob `foo`.
+    std::fs::create_dir(d.join("foo")).expect("mkdir foo");
+    write(d, "foo/bar.txt", "UNTRACKED-NESTED\n");
+
+    let todos = vec![RebaseTodoOp {
+        oid: c1.clone(),
+        action: RebaseAction::Pick,
+        new_message: None,
+    }];
+    match start_interactive_rebase(d, &c0, todos).expect_err("type-swap collision must refuse") {
+        AppError::Git(m) => assert!(
+            m.contains("would be overwritten by checkout") && m.contains("foo/bar.txt"),
+            "got: {m}"
+        ),
+        other => panic!("expected Git, got {other:?}"),
+    }
+
+    // The nested untracked file is untouched, no rebase started, branch/HEAD unmoved.
+    assert_eq!(read_str(d, "foo/bar.txt"), "UNTRACKED-NESTED\n", "nested untracked file was clobbered");
+    assert!(!has_bonsai_dir(d), "a refused start must leave no rebase state");
+    assert_eq!(rev(d, "HEAD"), c1, "HEAD still at the original tip");
+    assert_eq!(symbolic_head(d), "refs/heads/main", "still on the original branch");
+    assert_eq!(repo_state(d), git2::RepositoryState::Clean);
+}
