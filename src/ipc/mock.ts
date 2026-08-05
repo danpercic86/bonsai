@@ -77,6 +77,7 @@ import type {
   CommitDiff,
   ConfigLevelArg,
   ConfigView,
+  IdentityProfile,
   BisectOutcome,
   CommitMessageProposal,
   CommitResult,
@@ -1142,6 +1143,24 @@ const DEFAULT_UI_SETTINGS: UiSettings = {
   onboardingSeen: false,
   // P42: auto-check-updates-on-launch OFF by default (privacy / opt-in).
   autoCheckUpdates: false,
+  // P44: two seeded identity profiles so the harness shows a populated list
+  // and Apply is exercisable (fixed string ids).
+  profiles: [
+    {
+      id: 'mock-work',
+      label: 'Work',
+      userName: 'Mock Fixture User',
+      userEmail: 'work@bonsai.dev',
+      signingKey: null,
+    },
+    {
+      id: 'mock-personal',
+      label: 'Personal',
+      userName: 'Mock Personal',
+      userEmail: 'me@personal.dev',
+      signingKey: 'ABC123',
+    },
+  ],
 };
 
 function clampPaneWidths(w: PaneWidths): PaneWidths {
@@ -1267,6 +1286,10 @@ function readUiSettings(): UiSettings {
       typeof parsed.autoCheckUpdates === 'boolean'
         ? parsed.autoCheckUpdates
         : DEFAULT_UI_SETTINGS.autoCheckUpdates;
+    // P44 identity profiles (additive): degrade to default if absent/malformed.
+    const profiles: IdentityProfile[] = Array.isArray(parsed.profiles)
+      ? parsed.profiles
+      : structuredClone(DEFAULT_UI_SETTINGS.profiles);
     return {
       theme,
       paneWidths,
@@ -1281,6 +1304,7 @@ function readUiSettings(): UiSettings {
       mcpWriteConsented,
       onboardingSeen,
       autoCheckUpdates,
+      profiles,
     };
   } catch {
     return structuredClone(DEFAULT_UI_SETTINGS);
@@ -3341,6 +3365,27 @@ export const mockIpc: IpcApi = {
     delete state.config[level][key.trim()];
   },
 
+  // P44: apply an identity (live in-memory profile fields, NOT a persisted id)
+  // to the repo's Local config store, then return the refreshed Local view —
+  // full round-trip in the harness. Signing key is written only when set +
+  // non-empty (mirrors the Rust core fn); an empty key leaves any existing one
+  // untouched.
+  async applyIdentityProfile(
+    repoId: string,
+    userName: string,
+    userEmail: string,
+    signingKey: string | null,
+  ): Promise<ConfigView> {
+    await delay(120);
+    const state = requireRepo(repoId);
+    state.config.local['user.name'] = userName.trim();
+    state.config.local['user.email'] = userEmail.trim();
+    if (signingKey && signingKey.trim() !== '') {
+      state.config.local['user.signingkey'] = signingKey.trim();
+    }
+    return buildConfigView(state.config, 'local');
+  },
+
   // Stateful stash mock (P9 §6.5). Indices are positional into the mutating
   // stack: every create/pop/drop re-indexes so index 0 stays the most recent.
   async listStashes(repoId: string): Promise<StashEntry[]> {
@@ -4062,6 +4107,7 @@ export const mockIpc: IpcApi = {
       mcpWriteConsented: patch.mcpWriteConsented ?? current.mcpWriteConsented,
       onboardingSeen: patch.onboardingSeen ?? current.onboardingSeen,
       autoCheckUpdates: patch.autoCheckUpdates ?? current.autoCheckUpdates,
+      profiles: patch.profiles ?? current.profiles,
     };
     writeUiSettings(next);
     // P30 §7: config round-trip re-arms the synthetic job tick timers.

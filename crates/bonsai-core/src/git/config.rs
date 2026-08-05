@@ -311,6 +311,33 @@ pub fn set_config(
     Ok(())
 }
 
+/// Blocking. Applies an identity to the repo's LOCAL git config (P44): writes
+/// `user.name`, `user.email`, and — only when `signing_key` is Some AND
+/// non-empty (after trim) — `user.signingkey`. A None/empty signing key is left
+/// UNTOUCHED (never unset), to avoid surprising removals. Overwrites existing
+/// Local values. Returns the refreshed Local `ConfigView` (same shape as
+/// `read_config(_, Local)`). Errors: `NoRepo` (workdir not a repo) |
+/// `InvalidName` | `Git`.
+///
+/// Reuses the validated `set_config` write path per key (no reinvented config
+/// logic); `user.signingkey` is not a curated key, so it surfaces in the
+/// returned `ConfigView.advanced` list rather than `curated`.
+pub fn apply_identity_profile(
+    workdir: &Path,
+    user_name: &str,
+    user_email: &str,
+    signing_key: Option<&str>,
+) -> Result<ConfigView, AppError> {
+    set_config(workdir, ConfigLevelArg::Local, "user.name", user_name)?;
+    set_config(workdir, ConfigLevelArg::Local, "user.email", user_email)?;
+    if let Some(key) = signing_key {
+        if !key.trim().is_empty() {
+            set_config(workdir, ConfigLevelArg::Local, "user.signingkey", key)?;
+        }
+    }
+    read_config(workdir, ConfigLevelArg::Local)
+}
+
 /// Blocking. Removes `key` at `level`. Idempotent: a key not present at that
 /// level yields `Ok(())` (NotFound swallowed). Errors: `NoRepo` | `InvalidName`
 /// | `Git`.

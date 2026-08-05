@@ -12,6 +12,7 @@ import type {
   AutoFetchSettings,
   GraphPrefs,
   HealthRefreshSettings,
+  IdentityProfile,
   ListView,
   McpStatus,
   Theme,
@@ -20,6 +21,7 @@ import type {
 import { type McpScope } from '../lib/mcpAddCommand';
 import type { UpdateUiState } from '../hooks/useUpdateController';
 import { SettingsGitConfigSection } from './SettingsGitConfigSection';
+import { SettingsProfilesSection } from './SettingsProfilesSection';
 import { SettingsMcpSection } from './SettingsMcpSection';
 import { SettingsUpdatesSection } from './SettingsUpdatesSection';
 import {
@@ -83,6 +85,9 @@ export interface SettingsPanelProps {
   /** P40b: when 'identity', the Git-config section scrolls/focuses its Identity
    *  sub-section on open (commit-error "Set identity…" linkage). */
   configInitialFocus?: 'identity' | null;
+  /** P44: named identity profiles (global app setting). CRUD persists via
+   *  `onChange({ profiles })`; Apply is owned by the section's own IPC. */
+  profiles: IdentityProfile[];
   /** Run `claude mcp add` for the running server at the given scope (P16).
    *  `'user'` = global, `'local'` = the open repo (private). Resolves when the
    *  run settles so the panel can clear its in-flight state (App still owns the
@@ -193,6 +198,7 @@ export function SettingsPanel({
   onRequestEnableMcpWrite,
   repoPath,
   configInitialFocus,
+  profiles,
   onRegisterMcp,
   onShowOnboarding,
   updateCurrentVersion,
@@ -407,6 +413,13 @@ export function SettingsPanel({
 
         {/* --- Git config (P40b) --- */}
         <SettingsGitConfigSection repoId={repoPath} initialFocus={configInitialFocus} />
+
+        {/* --- Identity profiles (P44) --- */}
+        <SettingsProfilesSection
+          repoId={repoPath}
+          profiles={profiles}
+          onProfilesChange={(next) => onChange({ profiles: next })}
+        />
 
         {/* --- AI assistance (P13 §8.1) --- */}
         <section className="settings-section">

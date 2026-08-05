@@ -57,8 +57,8 @@ use bonsai_core::health::{collect_repo_health, RepoHealth};
 use crate::scheduler::{self, JobKind, JobOutcome, SchedulerState};
 use crate::settings::{
     self, clamp_auto_fetch, clamp_graph_prefs, clamp_health_refresh, clamp_pane_widths,
-    AiAutonomy, AutoFetch, GraphPrefs, HealthRefresh, ListView, PaneWidths, RecentRepo,
-    ThemeChoice,
+    AiAutonomy, AutoFetch, GraphPrefs, HealthRefresh, IdentityProfile, ListView, PaneWidths,
+    RecentRepo, ThemeChoice,
 };
 use crate::state::{AppState, RepoEntry};
 use crate::watcher::spawn_watcher;
@@ -218,7 +218,10 @@ pub async fn remove_recent_repo(
 }
 
 /// Combined UI settings surfaced to the frontend (P2 contract §2.2).
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+///
+/// NOT `Copy` since P44 added the `profiles` `Vec` — clone the Vec into the
+/// returned value in `get`/`set_ui_settings`.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UiSettings {
     pub theme: ThemeChoice,
@@ -243,11 +246,16 @@ pub struct UiSettings {
     pub onboarding_seen: bool,
     /// P42 D4: auto-check for updates on launch (default false).
     pub auto_check_updates: bool,
+    /// P44: named identity profiles (global).
+    pub profiles: Vec<IdentityProfile>,
 }
 
 /// Partial patch for `set_ui_settings` — only `Some(..)` fields are applied
 /// (P2 contract §2.2).
-#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Deserialize)]
+///
+/// NOT `Copy` since P44 added the `profiles` `Vec`. `apply_patch` already takes
+/// this by value.
+#[derive(Debug, Clone, PartialEq, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UiSettingsPatch {
     pub theme: Option<ThemeChoice>,
@@ -271,6 +279,9 @@ pub struct UiSettingsPatch {
     pub onboarding_seen: Option<bool>,
     /// P42 D4: auto-check-updates-on-launch flag; patches independently.
     pub auto_check_updates: Option<bool>,
+    /// P44: identity profiles — whole-array replace (like `pane_widths`); the
+    /// frontend sends the entire list when any profile changes.
+    pub profiles: Option<Vec<IdentityProfile>>,
 }
 
 /// Pure patch application: only `Some(..)` fields of `patch` mutate `s`; pane
@@ -317,6 +328,9 @@ fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     if let Some(auto_check_updates) = patch.auto_check_updates {
         s.auto_check_updates = auto_check_updates;
     }
+    if let Some(profiles) = patch.profiles {
+        s.profiles = profiles;
+    }
 }
 
 /// Current UI settings (theme + pane widths). Never rejects for a
@@ -341,6 +355,7 @@ pub async fn get_ui_settings(app: tauri::AppHandle) -> Result<UiSettings, AppErr
             mcp_write_consented: s.mcp_write_consented,
             onboarding_seen: s.onboarding_seen,
             auto_check_updates: s.auto_check_updates,
+            profiles: s.profiles.clone(),
         }
     })
     .await
@@ -377,6 +392,7 @@ pub async fn set_ui_settings(
             mcp_write_consented: s.mcp_write_consented,
             onboarding_seen: s.onboarding_seen,
             auto_check_updates: s.auto_check_updates,
+            profiles: s.profiles.clone(),
         })
     })
     .await
@@ -2136,6 +2152,36 @@ async fn unset_config_inner(
     tauri::async_runtime::spawn_blocking(move || config::unset_config(&workdir, level, &key))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Apply an identity to `repo_id`'s LOCAL git config (P44): writes user.name +
+/// user.email + (if set) user.signingkey, returns the refreshed Local
+/// `ConfigView`. The identity fields are passed by the caller (App's live
+/// in-memory profile state), NOT re-resolved from persisted settings — profile
+/// CRUD only persists after a 300 ms debounce, so a read-by-id here would race
+/// (edit-then-Apply within the window would apply the STALE persisted identity,
+/// and a freshly-added profile would not be found). Does NOT emit `repo-changed`
+/// (mirrors `set_config`; identity does not change tree/graph). Errors: `noRepo`
+/// (unknown repo) | `invalidName` | `git` (write failure).
+#[tauri::command]
+pub async fn apply_identity_profile(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    user_name: String,
+    user_email: String,
+    signing_key: Option<String>,
+) -> Result<ConfigView, AppError> {
+    let workdir = repo_path(state.inner(), &repo_id)?; // NoRepo if unknown
+    tauri::async_runtime::spawn_blocking(move || {
+        config::apply_identity_profile(
+            &workdir,
+            &user_name,
+            &user_email,
+            signing_key.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Enumerates the stash stack, index 0 (most recent) first (P9 contract §3).

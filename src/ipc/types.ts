@@ -690,6 +690,16 @@ export interface ConfigView {
   advanced: ConfigEntry[];
 }
 
+/** One named identity profile (P44). `id` is a stable crypto.randomUUID(). */
+export interface IdentityProfile {
+  id: string;
+  label: string;
+  userName: string;
+  userEmail: string;
+  /** Optional user.signingkey; null/empty ⇒ not written on apply. */
+  signingKey: string | null;
+}
+
 /** Cherry-pick outcome (P20). Mirrors the Rust `CherrypickOutcome` serde enum
  *  (tagged "kind", camelCase). `conflicts` pauses into RepoOpState.cherryPick. */
 export type CherrypickOutcome =
@@ -900,6 +910,8 @@ export interface UiSettings {
   onboardingSeen: boolean;
   /** P42: auto-check for updates on launch. Defaults false. */
   autoCheckUpdates: boolean;
+  /** P44: named identity profiles (global). */
+  profiles: IdentityProfile[];
 }
 
 export interface UiSettingsPatch {
@@ -922,6 +934,8 @@ export interface UiSettingsPatch {
   onboardingSeen?: boolean;
   // Auto-check-updates-on-launch (P42).
   autoCheckUpdates?: boolean;
+  /** P44: identity profiles — whole-array replace (like paneWidths). */
+  profiles?: IdentityProfile[];
 }
 
 /** Embedded MCP server status for the Settings panel (P16). Mirrors the Rust
@@ -1386,6 +1400,15 @@ export interface IpcApi {
   setConfig(repoId: string, level: ConfigLevelArg, key: string, value: string): Promise<void>;
   /** Remove `key` at `level` (idempotent). Rejects invalidName | git | noRepo. */
   unsetConfig(repoId: string, level: ConfigLevelArg, key: string): Promise<void>;
+  /** Apply an identity (live in-memory profile fields, NOT a persisted id) to
+   *  `repoId`'s Local git config; returns the refreshed Local ConfigView.
+   *  Rejects noRepo | invalidName | git. */
+  applyIdentityProfile(
+    repoId: string,
+    userName: string,
+    userEmail: string,
+    signingKey: string | null,
+  ): Promise<ConfigView>;
   /** Stash stack, index 0 (most recent) first. Rejects noRepo | git. */
   listStashes(repoId: string): Promise<StashEntry[]>;
   /** Stash the worktree per `scope`. message=null → git default. created:false ==

@@ -1044,6 +1044,43 @@ body {
   margin-top: 12px;
 }
 
+/* P44: identity-profile rows. */
+.settings-profile {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.settings-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settings-profile-badge {
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+.settings-profile-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.settings-profile-applied {
+  font-size: 11px;
+  color: var(--accent);
+}
+
 .settings-config-advanced-details {
   margin-top: 16px;
   border-top: 1px solid var(--border);

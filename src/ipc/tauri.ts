@@ -425,6 +425,20 @@ export const tauriIpc: IpcApi = {
     return invoke<void>('unset_config', { repoId, level, key });
   },
 
+  applyIdentityProfile(
+    repoId: string,
+    userName: string,
+    userEmail: string,
+    signingKey: string | null,
+  ): Promise<ConfigView> {
+    return invoke<ConfigView>('apply_identity_profile', {
+      repoId,
+      userName,
+      userEmail,
+      signingKey,
+    });
+  },
+
   listStashes(repoId: string): Promise<StashEntry[]> {
     return invoke<StashEntry[]>('list_stashes', { repoId });
   },

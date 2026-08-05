@@ -22,6 +22,22 @@ pub struct RecentRepo {
     pub last_opened: i64,
 }
 
+/// One named identity profile (P44). Global app setting; applied to a repo's
+/// Local git config on demand. `id` is a stable frontend-generated UUID.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IdentityProfile {
+    /// Stable id (frontend-generated `crypto.randomUUID()`); never reused.
+    pub id: String,
+    /// Display label, e.g. "Work". Empty/duplicate allowed but discouraged
+    /// (frontend soft-validates non-empty).
+    pub label: String,
+    pub user_name: String,
+    pub user_email: String,
+    /// Optional `user.signingkey`. None/empty ⇒ not written on apply.
+    pub signing_key: Option<String>,
+}
+
 /// Dark or light chrome (P2 contract §2.1). Lane colors are theme-invariant —
 /// only chrome (`--bg-*`/`--text-*`/etc.) differs; this enum is purely a UI
 /// preference with no effect on Git logic.
@@ -277,6 +293,9 @@ pub struct Settings {
     /// surprise outbound call before opt-in). Additive `#[serde(default)]`; a
     /// legacy file without this key loads as `false`.
     pub auto_check_updates: bool,
+    /// P44: named identity profiles (global). Additive `#[serde(default)]`; a
+    /// legacy file without this key loads as an empty Vec.
+    pub profiles: Vec<IdentityProfile>,
 }
 
 impl Default for Settings {
@@ -303,6 +322,7 @@ impl Default for Settings {
             mcp_token: None,
             onboarding_seen: false,
             auto_check_updates: false,
+            profiles: Vec::new(),
         }
     }
 }

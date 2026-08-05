@@ -24,6 +24,7 @@ import type {
   CloneProgress,
   GraphPrefs,
   HealthRefreshSettings,
+  IdentityProfile,
   ListView,
   McpStatus,
   PaneWidths,
@@ -159,6 +160,9 @@ export default function App() {
   const [mcpWriteConsentOpen, setMcpWriteConsentOpen] = useState(false);
   // P42b: auto-check-for-updates-on-launch preference (persisted; default OFF).
   const [autoCheckUpdates, setAutoCheckUpdates] = useState(false);
+  // P44: named identity profiles (global). Source of truth for the Settings
+  // section; persisted via handleSettingsChange like every other setting.
+  const [profiles, setProfiles] = useState<IdentityProfile[]>([]);
   // P42b: the update state machine (check/notify/download/restart) lives here so
   // App only wires the notification, dialog, and Settings section to it.
   const update = useUpdateController();
@@ -359,6 +363,7 @@ export default function App() {
       if (patch.mcpConsented !== undefined) setMcpConsented(patch.mcpConsented);
       if (patch.mcpWriteConsented !== undefined) setMcpWriteConsented(patch.mcpWriteConsented);
       if (patch.autoCheckUpdates !== undefined) setAutoCheckUpdates(patch.autoCheckUpdates);
+      if (patch.profiles !== undefined) setProfiles(patch.profiles);
       pendingSettingsPatchRef.current = { ...pendingSettingsPatchRef.current, ...patch };
       if (settingsSaveTimerRef.current !== null) {
         window.clearTimeout(settingsSaveTimerRef.current);
@@ -610,6 +615,7 @@ export default function App() {
         setMcpConsented(s.mcpConsented);
         setMcpWriteConsented(s.mcpWriteConsented);
         setAutoCheckUpdates(s.autoCheckUpdates);
+        setProfiles(s.profiles);
         if (!s.onboardingSeen) showOnboard = true;
         // P42b D4: auto-check on launch when the setting is on. A `?update=`
         // query (harness) forces one too, mirroring `?onboarding=1`. Silent —
@@ -922,6 +928,7 @@ export default function App() {
           onRequestEnableMcpWrite={() => setMcpWriteConsentOpen(true)}
           repoPath={activeRepo}
           configInitialFocus={configFocus}
+          profiles={profiles}
           onRegisterMcp={handleRegisterMcp}
           onShowOnboarding={showOnboarding}
           updateCurrentVersion={update.currentVersion}

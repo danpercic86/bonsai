@@ -134,6 +134,7 @@ pub fn run() {
             commands::get_config,
             commands::set_config,
             commands::unset_config,
+            commands::apply_identity_profile,
             commands::list_stashes,
             commands::create_stash,
             commands::apply_stash,

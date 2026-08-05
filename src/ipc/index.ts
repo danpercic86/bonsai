@@ -74,6 +74,7 @@ export type {
   HeadInfo,
   HealthRefreshSettings,
   Hunk,
+  IdentityProfile,
   IpcApi,
   JobKind,
   JobOutcome,
