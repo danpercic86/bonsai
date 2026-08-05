@@ -64,6 +64,41 @@ console/build errors and no boundary fallback.
 - **Release cut (deferred):** bump to `1.0.0` across the 3 manifests, tag `v1.0.0` → CI matrix
   builds/publishes. Do after the user's pending changes.
 
+## P46 — diff viewer: split view + copyable selection + auto-advance — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-05)
+
+Three user-requested diff-viewer enhancements. Approved plan:
+`~/.claude/plans/1-what-it-would-fluttering-thimble.md`. Contract + architect design appendix:
+`docs/contracts/P46-diff-viewer-enhancements.md`. **Frontend-only** — no Rust/IPC/fetch changes
+(`FileDiff → Hunk[] → DiffLine[]` already sufficient; split fetches 3-context like Diff).
+
+Locked decisions (user): **interactive** split (staging works in the columns) · **free native
+text selection** (stage-drag moves to the line-number gutter so content is copyable) · stage the
+last file → **close** the overlay.
+
+- **WS2 copy** (`70df786`): moved the range-staging drag handle off the whole `.diff-line` row onto
+  the `.diff-lineno` gutter spans (`user-select:none`, `cursor:row-resize`); `.diff-content` now
+  natively selectable → `Ctrl+C` yields clean code (no line numbers/markers). `DiffView.tsx` +
+  `styles.css`.
+- **WS3 auto-advance** (`70df786`): `handleStage` opens the next changed file's diff after staging
+  the open one (pure `src/utils/nextFile.ts::nextFileAfter`, merged `unstaged++untracked` order),
+  closing when the staged file was last. Added `statusRef`. Only fires when the open slot's path is
+  the one staged.
+- **WS1 split** (`f74bb53`): third **Split** toggle (File/Diff/Split); old-vs-new two-column layout
+  via pure `src/utils/splitRows.ts::pairSplitRows` rendered by stateless `DiffViewSplit.tsx`.
+  `DiffView` keeps ALL selection/range state; per-cell `data-g` = global line index reuses the
+  existing stage/discard/range machinery unchanged. Deferred: synchronized horizontal scroll
+  (per-cell `overflow-x:auto` for now).
+
+**Current step:** DONE pending native checkpoint. architect→senior-dev(×3)→reviewer(APPROVE, no
+MUST-FIX)→tester loop complete. AI GATE PASSED: `tsc --noEmit` clean; vitest **20/20** (new:
+`splitRows.test.ts` 10, `nextFile.test.ts` 6; pre-existing 4 green). Browser-harness
+(VITE_MOCK_IPC=1, zero console errors): split renders two columns with del-left/add-right tinting +
+center divider + shared `data-g`; content selectable while gutters/markers `user-select:none`
+(selection excludes line numbers/markers); staging README (non-last)→overlay advances to next
+unstaged file; staging scratch.rs (last)→overlay closes. **USER CHECKPOINT (must NOT self-pass):**
+native `pnpm tauri dev` — confirm OS-clipboard `Ctrl+C` from a diff, split-view scroll/resize feel
++ per-cell/gutter staging, and the stage→next-file / stage-last→close flow on a scratch repo.
+
 ## P45 — per-line discard action (mirrors "Stage 1 line") — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-05)
 
 User request: a per-line discard, similar to the existing per-line stage. Approved plan:
