@@ -86,8 +86,11 @@ last file → **close** the overlay.
 - **WS1 split** (`f74bb53`): third **Split** toggle (File/Diff/Split); old-vs-new two-column layout
   via pure `src/utils/splitRows.ts::pairSplitRows` rendered by stateless `DiffViewSplit.tsx`.
   `DiffView` keeps ALL selection/range state; per-cell `data-g` = global line index reuses the
-  existing stage/discard/range machinery unchanged. Deferred: synchronized horizontal scroll
-  (per-cell `overflow-x:auto` for now).
+  existing stage/discard/range machinery unchanged.
+- **WS1b synced scroll** (`ba24f2b`, user follow-up): replaced per-cell scrollbars with a two-pane
+  layout (one horizontal scrollbar per column) whose `scrollLeft` is kept in lock-step (left/right
+  refs + rAF reentrancy guard); cells `min-height:1.5em` keep filler rows aligned across the two
+  independent panes.
 
 **Current step:** DONE pending native checkpoint. architect→senior-dev(×3)→reviewer(APPROVE, no
 MUST-FIX)→tester loop complete. AI GATE PASSED: `tsc --noEmit` clean; vitest **20/20** (new:
