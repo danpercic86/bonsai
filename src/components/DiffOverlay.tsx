@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import type { ConflictFile, FileStatus, LineSelection } from '../ipc';
 import { DiffSlotView } from './DiffView';
 import type { DiffSlot } from './DiffView';
+import { ErrorBoundary } from './ErrorBoundary';
 import { detectLanguage } from '../utils/language';
 
 // Lazy so CodeMirror is code-split out of the main bundle — it must not load
@@ -252,29 +253,35 @@ export function DiffOverlay({
         </button>
       </div>
       <div className="diff-overlay-body">
+        {/* T0.4: contain a render throw to the overlay body so the header (and
+            its Close button) stays usable and the rest of the app survives. */}
         {meta.kind === 'conflict' || meta.kind === 'aiProposal' ? (
-          // Keyed by kind+path so switching a `conflict:` slot to an
-          // `ai-proposal:` slot for the SAME path remounts the editor and
-          // reseeds from the proposed body (its reseed guard keys on path only).
-          <ConflictSlotView
-            key={`${meta.kind}:${meta.path}`}
-            slot={slot}
-            onDismissError={onClose}
-            onClose={onClose}
-            onResolveConflictText={onResolveConflictText}
-            mutating={mutating}
-          />
+          <ErrorBoundary label="Conflict editor">
+            {/* Keyed by kind+path so switching a `conflict:` slot to an
+                `ai-proposal:` slot for the SAME path remounts the editor and
+                reseeds from the proposed body (its reseed guard keys on path only). */}
+            <ConflictSlotView
+              key={`${meta.kind}:${meta.path}`}
+              slot={slot}
+              onDismissError={onClose}
+              onClose={onClose}
+              onResolveConflictText={onResolveConflictText}
+              mutating={mutating}
+            />
+          </ErrorBoundary>
         ) : (
-          <DiffSlotView
-            slot={slot}
-            onDismissError={onClose}
-            viewMode={viewMode}
-            stageable={stageable}
-            onStageLines={onStageLines}
-            onStageHunk={onStageHunk}
-            onDiscardHunk={onDiscardHunk}
-            onDiscardLines={onDiscardLines}
-          />
+          <ErrorBoundary label="Diff view">
+            <DiffSlotView
+              slot={slot}
+              onDismissError={onClose}
+              viewMode={viewMode}
+              stageable={stageable}
+              onStageLines={onStageLines}
+              onStageHunk={onStageHunk}
+              onDiscardHunk={onDiscardHunk}
+              onDiscardLines={onDiscardLines}
+            />
+          </ErrorBoundary>
         )}
       </div>
     </div>

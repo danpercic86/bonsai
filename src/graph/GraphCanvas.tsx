@@ -220,10 +220,12 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     if (++countRef.current >= LOG_EVERY) {
       countRef.current = 0;
       const s = rec.flushSummary();
-      console.log(
-        `[bonsai] frames kind=${kind} n=${s.frames} avg=${s.avgMs.toFixed(1)}ms ` +
-          `max=${s.maxMs.toFixed(1)}ms >33ms=${s.over33}`,
-      );
+      if (import.meta.env.DEV) {
+        console.log(
+          `[bonsai] frames kind=${kind} n=${s.frames} avg=${s.avgMs.toFixed(1)}ms ` +
+            `max=${s.maxMs.toFixed(1)}ms >33ms=${s.over33}`,
+        );
+      }
     }
   }, []);
 
@@ -483,7 +485,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
             requestAnimationFrame(step);
           } else {
             const stats = rec.flushSummary();
-            console.log(`[bonsai] scroll-test ${JSON.stringify(stats)}`);
+            if (import.meta.env.DEV) console.log(`[bonsai] scroll-test ${JSON.stringify(stats)}`);
             resolve(stats);
           }
         };
@@ -663,7 +665,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       }
 
       const result: P7SelfTestResult = { pass, fail: failures.length, failures };
-      console.log(`[bonsai] p7SelfTest ${JSON.stringify(result)}`);
+      if (import.meta.env.DEV) console.log(`[bonsai] p7SelfTest ${JSON.stringify(result)}`);
       return result;
     };
 

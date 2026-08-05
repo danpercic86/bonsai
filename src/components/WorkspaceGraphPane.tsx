@@ -4,6 +4,7 @@ import { BlameView } from './BlameView';
 import { DiffBrowser } from './DiffBrowser';
 import { DiffOverlay } from './DiffOverlay';
 import type { DiffOverlayMeta } from './DiffOverlay';
+import { ErrorBoundary } from './ErrorBoundary';
 import { FileHistoryView } from './FileHistoryView';
 import { ReflogView } from './ReflogView';
 import type { DiffSlot } from './StatusPanel';
@@ -178,25 +179,27 @@ export function WorkspaceGraphPane({
           </div>
         </div>
       ) : graph !== null ? (
-        <GraphCanvas
-          ref={graphRef}
-          layout={graph}
-          selectedIndex={selectedIndex}
-          onSelect={(i) => {
-            // Left-clicking any row exits Compare mode (P5 §5.4). Scope reset
-            // + commit-browser close are handled by the §4.2 effect
-            // (selectedIndex dep); selecting does NOT auto-open the browser
-            // (P11g-rev Change C asymmetry).
-            if (compare !== null) clearCompare();
-            setSelectedIndex(i);
-          }}
-          wip={wip}
-          themeVersion={themeVersion}
-          active={active}
-          onContextMenu={onContextMenu}
-          metrics={metrics}
-          metricsVersion={metricsVersion}
-        />
+        <ErrorBoundary label="Commit graph">
+          <GraphCanvas
+            ref={graphRef}
+            layout={graph}
+            selectedIndex={selectedIndex}
+            onSelect={(i) => {
+              // Left-clicking any row exits Compare mode (P5 §5.4). Scope reset
+              // + commit-browser close are handled by the §4.2 effect
+              // (selectedIndex dep); selecting does NOT auto-open the browser
+              // (P11g-rev Change C asymmetry).
+              if (compare !== null) clearCompare();
+              setSelectedIndex(i);
+            }}
+            wip={wip}
+            themeVersion={themeVersion}
+            active={active}
+            onContextMenu={onContextMenu}
+            metrics={metrics}
+            metricsVersion={metricsVersion}
+          />
+        </ErrorBoundary>
       ) : null}
       {diffSlot !== null && overlayMeta !== null && (
         <DiffOverlay

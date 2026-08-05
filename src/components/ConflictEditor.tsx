@@ -266,7 +266,7 @@ function conflictSelfTest(): P7SelfTestResult {
   }
 
   const result: P7SelfTestResult = { pass, fail: failures.length, failures };
-  console.log(`[bonsai] conflictSelfTest ${JSON.stringify(result)}`);
+  if (import.meta.env.DEV) console.log(`[bonsai] conflictSelfTest ${JSON.stringify(result)}`);
   return result;
 }
 
