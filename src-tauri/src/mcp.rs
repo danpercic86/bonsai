@@ -17,6 +17,14 @@
 //! `localhost:<port>` (DNS-rebinding), and no CORS headers are ever emitted. The
 //! transport wiring (`StreamableHttpService` + axum) lives here so `bonsai-mcp`
 //! stays transport-agnostic (D-1).
+//!
+//! Launch behaviour (P44a): the server is auto-started at launch ONLY when the
+//! persisted `mcp_enabled` flag is true — i.e. the user consented and turned it
+//! on in a prior session; it is still never started without that prior explicit
+//! opt-in. Privacy posture: this re-opens the 127.0.0.1, bearer-token-gated
+//! listener at launch purely by the user's earlier choice (never silently on a
+//! fresh, never-enabled install). Turning it OFF persists `mcp_enabled=false`,
+//! so the next launch stays down.
 
 use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex};

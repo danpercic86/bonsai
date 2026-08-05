@@ -35,6 +35,28 @@ pub fn run() {
                             health_refresh: s.health_refresh,
                         },
                     );
+                    // P44a: restore the embedded MCP server across restart. The
+                    // `mcp_enabled` flag was persisted but nothing read it back at
+                    // launch, so the server stayed down (and the UI toggle showed
+                    // OFF) after a restart even when the user had turned it on. If
+                    // the user consented previously, re-open the loopback listener
+                    // here. `set_enabled` is async → drive it off the setup thread
+                    // (mirrors the scheduler spawn below). `start` already reads the
+                    // persisted `mcp_allow_write`, so enabling alone restores the
+                    // correct (read or write) tool set — no separate write-gate call
+                    // needed. Start failure (e.g. the persisted port is busy) is
+                    // non-fatal: log and continue so the app still launches.
+                    if s.mcp_enabled {
+                        let mcp_handle = app.handle().clone();
+                        tauri::async_runtime::spawn(async move {
+                            let mcp_state = mcp_handle.state::<mcp::McpServerState>();
+                            if let Err(e) =
+                                mcp::set_enabled(&mcp_handle, &mcp_state, true).await
+                            {
+                                eprintln!("bonsai: MCP auto-start failed (non-fatal): {e}");
+                            }
+                        });
+                    }
                 }
                 Err(e) => {
                     eprintln!("bonsai: cannot resolve settings file (non-fatal): {e}");

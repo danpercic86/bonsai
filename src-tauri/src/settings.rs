@@ -247,8 +247,9 @@ pub struct Settings {
     /// Defaults `false`; additive `#[serde(default)]`; a legacy file without
     /// this key loads as `false`.
     pub ai_consented: bool,
-    /// Embedded MCP server enabled (P16). Default `false`; the server is
-    /// lazily started on user enable, never auto-started at launch.
+    /// Embedded MCP server enabled (P16). Default `false`. Auto-started at
+    /// launch ONLY when this persisted flag is true (P44a — the user opted in
+    /// previously); still never started without that prior explicit opt-in.
     pub mcp_enabled: bool,
     /// Embedded MCP write-gate (P16). Default `false`. P16b forces the running
     /// server read-only regardless; P16c wires this to (re)register write tools.

@@ -25,6 +25,42 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
+## P44 — settings improvements (4 user requests) — **IN PROGRESS** (2026-08-05)
+
+Direct user feedback, 4 items. Approved plan: `~/.claude/plans/i-want-the-following-fluffy-lerdorf.md`.
+Decisions locked via question prompt: #2 = lightweight **named identity profiles** (name/email
+bundles applied to a repo's Local git config; no per-repo app-settings storage); #3 = collapse
+**Behaviour + custom keys** under one collapsed "Advanced" (Identity stays visible).
+
+Sub-increments (independent; A/C small, B core+contract, D new IPC surface+contract):
+- **P44a** (item #1) — remember MCP enablement across restart. Bug: `mcp_enabled` is persisted but
+  never read back at launch + the toggle reflects the live server, not the flag. Fix in
+  `lib.rs .setup()`: auto-start MCP when persisted `mcp_enabled` true (restore `mcp_allow_write`),
+  start-failure non-fatal. Update `mcp.rs` module doc (reverses the "never auto-start at launch"
+  privacy choice — by explicit prior user consent). Backend only.
+- **P44b** (item #4) — exclude gitignored files from repo health stats walk
+  (`crates/bonsai-core/src/health.rs` `walk_dir` → ignore-aware via `repo.is_path_ignored`, prune
+  ignored dirs; `.git` sizing walk stays unfiltered). Architect updates `docs/contracts/P29-repo-health.md`
+  §3/D1 ("ignored files ARE counted" → excluded). tester updates health tests. Small label note in
+  `RepoHealthPanel.tsx`.
+- **P44c** (item #3) — collapse Behaviour + custom-keys under one `<details>` "Advanced" in
+  `SettingsGitConfigSection.tsx` (keep Level toggle + Identity visible). Frontend only.
+- **P44d** (item #2) — named identity profiles. Architect writes `docs/contracts/P44-identity-profiles.md`.
+  Backend: `IdentityProfile` + `profiles` in `settings.rs`/`UiSettings`/`UiSettingsPatch`/`apply_patch`;
+  new `apply_identity_profile` command (writes user.name/email/signingkey to Local via core
+  `set_config`). Frontend: types + IPC wrapper + mock; new `SettingsProfilesSection.tsx`; wire into
+  `SettingsPanel.tsx`.
+
+**USER CHECKPOINT (I must NOT self-pass):** A — enable MCP + write in `pnpm tauri dev`, quit,
+relaunch → still enabled + listening. D — create profile, Apply to repo, verify `git config --local
+user.email` changed, restart → profiles persist. B — open a real repo with a large ignored dir →
+health count/bytes exclude it. C — collapsed Advanced feels less overwhelming, Identity usable.
+**AI gate:** cargo test/clippy (B health tests) + cargo check + tsc + pnpm build clean; harness
+(C collapsed Advanced expander; D profiles list/create/delete/apply on mock).
+
+**Current step:** P44 kicked off — architect writing P29 update (B) + P44 contract (D); senior-dev
+on A + C in parallel.
+
 ## P42 — packaging + auto-update (Productization) — **DONE (code AI-gate passed, awaiting USER CHECKPOINT)** (2026-08-05)
 
 Productization milestone. **User explicitly requested auto-updates (2026-08-04, "do not forget about
