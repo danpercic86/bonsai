@@ -219,6 +219,13 @@ export function RepoWorkspace({
     origPath: string | null;
     hunkIndex: number;
   } | null>(null);
+  // P45: pending "Discard line(s)" confirmation (unstaged diffs only). Stores the
+  // selection verbatim — arbitrary lines cannot be re-derived from a hunk index.
+  const [pendingLineDiscard, setPendingLineDiscard] = useState<{
+    path: string;
+    origPath: string | null;
+    selection: LineSelection[];
+  } | null>(null);
   // P20: amend affordance. `amend` toggles the commit box into amend mode;
   // `amendMessage` holds HEAD's message fetched once on toggle-on (prefill).
   const [amend, setAmend] = useState(false);
@@ -304,6 +311,7 @@ export function RepoWorkspace({
     pendingDiscard !== null ||
     pendingDiscardForce !== null ||
     pendingHunkDiscard !== null ||
+    pendingLineDiscard !== null ||
     pendingCreateBranch !== null ||
     pendingCreateTag !== null ||
     pendingDeleteTag !== null ||
@@ -1330,6 +1338,39 @@ export function RepoWorkspace({
       setMutating(true);
       try {
         await ipc.discardPartial(repoId, pending.path, pending.origPath, selection);
+        await refetchStatus();
+      } catch (e) {
+        reportStatusError(errorMessage(e));
+      } finally {
+        setMutating(false);
+      }
+    },
+    [repoId, refetchStatus, reportStatusError],
+  );
+
+  // P45: request a per-line discard — just arms the ConfirmDialog (destructive
+  // ops always confirm first). The selection is captured verbatim because
+  // arbitrary lines can't be re-derived after the diff refetches (unlike a hunk
+  // index). Passed to DiffOverlay only for unstaged tracked diffs (see gating).
+  const handleDiscardLines = useCallback((selection: LineSelection[]) => {
+    if (selection.length === 0) return;
+    const meta = overlayMetaRef.current;
+    if (meta === null) return;
+    setPendingLineDiscard({ path: meta.path, origPath: meta.origPath, selection });
+  }, []);
+
+  // P45: confirmed per-line discard — revert exactly the stored selection in the
+  // worktree, then refetch like handleConfirmHunkDiscard. Guarded by `mutating`;
+  // the backend's stale() guard rejects a selection whose coordinates moved.
+  const handleConfirmLineDiscard = useCallback(
+    async (pending: { path: string; origPath: string | null; selection: LineSelection[] }) => {
+      if (mutatingRef.current) return;
+      // The slot must still show the file the dialog was armed for.
+      if (overlayMetaRef.current?.path !== pending.path) return;
+      if (pending.selection.length === 0) return;
+      setMutating(true);
+      try {
+        await ipc.discardPartial(repoId, pending.path, pending.origPath, pending.selection);
         await refetchStatus();
       } catch (e) {
         reportStatusError(errorMessage(e));
@@ -3040,6 +3081,7 @@ export function RepoWorkspace({
           onStageLines={handleStageLines}
           onStageHunk={handleStageHunk}
           onDiscardHunk={handleDiscardHunk}
+          onDiscardLines={handleDiscardLines}
           blame={blame}
           closeBlame={closeBlame}
           revealCommitByOid={revealCommitByOid}
@@ -3175,6 +3217,9 @@ export function RepoWorkspace({
         pendingHunkDiscard={pendingHunkDiscard}
         setPendingHunkDiscard={setPendingHunkDiscard}
         handleConfirmHunkDiscard={(pending) => void handleConfirmHunkDiscard(pending)}
+        pendingLineDiscard={pendingLineDiscard}
+        setPendingLineDiscard={setPendingLineDiscard}
+        handleConfirmLineDiscard={(pending) => void handleConfirmLineDiscard(pending)}
         staleCleanupOpen={staleCleanupOpen}
         setStaleCleanupOpen={setStaleCleanupOpen}
         refetchBranches={refetchBranches}

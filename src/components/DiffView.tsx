@@ -26,6 +26,10 @@ export interface DiffViewProps {
   /** P28: discard every add/del line of hunk `hunkIndex` in the WORKTREE. Rendered
    *  only when provided AND stageable === 'stage' (unstaged diffs). */
   onDiscardHunk?(hunkIndex: number): void;
+  /** P45: discard exactly these changed lines (context already dropped) in the
+   *  WORKTREE. Rendered only when provided AND stageable === 'stage' (unstaged
+   *  tracked diffs). Both the gutter control and the drag-range float call this. */
+  onDiscardLines?(selection: LineSelection[]): void;
 }
 
 /**
@@ -66,6 +70,7 @@ export const DiffView = memo(function DiffView({
   onStageLines,
   onStageHunk,
   onDiscardHunk,
+  onDiscardLines,
 }: DiffViewProps) {
   // P4e Step 2: detect the file language and lazily load its grammar. Hooks
   // run unconditionally at the top; the binary/too-large/empty short-circuits
@@ -74,6 +79,9 @@ export const DiffView = memo(function DiffView({
   const highlight = useHighlighter(lang?.id ?? null);
 
   const interactive = stageable !== null;
+  // P45: a per-line discard control is offered only for unstaged tracked diffs
+  // (same gate as the hunk-header "Discard hunk") AND when App wires the callback.
+  const discardable = stageable === 'stage' && onDiscardLines !== undefined;
 
   // Flat, in-render-order list of every diff line across all hunks. A stable
   // GLOBAL index (position in this array) identifies a row for mouse-range
@@ -175,6 +183,14 @@ export const DiffView = memo(function DiffView({
     setRange(null);
   };
 
+  // P45: discard the drag-range's changed lines. App captures the selection into
+  // pendingLineDiscard and arms the ConfirmDialog; nothing reverts until confirm.
+  const commitDiscardRange = () => {
+    if (changedInRange.length === 0) return;
+    onDiscardLines?.(changedInRange.map(toSelection));
+    setRange(null);
+  };
+
   const lineRow = (hi: number, li: number, line: DiffLine) => {
     const g = globalIndexOf.get(`${hi}:${li}`) ?? 0;
     const selected =
@@ -215,6 +231,22 @@ export const DiffView = memo(function DiffView({
             ) : (
               ' '
             )}
+            {discardable && isChanged && (
+              <button
+                type="button"
+                className="diff-gutter-discard-btn"
+                title="Discard this line"
+                aria-label="Discard this line"
+                // Stop the row-drag from starting so a plain click discards one line.
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDiscardLines?.([toSelection(line)]);
+                }}
+              >
+                {'×'}
+              </button>
+            )}
           </span>
           {html !== null ? (
             <span className="diff-content" dangerouslySetInnerHTML={{ __html: html }} />
@@ -246,6 +278,16 @@ export const DiffView = memo(function DiffView({
             changedInRange.length === 1 ? '' : 's'
           }`}
         </button>
+        {discardable && (
+          <button
+            type="button"
+            className="diff-float-discard"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={commitDiscardRange}
+          >
+            {`Discard ${changedInRange.length} line${changedInRange.length === 1 ? '' : 's'}`}
+          </button>
+        )}
       </div>
     ) : null;
 
@@ -253,7 +295,10 @@ export const DiffView = memo(function DiffView({
   // defensively — File View should already be a single full-context hunk).
   if (viewMode === 'file') {
     return (
-      <div className="diff-view diff-view-file" ref={containerRef}>
+      <div
+        className={`diff-view diff-view-file${discardable ? ' diff-view--discardable' : ''}`}
+        ref={containerRef}
+      >
         {rows.map(({ hi, li, line }) => lineRow(hi, li, line))}
         {floatButton}
       </div>
@@ -261,7 +306,10 @@ export const DiffView = memo(function DiffView({
   }
 
   return (
-    <div className="diff-view" ref={containerRef}>
+    <div
+      className={`diff-view${discardable ? ' diff-view--discardable' : ''}`}
+      ref={containerRef}
+    >
       {diff.hunks.map((h, hi) => (
         <Fragment key={hi}>
           <div className="diff-hunk-header mono">
@@ -306,6 +354,8 @@ export interface DiffSlotViewProps {
   onStageHunk?(hunkIndex: number): void;
   /** P28: forwarded to DiffView (danger hunk-header discard button). */
   onDiscardHunk?(hunkIndex: number): void;
+  /** P45: forwarded to DiffView (per-line gutter + drag-range discard controls). */
+  onDiscardLines?(selection: LineSelection[]): void;
 }
 
 /** Loading / error / ready body under an expanded file row (contract §4.2).
@@ -319,6 +369,7 @@ export function DiffSlotView({
   onStageLines,
   onStageHunk,
   onDiscardHunk,
+  onDiscardLines,
 }: DiffSlotViewProps) {
   if (slot.state === 'loading' && slot.diff === null) {
     return (
@@ -353,6 +404,7 @@ export function DiffSlotView({
         onStageLines={onStageLines}
         onStageHunk={onStageHunk}
         onDiscardHunk={onDiscardHunk}
+        onDiscardLines={onDiscardLines}
       />
     </div>
   ) : null;

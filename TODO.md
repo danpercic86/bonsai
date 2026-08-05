@@ -25,6 +25,30 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
+## P45 — per-line discard action (mirrors "Stage 1 line") — **in-progress** (2026-08-05)
+
+User request: a per-line discard, similar to the existing per-line stage. Approved plan:
+`~/.claude/plans/i-want-to-have-adaptive-engelbart.md`. User chose **both** affordances (question
+prompt): a floating **"Discard N lines"** button beside "Stage N lines" AND a per-line gutter
+discard control beside the `+`. Every discard arms a confirm dialog (destructive-op guardrail).
+
+**UI-only change** — backend/IPC/mock already support arbitrary `LineSelection[]` discard via the
+existing `discard_partial` / `ipc.discardPartial` (P28 "Discard hunk" drives the same core at hunk
+granularity). No Rust, IPC-signature, or mock changes.
+
+Scope (all in `src/components/`): new `onDiscardLines?(selection)` prop threaded
+`DiffView` → `DiffSlotView` → `DiffOverlay` → `WorkspaceGraphPane` (gated `kind==='unstaged' &&
+stageable==='stage'`, same as `onDiscardHunk`); one App handler `handleDiscardLines` arming
+`pendingLineDiscard`, confirmed via `handleConfirmLineDiscard` → `ipc.discardPartial`; one
+`ConfirmDialog` in `WorkspaceDialogs.tsx` modeled on "Discard hunk?"; CSS for the float danger
+button + gutter discard button (marker-gutter layout is the one detail for the contract).
+
+Acceptance: both affordances revert exactly the selected line(s) toward the index (index untouched);
+absent on staged/untracked/read-only diffs; confirm dialog required; tsc + pnpm build clean;
+`discard_partial` cargo tests stay green.
+
+**Current step:** P45 — delegating contract to architect (`docs/contracts/P45-discard-line.md`).
+
 ## P44 — settings improvements (4 user requests) — **DONE (code AI-gate passed, awaiting USER CHECKPOINT)** (2026-08-05)
 
 Direct user feedback, 4 items. Approved plan: `~/.claude/plans/i-want-the-following-fluffy-lerdorf.md`.

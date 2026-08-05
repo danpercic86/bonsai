@@ -2608,6 +2608,41 @@ span.file-row-main {
   color: var(--accent);
 }
 
+/* P45: unstaged tracked diffs carry a second gutter control -> widen the marker
+   column and lay its two buttons out side by side. Read-only/staged diffs (no
+   modifier) keep the base 16px single-control gutter. */
+.diff-view--discardable .diff-line {
+  grid-template-columns: 40px 40px 34px auto;
+}
+.diff-view--discardable .diff-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+/* Danger sibling of .diff-gutter-btn (same hover-reveal aesthetic). */
+.diff-gutter-discard-btn {
+  flex: 1;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--text-3);
+  cursor: pointer;
+  user-select: none;
+}
+.diff-line:hover .diff-gutter-discard-btn,
+.diff-gutter-discard-btn:hover,
+.diff-gutter-discard-btn:focus-visible {
+  color: var(--danger);
+}
+/* keep the existing .diff-gutter-btn sizing valid inside the flex marker */
+.diff-view--discardable .diff-gutter-btn {
+  flex: 1;
+  width: auto;
+}
+
 /* Active mouse-range rows: an accent wash LAYERED over the add/del tint (the
    tint is a background-color; this is a background-image so both compose). */
 .diff-line-selected {
@@ -2638,6 +2673,25 @@ span.file-row-main {
 }
 
 .diff-stage-float button:hover {
+  filter: brightness(1.08);
+}
+
+/* P45: danger float button beside "Stage N lines" (shares the .diff-stage-float
+   box). The small left margin sits it side by side with the Stage button. */
+.diff-float-discard {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  background: var(--danger);
+  color: var(--bg-0);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+  margin-left: 8px;
+}
+.diff-float-discard:hover {
   filter: brightness(1.08);
 }
 

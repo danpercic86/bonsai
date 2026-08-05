@@ -15,6 +15,7 @@ import type {
   BranchInfo,
   BranchesSnapshot,
   CopySelection,
+  LineSelection,
   RebaseTodoOp,
   RemoteInfo,
   RepoOpState,
@@ -103,6 +104,10 @@ export interface WorkspaceDialogsProps {
   pendingHunkDiscard: { path: string; origPath: string | null; hunkIndex: number } | null;
   setPendingHunkDiscard: (v: { path: string; origPath: string | null; hunkIndex: number } | null) => void;
   handleConfirmHunkDiscard(pending: { path: string; origPath: string | null; hunkIndex: number }): void;
+
+  pendingLineDiscard: { path: string; origPath: string | null; selection: LineSelection[] } | null;
+  setPendingLineDiscard: (v: { path: string; origPath: string | null; selection: LineSelection[] } | null) => void;
+  handleConfirmLineDiscard(pending: { path: string; origPath: string | null; selection: LineSelection[] }): void;
 
   staleCleanupOpen: boolean;
   setStaleCleanupOpen: (v: boolean) => void;
@@ -228,6 +233,9 @@ export function WorkspaceDialogs({
   pendingHunkDiscard,
   setPendingHunkDiscard,
   handleConfirmHunkDiscard,
+  pendingLineDiscard,
+  setPendingLineDiscard,
+  handleConfirmLineDiscard,
   staleCleanupOpen,
   setStaleCleanupOpen,
   refetchBranches,
@@ -547,6 +555,37 @@ export function WorkspaceDialogs({
         <div className="dialog-body-note">
           The change in this hunk is permanently reverted in your working tree and cannot be
           undone. Staged changes are not affected.
+        </div>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pendingLineDiscard !== null}
+        title={
+          pendingLineDiscard !== null && pendingLineDiscard.selection.length === 1
+            ? 'Discard line?'
+            : 'Discard lines?'
+        }
+        confirmLabel={
+          pendingLineDiscard !== null && pendingLineDiscard.selection.length === 1
+            ? 'Discard line'
+            : 'Discard lines'
+        }
+        busy={mutating}
+        onConfirm={() => {
+          const pending = pendingLineDiscard;
+          setPendingLineDiscard(null);
+          if (pending !== null) void handleConfirmLineDiscard(pending);
+        }}
+        onCancel={() => setPendingLineDiscard(null)}
+      >
+        <div>
+          Discard {pendingLineDiscard?.selection.length ?? 0} selected{' '}
+          line{(pendingLineDiscard?.selection.length ?? 0) === 1 ? '' : 's'} in{' '}
+          <span className="mono">{pendingLineDiscard?.path ?? ''}</span>?
+        </div>
+        <div className="dialog-body-note">
+          The change{(pendingLineDiscard?.selection.length ?? 0) === 1 ? ' is' : 's are'} permanently
+          reverted in your working tree and cannot be undone. Staged changes are not affected.
         </div>
       </ConfirmDialog>
 

@@ -50,6 +50,7 @@ export interface WorkspaceGraphPaneProps {
   onStageLines: DiffOverlayProps['onStageLines'];
   onStageHunk: DiffOverlayProps['onStageHunk'];
   onDiscardHunk: DiffOverlayProps['onStageHunk'];
+  onDiscardLines: DiffOverlayProps['onDiscardLines'];
 
   blame: { path: string; lines: BlameLine[]; loading: boolean; error: string | null } | null;
   closeBlame(): void;
@@ -126,6 +127,7 @@ export function WorkspaceGraphPane({
   onStageLines,
   onStageHunk,
   onDiscardHunk,
+  onDiscardLines,
   blame,
   closeBlame,
   revealCommitByOid,
@@ -214,6 +216,12 @@ export function WorkspaceGraphPane({
             // discard) and never binary/tooLarge/renamed (stageable === null).
             overlayMeta.kind === 'unstaged' && stageable === 'stage'
               ? onDiscardHunk
+              : undefined
+          }
+          onDiscardLines={
+            // P45: same gate as onDiscardHunk — unstaged tracked diffs only.
+            overlayMeta.kind === 'unstaged' && stageable === 'stage'
+              ? onDiscardLines
               : undefined
           }
         />
