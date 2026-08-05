@@ -85,10 +85,17 @@ jobs:
           cache: pnpm
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          # Matches rust-toolchain.toml (1.97); extra targets for macOS universal.
-          targets: ${{ matrix.rust-targets }}
+          # Channel (1.97) comes from rust-toolchain.toml, so the extra macOS
+          # targets below attach to the SAME toolchain the build actually uses
+          # (the old dtolnay@stable step added them to `stable`, which the
+          # rust-toolchain.toml override then bypassed -> universal build failed).
+          target: ${{ matrix.rust-targets }}
+          # A dedicated swatinem/rust-cache step (below) handles caching, scoped
+          # to ./src-tauri -> target, so disable this action's built-in cache to
+          # avoid double-caching.
+          cache: false
 
       - name: Rust build cache
         uses: swatinem/rust-cache@v2
