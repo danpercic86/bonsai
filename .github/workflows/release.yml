@@ -1,0 +1,128 @@
+# Bonsai — release + auto-update publisher.
+#
+# Trigger: push a semver tag (e.g. `git tag v0.2.0 && git push origin v0.2.0`),
+# or run manually from the Actions tab.
+#
+# What it does per OS (macOS / Linux / Windows):
+#   1. builds the app with `pnpm tauri build`,
+#   2. signs the updater artifacts with the minisign PRIVATE key (from secrets),
+#   3. creates/updates a single GitHub Release for the tag,
+#   4. uploads the installers + their `.sig` files, and
+#   5. generates `latest.json` (the updater manifest) and attaches it to the release.
+#
+# The updater endpoint in `src-tauri/tauri.conf.json`
+#   (`plugins.updater.endpoints`) must point at:
+#   https://github.com/danpercic86/bonsai/releases/latest/download/latest.json
+# so installed clients read the manifest this workflow publishes.
+#
+# REQUIRED repo secrets (Settings → Secrets and variables → Actions):
+#   TAURI_SIGNING_PRIVATE_KEY           # contents of your PROD .tauri/updater-prod.key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  # the password you set when generating it
+# Its PUBLIC half must be in tauri.conf.json → plugins.updater.pubkey, or every
+# client rejects the update as a bad signature.
+#
+# OPTIONAL (OS code-signing — uncomment the env blocks below once you have them):
+#   Windows Authenticode via `bundle.windows.certificateThumbprint` in the config;
+#   macOS Developer ID + notarization via APPLE_* secrets.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+# Allow the job to create the GitHub Release and upload assets.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # One universal macOS build (Apple Silicon + Intel in a single .dmg).
+          - platform: macos-latest
+            args: '--target universal-apple-darwin'
+            rust-targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+          # ubuntu-22.04 for a broad glibc / webkit2gtk-4.1 baseline.
+          - platform: ubuntu-22.04
+            args: ''
+            rust-targets: ''
+          - platform: windows-latest
+            args: ''
+            rust-targets: ''
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Linux native deps for Tauri v2 (webkit2gtk 4.1 + NSIS-free bundlers).
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        # Version is read from package.json "packageManager" (pnpm@11.17.0).
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # Matches rust-toolchain.toml (1.97); extra targets for macOS universal.
+          targets: ${{ matrix.rust-targets }}
+
+      - name: Rust build cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: ${{ matrix.platform }}
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build, sign, and publish the release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Updater signing (REQUIRED for auto-update to verify).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # --- macOS code-signing + notarization (optional; uncomment when ready) ---
+          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          # Reuse the pushed tag for the release; manual runs fall back to the app version.
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'app-v__VERSION__' }}
+          releaseName: 'Bonsai v__VERSION__'
+          releaseBody: 'See the assets below to download and install this version.'
+          # Publish as a draft so you can review the notes before it goes live —
+          # flip to false to auto-publish (needed for the updater `latest` link to
+          # resolve without a manual publish click).
+          releaseDraft: true
+          prerelease: false
+          # tauri-action generates + attaches latest.json when updater artifacts
+          # are produced (createUpdaterArtifacts: true is already set in the config).
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}
