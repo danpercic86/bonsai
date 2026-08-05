@@ -338,15 +338,19 @@ export function SettingsGitConfigSection({ repoId, initialFocus }: SettingsGitCo
             {emailEntry !== undefined && renderCuratedControl(emailEntry)}
           </div>
 
-          {/* --- Behaviour --- */}
-          <div className="settings-config-group">
-            <h4 className="settings-config-subtitle">Behaviour</h4>
-            {behaviourKeys.map((entry) => renderCuratedControl(entry))}
-          </div>
+          {/* --- Advanced (Behaviour presets + custom keys), collapsed --- */}
+          <details className="settings-config-advanced-details">
+            <summary className="settings-config-advanced-summary">Advanced</summary>
 
-          {/* --- Advanced --- */}
-          <div className="settings-config-group">
-            <h4 className="settings-config-subtitle">Advanced</h4>
+            {/* --- Behaviour --- */}
+            <div className="settings-config-group">
+              <h4 className="settings-config-subtitle">Behaviour</h4>
+              {behaviourKeys.map((entry) => renderCuratedControl(entry))}
+            </div>
+
+            {/* --- Custom keys --- */}
+            <div className="settings-config-group">
+            <h4 className="settings-config-subtitle">Custom keys</h4>
             {advanced.length === 0 && (
               <p className="settings-config-hint">
                 No other keys set at the {level} level.
@@ -419,7 +423,8 @@ export function SettingsGitConfigSection({ repoId, initialFocus }: SettingsGitCo
               </button>
               {addError !== null && <p className="settings-config-error">{addError}</p>}
             </div>
-          </div>
+            </div>
+          </details>
         </>
       )}
     </section>

@@ -1044,6 +1044,50 @@ body {
   margin-top: 12px;
 }
 
+.settings-config-advanced-details {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-config-advanced-summary {
+  margin-top: 12px;
+  padding: 4px 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.settings-config-advanced-summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-config-advanced-summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+
+.settings-config-advanced-details[open] > .settings-config-advanced-summary::before {
+  transform: rotate(90deg);
+}
+
+.settings-config-advanced-summary:hover {
+  color: var(--text-2);
+}
+
+.settings-config-advanced-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 .commit-error-action {
   flex: none;
   margin-left: 8px;
