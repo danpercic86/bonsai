@@ -118,10 +118,10 @@ jobs:
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'app-v__VERSION__' }}
           releaseName: 'Bonsai v__VERSION__'
           releaseBody: 'See the assets below to download and install this version.'
-          # Publish as a draft so you can review the notes before it goes live —
-          # flip to false to auto-publish (needed for the updater `latest` link to
-          # resolve without a manual publish click).
-          releaseDraft: true
+          # Auto-publish (not a draft): GitHub's `/releases/latest/download/...`
+          # only resolves to PUBLISHED releases, so the updater manifest
+          # (latest.json) would 404 until a manual publish if this were a draft.
+          releaseDraft: false
           prerelease: false
           # tauri-action generates + attaches latest.json when updater artifacts
           # are produced (createUpdaterArtifacts: true is already set in the config).
