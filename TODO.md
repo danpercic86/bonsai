@@ -25,7 +25,7 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
-## P44 — settings improvements (4 user requests) — **IN PROGRESS** (2026-08-05)
+## P44 — settings improvements (4 user requests) — **DONE (code AI-gate passed, awaiting USER CHECKPOINT)** (2026-08-05)
 
 Direct user feedback, 4 items. Approved plan: `~/.claude/plans/i-want-the-following-fluffy-lerdorf.md`.
 Decisions locked via question prompt: #2 = lightweight **named identity profiles** (name/email
@@ -58,8 +58,18 @@ health count/bytes exclude it. C — collapsed Advanced feels less overwhelming,
 **AI gate:** cargo test/clippy (B health tests) + cargo check + tsc + pnpm build clean; harness
 (C collapsed Advanced expander; D profiles list/create/delete/apply on mock).
 
-**Current step:** P44 kicked off — architect writing P29 update (B) + P44 contract (D); senior-dev
-on A + C in parallel.
+**Current step:** ALL FOUR increments committed + reviewed + tested. P44a (33168eb), P44c
+(e6ca2b7), P44b (64ce3dd), P44d (3489200), tests (6f8c70c). Reviewer APPROVED all; one SHOULD-FIX
+folded on A (dropped redundant set_allow_write launch bounce — start already restores the persisted
+write gate) and one on D (edit-then-Apply staleness race → command now carries identity FIELDS, not
+a profile_id, reading App's live in-memory state; contract addendum records it). AI GATE PASSED:
+cargo clippy clean (bonsai + bonsai-core); tests green — health 13 (incl. stats_excludes_gitignored_
+files), config 14 (incl. 4 apply_identity_profile_*), settings 30 (incl. profiles_roundtrip_and_
+backcompat), commands apply_identity_profile NoRepo 1; pnpm build (tsc+vite) clean. Harness
+(VITE_MOCK_IPC=1, zero console errors): C — Git config shows Identity + a collapsed "Advanced"
+<details> containing Behaviour + Custom keys; D — seeded Work/Personal profiles render, applying
+Work wrote mock Local user.email=work@bonsai.dev and lit the "Active on this repo" badge on Work.
+Awaiting USER CHECKPOINT (native, listed in section head).
 
 ## P42 — packaging + auto-update (Productization) — **DONE (code AI-gate passed, awaiting USER CHECKPOINT)** (2026-08-05)
 
