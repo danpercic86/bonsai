@@ -1,8 +1,24 @@
-# Code signing (Windows) — investigation, not implemented
+# Code signing — deferred past v1.0.0
+
+**v1 decision (locked):** the first public release ships **unsigned** on all platforms. Users
+approve the one-time OS publisher warning at first launch — the steps are documented in the
+[README install section](../README.md#install). OS code signing (Windows Authenticode +
+macOS Developer ID / notarization) is planned for a later release; this file captures what
+that work requires so it can be picked up when a certificate is available.
 
 Status: documentation only. No `tauri.conf.json` changes, no CI step, and no certificate
-acquisition happen in this pass (per `docs/contracts/P2-followups.md` §6.3). This file is the seed
-of a future P3 contract once a certificate is available.
+acquisition happen in this pass (per `docs/contracts/P2-followups.md` §6.3).
+
+## macOS (Developer ID + notarization)
+
+Unsigned macOS builds are Gatekeeper-blocked on first launch (users work around it via
+right-click → Open, per the README). For a smooth install, the release needs an Apple
+Developer account (~$99/yr): a Developer ID Application signing identity plus notarization
+credentials supplied to `pnpm tauri build` via env — `APPLE_ID`, `APPLE_PASSWORD`
+(app-specific), `APPLE_TEAM_ID`, and `APPLE_SIGNING_IDENTITY`. The release workflow
+(`.github/workflows/release.yml`) already has a commented-out `APPLE_*` block ready to wire.
+
+## Windows
 
 ## What's needed
 

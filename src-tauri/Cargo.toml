@@ -3,6 +3,8 @@ name = "bonsai"
 version = "0.2.0"
 description = "Bonsai — a fast, native Git client"
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/danpercic86/bonsai"
 
 [lib]
 name = "bonsai_lib"
