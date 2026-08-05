@@ -25,6 +25,45 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
+## v1-prep — release-readiness for a public 1.0.0 — **DONE (AI gate passed)** (2026-08-05)
+
+Approved plan: `~/.claude/plans/i-want-to-prepare-floofy-crystal.md`. Based on a 3-agent
+readiness audit (roadmap / code-incompleteness / release-engineering). **Prepare only — NOT
+cutting the release** (user has further changes coming; version stays `0.2.0`, no tag).
+
+**Scope decisions (locked with user):** public open-source · ship the current codebase
+**as-is** (all built P28–P45 features stay visible; a light native smoke test precedes the
+eventual tag, full formal checkpoints deferred to v1.x) · installers ship **unsigned**
+(documented SmartScreen/Gatekeeper steps) · **keep** auto-update (fix plumbing).
+
+**Landed (3 commits, `da97e00`, `ca90865`, `da49852`):**
+- Tier 0: `LICENSE` (MIT) + `license`/`repository` in `src-tauri/Cargo.toml`; end-user
+  `README.md`; `CHANGELOG.md` (`[Unreleased]` 1.0.0-prep); `docs/code-signing.md` records
+  the ship-unsigned decision + macOS notarization path.
+- Tier 0.4: React error boundaries — new `src/components/ErrorBoundary.tsx`, wrapping app
+  root + commit-graph / diff-view / conflict-editor panes (was: a render throw white-screened
+  the whole app). Only substantive code gap the audit found.
+- Tier 2.2: gated 4 self-test/perf `console.log`s behind `import.meta.env.DEV`.
+- Tier 2.1: set `app.security.csp` (was `null`). Tier 1.2: `releaseDraft: true → false` so
+  the updater `latest.json` resolves via `/releases/latest/`.
+
+**AI gate:** green — `pnpm build` (tsc+vite) ✅, `vitest` 4/4 ✅, `cargo check -p bonsai` ✅
+(validates the manifest + tauri.conf CSP via tauri-build), browser harness renders with no
+console/build errors and no boundary fallback.
+
+**Remaining before an eventual tag (NOT done here):**
+- **USER CHECKPOINT — native smoke test:** `pnpm tauri dev` — graph renders, core happy path
+  (open repo → stage/commit → diff → branch → fetch/pull/push), and **confirm the new CSP
+  doesn't white-screen the native app** (browser harness cannot enforce the Tauri CSP; if it
+  breaks, relax `script-src`/`connect-src` or revert csp to null). Trip an error boundary to
+  see the fallback.
+- **USER action for auto-update:** the committed `plugins.updater.pubkey` is still the DEV
+  key (per `docs/contracts/P42-user-checklist.md` A2). Generate a prod keypair
+  (`pnpm tauri signer generate`), replace the pubkey, set `TAURI_SIGNING_PRIVATE_KEY`(+`_PASSWORD`)
+  CI secrets. Else clients reject updates as bad signatures. Also make the GitHub repo public.
+- **Release cut (deferred):** bump to `1.0.0` across the 3 manifests, tag `v1.0.0` → CI matrix
+  builds/publishes. Do after the user's pending changes.
+
 ## P45 — per-line discard action (mirrors "Stage 1 line") — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-05)
 
 User request: a per-line discard, similar to the existing per-line stage. Approved plan:
