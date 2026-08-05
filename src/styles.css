@@ -2729,38 +2729,43 @@ span.file-row-main {
 
 /* ---------- P46 WS1: side-by-side (split) view ---------- */
 
-/* Container reuses .diff-view (position:relative for the float, overflow-x:auto);
-   this modifier just stacks the @@ headers and split rows as blocks. */
+/* Container reuses .diff-view (position:relative for the float); the two panes own
+   the horizontal scroll, so the container itself must NOT scroll (overflow visible). */
 .diff-view-split {
   display: block;
+  overflow-x: visible;
 }
 
-/* One row = two equal columns (old | new). Mirrors .diff-line width behaviour so
-   the shared .diff-view container scrolls horizontally when a column overflows. */
-.diff-split-row {
+/* Two equal columns (old | new). Each column is a single pane spanning the whole
+   diff so it has exactly one horizontal scrollbar (kept in lock-step in JS). */
+.diff-split-panes {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  width: max-content;
-  min-width: 100%;
 }
 
-/* Each side is its own lineno | marker | content grid (matches the unified row). */
+/* One pane per column: the horizontal scroller. overflow-y:hidden keeps vertical
+   scrolling on the outer diff overlay so left/right stay row-aligned. */
+.diff-split-pane {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Center divider between the two columns (moved here from the per-cell rule). */
+.diff-split-pane-left {
+  border-right: 1px solid var(--border);
+}
+
+/* Each cell is its own lineno | marker | content grid (matches the unified row).
+   width:max-content grows the cell with its content so the PANE scrolls; min-width:100%
+   fills the pane so tint/selection span fully; min-height keeps fillers one line tall
+   so they align with the paired content cell in the other (independent) pane. */
 .diff-split-cell {
   display: grid;
   grid-template-columns: 40px 16px auto;
   white-space: pre;
-}
-
-/* Center divider between the two columns. */
-.diff-split-cell-left {
-  border-right: 1px solid var(--border);
-}
-
-/* Reuses .diff-content colours (dual-classed on the span); adds per-cell horizontal
-   scroll for long lines. min-width:0 lets the grid cell shrink so overflow clips. */
-.diff-split-content {
-  overflow-x: auto;
-  min-width: 0;
+  width: max-content;
+  min-width: 100%;
+  min-height: 1.5em;
 }
 
 /* Empty cell where one side has no corresponding line. */

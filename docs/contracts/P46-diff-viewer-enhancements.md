@@ -408,3 +408,41 @@ Build `Hunk`s inline from `DiffLine` literals; assert length, per-cell `kind`, a
   global index shared by both cells, dragging across a context row highlights both cells and the row is
   inside `[lo..hi]`; `changedInRange` already drops context, so staging is unaffected — behavior matches
   the unified renderer. No action needed; noted for reviewer awareness.
+
+## Workstream 1b — synchronized horizontal scrolling (follow-up, user-requested)
+
+Replaces the deferred per-cell `overflow-x:auto` (one scrollbar per line, columns out of sync) with a
+**two-pane layout**: one horizontal scrollbar per column, the two panes' `scrollLeft` kept in lock-step.
+
+**DOM restructure in `DiffViewSplit.tsx`** — stop rendering paired `.diff-split-row`s. Instead render a
+single `.diff-split-panes` (grid `1fr 1fr`) containing exactly TWO panes for the WHOLE diff:
+`.diff-split-pane.diff-split-pane-left` and `...-right`. Each pane interleaves, per hunk, a
+`.diff-hunk-header` then that hunk's cells for its side. Hoist `const pairedByHunk = hunks.map(pairSplitRows)`
+(compute once; also resolves the per-render recompute NIT). Left header carries the `@@` text + Stage/
+Discard-hunk buttons; right header carries the `@@` text only (no buttons) — same `.diff-hunk-header`
+class so heights match for row alignment. The existing `cell(side, line)` helper is reused verbatim
+(cells keep `data-g`, gutter pointerdown, per-cell `+`/`−`/`×`, `.diff-line-selected`).
+
+**Scroll sync** (view-local, no app state): `leftPaneRef`/`rightPaneRef` + a `syncingRef` reentrancy
+guard. `onScroll` on each pane copies `scrollLeft` to the other, then clears the guard on the next
+`requestAnimationFrame` (setting `scrollLeft` re-fires `scroll`).
+
+**Row alignment invariant:** every `.diff-split-cell` is exactly one line tall (`white-space:pre` never
+wraps) — give cells (incl. fillers) `min-height:1.5em` so a filler matches its paired content cell across
+the two independent panes. Headers align by shared class.
+
+**CSS (`styles.css`):** `.diff-view-split{overflow-x:visible}` (panes own the scroll, not `.diff-view`);
+`.diff-split-panes{display:grid;grid-template-columns:1fr 1fr}`; `.diff-split-pane{overflow-x:auto;
+overflow-y:hidden}`; `.diff-split-pane-left{border-right:1px solid var(--border)}` (divider moves from the
+cell to the pane); `.diff-split-cell{...;width:max-content;min-width:100%;min-height:1.5em}` (grows with
+content so the pane scrolls; fills pane width so tint/selection span fully). Remove `.diff-split-content`'s
+`overflow-x`/`min-width:0` and the old `.diff-split-row` rules.
+
+**`DiffView.tsx`:** the two float-anchor selectors change from `closest('.diff-line, .diff-split-row')`
+to `closest('.diff-line, .diff-split-cell')` (rows no longer exist; the cell's `offsetTop` is relative to
+the `position:relative` `.diff-view`, so `floatTop` stays correct).
+
+**Acceptance:** one horizontal scrollbar per column; scrolling either column scrolls the other to the same
+offset; rows stay vertically aligned (incl. filler rows) at any horizontal offset; gutters scroll with
+content (matches unified); per-cell/gutter staging, selection, and the drag-range float still work; `Ctrl+C`
+still copies clean content; `tsc`/build clean.

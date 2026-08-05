@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, useRef } from 'react';
 import type React from 'react';
 import type { DiffLine, Hunk, LineSelection } from '../ipc';
 import { toSelection } from './DiffView';
@@ -58,6 +58,25 @@ export function DiffViewSplit({
   onStageHunk,
   onDiscardHunk,
 }: DiffViewSplitProps) {
+  // View-local scroll state only (no app/selection state): the two panes are
+  // independent horizontal scrollers kept in lock-step. `syncingRef` guards the
+  // feedback loop — programmatically setting `scrollLeft` re-fires `scroll`.
+  const leftPaneRef = useRef<HTMLDivElement | null>(null);
+  const rightPaneRef = useRef<HTMLDivElement | null>(null);
+  const syncingRef = useRef(false);
+
+  const syncScroll = (from: 'left' | 'right') => {
+    if (syncingRef.current) return;
+    const src = (from === 'left' ? leftPaneRef : rightPaneRef).current;
+    const dst = (from === 'left' ? rightPaneRef : leftPaneRef).current;
+    if (src === null || dst === null) return;
+    syncingRef.current = true;
+    dst.scrollLeft = src.scrollLeft;
+    requestAnimationFrame(() => {
+      syncingRef.current = false;
+    });
+  };
+
   const cell = (side: 'left' | 'right', line: DiffLine | null) => {
     if (line === null) {
       return <div className="diff-split-cell diff-split-filler" />;
@@ -146,41 +165,68 @@ export function DiffViewSplit({
     );
   };
 
+  // Compute the split pairing once per hunk and reuse it for both panes (resolves
+  // the per-render recompute and keeps left/right rows in exact 1:1 correspondence).
+  const pairedByHunk = hunks.map(pairSplitRows);
+
+  // Both panes render the SAME `.diff-hunk-header mono` element so their heights
+  // match for row alignment; only the left header carries the action buttons.
+  const header = (h: Hunk, hi: number, withButtons: boolean) => (
+    <div className="diff-hunk-header mono">
+      <span className="diff-hunk-header-text">
+        {`@@ -${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines} @@`}
+      </span>
+      {withButtons && interactive && (
+        <button
+          type="button"
+          className="diff-hunk-stage-btn"
+          onClick={() => onStageHunk(hi)}
+        >
+          {stageable === 'stage' ? 'Stage hunk' : 'Unstage hunk'}
+        </button>
+      )}
+      {withButtons && stageable === 'stage' && onDiscardHunk !== undefined && (
+        <button
+          type="button"
+          className="diff-hunk-discard-btn"
+          onClick={() => onDiscardHunk(hi)}
+        >
+          {'Discard hunk'}
+        </button>
+      )}
+    </div>
+  );
+
   return (
-    <>
-      {hunks.map((h, hi) => (
-        <Fragment key={hi}>
-          <div className="diff-hunk-header mono">
-            <span className="diff-hunk-header-text">
-              {`@@ -${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines} @@`}
-            </span>
-            {interactive && (
-              <button
-                type="button"
-                className="diff-hunk-stage-btn"
-                onClick={() => onStageHunk(hi)}
-              >
-                {stageable === 'stage' ? 'Stage hunk' : 'Unstage hunk'}
-              </button>
-            )}
-            {stageable === 'stage' && onDiscardHunk !== undefined && (
-              <button
-                type="button"
-                className="diff-hunk-discard-btn"
-                onClick={() => onDiscardHunk(hi)}
-              >
-                {'Discard hunk'}
-              </button>
-            )}
-          </div>
-          {pairSplitRows(h).map((row, ri) => (
-            <div className="diff-split-row" key={ri}>
-              {cell('left', row.left)}
-              {cell('right', row.right)}
-            </div>
-          ))}
-        </Fragment>
-      ))}
-    </>
+    <div className="diff-split-panes">
+      <div
+        className="diff-split-pane diff-split-pane-left"
+        ref={leftPaneRef}
+        onScroll={() => syncScroll('left')}
+      >
+        {hunks.map((h, hi) => (
+          <Fragment key={hi}>
+            {header(h, hi, true)}
+            {pairedByHunk[hi].map((row, ri) => (
+              <Fragment key={ri}>{cell('left', row.left)}</Fragment>
+            ))}
+          </Fragment>
+        ))}
+      </div>
+      <div
+        className="diff-split-pane diff-split-pane-right"
+        ref={rightPaneRef}
+        onScroll={() => syncScroll('right')}
+      >
+        {hunks.map((h, hi) => (
+          <Fragment key={hi}>
+            {header(h, hi, false)}
+            {pairedByHunk[hi].map((row, ri) => (
+              <Fragment key={ri}>{cell('right', row.right)}</Fragment>
+            ))}
+          </Fragment>
+        ))}
+      </div>
+    </div>
   );
 }

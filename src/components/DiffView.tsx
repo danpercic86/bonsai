@@ -183,11 +183,11 @@ export const DiffView = memo(function DiffView({
     draggingRef.current = true;
     setRange({ anchor: g, focus: g });
     // currentTarget is a .diff-lineno span, not the row: resolve the row so the
-    // "Stage N lines" float lines up with the row's offsetTop. Split rows are
-    // `.diff-split-row` (a child of the position:relative container), so widen the
-    // lookup to resolve `offsetTop` in either view (P46 WS1).
+    // "Stage N lines" float lines up with the row's offsetTop. In split view the
+    // anchor is a `.diff-split-cell` (offsetTop is still relative to the
+    // position:relative .diff-view), so widen the lookup for either view (P46 WS1).
     const row = (e.currentTarget as HTMLElement).closest(
-      '.diff-line, .diff-split-row',
+      '.diff-line, .diff-split-cell',
     ) as HTMLElement | null;
     setFloatTop(row?.offsetTop ?? 0);
   };
@@ -195,7 +195,7 @@ export const DiffView = memo(function DiffView({
     if (!draggingRef.current) return;
     setRange((prev) => (prev === null ? { anchor: g, focus: g } : { anchor: prev.anchor, focus: g }));
     const row = (e.currentTarget as HTMLElement).closest(
-      '.diff-line, .diff-split-row',
+      '.diff-line, .diff-split-cell',
     ) as HTMLElement | null;
     setFloatTop(row?.offsetTop ?? 0);
   };
