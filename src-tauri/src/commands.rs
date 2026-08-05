@@ -3871,6 +3871,19 @@ mod tests {
         assert!(matches!(err, AppError::NoRepo));
     }
 
+    /// The P44 `apply_identity_profile` command returns `NoRepo` for an unknown
+    /// id. Its only pre-`spawn_blocking` gate is `repo_path` (it has no `_inner`
+    /// split, and the tauri "test" feature is avoided on this machine — see
+    /// `config_commands_require_an_open_repo`), so the NoRepo path is exercised
+    /// at that gate. The gate fails before any identity field reaches git2, so
+    /// global config stays untouched even for an unknown repo.
+    #[test]
+    fn apply_identity_profile_unknown_repo_errors() {
+        let state = AppState::default();
+        let err = repo_path(&state, MISSING_ID).expect_err("apply with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+    }
+
     /// The P17 partial-staging commands return `NoRepo` for an unknown id
     /// (contract §6.2 scenario 15) — the gate is `repo_path` before any git2.
     #[test]

@@ -779,6 +779,76 @@ mod tests {
         }
     }
 
+    /// Gitignored files/dirs are EXCLUDED from workdir stats (P44b): a >10 MiB
+    /// ignored `ignored.bin` and an ignored `node_modules/` subtree do NOT
+    /// appear in `largest_files`, do NOT bump `large_file_count`, and are not
+    /// counted in `workdir_file_count`/`workdir_bytes` — only the non-ignored
+    /// control file + the `.gitignore` itself count. This proves exclusion
+    /// (the `stats_counts_and_large_files` test only confirms a NON-ignored
+    /// large file still counts).
+    #[test]
+    fn stats_excludes_gitignored_files() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        init(d);
+        // One committed, non-ignored control file.
+        commit(d, "C0", &[("control.txt", "control\n")]);
+
+        // .gitignore covering a single file and a whole directory.
+        std::fs::write(d.join(".gitignore"), "ignored.bin\nnode_modules/\n")
+            .expect("write .gitignore");
+
+        // A >10 MiB IGNORED file (same construction as the large-file test):
+        // must NOT count nor appear in largest_files.
+        let big = vec![0u8; (LARGE_FILE_BYTES + 1) as usize];
+        std::fs::write(d.join("ignored.bin"), &big).expect("write big ignored file");
+
+        // An ignored directory with a file inside: the whole subtree is excluded.
+        std::fs::create_dir(d.join("node_modules")).expect("mkdir node_modules");
+        std::fs::write(d.join("node_modules").join("dep.js"), "module.exports={}\n")
+            .expect("write node_modules file");
+
+        let stats = collect_stats_with_caps(d, DEFAULT_CAPS).expect("stats");
+
+        // The ignored large file is absent from largestFiles.
+        assert!(
+            !stats.largest_files.iter().any(|f| f.path == "ignored.bin"),
+            "ignored.bin must be excluded from largestFiles: {:?}",
+            stats.largest_files
+        );
+        // No node_modules/* path leaks into largestFiles either.
+        assert!(
+            !stats
+                .largest_files
+                .iter()
+                .any(|f| f.path.starts_with("node_modules/")),
+            "node_modules subtree must be excluded: {:?}",
+            stats.largest_files
+        );
+        // The only >10 MiB file is ignored → large_file_count is not bumped.
+        assert_eq!(stats.large_file_count, 0, "ignored large file must not count");
+        // Only the two non-ignored files (control.txt + .gitignore) are counted;
+        // ignored.bin and node_modules/dep.js are not.
+        assert_eq!(
+            stats.workdir_file_count, 2,
+            "only control.txt + .gitignore count, got {}",
+            stats.workdir_file_count
+        );
+        // workdir_bytes excludes the 10 MiB ignored blob (both counted files are
+        // tiny text) — proves the ignored bytes are not summed in.
+        assert!(
+            stats.workdir_bytes < LARGE_FILE_BYTES,
+            "workdir_bytes must exclude the ignored 10 MiB file: {}",
+            stats.workdir_bytes
+        );
+        // Sanity: the non-ignored control file IS present.
+        assert!(
+            stats.largest_files.iter().any(|f| f.path == "control.txt"),
+            "control.txt should be counted: {:?}",
+            stats.largest_files
+        );
+    }
+
     /// Shadowed caps: revwalk stops at the cap with capped=true and
     /// count == cap; the workdir walk sets its capped flag on overflow.
     #[test]

@@ -1148,4 +1148,62 @@ mod tests {
         let raw = std::fs::read_to_string(&file).expect("read settings.json");
         assert!(raw.contains("\"autoCheckUpdates\": true"));
     }
+
+    /// A couple of `profiles` round-trip through save/load intact (incl. the
+    /// optional signing key both Some and None); AND a legacy `settings.json`
+    /// WITHOUT the `profiles` key loads with `profiles == vec![]` — the
+    /// additive-field back-compat guarantee for the P44 setting specifically,
+    /// mirroring `old_settings_file_without_auto_check_updates_loads_default`.
+    #[test]
+    fn profiles_roundtrip_and_backcompat() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let s = Settings {
+            profiles: vec![
+                IdentityProfile {
+                    id: "id-work".to_string(),
+                    label: "Work".to_string(),
+                    user_name: "Ada Lovelace".to_string(),
+                    user_email: "work@example.com".to_string(),
+                    signing_key: None,
+                },
+                IdentityProfile {
+                    id: "id-personal".to_string(),
+                    label: "Personal".to_string(),
+                    user_name: "Ada".to_string(),
+                    user_email: "me@personal.dev".to_string(),
+                    signing_key: Some("KEY123".to_string()),
+                },
+            ],
+            ..Default::default()
+        };
+        save_to(&file, &s).expect("save settings");
+        let loaded = load_from(&file);
+        assert_eq!(loaded, s);
+        assert_eq!(loaded.profiles.len(), 2);
+        assert_eq!(loaded.profiles[0].label, "Work");
+        assert_eq!(loaded.profiles[0].signing_key, None);
+        assert_eq!(loaded.profiles[1].signing_key.as_deref(), Some("KEY123"));
+        let raw = std::fs::read_to_string(&file).expect("read settings.json");
+        assert!(raw.contains("\"profiles\""));
+        // camelCase wire mirror for the IdentityProfile fields.
+        assert!(raw.contains("\"userEmail\""));
+        assert!(raw.contains("\"signingKey\""));
+
+        // Back-compat: a pre-P44 file without `profiles` loads as an empty Vec
+        // and preserves the existing fields.
+        let legacy = r#"{
+            "version": 1,
+            "recentRepos": [ { "path": "D:\\Repos\\legacy", "lastOpened": 123 } ],
+            "theme": "light",
+            "paneWidths": { "sidebar": 300, "rightPanel": 400 },
+            "listView": "flat"
+        }"#;
+        std::fs::write(&file, legacy).expect("write pre-P44 settings.json");
+        let loaded = load_from(&file);
+        assert!(loaded.profiles.is_empty());
+        assert_eq!(loaded.theme, ThemeChoice::Light);
+        assert_eq!(loaded.list_view, ListView::Flat);
+        assert_eq!(loaded.recent_repos.len(), 1);
+    }
 }

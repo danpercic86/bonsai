@@ -541,4 +541,78 @@ mod tests {
             other => panic!("expected NoRepo, got {other:?}"),
         }
     }
+
+    // ---- P44 apply_identity_profile (Local only; never touch global) --------
+
+    /// (P44.1) Apply ("Ada","ada@x.io", None) → Local user.name/user.email are
+    /// the applied values; user.signingkey is NOT written (absent from advanced).
+    #[test]
+    fn apply_identity_profile_writes_local_identity() {
+        let dir = init_repo();
+        let view = apply_identity_profile(dir.path(), "Ada", "ada@x.io", None).expect("apply");
+        assert_eq!(
+            find_curated(&view, "user.name").target_value.as_deref(),
+            Some("Ada")
+        );
+        assert_eq!(
+            find_curated(&view, "user.email").target_value.as_deref(),
+            Some("ada@x.io")
+        );
+        assert!(
+            !view.advanced.iter().any(|e| e.name == "user.signingkey"),
+            "signing key must be absent when None: {:?}",
+            view.advanced
+        );
+    }
+
+    /// (P44.2) A Some non-empty signing key is written and surfaces in advanced
+    /// (user.signingkey is not a curated key).
+    #[test]
+    fn apply_identity_profile_writes_signing_key_when_set() {
+        let dir = init_repo();
+        let view =
+            apply_identity_profile(dir.path(), "Ada", "ada@x.io", Some("KEYID")).expect("apply");
+        assert!(
+            view.advanced
+                .iter()
+                .any(|e| e.name == "user.signingkey" && e.value == "KEYID"),
+            "advanced must contain user.signingkey=KEYID: {:?}",
+            view.advanced
+        );
+    }
+
+    /// (P44.3) A None signing key leaves a pre-existing Local user.signingkey
+    /// UNTOUCHED (never unset).
+    #[test]
+    fn apply_identity_profile_leaves_existing_signing_key_on_none() {
+        let dir = init_repo();
+        let path = dir.path();
+        set_config(path, ConfigLevelArg::Local, "user.signingkey", "OLD").expect("preset key");
+        let view = apply_identity_profile(path, "Ada", "ada@x.io", None).expect("apply");
+        assert!(
+            view.advanced
+                .iter()
+                .any(|e| e.name == "user.signingkey" && e.value == "OLD"),
+            "pre-existing signing key must be preserved on None: {:?}",
+            view.advanced
+        );
+    }
+
+    /// (P44.4) Apply overwrites a different pre-existing Local identity.
+    #[test]
+    fn apply_identity_profile_overwrites_existing_identity() {
+        let dir = init_repo();
+        let path = dir.path();
+        set_config(path, ConfigLevelArg::Local, "user.name", "Old Name").expect("preset name");
+        set_config(path, ConfigLevelArg::Local, "user.email", "old@x.io").expect("preset email");
+        let view = apply_identity_profile(path, "New Name", "new@x.io", None).expect("apply");
+        assert_eq!(
+            find_curated(&view, "user.name").target_value.as_deref(),
+            Some("New Name")
+        );
+        assert_eq!(
+            find_curated(&view, "user.email").target_value.as_deref(),
+            Some("new@x.io")
+        );
+    }
 }
