@@ -11,7 +11,7 @@ no worktree touches. READ-ONLY is a hard invariant.**
 
 | # | Decision | Choice + rationale |
 |---|----------|--------------------|
-| D1 | Metric set | Four sections exactly: `stats`, `branches`, `workingState`, `structure` (§3). Everything in the task's candidate groups is included EXCEPT: repo size "on disk" is split into two cheap numbers (workdir file count/bytes with a cap, `.git` dir bytes with a cap) — no recursive uncapped walks. |
+| D1 | Metric set | Four sections exactly: `stats`, `branches`, `workingState`, `structure` (§3). Everything in the task's candidate groups is included EXCEPT: repo size "on disk" is split into two cheap numbers (workdir file count/bytes with a cap, `.git` dir bytes with a cap) — no recursive uncapped walks. The workdir count/bytes/largest-files measure **tracked + untracked-but-not-ignored** content only: gitignored files (`node_modules`, `target`, `dist`, …) are EXCLUDED — they are build/dep noise, not the user's repo footprint. The `.git` sizing walk is separate and stays unfiltered (§3). |
 | D2 | Command shape | ONE command `get_repo_health(repoId)` returning all four sections in a single round-trip (IPC invariant: no per-metric round-trips). |
 | D3 | Parallelism | **Sequential** inside one `spawn_blocking`. git2 `Repository` is not `Sync`; each section opens its own repo handle anyway, but parallel threads buy little (sections are I/O-bound on the same disk) and add failure modes. Keep it simple; per-section elapsed ms is reported so slowness is visible. |
 | D4 | Failure isolation | Each section is `Section<T> { data, error, elapsedMs }`. One section erroring/capping never fails the whole command. The whole command errors ONLY for `NoRepo`/join errors. |
@@ -50,8 +50,24 @@ no worktree touches. READ-ONLY is a hard invariant.**
 total commit count on HEAD (capped), commits in last 30 days, distinct author emails in
 last 30 days, distinct author emails overall-within-cap; ODB object count + top-10 blobs
 (D6); workdir file count + total bytes + top-10 largest files + large-file count (one
-capped walk skipping `.git` and honoring nothing else — ignored files ARE counted, they
-occupy disk); `.git` dir byte size (capped walk).
+capped, **gitignore-aware** walk: prune ignored directories and skip ignored files via
+libgit2 `repo.is_path_ignored`, always skip `.git`, never follow symlinks/junctions, honor
+`WORKDIR_WALK_CAP` — gitignored files are EXCLUDED so build/dep dirs like `node_modules`,
+`target`, `dist` don't inflate file count / bytes / largest-files); `.git` dir byte size
+(capped walk).
+
+*Ignored-file exclusion (P44b):* only the **workdir** walk is gitignore-aware. The `.git`
+dir sizing walk is UNAFFECTED — it stays unfiltered because it sizes git internals, and
+`.git` is always ignored anyway (filtering it would zero it out). The **workingState**
+section already excludes ignored files: its counts come from `read_status` with
+`include_ignored(false)`, so no change there.
+
+*Implementation approach (for the record):* open the repo **once** in the stats collector
+and pass an `Option<&git2::Repository>` (or an ignore predicate) into `walk_dir`. The
+workdir call passes `Some(repo)` (prune ignored dirs + skip ignored files via
+`is_path_ignored`); the `.git` call passes `None` (unfiltered). If the repo can't be
+opened, fall back to an unfiltered walk (defensive — never fail the section over ignore
+lookups).
 
 **branches** — local count, remote-tracking count, tag count (`references_glob` counts);
 current-branch name + ahead/behind vs upstream (reuse the `branches.rs` logic:
@@ -172,8 +188,8 @@ Events: none new. Channels: none (payload is small — counts + 20 stat rows).
 |-------|-------|-----------|
 | `REVWALK_CAP` | `100_000` commits | stats revwalk (count/authors/30d). Stop, set `commit_count_capped`. |
 | `ODB_SCAN_CAP` | `500_000` objects | `odb.foreach` for object count + largest blobs. `read_header` only (type+size), NEVER `read`. Stop via returning `false`, set `object_scan_capped`. |
-| `WORKDIR_WALK_CAP` | `200_000` entries | workdir file count/bytes/largest/large-count. Iterative dir walk, skip `.git`, never follow symlinks/junctions. Early-stop + `workdir_scan_capped`. |
-| `GITDIR_WALK_CAP` | `200_000` entries | `.git` byte size. Same walker, `git_dir_scan_capped`. |
+| `WORKDIR_WALK_CAP` | `200_000` entries | workdir file count/bytes/largest/large-count. Iterative **gitignore-aware** dir walk (prune ignored dirs + skip ignored files via `repo.is_path_ignored`), skip `.git`, never follow symlinks/junctions. Early-stop + `workdir_scan_capped`. |
+| `GITDIR_WALK_CAP` | `200_000` entries | `.git` byte size. Same walker, **unfiltered** (no ignore predicate — it sizes git internals), `git_dir_scan_capped`. |
 | `TOP_N` | `10` | largest blobs and largest files (min-heap of size N, O(n log N)). |
 | `LARGE_FILE_BYTES` | `10 MiB` | large-file warn threshold. |
 
@@ -190,10 +206,11 @@ proportionally to object CONTENT (headers/paths/sizes only).
 - Existing `AppError` kinds only. Expected per-section: `Git`, `Io`. Whole-command:
   `NoRepo` (unknown repoId), `Other` (join). No new variants.
 - READ-ONLY guarantee: health.rs calls only read APIs (`revwalk`, `odb.read_header`,
-  `references_glob`, `statuses`, `stash_foreach` — note: takes `&mut Repository` but
-  performs no writes — `find_stale_branches`, `list_worktrees`, `list_submodules`,
-  `read_op_state`, `scan_inventory`, fs metadata reads). Reviewer MUST verify no call
-  to `delete_*`, `stash_save`, `Odb::write`, config setters, or any `std::fs` write.
+  `references_glob`, `statuses`, `is_path_ignored`, `stash_foreach` — note: takes
+  `&mut Repository` but performs no writes — `find_stale_branches`, `list_worktrees`,
+  `list_submodules`, `read_op_state`, `scan_inventory`, fs metadata reads). Reviewer MUST
+  verify no call to `delete_*`, `stash_save`, `Odb::write`, config setters, or any
+  `std::fs` write.
 
 ---
 
@@ -293,3 +310,12 @@ per call). It MUST exercise every warn state:
   blobs, that is a follow-up (requires a tree-diff walk with its own budget).
 - D13 threshold (10 MiB) and all §5 caps are consts — confirm silently unless the user
   objects at checkpoint.
+
+---
+
+## Addendum
+- **2026-08-05 (P44b):** Repo-health workdir stats now EXCLUDE gitignored files. This
+  reverses the original D1/§3 decision that "ignored files ARE counted, they occupy disk",
+  per direct user request. The workdir walk is now gitignore-aware (§3, §5); the `.git`
+  sizing walk and the `workingState` section are unchanged (both already handle ignored
+  content correctly).

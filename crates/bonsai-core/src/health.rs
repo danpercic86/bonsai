@@ -282,15 +282,18 @@ fn collect_stats_with_caps(workdir: &Path, caps: StatsCaps) -> Result<StatsSecti
         .map(|(size, oid)| BlobStat { oid, size })
         .collect();
 
-    // --- workdir walk (skip .git, never follow symlinks; ignored files count).
-    let wd = walk_dir(workdir, true, caps.workdir, Some(workdir))?;
+    // --- workdir walk (skip .git, never follow symlinks; gitignore-aware:
+    // ignored dirs are pruned and ignored files skipped so build/dep noise
+    // like node_modules/target/dist does not inflate the stats).
+    let wd = walk_dir(workdir, true, caps.workdir, Some(workdir), Some(&repo))?;
     let largest_files: Vec<FileStat> = drain_top_n(wd.largest)
         .into_iter()
         .map(|(size, path)| FileStat { path, size })
         .collect();
 
-    // --- .git dir byte size (capped walk; no .git skip, no per-file stats).
-    let gd = walk_dir(repo.path(), false, caps.gitdir, None)?;
+    // --- .git dir byte size (capped walk; no .git skip, no per-file stats,
+    // UNFILTERED — it sizes git internals, so no ignore predicate).
+    let gd = walk_dir(repo.path(), false, caps.gitdir, None, None)?;
 
     Ok(StatsSection {
         commit_count,
@@ -340,6 +343,10 @@ struct WalkResult {
 /// Iterative, symlink-refusing walk. Counts every directory ENTRY visited
 /// against `cap`. `skip_git` skips any directory named `.git`. When
 /// `rel_root` is Some, per-file top-N + large-file tracking is enabled.
+/// When `repo` is Some, the walk is gitignore-aware: ignored directories are
+/// pruned (whole subtree skipped) and ignored files are not counted, via
+/// `repo.is_path_ignored` on the fwd-slash `rel_root`-relative path. An ignore
+/// lookup that errors is treated as NOT ignored (defensive — include it).
 /// Unreadable subdirectories are skipped (read-only robustness), only a
 /// failure to read `root` itself errors.
 fn walk_dir(
@@ -347,6 +354,7 @@ fn walk_dir(
     skip_git: bool,
     cap: usize,
     rel_root: Option<&Path>,
+    repo: Option<&git2::Repository>,
 ) -> Result<WalkResult, AppError> {
     let mut out = WalkResult {
         file_count: 0,
@@ -379,30 +387,49 @@ fn walk_dir(
             if ft.is_symlink() {
                 continue; // never follow symlinks/junctions
             }
+            // Fwd-slash `rel_root`-relative path (used for ignore checks and
+            // top-N). Only when a base is present (None for the .git walk).
+            let rel = rel_root.map(|base| rel_fwd(&entry.path(), base));
             if ft.is_dir() {
                 if skip_git && entry.file_name() == ".git" {
                     continue;
                 }
+                // Prune whole ignored subtrees (node_modules/target/dist/…).
+                if let (Some(r), Some(rel)) = (repo, rel.as_deref()) {
+                    if r.is_path_ignored(rel).unwrap_or(false) {
+                        continue;
+                    }
+                }
                 stack.push(entry.path());
             } else if ft.is_file() {
+                // Skip gitignored files so they do not inflate the stats.
+                if let (Some(r), Some(rel)) = (repo, rel.as_deref()) {
+                    if r.is_path_ignored(rel).unwrap_or(false) {
+                        continue;
+                    }
+                }
                 let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
                 out.file_count = out.file_count.saturating_add(1);
                 out.bytes = out.bytes.saturating_add(size);
-                if let Some(base) = rel_root {
+                if let Some(rel) = rel {
                     if size >= LARGE_FILE_BYTES {
                         out.large_count = out.large_count.saturating_add(1);
                     }
-                    let rel = entry
-                        .path()
-                        .strip_prefix(base)
-                        .map(|p| p.to_string_lossy().replace('\\', "/"))
-                        .unwrap_or_else(|_| entry.path().to_string_lossy().into_owned());
                     push_top_n(&mut out.largest, (size, rel));
                 }
             }
         }
     }
     Ok(out)
+}
+
+/// Fwd-slash path of `path` relative to `base` (falls back to the full path
+/// if `path` is not under `base`). Backslashes are normalized so libgit2's
+/// ignore matcher and the reported `largestFiles` paths are consistent.
+fn rel_fwd(path: &Path, base: &Path) -> String {
+    path.strip_prefix(base)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|_| path.to_string_lossy().into_owned())
 }
 
 // ------------------------------------------------------------ branches (§3)
@@ -713,7 +740,7 @@ mod tests {
         commit(d, "C1", &[("b.txt", "b\n")]);
         commit(d, "C2", &[("c.txt", "c\n")]);
 
-        // One file over the 10 MiB threshold (untracked/ignored files count).
+        // One file over the 10 MiB threshold (untracked, non-ignored → counts).
         let big = vec![0u8; (LARGE_FILE_BYTES + 1) as usize];
         std::fs::write(d.join("big.bin"), &big).expect("write big file");
 

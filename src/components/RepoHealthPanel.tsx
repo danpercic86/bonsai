@@ -79,10 +79,20 @@ function WarnCount({ value, label }: { value: number; label: string }) {
 }
 
 /** One label/value row in a section's metric grid. */
-function Metric({ label, children }: { label: string; children: ReactNode }) {
+function Metric({
+  label,
+  children,
+  title,
+}: {
+  label: string;
+  children: ReactNode;
+  title?: string;
+}) {
   return (
     <>
-      <span className="health-metric-label">{label}</span>
+      <span className="health-metric-label" title={title}>
+        {label}
+      </span>
       <span className="health-metric-value">{children}</span>
     </>
   );
@@ -141,7 +151,10 @@ function StatsBody({ data }: { data: StatsSection }) {
         <Metric label="Objects">
           <CappedNum value={data.objectCount} capped={data.objectScanCapped} />
         </Metric>
-        <Metric label="Working tree">
+        <Metric
+          label="Working tree"
+          title="Excludes gitignored files (node_modules, target, dist, …)"
+        >
           <CappedNum
             value={`${data.workdirFileCount} files, ${formatBytes(data.workdirBytes)}`}
             capped={data.workdirScanCapped}
