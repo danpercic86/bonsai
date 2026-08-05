@@ -25,7 +25,7 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
-## P45 — per-line discard action (mirrors "Stage 1 line") — **in-progress** (2026-08-05)
+## P45 — per-line discard action (mirrors "Stage 1 line") — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-05)
 
 User request: a per-line discard, similar to the existing per-line stage. Approved plan:
 `~/.claude/plans/i-want-to-have-adaptive-engelbart.md`. User chose **both** affordances (question
@@ -47,7 +47,16 @@ Acceptance: both affordances revert exactly the selected line(s) toward the inde
 absent on staged/untracked/read-only diffs; confirm dialog required; tsc + pnpm build clean;
 `discard_partial` cargo tests stay green.
 
-**Current step:** P45 — delegating contract to architect (`docs/contracts/P45-discard-line.md`).
+**Current step:** DONE pending native checkpoint. Committed: impl `fa90a31` (8 files, UI-only),
+tests next commit. Architect→senior-dev→reviewer (APPROVE-WITH-NITS, no MUST-FIX)→tester loop
+complete. AI GATE PASSED: tsc + pnpm build clean; `cargo test -p bonsai-core discard` 24 passed
+(incl. new `single_added_line_discarded` / `single_deleted_line_discarded`), `stage_partial` 13
+passed. Browser-harness (VITE_MOCK_IPC=1, zero console errors) confirmed on mock src/main.rs: gutter
+`×` + float "Discard N lines" each arm a confirm dialog then revert exactly the selected line(s)
+toward the index; both absent on staged diffs (no `.diff-view--discardable`); marker gutter widened
+to 34px. **USER CHECKPOINT (must NOT self-pass):** native `pnpm tauri dev` on a scratch repo —
+discard one line (gutter) + a range (float), verify `git diff` shows only the non-discarded changes
+and `git diff --cached` is unchanged.
 
 ## P44 — settings improvements (4 user requests) — **DONE (code AI-gate passed, awaiting USER CHECKPOINT)** (2026-08-05)
 

@@ -434,6 +434,58 @@ mod tests {
         assert_eq!(index_oid(d, "f.txt"), oid_before, "index must be untouched");
     }
 
+    /// P45: a ONE-element `Add` selection discards exactly that inserted line
+    /// while a second inserted line (same diff) survives; the index blob oid is
+    /// untouched. Confirms single-line (not whole-hunk) discard granularity.
+    #[test]
+    fn single_added_line_discarded() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        init(d);
+        // Index/HEAD = 3 lines; worktree inserts X (new 2) and Y (new 4).
+        commit(d, "base", &[("f.txt", "a\nb\nc\n")]);
+        std::fs::write(d.join("f.txt"), "a\nX\nb\nY\nc\n").expect("edit");
+        let oid_before = index_oid(d, "f.txt");
+
+        // Discard ONLY the first inserted line (one-element selection).
+        let s = vec![sel(LineKind::Add, None, Some(2))];
+        discard_partial(d, "f.txt", None, &s).expect("discard one added line");
+
+        // X reverted; Y (the other added line) remains; index untouched.
+        assert_eq!(
+            std::fs::read(d.join("f.txt")).expect("read"),
+            b"a\nb\nY\nc\n",
+            "only the selected added line reverts to the index blob"
+        );
+        assert_eq!(index_oid(d, "f.txt"), oid_before, "index must be untouched");
+    }
+
+    /// P45: a ONE-element `Del` selection restores exactly that removed line
+    /// from the index blob while a second removed line stays deleted; the index
+    /// blob oid is untouched.
+    #[test]
+    fn single_deleted_line_discarded() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        init(d);
+        // Index/HEAD = 4 lines; worktree deletes b (old 2) and d (old 4).
+        commit(d, "base", &[("f.txt", "a\nb\nc\nd\n")]);
+        std::fs::write(d.join("f.txt"), "a\nc\n").expect("edit");
+        let oid_before = index_oid(d, "f.txt");
+
+        // Discard ONLY the deletion of b (one-element selection) -> restore it.
+        let s = vec![sel(LineKind::Del, Some(2), None)];
+        discard_partial(d, "f.txt", None, &s).expect("discard one deleted line");
+
+        // b restored from the index; d stays deleted; index untouched.
+        assert_eq!(
+            std::fs::read(d.join("f.txt")).expect("read"),
+            b"a\nb\nc\n",
+            "only the selected deleted line is restored from the index blob"
+        );
+        assert_eq!(index_oid(d, "f.txt"), oid_before, "index must be untouched");
+    }
+
     /// Deleting the worktree file and discarding all its Del lines recreates
     /// it with the index bytes (§6.1.7).
     #[test]
