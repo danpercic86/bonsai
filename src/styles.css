@@ -2727,6 +2727,61 @@ span.file-row-main {
   filter: brightness(1.08);
 }
 
+/* ---------- P46 WS1: side-by-side (split) view ---------- */
+
+/* Container reuses .diff-view (position:relative for the float, overflow-x:auto);
+   this modifier just stacks the @@ headers and split rows as blocks. */
+.diff-view-split {
+  display: block;
+}
+
+/* One row = two equal columns (old | new). Mirrors .diff-line width behaviour so
+   the shared .diff-view container scrolls horizontally when a column overflows. */
+.diff-split-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: max-content;
+  min-width: 100%;
+}
+
+/* Each side is its own lineno | marker | content grid (matches the unified row). */
+.diff-split-cell {
+  display: grid;
+  grid-template-columns: 40px 16px auto;
+  white-space: pre;
+}
+
+/* Center divider between the two columns. */
+.diff-split-cell-left {
+  border-right: 1px solid var(--border);
+}
+
+/* Reuses .diff-content colours (dual-classed on the span); adds per-cell horizontal
+   scroll for long lines. min-width:0 lets the grid cell shrink so overflow clips. */
+.diff-split-content {
+  overflow-x: auto;
+  min-width: 0;
+}
+
+/* Empty cell where one side has no corresponding line. */
+.diff-split-filler {
+  background: var(--bg-2);
+}
+
+/* Trailing "\ No newline at end of file" note (mirrors .diff-nonewline .diff-content). */
+.diff-split-nonewline {
+  color: var(--text-3);
+  font-style: italic;
+}
+
+/* Unstaged tracked diffs carry the extra × control -> widen the marker column
+   (mirror the unified .diff-view--discardable .diff-line rule). The marker flexing
+   and .diff-gutter-btn sizing are already covered by the shared
+   .diff-view--discardable .diff-marker / .diff-gutter-btn rules. */
+.diff-view-split.diff-view--discardable .diff-split-cell {
+  grid-template-columns: 40px 34px auto;
+}
+
 /* Segmented File | Diff control in the diff-overlay header. */
 .diff-view-toggle {
   flex: none;

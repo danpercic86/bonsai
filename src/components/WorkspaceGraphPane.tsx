@@ -45,7 +45,7 @@ export interface WorkspaceGraphPaneProps {
   onResolveConflictText: DiffOverlayProps['onResolveConflictText'];
   mutating: boolean;
   overlayExplain: (() => void) | undefined;
-  diffViewMode: 'diff' | 'file';
+  diffViewMode: 'diff' | 'file' | 'split';
   onSetViewMode: DiffOverlayProps['onSetViewMode'];
   stageable: null | 'stage' | 'unstage';
   onStageLines: DiffOverlayProps['onStageLines'];

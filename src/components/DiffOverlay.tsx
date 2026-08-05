@@ -162,9 +162,9 @@ export interface DiffOverlayProps {
    *  `undefined` hides the "✨ Explain" action (AI ineligible or a non-workdir
    *  slot kind). App owns the aiAnalyzeDiff call + AiOutputPanel state. */
   onExplain?(): void;
-  /** P17c: File/Diff toggle state (available for ALL kinds). */
-  viewMode: 'diff' | 'file';
-  onSetViewMode(m: 'diff' | 'file'): void;
+  /** P17c: File/Diff/Split toggle state (available for ALL kinds). */
+  viewMode: 'diff' | 'file' | 'split';
+  onSetViewMode(m: 'diff' | 'file' | 'split'): void;
   /** P17c: partial-staging direction (null = read-only). App derives this from
    *  the slot kind + loaded diff; forwarded to the DiffSlotView branch ONLY. */
   stageable: null | 'stage' | 'unstage';
@@ -240,6 +240,14 @@ export function DiffOverlay({
             onClick={() => onSetViewMode('diff')}
           >
             Diff
+          </button>
+          <button
+            type="button"
+            className={viewMode === 'split' ? 'active' : ''}
+            aria-pressed={viewMode === 'split'}
+            onClick={() => onSetViewMode('split')}
+          >
+            Split
           </button>
         </div>
         <button

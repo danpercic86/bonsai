@@ -2,6 +2,7 @@ import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { ConflictFile, DiffLine, FileDiff, LineSelection } from '../ipc';
 import { detectLanguage } from '../utils/language';
 import { useHighlighter } from '../utils/useHighlighter';
+import { DiffViewSplit } from './DiffViewSplit';
 
 // Pure unified-diff renderer (M4 contract §4.1). No ipc imports: diffs arrive
 // precomputed from Rust (or the mock); this component only lays them out.
@@ -14,8 +15,9 @@ import { useHighlighter } from '../utils/useHighlighter';
 
 export interface DiffViewProps {
   diff: FileDiff;
-  /** 'diff' (hunks, today) or 'file' (one continuous full-context listing). Default 'diff'. */
-  viewMode?: 'diff' | 'file';
+  /** 'diff' (hunks) | 'file' (one continuous full-context listing) | 'split'
+   *  (side-by-side old/new). Default 'diff'. */
+  viewMode?: 'diff' | 'file' | 'split';
   /** null = read-only (commit/compare/conflict, or binary/tooLarge/renamed). Otherwise the
    *  direction a granular action performs. */
   stageable?: null | 'stage' | 'unstage';
@@ -55,7 +57,7 @@ function Placeholder({ text }: { text: string }) {
   return <div className="diff-placeholder">{text}</div>;
 }
 
-function toSelection(line: DiffLine): LineSelection {
+export function toSelection(line: DiffLine): LineSelection {
   return { kind: line.kind, oldNo: line.oldNo, newNo: line.newNo };
 }
 
@@ -94,6 +96,15 @@ export const DiffView = memo(function DiffView({
   const globalIndexOf = useMemo(() => {
     const m = new Map<string, number>();
     rows.forEach((r, g) => m.set(`${r.hi}:${r.li}`, g));
+    return m;
+  }, [rows]);
+  // P46 WS1: DiffLine → global index by object identity. Split cells reference the
+  // exact `hunk.lines[*]` objects (via pairSplitRows), so this resolves each cell's
+  // global index for the `data-g` attribute and the selection test. Context lines
+  // appear once in `rows` → once here.
+  const globalIndexByLine = useMemo(() => {
+    const m = new Map<DiffLine, number>();
+    rows.forEach((r, g) => m.set(r.line, g));
     return m;
   }, [rows]);
 
@@ -172,14 +183,20 @@ export const DiffView = memo(function DiffView({
     draggingRef.current = true;
     setRange({ anchor: g, focus: g });
     // currentTarget is a .diff-lineno span, not the row: resolve the row so the
-    // "Stage N lines" float lines up with the row's offsetTop.
-    const row = (e.currentTarget as HTMLElement).closest('.diff-line') as HTMLElement | null;
+    // "Stage N lines" float lines up with the row's offsetTop. Split rows are
+    // `.diff-split-row` (a child of the position:relative container), so widen the
+    // lookup to resolve `offsetTop` in either view (P46 WS1).
+    const row = (e.currentTarget as HTMLElement).closest(
+      '.diff-line, .diff-split-row',
+    ) as HTMLElement | null;
     setFloatTop(row?.offsetTop ?? 0);
   };
   const onRowPointerEnter = (e: React.PointerEvent<HTMLElement>, g: number) => {
     if (!draggingRef.current) return;
     setRange((prev) => (prev === null ? { anchor: g, focus: g } : { anchor: prev.anchor, focus: g }));
-    const row = (e.currentTarget as HTMLElement).closest('.diff-line') as HTMLElement | null;
+    const row = (e.currentTarget as HTMLElement).closest(
+      '.diff-line, .diff-split-row',
+    ) as HTMLElement | null;
     setFloatTop(row?.offsetTop ?? 0);
   };
 
@@ -323,6 +340,35 @@ export const DiffView = memo(function DiffView({
     );
   }
 
+  // Split View: side-by-side old/new columns. DiffViewSplit is pure presentation —
+  // it reuses DiffView's selection domain (globalIndexByLine + selectedBounds) and
+  // the same handlers, so the float button and staging path are shared unchanged.
+  if (viewMode === 'split') {
+    return (
+      <div
+        className={`diff-view diff-view-split${discardable ? ' diff-view--discardable' : ''}`}
+        ref={containerRef}
+      >
+        <DiffViewSplit
+          hunks={diff.hunks}
+          globalIndexByLine={globalIndexByLine}
+          selectedBounds={selectedBounds}
+          interactive={interactive}
+          stageable={stageable}
+          discardable={discardable}
+          highlight={highlight}
+          onGutterPointerDown={onRowPointerDown}
+          onRowPointerEnter={onRowPointerEnter}
+          onStageLines={(s) => onStageLines?.(s)}
+          onDiscardLines={onDiscardLines}
+          onStageHunk={(i) => onStageHunk?.(i)}
+          onDiscardHunk={onDiscardHunk}
+        />
+        {floatButton}
+      </div>
+    );
+  }
+
   return (
     <div
       className={`diff-view${discardable ? ' diff-view--discardable' : ''}`}
@@ -365,8 +411,8 @@ export interface DiffSlotViewProps {
   slot: DiffSlot;
   /** Dismissing the error banner collapses the expansion (App passes the toggle). */
   onDismissError(): void;
-  /** P17c: forwarded to DiffView (File/Diff toggle + partial-staging affordances). */
-  viewMode?: 'diff' | 'file';
+  /** P17c: forwarded to DiffView (File/Diff/Split toggle + partial-staging affordances). */
+  viewMode?: 'diff' | 'file' | 'split';
   stageable?: null | 'stage' | 'unstage';
   onStageLines?(selection: LineSelection[]): void;
   onStageHunk?(hunkIndex: number): void;

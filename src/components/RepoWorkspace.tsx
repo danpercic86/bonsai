@@ -341,7 +341,7 @@ export function RepoWorkspace({
   // P17c: File vs Diff view for the center-pane diff overlay. Drives the
   // `fullContext` arg of the primary overlay fetchers; read through a ref by the
   // stable `refetchStatus` callback so toggling never re-creates it.
-  const [diffViewMode, setDiffViewMode] = useState<'diff' | 'file'>('diff');
+  const [diffViewMode, setDiffViewMode] = useState<'diff' | 'file' | 'split'>('diff');
   const diffViewModeRef = useRef(diffViewMode);
   diffViewModeRef.current = diffViewMode;
 
@@ -1301,7 +1301,7 @@ export function RepoWorkspace({
   // keeps the stale content visible during the swap. Conflict/ai-proposal slots
   // are not FileDiffs (they use getConflict), so they need no refetch.
   const handleSetViewMode = useCallback(
-    (m: 'diff' | 'file') => {
+    (m: 'diff' | 'file' | 'split') => {
       setDiffViewMode(m);
       const meta = overlayMetaRef.current;
       const slot = diffSlotRef.current;
