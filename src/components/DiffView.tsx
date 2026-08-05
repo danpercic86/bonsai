@@ -163,18 +163,24 @@ export const DiffView = memo(function DiffView({
   if (diff.tooLarge) return <Placeholder text="Diff too large to display (> 5000 lines)" />;
   if (diff.hunks.length === 0) return <Placeholder text="No changes" />;
 
-  const onRowPointerDown = (e: React.PointerEvent<HTMLDivElement>, g: number) => {
+  const onRowPointerDown = (e: React.PointerEvent<HTMLElement>, g: number) => {
     if (!interactive || e.button !== 0) return;
-    // Own the drag: suppress native text selection so the row range is clean.
+    // Own the drag from the line-number gutter only: preventDefault here keeps
+    // the drag range clean without suppressing native text selection over the
+    // (.diff-content) code, which carries no pointerdown handler.
     e.preventDefault();
     draggingRef.current = true;
     setRange({ anchor: g, focus: g });
-    setFloatTop(e.currentTarget.offsetTop);
+    // currentTarget is a .diff-lineno span, not the row: resolve the row so the
+    // "Stage N lines" float lines up with the row's offsetTop.
+    const row = (e.currentTarget as HTMLElement).closest('.diff-line') as HTMLElement | null;
+    setFloatTop(row?.offsetTop ?? 0);
   };
-  const onRowPointerEnter = (e: React.PointerEvent<HTMLDivElement>, g: number) => {
+  const onRowPointerEnter = (e: React.PointerEvent<HTMLElement>, g: number) => {
     if (!draggingRef.current) return;
     setRange((prev) => (prev === null ? { anchor: g, focus: g } : { anchor: prev.anchor, focus: g }));
-    setFloatTop(e.currentTarget.offsetTop);
+    const row = (e.currentTarget as HTMLElement).closest('.diff-line') as HTMLElement | null;
+    setFloatTop(row?.offsetTop ?? 0);
   };
 
   const commitRange = () => {
@@ -203,11 +209,23 @@ export const DiffView = memo(function DiffView({
           className={`diff-line diff-line-${line.kind}${selected ? ' diff-line-selected' : ''}`}
           data-hunk={hi}
           data-line={li}
-          onPointerDown={interactive ? (e) => onRowPointerDown(e, g) : undefined}
+          // Range-drag is armed only from the line-number gutters below; the row
+          // keeps pointerenter so a gutter-initiated drag extends across rows,
+          // while pointerdown over .diff-content stays native (text-selectable).
           onPointerEnter={interactive ? (e) => onRowPointerEnter(e, g) : undefined}
         >
-          <span className="diff-lineno">{line.oldNo ?? ''}</span>
-          <span className="diff-lineno">{line.newNo ?? ''}</span>
+          <span
+            className="diff-lineno"
+            onPointerDown={interactive ? (e) => onRowPointerDown(e, g) : undefined}
+          >
+            {line.oldNo ?? ''}
+          </span>
+          <span
+            className="diff-lineno"
+            onPointerDown={interactive ? (e) => onRowPointerDown(e, g) : undefined}
+          >
+            {line.newNo ?? ''}
+          </span>
           <span className="diff-marker">
             {interactive && isChanged ? (
               <button

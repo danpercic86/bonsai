@@ -2543,6 +2543,9 @@ span.file-row-main {
   padding-right: 6px;
   color: var(--text-3);
   user-select: none;
+  /* P46 WS2: the line-number gutter is the range-staging drag handle (native
+     text selection stays available over .diff-content). */
+  cursor: row-resize;
 }
 
 .diff-marker {

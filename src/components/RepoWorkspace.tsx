@@ -7,6 +7,7 @@ import { WorkspaceDialogs } from './WorkspaceDialogs';
 import { WorkspaceGraphPane } from './WorkspaceGraphPane';
 import { WorkspaceRightPanel } from './WorkspaceRightPanel';
 import { MAX_HISTORY_UI, isUsableRepo, shortOid } from './workspaceUtils';
+import { nextFileAfter, type WorkdirChange } from '../utils/nextFile';
 import { createWorkspaceMenus } from './workspaceMenus';
 import type { DiffOverlayMeta } from './DiffOverlay';
 import type { DiffScope } from './DiffFileTree';
@@ -378,6 +379,11 @@ export function RepoWorkspace({
   const opStateReqId = useRef(0);
   const diffSlotRef = useRef<DiffSlot | null>(null);
   diffSlotRef.current = diffSlot;
+  // Latest status snapshot, read by handleStage AFTER `await refetchStatus()` to
+  // confirm the auto-advance target still exists (the closure `status` is the
+  // pre-stage value; P46 WS3).
+  const statusRef = useRef(status);
+  statusRef.current = status;
   const statusErrorId = useRef(0);
   // Latest selection/graph read by refetchGraph without widening its deps (would
   // churn identity + re-subscribe the repo-changed / window-focus effects).
@@ -1062,9 +1068,54 @@ export function RepoWorkspace({
 
   async function handleStage(paths: string[]) {
     setMutating(true);
+    // P46 WS3: when the file open in the diff overlay is the one being staged,
+    // auto-advance to the NEXT changed file (visible [unstaged, untracked]
+    // order). Compute the target from the PRE-stage snapshot; refetchStatus
+    // collapses the staged slot, then we open the target below.
+    let nextTarget: WorkdirChange | null = null;
+    const slot = diffSlotRef.current;
+    if (
+      slot !== null &&
+      status !== null &&
+      (slot.key.startsWith('unstaged:') || slot.key.startsWith('untracked:'))
+    ) {
+      const openPath = slot.key.slice(slot.key.indexOf(':') + 1);
+      if (paths.includes(openPath)) {
+        const changes: WorkdirChange[] = [
+          ...status.unstaged.map((e) => ({
+            section: 'unstaged' as const,
+            path: e.path,
+            origPath: e.origPath,
+          })),
+          ...status.untracked.map((e) => ({
+            section: 'untracked' as const,
+            path: e.path,
+            origPath: e.origPath,
+          })),
+        ];
+        nextTarget = nextFileAfter(changes, openPath, paths);
+      }
+    }
     try {
       await ipc.stage(repoId, paths);
       await refetchStatus();
+      if (nextTarget !== null) {
+        const target = nextTarget;
+        const fresh = statusRef.current;
+        const stillThere =
+          fresh?.[target.section].some((e) => e.path === target.path) ?? false;
+        if (stillThere) {
+          void fetchDiffSlot(`${target.section}:${target.path}`, () =>
+            ipc.getWorkdirFileDiff(
+              repoId,
+              target.path,
+              target.origPath,
+              false,
+              diffViewModeRef.current === 'file',
+            ),
+          );
+        }
+      }
     } catch (e) {
       reportStatusError(errorMessage(e));
     } finally {
