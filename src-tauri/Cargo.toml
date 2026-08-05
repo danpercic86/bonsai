@@ -30,6 +30,16 @@ tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
 rand = "0.9"
 subtle = "2"
 
+# The macOS universal build cross-compiles an x86_64 slice from the arm64 CI
+# runner. git2's https/ssh stack (libgit2-sys + libssh2-sys) links native
+# OpenSSL, which pkg-config cannot locate for the cross-arch target. Build
+# OpenSSL from source (vendored) so each arch links its own copy. Scoped to
+# macOS so the Windows (SChannel/WinCNG, no OpenSSL) and Linux (system
+# libssl-dev) legs are untouched. Feature-unifies with the base git2 dep, so
+# the whole app graph's single openssl-sys builds vendored on macOS.
+[target.'cfg(target_os = "macos")'.dependencies]
+git2 = { workspace = true, features = ["vendored-openssl"] }
+
 [dev-dependencies]
 tempfile = { workspace = true }
 # P16d embedded-HTTP MCP integration test: a raw HTTP client to drive the
