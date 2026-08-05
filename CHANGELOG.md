@@ -6,10 +6,13 @@ All notable changes to Bonsai are documented here. The format is based on
 
 ## [Unreleased]
 
-Release-readiness prep for the first public **1.0.0**. The version is intentionally **not**
-bumped or tagged yet.
+## [0.3.0] — 2026-08-05
+
+An interactive side-by-side diff view, plus continued release-readiness hardening.
 
 ### Added
+- Interactive side-by-side (split) diff view with synchronized horizontal scrolling,
+  copyable selection, and auto-advance to the next file after staging.
 - MIT `LICENSE` and end-user `README.md`.
 - Top-level and per-pane React error boundaries (commit graph, diff view, conflict editor)
   so a render error is contained to a pane instead of white-screening the whole app.
@@ -20,13 +23,18 @@ bumped or tagged yet.
 - The release workflow publishes releases directly (not as drafts) so the auto-updater's
   `latest.json` resolves via the `releases/latest` URL.
 
+### Fixed
+- The macOS `universal-apple-darwin` release build now installs the extra Rust targets onto
+  the toolchain pinned by `rust-toolchain.toml` (via `actions-rust-lang/setup-rust-toolchain`),
+  fixing the "target x86_64-apple-darwin is not installed" build failure.
+
 ### Notes
 - **Verification in progress.** A large set of already-built features (force-push-with-lease,
   reflog viewer, bisect, Git config editing, first-run onboarding, per-line discard, named
   worktrees, background auto-fetch, the AI what-changed digest, and the repo-health
   dashboard) has passed automated tests and the browser harness but is still completing a
-  formal native-window verification pass ahead of the 1.0.0 tag.
-- v1 installers ship **unsigned**. See the README for the one-time Windows SmartScreen /
+  formal native-window verification pass ahead of a future 1.0.0 tag.
+- Installers ship **unsigned**. See the README for the one-time Windows SmartScreen /
   macOS Gatekeeper approval steps. OS code signing is planned for a later release.
 
 ## [0.2.0] — 2026-08-05
@@ -48,5 +56,6 @@ The MVP and first productization phase. Highlights:
 - Tauri v2 auto-update scaffolding (behind Bonsai IPC) and a first-run onboarding overlay.
 - An embedded MCP server exposing structured Git data (graph, diffs, conflicts) to AI tools.
 
-[Unreleased]: https://github.com/danpercic86/bonsai/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/danpercic86/bonsai/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/danpercic86/bonsai/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/danpercic86/bonsai/releases/tag/v0.2.0
