@@ -296,6 +296,14 @@ pub struct Settings {
     /// P44: named identity profiles (global). Additive `#[serde(default)]`; a
     /// legacy file without this key loads as an empty Vec.
     pub profiles: Vec<IdentityProfile>,
+    /// P49: terminal launch command template (`{path}` placeholder). Empty ⇒
+    /// per-OS auto-detect (see `bonsai_core::external`). Additive
+    /// `#[serde(default)]` ⇒ a pre-P49 file loads `""`.
+    pub terminal_command: String,
+    /// P49: editor launch command template (`{path}` placeholder). Empty ⇒
+    /// auto-detect the VS Code family. Additive `#[serde(default)]` ⇒ a pre-P49
+    /// file loads `""`.
+    pub editor_command: String,
 }
 
 impl Default for Settings {
@@ -323,6 +331,8 @@ impl Default for Settings {
             onboarding_seen: false,
             auto_check_updates: false,
             profiles: Vec::new(),
+            terminal_command: String::new(),
+            editor_command: String::new(),
         }
     }
 }
@@ -1202,6 +1212,48 @@ mod tests {
         std::fs::write(&file, legacy).expect("write pre-P44 settings.json");
         let loaded = load_from(&file);
         assert!(loaded.profiles.is_empty());
+        assert_eq!(loaded.theme, ThemeChoice::Light);
+        assert_eq!(loaded.list_view, ListView::Flat);
+        assert_eq!(loaded.recent_repos.len(), 1);
+    }
+
+    /// An old `settings.json` written before P49 (no `terminalCommand`/
+    /// `editorCommand` keys) loads both as `""` and preserves the existing
+    /// fields — the additive-field back-compat guarantee for the P49 settings.
+    /// Also asserts a round-trip through the documented camelCase keys.
+    #[test]
+    fn external_commands_roundtrip_and_backcompat() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+
+        // Round-trip non-default values + camelCase wire keys.
+        let s = Settings {
+            terminal_command: "wt -d {path}".to_string(),
+            editor_command: "code {path}".to_string(),
+            ..Default::default()
+        };
+        save_to(&file, &s).expect("save settings");
+        let loaded = load_from(&file);
+        assert_eq!(loaded, s);
+        assert_eq!(loaded.terminal_command, "wt -d {path}");
+        assert_eq!(loaded.editor_command, "code {path}");
+        let raw = std::fs::read_to_string(&file).expect("read settings.json");
+        assert!(raw.contains("\"terminalCommand\""));
+        assert!(raw.contains("\"editorCommand\""));
+
+        // Back-compat: a pre-P49 file without the keys loads both as "" and
+        // preserves existing fields.
+        let legacy = r#"{
+            "version": 1,
+            "recentRepos": [ { "path": "D:\\Repos\\legacy", "lastOpened": 123 } ],
+            "theme": "light",
+            "paneWidths": { "sidebar": 300, "rightPanel": 400 },
+            "listView": "flat"
+        }"#;
+        std::fs::write(&file, legacy).expect("write pre-P49 settings.json");
+        let loaded = load_from(&file);
+        assert_eq!(loaded.terminal_command, "");
+        assert_eq!(loaded.editor_command, "");
         assert_eq!(loaded.theme, ThemeChoice::Light);
         assert_eq!(loaded.list_view, ListView::Flat);
         assert_eq!(loaded.recent_repos.len(), 1);

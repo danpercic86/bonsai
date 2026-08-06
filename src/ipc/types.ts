@@ -918,6 +918,11 @@ export interface UiSettings {
   autoCheckUpdates: boolean;
   /** P44: named identity profiles (global). */
   profiles: IdentityProfile[];
+  /** P49: terminal launch command template ("{path}" placeholder). Empty ⇒
+   *  per-OS auto-detect. */
+  terminalCommand: string;
+  /** P49: editor launch command template. Empty ⇒ auto-detect VS Code. */
+  editorCommand: string;
 }
 
 export interface UiSettingsPatch {
@@ -942,6 +947,10 @@ export interface UiSettingsPatch {
   autoCheckUpdates?: boolean;
   /** P44: identity profiles — whole-array replace (like paneWidths). */
   profiles?: IdentityProfile[];
+  /** P49: terminal launch command template; patches independently. */
+  terminalCommand?: string;
+  /** P49: editor launch command template; patches independently. */
+  editorCommand?: string;
 }
 
 /** Embedded MCP server status for the Settings panel (P16). Mirrors the Rust
@@ -1190,7 +1199,8 @@ export interface AppError {
     | 'unresolvedConflicts'
     | 'aiUnavailable'
     | 'aiFailed'
-    | 'updateFailed';
+    | 'updateFailed'
+    | 'externalToolFailed';
   message: string;
 }
 
@@ -1574,6 +1584,15 @@ export interface IpcApi {
   getUiSettings(): Promise<UiSettings>;
   /** Applies a partial patch (only defined fields) and returns the resulting settings. */
   setUiSettings(patch: UiSettingsPatch): Promise<UiSettings>;
+  /** P49: launch the OS terminal at `path` (a repo/worktree/submodule dir). Uses
+   *  the configured terminalCommand template (empty ⇒ auto-detect). Rejects
+   *  AppError('externalToolFailed' | 'io'). */
+  openInTerminal(path: string): Promise<void>;
+  /** P49: reveal `path` in the OS file manager. Rejects AppError('externalToolFailed' | 'io'). */
+  revealInFileManager(path: string): Promise<void>;
+  /** P49: open `path` in the configured editor (empty ⇒ auto-detect VS Code).
+   *  Rejects AppError('externalToolFailed' | 'io'). */
+  openInEditor(path: string): Promise<void>;
   /** Cheap Claude Code CLI health probe (P13). Never rejects for CLI state. */
   checkAiAvailability(): Promise<AiAvailability>;
   /** Propose an AI merge resolution for one conflicted path (P13). Writes nothing.

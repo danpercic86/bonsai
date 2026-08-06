@@ -1314,6 +1314,66 @@
         assert!(!s.auto_check_updates);
     }
 
+    /// P49: `terminal_command`/`editor_command` patch independently — a `Some`
+    /// overwrites, a `None` (including an empty/unrelated patch) leaves the
+    /// stored value untouched, and `Some("")` explicitly resets to auto-detect.
+    #[test]
+    fn set_ui_settings_patch_external_commands_is_partial() {
+        let mut s = settings::Settings::default();
+        assert_eq!(s.terminal_command, "");
+        assert_eq!(s.editor_command, "");
+
+        // Only `terminal_command` changes; the editor + unrelated fields stay.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                terminal_command: Some("wt -d {path}".to_string()),
+                ..Default::default()
+            },
+        );
+        assert_eq!(s.terminal_command, "wt -d {path}");
+        assert_eq!(s.editor_command, "");
+        assert_eq!(s.theme, ThemeChoice::default());
+
+        // Only `editor_command` changes; the terminal value is preserved.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                editor_command: Some("code {path}".to_string()),
+                ..Default::default()
+            },
+        );
+        assert_eq!(s.terminal_command, "wt -d {path}");
+        assert_eq!(s.editor_command, "code {path}");
+
+        // An unrelated patch does NOT clear either command.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                theme: Some(ThemeChoice::Light),
+                ..Default::default()
+            },
+        );
+        assert_eq!(s.terminal_command, "wt -d {path}");
+        assert_eq!(s.editor_command, "code {path}");
+
+        // An empty patch is equally non-destructive.
+        apply_patch(&mut s, UiSettingsPatch::default());
+        assert_eq!(s.terminal_command, "wt -d {path}");
+        assert_eq!(s.editor_command, "code {path}");
+
+        // `Some("")` explicitly resets a command back to auto-detect.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                terminal_command: Some(String::new()),
+                ..Default::default()
+            },
+        );
+        assert_eq!(s.terminal_command, "");
+        assert_eq!(s.editor_command, "code {path}");
+    }
+
     /// `ai_resolve_conflict` enforces the backend consent gate (§9.6) BEFORE
     /// touching the repo: default settings (`ai_consented=false`) → `AiUnavailable`
     /// even with no repo open; once enabled+consented, an unknown repo id →

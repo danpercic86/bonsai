@@ -32,6 +32,7 @@ mod health;
 mod tags;
 mod ai_assets;
 mod profiles;
+mod external;
 
 #[cfg(test)]
 mod tests;
@@ -67,3 +68,4 @@ pub use health::*;
 pub use tags::*;
 pub use ai_assets::*;
 pub use profiles::*;
+pub use external::*;

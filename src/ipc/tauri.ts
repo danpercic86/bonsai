@@ -646,6 +646,18 @@ export const tauriIpc: IpcApi = {
     return invoke<UiSettings>('set_ui_settings', { patch });
   },
 
+  openInTerminal(path: string): Promise<void> {
+    return invoke<void>('open_in_terminal', { path });
+  },
+
+  revealInFileManager(path: string): Promise<void> {
+    return invoke<void>('reveal_in_file_manager', { path });
+  },
+
+  openInEditor(path: string): Promise<void> {
+    return invoke<void>('open_in_editor', { path });
+  },
+
   getSession(): Promise<SessionState> {
     return invoke<SessionState>('get_session');
   },

@@ -33,6 +33,11 @@ pub struct UiSettings {
     pub auto_check_updates: bool,
     /// P44: named identity profiles (global).
     pub profiles: Vec<IdentityProfile>,
+    /// P49: terminal launch command template (`{path}` placeholder). Empty ⇒
+    /// per-OS auto-detect.
+    pub terminal_command: String,
+    /// P49: editor launch command template. Empty ⇒ auto-detect VS Code.
+    pub editor_command: String,
 }
 
 /// Partial patch for `set_ui_settings` — only `Some(..)` fields are applied
@@ -67,6 +72,10 @@ pub struct UiSettingsPatch {
     /// P44: identity profiles — whole-array replace (like `pane_widths`); the
     /// frontend sends the entire list when any profile changes.
     pub profiles: Option<Vec<IdentityProfile>>,
+    /// P49: terminal launch command template; patches independently.
+    pub terminal_command: Option<String>,
+    /// P49: editor launch command template; patches independently.
+    pub editor_command: Option<String>,
 }
 
 /// Pure patch application: only `Some(..)` fields of `patch` mutate `s`; pane
@@ -116,6 +125,12 @@ pub(crate) fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     if let Some(profiles) = patch.profiles {
         s.profiles = profiles;
     }
+    if let Some(terminal_command) = patch.terminal_command {
+        s.terminal_command = terminal_command;
+    }
+    if let Some(editor_command) = patch.editor_command {
+        s.editor_command = editor_command;
+    }
 }
 
 /// Current UI settings (theme + pane widths). Never rejects for a
@@ -141,6 +156,8 @@ pub async fn get_ui_settings(app: tauri::AppHandle) -> Result<UiSettings, AppErr
             onboarding_seen: s.onboarding_seen,
             auto_check_updates: s.auto_check_updates,
             profiles: s.profiles.clone(),
+            terminal_command: s.terminal_command.clone(),
+            editor_command: s.editor_command.clone(),
         }
     })
     .await
@@ -178,6 +195,8 @@ pub async fn set_ui_settings(
             onboarding_seen: s.onboarding_seen,
             auto_check_updates: s.auto_check_updates,
             profiles: s.profiles.clone(),
+            terminal_command: s.terminal_command.clone(),
+            editor_command: s.editor_command.clone(),
         })
     })
     .await

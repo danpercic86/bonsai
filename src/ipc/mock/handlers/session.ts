@@ -89,6 +89,8 @@ export const sessionHandlers = {
       onboardingSeen: patch.onboardingSeen ?? current.onboardingSeen,
       autoCheckUpdates: patch.autoCheckUpdates ?? current.autoCheckUpdates,
       profiles: patch.profiles ?? current.profiles,
+      terminalCommand: patch.terminalCommand ?? current.terminalCommand,
+      editorCommand: patch.editorCommand ?? current.editorCommand,
     };
     writeUiSettings(next);
     // P30 §7: config round-trip re-arms the synthetic job tick timers.

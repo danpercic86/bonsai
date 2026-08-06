@@ -18,6 +18,7 @@ import { sessionHandlers } from './mock/handlers/session';
 import { mcpHandlers } from './mock/handlers/mcp';
 import { assetsHandlers } from './mock/handlers/assets';
 import { updateHandlers } from './mock/handlers/update';
+import { externalHandlers } from './mock/handlers/external';
 
 // Assembled from per-domain handler groups. Public surface unchanged: index.ts
 // still imports { mockIpc } from './mock'.
@@ -40,4 +41,5 @@ export const mockIpc: IpcApi = {
   ...mcpHandlers,
   ...assetsHandlers,
   ...updateHandlers,
+  ...externalHandlers,
 };

@@ -111,6 +111,9 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
       signingKey: 'ABC123',
     },
   ],
+  // P49: external-tool templates default to "" ⇒ per-OS auto-detect.
+  terminalCommand: '',
+  editorCommand: '',
 };
 
 export function clampPaneWidths(w: PaneWidths): PaneWidths {
@@ -240,6 +243,15 @@ export function readUiSettings(): UiSettings {
     const profiles: IdentityProfile[] = Array.isArray(parsed.profiles)
       ? parsed.profiles
       : structuredClone(DEFAULT_UI_SETTINGS.profiles);
+    // P49 external-tool templates (additive): fall back to default ("").
+    const terminalCommand =
+      typeof parsed.terminalCommand === 'string'
+        ? parsed.terminalCommand
+        : DEFAULT_UI_SETTINGS.terminalCommand;
+    const editorCommand =
+      typeof parsed.editorCommand === 'string'
+        ? parsed.editorCommand
+        : DEFAULT_UI_SETTINGS.editorCommand;
     return {
       theme,
       paneWidths,
@@ -255,6 +267,8 @@ export function readUiSettings(): UiSettings {
       onboardingSeen,
       autoCheckUpdates,
       profiles,
+      terminalCommand,
+      editorCommand,
     };
   } catch {
     return structuredClone(DEFAULT_UI_SETTINGS);

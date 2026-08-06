@@ -25,6 +25,49 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
+## P49 — external integrations: open in terminal / file manager / editor (Phase 1) — **IN PROGRESS** (2026-08-06)
+
+Roadmap approved 2026-08-06 from a feature-gap analysis (6 research streams: codebase inventory +
+worldwide Git-client reviews + AI+git use-cases + terminal/graph/perf). Full plan:
+`~/.claude/plans/do-thorough-analysis-of-purrfect-moth.md`. Sequenced **P49–P65** across four themes
+(quick wins · AI-native edge · forge/PR · correctness/parity) + large-repo perf. **Phase 1** = P49
+external integrations → P50 search + command palette → P51 graph polish/clutter controls → P52
+adopt git's commit-graph file.
+
+**P49 goal:** launch the user's external tools from Bonsai at a repo/worktree/submodule path — (a)
+**open in terminal**, (b) **reveal in file manager**, (c) **open in editor**. Currently ABSENT — no
+shell/opener Tauri plugin is registered at all (`src-tauri/capabilities/default.json` has only
+dialog/updater/process). Research verdict: external launch satisfies most users; an embedded terminal
+is a heavy build CLI power-users bypass → external only for v1.
+
+**Locked decisions (from approved plan):**
+- External launch only; embedded terminal deferred.
+- Terminal = user-configurable **per-OS command template** with a `{path}` placeholder; auto-detected
+  defaults (Win: `wt -d {path}` → PowerShell → cmd; macOS: Terminal/iTerm via `open -a`; Linux:
+  template with `--working-directory`/`-e`).
+- **Safety:** spawn as a child process with explicit cwd + path-as-arg — NEVER interpolate the repo
+  path into a shell string (dodges the `wt` `;`/PATH gotchas + injection); handle paths with spaces.
+- Three commands: `open_in_terminal`, `reveal_in_file_manager`, `open_in_editor`.
+- Entry points: repo/worktree/submodule context menus + tab `+`/tab menu + a toolbar button.
+
+**Acceptance criteria:** the three actions launch the correct external app at the correct path on
+Windows (+ macOS/Linux defaults present); a failed launch surfaces a clear toast, never a silent
+no-op; terminal template editable in Settings + persisted, default auto-detected per-OS; path with
+spaces handled; tsc + pnpm build clean; cargo check + clippy clean; `src/ipc/mock.ts` in lockstep;
+USER CHECKPOINT = real OS launch per platform (harness cannot verify a real terminal opening).
+
+Sub-increments: **P49a** Rust (plugin + capabilities + 3 commands + settings field + IPC triple +
+mock) → **P49b** frontend (Settings terminal-template section + context-menu/tab/toolbar entries).
+
+**Contract:** `docs/contracts/P49-external-integrations.md` + `P49-user-checklist.md` (architect — DONE).
+**Orchestrator decisions on flagged OQs:** OQ1 reveal = open the directory; OQ2 editor auto-detect =
+VS Code family only (else `editor_command`); OQ3 single per-machine template string (auto-detected
+default per current OS); OQ4 add `AppError::ExternalToolFailed(String)`. Plugin: self-contained Rust
+`std::process::Command` — no plugin/capability change (`capabilities/default.json` unchanged).
+**Current step:** P49a DONE (reviewer APPROVE, 0 must-fix/should-fix; nits deferred: missing-path
+command test → tester, `wt` alias pick → native checkpoint). Committing, then P49b (frontend UI +
+entry points).
+
 ## P48 — New Worktree dialog UX (searchable branch picker, wider dialog, per-category select-all) — **DONE (AI gate + USER CHECKPOINT confirmed)** (2026-08-06)
 
 User reported three pain points in the New Worktree dialog: (1) dialog too small / long file

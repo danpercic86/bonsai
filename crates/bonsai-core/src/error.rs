@@ -6,7 +6,8 @@
 /// | "unmergedBranch" | "branchNotFound"
 /// | "noRemote" | "noUpstream" | "authFailed" | "networkError"
 /// | "pushRejected" | "operationInProgress" | "noOperationInProgress"
-/// | "unresolvedConflicts" | "aiUnavailable" | "aiFailed",
+/// | "unresolvedConflicts" | "aiUnavailable" | "aiFailed"
+/// | "externalToolFailed",
 /// "message": "..." }`.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
@@ -57,6 +58,11 @@ pub enum AppError {
     AiUnavailable(String),
     #[error("{0}")]
     AiFailed(String),
+    /// External-tool launch failed (P49): no terminal/file-manager/editor
+    /// candidate could be spawned. Carries a message naming the last program
+    /// tried; the frontend adds a "set a command in Settings" hint.
+    #[error("{0}")]
+    ExternalToolFailed(String),
 }
 
 impl AppError {
@@ -85,6 +91,7 @@ impl AppError {
             AppError::UnresolvedConflicts(_) => "unresolvedConflicts",
             AppError::AiUnavailable(_) => "aiUnavailable",
             AppError::AiFailed(_) => "aiFailed",
+            AppError::ExternalToolFailed(_) => "externalToolFailed",
         }
     }
 
@@ -109,7 +116,8 @@ impl AppError {
             | AppError::NoOperationInProgress(m)
             | AppError::UnresolvedConflicts(m)
             | AppError::AiUnavailable(m)
-            | AppError::AiFailed(m) => m,
+            | AppError::AiFailed(m)
+            | AppError::ExternalToolFailed(m) => m,
             AppError::NoRepo => "no repository is open",
             AppError::EmptyMessage => "commit message is empty",
             AppError::NothingToCommit => "nothing to commit (index matches HEAD)",

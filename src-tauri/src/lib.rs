@@ -193,7 +193,10 @@ pub fn run() {
             commands::list_worktree_contexts,
             commands::preview_worktree_profile,
             commands::activate_worktree_profile,
-            commands::ai_generate_asset
+            commands::ai_generate_asset,
+            commands::open_in_terminal,
+            commands::reveal_in_file_manager,
+            commands::open_in_editor
         ])
         .build(tauri::generate_context!())
         .expect("error while running Bonsai")
