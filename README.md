@@ -4,7 +4,7 @@
 
 # Bonsai
 
-**A fast, native-feeling desktop Git client with a GitKraken-style commit graph.**
+**A fast, native-feeling desktop Git client built around a rich, multi-lane commit graph.**
 
 Cross-platform (Windows · macOS · Linux) · Built with Tauri, Rust, and React.
 
@@ -31,7 +31,7 @@ renders — so the graph stays fast even over histories of 20,000+ commits.
 
 ## Features
 
-- **GitKraken-style commit graph** — multi-colored branch lanes, smooth curved fork/merge
+- **Rich commit graph** — multi-colored branch lanes, smooth curved fork/merge
   edges, and ref pills for local branches, `origin/*` remotes, tags, and HEAD. Virtualized
   on a canvas so scrolling stays smooth over very large histories.
 - **Three-pane workspace** — branches / remotes / tags on the left, the graph in the center,

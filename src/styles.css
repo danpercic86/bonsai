@@ -590,22 +590,26 @@ body {
 }
 
 .toast-error {
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  background: color-mix(in srgb, var(--danger) 14%, var(--bg-2));
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--bg-2));
   color: var(--danger);
 }
 
 .toast-success {
-  background: color-mix(in srgb, var(--success) 12%, transparent);
+  background: color-mix(in srgb, var(--success) 14%, var(--bg-2));
+  border: 1px solid color-mix(in srgb, var(--success) 35%, var(--bg-2));
   color: var(--success);
 }
 
 .toast-warning {
-  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  background: color-mix(in srgb, var(--warning) 14%, var(--bg-2));
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, var(--bg-2));
   color: var(--warning);
 }
 
 .toast-info {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-2));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--bg-2));
   color: var(--accent);
 }
 

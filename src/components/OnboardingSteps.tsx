@@ -18,7 +18,7 @@ export function WelcomeStep() {
         🌱
       </div>
       <p className="onboarding-lead">
-        Bonsai is a fast, native Git client with a GitKraken-style commit graph at its center.
+        Bonsai is a fast, native Git client built around a rich, multi-lane commit graph.
       </p>
       <p className="onboarding-body">
         This quick tour helps you open a repository, confirm your Git identity, and find your way

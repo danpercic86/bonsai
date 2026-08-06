@@ -42,7 +42,7 @@ An interactive side-by-side diff view, plus continued release-readiness hardenin
 The MVP and first productization phase. Highlights:
 
 ### Added
-- GitKraken-style commit graph rendered on canvas — multi-colored branch lanes, curved
+- Rich commit graph rendered on canvas — multi-colored branch lanes, curved
   fork/merge edges, ref pills (branches, `origin/*` remotes, tags, HEAD), virtualized for
   large histories (20k+ commits).
 - Three-pane workspace: branches / remotes / tags sidebar, commit graph, and a status +
