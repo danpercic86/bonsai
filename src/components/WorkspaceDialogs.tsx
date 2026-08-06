@@ -1,15 +1,10 @@
-import { ConfirmDialog } from './ConfirmDialog';
-import { PromptDialog } from './PromptDialog';
-import { RebasePlanEditor } from './RebasePlanEditor';
-import { TagCreateDialog } from './TagCreateDialog';
-import { RemoteEditDialog } from './RemoteEditDialog';
-import { WorktreeCreateDialog } from './WorktreeCreateDialog';
-import { WorktreeContextDialog } from './WorktreeContextDialog';
-import { WhatChangedDialog } from './WhatChangedDialog';
-import { ContextMenu } from './ContextMenu';
+import { DestructiveDialogs } from './dialogs/DestructiveDialogs';
+import { StashDialogs } from './dialogs/StashDialogs';
+import { BranchTagDialogs } from './dialogs/BranchTagDialogs';
+import { RemoteDialogs } from './dialogs/RemoteDialogs';
+import { WorktreeDialogs } from './dialogs/WorktreeDialogs';
+import { CleanupDialogs } from './dialogs/CleanupDialogs';
 import type { ContextMenuItem } from './ContextMenu';
-import { StaleBranchesDialog } from './StaleBranchesDialog';
-import { shortOid, worktreeContainerPreview } from './workspaceUtils';
 import type {
   AiDigestRange,
   BranchInfo,
@@ -22,20 +17,6 @@ import type {
   ResetMode,
   WorktreeInfo,
 } from '../ipc';
-
-/** Modified-vs-new confirm copy for the bulk "Discard all" dialog. Phrases for
- *  the mixed / modified-only / new-only cases so the permanent deletion of new
- *  (untracked) files is always spelled out. */
-function discardForceQuestion(
-  pending: { modified: number; created: number } | null,
-): string {
-  const modified = pending?.modified ?? 0;
-  const created = pending?.created ?? 0;
-  const files = (n: number) => `${n} ${n === 1 ? 'file' : 'files'}`;
-  if (created === 0) return `Revert ${files(modified)}?`;
-  if (modified === 0) return `Permanently delete ${files(created)}?`;
-  return `Revert ${files(modified)} and permanently delete ${files(created)}?`;
-}
 
 export interface WorkspaceDialogsProps {
   repoId: string;
@@ -195,688 +176,136 @@ export interface WorkspaceDialogsProps {
 
 /** P3e: the full trailing dialog/modal cluster + graph context menu for a
  *  workspace tab. Purely presentational — every open/pending flag, setter and
- *  handler is threaded in from RepoWorkspace so behavior/DOM are identical. */
-export function WorkspaceDialogs({
-  repoId,
-  mutating,
-  opState,
-  headBranch,
-  branches,
-  remotes,
-  worktrees,
-  abortConfirmOpen,
-  setAbortConfirmOpen,
-  handleRebaseAbort,
-  handleBisectReset,
-  handleCherrypickAbort,
-  handleRevertAbort,
-  handleAbortMerge,
-  pendingDeleteBranch,
-  setPendingDeleteBranch,
-  handleDeleteBranch,
-  pendingRebase,
-  setPendingRebase,
-  handleRebaseBranch,
-  pendingDeleteRemote,
-  setPendingDeleteRemote,
-  handleDeleteRemoteTracking,
-  pendingDropStash,
-  setPendingDropStash,
-  handleDropStash,
-  pendingReservedStash,
-  setPendingReservedStash,
-  handleApplyStashSkipping,
-  handlePopStashSkipping,
-  pendingReset,
-  setPendingReset,
-  handleResetBranch,
-  pendingDiscard,
-  setPendingDiscard,
-  handleDiscard,
-  pendingDiscardForce,
-  setPendingDiscardForce,
-  handleDiscardForce,
-  pendingCommitPush,
-  handleConfirmCommitPush,
-  handleCancelCommitPush,
-  pendingForcePush,
-  setPendingForcePush,
-  doForcePush,
-  remoteOp,
-  pendingHunkDiscard,
-  setPendingHunkDiscard,
-  handleConfirmHunkDiscard,
-  pendingLineDiscard,
-  setPendingLineDiscard,
-  handleConfirmLineDiscard,
-  staleCleanupOpen,
-  setStaleCleanupOpen,
-  refetchBranches,
-  refetchGraph,
-  pendingCreateBranch,
-  setPendingCreateBranch,
-  handleCreateBranchHere,
-  pendingCreateTag,
-  setPendingCreateTag,
-  handleCreateTag,
-  pendingDeleteTag,
-  setPendingDeleteTag,
-  handleDeleteTag,
-  pendingAddRemote,
-  setPendingAddRemote,
-  handleAddRemote,
-  pendingEditUrl,
-  setPendingEditUrl,
-  handleSetRemoteUrl,
-  pendingRenameRemote,
-  setPendingRenameRemote,
-  handleRenameRemote,
-  pendingRemoveRemote,
-  setPendingRemoveRemote,
-  handleRemoveRemote,
-  whatChangedOpen,
-  setWhatChangedOpen,
-  runDigest,
-  newWorktreeOpen,
-  setNewWorktreeOpen,
-  handleAddWorktree,
-  worktreeContextOpen,
-  setWorktreeContextOpen,
-  pendingWorktreeLock,
-  setPendingWorktreeLock,
-  handleLockWorktree,
-  pendingWorktreeRemove,
-  setPendingWorktreeRemove,
-  handleRemoveWorktree,
-  rebasePlan,
-  setRebasePlan,
-  rebasePlanError,
-  setRebasePlanError,
-  handleStartInteractiveRebase,
-  menu,
-  closeMenu,
-}: WorkspaceDialogsProps) {
+ *  handler is threaded in from RepoWorkspace so behavior/DOM are identical.
+ *  This container only splits the cluster into per-family child components
+ *  (`dialogs/*`); it neither owns state nor regroups the flat prop list. */
+export function WorkspaceDialogs(props: WorkspaceDialogsProps) {
   return (
     <>
-      <ConfirmDialog
-        open={abortConfirmOpen}
-        title={
-          opState.kind === 'rebase'
-            ? 'Abort rebase?'
-            : opState.kind === 'bisect'
-              ? 'Reset bisect?'
-              : opState.kind === 'cherryPick'
-                ? 'Abort cherry-pick?'
-                : opState.kind === 'revert'
-                  ? 'Abort revert?'
-                  : 'Abort merge?'
-        }
-        confirmLabel={
-          opState.kind === 'rebase'
-            ? 'Abort rebase'
-            : opState.kind === 'bisect'
-              ? 'Reset bisect'
-              : opState.kind === 'cherryPick'
-                ? 'Abort cherry-pick'
-                : opState.kind === 'revert'
-                  ? 'Abort revert'
-                  : 'Abort merge'
-        }
-        busy={mutating}
-        onConfirm={() => {
-          const kind = opState.kind;
-          setAbortConfirmOpen(false);
-          if (kind === 'rebase') {
-            void handleRebaseAbort();
-          } else if (kind === 'bisect') {
-            void handleBisectReset();
-          } else if (kind === 'cherryPick') {
-            void handleCherrypickAbort();
-          } else if (kind === 'revert') {
-            void handleRevertAbort();
-          } else {
-            void handleAbortMerge();
-          }
-        }}
-        onCancel={() => setAbortConfirmOpen(false)}
-      >
-        {opState.kind === 'rebase' ? (
-          <div>
-            This restores your branch and working tree to their pre-rebase state. Replayed commits
-            and conflict resolutions will be lost.
-          </div>
-        ) : opState.kind === 'bisect' ? (
-          <div>
-            This ends the bisect and restores your original branch and working tree. The recorded
-            good/bad marks will be discarded.
-          </div>
-        ) : opState.kind === 'cherryPick' || opState.kind === 'revert' ? (
-          <div>
-            This resets your branch and working tree to HEAD. The in-progress{' '}
-            {opState.kind === 'cherryPick' ? 'cherry-pick' : 'revert'} and any conflict resolutions
-            will be lost.
-          </div>
-        ) : (
-          <div>
-            This restores the files touched by the merge to their pre-merge state. Conflict
-            resolutions will be lost.
-          </div>
-        )}
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={pendingDeleteBranch !== null}
-        title="Delete branch"
-        confirmLabel="Delete branch"
-        busy={mutating}
-        onConfirm={() => {
-          const name = pendingDeleteBranch;
-          setPendingDeleteBranch(null);
-          if (name !== null) void handleDeleteBranch(name);
-        }}
-        onCancel={() => setPendingDeleteBranch(null)}
-      >
-        <div>Delete branch "<span className="mono">{pendingDeleteBranch ?? ''}</span>"?</div>
-        <div className="dialog-body-note">
-          This cannot be undone from Bonsai.
-        </div>
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={pendingRebase !== null}
-        title="Rebase branch"
-        confirmLabel="Rebase"
-        busy={mutating}
-        onConfirm={() => {
-          const p = pendingRebase;
-          setPendingRebase(null);
-          if (p !== null) void handleRebaseBranch(p.name);
-        }}
-        onCancel={() => setPendingRebase(null)}
-      >
-        <div>
-          Rebase "<span className="mono">{pendingRebase?.cur ?? ''}</span>" onto "
-          <span className="mono">{pendingRebase?.name ?? ''}</span>"?
-        </div>
-        <div className="dialog-body-note">
-          This rewrites the current branch&apos;s commits. Recoverable via reflog.
-        </div>
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={pendingDeleteRemote !== null}
-        title="Delete remote-tracking reference"
-        confirmLabel="Delete reference"
-        busy={mutating}
-        onConfirm={() => {
-          const name = pendingDeleteRemote;
-          setPendingDeleteRemote(null);
-          if (name !== null) void handleDeleteRemoteTracking(name);
-        }}
-        onCancel={() => setPendingDeleteRemote(null)}
-      >
-        <div>Delete the remote-tracking reference "<span className="mono">{pendingDeleteRemote ?? ''}</span>"?</div>
-        <div className="dialog-body-note">
-          This removes only Bonsai's local copy of the remote branch. It does NOT delete the branch on
-          the server — a future fetch may recreate it.
-        </div>
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={pendingDropStash !== null}
-        title="Drop stash"
-        confirmLabel="Drop stash"
-        busy={mutating}
-        onConfirm={() => {
-          const i = pendingDropStash;
-          setPendingDropStash(null);
-          if (i !== null) void handleDropStash(i);
-        }}
-        onCancel={() => setPendingDropStash(null)}
-      >
-        <div>Drop <span className="mono">stash@{`{${pendingDropStash ?? 0}}`}</span>?</div>
-        <div className="dialog-body-note">
-          This permanently discards the stashed changes and cannot be undone.
-        </div>
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={pendingReservedStash !== null}
-        title="Skip files Windows can't restore?"
-        confirmLabel="Apply the rest"
-        confirmVariant="primary"
-        busy={mutating}
-        onConfirm={() => {
-          const p = pendingReservedStash;
-          setPendingReservedStash(null);
-          if (p === null) return;
-          if (p.op === 'pop') handlePopStashSkipping(p.index);
-          else handleApplyStashSkipping(p.index);
-        }}
-        onCancel={() => setPendingReservedStash(null)}
-      >
-        <div>
-          <span className="mono">stash@{`{${pendingReservedStash?.index ?? 0}}`}</span> contains
-          files Windows can&apos;t restore (
-          <span className="mono">{pendingReservedStash?.paths.join(', ') ?? ''}</span>). Apply the
-          rest, skipping those files?
-        </div>
-        <div className="dialog-body-note">
-          {pendingReservedStash?.op === 'pop'
-            ? 'The stash will be kept so those files are not lost.'
-            : 'The skipped files remain in the stash.'}
-        </div>
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={pendingReset !== null}
-        title={pendingReset?.mode === 'hard' ? 'Hard reset' : 'Reset branch'}
-        confirmLabel={
-          pendingReset === null
-            ? 'Reset'
-            : `Reset (${pendingReset.mode})`
-        }
-        busy={mutating}
-        onConfirm={() => {
-          const p = pendingReset;
-          setPendingReset(null);
-          if (p !== null) void handleResetBranch(p.oid, p.mode);
-        }}
-        onCancel={() => setPendingReset(null)}
-      >
-        <div>
-          Move <span className="mono">{headBranch?.name ?? 'HEAD'}</span> to{' '}
-          <span className="mono">{shortOid(pendingReset?.oid ?? '')}</span> ({pendingReset?.mode})?
-        </div>
-        <div className="dialog-body-note">
-          Commits after the target are no longer on this branch (recoverable via the reflog).
-          {pendingReset?.mode === 'hard' && (
-            <> Uncommitted changes in your working tree will be permanently discarded.</>
-          )}
-        </div>
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={pendingDiscard !== null}
-        title="Discard changes"
-        confirmLabel="Discard changes"
-        busy={mutating}
-        onConfirm={() => {
-          const paths = pendingDiscard;
-          setPendingDiscard(null);
-          if (paths !== null) void handleDiscard(paths);
-        }}
-        onCancel={() => setPendingDiscard(null)}
-      >
-        <div>Discard changes to {pendingDiscard?.length ?? 0} file(s)?</div>
-        <div className="dialog-body-note">
-          This permanently reverts them to the last staged/committed version and cannot be undone.
-        </div>
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={pendingDiscardForce !== null}
-        title="Discard all changes"
-        confirmLabel="Discard all"
-        busy={mutating}
-        onConfirm={() => {
-          const p = pendingDiscardForce;
-          setPendingDiscardForce(null);
-          if (p !== null) void handleDiscardForce(p.paths);
-        }}
-        onCancel={() => setPendingDiscardForce(null)}
-      >
-        <div>{discardForceQuestion(pendingDiscardForce)}</div>
-        {(pendingDiscardForce?.untracked.length ?? 0) > 0 && (
-          <>
-            <div className="dialog-body-note">Permanently deleted:</div>
-            <ul className="confirm-name-list">
-              {(pendingDiscardForce?.untracked ?? []).slice(0, 10).map((p) => (
-                <li key={p} className="mono">
-                  {p}
-                </li>
-              ))}
-              {(pendingDiscardForce?.untracked.length ?? 0) > 10 && (
-                <li className="dialog-body-note">
-                  +{(pendingDiscardForce?.untracked.length ?? 0) - 10} more
-                </li>
-              )}
-            </ul>
-          </>
-        )}
-        <div className="dialog-body-note">This cannot be undone.</div>
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={pendingCommitPush !== null}
-        title="Set upstream and push?"
-        confirmLabel="Commit & Push"
-        confirmVariant="primary"
-        busy={mutating}
-        onConfirm={handleConfirmCommitPush}
-        onCancel={handleCancelCommitPush}
-      >
-        <div>
-          Push <strong>{headBranch?.name ?? 'HEAD'}</strong> to origin/
-          {headBranch?.name ?? 'HEAD'} and set it as its upstream?
-        </div>
-        <div className="dialog-body-note">
-          The commit is created first, then pushed.
-        </div>
-      </ConfirmDialog>
-
-      {/* P37b: force-push with lease — names branch + remote, warns it rewrites
-          published history, and documents the client-side-lease limitation. */}
-      <ConfirmDialog
-        open={pendingForcePush}
-        title="Force-push with lease?"
-        confirmLabel="Force-push"
-        busy={remoteOp === 'push'}
-        onConfirm={doForcePush}
-        onCancel={() => setPendingForcePush(false)}
-      >
-        <div>
-          This rewrites the published history of{' '}
-          <span className="mono">{headBranch?.name ?? 'HEAD'}</span> on{' '}
-          <span className="mono">{headBranch?.upstream?.split('/')[0] ?? 'origin'}</span>. Continue?
-        </div>
-        <div className="dialog-body-note">
-          Bonsai first checks the remote hasn&apos;t moved since your last fetch and refuses if
-          someone else pushed — strictly safer than a plain force-push. Note this is a client-side
-          check with a small race window, not the atomic server-side guarantee of{' '}
-          <span className="mono">git push --force-with-lease</span>.
-        </div>
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={pendingHunkDiscard !== null}
-        title="Discard hunk?"
-        confirmLabel="Discard hunk"
-        busy={mutating}
-        onConfirm={() => {
-          const pending = pendingHunkDiscard;
-          setPendingHunkDiscard(null);
-          if (pending !== null) void handleConfirmHunkDiscard(pending);
-        }}
-        onCancel={() => setPendingHunkDiscard(null)}
-      >
-        <div>
-          Discard this hunk in <span className="mono">{pendingHunkDiscard?.path ?? ''}</span>?
-        </div>
-        <div className="dialog-body-note">
-          The change in this hunk is permanently reverted in your working tree and cannot be
-          undone. Staged changes are not affected.
-        </div>
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={pendingLineDiscard !== null}
-        title={
-          pendingLineDiscard !== null && pendingLineDiscard.selection.length === 1
-            ? 'Discard line?'
-            : 'Discard lines?'
-        }
-        confirmLabel={
-          pendingLineDiscard !== null && pendingLineDiscard.selection.length === 1
-            ? 'Discard line'
-            : 'Discard lines'
-        }
-        busy={mutating}
-        onConfirm={() => {
-          const pending = pendingLineDiscard;
-          setPendingLineDiscard(null);
-          if (pending !== null) void handleConfirmLineDiscard(pending);
-        }}
-        onCancel={() => setPendingLineDiscard(null)}
-      >
-        <div>
-          Discard {pendingLineDiscard?.selection.length ?? 0} selected{' '}
-          line{(pendingLineDiscard?.selection.length ?? 0) === 1 ? '' : 's'} in{' '}
-          <span className="mono">{pendingLineDiscard?.path ?? ''}</span>?
-        </div>
-        <div className="dialog-body-note">
-          The change{(pendingLineDiscard?.selection.length ?? 0) === 1 ? ' is' : 's are'} permanently
-          reverted in your working tree and cannot be undone. Staged changes are not affected.
-        </div>
-      </ConfirmDialog>
-
-      {/* P25d: B4 stale-branch cleanup. The nested ConfirmDialog inside lists the
-          exact names before any delete; onDeleted refetches branches + graph. */}
-      <StaleBranchesDialog
-        open={staleCleanupOpen}
-        onClose={() => setStaleCleanupOpen(false)}
-        repoId={repoId}
-        onDeleted={() => void Promise.all([refetchBranches(), refetchGraph()])}
+      <DestructiveDialogs
+        mutating={props.mutating}
+        opState={props.opState}
+        headBranch={props.headBranch}
+        abortConfirmOpen={props.abortConfirmOpen}
+        setAbortConfirmOpen={props.setAbortConfirmOpen}
+        handleRebaseAbort={props.handleRebaseAbort}
+        handleBisectReset={props.handleBisectReset}
+        handleCherrypickAbort={props.handleCherrypickAbort}
+        handleRevertAbort={props.handleRevertAbort}
+        handleAbortMerge={props.handleAbortMerge}
+        pendingReset={props.pendingReset}
+        setPendingReset={props.setPendingReset}
+        handleResetBranch={props.handleResetBranch}
+        pendingDiscard={props.pendingDiscard}
+        setPendingDiscard={props.setPendingDiscard}
+        handleDiscard={props.handleDiscard}
+        pendingDiscardForce={props.pendingDiscardForce}
+        setPendingDiscardForce={props.setPendingDiscardForce}
+        handleDiscardForce={props.handleDiscardForce}
+        pendingCommitPush={props.pendingCommitPush}
+        handleConfirmCommitPush={props.handleConfirmCommitPush}
+        handleCancelCommitPush={props.handleCancelCommitPush}
+        pendingForcePush={props.pendingForcePush}
+        setPendingForcePush={props.setPendingForcePush}
+        doForcePush={props.doForcePush}
+        remoteOp={props.remoteOp}
+        pendingHunkDiscard={props.pendingHunkDiscard}
+        setPendingHunkDiscard={props.setPendingHunkDiscard}
+        handleConfirmHunkDiscard={props.handleConfirmHunkDiscard}
+        pendingLineDiscard={props.pendingLineDiscard}
+        setPendingLineDiscard={props.setPendingLineDiscard}
+        handleConfirmLineDiscard={props.handleConfirmLineDiscard}
       />
 
-      <PromptDialog
-        open={pendingCreateBranch !== null}
-        title="Create branch here"
-        label="Branch name"
-        placeholder="feature/my-branch"
-        confirmLabel="Create branch"
-        busy={mutating}
-        validate={(v) => {
-          const t = v.trim();
-          if (t === '' || t.startsWith('-')) return 'Enter a valid branch name';
-          if (branches?.local.some((b) => b.name === t) === true)
-            return 'A branch with that name already exists';
-          return null;
-        }}
-        onSubmit={(v) => void handleCreateBranchHere(pendingCreateBranch!.oid, v.trim())}
-        onCancel={() => setPendingCreateBranch(null)}
+      <StashDialogs
+        mutating={props.mutating}
+        pendingDropStash={props.pendingDropStash}
+        setPendingDropStash={props.setPendingDropStash}
+        handleDropStash={props.handleDropStash}
+        pendingReservedStash={props.pendingReservedStash}
+        setPendingReservedStash={props.setPendingReservedStash}
+        handleApplyStashSkipping={props.handleApplyStashSkipping}
+        handlePopStashSkipping={props.handlePopStashSkipping}
       />
 
-      {/* P22: create tag at the right-clicked commit. */}
-      <TagCreateDialog
-        open={pendingCreateTag !== null}
-        targetOid={pendingCreateTag?.oid ?? ''}
-        busy={mutating}
-        existingTags={branches?.tags ?? []}
-        onSubmit={(name, message) => {
-          const oid = pendingCreateTag?.oid ?? null;
-          setPendingCreateTag(null);
-          if (oid !== null) void handleCreateTag(oid, name, message);
-        }}
-        onCancel={() => setPendingCreateTag(null)}
+      <BranchTagDialogs
+        mutating={props.mutating}
+        branches={props.branches}
+        pendingDeleteBranch={props.pendingDeleteBranch}
+        setPendingDeleteBranch={props.setPendingDeleteBranch}
+        handleDeleteBranch={props.handleDeleteBranch}
+        pendingRebase={props.pendingRebase}
+        setPendingRebase={props.setPendingRebase}
+        handleRebaseBranch={props.handleRebaseBranch}
+        pendingCreateBranch={props.pendingCreateBranch}
+        setPendingCreateBranch={props.setPendingCreateBranch}
+        handleCreateBranchHere={props.handleCreateBranchHere}
+        pendingCreateTag={props.pendingCreateTag}
+        setPendingCreateTag={props.setPendingCreateTag}
+        handleCreateTag={props.handleCreateTag}
+        pendingDeleteTag={props.pendingDeleteTag}
+        setPendingDeleteTag={props.setPendingDeleteTag}
+        handleDeleteTag={props.handleDeleteTag}
       />
 
-      {/* P22: delete tag (local only). */}
-      <ConfirmDialog
-        open={pendingDeleteTag !== null}
-        title="Delete tag"
-        confirmLabel="Delete tag"
-        busy={mutating}
-        onConfirm={() => {
-          const name = pendingDeleteTag;
-          setPendingDeleteTag(null);
-          if (name !== null) void handleDeleteTag(name);
-        }}
-        onCancel={() => setPendingDeleteTag(null)}
-      >
-        <div>Delete tag "<span className="mono">{pendingDeleteTag ?? ''}</span>"?</div>
-        <div className="dialog-body-note">
-          Deletes the local tag only; a tag already pushed to a remote is not removed there.
-        </div>
-      </ConfirmDialog>
-
-      {/* P22: add a new remote (name + url both editable). */}
-      <RemoteEditDialog
-        open={pendingAddRemote}
-        title="Add remote"
-        confirmLabel="Add remote"
-        busy={mutating}
-        existingNames={remotes.map((r) => r.name)}
-        onSubmit={(name, url) => {
-          setPendingAddRemote(false);
-          void handleAddRemote(name, url);
-        }}
-        onCancel={() => setPendingAddRemote(false)}
+      <RemoteDialogs
+        mutating={props.mutating}
+        remotes={props.remotes}
+        pendingDeleteRemote={props.pendingDeleteRemote}
+        setPendingDeleteRemote={props.setPendingDeleteRemote}
+        handleDeleteRemoteTracking={props.handleDeleteRemoteTracking}
+        pendingAddRemote={props.pendingAddRemote}
+        setPendingAddRemote={props.setPendingAddRemote}
+        handleAddRemote={props.handleAddRemote}
+        pendingEditUrl={props.pendingEditUrl}
+        setPendingEditUrl={props.setPendingEditUrl}
+        handleSetRemoteUrl={props.handleSetRemoteUrl}
+        pendingRenameRemote={props.pendingRenameRemote}
+        setPendingRenameRemote={props.setPendingRenameRemote}
+        handleRenameRemote={props.handleRenameRemote}
+        pendingRemoveRemote={props.pendingRemoveRemote}
+        setPendingRemoveRemote={props.setPendingRemoveRemote}
+        handleRemoveRemote={props.handleRemoveRemote}
       />
 
-      {/* P22: edit an existing remote's fetch URL (name read-only). */}
-      <RemoteEditDialog
-        open={pendingEditUrl !== null}
-        title="Edit remote URL"
-        confirmLabel="Save URL"
-        busy={mutating}
-        nameReadOnly
-        initialName={pendingEditUrl?.name}
-        initialUrl={pendingEditUrl?.url}
-        existingNames={remotes.map((r) => r.name)}
-        onSubmit={(_name, url) => {
-          const target = pendingEditUrl;
-          setPendingEditUrl(null);
-          if (target !== null) void handleSetRemoteUrl(target.name, url);
-        }}
-        onCancel={() => setPendingEditUrl(null)}
+      <WorktreeDialogs
+        repoId={props.repoId}
+        mutating={props.mutating}
+        branches={props.branches}
+        worktrees={props.worktrees}
+        newWorktreeOpen={props.newWorktreeOpen}
+        setNewWorktreeOpen={props.setNewWorktreeOpen}
+        handleAddWorktree={props.handleAddWorktree}
+        worktreeContextOpen={props.worktreeContextOpen}
+        setWorktreeContextOpen={props.setWorktreeContextOpen}
+        pendingWorktreeLock={props.pendingWorktreeLock}
+        setPendingWorktreeLock={props.setPendingWorktreeLock}
+        handleLockWorktree={props.handleLockWorktree}
+        pendingWorktreeRemove={props.pendingWorktreeRemove}
+        setPendingWorktreeRemove={props.setPendingWorktreeRemove}
+        handleRemoveWorktree={props.handleRemoveWorktree}
       />
 
-      {/* P22: rename a remote (single-field → reuse PromptDialog). */}
-      <PromptDialog
-        open={pendingRenameRemote !== null}
-        title="Rename remote"
-        label="New remote name"
-        placeholder="origin"
-        initialValue={pendingRenameRemote?.name}
-        confirmLabel="Rename"
-        busy={mutating}
-        validate={(v) => {
-          const t = v.trim();
-          if (t === '') return 'Enter a remote name';
-          if (/\s/.test(t)) return 'Remote name cannot contain whitespace';
-          if (t !== pendingRenameRemote?.name && remotes.some((r) => r.name === t))
-            return 'A remote with that name already exists';
-          return null;
-        }}
-        onSubmit={(v) => {
-          const target = pendingRenameRemote;
-          setPendingRenameRemote(null);
-          if (target !== null) void handleRenameRemote(target.name, v.trim());
-        }}
-        onCancel={() => setPendingRenameRemote(null)}
+      <CleanupDialogs
+        repoId={props.repoId}
+        mutating={props.mutating}
+        headBranch={props.headBranch}
+        branches={props.branches}
+        staleCleanupOpen={props.staleCleanupOpen}
+        setStaleCleanupOpen={props.setStaleCleanupOpen}
+        refetchBranches={props.refetchBranches}
+        refetchGraph={props.refetchGraph}
+        whatChangedOpen={props.whatChangedOpen}
+        setWhatChangedOpen={props.setWhatChangedOpen}
+        runDigest={props.runDigest}
+        rebasePlan={props.rebasePlan}
+        setRebasePlan={props.setRebasePlan}
+        rebasePlanError={props.rebasePlanError}
+        setRebasePlanError={props.setRebasePlanError}
+        handleStartInteractiveRebase={props.handleStartInteractiveRebase}
+        menu={props.menu}
+        closeMenu={props.closeMenu}
       />
-
-      {/* P22: remove a remote (drops its tracking refs locally). */}
-      <ConfirmDialog
-        open={pendingRemoveRemote !== null}
-        title="Remove remote"
-        confirmLabel="Remove remote"
-        busy={mutating}
-        onConfirm={() => {
-          const name = pendingRemoveRemote;
-          setPendingRemoveRemote(null);
-          if (name !== null) void handleRemoveRemote(name);
-        }}
-        onCancel={() => setPendingRemoveRemote(null)}
-      >
-        <div>Remove remote "<span className="mono">{pendingRemoveRemote ?? ''}</span>"?</div>
-        <div className="dialog-body-note">
-          Removes the remote and its remote-tracking branches from this repo. The server is not
-          affected.
-        </div>
-      </ConfirmDialog>
-
-      {/* P28 §7: "What changed" range picker → runDigest → AiOutputPanel. */}
-      <WhatChangedDialog
-        open={whatChangedOpen}
-        branchNames={[
-          ...(branches?.local.map((b) => b.name) ?? []),
-          ...(branches?.remote.map((b) => b.name) ?? []),
-        ]}
-        currentBranch={headBranch?.name ?? null}
-        onSubmit={(range, title) => {
-          setWhatChangedOpen(false);
-          runDigest(range, title);
-        }}
-        onCancel={() => setWhatChangedOpen(false)}
-      />
-
-      {/* P27 §6.5: new worktree — branch picker + derived-path preview. */}
-      <WorktreeCreateDialog
-        open={newWorktreeOpen}
-        busy={mutating}
-        repoId={repoId}
-        localBranches={branches?.local.map((b) => b.name) ?? []}
-        usedBranches={worktrees.map((w) => w.branch).filter((b): b is string => b !== null)}
-        container={worktreeContainerPreview(worktrees, repoId)}
-        onSubmit={handleAddWorktree}
-        onCancel={() => setNewWorktreeOpen(false)}
-      />
-
-      {/* P31 §7: worktree × AI-context matrix. Activation inside routes through
-          the ProfileActivateDialog preview gate; the matrix refetches itself. */}
-      <WorktreeContextDialog
-        open={worktreeContextOpen}
-        repoId={repoId}
-        onClose={() => setWorktreeContextOpen(false)}
-      />
-
-      {/* P27 §6.4: lock a worktree with an optional reason. */}
-      <PromptDialog
-        open={pendingWorktreeLock !== null}
-        title="Lock worktree"
-        label="Reason (optional)"
-        placeholder="pinned for QA"
-        confirmLabel="Lock"
-        busy={mutating}
-        onSubmit={(v) => {
-          const name = pendingWorktreeLock;
-          setPendingWorktreeLock(null);
-          if (name !== null) {
-            const reason = v.trim();
-            void handleLockWorktree(name, reason === '' ? undefined : reason);
-          }
-        }}
-        onCancel={() => setPendingWorktreeLock(null)}
-      />
-
-      {/* P27 §6.6: remove a worktree — names the exact directory deleted. */}
-      <ConfirmDialog
-        open={pendingWorktreeRemove !== null}
-        title="Remove worktree"
-        confirmLabel="Remove worktree"
-        busy={mutating}
-        onConfirm={() => {
-          const target = pendingWorktreeRemove;
-          setPendingWorktreeRemove(null);
-          if (target !== null) void handleRemoveWorktree(target.name);
-        }}
-        onCancel={() => setPendingWorktreeRemove(null)}
-      >
-        <div>
-          Remove worktree "<span className="mono">{pendingWorktreeRemove?.name ?? ''}</span>"?
-        </div>
-        <div className="dialog-body-note">
-          This permanently deletes the directory{' '}
-          <span className="mono">{pendingWorktreeRemove?.absPath ?? ''}</span> from disk. Bonsai
-          refuses if the worktree has uncommitted changes.
-        </div>
-      </ConfirmDialog>
-
-      {/* P23b: interactive-rebase plan editor. */}
-      <RebasePlanEditor
-        open={rebasePlan !== null}
-        ontoLabel={rebasePlan?.ontoLabel ?? ''}
-        ontoOid={rebasePlan?.ontoOid ?? ''}
-        initialTodos={rebasePlan?.initialTodos ?? []}
-        summaries={rebasePlan?.summaries ?? {}}
-        mutating={mutating}
-        error={rebasePlanError}
-        onCancel={() => {
-          setRebasePlan(null);
-          setRebasePlanError(null);
-        }}
-        onStart={(todos) => {
-          if (rebasePlan !== null) {
-            void handleStartInteractiveRebase(rebasePlan.ontoOid, rebasePlan.ontoLabel, todos);
-          }
-        }}
-      />
-
-      {menu !== null && (
-        <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={closeMenu} />
-      )}
     </>
   );
 }
