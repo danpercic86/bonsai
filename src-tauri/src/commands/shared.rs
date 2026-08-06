@@ -1,0 +1,80 @@
+//! Shared imports (re-exported) and the `repo_path` helper for the
+//! `commands` module, split from the former monolithic `commands.rs`.
+
+pub(crate) use tauri::Emitter;
+
+pub(crate) use bonsai_core::ai::{self, AiAvailability, RunOpts};
+pub(crate) use bonsai_core::assets::{
+    self, AgentAsset, AgentAssetInput, AgentAssetInventory, AgentAssetKind, AiAssetInventory,
+    AiGeneratedAsset, AssetContent, ContextProfile, ProfileActivation, ProfilePreviewEntry,
+    ProfileStore, WorktreeContextStatus,
+};
+pub(crate) use bonsai_core::error::AppError;
+pub(crate) use bonsai_core::git::ai_commit::{self, CommitMessageProposal};
+pub(crate) use bonsai_core::git::ai_explain::{self, AiAnalysis, AiAnalysisMode, AiDiffTarget, AiDigestRange};
+pub(crate) use bonsai_core::git::ai_resolve::{self, AiResolveProposal};
+pub(crate) use bonsai_core::git::ai_summary::{self, AiSummary};
+pub(crate) use bonsai_core::git::bisect::{self, BisectOutcome};
+pub(crate) use bonsai_core::git::blame::{self, BlameLine, FileHistoryEntry};
+pub(crate) use bonsai_core::git::reflog::{self, ReflogEntry};
+pub(crate) use bonsai_core::git::branches::{self, BranchesSnapshot, CheckoutResult, CreateBranchHereResult};
+pub(crate) use bonsai_core::git::cherrypick::{self, CherrypickOutcome};
+pub(crate) use bonsai_core::git::clone::{clone_repo as clone_repo_core, init_repo as init_repo_core, CloneProgress};
+pub(crate) use bonsai_core::git::commit::{amend_commit, create_commit, CommitResult};
+pub(crate) use bonsai_core::git::config::{self, ConfigLevelArg, ConfigView};
+pub(crate) use bonsai_core::git::conflict::{self, ConflictEntry, ConflictFile, ConflictResolution};
+pub(crate) use bonsai_core::git::diff::{
+    commit_diff, commit_file_diff, compare_head_diff, compare_head_file_diff, workdir_file_diff,
+    CommitDiff, CompareDiff, FileDiff,
+};
+pub(crate) use bonsai_core::git::merge::{self, MergeOutcome};
+pub(crate) use bonsai_core::git::opstate::{read_op_state, RepoOpState};
+pub(crate) use bonsai_core::git::rebase::{self, RebaseOutcome};
+pub(crate) use bonsai_core::git::rebase_interactive::{self, RebaseTodoOp};
+pub(crate) use bonsai_core::git::discard::{
+    discard_paths as discard_paths_core, discard_paths_force as discard_paths_force_core,
+};
+pub(crate) use bonsai_core::git::discard_partial::discard_partial as discard_partial_core;
+pub(crate) use bonsai_core::git::remote::{
+    add_remote as add_remote_core, fetch_all, force_push_with_lease,
+    list_remotes as list_remotes_core, pull_ff, push_current,
+    remove_remote as remove_remote_core, rename_remote as rename_remote_core,
+    set_remote_url as set_remote_url_core, FetchResult, PullResult, PushResult, RemoteInfo,
+};
+pub(crate) use bonsai_core::git::repo::{read_repo_info, RepoInfo};
+pub(crate) use bonsai_core::git::reset::{reset_branch as reset_branch_core, ResetMode};
+pub(crate) use bonsai_core::git::revert::{self, RevertOutcome};
+pub(crate) use bonsai_core::git::stage::{stage_paths, unstage_paths};
+pub(crate) use bonsai_core::git::stale::{self, BranchDeleteResult, StaleReport};
+pub(crate) use bonsai_core::git::stage_partial::{
+    stage_partial as stage_partial_core, unstage_partial as unstage_partial_core, LineSelection,
+};
+pub(crate) use bonsai_core::git::stash::{self, ApplyStashOutcome, CreateStashResult, StashEntry, StashScope};
+pub(crate) use bonsai_core::git::status::{read_status, StatusSnapshot};
+pub(crate) use bonsai_core::git::submodule::{self, SubmoduleInfo};
+pub(crate) use bonsai_core::git::worktree::{self, WorktreeInfo};
+pub(crate) use bonsai_core::git::worktree_copy::{self, CopyCandidate, CopyPlanEntry, CopySelection};
+pub(crate) use bonsai_core::git::tags;
+pub(crate) use bonsai_core::graph::{compute_graph, GraphLayout};
+pub(crate) use bonsai_core::health::{collect_repo_health, RepoHealth};
+pub(crate) use crate::scheduler::{self, JobKind, JobOutcome, SchedulerState};
+pub(crate) use crate::settings::{
+    self, clamp_auto_fetch, clamp_graph_prefs, clamp_health_refresh, clamp_pane_widths,
+    AiAutonomy, AutoFetch, GraphPrefs, HealthRefresh, IdentityProfile, ListView, PaneWidths,
+    RecentRepo, ThemeChoice,
+};
+pub(crate) use crate::state::{AppState, RepoEntry};
+pub(crate) use crate::watcher::spawn_watcher;
+
+/// Canonical workdir path for `repo_id`, or `NoRepo` if it isn't open
+/// (P3e contract §3).
+pub(crate) fn repo_path(state: &AppState, repo_id: &str) -> Result<std::path::PathBuf, AppError> {
+    let repos = state
+        .repos
+        .lock()
+        .map_err(|_| AppError::Other("state lock poisoned".to_string()))?;
+    repos
+        .get(repo_id)
+        .map(|e| e.path.clone())
+        .ok_or(AppError::NoRepo)
+}
