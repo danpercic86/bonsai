@@ -4,12 +4,16 @@ import {
   BisectIcon,
   BranchIcon,
   CheckoutIcon,
+  CherryPickIcon,
   CompareIcon,
   CopyIcon,
   DeleteIcon,
   HistoryIcon,
   MergeIcon,
   RebaseIcon,
+  RebaseInteractiveIcon,
+  ResetIcon,
+  RevertIcon,
   StashApplyIcon,
   StashPopIcon,
   SummarizeIcon,
@@ -245,18 +249,27 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
         disabled: gate,
         onSelect: () => void handleMergeBranch(name),
       });
+      // Grouped rebase: click the parent = standard rebase (default); the flyout
+      // exposes Standard / Interactive… (P23b §8.2 interactive rebase onto tip).
       items.push({
         label: `Rebase ${cur} onto ${name}`,
         icon: createElement(RebaseIcon),
         disabled: gate,
         onSelect: () => void handleRebaseBranch(name),
-      });
-      // P23b §8.2: interactive rebase of the current branch onto this ref's tip.
-      items.push({
-        label: `Rebase ${cur} onto ${name} (interactive)…`,
-        icon: createElement(RebaseIcon),
-        disabled: gate,
-        onSelect: () => void openRebasePlan({ ontoOid: tip, ontoLabel: name }),
+        children: [
+          {
+            label: 'Standard',
+            icon: createElement(RebaseIcon),
+            disabled: gate,
+            onSelect: () => void handleRebaseBranch(name),
+          },
+          {
+            label: 'Interactive…',
+            icon: createElement(RebaseInteractiveIcon),
+            disabled: gate,
+            onSelect: () => void openRebasePlan({ ontoOid: tip, ontoLabel: name }),
+          },
+        ],
       });
     }
     // P47 (Part A): the shared oid-based commit actions (Create branch/tag here,
@@ -270,6 +283,7 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
       label: 'Delete',
       icon: createElement(DeleteIcon),
       disabled: gate,
+      tone: 'danger',
       onSelect: () =>
         kind === 'remoteBranch' ? setPendingDeleteRemote(name) : setPendingDeleteBranch(name),
     });
@@ -457,16 +471,37 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     if (targetOid === head.oid) return [];
     const gate = mutating || opActive;
     const b = headBranch?.name ?? 'HEAD';
-    const make = (mode: ResetMode, label: string): ContextMenuItem => ({
-      label,
-      icon: createElement(RebaseIcon),
-      disabled: gate,
-      onSelect: () => setPendingReset({ oid: targetOid, mode }),
-    });
+    // Grouped reset: click the parent = mixed reset (default); the flyout exposes
+    // Soft / Mixed / Hard…. Hard is suffixed "…" (extra-warning ConfirmDialog) and
+    // flagged danger. Returned as a single-element array so callers keep spreading.
     return [
-      make('soft', `Reset ${b} to here (soft)`),
-      make('mixed', `Reset ${b} to here (mixed)`),
-      make('hard', `Reset ${b} to here (hard)…`),
+      {
+        label: `Reset ${b} to here`,
+        icon: createElement(ResetIcon),
+        disabled: gate,
+        onSelect: () => setPendingReset({ oid: targetOid, mode: 'mixed' }),
+        children: [
+          {
+            label: 'Soft',
+            icon: createElement(ResetIcon),
+            disabled: gate,
+            onSelect: () => setPendingReset({ oid: targetOid, mode: 'soft' }),
+          },
+          {
+            label: 'Mixed',
+            icon: createElement(ResetIcon),
+            disabled: gate,
+            onSelect: () => setPendingReset({ oid: targetOid, mode: 'mixed' }),
+          },
+          {
+            label: 'Hard…',
+            icon: createElement(ResetIcon),
+            disabled: gate,
+            tone: 'danger',
+            onSelect: () => setPendingReset({ oid: targetOid, mode: 'hard' }),
+          },
+        ],
+      },
     ];
   }
 
@@ -508,13 +543,13 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
       items.push(
         {
           label: 'Cherry-pick onto current…',
-          icon: createElement(RebaseIcon),
+          icon: createElement(CherryPickIcon),
           disabled: gate,
           onSelect: () => void handleCherrypick(oid),
         },
         {
           label: 'Revert commit',
-          icon: createElement(RebaseIcon),
+          icon: createElement(RevertIcon),
           disabled: gate,
           onSelect: () => void handleRevert(oid),
         },
@@ -538,7 +573,7 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
             // selected commit (it becomes the `onto` base). Gated like cherry-pick.
             {
               label: 'Interactive rebase from here…',
-              icon: createElement(RebaseIcon),
+              icon: createElement(RebaseInteractiveIcon),
               disabled: gate,
               onSelect: () => void openRebasePlan({ ontoOid: oid, ontoLabel: shortOid(oid) }),
             },

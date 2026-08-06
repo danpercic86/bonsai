@@ -324,6 +324,45 @@ body {
   cursor: default;
 }
 
+/* Destructive actions (Delete, hard reset): red icon + label. The icon inherits
+   currentColor, so the glyph reddens with the label; hover keeps the --selection
+   background (--danger text stays legible on it in both themes). */
+.context-menu-item[data-tone='danger'] {
+  color: var(--danger);
+}
+
+/* Row wrapper: the position anchor for a flyout submenu. Column flex so the
+   button stretches to full width (it is no longer a direct child of .context-menu). */
+.context-menu-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Label takes the middle space; ellipsizes long branch names. */
+.context-menu-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Trailing "has submenu" chevron, pushed to the right edge. */
+.context-menu-chevron {
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--text-3);
+  font-size: 10px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+/* Flyout submenu: absolutely positioned relative to its .context-menu-row anchor;
+   left/right/top offsets are set inline by the component (with viewport clamping). */
+.context-menu--sub {
+  position: absolute;
+}
+
 /* ---------- Empty-state recents list (P1 §10.2) ---------- */
 
 .recents-list {

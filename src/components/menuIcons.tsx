@@ -78,6 +78,66 @@ export function RebaseIcon() {
   );
 }
 
+/** Rebase (interactive) — the rebase arc plus a short todo-list (edit-plan cue). */
+export function RebaseInteractiveIcon() {
+  return (
+    <svg {...svgProps}>
+      {/* lifted branch arc on the left (echoes RebaseIcon) */}
+      <path d="M2 13 C2 6.5 6 6.5 6 13" />
+      {/* todo-list lines on the right (the editable plan) */}
+      <path d="M9 5 H14" />
+      <path d="M9 8.5 H14" />
+      <path d="M9 12 H14" />
+    </svg>
+  );
+}
+
+/** Reset — a branch pointer rewound onto a target marker dot (distinct from the
+ *  HistoryIcon clock and the RebaseIcon arc). */
+export function ResetIcon() {
+  return (
+    <svg {...svgProps}>
+      {/* destination marker (solid) the branch is reset onto */}
+      <circle cx="3.5" cy="8" r="1.6" fill="currentColor" stroke="none" />
+      {/* current tip (hollow) */}
+      <circle cx="12.5" cy="8" r="1.5" />
+      {/* line rewinding back to the marker */}
+      <path d="M11 8 H5.6" />
+      {/* arrowhead pointing back-left onto the marker */}
+      <path d="M7.2 5.8 L5.2 8 L7.2 10.2" />
+    </svg>
+  );
+}
+
+/** Cherry-pick — a pair of cherries (circles) with stems and a leaf. */
+export function CherryPickIcon() {
+  return (
+    <svg {...svgProps}>
+      {/* two cherries */}
+      <circle cx="5" cy="11.5" r="2.3" />
+      <circle cx="10.5" cy="12" r="2" />
+      {/* stems converging to a top point */}
+      <path d="M5 9.2 C6 6 8.5 4 11.5 2.8" />
+      <path d="M10.5 10 C10 7 10.3 4.6 11.5 2.8" />
+      {/* leaf */}
+      <path d="M11.5 2.8 C13 2 14.2 2.9 13.8 4.4 C12.3 4.7 11.5 4 11.5 2.8 Z" />
+    </svg>
+  );
+}
+
+/** Revert — a counter-clockwise undo arrow (open loop + back-pointing head),
+ *  distinct from the clock-based HistoryIcon. */
+export function RevertIcon() {
+  return (
+    <svg {...svgProps}>
+      {/* counter-clockwise loop, open at the top-left */}
+      <path d="M5.4 4.2 A4.6 4.6 0 1 0 9.2 3.4" />
+      {/* arrowhead at the open end, pointing back */}
+      <path d="M5.6 1.9 L4.7 4.5 L7.4 5.1" />
+    </svg>
+  );
+}
+
 /** Compare — two side-by-side panes (split diff). */
 export function CompareIcon() {
   return (
