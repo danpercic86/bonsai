@@ -64,9 +64,23 @@ mock) → **P49b** frontend (Settings terminal-template section + context-menu/t
 VS Code family only (else `editor_command`); OQ3 single per-machine template string (auto-detected
 default per current OS); OQ4 add `AppError::ExternalToolFailed(String)`. Plugin: self-contained Rust
 `std::process::Command` — no plugin/capability change (`capabilities/default.json` unchanged).
-**Current step:** P49a DONE (reviewer APPROVE, 0 must-fix/should-fix; nits deferred: missing-path
-command test → tester, `wt` alias pick → native checkpoint). Committing, then P49b (frontend UI +
-entry points).
+- **P49a** (reviewer APPROVE, 0 must-fix/should-fix) — committed `20ec096`. core `external.rs`
+  (TargetOs-branched builders + CommandRunner/SpawnRunner + ladders), `ExternalToolFailed`, settings
+  `terminal_command`/`editor_command`, 3 commands (128), IPC + mock (`#fail` sentinel). 18 core + 2
+  command tests. Nits deferred: missing-path command test → tester; `wt` alias pick → native checkpoint.
+- **P49b** (reviewer APPROVE, 0 must-fix/should-fix) — `SettingsExternalToolsSection.tsx` + shared
+  `externalToolsItems(path)` in `workspaceMenus.ts` (spread into worktree/submodule menus) +
+  App-owned per-tab context menu + toolbar "Open externally" dropdown + container handlers →
+  error toasts. Deviations (sound, reviewer-validated): toolbar takes `ContextMenuItem[]`; tab menu
+  owned by App (TabStrip is App-level).
+**P49 AI GATE PASSED** (browser harness, mock :1420, zero console errors): EXTERNAL TOOLS settings
+section renders (terminal/editor inputs + per-field reset + `{path}` "separate argument, never a
+shell" helper); toolbar "Open externally" → Open in terminal / Reveal in file manager / Open in
+editor, click = silent success; tab right-click → same 3-item menu. Success path proven live;
+`#fail` error-toast + within-session persistence reviewer-verified (no ipc handle exposed to the
+harness). tsc + pnpm build clean.
+**Current step:** P49b done + AI gate passed — running tester (full workspace regression + add the
+missing-path command test the reviewer flagged), then USER CHECKPOINT.
 
 ## P48 — New Worktree dialog UX (searchable branch picker, wider dialog, per-category select-all) — **DONE (AI gate + USER CHECKPOINT confirmed)** (2026-08-06)
 

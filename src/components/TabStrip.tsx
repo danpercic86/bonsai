@@ -35,6 +35,9 @@ export interface TabStripProps {
   /** P3e §5.6: lifts menu-open like RepoSwitcher.onOpenChange — App suppresses
    *  global shortcuts while open and its Esc effect skips the consumed key. */
   onMenuOpenChange?(open: boolean): void;
+  /** P49b: right-click a tab pill → open the "Open externally" menu for that
+   *  tab's repo path. App owns the ContextMenu (the strip spans all tabs). */
+  onTabMenu?(path: string, x: number, y: number): void;
 }
 
 /** P3e §5.6: the multi-tab header strip (replaces RepoSwitcher). One pill per
@@ -53,6 +56,7 @@ export function TabStrip({
   onClone,
   onInit,
   onMenuOpenChange,
+  onTabMenu,
 }: TabStripProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   // Drag-and-drop reorder (issue 4): source index recorded on drag start, and
@@ -101,6 +105,11 @@ export function TabStrip({
               `${dropTarget === index ? ' tab-drop-target' : ''}`
             }
             draggable
+            onContextMenu={(e) => {
+              if (onTabMenu === undefined) return;
+              e.preventDefault();
+              onTabMenu(t.path, e.clientX, e.clientY);
+            }}
             onDragStart={(e) => {
               dragFrom.current = index;
               e.dataTransfer.effectAllowed = 'move';

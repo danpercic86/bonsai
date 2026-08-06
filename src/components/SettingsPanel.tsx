@@ -20,6 +20,7 @@ import type {
 } from '../ipc';
 import { type McpScope } from '../lib/mcpAddCommand';
 import type { UpdateUiState } from '../hooks/useUpdateController';
+import { SettingsExternalToolsSection } from './SettingsExternalToolsSection';
 import { SettingsGitConfigSection } from './SettingsGitConfigSection';
 import { SettingsProfilesSection } from './SettingsProfilesSection';
 import { SettingsMcpSection } from './SettingsMcpSection';
@@ -88,6 +89,10 @@ export interface SettingsPanelProps {
   /** P44: named identity profiles (global app setting). CRUD persists via
    *  `onChange({ profiles })`; Apply is owned by the section's own IPC. */
   profiles: IdentityProfile[];
+  /** P49b: external-tool command templates ('' ⇒ auto-detect). Threaded from
+   *  App's UiSettings state; persisted via `onChange` like every other setting. */
+  terminalCommand: string;
+  editorCommand: string;
   /** Run `claude mcp add` for the running server at the given scope (P16).
    *  `'user'` = global, `'local'` = the open repo (private). Resolves when the
    *  run settles so the panel can clear its in-flight state (App still owns the
@@ -199,6 +204,8 @@ export function SettingsPanel({
   repoPath,
   configInitialFocus,
   profiles,
+  terminalCommand,
+  editorCommand,
   onRegisterMcp,
   onShowOnboarding,
   updateCurrentVersion,
@@ -413,6 +420,13 @@ export function SettingsPanel({
 
         {/* --- Git config (P40b) --- */}
         <SettingsGitConfigSection repoId={repoPath} initialFocus={configInitialFocus} />
+
+        {/* --- External tools (P49b) --- */}
+        <SettingsExternalToolsSection
+          terminalCommand={terminalCommand}
+          editorCommand={editorCommand}
+          onChange={onChange}
+        />
 
         {/* --- Identity profiles (P44) --- */}
         <SettingsProfilesSection

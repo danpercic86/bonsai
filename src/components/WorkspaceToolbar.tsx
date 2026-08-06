@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react';
 import { minutesLabel } from './workspaceUtils';
 import { ContextMenu } from './ContextMenu';
+import type { ContextMenuItem } from './ContextMenu';
+import { FolderOpenIcon } from './menuIcons';
 import type { BranchInfo, JobStatus } from '../ipc';
 
 export interface WorkspaceToolbarProps {
@@ -28,6 +30,10 @@ export interface WorkspaceToolbarProps {
   /** True once HEAD points at a commit (not unborn) — gates the reflog button. */
   headBorn: boolean;
   onRefresh(): void;
+  /** P49b: the shared "Open externally" trio for the current repo path, already
+   *  bound to RepoWorkspace's launch handlers. Rendered behind an always-enabled
+   *  dropdown button (external launches never touch git state, so no op-gating). */
+  externalItems: ContextMenuItem[];
 }
 
 /** P3e: the top workspace toolbar (fetch/pull/push + auto-fetch readout + AI
@@ -54,15 +60,25 @@ export function WorkspaceToolbar({
   onViewHeadReflog,
   headBorn,
   onRefresh,
+  externalItems,
 }: WorkspaceToolbarProps) {
   // P37b: anchor for the Push caret dropdown (positioned at the caret's rect).
   const caretRef = useRef<HTMLButtonElement>(null);
   const [pushMenu, setPushMenu] = useState<{ x: number; y: number } | null>(null);
+  // P49b: anchor + open-state for the "Open externally" dropdown (same idiom).
+  const externalRef = useRef<HTMLButtonElement>(null);
+  const [externalMenu, setExternalMenu] = useState<{ x: number; y: number } | null>(null);
 
   const openPushMenu = () => {
     const rect = caretRef.current?.getBoundingClientRect();
     if (rect === undefined) return;
     setPushMenu({ x: rect.left, y: rect.bottom + 2 });
+  };
+
+  const openExternalMenu = () => {
+    const rect = externalRef.current?.getBoundingClientRect();
+    if (rect === undefined) return;
+    setExternalMenu({ x: rect.right, y: rect.bottom + 2 });
   };
 
   const pushTitle =
@@ -169,16 +185,31 @@ export function WorkspaceToolbar({
             ↺ Reflog
           </button>
         </div>
-        <button
-          type="button"
-          className="btn-icon toolbar-refresh"
-          disabled={refreshing || statusLoading || graphLoading || mutating}
-          onClick={() => onRefresh()}
-          title="Refresh (Ctrl+R)"
-          aria-label="Refresh"
-        >
-          {'⟳'}
-        </button>
+        <div className="toolbar-right">
+          <button
+            ref={externalRef}
+            type="button"
+            className="btn-icon toolbar-external"
+            onClick={() => openExternalMenu()}
+            title="Open this repository externally (terminal / file manager / editor)"
+            aria-label="Open externally"
+            aria-haspopup="menu"
+          >
+            <span className="toolbar-external-icon" aria-hidden="true">
+              <FolderOpenIcon />
+            </span>
+          </button>
+          <button
+            type="button"
+            className="btn-icon toolbar-refresh"
+            disabled={refreshing || statusLoading || graphLoading || mutating}
+            onClick={() => onRefresh()}
+            title="Refresh (Ctrl+R)"
+            aria-label="Refresh"
+          >
+            {'⟳'}
+          </button>
+        </div>
       </div>
       {(remoteOp !== null || refreshing) && <div className="header-progress" aria-hidden="true" />}
       {pushMenu !== null && (
@@ -192,6 +223,14 @@ export function WorkspaceToolbar({
             },
           ]}
           onClose={() => setPushMenu(null)}
+        />
+      )}
+      {externalMenu !== null && (
+        <ContextMenu
+          x={externalMenu.x}
+          y={externalMenu.y}
+          items={externalItems}
+          onClose={() => setExternalMenu(null)}
         />
       )}
     </>

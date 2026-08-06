@@ -8,6 +8,8 @@ import {
   CompareIcon,
   CopyIcon,
   DeleteIcon,
+  EditorIcon,
+  FolderOpenIcon,
   HistoryIcon,
   MergeIcon,
   RebaseIcon,
@@ -18,6 +20,7 @@ import {
   StashPopIcon,
   SummarizeIcon,
   TagIcon,
+  TerminalIcon,
 } from './menuIcons';
 import { shortOid } from './workspaceUtils';
 import { errorMessage } from '../utils/errors';
@@ -34,6 +37,45 @@ import type {
   WorktreeInfo,
 } from '../ipc';
 import type { GraphContextTarget } from '../graph/GraphCanvas';
+
+/** P49: the three external-launch handlers a filesystem path is opened with.
+ *  Each takes the target path so one handler set drives every entry point
+ *  (row menus, tab menu, toolbar). Launches never touch git state, so items
+ *  built from these are NEVER gated by `mutating`/`opActive`. */
+export interface ExternalToolsHandlers {
+  onOpenInTerminal(path: string): void;
+  onRevealInFileManager(path: string): void;
+  onOpenInEditor(path: string): void;
+}
+
+/** P49: the shared "Open externally" items for a filesystem `path`. Standalone
+ *  (not a closure) so App can build the identical trio for the tab context menu
+ *  without a full `createWorkspaceMenus` instance. Always enabled. */
+export function externalToolsItems(
+  path: string,
+  h: ExternalToolsHandlers,
+): ContextMenuItem[] {
+  return [
+    {
+      label: 'Open in terminal',
+      icon: createElement(TerminalIcon),
+      disabled: false,
+      onSelect: () => h.onOpenInTerminal(path),
+    },
+    {
+      label: 'Reveal in file manager',
+      icon: createElement(FolderOpenIcon),
+      disabled: false,
+      onSelect: () => h.onRevealInFileManager(path),
+    },
+    {
+      label: 'Open in editor',
+      icon: createElement(EditorIcon),
+      disabled: false,
+      onSelect: () => h.onOpenInEditor(path),
+    },
+  ];
+}
 
 /** P3e §menu-extraction: the current state + handlers a menu build needs. Every
  *  field mirrors the value/callback the inline builders closed over before the
@@ -86,6 +128,11 @@ export interface WorkspaceMenuDeps {
   bisectActive: boolean;
   handleMarkBisectBad(oid: string): void;
   handleStartBisect(bad: string, good: string): void;
+  // P49: external-tool launchers (terminal / file manager / editor). Threaded
+  // through so row menus can spread the shared `externalToolsItems`.
+  onOpenInTerminal(path: string): void;
+  onRevealInFileManager(path: string): void;
+  onOpenInEditor(path: string): void;
 }
 
 export interface WorkspaceMenus {
@@ -98,6 +145,9 @@ export interface WorkspaceMenus {
   resetMenuItems(targetOid: string): ContextMenuItem[];
   commitMenuItems(oid: string): ContextMenuItem[];
   buildContextItems(target: GraphContextTarget): ContextMenuItem[];
+  /** P49: the shared "Open externally" trio for a path, bound to this deps'
+   *  handlers. Reused by the toolbar dropdown; spread into row menus below. */
+  externalToolsItems(path: string): ContextMenuItem[];
 }
 
 /** Factory over the current deps returning every context-menu item-array
@@ -151,7 +201,17 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     bisectActive,
     handleMarkBisectBad,
     handleStartBisect,
+    onOpenInTerminal,
+    onRevealInFileManager,
+    onOpenInEditor,
   } = deps;
+
+  // P49: one handler bundle reused by every external-launch entry point.
+  const extHandlers: ExternalToolsHandlers = {
+    onOpenInTerminal,
+    onRevealInFileManager,
+    onOpenInEditor,
+  };
 
   // P6 §4.1: the single shared builder for a branch/remote-tracking ref menu,
   // used identically by the graph pills AND the sidebar rows. Resolves tip +
@@ -350,6 +410,9 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
         disabled: sub.status === 'uninitialized',
         onSelect: () => onOpenRepoPath(sub.absPath),
       },
+      // P49: launch external tools at the submodule's absolute workdir. Always
+      // enabled (they touch no git state) — never gated by `gate` above.
+      ...externalToolsItems(sub.absPath, extHandlers),
     ];
   }
 
@@ -388,6 +451,9 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
         disabled: gate || wt.isMain || wt.isCurrent || wt.locked,
         onSelect: () => setPendingWorktreeRemove({ name: wt.name, absPath: wt.absPath }),
       },
+      // P49: launch external tools at the worktree's absolute workdir. Always
+      // enabled — never gated by `gate` above.
+      ...externalToolsItems(wt.absPath, extHandlers),
     ];
   }
 
@@ -652,5 +718,6 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     resetMenuItems,
     commitMenuItems,
     buildContextItems,
+    externalToolsItems: (path: string) => externalToolsItems(path, extHandlers),
   };
 }

@@ -241,3 +241,39 @@ export function HistoryIcon() {
     </svg>
   );
 }
+
+/** Open in terminal (P49) — a console window with a prompt caret + command line. */
+export function TerminalIcon() {
+  return (
+    <svg {...svgProps}>
+      <rect x="2" y="3" width="12" height="10" rx="1.4" />
+      {/* prompt caret */}
+      <path d="M4.5 6.5 L6.5 8.5 L4.5 10.5" />
+      {/* command line */}
+      <path d="M8 10.5 H11" />
+    </svg>
+  );
+}
+
+/** Reveal in file manager (P49) — an open folder with a lifted front flap,
+ *  distinct from the closed-folder cues elsewhere. */
+export function FolderOpenIcon() {
+  return (
+    <svg {...svgProps}>
+      {/* back tab of the folder */}
+      <path d="M2 4.5 a1 1 0 0 1 1 -1 H6 L7.5 5 H13 a1 1 0 0 1 1 1 V7 H2 Z" />
+      {/* open front flap */}
+      <path d="M2.4 7 H14 L12.4 12.2 a1 1 0 0 1 -0.95 0.8 H3.2 a1 1 0 0 1 -0.98 -0.8 Z" />
+    </svg>
+  );
+}
+
+/** Open in editor (P49) — a `</>` code glyph (VS Code family auto-detect). */
+export function EditorIcon() {
+  return (
+    <svg {...svgProps}>
+      <path d="M6 4.5 L2.5 8 L6 11.5" />
+      <path d="M10 4.5 L13.5 8 L10 11.5" />
+    </svg>
+  );
+}

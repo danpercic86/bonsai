@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CloneDialog, deriveRepoName, joinRepoPath } from './components/CloneDialog';
 import { ConfirmDialog } from './components/ConfirmDialog';
+import { ContextMenu } from './components/ContextMenu';
 import { RepoWorkspace } from './components/RepoWorkspace';
 import { SettingsPanel } from './components/SettingsPanel';
+import { externalToolsItems } from './components/workspaceMenus';
 import { AiAssetsPanel } from './components/AiAssetsPanel';
 import { RepoHealthPanel } from './components/RepoHealthPanel';
 import { OnboardingOverlay } from './components/OnboardingOverlay';
@@ -163,6 +165,13 @@ export default function App() {
   // P44: named identity profiles (global). Source of truth for the Settings
   // section; persisted via handleSettingsChange like every other setting.
   const [profiles, setProfiles] = useState<IdentityProfile[]>([]);
+  // P49b: external-tool command templates ('' ⇒ backend auto-detects per-OS).
+  // Threaded into the Settings section; persisted via handleSettingsChange.
+  const [terminalCommand, setTerminalCommand] = useState('');
+  const [editorCommand, setEditorCommand] = useState('');
+  // P49b: per-tab "Open externally" context menu (App owns it — the strip spans
+  // all tabs). Holds the right-clicked tab's repo path + anchor point.
+  const [tabMenu, setTabMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   // P42b: the update state machine (check/notify/download/restart) lives here so
   // App only wires the notification, dialog, and Settings section to it.
   const update = useUpdateController();
@@ -364,6 +373,8 @@ export default function App() {
       if (patch.mcpWriteConsented !== undefined) setMcpWriteConsented(patch.mcpWriteConsented);
       if (patch.autoCheckUpdates !== undefined) setAutoCheckUpdates(patch.autoCheckUpdates);
       if (patch.profiles !== undefined) setProfiles(patch.profiles);
+      if (patch.terminalCommand !== undefined) setTerminalCommand(patch.terminalCommand);
+      if (patch.editorCommand !== undefined) setEditorCommand(patch.editorCommand);
       pendingSettingsPatchRef.current = { ...pendingSettingsPatchRef.current, ...patch };
       if (settingsSaveTimerRef.current !== null) {
         window.clearTimeout(settingsSaveTimerRef.current);
@@ -375,6 +386,28 @@ export default function App() {
           .setUiSettings(merged)
           .catch((e) => pushToast('error', `Could not save settings: ${errorMessage(e)}`));
       }, 300);
+    },
+    [pushToast],
+  );
+
+  // P49b: external-tool launchers for the per-tab context menu (the strip is
+  // App-owned, spanning all tabs). Same shape as RepoWorkspace's — never gated
+  // by any repo op; failures surface via the shared AppError→toast path.
+  const openInTerminal = useCallback(
+    (path: string) => {
+      void ipc.openInTerminal(path).catch((e) => pushToast('error', errorMessage(e)));
+    },
+    [pushToast],
+  );
+  const revealInFileManager = useCallback(
+    (path: string) => {
+      void ipc.revealInFileManager(path).catch((e) => pushToast('error', errorMessage(e)));
+    },
+    [pushToast],
+  );
+  const openInEditor = useCallback(
+    (path: string) => {
+      void ipc.openInEditor(path).catch((e) => pushToast('error', errorMessage(e)));
     },
     [pushToast],
   );
@@ -616,6 +649,8 @@ export default function App() {
         setMcpWriteConsented(s.mcpWriteConsented);
         setAutoCheckUpdates(s.autoCheckUpdates);
         setProfiles(s.profiles);
+        setTerminalCommand(s.terminalCommand);
+        setEditorCommand(s.editorCommand);
         if (!s.onboardingSeen) showOnboard = true;
         // P42b D4: auto-check on launch when the setting is on. A `?update=`
         // query (harness) forces one too, mirroring `?onboarding=1`. Silent —
@@ -794,6 +829,7 @@ export default function App() {
             onClone={handleCloneOpen}
             onInit={() => void handleInitRepository()}
             onMenuOpenChange={setMenuOpen}
+            onTabMenu={(path, x, y) => setTabMenu({ path, x, y })}
           />
           <div className="header-toolbar">
             <button
@@ -929,6 +965,8 @@ export default function App() {
           repoPath={activeRepo}
           configInitialFocus={configFocus}
           profiles={profiles}
+          terminalCommand={terminalCommand}
+          editorCommand={editorCommand}
           onRegisterMcp={handleRegisterMcp}
           onShowOnboarding={showOnboarding}
           updateCurrentVersion={update.currentVersion}
@@ -1018,6 +1056,18 @@ export default function App() {
             version={update.state.info.version ?? ''}
             onView={update.openDialog}
             onDismiss={update.dismissNotification}
+          />
+        )}
+        {tabMenu !== null && (
+          <ContextMenu
+            x={tabMenu.x}
+            y={tabMenu.y}
+            items={externalToolsItems(tabMenu.path, {
+              onOpenInTerminal: openInTerminal,
+              onRevealInFileManager: revealInFileManager,
+              onOpenInEditor: openInEditor,
+            })}
+            onClose={() => setTabMenu(null)}
           />
         )}
         <Toasts toasts={toasts} onDismiss={dismissToast} />

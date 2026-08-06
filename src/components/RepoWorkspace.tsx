@@ -1680,6 +1680,29 @@ export function RepoWorkspace({
   // P37b: force-push needs a normal-push-capable HEAD with a configured upstream.
   const canForcePush = canPullPush && headBranch?.upstream != null;
 
+  // P49b: launch external tools at a filesystem path (repo / worktree /
+  // submodule). Never gated by mutating/opActive — launches touch no git state.
+  // Failures surface via the shared AppError→toast path; success is silent (the
+  // opened window is its own feedback).
+  const handleOpenInTerminal = useCallback(
+    (path: string) => {
+      void ipc.openInTerminal(path).catch((e) => pushToast('error', errorMessage(e)));
+    },
+    [pushToast],
+  );
+  const handleRevealInFileManager = useCallback(
+    (path: string) => {
+      void ipc.revealInFileManager(path).catch((e) => pushToast('error', errorMessage(e)));
+    },
+    [pushToast],
+  );
+  const handleOpenInEditor = useCallback(
+    (path: string) => {
+      void ipc.openInEditor(path).catch((e) => pushToast('error', errorMessage(e)));
+    },
+    [pushToast],
+  );
+
   // P3e §menu-extraction: the context-menu item-array builders live in
   // workspaceMenus.ts now; rebuild them each render over the current state +
   // handlers so the produced arrays stay byte-identical to the old inline ones.
@@ -1731,6 +1754,9 @@ export function RepoWorkspace({
       pushToast('info', 'Bisect: now pick an older known-GOOD commit to start');
     },
     handleStartBisect: (bad: string, good: string) => void handleStartBisect(bad, good),
+    onOpenInTerminal: handleOpenInTerminal,
+    onRevealInFileManager: handleRevealInFileManager,
+    onOpenInEditor: handleOpenInEditor,
   });
 
   // P39b: short summaries for the bisect banner's first-bad / current oids,
@@ -1820,6 +1846,7 @@ export function RepoWorkspace({
         }
         headBorn={head !== null && !head.unborn}
         onRefresh={() => void handleRefresh()}
+        externalItems={menus.externalToolsItems(repoPath)}
       />
 
       <div className="panes">

@@ -1405,9 +1405,23 @@ body {
   gap: 8px;
 }
 
-.toolbar-refresh {
+/* P49b: right-side icon cluster (Open-externally + Refresh) pinned to col 3. */
+.toolbar-right {
   grid-column: 3;
   justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.toolbar-right .btn-icon {
+  margin-left: 0; /* the flex group owns spacing (btn-icon's auto margin off) */
+}
+
+.toolbar-external-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* ---------- 3-pane layout ---------- */
