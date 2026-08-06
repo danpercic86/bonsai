@@ -36,7 +36,7 @@ export type { WipSummary };
 
 /** Right-click target on the graph: a ref pill, or a bare commit row. */
 export type GraphContextTarget =
-  | { kind: 'ref'; ref: RefLabel }
+  | { kind: 'ref'; ref: RefLabel; oid: string }
   | { kind: 'commit'; index: number; oid: string };
 
 export interface GraphCanvasProps {
@@ -830,7 +830,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       if (hitLabel !== undefined && hitLabel.entity !== null) {
         const ref = targetRefOf(hitLabel.entity);
         if (ref !== null) {
-          onContextMenu?.({ kind: 'ref', ref }, e.clientX, e.clientY);
+          onContextMenu?.({ kind: 'ref', ref, oid: node.id }, e.clientX, e.clientY);
           return;
         }
         // tag/head resolve to a ref whose branchMenuItems is [] → no menu opens;
@@ -848,7 +848,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
         if (entity.kind !== 'branch') continue;
         const ref = targetRefOf(entity);
         if (ref !== null) {
-          onContextMenu?.({ kind: 'ref', ref }, e.clientX, e.clientY);
+          onContextMenu?.({ kind: 'ref', ref, oid: node.id }, e.clientX, e.clientY);
           return;
         }
       }

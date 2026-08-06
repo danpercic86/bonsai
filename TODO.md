@@ -52,9 +52,12 @@ F2 revert keeps deterministic message (no editor); F3 graph tag pills + all bran
 actions, sidebar tag rows scoped out; F4 editable-message dialog; F5 continue/abort leave retained
 autostash for manual pop (mirrors merge).
 
-**Current step:** P47c (menu consolidation) — next. P47a committed `c456e73`; P47b (IPC +
-commands) reviewer APPROVE, `cargo check -p bonsai` + `pnpm build` clean. P47b NITs deferred to
-P47d: gate mock `stashPopConflicts` on `stashed` so the mock can't produce it on a clean tree.
+**Current step:** P47d (message dialog + paused-conflict bug fix) — next. P47a `c456e73`,
+P47b `dc67360`, P47c committed (menu consolidation; reviewer APPROVE; `pnpm build` clean).
+Deferred into P47d: (a) add "…" ellipsis to the "Cherry-pick onto current" label now that it opens
+a dialog; (b) gate mock `stashPopConflicts` on `stashed` so it can't fire on a clean tree.
+Accepted as-is: unborn-HEAD branch pill no longer offers create-branch/tag (now uniform with the
+commit-row menu, which already hid these when HEAD is unborn).
 
 ## v1-prep — release-readiness for a public 1.0.0 — **DONE (AI gate passed)** (2026-08-05)
 

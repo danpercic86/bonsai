@@ -2753,7 +2753,9 @@ export function RepoWorkspace({
   }
 
   function handleTagContextMenu(name: string, clientX: number, clientY: number) {
-    setMenu({ x: clientX, y: clientY, items: menus.tagMenuItems(name) });
+    // P47 (F3): sidebar tag rows have no cheap oid → pass null (delete/copy/push
+    // only; graph tag pills pass the node oid and get the shared commit actions).
+    setMenu({ x: clientX, y: clientY, items: menus.tagMenuItems(name, null) });
   }
 
   function handleRemoteContextMenu(name: string, clientX: number, clientY: number) {

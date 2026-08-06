@@ -89,7 +89,7 @@ export interface WorkspaceMenus {
   stashMenuItems(index: number): ContextMenuItem[];
   submoduleMenuItems(sub: SubmoduleInfo): ContextMenuItem[];
   worktreeMenuItems(wt: WorktreeInfo): ContextMenuItem[];
-  tagMenuItems(name: string): ContextMenuItem[];
+  tagMenuItems(name: string, oid: string | null): ContextMenuItem[];
   remoteMenuItems(name: string): ContextMenuItem[];
   resetMenuItems(targetOid: string): ContextMenuItem[];
   commitMenuItems(oid: string): ContextMenuItem[];
@@ -162,7 +162,6 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     if (snapshot === null) return [];
     const cur = headBranch?.name ?? null;
     const gate = mutating || opActive;
-    const headUnborn = head === null || head.unborn;
     const entry =
       kind === 'localBranch'
         ? snapshot.local.find((b) => b.name === name)
@@ -180,12 +179,6 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
           void (kind === 'remoteBranch'
             ? handleCheckoutRemote(name)
             : handleCheckoutBranch(name)),
-      },
-      {
-        label: 'Create branch here',
-        icon: createElement(BranchIcon),
-        disabled: gate,
-        onSelect: () => setPendingCreateBranch({ oid: tip }),
       },
       {
         label: 'Copy branch name',
@@ -266,14 +259,13 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
         onSelect: () => void openRebasePlan({ ontoOid: tip, ontoLabel: name }),
       });
     }
-    if (!headUnborn) {
-      items.push({
-        label: 'Compare with HEAD',
-        icon: createElement(CompareIcon),
-        disabled: false,
-        onSelect: () => handleCompareWithHead(tip),
-      });
-    }
+    // P47 (Part A): the shared oid-based commit actions (Create branch/tag here,
+    // Compare with HEAD, Cherry-pick, Revert) for this branch's tip. Spread here
+    // — after Merge/Rebase, before Delete — so they form one contiguous group and
+    // the branch menu owns them instead of the old inline Create-branch/Compare
+    // duplicates (removed above). The current-HEAD-branch pill returns [] earlier,
+    // so self-cherry-pick stays excluded.
+    items.push(...commitActionItems(tip));
     items.push({
       label: 'Delete',
       icon: createElement(DeleteIcon),
@@ -388,7 +380,7 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
   // P22 §7.2: the shared tag menu — used by the graph tag pill AND the sidebar
   // tag rows. Delete (ConfirmDialog) + Copy + one "Push tag to <remote>" per
   // configured remote (§OPEN-7: 0 → no push item; 1 → single; >1 → one each).
-  function tagMenuItems(name: string): ContextMenuItem[] {
+  function tagMenuItems(name: string, oid: string | null): ContextMenuItem[] {
     const gate = mutating || opActive;
     const items: ContextMenuItem[] = [
       {
@@ -419,6 +411,11 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
         onSelect: () => void handlePushTag(r.name, name),
       });
     }
+    // P47 (Part A, Fork-1): a GRAPH tag pill carries its target oid (the node id),
+    // so it gets the shared commit actions after the tag-specific items. Sidebar
+    // tag rows pass `oid === null` (no cheap oid in BranchesSnapshot.tags → scoped
+    // out per F3) and keep delete/copy/push only.
+    if (oid !== null) items.push(...commitActionItems(oid));
     return items;
   }
 
@@ -473,10 +470,17 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     ];
   }
 
-  function commitMenuItems(oid: string): ContextMenuItem[] {
+  // P47 (Part A): the shared oid-based commit-action set. Extracted from
+  // commitMenuItems so branch pills and graph tag pills reach the same actions
+  // as commit rows (no arbitrary split) — spread by callers exactly as
+  // resetMenuItems is. Order: Create branch here, Create tag here, Compare with
+  // HEAD, then (attached HEAD only) Cherry-pick, Revert — matching the commit-row
+  // order preserved below. Returns [] when there is no usable HEAD so callers can
+  // spread unconditionally.
+  function commitActionItems(oid: string): ContextMenuItem[] {
     if (head === null || head.unborn) return [];
     const gate = mutating || opActive;
-    return [
+    const items: ContextMenuItem[] = [
       {
         label: 'Create branch here',
         icon: createElement(BranchIcon),
@@ -495,25 +499,41 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
         disabled: false,
         onSelect: () => handleCompareWithHead(oid),
       },
-      // P20 §5.2/§6: cherry-pick / revert onto the current branch. Gated on an
-      // attached born HEAD (excluded on detached HEAD, which the backend rejects
-      // — mirrors resetMenuItems) and an idle repo. On Conflicts the existing
-      // OpBanner/conflict flow takes over.
+    ];
+    // P20 §5.2/§6: cherry-pick / revert onto the current branch. Gated on an
+    // attached born HEAD (excluded on detached HEAD, which the backend rejects
+    // — mirrors resetMenuItems) and an idle repo. On Conflicts the existing
+    // OpBanner/conflict flow takes over.
+    if (!head.detached) {
+      items.push(
+        {
+          label: 'Cherry-pick onto current',
+          icon: createElement(RebaseIcon),
+          disabled: gate,
+          onSelect: () => void handleCherrypick(oid),
+        },
+        {
+          label: 'Revert commit',
+          icon: createElement(RebaseIcon),
+          disabled: gate,
+          onSelect: () => void handleRevert(oid),
+        },
+      );
+    }
+    return items;
+  }
+
+  function commitMenuItems(oid: string): ContextMenuItem[] {
+    if (head === null || head.unborn) return [];
+    const gate = mutating || opActive;
+    return [
+      ...commitActionItems(oid),
+      // Interactive-rebase-from-here + bisect stay commit-row-only (not part of
+      // the shared commit-action set). Gated on an attached born HEAD, matching
+      // the cherry-pick/revert gate in commitActionItems.
       ...(head.detached
         ? []
         : [
-            {
-              label: 'Cherry-pick onto current',
-              icon: createElement(RebaseIcon),
-              disabled: gate,
-              onSelect: () => void handleCherrypick(oid),
-            },
-            {
-              label: 'Revert commit',
-              icon: createElement(RebaseIcon),
-              disabled: gate,
-              onSelect: () => void handleRevert(oid),
-            },
             // P23b §8.2: interactive rebase replaying THIS commit..HEAD onto the
             // selected commit (it becomes the `onto` base). Gated like cherry-pick.
             {
@@ -565,7 +585,9 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
       }
       if (r.kind === 'head') return [];
       // P22 §7.2: the graph tag pill opens the same menu as the sidebar tag row.
-      if (r.kind === 'tag') return tagMenuItems(r.name);
+      // P47 (Fork-1): the graph tag pill carries the node oid → pass it so the
+      // shared commit actions are appended (sidebar tag rows pass null).
+      if (r.kind === 'tag') return tagMenuItems(r.name, target.oid);
       const kind = r.kind === 'remoteBranch' ? 'remoteBranch' : 'localBranch';
       const items = branchMenuItems(r.name, kind);
       if (items.length > 0) return items;
