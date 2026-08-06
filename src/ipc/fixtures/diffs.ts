@@ -298,7 +298,8 @@ export function mockCommitDiff(index: number, oid: string): CommitDiff {
       details: {
         oid,
         summary: 'feat: polish',
-        message: 'feat: polish',
+        message:
+          'feat: polish\n\nTighten spacing on the sidebar and align the ref pills.\nAlso bumps the default lane palette for better contrast.',
         authorName: 'Grace Hopper',
         authorEmail: 'grace@example.com',
         authorTs: ts,

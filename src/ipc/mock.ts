@@ -3591,7 +3591,9 @@ export const mockIpc: IpcApi = {
         ? message.split('\n', 1)[0]
         : `Cherry-pick ${oid.slice(0, 7)}`;
     state.commits.unshift({ oid: state.headOid, summary });
-    if (oid.endsWith(STASH_POP_CONFLICT_OID_SUFFIX)) {
+    // stashPopConflicts is only reachable when an autostash was actually created
+    // (a clean tree can never hit a stash-apply conflict — mirrors the backend).
+    if (stashed && oid.endsWith(STASH_POP_CONFLICT_OID_SUFFIX)) {
       return { kind: 'stashPopConflicts', head: state.headOid, paths: ['src/app.ts'] };
     }
     return { kind: 'committed', oid: state.headOid, stashed };
@@ -3658,7 +3660,9 @@ export const mockIpc: IpcApi = {
     }
     state.headOid = randomOid();
     state.commits.unshift({ oid: state.headOid, summary: `Revert "${oid.slice(0, 7)}"` });
-    if (oid.endsWith(STASH_POP_CONFLICT_OID_SUFFIX)) {
+    // stashPopConflicts is only reachable when an autostash was actually created
+    // (a clean tree can never hit a stash-apply conflict — mirrors the backend).
+    if (stashed && oid.endsWith(STASH_POP_CONFLICT_OID_SUFFIX)) {
       return { kind: 'stashPopConflicts', head: state.headOid, paths: ['src/app.ts'] };
     }
     return { kind: 'committed', oid: state.headOid, stashed };

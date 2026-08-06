@@ -507,7 +507,7 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     if (!head.detached) {
       items.push(
         {
-          label: 'Cherry-pick onto current',
+          label: 'Cherry-pick onto current…',
           icon: createElement(RebaseIcon),
           disabled: gate,
           onSelect: () => void handleCherrypick(oid),

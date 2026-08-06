@@ -4,6 +4,7 @@ import { COMMIT_PUSH_CANCELED } from './commitPushSignal';
 import type { ContextMenuItem } from './ContextMenu';
 import { WorkspaceToolbar } from './WorkspaceToolbar';
 import { WorkspaceDialogs } from './WorkspaceDialogs';
+import { CherrypickMessageDialog } from './CherrypickMessageDialog';
 import { WorkspaceGraphPane } from './WorkspaceGraphPane';
 import { WorkspaceRightPanel } from './WorkspaceRightPanel';
 import { MAX_HISTORY_UI, isUsableRepo, shortOid } from './workspaceUtils';
@@ -236,6 +237,14 @@ export function RepoWorkspace({
   // P39b: two-click bisect start. Holds the oid marked BAD (via the commit menu)
   // while the user picks an older known-GOOD commit; cleared on start / cancel.
   const [pendingBisectBad, setPendingBisectBad] = useState<string | null>(null);
+  // P47d: cherry-pick message dialog. `handleCherrypick` opens this prefilled
+  // with the source commit's full message (fetched via getCommitDiff); confirm
+  // runs the pick with the edited message. `loading` gates the prefill fetch.
+  const [pendingCherrypick, setPendingCherrypick] = useState<{
+    oid: string;
+    initialMessage: string;
+    loading: boolean;
+  } | null>(null);
   // P22 §7.1: tag + remote management dialog state.
   const [pendingCreateTag, setPendingCreateTag] = useState<{ oid: string } | null>(null);
   const [pendingDeleteTag, setPendingDeleteTag] = useState<string | null>(null);
@@ -314,6 +323,7 @@ export function RepoWorkspace({
     pendingHunkDiscard !== null ||
     pendingLineDiscard !== null ||
     pendingCreateBranch !== null ||
+    pendingCherrypick !== null ||
     pendingCreateTag !== null ||
     pendingDeleteTag !== null ||
     pendingAddRemote ||
@@ -553,7 +563,12 @@ export function RepoWorkspace({
     try {
       const op = await ipc.getOpState(repoId);
       const list =
-        op.kind === 'merge' || op.kind === 'rebase' ? await ipc.listConflicts(repoId) : [];
+        op.kind === 'merge' ||
+        op.kind === 'rebase' ||
+        op.kind === 'cherryPick' ||
+        op.kind === 'revert'
+          ? await ipc.listConflicts(repoId)
+          : [];
       if (id !== opStateReqId.current) return;
       setOpState(op);
       setConflicts(list);
@@ -2492,15 +2507,55 @@ export function RepoWorkspace({
     }
   }
 
+  // P47d: cherry-pick surfaces an editable-message dialog. Fetch the source
+  // commit's FULL message (the graph node only carries the summary line) and
+  // open the prefilled dialog; confirmCherrypick runs the actual pick.
   async function handleCherrypick(oid: string) {
+    const reqOid = oid;
+    setPendingCherrypick({ oid, initialMessage: '', loading: true });
+    try {
+      const diff = await ipc.getCommitDiff(repoId, oid);
+      setPendingCherrypick((prev) =>
+        prev !== null && prev.oid === reqOid
+          ? { ...prev, initialMessage: diff.details.message, loading: false }
+          : prev,
+      );
+    } catch (e) {
+      // Don't leave an empty dialog silently open — close and toast.
+      setPendingCherrypick((prev) => (prev !== null && prev.oid === reqOid ? null : prev));
+      pushToast('error', `Could not load the commit message: ${errorMessage(e)}`);
+    }
+  }
+
+  async function confirmCherrypick(oid: string, message: string) {
     setMutating(true);
     try {
-      const res = await ipc.cherrypickCommit(repoId, oid);
-      if (res.kind === 'committed') {
-        pushToast('success', `Cherry-picked ${shortOid(res.oid)}`);
-      } else {
-        pushToast('info', `Cherry-pick paused: ${res.paths.length} conflict(s) to resolve`);
+      const res = await ipc.cherrypickCommit(repoId, oid, message);
+      switch (res.kind) {
+        case 'committed':
+          pushToast(
+            'success',
+            `Cherry-picked ${shortOid(res.oid)}` +
+              (res.stashed ? ' · stashed changes restored' : ''),
+          );
+          break;
+        case 'conflicts':
+          pushToast(
+            'info',
+            `Cherry-pick paused: ${res.paths.length} conflict(s) to resolve` +
+              (res.stashed ? ' · your changes are stashed (stash@{0})' : ''),
+          );
+          break;
+        case 'stashPopConflicts':
+          pushToast(
+            'error',
+            `Cherry-picked ${shortOid(res.head)}, but re-applying your stashed changes hit ` +
+              `${res.paths.length} conflict(s). Your changes are still on the stash (stash@{0}); ` +
+              'resolve the conflicts, then drop the stash.',
+          );
+          break;
       }
+      setPendingCherrypick(null);
       await refreshAll();
     } catch (e) {
       surfacePickRevertError(e);
@@ -2513,10 +2568,28 @@ export function RepoWorkspace({
     setMutating(true);
     try {
       const res = await ipc.revertCommit(repoId, oid);
-      if (res.kind === 'committed') {
-        pushToast('success', `Reverted ${shortOid(res.oid)}`);
-      } else {
-        pushToast('info', `Revert paused: ${res.paths.length} conflict(s) to resolve`);
+      switch (res.kind) {
+        case 'committed':
+          pushToast(
+            'success',
+            `Reverted ${shortOid(res.oid)}` + (res.stashed ? ' · stashed changes restored' : ''),
+          );
+          break;
+        case 'conflicts':
+          pushToast(
+            'info',
+            `Revert paused: ${res.paths.length} conflict(s) to resolve` +
+              (res.stashed ? ' · your changes are stashed (stash@{0})' : ''),
+          );
+          break;
+        case 'stashPopConflicts':
+          pushToast(
+            'error',
+            `Reverted ${shortOid(res.head)}, but re-applying your stashed changes hit ` +
+              `${res.paths.length} conflict(s). Your changes are still on the stash (stash@{0}); ` +
+              'resolve the conflicts, then drop the stash.',
+          );
+          break;
       }
       await refreshAll();
     } catch (e) {
@@ -3321,6 +3394,18 @@ export function RepoWorkspace({
         }
         menu={menu}
         closeMenu={closeMenu}
+      />
+      <CherrypickMessageDialog
+        open={pendingCherrypick !== null}
+        oid={pendingCherrypick?.oid ?? ''}
+        initialMessage={pendingCherrypick?.initialMessage ?? ''}
+        loading={pendingCherrypick?.loading ?? false}
+        busy={mutating}
+        onConfirm={(message) => {
+          const p = pendingCherrypick;
+          if (p !== null) void confirmCherrypick(p.oid, message);
+        }}
+        onCancel={() => setPendingCherrypick(null)}
       />
     </>
   );
