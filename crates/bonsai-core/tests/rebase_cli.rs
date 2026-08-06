@@ -258,7 +258,7 @@ fn clean_linear_rebase_matches_cli_twin() {
 
     let outcome = rebase_branch(b, "main").expect("rebase");
     match &outcome {
-        RebaseOutcome::Rebased { branch, head, steps } => {
+        RebaseOutcome::Rebased { branch, head, steps, .. } => {
             assert_eq!(branch, "topic");
             assert_eq!(steps, &2, "topic..main range is 2 commits");
             assert_eq!(head, &head_oid(b), "returned head must be HEAD");
@@ -434,7 +434,7 @@ fn continue_after_resolving_matches_cli_twin() {
 
     let outcome = rebase_continue(b).expect("continue");
     match &outcome {
-        RebaseOutcome::Rebased { branch, head, steps } => {
+        RebaseOutcome::Rebased { branch, head, steps, .. } => {
             assert_eq!(branch, "topic");
             assert_eq!(steps, &1);
             assert_eq!(head, &head_oid(b));
@@ -721,7 +721,7 @@ fn rebase_onto_remote_tracking_matches_cli_twin() {
 
     let outcome = rebase_branch(work, "origin/main").expect("rebase origin/main");
     match &outcome {
-        RebaseOutcome::Rebased { branch, head, steps } => {
+        RebaseOutcome::Rebased { branch, head, steps, .. } => {
             assert_eq!(branch, "topic");
             assert_eq!(steps, &1);
             assert_eq!(head, &head_oid(work));

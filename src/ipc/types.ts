@@ -603,7 +603,7 @@ export type MergeOutcome =
 export type RebaseOutcome =
   | { kind: 'upToDate' }
   | { kind: 'fastForwarded'; branch: string; to: string }
-  | { kind: 'rebased'; branch: string; head: string; steps: number }
+  | { kind: 'rebased'; branch: string; head: string; steps: number; warnings?: string[] }
   | { kind: 'conflicts'; paths: string[]; currentStep: number; totalSteps: number };
 
 /** Interactive-rebase per-op action (P23). Mirrors the Rust `RebaseAction`

@@ -90,6 +90,22 @@ pub(crate) fn bisect_in_progress(repo: &git2::Repository) -> bool {
     state_path(repo).exists()
 }
 
+/// Guard for user-facing mutations. A Bonsai bisect runs on a DETACHED HEAD with
+/// `repo.state() == Clean` (its progress lives in `.git/bonsai-bisect/`, not
+/// libgit2 op-state), so the usual `state() != Clean` checks do NOT see it. Call
+/// this at the START of every user-facing mutating entry point (commit / amend /
+/// reset / stash create+apply+pop / merge / rebase / cherry-pick / revert) so a
+/// mid-bisect mutation is refused. Never call it from the bisect or interactive-
+/// rebase engines' own replay/reset paths (they must run mid-bisect).
+pub(crate) fn require_no_bisect(repo: &git2::Repository) -> Result<(), AppError> {
+    if bisect_in_progress(repo) {
+        return Err(AppError::OperationInProgress(
+            "a bisect is in progress — finish or reset it first".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Reads + parses `.git/bonsai-bisect/state.json`. Missing/corrupt -> `Git`.
 pub(crate) fn read_state(repo: &git2::Repository) -> Result<BisectState, AppError> {
     let raw = std::fs::read_to_string(state_path(repo))
@@ -850,6 +866,61 @@ mod tests {
             re.head().expect("head").peel_to_commit().expect("c").id().to_string(),
             orig_tip
         );
+    }
+
+    // ---------------------------------------------- user-mutation guard (Fix 1)
+
+    /// While a Bonsai bisect is active the HEAD is detached and `repo.state()`
+    /// is Clean, so the ordinary `state() != Clean` checks can't see it. The
+    /// user-facing mutating cores must therefore refuse via `require_no_bisect`.
+    #[test]
+    fn active_bisect_blocks_user_mutations() {
+        use crate::git::commit::create_commit;
+        use crate::git::reset::{reset_branch, ResetMode};
+        use crate::git::stash::{create_stash, StashScope};
+
+        let (dir, oids) = linear_repo_with_bug(8, 5);
+        let d = dir.path();
+
+        match start_bisect(d, &oids[7], &[oids[0].clone()]).expect("start") {
+            BisectOutcome::Testing { .. } => {}
+            other => panic!("expected Testing, got {other:?}"),
+        }
+        let repo = git2::Repository::open(d).expect("open");
+        assert!(bisect_in_progress(&repo));
+        assert_eq!(
+            repo.state(),
+            git2::RepositoryState::Clean,
+            "a Bonsai bisect keeps libgit2 op-state Clean"
+        );
+
+        // A worktree edit so create_stash would otherwise have work to do.
+        std::fs::write(d.join("f0.txt"), "dirty\n").expect("edit");
+
+        assert!(
+            matches!(
+                create_commit(d, "blocked").expect_err("commit blocked"),
+                AppError::OperationInProgress(_)
+            ),
+            "commit must be refused mid-bisect"
+        );
+        assert!(
+            matches!(
+                reset_branch(d, &oids[0], ResetMode::Soft).expect_err("reset blocked"),
+                AppError::OperationInProgress(_)
+            ),
+            "reset must be refused mid-bisect"
+        );
+        assert!(
+            matches!(
+                create_stash(d, None, StashScope::All).expect_err("stash blocked"),
+                AppError::OperationInProgress(_)
+            ),
+            "stash-create must be refused mid-bisect"
+        );
+
+        // The bisect state is intact — the refusals mutated nothing.
+        assert!(bisect_in_progress(&repo), "bisect still active after refusals");
     }
 
     #[test]

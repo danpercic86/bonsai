@@ -72,6 +72,12 @@ pub(crate) struct InteractiveState {
     pub committed: u32,
     /// true iff a conflict pause is active at `todos[cursor]`
     pub paused: bool,
+    /// Non-fatal notes accumulated across the replay, surfaced on the final
+    /// `RebaseOutcome::Rebased`. Currently: a Reword whose pick became empty and
+    /// was dropped (its new message silently lost otherwise). `#[serde(default)]`
+    /// so older on-disk state files still deserialize.
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 // ---------------------------------------------------------------- on-disk state
@@ -324,6 +330,7 @@ pub fn start_interactive_rebase(
         cursor: 0,
         committed: 0,
         paused: false,
+        warnings: Vec::new(),
     };
     write_state(&repo, &state)?;
 
@@ -474,6 +481,16 @@ fn commit_current_op(
     // `tree == head.tree`, keeping the predecessor. For pick/reword the parent IS
     // head, so this is equivalent to the original condition.
     if tree.id() == head_tree_id {
+        // Dropping an empty PICK matches default `git rebase` and is silent. A
+        // REWORD, though, is a message-only intent: dropping it discards the
+        // user's new message, so record a warning to surface on the final
+        // Rebased outcome (the frontend toasts it) rather than losing it quietly.
+        if op.action == RebaseAction::Reword {
+            let short: String = op.oid.chars().take(7).collect();
+            state.warnings.push(format!(
+                "reword of {short} was dropped: the commit became empty on the new base, so its new message was not applied"
+            ));
+        }
         repo.cleanup_state()?;
         state.cursor += 1;
         state.paused = false;
@@ -522,6 +539,7 @@ fn finish_interactive(
         branch: state.head_name.clone(),
         head: final_tip.to_string(),
         steps: state.committed,
+        warnings: state.warnings.clone(),
     })
 }
 
@@ -825,6 +843,7 @@ mod tests {
             cursor: 0,
             committed: 0,
             paused: false,
+            warnings: Vec::new(),
         };
         assert!(!interactive_in_progress(&repo));
         write_state(&repo, &state).expect("write");

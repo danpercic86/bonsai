@@ -54,7 +54,7 @@ export interface WorkspaceMenuDeps {
   runSummarize(base: string, target: string): void;
   runAnalyze(target: AiDiffTarget, mode: AiAnalysisMode, title: string): void;
   handleMergeBranch(name: string): void;
-  handleRebaseBranch(name: string): void;
+  setPendingRebase(v: { name: string; cur: string }): void;
   openRebasePlan(target: { ontoOid: string; ontoLabel: string }): void;
   handleCompareWithHead(oid: string): void;
   setPendingDeleteRemote(name: string): void;
@@ -121,7 +121,7 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     runSummarize,
     runAnalyze,
     handleMergeBranch,
-    handleRebaseBranch,
+    setPendingRebase,
     openRebasePlan,
     handleCompareWithHead,
     setPendingDeleteRemote,
@@ -255,13 +255,13 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
         label: `Rebase ${cur} onto ${name}`,
         icon: createElement(RebaseIcon),
         disabled: gate,
-        onSelect: () => void handleRebaseBranch(name),
+        onSelect: () => setPendingRebase({ name, cur }),
         children: [
           {
             label: 'Standard',
             icon: createElement(RebaseIcon),
             disabled: gate,
-            onSelect: () => void handleRebaseBranch(name),
+            onSelect: () => setPendingRebase({ name, cur }),
           },
           {
             label: 'Interactive…',

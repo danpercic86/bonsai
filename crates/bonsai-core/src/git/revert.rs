@@ -16,6 +16,7 @@ use std::path::Path;
 
 use crate::error::AppError;
 use crate::git::autostash::{self, PopResult};
+use crate::git::bisect::require_no_bisect;
 use crate::git::commit::resolve_signature;
 use crate::git::conflict::list_conflicts;
 use crate::git::repo::read_head_info;
@@ -94,6 +95,9 @@ fn finalize_revert(
 /// pop-conflict. Revert keeps its deterministic message (no override, F2).
 pub fn revert_commit(workdir: &Path, oid: &str) -> Result<RevertOutcome, AppError> {
     let mut repo = open_workdir_repo(workdir)?;
+
+    // A clean detached-HEAD bisect is invisible to `state()` below — refuse.
+    require_no_bisect(&repo)?;
 
     if repo.state() != git2::RepositoryState::Clean {
         return Err(AppError::OperationInProgress(

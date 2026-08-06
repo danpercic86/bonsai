@@ -7,6 +7,7 @@
 use std::path::Path;
 
 use crate::error::AppError;
+use crate::git::bisect::require_no_bisect;
 use crate::git::stage::open_workdir_repo;
 
 /// Result of a successful commit.
@@ -73,6 +74,10 @@ pub fn resolve_signature(cfg: &git2::Config) -> Result<git2::Signature<'static>,
 /// branch HEAD symbolically points at (first-commit flow).
 pub fn create_commit(workdir: &Path, message: &str) -> Result<CommitResult, AppError> {
     let repo = open_workdir_repo(workdir)?;
+
+    // A Bonsai bisect runs on a clean detached HEAD, so `state()` below can't
+    // see it — refuse a commit while one is active (would move the branch ref).
+    require_no_bisect(&repo)?;
 
     // P3c contract §4.5 backend guard: a plain commit mid-merge would create
     // a 1-parent commit and silently drop MERGE_HEAD ancestry.
@@ -148,6 +153,9 @@ pub fn create_commit(workdir: &Path, message: &str) -> Result<CommitResult, AppE
 /// `git commit --amend -m <message>` (P20 contract §2.1).
 pub fn amend_commit(workdir: &Path, message: &str) -> Result<CommitResult, AppError> {
     let repo = open_workdir_repo(workdir)?;
+
+    // A clean detached-HEAD bisect is invisible to `state()` below — refuse.
+    require_no_bisect(&repo)?;
 
     // Amending mid-merge/rebase/pick is nonsense — refuse before any read.
     if repo.state() != git2::RepositoryState::Clean {

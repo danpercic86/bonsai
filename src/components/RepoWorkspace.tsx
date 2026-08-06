@@ -186,6 +186,9 @@ export function RepoWorkspace({
   // P6 §4.5: pending branch/remote deletes drive the two confirm dialogs; the
   // shortcut effect is suppressed while either is up (derived `dialogOpen`).
   const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(null);
+  // Plain (non-interactive) rebase confirm gate. `name` = the branch rebased
+  // onto; `cur` = the current branch whose commits get rewritten (for the copy).
+  const [pendingRebase, setPendingRebase] = useState<{ name: string; cur: string } | null>(null);
   const [pendingDeleteRemote, setPendingDeleteRemote] = useState<string | null>(null);
   const [pendingDropStash, setPendingDropStash] = useState<number | null>(null);
   // Reserved-path recovery: a stash apply/pop hit Windows-reserved paths (e.g.
@@ -205,6 +208,9 @@ export function RepoWorkspace({
     paths: string[];
     modified: number;
     created: number;
+    // The untracked (created) subset of `paths` — the files permanently deleted,
+    // listed in the confirm dialog so the destruction is spelled out per-path.
+    untracked: string[];
   } | null>(null);
   // Commit & Push: when HEAD has no upstream, the message is parked here while a
   // ConfirmDialog asks to set upstream. The pending promise (resolves the
@@ -314,6 +320,7 @@ export function RepoWorkspace({
   const reflogRestoreRef = useRef(false);
   const dialogOpen =
     pendingDeleteBranch !== null ||
+    pendingRebase !== null ||
     pendingDeleteRemote !== null ||
     pendingDropStash !== null ||
     pendingReservedStash !== null ||
@@ -1288,12 +1295,12 @@ export function RepoWorkspace({
     if (paths.length === 0) return;
     const untracked = new Set((status?.untracked ?? []).map((e) => e.path));
     let modified = 0;
-    let created = 0;
+    const created: string[] = [];
     for (const p of paths) {
-      if (untracked.has(p)) created += 1;
+      if (untracked.has(p)) created.push(p);
       else modified += 1;
     }
-    setPendingDiscardForce({ paths, modified, created });
+    setPendingDiscardForce({ paths, modified, created: created.length, untracked: created });
   }
 
   // Force-discard: reverts modified tracked files to the index AND deletes
@@ -1922,6 +1929,8 @@ export function RepoWorkspace({
       await ipc.commitMerge(repoId, message);
       await refreshAll();
       pushToast('success', 'Merge committed');
+    } catch (e) {
+      pushToast('error', errorMessage(e));
     } finally {
       setMutating(false);
     }
@@ -2362,6 +2371,7 @@ export function RepoWorkspace({
       // (contract §0 #11 — it always rewrites; no up-to-date/fast-forward path).
       if (res.kind === 'rebased') {
         pushToast('success', `Rebased onto ${ontoLabel} (${res.steps} commit(s))`);
+        for (const w of res.warnings ?? []) pushToast('info', w);
       } else if (res.kind === 'conflicts') {
         pushToast(
           'info',
@@ -3029,7 +3039,7 @@ export function RepoWorkspace({
     runSummarize,
     runAnalyze,
     handleMergeBranch,
-    handleRebaseBranch,
+    setPendingRebase,
     openRebasePlan,
     handleCompareWithHead,
     setPendingDeleteRemote,
@@ -3146,7 +3156,9 @@ export function RepoWorkspace({
         onPush={() => void handlePush()}
         onForcePush={() => handleForcePush()}
         onWhatChanged={() => setWhatChangedOpen(true)}
-        onViewHeadReflog={() => void openReflog('HEAD')}
+        onViewHeadReflog={() =>
+          reflog && reflog.refName === 'HEAD' ? closeReflog() : void openReflog('HEAD')
+        }
         headBorn={head !== null && !head.unborn}
         onRefresh={() => void handleRefresh()}
       />
@@ -3314,6 +3326,9 @@ export function RepoWorkspace({
         pendingDeleteBranch={pendingDeleteBranch}
         setPendingDeleteBranch={setPendingDeleteBranch}
         handleDeleteBranch={(name) => void handleDeleteBranch(name)}
+        pendingRebase={pendingRebase}
+        setPendingRebase={setPendingRebase}
+        handleRebaseBranch={(name) => void handleRebaseBranch(name)}
         pendingDeleteRemote={pendingDeleteRemote}
         setPendingDeleteRemote={setPendingDeleteRemote}
         handleDeleteRemoteTracking={(name) => void handleDeleteRemoteTracking(name)}

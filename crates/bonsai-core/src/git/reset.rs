@@ -7,6 +7,7 @@
 use std::path::Path;
 
 use crate::error::AppError;
+use crate::git::bisect::require_no_bisect;
 use crate::git::stage::open_workdir_repo;
 
 /// Reset MODE. Wire: "soft" | "mixed" | "hard".
@@ -24,6 +25,9 @@ pub enum ResetMode {
 /// `git reset --soft/--mixed/--hard <oid>` (P20 contract §3.1).
 pub fn reset_branch(workdir: &Path, target_oid: &str, mode: ResetMode) -> Result<(), AppError> {
     let repo = open_workdir_repo(workdir)?;
+
+    // A clean detached-HEAD bisect is invisible to `state()` below — refuse.
+    require_no_bisect(&repo)?;
 
     if repo.state() != git2::RepositoryState::Clean {
         return Err(AppError::OperationInProgress(

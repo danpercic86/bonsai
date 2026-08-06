@@ -8,6 +8,7 @@ use std::path::Path;
 
 use crate::error::AppError;
 use crate::git::autostash::{self, PopResult};
+use crate::git::bisect::require_no_bisect;
 use crate::git::commit::{resolve_signature, CommitResult};
 use crate::git::conflict::list_conflicts;
 use crate::git::repo::read_head_info;
@@ -62,6 +63,9 @@ fn prepared_merge_message(name: &str, incoming_is_remote: bool) -> String {
 /// auto-commits).
 pub fn merge_branch(workdir: &Path, branch_name: &str) -> Result<MergeOutcome, AppError> {
     let mut repo = open_workdir_repo(workdir)?;
+
+    // A clean detached-HEAD bisect is invisible to `state()` below — refuse.
+    require_no_bisect(&repo)?;
 
     if repo.state() != git2::RepositoryState::Clean {
         return Err(AppError::OperationInProgress(

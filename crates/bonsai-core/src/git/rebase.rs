@@ -7,6 +7,7 @@
 use std::path::Path;
 
 use crate::error::AppError;
+use crate::git::bisect::require_no_bisect;
 use crate::git::commit::resolve_signature;
 use crate::git::conflict::list_conflicts;
 use crate::git::repo::read_head_info;
@@ -31,10 +32,15 @@ pub enum RebaseOutcome {
     /// Rebase ran to completion (rebase.finish()). `branch` = the rebased
     /// branch, `head` = its new tip (full oid), `steps` = number of operations
     /// in the plan (rebase.len(); dropped-empty picks are still counted).
+    /// `warnings` = non-fatal notes to toast (currently only from interactive
+    /// rebase: a Reword whose pick became empty and was dropped). Always empty
+    /// for plain rebase; `#[serde(default)]` keeps it optional on the wire.
     Rebased {
         branch: String,
         head: String,
         steps: u32,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        warnings: Vec<String>,
     },
     /// Replay paused on a conflict. Index + worktree hold the conflict markers;
     /// on-disk rebase-merge state persists. `paths` = sorted conflicted paths
@@ -202,6 +208,9 @@ fn read_head_from_rebase(repo: &git2::Repository) -> String {
 pub fn rebase_branch(workdir: &Path, onto_name: &str) -> Result<RebaseOutcome, AppError> {
     let repo = open_workdir_repo(workdir)?;
 
+    // A clean detached-HEAD bisect is invisible to `state()` below — refuse.
+    require_no_bisect(&repo)?;
+
     if repo.state() != git2::RepositoryState::Clean {
         return Err(AppError::OperationInProgress(
             "an operation is already in progress — commit or abort it first".to_string(),
@@ -319,6 +328,7 @@ pub fn rebase_branch(workdir: &Path, onto_name: &str) -> Result<RebaseOutcome, A
                 branch: head_branch,
                 head,
                 steps,
+                warnings: Vec::new(),
             }),
             Ok(DriveResult::Paused {
                 paths,
@@ -382,6 +392,7 @@ pub fn rebase_continue(workdir: &Path) -> Result<RebaseOutcome, AppError> {
             branch: head_branch,
             head,
             steps,
+            warnings: Vec::new(),
         }),
         Ok(DriveResult::Paused {
             paths,
@@ -455,6 +466,7 @@ pub fn rebase_skip(workdir: &Path) -> Result<RebaseOutcome, AppError> {
             branch: head_branch,
             head,
             steps,
+            warnings: Vec::new(),
         }),
         Ok(DriveResult::Paused {
             paths,
@@ -519,11 +531,32 @@ mod tests {
             branch: "topic".to_string(),
             head: "b".repeat(40),
             steps: 2,
+            warnings: Vec::new(),
         })
         .expect("json");
         assert_eq!(
             v,
-            serde_json::json!({ "kind": "rebased", "branch": "topic", "head": "b".repeat(40), "steps": 2 })
+            serde_json::json!({ "kind": "rebased", "branch": "topic", "head": "b".repeat(40), "steps": 2 }),
+            "empty warnings are omitted from the wire (skip_serializing_if)"
+        );
+
+        // A non-empty warnings list surfaces as a `warnings` array (toasted by the UI).
+        let v = serde_json::to_value(RebaseOutcome::Rebased {
+            branch: "topic".to_string(),
+            head: "b".repeat(40),
+            steps: 2,
+            warnings: vec!["reword of 1234567 was dropped".to_string()],
+        })
+        .expect("json");
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "kind": "rebased",
+                "branch": "topic",
+                "head": "b".repeat(40),
+                "steps": 2,
+                "warnings": ["reword of 1234567 was dropped"]
+            })
         );
 
         let v = serde_json::to_value(RebaseOutcome::Conflicts {

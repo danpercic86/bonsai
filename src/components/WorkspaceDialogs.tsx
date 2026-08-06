@@ -59,6 +59,10 @@ export interface WorkspaceDialogsProps {
   setPendingDeleteBranch: (v: string | null) => void;
   handleDeleteBranch(name: string): void;
 
+  pendingRebase: { name: string; cur: string } | null;
+  setPendingRebase: (v: { name: string; cur: string } | null) => void;
+  handleRebaseBranch(name: string): void;
+
   pendingDeleteRemote: string | null;
   setPendingDeleteRemote: (v: string | null) => void;
   handleDeleteRemoteTracking(name: string): void;
@@ -82,10 +86,16 @@ export interface WorkspaceDialogsProps {
   setPendingDiscard: (v: string[] | null) => void;
   handleDiscard(paths: string[]): void;
 
-  /** Bulk "Discard all": counts drive the modified-vs-new confirm copy. */
-  pendingDiscardForce: { paths: string[]; modified: number; created: number } | null;
+  /** Bulk "Discard all": counts drive the modified-vs-new confirm copy;
+   *  `untracked` lists the permanently-deleted (new) files by path. */
+  pendingDiscardForce: {
+    paths: string[];
+    modified: number;
+    created: number;
+    untracked: string[];
+  } | null;
   setPendingDiscardForce: (
-    v: { paths: string[]; modified: number; created: number } | null,
+    v: { paths: string[]; modified: number; created: number; untracked: string[] } | null,
   ) => void;
   handleDiscardForce(paths: string[]): void;
 
@@ -204,6 +214,9 @@ export function WorkspaceDialogs({
   pendingDeleteBranch,
   setPendingDeleteBranch,
   handleDeleteBranch,
+  pendingRebase,
+  setPendingRebase,
+  handleRebaseBranch,
   pendingDeleteRemote,
   setPendingDeleteRemote,
   handleDeleteRemoteTracking,
@@ -365,7 +378,28 @@ export function WorkspaceDialogs({
       >
         <div>Delete branch "<span className="mono">{pendingDeleteBranch ?? ''}</span>"?</div>
         <div className="dialog-body-note">
-          The branch is fully merged, but this cannot be undone from Bonsai.
+          This cannot be undone from Bonsai.
+        </div>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pendingRebase !== null}
+        title="Rebase branch"
+        confirmLabel="Rebase"
+        busy={mutating}
+        onConfirm={() => {
+          const p = pendingRebase;
+          setPendingRebase(null);
+          if (p !== null) void handleRebaseBranch(p.name);
+        }}
+        onCancel={() => setPendingRebase(null)}
+      >
+        <div>
+          Rebase "<span className="mono">{pendingRebase?.cur ?? ''}</span>" onto "
+          <span className="mono">{pendingRebase?.name ?? ''}</span>"?
+        </div>
+        <div className="dialog-body-note">
+          This rewrites the current branch&apos;s commits. Recoverable via reflog.
         </div>
       </ConfirmDialog>
 
@@ -493,6 +527,23 @@ export function WorkspaceDialogs({
         onCancel={() => setPendingDiscardForce(null)}
       >
         <div>{discardForceQuestion(pendingDiscardForce)}</div>
+        {(pendingDiscardForce?.untracked.length ?? 0) > 0 && (
+          <>
+            <div className="dialog-body-note">Permanently deleted:</div>
+            <ul className="confirm-name-list">
+              {(pendingDiscardForce?.untracked ?? []).slice(0, 10).map((p) => (
+                <li key={p} className="mono">
+                  {p}
+                </li>
+              ))}
+              {(pendingDiscardForce?.untracked.length ?? 0) > 10 && (
+                <li className="dialog-body-note">
+                  +{(pendingDiscardForce?.untracked.length ?? 0) - 10} more
+                </li>
+              )}
+            </ul>
+          </>
+        )}
         <div className="dialog-body-note">This cannot be undone.</div>
       </ConfirmDialog>
 

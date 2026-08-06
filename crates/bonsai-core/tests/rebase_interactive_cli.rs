@@ -157,7 +157,7 @@ fn reorder_swaps_top_two_commits() {
     todos.swap(1, 2); // [c1, c2, c3] -> [c1, c3, c2]
 
     match start_interactive_rebase(d, &base, todos).expect("start") {
-        RebaseOutcome::Rebased { branch, head, steps } => {
+        RebaseOutcome::Rebased { branch, head, steps, .. } => {
             assert_eq!(branch, "topic");
             assert_eq!(steps, 3);
             assert_eq!(head, rev(d, "HEAD"));
@@ -273,6 +273,56 @@ fn reword_changes_message_keeps_tree() {
     assert!(!has_bonsai_dir(d));
 }
 
+/// A reworded commit whose change is ALREADY on the new base becomes an empty
+/// pick and is dropped (like `git rebase`). Because a Reword is a message-only
+/// intent, dropping it would silently discard the user's new message — so the
+/// engine surfaces a `warnings` note on the final Rebased outcome instead of
+/// losing it quietly. (Fix 3: dropped-reword warning.)
+#[test]
+fn reword_dropped_when_empty_emits_warning() {
+    require_git!();
+    let dir = init_repo();
+    let d = dir.path();
+    // topic adds feat.txt="x"; main independently adds an IDENTICAL feat.txt, so
+    // replaying topic onto main is an empty pick (mirrors already_applied_pick).
+    write(d, "base.txt", "base\n");
+    git(d, &["add", "-A"]);
+    commit_fixed(d, "base");
+    git(d, &["checkout", "-b", "topic"]);
+    write(d, "feat.txt", "x\n");
+    git(d, &["add", "-A"]);
+    commit_fixed(d, "add feat");
+    git(d, &["checkout", "main"]);
+    write(d, "feat.txt", "x\n");
+    git(d, &["add", "-A"]);
+    commit_fixed(d, "main adds feat too");
+    git(d, &["checkout", "topic"]);
+
+    let onto = rev(d, "main");
+    let topic_tip = rev(d, "topic");
+    // REWORD (not Pick): the empty-drop must not silently swallow the new message.
+    let todos = vec![RebaseTodoOp {
+        oid: topic_tip,
+        action: RebaseAction::Reword,
+        new_message: Some("reworded but doomed".to_string()),
+    }];
+
+    match start_interactive_rebase(d, &onto, todos).expect("start") {
+        RebaseOutcome::Rebased { steps, warnings, .. } => {
+            assert_eq!(steps, 0, "the empty pick produced no commit");
+            assert_eq!(warnings.len(), 1, "exactly one dropped-reword warning");
+            assert!(
+                warnings[0].contains("reword") && warnings[0].contains("dropped"),
+                "warning names the dropped reword, got: {}",
+                warnings[0]
+            );
+        }
+        other => panic!("expected Rebased, got {other:?}"),
+    }
+    assert_eq!(repo_state(d), git2::RepositoryState::Clean);
+    assert!(!has_bonsai_dir(d));
+}
+
 // ============================================================ drop
 
 #[test]
@@ -357,7 +407,7 @@ fn conflict_pauses_then_continue_completes() {
     // Resolve by hand + continue -> completes.
     resolve_conflict_text(d, "a.txt", "line1\nresolved\nline3\n").expect("resolve");
     match rebase_continue(d).expect("continue") {
-        RebaseOutcome::Rebased { branch, head, steps } => {
+        RebaseOutcome::Rebased { branch, head, steps, .. } => {
             assert_eq!(branch, "topic");
             assert_eq!(steps, 1);
             assert_eq!(head, rev(d, "HEAD"));

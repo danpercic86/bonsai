@@ -16,6 +16,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
+use crate::git::bisect::require_no_bisect;
 use crate::git::commit::resolve_signature;
 use crate::git::conflict::list_conflicts;
 use crate::git::stage::open_workdir_repo;
@@ -149,6 +150,9 @@ pub fn create_stash(
 ) -> Result<CreateStashResult, AppError> {
     let mut repo = open_workdir_repo(workdir)?;
     require_clean(&repo)?;
+    // A clean detached-HEAD bisect is invisible to `require_clean` — refuse
+    // (covers both native and staged scopes, incl. `create_staged_stash`).
+    require_no_bisect(&repo)?;
 
     // Identity is required to author the stash commit; surface ConfigMissing
     // early, consistent with commit/merge.
@@ -530,6 +534,8 @@ pub fn apply_stash(
 ) -> Result<ApplyStashOutcome, AppError> {
     let mut repo = open_workdir_repo(workdir)?;
     require_clean(&repo)?;
+    // A clean detached-HEAD bisect is invisible to `require_clean` — refuse.
+    require_no_bisect(&repo)?;
 
     if !skip_reserved {
         // Preflight: block (mutate nothing) if reserved paths are present.
@@ -619,6 +625,8 @@ pub fn pop_stash(
 ) -> Result<ApplyStashOutcome, AppError> {
     let mut repo = open_workdir_repo(workdir)?;
     require_clean(&repo)?;
+    // A clean detached-HEAD bisect is invisible to `require_clean` — refuse.
+    require_no_bisect(&repo)?;
 
     if !skip_reserved {
         // Preflight: block (mutate nothing, never drop) on reserved paths.

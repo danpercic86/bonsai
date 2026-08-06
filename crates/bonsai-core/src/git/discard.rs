@@ -91,6 +91,25 @@ pub fn discard_paths_force(workdir: &Path, paths: &[String]) -> Result<(), AppEr
         }
     }
 
+    // 4. Validate every untracked entry is a regular file BEFORE deleting any of
+    //    them. A directory (or other non-file) would make `remove_file` in 4a
+    //    fail AFTER earlier siblings were already deleted — a partial, non-atomic
+    //    result that also skips the tracked-restore branch. Tolerate a not-found
+    //    entry (that IS the desired end state); every other IO error rejects the
+    //    whole batch before the first deletion, preserving all-or-nothing.
+    for p in &untracked {
+        match std::fs::symlink_metadata(workdir.join(p)) {
+            Ok(md) if !md.is_file() => {
+                return Err(AppError::Git(format!(
+                    "cannot discard '{p}': not a regular file"
+                )));
+            }
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(AppError::Io(e.to_string())),
+        }
+    }
+
     // 4a. Delete untracked files first. Tolerate already-gone (NotFound); a
     //     missing untracked file is the desired end state.
     for p in &untracked {
@@ -272,6 +291,39 @@ mod tests {
             .expect("missing untracked tolerated");
         assert!(!d.join("ghost.txt").exists(), "ghost still absent");
         assert!(!d.join("real.txt").exists(), "real.txt still deleted");
+    }
+
+    /// A directory in the untracked set is rejected up-front, and a sibling
+    /// untracked FILE also in the batch is NOT deleted — the all-or-nothing
+    /// guarantee holds even though the directory sorts after the file.
+    #[test]
+    fn force_untracked_directory_rejected_atomically() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        init(d);
+        commit(d, "base", &[("a.txt", "base\n")]);
+
+        // One untracked regular file + one untracked directory, both in the batch.
+        std::fs::write(d.join("keep.txt"), "new\n").expect("write file");
+        std::fs::create_dir(d.join("subdir")).expect("mkdir");
+        std::fs::write(d.join("subdir").join("inner.txt"), "x\n").expect("write inner");
+
+        let err = discard_paths_force(d, &["keep.txt".to_string(), "subdir".to_string()])
+            .expect_err("directory must be rejected");
+        match err {
+            AppError::Git(m) => assert!(m.contains("not a regular file"), "got: {m}"),
+            other => panic!("expected Git, got {other:?}"),
+        }
+        // The sibling untracked file survived — nothing was deleted before the
+        // up-front validation rejected the batch.
+        assert!(
+            d.join("keep.txt").exists(),
+            "sibling untracked file must NOT be deleted (atomic)"
+        );
+        assert!(
+            d.join("subdir").join("inner.txt").exists(),
+            "the directory and its contents are left untouched"
+        );
     }
 
     /// An invalid/escaping path rejects the whole batch before any mutation.
