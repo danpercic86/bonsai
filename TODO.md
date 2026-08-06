@@ -25,6 +25,35 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
+## P47 — cherry-pick enhancements + commit-action menu consolidation — **IN PROGRESS** (2026-08-06)
+
+User asked to "implement cherry-pick commits"; investigation found single-commit cherry-pick
+already exists (P20b) but was only reachable from the commit-row menu (user right-clicked a branch
+pill and didn't find it), and fails on a dirty worktree. Approved plan:
+`~/.claude/plans/i-need-you-to-replicated-goose.md`.
+
+**Scope (locked with user):**
+- **A. Menu consolidation** — extract a shared `commitActionItems(oid)` sub-builder (mirroring the
+  existing shared `resetMenuItems`) so oid-based actions (create branch/tag here, compare,
+  cherry-pick, revert) are reachable from branch AND tag pills, not only the commit row. Reverse
+  direction (checkout/copy-name/reflog/summarize) stays ref-specific by design.
+- **B. Single-pick enhancements** — autostash a dirty worktree (mirror `merge.rs` autostash;
+  likely add `StashPopConflicts` to `CherrypickOutcome`, apply parity to revert); editable commit
+  message (optional message param → new `CherrypickMessageDialog.tsx`); fix paused pick/revert
+  conflict-fetch bug at `RepoWorkspace.tsx:555`.
+- **Excluded:** detached-HEAD cherry-pick; multi-commit/range; `--allow-empty`.
+
+Sub-increments: P47a Rust core → P47b IPC+commands → P47c menu consolidation → P47d message
+dialog + bug fix.
+
+**Contract:** `docs/contracts/P47-cherry-pick-enhancements.md` + `P47-user-checklist.md` (done).
+Orchestrator decisions on flagged forks: F1 extract shared `autostash.rs` + migrate merge onto it;
+F2 revert keeps deterministic message (no editor); F3 graph tag pills + all branch pills get commit
+actions, sidebar tag rows scoped out; F4 editable-message dialog; F5 continue/abort leave retained
+autostash for manual pop (mirrors merge).
+
+**Current step:** P47a (Rust core) — in senior-dev.
+
 ## v1-prep — release-readiness for a public 1.0.0 — **DONE (AI gate passed)** (2026-08-05)
 
 Approved plan: `~/.claude/plans/i-want-to-prepare-floofy-crystal.md`. Based on a 3-agent

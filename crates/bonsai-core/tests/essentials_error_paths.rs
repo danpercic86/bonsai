@@ -73,7 +73,7 @@ fn detached_at_base() -> (tempfile::TempDir, String, String) {
 fn cherrypick_on_detached_head_errors() {
     require_git!();
     let (dir, _base, c2) = detached_at_base();
-    let err = cherrypick_commit(dir.path(), &c2).expect_err("detached must refuse");
+    let err = cherrypick_commit(dir.path(), &c2, None).expect_err("detached must refuse");
     match err {
         AppError::Git(m) => assert!(m.contains("HEAD is detached"), "got: {m}"),
         other => panic!("expected Git(HEAD is detached), got {other:?}"),
@@ -157,7 +157,7 @@ fn amend_during_paused_cherrypick_errors() {
     add_commit(d, "x.txt", "l1\nmain\nl3\n", "main edit");
     let head_before = head_oid(d);
 
-    let outcome = cherrypick_commit(d, &pick).expect("start pick");
+    let outcome = cherrypick_commit(d, &pick, None).expect("start pick");
     assert!(
         matches!(outcome, CherrypickOutcome::Conflicts { .. }),
         "fixture must conflict"

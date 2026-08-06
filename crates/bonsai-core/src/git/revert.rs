@@ -15,6 +15,7 @@
 use std::path::Path;
 
 use crate::error::AppError;
+use crate::git::autostash::{self, PopResult};
 use crate::git::commit::resolve_signature;
 use crate::git::conflict::list_conflicts;
 use crate::git::repo::read_head_info;
@@ -25,10 +26,16 @@ use crate::git::stage::open_workdir_repo;
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum RevertOutcome {
     /// Clean revert, auto-committed. `oid` = the new commit.
-    Committed { oid: String },
+    /// `stashed` = an autostash was created AND restored for this revert.
+    Committed { oid: String, stashed: bool },
     /// Index/worktree hold conflict markers; REVERT_HEAD written; repo paused
-    /// in state Revert. `paths` = sorted conflicted paths.
-    Conflicts { paths: Vec<String> },
+    /// in state Revert. `paths` = sorted conflicted paths. `stashed` = an
+    /// autostash was created and is RETAINED on the stack.
+    Conflicts { paths: Vec<String>, stashed: bool },
+    /// The revert committed cleanly, but re-applying the autostash conflicted.
+    /// The stash is RETAINED at stash@{0}. `head` = the new commit oid; `paths`
+    /// = conflicted paths from the stash apply.
+    StashPopConflicts { head: String, paths: Vec<String> },
 }
 
 /// Byte-exact `git revert --no-edit` message (contract §6): first line of the
@@ -74,14 +81,19 @@ fn finalize_revert(
     repo.cleanup_state()?; // removes REVERT_HEAD → state Clean
     Ok(RevertOutcome::Committed {
         oid: new.to_string(),
+        stashed: false,
     })
 }
 
 /// Blocking. Reverts `oid` on the current branch. Clean → commit immediately;
 /// conflict → pause for the OpBanner/conflict.rs flow. Preconditions all before
 /// any mutation (merge/rebase pattern).
+///
+/// A dirty TRACKED worktree is autostashed first (mirrors merge / cherry-pick);
+/// the stash is restored after a clean finalize, RETAINED on any conflict /
+/// pop-conflict. Revert keeps its deterministic message (no override, F2).
 pub fn revert_commit(workdir: &Path, oid: &str) -> Result<RevertOutcome, AppError> {
-    let repo = open_workdir_repo(workdir)?;
+    let mut repo = open_workdir_repo(workdir)?;
 
     if repo.state() != git2::RepositoryState::Clean {
         return Err(AppError::OperationInProgress(
@@ -97,28 +109,42 @@ pub fn revert_commit(workdir: &Path, oid: &str) -> Result<RevertOutcome, AppErro
         return Err(AppError::Git("cannot revert: HEAD is detached".to_string()));
     }
 
-    let target = repo.find_commit(
-        git2::Oid::from_str(oid).map_err(|_| AppError::Git("invalid commit id".to_string()))?,
-    )?;
+    // Validate the oid resolves BEFORE any mutation; the borrow ends here so
+    // the later &mut autostash calls are legal (mirrors merge_branch).
+    let target_id = {
+        let oid = git2::Oid::from_str(oid)
+            .map_err(|_| AppError::Git("invalid commit id".to_string()))?;
+        repo.find_commit(oid)?.id()
+    };
 
-    // Dirty-index guard (identical to cherry-pick / rebase / merge).
-    let mut index = repo.index()?;
-    let head_commit = repo.head()?.peel_to_commit()?;
-    if index.has_conflicts() || index.write_tree_to(&repo)? != head_commit.tree_id() {
+    // A conflicted index cannot be stashed safely — refuse before any mutation.
+    // (Unstaged/staged tracked changes are now autostashed rather than refused.)
+    if repo.index()?.has_conflicts() {
         return Err(AppError::Git(
-            "cannot revert: your index contains uncommitted changes — \
-             commit or unstage them first"
-                .to_string(),
+            "cannot revert: your index has unresolved conflicts".to_string(),
         ));
     }
-    drop(index);
 
-    // Identity EARLY (the clean path auto-commits).
+    // Identity EARLY (the clean path auto-commits). Also the autostash stasher.
     let sig = resolve_signature(&repo.config()?.snapshot()?)?;
 
+    // Autostash a dirty TRACKED worktree (mirrors merge / cherry-pick).
+    let stashed = if autostash::is_dirty(&repo)? {
+        autostash::stash_save(&mut repo, &sig, "bonsai: autostash before revert")?;
+        true
+    } else {
+        false
+    };
+
     // Mutation: sets index/worktree + writes REVERT_HEAD, state → Revert. On
-    // failure, guarantee a Clean state (mirror merge_branch).
-    if let Err(e) = repo.revert(&target, None) {
+    // failure, guarantee a Clean state (mirror merge_branch) and roll back the
+    // autostash. Scope the re-found commit so its borrow ends before the &mut
+    // rollback/pop calls below.
+    let revert_res = {
+        let target = repo.find_commit(target_id)?;
+        repo.revert(&target, None)
+    };
+    if let Err(e) = revert_res {
         let _ = repo.cleanup_state();
         let mapped = if e.code() == git2::ErrorCode::Conflict {
             AppError::CheckoutConflict(
@@ -129,15 +155,36 @@ pub fn revert_commit(workdir: &Path, oid: &str) -> Result<RevertOutcome, AppErro
         } else {
             e.into()
         };
-        return Err(mapped);
+        return Err(autostash::rollback_and_map(&mut repo, stashed, mapped));
     }
 
     if repo.index()?.has_conflicts() {
         let paths: Vec<String> = list_conflicts(workdir)?.into_iter().map(|c| c.path).collect();
-        return Ok(RevertOutcome::Conflicts { paths });
+        // PAUSE. Do NOT pop — the autostash (if any) is RETAINED on the stack.
+        return Ok(RevertOutcome::Conflicts { paths, stashed });
     }
 
-    finalize_revert(&repo, &sig)
+    let outcome = finalize_revert(&repo, &sig)?;
+    let oid = match outcome {
+        RevertOutcome::Committed { oid, .. } => oid,
+        other => return Ok(other),
+    };
+    if stashed {
+        return Ok(match autostash::pop_after_success(&mut repo, workdir)? {
+            PopResult::Restored => RevertOutcome::Committed {
+                oid,
+                stashed: true,
+            },
+            PopResult::Conflicted(paths) => RevertOutcome::StashPopConflicts {
+                head: oid,
+                paths,
+            },
+        });
+    }
+    Ok(RevertOutcome::Committed {
+        oid,
+        stashed: false,
+    })
 }
 
 /// Blocking. Finalizes a paused (resolved) revert — commits the resolved index
@@ -190,20 +237,32 @@ mod tests {
     fn wire_shapes_are_camel_case_tagged() {
         let v = serde_json::to_value(RevertOutcome::Committed {
             oid: "b".repeat(40),
+            stashed: false,
         })
         .expect("json");
         assert_eq!(
             v,
-            serde_json::json!({ "kind": "committed", "oid": "b".repeat(40) })
+            serde_json::json!({ "kind": "committed", "oid": "b".repeat(40), "stashed": false })
         );
 
         let v = serde_json::to_value(RevertOutcome::Conflicts {
+            paths: vec!["src/app.ts".to_string()],
+            stashed: true,
+        })
+        .expect("json");
+        assert_eq!(
+            v,
+            serde_json::json!({ "kind": "conflicts", "paths": ["src/app.ts"], "stashed": true })
+        );
+
+        let v = serde_json::to_value(RevertOutcome::StashPopConflicts {
+            head: "c".repeat(40),
             paths: vec!["src/app.ts".to_string()],
         })
         .expect("json");
         assert_eq!(
             v,
-            serde_json::json!({ "kind": "conflicts", "paths": ["src/app.ts"] })
+            serde_json::json!({ "kind": "stashPopConflicts", "head": "c".repeat(40), "paths": ["src/app.ts"] })
         );
     }
 

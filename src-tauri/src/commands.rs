@@ -2430,7 +2430,7 @@ async fn cherrypick_commit_inner(
     oid: String,
 ) -> Result<CherrypickOutcome, AppError> {
     let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || cherrypick::cherrypick_commit(&path, &oid))
+    tauri::async_runtime::spawn_blocking(move || cherrypick::cherrypick_commit(&path, &oid, None))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

@@ -7,6 +7,7 @@
 use std::path::Path;
 
 use crate::error::AppError;
+use crate::git::autostash::{self, PopResult};
 use crate::git::commit::{resolve_signature, CommitResult};
 use crate::git::conflict::list_conflicts;
 use crate::git::repo::read_head_info;
@@ -119,13 +120,8 @@ pub fn merge_branch(workdir: &Path, branch_name: &str) -> Result<MergeOutcome, A
 
     // Dirty = any TRACKED change (staged or unstaged); untracked/ignored
     // excluded (§2.2, mirrors git's autostash default §2.4).
-    let dirty = {
-        let mut so = git2::StatusOptions::new();
-        so.include_untracked(false).include_ignored(false);
-        !repo.statuses(Some(&mut so))?.is_empty()
-    };
-    let stashed = if dirty {
-        stash_save(&mut repo, &sig)?;
+    let stashed = if autostash::is_dirty(&repo)? {
+        autostash::stash_save(&mut repo, &sig, "bonsai: autostash before merge")?;
         true
     } else {
         false
@@ -154,13 +150,13 @@ pub fn merge_branch(workdir: &Path, branch_name: &str) -> Result<MergeOutcome, A
                 // Nothing mutated yet (set_target not run); restore the stash.
                 let msg = "cannot merge: local changes would be overwritten. \
                      Commit or discard them first.";
-                return Err(rollback_and_map(
+                return Err(autostash::rollback_and_map(
                     &mut repo,
                     stashed,
                     AppError::CheckoutConflict(msg.to_string()),
                 ));
             }
-            Err(e) => return Err(rollback_and_map(&mut repo, stashed, e.into())),
+            Err(e) => return Err(autostash::rollback_and_map(&mut repo, stashed, e.into())),
         }
         // `.map(|_| ())` discards the returned Reference so no borrow of `repo`
         // is retained across the following &mut rollback / pop calls.
@@ -174,11 +170,11 @@ pub fn merge_branch(workdir: &Path, branch_name: &str) -> Result<MergeOutcome, A
             // The ref move itself failed; worktree already checked out but the
             // branch still points at the old tip — restore the stash so the
             // user's original state is recoverable.
-            return Err(rollback_and_map(&mut repo, stashed, e.into()));
+            return Err(autostash::rollback_and_map(&mut repo, stashed, e.into()));
         }
         let to = incoming_id.to_string();
         if stashed {
-            return Ok(match pop_after_success(&mut repo, workdir)? {
+            return Ok(match autostash::pop_after_success(&mut repo, workdir)? {
                 PopResult::Restored => MergeOutcome::FastForwarded {
                     branch: head_branch,
                     to,
@@ -247,7 +243,7 @@ pub fn merge_branch(workdir: &Path, branch_name: &str) -> Result<MergeOutcome, A
         } else {
             e.into()
         };
-        return Err(rollback_and_map(&mut repo, stashed, mapped));
+        return Err(autostash::rollback_and_map(&mut repo, stashed, mapped));
     }
 
     let index = repo.index()?;
@@ -281,117 +277,12 @@ pub fn merge_branch(workdir: &Path, branch_name: &str) -> Result<MergeOutcome, A
     let result = finalize_merge_commit(&mut repo, &message)?;
     let oid = result.oid;
     if stashed {
-        return Ok(match pop_after_success(&mut repo, workdir)? {
+        return Ok(match autostash::pop_after_success(&mut repo, workdir)? {
             PopResult::Restored => MergeOutcome::Merged { oid, stashed: true },
             PopResult::Conflicted(paths) => MergeOutcome::StashPopConflicts { head: oid, paths },
         });
     }
     Ok(MergeOutcome::Merged { oid, stashed: false })
-}
-
-/// Autostash tracked (index + worktree) changes before a merge, resetting the
-/// tree to HEAD so the subsequent SAFE checkout/merge cannot conflict with the
-/// user's own edits (§2.4). NOT KEEP_INDEX (would leave the tree dirty), NOT
-/// INCLUDE_UNTRACKED (matches git's autostash default).
-fn stash_save(repo: &mut git2::Repository, sig: &git2::Signature) -> Result<(), AppError> {
-    repo.stash_save2(
-        sig,
-        Some("bonsai: autostash before merge"),
-        Some(git2::StashFlags::DEFAULT),
-    )?;
-    Ok(())
-}
-
-/// On a mutation failure AFTER `stash_save` but BEFORE the terminal outcome,
-/// try to restore the user's original dirty state, then return the original
-/// error (§2.7). Drops the stash ONLY on a genuinely clean restore; if the
-/// restore conflicts or fails, the stash is left on the stack and the error
-/// message is augmented to say so — never a silent success or a silent drop.
-fn rollback_and_map(repo: &mut git2::Repository, stashed: bool, err: AppError) -> AppError {
-    if !stashed {
-        return err;
-    }
-    // Attempt to restore the user's original dirty state. Most callers reach
-    // here with a clean tree (just-stashed, or the normal-merge error path
-    // reset the index), so the apply is clean. The FF set_target-failure caller
-    // has already checked out the incoming tree, so the apply could conflict.
-    //
-    // Use stash_apply (NOT stash_pop): this libgit2 applies a *content*
-    // conflict as Ok(()) with markers and stash_pop would then silently DROP
-    // the stash (data loss). We inspect the index after Ok and only drop on a
-    // genuinely clean restore; otherwise the stash is RETAINED at stash@{0} and
-    // we augment the error to say so — never a silent success.
-    let augment = |err: AppError| -> AppError {
-        let base = match &err {
-            AppError::CheckoutConflict(m) | AppError::Git(m) => m.clone(),
-            other => other.to_string(),
-        };
-        AppError::Git(format!("{base} (your changes are safe at stash@{{0}})"))
-    };
-    match repo.stash_apply(0, Some(&mut git2::StashApplyOptions::new())) {
-        Ok(()) => match repo.index() {
-            Ok(index) if !index.has_conflicts() => {
-                // Clean restore → drop the now-redundant stash and return the
-                // original error (state is as if nothing happened).
-                let _ = repo.stash_drop(0);
-                err
-            }
-            // Conflicted (or unreadable) restore: LEAVE the stash on the stack
-            // (never drop) and tell the user where their changes are.
-            _ => augment(err),
-        },
-        // Could not auto-restore: stash_apply never drops → stash retained.
-        Err(_) => augment(err),
-    }
-}
-
-/// Result of re-applying the autostash after a successful FF / merge-commit.
-enum PopResult {
-    Restored,
-    Conflicted(Vec<String>),
-}
-
-/// Re-apply the autostash after a successful FF / merge-commit (§2.8).
-///
-/// Uses `stash_apply` (NOT `stash_pop`) so WE control dropping. This libgit2
-/// version applies a *content* conflict as `Ok(())` — writing conflict markers
-/// into the worktree and conflict entries into the index — rather than
-/// returning `GIT_ECONFLICT`, and `stash_pop` would then DROP the stash on that
-/// silent conflict (data loss). So we must inspect the index after `Ok`, not
-/// trust the return code, before deciding to drop. No REINSTATE_INDEX
-/// (OPEN Q #1): staged changes return as unstaged.
-fn pop_after_success(
-    repo: &mut git2::Repository,
-    workdir: &Path,
-) -> Result<PopResult, AppError> {
-    let mut opts = git2::StashApplyOptions::new();
-    match repo.stash_apply(0, Some(&mut opts)) {
-        Ok(()) => {
-            if repo.index()?.has_conflicts() {
-                // Conflicted re-apply: LEAVE the stash on the stack (do NOT
-                // drop) → retained at stash@{0} for the user to resolve.
-                let paths = list_conflicts(workdir)?.into_iter().map(|c| c.path).collect();
-                Ok(PopResult::Conflicted(paths))
-            } else {
-                // Clean apply → now drop, equivalent to a clean pop.
-                repo.stash_drop(0)?;
-                Ok(PopResult::Restored)
-            }
-        }
-        // A checkout-level conflict (rare) means nothing droppable was applied
-        // → stash retained.
-        Err(e) if e.code() == git2::ErrorCode::Conflict => {
-            let paths = list_conflicts(workdir)?.into_iter().map(|c| c.path).collect();
-            Ok(PopResult::Conflicted(paths))
-        }
-        // Rare non-conflict failure: the FF / merge-commit HAS ALREADY landed
-        // and stash_apply never drops, so the stash is retained. Say the merge
-        // succeeded and point the user at their safe stash.
-        Err(e) => Err(AppError::Git(format!(
-            "merge succeeded, but re-applying your stashed changes failed: {e}. \
-             Your changes are safe at stash@{{0}}."
-        ))),
-    }
 }
 
 /// Shared core of commit_merge and the clean-merge auto-commit path

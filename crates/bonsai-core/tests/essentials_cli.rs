@@ -376,7 +376,7 @@ fn essentials_2_cherrypick_clean_matches_cli() {
         .parse()
         .expect("author epoch");
 
-    let outcome = cherrypick_commit(a, &pick_a).expect("bonsai cherry-pick");
+    let outcome = cherrypick_commit(a, &pick_a, None).expect("bonsai cherry-pick");
     match outcome {
         CherrypickOutcome::Committed { .. } => {}
         other => panic!("expected Committed, got {other:?}"),
@@ -432,9 +432,9 @@ fn essentials_3_cherrypick_conflict_resolve_continue_matches_cli() {
     let pick_b = build(b);
     assert_eq!(pick_a, pick_b, "twin pick oids must match");
 
-    let outcome = cherrypick_commit(a, &pick_a).expect("bonsai cherry-pick");
+    let outcome = cherrypick_commit(a, &pick_a, None).expect("bonsai cherry-pick");
     match outcome {
-        CherrypickOutcome::Conflicts { paths } => {
+        CherrypickOutcome::Conflicts { paths, .. } => {
             assert_eq!(paths, vec!["x.txt".to_string()], "x.txt must be conflicted");
         }
         other => panic!("expected Conflicts, got {other:?}"),
@@ -530,7 +530,7 @@ fn essentials_5_revert_conflict_resolve_continue_matches_cli() {
 
     let outcome = revert_commit(a, &c2_a).expect("bonsai revert");
     match outcome {
-        RevertOutcome::Conflicts { paths } => {
+        RevertOutcome::Conflicts { paths, .. } => {
             assert_eq!(paths, vec!["x.txt".to_string()]);
         }
         other => panic!("expected Conflicts, got {other:?}"),
@@ -573,7 +573,7 @@ fn essentials_8_cherrypick_abort_restores_head() {
     let head_before = head_oid(d);
     let worktree_before = read(d, "x.txt");
 
-    let outcome = cherrypick_commit(d, &pick).expect("cherry-pick");
+    let outcome = cherrypick_commit(d, &pick, None).expect("cherry-pick");
     assert!(matches!(outcome, CherrypickOutcome::Conflicts { .. }));
     assert_eq!(repo_state(d), git2::RepositoryState::CherryPick);
 

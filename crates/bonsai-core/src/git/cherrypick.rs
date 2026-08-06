@@ -16,6 +16,7 @@
 use std::path::Path;
 
 use crate::error::AppError;
+use crate::git::autostash::{self, PopResult};
 use crate::git::commit::resolve_signature;
 use crate::git::conflict::list_conflicts;
 use crate::git::repo::read_head_info;
@@ -26,11 +27,18 @@ use crate::git::stage::open_workdir_repo;
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum CherrypickOutcome {
     /// Clean pick, auto-committed. `oid` = the new commit.
-    Committed { oid: String },
-    /// Index/worktree hold conflict markers; CHERRY_PICK_HEAD written; repo
-    /// paused in state CherryPick. `paths` = sorted conflicted paths (the exact
-    /// set `list_conflicts` returns).
-    Conflicts { paths: Vec<String> },
+    /// `stashed` = an autostash was created AND restored for this pick.
+    Committed { oid: String, stashed: bool },
+    /// Index/worktree hold conflict markers; CHERRY_PICK_HEAD (+ MERGE_MSG when
+    /// a message override was supplied) written; repo paused in state
+    /// CherryPick. `paths` = sorted conflicted paths (the exact set
+    /// `list_conflicts` returns). `stashed` = an autostash was created and is
+    /// RETAINED on the stack (deferred re-apply, same as merge).
+    Conflicts { paths: Vec<String>, stashed: bool },
+    /// The pick committed cleanly, but re-applying the autostash conflicted.
+    /// The stash is RETAINED at stash@{0}. `head` = the new commit oid; `paths`
+    /// = conflicted paths from the stash apply.
+    StashPopConflicts { head: String, paths: Vec<String> },
 }
 
 /// Normalize a reused commit message exactly like `create_commit`: CRLF/CR →
@@ -43,13 +51,33 @@ fn normalize_message(raw: &str) -> String {
     format!("{trimmed}\n")
 }
 
+/// Read `.git/MERGE_MSG` as an override message, returning `Some(normalized)`
+/// only when the file exists and is non-empty after normalization. Used to carry
+/// a custom pick message across a conflict pause (persisted at pick time). A
+/// missing / empty file → `None` (fall back to the picked commit's message).
+fn read_merge_msg_override(repo: &git2::Repository) -> Option<String> {
+    let raw = std::fs::read_to_string(repo.path().join("MERGE_MSG")).ok()?;
+    let normalized = normalize_message(&raw);
+    if normalized.trim().is_empty() {
+        None
+    } else {
+        Some(normalized)
+    }
+}
+
 /// Shared finalize for the clean path AND `cherrypick_continue`: read the picked
-/// oid from CHERRY_PICK_HEAD, commit the current (resolved) index reusing the
-/// picked commit's message + ORIGINAL author with the supplied fresh committer,
-/// then `cleanup_state`. Parallels `merge::finalize_merge_commit`.
+/// oid from CHERRY_PICK_HEAD, commit the current (resolved) index preserving the
+/// picked commit's ORIGINAL author with the supplied fresh committer, then
+/// `cleanup_state`. Parallels `merge::finalize_merge_commit`.
+///
+/// Message precedence (contract §2.2):
+///   1. `message` Some(m)                          -> normalize_message(m)
+///   2. else .git/MERGE_MSG present & non-empty     -> that (continue path)
+///   3. else the picked commit's original message   -> normalize(pick.message)
 fn finalize_cherrypick(
     repo: &git2::Repository,
     committer: &git2::Signature,
+    message: Option<&str>,
 ) -> Result<CherrypickOutcome, AppError> {
     let head_path = repo.path().join("CHERRY_PICK_HEAD");
     let raw = std::fs::read_to_string(&head_path)
@@ -59,7 +87,11 @@ fn finalize_cherrypick(
     let pick = repo.find_commit(pick_oid)?;
 
     let author = pick.author().to_owned();
-    let message = normalize_message(pick.message().unwrap_or(""));
+    let message = match message {
+        Some(m) => normalize_message(m),
+        None => read_merge_msg_override(repo)
+            .unwrap_or_else(|| normalize_message(pick.message().unwrap_or(""))),
+    };
 
     let head_commit = repo.head()?.peel_to_commit()?;
     let tree = repo.find_tree(repo.index()?.write_tree()?)?;
@@ -82,14 +114,28 @@ fn finalize_cherrypick(
     repo.cleanup_state()?; // removes CHERRY_PICK_HEAD → state Clean
     Ok(CherrypickOutcome::Committed {
         oid: new.to_string(),
+        stashed: false,
     })
 }
 
 /// Blocking. Cherry-picks `oid` onto the current branch. Clean → commit
 /// immediately; conflict → pause for the OpBanner/conflict.rs flow.
+///
+/// `message`: `None` → reuse the picked commit's message verbatim (P20 behavior,
+/// no regression). `Some(m)` → commit with the normalized `m` instead,
+/// PRESERVING the original author and using a fresh committer (P20 identity
+/// rules). A `Some(m)` override survives a conflict pause via `.git/MERGE_MSG`.
+///
+/// A dirty TRACKED worktree is autostashed first (mirrors merge); the stash is
+/// restored after a clean finalize, RETAINED on any conflict/pop-conflict.
+///
 /// Preconditions are all checked BEFORE any mutation (merge/rebase pattern).
-pub fn cherrypick_commit(workdir: &Path, oid: &str) -> Result<CherrypickOutcome, AppError> {
-    let repo = open_workdir_repo(workdir)?;
+pub fn cherrypick_commit(
+    workdir: &Path,
+    oid: &str,
+    message: Option<&str>,
+) -> Result<CherrypickOutcome, AppError> {
+    let mut repo = open_workdir_repo(workdir)?;
 
     if repo.state() != git2::RepositoryState::Clean {
         return Err(AppError::OperationInProgress(
@@ -109,31 +155,44 @@ pub fn cherrypick_commit(workdir: &Path, oid: &str) -> Result<CherrypickOutcome,
         ));
     }
 
-    let pick = repo.find_commit(
-        git2::Oid::from_str(oid).map_err(|_| AppError::Git("invalid commit id".to_string()))?,
-    )?;
+    // Validate the oid resolves BEFORE any mutation; the borrow ends here so
+    // the later &mut autostash calls are legal (mirrors merge_branch).
+    let pick_id = {
+        let oid = git2::Oid::from_str(oid)
+            .map_err(|_| AppError::Git("invalid commit id".to_string()))?;
+        repo.find_commit(oid)?.id()
+    };
 
-    // Dirty-index guard (identical to rebase §3.9 / merge §4.1.5): staged
-    // changes or a conflicted index refuse the pick. Unstaged worktree changes
-    // are OK — they only fail as CheckoutConflict if the pick would clobber.
-    let mut index = repo.index()?;
-    let head_commit = repo.head()?.peel_to_commit()?;
-    if index.has_conflicts() || index.write_tree_to(&repo)? != head_commit.tree_id() {
+    // A conflicted index cannot be stashed safely — refuse before any mutation.
+    // (Unstaged/staged tracked changes are now autostashed rather than refused.)
+    if repo.index()?.has_conflicts() {
         return Err(AppError::Git(
-            "cannot cherry-pick: your index contains uncommitted changes — \
-             commit or unstage them first"
-                .to_string(),
+            "cannot cherry-pick: your index has unresolved conflicts".to_string(),
         ));
     }
-    drop(index);
 
     // Identity EARLY (the clean path auto-commits) → ConfigMissing before any
-    // worktree mutation.
+    // worktree mutation. `sig` is also the autostash stasher identity.
     let sig = resolve_signature(&repo.config()?.snapshot()?)?;
 
+    // Autostash a dirty TRACKED worktree (mirrors merge) so the pick checkout
+    // cannot clobber the user's edits.
+    let stashed = if autostash::is_dirty(&repo)? {
+        autostash::stash_save(&mut repo, &sig, "bonsai: autostash before cherry-pick")?;
+        true
+    } else {
+        false
+    };
+
     // Mutation: sets index/worktree + writes CHERRY_PICK_HEAD, state →
-    // CherryPick. On failure, guarantee a Clean state (mirror merge_branch).
-    if let Err(e) = repo.cherrypick(&pick, None) {
+    // CherryPick. On failure, guarantee a Clean state (mirror merge_branch) and
+    // roll back the autostash. Scope the re-found commit so its borrow ends
+    // before the &mut rollback/pop calls below.
+    let pick_res = {
+        let pick = repo.find_commit(pick_id)?;
+        repo.cherrypick(&pick, None)
+    };
+    if let Err(e) = pick_res {
         let _ = repo.cleanup_state();
         let mapped = if e.code() == git2::ErrorCode::Conflict {
             AppError::CheckoutConflict(
@@ -144,15 +203,42 @@ pub fn cherrypick_commit(workdir: &Path, oid: &str) -> Result<CherrypickOutcome,
         } else {
             e.into()
         };
-        return Err(mapped);
+        return Err(autostash::rollback_and_map(&mut repo, stashed, mapped));
     }
 
     if repo.index()?.has_conflicts() {
         let paths: Vec<String> = list_conflicts(workdir)?.into_iter().map(|c| c.path).collect();
-        return Ok(CherrypickOutcome::Conflicts { paths });
+        // Persist a custom message so it survives the pause and is honored by
+        // cherrypick_continue via MERGE_MSG (§2.2). No override → leave whatever
+        // libgit2 wrote (the picked commit's message).
+        if let Some(m) = message {
+            std::fs::write(repo.path().join("MERGE_MSG"), normalize_message(m))?;
+        }
+        // PAUSE. Do NOT pop — the autostash (if any) is RETAINED on the stack.
+        return Ok(CherrypickOutcome::Conflicts { paths, stashed });
     }
 
-    finalize_cherrypick(&repo, &sig)
+    let outcome = finalize_cherrypick(&repo, &sig, message)?;
+    let oid = match outcome {
+        CherrypickOutcome::Committed { oid, .. } => oid,
+        other => return Ok(other),
+    };
+    if stashed {
+        return Ok(match autostash::pop_after_success(&mut repo, workdir)? {
+            PopResult::Restored => CherrypickOutcome::Committed {
+                oid,
+                stashed: true,
+            },
+            PopResult::Conflicted(paths) => CherrypickOutcome::StashPopConflicts {
+                head: oid,
+                paths,
+            },
+        });
+    }
+    Ok(CherrypickOutcome::Committed {
+        oid,
+        stashed: false,
+    })
 }
 
 /// Blocking. Finalizes a paused (resolved) cherry-pick — commits the resolved
@@ -177,7 +263,9 @@ pub fn cherrypick_continue(workdir: &Path) -> Result<CherrypickOutcome, AppError
     drop(index);
 
     let sig = resolve_signature(&repo.config()?.snapshot()?)?;
-    finalize_cherrypick(&repo, &sig)
+    // message = None → finalize honors a persisted MERGE_MSG override, else the
+    // picked commit's message. Does NOT auto-pop a retained autostash (F5).
+    finalize_cherrypick(&repo, &sig, None)
 }
 
 /// Blocking. Aborts a paused cherry-pick: reset --hard to HEAD + cleanup_state
@@ -206,20 +294,32 @@ mod tests {
     fn wire_shapes_are_camel_case_tagged() {
         let v = serde_json::to_value(CherrypickOutcome::Committed {
             oid: "a".repeat(40),
+            stashed: true,
         })
         .expect("json");
         assert_eq!(
             v,
-            serde_json::json!({ "kind": "committed", "oid": "a".repeat(40) })
+            serde_json::json!({ "kind": "committed", "oid": "a".repeat(40), "stashed": true })
         );
 
         let v = serde_json::to_value(CherrypickOutcome::Conflicts {
             paths: vec!["README.md".to_string(), "src/app.ts".to_string()],
+            stashed: false,
         })
         .expect("json");
         assert_eq!(
             v,
-            serde_json::json!({ "kind": "conflicts", "paths": ["README.md", "src/app.ts"] })
+            serde_json::json!({ "kind": "conflicts", "paths": ["README.md", "src/app.ts"], "stashed": false })
+        );
+
+        let v = serde_json::to_value(CherrypickOutcome::StashPopConflicts {
+            head: "c".repeat(40),
+            paths: vec!["src/app.ts".to_string()],
+        })
+        .expect("json");
+        assert_eq!(
+            v,
+            serde_json::json!({ "kind": "stashPopConflicts", "head": "c".repeat(40), "paths": ["src/app.ts"] })
         );
     }
 
@@ -229,7 +329,7 @@ mod tests {
         git2::Repository::init(dir.path()).expect("init repo");
 
         // Unborn HEAD refuses before target resolution.
-        let err = cherrypick_commit(dir.path(), &"0".repeat(40)).expect_err("unborn");
+        let err = cherrypick_commit(dir.path(), &"0".repeat(40), None).expect_err("unborn");
         match err {
             AppError::Git(m) => assert!(m.contains("no commits yet"), "got: {m}"),
             other => panic!("expected Git, got {other:?}"),
