@@ -700,17 +700,23 @@ export interface IdentityProfile {
   signingKey: string | null;
 }
 
-/** Cherry-pick outcome (P20). Mirrors the Rust `CherrypickOutcome` serde enum
- *  (tagged "kind", camelCase). `conflicts` pauses into RepoOpState.cherryPick. */
+/** Cherry-pick outcome (P20, extended P47). Mirrors the Rust `CherrypickOutcome`
+ *  serde enum (tagged "kind", camelCase). `stashed` reports an autostash that was
+ *  created for the operation (and restored on `committed`, retained otherwise);
+ *  `conflicts` pauses into RepoOpState.cherryPick; `stashPopConflicts` = the pick
+ *  committed cleanly but re-applying the retained autostash conflicted. */
 export type CherrypickOutcome =
-  | { kind: 'committed'; oid: string }
-  | { kind: 'conflicts'; paths: string[] };
+  | { kind: 'committed'; oid: string; stashed: boolean }
+  | { kind: 'conflicts'; paths: string[]; stashed: boolean }
+  | { kind: 'stashPopConflicts'; head: string; paths: string[] };
 
-/** Revert outcome (P20). Mirrors the Rust `RevertOutcome` serde enum (tagged
- *  "kind", camelCase). `conflicts` pauses into RepoOpState.revert. */
+/** Revert outcome (P20, extended P47). Mirrors the Rust `RevertOutcome` serde enum
+ *  (tagged "kind", camelCase). `stashed`/`stashPopConflicts` mirror
+ *  `CherrypickOutcome`; `conflicts` pauses into RepoOpState.revert. */
 export type RevertOutcome =
-  | { kind: 'committed'; oid: string }
-  | { kind: 'conflicts'; paths: string[] };
+  | { kind: 'committed'; oid: string; stashed: boolean }
+  | { kind: 'conflicts'; paths: string[]; stashed: boolean }
+  | { kind: 'stashPopConflicts'; head: string; paths: string[] };
 
 export type PushResult =
   | { kind: 'upToDate'; remote: string; branch: string }
@@ -1446,11 +1452,16 @@ export interface IpcApi {
    *  untracked paths deleted from disk (P36). Destructive — the UI confirms
    *  first. Rejects other (invalid path) | io | git | noRepo. */
   discardPathsForce(repoId: string, paths: string[]): Promise<void>;
-  /** Cherry-pick a single commit onto the current branch (P20). Clean →
-   *  committed; conflict → pauses into RepoOpState.cherryPick. Rejects
-   *  operationInProgress | git | checkoutConflict | configMissing |
-   *  nothingToCommit | noRepo. */
-  cherrypickCommit(repoId: string, oid: string): Promise<CherrypickOutcome>;
+  /** Cherry-pick a single commit onto the current branch (P20, P47). Clean →
+   *  committed; conflict → pauses into RepoOpState.cherryPick. `message` (P47):
+   *  omit/null → reuse the picked commit's message; a string overrides it. A
+   *  dirty tracked worktree is autostashed first. Rejects operationInProgress |
+   *  git | checkoutConflict | configMissing | nothingToCommit | noRepo. */
+  cherrypickCommit(
+    repoId: string,
+    oid: string,
+    message?: string | null,
+  ): Promise<CherrypickOutcome>;
   /** Finalize a paused (resolved) cherry-pick (P20). Rejects
    *  noOperationInProgress | unresolvedConflicts | configMissing |
    *  nothingToCommit | git | noRepo. */

@@ -2419,8 +2419,9 @@ pub async fn cherrypick_commit(
     state: tauri::State<'_, AppState>,
     repo_id: String,
     oid: String,
+    message: Option<String>,
 ) -> Result<CherrypickOutcome, AppError> {
-    cherrypick_commit_inner(state.inner(), &repo_id, oid).await
+    cherrypick_commit_inner(state.inner(), &repo_id, oid, message).await
 }
 
 /// Runtime-free core of `cherrypick_commit` (unit-testable without a Tauri app).
@@ -2428,11 +2429,14 @@ async fn cherrypick_commit_inner(
     state: &AppState,
     repo_id: &str,
     oid: String,
+    message: Option<String>,
 ) -> Result<CherrypickOutcome, AppError> {
     let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || cherrypick::cherrypick_commit(&path, &oid, None))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    tauri::async_runtime::spawn_blocking(move || {
+        cherrypick::cherrypick_commit(&path, &oid, message.as_deref())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Finalizes a paused (resolved) cherry-pick (P20 contract §5). Errors:

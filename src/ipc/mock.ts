@@ -193,6 +193,11 @@ const INITIAL_STATUS: StatusSnapshot = {
 // ('conflict')` convention, keyed on oid). Any other oid commits cleanly.
 const PICK_REVERT_CONFLICT_OID_SUFFIX = 'c0ffee';
 
+// P47 demo trigger: a cherry-pick / revert of a commit whose oid ends in this
+// suffix commits cleanly but conflicts when the autostash is re-applied, so the
+// harness can exercise the `stashPopConflicts` outcome (stash retained).
+const STASH_POP_CONFLICT_OID_SUFFIX = 'deadbe';
+
 // P23b §7.2: interactive-rebase conflict demo. A Start pauses on a conflict when
 // EITHER `?rebase=conflict` is set (seeded per repo below) OR one of the plan's
 // replayed oids ends in this suffix (an explicit fixture marker) — mirroring the
@@ -3555,9 +3560,17 @@ export const mockIpc: IpcApi = {
     state.status.untracked = state.status.untracked.filter((e) => !drop.has(e.path));
   },
 
-  // P20 §5/§8.4: cherry-pick. An oid ending in the demo suffix pauses with a
-  // conflict (op-state → cherryPick); any other oid commits a new top node.
-  async cherrypickCommit(repoId: string, oid: string): Promise<CherrypickOutcome> {
+  // P20 §5/§8.4 + P47: cherry-pick. An oid ending in the conflict suffix pauses
+  // with a conflict (op-state → cherryPick); one ending in the stash-pop suffix
+  // commits cleanly but conflicts re-applying the autostash; any other oid
+  // commits a new top node. `stashed` mirrors the backend: true when the tracked
+  // worktree is dirty (autostash was needed). `message`, when supplied, becomes
+  // the new commit's summary (drives the editable-message flow, P47).
+  async cherrypickCommit(
+    repoId: string,
+    oid: string,
+    message?: string | null,
+  ): Promise<CherrypickOutcome> {
     await delay(150);
     const state = requireRepo(repoId);
     if (state.opState.kind !== 'none') {
@@ -3567,13 +3580,21 @@ export const mockIpc: IpcApi = {
       };
       throw err;
     }
+    const stashed = state.status.unstaged.length > 0 || state.status.staged.length > 0;
     if (oid.endsWith(PICK_REVERT_CONFLICT_OID_SUFFIX)) {
       seedPickRevertConflict(state, 'cherryPick');
-      return { kind: 'conflicts', paths: ['src/app.ts'] };
+      return { kind: 'conflicts', paths: ['src/app.ts'], stashed };
     }
     state.headOid = randomOid();
-    state.commits.unshift({ oid: state.headOid, summary: `Cherry-pick ${oid.slice(0, 7)}` });
-    return { kind: 'committed', oid: state.headOid };
+    const summary =
+      message != null && message.length > 0
+        ? message.split('\n', 1)[0]
+        : `Cherry-pick ${oid.slice(0, 7)}`;
+    state.commits.unshift({ oid: state.headOid, summary });
+    if (oid.endsWith(STASH_POP_CONFLICT_OID_SUFFIX)) {
+      return { kind: 'stashPopConflicts', head: state.headOid, paths: ['src/app.ts'] };
+    }
+    return { kind: 'committed', oid: state.headOid, stashed };
   },
 
   async cherrypickContinue(repoId: string): Promise<CherrypickOutcome> {
@@ -3598,7 +3619,8 @@ export const mockIpc: IpcApi = {
     state.conflictTexts = new Map();
     state.headOid = randomOid();
     state.commits.unshift({ oid: state.headOid, summary: 'Cherry-pick (resolved)' });
-    return { kind: 'committed', oid: state.headOid };
+    // Continue never re-applies a retained autostash (F5) → stashed: false.
+    return { kind: 'committed', oid: state.headOid, stashed: false };
   },
 
   async cherrypickAbort(repoId: string): Promise<void> {
@@ -3617,7 +3639,8 @@ export const mockIpc: IpcApi = {
     state.status.conflicted = [];
   },
 
-  // P20 §6/§8.4: revert. Same demo-trigger + op-state plumbing as cherry-pick.
+  // P20 §6/§8.4 + P47: revert. Same demo-triggers + autostash plumbing as
+  // cherry-pick, but no editable message (revert keeps its deterministic text).
   async revertCommit(repoId: string, oid: string): Promise<RevertOutcome> {
     await delay(150);
     const state = requireRepo(repoId);
@@ -3628,13 +3651,17 @@ export const mockIpc: IpcApi = {
       };
       throw err;
     }
+    const stashed = state.status.unstaged.length > 0 || state.status.staged.length > 0;
     if (oid.endsWith(PICK_REVERT_CONFLICT_OID_SUFFIX)) {
       seedPickRevertConflict(state, 'revert');
-      return { kind: 'conflicts', paths: ['src/app.ts'] };
+      return { kind: 'conflicts', paths: ['src/app.ts'], stashed };
     }
     state.headOid = randomOid();
     state.commits.unshift({ oid: state.headOid, summary: `Revert "${oid.slice(0, 7)}"` });
-    return { kind: 'committed', oid: state.headOid };
+    if (oid.endsWith(STASH_POP_CONFLICT_OID_SUFFIX)) {
+      return { kind: 'stashPopConflicts', head: state.headOid, paths: ['src/app.ts'] };
+    }
+    return { kind: 'committed', oid: state.headOid, stashed };
   },
 
   async revertContinue(repoId: string): Promise<RevertOutcome> {
@@ -3656,7 +3683,8 @@ export const mockIpc: IpcApi = {
     state.conflictTexts = new Map();
     state.headOid = randomOid();
     state.commits.unshift({ oid: state.headOid, summary: 'Revert (resolved)' });
-    return { kind: 'committed', oid: state.headOid };
+    // Continue never re-applies a retained autostash (F5) → stashed: false.
+    return { kind: 'committed', oid: state.headOid, stashed: false };
   },
 
   async revertAbort(repoId: string): Promise<void> {

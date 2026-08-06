@@ -479,8 +479,12 @@ export const tauriIpc: IpcApi = {
     return invoke<void>('discard_paths_force', { repoId, paths });
   },
 
-  cherrypickCommit(repoId: string, oid: string): Promise<CherrypickOutcome> {
-    return invoke<CherrypickOutcome>('cherrypick_commit', { repoId, oid });
+  cherrypickCommit(
+    repoId: string,
+    oid: string,
+    message: string | null = null,
+  ): Promise<CherrypickOutcome> {
+    return invoke<CherrypickOutcome>('cherrypick_commit', { repoId, oid, message });
   },
 
   cherrypickContinue(repoId: string): Promise<CherrypickOutcome> {
