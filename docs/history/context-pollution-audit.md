@@ -41,10 +41,10 @@ Just over the line, watch/split opportunistically: `StatusPanel.tsx` 698, `works
 Splitting the **top 4** offenders now (highest read-cost relief), each as its own compiling,
 reviewed, separately-committed increment:
 
-1. [ ] `commands.rs` → `commands/` submodules
-2. [ ] `mock.ts` → handlers + fixtures
-3. [ ] `RepoWorkspace.tsx` → handler hooks
-4. [ ] `WorkspaceDialogs.tsx` → per-family dialog files
+1. [x] `commands.rs` → `commands/` submodules (5123 → 28 files, largest non-test 310) — `505cab7`
+2. [x] `mock.ts` → handlers + fixtures (4681 → 43-line composer + 35 files) — `8f93d98`
+3. [x] `RepoWorkspace.tsx` → handler hooks (3428 → 2086 + 14 hooks) — `733c254`
+4. [x] `WorkspaceDialogs.tsx` → per-family dialog files (882 → 311 + 6 files) — `d0fd8f0`
 
 Remaining rows (`types.ts`, `mcp.rs`, `scheduler.rs`, `App.tsx`, `GraphCanvas.tsx`, `tauri.ts`,
 `draw.ts`, `Sidebar.tsx`) are lower-urgency follow-ups tracked here.
