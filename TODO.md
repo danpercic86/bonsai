@@ -25,6 +25,30 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
+## P48 — New Worktree dialog UX (searchable branch picker, wider dialog, per-category select-all) — **DONE (AI gate + USER CHECKPOINT confirmed)** (2026-08-06)
+
+User reported three pain points in the New Worktree dialog: (1) dialog too small / long file
+paths unreadable, (2) branch `<select>` doesn't scale to 100+ branches, (3) no bulk selection for
+copy candidates. Approved plan: `~/.claude/plans/about-worktrees-1-the-ancient-island.md`.
+
+**Scope (locked with user):**
+- Widen the dialog card to 520px + full-path `title` tooltip on each copy-candidate row.
+- New reusable `src/components/Combobox.tsx` (type-to-filter, keyboard nav, disabled "checked out"
+  branches, select-on-focus, capture-phase Escape that closes only the open dropdown). Replaces the
+  native branch `<select>` in `WorktreeCreateDialog.tsx`; also applied in free-input mode to the
+  `WhatChangedDialog.tsx` ref fields (replacing the native `<datalist>`).
+- Per-category "Check all / Uncheck all" toggles for Staged / Unstaged / Untracked (NOT Gitignored)
+  in `WorktreeCopyCandidates.tsx`.
+- Reusable-everywhere note: the only true branch dropdowns were the worktree `<select>` and the
+  WhatChanged datalist; checkout/merge/rebase/create-from are sidebar-row + context-menu driven
+  (different interaction) and were left unchanged.
+
+**AI GATE PASSED (2026-08-06).** Reviewer found + fixed one blocking bug (capture-vs-bubble Escape
+ordering) and browser-harness verification found + fixed one UX gap (typing appended to the
+pre-filled label → added select-on-focus). Both re-verified live. tsc clean, no console errors.
+Committed `10155e8` (5 files, +450/-62; new `Combobox.tsx`). **USER CHECKPOINT CONFIRMED
+(2026-08-06)** in native `pnpm tauri dev`.
+
 ## P47 — cherry-pick enhancements + commit-action menu consolidation — **DONE (AI gate passed)** (2026-08-06)
 
 User asked to "implement cherry-pick commits"; investigation found single-commit cherry-pick
