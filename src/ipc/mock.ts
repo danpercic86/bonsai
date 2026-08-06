@@ -1057,6 +1057,20 @@ function requireRepo(repoId: string): MockRepoState {
   return state;
 }
 
+/**
+ * True when `oid` matches a known ref tip: HEAD, a local branch tip, or a
+ * remote-tracking branch tip. Tags are `string[]` (no oids) in the mock, so
+ * they are not considered here. Lets diff/compare mocks treat ref-pill tips as
+ * resolvable commits, mirroring the real backend, instead of throwing.
+ */
+function isRefTip(state: MockRepoState, oid: string): boolean {
+  return (
+    state.branches.head.oid === oid ||
+    state.branches.local.some((b) => b.tip === oid) ||
+    state.branches.remote.some((r) => r.tip === oid)
+  );
+}
+
 // Recents persistence (P1 contract §3.4): localStorage-backed so the harness
 // reopen-on-launch story is verifiable — open once, reload, auto-reopen.
 const RECENTS_KEY = 'bonsai.mockRecents';
@@ -2176,6 +2190,15 @@ export const mockIpc: IpcApi = {
           : prependCommits(buildMockGraph(), state.commits);
     const index = layout.nodes.findIndex((n) => n.id === oid);
     if (index === -1) {
+      // Fallback: a branch/tracking-branch tip is a resolvable commit in the
+      // real backend but is NOT a graph node id in the mock (tips are decoupled
+      // from walkable rows). Serve a representative multi-line-message commit
+      // (fixture index 1 carries a subject + body) so ref-pill actions like
+      // "Cherry-pick onto current…" prefill visibly. Genuinely-unknown oids
+      // still throw below.
+      if (isRefTip(state, oid)) {
+        return structuredClone(mockCommitDiff(1, oid));
+      }
       const err: AppError = { kind: 'git', message: 'mock: unknown commit' };
       throw err;
     }
@@ -2215,6 +2238,13 @@ export const mockIpc: IpcApi = {
     }
     const index = layout.nodes.findIndex((n) => n.id === oid);
     if (index === -1) {
+      // Fallback: a branch/tracking-branch tip resolves to a real commit in the
+      // backend but is not a graph node id in the mock. Compare HEAD against a
+      // representative row (index 1) so "Compare with HEAD" on a ref pill yields
+      // a plausible diff. Genuinely-unknown oids still throw below.
+      if (isRefTip(state, oid)) {
+        return structuredClone(mockCompareDiff(state.headOid, oid, 1, layout));
+      }
       const err: AppError = { kind: 'git', message: 'mock: unknown commit' };
       throw err;
     }

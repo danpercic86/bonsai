@@ -52,12 +52,26 @@ F2 revert keeps deterministic message (no editor); F3 graph tag pills + all bran
 actions, sidebar tag rows scoped out; F4 editable-message dialog; F5 continue/abort leave retained
 autostash for manual pop (mirrors merge).
 
-**Current step:** P47d (message dialog + paused-conflict bug fix) — next. P47a `c456e73`,
-P47b `dc67360`, P47c committed (menu consolidation; reviewer APPROVE; `pnpm build` clean).
-Deferred into P47d: (a) add "…" ellipsis to the "Cherry-pick onto current" label now that it opens
-a dialog; (b) gate mock `stashPopConflicts` on `stashed` so it can't fire on a clean tree.
-Accepted as-is: unborn-HEAD branch pill no longer offers create-branch/tag (now uniform with the
-commit-row menu, which already hid these when HEAD is unborn).
+**AI GATE PASSED (2026-08-06).** All four increments committed & reviewer-APPROVED: P47a `c456e73`
+(core), P47b `dc67360` (IPC), P47c `aeb5bb8` (menu consolidation), P47d `7498215` (message dialog +
+paused-conflict fix). Tests `5319f34`: 7 new autostash/message CLI oracles + 380 lib + all
+integration green, 0 regressions. Browser-harness fidelity fix (ref-tip commit diffs in mock so
+branch/tag-pill actions resolve — also fixes pre-existing Compare-with-HEAD gap) in the same commit.
+
+**AI-gate evidence (browser harness, VITE_MOCK_IPC):**
+- Menu consolidation ✅ — branch pill menu now lists Create tag here / Cherry-pick onto current… /
+  Revert commit (were commit-row-only before); no duplicated create-branch/compare.
+- Cherry-pick dialog ✅ — opens from a branch pill prefilled with the source commit's multi-line
+  message; editing + confirm → toast "Cherry-picked de3dc5d · stashed changes restored" (autostash).
+- Revert ✅ — from a branch pill → "Reverted 607f7d5 · stashed changes restored".
+- Dialog error path ✅ — message-fetch failure closes cleanly with an error toast.
+- B3 paused-conflict fix — code-verified (reviewer trace: refetchOpState now feeds conflictCount for
+  cherryPick|revert → OpBanner Continue disabled); not drivable in-harness (conflict trigger is a
+  hardcoded oid suffix, unreachable from a pill) — covered by the native checkpoint.
+
+**Current step:** P47 — awaiting USER CHECKPOINT (native `pnpm tauri dev`), see
+`docs/contracts/P47-user-checklist.md`. Accepted as-is: unborn-HEAD branch pill no longer offers
+create-branch/tag (now uniform with the commit-row menu, which already hid these when unborn).
 
 ## v1-prep — release-readiness for a public 1.0.0 — **DONE (AI gate passed)** (2026-08-05)
 
