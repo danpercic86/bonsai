@@ -1,0 +1,101 @@
+import type { Dispatch, SetStateAction } from 'react';
+import type { PushToast } from '../../ToastContext';
+import type {
+  BlameLine,
+  FileHistoryEntry,
+  LineSelection,
+  ReflogEntry,
+  ResetMode,
+} from '../../ipc';
+
+/** Convenience alias for a `useState` setter. */
+export type Setter<T> = Dispatch<SetStateAction<T>>;
+
+/** Shared post-op refresh callbacks threaded from RepoWorkspace into the domain
+ *  action hooks. These are the stable `useCallback` refetch/clear helpers +
+ *  `refreshAll` defined once in the container. */
+export interface RefreshDeps {
+  refreshAll: () => Promise<void>;
+  refetchStatus: () => Promise<void>;
+  refetchGraph: () => Promise<void>;
+  refetchBranches: () => Promise<void>;
+  refetchStashes: () => Promise<void>;
+  refetchSubmodules: () => Promise<void>;
+  refetchWorktrees: () => Promise<void>;
+  refetchRemotes: () => Promise<void>;
+}
+
+/** The most common trio every mutating handler needs. */
+export interface BaseActionDeps {
+  repoId: string;
+  pushToast: PushToast;
+  setMutating: Setter<boolean>;
+}
+
+// ----- pending-dialog state shapes (mirrors the inline shapes in RepoWorkspace) -----
+
+export interface PendingReservedStash {
+  index: number;
+  op: 'apply' | 'pop';
+  paths: string[];
+}
+
+export interface PendingReset {
+  oid: string;
+  mode: ResetMode;
+}
+
+export interface PendingDiscardForce {
+  paths: string[];
+  modified: number;
+  created: number;
+  untracked: string[];
+}
+
+export interface PendingHunkDiscard {
+  path: string;
+  origPath: string | null;
+  hunkIndex: number;
+}
+
+export interface PendingLineDiscard {
+  path: string;
+  origPath: string | null;
+  selection: LineSelection[];
+}
+
+export interface PendingCherrypick {
+  oid: string;
+  initialMessage: string;
+  loading: boolean;
+}
+
+export interface RebasePlan {
+  ontoOid: string;
+  ontoLabel: string;
+  initialTodos: import('../../ipc').RebaseTodoOp[];
+  summaries: Record<string, string>;
+}
+
+// ----- P23d/P38: read-overlay state shapes (blame / file-history / reflog) -----
+
+export interface BlameState {
+  path: string;
+  lines: BlameLine[];
+  loading: boolean;
+  error: string | null;
+}
+
+export interface HistoryState {
+  path: string;
+  entries: FileHistoryEntry[];
+  loading: boolean;
+  error: string | null;
+}
+
+export interface ReflogState {
+  refName: string;
+  entries: ReflogEntry[];
+  loading: boolean;
+  error: string | null;
+}

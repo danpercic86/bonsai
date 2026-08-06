@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CommitBoxHandle } from './CommitBox';
-import { COMMIT_PUSH_CANCELED } from './commitPushSignal';
 import type { ContextMenuItem } from './ContextMenu';
 import { WorkspaceToolbar } from './WorkspaceToolbar';
 import { WorkspaceDialogs } from './WorkspaceDialogs';
 import { CherrypickMessageDialog } from './CherrypickMessageDialog';
 import { WorkspaceGraphPane } from './WorkspaceGraphPane';
 import { WorkspaceRightPanel } from './WorkspaceRightPanel';
-import { MAX_HISTORY_UI, isUsableRepo, shortOid } from './workspaceUtils';
-import { nextFileAfter, type WorkdirChange } from '../utils/nextFile';
+import { isUsableRepo, shortOid } from './workspaceUtils';
 import { createWorkspaceMenus } from './workspaceMenus';
 import type { DiffOverlayMeta } from './DiffOverlay';
 import type { DiffScope } from './DiffFileTree';
@@ -24,18 +22,14 @@ import type {
   AiAvailability,
   AiDiffTarget,
   AiDigestRange,
-  AiResolveProposal,
   BlameLine,
   BranchesSnapshot,
   CommitDiff,
   CompareDiff,
   ConflictEntry,
-  ConflictResolution,
-  CopySelection,
   FileDiff,
   FileHistoryEntry,
   GraphLayout,
-  BisectOutcome,
   GraphPrefs,
   HeadInfo,
   JobStatus,
@@ -49,7 +43,6 @@ import type {
   RepoOpState,
   ResetMode,
   StashEntry,
-  StashScope,
   StatusEntry,
   StatusSnapshot,
   SubmoduleInfo,
@@ -57,8 +50,21 @@ import type {
   WorktreeInfo,
 } from '../ipc';
 import { usePushToast } from '../ToastContext';
-import { errorMessage, isAppError } from '../utils/errors';
-import { hasUnresolvedMarkers } from '../utils/conflictRegions';
+import { errorMessage } from '../utils/errors';
+
+import { useRemoteOps } from './repoWorkspace/useRemoteOps';
+import { useCommitActions } from './repoWorkspace/useCommitActions';
+import { useBranchActions } from './repoWorkspace/useBranchActions';
+import { useMergeActions } from './repoWorkspace/useMergeActions';
+import { useStashActions } from './repoWorkspace/useStashActions';
+import { useSubmoduleActions } from './repoWorkspace/useSubmoduleActions';
+import { useWorktreeActions } from './repoWorkspace/useWorktreeActions';
+import { useTagRemoteActions } from './repoWorkspace/useTagRemoteActions';
+import { useRebaseActions } from './repoWorkspace/useRebaseActions';
+import { useCherrypickRevertActions } from './repoWorkspace/useCherrypickRevertActions';
+import { useBisectActions } from './repoWorkspace/useBisectActions';
+import { useReadOverlays } from './repoWorkspace/useReadOverlays';
+import { useWorkspaceKeyboard } from './repoWorkspace/useWorkspaceKeyboard';
 
 export interface RepoWorkspaceProps {
   /** Canonical workdir path (== repoId, P3e §2). */
@@ -1087,237 +1093,178 @@ export function RepoWorkspace({
       setRefreshing(false);
     }
   }, [refreshing, refreshAll]);
+  const headBranch = branches?.local.find((b) => b.isHead) ?? null;
 
-  async function handleStage(paths: string[]) {
-    setMutating(true);
-    // P46 WS3: when the file open in the diff overlay is the one being staged,
-    // auto-advance to the NEXT changed file (visible [unstaged, untracked]
-    // order). Compute the target from the PRE-stage snapshot; refetchStatus
-    // collapses the staged slot, then we open the target below.
-    let nextTarget: WorkdirChange | null = null;
-    const slot = diffSlotRef.current;
-    if (
-      slot !== null &&
-      status !== null &&
-      (slot.key.startsWith('unstaged:') || slot.key.startsWith('untracked:'))
-    ) {
-      const openPath = slot.key.slice(slot.key.indexOf(':') + 1);
-      if (paths.includes(openPath)) {
-        const changes: WorkdirChange[] = [
-          ...status.unstaged.map((e) => ({
-            section: 'unstaged' as const,
-            path: e.path,
-            origPath: e.origPath,
-          })),
-          ...status.untracked.map((e) => ({
-            section: 'untracked' as const,
-            path: e.path,
-            origPath: e.origPath,
-          })),
-        ];
-        nextTarget = nextFileAfter(changes, openPath, paths);
-      }
-    }
-    try {
-      await ipc.stage(repoId, paths);
-      await refetchStatus();
-      if (nextTarget !== null) {
-        const target = nextTarget;
-        const fresh = statusRef.current;
-        const stillThere =
-          fresh?.[target.section].some((e) => e.path === target.path) ?? false;
-        if (stillThere) {
-          void fetchDiffSlot(`${target.section}:${target.path}`, () =>
-            ipc.getWorkdirFileDiff(
-              repoId,
-              target.path,
-              target.origPath,
-              false,
-              diffViewModeRef.current === 'file',
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      reportStatusError(errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
+  const { handleFetch, handlePull, pushCurrentBranch, handlePush, handleForcePush, doForcePush } =
+    useRemoteOps({
+      repoId,
+      pushToast,
+      setMutating,
+      refreshAll,
+      refetchBranches,
+      refetchGraph,
+      setRemoteOp,
+      setPendingForcePush,
+    });
 
-  async function handleUnstage(paths: string[]) {
-    setMutating(true);
-    try {
-      await ipc.unstage(repoId, paths);
-      await refetchStatus();
-    } catch (e) {
-      reportStatusError(errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
+  const {
+    handleStage,
+    handleUnstage,
+    handleCommit,
+    handleCommitAndPush,
+    handleConfirmCommitPush,
+    handleCancelCommitPush,
+    handleCommitAmend,
+    handleToggleAmend,
+    handleResetBranch,
+    handleDiscard,
+    requestDiscardForce,
+    handleDiscardForce,
+    handleGenerateCommitMessage,
+  } = useCommitActions({
+    repoId,
+    pushToast,
+    setMutating,
+    refreshAll,
+    refetchStatus,
+    reportStatusError,
+    fetchDiffSlot,
+    pushCurrentBranch,
+    status,
+    statusRef,
+    diffSlotRef,
+    diffViewModeRef,
+    head,
+    headBranch,
+    setAmend,
+    setAmendMessage,
+    pendingCommitPush,
+    setPendingCommitPush,
+    commitPushResolver,
+    setPendingDiscardForce,
+  });
 
-  async function handleCommit(message: string) {
-    setMutating(true);
-    try {
-      await ipc.commit(repoId, message);
-      await refreshAll();
-    } finally {
-      setMutating(false);
-    }
-  }
+  const {
+    handleCreateBranch,
+    handleCheckoutBranch,
+    handleCreateBranchHere,
+    handleDeleteBranch,
+    handleCheckoutRemote,
+    handleDeleteRemoteTracking,
+  } = useBranchActions({
+    repoId,
+    pushToast,
+    setMutating,
+    refreshAll,
+    refetchBranches,
+    refetchGraph,
+    branches,
+    setBranchesError,
+    setPendingCreateBranch,
+  });
 
-  // Commit & Push (normal commit box, primary button). If the current branch has
-  // no upstream, gate on a ConfirmDialog first; otherwise commit + push directly.
-  // Returned promise mirrors handleCommit: rejects on commit failure (CommitBox
-  // keeps the message + shows the error), resolves once the commit lands (a push
-  // failure is surfaced as a toast, never rolled back).
-  async function handleCommitAndPush(message: string): Promise<void> {
-    if (headBranch !== null && headBranch.upstream === null) {
-      // Park the message + defer resolution until the dialog is answered.
-      return new Promise<void>((resolve, reject) => {
-        commitPushResolver.current = { resolve, reject };
-        setPendingCommitPush(message);
-      });
-    }
-    await doCommitAndPush(message);
-  }
+  const {
+    handleMergeBranch,
+    handleResolveConflict,
+    handleResolveConflictText,
+    handleAiResolveConflict,
+    handleCommitMerge,
+    handleAbortMerge,
+  } = useMergeActions({
+    repoId,
+    pushToast,
+    setMutating,
+    refreshAll,
+    aiConflictAutonomy,
+    setAiResolvingPath,
+    setDiffSlot,
+    fileDiffReqId,
+  });
 
-  // The actual commit-then-push. Commit errors rethrow (surfaced by CommitBox);
-  // push errors are toasted and the commit is kept.
-  async function doCommitAndPush(message: string): Promise<void> {
-    setMutating(true);
-    try {
-      await ipc.commit(repoId, message);
-    } finally {
-      setMutating(false);
-    }
-    await refreshAll();
-    await pushCurrentBranch();
-  }
+  const { handleCreateStash, handleApplyStash, handlePopStash, handleDropStash } = useStashActions({
+    repoId,
+    pushToast,
+    setMutating,
+    refreshAll,
+    refetchStashes,
+    refetchGraph,
+    setPendingReservedStash,
+  });
 
-  function handleConfirmCommitPush() {
-    const message = pendingCommitPush;
-    const resolver = commitPushResolver.current;
-    commitPushResolver.current = null;
-    setPendingCommitPush(null);
-    if (message === null) {
-      resolver?.resolve();
-      return;
-    }
-    void (async () => {
-      try {
-        await doCommitAndPush(message);
-        resolver?.resolve();
-      } catch (e) {
-        resolver?.reject(e);
-      }
-    })();
-  }
+  const { handleInitSubmodule, handleUpdateSubmodule, handleSyncSubmodule } = useSubmoduleActions({
+    repoId,
+    pushToast,
+    setMutating,
+    refetchSubmodules,
+  });
 
-  function handleCancelCommitPush() {
-    const resolver = commitPushResolver.current;
-    commitPushResolver.current = null;
-    setPendingCommitPush(null);
-    // No commit performed. Reject with the cancellation sentinel so CommitBox
-    // leaves the typed message intact and shows no error banner.
-    resolver?.reject(COMMIT_PUSH_CANCELED);
-  }
+  const { handleAddWorktree, handleLockWorktree, handleUnlockWorktree, handleRemoveWorktree } =
+    useWorktreeActions({
+      repoId,
+      pushToast,
+      setMutating,
+      refetchWorktrees,
+      setNewWorktreeOpen,
+    });
 
-  // P20 §2: amend the current tip. Rethrows so CommitBox surfaces
-  // configMissing/emptyMessage in its own error banner (like handleCommit's
-  // implicit rethrow). On success, clear amend mode + refresh.
-  async function handleCommitAmend(message: string) {
-    setMutating(true);
-    try {
-      await ipc.commitAmend(repoId, message);
-      setAmend(false);
-      setAmendMessage(null);
-      await refreshAll();
-      pushToast('success', 'Amended last commit');
-    } finally {
-      setMutating(false);
-    }
-  }
+  const {
+    handleCreateTag,
+    handleDeleteTag,
+    handlePushTag,
+    handleAddRemote,
+    handleRemoveRemote,
+    handleRenameRemote,
+    handleSetRemoteUrl,
+  } = useTagRemoteActions({
+    repoId,
+    pushToast,
+    setMutating,
+    refetchBranches,
+    refetchGraph,
+    refetchRemotes,
+  });
 
-  // P20 §2.3: toggle amend on/off. Toggling ON fetches HEAD's full message once
-  // (reusing getCommitDiff().details.message — no dedicated backend getter) so
-  // the box remounts prefilled. Toggling OFF drops back to the normal commit box.
-  async function handleToggleAmend(next: boolean) {
-    if (!next) {
-      setAmend(false);
-      setAmendMessage(null);
-      return;
-    }
-    if (head === null || head.unborn) return;
-    try {
-      const diff = await ipc.getCommitDiff(repoId, head.oid);
-      setAmendMessage(diff.details.message);
-      setAmend(true);
-    } catch (e) {
-      pushToast('error', `Could not load the last commit message: ${errorMessage(e)}`);
-    }
-  }
+  const {
+    handleRebaseBranch,
+    handleRebaseContinue,
+    handleRebaseSkip,
+    handleRebaseAbort,
+    openRebasePlan,
+    handleStartInteractiveRebase,
+  } = useRebaseActions({
+    repoId,
+    pushToast,
+    setMutating,
+    refreshAll,
+    graph,
+    setRebasePlan,
+    setRebasePlanError,
+  });
 
-  // P20 §3: reset the current branch (called after the shared ConfirmDialog).
-  async function handleResetBranch(oid: string, mode: ResetMode) {
-    setMutating(true);
-    try {
-      await ipc.resetBranch(repoId, oid, mode);
-      await refreshAll();
-      const branchLabel = headBranch?.name ?? 'HEAD';
-      pushToast('success', `Reset ${branchLabel} to ${shortOid(oid)} (${mode})`);
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
+  const {
+    handleCherrypick,
+    confirmCherrypick,
+    handleRevert,
+    handleCherrypickContinue,
+    handleRevertContinue,
+    handleCherrypickAbort,
+    handleRevertAbort,
+  } = useCherrypickRevertActions({
+    repoId,
+    pushToast,
+    setMutating,
+    refreshAll,
+    setPendingCherrypick,
+  });
 
-  // P20 §4: discard unstaged edits to tracked files (called after ConfirmDialog).
-  async function handleDiscard(paths: string[]) {
-    setMutating(true);
-    try {
-      await ipc.discardPaths(repoId, paths);
-      await refreshAll();
-      pushToast('success', `Discarded changes to ${paths.length} file(s)`);
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // Bulk "Discard all": partition the requested paths into modified (tracked)
-  // vs created (untracked) using the current status snapshot so the confirm
-  // dialog can warn about the permanent deletion of new files, then arm it.
-  function requestDiscardForce(paths: string[]) {
-    if (paths.length === 0) return;
-    const untracked = new Set((status?.untracked ?? []).map((e) => e.path));
-    let modified = 0;
-    const created: string[] = [];
-    for (const p of paths) {
-      if (untracked.has(p)) created.push(p);
-      else modified += 1;
-    }
-    setPendingDiscardForce({ paths, modified, created: created.length, untracked: created });
-  }
-
-  // Force-discard: reverts modified tracked files to the index AND deletes
-  // new/untracked files (called after the ConfirmDialog).
-  async function handleDiscardForce(paths: string[]) {
-    setMutating(true);
-    try {
-      await ipc.discardPathsForce(repoId, paths);
-      await refreshAll();
-      pushToast('success', `Discarded ${paths.length} file(s)`);
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
+  const { handleStartBisect, handleBisectMark, handleBisectSkip, handleBisectReset } =
+    useBisectActions({
+      repoId,
+      pushToast,
+      setMutating,
+      refreshAll,
+      setPendingBisectBad,
+    });
   // P17c: switch File/Diff view. When a workdir file diff is open, re-fetch it
   // with the new `fullContext` (File View = one whole-file hunk); the same key
   // keeps the stale content visible during the swap. Conflict/ai-proposal slots
@@ -1454,14 +1401,6 @@ export function RepoWorkspace({
     [repoId, refetchStatus, reportStatusError],
   );
 
-  // P15a: ask the backend for a proposed commit message from the staged diff.
-  // Returns the text for CommitBox to drop into its textarea; errors surface in
-  // the box's own error-banner (CommitBox catches). Never commits.
-  async function handleGenerateCommitMessage(): Promise<string> {
-    const proposal = await ipc.generateCommitMessage(repoId);
-    return proposal.message;
-  }
-
   // P15b: run an explain/review analysis of a diff target and show the prose in
   // the AiOutputPanel. Read-only — writes nothing. Guarded by a req-id so a slow
   // response can't clobber a newer request or a closed panel.
@@ -1556,1198 +1495,33 @@ export function RepoWorkspace({
       );
   }, [aiEligible, overlayMeta, runAnalyze]);
 
-  async function handleCreateBranch(name: string) {
-    setBranchesError(null);
-    setMutating(true);
-    try {
-      await ipc.createBranch(repoId, name);
-      await refetchBranches();
-      void refetchGraph();
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // P33: dirty-safe switch — auto-stash → switch → auto fast-forward (no fetch)
-  // → re-apply stash. Never hard-fails on a dirty tree; a conflicted re-apply is
-  // a SUCCESS (stash retained at stash@{0}). The upstream label for the FF toast
-  // is a stable branch property, read from the current branches snapshot.
-  async function handleCheckoutBranch(name: string) {
-    setBranchesError(null);
-    setMutating(true);
-    try {
-      const res = await ipc.checkoutBranch(repoId, name);
-      await refreshAll();
-      if (res.apply?.kind === 'conflicts') {
-        pushToast(
-          'warning',
-          `Switched to ${name}; your changes were carried over with conflicts and kept safe at stash@{0} — resolve them in the status panel`,
-        );
-      } else {
-        let msg = `Switched to ${name}`;
-        const extras: string[] = [];
-        if (res.stashed) extras.push('stashed & re-applied');
-        if (res.fastForwarded) {
-          const upstreamLabel = branches?.local.find((b) => b.name === name)?.upstream ?? 'upstream';
-          extras.push(`fast-forwarded to ${upstreamLabel}`);
-        }
-        if (extras.length > 0) msg += ` (${extras.join(', ')})`;
-        pushToast('success', msg);
-      }
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // P11 §1.4: create a local branch at `oid` + check it out, carrying any
-  // uncommitted work across via auto-stash. HEAD moves, so refreshAll.
-  async function handleCreateBranchHere(oid: string, name: string): Promise<void> {
-    setMutating(true);
-    try {
-      const res = await ipc.createBranchHere(repoId, name, oid);
-      await refreshAll();
-      if (!res.stashed) {
-        pushToast('success', `Created and checked out ${name}`);
-      } else if (res.apply?.kind === 'applied') {
-        pushToast('success', `Created ${name} and carried your changes over`);
-      } else {
-        pushToast(
-          'warning',
-          `Created ${name}; your changes were carried over with conflicts — resolve them in the status panel`,
-        );
-      }
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-      setPendingCreateBranch(null);
-    }
-  }
-
-  async function handleDeleteBranch(name: string) {
-    setBranchesError(null);
-    setMutating(true);
-    try {
-      await ipc.deleteBranch(repoId, name);
-      await Promise.all([refetchBranches(), refetchGraph()]);
-    } catch (e) {
-      setBranchesError(errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // P6 §4.4: GitKraken-style remote checkout — create/reuse a local tracking
-  // branch and switch to it (HEAD moves, so refreshAll like handleCheckoutBranch).
-  async function handleCheckoutRemote(name: string) {
-    setBranchesError(null);
-    setMutating(true);
-    try {
-      await ipc.checkoutRemoteBranch(repoId, name);
-      await refreshAll();
-    } catch (e) {
-      setBranchesError(errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // P6 §4.4: delete the LOCAL remote-tracking ref only (does not touch the
-  // server); refetch branches + graph like handleDeleteBranch.
-  async function handleDeleteRemoteTracking(name: string) {
-    setBranchesError(null);
-    setMutating(true);
-    try {
-      await ipc.deleteRemoteBranch(repoId, name);
-      await Promise.all([refetchBranches(), refetchGraph()]);
-    } catch (e) {
-      setBranchesError(errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // ----- M6: remote operations -----
-  function beginRemoteOp(op: 'fetch' | 'pull' | 'push') {
-    setMutating(true);
-    setRemoteOp(op);
-  }
-
-  function endRemoteOp() {
-    setMutating(false);
-    setRemoteOp(null);
-  }
-
-  async function handleFetch() {
-    beginRemoteOp('fetch');
-    try {
-      const res = await ipc.fetch(repoId);
-      const n = res.remotes.length;
-      const k = res.remotes.reduce((sum, r) => sum + r.updatedRefs, 0);
-      pushToast(
-        'success',
-        `Fetched ${n} remote${n === 1 ? '' : 's'}` +
-          (k > 0 ? ` — ${k} ref${k === 1 ? '' : 's'} updated` : ''),
-      );
-      await Promise.all([refetchBranches(), refetchGraph()]);
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      endRemoteOp();
-    }
-  }
-
-  async function handlePull() {
-    beginRemoteOp('pull');
-    try {
-      const res = await ipc.pull(repoId);
-      switch (res.kind) {
-        case 'upToDate':
-          pushToast('success', 'Already up to date');
-          break;
-        case 'fastForwarded':
-          pushToast('success', `Fast-forwarded ${res.branch} to ${shortOid(res.to)}`);
-          break;
-        case 'wouldNotFastForward':
-          pushToast(
-            'warning',
-            `Cannot fast-forward: '${res.branch}' has ${res.ahead} local commit(s) not on ` +
-              'upstream. Bonsai v1 does not merge — push your commits or reconcile via the CLI.',
-          );
-          break;
-      }
-      await refreshAll();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      endRemoteOp();
-    }
-  }
-
-  // Shared push of the current branch (toast + refresh). Used by the Push
-  // toolbar action and by Commit & Push. Never throws — push errors are toasted.
-  async function pushCurrentBranch() {
-    beginRemoteOp('push');
-    try {
-      const res = await ipc.push(repoId);
-      if (res.kind === 'upToDate') {
-        pushToast('success', 'Already up to date');
-      } else {
-        pushToast(
-          'success',
-          `Pushed ${res.branch} → ${res.remote}/${res.branch}` +
-            (res.setUpstream ? ' (upstream set)' : ''),
-        );
-      }
-      await Promise.all([refetchBranches(), refetchGraph()]);
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      endRemoteOp();
-    }
-  }
-
-  async function handlePush() {
-    await pushCurrentBranch();
-  }
-
-  // P37b: force-push with lease. Opens a danger confirm first; on confirm,
-  // force_push refuses (pushRejected) if the remote moved since our last fetch.
-  function handleForcePush() {
-    setPendingForcePush(true);
-  }
-
-  async function doForcePush() {
-    setPendingForcePush(false);
-    beginRemoteOp('push');
-    try {
-      const res = await ipc.forcePush(repoId);
-      if (res.kind === 'upToDate') {
-        pushToast('info', 'Already up to date');
-      } else {
-        pushToast('success', `Force-pushed ${res.branch} → ${res.remote}/${res.branch}`);
-      }
-      await Promise.all([refetchBranches(), refetchGraph()]);
-    } catch (e) {
-      // Any pushRejected from a force-push resolves the same way: fetch first.
-      const hint = isAppError(e) && e.kind === 'pushRejected' ? ' — fetch and retry' : '';
-      pushToast('error', errorMessage(e) + hint);
-    } finally {
-      endRemoteOp();
-    }
-  }
-
-  // ----- P3c: merge + conflict handling -----
-  async function handleMergeBranch(name: string) {
-    setMutating(true);
-    try {
-      const res = await ipc.mergeBranch(repoId, name);
-      switch (res.kind) {
-        case 'upToDate':
-          pushToast('info', `Already up to date with ${name}`);
-          break;
-        case 'fastForwarded':
-          pushToast(
-            'success',
-            `Fast-forwarded to ${name}` +
-              (res.stashed ? ' (local changes stashed and restored)' : ''),
-          );
-          break;
-        case 'merged':
-          pushToast(
-            'success',
-            `Merged ${name}` + (res.stashed ? ' (local changes stashed and restored)' : ''),
-          );
-          break;
-        case 'conflicts':
-          pushToast(
-            'info',
-            `Merge paused: ${res.paths.length} conflict(s) to resolve` +
-              (res.stashed
-                ? '. Your local changes are safe on the stash (stash@{0}) — apply them after finishing the merge.'
-                : ''),
-          );
-          break;
-        case 'stashPopConflicts':
-          pushToast(
-            'error',
-            `Merge done, but re-applying your stashed changes hit ${res.paths.length} conflict(s). ` +
-              'Your changes are still on the stash (stash@{0}); resolve the conflicts, then drop the stash.',
-          );
-          break;
-      }
-      await refreshAll();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleResolveConflict(path: string, resolution: ConflictResolution) {
-    setMutating(true);
-    try {
-      await ipc.resolveConflict(repoId, path, resolution);
-      await refreshAll();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // P12 §4.3: stage user-authored resolved text from the ConflictEditor. Same
-  // refresh batch as handleResolveConflict — refreshAll drops the resolved path
-  // and collapses the slot when the path is no longer conflicted. The editor
-  // surfaces a rejection inline via its onResolve promise, so re-throw on error.
-  async function handleResolveConflictText(path: string, content: string): Promise<void> {
-    setMutating(true);
-    try {
-      await ipc.resolveConflictText(repoId, path, content);
-      await refreshAll();
-      pushToast('success', `Staged resolution for ${path}`);
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-      throw e;
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // P13 §8.3: AI conflict resolution for one path. Fetches a proposal (writes
-  // nothing), then branches on the autonomy setting: proposeReview opens the
-  // proposal in the conflict editor (reused, seeded with the markerless body) so
-  // the user reviews/edits before Accept; autoResolve stages it immediately and
-  // the user reviews the staged diff before commit_merge. A per-path busy flag
-  // gates the row's button (the AI call takes seconds) without freezing the
-  // whole panel. Errors surface via the sticky error toast; manual buttons stay.
-  async function handleAiResolveConflict(path: string) {
-    setAiResolvingPath(path);
-    let proposal: AiResolveProposal;
-    try {
-      proposal = await ipc.aiResolveConflict(repoId, path);
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-      setAiResolvingPath(null);
-      return;
-    }
-    // Safety net (P13): never auto-stage a body that still carries conflict
-    // markers. The backend resolve_conflict_text trusts its input (git-add
-    // model), so a rare markerful model output would otherwise be staged
-    // silently in autoResolve. When that happens, fall through to the review
-    // editor with a warning instead — the user still resolves it by hand.
-    const markerful = hasUnresolvedMarkers(proposal.proposedText);
-    if (aiConflictAutonomy === 'autoResolve' && !markerful) {
-      setMutating(true);
-      try {
-        await ipc.resolveConflictText(repoId, path, proposal.proposedText);
-        await refreshAll();
-        pushToast('success', `Resolved ${path} with AI — review the staged result`);
-      } catch (e) {
-        pushToast('error', errorMessage(e));
-      } finally {
-        setMutating(false);
-        setAiResolvingPath(null);
-      }
-      return;
-    }
-    if (aiConflictAutonomy === 'autoResolve' && markerful) {
-      pushToast('error', `AI left unresolved markers in ${path} — opened for review`);
-    }
-    // proposeReview (or the autoResolve marker fallback): open the proposal in
-    // the conflict editor for review/edit.
-    // Guard the getConflict await with the shared fileDiffReqId (P13, same
-    // recipe as fetchConflictSlot): if the user opens another diff during the
-    // fetch, that bumps the id and we bail rather than clobber their slot.
-    const id = ++fileDiffReqId.current;
-    try {
-      const file = await ipc.getConflict(repoId, path);
-      if (id !== fileDiffReqId.current) return;
-      // Synthesize a ConflictFile carrying the AI's markerless body so the
-      // editor shows the proposed result; ours/theirs are kept for split mode.
-      const synthesized = { ...file, text: proposal.proposedText };
-      setDiffSlot({
-        key: `ai-proposal:${path}`,
-        state: 'ready',
-        diff: null,
-        conflict: synthesized,
-        error: null,
-      });
-    } catch (e) {
-      if (id !== fileDiffReqId.current) return;
-      pushToast('error', errorMessage(e));
-    } finally {
-      setAiResolvingPath(null);
-    }
-  }
-
-  async function handleCommitMerge(message: string) {
-    setMutating(true);
-    try {
-      await ipc.commitMerge(repoId, message);
-      await refreshAll();
-      pushToast('success', 'Merge committed');
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleAbortMerge() {
-    setMutating(true);
-    try {
-      await ipc.abortMerge(repoId);
-      await refreshAll();
-      pushToast('success', 'Merge aborted');
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // ----- P9 / P34: stash handling (scope-aware) -----
-  async function handleCreateStash(scope: StashScope) {
-    setMutating(true);
-    try {
-      const res = await ipc.createStash(repoId, null, scope);
-      const successCopy =
-        scope === 'staged' ? 'Stashed staged changes' : 'Changes stashed';
-      pushToast(
-        res.created ? 'success' : 'info',
-        res.created ? successCopy : 'Nothing to stash — working tree is clean',
-      );
-      await refreshAll(); // status + graph (pills) + stashes
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleApplyStash(index: number, skipReserved = false) {
-    setMutating(true);
-    try {
-      const res = await ipc.applyStash(repoId, index, skipReserved);
-      switch (res.kind) {
-        case 'applied':
-          pushToast('success', `Applied stash@{${index}}`);
-          break;
-        case 'conflicts':
-          pushToast(
-            'info',
-            `Stash applied with ${res.paths.length} conflict(s) to resolve — the stash is kept (stash@{${index}}).`,
-          );
-          break;
-        case 'reservedPaths':
-          // Not an error: offer to apply everything except the un-writable paths.
-          setPendingReservedStash({ index, op: 'apply', paths: res.paths });
-          return; // skip refreshAll; nothing changed and the dialog is now up
-        case 'appliedSkippingReserved':
-          pushToast(
-            'success',
-            `Applied stash@{${index}} — skipped ${res.skipped.length} file(s) Windows can't restore: ${res.skipped.join(', ')}`,
-          );
-          break;
-      }
-      await refreshAll();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handlePopStash(index: number, skipReserved = false) {
-    setMutating(true);
-    try {
-      const res = await ipc.popStash(repoId, index, skipReserved);
-      switch (res.kind) {
-        case 'applied':
-          pushToast('success', `Popped stash@{${index}}`);
-          break;
-        case 'conflicts':
-          pushToast(
-            'error',
-            `Pop hit ${res.paths.length} conflict(s); your changes are still on the stash (stash@{${index}}). ` +
-              'Resolve the conflicts, then drop it.',
-          );
-          break;
-        case 'reservedPaths':
-          setPendingReservedStash({ index, op: 'pop', paths: res.paths });
-          return; // skip refreshAll; nothing changed and the dialog is now up
-        case 'appliedSkippingReserved':
-          pushToast(
-            'success',
-            `Applied stash@{${index}} — skipped ${res.skipped.length} file(s) Windows can't restore: ${res.skipped.join(', ')}. ` +
-              'The stash was kept because those files could not be restored.',
-          );
-          break;
-      }
-      await refreshAll();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleDropStash(index: number) {
-    // called after ConfirmDialog
-    setMutating(true);
-    try {
-      await ipc.dropStash(repoId, index);
-      pushToast('success', `Dropped stash@{${index}}`);
-      await Promise.all([refetchStashes(), refetchGraph()]); // pills change; worktree does not
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // ----- P19: submodule handling -----
-  // Init/update/sync are non-destructive to the superproject → no confirm
-  // dialog. refetchSubmodules suffices (submodule ops don't change the
-  // superproject status/graph in v1).
-  async function handleInitSubmodule(name: string) {
-    setMutating(true);
-    try {
-      await ipc.initSubmodule(repoId, name);
-      pushToast('success', `Initialized ${name}`);
-      await refetchSubmodules();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleUpdateSubmodule(name: string) {
-    setMutating(true);
-    try {
-      await ipc.updateSubmodule(repoId, name);
-      pushToast('success', `Updated ${name}`);
-      await refetchSubmodules();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleSyncSubmodule(name: string) {
-    setMutating(true);
-    try {
-      await ipc.syncSubmodule(repoId, name);
-      pushToast('success', `Synced URL for ${name}`);
-      await refetchSubmodules();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // ----- P27: worktree handling -----
-  // Create/lock/unlock/remove never change the CURRENT repo's status/graph
-  // (remove refuses the open worktree server-side) → refetchWorktrees suffices.
-
-  // Called by WorktreeCreateDialog; rethrows so the dialog shows the error
-  // inline and stays open (success closes it here + toasts the derived path).
-  async function handleAddWorktree(
-    branch: string,
-    name: string,
-    selections: CopySelection[],
-  ): Promise<void> {
-    setMutating(true);
-    try {
-      // Route to the copy-aware command only when there is something to copy;
-      // an empty plan is a plain create (P32 Part B).
-      const wt =
-        selections.length > 0
-          ? await ipc.addWorktreeWithChanges(repoId, branch, name, selections)
-          : await ipc.addWorktree(repoId, branch, name);
-      const copied = selections.length > 0 ? ` (+${selections.length} file(s) copied)` : '';
-      pushToast('success', `Created worktree for ${branch} at ${wt.absPath}${copied}`);
-      setNewWorktreeOpen(false);
-      await refetchWorktrees();
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // Called after the lock-reason PromptDialog (empty reason → no reason).
-  async function handleLockWorktree(name: string, reason: string | undefined) {
-    setMutating(true);
-    try {
-      await ipc.lockWorktree(repoId, name, reason);
-      pushToast('success', `Locked worktree ${name}`);
-      await refetchWorktrees();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleUnlockWorktree(name: string) {
-    setMutating(true);
-    try {
-      await ipc.unlockWorktree(repoId, name);
-      pushToast('success', `Unlocked worktree ${name}`);
-      await refetchWorktrees();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // Called AFTER the ConfirmDialog naming the directory. The backend
-  // independently refuses main/current/locked/dirty (P27 §2.6) — its message
-  // surfaces via the error toast.
-  async function handleRemoveWorktree(name: string) {
-    setMutating(true);
-    try {
-      await ipc.removeWorktree(repoId, name);
-      pushToast('success', `Removed worktree ${name}`);
-      await refetchWorktrees();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // ----- P22: tag + remote management -----
-  // Create create/delete refetch branches (tag list, §2.0) + graph (pill).
-  async function handleCreateTag(oid: string, name: string, message: string | null) {
-    setMutating(true);
-    try {
-      await ipc.createTag(repoId, name, oid, message, /* force */ false);
-      pushToast('success', `Created tag ${name}`);
-      await Promise.all([refetchBranches(), refetchGraph()]);
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleDeleteTag(name: string) {
-    setMutating(true);
-    try {
-      await ipc.deleteTag(repoId, name);
-      pushToast('success', `Deleted tag ${name}`);
-      await Promise.all([refetchBranches(), refetchGraph()]);
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handlePushTag(remote: string, name: string) {
-    setMutating(true);
-    try {
-      await ipc.pushTag(repoId, remote, name, /* force */ false);
-      pushToast('success', `Pushed tag ${name} → ${remote}`);
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // Add/remove/rename move remote-tracking refs (and thus graph pills), so those
-  // refetch remotes + branches + graph; set-url changes only the RemoteInfo list.
-  async function handleAddRemote(name: string, url: string) {
-    setMutating(true);
-    try {
-      await ipc.addRemote(repoId, name, url);
-      pushToast('success', `Added remote ${name}`);
-      await Promise.all([refetchRemotes(), refetchBranches(), refetchGraph()]);
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleRemoveRemote(name: string) {
-    setMutating(true);
-    try {
-      await ipc.removeRemote(repoId, name);
-      pushToast('success', `Removed remote ${name}`);
-      await Promise.all([refetchRemotes(), refetchBranches(), refetchGraph()]);
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleRenameRemote(name: string, newName: string) {
-    setMutating(true);
-    try {
-      await ipc.renameRemote(repoId, name, newName);
-      pushToast('success', `Renamed remote ${name} → ${newName}`);
-      await Promise.all([refetchRemotes(), refetchBranches(), refetchGraph()]);
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleSetRemoteUrl(name: string, url: string) {
-    setMutating(true);
-    try {
-      await ipc.setRemoteUrl(repoId, name, url);
-      pushToast('success', `Updated URL for ${name}`);
-      await refetchRemotes();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // ----- P3d: rebase handling -----
-  async function handleRebaseBranch(onto: string) {
-    setMutating(true);
-    try {
-      const res = await ipc.rebaseBranch(repoId, onto);
-      switch (res.kind) {
-        case 'upToDate':
-          pushToast('info', `Already up to date with ${onto}`);
-          break;
-        case 'fastForwarded':
-          pushToast('success', `Fast-forwarded onto ${onto}`);
-          break;
-        case 'rebased':
-          pushToast('success', `Rebased onto ${onto} (${res.steps} commit(s))`);
-          break;
-        case 'conflicts':
-          pushToast(
-            'info',
-            `Rebase paused at step ${res.currentStep}/${res.totalSteps}: ` +
-              `${res.paths.length} conflict(s) to resolve`,
-          );
-          break;
-      }
-      await refreshAll();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleRebaseContinue() {
-    setMutating(true);
-    try {
-      const res = await ipc.rebaseContinue(repoId);
-      if (res.kind === 'conflicts') {
-        pushToast('info', `Rebase paused at step ${res.currentStep}/${res.totalSteps}`);
-      } else if (res.kind === 'rebased') {
-        pushToast('success', 'Rebase complete');
-      }
-      await refreshAll();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleRebaseSkip() {
-    setMutating(true);
-    try {
-      const res = await ipc.rebaseSkip(repoId);
-      if (res.kind === 'conflicts') {
-        pushToast('info', `Rebase paused at step ${res.currentStep}/${res.totalSteps}`);
-      } else if (res.kind === 'rebased') {
-        pushToast('success', 'Rebase complete');
-      }
-      await refreshAll();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleRebaseAbort() {
-    setMutating(true);
-    try {
-      await ipc.rebaseAbort(repoId);
-      await refreshAll();
-      pushToast('success', 'Rebase aborted');
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // ----- P23b: interactive rebase -----
-  // Seed the plan editor: fetch the default todo list (base..HEAD, all `pick`,
-  // oldest-first) and build a per-oid summaries map from the loaded graph nodes.
-  // On error → toast, no editor.
-  async function openRebasePlan(target: { ontoOid: string; ontoLabel: string }) {
-    try {
-      const initialTodos = await ipc.getInteractivePlan(repoId, target.ontoOid);
-      const nodes = graph?.nodes ?? [];
-      const summaries: Record<string, string> = {};
-      for (const t of initialTodos) {
-        summaries[t.oid] = nodes.find((n) => n.id === t.oid)?.summary ?? shortOid(t.oid);
-      }
-      setRebasePlanError(null);
-      setRebasePlan({ ...target, initialTodos, summaries });
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    }
-  }
-
-  // Start the interactive rebase. Success/conflict close the editor; a backend
-  // error keeps it open and surfaces the message in-dialog (plus a sticky toast).
-  // On Conflicts the existing OpBanner + rebaseContinue/Skip/Abort drive the rest.
-  async function handleStartInteractiveRebase(
-    ontoOid: string,
-    ontoLabel: string,
-    todos: RebaseTodoOp[],
-  ) {
-    setMutating(true);
-    try {
-      const res = await ipc.startInteractiveRebase(repoId, ontoOid, todos);
-      setRebasePlan(null);
-      setRebasePlanError(null);
-      // Interactive rebase only ever returns `rebased` or `conflicts`
-      // (contract §0 #11 — it always rewrites; no up-to-date/fast-forward path).
-      if (res.kind === 'rebased') {
-        pushToast('success', `Rebased onto ${ontoLabel} (${res.steps} commit(s))`);
-        for (const w of res.warnings ?? []) pushToast('info', w);
-      } else if (res.kind === 'conflicts') {
-        pushToast(
-          'info',
-          `Rebase paused at step ${res.currentStep}/${res.totalSteps}: ` +
-            `${res.paths.length} conflict(s) to resolve`,
-        );
-      }
-      await refreshAll();
-    } catch (e) {
-      // Keep the editor open so the error is visible in-context (§8.1 scope).
-      const msg = errorMessage(e);
-      setRebasePlanError(msg);
-      pushToast('error', msg);
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // ----- P23d: blame + file history -----
-  // Close helpers bump the matching reqId so a still-in-flight blameFile/
-  // fileHistory promise is dropped (its `reqId.current !== reqId` check fails)
-  // and the closed overlay can't pop back open.
-  const closeBlame = useCallback(() => {
-    blameReqId.current += 1;
-    setBlame(null);
-  }, []);
-  const closeHistory = useCallback(() => {
-    historyReqId.current += 1;
-    setHistory(null);
-  }, []);
-  const closeReflog = useCallback(() => {
-    reflogReqId.current += 1;
-    setReflog(null);
-  }, []);
-
-  // P38 §7.2: open the reflog overlay for "HEAD" or a local branch name. Cross-
-  // invalidate the sibling blame/history overlays so only one read overlay is
-  // ever open, then fetch behind the reflogReqId stale-guard.
-  const openReflog = useCallback(
-    async (refName: string) => {
-      blameReqId.current += 1;
-      setBlame(null);
-      historyReqId.current += 1;
-      setHistory(null);
-      const reqId = ++reflogReqId.current;
-      setReflog({ refName, entries: [], loading: true, error: null });
-      try {
-        const entries = await ipc.readReflog(repoId, refName);
-        if (reflogReqId.current !== reqId) return;
-        setReflog({ refName, entries, loading: false, error: null });
-      } catch (e) {
-        if (reflogReqId.current !== reqId) return;
-        setReflog({ refName, entries: [], loading: false, error: errorMessage(e) });
-      }
-    },
-    [repoId],
-  );
-
-  // Reveal a commit in the graph by oid: reuse the select-by-oid path. Setting
-  // `selectedIndex` opens CommitPanel AND triggers GraphCanvas's §6.3 effect,
-  // which scrolls the row into the virtualized viewport — so this is select+
-  // scroll, no extra graph API needed. Close the blame/history overlay first so
-  // the revealed row is actually visible (the overlay covers the graph pane).
-  const revealCommitByOid = useCallback(
-    (oid: string) => {
-      const g = graphDataRef.current;
-      if (g === null) return;
-      const idx = g.nodes.findIndex((n) => n.id === oid);
-      if (idx < 0) {
-        pushToast('info', 'Commit not in the current view');
-        return;
-      }
-      if (compareRef.current !== null) clearCompare();
-      closeBlame();
-      closeHistory();
-      closeReflog();
-      setSelectedIndex(idx);
-    },
-    [pushToast, clearCompare, closeBlame, closeHistory, closeReflog],
-  );
-
-  // Blame is against the committed HEAD version (atOid=null) in v1 (P23 OPEN #8
-  // + orchestrator decision). Cross-invalidate the sibling (history) so only one
-  // overlay is ever pending/open: bumping historyReqId drops any in-flight
-  // fileHistory response.
-  async function handleBlame(path: string) {
-    historyReqId.current += 1;
-    setHistory(null);
-    reflogReqId.current += 1;
-    setReflog(null);
-    const reqId = ++blameReqId.current;
-    setBlame({ path, lines: [], loading: true, error: null });
-    try {
-      const lines = await ipc.blameFile(repoId, path, null);
-      if (blameReqId.current !== reqId) return;
-      setBlame({ path, lines, loading: false, error: null });
-    } catch (e) {
-      if (blameReqId.current !== reqId) return;
-      setBlame({ path, lines: [], loading: false, error: errorMessage(e) });
-    }
-  }
-
-  async function handleFileHistory(path: string) {
-    blameReqId.current += 1;
-    setBlame(null);
-    reflogReqId.current += 1;
-    setReflog(null);
-    const reqId = ++historyReqId.current;
-    setHistory({ path, entries: [], loading: true, error: null });
-    try {
-      const entries = await ipc.fileHistory(repoId, path, MAX_HISTORY_UI);
-      if (historyReqId.current !== reqId) return;
-      setHistory({ path, entries, loading: false, error: null });
-    } catch (e) {
-      if (historyReqId.current !== reqId) return;
-      setHistory({ path, entries: [], loading: false, error: errorMessage(e) });
-    }
-  }
-
-  // P38 §7.2: after a restore armed from the reflog overlay completes (mutating
-  // falls back to false), the reflog is stale (HEAD moved / a branch was created)
-  // — re-fetch it so the new "reset: moving to …" entry appears. refreshAll (run
-  // by the shared reset/create-branch handlers) has already updated graph+branches.
-  const prevMutatingRef = useRef(mutating);
-  useEffect(() => {
-    const was = prevMutatingRef.current;
-    prevMutatingRef.current = mutating;
-    if (was && !mutating && reflogRestoreRef.current) {
-      reflogRestoreRef.current = false;
-      const open = reflogRef.current;
-      if (open !== null) void openReflog(open.refName);
-    }
-  }, [mutating, openReflog]);
-
-  // ----- P20 §5/§6: cherry-pick + revert handling -----
-  // An empty pick/revert (nothingToCommit) is an info, not an error toast (§8.1);
-  // every other failure surfaces via the sticky error toast.
-  function surfacePickRevertError(e: unknown) {
-    if (isAppError(e) && e.kind === 'nothingToCommit') {
-      pushToast('info', 'Nothing to apply — the change is already present');
-    } else {
-      pushToast('error', errorMessage(e));
-    }
-  }
-
-  // P47d: cherry-pick surfaces an editable-message dialog. Fetch the source
-  // commit's FULL message (the graph node only carries the summary line) and
-  // open the prefilled dialog; confirmCherrypick runs the actual pick.
-  async function handleCherrypick(oid: string) {
-    const reqOid = oid;
-    setPendingCherrypick({ oid, initialMessage: '', loading: true });
-    try {
-      const diff = await ipc.getCommitDiff(repoId, oid);
-      setPendingCherrypick((prev) =>
-        prev !== null && prev.oid === reqOid
-          ? { ...prev, initialMessage: diff.details.message, loading: false }
-          : prev,
-      );
-    } catch (e) {
-      // Don't leave an empty dialog silently open — close and toast.
-      setPendingCherrypick((prev) => (prev !== null && prev.oid === reqOid ? null : prev));
-      pushToast('error', `Could not load the commit message: ${errorMessage(e)}`);
-    }
-  }
-
-  async function confirmCherrypick(oid: string, message: string) {
-    setMutating(true);
-    try {
-      const res = await ipc.cherrypickCommit(repoId, oid, message);
-      switch (res.kind) {
-        case 'committed':
-          pushToast(
-            'success',
-            `Cherry-picked ${shortOid(res.oid)}` +
-              (res.stashed ? ' · stashed changes restored' : ''),
-          );
-          break;
-        case 'conflicts':
-          pushToast(
-            'info',
-            `Cherry-pick paused: ${res.paths.length} conflict(s) to resolve` +
-              (res.stashed ? ' · your changes are stashed (stash@{0})' : ''),
-          );
-          break;
-        case 'stashPopConflicts':
-          pushToast(
-            'error',
-            `Cherry-picked ${shortOid(res.head)}, but re-applying your stashed changes hit ` +
-              `${res.paths.length} conflict(s). Your changes are still on the stash (stash@{0}); ` +
-              'resolve the conflicts, then drop the stash.',
-          );
-          break;
-      }
-      setPendingCherrypick(null);
-      await refreshAll();
-    } catch (e) {
-      surfacePickRevertError(e);
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleRevert(oid: string) {
-    setMutating(true);
-    try {
-      const res = await ipc.revertCommit(repoId, oid);
-      switch (res.kind) {
-        case 'committed':
-          pushToast(
-            'success',
-            `Reverted ${shortOid(res.oid)}` + (res.stashed ? ' · stashed changes restored' : ''),
-          );
-          break;
-        case 'conflicts':
-          pushToast(
-            'info',
-            `Revert paused: ${res.paths.length} conflict(s) to resolve` +
-              (res.stashed ? ' · your changes are stashed (stash@{0})' : ''),
-          );
-          break;
-        case 'stashPopConflicts':
-          pushToast(
-            'error',
-            `Reverted ${shortOid(res.head)}, but re-applying your stashed changes hit ` +
-              `${res.paths.length} conflict(s). Your changes are still on the stash (stash@{0}); ` +
-              'resolve the conflicts, then drop the stash.',
-          );
-          break;
-      }
-      await refreshAll();
-    } catch (e) {
-      surfacePickRevertError(e);
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleCherrypickContinue() {
-    setMutating(true);
-    try {
-      const res = await ipc.cherrypickContinue(repoId);
-      // Conflicts can't recur on a single-pick continue, but map defensively.
-      if (res.kind === 'committed') {
-        pushToast('success', `Cherry-picked ${shortOid(res.oid)}`);
-      } else {
-        pushToast('info', `Cherry-pick paused: ${res.paths.length} conflict(s) to resolve`);
-      }
-      await refreshAll();
-    } catch (e) {
-      surfacePickRevertError(e);
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleRevertContinue() {
-    setMutating(true);
-    try {
-      const res = await ipc.revertContinue(repoId);
-      if (res.kind === 'committed') {
-        pushToast('success', `Reverted ${shortOid(res.oid)}`);
-      } else {
-        pushToast('info', `Revert paused: ${res.paths.length} conflict(s) to resolve`);
-      }
-      await refreshAll();
-    } catch (e) {
-      surfacePickRevertError(e);
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleCherrypickAbort() {
-    setMutating(true);
-    try {
-      await ipc.cherrypickAbort(repoId);
-      await refreshAll();
-      pushToast('success', 'Cherry-pick aborted');
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleRevertAbort() {
-    setMutating(true);
-    try {
-      await ipc.revertAbort(repoId);
-      await refreshAll();
-      pushToast('success', 'Revert aborted');
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // ----- P39b: git bisect -----
-  // Surface a start/mark/skip outcome as a toast; the banner (RepoOpState.bisect,
-  // refetched by refreshAll) renders the live progress + controls.
-  function reportBisectOutcome(res: BisectOutcome) {
-    if (res.kind === 'found') {
-      pushToast('success', `Bisect found first bad commit ${shortOid(res.firstBad)}`);
-    } else if (res.kind === 'cannotDetermine') {
-      pushToast(
-        'info',
-        `Bisect cannot determine the culprit: only skipped commits remain (${res.skipped.length}). Reset to finish.`,
-      );
-    } else {
-      pushToast(
-        'info',
-        `Bisecting: ${res.revisionsRemaining} revision(s) left, ~${res.estimatedSteps} step(s)`,
-      );
-    }
-  }
-
-  // Two-click start: the commit menu recorded a BAD oid; `good` is an older
-  // commit picked as known-good. Backend guards non-ancestor good / same oid /
-  // dirty worktree → surface its error and keep the pending-bad so the user can
-  // retry with a different good.
-  async function handleStartBisect(bad: string, good: string) {
-    setMutating(true);
-    try {
-      const res = await ipc.startBisect(repoId, bad, [good]);
-      setPendingBisectBad(null);
-      reportBisectOutcome(res);
-      await refreshAll();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleBisectMark(isGood: boolean) {
-    setMutating(true);
-    try {
-      const res = await ipc.bisectMark(repoId, isGood);
-      reportBisectOutcome(res);
-      await refreshAll();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleBisectSkip() {
-    setMutating(true);
-    try {
-      const res = await ipc.bisectSkip(repoId);
-      reportBisectOutcome(res);
-      await refreshAll();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  // Reset = leave bisect + re-checkout the original branch/worktree. Confirm-
-  // gated (routed through the shared Abort ConfirmDialog).
-  async function handleBisectReset() {
-    setMutating(true);
-    try {
-      await ipc.bisectReset(repoId);
-      await refreshAll();
-      pushToast('success', 'Bisect reset');
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
+  // P23d + P38: blame / file-history / reflog read overlays (state lives above;
+  // this hook owns the reqId stale-guards + open/close handlers + restore effect).
+  const {
+    closeBlame,
+    closeHistory,
+    closeReflog,
+    openReflog,
+    revealCommitByOid,
+    handleBlame,
+    handleFileHistory,
+  } = useReadOverlays({
+    repoId,
+    pushToast,
+    mutating,
+    setBlame,
+    setHistory,
+    setReflog,
+    blameReqId,
+    historyReqId,
+    reflogReqId,
+    reflogRef,
+    reflogRestoreRef,
+    graphDataRef,
+    compareRef,
+    clearCompare,
+    setSelectedIndex,
+  });
   function handleToggleConflictView(path: string) {
     const key = `conflict:${path}`;
     if (diffSlotRef.current?.key === key) {
@@ -2868,54 +1642,8 @@ export function RepoWorkspace({
   // parent re-render while the menu is open (reviewer NIT).
   const closeMenu = useCallback(() => setMenu(null), []);
 
-  // Esc-layering effect (active tab only; global modals win). typing guard ->
-  // collapse diff overlay -> exit compare -> deselect commit (P5 §5.4).
-  useEffect(() => {
-    if (!active) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (globalModalOpen) return;
-      const target = e.target as HTMLElement | null;
-      if (target !== null && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) return;
-      // P11g-rev §4.7: layering, topmost first. The commit-mode DiffBrowser
-      // overlay closes first; then the workdir single-file diffSlot; then
-      // compare mode (which also closes its auto-open browser); then deselect.
-      // P15b: the AI output panel floats above everything — Esc dismisses it first.
-      if (aiPanelOpenRef.current) {
-        closeAiPanel();
-        return;
-      }
-      // P23d: blame / file-history overlays close before the diff/commit layers.
-      // Use the close helpers so the in-flight fetch reqId is invalidated too.
-      if (blameOpenRef.current) {
-        closeBlame();
-        return;
-      }
-      if (historyOpenRef.current) {
-        closeHistory();
-        return;
-      }
-      if (reflogOpenRef.current) {
-        closeReflog();
-        return;
-      }
-      if (commitBrowserOpenRef.current) {
-        setCommitBrowserOpen(false);
-        return;
-      }
-      if (diffSlotRef.current !== null) {
-        collapseDiffSlot();
-        return;
-      }
-      if (compareRef.current !== null) {
-        clearCompare();
-        return;
-      }
-      setSelectedIndex((cur) => (cur !== null ? null : cur));
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [
+  // Per-repo keyboard handling (Esc-layering + shortcut effects), active tab only.
+  useWorkspaceKeyboard({
     active,
     globalModalOpen,
     collapseDiffSlot,
@@ -2924,88 +1652,15 @@ export function RepoWorkspace({
     closeBlame,
     closeHistory,
     closeReflog,
-  ]);
-
-  // Per-repo shortcut effect (active tab only, §5.1): refresh / fetch / pull /
-  // push / graph nav. Global modals + this repo's own dialogs suppress it.
-  useEffect(() => {
-    if (!active) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (globalModalOpen) return;
-      const ctrl = e.ctrlKey || e.metaKey;
-
-      if (e.key === 'F5' || (ctrl && e.key.toLowerCase() === 'r')) {
-        e.preventDefault();
-        const canRefresh = !refreshing && !statusLoading && !graphLoading && !mutating;
-        if (canRefresh) void handleRefresh();
-        return;
-      }
-
-      const target = e.target as HTMLElement | null;
-      const typing =
-        target !== null &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable);
-      if (typing) return;
-
-      if (dialogOpen || abortConfirmOpen) return;
-
-      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'f') {
-        e.preventDefault();
-        if (!refreshing && !mutating) void handleFetch();
-        return;
-      }
-
-      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'p') {
-        e.preventDefault();
-        if (!refreshing && !mutating && canPullPush) void handlePull();
-        return;
-      }
-
-      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'u') {
-        e.preventDefault();
-        if (!refreshing && !mutating && canPullPush) void handlePush();
-        return;
-      }
-
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        if (selectedIndex === null || graph === null) return;
-        e.preventDefault();
-        setSelectedIndex((cur) => {
-          if (cur === null) return cur;
-          const next = e.key === 'ArrowDown' ? cur + 1 : cur - 1;
-          return Math.max(0, Math.min(next, graph.nodes.length - 1));
-        });
-        return;
-      }
-
-      if (e.key === 'PageDown' || e.key === 'PageUp') {
-        if (selectedIndex === null || graph === null) return;
-        e.preventDefault();
-        const n = graphRef.current?.getVisibleRowCount() ?? 10;
-        setSelectedIndex((cur) => {
-          if (cur === null) return cur;
-          const next = e.key === 'PageDown' ? cur + n : cur - n;
-          return Math.max(0, Math.min(next, graph.nodes.length - 1));
-        });
-        return;
-      }
-
-      if (e.key === 'Home' || e.key === 'End') {
-        if (selectedIndex === null || graph === null) return;
-        e.preventDefault();
-        setSelectedIndex(e.key === 'Home' ? 0 : graph.nodes.length - 1);
-        return;
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    active,
-    globalModalOpen,
+    aiPanelOpenRef,
+    blameOpenRef,
+    historyOpenRef,
+    reflogOpenRef,
+    commitBrowserOpenRef,
+    diffSlotRef,
+    compareRef,
+    setSelectedIndex,
+    setCommitBrowserOpen,
     refreshing,
     statusLoading,
     graphLoading,
@@ -3015,9 +1670,13 @@ export function RepoWorkspace({
     abortConfirmOpen,
     selectedIndex,
     graph,
-  ]);
+    graphRef,
+    handleRefresh,
+    handleFetch,
+    handlePull,
+    handlePush,
+  });
 
-  const headBranch = branches?.local.find((b) => b.isHead) ?? null;
   // P37b: force-push needs a normal-push-capable HEAD with a configured upstream.
   const canForcePush = canPullPush && headBranch?.upstream != null;
 
