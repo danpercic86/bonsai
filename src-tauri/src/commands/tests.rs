@@ -1374,6 +1374,41 @@
         assert_eq!(s.editor_command, "code {path}");
     }
 
+    /// P49 (reviewer gap): the shared `launch_inner` missing-path precheck
+    /// returns `AppError::Io` — and launches **nothing** — when the target path
+    /// no longer exists. `reveal_in_file_manager` is the runtime-free command (it
+    /// takes neither an `AppHandle` nor state), so it drives the exact precheck
+    /// (`commands/external.rs` `launch_inner`, the `!p.exists()` guard) directly.
+    /// `open_in_terminal`/`open_in_editor` funnel through the *same* precheck but
+    /// first need an `AppHandle` to resolve the settings template, so they cannot
+    /// be driven runtime-free here (the tauri "test" feature is avoided on this
+    /// machine — see `config_commands_require_an_open_repo`); the shared seam is
+    /// proven via reveal. The `p.exists()` check is the first statement in the
+    /// spawn_blocking body — before any `SpawnRunner` is constructed — so an `Io`
+    /// result proves no file-manager / terminal / editor process was spawned.
+    #[test]
+    fn external_launch_rejects_missing_path_before_spawning() {
+        // Parent dir exists, leaf never created ⇒ guaranteed-missing on every OS,
+        // so the precheck short-circuits deterministically.
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let missing = dir.path().join("does-not-exist-p49");
+        let missing_str = missing.to_string_lossy().into_owned();
+        assert!(!missing.exists(), "precondition: the path must not exist");
+
+        let err = tauri::async_runtime::block_on(reveal_in_file_manager(missing_str.clone()))
+            .expect_err("a nonexistent path must be rejected by the precheck");
+        assert!(
+            matches!(err, AppError::Io(_)),
+            "missing path must surface as AppError::Io, got {err:?}"
+        );
+        // The precheck echoes the offending path — confirms this is *our* Io
+        // guard (not some incidental filesystem error) and that we never spawned.
+        assert!(
+            err.to_string().contains(&missing_str),
+            "the precheck error must name the offending path: {err}"
+        );
+    }
+
     /// `ai_resolve_conflict` enforces the backend consent gate (§9.6) BEFORE
     /// touching the repo: default settings (`ai_consented=false`) → `AiUnavailable`
     /// even with no repo open; once enabled+consented, an unknown repo id →

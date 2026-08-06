@@ -25,7 +25,7 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
-## P49 — external integrations: open in terminal / file manager / editor (Phase 1) — **IN PROGRESS** (2026-08-06)
+## P49 — external integrations: open in terminal / file manager / editor (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 
 Roadmap approved 2026-08-06 from a feature-gap analysis (6 research streams: codebase inventory +
 worldwide Git-client reviews + AI+git use-cases + terminal/graph/perf). Full plan:
@@ -79,8 +79,22 @@ shell" helper); toolbar "Open externally" → Open in terminal / Reveal in file 
 editor, click = silent success; tab right-click → same 3-item menu. Success path proven live;
 `#fail` error-toast + within-session persistence reviewer-verified (no ipc handle exposed to the
 harness). tsc + pnpm build clean.
-**Current step:** P49b done + AI gate passed — running tester (full workspace regression + add the
-missing-path command test the reviewer flagged), then USER CHECKPOINT.
+- **P49 tester** — full-workspace regression PASS (`cargo test --workspace` **897 passed / 0 failed /
+  2 ignored** pre-existing; zero regressions). Added `external_launch_rejects_missing_path_before_
+  spawning` (drives the shared `launch_inner` `!exists` guard via `reveal_in_file_manager` — the
+  runtime-free command — returns `Io`, launches nothing). clippy + tsc/build clean.
+  `P49-user-checklist.md` covers all native items.
+- **P49 AI GATE PASSED (2026-08-07).** Commits: `20ec096` P49a · `e186825` P49b (+ this tester
+  closeout). Backend argv/settings tests + browser-harness UI both verified; zero regressions.
+
+**P49 awaiting USER CHECKPOINT** (native `pnpm tauri dev`, per `docs/contracts/P49-user-checklist.md`):
+real per-OS launch of terminal / file-manager / editor from all 4 entry points (toolbar, tab menu,
+worktree + submodule rows); Windows `wt`→PowerShell→`cmd` fallback + `code.cmd` PATHEXT resolution;
+a repo path **with spaces**; terminal-template edit + Reset-to-auto-detect persisting across restart;
+failure toasts. This is the USER CHECKPOINT because the AI harness can prove argv correctness + mock
+behavior but cannot launch a real external app.
+**Current step:** P49 DONE (AI gate passed, awaiting USER CHECKPOINT). Next Phase-1 milestone: **P50**
+(commit/content search + command palette + list filtering) — architect contract pending.
 
 ## P48 — New Worktree dialog UX (searchable branch picker, wider dialog, per-category select-all) — **DONE (AI gate + USER CHECKPOINT confirmed)** (2026-08-06)
 
