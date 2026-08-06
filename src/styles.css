@@ -3528,12 +3528,39 @@ span.file-row-main {
 }
 
 .wt-copy-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-3);
   margin-bottom: 4px;
+}
+
+/* Per-group Check all ⇄ Uncheck all toggle (Staged/Unstaged/Untracked). */
+.wt-copy-selectall {
+  flex: none;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.wt-copy-selectall:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.wt-copy-selectall:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 .wt-copy-row {
@@ -3600,6 +3627,78 @@ span.file-row-main {
 
 .wt-copy-warn {
   color: var(--warning, var(--danger));
+}
+
+/* New-worktree dialog: wider card so long copy-candidate paths stay readable
+   (mirrors .rebase-plan-card). Keeps the .dialog-card responsive max-width cap. */
+.dialog-card.worktree-create-card {
+  width: 520px;
+}
+
+/* Reusable searchable combobox (branch picker + WhatChanged ref fields). The
+   input reuses .dialog-input; only the popover + option rows are new. */
+.combobox {
+  position: relative;
+}
+
+.combobox-popover {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  z-index: 120;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.combobox-option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text-1);
+  cursor: pointer;
+}
+
+.combobox-option--active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.combobox-option--disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+.combobox-option--disabled.combobox-option--active {
+  background: transparent;
+  color: var(--text-3);
+}
+
+.combobox-option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.combobox-option-hint {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.combobox-option--active .combobox-option-hint {
+  color: rgba(255, 255, 255, 0.8);
 }
 
 /* P23b: interactive-rebase plan editor — wider card, a reorderable row list. */

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ipc } from '../ipc';
 import type { CopyAction, CopyCandidate, CopySelection, CopyVerdict } from '../ipc';
 import { errorMessage } from '../utils/errors';
+import { Combobox, type ComboboxOption } from './Combobox';
 import { WorktreeCopyCandidates } from './WorktreeCopyCandidates';
 
 export interface WorktreeCreateDialogProps {
@@ -57,7 +58,6 @@ export function WorktreeCreateDialog({
   onSubmit,
   onCancel,
 }: WorktreeCreateDialogProps) {
-  const selectRef = useRef<HTMLSelectElement>(null);
   const [branch, setBranch] = useState('');
   const [name, setName] = useState('');
   // Once the user edits the name field we stop auto-syncing it to the branch.
@@ -98,7 +98,7 @@ export function WorktreeCreateDialog({
     setVerdictByPath(new Map());
     setConflictActions({});
     setPreviewFailed(false);
-    selectRef.current?.focus();
+    // The branch combobox is focused via its `autoFocus` prop on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -178,6 +178,35 @@ export function WorktreeCreateDialog({
     setConflictActions((prev) => ({ ...prev, [path]: action }));
   }, []);
 
+  const handleBranchChange = useCallback(
+    (next: string) => {
+      setBranch(next);
+      // Keep the name synced to the branch until the user edits it.
+      if (!nameDirty) setName(next);
+      setError(null);
+    },
+    [nameDirty],
+  );
+
+  // Bulk check/uncheck every path in a copy group. Only updates the `checked`
+  // Set (the preview effect re-runs, guarded by previewIdRef); unchecking also
+  // drops stale Overwrite/Skip choices, mirroring toggleChecked.
+  const toggleGroup = useCallback((paths: string[], check: boolean) => {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (check) paths.forEach((p) => next.add(p));
+      else paths.forEach((p) => next.delete(p));
+      return next;
+    });
+    if (!check) {
+      setConflictActions((prev) => {
+        const rest = { ...prev };
+        paths.forEach((p) => delete rest[p]);
+        return rest;
+      });
+    }
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -193,6 +222,14 @@ export function WorktreeCreateDialog({
   if (!open) return null;
 
   const inFlight = busy || submitting;
+  // Branch picker options: already-checked-out branches stay visible but
+  // disabled (a branch lives in one worktree), matching the old <select>.
+  const branchOptions: ComboboxOption[] = localBranches.map((b) => ({
+    value: b,
+    label: b,
+    disabled: used.has(b),
+    hint: used.has(b) ? 'checked out' : undefined,
+  }));
   // A blank name defaults to the branch (backend + mock do the same); the slug
   // is derived from that effective name, NOT the branch (P32 Part A).
   const effectiveName = name.trim() === '' ? branch : name;
@@ -214,7 +251,7 @@ export function WorktreeCreateDialog({
   return (
     <div className="dialog-overlay" onClick={cancel}>
       <div
-        className="dialog-card"
+        className="dialog-card worktree-create-card"
         role="dialog"
         aria-modal="true"
         aria-label="New worktree"
@@ -247,29 +284,17 @@ export function WorktreeCreateDialog({
           <div className="dialog-body">
             <label className="dialog-label">
               Branch
-              <select
-                ref={selectRef}
-                className="dialog-input"
+              <Combobox
+                ariaLabel="Branch"
                 value={branch}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  setBranch(next);
-                  // Keep the name synced to the branch until the user edits it.
-                  if (!nameDirty) setName(next);
-                  setError(null);
-                }}
-              >
-                {localBranches.length === 0 && (
-                  <option value="" disabled>
-                    No local branches
-                  </option>
-                )}
-                {localBranches.map((b) => (
-                  <option key={b} value={b} disabled={used.has(b)}>
-                    {used.has(b) ? `${b} (checked out)` : b}
-                  </option>
-                ))}
-              </select>
+                onChange={handleBranchChange}
+                options={branchOptions}
+                placeholder={
+                  localBranches.length === 0 ? 'No local branches' : 'Search branches…'
+                }
+                autoFocus
+                disabled={inFlight}
+              />
             </label>
             <label className="dialog-label">
               Name
@@ -314,6 +339,7 @@ export function WorktreeCreateDialog({
               conflictActions={conflictActions}
               disabled={inFlight}
               onToggle={toggleChecked}
+              onToggleGroup={toggleGroup}
               onSetAction={setAction}
             />
             {previewFailed && (

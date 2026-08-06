@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { AiDigestRange } from '../ipc';
+import { Combobox, type ComboboxOption } from './Combobox';
 
 export interface WhatChangedDialogProps {
   open: boolean;
-  /** Ref suggestions for the datalist (already-loaded local + remote branch
+  /** Ref suggestions for the combobox (already-loaded local + remote branch
    *  names — display aid only; any revparse-able ref is accepted). */
   branchNames: string[];
   /** Current branch shorthand (seeds the "to" field); null when detached/unborn. */
@@ -30,7 +31,6 @@ export function WhatChangedDialog({
   onSubmit,
   onCancel,
 }: WhatChangedDialogProps) {
-  const firstFieldRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<Mode>('betweenRefs');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -50,12 +50,6 @@ export function WhatChangedDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Focus after the reset effect has settled the mode, so the ref points at a mounted input.
-  useEffect(() => {
-    if (!open) return;
-    firstFieldRef.current?.focus();
-  }, [open, mode]);
-
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -67,6 +61,11 @@ export function WhatChangedDialog({
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [open, onCancel]);
+
+  const refOptions: ComboboxOption[] = useMemo(
+    () => branchNames.map((n) => ({ value: n, label: n })),
+    [branchNames],
+  );
 
   if (!open) return null;
 
@@ -156,32 +155,27 @@ export function WhatChangedDialog({
               <>
                 <label className="dialog-label">
                   From (base ref)
-                  <input
-                    ref={firstFieldRef}
-                    className="dialog-input"
+                  <Combobox
+                    allowFreeInput
+                    ariaLabel="From (base ref)"
                     value={from}
-                    onChange={(e) => setFrom(e.target.value)}
+                    onChange={setFrom}
+                    options={refOptions}
                     placeholder="origin/main"
-                    list="what-changed-refs"
-                    spellCheck={false}
+                    autoFocus
                   />
                 </label>
                 <label className="dialog-label">
                   To
-                  <input
-                    className="dialog-input"
+                  <Combobox
+                    allowFreeInput
+                    ariaLabel="To"
                     value={to}
-                    onChange={(e) => setTo(e.target.value)}
+                    onChange={setTo}
+                    options={refOptions}
                     placeholder={currentBranch ?? 'HEAD'}
-                    list="what-changed-refs"
-                    spellCheck={false}
                   />
                 </label>
-                <datalist id="what-changed-refs">
-                  {branchNames.map((n) => (
-                    <option key={n} value={n} />
-                  ))}
-                </datalist>
                 <p className="dialog-body-note">
                   Digests commits in "To" that are not in "From" (merge-base range).
                 </p>
@@ -212,20 +206,16 @@ export function WhatChangedDialog({
               <>
                 <label className="dialog-label">
                   Commit or ref
-                  <input
-                    className="dialog-input"
+                  <Combobox
+                    allowFreeInput
+                    ariaLabel="Commit or ref"
                     value={oid}
-                    onChange={(e) => setOid(e.target.value)}
+                    onChange={setOid}
+                    options={refOptions}
                     placeholder="abc1234"
-                    list="what-changed-refs"
-                    spellCheck={false}
+                    autoFocus
                   />
                 </label>
-                <datalist id="what-changed-refs">
-                  {branchNames.map((n) => (
-                    <option key={n} value={n} />
-                  ))}
-                </datalist>
                 <p className="dialog-body-note">
                   Digests everything on the current branch since this commit.
                 </p>

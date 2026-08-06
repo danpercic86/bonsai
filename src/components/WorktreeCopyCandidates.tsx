@@ -16,6 +16,8 @@ export interface WorktreeCopyCandidatesProps {
   conflictActions: Record<string, CopyAction>;
   disabled: boolean;
   onToggle(path: string): void;
+  /** Bulk check/uncheck every path in a group (Check all ⇄ Uncheck all). */
+  onToggleGroup(paths: string[], check: boolean): void;
   onSetAction(path: string, action: CopyAction): void;
 }
 
@@ -44,6 +46,7 @@ export function WorktreeCopyCandidates({
   conflictActions,
   disabled,
   onToggle,
+  onToggleGroup,
   onSetAction,
 }: WorktreeCopyCandidatesProps) {
   if (loading) {
@@ -60,9 +63,25 @@ export function WorktreeCopyCandidates({
       {GROUPS.map(({ group, label }) => {
         const rows = candidates.filter((c) => c.group === group);
         if (rows.length === 0) return null;
+        // Gitignored is intentionally excluded from bulk-select (copying every
+        // ignored file — build output, node_modules — is rarely intended).
+        const groupPaths = rows.map((r) => r.path);
+        const allChecked = groupPaths.every((p) => checked.has(p));
         return (
           <div key={group} className="wt-copy-group">
-            <div className="wt-copy-group-header">{label}</div>
+            <div className="wt-copy-group-header">
+              <span>{label}</span>
+              {group !== 'ignored' && (
+                <button
+                  type="button"
+                  className="wt-copy-selectall"
+                  disabled={disabled}
+                  onClick={() => onToggleGroup(groupPaths, !allChecked)}
+                >
+                  {allChecked ? 'Uncheck all' : 'Check all'}
+                </button>
+              )}
+            </div>
             {rows.map((c) => {
               const isChecked = checked.has(c.path);
               const isConflict = verdictByPath.get(c.path) === 'conflict';
@@ -79,7 +98,9 @@ export function WorktreeCopyCandidates({
                       disabled={disabled}
                       onChange={() => onToggle(c.path)}
                     />
-                    <span className="mono wt-copy-path">{c.path}</span>
+                    <span className="mono wt-copy-path" title={c.path}>
+                      {c.path}
+                    </span>
                   </label>
                   {needsDecision && (
                     <div className="wt-copy-conflict">
