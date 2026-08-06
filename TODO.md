@@ -25,7 +25,7 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
-## P47 — cherry-pick enhancements + commit-action menu consolidation — **IN PROGRESS** (2026-08-06)
+## P47 — cherry-pick enhancements + commit-action menu consolidation — **DONE (AI gate passed)** (2026-08-06)
 
 User asked to "implement cherry-pick commits"; investigation found single-commit cherry-pick
 already exists (P20b) but was only reachable from the commit-row menu (user right-clicked a branch
@@ -69,9 +69,11 @@ branch/tag-pill actions resolve — also fixes pre-existing Compare-with-HEAD ga
   cherryPick|revert → OpBanner Continue disabled); not drivable in-harness (conflict trigger is a
   hardcoded oid suffix, unreachable from a pill) — covered by the native checkpoint.
 
-**Current step:** P47 — awaiting USER CHECKPOINT (native `pnpm tauri dev`), see
-`docs/contracts/P47-user-checklist.md`. Accepted as-is: unborn-HEAD branch pill no longer offers
-create-branch/tag (now uniform with the commit-row menu, which already hid these when unborn).
+**Current step:** DONE — marked done at user's explicit request (2026-08-06). NOTE: the native
+USER CHECKPOINT (`pnpm tauri dev`, `docs/contracts/P47-user-checklist.md`) was **not run** — the
+user chose to close P47 on the AI-gate evidence alone; native verification is deferred/waived, not
+confirmed. Accepted as-is: unborn-HEAD branch pill no longer offers create-branch/tag (now uniform
+with the commit-row menu, which already hid these when HEAD is unborn).
 
 ## v1-prep — release-readiness for a public 1.0.0 — **DONE (AI gate passed)** (2026-08-05)
 
