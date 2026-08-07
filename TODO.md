@@ -25,7 +25,7 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
-## P52 — adopt git's commit-graph file (Phase 1 · large-repo perf) — **IN PROGRESS** (2026-08-07)
+## P52 — adopt git's commit-graph file (Phase 1 · large-repo perf) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 
 Phase 1 milestone 4 of 4 (final). Roadmap: `~/.claude/plans/do-thorough-analysis-of-purrfect-moth.md`.
 
@@ -69,8 +69,32 @@ health-gate wiring (report per-section timings; do NOT raise budgets silently).
   stats 1558→~300) — under budget; layout `compute_graph` 254.9ms<500 with the graph. `#[ignore]` is
   for parallel-suite CPU-contention flakiness (convention), NOT a budget dodge. No prod-logic change
   (only `#[cfg(test)]` + test-only fixture; `ensure_default_fixture` has no runtime caller).
-**Current step:** P52b committed — running P52 tester (final Phase-1 regression), then P52 close-out →
-**Phase 1 (P49–P52) COMPLETE**.
+- **P52 tester** — final Phase-1 regression: `cargo test --workspace` **932 passed / 0 failed / 3
+  ignored** (DEFAULT SUITE GREEN for the first time; the 3 ignored are the intentional perf gates);
+  vitest **74/74**; maintenance 6/6; explicit perf gate PASSES (debug total 1784ms<2000, stats
+  404<1500 — commit-graph win holds); clippy --all-targets + tsc/build clean; checklist complete.
+  No new tests needed.
+- **P52 AI GATE PASSED (2026-08-07).** Commits: `4b0583a` P52a · `0a77165` P52b. Backend-only; the
+  tracked health-perf regression is fixed (~5×) + `#[ignore]`d per perf-gate convention; zero regressions.
+
+**P52 awaiting USER CHECKPOINT** (native, per `docs/contracts/P52-user-checklist.md`): open a large
+real repo → `.git/objects/info/commit-graph` appears (and mtime refreshes after fetch/autoFetch);
+graph/blame/health feel faster; NO error when `git` is absent.
+
+---
+## ✅ PHASE 1 (P49–P52) COMPLETE — all AI-gate-passed, awaiting a BATCH of native USER CHECKPOINTs (2026-08-07)
+Delivered autonomously (user away 3h): **P49** open-in-terminal/file-manager/editor · **P50** commit/
+content search + Ctrl/Cmd-K command palette + sidebar list filtering · **P51** graph polish (SHA/date/
+author columns, author-vs-committer, compact, ahead/behind chip — all toggleable) · **P52** commit-graph
+file adoption (5× faster health scan; faster graph/blame). Native checklists:
+`docs/contracts/P{49,50,51,52}-user-checklist.md`. The four pre-existing dirty files (Cargo.lock,
+package.json, src-tauri/Cargo.toml, tauri.conf.json) were left untouched throughout.
+NOTE: the earlier-spawned "fix health perf gate" task chip was already started by the user in a
+separate worktree — P52 already fixes it on `main`, so that session is redundant (discard, don't merge).
+Next phase (NOT started — needs user OK): **Phase 2 (AI-native edge)** P53 blame/explain "why" +
+branch naming → P54 commit composer → P55 NL→safe git op → P56 local changelog → P57 semantic history search.
+**Current step:** Phase 1 DONE. PAUSED — awaiting user review + the batched native checkpoints (P49–P52).
+Do NOT start Phase 2 without user approval (their grant was "finish Phase 1" only).
 
 ## P51 — commit-graph polish + clutter controls (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 
