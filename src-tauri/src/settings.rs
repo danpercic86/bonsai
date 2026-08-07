@@ -157,32 +157,63 @@ pub fn clamp_health_refresh(h: HealthRefresh) -> HealthRefresh {
     }
 }
 
-/// Graph geometry knobs (P11). Defaults EQUAL the frontend METRICS defaults
-/// (dot 4 / avatar 10 / row 32 / lane 16) — the "no override" baseline.
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+/// Which timestamp the graph's date column + relative/absolute date use (P51).
+/// Pure UI preference; no Git effect. `Author` is the M2 baseline behavior.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GraphDateBasis {
+    #[default]
+    Author,
+    Committer,
+}
+
+/// Graph geometry knobs + per-row detail toggles (P11/P51). Geometry defaults
+/// EQUAL the frontend METRICS defaults (avatar 10 / row 32 / lane 16) — the
+/// "no override" baseline. Every P51 toggle is `#[serde(default)]` (via the
+/// container-level `default`) so an OLD settings.json without them still
+/// deserializes, falling back to the sensible defaults below. `dot_radius` was
+/// removed (P51 D7 — a dead no-op field); an old file carrying `dotRadius` is
+/// ignored (serde has no `deny_unknown_fields`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct GraphPrefs {
-    pub dot_radius: u32,
     pub avatar_radius: u32,
     pub row_height: u32,
     pub lane_width: u32,
+    /// P51: show the short-SHA column (+ verified-badge slot). Default true.
+    pub show_sha: bool,
+    /// P51: show the optional full author-NAME text column. Default false
+    /// (the avatar already conveys author; the name is the clutter-iest column).
+    pub show_author: bool,
+    /// P51: show the date column. Default true (M2 baseline showed it always).
+    pub show_date: bool,
+    /// P51: which timestamp the date column/tooltip use. Default Author.
+    pub date_basis: GraphDateBasis,
+    /// P51: ahead/behind chip on local-branch-tip pills. Default true (renders
+    /// only on diverged branches — low clutter, high value).
+    pub show_ahead_behind: bool,
+    /// P51: compact (denser) rows preset. Default false.
+    pub compact: bool,
 }
 
 impl Default for GraphPrefs {
     fn default() -> Self {
         GraphPrefs {
-            dot_radius: 4,
             avatar_radius: 10,
             row_height: 32,
             lane_width: 16,
+            show_sha: true,
+            show_author: false,
+            show_date: true,
+            date_basis: GraphDateBasis::Author,
+            show_ahead_behind: true,
+            compact: false,
         }
     }
 }
 
 pub const AUTO_FETCH_INTERVAL_MIN: u32 = 1;
 pub const AUTO_FETCH_INTERVAL_MAX: u32 = 120;
-pub const DOT_RADIUS_MIN: u32 = 2;
-pub const DOT_RADIUS_MAX: u32 = 10;
 pub const AVATAR_RADIUS_MIN: u32 = 6;
 pub const AVATAR_RADIUS_MAX: u32 = 16;
 pub const ROW_HEIGHT_MIN: u32 = 24;
@@ -201,14 +232,17 @@ pub fn clamp_auto_fetch(a: AutoFetch) -> AutoFetch {
     }
 }
 
-/// Clamps each graph knob to its documented range; called by both `load_from`
-/// (defend a hand-edited file) and the setter command.
+/// Clamps each graph geometry knob to its documented range; called by both
+/// `load_from` (defend a hand-edited file) and the setter command. The P51
+/// detail toggles + `date_basis` have no numeric range — they pass through
+/// unclamped via struct-update (`..g`). Keep the `..g`: dropping it would
+/// silently reset every toggle to its field default on every load/save.
 pub fn clamp_graph_prefs(g: GraphPrefs) -> GraphPrefs {
     GraphPrefs {
-        dot_radius: g.dot_radius.clamp(DOT_RADIUS_MIN, DOT_RADIUS_MAX),
         avatar_radius: g.avatar_radius.clamp(AVATAR_RADIUS_MIN, AVATAR_RADIUS_MAX),
         row_height: g.row_height.clamp(ROW_HEIGHT_MIN, ROW_HEIGHT_MAX),
         lane_width: g.lane_width.clamp(LANE_WIDTH_MIN, LANE_WIDTH_MAX),
+        ..g // toggles + date_basis pass through unclamped
     }
 }
 
@@ -800,42 +834,42 @@ mod tests {
         };
         assert_eq!(clamp_auto_fetch(in_range), in_range);
 
-        // Each graph knob below-min clamps to its min.
+        // Each graph knob below-min clamps to its min (toggles pass through).
         assert_eq!(
             clamp_graph_prefs(GraphPrefs {
-                dot_radius: 0,
                 avatar_radius: 0,
                 row_height: 0,
                 lane_width: 0,
+                ..GraphPrefs::default()
             }),
             GraphPrefs {
-                dot_radius: DOT_RADIUS_MIN,
                 avatar_radius: AVATAR_RADIUS_MIN,
                 row_height: ROW_HEIGHT_MIN,
                 lane_width: LANE_WIDTH_MIN,
+                ..GraphPrefs::default()
             }
         );
         // Each graph knob above-max clamps to its max.
         assert_eq!(
             clamp_graph_prefs(GraphPrefs {
-                dot_radius: 9999,
                 avatar_radius: 9999,
                 row_height: 9999,
                 lane_width: 9999,
+                ..GraphPrefs::default()
             }),
             GraphPrefs {
-                dot_radius: DOT_RADIUS_MAX,
                 avatar_radius: AVATAR_RADIUS_MAX,
                 row_height: ROW_HEIGHT_MAX,
                 lane_width: LANE_WIDTH_MAX,
+                ..GraphPrefs::default()
             }
         );
         // In-range graph knobs pass through unchanged.
         let g_in = GraphPrefs {
-            dot_radius: 5,
             avatar_radius: 12,
             row_height: 36,
             lane_width: 20,
+            ..GraphPrefs::default()
         };
         assert_eq!(clamp_graph_prefs(g_in), g_in);
     }
@@ -852,10 +886,10 @@ mod tests {
                 interval_minutes: 15,
             },
             graph: GraphPrefs {
-                dot_radius: 6,
                 avatar_radius: 14,
                 row_height: 40,
                 lane_width: 24,
+                ..GraphPrefs::default()
             },
             ..Default::default()
         };
@@ -865,7 +899,7 @@ mod tests {
         assert_eq!(loaded, s);
         assert!(loaded.auto_fetch.enabled);
         assert_eq!(loaded.auto_fetch.interval_minutes, 15);
-        assert_eq!(loaded.graph.dot_radius, 6);
+        assert_eq!(loaded.graph.avatar_radius, 14);
         assert_eq!(loaded.graph.lane_width, 24);
     }
 
@@ -882,17 +916,85 @@ mod tests {
             "theme": "dark",
             "paneWidths": { "sidebar": 240, "rightPanel": 380 },
             "autoFetch": { "enabled": true, "intervalMinutes": 0 },
-            "graph": { "dotRadius": 0, "avatarRadius": 99, "rowHeight": 1, "laneWidth": 999 }
+            "graph": { "avatarRadius": 99, "rowHeight": 1, "laneWidth": 999 }
         }"#;
         std::fs::write(&file, json).expect("write out-of-range settings.json");
 
         let loaded = load_from(&file);
         assert_eq!(loaded.auto_fetch.interval_minutes, AUTO_FETCH_INTERVAL_MIN);
         assert!(loaded.auto_fetch.enabled);
-        assert_eq!(loaded.graph.dot_radius, DOT_RADIUS_MIN);
         assert_eq!(loaded.graph.avatar_radius, AVATAR_RADIUS_MAX);
         assert_eq!(loaded.graph.row_height, ROW_HEIGHT_MIN);
         assert_eq!(loaded.graph.lane_width, LANE_WIDTH_MAX);
+    }
+
+    /// P51: non-default detail toggles + a `Committer` date basis round-trip
+    /// through save/load, and the raw JSON carries the documented camelCase
+    /// keys + the lowercase basis value.
+    #[test]
+    fn graph_prefs_toggles_roundtrip() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let s = Settings {
+            graph: GraphPrefs {
+                avatar_radius: 12,
+                row_height: 30,
+                lane_width: 18,
+                show_sha: false,
+                show_author: true,
+                show_date: false,
+                date_basis: GraphDateBasis::Committer,
+                show_ahead_behind: false,
+                compact: true,
+            },
+            ..Default::default()
+        };
+        save_to(&file, &s).expect("save settings");
+        let loaded = load_from(&file);
+        assert_eq!(loaded, s);
+        assert!(!loaded.graph.show_sha);
+        assert!(loaded.graph.show_author);
+        assert!(!loaded.graph.show_date);
+        assert_eq!(loaded.graph.date_basis, GraphDateBasis::Committer);
+        assert!(!loaded.graph.show_ahead_behind);
+        assert!(loaded.graph.compact);
+
+        let raw = std::fs::read_to_string(&file).expect("read settings.json");
+        assert!(raw.contains("\"showSha\": false"));
+        assert!(raw.contains("\"dateBasis\": \"committer\""));
+        assert!(raw.contains("\"compact\": true"));
+    }
+
+    /// P51 D7 back-compat: a legacy `graph` object that still carries the
+    /// removed `dotRadius` field and NONE of the new P51 toggle keys loads
+    /// without error — `dotRadius` is silently ignored (serde has no
+    /// `deny_unknown_fields`) and every new toggle falls back to its
+    /// `#[serde(default)]` default. Pins both the dead-field removal and the
+    /// additive-toggle guarantee.
+    #[test]
+    fn old_graph_prefs_with_dot_radius_ignored() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let json = r#"{
+            "version": 1,
+            "recentRepos": [],
+            "graph": { "dotRadius": 4, "avatarRadius": 12, "rowHeight": 30, "laneWidth": 18 }
+        }"#;
+        std::fs::write(&file, json).expect("write legacy graph settings.json");
+
+        let loaded = load_from(&file);
+        // Geometry from the legacy file is preserved (and clamped in-range).
+        assert_eq!(loaded.graph.avatar_radius, 12);
+        assert_eq!(loaded.graph.row_height, 30);
+        assert_eq!(loaded.graph.lane_width, 18);
+        // Every new P51 toggle falls back to its default (the `dotRadius` key
+        // in the file is ignored, not an error).
+        assert!(loaded.graph.show_sha);
+        assert!(!loaded.graph.show_author);
+        assert!(loaded.graph.show_date);
+        assert_eq!(loaded.graph.date_basis, GraphDateBasis::Author);
+        assert!(loaded.graph.show_ahead_behind);
+        assert!(!loaded.graph.compact);
     }
 
     /// An old `settings.json` written before P11 (no `autoFetch`/`graph` keys)

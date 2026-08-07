@@ -13,8 +13,7 @@ export const AUTO_FETCH_INTERVAL_MAX = 120;
 export const HEALTH_REFRESH_INTERVAL_MIN = 1;
 export const HEALTH_REFRESH_INTERVAL_MAX = 240;
 
-export const DOT_RADIUS_MIN = 2;
-export const DOT_RADIUS_MAX = 10;
+// P51 D7: DOT_RADIUS_MIN/MAX removed — `dotRadius` is a deleted dead field.
 
 export const AVATAR_RADIUS_MIN = 6;
 export const AVATAR_RADIUS_MAX = 16;

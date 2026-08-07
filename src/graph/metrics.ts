@@ -4,14 +4,18 @@ export const METRICS = {
   rowHeight: 32,
   laneWidth: 16,
   gutter: 12,
-  dotRadius: 4,
   dotRingWidth: 2,
   edgeWidth: 2,
   /** Gap between graph area and pills/summary column. */
   textGap: 12,
-  /** @deprecated P7 §1.2: author removed from graph rows. Retained (no churn). */
+  /** P51: optional full author-name text column (revived — was @deprecated). */
   authorColWidth: 120,
   dateColWidth: 72,
+  /** P51 §5: short-SHA right column geometry. */
+  shaColWidth: 54, // ~7 mono chars, right-aligned
+  shaFont: '12px', // size/weight prefix; FONT_MONO appended at draw time
+  badgeSlotWidth: 14, // verified-badge box, left of the SHA text
+  badgeGap: 4, // gap between the badge slot and the SHA text
   colGap: 12,
   pillHeight: 18,
   pillPadX: 8,
@@ -41,43 +45,97 @@ export const METRICS = {
   iconGap: 3,
 } as const;
 
-/** The four user-tunable knobs (P11 §2.3) — the only METRICS fields that vary
- *  at runtime. Everything else stays at its `as const` baseline value. */
-type MetricKnob = 'dotRadius' | 'avatarRadius' | 'rowHeight' | 'laneWidth';
+/** The three user-tunable geometry knobs (P11 §2.3) — the METRICS fields the
+ *  sliders vary at runtime. Everything else stays at its `as const` baseline. */
+type MetricKnob = 'avatarRadius' | 'rowHeight' | 'laneWidth';
 
 /** P11d: ring radii derived from `avatarRadius` at runtime (see
  *  `effectiveMetrics`); they widen to `number` alongside the user knobs. */
 type DerivedMetric = 'avatarHeadRingRadius' | 'avatarSelRingRadius';
 
-/** P11d §4.1: the effective render-geometry object threaded through the draw
- *  pass — the METRICS baseline with the four user knobs overlaid (plus the two
- *  avatarRadius-derived ring radii). Same shape as METRICS; the knobs and the
- *  derived rings widen to `number` (they carry runtime values). */
-export type EffectiveMetrics = Omit<typeof METRICS, MetricKnob | DerivedMetric> &
-  Record<MetricKnob | DerivedMetric, number>;
+/** P51 §5: METRICS fields the compact preset overrides at runtime — widened
+ *  from their `as const` literal types so the denser preset values type-check.
+ *  (`rowHeight`/`avatarRadius` are compact-overridden too but already widen via
+ *  `MetricKnob`.) */
+type CompactMetric =
+  | 'avatarBgRingExtra'
+  | 'pillHeight'
+  | 'textGap'
+  | 'avatarFont'
+  | 'summaryFont'
+  | 'metaFont'
+  | 'shaFont';
 
-/** P11d §4.1: overlay the four user knobs onto the METRICS baseline. All other
- *  fields (gutter, refColWidth, ring widths, fonts, maxRenderLanes, …) are
- *  unchanged (they equal METRICS.*). */
+/** P11d §4.1 / P51 §5: the effective render-geometry object threaded through
+ *  the draw pass — the METRICS baseline with the user knobs (or the compact
+ *  preset) overlaid. Same shape as METRICS; the knobs + derived rings + compact
+ *  fields widen to `number`/`string` (they carry runtime values). */
+export type EffectiveMetrics = Omit<
+  typeof METRICS,
+  MetricKnob | DerivedMetric | CompactMetric
+> &
+  Record<MetricKnob | DerivedMetric, number> & {
+    avatarBgRingExtra: number;
+    pillHeight: number;
+    textGap: number;
+    avatarFont: string;
+    summaryFont: string;
+    metaFont: string;
+    shaFont: string;
+  };
+
+/** P51 §5 (D5): compact-mode geometry preset. Overrides row/node/pill/font
+ *  geometry below the comfortable-mode slider ranges; `laneWidth` still honors
+ *  its slider (horizontal density is independent). Default `compact:false` ⇒
+ *  this is inert (the comfortable branch equals the pre-P51 baseline exactly). */
+const COMPACT = {
+  rowHeight: 22,
+  avatarRadius: 8,
+  avatarBgRingExtra: 1,
+  pillHeight: 15,
+  textGap: 8,
+  avatarFont: '600 10px',
+  summaryFont: '400 12px',
+  metaFont: '400 11px',
+  shaFont: '11px',
+} as const;
+
+/** P11d §4.1 / P51 §5: overlay the user knobs — or the compact preset when
+ *  `g.compact` — onto the METRICS baseline. In comfortable mode the row/node
+ *  sliders apply and every other field equals METRICS.* (no visual change from
+ *  the pre-P51 baseline). In compact mode row/node/pill/font geometry comes
+ *  from COMPACT and those sliders are ignored; `laneWidth` always honors its
+ *  slider. Call-site passes the full `GraphPrefs` (compact lives inside it). */
 export function effectiveMetrics(g: {
-  dotRadius: number;
   avatarRadius: number;
   rowHeight: number;
   laneWidth: number;
+  compact: boolean;
 }): EffectiveMetrics {
+  const preset = g.compact ? COMPACT : METRICS;
+  const avatarRadius = g.compact ? COMPACT.avatarRadius : g.avatarRadius;
+  const rowHeight = g.compact ? COMPACT.rowHeight : g.rowHeight;
   return {
     ...METRICS,
-    dotRadius: g.dotRadius,
-    avatarRadius: g.avatarRadius,
-    rowHeight: g.rowHeight,
+    // P51 compact overrides (each equals METRICS.* in comfortable mode).
+    avatarBgRingExtra: preset.avatarBgRingExtra,
+    pillHeight: preset.pillHeight,
+    textGap: preset.textGap,
+    avatarFont: preset.avatarFont,
+    summaryFont: preset.summaryFont,
+    metaFont: preset.metaFont,
+    shaFont: preset.shaFont,
+    // User knobs (row/node ignored while compact; laneWidth always honored).
+    avatarRadius,
+    rowHeight,
     laneWidth: g.laneWidth,
     // P11d: derive the HEAD/selection rings from the chosen avatarRadius so they
     // stay outside the disc at large sizes (preserving the baseline deltas of
     // +2.5 / +3.5 → 12.5 / 13.5 at the default avatarRadius 10).
     avatarHeadRingRadius:
-      g.avatarRadius + (METRICS.avatarHeadRingRadius - METRICS.avatarRadius),
+      avatarRadius + (METRICS.avatarHeadRingRadius - METRICS.avatarRadius),
     avatarSelRingRadius:
-      g.avatarRadius + (METRICS.avatarSelRingRadius - METRICS.avatarRadius),
+      avatarRadius + (METRICS.avatarSelRingRadius - METRICS.avatarRadius),
   };
 }
 
@@ -87,3 +145,7 @@ export const AVATAR = { sat: 52, light: 42 } as const;
 /** Font family appended to the size/weight strings above at draw time. */
 export const FONT_UI =
   '"Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif';
+
+/** P51 §5: monospace family for the short-SHA column (appended to `shaFont`
+ *  at draw time, like FONT_UI). Consumed by the draw layer in P51b. */
+export const FONT_MONO = 'ui-monospace, "Cascadia Code", "Consolas", monospace';

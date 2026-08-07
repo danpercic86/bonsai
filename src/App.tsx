@@ -132,10 +132,16 @@ export default function App() {
     intervalMinutes: 30,
   });
   const [graph, setGraph] = useState<GraphPrefs>({
-    dotRadius: 4,
     avatarRadius: 10,
     rowHeight: 32,
     laneWidth: 16,
+    // P51: per-row detail toggles (mirror GraphPrefs::default in settings.rs).
+    showSha: true,
+    showAuthor: false,
+    showDate: true,
+    dateBasis: 'author',
+    showAheadBehind: true,
+    compact: false,
   });
   // P11d §4.3: bumped on every graph-knob change → GraphCanvas full re-measure.
   const [metricsVersion, setMetricsVersion] = useState(0);

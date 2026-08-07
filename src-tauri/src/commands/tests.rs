@@ -1072,10 +1072,10 @@
             &mut s,
             UiSettingsPatch {
                 graph: Some(GraphPrefs {
-                    dot_radius: 5,
                     avatar_radius: 12,
                     row_height: 36,
                     lane_width: 20,
+                    ..GraphPrefs::default()
                 }),
                 ..Default::default()
             },
@@ -1083,10 +1083,10 @@
         assert_eq!(
             s.graph,
             GraphPrefs {
-                dot_radius: 5,
                 avatar_radius: 12,
                 row_height: 36,
                 lane_width: 20,
+                ..GraphPrefs::default()
             }
         );
         assert_eq!(
@@ -1109,10 +1109,10 @@
         assert_eq!(
             s.graph,
             GraphPrefs {
-                dot_radius: 5,
                 avatar_radius: 12,
                 row_height: 36,
                 lane_width: 20,
+                ..GraphPrefs::default()
             }
         );
 
@@ -1147,15 +1147,14 @@
             &mut s,
             UiSettingsPatch {
                 graph: Some(GraphPrefs {
-                    dot_radius: 0,
                     avatar_radius: 9999,
                     row_height: 0,
                     lane_width: 9999,
+                    ..GraphPrefs::default()
                 }),
                 ..Default::default()
             },
         );
-        assert_eq!(s.graph.dot_radius, settings::DOT_RADIUS_MIN);
         assert_eq!(s.graph.avatar_radius, settings::AVATAR_RADIUS_MAX);
         assert_eq!(s.graph.row_height, settings::ROW_HEIGHT_MIN);
         assert_eq!(s.graph.lane_width, settings::LANE_WIDTH_MAX);

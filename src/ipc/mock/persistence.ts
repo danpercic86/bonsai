@@ -1,6 +1,6 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
-import { AUTO_FETCH_INTERVAL_MAX, AUTO_FETCH_INTERVAL_MIN, AVATAR_RADIUS_MAX, AVATAR_RADIUS_MIN, DOT_RADIUS_MAX, DOT_RADIUS_MIN, HEALTH_REFRESH_INTERVAL_MAX, HEALTH_REFRESH_INTERVAL_MIN, LANE_WIDTH_MAX, LANE_WIDTH_MIN, ROW_HEIGHT_MAX, ROW_HEIGHT_MIN } from '../../settings/ranges';
-import type { AiAutonomy, AutoFetchSettings, GraphPrefs, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, RecentRepo, SessionState, Theme, UiSettings } from '../types';
+import { AUTO_FETCH_INTERVAL_MAX, AUTO_FETCH_INTERVAL_MIN, AVATAR_RADIUS_MAX, AVATAR_RADIUS_MIN, HEALTH_REFRESH_INTERVAL_MAX, HEALTH_REFRESH_INTERVAL_MIN, LANE_WIDTH_MAX, LANE_WIDTH_MIN, ROW_HEIGHT_MAX, ROW_HEIGHT_MIN } from '../../settings/ranges';
+import type { AiAutonomy, AutoFetchSettings, GraphDateBasis, GraphPrefs, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, RecentRepo, SessionState, Theme, UiSettings } from '../types';
 
 // Recents persistence (P1 contract §3.4): localStorage-backed so the harness
 // reopen-on-launch story is verifiable — open once, reload, auto-reopen.
@@ -80,7 +80,19 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
   autoFetch: { enabled: false, intervalMinutes: 5 },
   // P30: backend-scheduler healthRefresh signal; disabled by default.
   healthRefresh: { enabled: false, intervalMinutes: 30 },
-  graph: { dotRadius: 4, avatarRadius: 10, rowHeight: 32, laneWidth: 16 },
+  // P51: geometry knobs + per-row detail toggles (defaults mirror settings.rs
+  // GraphPrefs::default — compact off, SHA/date/ahead-behind on).
+  graph: {
+    avatarRadius: 10,
+    rowHeight: 32,
+    laneWidth: 16,
+    showSha: true,
+    showAuthor: false,
+    showDate: true,
+    dateBasis: 'author',
+    showAheadBehind: true,
+    compact: false,
+  },
   // AI assistance (P13): enabled by default, but consent gates the feature.
   aiEnabled: true,
   aiConflictAutonomy: 'proposeReview',
@@ -145,10 +157,11 @@ export function clampHealthRefresh(h: HealthRefreshSettings): HealthRefreshSetti
   };
 }
 
-/** Mirrors Rust `clamp_graph_prefs` (settings.rs). */
+/** Mirrors Rust `clamp_graph_prefs` (settings.rs): clamps the geometry knobs;
+ *  the P51 detail toggles + `dateBasis` pass through unclamped (spread). */
 export function clampGraphPrefs(g: GraphPrefs): GraphPrefs {
   return {
-    dotRadius: Math.min(DOT_RADIUS_MAX, Math.max(DOT_RADIUS_MIN, g.dotRadius)),
+    ...g, // toggles + dateBasis pass through unclamped
     avatarRadius: Math.min(AVATAR_RADIUS_MAX, Math.max(AVATAR_RADIUS_MIN, g.avatarRadius)),
     rowHeight: Math.min(ROW_HEIGHT_MAX, Math.max(ROW_HEIGHT_MIN, g.rowHeight)),
     laneWidth: Math.min(LANE_WIDTH_MAX, Math.max(LANE_WIDTH_MIN, g.laneWidth)),
@@ -194,23 +207,30 @@ export function readUiSettings(): UiSettings {
           ? parsed.healthRefresh.intervalMinutes
           : DEFAULT_UI_SETTINGS.healthRefresh.intervalMinutes,
     });
+    // P51: geometry + per-row toggles. Each field tolerant-parses independently
+    // (mirrors the Rust per-field `#[serde(default)]`): a legacy `graph` object
+    // missing a key — or still carrying `dotRadius` — falls back to the default.
+    const g = parsed.graph;
+    const dateBasis: GraphDateBasis = g?.dateBasis === 'committer' ? 'committer' : 'author';
     const graph = clampGraphPrefs({
-      dotRadius:
-        typeof parsed.graph?.dotRadius === 'number'
-          ? parsed.graph.dotRadius
-          : DEFAULT_UI_SETTINGS.graph.dotRadius,
       avatarRadius:
-        typeof parsed.graph?.avatarRadius === 'number'
-          ? parsed.graph.avatarRadius
+        typeof g?.avatarRadius === 'number'
+          ? g.avatarRadius
           : DEFAULT_UI_SETTINGS.graph.avatarRadius,
       rowHeight:
-        typeof parsed.graph?.rowHeight === 'number'
-          ? parsed.graph.rowHeight
-          : DEFAULT_UI_SETTINGS.graph.rowHeight,
+        typeof g?.rowHeight === 'number' ? g.rowHeight : DEFAULT_UI_SETTINGS.graph.rowHeight,
       laneWidth:
-        typeof parsed.graph?.laneWidth === 'number'
-          ? parsed.graph.laneWidth
-          : DEFAULT_UI_SETTINGS.graph.laneWidth,
+        typeof g?.laneWidth === 'number' ? g.laneWidth : DEFAULT_UI_SETTINGS.graph.laneWidth,
+      showSha: typeof g?.showSha === 'boolean' ? g.showSha : DEFAULT_UI_SETTINGS.graph.showSha,
+      showAuthor:
+        typeof g?.showAuthor === 'boolean' ? g.showAuthor : DEFAULT_UI_SETTINGS.graph.showAuthor,
+      showDate: typeof g?.showDate === 'boolean' ? g.showDate : DEFAULT_UI_SETTINGS.graph.showDate,
+      dateBasis,
+      showAheadBehind:
+        typeof g?.showAheadBehind === 'boolean'
+          ? g.showAheadBehind
+          : DEFAULT_UI_SETTINGS.graph.showAheadBehind,
+      compact: typeof g?.compact === 'boolean' ? g.compact : DEFAULT_UI_SETTINGS.graph.compact,
     });
     // P13 AI fields (additive, like autoFetch/graph): fall back to defaults.
     const aiEnabled =

@@ -2,6 +2,11 @@ import type { GraphEdge, GraphLayout, GraphNode, RefLabel, StashEntry } from '..
 
 const HOUR = 3600;
 
+/** P51: rows whose committer time is 1h AFTER the author time (as after a
+ *  rebase/amend) — gives the author-vs-committer date toggle a visible
+ *  difference in the harness. Inert until the P51b draw layer reads `dateBasis`. */
+const COMMITTER_SKEW_ROWS = new Set([1, 3, 5]);
+
 /** Deterministic 40-hex oid per row (rows < 256). */
 function oid(row: number): string {
   return row.toString(16).padStart(2, '0').repeat(20);
@@ -32,13 +37,15 @@ export function buildMockGraph(): GraphLayout {
     authorName?: string,
   ): void => {
     const row = nodes.length;
+    const ts = base - row * HOUR;
     const node: GraphNode = {
       id: oid(row),
       lane,
       parents,
       summary,
       author: authorName ?? author(row),
-      ts: base - row * HOUR,
+      ts,
+      committerTs: COMMITTER_SKEW_ROWS.has(row) ? ts + HOUR : ts,
     };
     if (refs !== undefined) node.refs = refs; // absent when empty, like the wire
     nodes.push(node);
@@ -150,6 +157,7 @@ export function prependCommits(layout: GraphLayout, commits: MockCommit[]): Grap
     summary: c.summary,
     author: 'You',
     ts: now - i * 60,
+    committerTs: now - i * 60,
   }));
   // Per row: the lane-0 first-parent edge, then (merge commits only) a second
   // edge to the base-layout parent on that parent's lane. Keeps (from, to)
@@ -238,6 +246,7 @@ export function withStashNodes(layout: GraphLayout, stashes: StashEntry[]): Grap
     summary: s.message,
     author: '',
     ts: s.ts,
+    committerTs: s.ts,
   }));
   const newEdges: GraphEdge[] = insertable.map((s, i) => ({
     from: i,

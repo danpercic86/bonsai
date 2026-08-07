@@ -364,10 +364,9 @@ export function SettingsPanel({
         <section className="settings-section">
           <h3 className="settings-section-title">Graph</h3>
           <p className="settings-section-desc">Tune the commit-graph geometry. Changes preview live.</p>
-          {/* P11d: single node-size knob == avatarRadius (post-P7 the graph has
-              no commit dot — each commit is an avatar disc). The old dotRadius
-              slider was a dead no-op; the field is kept in the model, only the
-              UI control is gone. */}
+          {/* P11d/P51: single node-size knob == avatarRadius (post-P7 the graph
+              has no commit dot — each commit is an avatar disc). The dead
+              `dotRadius` field was removed entirely in P51 (D7). */}
           <NumberSlider
             id="settings-graph-avatar"
             label="Commit node size"

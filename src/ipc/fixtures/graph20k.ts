@@ -127,13 +127,17 @@ export function generateLayout20k(): GraphLayout {
       }
     }
 
+    const ts = base - row * 60;
     const node: GraphNode = {
       id: oid(row),
       lane,
       parents,
       summary: `commit #${row}`,
       author: row % 2 === 0 ? 'Ada Lovelace' : 'Grace Hopper',
-      ts: base - row * 60,
+      ts,
+      // P51: committer time == author time in the procedural fixture (the small
+      // graph.ts fixture carries the rebase/amend skew rows for the toggle demo).
+      committerTs: ts,
     };
     if (refs !== undefined) node.refs = refs;
     nodes[row] = node;

@@ -80,6 +80,9 @@ export interface GraphNode {
   author: string;
   /** Author commit time, seconds since epoch (UTC). */
   ts: number;
+  /** Committer commit time, seconds since epoch (UTC). P51: powers the
+   *  author-vs-committer date basis toggle. Often == `ts`. */
+  committerTs: number;
 }
 
 export interface GraphEdge {
@@ -837,11 +840,26 @@ export interface JobStatusChangedPayload {
 }
 
 /** Graph geometry knobs (P11 §2.3) — pure render geometry, not layout math. */
+/** Which timestamp the graph's date column + relative/absolute date use (P51).
+ *  Mirrors the Rust `GraphDateBasis` enum (lowercase wire values). */
+export type GraphDateBasis = 'author' | 'committer';
+
 export interface GraphPrefs {
-  dotRadius: number;
   avatarRadius: number;
   rowHeight: number;
   laneWidth: number;
+  /** P51: short-SHA column (+ verified-badge slot). Default true. */
+  showSha: boolean;
+  /** P51: optional full author-name text column. Default false. */
+  showAuthor: boolean;
+  /** P51: date column. Default true. */
+  showDate: boolean;
+  /** P51: which timestamp the date column/tooltip use. Default 'author'. */
+  dateBasis: GraphDateBasis;
+  /** P51: ahead/behind chip on branch-tip pills. Default true. */
+  showAheadBehind: boolean;
+  /** P51: compact (denser) rows. Default false. */
+  compact: boolean;
 }
 
 /** AI conflict-resolution autonomy (P13). proposeReview = user accepts before

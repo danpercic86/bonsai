@@ -25,6 +25,53 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
+## P51 — commit-graph polish + clutter controls (Phase 1) — **IN PROGRESS** (2026-08-07)
+
+Phase 1 milestone 3 of 4. User chose "Finish Phase 1 (P51+P52)" + granted a 3h autonomous window.
+Roadmap: `~/.claude/plans/do-thorough-analysis-of-purrfect-moth.md`.
+
+**P51 goal:** add the commit-graph row details users want — every one individually TOGGLEABLE, plus a
+compact mode (worldwide #1 graph complaint = clutter). Add (sensible defaults; toggles in Settings →
+Graph):
+- short SHA per row; absolute date on hover (relative stays inline); ahead/behind on branch-tip rows
+  (reuse `BranchInfo` ahead/behind in `types.ts`); author-vs-committer date choice; a **verified/
+  signed badge slot** (stub now, lit by P58 signing); compact mode (denser rows); column show/hide
+  (+ reorder if cheap). Remove the dead `dotRadius` graph pref (`SettingsPanel.tsx`).
+
+**Current graph draw (Explore): SHOWN** = ref pills (branch/remote/tag/HEAD/stash + overflow),
+initials avatar, lane color, HEAD/selection rings, stash node, summary (first line), relative date,
+edges, WIP row, hover tooltips (`src/graph/draw.ts:683-825`). **NOT shown** = per-row SHA, verified
+badge, absolute date, ahead/behind on rows, committer. Geometry knobs exist in UiSettings
+(commitNodeSize/rowHeight/laneWidth); `dotRadius` is dead.
+
+**Key questions for the architect:** author-vs-committer → does `GraphNode` need a backend
+`committerTs` add (+ graph.rs + mock) or is it frontend-only? Column reorder scope (show/hide vs
+drag). Toggle persistence (extend UiSettings graph fields). Canvas draw stays additive + virtualization
+intact; clutter toggles must actually hide elements.
+
+**Contract:** `docs/contracts/P51-graph-polish.md` + `P51-user-checklist.md` (architect — DONE).
+Toggles nested in existing `GraphPrefs` (serde `graph`, whole-struct patch → NO ui_settings/UiSettings
+changes): `showSha`(T)/`showAuthor`(F)/`showDate`(T)/`dateBasis`(author|committer=author)/
+`showAheadBehind`(T)/`compact`(F). Backend: ADD `GraphNode.committer_ts` (committer NAME not added).
+Column model = new pure `rightColumns.ts` (author→SHA→date, right-packed, disabled reserves nothing);
+compact = geometry preset in `effectiveMetrics`; verified-badge = faint unlit stub left of SHA (P58
+lights it); ahead/behind = LEFT ref band on the local-branch pill from `BranchInfo`. Sub-increments:
+**P51a** data model/settings/geometry/mock + committerTs + `dotRadius` removal (no visual change) →
+**P51b** right-columns + SHA + badge stub + date basis + absolute-date hover + compact + SettingsPanel
+(extract `refLabels.ts` + `drawRowText.ts` → draw.ts <500) → **P51c** ahead/behind chip.
+**Orchestrator OQ decisions:** accept ALL architect recs — ahead/behind LEFT band; column reorder
+DEFERRED (show/hide only); badge faint-unlit-glyph; `showSha` default TRUE; `committer_ts` add / name
+defer; compact preset override; toggles nested in GraphPrefs.
+- **P51a** (reviewer APPROVE, 0 must-fix/should-fix) — `GraphNode.committer_ts` + 6 `GraphPrefs`
+  toggles (`GraphDateBasis` author|committer) nested in the whole-struct graph patch (ui_settings.rs
+  UNCHANGED); compact geometry preset (inert while false); `dotRadius` removed end-to-end (back-compat
+  tested). No visual change (draw.ts untouched). cargo 108 (src-tauri) + 427 (bonsai-core) pass;
+  clippy --all-targets clean; tsc/build clean. **Independently re-confirmed** the health 20k perf gate
+  is pre-existing (senior-dev stashed all changes → identical fail on clean tree; health.rs has no
+  graph dep). P51b nit to fold: `diffs.ts:344` CommitDiff `committerTs` should read `node?.committerTs`.
+**Current step:** P51b (right-columns + SHA + badge stub + date basis + absolute-date hover + compact
++ SettingsPanel toggles; extract `refLabels.ts` + `drawRowText.ts` → draw.ts <500) — senior-dev next.
+
 ## P50 — commit/content search + command palette + list filtering (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 
 Phase 1 milestone 2 of 4 (roadmap `~/.claude/plans/do-thorough-analysis-of-purrfect-moth.md`).
@@ -116,9 +163,10 @@ for v1 (omit those fields from the wire type).
 large-repo search responsiveness feel; match-ring highlight + next/prev canvas scroll + "not in view"
 hint; content `-S`/`-G` on a real repo; Ctrl/Cmd-K palette + Ctrl/Cmd-F search + sidebar Branches/
 Remotes/Tags filters on a real repo.
-**Current step:** P50 DONE (AI gate passed, awaiting USER CHECKPOINT). PAUSED for user review per their
-request. Next Phase-1 milestone on resume: **P51** (graph polish + clutter controls). ⚠ Follow-up:
-health 20k perf-ceiling gate failing (see P50 tester) — schedule a perf pass (P52 or dedicated).
+**Status:** P50 DONE (AI gate passed, awaiting USER CHECKPOINT). User chose Finish-Phase-1 + granted a
+3h autonomous window (2026-08-07) → resumed straight into P51/P52 without pausing; native checkpoints
+batched. ⚠ Follow-up: health 20k perf-ceiling gate failing (see P50 tester) — task chip spawned
+(task_e253301f); fold into P52.
 
 ## P49 — external integrations: open in terminal / file manager / editor (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 

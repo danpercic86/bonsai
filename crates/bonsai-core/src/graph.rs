@@ -64,6 +64,10 @@ pub struct GraphNode {
     pub author: String,
     /// Author commit time, seconds since epoch (UTC).
     pub ts: i64,
+    /// Committer commit time, seconds since epoch (UTC). P51: powers the
+    /// author-vs-committer date basis toggle. Often == `ts` (rebases/amends
+    /// differ). Additive; the frontend defaults to the author basis.
+    pub committer_ts: i64,
 }
 
 /// Logical commit→parent edge with the lane of its vertical run (§1.3).
@@ -484,6 +488,7 @@ fn layout_walk(
         // 5. Emit the node.
         index_of.insert(oid, row_u);
         let author = commit.author();
+        let committer = commit.committer();
         nodes.push(GraphNode {
             id: oid.to_string(),
             lane: lane as u32,
@@ -492,6 +497,7 @@ fn layout_walk(
             summary: first_line_capped(commit.summary_bytes(), 120),
             author: String::from_utf8_lossy(author.name_bytes()).into_owned(),
             ts: author.when().seconds(),
+            committer_ts: committer.when().seconds(),
         });
         raw_parents.push(parents);
     }
@@ -611,6 +617,38 @@ mod tests {
         assert_eq!(l.nodes[0].summary, "C2");
         assert_eq!(l.nodes[0].author, "Test User");
         assert_eq!(l.nodes[0].ts, 3);
+        // P51: committer time == author time here (the `commit` helper signs
+        // both with the same signature).
+        assert_eq!(l.nodes[0].committer_ts, 3);
+    }
+
+    /// P51 — `committer_ts` is populated from the COMMITTER signature and is
+    /// distinct from `ts` (the author time) when the two differ, as after a
+    /// rebase/amend. Proves the node reads the committer, not the author.
+    #[test]
+    fn committer_ts_reads_committer_time() {
+        let (dir, repo) = init_repo();
+        let author = git2::Signature::new("Author", "a@example.com", &git2::Time::new(100, 0))
+            .expect("author signature");
+        let committer =
+            git2::Signature::new("Committer", "c@example.com", &git2::Time::new(500, 0))
+                .expect("committer signature");
+        let blob = repo.blob(b"x").expect("blob");
+        let mut tb = repo.treebuilder(None).expect("treebuilder");
+        tb.insert("f.txt", blob, 0o100_644).expect("tree insert");
+        let tree = repo.find_tree(tb.write().expect("write tree")).expect("find tree");
+        let oid = repo
+            .commit(None, &author, &committer, "C0", &tree, &[])
+            .expect("commit");
+        branch(&repo, "main", oid);
+        set_head(&repo, "main");
+
+        let l = compute_graph(dir.path()).expect("compute_graph");
+        assert_eq!(l.nodes[0].ts, 100, "ts is the author time");
+        assert_eq!(
+            l.nodes[0].committer_ts, 500,
+            "committer_ts is the committer time"
+        );
     }
 
     /// E2 — fork + merge: M{C3,F2} F2{F1} C3{C2} F1{C1} C2{C1} C1{C0} C0{}.

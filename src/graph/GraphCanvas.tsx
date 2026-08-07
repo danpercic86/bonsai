@@ -649,6 +649,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
           summary: '',
           author: '',
           ts: 0,
+          committerTs: 0,
         };
         const entities = groupRefs(manyRefs);
         const { startX } = refColArea(METRICS);
