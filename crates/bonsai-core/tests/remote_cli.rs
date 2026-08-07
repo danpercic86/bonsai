@@ -53,7 +53,11 @@ fn configure_identity(repo: &Path) {
 
 /// Clones `bare` into `<root>/<name>` with repo-local identity configured.
 fn clone_from_bare(root: &Path, bare: &Path, name: &str) -> PathBuf {
-    git(root, &["clone", &path_str(bare), name]);
+    // Clone with autocrlf OFF so the checkout matches the LF blobs even when the
+    // machine's *global* core.autocrlf=true (else the worktree is CRLF while the
+    // index is LF, and the post-clone `configure_identity` autocrlf=false flip makes
+    // `git status` report spurious modifications — breaking the FF-pull CLI oracle).
+    git(root, &["-c", "core.autocrlf=false", "clone", &path_str(bare), name]);
     let dir = root.join(name);
     configure_identity(&dir);
     dir

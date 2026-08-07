@@ -25,7 +25,7 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
-## P54 — commit composer: WIP → N logical commits (Phase 2 · milestone 2/5) — **IN PROGRESS** (2026-08-07)
+## P54 — commit composer: WIP → N logical commits (Phase 2 · milestone 2/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
 Phase 2 milestone 2. User chose "Continue to P54" after P53. Contract: `docs/contracts/P54-commit-composer.md`
 (+ overview). OD1 remains local-`claude`-CLI-only.
@@ -84,10 +84,23 @@ Esc-layer). a→b→c (b reuses `ComposeGroup` from a; c needs both).
   (embedded in modal to dodge z-index occlusion). tsc/build clean; new files 325/211/174. Nits
   (non-blocking): partial-staged preview shows workdir-vs-index not HEAD→workdir (needs a new backend diff
   mode → track for checkpoint); defensive moveFile out-of-range; group card key={i}.
-**Current step:** P54a+b+c DONE + reviewer-APPROVED (committed 0999af4 / 6f7f3ef / next). Next: **P54
-tester** (regression + add the detached-HEAD rollback test [P54b should-fix] + vitest for the pure composer
-reducers + `P54-user-checklist.md`) → AI-gate harness (the composer is a DOM MODAL — fully harness-drivable
-after seeding aiConsented) → P54 done.
+- **P54 tester** — regression `cargo test --workspace` GREEN (exit 0; 3 perf gates ignored) after an
+  unrelated-fixture fix (below); vitest **96/96** (22 new composer-reducer partition tests). Added the
+  reviewer should-fix `apply_rolls_back_on_mid_sequence_failure_detached_head` (compose_apply 8/8 —
+  detached-HEAD rollback now covered alongside branch+unborn). Wrote `docs/contracts/P54-user-checklist.md`.
+  **Pre-existing unrelated fix (test-only):** M6 `remote_cli.rs` FF-pull oracle failed on this box due to
+  global `core.autocrlf=true` (CLI clone checked out CRLF worktree vs LF blobs → dirty before any pull);
+  fixed the fixture to `git -c core.autocrlf=false clone` (tester root-caused; NOT a P54 regression;
+  restores a fully green workspace suite).
+- **P54 AI GATE PASSED (2026-08-08).** Backend: propose partition invariant + apply ATOMIC / rollback
+  (branch, detached, unborn) / WORKDIR-UNTOUCHED all unit-proven (8 compose_apply + ai_compose + have_git
+  oracle) + reviewer file:line verification; frontend: 22 reducer partition vitests + reviewer
+  wiring/gating/Esc verification. Harness (mock :1420, aiConsented seeded): app loads clean (no error
+  boundary, zero console errors); "Compose commits ✨" renders ENABLED (aiEligible && workingDirty). The
+  live propose→review→apply MODAL flow is USER CHECKPOINT (headless pane can't composite/drive — 0×0).
+  Commits: `0999af4` (a) · `6f7f3ef` (b) · `68c1ae1` (c) · tester-closeout next.
+**Current step:** P54 DONE (AI gate passed, awaiting USER CHECKPOINT `docs/contracts/P54-user-checklist.md`).
+Next Phase-2 milestone: **P55 (natural-language → safe git op)**.
 
 ## P53 — AI "why" layer: blame-why + explain-commit + branch naming (Phase 2 · milestone 1/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 
