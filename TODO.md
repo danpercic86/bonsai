@@ -25,6 +25,85 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
+## 🗂️ PHASE 2 & 3 — CONTRACTS PREPARED (design only; NO code yet) (2026-08-07)
+
+Prepared autonomously while another session implemented an unrelated task on branch `feature/next-steps`.
+Per user: "prepare Phase 2 and 3 without changing any code." **11 architect contracts written to
+`docs/contracts/`; zero application code touched.** Implementation has NOT started. The standard loop
+resumes at step 3 (decompose → senior-dev) per milestone once the user greenlights.
+Roadmap: `~/.claude/plans/do-thorough-analysis-of-purrfect-moth.md`.
+
+### ⛔ BLOCKING open decision before ANY Phase-2 build (OD1)
+Confirm Phase 2 stays **local-`claude`-CLI-only**, with the model-tier seam (BYO-key / hosted /
+local-model `AiBackend` trait) DOCUMENTED but DEFERRED. Privacy is both gate and differentiator. Every
+Phase-2 contract (P53–P57) depends on this. Phase 3 (P58–P61) has NO such dependency and could start
+independently (even before Phase 2, if preferred).
+
+### Phase 2 — AI-native edge (contracts ready, unbuilt)
+- **`phase2-ai-native-overview.md`** — shared-conventions anchor: grounding payload on `ai/payload.rs`;
+  generate→review→accept/edit in `AiOutputPanel`; `ai_*` IPC request/response triple + camelCase +
+  `?ai=off` mock parity; local-first; model-tier seam = OD1.
+- **P53 `P53-ai-why-layer.md`** — (a) per-line blame "why", (b) "Explain this commit" from a graph node,
+  (c) AI branch naming. Read-only/low-risk; builds the grounding plumbing P54–P57 reuse. Sub: P53a
+  blame-why (`ai_line.rs` + `ai_explain_line`) · P53b explain-commit (menu + MESSAGE enrichment, no new
+  cmd) · P53c branch naming (`ai_branch_name.rs`). +2 cmds.
+- **P54 `P54-commit-composer.md`** — WIP → N logical commits (file-level v1). `ai_compose_commits`
+  (AI propose) + `apply_composed_commits` (pure git, atomic all-or-nothing, HEAD/index rollback anchor,
+  workdir never touched). Sub: P54a propose · P54b apply-engine · P54c review UI. +2 cmds. Reuses P53's
+  `gather_worktree`/`cap_review_payload` (promote to pub(crate)).
+- **P55 `P55-nl-to-safe-git-op.md`** — NL → ONE allowlisted typed op → read-only preview → explicit
+  confirm → execute via existing tested command. 7-layer structural safety (closed `AiOpIntent` enum,
+  fail-closed parse, Rust owns all ref/oid resolution, AI path never mutates, no raw shell string). v1
+  allowlist: undo-last-commit/merge, reset, revert, switch/create/delete branch, stash, discard, merge.
+  Sub: P55a safety core + reset/revert · P55b rest of allowlist · P55c UI. +1 cmd.
+- **P56 `P56-local-changelog.md`** — tag/ref range → grouped Markdown release notes, fully local;
+  reuses `ai_summary` range resolver (promote `resolve_digest_range`) + new `resolve_last_tag`. Sub:
+  P56a core · P56b UI (tag-pill entry). +1 cmd.
+- **P57 `P57-semantic-history-search.md`** — NL Q&A grounded in real diffs. 3-stage: persisted
+  per-commit doc index (app_data_dir, NOT `.git`) w/ progress channel → **BM25 retrieval (recommended
+  v1; embeddings DEFERRED — Defender ASR blocks model downloads on this box; ties to OD1)** → local
+  `claude` synthesis in `AiOutputPanel`. Complements P50 (does NOT touch `search.rs`). Sub: P57a
+  index+channel · P57b retrieval · P57c synthesis+UI. +4 cmds.
+
+### Phase 3 — Correctness & parity (contracts ready, unbuilt; NO OD1 dependency)
+- **P58 `P58-commit-signing.md`** — SSH-first + GPG signing at commit (via `git commit-tree -S` +
+  `git update-ref`; unsigned path byte-identical) + verification (`git log --format=%G?…`) that lights
+  the P51 badge stub + a commit-panel signature line. Introduces shared `exec.rs` git shell-out seam.
+  Sub: P58a sign · P58b verify · P58c frontend. +2 cmds. NATIVE USER CHECKPOINT (real key material).
+- **P59 `P59-hooks-and-lease-hardening.md`** — (a) run pre-commit/commit-msg/post-commit (+pre-push)
+  hooks via `git hook run` (**requires Git ≥2.36**), per-repo `bonsai.runHooks` opt-out, new
+  `AppError::HookRejected` carries hook output (never silent). (b) force-push →
+  `git push --force-with-lease=<ref>:<expected> --force-if-includes` (atomic lease, closes P37's
+  TOCTOU). Sub: P59a hooks · P59a-2 pre-push · P59b lease (independent). Shares `exec.rs` with P58.
+- **P60 `P60-parity-batch.md`** — 4 independent items: P60a branch rename (git2 `Branch::rename`) ·
+  P60b non-FF pull (offer merge/rebase, confirm-gated, reuse existing cmds — no new git logic) · P60c
+  one-click undo (read-only `describe_last_undo` → reflog classify → reuse `reset_branch`) · P60d
+  submodule add/deinit/remove. +5 cmds.
+- **P61 `P61-diff-quality.md`** — P61a intraline/word diff (backend LCS pass, `intraline:bool` param on
+  the 3 hunk cmds, off = byte-identical wire) · P61b image diff (base64-over-IPC — chosen for mock/
+  harness parity; 8 MiB cap; new `DiffImageView.tsx` side-by-side/onion/swipe). May add `base64` crate.
+  +1 cmd.
+
+### Integration notes for whoever implements (carry into each senior-dev prompt)
+- **Command-count renumbering:** every "+N cmds" is RELATIVE; the absolute `generate_handler!` tail
+  depends on LANDING ORDER — senior-dev must recount against `src-tauri/src/lib.rs` at each increment
+  (architects deliberately left absolute numbers open).
+- **Shared primitives — introduce once, then reuse:** `exec.rs` git shell-out by whichever of P58/P59
+  lands first; P53's `gather_worktree`/`cap_review_payload` promoted for P54; `resolve_digest_range`
+  promoted for P56; a shared `git/refs.rs` ref-seeder + `app_data_root(app)` helper suggested by P57.
+- **User sign-offs still needed (beyond OD1):** P55 `undoLastMerge` = reset-to-first-parent (destructive,
+  rewrites history; recommended, with shared-history warning) vs `revert -m 1` (safe, no rewrite);
+  P57 BM25-vs-embeddings; P61 adding the `base64` crate.
+- **Recommended build order:** confirm OD1 → P53 (foundation) → P54 / P55+P56 → P57 (last, highest cost).
+  Phase 3 is independent of OD1: P58+P59 (share `exec.rs`) → P60/P61 in any order.
+- **STATUS: contracts committed, uncommitted-code guardrail respected** — only the 10 new
+  `docs/contracts/*.md` + this TODO were staged; the 4 pre-existing dirty files (Cargo.lock,
+  package.json, src-tauri/Cargo.toml, tauri.conf.json) were left untouched.
+
+**Current step:** Phase 2 & 3 CONTRACTS PREPARED (design-only, committed). PAUSED — implementation NOT
+started. Awaiting user: (1) confirm OD1 + the three sign-offs above; (2) greenlight which phase/
+milestone to build first. Phase 1 (P49–P52) native USER CHECKPOINTs also still pending.
+
 ## P52 — adopt git's commit-graph file (Phase 1 · large-repo perf) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 
 Phase 1 milestone 4 of 4 (final). Roadmap: `~/.claude/plans/do-thorough-analysis-of-purrfect-moth.md`.
@@ -93,8 +172,10 @@ NOTE: the earlier-spawned "fix health perf gate" task chip was already started b
 separate worktree — P52 already fixes it on `main`, so that session is redundant (discard, don't merge).
 Next phase (NOT started — needs user OK): **Phase 2 (AI-native edge)** P53 blame/explain "why" +
 branch naming → P54 commit composer → P55 NL→safe git op → P56 local changelog → P57 semantic history search.
-**Current step:** Phase 1 DONE. PAUSED — awaiting user review + the batched native checkpoints (P49–P52).
-Do NOT start Phase 2 without user approval (their grant was "finish Phase 1" only).
+**Current step:** Phase 1 DONE + **Phase 2/3 contracts now PREPARED** (design-only; see the "🗂️ PHASE 2
+& 3 — CONTRACTS PREPARED" section at the top of this file). PAUSED — implementation NOT started.
+Do NOT start Phase 2 without user approval + confirming OD1 (their grant was "finish Phase 1" then
+"prepare Phase 2 and 3 without changing code" only).
 
 ## P51 — commit-graph polish + clutter controls (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 
