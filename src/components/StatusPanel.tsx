@@ -378,7 +378,6 @@ function ConflictRow({
         aria-expanded={expanded}
         onClick={onToggleView}
       >
-        <span className={`file-chevron${expanded ? ' file-chevron-open' : ''}`}>{'›'}</span>
         <span className="file-badge mono">{BADGES.conflicted}</span>
         <span className="file-path">
           {dir !== null && <span className="file-dir">{dir}</span>}
@@ -617,6 +616,19 @@ export function StatusPanel({
         <p className="pane-empty">No changes</p>
       ) : (
         <>
+          {snapshot.conflicted.length > 0 && (
+            <ConflictsSection
+              entries={snapshot.conflicted}
+              conflicts={conflicts}
+              disabled={disabled}
+              diffSlot={diffSlot}
+              aiEligible={aiEligible}
+              aiResolvingPath={aiResolvingPath}
+              onResolveConflict={onResolveConflict}
+              onToggleConflictView={onToggleConflictView}
+              onAiResolve={onAiResolve}
+            />
+          )}
           <Section
             label="Staged"
             variant="staged"
@@ -678,19 +690,6 @@ export function StatusPanel({
             onBlame={onBlame}
             onFileHistory={onFileHistory}
           />
-          {snapshot.conflicted.length > 0 && (
-            <ConflictsSection
-              entries={snapshot.conflicted}
-              conflicts={conflicts}
-              disabled={disabled}
-              diffSlot={diffSlot}
-              aiEligible={aiEligible}
-              aiResolvingPath={aiResolvingPath}
-              onResolveConflict={onResolveConflict}
-              onToggleConflictView={onToggleConflictView}
-              onAiResolve={onAiResolve}
-            />
-          )}
         </>
       )}
     </div>

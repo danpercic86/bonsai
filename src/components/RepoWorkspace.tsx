@@ -209,6 +209,9 @@ export function RepoWorkspace({
 
   const [opState, setOpState] = useState<RepoOpState>({ kind: 'none' });
   const [conflicts, setConflicts] = useState<ConflictEntry[]>([]);
+  // Tracks conflict count across renders so we auto-open the first conflicted
+  // file exactly once per conflict episode (0 -> >0 edge), not on every refetch.
+  const prevConflictCountRef = useRef(0);
   // P13 §8.3: path whose AI resolution is in flight (calls take seconds). Gates
   // the per-row ✨ AI button without freezing the whole panel like `mutating`.
   const [aiResolvingPath, setAiResolvingPath] = useState<string | null>(null);
@@ -645,6 +648,24 @@ export function RepoWorkspace({
       pushToast('error', `Could not read operation state: ${errorMessage(e)}`);
     }
   }, [repoId, fetchConflictSlot, collapseDiffSlot, pushToast]);
+
+  // Auto-open the first conflicted file once per conflict episode. Fires only on
+  // the 0 -> >0 transition (a fresh conflict from merge/rebase/cherry-pick/revert/
+  // stash-pop), and only if no conflict/proposal slot is already open — so it
+  // never re-opens a slot the user just closed (count stays >0, no new edge).
+  useEffect(() => {
+    const prev = prevConflictCountRef.current;
+    if (prev === 0 && conflicts.length > 0) {
+      const slot = diffSlotRef.current;
+      const alreadyOpen =
+        slot !== null &&
+        (slot.key.startsWith('conflict:') || slot.key.startsWith('ai-proposal:'));
+      if (!alreadyOpen) {
+        void fetchConflictSlot(conflicts[0].path);
+      }
+    }
+    prevConflictCountRef.current = conflicts.length;
+  }, [conflicts, fetchConflictSlot]);
 
   const clearOpState = useCallback(() => {
     opStateReqId.current += 1;

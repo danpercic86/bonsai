@@ -3,10 +3,10 @@ import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirro
 import { EditorState, Compartment, type Extension } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { MergeView } from '@codemirror/merge';
-import { LanguageDescription } from '@codemirror/language';
+import { LanguageDescription, syntaxHighlighting, HighlightStyle } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
+import { tags as t } from '@lezer/highlight';
 import type { ConflictFile } from '../ipc';
-import { detectLanguage } from '../utils/language';
 import {
   parseConflictRegions,
   applyResolution,
@@ -76,6 +76,26 @@ function cmTheme(mode: CmTheme): ReturnType<typeof EditorView.theme> {
   );
 }
 
+// ---- syntax highlighting ------------------------------------------------
+
+// Maps Lezer highlight tags to the app's `--syn-*` CSS vars (same palette the
+// highlight.js diff viewer uses) so the conflict editor is colored like every
+// other code view and tracks the light/dark theme automatically. The grammar is
+// loaded lazily per file (loadLanguageExtension); without a HighlightStyle the
+// parsed tokens get no color, which is why the editor rendered plain text.
+const bonsaiHighlightStyle = HighlightStyle.define([
+  { tag: [t.keyword, t.modifier, t.controlKeyword, t.operatorKeyword], color: 'var(--syn-keyword)' },
+  { tag: [t.string, t.special(t.string), t.regexp], color: 'var(--syn-string)' },
+  { tag: [t.comment, t.lineComment, t.blockComment], color: 'var(--syn-comment)', fontStyle: 'italic' },
+  { tag: [t.number, t.bool, t.null, t.atom], color: 'var(--syn-number)' },
+  { tag: [t.function(t.variableName), t.function(t.propertyName)], color: 'var(--syn-function)' },
+  { tag: [t.typeName, t.className, t.namespace], color: 'var(--syn-type)' },
+  { tag: [t.propertyName, t.attributeName], color: 'var(--syn-attr)' },
+  { tag: [t.tagName], color: 'var(--syn-tag)' },
+  { tag: [t.operator, t.punctuation, t.separator, t.bracket], color: 'var(--syn-punctuation)' },
+  { tag: [t.meta, t.docComment], color: 'var(--syn-meta)' },
+]);
+
 // ---- shared extensions (P12d §4.1) --------------------------------------
 
 // Both the unified EditorView and the split `b` (result) editor mount the SAME
@@ -98,6 +118,7 @@ function editableExtensions(
     conflictOverviewRuler(),
     updateListener,
     lang.of([]),
+    syntaxHighlighting(bonsaiHighlightStyle),
     theme.of(cmTheme(readTheme())),
   ];
 }
@@ -111,6 +132,7 @@ function readonlyExtensions(theme: Compartment, lang: Compartment): Extension[] 
     highlightActiveLine(),
     EditorState.readOnly.of(true),
     lang.of([]),
+    syntaxHighlighting(bonsaiHighlightStyle),
     theme.of(cmTheme(readTheme())),
   ];
 }
@@ -434,7 +456,6 @@ export function ConflictEditor({ file, onResolve, onCancel, mutating }: Conflict
     setMode(next);
   };
 
-  const lang = detectLanguage(file.path);
   const unresolved = hasUnresolvedMarkers(result);
   const saveDisabled = mutating || unresolved;
 
@@ -448,14 +469,6 @@ export function ConflictEditor({ file, onResolve, onCancel, mutating }: Conflict
   return (
     <div className="conflict-editor">
       <div className="conflict-editor-header">
-        <span className="conflict-editor-path mono" title={file.path}>
-          {file.path}
-        </span>
-        {lang !== null && (
-          <span className="lang-chip" data-lang={lang.id}>
-            {lang.label}
-          </span>
-        )}
         <span className="conflict-editor-spacer" />
         <div className="conflict-editor-mode-toggle" role="group" aria-label="Editor view mode">
           <button

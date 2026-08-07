@@ -224,32 +224,36 @@ export function DiffOverlay({
             {'✨ Explain'}
           </button>
         )}
-        <div className="diff-view-toggle" role="group" aria-label="View mode">
-          <button
-            type="button"
-            className={viewMode === 'file' ? 'active' : ''}
-            aria-pressed={viewMode === 'file'}
-            onClick={() => onSetViewMode('file')}
-          >
-            File
-          </button>
-          <button
-            type="button"
-            className={viewMode === 'diff' ? 'active' : ''}
-            aria-pressed={viewMode === 'diff'}
-            onClick={() => onSetViewMode('diff')}
-          >
-            Diff
-          </button>
-          <button
-            type="button"
-            className={viewMode === 'split' ? 'active' : ''}
-            aria-pressed={viewMode === 'split'}
-            onClick={() => onSetViewMode('split')}
-          >
-            Split
-          </button>
-        </div>
+        {/* File/Diff/Split does nothing for the conflict/proposal CodeMirror
+            editor (it has its own Unified/Side-by-side toggle) — hide it there. */}
+        {meta.kind !== 'conflict' && meta.kind !== 'aiProposal' && (
+          <div className="diff-view-toggle" role="group" aria-label="View mode">
+            <button
+              type="button"
+              className={viewMode === 'file' ? 'active' : ''}
+              aria-pressed={viewMode === 'file'}
+              onClick={() => onSetViewMode('file')}
+            >
+              File
+            </button>
+            <button
+              type="button"
+              className={viewMode === 'diff' ? 'active' : ''}
+              aria-pressed={viewMode === 'diff'}
+              onClick={() => onSetViewMode('diff')}
+            >
+              Diff
+            </button>
+            <button
+              type="button"
+              className={viewMode === 'split' ? 'active' : ''}
+              aria-pressed={viewMode === 'split'}
+              onClick={() => onSetViewMode('split')}
+            >
+              Split
+            </button>
+          </div>
+        )}
         <button
           type="button"
           className="btn-icon diff-overlay-close"

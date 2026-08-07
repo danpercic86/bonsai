@@ -4592,11 +4592,26 @@ span.file-row-main {
 .conflict-editor-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--border-0);
   background: var(--bg-1);
   flex: 0 0 auto;
+}
+
+/* Align the header controls to a common height so the toggle, Cancel and
+   Stage-resolved sit on one line without looking cramped. */
+.conflict-editor-header .btn-secondary,
+.conflict-editor-header .btn-primary {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Give the action buttons a little breathing room from the mode toggle. */
+.conflict-editor-mode-toggle + .btn-secondary,
+.conflict-editor-mode-toggle + .btn-primary {
+  margin-left: 4px;
 }
 
 .conflict-editor-path {
