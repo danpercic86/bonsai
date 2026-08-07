@@ -40,6 +40,7 @@ import type {
   ComposeApplyResult,
   ComposePlan,
   ComposeProposal,
+  OperationPlan,
   ConflictEntry,
   ConflictFile,
   ConflictResolution,
@@ -377,6 +378,13 @@ export const tauriIpc: IpcApi = {
   // P54a: propose grouping the working-tree changes into logical commits (read-only).
   aiComposeCommits(repoId: string, guidance: string | null): Promise<ComposeProposal> {
     return invoke<ComposeProposal>('ai_compose_commits', { repoId, guidance });
+  },
+
+  // P55a: map a natural-language request to ONE allowlisted, previewable git op
+  // (read-only; WRITES NOTHING). The mutation runs later via the resolved op's
+  // existing typed command on explicit confirm (safeOpDispatch, P55c).
+  aiPlanOperation(repoId: string, request: string): Promise<OperationPlan> {
+    return invoke<OperationPlan>('ai_plan_operation', { repoId, request });
   },
 
   // P54b: apply a reviewed composer plan as an ordered stage+commit sequence (atomic).

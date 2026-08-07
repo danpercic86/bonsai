@@ -25,6 +25,71 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
+## ⏳ FOR USER — decisions to approve/change + native checkpoints (overnight autonomous run, 2026-08-08)
+
+User granted an overnight autonomous run ("implement everything from the plan; leave things you need from
+me to choose/approve tomorrow"). I proceed on sensible defaults (accepting the architect's recommendations)
+and collect everything that's genuinely the user's call here. **None of these block** — all are
+confirm-gated at runtime or trivially changed in code.
+
+**Defaulted decisions (change any tomorrow):**
+- **P55 `undoLastMerge` semantics** = reset-to-first-parent (Mixed; REWRITES history), flagged Destructive
+  + shared-history warning, shown in a read-only preview before an explicit Confirm. Alt: `revert -m 1`
+  (adds a commit, never rewrites). One-line SafeOp mapping to switch, or add a dialog toggle. ← riskiest default.
+- **P57 retriever** = BM25 lexical (no embeddings/model download — ASR-safe, zero new deps). Alt: a local
+  embedding model (needs a runtime/model download; ties to the model-tier decision).
+- **P61 image-diff base64** = HAND-ROLLED (no new `base64` crate) to avoid touching your dirty
+  Cargo.lock/Cargo.toml. Swap to the crate anytime.
+- **OD1** (already confirmed): AI stays local-`claude`-CLI-only; model tiers deferred.
+
+**Native USER CHECKPOINTs accrued** (need `pnpm tauri dev` + real CLI/keys — cannot self-verify):
+Phase 1 P49–P52; Phase 2 P53, P54 (+ P55/P56/P57 as they land); Phase 3 P58 (real signing keys) + P59/P60/P61.
+Checklists: `docs/contracts/P<N>-user-checklist.md`.
+
+**Untouched throughout:** your 4 in-progress files (Cargo.lock, package.json, src-tauri/Cargo.toml,
+tauri.conf.json = the 0.3.0→0.3.1 bump) and `docs/audit-2026-08-07.md` (another session's file).
+
+## P55 — natural-language → SAFE git operation (Phase 2 · milestone 3/5) — **IN PROGRESS** (2026-08-08)
+
+Contract: `docs/contracts/P55-nl-to-safe-git-op.md`. OD1 = local-`claude`-CLI-only. The highest-trust-risk
+Phase-2 feature — the safety model (§2) is the centerpiece.
+
+**P55 goal:** turn a free-text request into a STRUCTURED, PREVIEWABLE, CONFIRM-GATED git op — NEVER a raw
+shell string. Read-only planner `ai_plan_operation(repoId, request) → OperationPlan`: the model may only
+SELECT+PARAMETERIZE ONE intent from a CLOSED allowlist (fixed `AiOpIntent` enum); Rust resolves refs/oids +
+builds a read-only preview + `DangerLevel`, or returns `unsupported`; on explicit Confirm a thin
+`safeOpDispatch` invokes the EXISTING typed command (resetBranch/revertCommit/checkoutBranch/…). 7 structural
+safety layers; the AI path NEVER mutates and no shell string exists anywhere. Cmd 133→134 (planner only; no
+new mutation command). Allowlist v1 (10 intents): undoLastCommit/undoLastMerge/resetToCommit/revertCommit/
+switchBranch/createBranch/deleteBranch/stashChanges/discardChanges/mergeBranch + unsupported.
+
+**Orchestrator OQ decisions — accept ALL architect recs:** OQ1 execute via existing typed commands (AI
+surface stays read-only) · OQ2 undoLastMerge = reset-to-first-parent + Destructive warning (FLAGGED for
+user — see FOR USER above) · OQ3 the 10-intent allowlist · OQ4 palette "Ask Bonsai to…" + toolbar ✨ · OQ5
+remote-only switch → checkoutRemoteBranch · OQ6 model = default sonnet · OQ7 show rationale · OQ8 network
+ops (push/pull/fetch) OUT of v1.
+
+Sub-increments: **P55a** safety core + reset/revert family (`ai_operation.rs` all types + `plan_operation` +
+grounding + `resolve_intent`/`build_preview` for undo-commit/undo-merge/reset/revert + the 2 NON-NEGOTIABLE
+tests `plan_never_mutates` + `out_of_allowlist_is_unsupported`) + `ai_plan_operation` cmd(→134) + IPC + mock
+→ **P55b** remaining allowlist (switch/create/delete/stash/discard/merge resolution+preview+tests) →
+**P55c** UI (`ProposedOpDialog` + `safeOpDispatch` + palette/toolbar entry + `runPlanOperation`).
+
+- **P55a** (reviewer APPROVE, 0 must-fix; 1 should-fix = file-size split→P55b; 2 nits) — safety core +
+  reset/revert family. New `ai_operation.rs`: closed `AiOpIntent` enum (L1) + fail-closed parse (L2 —
+  unparseable/unknown-tag/shell-string→Unsupported, distinct from AiFailed) + READ-ONLY `plan_operation`
+  (tested `plan_never_mutates`) + `resolve_intent`/`build_preview` for undoLastCommit / undoLastMerge
+  (first-parent Mixed Destructive + upstream warning) / resetToCommit / revertCommit (other 6 → "not yet
+  supported"). Reviewer VERIFIED IN CODE: no model-text→shell path (argv fixed consts, request+state via
+  STDIN, model output only → serde+Rust resolution), no model-text→unconfirmed-mutation. `ai_plan_operation`
+  cmd + _inner (consent before repo_path, read-only; 133→134). New `ai_operation_cli.rs` (2 process-isolated
+  write-nothing end-to-end tests). reset.rs ResetMode +Serialize. IPC + full §10 mock. 10 tests (incl. both
+  non-negotiables); clippy -D + build/tsc clean. `rationale` = Rust-generated (safer). ⚠ ai_operation.rs 1406
+  lines → MUST split into `ai_operation_resolve.rs` in P55b.
+**Current step:** P55a DONE (committed). Next: **P55b** — remaining 6 allowlist intents (switch/create/
+delete/stash/discard/merge resolution+preview + tests §11.6-8) AND split `resolve_intent`/`build_preview`
+into a new `ai_operation_resolve.rs` (MANDATED — keep both files under ~500 logic lines).
+
 ## P54 — commit composer: WIP → N logical commits (Phase 2 · milestone 2/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
 Phase 2 milestone 2. User chose "Continue to P54" after P53. Contract: `docs/contracts/P54-commit-composer.md`

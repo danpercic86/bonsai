@@ -2,7 +2,7 @@
 import type { IpcApi } from '../../types';
 import { AI_OFF, delay, requireRepo, stripConflictMarkers } from '../repoState';
 import { MAIN_RS_PATH, linesEqual } from '../statusHelpers';
-import type { AiAnalysis, AiAnalysisMode, AiAvailability, AiDiffTarget, AiDigestRange, AiResolveProposal, AiSummary, AppError, BranchNameProposal, BranchNameSource, CommitMessageProposal, ComposeGroup, ComposeProposal } from '../../types';
+import type { AiAnalysis, AiAnalysisMode, AiAvailability, AiDiffTarget, AiDigestRange, AiResolveProposal, AiSummary, AppError, BranchNameProposal, BranchNameSource, CommitMessageProposal, ComposeGroup, ComposeProposal, OperationPlan } from '../../types';
 
 export const aiHandlers = {
   async checkAiAvailability(): Promise<AiAvailability> {
@@ -291,6 +291,162 @@ export const aiHandlers = {
       { files: docs, message: 'test: cover the new behavior and docs' },
     ].filter((g) => g.files.length > 0);
     return { groups, unassigned: [], notes: [], costUsd: 0.012 };
+  },
+
+  // P55a: map a natural-language request to ONE allowlisted, previewable git op
+  // (read-only; WRITES NOTHING — the mutation runs later via the resolved op's
+  // existing typed command on confirm). `?ai=off` simulates a missing CLI; else
+  // DETERMINISTIC canned plans keyed on request keywords so the harness exercises
+  // both the proposed-dialog AND the calm unsupported paths with no backend. The
+  // mock covers ALL allowlist branches (incl. P55b ops) so the UI plumbing is
+  // fully exercisable before the backend resolves them.
+  async aiPlanOperation(repoId: string, request: string): Promise<OperationPlan> {
+    await delay(600);
+    requireRepo(repoId);
+    if (AI_OFF) {
+      const err: AppError = { kind: 'aiFailed', message: 'Claude Code CLI not found on PATH' };
+      throw err;
+    }
+    const r = request.toLowerCase();
+
+    // undo + merge → the headline: reset to the merge's first parent (Destructive).
+    if (r.includes('merge') && r.includes('undo')) {
+      return {
+        kind: 'proposed',
+        operation: {
+          op: { kind: 'reset', targetOid: 'a1b2c3d'.padEnd(40, '0'), targetShort: 'a1b2c3d', mode: 'mixed' },
+          preview: {
+            title: 'Undo last merge',
+            summary: 'Move `main` back to a1b2c3d (before merging feature/x), keeping your working changes.',
+            danger: 'destructive',
+            refChanges: [{ name: 'main', fromShort: 'c3d4e5f', toShort: 'a1b2c3d' }],
+            droppedCommits: [{ short: 'c3d4e5f', summary: "Merge branch 'feature/x'" }],
+            addedCommits: 0,
+            worktreeWarning: 'This rewrites history that may be shared with `origin/main`.',
+            confirmLabel: 'Undo merge',
+          },
+          rationale: 'Interpreted your request as undoing the last merge by resetting to its first parent (a1b2c3d).',
+          costUsd: 0.004,
+        },
+      };
+    }
+
+    // undo / last commit → reset to HEAD^ keeping changes (Caution).
+    if (r.includes('undo') || r.includes('last commit')) {
+      return {
+        kind: 'proposed',
+        operation: {
+          op: { kind: 'reset', targetOid: 'a1b2c3d'.padEnd(40, '0'), targetShort: 'a1b2c3d', mode: 'mixed' },
+          preview: {
+            title: 'Undo last commit',
+            summary: 'Move `main` back to a1b2c3d — keep the changes from d4e5f6a in your working tree.',
+            danger: 'caution',
+            refChanges: [{ name: 'main', fromShort: 'd4e5f6a', toShort: 'a1b2c3d' }],
+            droppedCommits: [{ short: 'd4e5f6a', summary: 'WIP: half-finished refactor' }],
+            addedCommits: 0,
+            worktreeWarning: null,
+            confirmLabel: 'Undo commit',
+          },
+          rationale: 'Interpreted your request as undoing the most recent commit (d4e5f6a).',
+          costUsd: 0.003,
+        },
+      };
+    }
+
+    // switch / checkout → dirty-safe branch switch (Safe).
+    if (r.includes('switch') || r.includes('checkout')) {
+      return {
+        kind: 'proposed',
+        operation: {
+          op: { kind: 'switchBranch', name: 'main', remote: false },
+          preview: {
+            title: 'Switch branch',
+            summary: 'Switch to `main`, auto-stashing and restoring any uncommitted changes.',
+            danger: 'safe',
+            refChanges: [],
+            droppedCommits: [],
+            addedCommits: 0,
+            worktreeWarning: null,
+            confirmLabel: 'Switch',
+          },
+          rationale: 'Interpreted your request as switching to the `main` branch.',
+          costUsd: 0.002,
+        },
+      };
+    }
+
+    // stash → stash uncommitted changes incl. untracked (Safe).
+    if (r.includes('stash')) {
+      return {
+        kind: 'proposed',
+        operation: {
+          op: { kind: 'stash', message: null, includeUntracked: true },
+          preview: {
+            title: 'Stash changes',
+            summary: 'Stash your uncommitted changes (including untracked files) for later.',
+            danger: 'safe',
+            refChanges: [],
+            droppedCommits: [],
+            addedCommits: 0,
+            worktreeWarning: null,
+            confirmLabel: 'Stash',
+          },
+          rationale: 'Interpreted your request as stashing your working changes.',
+          costUsd: 0.002,
+        },
+      };
+    }
+
+    // delete → delete a local branch (Caution; blocks unmerged, no force).
+    if (r.includes('delete')) {
+      return {
+        kind: 'proposed',
+        operation: {
+          op: { kind: 'deleteBranch', name: 'feature/old' },
+          preview: {
+            title: 'Delete branch',
+            summary: 'Delete the local branch `feature/old`.',
+            danger: 'caution',
+            refChanges: [],
+            droppedCommits: [],
+            addedCommits: 0,
+            worktreeWarning: null,
+            confirmLabel: 'Delete branch',
+          },
+          rationale: 'Interpreted your request as deleting the local branch `feature/old`.',
+          costUsd: 0.002,
+        },
+      };
+    }
+
+    // discard / throw away → discard tracked-modified changes (Destructive).
+    if (r.includes('discard') || r.includes('throw away')) {
+      return {
+        kind: 'proposed',
+        operation: {
+          op: { kind: 'discard', paths: ['src/app.rs', 'src/lib.rs'] },
+          preview: {
+            title: 'Discard changes',
+            summary: 'Permanently discard your uncommitted changes to 2 files.',
+            danger: 'destructive',
+            refChanges: [],
+            droppedCommits: [],
+            addedCommits: 0,
+            worktreeWarning: 'This permanently discards uncommitted changes to src/app.rs and src/lib.rs.',
+            confirmLabel: 'Discard changes',
+          },
+          rationale: 'Interpreted your request as discarding your uncommitted changes to those files.',
+          costUsd: 0.002,
+        },
+      };
+    }
+
+    // Anything else → a calm "can't do that safely" (a normal, non-error outcome).
+    return {
+      kind: 'unsupported',
+      reason: "I can only do a fixed set of safe git operations, and this isn't one of them.",
+      costUsd: 0.002,
+    };
   },
 
   // Stateful rebase mock (P3d contract §7.2). A repo seeded with a rebase starts

@@ -303,6 +303,50 @@ pub(crate) async fn ai_suggest_branch_name_inner(
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Maps a natural-language `request` to ONE allowlisted, previewable git
+/// operation (P55a §8). Loads settings and REFUSES with `AiUnavailable` unless
+/// `ai_enabled && ai_consented` (the authoritative backend gate; the frontend
+/// also gates for UX). READ-ONLY — WRITES NOTHING; does NOT emit `repo-changed`.
+/// A model reply it can't map to a safe op resolves to `unsupported` (a normal
+/// Ok outcome, not an error). The mutation runs later via the EXISTING typed
+/// command on the user's explicit confirm (P55c). Errors: `aiUnavailable` |
+/// `aiFailed` | `git` | `noRepo`.
+#[tauri::command]
+pub async fn ai_plan_operation(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    request: String,
+) -> Result<PlanOutcome, AppError> {
+    // Resolve the settings-file path at the AppHandle boundary so the inner stays
+    // runtime-free and unit-testable (mirrors `ai_analyze_diff`), then delegate.
+    let file = settings::settings_file(&app)?;
+    ai_plan_operation_inner(state.inner(), &file, &repo_id, request).await
+}
+
+/// Runtime-free core of `ai_plan_operation` (unit-testable without a Tauri app).
+/// The consent gate is enforced HERE, BEFORE `repo_path`. READ-ONLY ⇒ NO
+/// `repo-changed` emit.
+pub(crate) async fn ai_plan_operation_inner(
+    state: &AppState,
+    settings_file: &std::path::Path,
+    repo_id: &str,
+    request: String,
+) -> Result<PlanOutcome, AppError> {
+    let s = settings::load_from(settings_file);
+    if !(s.ai_enabled && s.ai_consented) {
+        return Err(AppError::AiUnavailable(
+            "AI features are disabled or not yet consented to".to_string(),
+        ));
+    }
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        ai_operation::plan_operation(&workdir, &request, RunOpts::default())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Proposes grouping the working-tree changes into logical commits (P54a §5).
 /// Loads settings and REFUSES with `AiUnavailable` unless `ai_enabled &&
 /// ai_consented` (the authoritative backend gate; the frontend also gates for

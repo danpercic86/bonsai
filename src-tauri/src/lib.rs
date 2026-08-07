@@ -121,6 +121,7 @@ pub fn run() {
             commands::ai_compose_commits,
             commands::ai_explain_line,
             commands::ai_suggest_branch_name,
+            commands::ai_plan_operation,
             commands::rebase_branch,
             commands::rebase_continue,
             commands::rebase_skip,

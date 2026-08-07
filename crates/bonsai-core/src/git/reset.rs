@@ -11,7 +11,11 @@ use crate::git::bisect::require_no_bisect;
 use crate::git::stage::open_workdir_repo;
 
 /// Reset MODE. Wire: "soft" | "mixed" | "hard".
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+///
+/// `Serialize` (added P55a): the AI safe-operation planner embeds a `ResetMode`
+/// inside a `SafeOp::Reset` it serializes back to the frontend, so the same
+/// camelCase wire strings must round-trip out as well as in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ResetMode {
     Soft,

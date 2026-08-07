@@ -29,7 +29,13 @@ REM                     lines actually reach the CLI's stdin (payload assembly).
 REM                     Uses the ABSOLUTE System32 find.exe so it drains stdin
 REM                     regardless of PATH ordering (a GNU `find` on PATH would
 REM                     not).
+REM P55a tester mode:
+REM   emit_file       - drains stdin, then emits the JSON envelope file named by
+REM                     %BONSAI_STUB_ENVELOPE% VERBATIM. Lets a test drive
+REM                     plan_operation with an ARBITRARY model reply (each intent
+REM                     / garbage) without batch-escaping JSON on the argv.
 setlocal
+if /i "%BONSAI_STUB_MODE%"=="emit_file"          goto :emit_file
 if /i "%BONSAI_STUB_MODE%"=="dump_stdin"        goto :dump_stdin
 if /i "%BONSAI_STUB_MODE%"=="version"          goto :version
 if /i "%BONSAI_STUB_MODE%"=="nonzero"           goto :nonzero
@@ -109,4 +115,12 @@ REM Capture stdin VERBATIM to the dump file (absolute find.exe so it drains
 REM regardless of a GNU `find` earlier on PATH), then emit the success envelope.
 %SystemRoot%\System32\find.exe /v "" > "%BONSAI_STUB_STDIN_DUMP%"
 echo {"result":"MERGED_BODY_OK","is_error":false,"total_cost_usd":0.012,"session_id":"sess-abc","type":"result"}
+exit /b 0
+
+:emit_file
+REM Drain stdin (absolute find.exe), then print the caller-provided envelope file
+REM VERBATIM. The test builds the envelope with serde_json so the `result` string
+REM (the model's intent JSON) is correctly escaped — no batch quoting headaches.
+%SystemRoot%\System32\find.exe /v "" >nul
+type "%BONSAI_STUB_ENVELOPE%"
 exit /b 0

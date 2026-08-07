@@ -983,6 +983,77 @@ export interface ComposeApplyResult {
   commits: ComposeCommit[];
 }
 
+// ---------------------------------------------------------------- P55 NL→safe-op
+
+/** The resolved-op kinds a plan can propose (P55). Mirrors the Rust `SafeOp` tag
+ *  union; each maps 1:1 to an EXISTING typed command on confirm (safeOpDispatch). */
+export type SafeOpKind =
+  | 'reset'
+  | 'revert'
+  | 'switchBranch'
+  | 'createBranch'
+  | 'deleteBranch'
+  | 'stash'
+  | 'discard'
+  | 'merge';
+
+/** A fully-RESOLVED typed operation (P55). Rust resolved every ref/oid; the model
+ *  never yields an oid. Discriminated on `kind`. Mirrors the Rust `SafeOp`. */
+export type SafeOp =
+  | { kind: 'reset'; targetOid: string; targetShort: string; mode: ResetMode }
+  | { kind: 'revert'; oid: string; short: string }
+  | { kind: 'switchBranch'; name: string; remote: boolean }
+  | { kind: 'createBranch'; name: string; atOid: string | null }
+  | { kind: 'deleteBranch'; name: string }
+  | { kind: 'stash'; message: string | null; includeUntracked: boolean }
+  | { kind: 'discard'; paths: string[] }
+  | { kind: 'merge'; name: string };
+
+/** Danger tier for the preview badge / confirm variant (P55). */
+export type DangerLevel = 'safe' | 'caution' | 'destructive';
+
+/** A ref that moves as part of an op, displayed `fromShort → toShort` (P55). */
+export interface RefChange {
+  name: string;
+  fromShort: string;
+  toShort: string;
+}
+
+/** One commit line in a preview's dropped list (P55). */
+export interface CommitRef {
+  short: string;
+  summary: string;
+}
+
+/** Read-only description of what confirming a `SafeOp` will do (P55). All fields
+ *  are display-ready; React only renders. Mirrors the Rust `OperationPreview`. */
+export interface OperationPreview {
+  title: string;
+  summary: string;
+  danger: DangerLevel;
+  refChanges: RefChange[];
+  droppedCommits: CommitRef[];
+  addedCommits: number;
+  worktreeWarning: string | null;
+  confirmLabel: string;
+}
+
+/** A resolved, previewable proposal (P55). `rationale` is a one-line "why this
+ *  maps to your ask" (Rust-generated). Mirrors the Rust `ProposedOperation`. */
+export interface ProposedOperation {
+  op: SafeOp;
+  preview: OperationPreview;
+  rationale: string;
+  costUsd: number | null;
+}
+
+/** Result of aiPlanOperation (P55). `unsupported` is a NORMAL (non-error) outcome
+ *  rendered as a calm "I can't do that safely" message. Mirrors the Rust
+ *  `PlanOutcome`. */
+export type OperationPlan =
+  | { kind: 'proposed'; operation: ProposedOperation }
+  | { kind: 'unsupported'; reason: string; costUsd: number | null };
+
 /** Result of IpcApi.checkForUpdate (P42). `available` false ⇒ up to date;
  *  version/notes/date populated only when available. currentVersion is always set. */
 export interface UpdateCheckResult {
@@ -1744,6 +1815,13 @@ export interface IpcApi {
    *  with groups:[] + all files unassigned. Rejects aiUnavailable | aiFailed (CLI
    *  fail/empty) | nothingToCommit (clean tree) | git | noRepo. */
   aiComposeCommits(repoId: string, guidance: string | null): Promise<ComposeProposal>;
+  /** P55. Map a natural-language `request` to ONE allowlisted, previewable git
+   *  operation. READ-ONLY: WRITES NOTHING, does NOT emit repo-changed — the caller
+   *  must show the preview and, on explicit confirm, dispatch the resolved op via
+   *  its EXISTING typed command (safeOpDispatch, P55c). An unmappable / adversarial
+   *  request resolves to `unsupported` (a normal outcome, never a mutation, never a
+   *  shell command). Rejects aiUnavailable | aiFailed | git | noRepo. */
+  aiPlanOperation(repoId: string, request: string): Promise<OperationPlan>;
   /** Apply a reviewed plan as an ORDERED stage+commit sequence. ATOMIC: validates
    *  fully, resets the index to HEAD (working tree UNTOUCHED), commits each group;
    *  ANY mid-sequence failure rolls HEAD+index back so NOTHING is committed. Files

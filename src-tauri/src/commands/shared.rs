@@ -19,6 +19,11 @@ pub(crate) use bonsai_core::git::ai_compose::{self, ComposeProposal};
 pub(crate) use bonsai_core::git::compose_apply::{self, ComposeApplyResult, ComposePlan};
 pub(crate) use bonsai_core::git::ai_explain::{self, AiAnalysis, AiAnalysisMode, AiDiffTarget, AiDigestRange};
 pub(crate) use bonsai_core::git::ai_line;
+// P55a NL→safe-op planner. Only the names the command layer NAMES are re-exported
+// (avoids an unused-import warning under -D warnings, matching the compose_apply
+// convention above); `ProposedOperation`/`SafeOp`/`OperationPreview`/`RefChange`/
+// `CommitRef`/`DangerLevel` travel nested inside `PlanOutcome`.
+pub(crate) use bonsai_core::git::ai_operation::{self, PlanOutcome};
 pub(crate) use bonsai_core::git::ai_resolve::{self, AiResolveProposal};
 pub(crate) use bonsai_core::git::ai_summary::{self, AiSummary};
 pub(crate) use bonsai_core::git::bisect::{self, BisectOutcome};

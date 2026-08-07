@@ -31,6 +31,14 @@ case "$BONSAI_STUB_MODE" in
     echo '{"result":"MERGED_BODY_OK","is_error":false,"total_cost_usd":0.012,"session_id":"sess-abc","type":"result"}'
     exit 0
     ;;
+  emit_file)
+    # P55a: drain stdin, then print the caller-provided envelope file VERBATIM so
+    # a test can drive plan_operation with an ARBITRARY model reply (each intent /
+    # garbage). The test builds the envelope with serde_json (correct escaping).
+    cat > /dev/null
+    cat "$BONSAI_STUB_ENVELOPE"
+    exit 0
+    ;;
   version)
     echo '2.1.220'
     exit 0
