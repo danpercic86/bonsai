@@ -178,7 +178,11 @@ pub fn list_refs(workdir: &Path) -> Result<BranchesSnapshot, AppError> {
 /// stricter pre-checks (libgit2 accepts `refs/heads/-x` as a valid ref name;
 /// the git CLI refuses `-x` as a branch name), the rest is
 /// `git2::Branch::name_is_valid`.
-fn validate_branch_name(name: &str) -> Result<(), AppError> {
+///
+/// `pub(crate)` so the NL-operation planner (`ai_operation_resolve`) can reuse
+/// the SAME validator when resolving a `createBranch` intent (a miss there
+/// degrades to a calm `Unsupported`, never a hard error).
+pub(crate) fn validate_branch_name(name: &str) -> Result<(), AppError> {
     let invalid = || AppError::InvalidName(format!("invalid branch name: '{name}'"));
     if name.trim().is_empty() || name.starts_with('-') {
         return Err(invalid());

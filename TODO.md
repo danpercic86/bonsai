@@ -86,9 +86,15 @@ tests `plan_never_mutates` + `out_of_allowlist_is_unsupported`) + `ai_plan_opera
   write-nothing end-to-end tests). reset.rs ResetMode +Serialize. IPC + full §10 mock. 10 tests (incl. both
   non-negotiables); clippy -D + build/tsc clean. `rationale` = Rust-generated (safer). ⚠ ai_operation.rs 1406
   lines → MUST split into `ai_operation_resolve.rs` in P55b.
-**Current step:** P55a DONE (committed). Next: **P55b** — remaining 6 allowlist intents (switch/create/
-delete/stash/discard/merge resolution+preview + tests §11.6-8) AND split `resolve_intent`/`build_preview`
-into a new `ai_operation_resolve.rs` (MANDATED — keep both files under ~500 logic lines).
+- **P55b** (reviewer APPROVE, 0 must-fix / 0 should-fix; 4 nits) — 6 remaining intents (switch local/remote,
+  createBranch [reuse `validate_branch_name`, reject existing], deleteBranch local-non-current, stash dirty,
+  discard∩tracked-modified, merge) — all op-in-progress-gated, read-only, fail-closed→Unsupported. Split
+  `ai_operation.rs` (877 logic) → spine 348 + `ai_operation_grounding.rs` 176 + `ai_operation_preview.rs`
+  226 + `ai_operation_resolve.rs` 496 (all <500 logic). `plan_never_mutates` now enumerates ALL 10 intents.
+  14 ai_operation tests; clippy -D + build/tsc clean; cmd unchanged (134); no mock change (P55a mock already
+  covered the branches).
+**Current step:** P55a+P55b DONE (committed). Next: **P55c** — UI (`ProposedOpDialog` + `safeOpDispatch` +
+palette "Ask Bonsai to…" + toolbar ✨ + `runPlanOperation` confirm/dispatch/refresh) → P55 tester → AI gate.
 
 ## P54 — commit composer: WIP → N logical commits (Phase 2 · milestone 2/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
