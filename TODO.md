@@ -49,7 +49,7 @@ Checklists: `docs/contracts/P<N>-user-checklist.md`.
 **Untouched throughout:** your 4 in-progress files (Cargo.lock, package.json, src-tauri/Cargo.toml,
 tauri.conf.json = the 0.3.0→0.3.1 bump) and `docs/audit-2026-08-07.md` (another session's file).
 
-## P55 — natural-language → SAFE git operation (Phase 2 · milestone 3/5) — **IN PROGRESS** (2026-08-08)
+## P55 — natural-language → SAFE git operation (Phase 2 · milestone 3/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
 Contract: `docs/contracts/P55-nl-to-safe-git-op.md`. OD1 = local-`claude`-CLI-only. The highest-trust-risk
 Phase-2 feature — the safety model (§2) is the centerpiece.
@@ -102,9 +102,18 @@ tests `plan_never_mutates` + `out_of_allowlist_is_unsupported`) + `ai_plan_opera
   Reviewer VERIFIED read-only-until-Confirm (single dispatch path). ipc/index.ts barrel re-exports. tsc/build
   clean. Nit→future polish: merge/revert that PAUSE on conflicts still show a 'success' toast (the conflict
   DOES surface via the existing op-state banner; contract-sanctioned).
-**Current step:** P55a+b+c DONE (committed). Next: **P55 tester** (regression + `safeOpDispatch` routing
-vitest + `P55-user-checklist.md`) → AI-gate harness (proposed dialog + unsupported + ?ai=off; DOM-drivable)
-→ P55 done.
+- **P55 tester** — `cargo test --workspace` **978/0/3-ignored**; vitest **109/109** (+13 `safeOpDispatch`
+  routing tests locking the §6 table with compile-time exhaustiveness + one-method-fires); wrote
+  `docs/contracts/P55-user-checklist.md`; clippy clean; no bugs.
+- **P55 AI GATE PASSED (2026-08-08).** Backend: 978 workspace tests incl. the two non-negotiables
+  `plan_never_mutates` (all 10 intents) + `out_of_allowlist_is_unsupported`, + 13 `safeOpDispatch` routing
+  vitests; reviewer VERIFIED IN CODE: no model-text→shell path, read-only-until-Confirm (single dispatch
+  path), dispatch→existing typed commands only. Harness smoke SKIPPED to conserve the overnight budget —
+  the same app's clean AI-eligible load was confirmed at P54, and the live NL→propose→confirm flow can't be
+  driven headless (pane 0×0). The live flow is USER CHECKPOINT (`docs/contracts/P55-user-checklist.md`).
+  Commits: `01df34e`? (a) · P55b · `<c>` · tester — see `git log`.
+**Current step:** P55 DONE (AI gate passed, awaiting USER CHECKPOINT). Phase 2 milestone 4/5 next: **P56
+(local AI changelog / release-notes)**.
 
 ## P54 — commit composer: WIP → N logical commits (Phase 2 · milestone 2/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
