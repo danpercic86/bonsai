@@ -78,8 +78,17 @@ Sub-increments: **P56a** core (`ai_changelog.rs`: `generate_changelog` + `resolv
   repo_path, read-only; 134→135). IPC + barrel + mock (`?ai=off`→aiFailed). New `ai_changelog_cli.rs` (git
   oracle: set==`git log <from>..<to>` for tag-range + sinceLastTag). 10 tests; clippy -D + build/tsc clean;
   `ai_changelog.rs` 485 lines. Nit: `format_commit_meta` promoted but unused by changelog (harmless).
-**Current step:** P56a DONE (committed). Next: **P56b** — UI (`ChangelogDialog` + tag-pill "Release notes
-since previous tag" + `runChangelog` + AiOutputPanel Copy/opt-in-editable).
+- **P56b** (reviewer APPROVE, 0 must-fix / 0 should-fix; 3 nits) — UI. New `ChangelogDialog.tsx`
+  (between-refs / since-last-tag range picker, Combobox ref fields). `runChangelog` mirrors runDigest
+  (aiPanelReqId last-wins; title `Release notes: <from>..<to>`; read-only). Tag-pill "Release notes since
+  previous tag" (graph pills + sidebar rows; gated !aiEligible; target=tagName per OQ7) + palette "Release
+  notes…". `AiOutputPanel` gains a Copy button (all callers) + OPT-IN `editable` textarea (changelog only)
+  — reviewer CONFIRMED backward-compat (non-editable callers keep the exact `<pre>` path; sole render site
+  WorkspaceGraphPane; draft reseeds via intermediate null → no stale-draft). tsc/build clean; paletteActions
+  vitest 11/11. Nits: edits lost on Esc/close (Copy is the persistence, per spec); refNames not deduped;
+  RepoWorkspace AI-runner bloat (future useAiPanel hook).
+**Current step:** P56a+b DONE (committed). Next: **P56 tester** (regression + `P56-user-checklist.md` +
+optional ChangelogDialog range vitest) → P56 done (live flow = USER CHECKPOINT, same headless limits).
 
 ## P55 — natural-language → SAFE git operation (Phase 2 · milestone 3/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 

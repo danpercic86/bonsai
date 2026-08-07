@@ -96,6 +96,8 @@ export interface WorkspaceGraphPaneProps {
     loading: boolean;
     error: string | null;
     costUsd: number | null;
+    /** P56b: opt-in editable body (changelog only); other callers omit it. */
+    editable?: boolean;
   } | null;
   closeAiPanel(): void;
 
@@ -343,6 +345,7 @@ export function WorkspaceGraphPane({
           loading={aiPanel.loading}
           error={aiPanel.error}
           costUsd={aiPanel.costUsd}
+          editable={aiPanel.editable}
           onClose={closeAiPanel}
         />
       )}

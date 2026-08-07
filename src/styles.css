@@ -2880,6 +2880,33 @@ span.file-row-main {
   color: var(--text-1);
 }
 
+/* P56b: header Copy button — a compact text button (not a single-glyph icon) that
+   sits left of the close ×. Shared by every AI output. min-width fits the wider
+   "Copied" flash so the header doesn't jump when the confirmation shows. */
+.ai-output-copy {
+  flex: none;
+  width: auto;
+  min-width: 52px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* P56b: editable changelog body — matches the read-only .ai-output-text metrics
+   but is an interactive <textarea> in copy-friendly monospace so the Markdown
+   source can be tweaked before pasting. */
+.ai-output-editable {
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  outline: none;
+  font-family: var(--font-mono);
+  tab-size: 2;
+}
+
 .diff-view {
   position: relative; /* P17c: anchors the .diff-stage-float action button */
   background: var(--bg-0);
@@ -4094,6 +4121,13 @@ span.file-row-main {
   font-size: 12px;
   color: var(--text-2);
   cursor: pointer;
+}
+
+/* P56b: ChangelogDialog — a touch wider than the default card so the ref
+   comboboxes (tag/branch names) aren't cramped. Reuses the shared radio/field
+   idioms otherwise. */
+.changelog-dialog {
+  width: 400px;
 }
 
 /* P28: WhatChangedDialog — horizontal radio mode picker above the fields. */

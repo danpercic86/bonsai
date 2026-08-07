@@ -25,6 +25,7 @@ import type {
   AiDigestRange,
   BlameLine,
   BranchesSnapshot,
+  ChangelogRange,
   CommitDiff,
   CompareDiff,
   ConflictEntry,
@@ -76,6 +77,7 @@ import { CommandPalette } from './CommandPalette';
 import { buildPaletteActions, type PaletteAction } from './paletteActions';
 import { ProposedOpDialog } from './ProposedOpDialog';
 import { PromptDialog } from './PromptDialog';
+import { ChangelogDialog } from './ChangelogDialog';
 import { safeOpDispatch } from './safeOpDispatch';
 import type { ComboboxOption } from './Combobox';
 
@@ -232,6 +234,9 @@ export function RepoWorkspace({
     loading: boolean;
     error: string | null;
     costUsd: number | null;
+    /** P56b: opt-in editable body — set only by runChangelog so the notes can be
+     *  tweaked before copying. Every other runner omits it (read-only <pre>). */
+    editable?: boolean;
   } | null>(null);
   const aiPanelReqId = useRef(0);
   const aiPanelOpenRef = useRef(false);
@@ -320,6 +325,8 @@ export function RepoWorkspace({
   const [newWorktreeOpen, setNewWorktreeOpen] = useState(false);
   // P28 §7: "✨ What changed…" digest range picker (opened from the toolbar).
   const [whatChangedOpen, setWhatChangedOpen] = useState(false);
+  // P56b §6: "✨ Release notes…" changelog range picker (opened from the palette).
+  const [changelogOpen, setChangelogOpen] = useState(false);
   // P55c: NL → safe-git-op. `askOpen` = the one-line natural-language input;
   // `askBusy` gates it while the READ-ONLY planner runs. `pendingProposedOp` is
   // the resolved proposal shown in ProposedOpDialog — NOTHING mutates until its
@@ -406,6 +413,7 @@ export function RepoWorkspace({
     staleCleanupOpen ||
     newWorktreeOpen ||
     whatChangedOpen ||
+    changelogOpen ||
     askOpen ||
     pendingProposedOp !== null ||
     pendingWorktreeRemove !== null ||
@@ -1562,6 +1570,48 @@ export function RepoWorkspace({
     [repoId],
   );
 
+  // P56b §6: generate grouped release notes for a tag/ref range and show the
+  // Markdown in the AiOutputPanel (editable). Read-only — writes nothing. Shares
+  // the same req-id guard as runAnalyze so a slow response can't clobber a newer
+  // request or a closed panel. The provisional `title` covers the loading state;
+  // on success the header becomes `Release notes: <fromRef>..<toRef>` from the
+  // RESOLVED range (e.g. the previous-tag name for sinceLastTag).
+  const runChangelog = useCallback(
+    (range: ChangelogRange, title: string) => {
+      const id = ++aiPanelReqId.current;
+      setAiPanel({ title, text: null, loading: true, error: null, costUsd: null, editable: true });
+      ipc.aiChangelog(repoId, range).then(
+        (res) => {
+          if (id !== aiPanelReqId.current) return;
+          setAiPanel({
+            title: `Release notes: ${res.fromRef}..${res.toRef}`,
+            text: res.text,
+            loading: false,
+            error: null,
+            costUsd: res.costUsd,
+            editable: true,
+          });
+        },
+        (e: unknown) => {
+          if (id !== aiPanelReqId.current) return;
+          setAiPanel({
+            title,
+            text: null,
+            loading: false,
+            error: errorMessage(e),
+            costUsd: null,
+            editable: true,
+          });
+        },
+      );
+    },
+    [repoId],
+  );
+
+  // P56b: open the general "Release notes…" range picker (palette entry). Stable
+  // so the palette-action useMemo doesn't rebuild each render.
+  const openChangelog = useCallback(() => setChangelogOpen(true), []);
+
   // P53a: blame-why — explain WHY a line exists and show the prose in the
   // AiOutputPanel. Read-only — writes nothing. Shares the same req-id guard as
   // runAnalyze so a slow response can't clobber a newer request or a closed
@@ -1822,19 +1872,30 @@ export function RepoWorkspace({
       revealCommitByOid,
       appCommands,
     });
-    // P55c: prepend the "Ask Bonsai to…" NL entry (registry pattern, gated
-    // aiEligible) so it is the first Action row and fuzzy-filterable. Its run
-    // opens the shared read-only NL input — nothing mutates until the resolved
-    // op's own confirm dialog.
+    // P55c / P56b: prepend the AI entries (registry pattern, gated aiEligible) so
+    // they lead the Action group and are fuzzy-filterable. "Ask Bonsai to…" opens
+    // the read-only NL input (nothing mutates until the resolved op's confirm);
+    // "Release notes…" opens the read-only ChangelogDialog range picker. unshift
+    // with two args keeps Ask first, Release notes second.
     if (aiEligible) {
-      actions.unshift({
-        id: 'ai.ask',
-        title: 'Ask Bonsai to…',
-        hint: '✨',
-        group: 'action',
-        keywords: 'ai natural language nl request undo revert switch stash discard merge branch',
-        run: openAskBonsai,
-      });
+      actions.unshift(
+        {
+          id: 'ai.ask',
+          title: 'Ask Bonsai to…',
+          hint: '✨',
+          group: 'action',
+          keywords: 'ai natural language nl request undo revert switch stash discard merge branch',
+          run: openAskBonsai,
+        },
+        {
+          id: 'ai.changelog',
+          title: 'Release notes…',
+          hint: '✨',
+          group: 'action',
+          keywords: 'ai changelog release notes tag range markdown between refs since last tag',
+          run: openChangelog,
+        },
+      );
     }
     return actions;
   }, [
@@ -1859,6 +1920,7 @@ export function RepoWorkspace({
     appCommands,
     aiEligible,
     openAskBonsai,
+    openChangelog,
   ]);
 
   function handleToggleConflictView(path: string) {
@@ -2070,6 +2132,7 @@ export function RepoWorkspace({
     setPendingCreateBranch,
     runSummarize,
     runAnalyze,
+    runChangelog,
     handleMergeBranch,
     setPendingRebase,
     openRebasePlan,
@@ -2498,6 +2561,24 @@ export function RepoWorkspace({
         busy={opDispatching}
         onConfirm={() => void confirmProposedOp()}
         onCancel={cancelProposedOp}
+      />
+      {/* P56b §6: the "Release notes…" range picker — opened from the palette
+          "Release notes…" action (the tag-pill menu calls runChangelog directly).
+          Submitting kicks off the READ-ONLY changelog; output renders in the
+          AiOutputPanel over the graph. */}
+      <ChangelogDialog
+        open={changelogOpen}
+        refNames={[
+          ...(branches?.tags ?? []),
+          ...(branches?.local.map((b) => b.name) ?? []),
+          ...(branches?.remote.map((b) => b.name) ?? []),
+        ]}
+        currentBranch={headBranch?.name ?? null}
+        onSubmit={(range, title) => {
+          setChangelogOpen(false);
+          runChangelog(range, title);
+        }}
+        onCancel={() => setChangelogOpen(false)}
       />
       {composer.open && (
         <ComposerDialog composer={composer} statusByPath={composerStatusByPath} />

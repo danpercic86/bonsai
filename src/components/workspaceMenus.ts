@@ -30,6 +30,7 @@ import type {
   AiDiffTarget,
   BranchInfo,
   BranchesSnapshot,
+  ChangelogRange,
   HeadInfo,
   RemoteInfo,
   ResetMode,
@@ -95,6 +96,10 @@ export interface WorkspaceMenuDeps {
   setPendingCreateBranch(v: { oid: string }): void;
   runSummarize(base: string, target: string): void;
   runAnalyze(target: AiDiffTarget, mode: AiAnalysisMode, title: string): void;
+  // P56b: generate grouped release notes for a tag/ref range. The tag-pill entry
+  // passes { kind:'sinceLastTag', target: tagName } → notes for what shipped in
+  // that tag. Read-only; results/errors render in the AiOutputPanel.
+  runChangelog(range: ChangelogRange, title: string): void;
   handleMergeBranch(name: string): void;
   setPendingRebase(v: { name: string; cur: string }): void;
   openRebasePlan(target: { ontoOid: string; ontoLabel: string }): void;
@@ -170,6 +175,7 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     setPendingCreateBranch,
     runSummarize,
     runAnalyze,
+    runChangelog,
     handleMergeBranch,
     setPendingRebase,
     openRebasePlan,
@@ -483,6 +489,17 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
         },
       },
     ];
+    // P56b §6: one-click grounded release notes — "what shipped in <tag>" (notes
+    // for the range previous-tag..this-tag, OQ7). Read-only; results render in the
+    // AiOutputPanel. Disabled (not hidden) unless AI is eligible, mirroring the
+    // "Explain this commit" gate; runChangelog's req-id guards staleness.
+    items.push({
+      label: 'Release notes since previous tag',
+      icon: createElement(SummarizeIcon),
+      disabled: !aiEligible,
+      onSelect: () =>
+        runChangelog({ kind: 'sinceLastTag', target: name }, `Release notes for ${name}`),
+    });
     for (const r of remotes) {
       items.push({
         label: `Push tag to ${r.name}`,
