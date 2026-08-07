@@ -49,6 +49,38 @@ Checklists: `docs/contracts/P<N>-user-checklist.md`.
 **Untouched throughout:** your 4 in-progress files (Cargo.lock, package.json, src-tauri/Cargo.toml,
 tauri.conf.json = the 0.3.0→0.3.1 bump) and `docs/audit-2026-08-07.md` (another session's file).
 
+## P56 — local AI changelog / release-notes (Phase 2 · milestone 4/5) — **IN PROGRESS** (2026-08-08)
+
+Contract: `docs/contracts/P56-local-changelog.md`. OD1 = local-`claude`-CLI-only. Smaller milestone (S–M).
+
+**P56 goal:** a tag/ref range (or "since last tag") → grouped, categorized Markdown release notes, fully
+local, READ-ONLY (writes nothing to git). New `ai_changelog(repoId, range) → AiChangelog`; reuses the
+shipped range resolver (`resolve_digest_range` → pub(crate)) + `resolve_last_tag` +
+`render_commit_list`/`render_headers`; AI grouping guided by a conventional-commits HINT (works on
+non-conventional repos too); fixed taxonomy Features/Fixes/Performance/Refactoring/Documentation/Tests/
+Other (empty omitted). Renders in `AiOutputPanel` (Copy + opt-in editable). Cmd 134→135.
+
+**Orchestrator OQ decisions — accept ALL architect recs:** OQ1 AI-grouping-with-conventional-hint · OQ2
+the 7-heading taxonomy · OQ3 tag-pill "Release notes since previous tag" + `ChangelogDialog` (+ optional
+palette) · OQ4 dedicated `AiChangelog` (echoes resolved fromRef/toRef) · OQ5 opt-in `editable` textarea +
+Copy on AiOutputPanel · OQ6 promote `resolve_digest_range`/`format_commit_meta` to pub(crate) · OQ7
+SinceLastTag = from tag-before-T, to=T.
+
+Sub-increments: **P56a** core (`ai_changelog.rs`: `generate_changelog` + `resolve_last_tag`; reuse resolver)
++ `ai_changelog` cmd(→135) + IPC + mock + tests → **P56b** UI (`ChangelogDialog` + tag-pill entry +
+`runChangelog` + AiOutputPanel Copy/editable).
+
+- **P56a** (reviewer APPROVE, 0 must-fix / 0 should-fix; 2 nits) — core+IPC+mock. New `ai_changelog.rs`:
+  `generate_changelog` (reuses promoted `resolve_digest_range`; `SinceLastTag`→`resolve_last_tag`→from;
+  empty range / no earlier tag → AiFailed BEFORE any CLI; read-only) + `resolve_last_tag` (reviewer-verified:
+  reachable-ancestor tags via merge_base, excludes the tip tag, both lightweight+annotated, committer-time
+  order) + fixed-taxonomy prompt (AI grouping, no Rust parser). `ai_changelog` cmd + _inner (consent before
+  repo_path, read-only; 134→135). IPC + barrel + mock (`?ai=off`→aiFailed). New `ai_changelog_cli.rs` (git
+  oracle: set==`git log <from>..<to>` for tag-range + sinceLastTag). 10 tests; clippy -D + build/tsc clean;
+  `ai_changelog.rs` 485 lines. Nit: `format_commit_meta` promoted but unused by changelog (harmless).
+**Current step:** P56a DONE (committed). Next: **P56b** — UI (`ChangelogDialog` + tag-pill "Release notes
+since previous tag" + `runChangelog` + AiOutputPanel Copy/opt-in-editable).
+
 ## P55 — natural-language → SAFE git operation (Phase 2 · milestone 3/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
 Contract: `docs/contracts/P55-nl-to-safe-git-op.md`. OD1 = local-`claude`-CLI-only. The highest-trust-risk

@@ -390,6 +390,48 @@ pub(crate) async fn ai_compose_commits_inner(
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Generates grouped Markdown release notes for a tag/ref range or "since the
+/// last tag" (P56a §4). Loads settings and REFUSES with `AiUnavailable` unless
+/// `ai_enabled && ai_consented` (the authoritative backend gate; the frontend
+/// also gates for UX). Read-only prose out — WRITES NOTHING; does NOT emit
+/// `repo-changed`. Errors: `aiUnavailable` | `aiFailed` (empty range / no earlier
+/// tag / CLI failure) | `git` (bad ref) | `noRepo`.
+#[tauri::command]
+pub async fn ai_changelog(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    range: ChangelogRange,
+) -> Result<AiChangelog, AppError> {
+    // Resolve the settings-file path at the AppHandle boundary so the inner stays
+    // runtime-free and unit-testable (mirrors `ai_digest`), then delegate.
+    let file = settings::settings_file(&app)?;
+    ai_changelog_inner(state.inner(), &file, &repo_id, range).await
+}
+
+/// Runtime-free core of `ai_changelog` (unit-testable without a Tauri app).
+/// The consent gate is enforced HERE, BEFORE `repo_path`. READ-ONLY ⇒ NO
+/// `repo-changed` emit.
+pub(crate) async fn ai_changelog_inner(
+    state: &AppState,
+    settings_file: &std::path::Path,
+    repo_id: &str,
+    range: ChangelogRange,
+) -> Result<AiChangelog, AppError> {
+    let s = settings::load_from(settings_file);
+    if !(s.ai_enabled && s.ai_consented) {
+        return Err(AppError::AiUnavailable(
+            "AI features are disabled or not yet consented to".to_string(),
+        ));
+    }
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        ai_changelog::generate_changelog(&workdir, range, RunOpts::default())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Optional AI helper (P24e §6.8): translate the `source_asset_id` instruction
 /// file into `target_agent`'s flavor via the local `claude` CLI. Enforces the
 /// consent gate FIRST (before `repo_path`), exactly like `generate_commit_message`.

@@ -386,7 +386,9 @@ fn commit_meta_line(commit: &git2::Commit<'_>) -> String {
 
 /// Joins metadata lines newest-first, capping at [`MAX_DIGEST_COMMITS`] lines
 /// and collapsing the overflow to `... and N more commits` (P28 Decision #5).
-fn format_commit_meta(lines: &[String]) -> String {
+/// `pub(crate)` so sibling AI modules (P56 changelog) reuse the digest range
+/// helpers rather than duplicating the walk (D2/OQ6).
+pub(crate) fn format_commit_meta(lines: &[String]) -> String {
     if lines.len() <= MAX_DIGEST_COMMITS {
         return lines.join("\n");
     }
@@ -400,8 +402,10 @@ fn format_commit_meta(lines: &[String]) -> String {
 
 /// Resolves a digest range to `(header_note, commits_newest_first, old_tree,
 /// new_tree)` per P28 §3. `old_tree == None` means "empty tree" (unrelated
-/// histories, or a lastDays window covering the whole history).
-fn resolve_digest_range<'r>(
+/// histories, or a lastDays window covering the whole history). `pub(crate)` so
+/// P56's `ai_changelog` reuses this single range resolver (D2/OQ6) rather than
+/// re-walking raw objects.
+pub(crate) fn resolve_digest_range<'r>(
     repo: &'r git2::Repository,
     range: &AiDigestRange,
 ) -> Result<

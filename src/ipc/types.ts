@@ -931,6 +931,27 @@ export interface AiSummary {
   costUsd: number | null;
 }
 
+/** Which range to write release notes for with aiChangelog — discriminated on
+ *  `kind` (P56). betweenRefs = notes for commits in `to` but not `from` (any
+ *  revparse-able refs; tags are the common case); sinceLastTag = notes since the
+ *  most recent tag reachable from `target` (default HEAD), EXCLUDING `target`'s
+ *  own tip. Mirrors the Rust `ChangelogRange`. */
+export type ChangelogRange =
+  | { kind: 'betweenRefs'; from: string; to: string }
+  | { kind: 'sinceLastTag'; target?: string | null };
+
+/** Grouped Markdown release notes + the RESOLVED range echoed for the panel
+ *  header (crucially the resolved previous-tag name for sinceLastTag). Mirrors
+ *  the Rust `AiChangelog`; generating writes nothing. `commitCount` is the number
+ *  of commits listed (capped). */
+export interface AiChangelog {
+  text: string;
+  fromRef: string;
+  toRef: string;
+  commitCount: number;
+  costUsd: number | null;
+}
+
 /** Grounding source for aiSuggestBranchName — discriminated on `kind` (P53c).
  *  working = the index-aware working-tree change set (the common "about to start
  *  work" case); commitRange = name a branch that will carry `from..to`. */
@@ -1793,6 +1814,11 @@ export interface IpcApi {
   /** P28. AI "what changed" digest over a selectable range (read-only prose).
    *  Writes nothing. Rejects aiUnavailable | aiFailed | git | invalidName | noRepo. */
   aiDigest(repoId: string, range: AiDigestRange): Promise<AiAnalysis>;
+  /** P56. Generate grouped Markdown release notes for a tag/ref range (or since
+   *  the last tag). Read-only; WRITES NOTHING; does NOT emit repo-changed. Fully
+   *  local. Rejects aiUnavailable | aiFailed (empty range / no earlier tag / CLI)
+   *  | git (bad ref) | noRepo. */
+  aiChangelog(repoId: string, range: ChangelogRange): Promise<AiChangelog>;
   /** P53a. AI "why does this line exist" — blames `lineNo` (as of `atOid`, null →
    *  HEAD) to find the introducing commit, then explains that commit's change to
    *  the file focused on that line. Read-only; writes nothing; does NOT emit

@@ -118,6 +118,7 @@ pub fn run() {
             commands::ai_analyze_diff,
             commands::ai_summarize_range,
             commands::ai_digest,
+            commands::ai_changelog,
             commands::ai_compose_commits,
             commands::ai_explain_line,
             commands::ai_suggest_branch_name,

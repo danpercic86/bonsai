@@ -11,6 +11,7 @@ pub(crate) use bonsai_core::assets::{
 };
 pub(crate) use bonsai_core::error::AppError;
 pub(crate) use bonsai_core::git::ai_branch_name::{self, BranchNameProposal, BranchNameSource};
+pub(crate) use bonsai_core::git::ai_changelog::{self, AiChangelog, ChangelogRange};
 pub(crate) use bonsai_core::git::ai_commit::{self, CommitMessageProposal};
 pub(crate) use bonsai_core::git::ai_compose::{self, ComposeProposal};
 // P54b apply side. Only the names referenced by the command layer are re-exported

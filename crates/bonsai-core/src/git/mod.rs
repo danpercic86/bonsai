@@ -1,4 +1,5 @@
 pub mod ai_branch_name;
+pub mod ai_changelog;
 pub mod ai_commit;
 pub mod ai_compose;
 pub mod ai_explain;

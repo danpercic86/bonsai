@@ -2,7 +2,7 @@
 import type { IpcApi } from '../../types';
 import { AI_OFF, delay, requireRepo, stripConflictMarkers } from '../repoState';
 import { MAIN_RS_PATH, linesEqual } from '../statusHelpers';
-import type { AiAnalysis, AiAnalysisMode, AiAvailability, AiDiffTarget, AiDigestRange, AiResolveProposal, AiSummary, AppError, BranchNameProposal, BranchNameSource, CommitMessageProposal, ComposeGroup, ComposeProposal, OperationPlan } from '../../types';
+import type { AiAnalysis, AiAnalysisMode, AiAvailability, AiChangelog, AiDiffTarget, AiDigestRange, AiResolveProposal, AiSummary, AppError, BranchNameProposal, BranchNameSource, ChangelogRange, CommitMessageProposal, ComposeGroup, ComposeProposal, OperationPlan } from '../../types';
 
 export const aiHandlers = {
   async checkAiAvailability(): Promise<AiAvailability> {
@@ -164,6 +164,36 @@ export const aiHandlers = {
         'stale-branch cleanup — plus test scaffolding.';
     }
     return { text, costUsd: 0.01 };
+  },
+
+  // P56a: grouped Markdown release notes for a tag/ref range (or since the last
+  // tag). Read-only; WRITES NOTHING; does NOT emit repo-changed. `?ai=off`
+  // simulates a missing CLI; else a fixed grouped sample, echoing the RESOLVED
+  // range so the harness shows what was generated (sinceLastTag resolves a canned
+  // previous tag 'v1.2.0').
+  async aiChangelog(repoId: string, range: ChangelogRange): Promise<AiChangelog> {
+    await delay(800);
+    requireRepo(repoId);
+    if (AI_OFF) {
+      const err: AppError = { kind: 'aiFailed', message: 'Claude Code CLI not found on PATH' };
+      throw err;
+    }
+    const fromRef = range.kind === 'betweenRefs' ? range.from : 'v1.2.0';
+    const toRef = range.kind === 'betweenRefs' ? range.to : (range.target ?? 'HEAD');
+    const text = [
+      'This release adds AI-native operations and hardens the graph.',
+      '',
+      '### Features',
+      '- Natural-language to safe git operation (a1b2c3d)',
+      '- AI branch naming (e4f5a6b)',
+      '',
+      '### Fixes',
+      '- Debounce watcher event storms on Windows (c7d8e9f)',
+      '',
+      '### Documentation',
+      '- Phase-2 contracts (0a1b2c3)',
+    ].join('\n');
+    return { text, fromRef, toRef, commitCount: 4, costUsd: 0.012 };
   },
 
   // P53a: AI "why does this line exist" — blame-why (read-only prose). Writes

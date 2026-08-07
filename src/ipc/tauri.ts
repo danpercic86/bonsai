@@ -12,6 +12,7 @@ import type {
   AgentAssetKind,
   AiAnalysis,
   AiAnalysisMode,
+  AiChangelog,
   AiDiffTarget,
   AiDigestRange,
   AiAvailability,
@@ -31,6 +32,7 @@ import type {
   BranchesSnapshot,
   BranchNameProposal,
   BranchNameSource,
+  ChangelogRange,
   CloneProgress,
   CommitDiff,
   CommitMessageProposal,
@@ -353,6 +355,12 @@ export const tauriIpc: IpcApi = {
   // P28: AI "what changed" digest over a selectable range (read-only prose).
   aiDigest(repoId: string, range: AiDigestRange): Promise<AiAnalysis> {
     return invoke<AiAnalysis>('ai_digest', { repoId, range });
+  },
+
+  // P56a: grouped Markdown release notes for a tag/ref range (or since the last
+  // tag). Read-only; WRITES NOTHING; does NOT emit repo-changed. Fully local.
+  aiChangelog(repoId: string, range: ChangelogRange): Promise<AiChangelog> {
+    return invoke<AiChangelog>('ai_changelog', { repoId, range });
   },
 
   // P53a: AI "why does this line exist" — blame-why (read-only prose).
