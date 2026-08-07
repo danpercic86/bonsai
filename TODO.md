@@ -25,7 +25,7 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
-## P51 — commit-graph polish + clutter controls (Phase 1) — **IN PROGRESS** (2026-08-07)
+## P51 — commit-graph polish + clutter controls (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 
 Phase 1 milestone 3 of 4. User chose "Finish Phase 1 (P51+P52)" + granted a 3h autonomous window.
 Roadmap: `~/.claude/plans/do-thorough-analysis-of-purrfect-moth.md`.
@@ -85,9 +85,20 @@ defer; compact preset override; toggles nested in GraphPrefs.
   (SettingsGraphSection toggle). textMeasure NUL→space tidy. 13 new tests (28 graph). **P51c AI GATE
   PASSED** (harness, mock :1420): repo loads clean with default toggle ON + diverged `feat` (↑1↓1) →
   chip draw path runs, canvas non-blank, zero console errors. Chip visual = USER CHECKPOINT. tsc/build clean.
-**Current step:** P51c committed — running P51 tester (full regression + the reviewer's chip-overflow
-coverage gap: a diverged chip-bearing pill overflowing the band asserting `+n`/cursor exact), then P51
-close-out → P52.
+- **P51 tester** — regression: cargo **926 passed / 1 failed** (ONLY the expected pre-existing health
+  20k perf gate; nothing else regressed) / 2 ignored; vitest **74 passed** (5 new chip-overflow tests
+  closing the reviewer gap: exact `+n`, no overlap, chip-bearing pop, toggle-off zero-width, budget
+  sweep). clippy --all-targets + tsc/build clean. Added a crowded-row chip bullet to the checklist.
+- **P51 AI GATE PASSED (2026-08-07).** Commits: `367a064` P51a · `03ba1e2` P51b · `49a54ce` P51c
+  (+ tester closeout). Settings toggles + all new draw paths harness-verified (canvas non-blank, zero
+  console errors); zero P51 regressions.
+
+**P51 awaiting USER CHECKPOINT** (native `pnpm tauri dev`, per `docs/contracts/P51-user-checklist.md`):
+canvas visuals the harness can't judge — SHA/date column legibility, author column, compact density,
+author↔committer date basis, absolute-date hover, and the `↑a ↓b` chip on diverged tips incl.
+crowded-row `+n` folding.
+**Current step:** P51 DONE (AI gate passed, awaiting USER CHECKPOINT). Starting **P52** (adopt git's
+commit-graph file — Phase-1 milestone 4/4; also targets the health 20k perf gate).
 
 ## P50 — commit/content search + command palette + list filtering (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 
