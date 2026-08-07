@@ -480,6 +480,21 @@ export function RepoWorkspace({
     return paths.size > 0 ? { fileCount: paths.size } : null;
   }, [status, head]);
 
+  // P53c: is there any working change to name a branch from? Gates the AI
+  // "Suggest name" affordance in the branch-create dialog (clean tree => no
+  // grounding => disabled, OQ6).
+  const workingDirty =
+    status !== null &&
+    (status.staged.length > 0 || status.unstaged.length > 0 || status.untracked.length > 0);
+
+  // P53c: container-bound branch-name suggestion (working-tree grounding). The
+  // dialog owns no IPC; the actual branch is created by the confirmed create
+  // path — naming WRITES NOTHING.
+  const suggestBranchName = useCallback(
+    () => ipc.aiSuggestBranchName(repoId, { kind: 'working' }),
+    [repoId],
+  );
+
   const overlayMeta: DiffOverlayMeta | null = useMemo(() => {
     if (diffSlot === null) return null;
     const key = diffSlot.key;
@@ -2245,6 +2260,9 @@ export function RepoWorkspace({
         pendingCreateBranch={pendingCreateBranch}
         setPendingCreateBranch={setPendingCreateBranch}
         handleCreateBranchHere={(oid, name) => void handleCreateBranchHere(oid, name)}
+        aiEligible={aiEligible}
+        workingDirty={workingDirty}
+        suggestBranchName={suggestBranchName}
         pendingCreateTag={pendingCreateTag}
         setPendingCreateTag={setPendingCreateTag}
         handleCreateTag={(oid, name, message) => void handleCreateTag(oid, name, message)}

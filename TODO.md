@@ -67,8 +67,19 @@ enrichment + graph-node menu entry, NO new cmd) → **P53c** branch naming (`ai_
   `!aiEligible` → `runAnalyze({kind:'commit'},'explain')`. No new command (130), no mock change. cargo -p
   bonsai-core ai_explain 19 pass; clippy -D + build/tsc clean. Nit: summary appears in both the COMMIT
   header and the MESSAGE first line (harmless redundancy).
-**Current step:** P53a+P53b DONE (committed). Next: **P53c** (branch naming — new `ai_branch_name.rs` +
-`ai_suggest_branch_name` cmd →131 + `BranchNameSuggest.tsx` + branch-create dialog wiring).
+- **P53c** (reviewer APPROVE, 0 must-fix / 0 should-fix; 3 nits) — new `ai_branch_name.rs`
+  (`suggest_branch_name`, pure `sanitize_branch_name` — output strictly `[a-z0-9/-]`, `.` never emitted
+  so `..`/`.lock`/dot hazards are structurally impossible, never an uncreatable ref; `Working` reuses
+  `gather_worktree`, `CommitRange` mirrors `summarize_range`; empty grounding → `AiFailed` BEFORE any CLI
+  spawn; parse→sanitize→stable-dedup→cap 5). `ai_suggest_branch_name` cmd + `_inner` (consent gate,
+  read-only; generate_handler! 130→131). IPC + mock (`?ai=off`→aiFailed); new `BranchNameSuggest.tsx`
+  (button gated `aiEligible && workingDirty`, last-wins guard, WRITES NOTHING) in the create-branch
+  dialog via a new optional `PromptDialog.extraContent` slot (additive; Worktree/Remote callers
+  untouched). `BranchNameProposal` = PartialEq only (Option<f64>; matches AiAnalysis). cargo -p
+  bonsai-core ai_branch_name 6 pass; clippy -D + build/tsc clean. Nits→tester: symmetric CommitRange
+  empty-range pre-CLI test; `feat/-x` post-slash-dash doc/test; list-number `1-` prefix leak (cosmetic).
+**Current step:** P53a+b+c DONE + reviewer-APPROVED (committed 94fd9b3 / 4371141 / next). Next: **P53
+tester** (full regression + fold the 3 reviewer nit tests) → AI-gate harness verification → P53 done.
 
 ## 🗂️ PHASE 2 & 3 — CONTRACTS PREPARED (design only; NO code yet) (2026-08-07)
 

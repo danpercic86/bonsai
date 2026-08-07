@@ -37,6 +37,8 @@ export type {
   BranchesSection,
   BranchesSnapshot,
   BranchInfo,
+  BranchNameProposal,
+  BranchNameSource,
   CherrypickOutcome,
   CloneProgress,
   CommitDetails,

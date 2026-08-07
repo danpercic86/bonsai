@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 export interface PromptDialogProps {
   open: boolean;
@@ -14,6 +14,9 @@ export interface PromptDialogProps {
   validate?(value: string): string | null;
   onSubmit(value: string): void;
   onCancel(): void;
+  /** Optional extra content rendered under the input (e.g. an AI "Suggest name"
+   *  row). Receives `setValue` so a suggestion can fill the controlled input. */
+  extraContent?(setValue: (v: string) => void): ReactNode;
 }
 
 /**
@@ -33,6 +36,7 @@ export function PromptDialog({
   validate,
   onSubmit,
   onCancel,
+  extraContent,
 }: PromptDialogProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState(initialValue ?? '');
@@ -92,6 +96,7 @@ export function PromptDialog({
               />
             </label>
             {error !== null && <p className="dialog-error">{error}</p>}
+            {extraContent?.(setValue)}
           </div>
           <div className="dialog-buttons">
             <button type="button" className="btn-secondary" onClick={onCancel}>

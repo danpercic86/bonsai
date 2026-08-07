@@ -10,6 +10,7 @@ pub(crate) use bonsai_core::assets::{
     ProfileStore, WorktreeContextStatus,
 };
 pub(crate) use bonsai_core::error::AppError;
+pub(crate) use bonsai_core::git::ai_branch_name::{self, BranchNameProposal, BranchNameSource};
 pub(crate) use bonsai_core::git::ai_commit::{self, CommitMessageProposal};
 pub(crate) use bonsai_core::git::ai_explain::{self, AiAnalysis, AiAnalysisMode, AiDiffTarget, AiDigestRange};
 pub(crate) use bonsai_core::git::ai_line;

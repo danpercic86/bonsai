@@ -1,7 +1,7 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
 import type { IpcApi } from '../../types';
 import { AI_OFF, delay, requireRepo, stripConflictMarkers } from '../repoState';
-import type { AiAnalysis, AiAnalysisMode, AiAvailability, AiDiffTarget, AiDigestRange, AiResolveProposal, AiSummary, AppError, CommitMessageProposal } from '../../types';
+import type { AiAnalysis, AiAnalysisMode, AiAvailability, AiDiffTarget, AiDigestRange, AiResolveProposal, AiSummary, AppError, BranchNameProposal, BranchNameSource, CommitMessageProposal } from '../../types';
 
 export const aiHandlers = {
   async checkAiAvailability(): Promise<AiAvailability> {
@@ -216,6 +216,30 @@ export const aiHandlers = {
       target,
       commitCount: 3,
       costUsd: 0.008,
+    };
+  },
+
+  // P53c: AI branch-name suggestions from a grounding source (read-only; writes
+  // NOTHING — the candidates fill the branch-create dialog's name field, and the
+  // existing create path performs the mutation). `?ai=off` simulates a missing
+  // CLI; else canned, already-valid candidates keyed on the source kind so the
+  // harness exercises the same chip plumbing with no CLI.
+  async aiSuggestBranchName(repoId: string, source: BranchNameSource): Promise<BranchNameProposal> {
+    await delay(400);
+    requireRepo(repoId);
+    if (AI_OFF) {
+      const err: AppError = {
+        kind: 'aiFailed',
+        message: 'Claude Code CLI not found on PATH',
+      };
+      throw err;
+    }
+    return {
+      names:
+        source.kind === 'working'
+          ? ['feat/ai-why-layer', 'ai-why-layer', 'feature/blame-why']
+          : ['feat/range-work', 'range-work', 'topic/selected-commits'],
+      costUsd: 0.003,
     };
   },
 

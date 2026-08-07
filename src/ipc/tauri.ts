@@ -29,6 +29,8 @@ import type {
   BlameLine,
   BranchDeleteResult,
   BranchesSnapshot,
+  BranchNameProposal,
+  BranchNameSource,
   CloneProgress,
   CommitDiff,
   CommitMessageProposal,
@@ -362,6 +364,11 @@ export const tauriIpc: IpcApi = {
   // P15c: summarize the commits/diff unique to `target` vs `base` (read-only prose).
   aiSummarizeRange(repoId: string, base: string, target: string): Promise<AiSummary> {
     return invoke<AiSummary>('ai_summarize_range', { repoId, base, target });
+  },
+
+  // P53c: AI branch-name suggestions from a grounding source (read-only; writes nothing).
+  aiSuggestBranchName(repoId: string, source: BranchNameSource): Promise<BranchNameProposal> {
+    return invoke<BranchNameProposal>('ai_suggest_branch_name', { repoId, source });
   },
 
   rebaseBranch(repoId: string, onto: string): Promise<RebaseOutcome> {

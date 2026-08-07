@@ -121,7 +121,9 @@ pub struct AiAnalysis {
 /// change). Contract §4.1 says "zero add/del lines => AiFailed"; we extend it so
 /// a binary-only change — which produces a non-empty payload placeholder but no
 /// textual add/del lines — is NOT misreported as "no changes to analyze".
-fn has_analyzable_content(files: &[FileDiff]) -> bool {
+/// `pub(crate)` so `ai_branch_name` reuses the same "is there anything to work
+/// with" gate over a gathered change set (P53c) rather than duplicating it.
+pub(crate) fn has_analyzable_content(files: &[FileDiff]) -> bool {
     files.iter().any(|f| {
         f.binary
             || f.too_large
@@ -153,8 +155,9 @@ fn gather_staged(workdir: &Path) -> Result<Vec<FileDiff>, AppError> {
 /// working directory, index-aware, including untracked additions — the single
 /// "everything since my last commit" diff in one pass. Unborn HEAD => diff vs
 /// the empty tree (all Added). Empty diff => empty Vec (=> `AiFailed` in
-/// `analyze_diff`).
-fn gather_worktree(workdir: &Path) -> Result<Vec<FileDiff>, AppError> {
+/// `analyze_diff`). `pub(crate)` so `ai_branch_name` reuses the SAME index-aware
+/// worktree gather for the `Working` naming source (P53c) — no duplication.
+pub(crate) fn gather_worktree(workdir: &Path) -> Result<Vec<FileDiff>, AppError> {
     let repo = open_workdir_repo(workdir)?;
     let head = head_tree(&repo)?;
     let mut opts = build_diff_options(&[], false);

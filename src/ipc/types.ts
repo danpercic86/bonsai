@@ -931,6 +931,21 @@ export interface AiSummary {
   costUsd: number | null;
 }
 
+/** Grounding source for aiSuggestBranchName — discriminated on `kind` (P53c).
+ *  working = the index-aware working-tree change set (the common "about to start
+ *  work" case); commitRange = name a branch that will carry `from..to`. */
+export type BranchNameSource =
+  | { kind: 'working' }
+  | { kind: 'commitRange'; from: string; to: string };
+
+/** Ranked branch-name candidates (best first); each is a valid git branch name
+ *  (backend-sanitized). Mirrors the Rust `BranchNameProposal`. Naming writes
+ *  nothing — the user picks/edits a candidate and the existing create path runs. */
+export interface BranchNameProposal {
+  names: string[];
+  costUsd: number | null;
+}
+
 /** Result of IpcApi.checkForUpdate (P42). `available` false ⇒ up to date;
  *  version/notes/date populated only when available. currentVersion is always set. */
 export interface UpdateCheckResult {
@@ -1679,6 +1694,11 @@ export interface IpcApi {
   /** P15c. Summarize commits/diff unique to `target` vs `base` (read-only prose).
    *  Rejects aiUnavailable | aiFailed | git | noRepo. */
   aiSummarizeRange(repoId: string, base: string, target: string): Promise<AiSummary>;
+  /** P53c. AI branch-name suggestions from `source`. Read-only; WRITES NOTHING.
+   *  Returns 1..5 sanitized, valid candidates the user picks/edits in the
+   *  branch-create dialog. Rejects aiUnavailable | aiFailed (empty grounding /
+   *  no usable name) | git (bad ref) | noRepo. */
+  aiSuggestBranchName(repoId: string, source: BranchNameSource): Promise<BranchNameProposal>;
   /** Persisted multi-tab session. Never rejects for a missing/corrupt file (empty). */
   getSession(): Promise<SessionState>;
   /** Writes the whole session (tabs change as a unit). Rejects io on save failure. */

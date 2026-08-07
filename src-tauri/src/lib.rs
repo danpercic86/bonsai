@@ -119,6 +119,7 @@ pub fn run() {
             commands::ai_summarize_range,
             commands::ai_digest,
             commands::ai_explain_line,
+            commands::ai_suggest_branch_name,
             commands::rebase_branch,
             commands::rebase_continue,
             commands::rebase_skip,

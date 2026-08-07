@@ -9,6 +9,7 @@ import type {
   AiDigestRange,
   BranchInfo,
   BranchesSnapshot,
+  BranchNameProposal,
   CopySelection,
   LineSelection,
   RebaseTodoOp,
@@ -108,6 +109,13 @@ export interface WorkspaceDialogsProps {
   pendingCreateBranch: { oid: string } | null;
   setPendingCreateBranch: (v: { oid: string } | null) => void;
   handleCreateBranchHere(oid: string, name: string): void;
+  /** P53c: AI "Suggest name" gate + grounding for the branch-create dialog.
+   *  `aiEligible` = installed && enabled && consented; `workingDirty` = the
+   *  worktree has any staged/unstaged/untracked change; `suggestBranchName`
+   *  is the container-bound IPC call (WRITES NOTHING). */
+  aiEligible: boolean;
+  workingDirty: boolean;
+  suggestBranchName(): Promise<BranchNameProposal>;
 
   pendingCreateTag: { oid: string } | null;
   setPendingCreateTag: (v: { oid: string } | null) => void;
@@ -240,6 +248,9 @@ export function WorkspaceDialogs(props: WorkspaceDialogsProps) {
         pendingCreateBranch={props.pendingCreateBranch}
         setPendingCreateBranch={props.setPendingCreateBranch}
         handleCreateBranchHere={props.handleCreateBranchHere}
+        aiEligible={props.aiEligible}
+        workingDirty={props.workingDirty}
+        suggestBranchName={props.suggestBranchName}
         pendingCreateTag={props.pendingCreateTag}
         setPendingCreateTag={props.setPendingCreateTag}
         handleCreateTag={props.handleCreateTag}

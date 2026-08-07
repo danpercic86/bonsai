@@ -260,6 +260,49 @@ pub(crate) async fn ai_explain_line_inner(
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// AI branch-name suggestions from `source` (P53c §4). Blames nothing — builds a
+/// grounding payload (working-tree change set or a commit range) and asks the CLI
+/// for ranked, kebab-case candidates the user picks/edits in the branch-create
+/// dialog. Loads settings and REFUSES with `AiUnavailable` unless `ai_enabled &&
+/// ai_consented` (the authoritative backend gate; the frontend also gates for
+/// UX). Read-only — WRITES NOTHING; does NOT emit `repo-changed`. Errors:
+/// `aiUnavailable` | `aiFailed` (empty grounding / no usable name) | `git` (bad
+/// ref) | `noRepo`.
+#[tauri::command]
+pub async fn ai_suggest_branch_name(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    source: BranchNameSource,
+) -> Result<BranchNameProposal, AppError> {
+    // Resolve the settings-file path at the AppHandle boundary so the inner stays
+    // runtime-free and unit-testable (mirrors `ai_analyze_diff`), then delegate.
+    let file = settings::settings_file(&app)?;
+    ai_suggest_branch_name_inner(state.inner(), &file, &repo_id, source).await
+}
+
+/// Runtime-free core of `ai_suggest_branch_name` (unit-testable without a Tauri
+/// app). The consent gate is enforced HERE, BEFORE `repo_path`.
+pub(crate) async fn ai_suggest_branch_name_inner(
+    state: &AppState,
+    settings_file: &std::path::Path,
+    repo_id: &str,
+    source: BranchNameSource,
+) -> Result<BranchNameProposal, AppError> {
+    let s = settings::load_from(settings_file);
+    if !(s.ai_enabled && s.ai_consented) {
+        return Err(AppError::AiUnavailable(
+            "AI features are disabled or not yet consented to".to_string(),
+        ));
+    }
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        ai_branch_name::suggest_branch_name(&workdir, &source, RunOpts::default())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Optional AI helper (P24e §6.8): translate the `source_asset_id` instruction
 /// file into `target_agent`'s flavor via the local `claude` CLI. Enforces the
 /// consent gate FIRST (before `repo_path`), exactly like `generate_commit_message`.

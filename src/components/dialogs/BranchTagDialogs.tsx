@@ -1,7 +1,8 @@
 import { ConfirmDialog } from '../ConfirmDialog';
 import { PromptDialog } from '../PromptDialog';
 import { TagCreateDialog } from '../TagCreateDialog';
-import type { BranchesSnapshot } from '../../ipc';
+import { BranchNameSuggest } from '../BranchNameSuggest';
+import type { BranchesSnapshot, BranchNameProposal } from '../../ipc';
 
 export interface BranchTagDialogsProps {
   mutating: boolean;
@@ -18,6 +19,10 @@ export interface BranchTagDialogsProps {
   pendingCreateBranch: { oid: string } | null;
   setPendingCreateBranch: (v: { oid: string } | null) => void;
   handleCreateBranchHere(oid: string, name: string): void;
+  /** P53c: gate + grounding for the "Suggest name ✨" affordance. */
+  aiEligible: boolean;
+  workingDirty: boolean;
+  suggestBranchName(): Promise<BranchNameProposal>;
 
   pendingCreateTag: { oid: string } | null;
   setPendingCreateTag: (v: { oid: string } | null) => void;
@@ -42,6 +47,9 @@ export function BranchTagDialogs({
   pendingCreateBranch,
   setPendingCreateBranch,
   handleCreateBranchHere,
+  aiEligible,
+  workingDirty,
+  suggestBranchName,
   pendingCreateTag,
   setPendingCreateTag,
   handleCreateTag,
@@ -106,6 +114,14 @@ export function BranchTagDialogs({
         }}
         onSubmit={(v) => void handleCreateBranchHere(pendingCreateBranch!.oid, v.trim())}
         onCancel={() => setPendingCreateBranch(null)}
+        extraContent={(setValue) => (
+          <BranchNameSuggest
+            aiEligible={aiEligible}
+            workingDirty={workingDirty}
+            suggest={suggestBranchName}
+            onPick={setValue}
+          />
+        )}
       />
 
       {/* P22: create tag at the right-clicked commit. */}
