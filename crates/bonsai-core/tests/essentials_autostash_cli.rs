@@ -125,7 +125,7 @@ fn build_conflicting_pick(d: &Path) -> String {
 /// A dirty TRACKED worktree + `cherrypick_commit(None)` autostashes the edit,
 /// runs a clean pick, then restores the edit. The committed HEAD tree + message
 /// + author match `git stash` → `git cherry-pick` → `git stash pop`; the
-/// previously-dirty worktree change is restored; the stash stack ends empty.
+///   previously-dirty worktree change is restored; the stash stack ends empty.
 #[test]
 fn p47_cherrypick_autostash_clean_matches_cli() {
     require_git!();

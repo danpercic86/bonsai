@@ -25,7 +25,7 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
-## P50 — commit/content search + command palette + list filtering (Phase 1) — **IN PROGRESS** (2026-08-07)
+## P50 — commit/content search + command palette + list filtering (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 
 Phase 1 milestone 2 of 4 (roadmap `~/.claude/plans/do-thorough-analysis-of-purrfect-moth.md`).
 Three keyboard-first discovery features, all ABSENT today (Sublime Merge's signature strength).
@@ -99,9 +99,26 @@ for v1 (omit those fields from the wire type).
   **P50d AI GATE PASSED** (harness, mock :1420, zero console): Branches + Remotes filter inputs appear
   (≥6 rows); typing "gh" → only `gh-pages`; "zzzznomatch" → "No branches match" hint. tsc+build clean;
   41/41 vitest.
-**Current step:** P50d committed — running P50 tester (full workspace regression + fold P50a/P50b test
-nits: remotes+tags search-oracle fixture, `all` message-wins assertion), then P50 close-out + pause
-for user review.
+- **P50 tester** — regression: **cargo 923 passed / 1 failed / 2 ignored**, vitest **41/41**. The 1
+  failure is `health::tests::perf_ceiling_on_20k_fixture` — a PRE-EXISTING perf-ceiling gate
+  (`health.rs`, NOT touched by P50; branches scan ~6s vs 2s budget, I/O-bound on this Defender box,
+  consistent across runs, fails even isolated). NOT a P50 regression (P50 only added `search.rs`).
+  ⚠ real perf watch item (aligns with parked C5 large-repo perf + the P29 health-branches watch) —
+  candidate for a perf pass / fold into P52. Added 2 search oracles
+  (`oracle_all_refs_seeds_remotes_and_tags`, `oracle_all_matched_label_message_wins`) + fixed the
+  pre-existing `essentials_autostash_cli.rs:128` doc nit → `clippy --all-targets -D warnings` now CLEAN.
+  tsc/build clean. `P50-user-checklist.md` complete.
+- **P50 AI GATE PASSED (2026-08-07).** Commits: `ab1194b` P50a · `f60c308` P50b · `0a01118` P50c ·
+  `0fd2232` P50d (+ tester closeout). Search (backend oracle vs real `git` + browser harness), command
+  palette, and list filtering all verified; zero P50 regressions.
+
+**P50 awaiting USER CHECKPOINT** (native `pnpm tauri dev`, per `docs/contracts/P50-user-checklist.md`):
+large-repo search responsiveness feel; match-ring highlight + next/prev canvas scroll + "not in view"
+hint; content `-S`/`-G` on a real repo; Ctrl/Cmd-K palette + Ctrl/Cmd-F search + sidebar Branches/
+Remotes/Tags filters on a real repo.
+**Current step:** P50 DONE (AI gate passed, awaiting USER CHECKPOINT). PAUSED for user review per their
+request. Next Phase-1 milestone on resume: **P51** (graph polish + clutter controls). ⚠ Follow-up:
+health 20k perf-ceiling gate failing (see P50 tester) — schedule a perf pass (P52 or dedicated).
 
 ## P49 — external integrations: open in terminal / file manager / editor (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 

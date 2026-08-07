@@ -671,6 +671,24 @@ mod tests {
 
     // ---------------------------------------------------------- oracle fixture
 
+    /// Init a `main`-headed repo with a pinned identity + `core.autocrlf=false`
+    /// (shared by the oracle fixtures so `git log` and the git2 revwalk agree on
+    /// order and identity).
+    fn init_repo(dir: &Path) -> git2::Repository {
+        let repo = git2::Repository::init_opts(
+            dir,
+            git2::RepositoryInitOptions::new().initial_head("main"),
+        )
+        .expect("init repo");
+        {
+            let mut cfg = repo.config().expect("config");
+            cfg.set_str("user.name", "Test User").expect("name");
+            cfg.set_str("user.email", "test@example.com").expect("email");
+            cfg.set_bool("core.autocrlf", false).expect("autocrlf");
+        }
+        repo
+    }
+
     /// One commit built directly from `parent`'s tree + `files`, on HEAD
     /// (refs/heads/main), with BOTH author and committer time pinned to `t` so
     /// `git log` and the git2 revwalk share one deterministic order.
@@ -706,17 +724,7 @@ mod tests {
     /// Returns the owning dir + `[c0, c1, c2, c3]`.
     fn build_fixture() -> (tempfile::TempDir, [git2::Oid; 4]) {
         let dir = crate::testutil::scratch_dir();
-        let repo = git2::Repository::init_opts(
-            dir.path(),
-            git2::RepositoryInitOptions::new().initial_head("main"),
-        )
-        .expect("init repo");
-        {
-            let mut cfg = repo.config().expect("config");
-            cfg.set_str("user.name", "Test User").expect("name");
-            cfg.set_str("user.email", "test@example.com").expect("email");
-            cfg.set_bool("core.autocrlf", false).expect("autocrlf");
-        }
+        let repo = init_repo(dir.path());
         let c0 = mk_commit(&repo, None, &[("a.txt", "alpha\n")], "grace period work", "Ada Lovelace", 1000);
         let c1 = mk_commit(&repo, Some(c0), &[("b.txt", "beta\n")], "add beta module", "Grace Hopper", 2000);
         let c2 = mk_commit(&repo, Some(c1), &[("a.txt", "alpha and more\n")], "fix alpha work", "Ada Lovelace", 3000);
@@ -724,6 +732,87 @@ mod tests {
         repo.branch("early", &repo.find_commit(c1).expect("c1"), false)
             .expect("branch early");
         (dir, [c0, c1, c2, c3])
+    }
+
+    /// Like [`mk_commit`] but attaches the new commit to NO ref (dangling), so the
+    /// caller can point a remote-tracking ref or tag at it — letting a fixture put
+    /// a commit out of reach of every LOCAL branch.
+    fn mk_dangling(
+        repo: &git2::Repository,
+        parent: git2::Oid,
+        files: &[(&str, &str)],
+        msg: &str,
+        author: &str,
+        t: i64,
+    ) -> git2::Oid {
+        let email = format!("{}@example.com", author.to_lowercase().replace(' ', "."));
+        let sig = git2::Signature::new(author, &email, &git2::Time::new(t, 0)).expect("sig");
+        let parent_commit = repo.find_commit(parent).expect("parent");
+        let mut tb = repo
+            .treebuilder(Some(&parent_commit.tree().expect("parent tree")))
+            .expect("treebuilder");
+        for (name, content) in files {
+            let blob = repo.blob(content.as_bytes()).expect("blob");
+            tb.insert(name, blob, 0o100_644).expect("insert");
+        }
+        let tree = repo.find_tree(tb.write().expect("write tree")).expect("tree");
+        repo.commit(None, &sig, &sig, msg, &tree, &[&parent_commit])
+            .expect("commit")
+    }
+
+    /// Fixture exercising the FULL `seed_all_refs` seeding (not just local
+    /// branches): `c_remote` is reachable ONLY via a remote-tracking ref
+    /// (`refs/remotes/origin/feature`), `c_tag` ONLY via a lightweight tag
+    /// (`refs/tags/v1.0`), and an `origin/HEAD` symbolic ref is present so the
+    /// `*/HEAD`-skip branch is exercised (and must not break the walk). All three
+    /// real commits carry "work" in the message so an all-refs search is
+    /// cross-checkable against `git log --all --grep=work`. Distinct timestamps
+    /// (1000/2000/3000) fix a deterministic newest-first order.
+    /// Returns the owning dir + `[c_base, c_remote, c_tag]`.
+    fn build_refs_fixture() -> (tempfile::TempDir, [git2::Oid; 3]) {
+        let dir = crate::testutil::scratch_dir();
+        let repo = init_repo(dir.path());
+        let c_base = mk_commit(
+            &repo,
+            None,
+            &[("base.txt", "base\n")],
+            "base setup work",
+            "Ada Lovelace",
+            1000,
+        );
+        // Reachable ONLY via a remote-tracking ref (no local branch points here).
+        let c_remote = mk_dangling(
+            &repo,
+            c_base,
+            &[("r.txt", "remote\n")],
+            "remote feature work",
+            "Ada Lovelace",
+            2000,
+        );
+        repo.reference("refs/remotes/origin/feature", c_remote, false, "seed remote")
+            .expect("remote ref");
+        // A `*/HEAD` remote ref that seed_all_refs must SKIP (never peeled).
+        repo.reference_symbolic(
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/feature",
+            false,
+            "seed origin/HEAD",
+        )
+        .expect("origin/HEAD");
+        // Reachable ONLY via a tag.
+        let c_tag = mk_dangling(
+            &repo,
+            c_base,
+            &[("t.txt", "tag\n")],
+            "tagged release work",
+            "Ada Lovelace",
+            3000,
+        );
+        let tag_obj = repo
+            .find_object(c_tag, Some(git2::ObjectType::Commit))
+            .expect("tag object");
+        repo.tag_lightweight("v1.0", &tag_obj, false).expect("tag");
+        (dir, [c_base, c_remote, c_tag])
     }
 
     /// oids our search returns, newest-first.
@@ -896,6 +985,68 @@ mod tests {
                 .expect("search");
         assert!(results.matches.is_empty());
         assert!(!results.truncated);
+    }
+
+    #[test]
+    fn oracle_all_refs_seeds_remotes_and_tags() {
+        // Cross-checks `seed_all_refs`' remote-tracking + tag + `*/HEAD`-skip
+        // seeding, which build_fixture (local branches only) never exercised.
+        if !have_git() {
+            return;
+        }
+        let (dir, [c_base, c_remote, c_tag]) = build_refs_fixture();
+        // Default scope = all refs. c_remote is reachable ONLY via origin/feature
+        // and c_tag ONLY via the v1.0 tag, so a full-message search finding them
+        // proves those refs are seeded — and it must match `git log --all` exactly.
+        let ours = our_oids(dir.path(), &q(SearchField::Message, "work"));
+        let cli = cli_oids(
+            dir.path(),
+            &["log", "--all", "-i", "-F", "--grep=work", "--format=%H"],
+        );
+        assert_eq!(ours, cli, "all-refs message search == git log --all --grep");
+        // Newest-first by timestamp: c_tag(3000), c_remote(2000), c_base(1000).
+        assert_eq!(ours, vec![oid_hex(c_tag), oid_hex(c_remote), oid_hex(c_base)]);
+        // Spell out the load-bearing claim: the remote-only and tag-only commits
+        // are present (not just reachable via the local `main` branch at c_base).
+        assert!(ours.contains(&oid_hex(c_remote)), "remote-tracking ref seeded");
+        assert!(ours.contains(&oid_hex(c_tag)), "tag ref seeded");
+    }
+
+    #[test]
+    fn oracle_all_matched_label_message_wins() {
+        // `all` mode checks message BEFORE author; when BOTH match, the row must
+        // be labelled Message. (The union oracle ignores the `matched` label.)
+        if !have_git() {
+            return;
+        }
+        let dir = crate::testutil::scratch_dir();
+        let repo = init_repo(dir.path());
+        // "hopper" is in BOTH the message and the author (name + email).
+        let c = mk_commit(
+            &repo,
+            None,
+            &[("f.txt", "x\n")],
+            "hopper refactor",
+            "Grace Hopper",
+            1000,
+        );
+        // CLI confirms the match is genuinely on both fields (not just our claim).
+        let by_msg = cli_oids(
+            dir.path(),
+            &["log", "--all", "-i", "-F", "--grep=hopper", "--format=%H"],
+        );
+        let by_author = cli_oids(
+            dir.path(),
+            &["log", "--all", "-i", "-F", "--author=hopper", "--format=%H"],
+        );
+        assert_eq!(by_msg, vec![oid_hex(c)], "message matches");
+        assert_eq!(by_author, vec![oid_hex(c)], "author matches");
+        // Our `all` search returns the one commit, labelled Message (message wins).
+        let results = search_commits(dir.path(), &SpawnGitRunner, &q(SearchField::All, "hopper"))
+            .expect("search");
+        assert_eq!(results.matches.len(), 1);
+        assert_eq!(results.matches[0].oid, oid_hex(c));
+        assert_eq!(results.matches[0].matched, MatchedField::Message);
     }
 
     // ---------------------------------------------------------- oracle: shell modes
