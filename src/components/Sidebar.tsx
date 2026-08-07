@@ -15,6 +15,12 @@ import { DeleteIcon } from './menuIcons';
 import { errorMessage } from '../utils/errors';
 import { buildPathTree } from '../utils/pathTree';
 import { Tree } from './Tree';
+import { ListFilterInput } from './ListFilterInput';
+import { filterByName, filterItems, filterTree } from './repoWorkspace/listFilter';
+
+/** P50d: show a section's inline type-to-filter box only once the list is long
+ *  enough to warrant it — keeps short lists uncluttered (contract §7). */
+const FILTER_MIN_ROWS = 6;
 
 function shortOid(oid: string): string {
   return oid.slice(0, 7);
@@ -422,6 +428,12 @@ export function Sidebar({
   const [submodulesCollapsed, setSubmodulesCollapsed] = useState(false);
   const [worktreesCollapsed, setWorktreesCollapsed] = useState(false);
 
+  // P50d: per-section inline filter queries (display-only; applied via
+  // listFilter helpers below). Each is ignored while its box is hidden.
+  const [branchFilter, setBranchFilter] = useState('');
+  const [remoteFilter, setRemoteFilter] = useState('');
+  const [tagFilter, setTagFilter] = useState('');
+
   const [createOpen, setCreateOpen] = useState(false);
   const [createValue, setCreateValue] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
@@ -454,6 +466,35 @@ export function Sidebar({
     () => (treeMode && data !== null ? buildPathTree(data.tags, (t) => t) : []),
     [treeMode, data],
   );
+
+  // P50d — apply the per-section filters. The box shows only when the section
+  // is expanded AND has ≥ FILTER_MIN_ROWS rows; while hidden, any stale query is
+  // ignored so the full list is always restored. Filtering is display-only.
+  const showBranchFilter = !branchesCollapsed && (data?.local.length ?? 0) >= FILTER_MIN_ROWS;
+  const branchQuery = showBranchFilter ? branchFilter : '';
+  const branchFiltering = branchQuery.trim() !== '';
+  const localFlatFiltered = filterItems(localFlat, branchQuery, (b) => b.name);
+  const localTreeFiltered = filterTree(localTree, branchQuery, (b) => b.name);
+  const branchNoMatch = branchFiltering && localFlatFiltered.length === 0;
+
+  // The Remotes section counts configured remotes + tracking rows and filters
+  // both by the same query.
+  const showRemoteFilter =
+    !remotesCollapsed && remotes.length + (data?.remote.length ?? 0) >= FILTER_MIN_ROWS;
+  const remoteQuery = showRemoteFilter ? remoteFilter : '';
+  const remoteFiltering = remoteQuery.trim() !== '';
+  const remotesFiltered = filterItems(remotes, remoteQuery, (r) => r.name);
+  const remoteFlatFiltered = filterItems(data?.remote ?? [], remoteQuery, (r) => r.name);
+  const remoteTreeFiltered = filterTree(remoteTree, remoteQuery, (r) => r.name);
+  const remoteNoMatch =
+    remoteFiltering && remotesFiltered.length === 0 && remoteFlatFiltered.length === 0;
+
+  const showTagFilter = !tagsCollapsed && (data?.tags.length ?? 0) >= FILTER_MIN_ROWS;
+  const tagQuery = showTagFilter ? tagFilter : '';
+  const tagFiltering = tagQuery.trim() !== '';
+  const tagsFiltered = filterByName(data?.tags ?? [], tagQuery);
+  const tagTreeFiltered = filterTree(tagTree, tagQuery, (t) => t);
+  const tagNoMatch = tagFiltering && tagsFiltered.length === 0;
 
   function closeCreate() {
     setCreateOpen(false);
@@ -531,6 +572,14 @@ export function Sidebar({
             />
             {!branchesCollapsed && (
               <>
+                {showBranchFilter && (
+                  <ListFilterInput
+                    value={branchFilter}
+                    onChange={setBranchFilter}
+                    ariaLabel="Filter branches"
+                    count={branchFiltering ? localFlatFiltered.length : undefined}
+                  />
+                )}
                 {createOpen && (
                   <div className="branch-create-row">
                     <input
@@ -574,7 +623,7 @@ export function Sidebar({
                     </li>
                   )}
                   {!treeMode &&
-                    localFlat.map((branch) => (
+                    localFlatFiltered.map((branch) => (
                       <BranchRow
                         key={branch.name}
                         branch={branch}
@@ -585,14 +634,24 @@ export function Sidebar({
                     ))}
                 </ul>
                 )}
-                {treeMode && data.local.length > 0 && (
+                {treeMode && localTreeFiltered.length > 0 && (
                   <Tree
-                    key={`local:${currentBranch ?? 'none'}`}
-                    nodes={localTree}
+                    // A filter-active key remounts with everything expanded so
+                    // matching leaves are visible (not hidden in collapsed dirs).
+                    key={
+                      branchFiltering
+                        ? `local-filter:${currentBranch ?? 'none'}`
+                        : `local:${currentBranch ?? 'none'}`
+                    }
+                    nodes={localTreeFiltered}
                     leafKey={(l) => l.item.name}
-                    defaultCollapsed
+                    defaultCollapsed={!branchFiltering}
                     initiallyExpanded={
-                      currentBranch !== null ? ancestorPrefixes(currentBranch) : []
+                      branchFiltering
+                        ? []
+                        : currentBranch !== null
+                          ? ancestorPrefixes(currentBranch)
+                          : []
                     }
                     renderLeaf={(l) => (
                       <BranchRow
@@ -604,6 +663,9 @@ export function Sidebar({
                       />
                     )}
                   />
+                )}
+                {branchNoMatch && (
+                  <p className="branch-muted">{`No branches match '${branchFilter.trim()}'`}</p>
                 )}
                 {!data.head.detached && data.local.length === 0 && (
                   <p className="branch-muted">No branches yet</p>
@@ -635,11 +697,23 @@ export function Sidebar({
             />
             {!remotesCollapsed && (
               <>
+                {showRemoteFilter && (
+                  <ListFilterInput
+                    value={remoteFilter}
+                    onChange={setRemoteFilter}
+                    ariaLabel="Filter remotes"
+                    count={
+                      remoteFiltering
+                        ? remotesFiltered.length + remoteFlatFiltered.length
+                        : undefined
+                    }
+                  />
+                )}
                 {/* P22 §6.2: configured remotes on top (each right-clickable for
                     Rename / Edit URL / Remove), independent of tracking refs. */}
-                {remotes.length > 0 && (
+                {remotesFiltered.length > 0 && (
                   <ul className="branch-list">
-                    {remotes.map((r) => (
+                    {remotesFiltered.map((r) => (
                       <ConfiguredRemoteRow
                         key={r.name}
                         remote={r}
@@ -648,13 +722,14 @@ export function Sidebar({
                     ))}
                   </ul>
                 )}
-                {/* Existing remote-tracking-branch tree, unchanged. */}
-                {data.remote.length > 0 &&
+                {/* Existing remote-tracking-branch tree, filtered display only. */}
+                {(treeMode ? remoteTreeFiltered.length > 0 : remoteFlatFiltered.length > 0) &&
                   (treeMode ? (
                     <Tree
-                      nodes={remoteTree}
+                      key={remoteFiltering ? 'remote-filter' : 'remote'}
+                      nodes={remoteTreeFiltered}
                       leafKey={(l) => l.item.name}
-                      defaultCollapsed
+                      defaultCollapsed={!remoteFiltering}
                       initiallyExpanded={[]}
                       renderLeaf={(l) => (
                         <RemoteRow
@@ -666,11 +741,14 @@ export function Sidebar({
                     />
                   ) : (
                     <ul className="branch-list">
-                      {data.remote.map((r) => (
+                      {remoteFlatFiltered.map((r) => (
                         <RemoteRow key={r.name} name={r.name} onContextMenu={onContextMenu} />
                       ))}
                     </ul>
                   ))}
+                {remoteNoMatch && (
+                  <p className="branch-muted">{`No remotes match '${remoteFilter.trim()}'`}</p>
+                )}
                 {remotes.length === 0 && data.remote.length === 0 && (
                   <p className="branch-muted">No remotes</p>
                 )}
@@ -684,26 +762,40 @@ export function Sidebar({
               collapsed={tagsCollapsed}
               onToggle={() => setTagsCollapsed((c) => !c)}
             />
-            {!tagsCollapsed &&
-              (data.tags.length === 0 ? (
-                <p className="branch-muted">No tags</p>
-              ) : treeMode ? (
-                <Tree
-                  nodes={tagTree}
-                  leafKey={(l) => l.item}
-                  defaultCollapsed
-                  initiallyExpanded={[]}
-                  renderLeaf={(l) => (
-                    <TagRow name={l.item} displayName={l.name} onContextMenu={onTagContextMenu} />
-                  )}
-                />
-              ) : (
-                <ul className="branch-list">
-                  {data.tags.map((tag) => (
-                    <TagRow key={tag} name={tag} onContextMenu={onTagContextMenu} />
-                  ))}
-                </ul>
-              ))}
+            {!tagsCollapsed && (
+              <>
+                {showTagFilter && (
+                  <ListFilterInput
+                    value={tagFilter}
+                    onChange={setTagFilter}
+                    ariaLabel="Filter tags"
+                    count={tagFiltering ? tagsFiltered.length : undefined}
+                  />
+                )}
+                {data.tags.length === 0 ? (
+                  <p className="branch-muted">No tags</p>
+                ) : tagNoMatch ? (
+                  <p className="branch-muted">{`No tags match '${tagFilter.trim()}'`}</p>
+                ) : treeMode ? (
+                  <Tree
+                    key={tagFiltering ? 'tags-filter' : 'tags'}
+                    nodes={tagTreeFiltered}
+                    leafKey={(l) => l.item}
+                    defaultCollapsed={!tagFiltering}
+                    initiallyExpanded={[]}
+                    renderLeaf={(l) => (
+                      <TagRow name={l.item} displayName={l.name} onContextMenu={onTagContextMenu} />
+                    )}
+                  />
+                ) : (
+                  <ul className="branch-list">
+                    {tagsFiltered.map((tag) => (
+                      <TagRow key={tag} name={tag} onContextMenu={onTagContextMenu} />
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
           </section>
 
           <section className="sidebar-section">

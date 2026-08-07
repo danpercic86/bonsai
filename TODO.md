@@ -90,7 +90,18 @@ for v1 (omit those fields from the wire type).
   **P50c AI GATE PASSED** (harness, mock :1420, zero console errors): Ctrl+K → palette w/ 36 options
   (no destructive entries); typing "push" → 2 (dynamic "Search commits for push" + Push); Esc closes
   ONLY the palette (workspace intact). tsc + build clean; 11/11 vitest.
-**Current step:** P50c committed — **P50d** (sidebar list filtering) next, then P50 tester + close-out.
+- **P50d** (reviewer APPROVE, 0 must-fix/should-fix; nits noted) — `listFilter.ts`
+  (`filterByName`/`filterItems`/`filterTree` — flat + tree ancestor-keep, pure) + `ListFilterInput`
+  (capture-phase Esc-clear, focus-scoped) wired into Branches/Remotes/Tags (shown when expanded &
+  ≥6 rows; query forced '' when hidden; tree filter-active key expands matches; no-match hint).
+  Mock tags 4→7 so the Tags filter is reachable in-harness (reviewer-confirmed safe: tag pills come
+  from layout node refs, not `branches.tags`). 10 unit tests.
+  **P50d AI GATE PASSED** (harness, mock :1420, zero console): Branches + Remotes filter inputs appear
+  (≥6 rows); typing "gh" → only `gh-pages`; "zzzznomatch" → "No branches match" hint. tsc+build clean;
+  41/41 vitest.
+**Current step:** P50d committed — running P50 tester (full workspace regression + fold P50a/P50b test
+nits: remotes+tags search-oracle fixture, `all` message-wins assertion), then P50 close-out + pause
+for user review.
 
 ## P49 — external integrations: open in terminal / file manager / editor (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 

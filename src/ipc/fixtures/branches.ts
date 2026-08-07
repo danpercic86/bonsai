@@ -98,6 +98,8 @@ export const INITIAL_BRANCHES: BranchesSnapshot = {
     { name: 'origin/feat', tip: '3'.repeat(40) },
   ],
   // P7 §9: v0.9 / v1.0 are referenced on graph row 0; add them here too.
-  tags: ['v0.1.0', 'v0.2.0', 'v0.9', 'v1.0'],
+  // P50d: ≥6 tags so the Tags section clears the inline-filter row threshold
+  // (FILTER_MIN_ROWS) in the harness; shared prefixes exercise live filtering.
+  tags: ['v0.1.0', 'v0.2.0', 'v0.3.0', 'v0.9', 'v1.0', 'v1.1.0', 'v2.0.0-rc.1'],
   head: { branchName: 'main', oid: MOCK_OID, detached: false, unborn: false },
 };
