@@ -24,6 +24,12 @@ export function useWorkspaceKeyboard(deps: {
   historyOpenRef: { current: boolean };
   reflogOpenRef: { current: boolean };
   commitBrowserOpenRef: { current: boolean };
+  // P54c: the commit composer is a top-level modal — Esc peels it (preview
+  // first, then the dialog) before the diff/compare layers; a no-op while
+  // applying (op in flight). `composerOpen` also gates graph-nav below.
+  composerOpenRef: { current: boolean };
+  closeComposer: () => void;
+  composerOpen: boolean;
   searchOpenRef: { current: boolean };
   closeSearch: () => void;
   // P50c: the command palette is a top-level modal — Esc peels it first.
@@ -68,6 +74,9 @@ export function useWorkspaceKeyboard(deps: {
     historyOpenRef,
     reflogOpenRef,
     commitBrowserOpenRef,
+    composerOpenRef,
+    closeComposer,
+    composerOpen,
     searchOpenRef,
     closeSearch,
     paletteOpenRef,
@@ -110,6 +119,14 @@ export function useWorkspaceKeyboard(deps: {
       // order (capture + stopImmediatePropagation means both never both fire).
       if (paletteOpenRef.current) {
         closePalette();
+        return;
+      }
+      // P54c: the composer modal peels next (above the typing bail so Esc closes
+      // it from its own message textarea / move-file select). It closes any open
+      // file preview first, then the whole dialog; `closeComposer` is a no-op
+      // while applying so an in-flight create isn't interrupted.
+      if (composerOpenRef.current) {
+        closeComposer();
         return;
       }
       const target = e.target as HTMLElement | null;
@@ -171,6 +188,7 @@ export function useWorkspaceKeyboard(deps: {
     closeReflog,
     closeSearch,
     closePalette,
+    closeComposer,
   ]);
 
   // Per-repo shortcut effect (active tab only, §5.1): refresh / fetch / pull /
@@ -193,7 +211,7 @@ export function useWorkspaceKeyboard(deps: {
       // guard so it works from the commit box too; suppressed under a dialog.
       if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault();
-        if (!dialogOpen && !abortConfirmOpen) openSearch();
+        if (!dialogOpen && !abortConfirmOpen && !composerOpen) openSearch();
         return;
       }
 
@@ -203,7 +221,7 @@ export function useWorkspaceKeyboard(deps: {
       // Not gated on paletteOpen/searchOpen so a second Ctrl/Cmd-K closes it.
       if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        if (!dialogOpen && !abortConfirmOpen) togglePalette();
+        if (!dialogOpen && !abortConfirmOpen && !composerOpen) togglePalette();
         return;
       }
 
@@ -216,9 +234,9 @@ export function useWorkspaceKeyboard(deps: {
           target.isContentEditable);
       if (typing) return;
 
-      // P50b/P50c: nav/fetch/pull/push are inert while the search bar or the
-      // command palette is open (each owns its own input keys).
-      if (dialogOpen || abortConfirmOpen || searchOpen || paletteOpen) return;
+      // P50b/P50c/P54c: nav/fetch/pull/push are inert while the search bar, the
+      // command palette, or the commit composer is open (each owns its own keys).
+      if (dialogOpen || abortConfirmOpen || searchOpen || paletteOpen || composerOpen) return;
 
       if (ctrl && e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault();
@@ -285,6 +303,7 @@ export function useWorkspaceKeyboard(deps: {
     openSearch,
     paletteOpen,
     togglePalette,
+    composerOpen,
     selectedIndex,
     graph,
   ]);

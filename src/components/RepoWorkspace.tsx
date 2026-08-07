@@ -30,6 +30,7 @@ import type {
   ConflictEntry,
   FileDiff,
   FileHistoryEntry,
+  FileStatus,
   GraphLayout,
   GraphPrefs,
   HeadInfo,
@@ -67,6 +68,8 @@ import { useBisectActions } from './repoWorkspace/useBisectActions';
 import { useReadOverlays } from './repoWorkspace/useReadOverlays';
 import { useWorkspaceKeyboard } from './repoWorkspace/useWorkspaceKeyboard';
 import { useCommitSearch } from './repoWorkspace/useCommitSearch';
+import { useCommitComposer } from './repoWorkspace/useCommitComposer';
+import { ComposerDialog } from './ComposerDialog';
 import { usePalette } from './repoWorkspace/usePalette';
 import { CommandPalette } from './CommandPalette';
 import { buildPaletteActions, type PaletteAction } from './paletteActions';
@@ -1632,6 +1635,47 @@ export function RepoWorkspace({
   // P50b: commit search — state hook drives the search bar + graph match rings;
   // next/prev reuse revealCommitByOid (the single-selection reveal path).
   const search = useCommitSearch({ repoId, graph, revealCommitByOid, pushToast });
+
+  // P54c: commit composer. The row "Preview" reuses the EXISTING workdir file-
+  // diff IPC — resolve the changed file's section from the latest snapshot
+  // (unstaged → untracked → staged) and fetch that file's diff (no new path).
+  const previewComposerFileDiff = useCallback(
+    (path: string): Promise<FileDiff> => {
+      const s = statusRef.current;
+      let entry: StatusEntry | undefined;
+      let staged = false;
+      if (s !== null) {
+        entry = s.unstaged.find((e) => e.path === path);
+        if (entry === undefined) entry = s.untracked.find((e) => e.path === path);
+        if (entry === undefined) {
+          entry = s.staged.find((e) => e.path === path);
+          staged = entry !== undefined;
+        }
+      }
+      if (entry === undefined) {
+        return Promise.reject(new Error(`No working-tree diff available for ${path}`));
+      }
+      return ipc.getWorkdirFileDiff(repoId, entry.path, entry.origPath, staged, false);
+    },
+    [repoId],
+  );
+  const composer = useCommitComposer({
+    repoId,
+    refetchStatus,
+    refetchGraph,
+    pushToast,
+    previewFileDiff: previewComposerFileDiff,
+  });
+  // Status badge per changed path for the composer file rows.
+  const composerStatusByPath = useMemo(() => {
+    const m = new Map<string, FileStatus>();
+    if (status !== null) {
+      for (const e of status.staged) m.set(e.path, e.status);
+      for (const e of status.untracked) m.set(e.path, e.status);
+      for (const e of status.unstaged) m.set(e.path, e.status);
+    }
+    return m;
+  }, [status]);
   // Branch/ref scope options for the search bar (All refs + local + remote).
   const searchScopeOptions = useMemo<ComboboxOption[]>(() => {
     const opts: ComboboxOption[] = [{ value: '', label: 'All refs' }];
@@ -1850,6 +1894,9 @@ export function RepoWorkspace({
     historyOpenRef,
     reflogOpenRef,
     commitBrowserOpenRef,
+    composerOpenRef: composer.openRef,
+    closeComposer: composer.escClose,
+    composerOpen: composer.open,
     searchOpenRef: search.openRef,
     closeSearch: search.close,
     paletteOpenRef: palette.openRef,
@@ -2196,6 +2243,8 @@ export function RepoWorkspace({
           onCommit={handleCommit}
           onCommitAndPush={headBranch ? (m) => handleCommitAndPush(m) : undefined}
           onGenerate={handleGenerateCommitMessage}
+          workingDirty={workingDirty}
+          onCompose={() => composer.openComposer()}
           onOpenIdentitySettings={onOpenIdentitySettings}
         />
       </div>
@@ -2324,6 +2373,9 @@ export function RepoWorkspace({
         onRunSearch={paletteRunSearch}
         onJumpToCommit={paletteJumpToCommit}
       />
+      {composer.open && (
+        <ComposerDialog composer={composer} statusByPath={composerStatusByPath} />
+      )}
     </>
   );
 }

@@ -32,6 +32,12 @@ export interface CommitBoxProps {
   /** P15a: asks the backend for a proposed message; resolves the text to insert,
    * rejects with AppError. Never commits. */
   onGenerate?(): Promise<string>;
+  /** P54c: any working-tree change exists (staged/unstaged/untracked) — gates the
+   * "Compose commits ✨" affordance (clean tree ⇒ nothing to compose). */
+  workingDirty?: boolean;
+  /** P54c: open the commit composer (proposes grouping the working tree into N
+   * logical commits). WRITES NOTHING — the composer confirms before applying. */
+  onCompose?: () => void;
   /** P40b: open Settings → Git config focused on Identity. When provided, a
    * "Set identity…" button appears beside a `configMissing` commit error. */
   onOpenIdentitySettings?: () => void;
@@ -60,6 +66,8 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
     aiEligible = false,
     onGenerate,
     onOpenIdentitySettings,
+    workingDirty = false,
+    onCompose,
   },
   ref,
 ) {
@@ -90,6 +98,12 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
   const showGenerate = !merge && onGenerate !== undefined;
   const generateDisabled =
     blocked || !aiEligible || stagedCount === 0 || busy || generating || submitting !== null;
+
+  // P54c: the "Compose commits ✨" affordance (commit mode only). Disabled when
+  // AI is ineligible, the tree is clean, or a mutation/generation is in flight.
+  const showCompose = !merge && !amend && onCompose !== undefined;
+  const composeDisabled =
+    blocked || !aiEligible || !workingDirty || busy || generating || submitting !== null;
 
   async function runGenerate() {
     if (onGenerate === undefined) return;
@@ -150,23 +164,42 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
 
   return (
     <div className="commit-box">
-      {showGenerate && (
+      {(showGenerate || showCompose) && (
         <div className="commit-box-header">
-          <button
-            type="button"
-            className="btn-secondary commit-generate-button"
-            disabled={generateDisabled}
-            onClick={onGenerateClick}
-            title={
-              !aiEligible
-                ? 'Enable AI features in settings to generate a commit message'
-                : stagedCount === 0
-                  ? 'Stage changes to generate a commit message'
-                  : 'Generate a commit message from the staged changes'
-            }
-          >
-            {generating ? 'Generating…' : '✨ Generate'}
-          </button>
+          {showGenerate && (
+            <button
+              type="button"
+              className="btn-secondary commit-generate-button"
+              disabled={generateDisabled}
+              onClick={onGenerateClick}
+              title={
+                !aiEligible
+                  ? 'Enable AI features in settings to generate a commit message'
+                  : stagedCount === 0
+                    ? 'Stage changes to generate a commit message'
+                    : 'Generate a commit message from the staged changes'
+              }
+            >
+              {generating ? 'Generating…' : '✨ Generate'}
+            </button>
+          )}
+          {showCompose && (
+            <button
+              type="button"
+              className="btn-secondary commit-compose-button"
+              disabled={composeDisabled}
+              onClick={onCompose}
+              title={
+                !aiEligible
+                  ? 'Enable AI features in settings to compose commits'
+                  : !workingDirty
+                    ? 'No working-tree changes to compose'
+                    : 'Group the working tree into logical commits with AI'
+              }
+            >
+              {'Compose commits ✨'}
+            </button>
+          )}
         </div>
       )}
       <textarea

@@ -73,8 +73,21 @@ Esc-layer). a→b→c (b reuses `ComposeGroup` from a; c needs both).
   mutating nothing; mock.ts spread). SHOULD-FIX→tester: add a detached-HEAD mid-sequence rollback test
   (only branch+unborn tested). Nits: rollback masks trigger err; rename-in-group test; 739 lines (prod
   ~200 + inline tests, ok).
-**Current step:** P54a+P54b DONE (committed). Next: **P54c** (review UI — `useCommitComposer` +
-`ComposerDialog` + `ComposerGroupCard`; CommitPanel "Compose commits ✨" entry; Esc-layer).
+- **P54c** (reviewer APPROVE, 0 must-fix / 0 should-fix; 3 nits) — frontend review UI. New
+  `useCommitComposer.ts` (PURE partition-preserving reducers editMessage/moveFile/addGroup/dropGroup/
+  mergeInto; `apply()` builds ComposePlan OMITTING unassigned → left uncommitted; reqId last-wins;
+  refetch+toast+close), `ComposerDialog.tsx` (modal: notes + "N left uncommitted" + group list +
+  Unassigned bucket + "+ New group" + "Create N commits" gated `canApply`), `ComposerGroupCard.tsx`
+  (presentational, no ipc). Entry = "Compose commits ✨" in **CommitBox** (the real working-changes panel,
+  not CommitPanel) gated `aiEligible && workingDirty`. Esc-layer composerOpenRef above diffSlot (preview
+  peels first; ignored while applying); nav + Ctrl/F/K inert while open. Preview reuses `getWorkdirFileDiff`
+  (embedded in modal to dodge z-index occlusion). tsc/build clean; new files 325/211/174. Nits
+  (non-blocking): partial-staged preview shows workdir-vs-index not HEAD→workdir (needs a new backend diff
+  mode → track for checkpoint); defensive moveFile out-of-range; group card key={i}.
+**Current step:** P54a+b+c DONE + reviewer-APPROVED (committed 0999af4 / 6f7f3ef / next). Next: **P54
+tester** (regression + add the detached-HEAD rollback test [P54b should-fix] + vitest for the pure composer
+reducers + `P54-user-checklist.md`) → AI-gate harness (the composer is a DOM MODAL — fully harness-drivable
+after seeding aiConsented) → P54 done.
 
 ## P53 — AI "why" layer: blame-why + explain-commit + branch naming (Phase 2 · milestone 1/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 

@@ -92,6 +92,10 @@ export interface WorkspaceRightPanelProps {
   /** Normal-commit path only: commit then push (threaded to CommitBox's split control). */
   onCommitAndPush: CommitBoxProps['onCommitAndPush'];
   onGenerate: CommitBoxProps['onGenerate'];
+  /** P54c: working tree has changes — gates the "Compose commits ✨" affordance. */
+  workingDirty: boolean;
+  /** P54c: open the commit composer (working-changes affordance). */
+  onCompose: () => void;
   /** P40b: open Settings → Git config → Identity from a `configMissing` commit
    *  error banner. */
   onOpenIdentitySettings: CommitBoxProps['onOpenIdentitySettings'];
@@ -161,6 +165,8 @@ export function WorkspaceRightPanel({
   onCommit,
   onCommitAndPush,
   onGenerate,
+  workingDirty,
+  onCompose,
   onOpenIdentitySettings,
 }: WorkspaceRightPanelProps) {
   return (
@@ -310,6 +316,8 @@ export function WorkspaceRightPanel({
             onCommitAndPush={amend || opState.kind === 'merge' ? undefined : onCommitAndPush}
             aiEligible={aiEligible}
             onGenerate={onGenerate}
+            workingDirty={workingDirty}
+            onCompose={onCompose}
             onOpenIdentitySettings={onOpenIdentitySettings}
           />
         </>
