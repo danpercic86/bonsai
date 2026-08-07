@@ -25,7 +25,7 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
-## P53 — AI "why" layer: blame-why + explain-commit + branch naming (Phase 2 · milestone 1/5) — **IN PROGRESS** (2026-08-07)
+## P53 — AI "why" layer: blame-why + explain-commit + branch naming (Phase 2 · milestone 1/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 
 Phase 2 first milestone. User greenlit implementation (main clear) + chose **P53 first** + **OD1 =
 local-`claude`-CLI-only, model-tier trait DEFERRED**. Contract: `docs/contracts/P53-ai-why-layer.md`
@@ -78,8 +78,22 @@ enrichment + graph-node menu entry, NO new cmd) → **P53c** branch naming (`ai_
   untouched). `BranchNameProposal` = PartialEq only (Option<f64>; matches AiAnalysis). cargo -p
   bonsai-core ai_branch_name 6 pass; clippy -D + build/tsc clean. Nits→tester: symmetric CommitRange
   empty-range pre-CLI test; `feat/-x` post-slash-dash doc/test; list-number `1-` prefix leak (cosmetic).
-**Current step:** P53a+b+c DONE + reviewer-APPROVED (committed 94fd9b3 / 4371141 / next). Next: **P53
-tester** (full regression + fold the 3 reviewer nit tests) → AI-gate harness verification → P53 done.
+- **P53 tester** — full regression: `cargo test --workspace` **945 passed / 0 failed / 3 ignored** (the
+  3 ignored = intentional perf gates); vitest **74/74**; clippy -D clean. Added 2 tests (both pass):
+  `suggest_branch_name_range_empty_fails_before_cli` (symmetric CommitRange empty-range → `AiFailed`
+  before any CLI spawn) + a post-slash-dash sanitize lock (`feat/-fix` stays valid). Wrote
+  `docs/contracts/P53-user-checklist.md`. No bugs found.
+- **P53 AI GATE PASSED (2026-08-07)** — backend: 945 workspace tests + reviewer file:line verification of
+  all 3 entry points. Harness (mock :1420): app loads clean (no server/console errors, full workspace +
+  P53 code integrated); the `aiEligible` gate chain verified END-TO-END — seeding `aiConsented` flipped
+  the AI affordances (commit Generate / Review staged+all / AI digest) disabled→enabled, proving
+  `aiEnabled && aiConsented && installed` propagates to the gate that controls ALL 3 P53 entry points.
+  The 3 entry points are CANVAS/overlay-driven (blame "Why?" overlay · graph-node "Explain this commit"
+  menu · "Create branch here"→Suggest dialog) → headless pane can't composite/right-click → live visuals
+  are USER CHECKPOINT (per `docs/contracts/P53-user-checklist.md`).
+**Current step:** P53 DONE (AI gate passed to harness limit; awaiting USER CHECKPOINT). Commits 94fd9b3
+(a) · 4371141 (b) · 33c1783 (c) · tester-closeout next. Next milestone: **P54 commit composer** — needs
+user greenlight to start.
 
 ## 🗂️ PHASE 2 & 3 — CONTRACTS PREPARED (design only; NO code yet) (2026-08-07)
 

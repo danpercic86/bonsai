@@ -278,6 +278,14 @@ mod tests {
             sanitize_branch_name("feat/add-thing").as_deref(),
             Some("feat/add-thing")
         );
+        // Post-slash dash is PRESERVED — only a dash BEFORE a '/' is dropped, so a
+        // separator immediately AFTER a '/' becomes a leading dash on that
+        // component: `feat/ fix` and `feat/-fix` both -> `feat/-fix`. This is
+        // intentional and creatable: `git check-ref-format refs/heads/feat/-fix`
+        // accepts it, so we surface the name rather than mangling it. Locks the
+        // current output (reviewer nit).
+        assert_eq!(sanitize_branch_name("feat/ fix").as_deref(), Some("feat/-fix"));
+        assert_eq!(sanitize_branch_name("feat/-fix").as_deref(), Some("feat/-fix"));
         // Leading/trailing junk trimmed; a dash next to a slash is dropped; a
         // double slash collapses.
         assert_eq!(
@@ -453,6 +461,47 @@ seven-branch
             AppError::AiFailed(m) => assert_eq!(
                 m, "no changes to name a branch from",
                 "empty-grounding message proves the pre-CLI bail; got: {m}"
+            ),
+            other => panic!("expected AiFailed (pre-CLI), got {other:?} — a spawn would be AiUnavailable"),
+        }
+    }
+
+    /// Symmetric to the Working case (§7.7): an EMPTY commit range — here
+    /// `from == to`, so the `from..to` revwalk hides exactly the commit it pushed
+    /// and yields nothing — must fail with the specific "no commits in the
+    /// selected range …" `AiFailed` inside `build_range_payload`, BEFORE any CLI
+    /// spawn. `BONSAI_CLAUDE_BIN` points at a nonexistent path: a regressed spawn
+    /// would surface as `AiUnavailable` (binary NotFound) — a DIFFERENT variant —
+    /// so the precise `AiFailed` assertion proves the pre-CLI bail.
+    #[test]
+    fn suggest_branch_name_range_empty_fails_before_cli() {
+        let _g = env_lock();
+        std::env::set_var(
+            crate::ai::CLAUDE_BIN_ENV,
+            "D:/nonexistent/claude-must-not-spawn.exe",
+        );
+
+        let dir = init_scratch();
+        let p = dir.path();
+        std::fs::write(p.join("base.txt"), "base\n").expect("write");
+        stage_paths(p, &["base.txt".into()]).expect("stage");
+        create_commit(p, "base").expect("commit");
+
+        // from == to => merge-base is that same commit, which the revwalk both
+        // pushes and hides => zero commits in the range => empty grounding.
+        let source = BranchNameSource::CommitRange {
+            from: "HEAD".to_string(),
+            to: "HEAD".to_string(),
+        };
+        let err = suggest_branch_name(p, &source, RunOpts::default())
+            .expect_err("empty range must fail before any CLI call");
+
+        std::env::remove_var(crate::ai::CLAUDE_BIN_ENV);
+
+        match err {
+            AppError::AiFailed(m) => assert_eq!(
+                m, "no commits in the selected range to name a branch from",
+                "empty-range message proves the pre-CLI bail; got: {m}"
             ),
             other => panic!("expected AiFailed (pre-CLI), got {other:?} — a spawn would be AiUnavailable"),
         }
