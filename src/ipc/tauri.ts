@@ -349,6 +349,16 @@ export const tauriIpc: IpcApi = {
     return invoke<AiAnalysis>('ai_digest', { repoId, range });
   },
 
+  // P53a: AI "why does this line exist" — blame-why (read-only prose).
+  aiExplainLine(
+    repoId: string,
+    path: string,
+    lineNo: number,
+    atOid: string | null,
+  ): Promise<AiAnalysis> {
+    return invoke<AiAnalysis>('ai_explain_line', { repoId, path, lineNo, atOid });
+  },
+
   // P15c: summarize the commits/diff unique to `target` vs `base` (read-only prose).
   aiSummarizeRange(repoId: string, base: string, target: string): Promise<AiSummary> {
     return invoke<AiSummary>('ai_summarize_range', { repoId, base, target });

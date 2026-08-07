@@ -165,6 +165,33 @@ export const aiHandlers = {
     return { text, costUsd: 0.01 };
   },
 
+  // P53a: AI "why does this line exist" — blame-why (read-only prose). Writes
+  // NOTHING. Does NOT emit repo-changed. `?ai=off` simulates a missing CLI; else
+  // a canned, shape-correct explanation echoing the line + path so the harness
+  // shows what was explained. `atOid` is ignored (v1 blame is always HEAD).
+  async aiExplainLine(
+    repoId: string,
+    path: string,
+    lineNo: number,
+    _atOid: string | null,
+  ): Promise<AiAnalysis> {
+    await delay(500);
+    requireRepo(repoId);
+    if (AI_OFF) {
+      const err: AppError = {
+        kind: 'aiFailed',
+        message: 'Claude Code CLI not found on PATH',
+      };
+      throw err;
+    }
+    return {
+      text:
+        `Why line ${lineNo} of ${path}: this line was introduced to guard the ` +
+        'new code path against an edge case the commit set out to fix (mock).',
+      costUsd: 0.005,
+    };
+  },
+
   // P15c: summarize the commits/diff unique to `target` vs `base` (read-only
   // prose). Writes NOTHING. Does NOT enforce the consent gate (matches
   // aiAnalyzeDiff; the frontend gates the affordance). `?ai=off` simulates a

@@ -172,6 +172,83 @@ pub fn blame_file(
     Ok(out)
 }
 
+/// Blocking. Blames ONLY line `line_no` (1-based) of `path` as of `at_oid`
+/// (`None` -> HEAD), returning the introducing commit + that line's text. Uses
+/// `BlameOptions::min_line`/`max_line` so a large file is not fully blamed
+/// (P53a §3.1). `line_no` out of range, or a path that is absent / binary /
+/// invalid, maps to `Git`.
+///
+/// Reuses the same helpers as [`blame_file`] (`validate_rel_path`,
+/// `open_workdir_repo`, `read_tree_blob`, `commit_meta`) and resolves `newest`
+/// the same way; the blob is read to both bounds-check `line_no` and pull the
+/// line text (from the blamed version, not the worktree — same as `blame_file`).
+pub fn blame_line(
+    workdir: &Path,
+    path: &str,
+    line_no: u32,
+    at_oid: Option<&str>,
+) -> Result<BlameLine, AppError> {
+    validate_rel_path(path)?;
+    if line_no == 0 {
+        return Err(AppError::Git("line number must be >= 1".to_string()));
+    }
+    let repo = open_workdir_repo(workdir)?;
+
+    // Resolve the newest commit for both the blame walk and the blob read
+    // (identical to `blame_file`).
+    let newest = match at_oid {
+        Some(o) => {
+            let oid =
+                git2::Oid::from_str(o).map_err(|_| AppError::Git("invalid commit id".to_string()))?;
+            repo.find_commit(oid)?
+        }
+        None => repo.head()?.peel_to_commit()?,
+    };
+
+    // Read the blamed blob's content to bounds-check `line_no` and to draw the
+    // line text (see `blame_file` for the `str::lines` rationale).
+    let content = read_tree_blob(&repo, &newest.tree()?, path)?;
+    let text = String::from_utf8_lossy(&content);
+    let lines: Vec<&str> = text.lines().collect();
+    let idx = (line_no as usize)
+        .checked_sub(1)
+        .filter(|&i| i < lines.len())
+        .ok_or_else(|| {
+            AppError::Git(format!(
+                "line {line_no} out of range (file has {} lines)",
+                lines.len()
+            ))
+        })?;
+    let line_text = lines[idx].to_string();
+
+    // Blame ONLY the one line (rename/copy tracking OFF for v1, as `blame_file`).
+    let mut opts = git2::BlameOptions::new();
+    opts.newest_commit(newest.id());
+    opts.min_line(line_no as usize);
+    opts.max_line(line_no as usize);
+    let blame = repo.blame_file(Path::new(path), Some(&mut opts))?;
+
+    // The single hunk covering `line_no`.
+    let hunk = blame
+        .get_line(line_no as usize)
+        .ok_or_else(|| AppError::Git(format!("no blame hunk for line {line_no}")))?;
+    let commit_oid = hunk.final_commit_id();
+    let meta = commit_meta(&repo, commit_oid)?;
+    // Offset of `line_no` within the hunk (min==max line => usually 0, but be
+    // robust if libgit2 returns a wider covering hunk).
+    let offset = (line_no as usize).saturating_sub(hunk.final_start_line());
+    Ok(BlameLine {
+        oid: commit_oid.to_string(),
+        author_name: meta.author_name.clone(),
+        author_email: meta.author_email.clone(),
+        author_ts: meta.author_ts,
+        summary: meta.summary.clone(),
+        orig_line_no: (hunk.orig_start_line() + offset) as u32,
+        final_line_no: line_no,
+        line_text,
+    })
+}
+
 /// True iff `diff` contains a delta whose new OR old path equals `path`.
 fn touches(diff: &git2::Diff, path: &str) -> bool {
     diff.deltas().any(|d| {
@@ -309,6 +386,70 @@ fn detect_rename_origin(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// git2-init a scratch repo with identity + autocrlf off (mirrors the
+    /// `ai_explain`/`diff` test fixtures).
+    fn init_scratch() -> tempfile::TempDir {
+        let dir = crate::testutil::scratch_dir();
+        let repo = git2::Repository::init(dir.path()).expect("init repo");
+        let mut cfg = repo.config().expect("config");
+        cfg.set_str("user.name", "Test User").expect("name");
+        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_bool("core.autocrlf", false).expect("autocrlf");
+        dir
+    }
+
+    /// §7.1: a 3-commit fixture editing distinct lines — `blame_line(path, k)`
+    /// returns the oid that LAST touched line k plus that line's text; an
+    /// out-of-range line maps to `Git`.
+    #[test]
+    fn blame_line_targets_single_line() {
+        use crate::git::commit::create_commit;
+        use crate::git::stage::stage_paths;
+
+        let dir = init_scratch();
+        let p = dir.path();
+
+        std::fs::write(p.join("f.txt"), "a\nb\nc\n").expect("write");
+        stage_paths(p, &["f.txt".into()]).expect("stage");
+        let c1 = create_commit(p, "add f").expect("commit").oid;
+
+        std::fs::write(p.join("f.txt"), "a\nb2\nc\n").expect("write");
+        stage_paths(p, &["f.txt".into()]).expect("stage");
+        let c2 = create_commit(p, "edit line 2").expect("commit").oid;
+
+        std::fs::write(p.join("f.txt"), "a\nb2\nc3\n").expect("write");
+        stage_paths(p, &["f.txt".into()]).expect("stage");
+        let c3 = create_commit(p, "edit line 3").expect("commit").oid;
+
+        let l1 = blame_line(p, "f.txt", 1, None).expect("blame l1");
+        assert_eq!(l1.oid, c1, "line 1 last touched by the first commit");
+        assert_eq!(l1.line_text, "a");
+        assert_eq!(l1.final_line_no, 1);
+
+        let l2 = blame_line(p, "f.txt", 2, None).expect("blame l2");
+        assert_eq!(l2.oid, c2, "line 2 last touched by the second commit");
+        assert_eq!(l2.line_text, "b2");
+
+        let l3 = blame_line(p, "f.txt", 3, None).expect("blame l3");
+        assert_eq!(l3.oid, c3, "line 3 last touched by the third commit");
+        assert_eq!(l3.line_text, "c3");
+
+        // Out-of-range line (and line 0) => Git, not a panic.
+        let err = blame_line(p, "f.txt", 99, None).expect_err("out of range");
+        assert!(matches!(err, AppError::Git(_)), "got {err:?}");
+        let err0 = blame_line(p, "f.txt", 0, None).expect_err("line 0");
+        assert!(matches!(err0, AppError::Git(_)), "got {err0:?}");
+    }
+
+    /// A traversing path is rejected as `Other` (via `validate_rel_path`) before
+    /// any repo access, exactly like `blame_file`.
+    #[test]
+    fn blame_line_rejects_bad_path() {
+        let dir = std::env::temp_dir();
+        let err = blame_line(&dir, "../secret", 1, None).expect_err("must reject ..");
+        assert!(matches!(err, AppError::Other(_)), "got {err:?}");
+    }
 
     /// `BlameLine` serializes with EXACTLY the camelCase keys the TS wire type
     /// declares (contract §9.3 / §10.1).

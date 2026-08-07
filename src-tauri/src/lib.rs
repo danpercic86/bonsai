@@ -118,6 +118,7 @@ pub fn run() {
             commands::ai_analyze_diff,
             commands::ai_summarize_range,
             commands::ai_digest,
+            commands::ai_explain_line,
             commands::rebase_branch,
             commands::rebase_continue,
             commands::rebase_skip,

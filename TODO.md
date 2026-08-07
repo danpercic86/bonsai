@@ -25,6 +25,43 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
+## P53 — AI "why" layer: blame-why + explain-commit + branch naming (Phase 2 · milestone 1/5) — **IN PROGRESS** (2026-08-07)
+
+Phase 2 first milestone. User greenlit implementation (main clear) + chose **P53 first** + **OD1 =
+local-`claude`-CLI-only, model-tier trait DEFERRED**. Contract: `docs/contracts/P53-ai-why-layer.md`
+(+ `phase2-ai-native-overview.md`). Standard architect→senior-dev→reviewer→commit→tester loop.
+
+**P53 goal:** three read-only/low-risk AI features that establish the Phase-2 grounding plumbing P54–P57
+reuse — (a) blame "why did this line change" (new `ai_explain_line`, line-focused grounding via
+single-line blame), (b) "Explain this commit" from a graph node (reuse `ai_analyze_diff` + enrich the
+Commit grounding with the commit MESSAGE — WHY-not-WHAT), (c) AI branch naming (new
+`ai_suggest_branch_name`, returns sanitized kebab-case candidates, WRITES NOTHING). Cmd 129→131.
+
+**Orchestrator OQ decisions — accept ALL architect recs:** OQ1 self-contained `ai_explain_line` ·
+OQ2 sources Working+CommitRange (drop Staged) · OQ3 branch-name model = default (sonnet, local CLI) ·
+OQ4 ask 3 / cap 5 · OQ5 accept D2 commit-MESSAGE grounding enrichment as an improvement (does change
+existing commit-explain/review output — intended, not a regression) · OQ6 disable "Suggest name" on a
+clean worktree · OQ7 defer rename-follow in blame-why (`orig_path=None`) · OQ8 promote `epoch_to_ymd`
+to a shared helper.
+
+Sub-increments (order-independent; b smallest): **P53a** blame-why (`blame_line` + `ai_line.rs` +
+`ai_explain_line` cmd + IPC/mock + BlameView "Why?") → **P53b** explain-commit (`ai_explain` MESSAGE
+enrichment + graph-node menu entry, NO new cmd) → **P53c** branch naming (`ai_branch_name.rs` +
+`ai_suggest_branch_name` cmd + `BranchNameSuggest.tsx` + branch-create dialog).
+
+- **P53a** (reviewer APPROVE, 0 must-fix / 0 should-fix; 4 cosmetic nits noted) — `blame.rs::blame_line`
+  (single-line blame, `BlameOptions` min/max_line, out-of-range→`Git`); new `ai_line.rs` `explain_line` +
+  `render_line_payload` (§3.4 template) + line-why consts; new `timefmt.rs` (`epoch_to_ymd` promoted, OQ8,
+  no dup); `cap_review_payload`→pub(crate) (build_payload untouched — D2 stays P53b). `ai_explain_line`
+  cmd + `_inner` (consent gate before repo_path, read-only, no repo-changed; generate_handler! 129→130).
+  IPC `aiExplainLine` + mock (`?ai=off`→aiFailed); BlameView per-block "Why?" (gated `aiEligible`) →
+  RepoWorkspace `runExplainLine` (aiPanelReqId last-wins, atOid=null v1). cargo -p bonsai-core 439 pass;
+  clippy -D warnings + pnpm build/tsc clean. Nits (noted, not folded): 3 repo-opens/call (behind CLI,
+  negligible); blame.rs doc says Git for a traversing path (actually Other, test correct); mock delay
+  before requireRepo; blame.rs now 519 lines (split on next blame addition).
+**Current step:** P53a DONE (committed). Next: **P53b** (explain-commit — `ai_explain` Commit MESSAGE
+enrichment + graph-node "Explain this commit" menu entry; NO new command).
+
 ## 🗂️ PHASE 2 & 3 — CONTRACTS PREPARED (design only; NO code yet) (2026-08-07)
 
 Prepared autonomously while another session implemented an unrelated task on branch `feature/next-steps`.
@@ -100,9 +137,10 @@ independently (even before Phase 2, if preferred).
   `docs/contracts/*.md` + this TODO were staged; the 4 pre-existing dirty files (Cargo.lock,
   package.json, src-tauri/Cargo.toml, tauri.conf.json) were left untouched.
 
-**Current step:** Phase 2 & 3 CONTRACTS PREPARED (design-only, committed). PAUSED — implementation NOT
-started. Awaiting user: (1) confirm OD1 + the three sign-offs above; (2) greenlight which phase/
-milestone to build first. Phase 1 (P49–P52) native USER CHECKPOINTs also still pending.
+**Current step:** IMPLEMENTATION STARTED — user chose P53-first + OD1 = local-`claude`-CLI-only (model
+tiers deferred). See the "## P53 …" section at the TOP of this file for live status. Phase 1 (P49–P52)
+native USER CHECKPOINTs still pending; the P55 undo-merge + P61 `base64`-crate sign-offs are still
+needed when those milestones are reached.
 
 ## P52 — adopt git's commit-graph file (Phase 1 · large-repo perf) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 

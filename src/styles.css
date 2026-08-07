@@ -2624,16 +2624,25 @@ span.file-row-main {
   align-items: stretch;
 }
 
-.blame-gutter {
+.blame-gutter-wrap {
   flex: 0 0 232px;
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-1);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.blame-gutter {
+  flex: 1;
+  min-width: 0;
   display: flex;
   gap: 8px;
   align-items: flex-start;
   padding: 2px 10px;
-  background: var(--bg-1);
+  background: transparent;
   border: none;
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
   color: var(--text-2);
   text-align: left;
   cursor: pointer;
@@ -2642,6 +2651,32 @@ span.file-row-main {
 
 .blame-gutter:hover {
   background: var(--bg-2);
+}
+
+/* P53a: per-block blame-why affordance — hidden until the gutter row is hovered
+   (or the button is focused for keyboard users). */
+.blame-why {
+  flex: none;
+  align-self: stretch;
+  border: none;
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: var(--accent);
+  font-size: 11px;
+  padding: 0 8px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+
+.blame-gutter-wrap:hover .blame-why,
+.blame-why:focus-visible {
+  opacity: 1;
+}
+
+.blame-why:hover {
+  background: var(--bg-2);
+  text-decoration: underline;
 }
 
 .blame-oid {

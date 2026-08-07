@@ -214,6 +214,52 @@ pub(crate) async fn ai_digest_inner(
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// AI "why does this line exist" (P53a §4). Blames `line_no` (as of `at_oid`,
+/// `None` => HEAD) to find the introducing commit, then explains that commit's
+/// change to the file focused on the line. Loads settings and REFUSES with
+/// `AiUnavailable` unless `ai_enabled && ai_consented` (the authoritative
+/// backend gate; the frontend also gates for UX). Read-only prose out — WRITES
+/// NOTHING; does NOT emit `repo-changed`. Errors: `aiUnavailable` | `aiFailed`
+/// | `git` | `invalidName` | `noRepo`.
+#[tauri::command]
+pub async fn ai_explain_line(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    path: String,
+    line_no: u32,
+    at_oid: Option<String>,
+) -> Result<AiAnalysis, AppError> {
+    // Resolve the settings-file path at the AppHandle boundary so the inner stays
+    // runtime-free and unit-testable (mirrors `ai_analyze_diff`), then delegate.
+    let file = settings::settings_file(&app)?;
+    ai_explain_line_inner(state.inner(), &file, &repo_id, path, line_no, at_oid).await
+}
+
+/// Runtime-free core of `ai_explain_line` (unit-testable without a Tauri app).
+/// The consent gate is enforced HERE, BEFORE `repo_path`.
+pub(crate) async fn ai_explain_line_inner(
+    state: &AppState,
+    settings_file: &std::path::Path,
+    repo_id: &str,
+    path: String,
+    line_no: u32,
+    at_oid: Option<String>,
+) -> Result<AiAnalysis, AppError> {
+    let s = settings::load_from(settings_file);
+    if !(s.ai_enabled && s.ai_consented) {
+        return Err(AppError::AiUnavailable(
+            "AI features are disabled or not yet consented to".to_string(),
+        ));
+    }
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        ai_line::explain_line(&workdir, &path, line_no, at_oid.as_deref(), RunOpts::default())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Optional AI helper (P24e §6.8): translate the `source_asset_id` instruction
 /// file into `target_agent`'s flavor via the local `claude` CLI. Enforces the
 /// consent gate FIRST (before `repo_path`), exactly like `generate_commit_message`.

@@ -45,12 +45,27 @@ export interface BlameViewProps {
   onClose(): void;
   /** Reveal (select + scroll) the commit for a gutter block in the graph. */
   onRevealCommit(oid: string): void;
+  /** P53a: gate the per-block "Why?" affordance (installed && enabled &&
+   *  consented). When false, no "Why?" button is rendered. */
+  aiEligible: boolean;
+  /** P53a: explain WHY the block's first line exists (AI). `oid` is the block's
+   *  introducing commit (re-blamed backend-side); `lineNo` is its first line. */
+  onExplainBlock(oid: string, lineNo: number): void;
 }
 
 /** Read-only per-line blame overlay (P23d §11.1). Layered over the graph pane
  *  exactly like the diff overlay; presentation-only — RepoWorkspace owns the
- *  fetch + reveal. */
-export function BlameView({ path, lines, loading, error, onClose, onRevealCommit }: BlameViewProps) {
+ *  fetch + reveal + AI explain. */
+export function BlameView({
+  path,
+  lines,
+  loading,
+  error,
+  onClose,
+  onRevealCommit,
+  aiEligible,
+  onExplainBlock,
+}: BlameViewProps) {
   const now = Math.floor(Date.now() / 1000);
   const blocks = useMemo(() => groupBlocks(lines), [lines]);
 
@@ -87,16 +102,28 @@ export function BlameView({ path, lines, loading, error, onClose, onRevealCommit
             <div className="blame-grid">
               {blocks.map((block, bi) => (
                 <div key={`${block.oid}:${bi}`} className="blame-block">
-                  <button
-                    type="button"
-                    className="blame-gutter"
-                    title={`${shortOid(block.oid)} — ${block.summary}\nClick to reveal in graph`}
-                    onClick={() => onRevealCommit(block.oid)}
-                  >
-                    <span className="blame-oid mono">{shortOid(block.oid)}</span>
-                    <span className="blame-author">{block.authorName}</span>
-                    <span className="blame-date">{relativeDate(block.authorTs, now)}</span>
-                  </button>
+                  <div className="blame-gutter-wrap">
+                    <button
+                      type="button"
+                      className="blame-gutter"
+                      title={`${shortOid(block.oid)} — ${block.summary}\nClick to reveal in graph`}
+                      onClick={() => onRevealCommit(block.oid)}
+                    >
+                      <span className="blame-oid mono">{shortOid(block.oid)}</span>
+                      <span className="blame-author">{block.authorName}</span>
+                      <span className="blame-date">{relativeDate(block.authorTs, now)}</span>
+                    </button>
+                    {aiEligible && (
+                      <button
+                        type="button"
+                        className="blame-why"
+                        title="Explain why this line exists (AI)"
+                        onClick={() => onExplainBlock(block.oid, block.lines[0].finalLineNo)}
+                      >
+                        Why?
+                      </button>
+                    )}
+                  </div>
                   <div className="blame-code">
                     {block.lines.map((line) => (
                       <div key={line.finalLineNo} className="blame-line">

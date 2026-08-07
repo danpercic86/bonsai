@@ -1670,6 +1670,12 @@ export interface IpcApi {
   /** P28. AI "what changed" digest over a selectable range (read-only prose).
    *  Writes nothing. Rejects aiUnavailable | aiFailed | git | invalidName | noRepo. */
   aiDigest(repoId: string, range: AiDigestRange): Promise<AiAnalysis>;
+  /** P53a. AI "why does this line exist" — blames `lineNo` (as of `atOid`, null →
+   *  HEAD) to find the introducing commit, then explains that commit's change to
+   *  the file focused on that line. Read-only; writes nothing; does NOT emit
+   *  repo-changed. Rejects aiUnavailable | aiFailed (line out of range / no
+   *  content) | git | invalidName | noRepo. */
+  aiExplainLine(repoId: string, path: string, lineNo: number, atOid: string | null): Promise<AiAnalysis>;
   /** P15c. Summarize commits/diff unique to `target` vs `base` (read-only prose).
    *  Rejects aiUnavailable | aiFailed | git | noRepo. */
   aiSummarizeRange(repoId: string, base: string, target: string): Promise<AiSummary>;

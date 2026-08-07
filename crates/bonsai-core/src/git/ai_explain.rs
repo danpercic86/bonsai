@@ -14,6 +14,7 @@ use crate::git::diff::{
 };
 use crate::git::stage::{open_workdir_repo, validate_rel_path};
 use crate::git::status::read_status;
+use crate::git::timefmt::epoch_to_ymd;
 
 /// Hard byte-cap on the assembled review payload (P25 §2.4). Belt-and-suspenders
 /// for pathological long-line `Worktree`/`Branch` diffs; the small
@@ -261,7 +262,7 @@ fn gather_branch(
 /// over the cap, cuts on the largest char boundary that leaves room for
 /// [`TRUNCATION_NOTE`] and appends the note, so the RESULT stays `<= cap` and
 /// the model is told the diff was clipped. Under the cap, returns `text` as-is.
-fn cap_review_payload(text: String) -> String {
+pub(crate) fn cap_review_payload(text: String) -> String {
     if text.len() <= MAX_REVIEW_PAYLOAD_BYTES {
         return text;
     }
@@ -363,23 +364,6 @@ pub fn analyze_diff(
 }
 
 // ============================================================ P28 digest
-
-/// Formats an epoch-seconds timestamp as `YYYY-MM-DD` (UTC). Civil-from-days
-/// algorithm (Howard Hinnant) — no chrono dependency.
-fn epoch_to_ymd(secs: i64) -> String {
-    let days = secs.div_euclid(86_400);
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097); // [0, 146096]
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
-    let mp = (5 * doy + 2) / 153; // [0, 11]
-    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
-    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
-    let y = if m <= 2 { y + 1 } else { y };
-    format!("{y:04}-{m:02}-{d:02}")
-}
 
 /// One digest metadata line: `- {short7} {YYYY-MM-DD} {author_name}  {subject}`
 /// (P28 §4.3). Lossy UTF-8; date from `commit.time()` (UTC).
@@ -958,14 +942,6 @@ mod tests {
             AiDigestRange::SinceCommit { oid } => assert_eq!(oid, "deadbeef"),
             other => panic!("expected SinceCommit, got {other:?}"),
         }
-    }
-
-    /// Sanity for the no-chrono civil-date conversion.
-    #[test]
-    fn epoch_to_ymd_known_dates() {
-        assert_eq!(epoch_to_ymd(0), "1970-01-01");
-        assert_eq!(epoch_to_ymd(1_767_225_600), "2026-01-01"); // 2026-01-01T00:00:00Z
-        assert_eq!(epoch_to_ymd(951_782_400), "2000-02-29"); // leap day
     }
 
     /// §10.1(6): 250 synthetic metas → 200 lines + "... and 50 more commits".

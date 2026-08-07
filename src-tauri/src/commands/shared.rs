@@ -12,6 +12,7 @@ pub(crate) use bonsai_core::assets::{
 pub(crate) use bonsai_core::error::AppError;
 pub(crate) use bonsai_core::git::ai_commit::{self, CommitMessageProposal};
 pub(crate) use bonsai_core::git::ai_explain::{self, AiAnalysis, AiAnalysisMode, AiDiffTarget, AiDigestRange};
+pub(crate) use bonsai_core::git::ai_line;
 pub(crate) use bonsai_core::git::ai_resolve::{self, AiResolveProposal};
 pub(crate) use bonsai_core::git::ai_summary::{self, AiSummary};
 pub(crate) use bonsai_core::git::bisect::{self, BisectOutcome};

@@ -67,6 +67,10 @@ export interface WorkspaceGraphPaneProps {
   blame: { path: string; lines: BlameLine[]; loading: boolean; error: string | null } | null;
   closeBlame(): void;
   revealCommitByOid(oid: string): void;
+  /** P53a: gate the per-block "Why?" affordance in BlameView (aiEligible). */
+  blameAiEligible: boolean;
+  /** P53a: explain WHY a blame line exists (AI); `path` is the blamed file. */
+  onBlameExplain(path: string, lineNo: number): void;
   history: {
     path: string;
     entries: FileHistoryEntry[];
@@ -146,6 +150,8 @@ export function WorkspaceGraphPane({
   blame,
   closeBlame,
   revealCommitByOid,
+  blameAiEligible,
+  onBlameExplain,
   history,
   closeHistory,
   reflog,
@@ -300,6 +306,8 @@ export function WorkspaceGraphPane({
           error={blame.error}
           onClose={closeBlame}
           onRevealCommit={revealCommitByOid}
+          aiEligible={blameAiEligible}
+          onExplainBlock={(_oid, lineNo) => onBlameExplain(blame.path, lineNo)}
         />
       )}
       {history !== null && (

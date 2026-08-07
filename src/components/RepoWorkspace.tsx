@@ -1527,6 +1527,37 @@ export function RepoWorkspace({
     [repoId],
   );
 
+  // P53a: blame-why — explain WHY a line exists and show the prose in the
+  // AiOutputPanel. Read-only — writes nothing. Shares the same req-id guard as
+  // runAnalyze so a slow response can't clobber a newer request or a closed
+  // panel. `atOid` is the blamed version (null => HEAD in v1).
+  const runExplainLine = useCallback(
+    (path: string, lineNo: number, atOid: string | null, title: string) => {
+      const id = ++aiPanelReqId.current;
+      setAiPanel({ title, text: null, loading: true, error: null, costUsd: null });
+      ipc.aiExplainLine(repoId, path, lineNo, atOid).then(
+        (res) => {
+          if (id !== aiPanelReqId.current) return;
+          setAiPanel({ title, text: res.text, loading: false, error: null, costUsd: res.costUsd });
+        },
+        (e: unknown) => {
+          if (id !== aiPanelReqId.current) return;
+          setAiPanel({ title, text: null, loading: false, error: errorMessage(e), costUsd: null });
+        },
+      );
+    },
+    [repoId],
+  );
+
+  // P53a: BlameView "Why?" entry point — blame is always vs HEAD in v1, so
+  // atOid is null. Title mirrors the mock/backend grounding label.
+  const onBlameExplain = useCallback(
+    (path: string, lineNo: number) => {
+      runExplainLine(path, lineNo, null, `Why line ${lineNo} of ${path}`);
+    },
+    [runExplainLine],
+  );
+
   const closeAiPanel = useCallback(() => {
     aiPanelReqId.current += 1;
     setAiPanel(null);
@@ -2067,6 +2098,8 @@ export function RepoWorkspace({
           blame={blame}
           closeBlame={closeBlame}
           revealCommitByOid={revealCommitByOid}
+          blameAiEligible={aiEligible}
+          onBlameExplain={onBlameExplain}
           history={history}
           closeHistory={closeHistory}
           reflog={reflog}
