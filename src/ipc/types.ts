@@ -946,6 +946,24 @@ export interface BranchNameProposal {
   costUsd: number | null;
 }
 
+/** One proposed logical commit (P54). v1 is file-level: each changed file is in
+ *  exactly one group across the plan. Round-trips as both proposal and plan. */
+export interface ComposeGroup {
+  files: string[];
+  message: string;
+}
+
+/** Normalized composer proposal — always an apply-able partition of the change
+ *  set (backend-enforced). Mirrors the Rust `ComposeProposal`. */
+export interface ComposeProposal {
+  groups: ComposeGroup[];
+  /** Changed files the AI did not place (or overflow past the group cap). */
+  unassigned: string[];
+  /** Normalizer notes (informational; never an error). */
+  notes: string[];
+  costUsd: number | null;
+}
+
 /** Result of IpcApi.checkForUpdate (P42). `available` false ⇒ up to date;
  *  version/notes/date populated only when available. currentVersion is always set. */
 export interface UpdateCheckResult {
@@ -1699,6 +1717,14 @@ export interface IpcApi {
    *  branch-create dialog. Rejects aiUnavailable | aiFailed (empty grounding /
    *  no usable name) | git (bad ref) | noRepo. */
   aiSuggestBranchName(repoId: string, source: BranchNameSource): Promise<BranchNameProposal>;
+  /** P54a. Propose grouping the working-tree changes (HEAD vs working tree, incl.
+   *  untracked) into logical commits. Read-only; WRITES NOTHING. `guidance` = an
+   *  optional free-text hint (e.g. "keep tests separate"). The result is ALWAYS an
+   *  apply-able partition (unknown paths dropped, overlaps first-wins, uncovered
+   *  files in `unassigned`). Unparseable model output is NOT an error — it resolves
+   *  with groups:[] + all files unassigned. Rejects aiUnavailable | aiFailed (CLI
+   *  fail/empty) | nothingToCommit (clean tree) | git | noRepo. */
+  aiComposeCommits(repoId: string, guidance: string | null): Promise<ComposeProposal>;
   /** Persisted multi-tab session. Never rejects for a missing/corrupt file (empty). */
   getSession(): Promise<SessionState>;
   /** Writes the whole session (tabs change as a unit). Rejects io on save failure. */

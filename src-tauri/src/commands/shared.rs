@@ -12,6 +12,9 @@ pub(crate) use bonsai_core::assets::{
 pub(crate) use bonsai_core::error::AppError;
 pub(crate) use bonsai_core::git::ai_branch_name::{self, BranchNameProposal, BranchNameSource};
 pub(crate) use bonsai_core::git::ai_commit::{self, CommitMessageProposal};
+// P54a re-exports only what the propose command uses; `ComposeGroup` (and the
+// P54b plan/result types) are re-exported when the apply command lands.
+pub(crate) use bonsai_core::git::ai_compose::{self, ComposeProposal};
 pub(crate) use bonsai_core::git::ai_explain::{self, AiAnalysis, AiAnalysisMode, AiDiffTarget, AiDigestRange};
 pub(crate) use bonsai_core::git::ai_line;
 pub(crate) use bonsai_core::git::ai_resolve::{self, AiResolveProposal};

@@ -37,6 +37,7 @@ import type {
   CherrypickOutcome,
   CommitResult,
   CompareDiff,
+  ComposeProposal,
   ConflictEntry,
   ConflictFile,
   ConflictResolution,
@@ -369,6 +370,11 @@ export const tauriIpc: IpcApi = {
   // P53c: AI branch-name suggestions from a grounding source (read-only; writes nothing).
   aiSuggestBranchName(repoId: string, source: BranchNameSource): Promise<BranchNameProposal> {
     return invoke<BranchNameProposal>('ai_suggest_branch_name', { repoId, source });
+  },
+
+  // P54a: propose grouping the working-tree changes into logical commits (read-only).
+  aiComposeCommits(repoId: string, guidance: string | null): Promise<ComposeProposal> {
+    return invoke<ComposeProposal>('ai_compose_commits', { repoId, guidance });
   },
 
   rebaseBranch(repoId: string, onto: string): Promise<RebaseOutcome> {

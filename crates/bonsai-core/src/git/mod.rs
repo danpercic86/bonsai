@@ -1,5 +1,6 @@
 pub mod ai_branch_name;
 pub mod ai_commit;
+pub mod ai_compose;
 pub mod ai_explain;
 pub mod ai_line;
 pub mod ai_resolve;

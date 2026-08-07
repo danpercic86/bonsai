@@ -1,7 +1,8 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
 import type { IpcApi } from '../../types';
 import { AI_OFF, delay, requireRepo, stripConflictMarkers } from '../repoState';
-import type { AiAnalysis, AiAnalysisMode, AiAvailability, AiDiffTarget, AiDigestRange, AiResolveProposal, AiSummary, AppError, BranchNameProposal, BranchNameSource, CommitMessageProposal } from '../../types';
+import { MAIN_RS_PATH, linesEqual } from '../statusHelpers';
+import type { AiAnalysis, AiAnalysisMode, AiAvailability, AiDiffTarget, AiDigestRange, AiResolveProposal, AiSummary, AppError, BranchNameProposal, BranchNameSource, CommitMessageProposal, ComposeGroup, ComposeProposal } from '../../types';
 
 export const aiHandlers = {
   async checkAiAvailability(): Promise<AiAvailability> {
@@ -241,6 +242,55 @@ export const aiHandlers = {
           : ['feat/range-work', 'range-work', 'topic/selected-commits'],
       costUsd: 0.003,
     };
+  },
+
+  // P54a: propose grouping the working-tree changes into logical commits (read-only;
+  // WRITES NOTHING — the apply step is P54b's applyComposedCommits). `?ai=off`
+  // simulates a missing CLI; a clean tree → nothingToCommit (no CLI call). Else the
+  // changed set is split into up to two coherent groups (tests/docs vs code) so the
+  // harness exercises the review dialog. `guidance` is ignored in the mock. Always
+  // returns an apply-able partition (`unassigned` empty here).
+  async aiComposeCommits(repoId: string, _guidance: string | null): Promise<ComposeProposal> {
+    await delay(700);
+    const state = requireRepo(repoId);
+    if (AI_OFF) {
+      const err: AppError = { kind: 'aiFailed', message: 'Claude Code CLI not found on PATH' };
+      throw err;
+    }
+    // Unique changed paths across staged/unstaged/untracked, plus the model file
+    // when its working copy differs from HEAD (mirrors the backend change set).
+    const paths = new Set<string>();
+    for (const e of state.status.staged) paths.add(e.path);
+    for (const e of state.status.unstaged) paths.add(e.path);
+    for (const e of state.status.untracked) paths.add(e.path);
+    if (!linesEqual(state.mainRs.workdir, state.mainRs.head)) paths.add(MAIN_RS_PATH);
+    const changed = [...paths];
+    if (changed.length === 0) {
+      const err: AppError = {
+        kind: 'nothingToCommit',
+        message: 'nothing to compose (working tree clean)',
+      };
+      throw err;
+    }
+    // Heuristic split: tests/docs vs code; fall back to first-half / second-half
+    // so we always surface at least one non-empty group.
+    const isDocOrTest = (p: string): boolean =>
+      /(^|\/)(tests?|__tests__|docs?)(\/|$)|\.(test|spec)\.|\.md$/i.test(p);
+    let code = changed.filter((p) => !isDocOrTest(p));
+    let docs = changed.filter((p) => isDocOrTest(p));
+    if (code.length === 0 || docs.length === 0) {
+      const mid = Math.ceil(changed.length / 2);
+      code = changed.slice(0, mid);
+      docs = changed.slice(mid);
+    }
+    const groups: ComposeGroup[] = [
+      {
+        files: code,
+        message: 'feat: implement the core change\n\n- group the primary code edits',
+      },
+      { files: docs, message: 'test: cover the new behavior and docs' },
+    ].filter((g) => g.files.length > 0);
+    return { groups, unassigned: [], notes: [], costUsd: 0.012 };
   },
 
   // Stateful rebase mock (P3d contract §7.2). A repo seeded with a rebase starts

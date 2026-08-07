@@ -303,6 +303,49 @@ pub(crate) async fn ai_suggest_branch_name_inner(
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Proposes grouping the working-tree changes into logical commits (P54a §5).
+/// Loads settings and REFUSES with `AiUnavailable` unless `ai_enabled &&
+/// ai_consented` (the authoritative backend gate; the frontend also gates for
+/// UX). Read-only — WRITES NOTHING; does NOT emit `repo-changed`. The result is
+/// ALWAYS an apply-able partition (unknown paths dropped, overlaps first-wins,
+/// uncovered files in `unassigned`); unparseable model output is NOT an error.
+/// Errors: `aiUnavailable` | `aiFailed` (CLI fail/empty) | `nothingToCommit`
+/// (clean tree) | `git` | `noRepo`.
+#[tauri::command]
+pub async fn ai_compose_commits(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    guidance: Option<String>,
+) -> Result<ComposeProposal, AppError> {
+    // Resolve the settings-file path at the AppHandle boundary so the inner stays
+    // runtime-free and unit-testable (mirrors `generate_commit_message`), then delegate.
+    let file = settings::settings_file(&app)?;
+    ai_compose_commits_inner(state.inner(), &file, &repo_id, guidance).await
+}
+
+/// Runtime-free core of `ai_compose_commits` (unit-testable without a Tauri app).
+/// The consent gate is enforced HERE, BEFORE `repo_path`.
+pub(crate) async fn ai_compose_commits_inner(
+    state: &AppState,
+    settings_file: &std::path::Path,
+    repo_id: &str,
+    guidance: Option<String>,
+) -> Result<ComposeProposal, AppError> {
+    let s = settings::load_from(settings_file);
+    if !(s.ai_enabled && s.ai_consented) {
+        return Err(AppError::AiUnavailable(
+            "AI features are disabled or not yet consented to".to_string(),
+        ));
+    }
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        ai_compose::compose_commits(&workdir, guidance.as_deref(), RunOpts::default())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Optional AI helper (P24e §6.8): translate the `source_asset_id` instruction
 /// file into `target_agent`'s flavor via the local `claude` CLI. Enforces the
 /// consent gate FIRST (before `repo_path`), exactly like `generate_commit_message`.

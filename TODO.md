@@ -25,6 +25,45 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
+## P54 — commit composer: WIP → N logical commits (Phase 2 · milestone 2/5) — **IN PROGRESS** (2026-08-07)
+
+Phase 2 milestone 2. User chose "Continue to P54" after P53. Contract: `docs/contracts/P54-commit-composer.md`
+(+ overview). OD1 remains local-`claude`-CLI-only.
+
+**P54 goal:** propose grouping the working tree into N logical commits (FILE-LEVEL v1), each with a
+generated message; user reviews/edits/reassigns/drops/merges; apply as an ORDERED, ATOMIC stage+commit
+sequence. Two commands: `ai_compose_commits` (PROPOSE — AI, consent-gated, WRITES NOTHING; result is
+ALWAYS an apply-able partition regardless of model output — Rust is the referee) + `apply_composed_commits`
+(APPLY — pure git, NOT AI-gated; validate-whole-plan → reset index to HEAD → commit each group → roll
+HEAD+index back on ANY failure; WORKDIR NEVER TOUCHED, no data-loss risk). Cmd 131→133.
+
+**Orchestrator OQ decisions — accept ALL architect recs:** OQ1 apply auto-resets index to HEAD (workdir
+untouched; UI states it) · OQ2 FILE-LEVEL v1 (line-level split deferred to a future P54d/P66) · OQ3 ship
+optional `guidance` hint · OQ4 reuse P53's already-promoted `gather_worktree` + `cap_review_payload`
+(both pub(crate) — NO new visibility change) · OQ5 keep empty-message groups (UI/apply validate) · OQ6
+single apply command, no progress channel.
+
+Sub-increments: **P54a** propose backend (`ai_compose.rs`: `parse_compose_response` referee → guaranteed
+apply-able partition; grounding) + `ai_compose_commits` cmd + IPC + mock → **P54b** apply engine
+(`compose_apply.rs`: atomic reset / commit-loop / rollback) + `apply_composed_commits` cmd + IPC + mock →
+**P54c** review UI (`useCommitComposer` + `ComposerDialog` + `ComposerGroupCard`; CommitPanel entry;
+Esc-layer). a→b→c (b reuses `ComposeGroup` from a; c needs both).
+
+- **P54a** (reviewer APPROVE, 0 must-fix / 0 should-fix; 3 nits) — new `ai_compose.rs`: `ComposeGroup`/
+  `ComposeProposal`/`MAX_COMPOSE_GROUPS=10`; `compose_commits` (clean tree → `NothingToCommit` before any
+  CLI; CLI hard-fail → `AiFailed`; reuses P53's pub(crate) `gather_worktree` + `cap_review_payload`, no
+  dup); WHY-not-WHAT grounding (§3.2). The pure REFEREE `parse_compose_response` — reviewer PROVED the
+  partition invariant (groups∪unassigned==changed, disjoint, order-preserving, no phantom) across ALL
+  branches (unparseable→all-unassigned, overlap first-wins, unknown dropped, empty dropped, cap→tail
+  unassigned; `extract_json` opens-first handles the bare-array fallback). `ai_compose_commits` cmd +
+  `_inner` (consent gate before repo_path, read-only; generate_handler! 131→132) + consent-gate test. IPC
+  + mock (`?ai=off`→aiFailed, clean→nothingToCommit). 8/8 lib + 1/1 integration
+  (`tests/ai_compose_cli.rs` stub-echo, sibling isolation pattern); clippy -D + build/tsc clean. Nit
+  (accepted): ai_compose.rs 616 lines (prod ~309 + mandated inline §8 suite needing private access; under
+  the ai_explain 1178 precedent). `ComposeProposal` = PartialEq only (Option<f64>).
+**Current step:** P54a DONE (committed). Next: **P54b** (apply engine — `compose_apply.rs` atomic
+reset/commit-loop/rollback + `apply_composed_commits` cmd →133 + `compose.ts` mock).
+
 ## P53 — AI "why" layer: blame-why + explain-commit + branch naming (Phase 2 · milestone 1/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 
 Phase 2 first milestone. User greenlit implementation (main clear) + chose **P53 first** + **OD1 =
