@@ -658,6 +658,45 @@ export interface ReflogEntry {
   message: string;
 }
 
+/** Which field(s) commit search examines (P50). `all` = message OR author. */
+export type SearchField = 'all' | 'message' | 'author' | 'path' | 'content';
+/** Which field actually matched a result row. */
+export type MatchedField = 'message' | 'author' | 'path' | 'content';
+
+/** A commit/content search request (P50a). Mirrors the Rust `SearchQuery`
+ *  (camelCase) EXACTLY. `regex` applies to CONTENT only (v1): false = `-S`
+ *  literal, true = `-G` regex; ignored for message/author/path. `caseSensitive`
+ *  false ⇒ case-insensitive. `maxResults` 0 ⇒ backend default cap (1000),
+ *  clamped to it. `scopeRef` null ⇒ all refs; a ref/oid ⇒ walk only that scope.
+ *  (Date scope `since`/`until` is deferred — not part of the v1 wire type.) */
+export interface SearchQuery {
+  text: string;
+  field: SearchField;
+  regex: boolean;
+  caseSensitive: boolean;
+  maxResults: number;
+  scopeRef: string | null;
+}
+
+/** One matched commit (P50a). Mirrors the Rust `SearchMatch` (camelCase)
+ *  EXACTLY. `oid` is full 40-hex (feeds revealCommitByOid). `snippet` is the
+ *  matched pathspec for Path mode, absent otherwise (serde skip when None). */
+export interface SearchMatch {
+  oid: string;
+  summary: string;
+  authorName: string;
+  authorTs: number;
+  matched: MatchedField;
+  snippet?: string;
+}
+
+/** Commit-search response (P50a): capped, newest-first matches + a `truncated`
+ *  flag when a cap or scan bound was hit ("there may be more"). */
+export interface SearchResults {
+  matches: SearchMatch[];
+  truncated: boolean;
+}
+
 /** Write-target level (P40). System is never a write target. */
 export type ConfigLevelArg = 'local' | 'global';
 /** Where a value actually lives (read result). */
@@ -1408,6 +1447,12 @@ export interface IpcApi {
   /** Reflog for `refName` ("HEAD" or a local branch name), newest-first, capped.
    *  A never-updated ref yields `[]` (not an error). Read-only. Rejects git | noRepo. */
   readReflog(repoId: string, refName: string): Promise<ReflogEntry[]>;
+  /** Commit/content search (P50a). Dispatches by `query.field`: message/author/
+   *  all via a header-only git2 revwalk; path/content via `git log`. Capped
+   *  (`truncated` when more may exist). Empty/whitespace `text` resolves to
+   *  `{ matches: [], truncated: false }`. Read-only, does NOT emit repo-changed.
+   *  Rejects git (bad pathspec / invalid `-G` regex) | noRepo. */
+  searchCommits(repoId: string, query: SearchQuery): Promise<SearchResults>;
   /** Config view for `level` of `repoId`: curated keys (effective value + level
    *  + target-level value) + advanced entries. Read-only. Rejects git | noRepo. */
   getConfig(repoId: string, level: ConfigLevelArg): Promise<ConfigView>;

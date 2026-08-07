@@ -1,8 +1,9 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
 import type { IpcApi } from '../../types';
 import { asFullContext, lineDiff, mockCommitDiff, mockCommitFileDiff, mockCompareDiff, mockWorkdirDiff } from '../../fixtures/diffs';
-import { buildMockGraph, buildMockGraphDetached, prependCommits, withStashNodes } from '../../fixtures/graph';
+import { buildMockGraph, buildMockGraphDetached, prependCommits } from '../../fixtures/graph';
 import { generateLayout20k } from '../../fixtures/graph20k';
+import { resolveLayout } from './layout';
 import { delay, isRefTip, requireRepo } from '../repoState';
 import { MAIN_RS_PATH } from '../statusHelpers';
 import type { AppError, CommitDiff, CompareDiff, FileDiff, GraphLayout } from '../../types';
@@ -123,15 +124,12 @@ export const diffHandlers = {
 
   async getGraph(repoId: string): Promise<GraphLayout> {
     await delay(150);
-    const state = requireRepo(repoId);
     // Built fresh per call (timestamps relative to now; callers own the copy).
-    if (state.graphFixture === '20k') return generateLayout20k();
-    if (state.graphFixture === 'detached') return buildMockGraphDetached();
-    // Default fixture: synthetic mock-commit rows prepended (P1 §3.5), then the
-    // live stash stack injected as offshoot nodes (P10 §3.3) so create/apply/
-    // pop/drop reflect visually on the next repo-changed refetch.
-    const base = prependCommits(buildMockGraph(), state.commits);
-    return withStashNodes(base, state.stashes);
+    // The default fixture prepends synthetic mock-commit rows (P1 §3.5) and
+    // injects the live stash stack as offshoot nodes (P10 §3.3) so create/apply/
+    // pop/drop reflect on the next repo-changed refetch. Shared with
+    // searchCommits via resolveLayout so both agree on the visible rows.
+    return resolveLayout(requireRepo(repoId));
   },
 
 } satisfies Partial<IpcApi>;

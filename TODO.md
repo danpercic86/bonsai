@@ -25,6 +25,53 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
+## P50 — commit/content search + command palette + list filtering (Phase 1) — **IN PROGRESS** (2026-08-07)
+
+Phase 1 milestone 2 of 4 (roadmap `~/.claude/plans/do-thorough-analysis-of-purrfect-moth.md`).
+Three keyboard-first discovery features, all ABSENT today (Sublime Merge's signature strength).
+
+**P50 goal:**
+- **Commit/content search** — find commits by message / author / path, and by CONTENT (pickaxe
+  `-S` literal / `-G` regex). Matches surfaced in the EXISTING graph (highlight dots + jump next/prev),
+  reusing the reveal-in-graph infra; `compute_graph` stays unfiltered/stable (search is a SEPARATE cmd).
+- **Command palette** (Ctrl/Cmd-K) — fuzzy-launch existing actions + jump to branch/tag/commit +
+  trigger search.
+- **List filtering** — type-to-filter boxes on the sidebar Branches / Remotes / Tags lists (reuse
+  `Combobox.tsx`).
+
+**Key design decisions (architect settles in the contract):**
+- Search perf: message/author/path via bounded git2 revwalk; CONTENT `-S`/`-G` likely shell-out to
+  `git log` (optimized pickaxe — a git2 diff-per-commit walk janks large histories; app already shells
+  `git`). Cap results + a truncated signal.
+- `search_commits(query)` returns matching oids (+ minimal match metadata) — NOT a graph re-filter.
+- Command-palette v1 scope (action registry + branch/commit jump + search entry); own increment or bundled.
+
+**Acceptance criteria:** finds by message/author/path/content + jumps to matches in the graph; palette
+opens on Ctrl/Cmd-K, filters + launches actions, routes to search/nav, Esc-layers with existing
+overlays, never fires destructive ops without the existing confirms; sidebar lists filter as you type;
+large-history search stays responsive (bounded/capped); tsc + build clean; cargo test + clippy clean;
+mock in lockstep; CLI-oracle for search vs real `git log`/`git log -S/-G`.
+
+**Contract:** `docs/contracts/P50-search-command-palette.md` + `P50-user-checklist.md` (architect —
+DONE). Backend: message/author/`all` → git2 revwalk (header-only, scan cap 200k); path + content →
+shell-out `git log` (`-S`/`-G`) via injected `GitRunner` (credential_fill idiom); result cap 1000
+(cap+1 → `truncated`). Sub-increments: **P50a** backend+IPC+mock+oracle → **P50b** search UI +
+graph highlight/jump → **P50c** command palette → **P50d** list filtering (b/c/d order-independent).
+**Orchestrator decisions on flagged OQs:** OQ1 bind Ctrl/Cmd-F to open commit search + visible entry
++ palette fallback; OQ2 DEFER message/author regex + dedicated invalidRegex error (content `-S`/`-G`
+only; bad regex → generic Git error); OQ3 palette only when a repo is open; OQ4 minimal match meta
+(single `matched` + path-only snippet); OQ5 ship branch `scopeRef`, **DEFER date scope (since/until)**
+for v1 (omit those fields from the wire type).
+- **P50a** (reviewer APPROVE, 0 must-fix/should-fix) — `git/search.rs` (git2 revwalk msg/author/all +
+  `git log -S/-G` shell path/content via injected `GitRunner`; caps 1000 / scan 200k; cap+1
+  truncation exact both backends), `search_commits` cmd (**129**), IPC + mock (`resolveLayout` shared
+  with getGraph; `#fail`→Git; truncated path). 25 tests (8 real-git oracles + FakeGitRunner argv +
+  PanicRunner + cap/empty/invalid-regex + wire shape). Deviations (validated): `--glob-pathspecs`
+  before `log` (git 2.51 fix); since/until omitted (OQ5); `parse_log_output` takes field+text;
+  `resolveLayout` extracted (pure refactor). Tester NITs to fold: remotes+tags oracle fixture for
+  `seed_all_refs`; `all` message-wins `matched` assertion.
+**Current step:** P50b (search UI + graph highlight/jump) — senior-dev next.
+
 ## P49 — external integrations: open in terminal / file manager / editor (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 
 Roadmap approved 2026-08-06 from a feature-gap analysis (6 research streams: codebase inventory +

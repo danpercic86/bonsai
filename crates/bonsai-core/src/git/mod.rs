@@ -24,6 +24,7 @@ pub mod remote;
 pub mod reset;
 pub mod repo;
 pub mod revert;
+pub mod search;
 pub mod stage;
 pub mod stage_partial;
 pub mod stale;

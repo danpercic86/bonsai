@@ -68,6 +68,8 @@ import type {
   RepoOpState,
   ResetMode,
   RevertOutcome,
+  SearchQuery,
+  SearchResults,
   SessionState,
   StaleReport,
   StashEntry,
@@ -411,6 +413,10 @@ export const tauriIpc: IpcApi = {
 
   readReflog(repoId: string, refName: string): Promise<ReflogEntry[]> {
     return invoke<ReflogEntry[]>('read_reflog', { repoId, refName });
+  },
+
+  searchCommits(repoId: string, query: SearchQuery): Promise<SearchResults> {
+    return invoke<SearchResults>('search_commits', { repoId, query });
   },
 
   getConfig(repoId: string, level: ConfigLevelArg): Promise<ConfigView> {
