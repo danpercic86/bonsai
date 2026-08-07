@@ -41,6 +41,9 @@ export interface WorkspaceGraphPaneProps {
   onContextMenu: GraphCanvasProps['onContextMenu'];
   metrics: GraphCanvasProps['metrics'];
   metricsVersion: number;
+  /** P51b: per-row display toggles + date basis + ahead/behind, forwarded to
+   *  GraphCanvas (built from graphPrefs/branches in RepoWorkspace). */
+  display: GraphCanvasProps['display'];
 
   /** P50b: commit-search state (bar + graph highlight + next/prev jump). */
   search: UseCommitSearch;
@@ -124,6 +127,7 @@ export function WorkspaceGraphPane({
   onContextMenu,
   metrics,
   metricsVersion,
+  display,
   search,
   searchScopeOptions,
   diffSlot,
@@ -253,6 +257,7 @@ export function WorkspaceGraphPane({
             metrics={metrics}
             metricsVersion={metricsVersion}
             matchRows={search.matchRows}
+            display={display}
           />
         </ErrorBoundary>
       ) : null}

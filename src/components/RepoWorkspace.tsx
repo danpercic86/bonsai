@@ -15,6 +15,7 @@ import { Sidebar } from './Sidebar';
 import type { DiffSlot, WorkdirSection } from './StatusPanel';
 import type { GraphCanvasHandle, GraphContextTarget, WipSummary } from '../graph/GraphCanvas';
 import { effectiveMetrics } from '../graph/metrics';
+import type { GraphDisplayOptions } from '../graph/rightColumns';
 import { ipc } from '../ipc';
 import type {
   AiAnalysisMode,
@@ -142,6 +143,22 @@ export function RepoWorkspace({
   // P11d §4.1: METRICS overlaid with the user's graph knobs; memoized so the
   // canvas metricsRef only churns when a knob actually changes.
   const metrics = useMemo(() => effectiveMetrics(graphPrefs), [graphPrefs]);
+
+  // P51b: per-row display toggles (SHA/author/date column + date basis) derived
+  // from graphPrefs and threaded into GraphCanvas. `branchStats` is an empty map
+  // here — P51c derives it from `branches` and wires the ahead/behind chip; the
+  // P51b draw pass ignores `showAheadBehind`/`branchStats`.
+  const graphDisplay = useMemo<GraphDisplayOptions>(
+    () => ({
+      showSha: graphPrefs.showSha,
+      showAuthor: graphPrefs.showAuthor,
+      showDate: graphPrefs.showDate,
+      dateBasis: graphPrefs.dateBasis,
+      showAheadBehind: graphPrefs.showAheadBehind,
+      branchStats: new Map(),
+    }),
+    [graphPrefs],
+  );
 
   // RepoInfo is (re)loaded by refreshAll's openRepo; head also arrives via the
   // branches snapshot, so gating works before the first refreshAll.
@@ -1998,6 +2015,7 @@ export function RepoWorkspace({
           onContextMenu={handleGraphContextMenu}
           metrics={metrics}
           metricsVersion={metricsVersion}
+          display={graphDisplay}
           search={search}
           searchScopeOptions={searchScopeOptions}
           diffSlot={diffSlot}

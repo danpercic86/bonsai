@@ -16,15 +16,17 @@ import {
   avatarHit,
   drawGraph,
   drawWipRow,
-  entityStyle,
-  groupRefs,
   initials,
   laneX,
-  layoutRefLabels,
   refColArea,
   relativeDate,
 } from './draw';
-import type { RefEntity, WipSummary } from './draw';
+import type { WipSummary } from './draw';
+import { entityStyle, groupRefs, layoutRefLabels } from './refLabels';
+import type { RefEntity } from './refLabels';
+import { formatAbsolute } from './dates';
+import { computeRightColumns } from './rightColumns';
+import type { GraphDisplayOptions } from './rightColumns';
 import type { P7SelfTestResult } from './frameStats';
 import { buildEdgeIndex, edgesInRange } from './edgeIndex';
 import { createFrameRecorder } from './frameStats';
@@ -68,6 +70,10 @@ export interface GraphCanvasProps {
   /** P50b: row indices carrying a commit-search match → an outer match ring on
    *  those dots. Empty/absent when search is closed (no ring pass). */
   matchRows?: readonly number[];
+  /** P51b: persisted per-row display toggles (SHA/author/date column + date
+   *  basis, ahead/behind data). Fed straight into `drawGraph` and the date-
+   *  column hover hit-test; a new object identity triggers a repaint. */
+  display: GraphDisplayOptions;
 }
 
 /** P2c §5.2: imperative escape hatch — App needs the DOM-measured visible row
@@ -86,11 +92,14 @@ type Rect = { left: number; top: number; width: number; height: number };
 
 /** P7 §6.1: current hover-tooltip target. `avatar` shows the full author name;
  *  `overflow` lists the hidden ref entities of a "+n" chip, one per line;
- *  `ref` shows the full branch name of a shown branch pill. */
+ *  `ref` shows the full branch name of a shown branch pill; `date` (P51b) shows
+ *  the FULL absolute authored + committed timestamps (the inline date is
+ *  relative), one per line. */
 type TooltipState =
   | { kind: 'avatar'; text: string; anchor: Rect }
   | { kind: 'overflow'; lines: string[]; anchor: Rect }
-  | { kind: 'ref'; text: string; anchor: Rect };
+  | { kind: 'ref'; text: string; anchor: Rect }
+  | { kind: 'date'; lines: string[]; anchor: Rect };
 
 /** P7 §6.1: cheap identity so `setTooltip` only re-renders on a real target
  *  change (kind + content), never per mouse pixel or per scroll frame. */
@@ -100,6 +109,9 @@ function sameTarget(a: TooltipState | null, b: TooltipState | null): boolean {
   if (a.kind === 'avatar' && b.kind === 'avatar') return a.text === b.text;
   if (a.kind === 'ref' && b.kind === 'ref') return a.text === b.text;
   if (a.kind === 'overflow' && b.kind === 'overflow') {
+    return a.lines.join('␟') === b.lines.join('␟');
+  }
+  if (a.kind === 'date' && b.kind === 'date') {
     return a.lines.join('␟') === b.lines.join('␟');
   }
   return false;
@@ -161,6 +173,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     metrics,
     metricsVersion,
     matchRows,
+    display,
   },
   ref,
 ) {
@@ -221,8 +234,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   );
 
   // Latest props for the stable paint callback.
-  const propsRef = useRef({ layout, selectedIndex, edgeIndex, wip, matchSet });
-  propsRef.current = { layout, selectedIndex, edgeIndex, wip, matchSet };
+  const propsRef = useRef({ layout, selectedIndex, edgeIndex, wip, matchSet, display });
+  propsRef.current = { layout, selectedIndex, edgeIndex, wip, matchSet, display };
 
   const recordFrame = useCallback((kind: 'paint' | 'gap', durMs: number) => {
     const rec = kind === 'paint' ? paintRecorderRef.current : gapRecorderRef.current;
@@ -255,7 +268,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     const t0 = STATS_ENABLED ? performance.now() : 0;
     const m = metricsRef.current;
     const rowHeight = m.rowHeight;
-    const { layout: lay, selectedIndex: sel, edgeIndex: ix, wip, matchSet } = propsRef.current;
+    const { layout: lay, selectedIndex: sel, edgeIndex: ix, wip, matchSet, display } =
+      propsRef.current;
     const { w, h } = cssSizeRef.current;
     const scrollTop = scrollerRef.current?.scrollTop ?? scrollTopRef.current;
     scrollTopRef.current = scrollTop;
@@ -280,6 +294,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       { firstRow, lastRow, scrollTop: layoutScrollTop, width: w, height: h, rightInset },
       themeRef.current,
       { hoverRow, selectedIndex: sel, matchRows: matchSet },
+      display,
       m,
     );
     if (wip !== null && scrollTop < rowHeight + 56) {
@@ -395,7 +410,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       return;
     }
     paintNow();
-  }, [paintNow, layout, selectedIndex, wip, matchSet]);
+  }, [paintNow, layout, selectedIndex, wip, matchSet, display]);
 
   // P2b §4.4: theme changes re-resolve the cached CSS-variable colors and
   // repaint. Runs once on mount too (themeVersion starts at 0), which is
@@ -744,6 +759,28 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
         };
       }
     }
+    // P51b: hovering the date column → FULL absolute timestamps (authored +
+    // committed), one per line; the inline date stays relative. Recompute the
+    // column geometry with the SAME pure helper the draw pass uses so the hit
+    // box matches the drawn column exactly.
+    const { display } = propsRef.current;
+    const rightInset = scrollerRef.current
+      ? scrollerRef.current.offsetWidth - scrollerRef.current.clientWidth
+      : 0;
+    const effRight = cssSizeRef.current.w - rightInset;
+    const cols = computeRightColumns(effRight, display, m);
+    if (cols.date !== null && x >= cols.date.leftX && x <= cols.date.rightX) {
+      return {
+        kind: 'date',
+        lines: [`Authored  ${formatAbsolute(node.ts)}`, `Committed ${formatAbsolute(node.committerTs)}`],
+        anchor: {
+          left: cols.date.leftX,
+          top: cy - m.pillHeight / 2,
+          width: cols.date.width,
+          height: m.pillHeight,
+        },
+      };
+    }
     return null;
   };
 
@@ -897,7 +934,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
             top: `${tipPos?.top ?? tooltip.anchor.top + tooltip.anchor.height + 4}px`,
           }}
         >
-          {tooltip.kind === 'overflow'
+          {tooltip.kind === 'overflow' || tooltip.kind === 'date'
             ? tooltip.lines.map((l, i) => <div key={i}>{l}</div>)
             : tooltip.text}
         </div>

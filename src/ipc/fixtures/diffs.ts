@@ -341,7 +341,7 @@ export function mockCommitDiff(index: number, oid: string): CommitDiff {
       authorName: node?.author ?? 'Ada Lovelace',
       authorEmail: 'dev@example.com',
       authorTs: node?.ts ?? ts,
-      committerTs: node?.ts ?? ts,
+      committerTs: node?.committerTs ?? ts,
       parents:
         node !== undefined && node.parents.length === 0
           ? []

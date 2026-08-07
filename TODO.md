@@ -69,8 +69,16 @@ defer; compact preset override; toggles nested in GraphPrefs.
   clippy --all-targets clean; tsc/build clean. **Independently re-confirmed** the health 20k perf gate
   is pre-existing (senior-dev stashed all changes → identical fail on clean tree; health.rs has no
   graph dep). P51b nit to fold: `diffs.ts:344` CommitDiff `committerTs` should read `node?.committerTs`.
-**Current step:** P51b (right-columns + SHA + badge stub + date basis + absolute-date hover + compact
-+ SettingsPanel toggles; extract `refLabels.ts` + `drawRowText.ts` → draw.ts <500) — senior-dev next.
+- **P51b** (reviewer APPROVE, 0 must-fix/should-fix; 3 cosmetic nits) — right-column system
+  (`rightColumns.ts`) + SHA/author/date columns + `dateBasis` + absolute-date hover + compact +
+  `SettingsGraphSection` toggles; extracted `refLabels.ts`/`drawRowText.ts`/`dates.ts`/`textMeasure.ts`
+  → **draw.ts 838→453** (<500), SettingsPanel 501→400. 16 new unit tests (57 total). diffs.ts nit
+  folded (committerTs). **P51b AI GATE PASSED** (harness, mock :1420, zero console): Graph section shows
+  Short SHA / Author name / Date / Date basis (Author·Committer) / Compact rows; toggling Author-name ON
+  + Short-SHA OFF each repaint the canvas non-blank with no errors (column add + remove/reflow paths).
+  Canvas visuals (SHA text/layout/compact density/hover) = USER CHECKPOINT (pane not screenshottable
+  headless). Nit noted: GraphCanvas.tsx 944 lines (pre-existing) — future split candidate.
+**Current step:** P51c (ahead/behind chip on branch pills) — senior-dev next.
 
 ## P50 — commit/content search + command palette + list filtering (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 

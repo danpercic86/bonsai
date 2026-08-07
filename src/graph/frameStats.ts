@@ -74,15 +74,15 @@ export function createFrameRecorder(): FrameRecorder {
 export interface P7DevHooks {
   initials(name: string): string;
   avatarColor(name: string): import('./draw').AvatarColor;
-  groupRefs(refs: readonly import('../ipc').RefLabel[] | undefined): import('./draw').RefEntity[];
+  groupRefs(refs: readonly import('../ipc').RefLabel[] | undefined): import('./refLabels').RefEntity[];
   layoutRefLabels(
     ctx: CanvasRenderingContext2D,
-    entities: readonly import('./draw').RefEntity[],
+    entities: readonly import('./refLabels').RefEntity[],
     node: import('../ipc').GraphNode,
     theme: import('./colors').Theme,
     startX: number,
     budget: number,
-  ): import('./draw').LaidRefLabel[];
+  ): import('./refLabels').LaidRefLabel[];
   refColArea(m: import('./metrics').EffectiveMetrics): { startX: number; budget: number };
   avatarHit(
     px: number,
