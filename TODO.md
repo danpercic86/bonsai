@@ -70,7 +70,18 @@ for v1 (omit those fields from the wire type).
   before `log` (git 2.51 fix); since/until omitted (OQ5); `parse_log_output` takes field+text;
   `resolveLayout` extracted (pure refactor). Tester NITs to fold: remotes+tags oracle fixture for
   `seed_all_refs`; `all` message-wins `matched` assertion.
-**Current step:** P50b (search UI + graph highlight/jump) — senior-dev next.
+- **P50b** (reviewer APPROVE, 0 must-fix; 1 should-fix + 2 nits FOLDED) — `useCommitSearch` hook +
+  pure `searchHelpers` + `CommitSearchBar` + `SearchResultsList`; `--match-ring` draw pass on the
+  canvas (additive, no re-layout, visible rows only); next/prev + results-click reuse
+  `revealCommitByOid` (current match = normal selection); cheap modes debounced live, content
+  submit-only; regex gated to Content; Ctrl/Cmd-F + graph-pane FAB open, capture-phase Esc layering.
+  Folded: match-ring staleness (graph identity now in the `matchRows` memo deps + reactive `graph`
+  prop), refocus-on-reopen (`openNonce`), dead badge CSS dropped.
+  **P50b AI GATE PASSED** (harness, mock :1420, zero console errors): FAB opens the bar; message
+  live-search "graph" → **1/1** + results list (`cd08f97` · summary · 2h · **"Message"** badge); regex
+  toggle disabled in message mode, ENABLED in Content (`Regular expression (git -G)`, disabled=false).
+  tsc + build clean; 20/20 vitest. (Canvas ring draw + scroll feel = reviewer-verified / USER CHECKPOINT.)
+**Current step:** P50b committed — **P50c** (command palette) next.
 
 ## P49 — external integrations: open in terminal / file manager / editor (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 

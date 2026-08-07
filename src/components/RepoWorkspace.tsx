@@ -65,6 +65,8 @@ import { useCherrypickRevertActions } from './repoWorkspace/useCherrypickRevertA
 import { useBisectActions } from './repoWorkspace/useBisectActions';
 import { useReadOverlays } from './repoWorkspace/useReadOverlays';
 import { useWorkspaceKeyboard } from './repoWorkspace/useWorkspaceKeyboard';
+import { useCommitSearch } from './repoWorkspace/useCommitSearch';
+import type { ComboboxOption } from './Combobox';
 
 export interface RepoWorkspaceProps {
   /** Canonical workdir path (== repoId, P3e §2). */
@@ -1522,6 +1524,18 @@ export function RepoWorkspace({
     clearCompare,
     setSelectedIndex,
   });
+
+  // P50b: commit search — state hook drives the search bar + graph match rings;
+  // next/prev reuse revealCommitByOid (the single-selection reveal path).
+  const search = useCommitSearch({ repoId, graph, revealCommitByOid, pushToast });
+  // Branch/ref scope options for the search bar (All refs + local + remote).
+  const searchScopeOptions = useMemo<ComboboxOption[]>(() => {
+    const opts: ComboboxOption[] = [{ value: '', label: 'All refs' }];
+    for (const b of branches?.local ?? []) opts.push({ value: b.name, label: b.name });
+    for (const r of branches?.remote ?? []) opts.push({ value: r.name, label: r.name });
+    return opts;
+  }, [branches]);
+
   function handleToggleConflictView(path: string) {
     const key = `conflict:${path}`;
     if (diffSlotRef.current?.key === key) {
@@ -1657,10 +1671,14 @@ export function RepoWorkspace({
     historyOpenRef,
     reflogOpenRef,
     commitBrowserOpenRef,
+    searchOpenRef: search.openRef,
+    closeSearch: search.close,
     diffSlotRef,
     compareRef,
     setSelectedIndex,
     setCommitBrowserOpen,
+    searchOpen: search.open,
+    openSearch: search.openSearch,
     refreshing,
     statusLoading,
     graphLoading,
@@ -1893,6 +1911,8 @@ export function RepoWorkspace({
           onContextMenu={handleGraphContextMenu}
           metrics={metrics}
           metricsVersion={metricsVersion}
+          search={search}
+          searchScopeOptions={searchScopeOptions}
           diffSlot={diffSlot}
           overlayMeta={overlayMeta}
           collapseDiffSlot={collapseDiffSlot}

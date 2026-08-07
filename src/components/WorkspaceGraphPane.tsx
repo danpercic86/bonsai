@@ -1,6 +1,8 @@
 import type { ComponentProps, RefObject } from 'react';
 import { AiOutputPanel } from './AiOutputPanel';
 import { BlameView } from './BlameView';
+import { CommitSearchBar } from './CommitSearchBar';
+import type { ComboboxOption } from './Combobox';
 import { DiffBrowser } from './DiffBrowser';
 import { DiffOverlay } from './DiffOverlay';
 import type { DiffOverlayMeta } from './DiffOverlay';
@@ -8,6 +10,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { FileHistoryView } from './FileHistoryView';
 import { ReflogView } from './ReflogView';
 import type { DiffSlot } from './StatusPanel';
+import type { UseCommitSearch } from './repoWorkspace/useCommitSearch';
 import { GraphCanvas } from '../graph/GraphCanvas';
 import type { GraphCanvasHandle } from '../graph/GraphCanvas';
 import type {
@@ -38,6 +41,11 @@ export interface WorkspaceGraphPaneProps {
   onContextMenu: GraphCanvasProps['onContextMenu'];
   metrics: GraphCanvasProps['metrics'];
   metricsVersion: number;
+
+  /** P50b: commit-search state (bar + graph highlight + next/prev jump). */
+  search: UseCommitSearch;
+  /** Branch/ref scope options for the search bar; `value: ''` == all refs. */
+  searchScopeOptions: ComboboxOption[];
 
   diffSlot: DiffSlot | null;
   overlayMeta: DiffOverlayMeta | null;
@@ -116,6 +124,8 @@ export function WorkspaceGraphPane({
   onContextMenu,
   metrics,
   metricsVersion,
+  search,
+  searchScopeOptions,
   diffSlot,
   overlayMeta,
   collapseDiffSlot,
@@ -148,8 +158,52 @@ export function WorkspaceGraphPane({
   listView,
   onOpenIdentitySettings,
 }: WorkspaceGraphPaneProps) {
+  // P50b: the floating search affordance is only shown over a bare graph — hide
+  // it while any overlay covers the pane (it would poke through the corner).
+  const anyOverlayOpen =
+    diffSlot !== null ||
+    blame !== null ||
+    history !== null ||
+    reflog !== null ||
+    aiPanel !== null ||
+    diffBrowserView !== null;
   return (
     <main className="graph-pane">
+      {/* P50b: search bar at the top of the pane while open; a floating affordance
+          otherwise (Ctrl/Cmd-F also opens it — the webview may steal that in the
+          browser harness, so the button is the always-reachable entry point). */}
+      {search.open ? (
+        <CommitSearchBar
+          query={search.query}
+          patchQuery={search.patchQuery}
+          submit={search.submit}
+          close={search.close}
+          results={search.results}
+          loading={search.loading}
+          error={search.error}
+          currentMatch={search.currentMatch}
+          needsSubmit={search.needsSubmit}
+          next={search.next}
+          prev={search.prev}
+          goToMatch={search.goToMatch}
+          scopeOptions={searchScopeOptions}
+          openNonce={search.openNonce}
+        />
+      ) : (
+        graph !== null &&
+        head?.unborn !== true &&
+        !anyOverlayOpen && (
+          <button
+            type="button"
+            className="graph-search-fab"
+            title="Search commits (Ctrl+F)"
+            aria-label="Search commits"
+            onClick={() => search.openSearch()}
+          >
+            ⌕
+          </button>
+        )
+      )}
       {graphError !== null && (
         <div className="error-banner graph-error-banner">{graphError}</div>
       )}
@@ -198,6 +252,7 @@ export function WorkspaceGraphPane({
             onContextMenu={onContextMenu}
             metrics={metrics}
             metricsVersion={metricsVersion}
+            matchRows={search.matchRows}
           />
         </ErrorBoundary>
       ) : null}

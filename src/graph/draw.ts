@@ -28,6 +28,9 @@ export interface Viewport {
 export interface Interaction {
   hoverRow: number | null;
   selectedIndex: number | null;
+  /** P50b: rows carrying a commit-search match → an outer `--match-ring` ring.
+   *  `null` when search is closed / has no visible matches (no ring pass). */
+  matchRows: Set<number> | null;
 }
 
 /** Long-edge middle segments are clamped to this margin around the canvas. */
@@ -769,6 +772,15 @@ export function drawGraph(
       ctx.beginPath();
       ctx.arc(x, y, m.avatarSelRingRadius, 0, Math.PI * 2);
       ctx.strokeStyle = theme.accent;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    // P50b: search-match ring — an outer ring in --match-ring so matches stay
+    // spottable while scrolling (distinct radius + color from head/selection).
+    if (ix.matchRows !== null && ix.matchRows.has(row)) {
+      ctx.beginPath();
+      ctx.arc(x, y, m.avatarSelRingRadius + 1.5, 0, Math.PI * 2);
+      ctx.strokeStyle = theme.matchRing;
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }

@@ -18,6 +18,8 @@ export interface Theme {
   accentText: string;
   danger: string;
   warning: string;
+  /** P50b: search-match ring color (distinct from head/selection rings). */
+  matchRing: string;
 }
 
 /** Tag pill color is fixed across themes (ui-reference §6). */
@@ -67,5 +69,6 @@ export function resolveTheme(el: HTMLElement): Theme {
     accentText: read('--accent-text'),
     danger: read('--danger'),
     warning: read('--warning'),
+    matchRing: read('--match-ring'),
   };
 }

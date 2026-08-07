@@ -65,6 +65,9 @@ export interface GraphCanvasProps {
   /** P11d §4.3: bumped when any graph knob changes → forces a full re-measure +
    *  repaint (analogous to `themeVersion`). */
   metricsVersion: number;
+  /** P50b: row indices carrying a commit-search match → an outer match ring on
+   *  those dots. Empty/absent when search is closed (no ring pass). */
+  matchRows?: readonly number[];
 }
 
 /** P2c §5.2: imperative escape hatch — App needs the DOM-measured visible row
@@ -157,6 +160,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     onContextMenu,
     metrics,
     metricsVersion,
+    matchRows,
   },
   ref,
 ) {
@@ -209,9 +213,16 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   // Edge culling index, built once per layout object (§4.4).
   const edgeIndex = useMemo(() => buildEdgeIndex(layout), [layout]);
 
+  // P50b: search-match set, rebuilt once per matchRows prop change (not per
+  // frame). null when there are no matches so the draw pass skips the ring.
+  const matchSet = useMemo(
+    () => (matchRows !== undefined && matchRows.length > 0 ? new Set(matchRows) : null),
+    [matchRows],
+  );
+
   // Latest props for the stable paint callback.
-  const propsRef = useRef({ layout, selectedIndex, edgeIndex, wip });
-  propsRef.current = { layout, selectedIndex, edgeIndex, wip };
+  const propsRef = useRef({ layout, selectedIndex, edgeIndex, wip, matchSet });
+  propsRef.current = { layout, selectedIndex, edgeIndex, wip, matchSet };
 
   const recordFrame = useCallback((kind: 'paint' | 'gap', durMs: number) => {
     const rec = kind === 'paint' ? paintRecorderRef.current : gapRecorderRef.current;
@@ -244,7 +255,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     const t0 = STATS_ENABLED ? performance.now() : 0;
     const m = metricsRef.current;
     const rowHeight = m.rowHeight;
-    const { layout: lay, selectedIndex: sel, edgeIndex: ix, wip } = propsRef.current;
+    const { layout: lay, selectedIndex: sel, edgeIndex: ix, wip, matchSet } = propsRef.current;
     const { w, h } = cssSizeRef.current;
     const scrollTop = scrollerRef.current?.scrollTop ?? scrollTopRef.current;
     scrollTopRef.current = scrollTop;
@@ -268,7 +279,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       edgesInRange(lay, ix, firstRow, lastRow),
       { firstRow, lastRow, scrollTop: layoutScrollTop, width: w, height: h, rightInset },
       themeRef.current,
-      { hoverRow, selectedIndex: sel },
+      { hoverRow, selectedIndex: sel, matchRows: matchSet },
       m,
     );
     if (wip !== null && scrollTop < rowHeight + 56) {
@@ -384,7 +395,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       return;
     }
     paintNow();
-  }, [paintNow, layout, selectedIndex, wip]);
+  }, [paintNow, layout, selectedIndex, wip, matchSet]);
 
   // P2b §4.4: theme changes re-resolve the cached CSS-variable colors and
   // repaint. Runs once on mount too (themeVersion starts at 0), which is

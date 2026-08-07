@@ -24,11 +24,15 @@ export function useWorkspaceKeyboard(deps: {
   historyOpenRef: { current: boolean };
   reflogOpenRef: { current: boolean };
   commitBrowserOpenRef: { current: boolean };
+  searchOpenRef: { current: boolean };
+  closeSearch: () => void;
   diffSlotRef: { current: DiffSlot | null };
   compareRef: { current: { oid: string } | null };
   setSelectedIndex: Setter<number | null>;
   setCommitBrowserOpen: Setter<boolean>;
   // Shortcuts
+  searchOpen: boolean;
+  openSearch: () => void;
   refreshing: boolean;
   statusLoading: boolean;
   graphLoading: boolean;
@@ -58,10 +62,14 @@ export function useWorkspaceKeyboard(deps: {
     historyOpenRef,
     reflogOpenRef,
     commitBrowserOpenRef,
+    searchOpenRef,
+    closeSearch,
     diffSlotRef,
     compareRef,
     setSelectedIndex,
     setCommitBrowserOpen,
+    searchOpen,
+    openSearch,
     refreshing,
     statusLoading,
     graphLoading,
@@ -113,6 +121,14 @@ export function useWorkspaceKeyboard(deps: {
         setCommitBrowserOpen(false);
         return;
       }
+      // P50b: the commit-search bar sits below the transient overlays and above
+      // the diff/compare layers. When its input is focused the bar's own
+      // capture-phase Esc already closed it (this branch handles the
+      // focus-elsewhere case).
+      if (searchOpenRef.current) {
+        closeSearch();
+        return;
+      }
       if (diffSlotRef.current !== null) {
         collapseDiffSlot();
         return;
@@ -134,6 +150,7 @@ export function useWorkspaceKeyboard(deps: {
     closeBlame,
     closeHistory,
     closeReflog,
+    closeSearch,
   ]);
 
   // Per-repo shortcut effect (active tab only, §5.1): refresh / fetch / pull /
@@ -151,6 +168,15 @@ export function useWorkspaceKeyboard(deps: {
         return;
       }
 
+      // P50b (OQ1): Ctrl/Cmd-F opens commit search (preventDefault the webview
+      // find). Ctrl+Shift+F stays fetch (handled below). Runs before the typing
+      // guard so it works from the commit box too; suppressed under a dialog.
+      if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        if (!dialogOpen && !abortConfirmOpen) openSearch();
+        return;
+      }
+
       const target = e.target as HTMLElement | null;
       const typing =
         target !== null &&
@@ -160,7 +186,9 @@ export function useWorkspaceKeyboard(deps: {
           target.isContentEditable);
       if (typing) return;
 
-      if (dialogOpen || abortConfirmOpen) return;
+      // P50b: nav/fetch/pull/push are inert while the search bar is open (its
+      // own input handles Enter/Shift+Enter for next/prev).
+      if (dialogOpen || abortConfirmOpen || searchOpen) return;
 
       if (ctrl && e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault();
@@ -223,6 +251,8 @@ export function useWorkspaceKeyboard(deps: {
     canPullPush,
     dialogOpen,
     abortConfirmOpen,
+    searchOpen,
+    openSearch,
     selectedIndex,
     graph,
   ]);
