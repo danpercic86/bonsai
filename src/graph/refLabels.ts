@@ -9,6 +9,7 @@ import type { GraphNode, RefLabel } from '../ipc';
 import { STASH_BG, STASH_COLOR, TAG_BG, TAG_COLOR } from './colors';
 import type { Theme } from './colors';
 import { FONT_UI, METRICS } from './metrics';
+import type { GraphDisplayOptions } from './rightColumns';
 import { measure, truncateToWidth } from './textMeasure';
 
 // ---------- shared pill style (P7 §3.3: consumed by entityStyle / LaidRefLabel) ----------
@@ -193,6 +194,19 @@ export interface LaidRefLabel {
   w: number;
   /** Glyphs to draw (all false for chip / tag / head). */
   icons: RefIcons;
+  /** P51c: ahead/behind chip drawn immediately RIGHT of this pill (local
+   *  diverged branches only), or `null`. Its width is reserved during layout so
+   *  later pills / the "+n" chip never overlap it. */
+  chip: AheadBehindChip | null;
+}
+
+/** P51c: a laid-out ahead/behind chip. `text` is the compact "↑a ↓b" string
+ *  (either arrow dropped when its count is 0), `width` its measured width in
+ *  `metaFont` (ceil'd), `color` the resolved theme color. */
+export interface AheadBehindChip {
+  text: string;
+  width: number;
+  color: string;
 }
 
 /** Which glyphs a pill carries. A branch may show laptop and/or cloud; a stash
@@ -238,11 +252,64 @@ function refPillWidth(
   );
 }
 
+// ---------- ahead/behind chip (P51c §7) ----------
+
+/** P51c: compact "↑a ↓b" chip text for a diverged local branch, or `null` when
+ *  NOT diverged (both counts ≤ 0). Each arrow is dropped when its count is 0
+ *  ("↑3" / "↓2" / "↑3 ↓2"). PURE — the sole formatting + divergence rule,
+ *  unit-tested without a canvas. */
+export function formatAheadBehind(ahead: number, behind: number): string | null {
+  if (ahead <= 0 && behind <= 0) return null;
+  const parts: string[] = [];
+  if (ahead > 0) parts.push(`↑${ahead}`);
+  if (behind > 0) parts.push(`↓${behind}`);
+  return parts.join(' ');
+}
+
+/** P51c: chip text for an entity, applying the full gate — the toggle is on,
+ *  the entity is a LOCAL branch, its name is in `branchStats` with non-null
+ *  counts, and it is diverged. Returns `null` otherwise (no chip, no reserved
+ *  space). PURE (no canvas) so the gate is unit-testable. */
+export function chipTextFor(e: RefEntity, display: GraphDisplayOptions): string | null {
+  if (!display.showAheadBehind) return null;
+  if (e.kind !== 'branch' || !e.hasLocal) return null;
+  const stat = display.branchStats.get(e.name);
+  if (stat === undefined || stat.ahead === null || stat.behind === null) return null;
+  return formatAheadBehind(stat.ahead, stat.behind);
+}
+
+/** P51c: measure the chip for `e` (in `metaFont`), or `null` when it has none.
+ *  Sets `ctx.font` to measure, then RESTORES it to `pillFont` so the caller's
+ *  loop invariant (pill measurement runs in `pillFont`) holds. */
+function chipFor(
+  ctx: CanvasRenderingContext2D,
+  e: RefEntity,
+  theme: Theme,
+  display: GraphDisplayOptions,
+): AheadBehindChip | null {
+  const text = chipTextFor(e, display);
+  if (text === null) return null;
+  ctx.font = `${METRICS.metaFont} ${FONT_UI}`;
+  const width = Math.ceil(measure(ctx, text));
+  ctx.font = `${METRICS.pillFont} ${FONT_UI}`;
+  return { text, width, color: theme.text2 };
+}
+
+/** P51c: extra horizontal advance a pill's chip adds after it (gap + width),
+ *  or 0 when there is no chip. Used for both forward layout and pop-rewind so
+ *  the "+n" overflow count stays exact. */
+function chipAdvance(chip: AheadBehindChip | null): number {
+  return chip === null ? 0 : METRICS.chipGap + chip.width;
+}
+
 /** P7 §4: lay entities L→R in the fixed band `[startX, startX+budget]`; break
  *  before an entity that would exceed the budget (except the first); append a
  *  "+n" chip counting HIDDEN ENTITIES. Mirrors the old `layoutRowPills` overflow
  *  rule exactly. PURE (no drawing); sets `ctx.font` internally. Single source of
- *  truth for both the draw pass and hit-testing. */
+ *  truth for both the draw pass and hit-testing. P51c: a diverged local branch
+ *  reserves its ahead/behind chip width (gap + chip) after the pill, so later
+ *  pills never overlap it and the chip counts toward the fixed-band budget (it
+ *  can be pushed into the "+n" overflow like any other content). */
 export function layoutRefLabels(
   ctx: CanvasRenderingContext2D,
   entities: readonly RefEntity[],
@@ -250,6 +317,7 @@ export function layoutRefLabels(
   theme: Theme,
   startX: number,
   budget: number,
+  display: GraphDisplayOptions,
 ): LaidRefLabel[] {
   const result: LaidRefLabel[] = [];
   if (entities.length === 0) return result;
@@ -260,9 +328,13 @@ export function layoutRefLabels(
     const style = entityStyle(e, node, theme);
     const icons = iconsFor(e);
     const w = refPillWidth(ctx, style, icons);
-    if (shown > 0 && x + w > startX + budget) break;
-    result.push({ entity: e, style, x, w, icons });
-    x += w + METRICS.pillGap;
+    // P51c: reserve the ahead/behind chip's width (gap + chip) so it never
+    // overlaps the next pill; the reservation counts toward the band budget.
+    const chip = chipFor(ctx, e, theme, display);
+    const advance = w + chipAdvance(chip);
+    if (shown > 0 && x + advance > startX + budget) break;
+    result.push({ entity: e, style, x, w, icons, chip });
+    x += advance + METRICS.pillGap;
     shown++;
   }
   let hidden = entities.length - shown;
@@ -283,13 +355,15 @@ export function layoutRefLabels(
     while (result.length > 0 && x + chipW > startX + budget) {
       const popped = result.pop();
       if (popped === undefined) break;
-      x -= popped.w + METRICS.pillGap;
+      // Rewind by the SAME advance the forward pass added (pill + any reserved
+      // ahead/behind chip + gap) so the "+n" count and cursor stay exact.
+      x -= popped.w + chipAdvance(popped.chip) + METRICS.pillGap;
       hidden++;
       chipStyle = chipStyleFor(hidden);
       chipW = refPillWidth(ctx, chipStyle, noIcons);
     }
     // If every pill got popped the chip sits alone at startX (x === startX).
-    result.push({ entity: null, style: chipStyle, x, w: chipW, icons: noIcons });
+    result.push({ entity: null, style: chipStyle, x, w: chipW, icons: noIcons, chip: null });
   }
   return result;
 }
@@ -301,7 +375,7 @@ export function layoutRefLabels(
  *  and laid-out widths stay pixel-identical. Nothing draws past the ref band
  *  (guaranteed by the layout budget). */
 export function drawRefLabelAt(ctx: CanvasRenderingContext2D, laid: LaidRefLabel, cy: number): void {
-  const { style, x, w, icons } = laid;
+  const { style, x, w, icons, chip } = laid;
   const h = METRICS.pillHeight;
   const y = cy - h / 2;
   const r = h / 2;
@@ -345,4 +419,13 @@ export function drawRefLabelAt(ctx: CanvasRenderingContext2D, laid: LaidRefLabel
   ctx.fillStyle = style.text;
   ctx.textAlign = 'left';
   ctx.fillText(truncateToWidth(ctx, style.label, labelMaxPx), ix, cy);
+
+  // P51c: ahead/behind chip, immediately RIGHT of the pill (its width was
+  // reserved by layoutRefLabels, so nothing overlaps). Muted, no background.
+  if (chip !== null) {
+    ctx.font = `${METRICS.metaFont} ${FONT_UI}`;
+    ctx.fillStyle = chip.color;
+    ctx.textAlign = 'left';
+    ctx.fillText(chip.text, x + w + METRICS.chipGap, cy);
+  }
 }

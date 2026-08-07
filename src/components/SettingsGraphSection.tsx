@@ -1,10 +1,10 @@
 // P51b: Settings "Graph" section (own file, mirrors the other extracted
 // settings sections). Three geometry sliders (avatar / row / lane) plus the
 // P51 per-row detail controls — short SHA, author-name column, date column, a
-// date-basis choice, and compact rows. Every control fires `onChange` with a
-// WHOLE-STRUCT `graph` patch (the backend patch path is whole-struct); App
-// updates state live and debounces the persist, exactly like the pre-P51 inline
-// sliders. (The ahead/behind toggle ships in P51c — not here.)
+// date-basis choice, an ahead/behind chip toggle, and compact rows. Every
+// control fires `onChange` with a WHOLE-STRUCT `graph` patch (the backend patch
+// path is whole-struct); App updates state live and debounces the persist,
+// exactly like the pre-P51 inline sliders.
 
 import type { GraphPrefs, UiSettingsPatch } from '../ipc';
 import { NumberSlider } from './NumberSlider';
@@ -114,6 +114,17 @@ export function SettingsGraphSection({ graph, onChange }: SettingsGraphSectionPr
           <span>Committer</span>
         </label>
       </fieldset>
+
+      {/* P51c: ahead/behind chip on local-branch pills. Renders only on diverged
+          branches (ahead/behind > 0) — low clutter, so on by default. */}
+      <label className="settings-checkbox">
+        <input
+          type="checkbox"
+          checked={graph.showAheadBehind}
+          onChange={(e) => patch({ showAheadBehind: e.target.checked })}
+        />
+        <span>Ahead/behind on branches</span>
+      </label>
 
       <label className="settings-checkbox">
         <input

@@ -144,22 +144,6 @@ export function RepoWorkspace({
   // canvas metricsRef only churns when a knob actually changes.
   const metrics = useMemo(() => effectiveMetrics(graphPrefs), [graphPrefs]);
 
-  // P51b: per-row display toggles (SHA/author/date column + date basis) derived
-  // from graphPrefs and threaded into GraphCanvas. `branchStats` is an empty map
-  // here — P51c derives it from `branches` and wires the ahead/behind chip; the
-  // P51b draw pass ignores `showAheadBehind`/`branchStats`.
-  const graphDisplay = useMemo<GraphDisplayOptions>(
-    () => ({
-      showSha: graphPrefs.showSha,
-      showAuthor: graphPrefs.showAuthor,
-      showDate: graphPrefs.showDate,
-      dateBasis: graphPrefs.dateBasis,
-      showAheadBehind: graphPrefs.showAheadBehind,
-      branchStats: new Map(),
-    }),
-    [graphPrefs],
-  );
-
   // RepoInfo is (re)loaded by refreshAll's openRepo; head also arrives via the
   // branches snapshot, so gating works before the first refreshAll.
   const [repo, setRepo] = useState<RepoInfo | null>(null);
@@ -182,6 +166,34 @@ export function RepoWorkspace({
   const [branches, setBranches] = useState<BranchesSnapshot | null>(null);
   const [branchesError, setBranchesError] = useState<string | null>(null);
   const [branchesLoading, setBranchesLoading] = useState(false);
+
+  // P51c: local-branch ahead/behind, keyed by branch name, for the graph's
+  // ahead/behind chip. Only branches WITH an upstream (non-null counts) are
+  // included; the chip render gates on divergence (>0) + the showAheadBehind
+  // toggle. Memoized on `branches` so the canvas display object is stable
+  // between refreshes.
+  const branchStats = useMemo<Map<string, { ahead: number | null; behind: number | null }>>(() => {
+    const m = new Map<string, { ahead: number | null; behind: number | null }>();
+    for (const b of branches?.local ?? []) {
+      if (b.ahead !== null && b.behind !== null) m.set(b.name, { ahead: b.ahead, behind: b.behind });
+    }
+    return m;
+  }, [branches]);
+
+  // P51b/P51c: per-row display toggles (SHA/author/date column + date basis) +
+  // the ahead/behind chip data, derived from graphPrefs/branchStats and threaded
+  // into GraphCanvas.
+  const graphDisplay = useMemo<GraphDisplayOptions>(
+    () => ({
+      showSha: graphPrefs.showSha,
+      showAuthor: graphPrefs.showAuthor,
+      showDate: graphPrefs.showDate,
+      dateBasis: graphPrefs.dateBasis,
+      showAheadBehind: graphPrefs.showAheadBehind,
+      branchStats,
+    }),
+    [graphPrefs, branchStats],
+  );
 
   const [stashes, setStashes] = useState<StashEntry[]>([]);
 

@@ -671,7 +671,17 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
         // Budget wide enough to fit `main` + gap + a `+n` chip, yet still
         // narrow enough to force overflow of the full 5-branch set.
         const testBudget = 120;
-        const laid = layoutRefLabels(ctx, entities, node, theme, startX, testBudget);
+        // Chip-disabled display: this overflow self-test predates P51c and must
+        // stay independent of ahead/behind reservation.
+        const noChipsDisplay: GraphDisplayOptions = {
+          showSha: true,
+          showAuthor: false,
+          showDate: true,
+          dateBasis: 'author',
+          showAheadBehind: false,
+          branchStats: new Map(),
+        };
+        const laid = layoutRefLabels(ctx, entities, node, theme, startX, testBudget, noChipsDisplay);
         check('layoutRefLabels first entity laid', laid.length >= 1 && laid[0].entity !== null);
         const last = laid[laid.length - 1];
         check('layoutRefLabels trailing overflow chip', last !== undefined && last.entity === null);
@@ -715,7 +725,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   // ref column → the hidden-entity list. Pure over current props/refs; returns
   // null for empty area, the WIP row, or when no ctx/theme is available.
   const computeHoverTarget = (x: number, y: number, scrollTop: number): TooltipState | null => {
-    const { layout: lay, wip } = propsRef.current;
+    const { layout: lay, wip, display } = propsRef.current;
     const row = hitTestAtMouseY(y, scrollTop);
     if (row === null || row < 0) return null; // none, or the WIP row (-1)
     const node = lay.nodes[row];
@@ -737,7 +747,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     if (node.refs !== undefined && node.refs.length > 0 && x < m.refColWidth) {
       const { startX, budget } = refColArea(m);
       const entities = groupRefs(node.refs);
-      const laid = layoutRefLabels(ctx, entities, node, theme, startX, budget);
+      const laid = layoutRefLabels(ctx, entities, node, theme, startX, budget, display);
       const chip = laid.find((l) => l.entity === null && x >= l.x && x <= l.x + l.w);
       if (chip !== undefined) {
         const shown = laid.filter((l) => l.entity !== null).length;
@@ -762,8 +772,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     // P51b: hovering the date column → FULL absolute timestamps (authored +
     // committed), one per line; the inline date stays relative. Recompute the
     // column geometry with the SAME pure helper the draw pass uses so the hit
-    // box matches the drawn column exactly.
-    const { display } = propsRef.current;
+    // box matches the drawn column exactly. (`display` is read at the top.)
     const rightInset = scrollerRef.current
       ? scrollerRef.current.offsetWidth - scrollerRef.current.clientWidth
       : 0;
@@ -874,7 +883,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       node.refs.length > 0
     ) {
       const { startX, budget } = refColArea(m);
-      const laid = layoutRefLabels(ctx, groupRefs(node.refs), node, theme, startX, budget);
+      const laid = layoutRefLabels(ctx, groupRefs(node.refs), node, theme, startX, budget, display);
       const hitLabel = laid.find((l) => l.entity !== null && x >= l.x && x <= l.x + l.w);
       if (hitLabel !== undefined && hitLabel.entity !== null) {
         const ref = targetRefOf(hitLabel.entity);

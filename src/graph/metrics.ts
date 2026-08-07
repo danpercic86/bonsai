@@ -20,6 +20,9 @@ export const METRICS = {
   pillHeight: 18,
   pillPadX: 8,
   pillGap: 4,
+  /** P51c: gap between a local-branch pill and its trailing ahead/behind chip
+   *  (the chip has no pill background, so it sits a touch clearer than pillGap). */
+  chipGap: 6,
   pillMaxWidth: 160,
   pillFont: '600 11px',
   summaryFont: '400 13px',

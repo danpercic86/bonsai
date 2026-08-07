@@ -78,7 +78,16 @@ defer; compact preset override; toggles nested in GraphPrefs.
   + Short-SHA OFF each repaint the canvas non-blank with no errors (column add + remove/reflow paths).
   Canvas visuals (SHA text/layout/compact density/hover) = USER CHECKPOINT (pane not screenshottable
   headless). Nit noted: GraphCanvas.tsx 944 lines (pre-existing) — future split candidate.
-**Current step:** P51c (ahead/behind chip on branch pills) — senior-dev next.
+- **P51c** (reviewer APPROVE, 0 must-fix; 1 should-fix = test-coverage gap → tester; 2 cosmetic nits)
+  — `branchStats` from `BranchInfo.local` threaded via `display`; `↑N ↓M` chip on diverged local-branch
+  pills in the LEFT band (`refLabels.ts`; reserves `chipGap+chipWidth`, integrated with overflow `+n`
+  pop-rewind — reviewer hand-verified EXACT, no off-by-one/overlap); gated by `showAheadBehind`
+  (SettingsGraphSection toggle). textMeasure NUL→space tidy. 13 new tests (28 graph). **P51c AI GATE
+  PASSED** (harness, mock :1420): repo loads clean with default toggle ON + diverged `feat` (↑1↓1) →
+  chip draw path runs, canvas non-blank, zero console errors. Chip visual = USER CHECKPOINT. tsc/build clean.
+**Current step:** P51c committed — running P51 tester (full regression + the reviewer's chip-overflow
+coverage gap: a diverged chip-bearing pill overflowing the band asserting `+n`/cursor exact), then P51
+close-out → P52.
 
 ## P50 — commit/content search + command palette + list filtering (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 

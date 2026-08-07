@@ -82,6 +82,7 @@ export interface P7DevHooks {
     theme: import('./colors').Theme,
     startX: number,
     budget: number,
+    display: import('./rightColumns').GraphDisplayOptions,
   ): import('./refLabels').LaidRefLabel[];
   refColArea(m: import('./metrics').EffectiveMetrics): { startX: number; budget: number };
   avatarHit(

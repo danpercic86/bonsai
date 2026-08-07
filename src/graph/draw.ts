@@ -442,7 +442,7 @@ export function drawGraph(
     // 5a (LEFT): ref column — collapsed entities capped by the fixed band with
     // a trailing "+n" chip. Layout is the shared pure helper (single source of
     // truth with the hit-test); this pass only paints the laid-out labels.
-    const laid = layoutRefLabels(ctx, groupRefs(node.refs), node, theme, startX, budget);
+    const laid = layoutRefLabels(ctx, groupRefs(node.refs), node, theme, startX, budget, display);
     for (const l of laid) drawRefLabelAt(ctx, l, y);
 
     // 5b–5e (RIGHT): summary (flex) + optional author / SHA(+badge) / date
