@@ -13,6 +13,11 @@ use bonsai_core::graph::compute_graph;
 #[test]
 #[ignore] // release-mode gate; see module docs for the invocation
 fn layout_31k_under_500ms() {
+    // P52: ensure_default_fixture now writes `.git/objects/info/commit-graph`
+    // (once, when git is available), so this gate measures compute_graph with
+    // the commit-graph present — libgit2 reads generation numbers + inline
+    // commit metadata from it instead of inflating 31k commit objects, giving
+    // the layout revwalk more margin under the 500 ms ceiling.
     let path = ensure_default_fixture().expect("fixture generation failed");
 
     // Warm-up (page cache, odb).
@@ -27,12 +32,12 @@ fn layout_31k_under_500ms() {
         timings_ms.push(t.elapsed().as_secs_f64() * 1e3);
         assert_eq!(layout.nodes.len(), 31_000);
     }
-    println!("[perf-gate] compute_graph timings: {timings_ms:.1?} ms");
 
     let min = timings_ms
         .iter()
         .copied()
         .fold(f64::INFINITY, f64::min);
+    println!("[perf-gate] compute_graph timings: {timings_ms:.1?} ms (best {min:.1} ms)");
     assert!(
         min < 500.0,
         "layout gate failed: minimum of 3 runs was {min:.1} ms (limit 500 ms)"

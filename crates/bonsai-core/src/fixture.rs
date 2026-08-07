@@ -238,28 +238,64 @@ pub fn ensure_default_fixture() -> Result<PathBuf, AppError> {
     let dir = target_dir.join("graph-fixture");
     let repo_path = dir.join("repo");
     let marker = dir.join("COMPLETE");
-    if marker.exists() && repo_path.exists() {
-        return Ok(repo_path);
-    }
-    if repo_path.exists() {
-        std::fs::remove_dir_all(&repo_path)?;
-    }
-    if marker.exists() {
-        std::fs::remove_file(&marker)?;
-    }
-    std::fs::create_dir_all(&repo_path)?;
+    if !(marker.exists() && repo_path.exists()) {
+        // Cache miss — (re)generate the synthetic history.
+        if repo_path.exists() {
+            std::fs::remove_dir_all(&repo_path)?;
+        }
+        if marker.exists() {
+            std::fs::remove_file(&marker)?;
+        }
+        std::fs::create_dir_all(&repo_path)?;
 
-    let spec = FixtureSpec::default();
-    let start = std::time::Instant::now();
-    generate_fixture(&repo_path, &spec)?;
-    std::fs::write(&marker, b"ok")?;
-    eprintln!(
-        "[fixture] generated {}-commit fixture in {:.1}s at {}",
-        spec.total_commits(),
-        start.elapsed().as_secs_f64(),
-        repo_path.display()
-    );
+        let spec = FixtureSpec::default();
+        let start = std::time::Instant::now();
+        generate_fixture(&repo_path, &spec)?;
+        std::fs::write(&marker, b"ok")?;
+        eprintln!(
+            "[fixture] generated {}-commit fixture in {:.1}s at {}",
+            spec.total_commits(),
+            start.elapsed().as_secs_f64(),
+            repo_path.display()
+        );
+    }
+
+    // P52: ensure the fixture carries a commit-graph. Runs on BOTH the fresh
+    // and the cache-hit path (covers a pre-P52 cached fixture generated before
+    // this guard existed), existence-guarded so a reused fixture never re-pays
+    // a full rewrite. This mirrors what a real opened repo gets from P52a's
+    // open hook, so the perf gates measure the realistic (graph-present) state.
+    ensure_commit_graph(&repo_path);
     Ok(repo_path)
+}
+
+/// Best-effort, existence + `have_git`-guarded commit-graph write for the
+/// cached fixture (P52). Skips cleanly when the graph already exists (no full
+/// rewrite on a reused fixture) or when `git` is absent — libgit2 works without
+/// the file, so a missing graph only means the perf gate degrades to the
+/// slower (pre-P52) path. Never errors, never panics.
+fn ensure_commit_graph(repo_path: &Path) {
+    // Non-bare working copy ⇒ the file lands under `.git`; the second check is
+    // defensive (a bare repo would place it directly under `objects/`).
+    let cg = repo_path.join(".git/objects/info/commit-graph");
+    let cg_bare = repo_path.join("objects/info/commit-graph");
+    if cg.exists() || cg_bare.exists() {
+        return;
+    }
+    if !have_git() {
+        eprintln!("[fixture] git absent — skipping commit-graph write");
+        return;
+    }
+    let outcome = crate::git::maintenance::write_commit_graph_best_effort(repo_path);
+    eprintln!("[fixture] commit-graph write attempted: {outcome:?}");
+}
+
+/// Whether the `git` CLI is on PATH (the commit-graph writer shells out to it).
+fn have_git() -> bool {
+    std::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .is_ok()
 }
 
 #[cfg(test)]

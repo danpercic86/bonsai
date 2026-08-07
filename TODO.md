@@ -61,8 +61,16 @@ health-gate wiring (report per-section timings; do NOT raise budgets silently).
   each returns the command result independently; never blocks/errors. NO graph.rs/health.rs/IPC/TS/mock
   change, no `core.commitGraph`, no new repo-changed. 6 tests incl. load-bearing `compute_graph` +
   health-branches IDENTICAL before/after + Skipped-on-no-git. clippy --all-targets + build clean.
-**Current step:** P52b (perf-fixture + gate wiring; health 20k gate fix — report per-section timings,
-NO silent budget raise) — senior-dev next.
+- **P52b** (reviewer APPROVE, 0 must-fix/should-fix; 1 harmless nit) — fixture `ensure_commit_graph`
+  (existence + have_git guarded, at-most-once, on both cache paths) writes the graph so perf tests
+  measure the realistic state; health perf test gets best-of-3 per-section reporting + graph-presence
+  assert + `#[ignore]` (matching the existing `perf_gate.rs` gates); **budgets UNCHANGED (1500/2000)**.
+  **Commit-graph perf win (20k health, isolated):** total ~8100ms → **~1600ms** (branches 6000→~1280,
+  stats 1558→~300) — under budget; layout `compute_graph` 254.9ms<500 with the graph. `#[ignore]` is
+  for parallel-suite CPU-contention flakiness (convention), NOT a budget dodge. No prod-logic change
+  (only `#[cfg(test)]` + test-only fixture; `ensure_default_fixture` has no runtime caller).
+**Current step:** P52b committed — running P52 tester (final Phase-1 regression), then P52 close-out →
+**Phase 1 (P49–P52) COMPLETE**.
 
 ## P51 — commit-graph polish + clutter controls (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 
