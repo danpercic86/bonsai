@@ -93,8 +93,18 @@ tests `plan_never_mutates` + `out_of_allowlist_is_unsupported`) + `ai_plan_opera
   226 + `ai_operation_resolve.rs` 496 (all <500 logic). `plan_never_mutates` now enumerates ALL 10 intents.
   14 ai_operation tests; clippy -D + build/tsc clean; cmd unchanged (134); no mock change (P55a mock already
   covered the branches).
-**Current step:** P55a+P55b DONE (committed). Next: **P55c** — UI (`ProposedOpDialog` + `safeOpDispatch` +
-palette "Ask Bonsai to…" + toolbar ✨ + `runPlanOperation` confirm/dispatch/refresh) → P55 tester → AI gate.
+- **P55c** (reviewer APPROVE, 0 must-fix / 0 should-fix; 3 nits) — UI. New `safeOpDispatch.ts` (pure switch
+  → EXISTING typed commands only; no git logic/shell; stash→`createStash` with `StashScope`
+  'allWithUntracked'|'all') + `ProposedOpDialog.tsx` (on `ConfirmDialog`, Cancel-focused, danger-variant,
+  presentational). `runPlanOperation` (last-wins guard; proposed→dialog, unsupported→calm info toast,
+  error→error toast) + `confirmProposedOp` (the ONLY mutation, via safeOpDispatch, then refresh+toast).
+  Entries: palette "Ask Bonsai to…" (registry, gated aiEligible) + toolbar ✨ Ask → shared NL PromptDialog.
+  Reviewer VERIFIED read-only-until-Confirm (single dispatch path). ipc/index.ts barrel re-exports. tsc/build
+  clean. Nit→future polish: merge/revert that PAUSE on conflicts still show a 'success' toast (the conflict
+  DOES surface via the existing op-state banner; contract-sanctioned).
+**Current step:** P55a+b+c DONE (committed). Next: **P55 tester** (regression + `safeOpDispatch` routing
+vitest + `P55-user-checklist.md`) → AI-gate harness (proposed dialog + unsupported + ?ai=off; DOM-drivable)
+→ P55 done.
 
 ## P54 — commit composer: WIP → N logical commits (Phase 2 · milestone 2/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 

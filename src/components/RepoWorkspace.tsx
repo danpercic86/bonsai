@@ -37,6 +37,7 @@ import type {
   JobStatus,
   LineSelection,
   ListView,
+  ProposedOperation,
   RebaseTodoOp,
   PaneWidths,
   ReflogEntry,
@@ -73,6 +74,9 @@ import { ComposerDialog } from './ComposerDialog';
 import { usePalette } from './repoWorkspace/usePalette';
 import { CommandPalette } from './CommandPalette';
 import { buildPaletteActions, type PaletteAction } from './paletteActions';
+import { ProposedOpDialog } from './ProposedOpDialog';
+import { PromptDialog } from './PromptDialog';
+import { safeOpDispatch } from './safeOpDispatch';
 import type { ComboboxOption } from './Combobox';
 
 export interface RepoWorkspaceProps {
@@ -316,6 +320,17 @@ export function RepoWorkspace({
   const [newWorktreeOpen, setNewWorktreeOpen] = useState(false);
   // P28 §7: "✨ What changed…" digest range picker (opened from the toolbar).
   const [whatChangedOpen, setWhatChangedOpen] = useState(false);
+  // P55c: NL → safe-git-op. `askOpen` = the one-line natural-language input;
+  // `askBusy` gates it while the READ-ONLY planner runs. `pendingProposedOp` is
+  // the resolved proposal shown in ProposedOpDialog — NOTHING mutates until its
+  // Confirm; `opDispatching` gates that dialog while the confirmed op runs.
+  // `planReqId` is a last-wins guard (mirrors aiPanelReqId) so a slow/superseded
+  // or cancelled plan reply is dropped.
+  const [askOpen, setAskOpen] = useState(false);
+  const [askBusy, setAskBusy] = useState(false);
+  const [pendingProposedOp, setPendingProposedOp] = useState<ProposedOperation | null>(null);
+  const [opDispatching, setOpDispatching] = useState(false);
+  const planReqId = useRef(0);
   const [pendingWorktreeRemove, setPendingWorktreeRemove] = useState<{
     name: string;
     absPath: string;
@@ -391,6 +406,8 @@ export function RepoWorkspace({
     staleCleanupOpen ||
     newWorktreeOpen ||
     whatChangedOpen ||
+    askOpen ||
+    pendingProposedOp !== null ||
     pendingWorktreeRemove !== null ||
     pendingWorktreeLock !== null ||
     worktreeContextOpen ||
@@ -1581,6 +1598,77 @@ export function RepoWorkspace({
     setAiPanel(null);
   }, []);
 
+  // P55c: map a natural-language `request` to ONE allowlisted, previewable op via
+  // the READ-ONLY planner. Mirrors runAnalyze's last-wins req-id guard so a slow,
+  // superseded, or cancelled reply is dropped. On `proposed` → arm the
+  // ProposedOpDialog (NOTHING mutates yet); on `unsupported` → a calm info toast;
+  // on error (aiUnavailable / aiFailed / …) → the shared error toast. This call
+  // is READ-ONLY — it writes nothing and never emits repo-changed.
+  const runPlanOperation = useCallback(
+    (request: string) => {
+      const id = ++planReqId.current;
+      setAskBusy(true);
+      ipc.aiPlanOperation(repoId, request).then(
+        (plan) => {
+          if (id !== planReqId.current) return;
+          setAskBusy(false);
+          setAskOpen(false);
+          if (plan.kind === 'proposed') setPendingProposedOp(plan.operation);
+          else pushToast('info', plan.reason);
+        },
+        (e: unknown) => {
+          if (id !== planReqId.current) return;
+          setAskBusy(false);
+          setAskOpen(false);
+          pushToast('error', errorMessage(e));
+        },
+      );
+    },
+    [repoId, pushToast],
+  );
+
+  const openAskBonsai = useCallback(() => {
+    // Drop any in-flight/stale plan and clear the input's busy state on open.
+    planReqId.current += 1;
+    setAskBusy(false);
+    setAskOpen(true);
+  }, []);
+
+  const cancelAskBonsai = useCallback(() => {
+    // Cancel drops any in-flight plan (its reply is ignored by the req-id guard).
+    planReqId.current += 1;
+    setAskBusy(false);
+    setAskOpen(false);
+  }, []);
+
+  // P55c: the ONLY mutation in the NL pipeline — runs after the user confirms the
+  // ProposedOpDialog. Dispatches the RESOLVED op to its EXISTING typed command
+  // (safeOpDispatch, §6), then refreshes; a dispatched-command AppError (e.g.
+  // checkoutConflict / unmergedBranch) surfaces in the shared error toast. The
+  // op may pause into the existing conflict/autostash flow — no new UI here.
+  const confirmProposedOp = useCallback(async () => {
+    const operation = pendingProposedOp;
+    if (operation === null) return;
+    setOpDispatching(true);
+    setMutating(true);
+    try {
+      await safeOpDispatch(ipc, repoId, operation.op);
+      await refreshAll();
+      pushToast('success', operation.preview.title);
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setOpDispatching(false);
+      setMutating(false);
+      setPendingProposedOp(null);
+    }
+  }, [pendingProposedOp, repoId, refreshAll, pushToast]);
+
+  const cancelProposedOp = useCallback(() => {
+    // Ignore cancel while the confirmed op is dispatching (keep the modal up).
+    if (!opDispatching) setPendingProposedOp(null);
+  }, [opDispatching]);
+
   // P15b: analyze the file diff currently open in the center-pane overlay. Only
   // workdir kinds (staged/unstaged/untracked) map to a `workdirFile` target;
   // `staged` is true only for the staged slot. `undefined` hides the affordance
@@ -1712,52 +1800,66 @@ export function RepoWorkspace({
     [revealCommitByOid, pushToast],
   );
 
-  const paletteActions = useMemo<PaletteAction[]>(
-    () =>
-      palette.open
-        ? buildPaletteActions({
-            mutating,
-            refreshing,
-            statusLoading,
-            graphLoading,
-            opActive,
-            canPullPush,
-            hasHeadBranch: headBranch !== null,
-            onFetch: () => void handleFetch(),
-            onPull: () => void handlePull(),
-            onPush: () => void handlePush(),
-            onRefresh: () => void handleRefresh(),
-            onNewBranch: openNewBranch,
-            onNewWorktree: openNewWorktree,
-            onOpenSearch: openSearchEmpty,
-            branches,
-            graph,
-            revealCommitByOid,
-            appCommands,
-          })
-        : [],
-    [
-      palette.open,
+  const paletteActions = useMemo<PaletteAction[]>(() => {
+    if (!palette.open) return [];
+    const actions = buildPaletteActions({
       mutating,
       refreshing,
       statusLoading,
       graphLoading,
       opActive,
       canPullPush,
-      headBranch,
-      handleFetch,
-      handlePull,
-      handlePush,
-      handleRefresh,
-      openNewBranch,
-      openNewWorktree,
-      openSearchEmpty,
+      hasHeadBranch: headBranch !== null,
+      onFetch: () => void handleFetch(),
+      onPull: () => void handlePull(),
+      onPush: () => void handlePush(),
+      onRefresh: () => void handleRefresh(),
+      onNewBranch: openNewBranch,
+      onNewWorktree: openNewWorktree,
+      onOpenSearch: openSearchEmpty,
       branches,
       graph,
       revealCommitByOid,
       appCommands,
-    ],
-  );
+    });
+    // P55c: prepend the "Ask Bonsai to…" NL entry (registry pattern, gated
+    // aiEligible) so it is the first Action row and fuzzy-filterable. Its run
+    // opens the shared read-only NL input — nothing mutates until the resolved
+    // op's own confirm dialog.
+    if (aiEligible) {
+      actions.unshift({
+        id: 'ai.ask',
+        title: 'Ask Bonsai to…',
+        hint: '✨',
+        group: 'action',
+        keywords: 'ai natural language nl request undo revert switch stash discard merge branch',
+        run: openAskBonsai,
+      });
+    }
+    return actions;
+  }, [
+    palette.open,
+    mutating,
+    refreshing,
+    statusLoading,
+    graphLoading,
+    opActive,
+    canPullPush,
+    headBranch,
+    handleFetch,
+    handlePull,
+    handlePush,
+    handleRefresh,
+    openNewBranch,
+    openNewWorktree,
+    openSearchEmpty,
+    branches,
+    graph,
+    revealCommitByOid,
+    appCommands,
+    aiEligible,
+    openAskBonsai,
+  ]);
 
   function handleToggleConflictView(path: string) {
     const key = `conflict:${path}`;
@@ -2089,6 +2191,7 @@ export function RepoWorkspace({
         onPush={() => void handlePush()}
         onForcePush={() => handleForcePush()}
         onWhatChanged={() => setWhatChangedOpen(true)}
+        onAskBonsai={openAskBonsai}
         onViewHeadReflog={() =>
           reflog && reflog.refName === 'HEAD' ? closeReflog() : void openReflog('HEAD')
         }
@@ -2372,6 +2475,29 @@ export function RepoWorkspace({
         onClose={palette.close}
         onRunSearch={paletteRunSearch}
         onJumpToCommit={paletteJumpToCommit}
+      />
+      {/* P55c: the shared "Ask Bonsai to…" NL input — opened from the palette
+          action or the toolbar ✨ Ask button. Submitting runs the READ-ONLY
+          planner; the proposal (if any) then opens ProposedOpDialog below. */}
+      <PromptDialog
+        open={askOpen}
+        title="Ask Bonsai to…"
+        label="Describe what you want to do in plain language"
+        placeholder="e.g. undo my last merge · switch to main · stash my changes"
+        confirmLabel="Ask"
+        busy={askBusy}
+        validate={(v) => (v.trim() === '' ? 'Type a request' : null)}
+        onSubmit={(v) => runPlanOperation(v.trim())}
+        onCancel={cancelAskBonsai}
+      />
+      {/* P55c: preview + confirm gate. NOTHING mutates until its Confirm, which
+          dispatches the resolved op via safeOpDispatch (existing typed command). */}
+      <ProposedOpDialog
+        open={pendingProposedOp !== null}
+        operation={pendingProposedOp}
+        busy={opDispatching}
+        onConfirm={() => void confirmProposedOp()}
+        onCancel={cancelProposedOp}
       />
       {composer.open && (
         <ComposerDialog composer={composer} statusByPath={composerStatusByPath} />

@@ -3938,6 +3938,106 @@ span.file-row-main {
   overflow-wrap: anywhere;
 }
 
+/* ---------- P55c: NL → safe-git-op preview (ProposedOpDialog) ---------- */
+.proposed-op-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.danger-badge {
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.danger-badge.safe {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, var(--bg-2));
+  border-color: color-mix(in srgb, var(--success) 35%, var(--bg-2));
+}
+
+.danger-badge.caution {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, var(--bg-2));
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--bg-2));
+}
+
+.danger-badge.destructive {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, var(--bg-2));
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--bg-2));
+}
+
+.proposed-op-summary {
+  margin: 0;
+  color: var(--text-1);
+}
+
+.op-ref-change-list,
+.op-dropped-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.op-ref-change {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.op-ref-name {
+  color: var(--text-2);
+  margin-right: 2px;
+}
+
+.op-ref-arrow {
+  color: var(--text-3);
+}
+
+.op-section-label {
+  font-size: 11px;
+  color: var(--text-2);
+  margin-bottom: 4px;
+}
+
+.op-dropped-list li {
+  font-size: 12px;
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+
+.op-added {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.op-worktree-warning {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.op-rationale {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+
 /* P53c: AI "Suggest name ✨" row under the branch-create input. */
 .branch-name-suggest {
   display: flex;

@@ -25,6 +25,9 @@ export interface WorkspaceToolbarProps {
   /** P37b: opens the force-push-with-lease confirm dialog. */
   onForcePush(): void;
   onWhatChanged(): void;
+  /** P55c: opens the "Ask Bonsai to…" natural-language input (gated aiEligible).
+   *  Read-only until the proposed op's own confirm dialog. */
+  onAskBonsai(): void;
   /** P38: opens the HEAD reflog overlay (recovery net). Enabled on a born repo. */
   onViewHeadReflog(): void;
   /** True once HEAD points at a commit (not unborn) — gates the reflog button. */
@@ -57,6 +60,7 @@ export function WorkspaceToolbar({
   onPush,
   onForcePush,
   onWhatChanged,
+  onAskBonsai,
   onViewHeadReflog,
   headBorn,
   onRefresh,
@@ -173,6 +177,16 @@ export function WorkspaceToolbar({
               title="AI digest of what changed over a range (read-only)"
             >
               ✨ What changed…
+            </button>
+          )}
+          {aiEligible && (
+            <button
+              type="button"
+              className="toolbar-btn"
+              onClick={() => onAskBonsai()}
+              title="Ask Bonsai to perform a safe git operation from a natural-language request (previewed + confirmed)"
+            >
+              ✨ Ask…
             </button>
           )}
           <button
