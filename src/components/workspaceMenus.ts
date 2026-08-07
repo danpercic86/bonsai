@@ -601,6 +601,19 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
         onSelect: () => handleCompareWithHead(oid),
       },
     ];
+    // P53b §5.2: "Explain this commit" — reuses the existing ai_analyze_diff
+    // explain path ({kind:'commit'}); the backend now grounds the explanation on
+    // the full commit MESSAGE (D2), not just the diff. Read-only, so it sits in
+    // this read-only group AFTER "Compare with HEAD" and BEFORE Cherry-pick/
+    // Revert, and is offered on detached HEAD too. Disabled unless AI is eligible
+    // (installed && enabled && consented). runAnalyze's req-id guards staleness.
+    items.push({
+      label: 'Explain this commit',
+      icon: createElement(SummarizeIcon),
+      disabled: !aiEligible,
+      onSelect: () =>
+        runAnalyze({ kind: 'commit', oid }, 'explain', `Explain commit ${oid.slice(0, 7)}`),
+    });
     // P20 §5.2/§6: cherry-pick / revert onto the current branch. Gated on an
     // attached born HEAD (excluded on detached HEAD, which the backend rejects
     // — mirrors resetMenuItems) and an idle repo. On Conflicts the existing

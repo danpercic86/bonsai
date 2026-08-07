@@ -59,8 +59,16 @@ enrichment + graph-node menu entry, NO new cmd) → **P53c** branch naming (`ai_
   clippy -D warnings + pnpm build/tsc clean. Nits (noted, not folded): 3 repo-opens/call (behind CLI,
   negligible); blame.rs doc says Git for a traversing path (actually Other, test correct); mock delay
   before requireRepo; blame.rs now 519 lines (split on next blame addition).
-**Current step:** P53a DONE (committed). Next: **P53b** (explain-commit — `ai_explain` Commit MESSAGE
-enrichment + graph-node "Explain this commit" menu entry; NO new command).
+- **P53b** (reviewer APPROVE, 0 must-fix / 0 should-fix; 2 nits) — D2 grounding enrichment:
+  `build_payload` Commit arm appends `MESSAGE:\n<full commit message>` (reuses `CommitDetails.message` —
+  full body, trailing-trimmed) after COMMIT/AUTHOR, before the file blocks — Commit arm ONLY (intentionally
+  improves shipped commit explain/review per OQ5). "Explain this commit" added to the shared
+  `commitActionItems` (commit rows + branch/tag pills), read-only group (after Compare-with-HEAD), gated
+  `!aiEligible` → `runAnalyze({kind:'commit'},'explain')`. No new command (130), no mock change. cargo -p
+  bonsai-core ai_explain 19 pass; clippy -D + build/tsc clean. Nit: summary appears in both the COMMIT
+  header and the MESSAGE first line (harmless redundancy).
+**Current step:** P53a+P53b DONE (committed). Next: **P53c** (branch naming — new `ai_branch_name.rs` +
+`ai_suggest_branch_name` cmd →131 + `BranchNameSuggest.tsx` + branch-create dialog wiring).
 
 ## 🗂️ PHASE 2 & 3 — CONTRACTS PREPARED (design only; NO code yet) (2026-08-07)
 

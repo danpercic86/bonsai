@@ -284,9 +284,14 @@ fn build_payload(workdir: &Path, target: &AiDiffTarget) -> Result<(String, Vec<F
         AiDiffTarget::Commit { oid } => {
             let cd = commit_diff(workdir, oid)?;
             let short7: String = cd.details.oid.chars().take(7).collect();
+            // (D2) Ground on the author's stated intent — the full commit
+            // MESSAGE, not just the diff — inserted after COMMIT/AUTHOR and
+            // before the per-file blocks. `cd.details.message` is the full
+            // lossy message with trailing whitespace already trimmed
+            // (diff::commit_details), so no trailing blank line leaks in.
             let prefix = format!(
-                "COMMIT {}  {}\nAUTHOR {}\n\n",
-                short7, cd.details.summary, cd.details.author_name
+                "COMMIT {}  {}\nAUTHOR {}\nMESSAGE:\n{}\n\n",
+                short7, cd.details.summary, cd.details.author_name, cd.details.message
             );
             let mut file_diffs = Vec::with_capacity(cd.files.len());
             for h in &cd.files {
@@ -741,6 +746,40 @@ mod tests {
             "worktree gather must cover staged + unstaged + untracked"
         );
         assert!(has_analyzable_content(&files));
+    }
+
+    /// §7.10 (P53b/D2): the Commit-target grounding prefix now carries the FULL
+    /// commit MESSAGE (author intent = the strongest "why" signal), not just the
+    /// summary — inserted after AUTHOR and before the per-file blocks.
+    #[test]
+    fn commit_payload_prefix_carries_full_message() {
+        let dir = init_scratch();
+        let p = dir.path();
+
+        std::fs::write(p.join("f.txt"), "hello\n").expect("write");
+        stage_paths(p, &["f.txt".into()]).expect("stage");
+        // Summary line + a body line whose text lives ONLY in the body — proving
+        // the whole message body (not merely the summary) reaches the grounding.
+        let msg = "Add greeting\n\nExplains WHY: users needed a friendly hello.";
+        let oid = create_commit(p, msg).expect("commit").oid;
+
+        let (prefix, files) =
+            build_payload(p, &AiDiffTarget::Commit { oid }).expect("build payload");
+
+        assert!(
+            prefix.contains("MESSAGE:\n"),
+            "prefix must carry a MESSAGE section: {prefix:?}"
+        );
+        assert!(
+            prefix.contains("Explains WHY: users needed a friendly hello."),
+            "prefix must carry the full message BODY, not just the summary: {prefix:?}"
+        );
+        // Ordering: COMMIT → AUTHOR → MESSAGE, before the (separately rendered)
+        // per-file blocks.
+        let author_idx = prefix.find("\nAUTHOR ").expect("AUTHOR line");
+        let msg_idx = prefix.find("\nMESSAGE:").expect("MESSAGE line");
+        assert!(msg_idx > author_idx, "MESSAGE must follow AUTHOR: {prefix:?}");
+        assert!(!files.is_empty(), "the commit changed a file");
     }
 
     /// §9.1(4): `resolve_branch_base` — explicit base wins over everything.
