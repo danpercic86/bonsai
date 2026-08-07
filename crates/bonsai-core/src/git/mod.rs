@@ -12,6 +12,7 @@ pub mod branches;
 pub mod cherrypick;
 pub mod clone;
 pub mod commit;
+pub mod compose_apply;
 pub mod config;
 pub mod conflict;
 pub mod cred_cache;

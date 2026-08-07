@@ -145,6 +145,7 @@ pub fn run() {
             commands::pop_stash,
             commands::drop_stash,
             commands::commit_amend,
+            commands::apply_composed_commits,
             commands::reset_branch,
             commands::discard_paths,
             commands::discard_paths_force,

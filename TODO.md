@@ -61,8 +61,20 @@ Esc-layer). a→b→c (b reuses `ComposeGroup` from a; c needs both).
   (`tests/ai_compose_cli.rs` stub-echo, sibling isolation pattern); clippy -D + build/tsc clean. Nit
   (accepted): ai_compose.rs 616 lines (prod ~309 + mandated inline §8 suite needing private access; under
   the ai_explain 1178 precedent). `ComposeProposal` = PartialEq only (Option<f64>).
-**Current step:** P54a DONE (committed). Next: **P54b** (apply engine — `compose_apply.rs` atomic
-reset/commit-loop/rollback + `apply_composed_commits` cmd →133 + `compose.ts` mock).
+- **P54b** (reviewer APPROVE, 0 must-fix; 1 should-fix→tester; 4 nits) — written by an agent that CRASHED
+  mid-run (API error); orchestrator INDEPENDENTLY verified before commit: 7/7 compose_apply tests pass
+  (mid-sequence rollback, workdir-untouched, unborn-HEAD, validate-before-commit, two-group deltas +
+  have_git `show --stat` oracle), clippy -D + build/tsc clean, cmd registered (133). New `compose_apply.rs`
+  `apply_composed_commits` — reviewer verified IN CODE all 3 safety guarantees: ATOMIC (whole-plan
+  validation before any mutation; any loop Err → rollback, ZERO commits), HEAD+index ROLLBACK for
+  branch/detached/unborn, WORKDIR NEVER TOUCHED (no checkout/hard-reset; `reset_index_to_head` reads HEAD
+  tree into index only). No new crate dep. `files_with_rename_origs` stages both sides. `commands/compose.rs`
+  (house shape of commit, NO consent gate, no repo-changed; 132→133). Types + mock (`compose.ts` #fail→git
+  mutating nothing; mock.ts spread). SHOULD-FIX→tester: add a detached-HEAD mid-sequence rollback test
+  (only branch+unborn tested). Nits: rollback masks trigger err; rename-in-group test; 739 lines (prod
+  ~200 + inline tests, ok).
+**Current step:** P54a+P54b DONE (committed). Next: **P54c** (review UI — `useCommitComposer` +
+`ComposerDialog` + `ComposerGroupCard`; CommitPanel "Compose commits ✨" entry; Esc-layer).
 
 ## P53 — AI "why" layer: blame-why + explain-commit + branch naming (Phase 2 · milestone 1/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 

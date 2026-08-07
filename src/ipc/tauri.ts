@@ -37,6 +37,8 @@ import type {
   CherrypickOutcome,
   CommitResult,
   CompareDiff,
+  ComposeApplyResult,
+  ComposePlan,
   ComposeProposal,
   ConflictEntry,
   ConflictFile,
@@ -375,6 +377,11 @@ export const tauriIpc: IpcApi = {
   // P54a: propose grouping the working-tree changes into logical commits (read-only).
   aiComposeCommits(repoId: string, guidance: string | null): Promise<ComposeProposal> {
     return invoke<ComposeProposal>('ai_compose_commits', { repoId, guidance });
+  },
+
+  // P54b: apply a reviewed composer plan as an ordered stage+commit sequence (atomic).
+  applyComposedCommits(repoId: string, plan: ComposePlan): Promise<ComposeApplyResult> {
+    return invoke<ComposeApplyResult>('apply_composed_commits', { repoId, plan });
   },
 
   rebaseBranch(repoId: string, onto: string): Promise<RebaseOutcome> {

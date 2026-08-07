@@ -964,6 +964,25 @@ export interface ComposeProposal {
   costUsd: number | null;
 }
 
+/** User-finalized plan to apply (P54b). ORDERED — the first group becomes the
+ *  oldest commit. A changed file absent from every group is intentionally left
+ *  uncommitted in the working tree. Mirrors the Rust `ComposePlan`. */
+export interface ComposePlan {
+  groups: ComposeGroup[];
+}
+
+/** One created commit (P54b). `oid` is the full 40-hex id; `summary` is the first
+ *  message line. */
+export interface ComposeCommit {
+  oid: string;
+  summary: string;
+}
+
+/** Result of IpcApi.applyComposedCommits (P54b): created commits, oldest→newest. */
+export interface ComposeApplyResult {
+  commits: ComposeCommit[];
+}
+
 /** Result of IpcApi.checkForUpdate (P42). `available` false ⇒ up to date;
  *  version/notes/date populated only when available. currentVersion is always set. */
 export interface UpdateCheckResult {
@@ -1725,6 +1744,14 @@ export interface IpcApi {
    *  with groups:[] + all files unassigned. Rejects aiUnavailable | aiFailed (CLI
    *  fail/empty) | nothingToCommit (clean tree) | git | noRepo. */
   aiComposeCommits(repoId: string, guidance: string | null): Promise<ComposeProposal>;
+  /** Apply a reviewed plan as an ORDERED stage+commit sequence. ATOMIC: validates
+   *  fully, resets the index to HEAD (working tree UNTOUCHED), commits each group;
+   *  ANY mid-sequence failure rolls HEAD+index back so NOTHING is committed. Files
+   *  in no group are left uncommitted. Called ONLY on the user's explicit final
+   *  confirm. Does NOT emit repo-changed (caller refetches). Not AI-gated. Rejects
+   *  noRepo | operationInProgress | git | emptyMessage | configMissing |
+   *  nothingToCommit | other (unknown/duplicate path, no-op group, drift). */
+  applyComposedCommits(repoId: string, plan: ComposePlan): Promise<ComposeApplyResult>;
   /** Persisted multi-tab session. Never rejects for a missing/corrupt file (empty). */
   getSession(): Promise<SessionState>;
   /** Writes the whole session (tabs change as a unit). Rejects io on save failure. */
