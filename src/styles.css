@@ -1633,6 +1633,105 @@ body {
   color: var(--danger);
 }
 
+/* P50c: Ctrl/Cmd-K command palette — a centered modal near the top of the
+   viewport (reuses .dialog-overlay for the backdrop). */
+.command-palette-overlay {
+  align-items: flex-start;
+  padding-top: 12vh;
+}
+
+.command-palette {
+  width: 560px;
+  max-width: calc(100vw - 32px);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.command-palette-input {
+  flex: none;
+  height: 42px;
+  padding: 0 14px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 15px;
+}
+.command-palette-input:focus {
+  outline: none;
+}
+
+.command-palette-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+}
+
+.command-palette-empty {
+  padding: 10px 8px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+.command-palette-group {
+  padding: 8px 8px 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.command-palette-option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  font-size: 13px;
+  color: var(--text-1);
+  cursor: pointer;
+}
+.command-palette-option.is-active {
+  background: var(--accent);
+  color: #fff;
+}
+.command-palette-option.is-disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+.command-palette-option.is-disabled.is-active {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text-3);
+}
+
+.command-palette-option-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-palette-option-hint {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.command-palette-option.is-active .command-palette-option-hint {
+  color: rgba(255, 255, 255, 0.8);
+}
+
 .graph-search-fab {
   position: absolute;
   top: 10px;

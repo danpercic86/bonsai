@@ -66,6 +66,9 @@ import { useBisectActions } from './repoWorkspace/useBisectActions';
 import { useReadOverlays } from './repoWorkspace/useReadOverlays';
 import { useWorkspaceKeyboard } from './repoWorkspace/useWorkspaceKeyboard';
 import { useCommitSearch } from './repoWorkspace/useCommitSearch';
+import { usePalette } from './repoWorkspace/usePalette';
+import { CommandPalette } from './CommandPalette';
+import { buildPaletteActions, type PaletteAction } from './paletteActions';
 import type { ComboboxOption } from './Combobox';
 
 export interface RepoWorkspaceProps {
@@ -100,6 +103,10 @@ export interface RepoWorkspaceProps {
   onOpenRepoPath(path: string): void;
   /** P40b: open Settings → Git config → Identity (commit-error linkage). */
   onOpenIdentitySettings(): void;
+  /** P50c: App-level command-palette entries (toggle theme/lists, open Settings
+   *  / AI Assets / Health, open repo / clone / new) — merged with the repo-scoped
+   *  entries this workspace assembles. Built once in App. */
+  appCommands: PaletteAction[];
 }
 
 /** P3e §5.1: the entire per-repo state cluster + handlers + render tree, one
@@ -123,6 +130,7 @@ export function RepoWorkspace({
   onPaneResizeEnd,
   onOpenRepoPath,
   onOpenIdentitySettings,
+  appCommands,
 }: RepoWorkspaceProps) {
   const pushToast = usePushToast();
   const repoPath = repoId; // repoId == canonical workdir path (§2)
@@ -1536,6 +1544,81 @@ export function RepoWorkspace({
     return opts;
   }, [branches]);
 
+  // P50c: command palette (Ctrl/Cmd-K). usePalette owns open/close; the
+  // accelerator + Esc-layering are wired through useWorkspaceKeyboard below. The
+  // entry registry is assembled ONLY while open (its tag lookup scans the whole
+  // graph) and merges the repo-scoped actions with App's `appCommands`.
+  const palette = usePalette({ active });
+
+  // "New branch…" opens the shared create-branch PromptDialog seeded at HEAD (a
+  // dialog — never a raw mutation); disabled when detached/unborn or busy.
+  const openNewBranch = useCallback(() => {
+    if (headBranch !== null) setPendingCreateBranch({ oid: headBranch.tip });
+  }, [headBranch]);
+  const openNewWorktree = useCallback(() => setNewWorktreeOpen(true), []);
+  const openSearchEmpty = useCallback(() => search.openSearch(), [search.openSearch]);
+
+  // Dynamic palette rows: prefill + open the search bar, or jump to a commit by
+  // oid prefix — both reuse the non-mutating single-selection reveal path.
+  const paletteRunSearch = useCallback((t: string) => search.openSearch(t), [search.openSearch]);
+  const paletteJumpToCommit = useCallback(
+    (prefix: string) => {
+      const g = graphDataRef.current;
+      const p = prefix.toLowerCase();
+      const node = g?.nodes.find((n) => n.id.startsWith(p));
+      if (node !== undefined) revealCommitByOid(node.id);
+      else pushToast('info', `No commit matching ${prefix} in the current view`);
+    },
+    [revealCommitByOid, pushToast],
+  );
+
+  const paletteActions = useMemo<PaletteAction[]>(
+    () =>
+      palette.open
+        ? buildPaletteActions({
+            mutating,
+            refreshing,
+            statusLoading,
+            graphLoading,
+            opActive,
+            canPullPush,
+            hasHeadBranch: headBranch !== null,
+            onFetch: () => void handleFetch(),
+            onPull: () => void handlePull(),
+            onPush: () => void handlePush(),
+            onRefresh: () => void handleRefresh(),
+            onNewBranch: openNewBranch,
+            onNewWorktree: openNewWorktree,
+            onOpenSearch: openSearchEmpty,
+            branches,
+            graph,
+            revealCommitByOid,
+            appCommands,
+          })
+        : [],
+    [
+      palette.open,
+      mutating,
+      refreshing,
+      statusLoading,
+      graphLoading,
+      opActive,
+      canPullPush,
+      headBranch,
+      handleFetch,
+      handlePull,
+      handlePush,
+      handleRefresh,
+      openNewBranch,
+      openNewWorktree,
+      openSearchEmpty,
+      branches,
+      graph,
+      revealCommitByOid,
+      appCommands,
+    ],
+  );
+
   function handleToggleConflictView(path: string) {
     const key = `conflict:${path}`;
     if (diffSlotRef.current?.key === key) {
@@ -1673,12 +1756,16 @@ export function RepoWorkspace({
     commitBrowserOpenRef,
     searchOpenRef: search.openRef,
     closeSearch: search.close,
+    paletteOpenRef: palette.openRef,
+    closePalette: palette.close,
     diffSlotRef,
     compareRef,
     setSelectedIndex,
     setCommitBrowserOpen,
     searchOpen: search.open,
     openSearch: search.openSearch,
+    paletteOpen: palette.open,
+    togglePalette: palette.toggle,
     refreshing,
     statusLoading,
     graphLoading,
@@ -2127,6 +2214,13 @@ export function RepoWorkspace({
           if (p !== null) void confirmCherrypick(p.oid, message);
         }}
         onCancel={() => setPendingCherrypick(null)}
+      />
+      <CommandPalette
+        open={palette.open}
+        actions={paletteActions}
+        onClose={palette.close}
+        onRunSearch={paletteRunSearch}
+        onJumpToCommit={paletteJumpToCommit}
       />
     </>
   );

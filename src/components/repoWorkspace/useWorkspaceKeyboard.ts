@@ -26,6 +26,9 @@ export function useWorkspaceKeyboard(deps: {
   commitBrowserOpenRef: { current: boolean };
   searchOpenRef: { current: boolean };
   closeSearch: () => void;
+  // P50c: the command palette is a top-level modal — Esc peels it first.
+  paletteOpenRef: { current: boolean };
+  closePalette: () => void;
   diffSlotRef: { current: DiffSlot | null };
   compareRef: { current: { oid: string } | null };
   setSelectedIndex: Setter<number | null>;
@@ -33,6 +36,9 @@ export function useWorkspaceKeyboard(deps: {
   // Shortcuts
   searchOpen: boolean;
   openSearch: () => void;
+  // P50c: Ctrl/Cmd-K toggles the palette; paletteOpen gates graph-nav keys.
+  paletteOpen: boolean;
+  togglePalette: () => void;
   refreshing: boolean;
   statusLoading: boolean;
   graphLoading: boolean;
@@ -64,12 +70,16 @@ export function useWorkspaceKeyboard(deps: {
     commitBrowserOpenRef,
     searchOpenRef,
     closeSearch,
+    paletteOpenRef,
+    closePalette,
     diffSlotRef,
     compareRef,
     setSelectedIndex,
     setCommitBrowserOpen,
     searchOpen,
     openSearch,
+    paletteOpen,
+    togglePalette,
     refreshing,
     statusLoading,
     graphLoading,
@@ -93,6 +103,15 @@ export function useWorkspaceKeyboard(deps: {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (globalModalOpen) return;
+      // P50c: the command palette is a top-level modal — it closes FIRST, before
+      // any transient overlay and before the typing bail below. Its own
+      // capture-phase Escape normally handles this while its input is focused;
+      // this is the focus-elsewhere fallback and keeps it explicit in the peel
+      // order (capture + stopImmediatePropagation means both never both fire).
+      if (paletteOpenRef.current) {
+        closePalette();
+        return;
+      }
       const target = e.target as HTMLElement | null;
       if (target !== null && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) return;
       // P11g-rev §4.7: layering, topmost first. The commit-mode DiffBrowser
@@ -151,6 +170,7 @@ export function useWorkspaceKeyboard(deps: {
     closeHistory,
     closeReflog,
     closeSearch,
+    closePalette,
   ]);
 
   // Per-repo shortcut effect (active tab only, §5.1): refresh / fetch / pull /
@@ -177,6 +197,16 @@ export function useWorkspaceKeyboard(deps: {
         return;
       }
 
+      // P50c: Ctrl/Cmd-K toggles the command palette (no Shift; distinct from
+      // Ctrl/Cmd-F search). Runs before the typing guard so it toggles from the
+      // commit box / search bar too; suppressed under a dialog or abort confirm.
+      // Not gated on paletteOpen/searchOpen so a second Ctrl/Cmd-K closes it.
+      if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        if (!dialogOpen && !abortConfirmOpen) togglePalette();
+        return;
+      }
+
       const target = e.target as HTMLElement | null;
       const typing =
         target !== null &&
@@ -186,9 +216,9 @@ export function useWorkspaceKeyboard(deps: {
           target.isContentEditable);
       if (typing) return;
 
-      // P50b: nav/fetch/pull/push are inert while the search bar is open (its
-      // own input handles Enter/Shift+Enter for next/prev).
-      if (dialogOpen || abortConfirmOpen || searchOpen) return;
+      // P50b/P50c: nav/fetch/pull/push are inert while the search bar or the
+      // command palette is open (each owns its own input keys).
+      if (dialogOpen || abortConfirmOpen || searchOpen || paletteOpen) return;
 
       if (ctrl && e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault();
@@ -253,6 +283,8 @@ export function useWorkspaceKeyboard(deps: {
     abortConfirmOpen,
     searchOpen,
     openSearch,
+    paletteOpen,
+    togglePalette,
     selectedIndex,
     graph,
   ]);

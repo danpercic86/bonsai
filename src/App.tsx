@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CloneDialog, deriveRepoName, joinRepoPath } from './components/CloneDialog';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { ContextMenu } from './components/ContextMenu';
 import { RepoWorkspace } from './components/RepoWorkspace';
 import { SettingsPanel } from './components/SettingsPanel';
 import { externalToolsItems } from './components/workspaceMenus';
+import type { PaletteAction } from './components/paletteActions';
 import { AiAssetsPanel } from './components/AiAssetsPanel';
 import { RepoHealthPanel } from './components/RepoHealthPanel';
 import { OnboardingOverlay } from './components/OnboardingOverlay';
@@ -619,6 +620,80 @@ export default function App() {
     }
   }, [openTab, pushToast]);
 
+  // P50c: App-level command-palette entries — everything valid app-wide. Threaded
+  // down to every RepoWorkspace, which merges them with its repo-scoped actions.
+  // The setState-based openers are stable; only the useCallback handlers are deps.
+  const appCommands = useMemo<PaletteAction[]>(
+    () => [
+      {
+        id: 'app.openRepo',
+        title: 'Open repository…',
+        hint: 'Ctrl+O',
+        group: 'action',
+        keywords: 'folder browse',
+        run: () => void handleOpenRepository(),
+      },
+      {
+        id: 'app.clone',
+        title: 'Clone repository…',
+        group: 'action',
+        keywords: 'git url download',
+        run: handleCloneOpen,
+      },
+      {
+        id: 'app.init',
+        title: 'New repository…',
+        group: 'action',
+        keywords: 'init create',
+        run: () => void handleInitRepository(),
+      },
+      {
+        id: 'app.settings',
+        title: 'Open Settings',
+        group: 'action',
+        keywords: 'preferences config options',
+        run: () => setSettingsOpen(true),
+      },
+      {
+        id: 'app.aiAssets',
+        title: 'AI Assets',
+        group: 'action',
+        keywords: 'agents claude context',
+        run: () => setAiAssetsOpen(true),
+      },
+      {
+        id: 'app.health',
+        title: 'Repository Health',
+        group: 'action',
+        keywords: 'stats status',
+        run: () => setHealthOpen(true),
+      },
+      {
+        id: 'app.toggleTheme',
+        title: 'Toggle theme (light / dark)',
+        group: 'action',
+        keywords: 'appearance dark light',
+        run: toggleTheme,
+      },
+      {
+        id: 'app.toggleListView',
+        title: 'Toggle tree / flat lists',
+        group: 'action',
+        keywords: 'sidebar view branches',
+        run: toggleListView,
+      },
+      {
+        id: 'app.shortcuts',
+        title: 'Keyboard shortcuts',
+        hint: '?',
+        group: 'action',
+        keywords: 'help keys',
+        run: () => setOverlayOpen(true),
+      },
+    ],
+    [handleOpenRepository, handleCloneOpen, handleInitRepository, toggleTheme, toggleListView],
+  );
+
   // ----- Reopen-all-on-launch (§6.2) -----
   const launchedRef = useRef(false);
   useEffect(() => {
@@ -909,6 +984,7 @@ export default function App() {
                 onPaneResizeEnd={handlePaneResizeEnd}
                 onOpenRepoPath={(path) => void openTab(path)}
                 onOpenIdentitySettings={openIdentitySettings}
+                appCommands={appCommands}
               />
             </div>
           ))

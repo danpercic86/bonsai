@@ -81,7 +81,16 @@ for v1 (omit those fields from the wire type).
   live-search "graph" → **1/1** + results list (`cd08f97` · summary · 2h · **"Message"** badge); regex
   toggle disabled in message mode, ENABLED in Content (`Regular expression (git -G)`, disabled=false).
   tsc + build clean; 20/20 vitest. (Canvas ring draw + scroll feel = reviewer-verified / USER CHECKPOINT.)
-**Current step:** P50b committed — **P50c** (command palette) next.
+- **P50c** (reviewer APPROVE, 0 must-fix/should-fix; 3 cosmetic nits noted) — `CommandPalette` +
+  `paletteActions` (`PaletteAction`/`buildPaletteActions` + pure `fuzzyScore`/`filterActions`) +
+  `usePalette` hook. Ctrl/Cmd-K toggle (distinct from search's Ctrl/Cmd-F), ↑↓ skip-disabled, Enter
+  runs+closes, capture-phase Esc at the TOP of the peel order. Actions reuse toolbar handlers with
+  matching disabled-gating; branch/tag/commit jumps = `revealCommitByOid` (non-mutating); create
+  entries only OPEN dialogs. **No destructive op fires directly** (reviewer-verified). 11 fuzzy tests.
+  **P50c AI GATE PASSED** (harness, mock :1420, zero console errors): Ctrl+K → palette w/ 36 options
+  (no destructive entries); typing "push" → 2 (dynamic "Search commits for push" + Push); Esc closes
+  ONLY the palette (workspace intact). tsc + build clean; 11/11 vitest.
+**Current step:** P50c committed — **P50d** (sidebar list filtering) next, then P50 tester + close-out.
 
 ## P49 — external integrations: open in terminal / file manager / editor (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 
