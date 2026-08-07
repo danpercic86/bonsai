@@ -420,6 +420,18 @@ async fn execute_job(
                             .iter()
                             .map(|r| r.updated_refs)
                             .fold(0, u32::saturating_add);
+                        // P52: refs advanced ⇒ (re)write the commit-graph off
+                        // the tick path (fire-and-forget, best-effort, never
+                        // awaited). Gated on `updated > 0` so the common no-op
+                        // auto-fetch tick does not pay a pointless rewrite.
+                        if updated > 0 {
+                            let cg_path = path.clone();
+                            tauri::async_runtime::spawn_blocking(move || {
+                                let _ = bonsai_core::git::maintenance::write_commit_graph_best_effort(
+                                    &cg_path,
+                                );
+                            });
+                        }
                         RunResult::Success {
                             updated_refs: Some(updated),
                             emit_repo_changed: updated > 0,

@@ -11,7 +11,19 @@ pub async fn fetch(
     state: tauri::State<'_, AppState>,
     repo_id: String,
 ) -> Result<FetchResult, AppError> {
-    fetch_inner(state.inner(), &repo_id).await
+    let result = fetch_inner(state.inner(), &repo_id).await?;
+    // P52: when refs actually advanced, (re)write the commit-graph off the
+    // response path (fire-and-forget, best-effort, never awaited — the fetch
+    // result returns immediately regardless). Gated on `updated_refs > 0` so a
+    // no-op fetch does not pay a pointless full rewrite.
+    if result.remotes.iter().any(|r| r.updated_refs > 0) {
+        if let Ok(path) = repo_path(state.inner(), &repo_id) {
+            tauri::async_runtime::spawn_blocking(move || {
+                let _ = bonsai_core::git::maintenance::write_commit_graph_best_effort(&path);
+            });
+        }
+    }
+    Ok(result)
 }
 
 /// Runtime-free core of `fetch` (unit-testable without a Tauri app).
@@ -30,7 +42,17 @@ pub async fn pull(
     state: tauri::State<'_, AppState>,
     repo_id: String,
 ) -> Result<PullResult, AppError> {
-    pull_inner(state.inner(), &repo_id).await
+    let result = pull_inner(state.inner(), &repo_id).await?;
+    // P52: pull is user-initiated + low frequency, so (re)write the
+    // commit-graph unconditionally on success (a no-op rewrite is harmless).
+    // Fire-and-forget, best-effort, never awaited — the pull result returns
+    // immediately regardless.
+    if let Ok(path) = repo_path(state.inner(), &repo_id) {
+        tauri::async_runtime::spawn_blocking(move || {
+            let _ = bonsai_core::git::maintenance::write_commit_graph_best_effort(&path);
+        });
+    }
+    Ok(result)
 }
 
 /// Runtime-free core of `pull` (unit-testable without a Tauri app).

@@ -15,6 +15,7 @@ pub mod cred_cache;
 pub mod diff;
 pub mod discard;
 pub mod discard_partial;
+pub mod maintenance;
 pub mod merge;
 pub mod opstate;
 pub mod rebase;

@@ -25,6 +25,45 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
+## P52 — adopt git's commit-graph file (Phase 1 · large-repo perf) — **IN PROGRESS** (2026-08-07)
+
+Phase 1 milestone 4 of 4 (final). Roadmap: `~/.claude/plans/do-thorough-analysis-of-purrfect-moth.md`.
+
+**P52 goal:** write/refresh git's `commit-graph` file so libgit2 skips re-parsing commits —
+accelerating the graph-layout revwalk AND blame/file-history AND the repo-health branches scan. Also
+the intended fix for the failing `health::tests::perf_ceiling_on_20k_fixture` gate (task_e253301f).
+
+**Approach (plan):** on repo open + after fetch, shell out to `git commit-graph write --reachable
+--changed-paths` (best-effort; the app already shells `git` in `scheduler.rs`; skip cleanly if git
+absent), behind a setting. Ensure libgit2 (git2 0.21) actually reads the commit-graph
+(`core.commitGraph`). Re-run the perf gate to quantify; write the commit-graph in the perf fixtures so
+the gates reflect it.
+
+**Key questions for the architect:** trigger points (`open_repo` + fetch/scheduler) + setting default;
+does git2 0.21 auto-use the commit-graph or need `core.commitGraph=true`? `--changed-paths` Bloom
+filters for file-history/pathspec; how to update `perf_gate.rs` + the health 20k perf fixture to write
++ benefit from the commit-graph (and get the health gate GREEN); best-effort/no-git fallback.
+
+**Contract:** `docs/contracts/P52-commit-graph.md` + `P52-user-checklist.md` (architect — DONE).
+KEY FINDING: libgit2 (v1.8.1, vendored by git2 0.21) uses the commit-graph **automatically +
+unconditionally** — NO `core.commitGraph` needed; `graph.rs` revwalk + `health.rs` merge-base consume
+it with zero code change. Bonsai only WRITES the file. Backend-only (no IPC/TS/mock). File lands at
+`.git/objects/info/commit-graph` (already watcher-filtered → no spurious repo-changed).
+**Orchestrator OQ decisions:** accept ALL recs — no `core.commitGraph` write; **always-on, no toggle**;
+plain `--reachable` (not `--split`); keep `--changed-paths`; triggers gated fetch/autoFetch on
+updated-count, pull unconditional. Sub-increments: **P52a** `maintenance.rs` + 3 triggers + unit/CLI
+tests (load-bearing: `compute_graph` output identical before/after) → **P52b** fixture/perf-gate/
+health-gate wiring (report per-section timings; do NOT raise budgets silently).
+- **P52a** (reviewer APPROVE, 0 must-fix/should-fix; 2 cosmetic nits) — `git/maintenance.rs`
+  (`CommitGraphOutcome` Written/Skipped, never Err; `commit_graph_args`; `write_commit_graph` +
+  best_effort, reusing search `GitRunner`/`SpawnGitRunner`). 4 fire-and-forget un-awaited triggers:
+  open_repo, fetch (gated `updated_refs>0`), pull (unconditional), scheduler autoFetch (`updated>0`) —
+  each returns the command result independently; never blocks/errors. NO graph.rs/health.rs/IPC/TS/mock
+  change, no `core.commitGraph`, no new repo-changed. 6 tests incl. load-bearing `compute_graph` +
+  health-branches IDENTICAL before/after + Skipped-on-no-git. clippy --all-targets + build clean.
+**Current step:** P52b (perf-fixture + gate wiring; health 20k gate fix — report per-section timings,
+NO silent budget raise) — senior-dev next.
+
 ## P51 — commit-graph polish + clutter controls (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
 
 Phase 1 milestone 3 of 4. User chose "Finish Phase 1 (P51+P52)" + granted a 3h autonomous window.

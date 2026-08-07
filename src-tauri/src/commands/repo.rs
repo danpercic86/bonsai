@@ -122,6 +122,20 @@ pub async fn open_repo(
                 }
             }
         });
+
+        // P52: (re)write the commit-graph so libgit2's revwalk / merge-base skip
+        // re-parsing commit objects. Fire-and-forget, best-effort, off the UI
+        // path (same shape/rationale as warm-on-open above). No error path:
+        // `write_commit_graph_best_effort` never Errs — git absent / a non-zero
+        // exit is a clean skip, so the open never blocks on or fails because of
+        // it. The file lands under `.git/objects` (watcher-filtered, D5) ⇒ no
+        // spurious repo-changed.
+        let cg_workdir = info.path.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let _ = bonsai_core::git::maintenance::write_commit_graph_best_effort(
+                std::path::Path::new(&cg_workdir),
+            );
+        });
     }
     Ok(result)
 }
