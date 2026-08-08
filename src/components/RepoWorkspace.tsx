@@ -5,6 +5,7 @@ import { WorkspaceToolbar } from './WorkspaceToolbar';
 import { WorkspaceDialogs } from './WorkspaceDialogs';
 import { CherrypickMessageDialog } from './CherrypickMessageDialog';
 import { NonFfPullDialog } from './dialogs/NonFfPullDialog';
+import { UndoDialog } from './dialogs/UndoDialog';
 import { WorkspaceGraphPane } from './WorkspaceGraphPane';
 import { WorkspaceRightPanel } from './WorkspaceRightPanel';
 import { isUsableRepo, shortOid } from './workspaceUtils';
@@ -43,6 +44,7 @@ import type {
   RebaseTodoOp,
   PaneWidths,
   ReflogEntry,
+  UndoPlan,
   RemoteInfo,
   RepoInfo,
   RepoOpState,
@@ -319,6 +321,9 @@ export function RepoWorkspace({
   const [pendingRenameBranch, setPendingRenameBranch] = useState<{ name: string } | null>(null);
   // P60b: a non-fast-forward pull → drives NonFfPullDialog (Merge / Rebase).
   const [pendingNonFfPull, setPendingNonFfPull] = useState<NonFfPullInfo | null>(null);
+  // P60c: one-click undo. The toolbar Undo button describes the last op
+  // (read-only) into this plan; the UndoDialog confirms, then reuses resetBranch.
+  const [pendingUndo, setPendingUndo] = useState<UndoPlan | null>(null);
   // P39b: two-click bisect start. Holds the oid marked BAD (via the commit menu)
   // while the user picks an older known-GOOD commit; cleared on start / cancel.
   const [pendingBisectBad, setPendingBisectBad] = useState<string | null>(null);
@@ -424,6 +429,7 @@ export function RepoWorkspace({
     pendingCreateBranch !== null ||
     pendingRenameBranch !== null ||
     pendingNonFfPull !== null ||
+    pendingUndo !== null ||
     pendingCherrypick !== null ||
     pendingCreateTag !== null ||
     pendingDeleteTag !== null ||
@@ -1773,6 +1779,18 @@ export function RepoWorkspace({
     setAskOpen(true);
   }, []);
 
+  // P60c: describe the last HEAD-moving op (READ-ONLY) and open the UndoDialog.
+  // Confirming there reuses the shipped resetBranch (handleResetBranch) with the
+  // plan's target + mode; the dialog gates on undoable / requiresCleanWorktree.
+  const handleRequestUndo = useCallback(async () => {
+    try {
+      const plan = await ipc.describeLastUndo(repoId);
+      setPendingUndo(plan);
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    }
+  }, [repoId, pushToast]);
+
   const cancelAskBonsai = useCallback(() => {
     // Cancel drops any in-flight plan (its reply is ignored by the req-id guard).
     planReqId.current += 1;
@@ -2361,6 +2379,7 @@ export function RepoWorkspace({
         onForcePush={() => handleForcePush()}
         onWhatChanged={() => setWhatChangedOpen(true)}
         onAskBonsai={openAskBonsai}
+        onUndo={() => void handleRequestUndo()}
         onViewHeadReflog={() =>
           reflog && reflog.refName === 'HEAD' ? closeReflog() : void openReflog('HEAD')
         }
@@ -2673,6 +2692,26 @@ export function RepoWorkspace({
           if (p !== null) void handleRebaseBranch(p.upstream);
         }}
         onCancel={() => setPendingNonFfPull(null)}
+      />
+      {/* P60c: one-click undo. The plan is computed READ-ONLY by describeLastUndo;
+          confirming reuses the shipped resetBranch (mixed/hard per the plan). The
+          dialog blocks itself when !undoable or a hard undo hits a dirty tree. */}
+      <UndoDialog
+        plan={pendingUndo}
+        busy={mutating}
+        onConfirm={() => {
+          const p = pendingUndo;
+          setPendingUndo(null);
+          if (
+            p !== null &&
+            p.undoable &&
+            p.resetMode !== null &&
+            !(p.requiresCleanWorktree && p.worktreeDirty)
+          ) {
+            void handleResetBranch(p.targetOid, p.resetMode);
+          }
+        }}
+        onCancel={() => setPendingUndo(null)}
       />
       <CommandPalette
         open={palette.open}

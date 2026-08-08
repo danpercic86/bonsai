@@ -28,6 +28,9 @@ export interface WorkspaceToolbarProps {
   /** P55c: opens the "Ask Bonsai to…" natural-language input (gated aiEligible).
    *  Read-only until the proposed op's own confirm dialog. */
   onAskBonsai(): void;
+  /** P60c: one-click undo — describes the last op, then opens the UndoDialog.
+   *  Enabled on a born repo (the dialog explains when there's nothing to undo). */
+  onUndo(): void;
   /** P38: opens the HEAD reflog overlay (recovery net). Enabled on a born repo. */
   onViewHeadReflog(): void;
   /** True once HEAD points at a commit (not unborn) — gates the reflog button. */
@@ -61,6 +64,7 @@ export function WorkspaceToolbar({
   onForcePush,
   onWhatChanged,
   onAskBonsai,
+  onUndo,
   onViewHeadReflog,
   headBorn,
   onRefresh,
@@ -118,6 +122,15 @@ export function WorkspaceToolbar({
     <>
       <div className="workspace-toolbar">
         <div className="toolbar-center">
+          <button
+            type="button"
+            className="toolbar-btn"
+            disabled={refreshing || mutating || !headBorn}
+            onClick={() => onUndo()}
+            title="Undo the last operation (commit, merge, rebase, reset…)"
+          >
+            ↶ Undo
+          </button>
           <button
             type="button"
             className="toolbar-btn"

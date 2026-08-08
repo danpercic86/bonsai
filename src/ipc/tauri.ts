@@ -93,6 +93,7 @@ import type {
   UiSettings,
   UiSettingsPatch,
   Unsubscribe,
+  UndoPlan,
   UpdateCheckResult,
   UpdateProgress,
   VerifyResults,
@@ -476,6 +477,9 @@ export const tauriIpc: IpcApi = {
 
   readReflog(repoId: string, refName: string): Promise<ReflogEntry[]> {
     return invoke<ReflogEntry[]>('read_reflog', { repoId, refName });
+  },
+  describeLastUndo(repoId: string): Promise<UndoPlan> {
+    return invoke<UndoPlan>('describe_last_undo', { repoId });
   },
 
   searchCommits(repoId: string, query: SearchQuery): Promise<SearchResults> {

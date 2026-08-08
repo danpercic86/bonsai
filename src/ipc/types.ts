@@ -680,6 +680,38 @@ export interface ReflogEntry {
   message: string;
 }
 
+/** Classified last-operation kind (P60c). Mirrors the Rust `UndoKind` serde
+ *  enum (camelCase) EXACTLY. Drives the undo verb + reset mode. */
+export type UndoKind =
+  | 'commit'
+  | 'amend'
+  | 'merge'
+  | 'rebase'
+  | 'fastForward'
+  | 'cherryPick'
+  | 'revert'
+  | 'reset'
+  | 'branchSwitch'
+  | 'unknown';
+
+/** Plan for reversing the last HEAD-moving operation (P60c). Mirrors the Rust
+ *  `UndoPlan` (camelCase) EXACTLY. `targetOid`/`targetShort` are "" when there
+ *  is nothing to undo or the target is the 40-zero root. `resetMode` is null
+ *  when `!undoable`. `worktreeDirty` is TRACKED dirtiness (staged + unstaged) —
+ *  a hard reset preserves untracked files. When `requiresCleanWorktree &&
+ *  worktreeDirty` the UI SHOWS the plan but BLOCKS the button (stash first). */
+export interface UndoPlan {
+  kind: UndoKind;
+  summary: string;
+  targetOid: string;
+  targetShort: string;
+  resetMode: ResetMode | null;
+  requiresCleanWorktree: boolean;
+  worktreeDirty: boolean;
+  undoable: boolean;
+  reason: string | null;
+}
+
 /** Which field(s) commit search examines (P50). `all` = message OR author. */
 export type SearchField = 'all' | 'message' | 'author' | 'path' | 'content';
 /** Which field actually matched a result row. */
@@ -1771,6 +1803,10 @@ export interface IpcApi {
   /** Reflog for `refName` ("HEAD" or a local branch name), newest-first, capped.
    *  A never-updated ref yields `[]` (not an error). Read-only. Rejects git | noRepo. */
   readReflog(repoId: string, refName: string): Promise<ReflogEntry[]>;
+  /** Describe how to reverse the last HEAD-moving op (P60c). READ-ONLY: reads
+   *  HEAD reflog[0], classifies it, and returns an `UndoPlan` (target + reset
+   *  mode + safety flags). Execution reuses `resetBranch`. Rejects git | noRepo. */
+  describeLastUndo(repoId: string): Promise<UndoPlan>;
   /** Commit/content search (P50a). Dispatches by `query.field`: message/author/
    *  all via a header-only git2 revwalk; path/content via `git log`. Capped
    *  (`truncated` when more may exist). Empty/whitespace `text` resolves to

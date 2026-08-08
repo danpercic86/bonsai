@@ -82,8 +82,20 @@ recount vs lib.rs (base 141).
   handlers (no new git logic); `?remote=rebaseconflict` seam. pull-diverged oracle returns upstream==`@{u}`.
   clippy -D + tsc/build clean; cmd 142. Nits: sidebar HEAD-row rename parity (TODO); dead mock
   upstream-fallback; branches.rs 2197 lines (pre-existing).
-**Current step:** P60a+b DONE (committed). Next: **P60c** — one-click undo (`undo.rs` READ-ONLY
-describe_last_undo classifier + cmd→143 + Undo toolbar + UndoDialog reusing resetBranch).
+- **P60c** (reviewer APPROVE, 0 must-fix / 0 should-fix; 3 cosmetic nits) — one-click undo. New READ-ONLY
+  `undo.rs`: `classify()` (prefix truth-table, first-match-wins: commit(amend)→Amend before commit→Commit;
+  merge/pull-merge→Merge; ff→FastForward; rebase/cherry-pick/revert/reset; checkout-moving→BranchSwitch) +
+  `describe_last_undo` (target=reflog[0].oldOid; MIXED for commit/amend/reset, HARD for merge/rebase/ff/
+  cherry-pick/revert; zero-oid/empty/branchswitch/unknown→undoable:false; hard+dirty→undoable:true+
+  requiresCleanWorktree; worktree_dirty tracked-only [hard reset preserves untracked]). Reviewer CONFIRMED
+  zero mutation in production (only #[cfg(test)]). `describe_last_undo` cmd (142→143; read-only). Undo toolbar
+  button + `UndoDialog` (disabled on !undoable/reason or requiresCleanWorktree&&dirty; hard=destructive; amend
+  message-discarded note) → execution REUSES `resetBranch(targetOid, resetMode)` (no new mutation command).
+  IPC + mock (mirrors classifier; `?undo=` seam). 10 tests (truth-table + wire + CLI oracle
+  commit→merge→reset→branch-switch, target==`HEAD@{1}`); clippy -D + build/tsc clean. Nits: `pull <ref>:
+  Merge`→fastForward (both Hard→same reversal); Undo in toolbar-center; summary shows raw prefix.
+**Current step:** P60a+b+c DONE (committed). Next: **P60d** — submodules (add via git2+acquire_cred / deinit
++ remove via GitRunner shell-out, path after `--`; add/deinit/remove cmds →146 + submodule menu).
 
 ## P59 — git hooks execution + force-push-lease hardening (Phase 3 · milestone 2/4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 

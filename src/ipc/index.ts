@@ -157,6 +157,8 @@ export type {
   Theme,
   UiSettings,
   UiSettingsPatch,
+  UndoKind,
+  UndoPlan,
   Unsubscribe,
   UpdateCheckResult,
   UpdateProgress,
