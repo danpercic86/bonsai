@@ -84,7 +84,7 @@ Contracts: `docs/contracts/phase4-forge-overview.md` + `P62`/`P63`/`P64`/`P65-*.
 - P63 later adds an `openToPr?` prop on `PrPanel` + `showPrBadge`/`showCiStatus` `GraphPrefs` fields (additive).
 - P65 touches `GraphCanvas` edge handling + `RepoWorkspace.refetchGraph` — land after any in-flight graph-pane work.
 
-### P62 — forge foundation (GitHub first) — **IN PROGRESS**
+### P62 — forge foundation (GitHub first) — **DONE ✅ (AI-gate + harness verified; awaiting native USER CHECKPOINT)**
 Contract: `docs/contracts/P62-forge-foundation.md`. New pure crate `crates/bonsai-forge/` + 7 commands +
 right-pane PR panel. **+7 cmd (147→154, RECOUNT at impl).** Sub-increments:
 - **P62a** — pure `bonsai-forge` crate: `Cargo.toml` (reqwest+keyring), `lib.rs`, `types.rs` (+wire tests),
@@ -97,13 +97,14 @@ right-pane PR panel. **+7 cmd (147→154, RECOUNT at impl).** Sub-increments:
 - **P62c** — PR panel: `PrPanel` container + `PrList`/`PrListItem`/`PrDetailView`/`PrReviewComments`/
   `PrCreateForm`/`ForgeConnect` + right-pane `'work'|'prs'` tab in `RepoWorkspace`/`WorkspaceRightPanel`.
 
-**Current step:** P62a ✅ + P62b ✅ DONE (committed). P62a = `bonsai-forge` crate + 4 `AppError` variants.
-P62b = 7 `forge_*` command triples + crate-level `set_token`/`clear_token`/`validate_token` + full TS IPC
-(types/tauri/index + 4 `AppError.kind`) + offline `forgeHandlers` mock + `fixtures/forge.ts`. Both reviewer
-APPROVE-WITH-NITS (0 must-fix / 0 should-fix on P62b). **Cmd = 154** (147+7, confirmed by grep). AI gate:
-`bonsai-forge` 60/0, `bonsai --lib` 117/0, clippy -D clean, workspace build 0-warn, tsc+build green.
-Next: **P62c** — PR panel UI (`PrPanel` container + `PrList`/`PrListItem`/`PrDetailView`/`PrReviewComments`/
-`PrCreateForm`/`ForgeConnect`) + right-pane `'work'|'prs'` tab; then browser-harness the full flow on mock.
+**Current step:** ✅ **P62 COMPLETE** (P62a crate + P62b IPC/mock + P62c PR panel UI, all committed).
+Reviewer approve across all three (0 must-fix); P62c should-fix (commit-draft preserved across tab
+switch) + nits folded. **Cmd = 154**. AI gate: `bonsai-forge` 60/0, `bonsai --lib` 117/0, clippy -D clean,
+workspace build 0-warn, tsc+build green. Browser harness (`pnpm dev:mock`) verified the full flow:
+connect→list (3 open PRs, merged hidden)→detail (labels/mergeable/+−/9 files/3 comments incl. 2 review
+w/ path)→create→new #999; `?forge=off`→offline+Retry; commit draft survives the Working↔PRs toggle;
+working panel still fills/scrolls; console clean. Native USER CHECKPOINT (real GitHub PAT/PRs) pending.
+Next: **P63** — forge signals on graph (PR + CI badges; +1 cmd `forge_commit_statuses`).
 
 ### P63 — forge signals on graph — **PENDING** (contract ready `docs/contracts/P63-forge-graph-signals.md`)
 ### P64 — more providers + AI PR descriptions — **PENDING** (contract ready; recommend split B+GitLab, then P64b/c)

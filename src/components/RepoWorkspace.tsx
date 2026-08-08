@@ -173,6 +173,10 @@ export function RepoWorkspace({
   const [statusLoading, setStatusLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
+  // P62c: right-pane tab — the existing working/compare/commit tri-state
+  // ('work') vs the pull-request panel ('prs'). PrPanel mounts only under 'prs'.
+  const [rightPaneTab, setRightPaneTab] = useState<'work' | 'prs'>('work');
+
   // P30 D11: background-job status readout (fed by get_job_status on mount +
   // live job-status-changed events); jobNow re-renders the relative label.
   const [jobStatus, setJobStatus] = useState<JobStatus[]>([]);
@@ -2634,6 +2638,10 @@ export function RepoWorkspace({
         />
         <WorkspaceRightPanel
           rightPanelWidth={paneWidths.rightPanel}
+          repoId={repoId}
+          rightPaneTab={rightPaneTab}
+          onSelectRightPaneTab={setRightPaneTab}
+          prDefaultHead={headBranch?.name ?? null}
           opState={opState}
           conflicts={conflicts}
           mutating={mutating}

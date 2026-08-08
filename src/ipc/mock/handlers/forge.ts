@@ -65,9 +65,24 @@ export const forgeHandlers = {
     await delay(150);
     requireRepo(repoId);
     offGuard();
-    // Retarget the canned detail to the requested PR when it is a known row.
-    const summary = FORGE_PR_LIST.find((pr) => pr.number === number) ?? FORGE_PR_DETAIL.summary;
-    return { ...FORGE_PR_DETAIL, summary };
+    const summary = FORGE_PR_LIST.find((pr) => pr.number === number);
+    // #128 has a fully-authored fixture detail; unknown numbers fall back to it.
+    if (summary === undefined || summary.number === FORGE_PR_DETAIL.summary.number) {
+      return { ...FORGE_PR_DETAIL, summary: summary ?? FORGE_PR_DETAIL.summary };
+    }
+    // Synthesize a COHERENT detail for the other known rows so opening e.g.
+    // merged PR #120 shows its own body / mergeable / labels, not #128's.
+    return {
+      summary,
+      body:
+        `## ${summary.title}\n\n` +
+        `Merges \`${summary.sourceBranch}\` into \`${summary.targetBranch}\`.\n`,
+      mergeable: summary.state === 'open' ? true : null,
+      additions: 40 + (summary.number % 50),
+      deletions: 10 + (summary.number % 20),
+      changedFiles: 1 + (summary.number % 6),
+      labels: summary.isDraft ? ['work-in-progress'] : [],
+    };
   },
 
   async forgeCreatePr(repoId: string, input: CreatePrInput): Promise<PrDetail> {

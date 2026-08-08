@@ -4,6 +4,7 @@ import type { CommitBoxHandle } from './CommitBox';
 import { CommitPanel } from './CommitPanel';
 import { ComparePanel } from './ComparePanel';
 import { OpBanner } from './OpBanner';
+import { PrPanel } from './PrPanel';
 import { StatusPanel } from './StatusPanel';
 import { StashSplitButton } from './StashSplitButton';
 import { shortOid } from './workspaceUtils';
@@ -28,6 +29,14 @@ type CommitBoxProps = ComponentProps<typeof CommitBox>;
 
 export interface WorkspaceRightPanelProps {
   rightPanelWidth: number;
+
+  /** P62c: canonical repo id — threaded to the PR panel under the 'prs' tab. */
+  repoId: string;
+  /** P62c: active right-pane tab (owned by RepoWorkspace). */
+  rightPaneTab: 'work' | 'prs';
+  onSelectRightPaneTab(tab: 'work' | 'prs'): void;
+  /** P62c: current branch name — seeds the PR create form's compare field. */
+  prDefaultHead: string | null;
 
   opState: RepoOpState;
   conflicts: StatusPanelProps['conflicts'];
@@ -177,9 +186,34 @@ export function WorkspaceRightPanel({
   onOpenIdentitySettings,
   signingStatus,
   commitSignature,
+  repoId,
+  rightPaneTab,
+  onSelectRightPaneTab,
+  prDefaultHead,
 }: WorkspaceRightPanelProps) {
   return (
     <aside className="right-panel" style={{ width: rightPanelWidth }}>
+      <div className="right-pane-tabs" role="tablist" aria-label="Right panel view">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={rightPaneTab === 'work'}
+          className={`right-pane-tab${rightPaneTab === 'work' ? ' active' : ''}`}
+          onClick={() => onSelectRightPaneTab('work')}
+        >
+          Working
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={rightPaneTab === 'prs'}
+          className={`right-pane-tab${rightPaneTab === 'prs' ? ' active' : ''}`}
+          onClick={() => onSelectRightPaneTab('prs')}
+        >
+          Pull requests
+        </button>
+      </div>
+      <div className="right-panel-work" hidden={rightPaneTab !== 'work'}>
       <OpBanner
         op={opState}
         conflictCount={conflicts.length}
@@ -332,6 +366,10 @@ export function WorkspaceRightPanel({
             signingStatus={signingStatus}
           />
         </>
+      )}
+      </div>
+      {rightPaneTab === 'prs' && (
+        <PrPanel repoId={repoId} defaultHead={prDefaultHead} />
       )}
     </aside>
   );
