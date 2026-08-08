@@ -1596,7 +1596,7 @@ export type Unsubscribe = () => void;
 // --- P62 forge / PR integration (mirrors crates/bonsai-forge/src/types.rs) ---
 
 /** Which forge backs `origin` (detected from the remote URL). */
-export type ForgeKind = 'gitHub' | 'unknown';
+export type ForgeKind = 'gitHub' | 'gitLab' | 'unknown';
 /** PR lifecycle state. */
 export type PrState = 'open' | 'closed' | 'merged';
 /** List-query filter (maps to GitHub's `?state=`). */

@@ -9,11 +9,12 @@
 use serde::{Deserialize, Serialize};
 
 /// Which forge backs `origin`. Unit variants ⇒ plain camelCase string on the
-/// wire (`"gitHub"` | `"unknown"`).
+/// wire (`"gitHub"` | `"gitLab"` | `"unknown"`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ForgeKind {
     GitHub,
+    GitLab,
     Unknown,
 }
 
@@ -207,7 +208,11 @@ mod tests {
     #[test]
     fn forge_kind_wire_shape_is_camel_case() {
         assert_eq!(value_of(&ForgeKind::GitHub), json!("gitHub"));
+        assert_eq!(value_of(&ForgeKind::GitLab), json!("gitLab"));
         assert_eq!(value_of(&ForgeKind::Unknown), json!("unknown"));
+        // Round-trips from the wire string the TS union sends.
+        let got: ForgeKind = serde_json::from_value(json!("gitLab")).unwrap();
+        assert_eq!(got, ForgeKind::GitLab);
     }
 
     #[test]

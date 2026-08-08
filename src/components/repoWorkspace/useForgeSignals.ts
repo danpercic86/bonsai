@@ -180,11 +180,12 @@ export function useForgeSignals(deps: {
       const reqId = ++reqIdRef.current;
       const repo = repoIdRef.current;
       try {
-        // Cheap, no network (P62): a non-GitHub / unparseable origin is inert —
-        // clear any stale badges and bail WITHOUT surfacing an error.
+        // Cheap, no network (P62): an unsupported / unparseable origin is inert
+        // — clear any stale badges and bail WITHOUT surfacing an error. Any
+        // KNOWN provider (gitHub | gitLab | …) proceeds to fetch PR + CI signals.
         const ctx = await ipc.forgeRepoContext(repo);
         if (reqIdRef.current !== reqId) return;
-        if (ctx.provider !== 'gitHub') {
+        if (ctx.provider === 'unknown') {
           clearAll();
           return;
         }

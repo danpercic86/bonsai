@@ -26,11 +26,6 @@ const REMOTE_NAME: &str = "origin";
 /// Hard cap on `per_page` (§3).
 const MAX_PER_PAGE: u32 = 50;
 
-/// Hard cap on the number of shas a single `commit_statuses` batch resolves
-/// (contract §4 backstop). Bounds the serial HTTP calls regardless of caller;
-/// the P63b `useForgeSignals` hook also caps/dedups — defense-in-depth.
-const MAX_STATUS_BATCH: usize = 100;
-
 pub struct GitHubProvider {
     target: ForgeTarget,
     token: Option<String>,
@@ -170,34 +165,9 @@ impl ForgeProvider for GitHubProvider {
     }
 
     fn commit_statuses(&self, shas: &[String]) -> Result<Vec<CommitStatus>, AppError> {
-        // Dedup + cap the input (contract §4 backstop): bounds the serial HTTP
-        // calls regardless of caller. The P63b hook also caps/dedups — this is
-        // defense-in-depth.
-        let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
-        let deduped: Vec<&String> = shas
-            .iter()
-            .filter(|s| seen.insert(s.as_str()))
-            .take(MAX_STATUS_BATCH)
-            .collect();
-
-        // Loop the existing per-sha combined-status logic, classifying failures:
-        //   * `ForgeApi` (almost always a 404 — the commit isn't on the remote,
-        //     e.g. an unpushed local branch tip or a fork PR head) ⇒ OMIT just
-        //     that sha; a single missing tip must not blank ALL CI dots.
-        //   * any OTHER error (auth / rate-limit / network / unsupported) is
-        //     account/transport-level ⇒ propagate and fail the whole batch, so
-        //     the hook can back off.
-        // Returns only the resolved shas (the P63b hook keys by `status.sha`, so
-        // the order among them is irrelevant).
-        let mut out = Vec::with_capacity(deduped.len());
-        for sha in deduped {
-            match self.combined_status(sha) {
-                Ok(status) => out.push(status),
-                Err(AppError::ForgeApi(_)) => {} // not-found ⇒ omit this sha
-                Err(e) => return Err(e),          // fatal ⇒ fail the batch
-            }
-        }
-        Ok(out)
+        // Dedup + cap + per-sha error classification (omit not-found, propagate
+        // fatal) is provider-neutral ⇒ shared in `crate::rollup`.
+        crate::rollup::batch_commit_statuses(shas, |sha| self.combined_status(sha))
     }
 }
 

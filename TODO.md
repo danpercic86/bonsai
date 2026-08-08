@@ -134,9 +134,20 @@ Split (architect rec): **P64a** AI PR descriptions (Part B, +1 cmd 155→156) �
   gated to eligible+range → click fills a structured title/body from mock, no auto-submit, console clean.
   Live real-CLI generation = native USER CHECKPOINT.
 
-**Current step:** P64a ✅ DONE. Next: **P64b** — GitLab provider (Part A #1): new `crates/bonsai-forge/src/gitlab/{mod,rest,dto}.rs`
-implementing the same `ForgeProvider` trait; `ForgeKind::GitLab` + `detect.rs` host/path; map GitLab MR/CI onto the
-neutral DTOs; PAT→Bearer; mock `?forge=gitlab`. +0 commands.
+- **P64b** ✅ DONE (committed) — GitLab provider: `gitlab/{mod,rest,dto}.rs` on the same trait (MR→PR,
+  notes/discussions→comments de-duped, pipeline→CI rollup); shared neutral `crate::rollup` extracted from
+  github (GitHub byte-identical + still covered); `ForgeKind::GitLab` + nested-group detection + URL-encoded
+  project path; `PRIVATE-TOKEN` auth (redacted); provider-aware `build_provider` (open + validate_token).
+  Frontend `ForgeKind+='gitLab'`, PrPanel/useForgeSignals guards `!== 'unknown'`, `?forge=gitlab` mock.
+  Reviewer approve (0 must-fix). AI gate: bonsai-forge 93/0 (29 GitLab), clippy -D clean, build, tsc+build+vitest
+  197. Harness: `?forge=gitlab` → supported (host-aware connect → paste → PR list renders). Cmd 156.
+  ↳ DEFERRED to P64c: per-provider ForgeConnect hint (contract §3e — GitLab `api`-scope guidance + token-help
+  link); do all providers' hints in one pass. GitLab 403 msg already mentions the `api` scope as a fallback.
+
+**Current step:** P64b ✅ DONE. Next: **P64c** — Bitbucket + Azure DevOps providers (Part A #2/#3): new
+`bitbucket/` + `azure/` modules on the same trait; `ForgeKind` += 2; Azure needs `ForgeTarget.project`
+(org/project/repo) + Basic/PAT auth; Bitbucket access-token→Bearer; + the deferred §3e per-provider connect
+hints (all providers). +0 commands.
 ### P65 — paged/streaming graph loading — **PENDING** (contract ready; independent; land after graph-pane work)
 
 ## P61 — diff quality: word-level/intraline highlighting + image diff (Phase 3 · milestone 4/4, FINAL) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-08)

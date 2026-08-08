@@ -80,7 +80,9 @@ export function PrPanel({
   const listReqRef = useRef(0);
   const detailReqRef = useRef(0);
 
-  const authed = ctx !== null && ctx.provider === 'gitHub' && ctx.authenticated;
+  // Any KNOWN provider (gitHub | gitLab | …) is supported; only 'unknown' falls
+  // through to the unsupported empty state (set in the bootstrap effect below).
+  const authed = ctx !== null && ctx.provider !== 'unknown' && ctx.authenticated;
 
   // Bootstrap: resolve the forge context on mount / repo change / after connect.
   useEffect(() => {

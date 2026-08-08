@@ -18,6 +18,8 @@ pub mod provider;
 pub mod types;
 
 mod github;
+mod gitlab;
+mod rollup;
 
 use std::path::Path;
 
@@ -29,6 +31,25 @@ pub use provider::ForgeProvider;
 pub use types::*;
 
 use crate::github::GitHubProvider;
+use crate::gitlab::GitLabProvider;
+
+/// Construct the concrete [`ForgeProvider`] for `target` over `http`. Shared by
+/// [`open`] and [`validate_token`] so both resolve the SAME provider for a host.
+///
+/// GitLab hosts get [`GitLabProvider`]; GitHub AND unparseable/unknown origins
+/// both go through [`GitHubProvider`] (an `Unknown` target yields a friendly
+/// `repo_context` but `ForgeUnsupported` on any data method — unchanged P62
+/// behavior). Adding a provider = one arm here + one `detect` host mapping.
+fn build_provider(
+    target: ForgeTarget,
+    token: Option<String>,
+    http: Box<dyn HttpTransport>,
+) -> Box<dyn ForgeProvider> {
+    match target.kind {
+        ForgeKind::GitLab => Box::new(GitLabProvider::new(target, token, http)),
+        _ => Box::new(GitHubProvider::new(target, token, http)),
+    }
+}
 
 /// Resolve the [`ForgeTarget`] for the repo at `workdir` from its `origin`
 /// remote. An unparseable origin yields an `Unknown`-kind target with empty
@@ -79,27 +100,26 @@ pub fn open(workdir: &Path) -> Result<Box<dyn ForgeProvider>, AppError> {
     };
 
     let transport = ReqwestTransport::new()?;
-    Ok(Box::new(GitHubProvider::new(
-        target,
-        token,
-        Box::new(transport),
-    )))
+    Ok(build_provider(target, token, Box::new(transport)))
 }
 
 /// Validate a candidate `token` against `target` using `http`, returning the
 /// authenticated viewer on success. Stores NOTHING — the caller persists only
 /// after this returns `Ok`. Split out from [`set_token`] so the validate path
 /// is unit-tested with a fake transport (no network, no keychain). Rejects
-/// [`AppError::ForgeUnsupported`] for a non-GitHub origin and
-/// [`AppError::AuthFailed`] for a token GitHub rejects.
+/// [`AppError::ForgeUnsupported`] for an unsupported origin and
+/// [`AppError::AuthFailed`] for a token the forge rejects.
+///
+/// Provider-aware (OQ-A4): each forge hits its OWN identity endpoint through its
+/// OWN auth header — [`build_provider`] picks the right one for `target.kind`.
 pub(crate) fn validate_token(
     target: ForgeTarget,
     token: &str,
     http: Box<dyn HttpTransport>,
 ) -> Result<ForgeViewer, AppError> {
-    // `viewer()` performs the single `GET /user` validation call and, on
-    // success, warms the process viewer cache for the host.
-    GitHubProvider::new(target, Some(token.to_string()), http).viewer()
+    // `viewer()` performs the single identity (`GET /user`) validation call and,
+    // on success, warms the process viewer cache for the host.
+    build_provider(target, Some(token.to_string()), http).viewer()
 }
 
 /// Validate a pasted PAT for the repo at `workdir` and, on success, persist it

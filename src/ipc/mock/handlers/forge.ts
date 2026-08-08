@@ -20,6 +20,7 @@ import type {
   AppError,
   CommitStatus,
   CreatePrInput,
+  ForgeKind,
   ForgeRepoContext,
   ForgeViewer,
   IpcApi,
@@ -32,6 +33,11 @@ import type {
 } from '../../types';
 
 const FORGE_OFF = urlParam('forge') === 'off';
+// P64b: a `?forge=gitlab` sentinel makes forgeRepoContext report a GitLab
+// provider so the panel exercises connect → list → detail → create for a
+// non-GitHub forge. The neutral PR/status fixtures render UNCHANGED (the mock
+// sits at the neutral-DTO boundary) — only the repo-context provider/host swap.
+const FORGE_KIND: ForgeKind = urlParam('forge') === 'gitlab' ? 'gitLab' : 'gitHub';
 // Mutable across the browser session: forgeSetToken / forgeClearToken toggle it
 // and forgeRepoContext reflects it. Seeded true only by ?forge=auth.
 let authenticated = urlParam('forge') === 'auth';
@@ -51,6 +57,13 @@ export const forgeHandlers = {
     offGuard();
     return {
       ...FORGE_REPO_CONTEXT,
+      provider: FORGE_KIND,
+      ...(FORGE_KIND === 'gitLab'
+        ? {
+            host: 'gitlab.com',
+            webUrl: `https://gitlab.com/${FORGE_REPO_CONTEXT.owner}/${FORGE_REPO_CONTEXT.repo}`,
+          }
+        : {}),
       authenticated,
       viewer: authenticated ? FORGE_VIEWER : null,
     };

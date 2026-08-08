@@ -287,7 +287,7 @@ pub fn create_pull_body(input: &CreatePrInput) -> Result<String, AppError> {
 
 /// Parse the legacy combined-status body and the check-runs body, map each into
 /// a neutral [`StatusContext`], and delegate the cap + rollup math to
-/// [`rollup::build_commit_status`] (§7). GitHub wire structs never leave here.
+/// [`crate::rollup::build_commit_status`] (§7). GitHub wire structs never leave here.
 pub fn build_combined_status(
     sha: &str,
     combined_body: &str,
@@ -313,7 +313,7 @@ pub fn build_combined_status(
             target_url: c.details_url,
         });
     }
-    Ok(rollup::build_commit_status(sha, contexts))
+    Ok(crate::rollup::build_commit_status(sha, contexts))
 }
 
 #[cfg(test)]

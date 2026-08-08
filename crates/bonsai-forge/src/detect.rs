@@ -1,9 +1,13 @@
-//! PURE provider detection from an `origin` remote URL (P62 contract §6).
+//! PURE provider detection from an `origin` remote URL (P62 contract §6, P64
+//! §3b).
 //!
 //! No I/O — accepts every git remote URL form (https, ssh, scp-like) and
-//! extracts `host`/`owner`/`repo`. `github.com` ⇒ [`ForgeKind::GitHub`]; any
-//! other parseable host ⇒ [`ForgeKind::Unknown`] (enterprise host override is a
-//! deferred setting, OQ-6); an unparseable URL ⇒ `None`.
+//! extracts `host`/`owner`/`repo`. `github.com` ⇒ [`ForgeKind::GitHub`];
+//! `gitlab.com` ⇒ [`ForgeKind::GitLab`] — GitLab supports nested groups, so
+//! `owner` is the FULL namespace path (may contain `/`) and `repo` is the last
+//! segment (OQ-A6). Any other parseable host ⇒ [`ForgeKind::Unknown`]
+//! (enterprise host override is a deferred setting, OQ-6); an unparseable URL ⇒
+//! `None`.
 
 use crate::types::ForgeKind;
 
@@ -36,14 +40,20 @@ pub fn detect_provider(remote_url: &str) -> Option<ForgeTarget> {
     if segs.len() < 2 {
         return None; // need at least owner + repo
     }
-    let owner = segs[0].to_string();
-    let repo = segs[1].to_string();
 
-    let kind = if host == "github.com" {
-        ForgeKind::GitHub
-    } else {
-        ForgeKind::Unknown
+    let kind = kind_for_host(&host);
+    // GitLab supports nested groups (`group/subgroup/project`): the namespace is
+    // EVERYTHING but the last segment (may contain `/`) and the project is the
+    // last segment. GitHub (and unknown hosts) keep P62's exactly-first-two
+    // behavior — extra path segments are ignored.
+    let (owner, repo) = match kind {
+        ForgeKind::GitLab => (
+            segs[..segs.len() - 1].join("/"),
+            segs[segs.len() - 1].to_string(),
+        ),
+        _ => (segs[0].to_string(), segs[1].to_string()),
     };
+
     let web_url = format!("https://{host}/{owner}/{repo}");
     Some(ForgeTarget {
         kind,
@@ -52,6 +62,16 @@ pub fn detect_provider(remote_url: &str) -> Option<ForgeTarget> {
         repo,
         web_url,
     })
+}
+
+/// Host → forge kind for the public SaaS hosts recognized in v1. Enterprise /
+/// self-managed host override is deferred (OQ-6), so anything else is `Unknown`.
+fn kind_for_host(host: &str) -> ForgeKind {
+    match host {
+        "github.com" => ForgeKind::GitHub,
+        "gitlab.com" => ForgeKind::GitLab,
+        _ => ForgeKind::Unknown,
+    }
 }
 
 /// Split a remote URL into `(host, path)`. Handles `https://`/`http://`,
@@ -188,5 +208,68 @@ mod tests {
         assert!(t("git://github.com/owner/repo.git").is_none(), "git:// scheme");
         assert!(t("ftp://github.com/owner/repo").is_none(), "ftp scheme");
         assert!(t("").is_none(), "empty");
+    }
+
+    /// gitlab.com in every remote form: flat `owner/repo`, nested groups
+    /// (`owner` carries the full namespace path), with/without `.git`, ssh, scp.
+    #[test]
+    fn detect_table_gitlab() {
+        // Flat owner/repo across https (+.git / trailing slash), ssh, scp.
+        for url in [
+            "https://gitlab.com/owner/repo",
+            "https://gitlab.com/owner/repo.git",
+            "https://gitlab.com/owner/repo/",
+            "https://gitlab.com/owner/repo.git/",
+            "ssh://git@gitlab.com/owner/repo.git",
+            "ssh://git@gitlab.com:22/owner/repo.git",
+            "git@gitlab.com:owner/repo.git",
+            "git@gitlab.com:owner/repo",
+        ] {
+            let got = t(url).unwrap_or_else(|| panic!("expected Some for {url}"));
+            assert_eq!(got.kind, ForgeKind::GitLab, "{url}");
+            assert_eq!(got.host, "gitlab.com", "{url}");
+            assert_eq!(got.owner, "owner", "{url}");
+            assert_eq!(got.repo, "repo", "{url}");
+            assert_eq!(got.web_url, "https://gitlab.com/owner/repo", "{url}");
+        }
+
+        // Nested groups: `owner` is the FULL namespace path (may contain '/'),
+        // `repo` is the last segment. (For GitHub this same URL would clip to
+        // owner=group, repo=subgroup — GitLab must NOT.)
+        for url in [
+            "https://gitlab.com/group/subgroup/project.git",
+            "git@gitlab.com:group/subgroup/project.git",
+            "ssh://git@gitlab.com/group/subgroup/project",
+        ] {
+            let got = t(url).unwrap_or_else(|| panic!("expected Some for {url}"));
+            assert_eq!(got.kind, ForgeKind::GitLab, "{url}");
+            assert_eq!(got.owner, "group/subgroup", "{url}");
+            assert_eq!(got.repo, "project", "{url}");
+            assert_eq!(
+                got.web_url, "https://gitlab.com/group/subgroup/project",
+                "{url}"
+            );
+        }
+
+        // Deeply nested (group/subgroup/subsubgroup/project) still resolves.
+        let deep = t("https://gitlab.com/a/b/c/proj.git").unwrap();
+        assert_eq!(deep.owner, "a/b/c");
+        assert_eq!(deep.repo, "proj");
+
+        // Host lowercased; owner/repo case preserved.
+        let mixed = t("https://GitLab.com/Group/Proj.git").unwrap();
+        assert_eq!(mixed.kind, ForgeKind::GitLab);
+        assert_eq!(mixed.host, "gitlab.com");
+        assert_eq!(mixed.owner, "Group");
+        assert_eq!(mixed.repo, "Proj");
+
+        // Single segment is still not a repo.
+        assert!(t("https://gitlab.com/owner").is_none(), "single segment");
+
+        // Contrast: GitHub keeps exactly-two even with extra segments.
+        let gh = t("https://github.com/group/subgroup/project").unwrap();
+        assert_eq!(gh.kind, ForgeKind::GitHub);
+        assert_eq!(gh.owner, "group");
+        assert_eq!(gh.repo, "subgroup");
     }
 }
