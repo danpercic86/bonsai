@@ -550,10 +550,13 @@ pub async fn run_scheduler(app: tauri::AppHandle, tick: std::time::Duration) {
         tokio::time::sleep(tick).await;
         let repos: Vec<(String, PathBuf)> = {
             let state = app.state::<AppState>();
-            let guard = match state.repos.lock() {
-                Ok(g) => g,
-                Err(_) => continue,
-            };
+            // Poison recovery (audit §3.8) — matches `lock_recover`'s policy:
+            // the repos map stays structurally valid, and skipping every tick
+            // forever would silently kill auto-fetch/health-refresh.
+            let guard = state
+                .repos
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
             guard
                 .iter()
                 .map(|(id, entry)| (id.clone(), entry.path.clone()))

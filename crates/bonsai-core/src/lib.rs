@@ -7,5 +7,6 @@ pub mod fixture;
 pub mod git;
 pub mod graph;
 pub mod health;
+pub mod procutil;
 #[cfg(test)]
 pub mod testutil;

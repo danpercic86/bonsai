@@ -94,42 +94,10 @@ impl CommandRunner for SpawnRunner {
     }
 }
 
-/// Resolve a program name to something `Command` can spawn.
-///
-/// On Windows `Command::new("code")` searches `PATH` for `code`/`code.exe` only
-/// — it does NOT find the `code.cmd` shim. So resolve a bare name against `PATH`
-/// trying it as-is then with each `PATHEXT` extension (`.EXE`, `.CMD`, `.BAT`,
-/// …); the first hit wins and an unresolvable name is an `Err` (the ladder falls
-/// through). A name that already contains a path separator is used verbatim.
-#[cfg(windows)]
-fn resolve_program(program: &str) -> Result<PathBuf, String> {
-    if program.contains('/') || program.contains('\\') {
-        return Ok(PathBuf::from(program));
-    }
-    let path_var = std::env::var_os("PATH").unwrap_or_default();
-    let pathext = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
-    let exts: Vec<&str> = pathext.split(';').filter(|e| !e.is_empty()).collect();
-    for dir in std::env::split_paths(&path_var) {
-        let bare = dir.join(program);
-        if bare.is_file() {
-            return Ok(bare);
-        }
-        for ext in &exts {
-            let candidate = dir.join(format!("{program}{ext}"));
-            if candidate.is_file() {
-                return Ok(candidate);
-            }
-        }
-    }
-    Err(format!("`{program}` was not found on PATH"))
-}
-
-/// Non-Windows: hand the name to `Command` unchanged and let the OS do the
-/// normal `PATH` search (`spawn()` yields `NotFound` → `Err` when it is absent).
-#[cfg(not(windows))]
-fn resolve_program(program: &str) -> Result<PathBuf, String> {
-    Ok(PathBuf::from(program))
-}
+/// PATHEXT-aware program resolution — promoted to [`crate::procutil`] so the
+/// AI CLI driver shares it (audit §2.7); the semantics for the ladder are
+/// unchanged (unresolvable name → `Err` → next ladder entry).
+use crate::procutil::resolve_program;
 
 // ---- pure builders (no fs, no spawn) ------------------------------------------
 

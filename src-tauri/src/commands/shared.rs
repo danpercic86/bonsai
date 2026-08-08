@@ -103,10 +103,14 @@ pub(crate) fn app_data_root(app: &tauri::AppHandle) -> Result<std::path::PathBuf
 /// Canonical workdir path for `repo_id`, or `NoRepo` if it isn't open
 /// (P3e contract §3).
 pub(crate) fn repo_path(state: &AppState, repo_id: &str) -> Result<std::path::PathBuf, AppError> {
+    // Poison recovery (audit §3.8): the guarded HashMap is structurally valid
+    // at every point (plain insert/remove/read — same argument as the
+    // scheduler's `lock_recover`), so a one-off panic under the lock must not
+    // permanently fail EVERY later command.
     let repos = state
         .repos
         .lock()
-        .map_err(|_| AppError::Other("state lock poisoned".to_string()))?;
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     repos
         .get(repo_id)
         .map(|e| e.path.clone())

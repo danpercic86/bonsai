@@ -95,6 +95,12 @@ impl McpRunning {
 #[derive(Default)]
 pub struct McpServerState {
     pub inner: Mutex<Option<McpRunning>>,
+    /// Serializes the WHOLE enable/disable/bounce path (audit §3.6). The sync
+    /// `inner` lock cannot be held across `start().await`, so without this
+    /// guard the P44a launch auto-start and a user toggle could both pass the
+    /// "already running" check (which only sees `inner` — populated at the END
+    /// of `start`) and bind two servers, persisting the dead one's token/port.
+    start_guard: tokio::sync::Mutex<()>,
 }
 
 /// The server status surfaced to the Settings panel (P16 §10.3). `camelCase`
@@ -160,8 +166,14 @@ pub async fn set_enabled(
     mcp_state: &McpServerState,
     enabled: bool,
 ) -> Result<McpStatus, AppError> {
+    // Hold the start-guard across the whole path (check → bind → insert) so a
+    // racing enable (launch auto-start vs user toggle, audit §3.6) cannot pass
+    // the "already running" check twice and start two servers.
+    let _start = mcp_state.start_guard.lock().await;
     if enabled {
-        // Already running → return current status (idempotent enable).
+        // Already running → return current status (idempotent enable). Checked
+        // AFTER acquiring the guard: a racer that just finished `start` has
+        // inserted into `inner` by the time we get here.
         {
             let g = mcp_state.inner.lock().map_err(pois)?;
             if let Some(r) = g.as_ref() {
@@ -190,13 +202,15 @@ pub async fn set_allow_write(
     mcp_state: &McpServerState,
     allow_write: bool,
 ) -> Result<McpStatus, AppError> {
+    // Same start-guard as `set_enabled` (audit §3.6): the bounce below is a
+    // stop+start and must not interleave with a concurrent enable.
+    let _start = mcp_state.start_guard.lock().await;
+
     // Persist the gate first so the (re)start below — and any future start when
-    // stopped — reads the new value.
+    // stopped — reads the new value. Serialized load→mutate→save (audit §2.3).
     let file = settings::settings_file(app)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let mut s = settings::load_from(&file);
-        s.mcp_allow_write = allow_write;
-        settings::save_to(&file, &s)
+        settings::update(&file, |s| s.mcp_allow_write = allow_write).map(|_| ())
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))??;
@@ -231,6 +245,26 @@ pub fn shutdown(mcp_state: &McpServerState) {
         if let Some(r) = g.take() {
             r.stop();
         }
+    }
+}
+
+/// Token to serve on the ACTUAL bound port (audit §3.7): reuse the persisted
+/// token only when the server came up on the persisted port — the one the
+/// user's `claude mcp add` registration targets. When bind fell back to a
+/// fresh ephemeral port, a local process squatting the OLD persisted port
+/// would receive the client's still-valid bearer token (and could replay it
+/// against the new port) — so rotate. The status the frontend shows carries
+/// port + token, making the required re-registration visible. A persisted
+/// token WITHOUT a persisted port (nothing registered yet) is kept.
+fn token_for_bound_port(
+    persisted_token: Option<String>,
+    persisted_port: Option<u16>,
+    actual_port: u16,
+) -> String {
+    match (persisted_token, persisted_port) {
+        (Some(t), Some(p)) if p == actual_port => t,
+        (Some(t), None) => t,
+        _ => generate_token(),
     }
 }
 
@@ -310,9 +344,11 @@ async fn bind_listener(preferred: Option<u16>) -> Result<TcpListener, AppError> 
 /// Security (P16 §8) is unchanged and lives here with the router: 127.0.0.1-only
 /// bind, `auth_layer` on `/mcp` (constant-time token compare, reject-any-Origin,
 /// Host allowlist, no CORS). Returns the ACTUAL bound port in [`McpRunning`]; the
-/// caller persists it.
+/// caller persists it. `make_token` receives that actual port AFTER binding so
+/// the caller can rotate the token on an ephemeral-port fallback (audit §3.7);
+/// tests pass `|_| TEST_TOKEN.to_string()`.
 pub(crate) async fn spawn_server(
-    token: String,
+    make_token: impl FnOnce(u16) -> String + Send,
     allow_write: bool,
     preferred_port: Option<u16>,
     list_open: Arc<dyn Fn() -> Vec<OpenRepo> + Send + Sync>,
@@ -323,6 +359,7 @@ pub(crate) async fn spawn_server(
         .local_addr()
         .map_err(|e| AppError::Io(e.to_string()))?
         .port();
+    let token = make_token(actual_port);
 
     // Per-session service factory (P16 §5): each new MCP session seeds its
     // selection from `seed` (the focused tab) and enumerates the open tabs via
@@ -390,8 +427,6 @@ async fn start(app: &AppHandle, mcp_state: &McpServerState) -> Result<McpStatus,
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?;
 
-    let token = token_opt.unwrap_or_else(generate_token);
-
     // AppState glue: seed the per-session selection from the focused tab
     // (`active_repo`) and snapshot the open tabs (`repos`) at call time. A
     // poisoned lock degrades to "no selection" / "no repos" rather than failing.
@@ -407,31 +442,43 @@ async fn start(app: &AppHandle, mcp_state: &McpServerState) -> Result<McpStatus,
     let list_app = app.clone();
     let list_open: Arc<dyn Fn() -> Vec<OpenRepo> + Send + Sync> = Arc::new(move || {
         let st = list_app.state::<AppState>();
-        let open: Vec<OpenRepo> = match st.repos.lock() {
-            Ok(m) => m
-                .iter()
-                .map(|(id, e)| OpenRepo {
-                    repo_id: id.clone(),
-                    path: e.path.clone(),
-                })
-                .collect(),
-            Err(_) => Vec::new(),
-        };
+        // Poison recovery on AppState.repos (audit §3.8) — the map is
+        // structurally valid at every point; degrading to "no repos" forever
+        // would silently hide every open tab from connected sessions.
+        let open: Vec<OpenRepo> = st
+            .repos
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .map(|(id, e)| OpenRepo {
+                repo_id: id.clone(),
+                path: e.path.clone(),
+            })
+            .collect();
         open
     });
 
-    let running = spawn_server(token, allow_write, port_opt, list_open, seed).await?;
+    let running = spawn_server(
+        move |actual| token_for_bound_port(token_opt, port_opt, actual),
+        allow_write,
+        port_opt,
+        list_open,
+        seed,
+    )
+    .await?;
     let actual_port = running.port;
     let token_save = running.token.clone();
 
     // Persist token + actual port + enabled=true (stable `claude mcp add`, D-4).
+    // Serialized load→mutate→save (audit §2.3).
     let file_save = file.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let mut s = settings::load_from(&file_save);
-        s.mcp_token = Some(token_save);
-        s.mcp_port = Some(actual_port);
-        s.mcp_enabled = true;
-        settings::save_to(&file_save, &s)
+        settings::update(&file_save, |s| {
+            s.mcp_token = Some(token_save);
+            s.mcp_port = Some(actual_port);
+            s.mcp_enabled = true;
+        })
+        .map(|_| ())
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))??;
@@ -455,11 +502,10 @@ async fn stop(app: &AppHandle, mcp_state: &McpServerState) -> Result<McpStatus, 
     }
 
     // Persist enabled=false (best-effort — a failed write must not block stop).
+    // Serialized load→mutate→save (audit §2.3).
     if let Ok(file) = settings::settings_file(app) {
         let _ = tauri::async_runtime::spawn_blocking(move || {
-            let mut s = settings::load_from(&file);
-            s.mcp_enabled = false;
-            let _ = settings::save_to(&file, &s);
+            let _ = settings::update(&file, |s| s.mcp_enabled = false);
         })
         .await;
     }
@@ -552,6 +598,26 @@ mod tests {
     fn tool_count_reflects_write_gate() {
         assert_eq!(tool_count(false), 14);
         assert_eq!(tool_count(true), 34);
+    }
+
+    /// Audit §3.7: the persisted token is reused ONLY when the actual bound
+    /// port matches the persisted one; an ephemeral-port fallback rotates it.
+    #[test]
+    fn token_rotates_when_bound_port_differs_from_persisted() {
+        let tok = "persisted-token".to_string();
+        // Same port → reuse.
+        assert_eq!(
+            token_for_bound_port(Some(tok.clone()), Some(8765), 8765),
+            tok
+        );
+        // Ephemeral fallback (different port) → fresh token.
+        let rotated = token_for_bound_port(Some(tok.clone()), Some(8765), 49152);
+        assert_ne!(rotated, tok);
+        assert_eq!(rotated.len(), 43, "fresh CSPRNG token");
+        // No persisted port (nothing registered yet) → keep the token.
+        assert_eq!(token_for_bound_port(Some(tok.clone()), None, 49152), tok);
+        // No persisted token at all → generate.
+        assert_eq!(token_for_bound_port(None, Some(8765), 8765).len(), 43);
     }
 }
 
@@ -990,7 +1056,7 @@ mod http_integration {
         seed: Arc<dyn Fn() -> Option<String> + Send + Sync>,
     ) -> McpRunning {
         spawn_server(
-            TEST_TOKEN.to_string(),
+            |_actual_port| TEST_TOKEN.to_string(),
             allow_write,
             preferred_port,
             list_open,

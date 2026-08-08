@@ -16,7 +16,12 @@
 //!
 //! Injection-safety (mirrors P49): every user string (`text`, `scope_ref`) is a
 //! single argv element handed to `git` directly — never a shell — so a `;` or
-//! `&&` in the query is literal, never a second command.
+//! `&&` in the query is literal, never a second command. Additionally (audit
+//! §2.6), a `scope_ref` starting with `-` is rejected up front AND the shell
+//! argv carries `--end-of-options` before the scope token, so a
+//! leading-dash value can never be parsed as a `git log` OPTION either (e.g.
+//! `--output=<file>` — an arbitrary-file-write primitive). The `-S`/`-G`
+//! pickaxe token stays BEFORE `--end-of-options` because it IS an option.
 //!
 //! v1 scope (orchestrator decisions on the contract's open questions): the
 //! `regex` flag applies to CONTENT only; message/author/path are plain
@@ -163,6 +168,15 @@ pub fn search_commits(
             truncated: false,
         });
     }
+    // Defense-in-depth (audit §2.6): git itself refuses ref names starting
+    // with `-`, so a leading-dash scope can only be an option-injection
+    // attempt (or garbage) — reject it before it goes anywhere near an argv
+    // or a revparse. Applies uniformly to all modes.
+    if let Some(scope) = &query.scope_ref {
+        if scope.starts_with('-') {
+            return Err(AppError::Other(format!("invalid scope ref: {scope}")));
+        }
+    }
     let cap = effective_cap(query);
     let (matches, truncated) = match query.field {
         SearchField::Path | SearchField::Content => {
@@ -218,8 +232,18 @@ fn build_log_args(q: &SearchQuery, cap: u32) -> Vec<String> {
         args.push("-i".to_string());
     }
     let scope = q.scope_ref.clone().unwrap_or_else(|| "--all".to_string());
+    // `--end-of-options` (audit §2.6) sits after every OPTION (format/count/
+    // `-i`, and the `-S`/`-G` pickaxe token in Content mode) and before the
+    // scope token, so a hostile `scope_ref` can never be parsed as a `git log`
+    // option. NOTE: the default `--all` scope must stay an option, so the
+    // marker is emitted only for an explicit (already leading-dash-rejected)
+    // scope — belt-and-suspenders on top of that rejection.
+    let end_of_options = q.scope_ref.is_some();
     match q.field {
         SearchField::Path => {
+            if end_of_options {
+                args.push("--end-of-options".to_string());
+            }
             args.push(scope);
             args.push("--".to_string());
             args.push(q.text.clone());
@@ -227,6 +251,9 @@ fn build_log_args(q: &SearchQuery, cap: u32) -> Vec<String> {
         SearchField::Content => {
             let flag = if q.regex { "-G" } else { "-S" };
             args.push(format!("{flag}{}", q.text));
+            if end_of_options {
+                args.push("--end-of-options".to_string());
+            }
             args.push(scope);
         }
         // Message/Author/All never shell out.
@@ -336,8 +363,10 @@ fn revwalk_search(
         if examined > MAX_SEARCH_SCAN {
             return Ok((out, true));
         }
-        let oid = oid?;
-        let c = repo.find_commit(oid)?;
+        // Per-commit degradation (audit §3.16, mirrors health.rs): one corrupt
+        // commit/odb entry skips that row instead of aborting the whole search.
+        let Ok(oid) = oid else { continue };
+        let Ok(c) = repo.find_commit(oid) else { continue };
         let msg = String::from_utf8_lossy(c.message_bytes());
         let (hit, which) = match q.field {
             SearchField::Message => (contains_fold(&msg, &needle, cs), MatchedField::Message),
@@ -523,14 +552,49 @@ mod tests {
 
     #[test]
     fn build_log_args_scope_ref_overrides_all() {
+        // An explicit scope rides behind `--end-of-options` (audit §2.6).
         let query = SearchQuery {
             scope_ref: Some("dev".to_string()),
             ..q(SearchField::Path, "f.txt")
         };
         let args = build_log_args(&query, 50);
         let mut expected = base_args("51");
-        expected.extend(["-i", "dev", "--", "f.txt"].map(String::from));
+        expected.extend(["-i", "--end-of-options", "dev", "--", "f.txt"].map(String::from));
         assert_eq!(args, expected);
+
+        // Content mode: the pickaxe token (an OPTION) stays BEFORE the marker.
+        let content = SearchQuery {
+            scope_ref: Some("dev".to_string()),
+            ..q(SearchField::Content, "needle")
+        };
+        let args = build_log_args(&content, 50);
+        let mut expected = base_args("51");
+        expected.extend(["-i", "-Sneedle", "--end-of-options", "dev"].map(String::from));
+        assert_eq!(args, expected);
+    }
+
+    /// Audit §2.6: a scope named like an option is rejected in EVERY mode
+    /// before any git spawn (PanicRunner proves the shell modes) or revwalk.
+    #[test]
+    fn leading_dash_scope_ref_is_rejected() {
+        for field in [
+            SearchField::Path,
+            SearchField::Content,
+            SearchField::Message,
+            SearchField::Author,
+            SearchField::All,
+        ] {
+            let query = SearchQuery {
+                scope_ref: Some("--output=C:/evil.bat".to_string()),
+                ..q(field, "needle")
+            };
+            let err = search_commits(Path::new("."), &PanicRunner, &query)
+                .expect_err("leading-dash scope must be rejected");
+            match err {
+                AppError::Other(m) => assert!(m.contains("invalid scope ref"), "got {m}"),
+                other => panic!("expected Other(invalid scope ref), got {other:?}"),
+            }
+        }
     }
 
     #[test]
@@ -1092,6 +1156,25 @@ mod tests {
         let cli = cli_oids(dir.path(), &["log", "--all", "-i", "--format=%H", "-Gal.ha"]);
         assert_eq!(ours, cli, "content -G == git log -G");
         assert!(!ours.is_empty(), "regex should match the alpha edits");
+    }
+
+    /// A REAL `git log` accepts the `--end-of-options` marker before an
+    /// explicit scope (audit §2.6) and returns the same rows as the plain CLI.
+    #[test]
+    fn oracle_path_scoped_with_end_of_options_matches_cli() {
+        if !have_git() {
+            return;
+        }
+        let (dir, [c0, _c1, _c2, _c3]) = build_fixture();
+        let scoped = SearchQuery {
+            scope_ref: Some("early".to_string()),
+            ..q(SearchField::Path, "a.txt")
+        };
+        let ours = our_oids(dir.path(), &scoped);
+        let cli = cli_oids(dir.path(), &["log", "early", "--format=%H", "--", "a.txt"]);
+        assert_eq!(ours, cli, "scoped path search == git log <scope> -- <path>");
+        // early = C1..C0; only C0 touches a.txt inside the scope.
+        assert_eq!(ours, vec![oid_hex(c0)]);
     }
 
     #[test]

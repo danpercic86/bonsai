@@ -177,9 +177,8 @@ pub async fn set_ui_settings(
 ) -> Result<UiSettings, AppError> {
     let file = settings::settings_file(&app)?;
     let ui = tauri::async_runtime::spawn_blocking(move || -> Result<UiSettings, AppError> {
-        let mut s = settings::load_from(&file);
-        apply_patch(&mut s, patch);
-        settings::save_to(&file, &s)?;
+        // Serialized load→mutate→save (audit §2.3) — never a bare load+save pair.
+        let s = settings::update(&file, |s| apply_patch(s, patch))?;
         Ok(UiSettings {
             theme: s.theme,
             pane_widths: s.pane_widths,
@@ -249,10 +248,12 @@ pub async fn get_session(app: tauri::AppHandle) -> Result<SessionState, AppError
 pub async fn set_session(app: tauri::AppHandle, session: SessionState) -> Result<(), AppError> {
     let file = settings::settings_file(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let mut s = settings::load_from(&file);
-        s.open_repos = session.open_repos;
-        s.active_repo = session.active_repo;
-        settings::save_to(&file, &s)
+        // Serialized load→mutate→save (audit §2.3).
+        settings::update(&file, |s| {
+            s.open_repos = session.open_repos;
+            s.active_repo = session.active_repo;
+        })
+        .map(|_| ())
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?

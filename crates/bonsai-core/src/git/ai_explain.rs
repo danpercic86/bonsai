@@ -45,6 +45,14 @@ const REVIEW_PROMPT: &str = "Review the change provided on standard input.";
 /// the WHOLE range (byte-capped separately by `cap_review_payload`).
 pub const MAX_DIGEST_COMMITS: usize = 200;
 
+/// Hard bound on commits MATERIALIZED by a digest-range walk (audit §3.15).
+/// Comfortably above [`MAX_DIGEST_COMMITS`] (so the meta cap still sees its
+/// overflow count for mid-sized ranges) but bounded — a `BetweenRefs` over an
+/// unrelated-history or ancient base would otherwise collect the entire
+/// history in memory. Past the cap the walk STOPS and the header records the
+/// truncation; the range DIFF is tree-to-tree and still spans the whole range.
+pub const MAX_DIGEST_WALK_COMMITS: usize = 400;
+
 /// System prompt for the "what changed" digest (P28 §2, verbatim). SINGLE line
 /// — Windows `claude.cmd` argv constraint, same rule as the P15 prompts.
 const DIGEST_SYSTEM_PROMPT: &str = "You are a senior engineer writing a change digest for a teammate returning to a repository. Standard input contains a commit list (short hash, date, author, subject) followed by the corresponding combined diff. Write a clear plain-English digest of what changed over this range: a two or three sentence executive summary first, then the main themes or workstreams as short groups, citing file or area names and mentioning authors when several people contributed. Prefer narrative over per-commit listing; skip trivial churn. Output prose only — no markdown code fences.";
@@ -439,8 +447,16 @@ pub(crate) fn resolve_digest_range<'r>(
             if let Some(oid) = mb {
                 walk.hide(oid)?;
             }
+            // Bounded collection (audit §3.15, mirrors ai_branch_name's
+            // collect-≤cap pattern): stop walking past the cap instead of
+            // materializing an arbitrarily large range in memory.
             let mut commits = Vec::new();
+            let mut walk_truncated = false;
             for oid in walk {
+                if commits.len() >= MAX_DIGEST_WALK_COMMITS {
+                    walk_truncated = true;
+                    break;
+                }
                 commits.push(repo.find_commit(oid?)?);
             }
 
@@ -450,7 +466,17 @@ pub(crate) fn resolve_digest_range<'r>(
             };
             let new_tree = to_c.tree()?;
 
-            let mut header = format!("RANGE {from}..{to} ({} commits)", commits.len());
+            let mut header = format!(
+                "RANGE {from}..{to} ({}{} commits)",
+                commits.len(),
+                if walk_truncated { "+" } else { "" }
+            );
+            if walk_truncated {
+                header.push_str(&format!(
+                    "\n(+ more commits — list truncated at the {MAX_DIGEST_WALK_COMMITS} \
+                     newest; the diff still spans the whole range)"
+                ));
+            }
             if unrelated {
                 header.push_str(
                     "\nNOTE: this branch and its base have no common ancestor (unrelated \
@@ -481,9 +507,18 @@ pub(crate) fn resolve_digest_range<'r>(
             walk.push(head.id())?;
             let mut commits = Vec::new();
             let mut boundary: Option<git2::Commit<'r>> = None;
+            let mut walk_truncated = false;
             for oid in walk {
                 let commit = repo.find_commit(oid?)?;
                 if commit.time().seconds() >= cutoff {
+                    // Bounded collection (audit §3.15): past the cap the
+                    // current in-window commit becomes the boundary, so the
+                    // diff anchors exactly to the collected newest commits.
+                    if commits.len() >= MAX_DIGEST_WALK_COMMITS {
+                        walk_truncated = true;
+                        boundary = Some(commit);
+                        break;
+                    }
                     commits.push(commit);
                 } else {
                     boundary = Some(commit);
@@ -503,10 +538,17 @@ pub(crate) fn resolve_digest_range<'r>(
                 .ok()
                 .map(str::to_string)
                 .unwrap_or_else(|| "HEAD (detached)".to_string());
-            let header = format!(
-                "RANGE last {days} day(s) on {branch} ({} commits)",
-                commits.len()
+            let mut header = format!(
+                "RANGE last {days} day(s) on {branch} ({}{} commits)",
+                commits.len(),
+                if walk_truncated { "+" } else { "" }
             );
+            if walk_truncated {
+                header.push_str(&format!(
+                    "\n(+ more commits — list truncated at the {MAX_DIGEST_WALK_COMMITS} \
+                     newest; the diff covers exactly these commits)"
+                ));
+            }
             Ok((header, commits, old_tree, new_tree))
         }
     }
@@ -1068,6 +1110,58 @@ mod tests {
         assert_eq!(new_tree.id(), repo.find_commit(d).expect("D").tree().expect("t").id());
         assert!(header.contains("RANGE main..feature (2 commits)"), "got {header}");
         assert!(!header.contains("no common ancestor"));
+    }
+
+    /// Audit §3.15: a BetweenRefs range LARGER than the walk cap materializes
+    /// at most `MAX_DIGEST_WALK_COMMITS` commits (walk stops — no unbounded
+    /// collection) and records the truncation in the header, while the old/new
+    /// trees still anchor the FULL range.
+    #[test]
+    fn between_refs_walk_is_capped_and_marks_truncation() {
+        let dir = init_scratch();
+        let repo = git2::Repository::open(dir.path()).expect("open");
+        let t = 1_700_000_000i64;
+        let root = commit_at(&repo, None, "root", t, &[]);
+        let mut tip = root;
+        for i in 0..(MAX_DIGEST_WALK_COMMITS + 5) {
+            let prev = repo.find_commit(tip).expect("prev");
+            tip = commit_at(&repo, None, &format!("c{i}"), t + 10 * (i as i64 + 1), &[&prev]);
+        }
+
+        let range = AiDigestRange::BetweenRefs {
+            from: root.to_string(),
+            to: tip.to_string(),
+        };
+        let (header, commits, old_tree, new_tree) =
+            resolve_digest_range(&repo, &range).expect("resolve");
+        assert_eq!(commits.len(), MAX_DIGEST_WALK_COMMITS, "walk capped");
+        assert_eq!(commits[0].id(), tip, "newest first");
+        assert!(
+            header.contains(&format!("({MAX_DIGEST_WALK_COMMITS}+ commits)")),
+            "got {header}"
+        );
+        assert!(header.contains("truncated"), "got {header}");
+        // Trees still anchor the full range (merge-base(root, tip) == root).
+        assert_eq!(
+            old_tree.expect("old tree").id(),
+            repo.find_commit(root).expect("root").tree().expect("t").id()
+        );
+        assert_eq!(
+            new_tree.id(),
+            repo.find_commit(tip).expect("tip").tree().expect("t").id()
+        );
+
+        // An in-cap range stays untruncated (no "+", no note). (HEAD is unborn
+        // in this fixture — the commits hang off no ref — so use BetweenRefs.)
+        let small = AiDigestRange::BetweenRefs {
+            from: commits[2].id().to_string(),
+            to: tip.to_string(),
+        };
+        let (small_header, small_commits, _o, _n) =
+            resolve_digest_range(&repo, &small).expect("resolve small");
+        assert_eq!(small_commits.len(), 2);
+        assert!(small_header.contains("(2 commits)"), "got {small_header}");
+        assert!(!small_header.contains("truncated"), "got {small_header}");
     }
 
     /// §10.1(2): `from == to` → zero commits → `digest_changes` returns

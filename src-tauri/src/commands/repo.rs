@@ -77,13 +77,13 @@ pub async fn open_repo(
             Ok(file) => {
                 let repo_path = info.path.clone();
                 let saved = tauri::async_runtime::spawn_blocking(move || {
-                    let mut s = settings::load_from(&file);
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_secs() as i64)
                         .unwrap_or(0);
-                    settings::record_recent(&mut s, &repo_path, now);
-                    settings::save_to(&file, &s)
+                    // Serialized load→mutate→save (audit §2.3).
+                    settings::update(&file, |s| settings::record_recent(s, &repo_path, now))
+                        .map(|_| ())
                 })
                 .await;
                 match saved {
@@ -160,10 +160,11 @@ pub async fn remove_recent_repo(
 ) -> Result<Vec<RecentRepo>, AppError> {
     let file = settings::settings_file(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let mut s = settings::load_from(&file);
-        s.recent_repos
-            .retain(|r| !r.path.eq_ignore_ascii_case(&path));
-        settings::save_to(&file, &s)?;
+        // Serialized load→mutate→save (audit §2.3).
+        let s = settings::update(&file, |s| {
+            s.recent_repos
+                .retain(|r| !r.path.eq_ignore_ascii_case(&path));
+        })?;
         Ok(s.recent_repos)
     })
     .await
@@ -172,17 +173,19 @@ pub async fn remove_recent_repo(
 
 /// Records the frontend's focused-tab repoId (or `None` when no repo is
 /// focused). Lock-and-clone discipline like `repo_path`; poisoned lock →
-/// `Other`. This seeds a new embedded-MCP session's initial repo (P16 §5) — it
+/// recovered. This seeds a new embedded-MCP session's initial repo (P16 §5) — it
 /// does NOT change any already-connected AI session's selection.
 #[tauri::command]
 pub async fn set_active_repo(
     state: tauri::State<'_, AppState>,
     repo_id: Option<String>,
 ) -> Result<(), AppError> {
+    // Poison recovery (audit §3.8): the guarded Option<String> is structurally
+    // valid at every point, so a past panic under the lock must not brick this.
     *state
         .active_repo
         .lock()
-        .map_err(|_| AppError::Other("state lock poisoned".to_string()))? = repo_id;
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = repo_id;
     Ok(())
 }
 
@@ -214,10 +217,13 @@ where
         // open, reuse its exact key so we FOCUS it instead of inserting a
         // duplicate. Only compute the callback once we know the final id.
         {
+            // Poison recovery (audit §3.8): the guarded map is structurally
+            // valid at every point (plain insert/remove), so recover instead
+            // of bricking every later command.
             let repos = state
                 .repos
                 .lock()
-                .map_err(|_| AppError::Other("state lock poisoned".to_string()))?;
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(existing) = repos
                 .keys()
                 .find(|k| k.eq_ignore_ascii_case(&repo_id))
@@ -244,10 +250,11 @@ where
         };
 
         let previous = {
+            // Poison recovery — see the dedupe-scan comment above (audit §3.8).
             let mut repos = state
                 .repos
                 .lock()
-                .map_err(|_| AppError::Other("state lock poisoned".to_string()))?;
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             repos.insert(
                 repo_id.clone(),
                 RepoEntry {
@@ -282,10 +289,12 @@ pub(crate) async fn close_repo_inner(state: &AppState, repo_id: &str) -> Result<
     // WatcherHandle's debounce-thread join (≤ ~300 ms) doesn't hold the map
     // lock.
     let entry = {
+        // Poison recovery on AppState.repos (audit §3.8) — the map is
+        // structurally valid at every point.
         let mut repos = state
             .repos
             .lock()
-            .map_err(|_| AppError::Other("state lock poisoned".to_string()))?;
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         repos.remove(repo_id)
     };
     drop(entry); // watcher stops, debounce thread joins here

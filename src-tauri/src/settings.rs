@@ -6,8 +6,20 @@
 //! [`settings_file`] touches Tauri.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 use bonsai_core::error::AppError;
+
+/// Serializes every load→mutate→save cycle in this process (audit §2.3).
+///
+/// `save_to` is atomic on its own, but two concurrent [`update`] cycles on
+/// different blocking threads (e.g. a pane-width drag save racing the MCP
+/// token persist) would each load, mutate their own field, and rename — the
+/// last rename silently reverting the other's field. Pure reads (`load_from`)
+/// stay lock-free: they never write, and a torn read is impossible through the
+/// atomic rename.
+static SETTINGS_IO: Mutex<()> = Mutex::new(());
 
 pub const MAX_RECENT_REPOS: usize = 10;
 pub const SETTINGS_VERSION: u32 = 1;
@@ -394,9 +406,30 @@ pub fn load_from(file: &Path) -> Settings {
     s
 }
 
+/// Loads, mutates, and saves settings as ONE serialized transaction (audit
+/// §2.3): the process-wide [`SETTINGS_IO`] lock is held across the whole
+/// load→mutate→save cycle so concurrent writers can never revert each other's
+/// fields. ALL read-modify-write callers must go through this; `load_from`
+/// alone remains fine for pure reads. Returns the saved settings so callers
+/// can derive their response without a second (unlocked) read.
+pub fn update(file: &Path, mutate: impl FnOnce(&mut Settings)) -> Result<Settings, AppError> {
+    // Poison recovery: a panicking mutator leaves the settings FILE untouched
+    // (the save never ran), so later updates are safe to proceed.
+    let _io = SETTINGS_IO
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut s = load_from(file);
+    mutate(&mut s);
+    save_to(file, &s)?;
+    Ok(s)
+}
+
 /// Saves settings to `file` atomically: creates parent dirs, writes pretty
-/// JSON to `<file>.tmp` (same volume), then renames over `file`. On Windows
-/// `std::fs::rename` replaces an existing destination file.
+/// JSON to a uniquely-named `<file>.<pid>.<n>.tmp` (same volume), then renames
+/// over `file`. On Windows `std::fs::rename` replaces an existing destination
+/// file. The tmp name carries the process id + a process-local counter so
+/// concurrent PROCESSES (the in-process serialization is [`update`]'s job)
+/// can never collide on one tmp path (audit §2.3).
 pub fn save_to(file: &Path, s: &Settings) -> Result<(), AppError> {
     if let Some(parent) = file.parent() {
         std::fs::create_dir_all(parent)
@@ -405,8 +438,13 @@ pub fn save_to(file: &Path, s: &Settings) -> Result<(), AppError> {
     let json = serde_json::to_string_pretty(s)
         .map_err(|e| AppError::Io(format!("serialize settings: {e}")))?;
 
+    static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
     let mut tmp_name = file.as_os_str().to_owned();
-    tmp_name.push(".tmp");
+    tmp_name.push(format!(
+        ".{}.{}.tmp",
+        std::process::id(),
+        TMP_SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
     let tmp = PathBuf::from(tmp_name);
 
     std::fs::write(&tmp, json)
@@ -523,7 +561,8 @@ mod tests {
         );
     }
 
-    /// The atomic write leaves no `settings.json.tmp` behind (P1 §3.3.4).
+    /// The atomic write leaves no `*.tmp` behind (P1 §3.3.4) — the tmp name is
+    /// unique per write now, so scan the whole dir instead of one fixed name.
     #[test]
     fn atomic_write_leaves_no_tmp() {
         let dir = tempfile::TempDir::new().expect("create temp dir");
@@ -533,13 +572,61 @@ mod tests {
         save_to(&file, &s).expect("save settings");
 
         assert!(file.exists());
-        assert!(!dir.path().join("settings.json.tmp").exists());
+        assert!(!any_tmp_left(dir.path()));
 
         // Overwriting an existing file is also atomic (rename replaces).
         record_recent(&mut s, "D:\\Repos\\y", 2);
         save_to(&file, &s).expect("save settings again");
-        assert!(!dir.path().join("settings.json.tmp").exists());
+        assert!(!any_tmp_left(dir.path()));
         assert_eq!(load_from(&file), s);
+    }
+
+    /// True when any `*.tmp` file remains in `dir`.
+    fn any_tmp_left(dir: &Path) -> bool {
+        std::fs::read_dir(dir)
+            .expect("read dir")
+            .filter_map(Result::ok)
+            .any(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
+    }
+
+    /// Audit §2.3 regression: N threads × M `update` cycles on DISJOINT fields
+    /// all survive — no lost update reverts another thread's field. Before the
+    /// process-wide `SETTINGS_IO` lock, concurrent load→mutate→save cycles let
+    /// the last rename win and silently dropped the other writers' fields.
+    #[test]
+    fn concurrent_updates_of_disjoint_fields_all_survive() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        save_to(&file, &Settings::default()).expect("seed settings");
+
+        const ROUNDS: u32 = 25;
+        let handles: Vec<std::thread::JoinHandle<()>> = (0..4)
+            .map(|writer: u32| {
+                let file = file.clone();
+                std::thread::spawn(move || {
+                    for i in 0..ROUNDS {
+                        update(&file, |s| match writer {
+                            0 => s.pane_widths.sidebar = SIDEBAR_MIN + (i % 10),
+                            1 => s.mcp_token = Some(format!("token-{i}")),
+                            2 => s.editor_command = format!("editor-{i}"),
+                            _ => s.active_repo = Some(format!("repo-{i}")),
+                        })
+                        .expect("update settings");
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().expect("writer thread");
+        }
+
+        let last = ROUNDS - 1;
+        let loaded = load_from(&file);
+        assert_eq!(loaded.pane_widths.sidebar, SIDEBAR_MIN + (last % 10));
+        assert_eq!(loaded.mcp_token.as_deref(), Some(format!("token-{last}").as_str()));
+        assert_eq!(loaded.editor_command, format!("editor-{last}"));
+        assert_eq!(loaded.active_repo.as_deref(), Some(format!("repo-{last}").as_str()));
+        assert!(!any_tmp_left(dir.path()));
     }
 
     /// save_to creates missing parent directories.

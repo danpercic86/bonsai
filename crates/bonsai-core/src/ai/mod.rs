@@ -99,14 +99,15 @@ struct ProcOutput {
 /// wait up to `timeout` (std-only drain-and-poll — §3.2). A writer + two reader
 /// threads run concurrently, so there is NO pipe-buffer deadlock for large
 /// payloads: the child can write stdout freely while we feed stdin, and neither
-/// side blocks the other. On the deadline we `kill()` then `wait()` (reap) the
-/// child.
+/// side blocks the other. On the deadline we kill the child's whole process
+/// TREE ([`kill_child_tree`] — a bare `kill()` would orphan the node process
+/// behind a `.cmd` shim, audit §2.7) then `wait()` (reap) the child.
 ///
 /// The threads are owned (not scoped) so that on timeout we can return WITHOUT
-/// joining the readers: a killed `cmd.exe` shim can leave a grandchild (e.g. the
-/// stub's `ping`) holding the inherited stdout pipe open, and `read_to_end` would
-/// otherwise block well past the deadline. The detached readers exit on their own
-/// once the OS finally closes those pipes. To keep the writer `'static`, the
+/// joining the readers: the tree kill is best-effort, and a surviving grandchild
+/// (e.g. the stub's `ping`) can hold the inherited stdout pipe open, so
+/// `read_to_end` could otherwise block well past the deadline. The detached
+/// readers exit on their own once the OS finally closes those pipes. To keep the writer `'static`, the
 /// payload is copied into an owned `String`.
 ///
 /// Only spawn failure yields `Err` (an `io::Error`); everything else is reported
@@ -165,7 +166,7 @@ fn run_process(
             }
             Ok(None) => {
                 if Instant::now() >= deadline {
-                    let _ = child.kill();
+                    kill_child_tree(&mut child);
                     let _ = child.wait();
                     timed_out = true;
                     break;
@@ -195,10 +196,44 @@ fn run_process(
     Ok(ProcOutput { timed_out: false, success, stdout: stdout_buf, stderr: stderr_buf })
 }
 
-/// Resolve the binary to spawn: `CLAUDE_BIN_ENV` override (tests) else `claude`
-/// (PATH-resolved; picks up the Windows `claude.cmd` shim). (P13)
-fn resolve_bin() -> String {
-    std::env::var(CLAUDE_BIN_ENV).unwrap_or_else(|_| "claude".to_string())
+/// Resolve the binary to spawn: `CLAUDE_BIN_ENV` override (tests) wins,
+/// verbatim. Otherwise resolve `claude` against PATH with PATHEXT awareness
+/// via [`crate::procutil::resolve_program`] — on Windows a bare
+/// `Command::new("claude")` does NOT find the npm `claude.cmd` shim
+/// (CreateProcess only appends `.exe`), so an npm-only install would fail
+/// every AI feature (audit §2.7). An unresolvable name falls back to the bare
+/// `claude` so the spawn's `NotFound` → `AiUnavailable` error path still
+/// fires naturally. (P13)
+fn resolve_bin() -> std::path::PathBuf {
+    if let Ok(overridden) = std::env::var(CLAUDE_BIN_ENV) {
+        return std::path::PathBuf::from(overridden);
+    }
+    crate::procutil::resolve_program("claude")
+        .unwrap_or_else(|_| std::path::PathBuf::from("claude"))
+}
+
+/// Kill `child` AND its descendants (audit §2.7). On Windows the resolved
+/// binary is usually the npm `claude.cmd` shim: `child.kill()` terminates only
+/// the cmd.exe wrapper and orphans the node process behind it, which keeps
+/// running (and holding the inherited pipes) past the deadline — so kill the
+/// whole tree via `taskkill /T /F` (best-effort, hidden console; mirrors
+/// `external.rs`' console suppression), with `child.kill()` as the backstop.
+/// Non-Windows children are spawned directly (no shim), so a plain `kill()`
+/// suffices.
+fn kill_child_tree(child: &mut std::process::Child) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &child.id().to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+    let _ = child.kill();
 }
 
 /// Strip a single leading/trailing ``` fence (optionally ```lang) defensively.
@@ -250,6 +285,12 @@ pub fn run_claude(
     let bin = resolve_bin();
     let model = opts.model.clone().unwrap_or_else(|| DEFAULT_MODEL.to_string());
 
+    // BatBadBut-class caveat: on Windows `bin` typically resolves to the npm
+    // `claude.cmd` shim, and argv text reaching a `.cmd` is re-expanded by
+    // cmd.exe (`%VAR%`, metacharacters). INVARIANT (keep truthful): every argv
+    // element below is a Bonsai-controlled constant (prompts, flags), a vetted
+    // model alias, or a single-line system prompt constant — ALL repo-derived
+    // and user data flows exclusively through `stdin_payload`, never argv.
     let mut cmd = Command::new(&bin);
     cmd.current_dir(cwd)
         .arg("-p")
