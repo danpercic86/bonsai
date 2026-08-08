@@ -124,3 +124,25 @@ pub async fn history_index_status(
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
+
+/// Relevance-ranked retrieval over the persisted index (BM25). Pure IR — read-
+/// only, touches NO git objects, does NOT emit `repo-changed`, and is NOT
+/// AI-gated (P57b contract §4 / OQ5). Empty/whitespace `text` ⇒ empty hits; a
+/// missing index ⇒ `{ hits: [], indexStale: true, indexedCommits: 0 }` (the UI
+/// offers Build). Mirrors `history_index_status`'s shape. Rejects io | noRepo.
+#[tauri::command]
+pub async fn history_search(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    query: HistoryQuery,
+) -> Result<HistorySearchResults, AppError> {
+    let base = app_data_root(&app)?;
+    let workdir = repo_path(state.inner(), &repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = history_index::index_dir_for(&base, &workdir);
+        history_index::search_history(&workdir, &dir, &query)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}

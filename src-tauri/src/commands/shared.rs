@@ -29,7 +29,13 @@ pub(crate) use bonsai_core::git::ai_resolve::{self, AiResolveProposal};
 pub(crate) use bonsai_core::git::ai_summary::{self, AiSummary};
 pub(crate) use bonsai_core::git::bisect::{self, BisectOutcome};
 pub(crate) use bonsai_core::git::blame::{self, BlameLine, FileHistoryEntry};
-pub(crate) use bonsai_core::git::history_index::{self, IndexProgress, IndexStatus};
+// P57b retrieval side. Only the names the command layer NAMES are re-exported
+// (avoids an unused-import warning under -D warnings, matching the compose_apply /
+// ai_operation convention above); `HistoryHit` travels nested inside
+// `HistorySearchResults.hits`.
+pub(crate) use bonsai_core::git::history_index::{
+    self, HistoryQuery, HistorySearchResults, IndexProgress, IndexStatus,
+};
 pub(crate) use bonsai_core::git::reflog::{self, ReflogEntry};
 pub(crate) use bonsai_core::git::branches::{self, BranchesSnapshot, CheckoutResult, CreateBranchHereResult};
 pub(crate) use bonsai_core::git::cherrypick::{self, CherrypickOutcome};

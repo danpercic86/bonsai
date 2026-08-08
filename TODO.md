@@ -82,8 +82,16 @@ Sub-increments (strictly ordered): **P57a** index builder + persistence + status
   (`?historyFail`). 21 tests; clippy -D + build/tsc clean. Nits→P57b: uses `stage::open_workdir_repo`
   (bare→wrong "cannot modify index" msg; unreachable) → switch to `open_repo_at`; index_status loads full
   store (OQ10 defer); tf/df HashMap non-byte-deterministic (value-equal, fine).
-**Current step:** P57a DONE (committed). Next: **P57b** — retrieval (`search_history` + `history_search`
-cmd →138 + HistoryQuery/HistoryHit/HistorySearchResults types + mock; fold the open_repo_at nit).
+- **P57b** (reviewer APPROVE, 0 must-fix / 0 should-fix; 4 optional nits) — retrieval. New
+  `history_index/search.rs` (279): `HistoryQuery`/`HistoryHit`/`HistorySearchResults` + `search_history`
+  (loads store — no-store/schema-mismatch → empty+indexStale; empty text → empty; SAME `doc::tokenize`;
+  reuses `bm25::rank`; top_k 0→DEFAULT_TOP_K clamp MAX_TOP_K; touches no git). `history_search` cmd
+  (137→138; pure IR, not AI-gated, no repo-changed). Folded the P57a nit: `build_index`/`index_status` now
+  use bare-agnostic `open_repo_at`. IPC + mock. 28 history_index tests; clippy -D + build/tsc clean. Nits
+  (optional): mod.rs 530 (non-test ~285); duplicate open_repo_at (OQ9 defer); redundant trim; mock tokenizer naive.
+**Current step:** P57a+b DONE (committed). Next: **P57c** — AI synthesis (`ai_history.rs` answer_history +
+HistoryAnswer + parse_cited; `ai_search_history` cmd →139) + UI (`HistorySearchPanel`/`HistoryResultsList`/
+`useHistorySearch`; AiOutputPanel reuse + matchRows) → P57 tester → **Phase 2 COMPLETE**.
 
 ## P56 — local AI changelog / release-notes (Phase 2 · milestone 4/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 

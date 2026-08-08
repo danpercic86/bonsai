@@ -734,6 +734,35 @@ export interface IndexStatus {
   builtAt: number | null;
 }
 
+/** Retrieval query for `historySearch` (P57b). Mirrors the Rust `HistoryQuery`
+ *  (camelCase). `topK` 0 ⇒ the backend default (DEFAULT_TOP_K = 20), clamped to
+ *  MAX_TOP_K = 50. */
+export interface HistoryQuery {
+  text: string;
+  topK: number;
+}
+
+/** One relevance-ranked commit from `historySearch` (P57b). Mirrors the Rust
+ *  `HistoryHit` (camelCase). Overlaps P50's `SearchMatch` so the results UI reuses
+ *  `revealCommitByOid` + the graph match rings. `score` is BM25 relevance,
+ *  descending. */
+export interface HistoryHit {
+  oid: string;
+  summary: string;
+  authorName: string;
+  authorTs: number;
+  score: number;
+}
+
+/** Ranked retrieval results (P57b). Mirrors the Rust `HistorySearchResults`
+ *  (camelCase). `indexStale` is true when no usable index exists yet (UI offers
+ *  Build). */
+export interface HistorySearchResults {
+  hits: HistoryHit[];
+  indexStale: boolean;
+  indexedCommits: number;
+}
+
 /** Write-target level (P40). System is never a write target. */
 export type ConfigLevelArg = 'local' | 'global';
 /** Where a value actually lives (read result). */
@@ -1659,6 +1688,11 @@ export interface IpcApi {
   /** Cheap status of the persisted index (built?, count, staleness vs current
    *  refs). Read-only, NOT AI-gated, does NOT emit repo-changed. Rejects git | noRepo. */
   historyIndexStatus(repoId: string): Promise<IndexStatus>;
+  /** Relevance-ranked retrieval over the persisted index (pure IR; NOT AI-gated).
+   *  Empty/whitespace `text` ⇒ { hits: [], ... }. No index ⇒ { hits: [],
+   *  indexStale: true, indexedCommits: 0 } (UI offers Build). Read-only, does NOT
+   *  emit repo-changed. Rejects io | noRepo. */
+  historySearch(repoId: string, query: HistoryQuery): Promise<HistorySearchResults>;
   /** Config view for `level` of `repoId`: curated keys (effective value + level
    *  + target-level value) + advanced entries. Read-only. Rejects git | noRepo. */
   getConfig(repoId: string, level: ConfigLevelArg): Promise<ConfigView>;

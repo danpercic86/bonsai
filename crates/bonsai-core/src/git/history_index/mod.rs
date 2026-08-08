@@ -19,6 +19,7 @@
 
 pub mod bm25;
 pub mod doc;
+pub mod search;
 pub mod store;
 
 use std::path::{Path, PathBuf};
@@ -27,6 +28,7 @@ use crate::error::AppError;
 
 pub use bm25::Bm25Index;
 pub use doc::{extract_doc, tokenize, CommitDoc, MSG_BOOST};
+pub use search::{search_history, HistoryHit, HistoryQuery, HistorySearchResults};
 pub use store::{repo_key, IndexStore};
 
 /// Persisted-index schema; bump on ANY format/tokenization change to force a
@@ -39,6 +41,10 @@ pub const MAX_INDEX_COMMITS: usize = 50_000;
 pub const MAX_DOC_DIFF_BYTES: usize = 4_096;
 /// Emit an `Extracting` progress tick every N documented commits (contract §3.4).
 pub const PROGRESS_TICK: usize = 200;
+/// Default retrieval depth when a query asks for `top_k == 0` (contract §2.1).
+pub const DEFAULT_TOP_K: u32 = 20;
+/// Hard cap on retrieval depth; a larger `top_k` is clamped to this (contract §2.1).
+pub const MAX_TOP_K: u32 = 50;
 
 /// Streamed build progress — one per Channel tick (contract §2.1).
 #[derive(Debug, Clone, serde::Serialize)]
@@ -103,7 +109,7 @@ pub fn build_index(
     index_dir: &Path,
     mut on_progress: impl FnMut(IndexProgress) + Send,
 ) -> Result<IndexStatus, AppError> {
-    let repo = crate::git::stage::open_workdir_repo(workdir)?;
+    let repo = open_repo_at(workdir)?;
     let mut store = store::load(index_dir)
         .filter(|s| s.schema == HISTORY_INDEX_SCHEMA)
         .unwrap_or_else(IndexStore::empty);
@@ -154,7 +160,7 @@ pub fn index_status(workdir: &Path, index_dir: &Path) -> Result<IndexStatus, App
         Some(s) => return Ok(not_built(s.schema)),
         None => return Ok(not_built(0)),
     };
-    let repo = crate::git::stage::open_workdir_repo(workdir)?;
+    let repo = open_repo_at(workdir)?;
     let stale = collect_tip_hexes(&repo)? != store.tip_oids;
     let new_commits = reachable_oids(&repo)?
         .iter()
@@ -196,6 +202,19 @@ fn not_built(schema: u32) -> IndexStatus {
         schema,
         built_at: None,
     }
+}
+
+/// Open the repo at `workdir` with `NO_SEARCH` — the bare-agnostic, read-only
+/// convention every `git/` module uses (`branches.rs`/`tags.rs`/`search.rs`).
+/// The index is derived data (it never writes to `.git`), so this must NOT go
+/// through `stage::open_workdir_repo`, which asserts a working directory and
+/// yields a wrong-domain "cannot modify index" error on a bare repo (P57a nit).
+fn open_repo_at(workdir: &Path) -> Result<git2::Repository, AppError> {
+    Ok(git2::Repository::open_ext(
+        workdir,
+        git2::RepositoryOpenFlags::NO_SEARCH,
+        std::iter::empty::<&std::ffi::OsStr>(),
+    )?)
 }
 
 /// All-refs reachable walk (header-only), bounded at [`MAX_INDEX_COMMITS`].
@@ -344,10 +363,21 @@ mod tests {
         assert!(!status.stale);
         assert_eq!(status.new_commits, 0);
 
-        let store = store::load(idx.path()).expect("load store");
-        let ranked = bm25::rank(&store.bm25, &store.docs, &tokenize("zebracorn"), 20);
-        assert!(!ranked.is_empty(), "the keyword commit is retrieved");
-        assert_eq!(ranked[0].0, c2.to_string(), "unique-term commit ranks first");
+        // End-to-end through the P57b public API (git-built store -> retrieval):
+        // the term unique to commit 2 returns that oid first.
+        let results = search_history(
+            dir.path(),
+            idx.path(),
+            &HistoryQuery {
+                text: "zebracorn".to_string(),
+                top_k: 0,
+            },
+        )
+        .expect("search");
+        assert!(!results.hits.is_empty(), "the keyword commit is retrieved");
+        assert_eq!(results.hits[0].oid, c2.to_string(), "unique-term commit ranks first");
+        assert!(!results.index_stale);
+        assert_eq!(results.indexed_commits, 4);
     }
 
     // ---------------------------------------------------- §7.7 incremental
