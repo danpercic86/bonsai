@@ -49,7 +49,7 @@ Checklists: `docs/contracts/P<N>-user-checklist.md`.
 **Untouched throughout:** your 4 in-progress files (Cargo.lock, package.json, src-tauri/Cargo.toml,
 tauri.conf.json = the 0.3.0→0.3.1 bump) and `docs/audit-2026-08-07.md` (another session's file).
 
-## P59 — git hooks execution + force-push-lease hardening (Phase 3 · milestone 2/4) — **IN PROGRESS** (2026-08-08)
+## P59 — git hooks execution + force-push-lease hardening (Phase 3 · milestone 2/4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
 Contract: `docs/contracts/P59-hooks-and-lease-hardening.md`. Reuses the P58 `exec.rs` seam. Two trust fixes.
 
@@ -125,9 +125,20 @@ fan-out (like P58 sign; all pass false) — flag a future `CommitOpts` struct.
   + force_push_cli 12 + remote_cli 20; pre-push oracle RAN; clippy -D + build clean. **Cmd = 141** (lib.rs
   untouched; "142" was a #[tauri::command]-attr miscount). Nits: remote_url_of uses fetch-url not pushurl;
   COMMIT_HOOK_CANCELED reused for push (stale name); opLabel unused (label infers 'pre-push' prefix — 3-way coupling).
-**Current step:** P59a+ui+b+a-2 DONE (committed). Next: **P59 tester** (full regression + `P59-user-checklist.md`
-— real hook managers Husky/pre-commit/lint-staged/gitleaks + force-with-lease vs a moved remote, native) →
-P59 AI gate → P59 done.
+- **P59 tester** — `cargo test --workspace` **1071 passed / 0 failed / 3 ignored**; vitest **139/139** (+12
+  `hooksGate.test.ts`: pure gate helpers + the load-bearing `pre-commit`/`pre-push hook failed:` prefixes —
+  also hardens the reviewer's label-coupling nit); clippy -D clean. Wrote `docs/contracts/P59-user-checklist.md`.
+  No bugs.
+- **P59 AI GATE PASSED (2026-08-08).** Backend: 1071 workspace incl. the hermetic hooks oracle (12:
+  fail-blocks-with-output/HEAD-unchanged, commit-msg rewrite, post-commit non-blocking, core.hooksPath,
+  opt-out, re-stage) + force_push_cli (12: atomic lease refuse+origin-unchanged / held-lease succeeds /
+  up-to-date no-spawn / pre-push skip) + remote_cli (20) + reviewer verification (pre-check never skips a
+  hook; --no-verify double-run fix; the no-`+` lease empirically confirmed; -c core.askpass= never-prompt)
+  + hooksGate 12 vitests. Real hook managers (Husky/pre-commit/lint-staged/gitleaks) blocking + dialog
+  legibility + Windows shell hooks + real-remote force-with-lease atomic-refuse + no-prompt creds = USER
+  CHECKPOINT (`docs/contracts/P59-user-checklist.md`). Commits `87a49c9`(a)·`b17ae64`(ui)·`69d7f16`(b)·`83fe64e`(a-2)·tester.
+**Current step:** P59 DONE (AI gate passed, awaiting USER CHECKPOINT). Phase 3 milestone 3/4 next: **P60
+(parity batch: rename / non-FF pull / one-click undo / submodule add-deinit-remove)**.
 
 ## P58 — real commit signing + verification (Phase 3 · milestone 1/4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
