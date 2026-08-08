@@ -301,12 +301,12 @@ export const tauriIpc: IpcApi = {
     return invoke<PullResult>('pull', { repoId });
   },
 
-  push(repoId: string): Promise<PushResult> {
-    return invoke<PushResult>('push', { repoId });
+  push(repoId: string, skipHooks = false): Promise<PushResult> {
+    return invoke<PushResult>('push', { repoId, skipHooks });
   },
 
-  forcePush(repoId: string): Promise<PushResult> {
-    return invoke<PushResult>('force_push', { repoId });
+  forcePush(repoId: string, skipHooks = false): Promise<PushResult> {
+    return invoke<PushResult>('force_push', { repoId, skipHooks });
   },
 
   getOpState(repoId: string): Promise<RepoOpState> {

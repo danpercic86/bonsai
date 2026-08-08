@@ -65,20 +65,28 @@ pub(crate) async fn pull_inner(state: &AppState, repo_id: &str) -> Result<PullRe
 }
 
 /// Pushes the current branch to its upstream — or origin/<branch> + set
-/// upstream when none (M6 contract §2.6). Never force. Errors: `noRemote`
-/// | `authFailed` | `networkError` | `pushRejected` | `git` | `noRepo`.
+/// upstream when none (M6 contract §2.6). Never force. `skip_hooks` (P59a-2):
+/// `true` ≡ `git push --no-verify` — otherwise the `pre-push` hook runs before
+/// the push. Errors: `noRemote` | `authFailed` | `networkError` |
+/// `pushRejected` | `hookRejected` | `git` | `noRepo`.
 #[tauri::command]
 pub async fn push(
     state: tauri::State<'_, AppState>,
     repo_id: String,
+    skip_hooks: Option<bool>,
 ) -> Result<PushResult, AppError> {
-    push_inner(state.inner(), &repo_id).await
+    push_inner(state.inner(), &repo_id, skip_hooks).await
 }
 
 /// Runtime-free core of `push` (unit-testable without a Tauri app).
-pub(crate) async fn push_inner(state: &AppState, repo_id: &str) -> Result<PushResult, AppError> {
+pub(crate) async fn push_inner(
+    state: &AppState,
+    repo_id: &str,
+    skip_hooks: Option<bool>,
+) -> Result<PushResult, AppError> {
     let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || push_current(&path))
+    let skip = skip_hooks.unwrap_or(false);
+    tauri::async_runtime::spawn_blocking(move || push_current(&path, &SpawnGitExec, skip))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
@@ -86,22 +94,31 @@ pub(crate) async fn push_inner(state: &AppState, repo_id: &str) -> Result<PushRe
 /// Force-push the current branch to its upstream WITH A LEASE (P37 + P59b). The
 /// push runs through the git binary so git performs its atomic
 /// `--force-with-lease` server-side check (closes P37's client-side TOCTOU);
-/// refuses if the remote moved since the last fetch. Errors: `noUpstream` |
-/// `authFailed` | `networkError` | `pushRejected` | `git` | `noRepo`.
+/// refuses if the remote moved since the last fetch. `skip_hooks` (P59a-2):
+/// `true` ≡ `--no-verify` — otherwise the `pre-push` hook runs before the push.
+/// Errors: `noUpstream` | `authFailed` | `networkError` | `pushRejected` |
+/// `hookRejected` | `git` | `noRepo`.
 #[tauri::command]
 pub async fn force_push(
     state: tauri::State<'_, AppState>,
     repo_id: String,
+    skip_hooks: Option<bool>,
 ) -> Result<PushResult, AppError> {
-    force_push_inner(state.inner(), &repo_id).await
+    force_push_inner(state.inner(), &repo_id, skip_hooks).await
 }
 
 /// Runtime-free core of `force_push` (unit-testable without a Tauri app).
-pub(crate) async fn force_push_inner(state: &AppState, repo_id: &str) -> Result<PushResult, AppError> {
+pub(crate) async fn force_push_inner(
+    state: &AppState,
+    repo_id: &str,
+    skip_hooks: Option<bool>,
+) -> Result<PushResult, AppError> {
     let path = repo_path(state, repo_id)?;
+    let skip = skip_hooks.unwrap_or(false);
     // P59b: the push runs through the git binary for git's atomic
-    // `--force-with-lease` (closes P37's client-side TOCTOU).
-    tauri::async_runtime::spawn_blocking(move || force_push_with_lease(&path, &SpawnGitExec))
+    // `--force-with-lease` (closes P37's client-side TOCTOU). P59a-2: the
+    // pre-push hook (also via the git binary) runs first unless skipped.
+    tauri::async_runtime::spawn_blocking(move || force_push_with_lease(&path, &SpawnGitExec, skip))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

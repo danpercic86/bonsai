@@ -1665,13 +1665,16 @@ export interface IpcApi {
   /** Fetch upstream remote + fast-forward only. Rejects noUpstream | authFailed
    *  | networkError | checkoutConflict | git | noRepo. */
   pull(repoId: string): Promise<PullResult>;
-  /** Push current branch (sets upstream to origin/<branch> when none). Rejects
-   *  noRemote | authFailed | networkError | pushRejected | git | noRepo. */
-  push(repoId: string): Promise<PushResult>;
+  /** Push current branch (sets upstream to origin/<branch> when none). `skipHooks`
+   *  (P59a-2): true ≡ `git push --no-verify`; otherwise the `pre-push` hook runs
+   *  first and a non-zero exit rejects with `hookRejected`. Rejects
+   *  noRemote | authFailed | networkError | pushRejected | hookRejected | git | noRepo. */
+  push(repoId: string, skipHooks?: boolean): Promise<PushResult>;
   /** Force-push the current branch to its upstream WITH A LEASE (P37). Refuses
-   *  (pushRejected) if the remote moved since the last fetch. Rejects
-   *  noUpstream | noRemote | authFailed | networkError | pushRejected | git | noRepo. */
-  forcePush(repoId: string): Promise<PushResult>;
+   *  (pushRejected) if the remote moved since the last fetch. `skipHooks` (P59a-2)
+   *  as {@link push}. Rejects noUpstream | noRemote | authFailed | networkError
+   *  | pushRejected | hookRejected | git | noRepo. */
+  forcePush(repoId: string, skipHooks?: boolean): Promise<PushResult>;
   /** Current operation state (merge/rebase/...). Part of the refresh batch.
    *  Rejects noRepo | git. */
   getOpState(repoId: string): Promise<RepoOpState>;

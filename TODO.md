@@ -113,9 +113,21 @@ fan-out (like P58 sign; all pass false) — flag a future `CommitOpts` struct.
   542+oracles green after the shared-seam fix; clippy -D + build clean. Notes: dropped NoRemote pre-check
   (→Git); remote.rs 1593-line god-file (future split); classify network `ssl`/`tls` substrings broad.
   ⚠ **CONTRACT BUG:** P59 §B2 pseudocode's `+`-refspec would bypass the lease — the CODE is correct (no `+`).
-**Current step:** P59b DONE (committed). Next: **P59a-2** — pre-push (`pre-push` in push_current +
-force_push_with_lease via hooks::run_hook; skip_hooks on push/force_push cmds + IPC; push-side hook-gate;
-pre-push oracle) → P59 tester → P59 done.
+- **P59a-2** (reviewer APPROVE, 0 must-fix / 0 should-fix; 3 nits) — pre-push. `push_current` +
+  `force_push_with_lease` run `pre-push` (hooks::run_hook, args=[remote,url], stdin=per-ref
+  `<lref> <loid> <rref> <roid|zeros>`) BEFORE the push; non-zero→HookRejected, abort; gated skip_hooks/
+  bonsai.runHooks. **Double-run fix:** force_push_with_lease pushes via the git binary (fires pre-push
+  itself) → we run the hook ourselves (HookRejected UX + skip semantics) + `--no-verify` so git doesn't
+  re-run → hook runs EXACTLY once; skip_hooks=true truly skips (oracle: ref advances w/ failing hook
+  present). push_current (libgit2, no hooks) → only our run. push/force_push cmds +skip_hooks + &SpawnGitExec
+  (~20-site fan-out). IPC push/forcePush skipHooks?; mock `?hooks=failpush`. Push-gate: push/forcePush →
+  useHookGate → HookOutputDialog "Push anyway" (pushed OUT of the commit gate → sequence not nest). lib 544
+  + force_push_cli 12 + remote_cli 20; pre-push oracle RAN; clippy -D + build clean. **Cmd = 141** (lib.rs
+  untouched; "142" was a #[tauri::command]-attr miscount). Nits: remote_url_of uses fetch-url not pushurl;
+  COMMIT_HOOK_CANCELED reused for push (stale name); opLabel unused (label infers 'pre-push' prefix — 3-way coupling).
+**Current step:** P59a+ui+b+a-2 DONE (committed). Next: **P59 tester** (full regression + `P59-user-checklist.md`
+— real hook managers Husky/pre-commit/lint-staged/gitleaks + force-with-lease vs a moved remote, native) →
+P59 AI gate → P59 done.
 
 ## P58 — real commit signing + verification (Phase 3 · milestone 1/4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 

@@ -151,7 +151,7 @@ fn lease_refuses_when_remote_moved() {
     let z = rewrite_head(&f.work, "z");
     assert_ne!(z, y, "local rewrite must differ from the third-party tip");
 
-    let err = force_push_with_lease(&f.work, &SpawnGitExec).expect_err("lease must refuse");
+    let err = force_push_with_lease(&f.work, &SpawnGitExec, false).expect_err("lease must refuse");
     match err {
         AppError::PushRejected(m) => {
             let low = m.to_lowercase();
@@ -187,7 +187,7 @@ fn lease_succeeds_and_moves_the_ref() {
     let z = rewrite_head(&f.work, "z");
     assert_ne!(z, x, "the rewrite must differ from the original tip");
 
-    let res = force_push_with_lease(&f.work, &SpawnGitExec).expect("lease should hold");
+    let res = force_push_with_lease(&f.work, &SpawnGitExec, false).expect("lease should hold");
     match res {
         PushResult::Pushed {
             remote,
@@ -216,7 +216,7 @@ fn up_to_date_when_baseline_equals_local_tip() {
     let x = origin_main(&f);
 
     // PanicExec: up-to-date must short-circuit in git2 with NO git spawned.
-    let res = force_push_with_lease(&f.work, &PanicExec).expect("up-to-date is not an error");
+    let res = force_push_with_lease(&f.work, &PanicExec, false).expect("up-to-date is not an error");
     match res {
         PushResult::UpToDate { remote, branch } => {
             assert_eq!(remote, "origin");
@@ -237,7 +237,7 @@ fn no_upstream_is_rejected() {
 
     git(&f.work, &["checkout", "-b", "nolease"]);
     // PanicExec: the NoUpstream pre-check fires before any git push.
-    let err = force_push_with_lease(&f.work, &PanicExec).expect_err("no upstream must error");
+    let err = force_push_with_lease(&f.work, &PanicExec, false).expect_err("no upstream must error");
     assert!(
         matches!(err, AppError::NoUpstream(_)),
         "expected NoUpstream, got {err:?}"
@@ -259,7 +259,7 @@ fn no_baseline_refuses_with_fetch_hint() {
 
     let _z = rewrite_head(&f.work, "z");
     // PanicExec: the no-baseline pre-check fires before any git push.
-    let err = force_push_with_lease(&f.work, &PanicExec).expect_err("no baseline must refuse");
+    let err = force_push_with_lease(&f.work, &PanicExec, false).expect_err("no baseline must refuse");
     match err {
         AppError::PushRejected(m) => {
             assert!(
@@ -298,7 +298,7 @@ fn lease_succeeds_on_nested_branch_name() {
     assert_ne!(z, x, "the rewrite must differ from the original tip");
 
     let res =
-        force_push_with_lease(&f.work, &SpawnGitExec).expect("lease should hold on nested branch");
+        force_push_with_lease(&f.work, &SpawnGitExec, false).expect("lease should hold on nested branch");
     match res {
         PushResult::Pushed {
             remote,
@@ -347,7 +347,7 @@ fn force_push_drops_a_remote_commit() {
     let z = head_oid(&f.work);
     assert_ne!(z, y);
 
-    let res = force_push_with_lease(&f.work, &SpawnGitExec).expect("lease should hold");
+    let res = force_push_with_lease(&f.work, &SpawnGitExec, false).expect("lease should hold");
     assert!(matches!(res, PushResult::Pushed { .. }), "got {res:?}");
 
     // Oracle: origin/main == Z, its parent == X, and Y is no longer reachable.
@@ -369,7 +369,7 @@ fn detached_head_is_rejected() {
     git(&f.work, &["checkout", &tip]); // detach
 
     // PanicExec: the detached-HEAD guard fires before any git push.
-    let err = force_push_with_lease(&f.work, &PanicExec).expect_err("detached HEAD must error");
+    let err = force_push_with_lease(&f.work, &PanicExec, false).expect_err("detached HEAD must error");
     match err {
         AppError::Git(m) => assert!(
             m.to_lowercase().contains("detached"),
@@ -395,7 +395,7 @@ fn unborn_head_is_rejected() {
     configure_identity(&repo);
 
     // PanicExec: the unborn-HEAD guard fires before any git push.
-    let err = force_push_with_lease(&repo, &PanicExec).expect_err("unborn HEAD must error");
+    let err = force_push_with_lease(&repo, &PanicExec, false).expect_err("unborn HEAD must error");
     match err {
         AppError::Git(m) => assert!(
             m.to_lowercase().contains("no commits"),
@@ -403,6 +403,78 @@ fn unborn_head_is_rejected() {
         ),
         other => panic!("expected Git, got {other:?}"),
     }
+}
+
+// ---------------------------------- §A6 pre-push hook oracle (P59a-2)
+
+/// A failing `pre-push` hook ABORTS the force-push with `HookRejected`, and the
+/// remote ref stays UNCHANGED. The hook echoes the stdin ref line — which for a
+/// force-push carries the LEASE baseline as the remote-oid — proving the stdin
+/// synthesis. Requires Git ≥ 2.36 (`git hook run`).
+#[test]
+fn pre_push_hook_blocks_force_push() {
+    require_git!();
+    if !common::git_version_at_least(2, 36) {
+        eprintln!("skipping: git < 2.36 (no `git hook run`)");
+        return;
+    }
+    let f = init_origin_and_clone();
+    let x = origin_main(&f);
+
+    common::write_pre_push_hook(&f.work, "read line\necho \"pre-push saw: $line\" >&2\nexit 1\n");
+    let z = rewrite_head(&f.work, "z");
+    assert_ne!(z, x);
+
+    let err =
+        force_push_with_lease(&f.work, &SpawnGitExec, false).expect_err("pre-push must block");
+    match err {
+        AppError::HookRejected(m) => {
+            assert!(m.contains("pre-push hook failed:"), "prefix: {m}");
+            assert!(m.contains("refs/heads/main"), "stdin ref surfaced: {m}");
+            // The remote-oid field is the lease baseline X (not 40 zeros).
+            assert!(m.contains(&x), "stdin remote-oid must be the lease baseline: {m}");
+        }
+        other => panic!("expected HookRejected, got {other:?}"),
+    }
+    // Oracle: the force-push never happened — origin unchanged.
+    assert_eq!(origin_main(&f), x, "origin main must be unchanged after a blocked pre-push");
+}
+
+/// P59a-2: `skip_hooks = true` (≡ --no-verify) bypasses a failing pre-push — the
+/// force-push proceeds and origin moves to the rewritten tip.
+#[test]
+fn pre_push_hook_skipped_allows_force_push() {
+    require_git!();
+    if !common::git_version_at_least(2, 36) {
+        eprintln!("skipping: git < 2.36");
+        return;
+    }
+    let f = init_origin_and_clone();
+    common::write_pre_push_hook(&f.work, "exit 1\n");
+    let z = rewrite_head(&f.work, "z");
+
+    let res = force_push_with_lease(&f.work, &SpawnGitExec, true)
+        .expect("skip_hooks bypasses the failing pre-push");
+    assert!(matches!(res, PushResult::Pushed { .. }), "got {res:?}");
+    assert_eq!(origin_main(&f), z, "origin main must move when the hook is skipped");
+}
+
+/// A PASSING pre-push (exit 0) allows the force-push through git's atomic lease.
+#[test]
+fn pre_push_hook_pass_allows_force_push() {
+    require_git!();
+    if !common::git_version_at_least(2, 36) {
+        eprintln!("skipping: git < 2.36");
+        return;
+    }
+    let f = init_origin_and_clone();
+    common::write_pre_push_hook(&f.work, "exit 0\n");
+    let z = rewrite_head(&f.work, "z");
+
+    let res =
+        force_push_with_lease(&f.work, &SpawnGitExec, false).expect("passing pre-push allows push");
+    assert!(matches!(res, PushResult::Pushed { .. }), "got {res:?}");
+    assert_eq!(origin_main(&f), z);
 }
 
 /// True if `ancestor` is reachable from `ref_name` in `repo` (git merge-base

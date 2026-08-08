@@ -20,6 +20,7 @@ mod common;
 use std::path::{Path, PathBuf};
 
 use bonsai_core::error::AppError;
+use bonsai_core::git::exec::SpawnGitExec;
 use bonsai_core::git::remote::{fetch_all, pull_ff, push_current, PullResult, PushResult};
 use common::{commit_fixed, git, git_ok};
 
@@ -362,7 +363,7 @@ fn push_updates_bare_and_tracking_ref() {
     local_commit(&f.work, "feature.txt", "feat\n", "feature work");
     let tip = rev_parse(&f.work, "main");
 
-    let res = push_current(&f.work).expect("push");
+    let res = push_current(&f.work, &SpawnGitExec, false).expect("push");
     match res {
         PushResult::Pushed { remote, branch, set_upstream } => {
             assert_eq!(remote, "origin");
@@ -385,15 +386,64 @@ fn push_updates_bare_and_tracking_ref() {
     assert_eq!(rev_parse(&t.bare, "main"), tip, "CLI twin must agree");
 }
 
+/// §A6 (P59a-2): a failing `pre-push` hook ABORTS `push_current` with
+/// HookRejected — the bare remote ref stays UNCHANGED. The hook echoes the ref
+/// line it read from stdin, proving the stdin synthesis end-to-end. Requires
+/// Git ≥ 2.36 (`git hook run`).
+#[test]
+fn pre_push_hook_blocks_push_current() {
+    require_git!();
+    if !common::git_version_at_least(2, 36) {
+        eprintln!("skipping: git < 2.36 (no `git hook run`)");
+        return;
+    }
+    let f = setup();
+    let base = rev_parse(&f.bare, "main");
+    local_commit(&f.work, "feature.txt", "feat\n", "feature work");
+
+    common::write_pre_push_hook(&f.work, "read line\necho \"pre-push saw: $line\" >&2\nexit 1\n");
+
+    let err = push_current(&f.work, &SpawnGitExec, false).expect_err("pre-push must block");
+    match err {
+        AppError::HookRejected(m) => {
+            assert!(m.contains("pre-push hook failed:"), "prefix: {m}");
+            // The synthesized stdin ref line reached the hook.
+            assert!(m.contains("refs/heads/main"), "stdin ref surfaced: {m}");
+        }
+        other => panic!("expected HookRejected, got {other:?}"),
+    }
+    // Oracle: the push never happened — bare main unchanged.
+    assert_eq!(rev_parse(&f.bare, "main"), base, "bare main must be unchanged");
+}
+
+/// P59a-2: `skip_hooks = true` (≡ --no-verify) bypasses a failing pre-push — the
+/// push proceeds and the bare ref advances.
+#[test]
+fn pre_push_hook_skipped_allows_push_current() {
+    require_git!();
+    if !common::git_version_at_least(2, 36) {
+        eprintln!("skipping: git < 2.36");
+        return;
+    }
+    let f = setup();
+    local_commit(&f.work, "feature.txt", "feat\n", "feature work");
+    let tip = rev_parse(&f.work, "main");
+    common::write_pre_push_hook(&f.work, "exit 1\n");
+
+    let res = push_current(&f.work, &SpawnGitExec, true).expect("skip_hooks bypasses pre-push");
+    assert!(matches!(res, PushResult::Pushed { .. }), "got {res:?}");
+    assert_eq!(rev_parse(&f.bare, "main"), tip, "bare main must advance when hook skipped");
+}
+
 /// §6.3.2: an immediate second push is UpToDate (local short-circuit).
 #[test]
 fn push_twice_is_up_to_date() {
     require_git!();
     let f = setup();
     local_commit(&f.work, "feature.txt", "feat\n", "feature work");
-    push_current(&f.work).expect("first push");
+    push_current(&f.work, &SpawnGitExec, false).expect("first push");
 
-    let res = push_current(&f.work).expect("second push");
+    let res = push_current(&f.work, &SpawnGitExec, false).expect("second push");
     match res {
         PushResult::UpToDate { remote, branch } => {
             assert_eq!(remote, "origin");
@@ -413,7 +463,7 @@ fn push_without_upstream_sets_upstream() {
     local_commit(&f.work, "topic.txt", "t\n", "topic work");
     let tip = rev_parse(&f.work, "topic");
 
-    let res = push_current(&f.work).expect("push");
+    let res = push_current(&f.work, &SpawnGitExec, false).expect("push");
     match res {
         PushResult::Pushed { remote, branch, set_upstream } => {
             assert_eq!(remote, "origin");
@@ -438,7 +488,7 @@ fn push_without_upstream_or_origin_is_no_remote() {
     git(&f.work, &["checkout", "-b", "topic"]);
     local_commit(&f.work, "topic.txt", "t\n", "topic work");
 
-    let err = push_current(&f.work).expect_err("push with no origin");
+    let err = push_current(&f.work, &SpawnGitExec, false).expect_err("push with no origin");
     assert!(matches!(err, AppError::NoRemote(_)), "got {err:?}");
 }
 
@@ -452,7 +502,7 @@ fn push_non_fast_forward_is_rejected_and_bare_unchanged() {
     local_commit(&f.work, "local.txt", "local\n", "local work");
     let bare_before = rev_parse(&f.bare, "main");
 
-    let err = push_current(&f.work).expect_err("non-ff push must fail");
+    let err = push_current(&f.work, &SpawnGitExec, false).expect_err("non-ff push must fail");
     match err {
         AppError::PushRejected(m) => assert!(!m.is_empty(), "message must not be empty"),
         other => panic!("expected PushRejected, got {other:?}"),
@@ -471,7 +521,7 @@ fn push_detached_and_unborn_are_guarded() {
     require_git!();
     let f = setup();
     git(&f.work, &["checkout", "--detach"]);
-    let err = push_current(&f.work).expect_err("detached push");
+    let err = push_current(&f.work, &SpawnGitExec, false).expect_err("detached push");
     match err {
         AppError::Git(m) => assert_eq!(m, "cannot push: HEAD is detached"),
         other => panic!("expected Git, got {other:?}"),
@@ -479,7 +529,7 @@ fn push_detached_and_unborn_are_guarded() {
 
     let unborn = common::init_repo();
     git(unborn.path(), &["remote", "add", "origin", &path_str(&f.bare)]);
-    let err = push_current(unborn.path()).expect_err("unborn push");
+    let err = push_current(unborn.path(), &SpawnGitExec, false).expect_err("unborn push");
     match err {
         AppError::Git(m) => assert_eq!(m, "cannot push: the repository has no commits yet"),
         other => panic!("expected Git, got {other:?}"),

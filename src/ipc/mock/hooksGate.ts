@@ -25,6 +25,19 @@ export const MOCK_HOOK_OUTPUT = [
   'Secret:      sk_live_************************',
 ].join('\n');
 
+/** Realistic `pre-push` hook output (P59a-2). The `pre-push hook failed:` prefix
+ *  is load-bearing: HookOutputDialog derives its "Push anyway (skip hooks)" label
+ *  from a `pre-push` heading, exactly as the backend's `run_hook` message does. */
+export const MOCK_PRE_PUSH_OUTPUT = [
+  'pre-push hook failed:',
+  'gitleaks................................................................Failed',
+  '- hook id: gitleaks',
+  '- exit code: 1',
+  '',
+  'Finding:     Potential secret in a commit being pushed',
+  'Commit:      a1b2c3d',
+].join('\n');
+
 /** Returns a `hookRejected` AppError when a blocking hook would fail this
  *  commit/amend/merge, else `null`. Triggered by the repo's `?hooks=fail` flag
  *  OR a `#hookfail` message sentinel — UNLESS `skipHooks` is true (≡ --no-verify)
@@ -39,4 +52,18 @@ export function hookRejectionFor(
   const triggered = state.hooksFail || message.includes(HOOK_FAIL_SENTINEL);
   if (!triggered) return null;
   return { kind: 'hookRejected', message: MOCK_HOOK_OUTPUT };
+}
+
+/** Returns a `hookRejected` for a blocking `pre-push` hook (the `?hooks=failpush`
+ *  seam), else `null`. UNLESS `skipHooks` is true (≡ --no-verify) or
+ *  `bonsai.runHooks` is false — mirroring `hookRejectionFor`, but for the push
+ *  side (no message sentinel — a push has no message). */
+export function prePushRejectionFor(
+  state: MockRepoState,
+  skipHooks?: boolean,
+): AppError | null {
+  if (skipHooks === true) return null;
+  if (!runHooksEnabled(state.config)) return null;
+  if (!state.hooksFailPush) return null;
+  return { kind: 'hookRejected', message: MOCK_PRE_PUSH_OUTPUT };
 }

@@ -9,7 +9,12 @@ export interface HookOutputDialogProps {
   message: string;
   /** True while the skip-hooks retry is in flight (disables the action). */
   busy: boolean;
-  /** "Commit anyway (skip hooks)": re-run the SAME commit with `skipHooks:true`. */
+  /** P59a-2: which operation the hook blocked — drives the primary-action label
+   *  ("Commit anyway (skip hooks)" vs "Push anyway (skip hooks)") and the title.
+   *  Default `'commit'`. When omitted it is inferred from `message`: a `pre-push`
+   *  heading ⇒ `'push'` (the backend + mock both prefix push output that way). */
+  opLabel?: 'commit' | 'push';
+  /** "Commit/Push anyway (skip hooks)": re-run the SAME op with `skipHooks:true`. */
   onSkipRetry(): void;
   onCancel(): void;
 }
@@ -28,6 +33,7 @@ export function HookOutputDialog({
   open,
   message,
   busy,
+  opLabel,
   onSkipRetry,
   onCancel,
 }: HookOutputDialogProps) {
@@ -37,11 +43,16 @@ export function HookOutputDialog({
   const heading = nl === -1 ? message : message.slice(0, nl);
   const output = nl === -1 ? '' : message.slice(nl + 1);
 
+  // The primary action + title track the operation: a `pre-push` hook blocked a
+  // push; anything else blocked a commit/amend/merge. `opLabel` overrides.
+  const op = opLabel ?? (message.startsWith('pre-push') ? 'push' : 'commit');
+  const verb = op === 'push' ? 'Push' : 'Commit';
+
   return (
     <ConfirmDialog
       open={open}
-      title="A git hook blocked this commit"
-      confirmLabel="Commit anyway (skip hooks)"
+      title={`A git hook blocked this ${op}`}
+      confirmLabel={`${verb} anyway (skip hooks)`}
       confirmVariant="primary"
       busy={busy}
       onConfirm={onSkipRetry}
@@ -51,7 +62,7 @@ export function HookOutputDialog({
         <p className="hook-output-heading">{heading}</p>
         {output !== '' && <pre className="hook-output-body">{output}</pre>}
         <p className="hook-output-note">
-          Fix the reported issue and commit again, or skip the hooks for this one commit.
+          Fix the reported issue and try again, or skip the hooks for this one {op}.
         </p>
       </div>
     </ConfirmDialog>

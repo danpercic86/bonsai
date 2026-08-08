@@ -80,6 +80,21 @@ pub fn have_git() -> bool {
     Command::new("git").arg("--version").output().is_ok()
 }
 
+/// True when the git on PATH is ≥ `(major, minor)`. The P59a-2 `pre-push` hook
+/// oracle needs `git hook run` (Git ≥ 2.36); tests skip below that.
+pub fn git_version_at_least(major: u32, minor: u32) -> bool {
+    let out = match Command::new("git").arg("--version").output() {
+        Ok(o) if o.status.success() => o,
+        _ => return false,
+    };
+    let s = String::from_utf8_lossy(&out.stdout);
+    let ver = s.split_whitespace().nth(2).unwrap_or("");
+    let mut it = ver.split('.');
+    let maj: u32 = it.next().and_then(|x| x.parse().ok()).unwrap_or(0);
+    let min: u32 = it.next().and_then(|x| x.parse().ok()).unwrap_or(0);
+    maj > major || (maj == major && min >= minor)
+}
+
 /// Runs `git <args>` in `dir`, asserting success; returns trimmed stdout.
 pub fn git(dir: &Path, args: &[&str]) -> String {
     String::from_utf8_lossy(&git_raw(dir, args, &[])).trim().to_string()
@@ -131,6 +146,24 @@ pub fn init_repo() -> tempfile::TempDir {
     git(path, &["config", "status.renames", "true"]);
     git(path, &["config", "core.autocrlf", "false"]);
     dir
+}
+
+/// Write an executable `#!/bin/sh` `pre-push` hook into `repo/.git/hooks` with
+/// LF endings (git's bundled `sh` runs it on Windows too — the point of
+/// `git hook run`). `body` is the script AFTER the shebang. The P59a-2 pre-push
+/// oracle uses this against a local bare remote.
+pub fn write_pre_push_hook(repo: &Path, body: &str) {
+    let hooks = repo.join(".git").join("hooks");
+    std::fs::create_dir_all(&hooks).expect("mkdir hooks");
+    let path = hooks.join("pre-push");
+    std::fs::write(&path, format!("#!/bin/sh\n{body}").replace("\r\n", "\n")).expect("write hook");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&path).expect("meta").permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&path, perms).expect("chmod");
+    }
 }
 
 /// CLI commit with fixed author/committer dates (deterministic oid across

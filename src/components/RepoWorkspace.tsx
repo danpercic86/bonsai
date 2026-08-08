@@ -1259,6 +1259,7 @@ export function RepoWorkspace({
       refetchGraph,
       setRemoteOp,
       setPendingForcePush,
+      runWithHookGate: hookGate.runWithHookGate,
     });
 
   const {

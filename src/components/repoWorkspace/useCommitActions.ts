@@ -178,8 +178,12 @@ export function useCommitActions(
   }
 
   // The actual commit-then-push. The commit runs through the hook gate; commit
-  // errors rethrow (surfaced by CommitBox), a hook rejection opens the dialog,
-  // and push errors are toasted and the commit is kept.
+  // errors rethrow (surfaced by CommitBox), a commit-hook rejection opens the
+  // dialog, and push errors are toasted and the commit is kept. The push runs
+  // AFTER the commit gate fully resolves (not nested inside it): pushCurrentBranch
+  // owns its OWN pre-push hook gate (P59a-2), and a single useHookGate can only
+  // park one attempt at a time — sequencing keeps the commit-hook and pre-push
+  // dialogs from colliding.
   async function doCommitAndPush(
     message: string,
     sign: boolean | null,
@@ -194,8 +198,9 @@ export function useCommitActions(
       }
       await refreshAll();
       refreshVerification();
-      await pushCurrentBranch();
     }, skipHooks);
+    // Commit committed (gate resolved): now push, with its own pre-push gate.
+    await pushCurrentBranch();
   }
 
   function handleConfirmCommitPush() {

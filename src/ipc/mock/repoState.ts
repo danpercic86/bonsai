@@ -105,6 +105,10 @@ export interface MockRepoState {
    *  (unless skipHooks or `bonsai.runHooks` is false). A `#hookfail` message
    *  sentinel triggers it per-call regardless of this flag. */
   hooksFail: boolean;
+  /** P59a-2: `?hooks=failpush` — a blocking pre-push hook rejects push/forcePush
+   *  (unless skipHooks or `bonsai.runHooks` is false). Drives the push-side
+   *  HookOutputDialog + "Push anyway (skip hooks)" retry in the harness. */
+  hooksFailPush: boolean;
 
   status: StatusSnapshot;
   headOid: string;
@@ -236,6 +240,7 @@ export function createRepoState(path: string): MockRepoState {
     config: makeMockConfigStore(query('fixture') !== 'noconfig'),
     remoteTrigger: query('remote'),
     hooksFail: query('hooks') === 'fail',
+    hooksFailPush: query('hooks') === 'failpush',
     status: structuredClone(INITIAL_STATUS),
     headOid: MOCK_OID,
     branches: structuredClone(INITIAL_BRANCHES),

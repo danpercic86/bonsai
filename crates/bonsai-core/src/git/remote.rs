@@ -17,6 +17,7 @@ use std::process::{Command, Stdio};
 use crate::error::AppError;
 use crate::git::cred_cache::{self, Resolved};
 use crate::git::exec::GitExec;
+use crate::git::hooks::{hooks_enabled, run_hook, HookName};
 use crate::git::repo::read_head_info;
 
 /// Per-remote fetch outcome (contract §2.1).
@@ -526,7 +527,18 @@ pub fn pull_ff(workdir: &Path) -> Result<PullResult, AppError> {
 /// Blocking. Pushes the current branch to its upstream — or, when no upstream
 /// is configured, to `origin/<branch>` AND sets the upstream (contract §2.6,
 /// locked decision §9). NEVER force: the refspec has NO leading '+'.
-pub fn push_current(workdir: &Path) -> Result<PushResult, AppError> {
+///
+/// `skip_hooks` (P59a-2): `true` ≡ `git push --no-verify`; otherwise the
+/// effective toggle is `bonsai.runHooks` (default true). When enabled, the
+/// `pre-push` hook runs through `runner` BEFORE the libgit2 push (git2 fires no
+/// hooks) — a non-zero exit aborts as [`AppError::HookRejected`] with nothing
+/// pushed. The push itself still goes through libgit2 + the in-process
+/// credential cache; only the hook uses `runner`.
+pub fn push_current(
+    workdir: &Path,
+    runner: &dyn GitExec,
+    skip_hooks: bool,
+) -> Result<PushResult, AppError> {
     let repo = open_repo_at(workdir)?;
 
     let head = read_head_info(&repo)?;
@@ -591,6 +603,23 @@ pub fn push_current(workdir: &Path) -> Result<PushResult, AppError> {
             remote: remote_name,
             branch: name,
         });
+    }
+
+    // P59a-2: run the `pre-push` hook BEFORE the libgit2 push. Args =
+    // `<remote-name> <remote-url>`; stdin = one line per pushed ref (git's
+    // contract). A non-zero exit aborts with HookRejected — nothing is pushed.
+    // Placed AFTER the up-to-date short-circuit (nothing to push ⇒ git runs no
+    // pre-push either) and BEFORE any credential/network work or ref update.
+    if hooks_enabled(&config, skip_hooks) {
+        let remote_url = remote_url_of(&repo, &remote_name);
+        let stdin = build_pre_push_stdin(&refname, local_tip, &remote_ref, prev_remote_tip);
+        run_hook(
+            runner,
+            workdir,
+            HookName::PrePush,
+            &[remote_name.clone(), remote_url],
+            Some(stdin.as_bytes()),
+        )?;
     }
 
     let attempts = RefCell::new(CredAttempts::default());
@@ -688,7 +717,11 @@ fn lease_no_baseline_msg(remote: &str, branch: &str) -> String {
 /// (stale info / [rejected] / force-with-lease) -> `PushRejected` (wrapped with
 /// the contextual `lease_moved_msg`); auth -> `AuthFailed`; connect/DNS/TLS ->
 /// `NetworkError`; anything else -> `Git`.
-pub fn force_push_with_lease(workdir: &Path, runner: &dyn GitExec) -> Result<PushResult, AppError> {
+pub fn force_push_with_lease(
+    workdir: &Path,
+    runner: &dyn GitExec,
+    skip_hooks: bool,
+) -> Result<PushResult, AppError> {
     let repo = open_repo_at(workdir)?;
 
     let head = read_head_info(&repo)?;
@@ -769,6 +802,24 @@ pub fn force_push_with_lease(workdir: &Path, runner: &dyn GitExec) -> Result<Pus
         });
     }
 
+    // P59a-2: run the `pre-push` hook BEFORE the git-binary force-push (same
+    // `runner`). Args = `<remote-name> <remote-url>`; stdin = the single pushed
+    // ref, its remote-oid = the resolved lease baseline `expected` (never zero
+    // here — a missing baseline already returned PushRejected above). A non-zero
+    // exit aborts with HookRejected — nothing is pushed. Placed AFTER the
+    // up-to-date short-circuit so an up-to-date force-push spawns no git at all.
+    if hooks_enabled(&config, skip_hooks) {
+        let remote_url = remote_url_of(&repo, &remote_name);
+        let stdin = build_pre_push_stdin(&refname, local_tip, &remote_ref, Some(expected));
+        run_hook(
+            runner,
+            workdir,
+            HookName::PrePush,
+            &[remote_name.clone(), remote_url],
+            Some(stdin.as_bytes()),
+        )?;
+    }
+
     // Hand the resolved baseline to the git binary so IT performs the atomic
     // `--force-with-lease` expected-old-value check at push-negotiation time
     // (P59b B-D2). This collapses P37's two-step ls-remote→push compare into
@@ -800,6 +851,33 @@ pub fn force_push_with_lease(workdir: &Path, runner: &dyn GitExec) -> Result<Pus
     })
 }
 
+/// The fetch URL of remote `name`, or an empty string when it is unset /
+/// unreadable / non-UTF-8. Used as the `pre-push` hook's 2nd arg (git passes
+/// the remote URL there); an empty string is a harmless placeholder git itself
+/// also tolerates when a remote has no URL.
+fn remote_url_of(repo: &git2::Repository, name: &str) -> String {
+    repo.find_remote(name)
+        .ok()
+        .and_then(|r| r.url().ok().map(str::to_string))
+        .unwrap_or_default()
+}
+
+/// Build the `pre-push` hook stdin (git's contract, `githooks(5)`): one line per
+/// pushed ref, `<local-ref> SP <local-oid> SP <remote-ref> SP <remote-oid> LF`.
+/// `remote_oid` is the baseline/expected remote tip, or 40 zeros when the remote
+/// ref is new (no baseline). Pure / unit-tested — Bonsai only ever pushes ONE
+/// ref per op, so this is a single line.
+fn build_pre_push_stdin(
+    local_ref: &str,
+    local_oid: git2::Oid,
+    remote_ref: &str,
+    remote_oid: Option<git2::Oid>,
+) -> String {
+    const ZERO_OID: &str = "0000000000000000000000000000000000000000";
+    let remote = remote_oid.map_or_else(|| ZERO_OID.to_string(), |o| o.to_string());
+    format!("{local_ref} {local_oid} {remote_ref} {remote}\n")
+}
+
 /// Assemble the atomic-lease force-push argv (P59b B2). Pure / unit-tested.
 ///
 /// `git push --force-with-lease=<remote_ref>:<expected_hex> --force-if-includes
@@ -815,6 +893,14 @@ pub fn force_push_with_lease(workdir: &Path, runner: &dyn GitExec) -> Result<Pus
 /// old git2 path needed `+` because it did the lease compare client-side; the
 /// git binary must not.) This diverges from the literal B2 pseudocode, which
 /// carried the `+` over from the git2 code.
+///
+/// `--no-verify` (P59a-2): the git binary would fire the `pre-push` hook ITSELF
+/// on this push. Bonsai runs `pre-push` explicitly BEFORE this (via
+/// [`run_hook`], so a non-zero exit is a structured [`AppError::HookRejected`]
+/// and `skip_hooks` / `bonsai.runHooks` are honored) — so we suppress git's OWN
+/// run here to avoid a double execution and to make `skip_hooks` actually skip
+/// (git otherwise ignores our toggle). Unlike `push_current` (libgit2, which
+/// fires no hooks), the force-push MUST pass `--no-verify` for the toggle to work.
 fn build_force_push_args(
     remote: &str,
     branch: &str,
@@ -825,6 +911,7 @@ fn build_force_push_args(
         "push".to_string(),
         format!("--force-with-lease={remote_ref}:{expected_hex}"),
         "--force-if-includes".to_string(),
+        "--no-verify".to_string(),
         remote.to_string(),
         format!("refs/heads/{branch}:{remote_ref}"),
     ]
@@ -1088,12 +1175,15 @@ mod tests {
                 "--force-with-lease=refs/heads/main:1111111111111111111111111111111111111111"
                     .to_string(),
                 "--force-if-includes".to_string(),
+                "--no-verify".to_string(),
                 "origin".to_string(),
                 "refs/heads/main:refs/heads/main".to_string(),
             ]
         );
         // No leading '+': an unconditional force would defeat --force-with-lease.
-        assert!(!args[4].starts_with('+'), "refspec must not force unconditionally");
+        assert!(!args[5].starts_with('+'), "refspec must not force unconditionally");
+        // --no-verify present so git does not re-run the pre-push hook we ran.
+        assert!(args.contains(&"--no-verify".to_string()), "must suppress git's own pre-push");
     }
 
     /// A slashed branch name flows verbatim into both the lease ref and the
@@ -1110,8 +1200,39 @@ mod tests {
             args[1],
             "--force-with-lease=refs/heads/feature/x:2222222222222222222222222222222222222222"
         );
-        assert_eq!(args[3], "upstream");
-        assert_eq!(args[4], "refs/heads/feature/x:refs/heads/feature/x");
+        assert_eq!(args[4], "upstream");
+        assert_eq!(args[5], "refs/heads/feature/x:refs/heads/feature/x");
+    }
+
+    // ------------------------------------- P59a-2 build_pre_push_stdin (pure)
+
+    /// An existing remote ref: the baseline oid appears as the 4th field, and the
+    /// line is `<local-ref> <local-oid> <remote-ref> <remote-oid>\n`.
+    #[test]
+    fn pre_push_stdin_existing_ref() {
+        let local = git2::Oid::from_str("1111111111111111111111111111111111111111").expect("oid");
+        let remote = git2::Oid::from_str("2222222222222222222222222222222222222222").expect("oid");
+        let line = build_pre_push_stdin("refs/heads/main", local, "refs/heads/main", Some(remote));
+        assert_eq!(
+            line,
+            "refs/heads/main 1111111111111111111111111111111111111111 \
+             refs/heads/main 2222222222222222222222222222222222222222\n"
+        );
+    }
+
+    /// A NEW remote ref (no baseline): the remote-oid field is 40 zeros, exactly
+    /// as git synthesizes it for a create.
+    #[test]
+    fn pre_push_stdin_new_ref_is_zeros() {
+        let local = git2::Oid::from_str("3333333333333333333333333333333333333333").expect("oid");
+        let line = build_pre_push_stdin("refs/heads/feature/x", local, "refs/heads/feature/x", None);
+        assert_eq!(
+            line,
+            "refs/heads/feature/x 3333333333333333333333333333333333333333 \
+             refs/heads/feature/x 0000000000000000000000000000000000000000\n"
+        );
+        // Trailing LF so `read` in a `while read` hook loop terminates the line.
+        assert!(line.ends_with('\n'));
     }
 
     // ------------------------------------- P59b classify_push_stderr (pure)

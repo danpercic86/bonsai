@@ -12,6 +12,7 @@ mod common;
 use std::path::{Path, PathBuf};
 
 use bonsai_core::error::AppError;
+use bonsai_core::git::exec::SpawnGitExec;
 use bonsai_core::git::remote::{fetch_all, pull_ff, push_current, PullResult, PushResult};
 use common::{commit_fixed, git, git_ok};
 
@@ -237,7 +238,7 @@ fn push_with_stale_tracking_is_local_up_to_date_divergence() {
     assert_ne!(b_tip, a_tip);
 
     // Ours: local short-circuit → UpToDate, bare untouched (still B).
-    let res = push_current(&f.work).expect("push");
+    let res = push_current(&f.work, &SpawnGitExec, false).expect("push");
     match res {
         PushResult::UpToDate { remote, branch } => {
             assert_eq!(remote, "origin");
@@ -330,7 +331,7 @@ fn unicode_branch_push_round_trips() {
     local_commit(&f.work, "u.txt", "ü\n", "unicode branch work");
     let tip = rev_parse(&f.work, name);
 
-    let res = push_current(&f.work).expect("push unicode branch");
+    let res = push_current(&f.work, &SpawnGitExec, false).expect("push unicode branch");
     match res {
         PushResult::Pushed { remote, branch, set_upstream } => {
             assert_eq!(remote, "origin");
@@ -365,7 +366,7 @@ fn unicode_branch_push_round_trips() {
     );
 
     // Idempotence: immediate second push is UpToDate.
-    let res = push_current(&f.work).expect("second push");
+    let res = push_current(&f.work, &SpawnGitExec, false).expect("second push");
     assert!(
         matches!(res, PushResult::UpToDate { .. }),
         "expected UpToDate, got {res:?}"

@@ -517,11 +517,11 @@
             .expect_err("pull with no repo");
         assert!(matches!(err, AppError::NoRepo));
 
-        let err = tauri::async_runtime::block_on(push_inner(&state, MISSING_ID))
+        let err = tauri::async_runtime::block_on(push_inner(&state, MISSING_ID, None))
             .expect_err("push with no repo");
         assert!(matches!(err, AppError::NoRepo));
 
-        let err = tauri::async_runtime::block_on(force_push_inner(&state, MISSING_ID))
+        let err = tauri::async_runtime::block_on(force_push_inner(&state, MISSING_ID, None))
             .expect_err("force_push with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }

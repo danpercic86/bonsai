@@ -1,6 +1,7 @@
 import { ipc } from '../../ipc';
 import { errorMessage, isAppError } from '../../utils/errors';
 import { shortOid } from '../workspaceUtils';
+import { COMMIT_HOOK_CANCELED } from '../commitPushSignal';
 import type { BaseActionDeps, Setter } from './types';
 
 /** M6 + P37b: fetch / pull / push / force-push-with-lease. */
@@ -11,6 +12,13 @@ export function useRemoteOps(
     refetchGraph: () => Promise<void>;
     setRemoteOp: Setter<'fetch' | 'pull' | 'push' | null>;
     setPendingForcePush: Setter<boolean>;
+    /** P59a-2: wrap a push attempt so a `pre-push` `hookRejected` opens the
+     *  HookOutputDialog (+ "Push anyway" retry with skipHooks:true) instead of
+     *  surfacing raw. Shared with the commit paths (one dialog + one retry). */
+    runWithHookGate: (
+      attempt: (skipHooks: boolean) => Promise<void>,
+      skipHooks: boolean,
+    ) => Promise<void>;
   },
 ) {
   const {
@@ -22,6 +30,7 @@ export function useRemoteOps(
     refetchGraph,
     setRemoteOp,
     setPendingForcePush,
+    runWithHookGate,
   } = deps;
 
   function beginRemoteOp(op: 'fetch' | 'pull' | 'push') {
@@ -82,22 +91,28 @@ export function useRemoteOps(
 
   // Shared push of the current branch (toast + refresh). Used by the Push
   // toolbar action and by Commit & Push. Never throws — push errors are toasted.
+  // P59a-2: routed through the hook gate so a blocking `pre-push` opens the
+  // HookOutputDialog ("Push anyway" retries with skipHooks:true); the attempt
+  // performs the push AND its success side-effects, so the retry re-runs both.
   async function pushCurrentBranch() {
     beginRemoteOp('push');
     try {
-      const res = await ipc.push(repoId);
-      if (res.kind === 'upToDate') {
-        pushToast('success', 'Already up to date');
-      } else {
-        pushToast(
-          'success',
-          `Pushed ${res.branch} → ${res.remote}/${res.branch}` +
-            (res.setUpstream ? ' (upstream set)' : ''),
-        );
-      }
-      await Promise.all([refetchBranches(), refetchGraph()]);
+      await runWithHookGate(async (skipHooks) => {
+        const res = await ipc.push(repoId, skipHooks);
+        if (res.kind === 'upToDate') {
+          pushToast('success', 'Already up to date');
+        } else {
+          pushToast(
+            'success',
+            `Pushed ${res.branch} → ${res.remote}/${res.branch}` +
+              (res.setUpstream ? ' (upstream set)' : ''),
+          );
+        }
+        await Promise.all([refetchBranches(), refetchGraph()]);
+      }, false);
     } catch (e) {
-      pushToast('error', errorMessage(e));
+      // Dialog dismissed (pre-push not skipped): nothing pushed, no error banner.
+      if (e !== COMMIT_HOOK_CANCELED) pushToast('error', errorMessage(e));
     } finally {
       endRemoteOp();
     }
@@ -117,14 +132,20 @@ export function useRemoteOps(
     setPendingForcePush(false);
     beginRemoteOp('push');
     try {
-      const res = await ipc.forcePush(repoId);
-      if (res.kind === 'upToDate') {
-        pushToast('info', 'Already up to date');
-      } else {
-        pushToast('success', `Force-pushed ${res.branch} → ${res.remote}/${res.branch}`);
-      }
-      await Promise.all([refetchBranches(), refetchGraph()]);
+      // P59a-2: same hook gate as the normal push — a blocking `pre-push` opens
+      // the dialog with a "Push anyway" retry (skipHooks:true).
+      await runWithHookGate(async (skipHooks) => {
+        const res = await ipc.forcePush(repoId, skipHooks);
+        if (res.kind === 'upToDate') {
+          pushToast('info', 'Already up to date');
+        } else {
+          pushToast('success', `Force-pushed ${res.branch} → ${res.remote}/${res.branch}`);
+        }
+        await Promise.all([refetchBranches(), refetchGraph()]);
+      }, false);
     } catch (e) {
+      // Dialog dismissed (pre-push not skipped): nothing pushed, no error banner.
+      if (e === COMMIT_HOOK_CANCELED) return;
       // Any pushRejected from a force-push resolves the same way: fetch first.
       const hint = isAppError(e) && e.kind === 'pushRejected' ? ' — fetch and retry' : '';
       pushToast('error', errorMessage(e) + hint);

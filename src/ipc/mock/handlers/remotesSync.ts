@@ -2,6 +2,7 @@
 import type { IpcApi } from '../../types';
 import { randomOid } from '../../fixtures/oids';
 import { delay, requireRepo, throwAuthFailed, throwNetworkError } from '../repoState';
+import { prePushRejectionFor } from '../hooksGate';
 import type { AppError, FetchResult, PullResult, PushResult } from '../../types';
 
 export const remotesSyncHandlers = {
@@ -63,9 +64,12 @@ export const remotesSyncHandlers = {
     return { kind: 'upToDate' };
   },
 
-  async push(repoId: string): Promise<PushResult> {
+  async push(repoId: string, skipHooks?: boolean): Promise<PushResult> {
     await delay(400);
     const state = requireRepo(repoId);
+    // P59a-2: the pre-push hook runs BEFORE the push; a block aborts it.
+    const prePush = prePushRejectionFor(state, skipHooks);
+    if (prePush !== null) throw prePush;
     if (state.remoteTrigger === 'authfail') throwAuthFailed();
     if (state.remoteTrigger === 'network') throwNetworkError();
     if (state.remoteTrigger === 'rejected') {
@@ -104,9 +108,12 @@ export const remotesSyncHandlers = {
   // P37: force-push the current branch WITH A LEASE. `?remote=leasefail` drives
   // the refusal path (the remote moved since the last fetch); otherwise the
   // lease holds and the remote-tracking tip advances to the local tip.
-  async forcePush(repoId: string): Promise<PushResult> {
+  async forcePush(repoId: string, skipHooks?: boolean): Promise<PushResult> {
     await delay(400);
     const state = requireRepo(repoId);
+    // P59a-2: the pre-push hook runs BEFORE the force-push; a block aborts it.
+    const prePush = prePushRejectionFor(state, skipHooks);
+    if (prePush !== null) throw prePush;
     if (state.remoteTrigger === 'authfail') throwAuthFailed();
     if (state.remoteTrigger === 'network') throwNetworkError();
     if (state.remoteTrigger === 'leasefail') {
