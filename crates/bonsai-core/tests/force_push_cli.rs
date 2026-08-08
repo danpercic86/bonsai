@@ -1,13 +1,19 @@
-//! P37 CLI-oracle force-push-with-lease tests (contract §8).
+//! P37 + P59b CLI-oracle force-push-with-lease tests (contract §8 / P59b §B3).
 //!
 //! Every "remote" is a LOCAL BARE repo (`git init --bare`) referenced by a
 //! plain path — the local transport needs NO network and NO credentials, so
-//! the lease pre-check (connect_auth(Push) + ls-remote) and the force-push run
-//! hermetically (no Git Credential Manager prompts). All scratch repos live
-//! under `D:\Temp\bonsai-scratch`.
+//! git's atomic `git push --force-with-lease` (P59b, via `SpawnGitExec`) runs
+//! hermetically (no Git Credential Manager prompts; `credential.helper` is reset
+//! empty per repo). All scratch repos live under `D:\Temp\bonsai-scratch`.
 //!
 //! Cross-check against the real `git` CLI: after each operation the origin's
 //! `main` tip is read with `git rev-parse` and compared to the expected oid.
+//!
+//! P59b moved the push mechanism from the old client-side connect_auth+ls-remote
+//! compare-and-swap to git's OWN atomic `--force-with-lease` (closing P37's
+//! TOCTOU window). Tests that must NOT reach the push (up-to-date C, no-upstream
+//! D, no-baseline E, detached H, unborn I) inject a `PanicExec` to prove no git
+//! is spawned.
 //!
 //! Each test skips (passes with a note) if `git` is not on PATH.
 
@@ -16,6 +22,7 @@ mod common;
 use std::path::{Path, PathBuf};
 
 use bonsai_core::error::AppError;
+use bonsai_core::git::exec::{GitExec, GitOutput, SpawnGitExec};
 use bonsai_core::git::remote::{force_push_with_lease, PushResult};
 use common::{commit_fixed, git, git_env};
 
@@ -26,6 +33,21 @@ macro_rules! require_git {
             return;
         }
     };
+}
+
+/// A `GitExec` that must NEVER be invoked. Used by the up-to-date / pre-check
+/// tests to prove `force_push_with_lease` short-circuits BEFORE spawning git.
+struct PanicExec;
+impl GitExec for PanicExec {
+    fn exec(
+        &self,
+        _args: &[&str],
+        _cwd: &Path,
+        _stdin: Option<&[u8]>,
+        _env: &[(&str, &str)],
+    ) -> Result<GitOutput, AppError> {
+        panic!("force_push_with_lease must NOT spawn git on this path");
+    }
 }
 
 /// bare "origin" + a `work` clone (the repo under test) with an initial commit
@@ -129,12 +151,20 @@ fn lease_refuses_when_remote_moved() {
     let z = rewrite_head(&f.work, "z");
     assert_ne!(z, y, "local rewrite must differ from the third-party tip");
 
-    let err = force_push_with_lease(&f.work).expect_err("lease must refuse");
+    let err = force_push_with_lease(&f.work, &SpawnGitExec).expect_err("lease must refuse");
     match err {
         AppError::PushRejected(m) => {
             let low = m.to_lowercase();
+            // Contextual hint (lease_moved_msg) prepended by the caller.
             assert!(low.contains("moved"), "message must mention 'moved': {m}");
             assert!(low.contains("fetch"), "message must mention 'fetch': {m}");
+            // The refusal is git's OWN atomic --force-with-lease check (its
+            // stderr flows through) — NOT our old client-side compare. This is
+            // the P37 TOCTOU-closing guarantee.
+            assert!(
+                low.contains("stale info") || low.contains("rejected"),
+                "message must carry git's lease-refusal stderr: {m}"
+            );
         }
         other => panic!("expected PushRejected, got {other:?}"),
     }
@@ -157,7 +187,7 @@ fn lease_succeeds_and_moves_the_ref() {
     let z = rewrite_head(&f.work, "z");
     assert_ne!(z, x, "the rewrite must differ from the original tip");
 
-    let res = force_push_with_lease(&f.work).expect("lease should hold");
+    let res = force_push_with_lease(&f.work, &SpawnGitExec).expect("lease should hold");
     match res {
         PushResult::Pushed {
             remote,
@@ -185,7 +215,8 @@ fn up_to_date_when_baseline_equals_local_tip() {
     let f = init_origin_and_clone();
     let x = origin_main(&f);
 
-    let res = force_push_with_lease(&f.work).expect("up-to-date is not an error");
+    // PanicExec: up-to-date must short-circuit in git2 with NO git spawned.
+    let res = force_push_with_lease(&f.work, &PanicExec).expect("up-to-date is not an error");
     match res {
         PushResult::UpToDate { remote, branch } => {
             assert_eq!(remote, "origin");
@@ -205,7 +236,8 @@ fn no_upstream_is_rejected() {
     let f = init_origin_and_clone();
 
     git(&f.work, &["checkout", "-b", "nolease"]);
-    let err = force_push_with_lease(&f.work).expect_err("no upstream must error");
+    // PanicExec: the NoUpstream pre-check fires before any git push.
+    let err = force_push_with_lease(&f.work, &PanicExec).expect_err("no upstream must error");
     assert!(
         matches!(err, AppError::NoUpstream(_)),
         "expected NoUpstream, got {err:?}"
@@ -226,7 +258,8 @@ fn no_baseline_refuses_with_fetch_hint() {
     git(&f.work, &["update-ref", "-d", "refs/remotes/origin/main"]);
 
     let _z = rewrite_head(&f.work, "z");
-    let err = force_push_with_lease(&f.work).expect_err("no baseline must refuse");
+    // PanicExec: the no-baseline pre-check fires before any git push.
+    let err = force_push_with_lease(&f.work, &PanicExec).expect_err("no baseline must refuse");
     match err {
         AppError::PushRejected(m) => {
             assert!(
@@ -264,7 +297,8 @@ fn lease_succeeds_on_nested_branch_name() {
     let z = rewrite_head(&f.work, "z-nested");
     assert_ne!(z, x, "the rewrite must differ from the original tip");
 
-    let res = force_push_with_lease(&f.work).expect("lease should hold on nested branch");
+    let res =
+        force_push_with_lease(&f.work, &SpawnGitExec).expect("lease should hold on nested branch");
     match res {
         PushResult::Pushed {
             remote,
@@ -313,7 +347,7 @@ fn force_push_drops_a_remote_commit() {
     let z = head_oid(&f.work);
     assert_ne!(z, y);
 
-    let res = force_push_with_lease(&f.work).expect("lease should hold");
+    let res = force_push_with_lease(&f.work, &SpawnGitExec).expect("lease should hold");
     assert!(matches!(res, PushResult::Pushed { .. }), "got {res:?}");
 
     // Oracle: origin/main == Z, its parent == X, and Y is no longer reachable.
@@ -334,7 +368,8 @@ fn detached_head_is_rejected() {
     let tip = head_oid(&f.work);
     git(&f.work, &["checkout", &tip]); // detach
 
-    let err = force_push_with_lease(&f.work).expect_err("detached HEAD must error");
+    // PanicExec: the detached-HEAD guard fires before any git push.
+    let err = force_push_with_lease(&f.work, &PanicExec).expect_err("detached HEAD must error");
     match err {
         AppError::Git(m) => assert!(
             m.to_lowercase().contains("detached"),
@@ -359,7 +394,8 @@ fn unborn_head_is_rejected() {
     git(&repo, &["init", "-b", "main"]);
     configure_identity(&repo);
 
-    let err = force_push_with_lease(&repo).expect_err("unborn HEAD must error");
+    // PanicExec: the unborn-HEAD guard fires before any git push.
+    let err = force_push_with_lease(&repo, &PanicExec).expect_err("unborn HEAD must error");
     match err {
         AppError::Git(m) => assert!(
             m.to_lowercase().contains("no commits"),

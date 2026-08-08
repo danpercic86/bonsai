@@ -1,6 +1,7 @@
 //! `remotes` commands — split from the former monolithic `commands.rs`.
 
 use super::shared::*;
+use bonsai_core::git::exec::SpawnGitExec;
 
 /// Fetches every configured remote, sequentially, fail-fast (M6 contract
 /// §2.4/§9). Errors: `noRemote` | `authFailed` | `networkError` | `git`
@@ -82,8 +83,10 @@ pub(crate) async fn push_inner(state: &AppState, repo_id: &str) -> Result<PushRe
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
-/// Force-push the current branch to its upstream WITH A LEASE (P37). Refuses if
-/// the remote moved since the last fetch. Errors: `noUpstream` | `noRemote` |
+/// Force-push the current branch to its upstream WITH A LEASE (P37 + P59b). The
+/// push runs through the git binary so git performs its atomic
+/// `--force-with-lease` server-side check (closes P37's client-side TOCTOU);
+/// refuses if the remote moved since the last fetch. Errors: `noUpstream` |
 /// `authFailed` | `networkError` | `pushRejected` | `git` | `noRepo`.
 #[tauri::command]
 pub async fn force_push(
@@ -96,7 +99,9 @@ pub async fn force_push(
 /// Runtime-free core of `force_push` (unit-testable without a Tauri app).
 pub(crate) async fn force_push_inner(state: &AppState, repo_id: &str) -> Result<PushResult, AppError> {
     let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || force_push_with_lease(&path))
+    // P59b: the push runs through the git binary for git's atomic
+    // `--force-with-lease` (closes P37's client-side TOCTOU).
+    tauri::async_runtime::spawn_blocking(move || force_push_with_lease(&path, &SpawnGitExec))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

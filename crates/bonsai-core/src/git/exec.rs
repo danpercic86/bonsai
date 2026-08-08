@@ -7,10 +7,12 @@
 //! through it; P59 (hooks) reuses the same seam.
 //!
 //! [`SpawnGitExec`] NEVER prompts — `GIT_TERMINAL_PROMPT=0` gates the terminal
-//! prompt and `GIT_ASKPASS`/`SSH_ASKPASS` are cleared so the askpass GUI path
-//! can't pop a window — and suppresses the transient console window on Windows
-//! (mirrors `remote.rs::credential_fill`). A locked agent (encrypted key, no
-//! agent) therefore fails fast to a captured stderr, never hangs on a prompt.
+//! prompt, `GIT_ASKPASS`/`SSH_ASKPASS` are cleared, AND `-c core.askpass=`
+//! neutralizes a *configured* askpass helper (the env vars alone do NOT cover a
+//! `core.askpass` set in git config — see `remote.rs::credential_fill`), so the
+//! askpass GUI path can't pop a window — and it suppresses the transient console
+//! window on Windows. A locked agent (encrypted key, no agent) or a
+//! credential-requiring push therefore fails fast to captured stderr, never hangs.
 
 use std::io::Write;
 use std::path::Path;
@@ -57,11 +59,19 @@ impl GitExec for SpawnGitExec {
         env: &[(&str, &str)],
     ) -> Result<GitOutput, AppError> {
         let mut cmd = Command::new("git");
-        cmd.args(args)
+        // `-c core.askpass=` (before the subcommand) neutralizes a CONFIGURED
+        // askpass helper — GIT_TERMINAL_PROMPT=0 + clearing the askpass ENV vars
+        // do NOT cover a `core.askpass` set in git config (see
+        // remote.rs::credential_fill); a credential-requiring push (P59b
+        // force-with-lease) would otherwise hit it as a hidden GUI prompt / hang.
+        // `args` is left untouched so the subcmd extraction + builder tests hold.
+        cmd.arg("-c")
+            .arg("core.askpass=")
+            .args(args)
             .current_dir(cwd)
             // Never block on an interactive prompt (terminal OR askpass GUI): a
-            // locked signer must fail fast to captured stderr (never-prompt
-            // policy, mirrors remote.rs::credential_fill).
+            // locked signer / credential-requiring push must fail fast to captured
+            // stderr (never-prompt policy, mirrors remote.rs::credential_fill).
             .env("GIT_TERMINAL_PROMPT", "0")
             .env_remove("GIT_ASKPASS")
             .env_remove("SSH_ASKPASS")

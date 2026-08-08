@@ -16,6 +16,7 @@ use std::process::{Command, Stdio};
 
 use crate::error::AppError;
 use crate::git::cred_cache::{self, Resolved};
+use crate::git::exec::GitExec;
 use crate::git::repo::read_head_info;
 
 /// Per-remote fetch outcome (contract §2.1).
@@ -669,16 +670,25 @@ fn lease_no_baseline_msg(remote: &str, branch: &str) -> String {
 ///
 /// Requires a configured upstream (unlike `push_current`, which can create
 /// origin/<branch>). Lease baseline = the remote-tracking ref
-/// `refs/remotes/<remote>/<branch>` (git's default --force-with-lease). Live
-/// remote oid read via connect_auth(Push)+list() (ls-remote) BEFORE any push.
+/// `refs/remotes/<remote>/<branch>` (git's default --force-with-lease).
+///
+/// P59b hardening: the branch/upstream/baseline resolution stays in git2, but
+/// the PUSH runs through the git binary (`runner`) as
+/// `git push --force-with-lease=<remote_ref>:<expected> --force-if-includes …`.
+/// git performs the expected-old-value compare-and-swap at push-negotiation
+/// time (atomic on capable servers), eliminating P37's client-side
+/// ls-remote→push TOCTOU window. `SpawnGitExec` never prompts and relies on
+/// git's own configured credential helper for this one op (OQ-B2) — the same
+/// never-prompt helper used for reads.
 ///
 /// Errors: unborn/detached/no-name -> `Git`; no upstream -> `NoUpstream`;
-/// no remote-tracking baseline -> `PushRejected` (fetch first); remote moved
-/// (live != baseline, or remote ref deleted) -> `PushRejected` (lease failed);
-/// remote missing -> `NoRemote`; connect/list/push git2 errors -> via
-/// `map_remote_err` (`AuthFailed` / `NetworkError` / `PushRejected` / `Git`);
-/// server-side ref rejection -> `PushRejected`.
-pub fn force_push_with_lease(workdir: &Path) -> Result<PushResult, AppError> {
+/// no remote-tracking baseline -> `PushRejected` (fetch first); baseline already
+/// equals the local tip -> `UpToDate` (NO git spawned); a non-zero `git push`
+/// is mapped by `classify_push_stderr` — git's atomic lease refusal
+/// (stale info / [rejected] / force-with-lease) -> `PushRejected` (wrapped with
+/// the contextual `lease_moved_msg`); auth -> `AuthFailed`; connect/DNS/TLS ->
+/// `NetworkError`; anything else -> `Git`.
+pub fn force_push_with_lease(workdir: &Path, runner: &dyn GitExec) -> Result<PushResult, AppError> {
     let repo = open_repo_at(workdir)?;
 
     let head = read_head_info(&repo)?;
@@ -759,80 +769,117 @@ pub fn force_push_with_lease(workdir: &Path) -> Result<PushResult, AppError> {
         });
     }
 
-    let mut remote = match repo.find_remote(&remote_name) {
-        Ok(r) => r,
-        Err(e) if e.code() == git2::ErrorCode::NotFound => {
-            return Err(AppError::NoRemote(format!(
-                "remote '{remote_name}' not found"
-            )));
-        }
-        Err(e) => return Err(e.into()),
-    };
-
-    // Shared across the connect (lease check) and the push.
-    let attempts = RefCell::new(CredAttempts::default());
-
-    // --- (1) lease check: read the LIVE remote oid via ls-remote ---
-    {
-        let mut cb = git2::RemoteCallbacks::new();
-        cb.credentials(|url, username_from_url, allowed| {
-            acquire_cred(repo.workdir(), &attempts, url, username_from_url, allowed)
+    // Hand the resolved baseline to the git binary so IT performs the atomic
+    // `--force-with-lease` expected-old-value check at push-negotiation time
+    // (P59b B-D2). This collapses P37's two-step ls-remote→push compare into
+    // git's single negotiated push, closing OUR TOCTOU window. `--force-if-
+    // includes` additionally refuses a rewrite made without having seen the
+    // remote tip. `SpawnGitExec` never prompts and uses git's configured
+    // credential helper for this one op (OQ-B2).
+    let expected_hex = expected.to_string();
+    let args = build_force_push_args(&remote_name, &name, &remote_ref, &expected_hex);
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let out = runner.exec(&arg_refs, workdir, None, &[])?;
+    if out.success {
+        return Ok(PushResult::Pushed {
+            remote: remote_name,
+            branch: name,
+            set_upstream: false,
         });
-        remote
-            .connect_auth(git2::Direction::Push, Some(cb), None)
-            .map_err(|e| map_remote_err(e, &remote_name))?;
     }
-    let actual = remote
-        .list()
-        .map_err(|e| map_remote_err(e, &remote_name))?
-        .iter()
-        .find(|h| h.name() == remote_ref)
-        .map(git2::RemoteHead::oid);
-    // Some(x)==Some(x); an absent remote ref => None != Some(expected) => refuse.
-    if actual != Some(expected) {
-        let _ = remote.disconnect();
-        return Err(AppError::PushRejected(lease_moved_msg(
-            &remote_name,
-            &remote_branch,
-        )));
-    }
-
-    // --- (2) lease holds: force-push over the same connection ---
-    let rejected: RefCell<Option<String>> = RefCell::new(None);
-    {
-        let mut cb = git2::RemoteCallbacks::new();
-        cb.credentials(|url, username_from_url, allowed| {
-            acquire_cred(repo.workdir(), &attempts, url, username_from_url, allowed)
-        });
-        cb.push_update_reference(|_refname, status| {
-            if let Some(msg) = status {
-                *rejected.borrow_mut() = Some(msg.to_string());
-            }
-            Ok(())
-        });
-
-        let mut opts = git2::PushOptions::new();
-        opts.remote_callbacks(cb);
-
-        // Leading '+' = force.
-        let refspec = format!("+{refname}:{remote_ref}");
-        remote
-            .push(&[refspec.as_str()], Some(&mut opts))
-            .map_err(|e| map_remote_err(e, &remote_name))?;
-    }
-    let _ = remote.disconnect();
-
-    if let Some(msg) = rejected.into_inner() {
-        return Err(AppError::PushRejected(format!(
-            "push rejected by remote: {msg}"
-        )));
-    }
-
-    Ok(PushResult::Pushed {
-        remote: remote_name,
-        branch: name,
-        set_upstream: false,
+    // Non-zero exit: classify git's stderr. A lease/lease-includes refusal is a
+    // `PushRejected`; wrap it with the contextual `lease_moved_msg` (which names
+    // the ref that moved) followed by git's own stderr tail so the UI shows both
+    // the actionable hint and git's verbatim reason.
+    Err(match classify_push_stderr(&out.stderr) {
+        AppError::PushRejected(git_tail) => AppError::PushRejected(format!(
+            "{}\n{git_tail}",
+            lease_moved_msg(&remote_name, &remote_branch)
+        )),
+        other => other,
     })
+}
+
+/// Assemble the atomic-lease force-push argv (P59b B2). Pure / unit-tested.
+///
+/// `git push --force-with-lease=<remote_ref>:<expected_hex> --force-if-includes
+///  <remote> refs/heads/<branch>:<remote_ref>` — git does the expected-old-
+/// value compare at negotiation time (atomic), so there is no client-side
+/// ls-remote→push race. `remote_ref` is the upstream's `branch.<b>.merge`
+/// (already `refs/heads/<x>`).
+///
+/// The refspec deliberately has **no leading `+`**: `--force-with-lease` itself
+/// supplies the (CONDITIONAL) force. A `+` is an UNCONDITIONAL force that git
+/// applies BEFORE the lease and which therefore OVERRIDES `--force-with-lease`
+/// entirely — verified empirically — defeating P59b's atomic guarantee. (The
+/// old git2 path needed `+` because it did the lease compare client-side; the
+/// git binary must not.) This diverges from the literal B2 pseudocode, which
+/// carried the `+` over from the git2 code.
+fn build_force_push_args(
+    remote: &str,
+    branch: &str,
+    remote_ref: &str,
+    expected_hex: &str,
+) -> Vec<String> {
+    vec![
+        "push".to_string(),
+        format!("--force-with-lease={remote_ref}:{expected_hex}"),
+        "--force-if-includes".to_string(),
+        remote.to_string(),
+        format!("refs/heads/{branch}:{remote_ref}"),
+    ]
+}
+
+/// Compact tail (last few non-empty lines) of `git push` stderr, for a readable
+/// error message without dumping the whole progress stream.
+fn push_stderr_tail(stderr: &str) -> String {
+    let lines: Vec<&str> = stderr.lines().filter(|l| !l.trim().is_empty()).collect();
+    if lines.is_empty() {
+        return "git push failed".to_string();
+    }
+    let start = lines.len().saturating_sub(6);
+    lines[start..].join("\n")
+}
+
+/// Map a non-zero `git push` stderr to a typed [`AppError`] (P59b B-D3). Pure /
+/// unit-tested. git's atomic lease / lease-includes refusal
+/// (`stale info` / `[rejected]` / `force-with-lease` / `remote ref updated since
+/// checkout`) => `PushRejected` (the caller prepends the contextual
+/// `lease_moved_msg`); credential failures => `AuthFailed`; connect / DNS / TLS
+/// => `NetworkError`; anything else => `Git` (stderr tail).
+fn classify_push_stderr(stderr: &str) -> AppError {
+    let low = stderr.to_lowercase();
+    let tail = push_stderr_tail(stderr);
+    // git's atomic --force-with-lease / --force-if-includes refusal.
+    if low.contains("stale info")
+        || low.contains("[rejected]")
+        || low.contains("force-with-lease")
+        || low.contains("remote ref updated since checkout")
+    {
+        return AppError::PushRejected(tail);
+    }
+    // Never-prompt policy => git fails fast with one of these when creds are
+    // needed but the configured helper can't supply them non-interactively.
+    if low.contains("authentication failed")
+        || low.contains("could not read username")
+        || low.contains("could not read password")
+        || low.contains("terminal prompts disabled")
+    {
+        return AppError::AuthFailed(tail);
+    }
+    // Connectivity / transport.
+    if low.contains("could not resolve host")
+        || low.contains("could not connect")
+        || low.contains("connection refused")
+        || low.contains("connection timed out")
+        || low.contains("failed to connect")
+        || low.contains("network is unreachable")
+        || low.contains("ssl")
+        || low.contains("tls")
+    {
+        return AppError::NetworkError(tail);
+    }
+    AppError::Git(tail)
 }
 
 // ============================================================ P22 §3 remotes
@@ -1018,6 +1065,121 @@ mod tests {
         let no_baseline = lease_no_baseline_msg("upstream", "topic");
         assert!(no_baseline.contains("'upstream/topic'"), "{no_baseline}");
         assert!(no_baseline.contains("Fetch first"), "{no_baseline}");
+    }
+
+    // ------------------------------------- P59b build_force_push_args (pure)
+
+    /// The atomic-lease argv: `push`, force-with-lease keyed on
+    /// `<remote_ref>:<baseline>`, `--force-if-includes`, remote, then a PLAIN
+    /// (no `+`) refspec — the lease itself supplies the conditional force; a `+`
+    /// would be an unconditional force that overrides the lease (P59b).
+    #[test]
+    fn force_push_args_exact_vec() {
+        let args = build_force_push_args(
+            "origin",
+            "main",
+            "refs/heads/main",
+            "1111111111111111111111111111111111111111",
+        );
+        assert_eq!(
+            args,
+            vec![
+                "push".to_string(),
+                "--force-with-lease=refs/heads/main:1111111111111111111111111111111111111111"
+                    .to_string(),
+                "--force-if-includes".to_string(),
+                "origin".to_string(),
+                "refs/heads/main:refs/heads/main".to_string(),
+            ]
+        );
+        // No leading '+': an unconditional force would defeat --force-with-lease.
+        assert!(!args[4].starts_with('+'), "refspec must not force unconditionally");
+    }
+
+    /// A slashed branch name flows verbatim into both the lease ref and the
+    /// refspec (guards nested-ref interpolation).
+    #[test]
+    fn force_push_args_nested_branch() {
+        let args = build_force_push_args(
+            "upstream",
+            "feature/x",
+            "refs/heads/feature/x",
+            "2222222222222222222222222222222222222222",
+        );
+        assert_eq!(
+            args[1],
+            "--force-with-lease=refs/heads/feature/x:2222222222222222222222222222222222222222"
+        );
+        assert_eq!(args[3], "upstream");
+        assert_eq!(args[4], "refs/heads/feature/x:refs/heads/feature/x");
+    }
+
+    // ------------------------------------- P59b classify_push_stderr (pure)
+
+    /// git's atomic --force-with-lease / --force-if-includes refusal maps to
+    /// `PushRejected` (the caller then prepends the contextual lease_moved_msg).
+    #[test]
+    fn classify_lease_refusal_is_push_rejected() {
+        for s in [
+            " ! [rejected]        main -> main (stale info)",
+            "error: remote ref updated since checkout",
+            "! refusing to lose commits: force-with-lease",
+        ] {
+            assert!(
+                matches!(classify_push_stderr(s), AppError::PushRejected(_)),
+                "stderr should map to PushRejected: {s:?}"
+            );
+        }
+    }
+
+    /// Never-prompt credential failures map to `AuthFailed`.
+    #[test]
+    fn classify_auth_failure_is_auth_failed() {
+        for s in [
+            "fatal: Authentication failed for 'https://example.com/x.git/'",
+            "fatal: could not read Username for 'https://example.com': terminal prompts disabled",
+        ] {
+            assert!(
+                matches!(classify_push_stderr(s), AppError::AuthFailed(_)),
+                "stderr should map to AuthFailed: {s:?}"
+            );
+        }
+    }
+
+    /// Connect / DNS / TLS failures map to `NetworkError`.
+    #[test]
+    fn classify_network_failure_is_network_error() {
+        for s in [
+            "fatal: unable to access 'https://x/': Could not resolve host: x",
+            "fatal: unable to access 'https://x/': SSL certificate problem",
+        ] {
+            assert!(
+                matches!(classify_push_stderr(s), AppError::NetworkError(_)),
+                "stderr should map to NetworkError: {s:?}"
+            );
+        }
+    }
+
+    /// Anything unrecognized falls through to a generic `Git` error carrying the
+    /// stderr tail.
+    #[test]
+    fn classify_unknown_is_git() {
+        match classify_push_stderr("fatal: something entirely unexpected happened") {
+            AppError::Git(m) => assert!(m.contains("unexpected"), "{m}"),
+            other => panic!("expected Git, got {other:?}"),
+        }
+    }
+
+    /// The stderr tail keeps only the last few non-empty lines and never panics
+    /// on empty input.
+    #[test]
+    fn push_stderr_tail_is_compact() {
+        assert_eq!(push_stderr_tail("   \n  \n"), "git push failed");
+        let many = (0..20).map(|i| format!("line{i}")).collect::<Vec<_>>().join("\n");
+        let tail = push_stderr_tail(&many);
+        assert_eq!(tail.lines().count(), 6);
+        assert!(tail.contains("line19"));
+        assert!(!tail.contains("line13"));
     }
 
     // ------------------------------------------------ §8.3 RemoteInfo shape

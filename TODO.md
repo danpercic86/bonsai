@@ -98,9 +98,24 @@ fan-out (like P58 sign; all pass false) — flag a future `CommitOpts` struct.
   nulls gateRef BEFORE the async retry → a concurrent Cancel no-ops (fixes the cancel-during-retry
   double-settle). Frontend-only; tsc/build clean. Nits: skip-hooks checkbox persists across commits (like
   P58c sign — consider per-commit reset); composer path ungated (intentional — P59a composer skips hooks).
-**Current step:** P59a+P59a-ui DONE (committed). Next: **P59b** — remote.rs: pre-push (push_current +
-force_push) + force-push-lease hardening (git --force-with-lease --force-if-includes; build_force_push_args/
-classify_push_stderr; extend force_push_cli oracle).
+- **P59b** (reviewer REQUEST-CHANGES → 1 MUST-FIX fixed → approve; 1 should-fix, 3 nits) — force-push-lease
+  hardening. `force_push_with_lease` rewritten to git's ATOMIC `git push --force-with-lease=<ref>:<expected>
+  --force-if-includes` (closes P37's client-side TOCTOU); git2 resolution + UpToDate short-circuit preserved
+  (before any spawn); `runner: &dyn GitExec`; pure build_force_push_args + classify_push_stderr (lease-refuse
+  → PushRejected first, wrapped w/ lease_moved_msg). NO IPC/mock/UI change; cmd unchanged. **CRITICAL CATCH:**
+  the senior-dev DROPPED the leading `+` from the refspec — reviewer EMPIRICALLY CONFIRMED `+` is an
+  unconditional force that OVERRIDES --force-with-lease (would bypass the lease entirely); no-`+` makes it
+  conditional (refuse on stale, force when held). **MUST-FIX FIXED (orchestrator):** `SpawnGitExec` now
+  injects `-c core.askpass=` (GIT_TERMINAL_PROMPT=0 + askpass-env-removal did NOT cover a CONFIGURED
+  core.askpass — P59b is the first credential-requiring push through the seam; a GUI askpass could pop a
+  hidden dialog/hang on a destructive op). force_push_cli 9/9 (A lease-refuses+origin-unchanged, B held-lease
+  non-ff succeeds, C up-to-date no-spawn via PanicExec, D/E pre-checks) + remote unit 26/26; full bonsai-core
+  542+oracles green after the shared-seam fix; clippy -D + build clean. Notes: dropped NoRemote pre-check
+  (→Git); remote.rs 1593-line god-file (future split); classify network `ssl`/`tls` substrings broad.
+  ⚠ **CONTRACT BUG:** P59 §B2 pseudocode's `+`-refspec would bypass the lease — the CODE is correct (no `+`).
+**Current step:** P59b DONE (committed). Next: **P59a-2** — pre-push (`pre-push` in push_current +
+force_push_with_lease via hooks::run_hook; skip_hooks on push/force_push cmds + IPC; push-side hook-gate;
+pre-push oracle) → P59 tester → P59 done.
 
 ## P58 — real commit signing + verification (Phase 3 · milestone 1/4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
