@@ -87,9 +87,19 @@ panel line + sign toggle + `showSignatureBadge` pref).
   + build/tsc clean. Nits: extract signing.rs oracle (562 lines) → tests/signing_cli.rs in P58b; behavior
   delta (correct D3): composer/MCP commits now sign when commit.gpgsign=true; cherry-pick/revert/rebase
   still unsigned (out of scope, follow-up).
-**Current step:** P58a DONE (committed). Next: **P58b** — verification (`verify_commits` +
-build_verify_args/parse_verify_output/map_status_code; cmd →141) + oracle; EXTRACT the signing.rs test
-oracle to `tests/signing_cli.rs` (keep signing.rs under the ~500 limit).
+- **P58b** (reviewer APPROVE, 0 must-fix; 1 should-fix→P58c) — verification. `signing.rs` +verify_commits
+  + pure build_verify_args/parse_verify_output/map_status_code (`git log --no-walk
+  --format=%H%x1f%G?%x1f%GS%x1f%GK`; map G/U/B/X/Y/R/E/N; splitn(4) preserves spaces in signer/key; empty
+  oids→no spawn; non-hex dropped; wholesale git-fail→CannotCheck-for-all, never Err; MAX_VERIFY_BATCH=512).
+  Extracted the P58a oracle → `tests/signing_cli.rs` (signing.rs 562→497, under limit; no coverage lost).
+  `verify_commits` cmd (140→141; read-only). IPC + mock (deterministic per-nibble, all 8 badge states).
+  signing lib 8 + signing_cli 12 (verify oracle RAN); clippy -D + build/tsc clean. Finding: SSH-without-
+  allowed-signers = N/Unsigned (real git behavior), faithfully mirrored. **SHOULD-FIX → fold into P58c:**
+  add `--ignore-missing` to build_verify_args (a valid-hex-nonexistent oid — e.g. stale layout post-rebase
+  — currently fatal-exits git → whole batch degrades to CannotCheck; the flag makes "unresolvable omitted"
+  true) + extend the oracle with a real nonexistent 40-hex oid.
+**Current step:** P58a+b DONE (committed). Next: **P58c** — frontend (light badge + CommitPanel signature
+line + CommitBox sign toggle + `showSignatureBadge` pref) AND fold the P58b `--ignore-missing` should-fix.
 
 ## P57 — semantic commit-history search (Phase 2 · milestone 5/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 

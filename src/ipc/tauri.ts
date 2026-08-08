@@ -94,6 +94,7 @@ import type {
   Unsubscribe,
   UpdateCheckResult,
   UpdateProgress,
+  VerifyResults,
   AppError,
   WorktreeContextStatus,
   WorktreeInfo,
@@ -473,6 +474,10 @@ export const tauriIpc: IpcApi = {
 
   signingStatus(repoId: string): Promise<SigningStatus> {
     return invoke<SigningStatus>('signing_status', { repoId });
+  },
+
+  verifyCommits(repoId: string, oids: string[]): Promise<VerifyResults> {
+    return invoke<VerifyResults>('verify_commits', { repoId, oids });
   },
 
   historyIndexBuild(

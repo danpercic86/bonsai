@@ -718,6 +718,36 @@ export interface SigningStatus {
   key?: string;
 }
 
+/** `git log --format=%G?` verdict for one commit (P58b). Mirrors the Rust
+ *  `VerifyStatus` (camelCase). Authoritative for BOTH ssh and openpgp — git owns
+ *  the trust check. `unsigned` ⇒ no signature (badge stays blank). */
+export type VerifyStatus =
+  | 'good'
+  | 'goodUnknown'
+  | 'bad'
+  | 'expired'
+  | 'expiredKey'
+  | 'revoked'
+  | 'cannotCheck'
+  | 'unsigned';
+
+/** One commit's verification verdict (P58b). Mirrors the Rust
+ *  `CommitVerification` (camelCase). `signer` (%GS) / `key` (%GK) are omitted
+ *  when git reported them empty. */
+export interface CommitVerification {
+  oid: string;
+  status: VerifyStatus;
+  signer?: string;
+  key?: string;
+}
+
+/** Result of `verifyCommits` (P58b): one entry per RESOLVABLE requested oid, in
+ *  request order. Non-hex / unresolvable oids are omitted (kept "unchecked" by
+ *  the frontend). Mirrors the Rust `VerifyResults`. */
+export interface VerifyResults {
+  verifications: CommitVerification[];
+}
+
 // ---- P57: semantic commit-history search (BM25 index) ----------------------
 
 /** Build phase of `historyIndexBuild` (P57a). Mirrors the Rust `IndexPhase`
@@ -1711,6 +1741,12 @@ export interface IpcApi {
   /** Effective signing config for the commit-box indicator/toggle (P58a D6).
    *  Read-only; does NOT emit repo-changed. Rejects noRepo | git. */
   signingStatus(repoId: string): Promise<SigningStatus>;
+  /** Verify signatures for a bounded set of commit oids (P58b) — the visible
+   *  graph rows. Read-only; does NOT emit repo-changed. ONE git subprocess per
+   *  call, capped at MAX_VERIFY_BATCH. Non-hex oids are dropped and unresolvable
+   *  ones omitted; a missing gpg/ssh toolchain degrades to `cannotCheck` rather
+   *  than rejecting. Rejects git | noRepo. */
+  verifyCommits(repoId: string, oids: string[]): Promise<VerifyResults>;
   /** Build/refresh the per-commit semantic-search INDEX (BM25 over message+diff),
    *  streaming `IndexProgress`. Incremental: only commits absent from the store are
    *  (re)documented. Writes to the app data dir keyed by repo — NOT the repo; does

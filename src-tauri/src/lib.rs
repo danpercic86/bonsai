@@ -142,6 +142,7 @@ pub fn run() {
             commands::ai_search_history,
             commands::search_commits,
             commands::signing_status,
+            commands::verify_commits,
             commands::get_config,
             commands::set_config,
             commands::unset_config,

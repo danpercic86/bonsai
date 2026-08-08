@@ -1,4 +1,4 @@
-//! Commit signing (P58a).
+//! Commit signing (P58a) + signature verification (P58b).
 //!
 //! git2 has no "sign this commit" call, so signing follows mechanism **C** (P58
 //! D1/OQ1): git2 assembles the tree + identity + guards (in `commit.rs` /
@@ -8,8 +8,10 @@
 //! and the `gpg.program` / `gpg.ssh.program` overrides), so the unsigned path
 //! stays 100% git2 and byte-identical to pre-P58.
 //!
-//! P58a covers signing + the read-only [`signing_status`] indicator. Signature
-//! VERIFICATION (`verify_commits`) lands in P58b.
+//! P58a covers signing + the read-only [`signing_status`] indicator; P58b adds
+//! [`verify_commits`]: ONE `git log --format=%G?` subprocess verifies a bounded
+//! batch of oids, authoritative for BOTH ssh and openpgp. The git-driven
+//! behavior lives in the CLI-oracle integration file `tests/signing_cli.rs`.
 
 use std::path::Path;
 
@@ -102,21 +104,12 @@ pub fn signing_status(workdir: &Path) -> Result<SigningStatus, AppError> {
 }
 
 /// Create a SIGNED commit object via `git commit-tree -S` and move HEAD via
-/// `git update-ref` (P58 D1). BLOCKING. The caller has already run every guard,
-/// written the tree, and resolved the identity signatures — this only assembles
-/// the two plumbing spawns.
-///
-/// `author`/`committer` supply identity via `GIT_AUTHOR_*` / `GIT_COMMITTER_*`
-/// env; their `when()` is passed as `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE` in
-/// git's raw internal format so both dates match the git2 path exactly (an
-/// amend passes HEAD's original author, preserving its date). `message` is used
-/// verbatim on stdin (already CRLF-normalized + trimmed + trailing `\n`).
-/// `old_head`: `Some` ⇒ update-ref CAS old value; `None` ⇒ unborn (creates the
-/// branch the symref points at).
-///
-/// Errors: [`AppError::ConfigMissing`] (ssh + no `user.signingkey`, named);
-/// [`AppError::Git`] (signer failure / stale-old-oid CAS race / non-utf8 oid).
-/// NEVER prompts (via [`crate::git::exec::SpawnGitExec`]).
+/// `git update-ref` (P58 D1). BLOCKING. The caller supplies the written tree,
+/// resolved identity (passed via `GIT_AUTHOR_*`/`GIT_COMMITTER_*`, dates in git's
+/// raw format for byte-exact parity), verbatim `message` on stdin, and `old_head`
+/// (`Some` ⇒ update-ref CAS; `None` ⇒ unborn). Errors: [`AppError::ConfigMissing`]
+/// (ssh + no `user.signingkey`); [`AppError::Git`] (signer failure / CAS race /
+/// bad oid). NEVER prompts (via [`crate::git::exec::SpawnGitExec`]).
 #[allow(clippy::too_many_arguments)]
 pub fn create_signed_commit(
     exec: &dyn GitExec,
@@ -204,11 +197,9 @@ fn config_missing_key() -> AppError {
     )
 }
 
-/// Format a git2 time as git's internal `<unix-seconds> <±HHMM>` date, which
-/// `git commit-tree` accepts via `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE`. Chosen
-/// over RFC 2822 (no locale, no weekday/month-name math — the exact form git
-/// itself stores) so the signed path preserves author + committer dates
-/// byte-for-byte against the git2 path.
+/// Format a git2 time as git's internal `<unix-seconds> <±HHMM>` date, accepted
+/// by `git commit-tree` via `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE` (the exact
+/// form git stores — no locale/month-name math — so both dates are preserved).
 fn git_raw_date(when: &git2::Time) -> String {
     let secs = when.seconds();
     let off = when.offset_minutes();
@@ -237,65 +228,174 @@ fn open_repo_at(workdir: &Path) -> Result<git2::Repository, AppError> {
     )?)
 }
 
+// ---- P58b: signature verification ---------------------------------------------
+
+/// `git log --format=%G?` verdict, one per commit — authoritative for BOTH ssh
+/// and openpgp (git owns the trust check; git2/libgit2 only prove presence).
+/// Serializes camelCase to match the TS `VerifyStatus` mirror.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VerifyStatus {
+    /// `G` — valid signature from a trusted/known signer.
+    Good,
+    /// `U` — valid, signer identity not established (e.g. ssh key not in `allowedSigners`).
+    GoodUnknown,
+    /// `B` — bad signature.
+    Bad,
+    /// `X` — good signature that has expired.
+    Expired,
+    /// `Y` — good signature made by an expired key.
+    ExpiredKey,
+    /// `R` — good signature made by a revoked key.
+    Revoked,
+    /// `E` — cannot check (missing key, no `allowedSignersFile`, gpg/ssh absent).
+    CannotCheck,
+    /// `N` (or any unrecognized code) — no signature.
+    Unsigned,
+}
+
+/// One commit's verification verdict (P58b). Wire shape camelCase; `signer` /
+/// `key` are omitted when git reported them empty (e.g. unsigned commits).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitVerification {
+    /// Full 40-hex oid, echoing the request — the frontend keys its badge by it.
+    pub oid: String,
+    pub status: VerifyStatus,
+    /// `%GS` — signer name/identity; `None` when git reported it empty.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signer: Option<String>,
+    /// `%GK` — key id / fingerprint; `None` when git reported it empty.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+}
+
+/// Result of [`verify_commits`]: one [`CommitVerification`] per RESOLVABLE
+/// requested oid, in request order. Oids dropped as non-hex or beyond the batch
+/// cap are omitted — the frontend keeps them "unchecked".
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifyResults {
+    pub verifications: Vec<CommitVerification>,
+}
+
+/// Upper bound on oids verified per call (argv sanity — the frontend sends only
+/// visible graph rows). Oids beyond this are dropped.
+pub const MAX_VERIFY_BATCH: usize = 512;
+
+/// Fixed leading args (before the oid list) produced by [`build_verify_args`].
+const VERIFY_ARG_PREFIX: usize = 3;
+
+/// Verify `oids` in ONE `git log --no-walk` subprocess (P58 D2). BLOCKING. Each
+/// oid is validated as 40-hex (non-hex dropped) and capped at [`MAX_VERIFY_BATCH`]
+/// by [`build_verify_args`]. An empty / all-invalid set returns `Ok(empty)`
+/// WITHOUT spawning. A wholesale git failure (non-zero exit) degrades EVERY
+/// resolvable requested oid to [`VerifyStatus::CannotCheck`] rather than
+/// erroring (so a missing gpg/ssh toolchain still renders); only a spawn / I/O
+/// failure surfaces as [`AppError::Git`].
+pub fn verify_commits(
+    exec: &dyn GitExec,
+    workdir: &Path,
+    oids: &[String],
+) -> Result<VerifyResults, AppError> {
+    let args = build_verify_args(oids);
+    // No resolvable oid ⇒ nothing to check; do not spawn git.
+    if args.len() <= VERIFY_ARG_PREFIX {
+        return Ok(VerifyResults {
+            verifications: Vec::new(),
+        });
+    }
+    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+    let out = exec.exec(&argv, workdir, None, &[])?;
+    if !out.success {
+        // Degrade the resolvable requested oids (argv tail) to CannotCheck.
+        let verifications = args[VERIFY_ARG_PREFIX..]
+            .iter()
+            .map(|oid| CommitVerification {
+                oid: oid.clone(),
+                status: VerifyStatus::CannotCheck,
+                signer: None,
+                key: None,
+            })
+            .collect();
+        return Ok(VerifyResults { verifications });
+    }
+    Ok(VerifyResults {
+        verifications: parse_verify_output(&out.stdout),
+    })
+}
+
+/// Assemble the `git log` argv (P58 D2): a fixed `log --no-walk=unsorted
+/// --format=…` prefix ([`VERIFY_ARG_PREFIX`] entries) then the 40-hex oids
+/// (non-hex dropped, capped at [`MAX_VERIFY_BATCH`], order preserved). The
+/// `%x1f` US separator cannot collide with oid/signer/key text. Pure.
+fn build_verify_args(oids: &[String]) -> Vec<String> {
+    let mut args = vec![
+        "log".to_string(),
+        "--no-walk=unsorted".to_string(),
+        "--format=%H%x1f%G?%x1f%GS%x1f%GK".to_string(),
+    ];
+    args.extend(
+        oids.iter()
+            .filter(|o| is_hex40(o))
+            .take(MAX_VERIFY_BATCH)
+            .cloned(),
+    );
+    args
+}
+
+/// Parse `git log --format=%H%x1f%G?%x1f%GS%x1f%GK` output: one commit per line,
+/// four US-separated fields (oid, code, signer, key). Empty signer/key ⇒ `None`;
+/// blank / oid-less lines are skipped. Pure.
+fn parse_verify_output(stdout: &str) -> Vec<CommitVerification> {
+    stdout
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.splitn(4, '\u{1f}');
+            let oid = fields.next().filter(|o| !o.is_empty())?;
+            let code = fields.next().unwrap_or("");
+            let signer = fields.next().unwrap_or("");
+            let key = fields.next().unwrap_or("");
+            Some(CommitVerification {
+                oid: oid.to_string(),
+                status: map_status_code(code.chars().next().unwrap_or('N')),
+                signer: non_empty(signer),
+                key: non_empty(key),
+            })
+        })
+        .collect()
+}
+
+/// Map a `%G?` code char to a [`VerifyStatus`] (P58 D2). Unrecognized ⇒
+/// [`VerifyStatus::Unsigned`] (git only emits the documented set). Pure.
+fn map_status_code(c: char) -> VerifyStatus {
+    match c {
+        'G' => VerifyStatus::Good,
+        'U' => VerifyStatus::GoodUnknown,
+        'B' => VerifyStatus::Bad,
+        'X' => VerifyStatus::Expired,
+        'Y' => VerifyStatus::ExpiredKey,
+        'R' => VerifyStatus::Revoked,
+        'E' => VerifyStatus::CannotCheck,
+        _ => VerifyStatus::Unsigned, // 'N' and anything unexpected
+    }
+}
+
+/// `true` when `s` is exactly 40 ASCII-hex chars (a SHA-1 oid). Anything else is
+/// dropped before spawning git (never hard-fail on caller input).
+fn is_hex40(s: &str) -> bool {
+    s.len() == 40 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// `None` for an empty field (git prints empty `%GS`/`%GK` for unsigned).
+fn non_empty(s: &str) -> Option<String> {
+    (!s.is_empty()).then(|| s.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
-
-    // ---------------------------------------------------------- guards
-    fn have_git() -> bool {
-        Command::new("git").arg("--version").output().is_ok()
-    }
-    fn have_ssh_keygen() -> bool {
-        Command::new("ssh-keygen").arg("--help").output().is_ok()
-            || Command::new("ssh-keygen").arg("-A").output().is_ok()
-    }
-
-    // ---------------------------------------------------------- isolated config
-    fn isolated_config(entries: &[(&str, &str)]) -> (tempfile::TempDir, git2::Config) {
-        let dir = crate::testutil::scratch_dir();
-        let file = dir.path().join("gitconfig");
-        std::fs::write(&file, "").expect("config file");
-        let mut cfg = git2::Config::open(&file).expect("open config");
-        for (k, v) in entries {
-            cfg.set_str(k, v).expect("set entry");
-        }
-        (dir, cfg)
-    }
-
-    // ---------------------------------------------------------- pure units
-    #[test]
-    fn resolve_signing_none_follows_gpgsign() {
-        let (_d, off) = isolated_config(&[]);
-        assert!(!resolve_signing(&off, None).sign, "unset gpgsign ⇒ off");
-        let (_d, on) = isolated_config(&[("commit.gpgsign", "true")]);
-        assert!(resolve_signing(&on, None).sign, "gpgsign=true ⇒ on");
-    }
-
-    #[test]
-    fn resolve_signing_override_wins_over_config() {
-        let (_d, on) = isolated_config(&[("commit.gpgsign", "true")]);
-        assert!(!resolve_signing(&on, Some(false)).sign, "Some(false) overrides true");
-        let (_d, off) = isolated_config(&[("commit.gpgsign", "false")]);
-        assert!(resolve_signing(&off, Some(true)).sign, "Some(true) overrides false");
-    }
-
-    #[test]
-    fn resolve_signing_format_and_key() {
-        let (_d, cfg) = isolated_config(&[
-            ("gpg.format", "ssh"),
-            ("user.signingkey", "  /keys/id_ed25519  "),
-        ]);
-        let r = resolve_signing(&cfg, None);
-        assert_eq!(r.format, SignFormat::Ssh);
-        assert_eq!(r.key.as_deref(), Some("/keys/id_ed25519"), "trimmed");
-
-        // Unset format ⇒ Openpgp default; empty key ⇒ None.
-        let (_d, cfg) = isolated_config(&[("user.signingkey", "   ")]);
-        let r = resolve_signing(&cfg, None);
-        assert_eq!(r.format, SignFormat::Openpgp);
-        assert_eq!(r.key, None, "whitespace key ⇒ None");
-    }
+    use crate::git::exec::GitOutput;
 
     #[test]
     fn git_raw_date_formats_offset() {
@@ -304,259 +404,94 @@ mod tests {
         assert_eq!(git_raw_date(&git2::Time::new(42, 0)), "42 +0000");
     }
 
-    // ---------------------------------------------------------- wire shapes
+    // ---- verify: build_verify_args / parse / map (pure, git-free) ---------
     #[test]
-    fn sign_format_serializes_lowercase() {
-        assert_eq!(serde_json::to_value(SignFormat::Ssh).unwrap(), "ssh");
-        assert_eq!(serde_json::to_value(SignFormat::Openpgp).unwrap(), "openpgp");
+    fn build_verify_args_prefix_and_drops_non_hex() {
+        let good = "a".repeat(40);
+        let upper = "A".repeat(40); // uppercase is still 40-hex
+        let mixed = "0123456789abcdef0123456789abcdef01234567".to_string();
+        let oids = vec![
+            good.clone(),
+            "not-hex".to_string(),
+            "#".to_string(),
+            String::new(),
+            "b".repeat(39), // too short
+            upper.clone(),
+            mixed.clone(),
+        ];
+        let args = build_verify_args(&oids);
+        assert_eq!(args[0], "log");
+        assert_eq!(args[1], "--no-walk=unsorted");
+        assert_eq!(args[2], "--format=%H%x1f%G?%x1f%GS%x1f%GK");
+        assert_eq!(&args[VERIFY_ARG_PREFIX..], &[good, upper, mixed][..], "only 40-hex, in order");
     }
 
     #[test]
-    fn signing_status_wire_shape_camel_case() {
-        let v = serde_json::to_value(SigningStatus {
-            enabled: true,
-            format: Some(SignFormat::Ssh),
-            has_key: true,
-            key: Some("/k".to_string()),
-        })
-        .expect("json");
-        assert_eq!(v["enabled"], true);
-        assert_eq!(v["format"], "ssh");
-        assert_eq!(v["hasKey"], true);
-        assert_eq!(v["key"], "/k");
-        // key omitted when None (skip_serializing_if).
-        let none = serde_json::to_value(SigningStatus {
-            enabled: false,
-            format: None,
-            has_key: false,
-            key: None,
-        })
-        .expect("json");
-        assert!(none.get("key").is_none());
-        assert_eq!(none["format"], serde_json::Value::Null);
+    fn build_verify_args_caps_at_max_batch() {
+        let oids = vec!["a".repeat(40); MAX_VERIFY_BATCH + 50];
+        assert_eq!(build_verify_args(&oids).len(), VERIFY_ARG_PREFIX + MAX_VERIFY_BATCH);
     }
 
-    // ---------------------------------------------------------- fixtures
-    fn init_repo(dir: &Path) -> git2::Repository {
-        let repo = git2::Repository::init_opts(
-            dir,
-            git2::RepositoryInitOptions::new().initial_head("main"),
-        )
-        .expect("init");
-        let mut cfg = repo.config().expect("config");
-        cfg.set_str("user.name", "Sig Tester").expect("name");
-        cfg.set_str("user.email", "sig@example.com").expect("email");
-        cfg.set_bool("core.autocrlf", false).expect("autocrlf");
-        repo
-    }
-
-    fn stage_write(dir: &Path, name: &str, body: &str) {
-        std::fs::write(dir.join(name), body).expect("write file");
-        crate::git::stage::stage_paths(dir, &[name.to_string()]).expect("stage");
-    }
-
-    fn head_oid(dir: &Path) -> Option<String> {
-        let repo = open_repo_at(dir).ok()?;
-        let oid = repo.head().ok()?.peel_to_commit().ok()?.id();
-        Some(oid.to_string())
-    }
-
-    /// Raw commit object text (`git cat-file -p`) — used to assert the
-    /// presence/absence of the `gpgsig` header.
-    fn commit_object(dir: &Path, oid: &str) -> String {
-        let out = Command::new("git")
-            .args(["cat-file", "-p", oid])
-            .current_dir(dir)
-            .output()
-            .expect("cat-file");
-        assert!(out.status.success(), "cat-file failed: {}", String::from_utf8_lossy(&out.stderr));
-        String::from_utf8_lossy(&out.stdout).into_owned()
-    }
-
-    fn git_ok(dir: &Path, args: &[&str]) -> std::process::Output {
-        Command::new("git").args(args).current_dir(dir).output().expect("git")
-    }
-
-    /// Generate an ephemeral ed25519 key (EMPTY passphrase ⇒ no agent, hermetic),
-    /// write an `allowed_signers` naming the committer email, and set the ssh
-    /// signing config (`commit.gpgsign` per `gpgsign`). Forward-slash paths so
-    /// git + ssh-keygen agree on Windows. Returns the private-key path string.
-    fn setup_ssh_signing(dir: &Path, gpgsign: bool) -> String {
-        let fwd = |p: std::path::PathBuf| p.to_string_lossy().replace('\\', "/");
-        let key = fwd(dir.join("id_ed25519"));
-        let out = Command::new("ssh-keygen")
-            .args(["-t", "ed25519", "-N", "", "-C", "sig@example.com", "-f", &key, "-q"])
-            .output()
-            .expect("ssh-keygen");
-        assert!(out.status.success(), "keygen: {}", String::from_utf8_lossy(&out.stderr));
-
-        let pubtext = std::fs::read_to_string(dir.join("id_ed25519.pub")).expect("pub key");
-        let mut it = pubtext.split_whitespace();
-        let ktype = it.next().unwrap_or_default();
-        let kdata = it.next().unwrap_or_default();
-        let signers = dir.join("allowed_signers");
-        std::fs::write(&signers, format!("sig@example.com {ktype} {kdata}\n")).expect("signers");
-
-        let repo = open_repo_at(dir).expect("open");
-        let mut cfg = repo.config().expect("cfg");
-        cfg.set_str("gpg.format", "ssh").expect("format");
-        cfg.set_str("user.signingkey", &key).expect("signingkey");
-        cfg.set_str("gpg.ssh.allowedSignersFile", &fwd(signers)).expect("allowed");
-        cfg.set_bool("commit.gpgsign", gpgsign).expect("gpgsign");
-        key
-    }
-
-    // ---------------------------------------------------------- SSH oracle
     #[test]
-    fn oracle_ssh_sign_creates_verifiable_commit() {
-        if !have_git() || !have_ssh_keygen() {
-            eprintln!("skipping: git / ssh-keygen not available");
-            return;
-        }
-        use crate::git::commit::create_commit;
-        let dir = crate::testutil::scratch_dir();
-        let d = dir.path();
-        init_repo(d);
-        // Unsigned base first (proves the byte-identical path AND gives an oid to
-        // move from).
-        stage_write(d, "base.txt", "base\n");
-        create_commit(d, "base", None).expect("base commit");
-        let base = head_oid(d).expect("base head");
-        assert!(!commit_object(d, &base).contains("gpgsig"), "base must be unsigned");
-
-        setup_ssh_signing(d, false);
-        stage_write(d, "a.txt", "alpha\n");
-        let res = create_commit(d, "signed subject", Some(true)).expect("signed commit");
-
-        // HEAD moved to the new signed commit.
-        assert_eq!(head_oid(d).as_deref(), Some(res.oid.as_str()));
-        assert_ne!(res.oid, base);
-        assert_eq!(res.branch.as_deref(), Some("main"));
-        // gpgsig header present (SSH signature).
-        let obj = commit_object(d, &res.oid);
-        assert!(obj.contains("gpgsig"), "signed commit must carry a gpgsig header:\n{obj}");
-        // git agrees the signature is good + trusted (allowed_signers names us).
-        let verify = git_ok(d, &["verify-commit", &res.oid]);
-        assert!(verify.status.success(), "verify-commit: {}", String::from_utf8_lossy(&verify.stderr));
-        let g = git_ok(d, &["log", "--format=%G?", "-1", &res.oid]);
-        assert_eq!(String::from_utf8_lossy(&g.stdout).trim(), "G", "%G? must be Good");
-        // reflog records the commit move.
-        let reflog = git_ok(d, &["reflog", "-1"]);
-        assert!(
-            String::from_utf8_lossy(&reflog.stdout).contains("commit:"),
-            "reflog: {}",
-            String::from_utf8_lossy(&reflog.stdout)
+    fn parse_verify_output_splits_maps_and_empties_to_none() {
+        let us = '\u{1f}';
+        let stdout = format!(
+            "{a}{us}G{us}Ada Lovelace{us}KEY1\n{b}{us}N{us}{us}\n{c}{us}U{us}ssh-user{us}SHA256:xyz\n",
+            a = "1".repeat(40),
+            b = "2".repeat(40),
+            c = "3".repeat(40),
         );
-        // committer identity == resolve_signature.
-        let repo = open_repo_at(d).expect("open");
-        let head = repo.head().unwrap().peel_to_commit().unwrap();
-        assert_eq!(head.committer().email().ok(), Some("sig@example.com"));
+        let v = parse_verify_output(&stdout);
+        assert_eq!(v.len(), 3);
+        assert_eq!(v[0].oid, "1".repeat(40));
+        assert_eq!(v[0].status, VerifyStatus::Good);
+        assert_eq!(v[0].signer.as_deref(), Some("Ada Lovelace"));
+        assert_eq!(v[0].key.as_deref(), Some("KEY1"));
+        assert_eq!(v[1].status, VerifyStatus::Unsigned);
+        assert_eq!(v[1].signer, None, "empty %GS ⇒ None");
+        assert_eq!(v[1].key, None, "empty %GK ⇒ None");
+        assert_eq!(v[2].status, VerifyStatus::GoodUnknown);
+        assert_eq!(v[2].signer.as_deref(), Some("ssh-user"));
+        assert_eq!(v[2].key.as_deref(), Some("SHA256:xyz"));
+        // blank / oid-less lines skipped.
+        assert!(parse_verify_output("\n\n").is_empty());
     }
 
     #[test]
-    fn oracle_ssh_amend_preserves_author_and_resigns() {
-        if !have_git() || !have_ssh_keygen() {
-            return;
-        }
-        use crate::git::commit::{amend_commit, create_commit};
-        let dir = crate::testutil::scratch_dir();
-        let d = dir.path();
-        let repo = init_repo(d);
-        stage_write(d, "a.txt", "one\n");
-        create_commit(d, "orig subject", None).expect("commit");
-        let orig = repo.head().unwrap().peel_to_commit().unwrap();
-        let orig_author_when = orig.author().when();
-        let orig_author_email = orig.author().email().ok().map(str::to_string);
+    fn map_status_code_full_table() {
+        use VerifyStatus::*;
+        assert_eq!(map_status_code('G'), Good);
+        assert_eq!(map_status_code('U'), GoodUnknown);
+        assert_eq!(map_status_code('B'), Bad);
+        assert_eq!(map_status_code('X'), Expired);
+        assert_eq!(map_status_code('Y'), ExpiredKey);
+        assert_eq!(map_status_code('R'), Revoked);
+        assert_eq!(map_status_code('E'), CannotCheck);
+        assert_eq!(map_status_code('N'), Unsigned);
+        assert_eq!(map_status_code('?'), Unsigned, "unrecognized ⇒ Unsigned");
+    }
 
-        setup_ssh_signing(d, false);
-        // Message-only signed amend.
-        let res = amend_commit(d, "amended subject", Some(true)).expect("amend");
-        let repo2 = open_repo_at(d).unwrap();
-        let head = repo2.head().unwrap().peel_to_commit().unwrap();
-        assert_eq!(head.author().email().ok().map(str::to_string), orig_author_email, "author preserved");
-        assert_eq!(head.author().when().seconds(), orig_author_when.seconds(), "author date preserved");
-        assert_eq!(head.message().ok(), Some("amended subject\n"));
-        assert!(commit_object(d, &res.oid).contains("gpgsig"), "amend must re-sign");
+    // ---- verify_commits: empty / all-invalid never spawns (P58 §8) --------
+    /// Panics if invoked — proves `verify_commits` does not spawn git when no
+    /// oid survives 40-hex validation. (The wholesale-failure → CannotCheck
+    /// degrade is covered hermetically in `tests/signing_cli.rs`.)
+    struct PanicExec;
+    impl GitExec for PanicExec {
+        fn exec(
+            &self,
+            _args: &[&str],
+            _cwd: &Path,
+            _stdin: Option<&[u8]>,
+            _env: &[(&str, &str)],
+        ) -> Result<GitOutput, AppError> {
+            panic!("verify_commits must not spawn git for an empty/all-invalid set");
+        }
     }
 
     #[test]
-    fn config_gates_decide_signing() {
-        if !have_git() || !have_ssh_keygen() {
-            return;
-        }
-        use crate::git::commit::create_commit;
-        let dir = crate::testutil::scratch_dir();
-        let d = dir.path();
-        init_repo(d);
-        setup_ssh_signing(d, false); // gpg.format=ssh + key, commit.gpgsign=false
-
-        // (a) sign=None + gpgsign=false ⇒ UNSIGNED, byte-identical (no header).
-        stage_write(d, "a.txt", "a\n");
-        let a = create_commit(d, "a", None).expect("a");
-        assert!(!commit_object(d, &a.oid).contains("gpgsig"), "None+off ⇒ unsigned");
-
-        // (b) commit.gpgsign=true + sign=None ⇒ SIGNED.
-        {
-            let repo = open_repo_at(d).unwrap();
-            repo.config().unwrap().set_bool("commit.gpgsign", true).unwrap();
-        }
-        stage_write(d, "b.txt", "b\n");
-        let b = create_commit(d, "b", None).expect("b");
-        assert!(commit_object(d, &b.oid).contains("gpgsig"), "gpgsign=true ⇒ signed");
-
-        // (c) sign=Some(false) overrides gpgsign=true ⇒ UNSIGNED.
-        stage_write(d, "c.txt", "c\n");
-        let c = create_commit(d, "c", Some(false)).expect("c");
-        assert!(!commit_object(d, &c.oid).contains("gpgsig"), "Some(false) overrides ⇒ unsigned");
-    }
-
-    #[test]
-    fn ssh_signing_without_key_is_config_missing() {
-        if !have_git() {
-            return;
-        }
-        use crate::git::commit::create_commit;
-        let dir = crate::testutil::scratch_dir();
-        let d = dir.path();
-        let repo = init_repo(d);
-        stage_write(d, "base.txt", "base\n");
-        create_commit(d, "base", None).expect("base");
-        let base = head_oid(d).expect("base head");
-        // ssh format, NO user.signingkey.
-        repo.config().unwrap().set_str("gpg.format", "ssh").unwrap();
-
-        stage_write(d, "a.txt", "a\n");
-        let err = create_commit(d, "signed", Some(true)).expect_err("must be ConfigMissing");
-        match err {
-            AppError::ConfigMissing(m) => assert!(m.contains("user.signingkey"), "names the key: {m}"),
-            other => panic!("expected ConfigMissing, got {other:?}"),
-        }
-        assert_eq!(head_oid(d).as_deref(), Some(base.as_str()), "no commit created");
-    }
-
-    // ---------------------------------------------------------- signing_status
-    #[test]
-    fn signing_status_reads_config() {
-        let dir = crate::testutil::scratch_dir();
-        let d = dir.path();
-        let repo = init_repo(d);
-        // Unset ⇒ disabled, no format, no key.
-        let s = signing_status(d).expect("status");
-        assert!(!s.enabled);
-        assert_eq!(s.format, None);
-        assert!(!s.has_key);
-        assert_eq!(s.key, None);
-
-        {
-            let mut cfg = repo.config().unwrap();
-            cfg.set_str("gpg.format", "ssh").unwrap();
-            cfg.set_str("user.signingkey", "/keys/id").unwrap();
-            cfg.set_bool("commit.gpgsign", true).unwrap();
-        }
-        let s = signing_status(d).expect("status");
-        assert!(s.enabled);
-        assert_eq!(s.format, Some(SignFormat::Ssh));
-        assert!(s.has_key);
-        assert_eq!(s.key.as_deref(), Some("/keys/id"));
+    fn verify_commits_empty_or_all_invalid_does_not_spawn() {
+        assert!(verify_commits(&PanicExec, Path::new("."), &[]).unwrap().verifications.is_empty());
+        let junk = vec!["not-hex".to_string(), "#".to_string(), "b".repeat(39)];
+        assert!(verify_commits(&PanicExec, Path::new("."), &junk).unwrap().verifications.is_empty());
     }
 }
