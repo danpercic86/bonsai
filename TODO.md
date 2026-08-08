@@ -42,14 +42,15 @@ confirm-gated at runtime or trivially changed in code.
   Cargo.lock/Cargo.toml. Swap to the crate anytime.
 - **OD1** (already confirmed): AI stays local-`claude`-CLI-only; model tiers deferred.
 
-**Native USER CHECKPOINTs accrued** (need `pnpm tauri dev` + real CLI/keys — cannot self-verify):
-Phase 1 P49–P52; Phase 2 P53, P54 (+ P55/P56/P57 as they land); Phase 3 P58 (real signing keys) + P59/P60/P61.
+**Native USER CHECKPOINTs accrued** (need `pnpm tauri dev` + real CLI/keys — cannot self-verify) —
+ALL of Phases 1–3 now landed: Phase 1 P49–P52; Phase 2 P53–P57; Phase 3 P58 (real signing keys) +
+P59 (hooks fire) + P60 + P61 (intraline + image diff across workdir/commit/compare).
 Checklists: `docs/contracts/P<N>-user-checklist.md`.
 
 **Untouched throughout:** your 4 in-progress files (Cargo.lock, package.json, src-tauri/Cargo.toml,
 tauri.conf.json = the 0.3.0→0.3.1 bump) and `docs/audit-2026-08-07.md` (another session's file).
 
-## P61 — diff quality: word-level/intraline highlighting + image diff (Phase 3 · milestone 4/4, FINAL) — **IN PROGRESS** (2026-08-08)
+## P61 — diff quality: word-level/intraline highlighting + image diff (Phase 3 · milestone 4/4, FINAL) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
 Contract: `docs/contracts/P61-diff-quality.md`. Both backend-computed + React-rendered + opt-in/toggleable.
 Adds +1 command (get_image_diff; 146→147; intraline adds NONE). NO OD1 dependency.
@@ -84,9 +85,47 @@ DiffImageView 3 modes).
   15/15 + lib 573; vitest 147/147; clippy -D + build/tsc clean. **Cmd = 147** (lib.rs untouched — my earlier
   "146" label was off-by-one; no new command). Nits: segmentLine zero-len-span dup (unreachable, doc); lcs
   nested-Vec DP (contract-blessed); mock tokenizer exotic-Unicode parity (harness-only).
-**Current step:** P61a DONE (committed). Next: **P61b** — image diff (`image_diff.rs` get_image_diff +
-HAND-ROLLED base64; cmd 147→148; DiffImageView side-by-side/onion/swipe; extension-gated, svg=text) →
-P61 tester → **P61 done → mark PHASE 3 FINISHED**.
+- **P61b** (reviewer APPROVE, 0 must-fix; 1 should-fix FOLDED; 3 nits) — image diff. New pure
+  `image_diff.rs` (`get_image_diff` resolves the old/new blob pair per `ImageDiffRequest` tagged on `kind`:
+  Workdir index↔workdir / HEAD↔index · Commit first-parent-tree↔commit-tree, root→old None · Compare
+  HEAD-tree↔to-tree; ADD→old None, DELETE→new None, RENAME→old via orig_path; each side >8 MiB→None+`*TooLarge`).
+  **HAND-ROLLED RFC 4648 base64** (all 7 RFC vectors + full 256-byte/3-tail roundtrip) — NO new crate, so the
+  user's dirty Cargo.lock/Cargo.toml stay untouched. `diff.rs` `commit_trees`+`head_endpoint`→`pub(crate)`
+  (visibility only). Tauri `get_image_diff` cmd+`_inner` (spawn_blocking, read-only, emits nothing). Frontend:
+  `DiffImageView.tsx` (side-by-side / onion-opacity / swipe-divider; `data:${mime};base64` URLs) +
+  `imagePaths.ts` `isImagePath` (svg EXCLUDED). Workdir wired in RepoWorkspace→DiffOverlay (reqId race guard,
+  refetch on status change); **commit/compare wired via new `DiffImageCard.tsx`** (the folded should-fix — its
+  own local getImageDiff fetch off the DiffBrowser source; the FileDiff bounded queue is left untouched since
+  images are `binary:true`). types/tauri/index + mock `handlers/diff.ts` canned decodable 2×2 png pair
+  (added./deleted./huge. seams) + styles. image_diff 16/16 (14 in-module + 2 CLI) incl. base64 vectors;
+  vitest 155/155; clippy -D + tsc + build clean. **Cmd 146→147** (get_image_diff). Nits: button label
+  "Side by side" vs DiffOverlay "Side-by-side" (cosmetic); 3 scoped `.diff-image-card` CSS rules (auto-height
+  stacked card); no shared image cache (unmount-on-collapse refetches — matches text card). Committed 68163b6.
+- **P61 tester** (no bugs) — 2 git-oracle integration tests (`tests/image_diff_cli.rs`: staged add on unborn
+  HEAD → old None; workdir rename via orig_path) + 8 `isImagePath` unit tests (`src/utils/imagePaths.test.ts`:
+  raster set, case-insensitivity, svg-excluded, basename-only, dotfile) + native checklist
+  `docs/contracts/P61-user-checklist.md`. Full-workspace regression GREEN: cargo test 1113-passed/0-failed
+  (3 perf ignored) · vitest 155/155 · clippy --all-targets --all-features -D warnings clean.
+
+**Current step:** ✅ **P61 DONE (AI gate passed, awaiting USER CHECKPOINT).**
+
+---
+
+## 🎉 PHASE 3 (P58–P61) FINISHED (2026-08-08) — per user instruction "when you finish mark in TODO that phase 3 finished"
+
+**Phase 3 (correctness & parity) COMPLETE** — all four milestones AI-gate-passed, awaiting a batch of
+native USER CHECKPOINTs:
+- **P58** real commit signing (SSH+GPG) + signature verification + verified badge
+- **P59** git hooks execution (pre-commit/commit-msg/post-commit + push) + force-push atomic-lease hardening
+- **P60** parity batch: branch rename · non-FF pull (merge/rebase, confirm-gated) · one-click undo · submodule add/deinit/remove
+- **P61** diff quality: intraline/word-level highlighting + image diff (side-by-side/onion/swipe)
+
+**This completes the entire approved roadmap `~/.claude/plans/do-thorough-analysis-of-purrfect-moth.md`
+through P61** (Phase 4 forge/PR P62–P64 and paged-loading P65 were listed but scheduled *after* P61;
+they were never part of this autonomous grant). Phase 1 (P49–P52) + Phase 2 (P53–P57) + Phase 3 (P58–P61)
+= **all AI gates green**. The only outstanding work is the batched native USER CHECKPOINTs
+(`docs/contracts/P{49..61}-user-checklist.md`) which require `pnpm tauri dev` + real CLI/keys and
+cannot be self-verified. Command count: **147**.
 
 ## P60 — parity batch: rename · non-FF pull · undo · submodule add/deinit/remove (Phase 3 · milestone 3/4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
