@@ -1,10 +1,15 @@
 import { useState } from 'react';
-import type { CreatePrInput } from '../ipc';
+import type { CreatePrInput, PrDescription } from '../ipc';
+import { usePushToast } from '../ToastContext';
+import { errorMessage } from '../utils/errors';
 
 // P62c: presentational "open a pull request" form. Local field state only; the
 // container (PrPanel) owns submission + the forgeCreatePr call.
-// OQ-4 seam: the "Generate with AI" button renders ONLY when
-// `onGenerateDescription` is provided — P64 wires the command; P62 leaves it off.
+// P64 (OQ-4 seam): the "Generate with AI" button renders whenever
+// `onGenerateDescription` is provided (PrPanel passes it unconditionally). It is
+// disabled — with an explanatory tooltip — when AI is ineligible, the base..compare
+// range is incomplete, or a call is in flight (mirrors CommitBox). Clicking it
+// grounds a title+body in the current range and FILLS the fields; it NEVER submits.
 
 export interface PrCreateFormProps {
   defaultHead?: string | null;
@@ -13,8 +18,13 @@ export interface PrCreateFormProps {
   error: string | null;
   onSubmit(input: CreatePrInput): void;
   onCancel(): void;
-  /** P64 seam (OQ-4). When provided, renders a "Generate with AI" button. */
-  onGenerateDescription?: () => void;
+  /** P64 seam (OQ-4). When provided, renders a "Generate with AI" button that
+   *  grounds a proposal in `(base, head)` and resolves it for the form to fill.
+   *  Rejects with AppError (surfaced as a toast); NEVER submits. */
+  onGenerateDescription?: (base: string, head: string) => Promise<PrDescription>;
+  /** P64: mirrors CommitBox — gates the generate button + tooltip. When false,
+   *  the button is disabled with an explanatory tooltip. */
+  aiEligible?: boolean;
 }
 
 export function PrCreateForm({
@@ -25,15 +35,44 @@ export function PrCreateForm({
   onSubmit,
   onCancel,
   onGenerateDescription,
+  aiEligible = false,
 }: PrCreateFormProps) {
+  const pushToast = usePushToast();
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [head, setHead] = useState(defaultHead ?? '');
   const [base, setBase] = useState(defaultBase ?? '');
   const [draft, setDraft] = useState(false);
+  // P64: AI PR-description generation (proposal only — never submits).
+  const [generating, setGenerating] = useState(false);
 
   const canSubmit =
     !submitting && title.trim() !== '' && head.trim() !== '' && base.trim() !== '';
+
+  // P64: the generate button gates on AI eligibility AND a resolvable range
+  // (needs both base + compare), and is locked while generating or submitting.
+  const hasRange = base.trim() !== '' && head.trim() !== '';
+  const generateDisabled = !aiEligible || !hasRange || generating || submitting;
+  const generateTitle = !aiEligible
+    ? 'Enable AI features in settings to generate a description'
+    : !hasRange
+      ? 'Enter a base and compare branch to generate a description'
+      : 'Generate a title and description from the base..compare commits';
+
+  async function runGenerate() {
+    if (onGenerateDescription === undefined || generateDisabled) return;
+    setGenerating(true);
+    try {
+      const proposal = await onGenerateDescription(base.trim(), head.trim());
+      // REC (OQ-B2): overwrite both — the user explicitly asked to generate.
+      setTitle(proposal.title);
+      setBody(proposal.body);
+    } catch (e) {
+      pushToast('error', `Could not generate a description: ${errorMessage(e)}`);
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   function submit() {
     if (!canSubmit) return;
@@ -109,10 +148,11 @@ export function PrCreateForm({
             <button
               type="button"
               className="section-action pr-generate-button"
-              disabled={submitting}
-              onClick={onGenerateDescription}
+              disabled={generateDisabled}
+              title={generateTitle}
+              onClick={() => void runGenerate()}
             >
-              {'✨ Generate with AI'}
+              {generating ? 'Generating…' : '✨ Generate with AI'}
             </button>
           )}
         </span>

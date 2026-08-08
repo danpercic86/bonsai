@@ -7,7 +7,7 @@
 //   token incl. 'bad' in forgeSetToken → throws {kind:'authFailed'} (mirrors
 //                   compose's '#fail'), storing/flipping nothing.
 // Spread into mockIpc via forgeHandlers.
-import { delay, query as urlParam, requireRepo } from '../repoState';
+import { AI_OFF, delay, query as urlParam, requireRepo } from '../repoState';
 import {
   commitStatusFor,
   FORGE_PR_DETAIL,
@@ -23,6 +23,7 @@ import type {
   ForgeRepoContext,
   ForgeViewer,
   IpcApi,
+  PrDescription,
   PrDetail,
   PrListQuery,
   PrPage,
@@ -140,6 +141,52 @@ export const forgeHandlers = {
     requireRepo(repoId);
     offGuard();
     authenticated = false;
+  },
+
+  // P64: AI PR-description generation (provider-agnostic; pure local git + the
+  // claude CLI in the real backend). Read-only; WRITES NOTHING; never posts. The
+  // proposal fills the create-PR form for the user to review/edit before Create.
+  // Sentinels: `?ai=off` ⇒ aiUnavailable (the consent/CLI gate); a `#fail` marker
+  // in `head` ⇒ aiFailed; else a canned title + short Markdown body echoing the
+  // resolved base/head so the harness shows what was grounded.
+  async aiGeneratePrDescription(
+    repoId: string,
+    base: string,
+    head: string,
+  ): Promise<PrDescription> {
+    await delay(700);
+    requireRepo(repoId);
+    if (AI_OFF) {
+      const err: AppError = {
+        kind: 'aiUnavailable',
+        message: 'mock: AI features are disabled (?ai=off)',
+      };
+      throw err;
+    }
+    if (head.includes('#fail')) {
+      const err: AppError = {
+        kind: 'aiFailed',
+        message: `mock: nothing to describe: ${head} has no commits beyond ${base}`,
+      };
+      throw err;
+    }
+    return {
+      title: `Add ${head} onto ${base}`,
+      body: [
+        `Bring the work on \`${head}\` into \`${base}\`.`,
+        '',
+        '## Changes',
+        '- Wire the AI PR-description command behind the create-PR form',
+        '- Ground the draft in the real base..head commits and net diffstat',
+        '',
+        '## Notes',
+        'Generated locally — review and edit before opening the pull request.',
+      ].join('\n'),
+      base,
+      head,
+      commitCount: 3,
+      costUsd: 0.009,
+    };
   },
 
   async forgeCommitStatuses(repoId: string, shas: string[]): Promise<CommitStatus[]> {

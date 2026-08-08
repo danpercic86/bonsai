@@ -374,7 +374,12 @@ export function WorkspaceRightPanel({
       )}
       </div>
       {rightPaneTab === 'prs' && (
-        <PrPanel repoId={repoId} defaultHead={prDefaultHead} openToPr={prNav} />
+        <PrPanel
+          repoId={repoId}
+          defaultHead={prDefaultHead}
+          openToPr={prNav}
+          aiEligible={aiEligible}
+        />
       )}
     </aside>
   );

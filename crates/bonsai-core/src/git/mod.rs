@@ -9,6 +9,7 @@ pub mod ai_operation;
 pub mod ai_operation_grounding;
 pub mod ai_operation_preview;
 pub mod ai_operation_resolve;
+pub mod ai_pr_description;
 pub mod ai_resolve;
 pub mod ai_summary;
 pub mod autostash;

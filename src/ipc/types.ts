@@ -1718,6 +1718,20 @@ export interface PrNavRequest {
   seq: number;
 }
 
+/** P64: an AI-generated PR proposal (title + Markdown body) grounded in the
+ *  commits unique to `head` vs `base`, plus the echoed requested range + cost.
+ *  Mirrors the Rust `PrDescription`; generating WRITES NOTHING and never posts —
+ *  it fills the create-PR form for the user to review/edit before Create.
+ *  `body` may be `''` (why-not-what). */
+export interface PrDescription {
+  title: string;
+  body: string;
+  base: string;
+  head: string;
+  commitCount: number;
+  costUsd: number | null;
+}
+
 export interface AppError {
   kind:
     | 'git'
@@ -2241,6 +2255,13 @@ export interface IpcApi {
    *  local. Rejects aiUnavailable | aiFailed (empty range / no earlier tag / CLI)
    *  | git (bad ref) | noRepo. */
   aiChangelog(repoId: string, range: ChangelogRange): Promise<AiChangelog>;
+  /** P64. Generate a pull-request title + Markdown body grounded in the commits
+   *  unique to `head` vs `base` + the net diffstat. Read-only; WRITES NOTHING;
+   *  never posts to a forge; does NOT emit repo-changed. The proposal fills the
+   *  create-PR form for the user to review/edit before Create. Rejects
+   *  aiUnavailable | aiFailed (empty range / no usable title / CLI) | git (bad
+   *  ref) | noRepo. */
+  aiGeneratePrDescription(repoId: string, base: string, head: string): Promise<PrDescription>;
   /** P53a. AI "why does this line exist" — blames `lineNo` (as of `atOid`, null →
    *  HEAD) to find the introducing commit, then explains that commit's change to
    *  the file focused on that line. Read-only; writes nothing; does NOT emit

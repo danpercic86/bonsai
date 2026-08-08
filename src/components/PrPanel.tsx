@@ -35,9 +35,20 @@ export interface PrPanelProps {
   /** P63: external "open PR N" request (from a graph PR-badge click). A bumped
    *  `seq` re-opens even the same number. null ⇒ no pending navigation. */
   openToPr?: PrNavRequest | null;
+  /** P64: AI eligibility (aiEnabled && aiConsented && installed) — same source
+   *  the rest of the app uses. Drives the create form's "Generate with AI"
+   *  button: always shown, but disabled with an explanatory tooltip when false
+   *  (mirrors CommitBox). */
+  aiEligible?: boolean;
 }
 
-export function PrPanel({ repoId, defaultHead, defaultBase, openToPr }: PrPanelProps) {
+export function PrPanel({
+  repoId,
+  defaultHead,
+  defaultBase,
+  openToPr,
+  aiEligible = false,
+}: PrPanelProps) {
   const pushToast = usePushToast();
 
   const [ctx, setCtx] = useState<ForgeRepoContext | null>(null);
@@ -265,6 +276,16 @@ export function PrPanel({ repoId, defaultHead, defaultBase, openToPr }: PrPanelP
             error={createError}
             onSubmit={handleCreate}
             onCancel={() => setView('list')}
+            aiEligible={aiEligible}
+            // P64 (contract §4e, mirrors CommitBox): pass the seam
+            // UNCONDITIONALLY so the button is always shown; `aiEligible` drives
+            // the disabled state + tooltip (an un-consented user sees a disabled
+            // button pointing at the consent toggle — it can't invoke AI).
+            // Grounds a proposal in the form's current base..compare; the form
+            // fills the fields, never submits.
+            onGenerateDescription={(base, head) =>
+              ipc.aiGeneratePrDescription(repoId, base, head)
+            }
           />
         );
       case 'detail':

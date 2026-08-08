@@ -121,7 +121,22 @@ Next: **P63** — forge signals on graph (PR + CI badges; +1 cmd `forge_commit_s
 **Current step:** ✅ **P63 COMPLETE** (P63a data/settings + P63b render/interaction, committed). Cmd **155**.
 Next: **P64** — more providers (GitLab→Bitbucket→Azure) + AI PR descriptions; recommend split (P64 = AI
 descriptions + GitLab, then Bitbucket/Azure as P64b/c).
-### P64 — more providers + AI PR descriptions — **PENDING** (contract ready; recommend split B+GitLab, then P64b/c)
+### P64 — more providers + AI PR descriptions — **IN PROGRESS** (contract `docs/contracts/P64-forge-providers-ai-pr.md`)
+Split (architect rec): **P64a** AI PR descriptions (Part B, +1 cmd 155→156) → **P64b** GitLab provider
+(Part A #1, +0 cmd; adds `ForgeKind` arms + detect host + `ForgeTarget.project` + `viewer()` reuse) →
+**P64c** Bitbucket + Azure DevOps providers (+0 cmd). OD1: AI stays local-`claude`-CLI-only.
+- **P64a** ✅ DONE (committed) — `ai_generate_pr_description` (cmd **156**) reusing `run_claude` +
+  `resolve_digest_range` + `payload::render_*`/`cap_review_payload` + AI consent gate; writes nothing; empty-range
+  guard pre-CLI; byte-safe title parse (multibyte). Create-form seam wired shown-but-disabled (contract §4e /
+  CommitBox lane; `aiEligible` drives disabled+tooltip). Mock `?ai=off`/`#fail` sentinels. Reviewer approve
+  (multibyte-panic must-fix + eligibility-lane should-fix folded). AI gate: bonsai-core 610/1-ign +
+  ai_pr_description_cli 3/0, bonsai --lib 118, clippy -D clean, tsc+build, vitest 197. Harness: Generate button
+  gated to eligible+range → click fills a structured title/body from mock, no auto-submit, console clean.
+  Live real-CLI generation = native USER CHECKPOINT.
+
+**Current step:** P64a ✅ DONE. Next: **P64b** — GitLab provider (Part A #1): new `crates/bonsai-forge/src/gitlab/{mod,rest,dto}.rs`
+implementing the same `ForgeProvider` trait; `ForgeKind::GitLab` + `detect.rs` host/path; map GitLab MR/CI onto the
+neutral DTOs; PAT→Bearer; mock `?forge=gitlab`. +0 commands.
 ### P65 — paged/streaming graph loading — **PENDING** (contract ready; independent; land after graph-pane work)
 
 ## P61 — diff quality: word-level/intraline highlighting + image diff (Phase 3 · milestone 4/4, FINAL) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-08)

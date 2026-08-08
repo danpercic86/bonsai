@@ -121,6 +121,7 @@ pub fn run() {
             commands::ai_summarize_range,
             commands::ai_digest,
             commands::ai_changelog,
+            commands::ai_generate_pr_description,
             commands::ai_compose_commits,
             commands::ai_explain_line,
             commands::ai_suggest_branch_name,

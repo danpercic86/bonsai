@@ -45,6 +45,7 @@ import type {
   CreatePrInput,
   ForgeRepoContext,
   ForgeViewer,
+  PrDescription,
   PrDetail,
   PrListQuery,
   PrPage,
@@ -405,6 +406,12 @@ export const tauriIpc: IpcApi = {
   // tag). Read-only; WRITES NOTHING; does NOT emit repo-changed. Fully local.
   aiChangelog(repoId: string, range: ChangelogRange): Promise<AiChangelog> {
     return invoke<AiChangelog>('ai_changelog', { repoId, range });
+  },
+
+  // P64: AI PR title + Markdown body grounded in base..head. Read-only; WRITES
+  // NOTHING; never posts. Fills the create-PR form for the user to review/edit.
+  aiGeneratePrDescription(repoId: string, base: string, head: string): Promise<PrDescription> {
+    return invoke<PrDescription>('ai_generate_pr_description', { repoId, base, head });
   },
 
   // P53a: AI "why does this line exist" — blame-why (read-only prose).

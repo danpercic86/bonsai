@@ -1793,6 +1793,45 @@
         assert!(matches!(err, AppError::NoRepo), "got {err:?}");
     }
 
+    /// P64 §4c: `ai_generate_pr_description` enforces the same backend consent
+    /// gate BEFORE touching the repo: default settings (`ai_consented=false`) →
+    /// `AiUnavailable`; once enabled+consented, an unknown repo id → `NoRepo`
+    /// (the gate passed, `repo_path` then fails). No CLI needed.
+    #[test]
+    fn ai_generate_pr_description_enforces_consent_gate_then_no_repo() {
+        let state = AppState::default();
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let file = dir.path().join("settings.json");
+
+        // No settings file → defaults → not consented → the gate refuses.
+        let err = tauri::async_runtime::block_on(ai_generate_pr_description_inner(
+            &state,
+            &file,
+            MISSING_ID,
+            "main".to_string(),
+            "feature".to_string(),
+        ))
+        .expect_err("disabled gate must refuse");
+        assert!(matches!(err, AppError::AiUnavailable(_)), "got {err:?}");
+
+        // Enable + consent; now the gate passes and the missing repo → NoRepo.
+        let s = settings::Settings {
+            ai_enabled: true,
+            ai_consented: true,
+            ..settings::Settings::default()
+        };
+        settings::save_to(&file, &s).expect("save settings");
+        let err = tauri::async_runtime::block_on(ai_generate_pr_description_inner(
+            &state,
+            &file,
+            MISSING_ID,
+            "main".to_string(),
+            "feature".to_string(),
+        ))
+        .expect_err("no repo open must be NoRepo");
+        assert!(matches!(err, AppError::NoRepo), "got {err:?}");
+    }
+
     /// P15c §5/§8.5: `ai_summarize_range` enforces the same backend consent gate
     /// BEFORE touching the repo: default settings (`ai_consented=false`) →
     /// `AiUnavailable`; once enabled+consented, an unknown repo id → `NoRepo`

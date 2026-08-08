@@ -36,6 +36,7 @@ pub(crate) use bonsai_core::git::ai_line;
 // convention above); `ProposedOperation`/`SafeOp`/`OperationPreview`/`RefChange`/
 // `CommitRef`/`DangerLevel` travel nested inside `PlanOutcome`.
 pub(crate) use bonsai_core::git::ai_operation::{self, PlanOutcome};
+pub(crate) use bonsai_core::git::ai_pr_description::{self, PrDescription};
 pub(crate) use bonsai_core::git::ai_resolve::{self, AiResolveProposal};
 pub(crate) use bonsai_core::git::ai_summary::{self, AiSummary};
 pub(crate) use bonsai_core::git::bisect::{self, BisectOutcome};
