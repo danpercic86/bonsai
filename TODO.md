@@ -49,7 +49,7 @@ Checklists: `docs/contracts/P<N>-user-checklist.md`.
 **Untouched throughout:** your 4 in-progress files (Cargo.lock, package.json, src-tauri/Cargo.toml,
 tauri.conf.json = the 0.3.0→0.3.1 bump) and `docs/audit-2026-08-07.md` (another session's file).
 
-## P57 — semantic commit-history search (Phase 2 · milestone 5/5) — **IN PROGRESS** (2026-08-08)
+## P57 — semantic commit-history search (Phase 2 · milestone 5/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
 Contract: `docs/contracts/P57-semantic-history-search.md`. OD1 = local-`claude`-CLI-only. Highest build
 cost; Phase-2 FINAL. **Retriever = BM25 v1 (embeddings DEFERRED per OD1 / FOR USER).**
@@ -103,8 +103,18 @@ Sub-increments (strictly ordered): **P57a** index builder + persistence + status
   ai_history_cli test (top_k=0 retrieves all 3 matching, not 1). Folded matchRows staleness nit. 6
   ai_history + 28 history_index tests; clippy -D + build/tsc + vitest 109 clean; cmd 139. ⚠ contract §4
   pseudocode has the same latent `max(1)` bug — noted (the code is correct).
-**Current step:** P57a+b+c DONE (committed). Next: **P57 tester** (regression + `P57-user-checklist.md`) →
-P57 AI gate → **Phase 2 (P53–P57) COMPLETE**.
+- **P57 tester** — `cargo test --workspace` **1024 passed / 0 failed / 3 ignored** (perf gates); vitest
+  **109/109**; clippy -D clean. Wrote `docs/contracts/P57-user-checklist.md`. Optional frontend vitest
+  SKIPPED (score-bar/progress helpers module-private; no exported pure fn without a refactor/RTL dep). No bugs.
+- **P57 AI GATE PASSED (2026-08-08).** ~37 P57 tests across the full pipeline (pure BM25, doc extraction,
+  build/status/incremental/schema/staleness/round-trip, retrieval, ai_history synthesis + the top_k=0
+  regression) within the 1024-green workspace + reviewer verification (incl. the caught+fixed top_k
+  MUST-FIX); vitest 109. Live index-build → ask → grounded-answer flow is USER CHECKPOINT (headless pane
+  0×0; mock fixtures carry no diffs). Retriever = **BM25 v1 (embeddings deferred — FOR USER)**. Commits:
+  `<a>`·`<b>`·`<c+fix>`·tester (see `git log`).
+**Current step:** P57 DONE. ✅ **PHASE 2 (P53–P57) COMPLETE** — all AI-gate-passed, awaiting batched native
+USER CHECKPOINTs (`docs/contracts/P5{3,4,5,6,7}-user-checklist.md`). Next: **Phase 3 (correctness & parity)
+— P58 commit signing** (no OD1 dependency).
 
 ## P56 — local AI changelog / release-notes (Phase 2 · milestone 4/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
