@@ -49,7 +49,7 @@ Checklists: `docs/contracts/P<N>-user-checklist.md`.
 **Untouched throughout:** your 4 in-progress files (Cargo.lock, package.json, src-tauri/Cargo.toml,
 tauri.conf.json = the 0.3.0→0.3.1 bump) and `docs/audit-2026-08-07.md` (another session's file).
 
-## P58 — real commit signing + verification (Phase 3 · milestone 1/4) — **IN PROGRESS** (2026-08-08)
+## P58 — real commit signing + verification (Phase 3 · milestone 1/4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
 Contract: `docs/contracts/P58-commit-signing.md`. Phase 3 (correctness & parity) — NO OD1 dependency.
 Lights the P51 verified-badge stub.
@@ -114,8 +114,20 @@ panel line + sign toggle + `showSignatureBadge` pref).
   indistinguishable from the P51 faint not-yet-checked stub); `verifyBadge.ts:13` comment says "hollow" and
   is now stale → reconcile when the user confirms final iconography. Nits: hardcoded #ffffff badge fg;
   external (watcher) commits at an unchanged visible range show the faint stub until scroll/Refresh (OQ8-consistent).
-**Current step:** P58a+b+c DONE (committed). Next: **P58 tester** (regression + `P58-user-checklist.md` —
-SSH/GPG signing + verified-badge + sign toggle, real keys) → P58 AI gate → P58 done.
+- **P58 tester** — `cargo test --workspace` **1045 passed / 0 failed / 3 ignored**; vitest **127/127** (+18
+  `verifyBadge.test.ts`: all 8 VerifyStatus → badge kind + label + exhaustiveness); clippy -D clean. Wrote
+  `docs/contracts/P58-user-checklist.md`. Findings (non-blocking): (1) stale `verifyBadge.ts:13` "hollow"
+  comment (solid is intentional; user confirms glyphs at checkpoint); (2) PRE-EXISTING rustdoc warning
+  `ai_compose.rs:180` (P54 em-dash in a doc code-block; non-failing, clippy clean — cosmetic, fix opportunistically).
+- **P58 AI GATE PASSED (2026-08-08).** Backend: 1045 workspace incl. the HERMETIC SSH sign oracle (RAN:
+  signed commit git-verify-commits, unsigned byte-identical) + verify/config/ConfigMissing/--ignore-missing
+  + GraphPrefs back-compat + reviewer verification (unsigned byte-identical, create_signed_commit correct,
+  D4 double-gate, ~80-caller fan-out clean); frontend: verifyBadge 18 vitests + reviewer wiring. Real SSH+GPG
+  signing, the verified-badge VISUALS (+ OQ7 glyph confirm), sign toggle, missing-key error, cross-platform
+  no-console = USER CHECKPOINT (`docs/contracts/P58-user-checklist.md`; GPG native-only, badge pixels
+  headless-unverifiable). Commits `14a869d`(a)·`<b>`·`7f0514f`(c)·tester (see `git log`).
+**Current step:** P58 DONE (AI gate passed, awaiting USER CHECKPOINT). Phase 3 milestone 2/4 next: **P59
+(git hooks execution + force-push-lease hardening)** — reuses the P58 `exec.rs` seam.
 
 ## P57 — semantic commit-history search (Phase 2 · milestone 5/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
