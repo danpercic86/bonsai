@@ -20,6 +20,10 @@ function disp(over: Partial<GraphDisplayOptions> = {}): GraphDisplayOptions {
     showAheadBehind: false,
     branchStats: new Map(),
     showSignatureBadge: false,
+    showPrBadge: false,
+    showCiStatus: false,
+    prByBranch: new Map(),
+    ciBySha: new Map(),
     ...over,
   };
 }

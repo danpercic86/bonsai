@@ -446,7 +446,7 @@ export function drawGraph(
     // a trailing "+n" chip. Layout is the shared pure helper (single source of
     // truth with the hit-test); this pass only paints the laid-out labels.
     const laid = layoutRefLabels(ctx, groupRefs(node.refs), node, theme, startX, budget, display);
-    for (const l of laid) drawRefLabelAt(ctx, l, y);
+    for (const l of laid) drawRefLabelAt(ctx, l, y, theme);
 
     // 5b–5e (RIGHT): summary (flex) + optional author / SHA(+badge) / date
     // columns, packed by `cols`. Toggling a column off reclaims its width.

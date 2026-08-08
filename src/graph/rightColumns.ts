@@ -5,6 +5,7 @@
  *  `summaryEndX`. Used by BOTH the draw pass and the hover hit-test, so column
  *  geometry has a single source of truth. No canvas, no React. */
 
+import type { CiBadge, PrBadge } from './forgeBadges';
 import type { EffectiveMetrics } from './metrics';
 
 /** P51b §6.1: persisted per-row display toggles threaded into the draw + hover
@@ -24,6 +25,16 @@ export interface GraphDisplayOptions {
    *  false, the P51 faint stub renders unchanged (slot geometry is untouched
    *  either way — this only swaps the glyph drawn in the existing slot). */
   showSignatureBadge: boolean;
+  /** P63: draw the PR badge on branch-tip pills (already AND-ed with `!compact`
+   *  by the caller — the pure layer only checks this boolean). */
+  showPrBadge: boolean;
+  /** P63: draw the CI status dot on branch-tip pills (already AND-ed with
+   *  `!compact` by the caller). */
+  showCiStatus: boolean;
+  /** P63: branch SHORT-name → PR badge (from the open-PR list). Empty map ok. */
+  prByBranch: ReadonlyMap<string, PrBadge>;
+  /** P63: commit sha → CI badge (branch-tip shas only). Empty map ok. */
+  ciBySha: ReadonlyMap<string, CiBadge>;
 }
 
 /** One packed column, in canvas CSS-px. `rightX` is the right-align anchor the

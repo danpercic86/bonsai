@@ -1710,6 +1710,14 @@ export interface CommitStatus {
   contexts: StatusContext[];
 }
 
+/** P63: external "open PR N" request threaded from a graph PR-badge click into
+ *  the P62 `PrPanel`. `seq` is a bump counter so clicking the SAME PR badge
+ *  twice re-navigates (the panel keys its open-detail effect on `seq`). */
+export interface PrNavRequest {
+  number: number;
+  seq: number;
+}
+
 export interface AppError {
   kind:
     | 'git'

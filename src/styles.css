@@ -968,6 +968,14 @@ body {
   color: var(--text-3);
 }
 
+/* P63: a labelled sub-group inside a settings section (e.g. "Forge signals"). */
+.settings-subsection-title {
+  margin: 14px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
 .settings-checkbox {
   display: flex;
   align-items: center;

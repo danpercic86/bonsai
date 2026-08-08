@@ -146,6 +146,29 @@ export function SettingsGraphSection({ graph, onChange }: SettingsGraphSectionPr
         />
         <span>Compact rows</span>
       </label>
+
+      {/* P63: forge-driven, branch-tip-scoped badges. Default OFF (they need a
+          connected forge + network) and are suppressed while Compact is on. */}
+      <h4 className="settings-subsection-title">Forge signals</h4>
+      <p className="settings-section-desc">
+        Requires a connected forge (GitHub). Hidden in Compact mode.
+      </p>
+      <label className="settings-checkbox">
+        <input
+          type="checkbox"
+          checked={graph.showPrBadge}
+          onChange={(e) => patch({ showPrBadge: e.target.checked })}
+        />
+        <span>Show PR badges</span>
+      </label>
+      <label className="settings-checkbox">
+        <input
+          type="checkbox"
+          checked={graph.showCiStatus}
+          onChange={(e) => patch({ showCiStatus: e.target.checked })}
+        />
+        <span>Show CI status</span>
+      </label>
     </section>
   );
 }

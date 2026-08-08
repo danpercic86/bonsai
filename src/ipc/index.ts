@@ -127,6 +127,7 @@ export type {
   PaneWidths,
   PrDetail,
   PrListQuery,
+  PrNavRequest,
   PrPage,
   PrState,
   PrStateFilter,

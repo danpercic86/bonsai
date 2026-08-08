@@ -46,6 +46,13 @@ export const METRICS = {
   /** P7 §3.4/§8: ref-label glyph box + gap (icon-icon and icon-label). */
   iconSize: 11,
   iconGap: 3,
+  /** P63 §5: forge-signal badges trailing a branch pill (LEFT band). The PR
+   *  pill's max width fits "#12345"; the CI dot box == iconSize; `signalGap`
+   *  precedes each signal (a touch clearer than pillGap, like chipGap). */
+  prBadgeMaxWidth: 46,
+  prBadgePadX: 5,
+  ciBadgeSize: 11,
+  signalGap: 6,
 } as const;
 
 /** The three user-tunable geometry knobs (P11 §2.3) — the METRICS fields the

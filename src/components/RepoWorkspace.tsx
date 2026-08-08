@@ -42,6 +42,7 @@ import type {
   JobStatus,
   LineSelection,
   ListView,
+  PrNavRequest,
   ProposedOperation,
   RebaseTodoOp,
   PaneWidths,
@@ -79,6 +80,7 @@ import { useReadOverlays } from './repoWorkspace/useReadOverlays';
 import { useWorkspaceKeyboard } from './repoWorkspace/useWorkspaceKeyboard';
 import { useCommitSearch } from './repoWorkspace/useCommitSearch';
 import { useCommitVerification } from './repoWorkspace/useCommitVerification';
+import { useForgeSignals } from './repoWorkspace/useForgeSignals';
 import { useHistorySearch } from './repoWorkspace/useHistorySearch';
 import { useCommitComposer } from './repoWorkspace/useCommitComposer';
 import { ComposerDialog } from './ComposerDialog';
@@ -203,22 +205,6 @@ export function RepoWorkspace({
     }
     return m;
   }, [branches]);
-
-  // P51b/P51c: per-row display toggles (SHA/author/date column + date basis) +
-  // the ahead/behind chip data, derived from graphPrefs/branchStats and threaded
-  // into GraphCanvas.
-  const graphDisplay = useMemo<GraphDisplayOptions>(
-    () => ({
-      showSha: graphPrefs.showSha,
-      showAuthor: graphPrefs.showAuthor,
-      showDate: graphPrefs.showDate,
-      dateBasis: graphPrefs.dateBasis,
-      showAheadBehind: graphPrefs.showAheadBehind,
-      branchStats,
-      showSignatureBadge: graphPrefs.showSignatureBadge,
-    }),
-    [graphPrefs, branchStats],
-  );
 
   const [stashes, setStashes] = useState<StashEntry[]>([]);
 
@@ -554,6 +540,48 @@ export function RepoWorkspace({
     enabled: graphPrefs.showSignatureBadge,
     pushToast,
   });
+
+  // P63: per-branch forge-signal cache (PR + CI badges). Gated on the two prefs
+  // AND !compact (badges are compact-suppressed); failures are silent. Feeds the
+  // graphDisplay maps below; a completed fetch produces new map identities → a
+  // new display identity → the canvas repaints and the badges fill in.
+  const forgeSignals = useForgeSignals({
+    repoId,
+    graphDataRef,
+    showPrBadge: graphPrefs.showPrBadge,
+    showCiStatus: graphPrefs.showCiStatus,
+    compact: graphPrefs.compact,
+  });
+
+  // P51b/P51c/P63: per-row display toggles (SHA/author/date column + date basis)
+  // + the ahead/behind chip data + the forge-signal maps, derived from
+  // graphPrefs/branchStats/forgeSignals and threaded into GraphCanvas. The
+  // compact rule is enforced HERE (AND-ed into the two forge toggles) so the
+  // pure layer never sees `compact`.
+  const graphDisplay = useMemo<GraphDisplayOptions>(
+    () => ({
+      showSha: graphPrefs.showSha,
+      showAuthor: graphPrefs.showAuthor,
+      showDate: graphPrefs.showDate,
+      dateBasis: graphPrefs.dateBasis,
+      showAheadBehind: graphPrefs.showAheadBehind,
+      branchStats,
+      showSignatureBadge: graphPrefs.showSignatureBadge,
+      showPrBadge: graphPrefs.showPrBadge && !graphPrefs.compact,
+      showCiStatus: graphPrefs.showCiStatus && !graphPrefs.compact,
+      prByBranch: forgeSignals.prByBranch,
+      ciBySha: forgeSignals.ciBySha,
+    }),
+    [graphPrefs, branchStats, forgeSignals.prByBranch, forgeSignals.ciBySha],
+  );
+
+  // P63: right-pane PR navigation request — a graph PR-badge click sets the
+  // 'prs' tab and bumps `seq` so PrPanel opens (or re-opens) that PR's detail.
+  const [prNav, setPrNav] = useState<PrNavRequest | null>(null);
+  const onOpenPr = useCallback((n: number) => {
+    setRightPaneTab('prs');
+    setPrNav((prev) => ({ number: n, seq: (prev?.seq ?? 0) + 1 }));
+  }, []);
 
   // P58c: effective signing config for the commit-box toggle/indicator. Read
   // once per repo (and on manual Refresh); a read failure just hides the toggle.
@@ -1243,6 +1271,7 @@ export function RepoWorkspace({
         void refetchRemotes();
         void refetchOpState();
         void refetchCompare();
+        forgeSignals.refresh('focus'); // P63: TTL-guarded (not forced)
       });
       if (cancelled) {
         off();
@@ -1269,7 +1298,15 @@ export function RepoWorkspace({
     refetchRemotes,
     refetchOpState,
     refetchCompare,
+    forgeSignals.refresh,
   ]);
+
+  // P63: a new graph layout identity (post fetch/pull/branch-op) may carry new
+  // branch tips → TTL-guarded forge-signal refresh so their badges appear. Fires
+  // on mount too (graph null→value); runFetch bails while the layout is null.
+  useEffect(() => {
+    forgeSignals.refresh('graph');
+  }, [graph, forgeSignals.refresh]);
 
   // P30 §6: the P11e frontend auto-fetch timer is GONE — auto-fetch now runs
   // in the Rust scheduler for ALL open repos (scheduler.rs); data refresh
@@ -1354,11 +1391,12 @@ export function RepoWorkspace({
     try {
       await refreshAll();
       verification.refresh();
+      forgeSignals.refresh('manual', true); // P63: forced (bypass TTL)
       void refetchSigningStatus();
     } finally {
       setRefreshing(false);
     }
-  }, [refreshing, refreshAll, verification.refresh, refetchSigningStatus]);
+  }, [refreshing, refreshAll, verification.refresh, forgeSignals.refresh, refetchSigningStatus]);
   const headBranch = branches?.local.find((b) => b.isHead) ?? null;
 
   // P58c: the selected commit's signature verdict for the CommitPanel line —
@@ -1381,6 +1419,16 @@ export function RepoWorkspace({
       setPendingNonFfPull,
       runWithHookGate: hookGate.runWithHookGate,
     });
+
+  // P63: fetch/pull success may land new tips or new CI verdicts → FORCE a
+  // forge-signal refresh (bypass TTL) after they complete. Both internally catch
+  // + toast, so they resolve normally (the `.then` runs on completion).
+  const onFetch = useCallback(() => {
+    void handleFetch().then(() => forgeSignals.refresh('remote', true));
+  }, [handleFetch, forgeSignals.refresh]);
+  const onPull = useCallback(() => {
+    void handlePull().then(() => forgeSignals.refresh('remote', true));
+  }, [handlePull, forgeSignals.refresh]);
 
   const {
     handleStage,
@@ -2128,8 +2176,8 @@ export function RepoWorkspace({
       opActive,
       canPullPush,
       hasHeadBranch: headBranch !== null,
-      onFetch: () => void handleFetch(),
-      onPull: () => void handlePull(),
+      onFetch, // P63: wrapped to refresh forge signals after fetch
+      onPull, // P63: wrapped to refresh forge signals after pull
       onPush: () => void handlePush(),
       onRefresh: () => void handleRefresh(),
       onNewBranch: openNewBranch,
@@ -2176,8 +2224,8 @@ export function RepoWorkspace({
     opActive,
     canPullPush,
     headBranch,
-    handleFetch,
-    handlePull,
+    onFetch,
+    onPull,
     handlePush,
     handleRefresh,
     openNewBranch,
@@ -2358,8 +2406,8 @@ export function RepoWorkspace({
     graph,
     graphRef,
     handleRefresh,
-    handleFetch,
-    handlePull,
+    handleFetch: onFetch, // P63: refresh forge signals after fetch
+    handlePull: onPull, // P63: refresh forge signals after pull
     handlePush,
   });
 
@@ -2526,8 +2574,8 @@ export function RepoWorkspace({
         headBranch={headBranch}
         jobStatus={jobStatus}
         jobNow={jobNow}
-        onFetch={() => void handleFetch()}
-        onPull={() => void handlePull()}
+        onFetch={onFetch}
+        onPull={onPull}
         onPush={() => void handlePush()}
         onForcePush={() => handleForcePush()}
         onWhatChanged={() => setWhatChangedOpen(true)}
@@ -2589,6 +2637,7 @@ export function RepoWorkspace({
           display={graphDisplay}
           verifyStatus={verification.verifyStatus}
           onVisibleRangeChange={verification.onVisibleRangeChange}
+          onOpenPr={onOpenPr}
           search={search}
           searchScopeOptions={searchScopeOptions}
           historySearch={historySearch}
@@ -2642,6 +2691,7 @@ export function RepoWorkspace({
           rightPaneTab={rightPaneTab}
           onSelectRightPaneTab={setRightPaneTab}
           prDefaultHead={headBranch?.name ?? null}
+          prNav={prNav}
           opState={opState}
           conflicts={conflicts}
           mutating={mutating}

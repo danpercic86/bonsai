@@ -4,6 +4,7 @@ import type {
   CreatePrInput,
   ForgeRepoContext,
   PrDetail,
+  PrNavRequest,
   PrStateFilter,
   PrSummary,
   ReviewComment,
@@ -31,9 +32,12 @@ export interface PrPanelProps {
   defaultHead?: string | null;
   /** Base-branch hint for the create form (e.g. the upstream target). */
   defaultBase?: string | null;
+  /** P63: external "open PR N" request (from a graph PR-badge click). A bumped
+   *  `seq` re-opens even the same number. null ⇒ no pending navigation. */
+  openToPr?: PrNavRequest | null;
 }
 
-export function PrPanel({ repoId, defaultHead, defaultBase }: PrPanelProps) {
+export function PrPanel({ repoId, defaultHead, defaultBase, openToPr }: PrPanelProps) {
   const pushToast = usePushToast();
 
   const [ctx, setCtx] = useState<ForgeRepoContext | null>(null);
@@ -115,6 +119,20 @@ export function PrPanel({ repoId, defaultHead, defaultBase }: PrPanelProps) {
       },
     );
   }, [repoId, filter, listTick, authed, pushToast]);
+
+  // P63: react to an external "open PR N" request (a graph PR-badge click). Runs
+  // once per new `seq` while authenticated; unauthenticated ⇒ the bootstrap flow
+  // already shows ForgeConnect, so we simply wait (a later connect re-fires this
+  // via the `authed` dep). A per-seq guard prevents a ctx reload from re-opening.
+  const lastNavSeqRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (openToPr === null || openToPr === undefined || !authed) return;
+    if (lastNavSeqRef.current === openToPr.seq) return;
+    lastNavSeqRef.current = openToPr.seq;
+    loadDetail(openToPr.number);
+    // loadDetail is a stable component-scope fn; depend only on the request+auth.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openToPr, authed]);
 
   function loadDetail(number: number) {
     const id = ++detailReqRef.current;

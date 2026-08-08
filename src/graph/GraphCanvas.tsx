@@ -82,6 +82,10 @@ export interface GraphCanvasProps {
    *  first/last changed). Drives the debounced verify request for exactly the
    *  visible (overscanned) rows — the badge is virtualized. */
   onVisibleRangeChange?(first: number, last: number): void;
+  /** P63: a PR badge on a branch-tip pill was clicked → open that PR in the
+   *  right-pane PR panel. When absent, PR-badge clicks fall through to the
+   *  normal row-select. */
+  onOpenPr?(number: number): void;
 }
 
 /** P2c §5.2: imperative escape hatch — App needs the DOM-measured visible row
@@ -107,7 +111,10 @@ type TooltipState =
   | { kind: 'avatar'; text: string; anchor: Rect }
   | { kind: 'overflow'; lines: string[]; anchor: Rect }
   | { kind: 'ref'; text: string; anchor: Rect }
-  | { kind: 'date'; lines: string[]; anchor: Rect };
+  | { kind: 'date'; lines: string[]; anchor: Rect }
+  // P63: PR badge (`["PR #123 (open)", title]`) / CI dot (`["Checks: …"]`).
+  | { kind: 'pr'; lines: string[]; anchor: Rect }
+  | { kind: 'ci'; lines: string[]; anchor: Rect };
 
 /** P7 §6.1: cheap identity so `setTooltip` only re-renders on a real target
  *  change (kind + content), never per mouse pixel or per scroll frame. */
@@ -120,6 +127,12 @@ function sameTarget(a: TooltipState | null, b: TooltipState | null): boolean {
     return a.lines.join('␟') === b.lines.join('␟');
   }
   if (a.kind === 'date' && b.kind === 'date') {
+    return a.lines.join('␟') === b.lines.join('␟');
+  }
+  if (a.kind === 'pr' && b.kind === 'pr') {
+    return a.lines.join('␟') === b.lines.join('␟');
+  }
+  if (a.kind === 'ci' && b.kind === 'ci') {
     return a.lines.join('␟') === b.lines.join('␟');
   }
   return false;
@@ -184,6 +197,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     display,
     verifyStatus,
     onVisibleRangeChange,
+    onOpenPr,
   },
   ref,
 ) {
@@ -731,6 +745,10 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
           showAheadBehind: false,
           branchStats: new Map(),
           showSignatureBadge: false,
+          showPrBadge: false,
+          showCiStatus: false,
+          prByBranch: new Map(),
+          ciBySha: new Map(),
         };
         const laid = layoutRefLabels(ctx, entities, node, theme, startX, testBudget, noChipsDisplay);
         check('layoutRefLabels first entity laid', laid.length >= 1 && laid[0].entity !== null);
@@ -819,6 +837,32 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
           anchor: { left: hitLabel.x, top: cy - m.pillHeight / 2, width: hitLabel.w, height: m.pillHeight },
         };
       }
+      // P63: forge-signal badges — precedence AFTER the shown pill (the signal
+      // rects sit to the right of the pill body, so they never overlap it).
+      for (const l of laid) {
+        if (l.signals === null) continue;
+        const pr = l.signals.pr;
+        if (pr !== null && x >= pr.x && x <= pr.x + pr.w) {
+          const state = pr.badge.isDraft ? 'draft' : pr.badge.state;
+          return {
+            kind: 'pr',
+            lines: [`PR #${pr.badge.number} (${state})`, pr.badge.title],
+            anchor: { left: pr.x, top: cy - m.pillHeight / 2, width: pr.w, height: m.pillHeight },
+          };
+        }
+        const ci = l.signals.ci;
+        if (ci !== null) {
+          const half = m.ciBadgeSize / 2;
+          if (x >= ci.cx - half && x <= ci.cx + half) {
+            const b = ci.badge;
+            return {
+              kind: 'ci',
+              lines: [`Checks: ${b.passed} passed, ${b.failed} failed, ${b.pending} pending`],
+              anchor: { left: ci.cx - half, top: cy - half, width: m.ciBadgeSize, height: m.ciBadgeSize },
+            };
+          }
+        }
+      }
     }
     // P51b: hovering the date column → FULL absolute timestamps (authored +
     // committed), one per line; the inline date stays relative. Recompute the
@@ -894,17 +938,36 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const scroller = scrollerRef.current;
     if (scroller === null) return;
-    const y = e.clientY - scroller.getBoundingClientRect().top;
+    const rect = scroller.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const x = e.clientX - rect.left;
+    const m = metricsRef.current;
     const wipOffset = wip !== null ? 1 : 0;
-    const hit = hitTest(
-      y,
-      scroller.scrollTop,
-      wipOffset,
-      layout.nodes.length,
-      metricsRef.current.rowHeight,
-    );
-    if (hit === null || hit === 'wip') onSelect(null);
-    else onSelect(hit === selectedIndex ? null : hit);
+    const hit = hitTest(y, scroller.scrollTop, wipOffset, layout.nodes.length, m.rowHeight);
+    if (hit === null || hit === 'wip') {
+      onSelect(null);
+      return;
+    }
+    // P63: a PR badge in the LEFT ref band → open that PR (do NOT select the
+    // row). Recompute the row's laid labels with the SAME pure helper the draw
+    // pass + ref hit-tests use, so the signal rects match the pixels exactly.
+    const node = layout.nodes[hit];
+    if (onOpenPr !== undefined && x < m.refColWidth && node.refs !== undefined && node.refs.length > 0) {
+      const ctx = canvasRef.current?.getContext('2d') ?? null;
+      const theme = themeRef.current;
+      if (ctx !== null && theme !== null) {
+        const { startX, budget } = refColArea(m);
+        const laid = layoutRefLabels(ctx, groupRefs(node.refs), node, theme, startX, budget, display);
+        const prHit = laid.find(
+          (l) => l.signals?.pr != null && x >= l.signals.pr.x && x <= l.signals.pr.x + l.signals.pr.w,
+        );
+        if (prHit?.signals?.pr != null) {
+          onOpenPr(prHit.signals.pr.badge.number);
+          return;
+        }
+      }
+    }
+    onSelect(hit === selectedIndex ? null : hit);
   };
 
   // P5 §4.2 / P7 §5: right-click hit-test. Always suppress the native menu over
@@ -994,7 +1057,10 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
             top: `${tipPos?.top ?? tooltip.anchor.top + tooltip.anchor.height + 4}px`,
           }}
         >
-          {tooltip.kind === 'overflow' || tooltip.kind === 'date'
+          {tooltip.kind === 'overflow' ||
+          tooltip.kind === 'date' ||
+          tooltip.kind === 'pr' ||
+          tooltip.kind === 'ci'
             ? tooltip.lines.map((l, i) => <div key={i}>{l}</div>)
             : tooltip.text}
         </div>

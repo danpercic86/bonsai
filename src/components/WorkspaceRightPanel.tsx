@@ -16,6 +16,7 @@ import type {
   GraphLayout,
   HeadInfo,
   ListView,
+  PrNavRequest,
   RepoOpState,
   SigningStatus,
   StashScope,
@@ -37,6 +38,9 @@ export interface WorkspaceRightPanelProps {
   onSelectRightPaneTab(tab: 'work' | 'prs'): void;
   /** P62c: current branch name — seeds the PR create form's compare field. */
   prDefaultHead: string | null;
+  /** P63: external "open PR N" request from a graph PR-badge click (bumped
+   *  `seq` re-opens the same PR). Threaded into PrPanel's `openToPr`. */
+  prNav: PrNavRequest | null;
 
   opState: RepoOpState;
   conflicts: StatusPanelProps['conflicts'];
@@ -190,6 +194,7 @@ export function WorkspaceRightPanel({
   rightPaneTab,
   onSelectRightPaneTab,
   prDefaultHead,
+  prNav,
 }: WorkspaceRightPanelProps) {
   return (
     <aside className="right-panel" style={{ width: rightPanelWidth }}>
@@ -369,7 +374,7 @@ export function WorkspaceRightPanel({
       )}
       </div>
       {rightPaneTab === 'prs' && (
-        <PrPanel repoId={repoId} defaultHead={prDefaultHead} />
+        <PrPanel repoId={repoId} defaultHead={prDefaultHead} openToPr={prNav} />
       )}
     </aside>
   );

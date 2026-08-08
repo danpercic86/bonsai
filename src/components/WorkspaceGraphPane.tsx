@@ -50,6 +50,8 @@ export interface WorkspaceGraphPaneProps {
   verifyStatus: GraphCanvasProps['verifyStatus'];
   /** P58c: visible-window callback driving the debounced verify request. */
   onVisibleRangeChange: GraphCanvasProps['onVisibleRangeChange'];
+  /** P63: a graph PR-badge click → open that PR in the right-pane PR panel. */
+  onOpenPr: GraphCanvasProps['onOpenPr'];
 
   /** P50b: commit-search state (bar + graph highlight + next/prev jump). */
   search: UseCommitSearch;
@@ -149,6 +151,7 @@ export function WorkspaceGraphPane({
   display,
   verifyStatus,
   onVisibleRangeChange,
+  onOpenPr,
   search,
   searchScopeOptions,
   historySearch,
@@ -298,6 +301,7 @@ export function WorkspaceGraphPane({
             display={display}
             verifyStatus={verifyStatus}
             onVisibleRangeChange={onVisibleRangeChange}
+            onOpenPr={onOpenPr}
           />
         </ErrorBoundary>
       ) : null}
