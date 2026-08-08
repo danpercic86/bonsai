@@ -25,14 +25,24 @@ now CONFIRMED as of 2026-08-03. P18–P27 are fully DONE. Next: P28 (approved pl
 `~/.claude/plans/what-are-the-next-quiet-marble.md`): B3 what-changed digest →
 P29 D1 repo-health dashboard → P30 B5 scheduler → P31 per-worktree AI contexts.
 
-## ⏳ FOR USER — decisions to approve/change + native checkpoints (overnight autonomous run, 2026-08-08)
+**USER CHECKPOINT BATCH CONFIRMED (2026-08-08):** the user confirmed ALL remaining pending checkpoints in a
+single batch ("mark everything as checked"). Every item previously marked "awaiting USER CHECKPOINT" below is
+now CONFIRMED as of 2026-08-08 — this clears every outstanding native checkpoint from **P28 through P61**
+(incl. P32, P37–P46, the credential-cache + UX-fix batches, Phase 1 P49–P52, Phase 2 P53–P57, and Phase 3
+P58–P61). The FOR-USER defaulted decisions (P55 undo-merge = reset-to-first-parent, P57 BM25 retrieval,
+P61 hand-rolled base64) were reviewed and **ACCEPTED AS-IS** (no changes requested). The **entire approved
+roadmap P49–P61 is now fully DONE** (AI gate + USER CHECKPOINT both passed). Only Phase 4 (forge/PR P62–P64)
+and paged-loading P65 remain unbuilt — deliberately out of scope of this grant.
+
+## ✅ FOR USER — RESOLVED 2026-08-08 (decisions accepted + all native checkpoints confirmed)
 
 User granted an overnight autonomous run ("implement everything from the plan; leave things you need from
-me to choose/approve tomorrow"). I proceed on sensible defaults (accepting the architect's recommendations)
-and collect everything that's genuinely the user's call here. **None of these block** — all are
-confirm-gated at runtime or trivially changed in code.
+me to choose/approve tomorrow"), then on 2026-08-08 said "mark everything as checked" — so the defaulted
+decisions below are **ACCEPTED AS-IS** and all native checkpoints are **CONFIRMED** (see the batch banner
+above). Kept here for the record; nothing outstanding. All items were confirm-gated at runtime or trivially
+changed in code.
 
-**Defaulted decisions (change any tomorrow):**
+**Defaulted decisions — ACCEPTED AS-IS 2026-08-08 (change anytime later):**
 - **P55 `undoLastMerge` semantics** = reset-to-first-parent (Mixed; REWRITES history), flagged Destructive
   + shared-history warning, shown in a read-only preview before an explicit Confirm. Alt: `revert -m 1`
   (adds a commit, never rewrites). One-line SafeOp mapping to switch, or add a dialog toggle. ← riskiest default.
@@ -42,15 +52,14 @@ confirm-gated at runtime or trivially changed in code.
   Cargo.lock/Cargo.toml. Swap to the crate anytime.
 - **OD1** (already confirmed): AI stays local-`claude`-CLI-only; model tiers deferred.
 
-**Native USER CHECKPOINTs accrued** (need `pnpm tauri dev` + real CLI/keys — cannot self-verify) —
-ALL of Phases 1–3 now landed: Phase 1 P49–P52; Phase 2 P53–P57; Phase 3 P58 (real signing keys) +
-P59 (hooks fire) + P60 + P61 (intraline + image diff across workdir/commit/compare).
-Checklists: `docs/contracts/P<N>-user-checklist.md`.
+**Native USER CHECKPOINTs — ALL CONFIRMED 2026-08-08** (user marked everything checked): Phase 1 P49–P52;
+Phase 2 P53–P57; Phase 3 P58 (signing) + P59 (hooks) + P60 + P61 (intraline + image diff across
+workdir/commit/compare). Checklists retained for reference: `docs/contracts/P<N>-user-checklist.md`.
 
 **Untouched throughout:** your 4 in-progress files (Cargo.lock, package.json, src-tauri/Cargo.toml,
 tauri.conf.json = the 0.3.0→0.3.1 bump) and `docs/audit-2026-08-07.md` (another session's file).
 
-## P61 — diff quality: word-level/intraline highlighting + image diff (Phase 3 · milestone 4/4, FINAL) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
+## P61 — diff quality: word-level/intraline highlighting + image diff (Phase 3 · milestone 4/4, FINAL) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-08)
 
 Contract: `docs/contracts/P61-diff-quality.md`. Both backend-computed + React-rendered + opt-in/toggleable.
 Adds +1 command (get_image_diff; 146→147; intraline adds NONE). NO OD1 dependency.
@@ -127,7 +136,7 @@ they were never part of this autonomous grant). Phase 1 (P49–P52) + Phase 2 (P
 (`docs/contracts/P{49..61}-user-checklist.md`) which require `pnpm tauri dev` + real CLI/keys and
 cannot be self-verified. Command count: **147**.
 
-## P60 — parity batch: rename · non-FF pull · undo · submodule add/deinit/remove (Phase 3 · milestone 3/4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
+## P60 — parity batch: rename · non-FF pull · undo · submodule add/deinit/remove (Phase 3 · milestone 3/4) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-08)
 
 Contract: `docs/contracts/P60-parity-batch.md`. 4 independent table-stakes items, max reuse of shipped
 primitives. Adds +5 commands (141→146; non-FF pull adds NONE). NO OD1 dependency.
@@ -196,7 +205,7 @@ recount vs lib.rs (base 141).
 **Current step:** P60 DONE (AI gate passed, awaiting USER CHECKPOINT). Phase 3 FINAL milestone: **P61 (diff
 quality: intraline/word diff + image diff)** — then mark **Phase 3 finished** (per user instruction).
 
-## P59 — git hooks execution + force-push-lease hardening (Phase 3 · milestone 2/4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
+## P59 — git hooks execution + force-push-lease hardening (Phase 3 · milestone 2/4) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-08)
 
 Contract: `docs/contracts/P59-hooks-and-lease-hardening.md`. Reuses the P58 `exec.rs` seam. Two trust fixes.
 
@@ -287,7 +296,7 @@ fan-out (like P58 sign; all pass false) — flag a future `CommitOpts` struct.
 **Current step:** P59 DONE (AI gate passed, awaiting USER CHECKPOINT). Phase 3 milestone 3/4 next: **P60
 (parity batch: rename / non-FF pull / one-click undo / submodule add-deinit-remove)**.
 
-## P58 — real commit signing + verification (Phase 3 · milestone 1/4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
+## P58 — real commit signing + verification (Phase 3 · milestone 1/4) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-08)
 
 Contract: `docs/contracts/P58-commit-signing.md`. Phase 3 (correctness & parity) — NO OD1 dependency.
 Lights the P51 verified-badge stub.
@@ -367,7 +376,7 @@ panel line + sign toggle + `showSignatureBadge` pref).
 **Current step:** P58 DONE (AI gate passed, awaiting USER CHECKPOINT). Phase 3 milestone 2/4 next: **P59
 (git hooks execution + force-push-lease hardening)** — reuses the P58 `exec.rs` seam.
 
-## P57 — semantic commit-history search (Phase 2 · milestone 5/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
+## P57 — semantic commit-history search (Phase 2 · milestone 5/5) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-08)
 
 Contract: `docs/contracts/P57-semantic-history-search.md`. OD1 = local-`claude`-CLI-only. Highest build
 cost; Phase-2 FINAL. **Retriever = BM25 v1 (embeddings DEFERRED per OD1 / FOR USER).**
@@ -434,7 +443,7 @@ Sub-increments (strictly ordered): **P57a** index builder + persistence + status
 USER CHECKPOINTs (`docs/contracts/P5{3,4,5,6,7}-user-checklist.md`). Next: **Phase 3 (correctness & parity)
 — P58 commit signing** (no OD1 dependency).
 
-## P56 — local AI changelog / release-notes (Phase 2 · milestone 4/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
+## P56 — local AI changelog / release-notes (Phase 2 · milestone 4/5) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-08)
 
 Contract: `docs/contracts/P56-local-changelog.md`. OD1 = local-`claude`-CLI-only. Smaller milestone (S–M).
 
@@ -485,7 +494,7 @@ Sub-increments: **P56a** core (`ai_changelog.rs`: `generate_changelog` + `resolv
 **Current step:** P56 DONE (AI gate passed, awaiting USER CHECKPOINT). Phase 2 FINAL milestone: **P57
 (semantic commit-history search — BM25 v1, embeddings deferred per OD1 / FOR USER)**.
 
-## P55 — natural-language → SAFE git operation (Phase 2 · milestone 3/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
+## P55 — natural-language → SAFE git operation (Phase 2 · milestone 3/5) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-08)
 
 Contract: `docs/contracts/P55-nl-to-safe-git-op.md`. OD1 = local-`claude`-CLI-only. The highest-trust-risk
 Phase-2 feature — the safety model (§2) is the centerpiece.
@@ -551,7 +560,7 @@ tests `plan_never_mutates` + `out_of_allowlist_is_unsupported`) + `ai_plan_opera
 **Current step:** P55 DONE (AI gate passed, awaiting USER CHECKPOINT). Phase 2 milestone 4/5 next: **P56
 (local AI changelog / release-notes)**.
 
-## P54 — commit composer: WIP → N logical commits (Phase 2 · milestone 2/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
+## P54 — commit composer: WIP → N logical commits (Phase 2 · milestone 2/5) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-08)
 
 Phase 2 milestone 2. User chose "Continue to P54" after P53. Contract: `docs/contracts/P54-commit-composer.md`
 (+ overview). OD1 remains local-`claude`-CLI-only.
@@ -628,7 +637,7 @@ Esc-layer). a→b→c (b reuses `ComposeGroup` from a; c needs both).
 **Current step:** P54 DONE (AI gate passed, awaiting USER CHECKPOINT `docs/contracts/P54-user-checklist.md`).
 Next Phase-2 milestone: **P55 (natural-language → safe git op)**.
 
-## P53 — AI "why" layer: blame-why + explain-commit + branch naming (Phase 2 · milestone 1/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
+## P53 — AI "why" layer: blame-why + explain-commit + branch naming (Phase 2 · milestone 1/5) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-07)
 
 Phase 2 first milestone. User greenlit implementation (main clear) + chose **P53 first** + **OD1 =
 local-`claude`-CLI-only, model-tier trait DEFERRED**. Contract: `docs/contracts/P53-ai-why-layer.md`
@@ -778,7 +787,7 @@ tiers deferred). See the "## P53 …" section at the TOP of this file for live s
 native USER CHECKPOINTs still pending; the P55 undo-merge + P61 `base64`-crate sign-offs are still
 needed when those milestones are reached.
 
-## P52 — adopt git's commit-graph file (Phase 1 · large-repo perf) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
+## P52 — adopt git's commit-graph file (Phase 1 · large-repo perf) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-07)
 
 Phase 1 milestone 4 of 4 (final). Roadmap: `~/.claude/plans/do-thorough-analysis-of-purrfect-moth.md`.
 
@@ -851,7 +860,7 @@ branch naming → P54 commit composer → P55 NL→safe git op → P56 local cha
 Do NOT start Phase 2 without user approval + confirming OD1 (their grant was "finish Phase 1" then
 "prepare Phase 2 and 3 without changing code" only).
 
-## P51 — commit-graph polish + clutter controls (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
+## P51 — commit-graph polish + clutter controls (Phase 1) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-07)
 
 Phase 1 milestone 3 of 4. User chose "Finish Phase 1 (P51+P52)" + granted a 3h autonomous window.
 Roadmap: `~/.claude/plans/do-thorough-analysis-of-purrfect-moth.md`.
@@ -926,7 +935,7 @@ crowded-row `+n` folding.
 **Current step:** P51 DONE (AI gate passed, awaiting USER CHECKPOINT). Starting **P52** (adopt git's
 commit-graph file — Phase-1 milestone 4/4; also targets the health 20k perf gate).
 
-## P50 — commit/content search + command palette + list filtering (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
+## P50 — commit/content search + command palette + list filtering (Phase 1) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-07)
 
 Phase 1 milestone 2 of 4 (roadmap `~/.claude/plans/do-thorough-analysis-of-purrfect-moth.md`).
 Three keyboard-first discovery features, all ABSENT today (Sublime Merge's signature strength).
@@ -1022,7 +1031,7 @@ Remotes/Tags filters on a real repo.
 batched. ⚠ Follow-up: health 20k perf-ceiling gate failing (see P50 tester) — task chip spawned
 (task_e253301f); fold into P52.
 
-## P49 — external integrations: open in terminal / file manager / editor (Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-07)
+## P49 — external integrations: open in terminal / file manager / editor (Phase 1) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-07)
 
 Roadmap approved 2026-08-06 from a feature-gap analysis (6 research streams: codebase inventory +
 worldwide Git-client reviews + AI+git use-cases + terminal/graph/perf). Full plan:
@@ -1206,7 +1215,7 @@ console/build errors and no boundary fallback.
 - **Release cut (deferred):** bump to `1.0.0` across the 3 manifests, tag `v1.0.0` → CI matrix
   builds/publishes. Do after the user's pending changes.
 
-## P46 — diff viewer: split view + copyable selection + auto-advance — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-05)
+## P46 — diff viewer: split view + copyable selection + auto-advance — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-05)
 
 Three user-requested diff-viewer enhancements. Approved plan:
 `~/.claude/plans/1-what-it-would-fluttering-thimble.md`. Contract + architect design appendix:
@@ -1244,7 +1253,7 @@ unstaged file; staging scratch.rs (last)→overlay closes. **USER CHECKPOINT (mu
 native `pnpm tauri dev` — confirm OS-clipboard `Ctrl+C` from a diff, split-view scroll/resize feel
 + per-cell/gutter staging, and the stage→next-file / stage-last→close flow on a scratch repo.
 
-## P45 — per-line discard action (mirrors "Stage 1 line") — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-05)
+## P45 — per-line discard action (mirrors "Stage 1 line") — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-05)
 
 User request: a per-line discard, similar to the existing per-line stage. Approved plan:
 `~/.claude/plans/i-want-to-have-adaptive-engelbart.md`. User chose **both** affordances (question
@@ -1277,7 +1286,7 @@ to 34px. **USER CHECKPOINT (must NOT self-pass):** native `pnpm tauri dev` on a 
 discard one line (gutter) + a range (float), verify `git diff` shows only the non-discarded changes
 and `git diff --cached` is unchanged.
 
-## P44 — settings improvements (4 user requests) — **DONE (code AI-gate passed, awaiting USER CHECKPOINT)** (2026-08-05)
+## P44 — settings improvements (4 user requests) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-05)
 
 Direct user feedback, 4 items. Approved plan: `~/.claude/plans/i-want-the-following-fluffy-lerdorf.md`.
 Decisions locked via question prompt: #2 = lightweight **named identity profiles** (name/email
@@ -1323,7 +1332,7 @@ backcompat), commands apply_identity_profile NoRepo 1; pnpm build (tsc+vite) cle
 Work wrote mock Local user.email=work@bonsai.dev and lit the "Active on this repo" badge on Work.
 Awaiting USER CHECKPOINT (native, listed in section head).
 
-## P42 — packaging + auto-update (Productization) — **DONE (code AI-gate passed, awaiting USER CHECKPOINT)** (2026-08-05)
+## P42 — packaging + auto-update (Productization) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-05)
 
 Productization milestone. **User explicitly requested auto-updates (2026-08-04, "do not forget about
 auto updates").** Tauri v2 updater plugin + a check-for-update/update-available/download-install flow,
@@ -1386,7 +1395,7 @@ untracked-clobber safety fix + P43 onboarding + P42 auto-update. P41 LFS deferre
 stacked native USER CHECKPOINTs (docs/contracts/P*-user-checklist.md) + P42 release secrets. Autonomous
 session wrap-up.
 
-## P43 — first-run onboarding + empty-state polish (Productization) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
+## P43 — first-run onboarding + empty-state polish (Productization) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-04)
 
 Productization milestone. User decision (2026-08-04): **skip P41 LFS (niche) and P42 packaging (needs
 signing secrets) for now → build P43 onboarding.** Goal: a guided first-run experience (welcome →
@@ -1445,7 +1454,7 @@ welcome tour" reopens; ?onboarding=1 force-shows; no-repo EmptyState + unborn "f
 **Current step:** P43 DONE. Onboarding shipped. Next: P42 (auto-update — user-requested; the last
 in-flight milestone this session).
 
-## P40 — git config editing (Git completeness, Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
+## P40 — git config editing (Git completeness, Phase 1) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-04)
 
 Git-completeness milestone #4. Read/edit git config in-app: curated identity/behavior keys (user.name/
 email, core.autocrlf, init.defaultBranch, pull.ff|rebase) + arbitrary `section.key` entries, at Local
@@ -1511,7 +1520,7 @@ block → "Set identity…" → unblock; invalid key rejected inline.
 **Current step:** P40 DONE (AI gate passed, awaiting USER CHECKPOINT). Four Git-completeness milestones
 (P37-P40) landed. PAUSED for user P41 (LFS) scope decision.
 
-## P39 — git bisect (Git completeness, Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
+## P39 — git bisect (Git completeness, Phase 1) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-04)
 
 Git-completeness milestone #3. Binary-search for the regression-introducing commit: start (mark
 good+bad), mark good/bad/skip the checked-out midpoint, reset (abort → original HEAD/branch); the
@@ -1582,7 +1591,7 @@ per docs/contracts/P39-user-checklist.md): two-click canvas start (mark BAD → 
 USER CHECKPOINT because the canvas commit-menu + in-progress OpBanner aren't drivable in the AI harness.
 **Current step:** P39 DONE (AI gate passed, awaiting USER CHECKPOINT). Next: P40 (config editing).
 
-## P38 — reflog viewer + restore (Git completeness, Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
+## P38 — reflog viewer + restore (Git completeness, Phase 1) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-04)
 
 Git-completeness milestone #2. The safety net for force-push (P37) / rebase (P23) / amend (P20) /
 reset: read HEAD + per-branch reflog, present entries (short oid, old→new, message, committer/time,
@@ -1630,7 +1639,7 @@ moves the branch there after the destructive confirm (Cancel = no-op); branch-me
 a no-reflog branch shows an empty placeholder, not an error.
 **Current step:** P38 DONE (AI gate passed, awaiting USER CHECKPOINT). Next: P39 (bisect).
 
-## P37 — force-push-with-lease (Git completeness, Phase 1) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-04)
+## P37 — force-push-with-lease (Git completeness, Phase 1) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-04)
 
 New phase (approved plan `~/.claude/plans/if-we-think-about-eager-hoare.md`): the 4-theme roadmap is
 ~90% shipped, so the next phase is **Git completeness (parity) + productization**. User decision
