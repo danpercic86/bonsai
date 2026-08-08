@@ -170,6 +170,29 @@ export function clampGraphPrefs(g: GraphPrefs): GraphPrefs {
   };
 }
 
+/** Per-element validation for persisted identity profiles (mirrors readRecents):
+ *  keep only objects carrying the required IdentityProfile string fields
+ *  (`signingKey` may be null). Returns null when the input is not an array or
+ *  when a NON-empty array yields no survivors (all corrupt) — the caller falls
+ *  back to defaults. A legitimately empty list stays empty (the user deleted
+ *  all profiles; don't resurrect the seeds). Pure. */
+export function sanitizeProfiles(raw: unknown): IdentityProfile[] | null {
+  if (!Array.isArray(raw)) return null;
+  if (raw.length === 0) return [];
+  const valid = raw.filter(
+    (p): p is IdentityProfile =>
+      typeof p === 'object' &&
+      p !== null &&
+      typeof (p as IdentityProfile).id === 'string' &&
+      typeof (p as IdentityProfile).label === 'string' &&
+      typeof (p as IdentityProfile).userName === 'string' &&
+      typeof (p as IdentityProfile).userEmail === 'string' &&
+      ((p as IdentityProfile).signingKey === null ||
+        typeof (p as IdentityProfile).signingKey === 'string'),
+  );
+  return valid.length > 0 ? valid : null;
+}
+
 /** Corrupt/missing storage degrades to the default — mirrors load_from. */
 export function readUiSettings(): UiSettings {
   try {
@@ -266,10 +289,10 @@ export function readUiSettings(): UiSettings {
       typeof parsed.autoCheckUpdates === 'boolean'
         ? parsed.autoCheckUpdates
         : DEFAULT_UI_SETTINGS.autoCheckUpdates;
-    // P44 identity profiles (additive): degrade to default if absent/malformed.
-    const profiles: IdentityProfile[] = Array.isArray(parsed.profiles)
-      ? parsed.profiles
-      : structuredClone(DEFAULT_UI_SETTINGS.profiles);
+    // P44 identity profiles (additive): validate per-element (like readRecents);
+    // degrade to default when absent/malformed or when no element survives.
+    const profiles: IdentityProfile[] =
+      sanitizeProfiles(parsed.profiles) ?? structuredClone(DEFAULT_UI_SETTINGS.profiles);
     // P49 external-tool templates (additive): fall back to default ("").
     const terminalCommand =
       typeof parsed.terminalCommand === 'string'

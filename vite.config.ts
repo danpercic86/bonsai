@@ -8,7 +8,7 @@ export default defineConfig({
   test: {
     // Node environment is enough — the helpers under test are pure string logic.
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
   },
   server: {
     // PORT override lets a second dev server (e.g. another agent session) pick

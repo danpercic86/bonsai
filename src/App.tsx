@@ -292,7 +292,10 @@ export default function App() {
       } catch (e) {
         const msg = errorMessage(e);
         if (isAppError(e) && e.kind === 'io') {
-          void ipc.removeRecentRepo(path).then(setRecents);
+          void ipc.removeRecentRepo(path).then(setRecents, () => {
+            // Non-fatal: the recents prune is best-effort; the stale entry
+            // simply survives until the next successful open.
+          });
         }
         if (tabsRef.current.length > 0) pushToast('error', msg);
         else setError(msg);
@@ -555,10 +558,14 @@ export default function App() {
       const path = await ipc.pickFolder();
       if (path === null) return; // cancelled
       await openTab(path);
+    } catch (e) {
+      // openTab handles its own errors; this catches a picker failure so the
+      // rejection never escapes the event handler (non-fatal).
+      pushToast('error', errorMessage(e));
     } finally {
       setLoading(false);
     }
-  }, [openTab]);
+  }, [openTab, pushToast]);
 
   // ----- Clone (P21) -----
   const handleCloneOpen = useCallback(() => {
@@ -578,8 +585,13 @@ export default function App() {
   }, []);
 
   const handleClonePickDest = useCallback(async () => {
-    const path = await ipc.pickFolder();
-    if (path !== null) setCloneDest(path);
+    try {
+      const path = await ipc.pickFolder();
+      if (path !== null) setCloneDest(path);
+    } catch (e) {
+      // Surface in the clone dialog; a picker failure is non-fatal.
+      setCloneError(errorMessage(e));
+    }
   }, []);
 
   const handleCloneSubmit = useCallback(
@@ -810,20 +822,32 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Esc: close the shortcut overlay (TabStrip's own Esc handles its menu; skip
-  // when its menu consumed the keypress). Workspace Esc-layering is separate.
+  // Esc: close only the TOPMOST global overlay per keypress (LIFO peel:
+  // shortcut overlay → settings → AI assets → health → onboarding). TabStrip's
+  // own Esc handles its menu; skip when it consumed the keypress. Workspace
+  // Esc-layering is separate.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (menuOpen) return;
-      if (onboardingOpen) closeOnboarding();
-      if (healthOpen) setHealthOpen(false);
-      if (aiAssetsOpen) setAiAssetsOpen(false);
+      if (overlayOpen) {
+        setOverlayOpen(false);
+        return;
+      }
       if (settingsOpen) {
         setSettingsOpen(false);
         setConfigFocus(null);
+        return;
       }
-      if (overlayOpen) setOverlayOpen(false);
+      if (aiAssetsOpen) {
+        setAiAssetsOpen(false);
+        return;
+      }
+      if (healthOpen) {
+        setHealthOpen(false);
+        return;
+      }
+      if (onboardingOpen) closeOnboarding();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);

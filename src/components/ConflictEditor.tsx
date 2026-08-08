@@ -423,12 +423,17 @@ export function ConflictEditor({ file, onResolve, onCancel, mutating }: Conflict
     // Lazy syntax highlighting: resolve + load the grammar, then reconfigure each
     // mounted view's language compartment. Guarded via `disposed` against a mode
     // or file switch (or unmount) that lands before the async load resolves.
-    void loadLanguageExtension(file.path).then((ext) => {
-      if (disposed || ext === null) return;
-      for (const target of langTargets) {
-        target.view.dispatch({ effects: target.comp.reconfigure(ext) });
-      }
-    });
+    void loadLanguageExtension(file.path)
+      .then((ext) => {
+        if (disposed || ext === null) return;
+        for (const target of langTargets) {
+          target.view.dispatch({ effects: target.comp.reconfigure(ext) });
+        }
+      })
+      .catch(() => {
+        // Non-fatal: a failed grammar load just falls back to no syntax
+        // highlighting — the editor itself is unaffected.
+      });
 
     return () => {
       disposed = true;

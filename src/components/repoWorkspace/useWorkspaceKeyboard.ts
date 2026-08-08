@@ -217,7 +217,15 @@ export function useWorkspaceKeyboard(deps: {
 
       if (e.key === 'F5' || (ctrl && e.key.toLowerCase() === 'r')) {
         e.preventDefault();
-        const canRefresh = !refreshing && !statusLoading && !graphLoading && !mutating;
+        // Also suppressed while a confirm dialog is pending — a refresh could
+        // invalidate the state the dialog is about to act on.
+        const canRefresh =
+          !refreshing &&
+          !statusLoading &&
+          !graphLoading &&
+          !mutating &&
+          !dialogOpen &&
+          !abortConfirmOpen;
         if (canRefresh) void handleRefresh();
         return;
       }

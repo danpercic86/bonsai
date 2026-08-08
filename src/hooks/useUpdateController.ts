@@ -2,7 +2,10 @@
 // idle → checking → (available | upToDate | error) → downloading → readyToRestart
 // flow behind Bonsai's IPC-triple (`checkForUpdate` / `downloadAndInstallUpdate` /
 // `relaunchApp`). Never auto-installs: an available update only NOTIFIES; the user
-// drives download and the (process-exiting) restart. See docs/contracts/P42.
+// drives download and the (process-exiting) restart. Guards: `check()` is a no-op
+// while downloading/readyToRestart (a mid-download check must not wipe progress or
+// enable a second download); `download()` only fires from available/error (Retry).
+// See docs/contracts/P42.
 
 import { useCallback, useRef, useState } from 'react';
 
@@ -52,9 +55,16 @@ export function useUpdateController(): UpdateController {
   const infoRef = useRef<UpdateCheckResult | null>(null);
   // Re-entrancy guard: a launch auto-check + a manual check must not overlap.
   const checkingRef = useRef(false);
+  // `check`/`download` are empty-deps callbacks — they read the CURRENT status
+  // from this render-synced ref rather than a stale closure.
+  const statusRef = useRef(state.status);
+  statusRef.current = state.status;
 
   const check = useCallback(async (silent = false): Promise<void> => {
     if (checkingRef.current) return;
+    // A check while a download is in flight (or installed, awaiting restart)
+    // would wipe progress and could enable a second concurrent download.
+    if (statusRef.current === 'downloading' || statusRef.current === 'readyToRestart') return;
     checkingRef.current = true;
     if (!silent) setState({ status: 'checking' });
     try {
@@ -69,6 +79,9 @@ export function useUpdateController(): UpdateController {
         setState(silent ? { status: 'idle' } : { status: 'upToDate' });
       }
     } catch (e) {
+      // A failed CHECK must not leave a stale earlier payload behind — the
+      // error dialog's Retry is only meant to re-drive a failed DOWNLOAD.
+      infoRef.current = null;
       // A silent launch check swallows failures (no surprise toast/dialog).
       setState(silent ? { status: 'idle' } : { status: 'error', message: errorMessage(e) });
     } finally {
@@ -79,6 +92,12 @@ export function useUpdateController(): UpdateController {
   const download = useCallback((): void => {
     const info = infoRef.current;
     if (info === null) return;
+    // Only start from available (first download) or error (dialog Retry) — a
+    // re-click mid-download must not launch a second concurrent install.
+    if (statusRef.current !== 'available' && statusRef.current !== 'error') return;
+    // Advance the ref eagerly (not just on the next render) so a double-click
+    // in the same tick can't slip past the guard above.
+    statusRef.current = 'downloading';
     setState({
       status: 'downloading',
       info,

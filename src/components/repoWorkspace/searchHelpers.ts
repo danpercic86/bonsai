@@ -1,4 +1,4 @@
-import type { GraphLayout, SearchResults } from '../../ipc';
+import type { GraphLayout, SearchQuery, SearchResults } from '../../ipc';
 
 /** P50b: pure helpers for commit-search graph highlight + next/prev jump. Kept
  *  separate from the hook so the index math is trivially unit-testable and
@@ -21,6 +21,21 @@ export function deriveMatchRows(
     if (row !== undefined) rows.push(row);
   }
   return rows;
+}
+
+/** Serialized query identity — drives the content-mode "needs (re)submit" flag
+ *  so Enter runs the pickaxe once, then advances matches (browser-find feel).
+ *  Joined with `'\0'` (never appears in the fields) so queries whose text
+ *  contains the separator cannot collide. Pure. */
+export function queryKey(q: SearchQuery): string {
+  return [
+    q.field,
+    q.text,
+    q.regex ? 1 : 0,
+    q.caseSensitive ? 1 : 0,
+    q.scopeRef ?? '',
+    q.maxResults,
+  ].join('\0');
 }
 
 /** Next match index with wrap-around. `cur < 0` (no current match) starts at

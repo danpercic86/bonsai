@@ -60,7 +60,7 @@ import type {
   WorktreeInfo,
 } from '../ipc';
 import { usePushToast } from '../ToastContext';
-import { errorMessage } from '../utils/errors';
+import { errorMessage, isAppError } from '../utils/errors';
 import { isImagePath } from '../utils/imagePaths';
 
 import { useRemoteOps, type NonFfPullInfo } from './repoWorkspace/useRemoteOps';
@@ -761,10 +761,18 @@ export function RepoWorkspace({
       setCompareData(cd);
       setCompareLoading(false);
       setCompareError(null);
-    } catch {
+    } catch (e) {
       if (id !== compareReqId.current) return;
-      clearCompare();
-      pushToast('info', 'Compared commit is no longer in this repository');
+      // Only a `git`-kind rejection means the compared commit is genuinely gone
+      // (contract above). Transient failures (io/network/other) keep compare
+      // mode active and surface via the inline compare error state instead.
+      if (isAppError(e) && e.kind === 'git') {
+        clearCompare();
+        pushToast('info', 'Compared commit is no longer in this repository');
+      } else {
+        setCompareLoading(false);
+        setCompareError(errorMessage(e));
+      }
     }
   }, [repoId, clearCompare, pushToast]);
 
@@ -1156,12 +1164,17 @@ export function RepoWorkspace({
   }, [selectedIndex, graph, repoId]);
 
   // P11g-rev §4.2: reset scope + close the commit browser whenever the active
-  // source changes (new compare target, or a different commit selected). Compare
-  // auto-open then renders at root; commit mode returns to closed.
+  // source changes (new compare target, or a DIFFERENT commit selected). Keyed
+  // on the selected commit's OID — not the row index — so a background refetch
+  // that merely shifts rows never closes an open browser (same-OID preservation,
+  // mirroring the commit-diff effect above). Compare auto-open then renders at
+  // root; commit mode returns to closed.
+  const selectedOid =
+    selectedIndex !== null && graph !== null ? (graph.nodes[selectedIndex]?.id ?? null) : null;
   useEffect(() => {
     setScope({ kind: 'root' });
     setCommitBrowserOpen(false);
-  }, [compare?.oid, selectedIndex]);
+  }, [compare?.oid, selectedOid]);
 
   // repo-changed subscription: filter to THIS repo; refetch regardless of active
   // so a background tab stays fresh when its watcher fires (§7).
@@ -1187,7 +1200,11 @@ export function RepoWorkspace({
       }
       unsubs.push(off);
     };
-    void subscribe();
+    // Subscription loss = degraded live refresh only (manual refresh + focus
+    // rescan still work) — log, don't crash.
+    void subscribe().catch((e: unknown) => {
+      console.error('repo-changed subscription failed', e);
+    });
     return () => {
       cancelled = true;
       for (const unsub of unsubs) unsub();
@@ -1229,7 +1246,10 @@ export function RepoWorkspace({
       }
       unsubs.push(off);
     };
-    void subscribe();
+    // Subscription loss = degraded live refresh only (manual refresh works).
+    void subscribe().catch((e: unknown) => {
+      console.error('window-focus subscription failed', e);
+    });
     return () => {
       cancelled = true;
       for (const unsub of unsubs) unsub();
@@ -1305,7 +1325,10 @@ export function RepoWorkspace({
       }
       unsubs.push(off);
     };
-    void subscribe();
+    // Subscription loss = degraded job-status readout only — log, don't crash.
+    void subscribe().catch((e: unknown) => {
+      console.error('job-status subscription failed', e);
+    });
     return () => {
       cancelled = true;
       for (const unsub of unsubs) unsub();
@@ -1337,8 +1360,7 @@ export function RepoWorkspace({
   // P58c: the selected commit's signature verdict for the CommitPanel line —
   // reuses the shared verify cache (single source; no extra IPC). null when
   // nothing is selected, not yet verified, or the badge is disabled.
-  const selectedOid =
-    selectedIndex !== null && graph !== null ? (graph.nodes[selectedIndex]?.id ?? null) : null;
+  // (`selectedOid` is derived once above, by the scope-reset effect.)
   const commitSignature =
     selectedOid !== null ? (verification.detailsFor(selectedOid) ?? null) : null;
 
