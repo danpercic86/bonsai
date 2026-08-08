@@ -49,7 +49,7 @@ Checklists: `docs/contracts/P<N>-user-checklist.md`.
 **Untouched throughout:** your 4 in-progress files (Cargo.lock, package.json, src-tauri/Cargo.toml,
 tauri.conf.json = the 0.3.0→0.3.1 bump) and `docs/audit-2026-08-07.md` (another session's file).
 
-## P60 — parity batch: rename · non-FF pull · undo · submodule add/deinit/remove (Phase 3 · milestone 3/4) — **IN PROGRESS** (2026-08-08)
+## P60 — parity batch: rename · non-FF pull · undo · submodule add/deinit/remove (Phase 3 · milestone 3/4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
 Contract: `docs/contracts/P60-parity-batch.md`. 4 independent table-stakes items, max reuse of shipped
 primitives. Adds +5 commands (141→146; non-FF pull adds NONE). NO OD1 dependency.
@@ -104,8 +104,19 @@ recount vs lib.rs (base 141).
   mock (moved to submodules.ts). Frontend: Sidebar submodule section + "+"; Add(url+path)/Deinit(confirm)/
   Remove(DESTRUCTIVE). submodule 9/9 + CLI oracle roundtrip (parity w/ real git) + argv injection test;
   clippy -D + build/tsc clean. Nits: add-traversal→Other (doc); always-shown empty section; empty .git/modules parent.
-**Current step:** P60a+b+c+d DONE (committed). Next: **P60 tester** (full regression + `P60-user-checklist.md`
-— rename / non-FF pull / undo / submodules native) → P60 AI gate → P60 done → P61.
+- **P60 tester** — orchestrator-verified (the tester's cargo run was interrupted at the Agent boundary; it
+  wrote only the checklist): `cargo test --workspace` GREEN (0 failed; bonsai 110 + bonsai-core 563 lib +
+  all integration; 3 perf gates ignored), vitest **139/139**, clippy -D clean. Wrote
+  `docs/contracts/P60-user-checklist.md`.
+- **P60 AI GATE PASSED (2026-08-08).** Backend workspace green incl. rename 7 + CLI oracle (upstream
+  preserved, wasHead), undo 10 (truth-table + CLI oracle), submodule 9 + add/deinit/remove roundtrip oracle
+  + argv injection test, pull-diverged oracle (upstream==@{u}) + reviewer verification of all 4 (current-
+  branch rename reachable; non-FF pull = NO backend merge/rebase; undo READ-ONLY + safe mixed/hard
+  classifier; submodule shell-out injection-safe). vitest 139. Native rename(current branch) / non-FF-pull-
+  vs-real-remote / undo-dialogs / submodule-add-from-URL = USER CHECKPOINT (`docs/contracts/P60-user-checklist.md`).
+  Commits `869ef8c`(a+b) · `92125bb`(c) · `f72d056`(d) · tester.
+**Current step:** P60 DONE (AI gate passed, awaiting USER CHECKPOINT). Phase 3 FINAL milestone: **P61 (diff
+quality: intraline/word diff + image diff)** — then mark **Phase 3 finished** (per user instruction).
 
 ## P59 — git hooks execution + force-push-lease hardening (Phase 3 · milestone 2/4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
