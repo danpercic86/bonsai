@@ -139,6 +139,7 @@ pub fn run() {
             commands::history_index_build,
             commands::history_index_status,
             commands::history_search,
+            commands::ai_search_history,
             commands::search_commits,
             commands::get_config,
             commands::set_config,

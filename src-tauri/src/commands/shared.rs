@@ -19,6 +19,7 @@ pub(crate) use bonsai_core::git::ai_compose::{self, ComposeProposal};
 // `ComposeGroup`/`ComposeCommit` travel nested inside `ComposePlan`/`ComposeApplyResult`.
 pub(crate) use bonsai_core::git::compose_apply::{self, ComposeApplyResult, ComposePlan};
 pub(crate) use bonsai_core::git::ai_explain::{self, AiAnalysis, AiAnalysisMode, AiDiffTarget, AiDigestRange};
+pub(crate) use bonsai_core::git::ai_history::{self, HistoryAnswer};
 pub(crate) use bonsai_core::git::ai_line;
 // P55a NL→safe-op planner. Only the names the command layer NAMES are re-exported
 // (avoids an unused-import warning under -D warnings, matching the compose_apply

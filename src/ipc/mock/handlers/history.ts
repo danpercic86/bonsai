@@ -5,6 +5,7 @@
 // (bonsai-core::git::history_index). P57c adds the AI-answer handler here.
 import type {
   AppError,
+  HistoryAnswer,
   HistoryHit,
   HistoryQuery,
   HistorySearchResults,
@@ -12,8 +13,9 @@ import type {
   IndexStatus,
   IpcApi,
 } from '../../types';
-import { delay, query, requireRepo } from '../repoState';
+import { AI_OFF, delay, query, requireRepo } from '../repoState';
 import { resolveLayout } from './layout';
+import type { MockRepoState } from '../repoState';
 
 /** Mirrors the Rust `DEFAULT_TOP_K`/`MAX_TOP_K`: `topK` 0 ⇒ default, clamped. */
 const DEFAULT_TOP_K = 20;
@@ -102,35 +104,65 @@ export const historyHandlers = {
     if (!mockBuilt) {
       return { hits: [], indexStale: true, indexedCommits: 0 };
     }
-    const layout = resolveLayout(state);
-    const indexedCommits = layout.nodes.length;
-    const terms = words(q.text);
-    if (terms.length === 0) {
-      return { hits: [], indexStale: false, indexedCommits };
+    const indexedCommits = resolveLayout(state).nodes.length;
+    return { hits: rankHits(state, q.text, q.topK), indexStale: false, indexedCommits };
+  },
+
+  async aiSearchHistory(repoId: string, question: string, topK: number): Promise<HistoryAnswer> {
+    const state = requireRepo(repoId);
+    // AI-off convention (mirrors the ai.ts handlers): `?ai=off` simulates a
+    // missing CLI → aiFailed, so the harness can drive the error banner.
+    if (AI_OFF) {
+      const err: AppError = { kind: 'aiFailed', message: 'Claude Code CLI not found on PATH' };
+      throw err;
     }
-
-    // Naive token-overlap: how many query terms appear (as substrings) in a
-    // node's summary+author. Fixtures carry no diffs, so this is UI-plumbing only
-    // (same caveat as P50's search mock) — real BM25 ranking is Rust-side.
-    const scored = layout.nodes
-      .map((node) => {
-        const hay = `${node.summary} ${node.author}`.toLowerCase();
-        const overlap = terms.reduce((acc, t) => acc + (hay.includes(t) ? 1 : 0), 0);
-        return { node, overlap };
-      })
-      .filter((s) => s.overlap > 0)
-      .sort((a, b) => b.overlap - a.overlap || b.node.ts - a.node.ts);
-
-    const k = q.topK > 0 ? Math.min(q.topK, MAX_TOP_K) : DEFAULT_TOP_K;
-    // A fake, strictly-descending score so the UI's relevance bar renders in rank
-    // order (the real backend returns BM25 relevance).
-    const hits: HistoryHit[] = scored.slice(0, k).map((s, i) => ({
-      oid: s.node.id,
-      summary: s.node.summary,
-      authorName: s.node.author,
-      authorTs: s.node.ts,
-      score: scored.length - i,
-    }));
-    return { hits, indexStale: false, indexedCommits };
+    await delay(700);
+    // Retrieve exactly as `historySearch` does; no index / no relevant commits ⇒
+    // aiFailed BEFORE the (mock) CLI, mirroring the Rust `answer_history` guard.
+    const hits = mockBuilt ? rankHits(state, question, topK) : [];
+    if (hits.length === 0) {
+      const err: AppError = {
+        kind: 'aiFailed',
+        message: mockBuilt
+          ? 'no commits in the history match that question'
+          : 'history index not built — build it first',
+      };
+      throw err;
+    }
+    // Fixtures carry no diffs, so the answer is canned UI-plumbing (same caveat as
+    // historySearch); the real grounded synthesis lives Rust-side.
+    return {
+      text: 'Based on the retrieved commits, the change was introduced to address the behavior in question (mock answer).',
+      cited: hits.slice(0, 2).map((h) => h.oid.slice(0, 7)),
+      retrieved: hits,
+      costUsd: 0.01,
+    };
   },
 } satisfies Partial<IpcApi>;
+
+/** Naive token-overlap ranking shared by `historySearch` + `aiSearchHistory`:
+ *  how many query terms appear (as substrings) in a node's summary+author, then
+ *  a fake strictly-descending score so the UI's relevance bar renders in rank
+ *  order. Fixtures carry no diffs, so this is UI-plumbing only (same caveat as
+ *  P50's search mock) — the real BM25 ranking is Rust-side. */
+function rankHits(state: MockRepoState, text: string, topK: number): HistoryHit[] {
+  const layout = resolveLayout(state);
+  const terms = words(text);
+  if (terms.length === 0) return [];
+  const scored = layout.nodes
+    .map((node) => {
+      const hay = `${node.summary} ${node.author}`.toLowerCase();
+      const overlap = terms.reduce((acc, t) => acc + (hay.includes(t) ? 1 : 0), 0);
+      return { node, overlap };
+    })
+    .filter((s) => s.overlap > 0)
+    .sort((a, b) => b.overlap - a.overlap || b.node.ts - a.node.ts);
+  const k = topK > 0 ? Math.min(topK, MAX_TOP_K) : DEFAULT_TOP_K;
+  return scored.slice(0, k).map((s, i) => ({
+    oid: s.node.id,
+    summary: s.node.summary,
+    authorName: s.node.author,
+    authorTs: s.node.ts,
+    score: scored.length - i,
+  }));
+}

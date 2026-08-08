@@ -70,6 +70,7 @@ import { useBisectActions } from './repoWorkspace/useBisectActions';
 import { useReadOverlays } from './repoWorkspace/useReadOverlays';
 import { useWorkspaceKeyboard } from './repoWorkspace/useWorkspaceKeyboard';
 import { useCommitSearch } from './repoWorkspace/useCommitSearch';
+import { useHistorySearch } from './repoWorkspace/useHistorySearch';
 import { useCommitComposer } from './repoWorkspace/useCommitComposer';
 import { ComposerDialog } from './ComposerDialog';
 import { usePalette } from './repoWorkspace/usePalette';
@@ -1525,6 +1526,30 @@ export function RepoWorkspace({
     [repoId],
   );
 
+  // P57c: answer a natural-language history question grounded in the retrieved
+  // commits' real diffs, rendering the prose in the shared AiOutputPanel. Shares
+  // runAnalyze's last-wins req-id guard so a slow/superseded response can't
+  // clobber a newer request or a closed panel. `runHistoryAnswer` is handed to
+  // useHistorySearch as its `runAiAnswer` route.
+  const runHistoryAnswer = useCallback(
+    (question: string, topK: number) => {
+      const title = `History: "${question}"`;
+      const id = ++aiPanelReqId.current;
+      setAiPanel({ title, text: null, loading: true, error: null, costUsd: null });
+      ipc.aiSearchHistory(repoId, question, topK).then(
+        (res) => {
+          if (id !== aiPanelReqId.current) return;
+          setAiPanel({ title, text: res.text, loading: false, error: null, costUsd: res.costUsd });
+        },
+        (e: unknown) => {
+          if (id !== aiPanelReqId.current) return;
+          setAiPanel({ title, text: null, loading: false, error: errorMessage(e), costUsd: null });
+        },
+      );
+    },
+    [repoId],
+  );
+
   // P15c: summarize the commits/diff unique to `target` vs `base` and show the
   // prose in the AiOutputPanel. Read-only — writes nothing. Shares the same
   // req-id guard as runAnalyze so a slow response can't clobber a newer request
@@ -1774,6 +1799,17 @@ export function RepoWorkspace({
   // next/prev reuse revealCommitByOid (the single-selection reveal path).
   const search = useCommitSearch({ repoId, graph, revealCommitByOid, pushToast });
 
+  // P57c: semantic-history "Ask history" — retrieval + AI answer. The answer
+  // routes into the shared AiOutputPanel via runHistoryAnswer (aiPanel req-id).
+  const historySearch = useHistorySearch({
+    repoId,
+    graph,
+    revealCommitByOid,
+    aiEligible,
+    runAiAnswer: runHistoryAnswer,
+    pushToast,
+  });
+
   // P54c: commit composer. The row "Preview" reuses the EXISTING workdir file-
   // diff IPC — resolve the changed file's section from the latest snapshot
   // (unstaged → untracked → staged) and fetch that file's diff (no new path).
@@ -1867,6 +1903,7 @@ export function RepoWorkspace({
       onNewBranch: openNewBranch,
       onNewWorktree: openNewWorktree,
       onOpenSearch: openSearchEmpty,
+      onOpenHistory: historySearch.openPanel,
       branches,
       graph,
       revealCommitByOid,
@@ -1914,6 +1951,7 @@ export function RepoWorkspace({
     openNewBranch,
     openNewWorktree,
     openSearchEmpty,
+    historySearch.openPanel,
     branches,
     graph,
     revealCommitByOid,
@@ -2063,6 +2101,8 @@ export function RepoWorkspace({
     composerOpen: composer.open,
     searchOpenRef: search.openRef,
     closeSearch: search.close,
+    historySearchOpenRef: historySearch.openRef,
+    closeHistorySearch: historySearch.close,
     paletteOpenRef: palette.openRef,
     closePalette: palette.close,
     diffSlotRef,
@@ -2071,6 +2111,7 @@ export function RepoWorkspace({
     setCommitBrowserOpen,
     searchOpen: search.open,
     openSearch: search.openSearch,
+    historySearchOpen: historySearch.open,
     paletteOpen: palette.open,
     togglePalette: palette.toggle,
     refreshing,
@@ -2310,6 +2351,7 @@ export function RepoWorkspace({
           display={graphDisplay}
           search={search}
           searchScopeOptions={searchScopeOptions}
+          historySearch={historySearch}
           diffSlot={diffSlot}
           overlayMeta={overlayMeta}
           collapseDiffSlot={collapseDiffSlot}

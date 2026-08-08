@@ -3,6 +3,7 @@ pub mod ai_changelog;
 pub mod ai_commit;
 pub mod ai_compose;
 pub mod ai_explain;
+pub mod ai_history;
 pub mod ai_line;
 pub mod ai_operation;
 pub mod ai_operation_grounding;

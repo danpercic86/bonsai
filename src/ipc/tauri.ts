@@ -54,6 +54,7 @@ import type {
   FileDiff,
   FileHistoryEntry,
   GraphLayout,
+  HistoryAnswer,
   HistoryQuery,
   HistorySearchResults,
   IndexProgress,
@@ -486,6 +487,10 @@ export const tauriIpc: IpcApi = {
 
   historySearch(repoId: string, query: HistoryQuery): Promise<HistorySearchResults> {
     return invoke<HistorySearchResults>('history_search', { repoId, query });
+  },
+
+  aiSearchHistory(repoId: string, question: string, topK: number): Promise<HistoryAnswer> {
+    return invoke<HistoryAnswer>('ai_search_history', { repoId, question, topK });
   },
 
   getConfig(repoId: string, level: ConfigLevelArg): Promise<ConfigView> {

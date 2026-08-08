@@ -40,6 +40,8 @@ export interface BuildPaletteDeps {
   onNewBranch(): void;
   onNewWorktree(): void;
   onOpenSearch(): void;
+  /** P57c: open the "Ask history" overlay (semantic search + AI answer). */
+  onOpenHistory(): void;
   // Navigation source data + the shared reveal path.
   branches: BranchesSnapshot | null;
   graph: GraphLayout | null;
@@ -87,6 +89,7 @@ export function buildPaletteActions(deps: BuildPaletteDeps): PaletteAction[] {
     onNewBranch,
     onNewWorktree,
     onOpenSearch,
+    onOpenHistory,
     branches,
     graph,
     revealCommitByOid,
@@ -156,6 +159,14 @@ export function buildPaletteActions(deps: BuildPaletteDeps): PaletteAction[] {
     group: 'action',
     keywords: 'find grep message author',
     run: onOpenSearch,
+  });
+  out.push({
+    id: 'repo.askHistory',
+    title: 'Ask history…',
+    hint: '✨',
+    group: 'action',
+    keywords: 'ai semantic history question ask why when relevant commits search',
+    run: onOpenHistory,
   });
 
   // App-level actions (toggle theme/lists, open Settings / AI Assets / Health,

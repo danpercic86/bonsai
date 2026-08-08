@@ -146,3 +146,92 @@ pub async fn history_search(
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
+
+/// AI semantic-history answer: retrieves the top-K relevant commits from the
+/// persisted index, then synthesizes an NL answer grounded in the REAL diffs of
+/// those commits via the local `claude` CLI (P57c contract §4). The C3 consent-
+/// gate TRIPLE — loads settings and REFUSES with `AiUnavailable` unless
+/// `ai_enabled && ai_consented` (enforced in `_inner`, BEFORE `repo_path`).
+/// Read-only; WRITES NOTHING; does NOT emit `repo-changed`. Errors:
+/// `aiUnavailable` | `aiFailed` (no index / no relevant commits / CLI error) |
+/// `git` (bad oid) | `noRepo`.
+#[tauri::command]
+pub async fn ai_search_history(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    question: String,
+    top_k: u32,
+) -> Result<HistoryAnswer, AppError> {
+    // Resolve the settings-file path + app-data base at the AppHandle boundary so
+    // the inner stays runtime-free and unit-testable (mirrors the `ai_*` triple),
+    // then delegate.
+    let file = settings::settings_file(&app)?;
+    let base = app_data_root(&app)?;
+    ai_search_history_inner(state.inner(), &file, &base, &repo_id, question, top_k).await
+}
+
+/// Runtime-free core of `ai_search_history` (unit-testable without a Tauri app).
+/// The consent gate is enforced HERE, BEFORE `repo_path` (C3). `top_k` is capped
+/// at `MAX_TOP_K`; the `0` sentinel flows through UNCHANGED so the core resolves
+/// it to `DEFAULT_TOP_K` (the "default depth" contract honored by
+/// `search_history`/`answer_history`), NOT to a single commit.
+pub(crate) async fn ai_search_history_inner(
+    state: &AppState,
+    settings_file: &std::path::Path,
+    base: &std::path::Path,
+    repo_id: &str,
+    question: String,
+    top_k: u32,
+) -> Result<HistoryAnswer, AppError> {
+    let s = settings::load_from(settings_file);
+    if !(s.ai_enabled && s.ai_consented) {
+        return Err(AppError::AiUnavailable(
+            "AI features are disabled or not yet consented to".to_string(),
+        ));
+    }
+    let workdir = repo_path(state, repo_id)?;
+    let base = base.to_path_buf();
+    let top_k = resolve_ai_top_k(top_k);
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = history_index::index_dir_for(&base, &workdir);
+        ai_history::answer_history(&workdir, &dir, &question, top_k, RunOpts::default())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Resolve the wire `top_k` for the AI history path: cap at
+/// [`history_index::MAX_TOP_K`] and let the `0` "default depth" sentinel flow
+/// through UNCHANGED (the core then resolves `0` ⇒ `DEFAULT_TOP_K` via
+/// `effective_top_k`). Deliberately NOT a `clamp(1, MAX)`: a min-1 lower bound
+/// would turn the UI's `topK: 0` into `1` and ground the AI answer on only the
+/// single top commit instead of the top ~`DEFAULT_TOP_K` (P57c reviewer MUST-FIX).
+fn resolve_ai_top_k(top_k: u32) -> usize {
+    top_k.min(history_index::MAX_TOP_K) as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// P57c regression: `resolve_ai_top_k` must pass the `0` "default depth"
+    /// sentinel through UNCHANGED (⇒ `DEFAULT_TOP_K` in the core), NOT collapse it
+    /// to `1`. This FAILS against the prior `clamp(1, MAX_TOP_K)` (which returned
+    /// `1` for `0`, grounding the AI answer on a single commit); it passes once the
+    /// lower bound is dropped.
+    #[test]
+    fn resolve_ai_top_k_zero_is_default_sentinel_not_one() {
+        assert_eq!(
+            resolve_ai_top_k(0),
+            0,
+            "the 0 sentinel must flow through (⇒ DEFAULT_TOP_K in the core), not clamp to 1"
+        );
+        assert_eq!(resolve_ai_top_k(5), 5, "an explicit depth is preserved");
+        assert_eq!(
+            resolve_ai_top_k(9_999),
+            history_index::MAX_TOP_K as usize,
+            "an oversized depth is capped at MAX_TOP_K"
+        );
+    }
+}

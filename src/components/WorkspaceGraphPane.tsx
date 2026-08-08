@@ -3,6 +3,7 @@ import { AiOutputPanel } from './AiOutputPanel';
 import { BlameView } from './BlameView';
 import { CommitSearchBar } from './CommitSearchBar';
 import type { ComboboxOption } from './Combobox';
+import { HistorySearchPanel } from './HistorySearchPanel';
 import { DiffBrowser } from './DiffBrowser';
 import { DiffOverlay } from './DiffOverlay';
 import type { DiffOverlayMeta } from './DiffOverlay';
@@ -11,6 +12,7 @@ import { FileHistoryView } from './FileHistoryView';
 import { ReflogView } from './ReflogView';
 import type { DiffSlot } from './StatusPanel';
 import type { UseCommitSearch } from './repoWorkspace/useCommitSearch';
+import type { UseHistorySearch } from './repoWorkspace/useHistorySearch';
 import { GraphCanvas } from '../graph/GraphCanvas';
 import type { GraphCanvasHandle } from '../graph/GraphCanvas';
 import type {
@@ -49,6 +51,8 @@ export interface WorkspaceGraphPaneProps {
   search: UseCommitSearch;
   /** Branch/ref scope options for the search bar; `value: ''` == all refs. */
   searchScopeOptions: ComboboxOption[];
+  /** P57c: semantic-history "Ask history" state (overlay + graph match rings). */
+  historySearch: UseHistorySearch;
 
   diffSlot: DiffSlot | null;
   overlayMeta: DiffOverlayMeta | null;
@@ -136,6 +140,7 @@ export function WorkspaceGraphPane({
   display,
   search,
   searchScopeOptions,
+  historySearch,
   diffSlot,
   overlayMeta,
   collapseDiffSlot,
@@ -204,7 +209,8 @@ export function WorkspaceGraphPane({
       ) : (
         graph !== null &&
         head?.unborn !== true &&
-        !anyOverlayOpen && (
+        !anyOverlayOpen &&
+        !historySearch.open && (
           <button
             type="button"
             className="graph-search-fab"
@@ -215,6 +221,11 @@ export function WorkspaceGraphPane({
             ⌕
           </button>
         )
+      )}
+      {/* P57c: the "Ask history" overlay (semantic search + AI answer). Its own
+          top overlay, independent of the P50 literal-search bar. */}
+      {historySearch.open && (
+        <HistorySearchPanel historySearch={historySearch} revealCommitByOid={revealCommitByOid} />
       )}
       {graphError !== null && (
         <div className="error-banner graph-error-banner">{graphError}</div>
@@ -264,7 +275,10 @@ export function WorkspaceGraphPane({
             onContextMenu={onContextMenu}
             metrics={metrics}
             metricsVersion={metricsVersion}
-            matchRows={search.matchRows}
+            // P57c: while the Ask-history overlay is open its hit rings take the
+            // shared matchRows channel; otherwise the P50 search rings do. Both
+            // are memoized in their hooks, so this stays reference-stable.
+            matchRows={historySearch.open ? historySearch.matchRows : search.matchRows}
             display={display}
           />
         </ErrorBoundary>

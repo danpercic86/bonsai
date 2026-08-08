@@ -32,6 +32,9 @@ export function useWorkspaceKeyboard(deps: {
   composerOpen: boolean;
   searchOpenRef: { current: boolean };
   closeSearch: () => void;
+  // P57c: the "Ask history" overlay peels just below the P50 search layer.
+  historySearchOpenRef: { current: boolean };
+  closeHistorySearch: () => void;
   // P50c: the command palette is a top-level modal — Esc peels it first.
   paletteOpenRef: { current: boolean };
   closePalette: () => void;
@@ -42,6 +45,8 @@ export function useWorkspaceKeyboard(deps: {
   // Shortcuts
   searchOpen: boolean;
   openSearch: () => void;
+  // P57c: gates nav/fetch/pull/push while the Ask-history overlay owns keys.
+  historySearchOpen: boolean;
   // P50c: Ctrl/Cmd-K toggles the palette; paletteOpen gates graph-nav keys.
   paletteOpen: boolean;
   togglePalette: () => void;
@@ -79,6 +84,8 @@ export function useWorkspaceKeyboard(deps: {
     composerOpen,
     searchOpenRef,
     closeSearch,
+    historySearchOpenRef,
+    closeHistorySearch,
     paletteOpenRef,
     closePalette,
     diffSlotRef,
@@ -87,6 +94,7 @@ export function useWorkspaceKeyboard(deps: {
     setCommitBrowserOpen,
     searchOpen,
     openSearch,
+    historySearchOpen,
     paletteOpen,
     togglePalette,
     refreshing,
@@ -165,6 +173,13 @@ export function useWorkspaceKeyboard(deps: {
         closeSearch();
         return;
       }
+      // P57c: the Ask-history overlay peels just below the search bar (its own
+      // capture-phase Esc handles the input-focused case; this is the
+      // focus-elsewhere fallback).
+      if (historySearchOpenRef.current) {
+        closeHistorySearch();
+        return;
+      }
       if (diffSlotRef.current !== null) {
         collapseDiffSlot();
         return;
@@ -187,6 +202,7 @@ export function useWorkspaceKeyboard(deps: {
     closeHistory,
     closeReflog,
     closeSearch,
+    closeHistorySearch,
     closePalette,
     closeComposer,
   ]);
@@ -234,9 +250,18 @@ export function useWorkspaceKeyboard(deps: {
           target.isContentEditable);
       if (typing) return;
 
-      // P50b/P50c/P54c: nav/fetch/pull/push are inert while the search bar, the
-      // command palette, or the commit composer is open (each owns its own keys).
-      if (dialogOpen || abortConfirmOpen || searchOpen || paletteOpen || composerOpen) return;
+      // P50b/P50c/P54c/P57c: nav/fetch/pull/push are inert while the search bar,
+      // the command palette, the commit composer, or the Ask-history overlay is
+      // open (each owns its own keys).
+      if (
+        dialogOpen ||
+        abortConfirmOpen ||
+        searchOpen ||
+        paletteOpen ||
+        composerOpen ||
+        historySearchOpen
+      )
+        return;
 
       if (ctrl && e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault();
@@ -301,6 +326,7 @@ export function useWorkspaceKeyboard(deps: {
     abortConfirmOpen,
     searchOpen,
     openSearch,
+    historySearchOpen,
     paletteOpen,
     togglePalette,
     composerOpen,

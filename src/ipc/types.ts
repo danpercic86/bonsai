@@ -763,6 +763,17 @@ export interface HistorySearchResults {
   indexedCommits: number;
 }
 
+/** AI answer grounded in retrieved commits (P57c). Mirrors the Rust
+ *  `HistoryAnswer` (camelCase). `text` is fence-stripped prose; `cited` are the
+ *  short-oids the answer references (best-effort, for UI emphasis); `retrieved`
+ *  is the commit set fed to the model (drives the results list + reveal). */
+export interface HistoryAnswer {
+  text: string;
+  cited: string[];
+  retrieved: HistoryHit[];
+  costUsd: number | null;
+}
+
 /** Write-target level (P40). System is never a write target. */
 export type ConfigLevelArg = 'local' | 'global';
 /** Where a value actually lives (read result). */
@@ -1693,6 +1704,12 @@ export interface IpcApi {
    *  indexStale: true, indexedCommits: 0 } (UI offers Build). Read-only, does NOT
    *  emit repo-changed. Rejects io | noRepo. */
   historySearch(repoId: string, query: HistoryQuery): Promise<HistorySearchResults>;
+  /** Retrieve the top-`topK` relevant commits from the persisted index, then
+   *  synthesize an NL answer grounded in their REAL diffs via the local `claude`
+   *  CLI (P57c). Read-only; WRITES NOTHING; does NOT emit repo-changed. AI-gated.
+   *  `topK` 0 ⇒ backend default. Rejects aiUnavailable (CLI off / consent off) |
+   *  aiFailed (no index / no relevant commits / CLI error) | git | noRepo. */
+  aiSearchHistory(repoId: string, question: string, topK: number): Promise<HistoryAnswer>;
   /** Config view for `level` of `repoId`: curated keys (effective value + level
    *  + target-level value) + advanced entries. Read-only. Rejects git | noRepo. */
   getConfig(repoId: string, level: ConfigLevelArg): Promise<ConfigView>;

@@ -89,9 +89,22 @@ Sub-increments (strictly ordered): **P57a** index builder + persistence + status
   (137→138; pure IR, not AI-gated, no repo-changed). Folded the P57a nit: `build_index`/`index_status` now
   use bare-agnostic `open_repo_at`. IPC + mock. 28 history_index tests; clippy -D + build/tsc clean. Nits
   (optional): mod.rs 530 (non-test ~285); duplicate open_repo_at (OQ9 defer); redundant trim; mock tokenizer naive.
-**Current step:** P57a+b DONE (committed). Next: **P57c** — AI synthesis (`ai_history.rs` answer_history +
-HistoryAnswer + parse_cited; `ai_search_history` cmd →139) + UI (`HistorySearchPanel`/`HistoryResultsList`/
-`useHistorySearch`; AiOutputPanel reuse + matchRows) → P57 tester → **Phase 2 COMPLETE**.
+- **P57c** (reviewer REQUEST-CHANGES → 1 MUST-FIX fixed → approve; 3 nits) — AI synthesis + UI. New
+  `ai_history.rs` (`answer_history`: retrieve top-K → no-store/zero-hits → AiFailed BEFORE CLI → re-fetch
+  REAL first-parent diffs for top SYNTH_DIFF_K=8 → §3.5 grounding (QUESTION/RELEVANT COMMITS/TOP MATCHES
+  with MESSAGE+CHANGES=real diffs) → run_claude → parse_cited 7-hex-prefix-of-retrieved; `HistoryAnswer`).
+  `ai_search_history` cmd + _inner (consent gate before repo_path, read-only; 138→139). UI:
+  `HistorySearchPanel`+`HistoryResultsList`+`useHistorySearch` (reqId last-wins; matchRows reuse the single
+  GraphCanvas prop; answer in shared AiOutputPanel; Ask-AI gated aiEligible && built); distinct
+  `historySearchOpenRef` Esc-layer (below P50; ≠ P23d file-history); palette "Ask history…". Mock
+  aiSearchHistory (?ai=off). **MUST-FIX (reviewer-caught, FIXED):** `ai_search_history_inner` did
+  `top_k.clamp(1,MAX)` → UI's topK:0 grounded the answer on only 1 commit (mock's 0→20 hid it); fixed to
+  `resolve_ai_top_k=top_k.min(MAX)` (0→DEFAULT_TOP_K=20) + unit test (0→0, fails vs old clamp) +
+  ai_history_cli test (top_k=0 retrieves all 3 matching, not 1). Folded matchRows staleness nit. 6
+  ai_history + 28 history_index tests; clippy -D + build/tsc + vitest 109 clean; cmd 139. ⚠ contract §4
+  pseudocode has the same latent `max(1)` bug — noted (the code is correct).
+**Current step:** P57a+b+c DONE (committed). Next: **P57 tester** (regression + `P57-user-checklist.md`) →
+P57 AI gate → **Phase 2 (P53–P57) COMPLETE**.
 
 ## P56 — local AI changelog / release-notes (Phase 2 · milestone 4/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
