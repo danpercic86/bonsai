@@ -390,12 +390,33 @@ fn oracle_verify_bogus_and_empty_omitted() {
     stage_write(d, "a.txt", "a\n");
     let real = create_commit(d, "a", None).expect("a").oid;
 
-    // Non-hex "oids" are dropped before spawning ⇒ omitted; only `real` resolves.
-    let oids = vec![real.clone(), "not-a-real-oid".to_string(), "#".to_string()];
+    // Three kinds of "not the real commit", all omitted for different reasons:
+    //  * a non-hex string        → dropped before spawning by `is_hex40`;
+    //  * a lone "#"              → same;
+    //  * a VALID-40-hex oid that names NO object (a stale layout after
+    //    rebase/amend/reset) → sent to git, but `--ignore-missing` makes git
+    //    per-oid SKIP it and STILL exit 0, so the real oid is returned rather
+    //    than the whole batch fatal-exiting → CannotCheck (the P58b SHOULD-FIX).
+    let ghost = "dead".repeat(10); // 40 hex chars, not a real object
+    assert_eq!(ghost.len(), 40);
+    let oids = vec![
+        real.clone(),
+        ghost.clone(),
+        "not-a-real-oid".to_string(),
+        "#".to_string(),
+    ];
     let res = verify_commits(&SpawnGitExec, d, &oids).expect("verify");
-    assert_eq!(res.verifications.len(), 1, "bogus non-hex oids omitted");
+    assert_eq!(
+        res.verifications.len(),
+        1,
+        "ghost oid omitted by --ignore-missing (git exits 0); non-hex dropped"
+    );
     assert_eq!(res.verifications[0].oid, real);
     assert_eq!(res.verifications[0].status, VerifyStatus::Unsigned);
+    assert!(
+        res.verifications.iter().all(|v| v.status != VerifyStatus::CannotCheck),
+        "the real oid must NOT degrade to CannotCheck because of the ghost oid"
+    );
 
     // Empty request ⇒ empty result (no spawn path also covered by the unit test).
     assert!(verify_commits(&SpawnGitExec, d, &[]).expect("empty").verifications.is_empty());

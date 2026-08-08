@@ -46,6 +46,7 @@ import type {
   RepoInfo,
   RepoOpState,
   ResetMode,
+  SigningStatus,
   StashEntry,
   StatusEntry,
   StatusSnapshot,
@@ -70,6 +71,7 @@ import { useBisectActions } from './repoWorkspace/useBisectActions';
 import { useReadOverlays } from './repoWorkspace/useReadOverlays';
 import { useWorkspaceKeyboard } from './repoWorkspace/useWorkspaceKeyboard';
 import { useCommitSearch } from './repoWorkspace/useCommitSearch';
+import { useCommitVerification } from './repoWorkspace/useCommitVerification';
 import { useHistorySearch } from './repoWorkspace/useHistorySearch';
 import { useCommitComposer } from './repoWorkspace/useCommitComposer';
 import { ComposerDialog } from './ComposerDialog';
@@ -201,6 +203,7 @@ export function RepoWorkspace({
       dateBasis: graphPrefs.dateBasis,
       showAheadBehind: graphPrefs.showAheadBehind,
       branchStats,
+      showSignatureBadge: graphPrefs.showSignatureBadge,
     }),
     [graphPrefs, branchStats],
   );
@@ -277,9 +280,13 @@ export function RepoWorkspace({
   // ConfirmDialog asks to set upstream. The pending promise (resolves the
   // CommitBox submit) is held in commitPushResolver.
   const [pendingCommitPush, setPendingCommitPush] = useState<string | null>(null);
-  const commitPushResolver = useRef<{ resolve: () => void; reject: (e: unknown) => void } | null>(
-    null,
-  );
+  const commitPushResolver = useRef<{
+    resolve: () => void;
+    reject: (e: unknown) => void;
+    // P58c: the sign choice parked alongside the message (forwarded to
+    // doCommitAndPush once the set-upstream dialog is answered).
+    sign: boolean | null;
+  } | null>(null);
   // P37b: force-push-with-lease confirm gate (targets the current branch).
   const [pendingForcePush, setPendingForcePush] = useState(false);
   // P28: pending "Discard hunk" confirmation (unstaged diffs only).
@@ -485,6 +492,30 @@ export function RepoWorkspace({
   selectedIndexRef.current = selectedIndex;
   const graphDataRef = useRef(graph);
   graphDataRef.current = graph;
+
+  // P58c: per-oid signature verify cache, keyed on the graph's visible range;
+  // gated on the showSignatureBadge pref (off ⇒ empty map, NO verify requests).
+  const verification = useCommitVerification({
+    repoId,
+    graphDataRef,
+    enabled: graphPrefs.showSignatureBadge,
+    pushToast,
+  });
+
+  // P58c: effective signing config for the commit-box toggle/indicator. Read
+  // once per repo (and on manual Refresh); a read failure just hides the toggle.
+  const [signingStatus, setSigningStatus] = useState<SigningStatus | null>(null);
+  const refetchSigningStatus = useCallback(async () => {
+    try {
+      setSigningStatus(await ipc.signingStatus(repoId));
+    } catch {
+      setSigningStatus(null); // non-critical read — hide the toggle, follow config
+    }
+  }, [repoId]);
+  useEffect(() => {
+    void refetchSigningStatus();
+  }, [refetchSigningStatus]);
+
   // Latest compare target read by refetchCompare without widening effect deps.
   const compareRef = useRef(compare);
   compareRef.current = compare;
@@ -1187,17 +1218,29 @@ export function RepoWorkspace({
     return () => window.clearInterval(id);
   }, []);
 
-  // Manual refresh (button + Ctrl+R/F5).
+  // Manual refresh (button + Ctrl+R/F5). P58c: also drop the signature-verify
+  // cache (keyring / allowedSigners may have changed — OQ8) and re-read the
+  // signing config so the commit-box toggle reflects a fresh commit.gpgsign.
   const handleRefresh = useCallback(async () => {
     if (refreshing) return;
     setRefreshing(true);
     try {
       await refreshAll();
+      verification.refresh();
+      void refetchSigningStatus();
     } finally {
       setRefreshing(false);
     }
-  }, [refreshing, refreshAll]);
+  }, [refreshing, refreshAll, verification.refresh, refetchSigningStatus]);
   const headBranch = branches?.local.find((b) => b.isHead) ?? null;
+
+  // P58c: the selected commit's signature verdict for the CommitPanel line —
+  // reuses the shared verify cache (single source; no extra IPC). null when
+  // nothing is selected, not yet verified, or the badge is disabled.
+  const selectedOid =
+    selectedIndex !== null && graph !== null ? (graph.nodes[selectedIndex]?.id ?? null) : null;
+  const commitSignature =
+    selectedOid !== null ? (verification.detailsFor(selectedOid) ?? null) : null;
 
   const { handleFetch, handlePull, pushCurrentBranch, handlePush, handleForcePush, doForcePush } =
     useRemoteOps({
@@ -1246,6 +1289,7 @@ export function RepoWorkspace({
     setPendingCommitPush,
     commitPushResolver,
     setPendingDiscardForce,
+    refreshVerification: verification.refresh,
   });
 
   const {
@@ -2349,6 +2393,8 @@ export function RepoWorkspace({
           metrics={metrics}
           metricsVersion={metricsVersion}
           display={graphDisplay}
+          verifyStatus={verification.verifyStatus}
+          onVisibleRangeChange={verification.onVisibleRangeChange}
           search={search}
           searchScopeOptions={searchScopeOptions}
           historySearch={historySearch}
@@ -2449,11 +2495,13 @@ export function RepoWorkspace({
           onCommitAmend={handleCommitAmend}
           onCommitMergeSubmit={handleCommitMerge}
           onCommit={handleCommit}
-          onCommitAndPush={headBranch ? (m) => handleCommitAndPush(m) : undefined}
+          onCommitAndPush={headBranch ? (m, sign) => handleCommitAndPush(m, sign) : undefined}
           onGenerate={handleGenerateCommitMessage}
           workingDirty={workingDirty}
           onCompose={() => composer.openComposer()}
           onOpenIdentitySettings={onOpenIdentitySettings}
+          signingStatus={signingStatus}
+          commitSignature={commitSignature}
         />
       </div>
 

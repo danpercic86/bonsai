@@ -194,6 +194,11 @@ pub struct GraphPrefs {
     pub show_ahead_behind: bool,
     /// P51: compact (denser) rows preset. Default false.
     pub compact: bool,
+    /// P58c: light the per-row signature badge (verified/unverified/unknown)
+    /// from `verify_commits`. Default true. When false the P51 faint stub
+    /// renders unchanged AND no verification is requested (clutter principle;
+    /// individually toggleable, like every other detail column).
+    pub show_signature_badge: bool,
 }
 
 impl Default for GraphPrefs {
@@ -208,6 +213,7 @@ impl Default for GraphPrefs {
             date_basis: GraphDateBasis::Author,
             show_ahead_behind: true,
             compact: false,
+            show_signature_badge: true,
         }
     }
 }
@@ -946,6 +952,7 @@ mod tests {
                 date_basis: GraphDateBasis::Committer,
                 show_ahead_behind: false,
                 compact: true,
+                show_signature_badge: false,
             },
             ..Default::default()
         };
@@ -958,11 +965,13 @@ mod tests {
         assert_eq!(loaded.graph.date_basis, GraphDateBasis::Committer);
         assert!(!loaded.graph.show_ahead_behind);
         assert!(loaded.graph.compact);
+        assert!(!loaded.graph.show_signature_badge);
 
         let raw = std::fs::read_to_string(&file).expect("read settings.json");
         assert!(raw.contains("\"showSha\": false"));
         assert!(raw.contains("\"dateBasis\": \"committer\""));
         assert!(raw.contains("\"compact\": true"));
+        assert!(raw.contains("\"showSignatureBadge\": false"));
     }
 
     /// P51 D7 back-compat: a legacy `graph` object that still carries the
@@ -995,6 +1004,9 @@ mod tests {
         assert_eq!(loaded.graph.date_basis, GraphDateBasis::Author);
         assert!(loaded.graph.show_ahead_behind);
         assert!(!loaded.graph.compact);
+        // P58c: a legacy `graph` object without `showSignatureBadge` loads with
+        // it defaulted true (the badge is on unless explicitly turned off).
+        assert!(loaded.graph.show_signature_badge);
     }
 
     /// An old `settings.json` written before P11 (no `autoFetch`/`graph` keys)

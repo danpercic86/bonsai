@@ -1,5 +1,6 @@
 import { forwardRef, useImperativeHandle, useState } from 'react';
 import { isAppError } from '../utils/errors';
+import type { SigningStatus } from '../ipc';
 import { ConfirmDialog } from './ConfirmDialog';
 import { COMMIT_PUSH_CANCELED } from './commitPushSignal';
 
@@ -7,13 +8,15 @@ export interface CommitBoxProps {
   stagedCount: number;
   /** App-wide mutation in flight. */
   busy: boolean;
-  /** Resolves on success (box clears its textarea); rejects with AppError on failure. */
-  onCommit(message: string): Promise<void>;
+  /** Resolves on success (box clears its textarea); rejects with AppError on
+   * failure. P58c: `sign` is the explicit checkbox value (OQ6) — true/false to
+   * force, null when the toggle is hidden (merge / no signing status). */
+  onCommit(message: string, sign: boolean | null): Promise<void>;
   /** Normal-commit-mode only: commit then push the current branch. When provided
    * (and not merge/amend), the box renders a split control — primary
    * "Commit & Push" (this) + secondary "Commit" (onCommit). Same resolve/reject
    * contract as onCommit. */
-  onCommitAndPush?: (message: string) => Promise<void>;
+  onCommitAndPush?: (message: string, sign: boolean | null) => Promise<void>;
   /** P3c §8.4: 'merge' repurposes the box as the merge-message editor —
    * prefilled once (App remounts via key on the merge transition), button
    * label "Commit merge", submit routed to commitMerge by the parent. */
@@ -41,6 +44,11 @@ export interface CommitBoxProps {
   /** P40b: open Settings → Git config focused on Identity. When provided, a
    * "Set identity…" button appears beside a `configMissing` commit error. */
   onOpenIdentitySettings?: () => void;
+  /** P58c: effective signing config (RepoWorkspace reads it once per repo).
+   * Drives the "Sign commit" checkbox default + the will-sign / no-key hint.
+   * null/undefined (unread or read failed) ⇒ the toggle is hidden and commits
+   * follow `commit.gpgsign` (sign = null). Hidden in merge mode. */
+  signingStatus?: SigningStatus | null;
 }
 
 /** Imperative submit hook so OpBanner's [Commit merge] triggers the same
@@ -68,10 +76,14 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
     onOpenIdentitySettings,
     workingDirty = false,
     onCompose,
+    signingStatus,
   },
   ref,
 ) {
   const [message, setMessage] = useState(initialMessage ?? '');
+  // P58c: signing toggle. `null` ⇒ follow signingStatus.enabled (config default)
+  // until the user flips it; then the explicit bool sticks for the session.
+  const [signOverride, setSignOverride] = useState<boolean | null>(null);
   // null = idle; otherwise which control is in flight (label + shared disable).
   const [submitting, setSubmitting] = useState<null | 'commit' | 'commitPush'>(null);
   const [error, setError] = useState<{ kind: string; text: string } | null>(null);
@@ -92,6 +104,15 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
   // Normal commit mode only: the split Commit & Push / Commit control. Narrowed
   // to a defined action here so the render needs no redundant undefined guard.
   const splitAction = !merge && !amend ? onCommitAndPush : undefined;
+
+  // P58c: the "Sign commit" toggle — shown in commit + amend (never merge) once
+  // signingStatus is known. `signChecked` defaults to the effective
+  // commit.gpgsign; the explicit value is sent as `sign` (OQ6). When the toggle
+  // is hidden, `sign` is null so the commit follows config.
+  const showSign = !merge && signingStatus != null;
+  const signChecked = signOverride ?? (signingStatus?.enabled ?? false);
+  const signArg: boolean | null = showSign ? signChecked : null;
+  const signFormatLabel = signingStatus?.format === 'ssh' ? 'SSH' : 'GPG';
 
   // P15a: the "✨ Generate" affordance (commit mode only). Disabled per contract
   // §5.5 when AI is ineligible, nothing is staged, or a mutation/generation runs.
@@ -135,11 +156,14 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
 
   // Shared submit path: validation gate + message reset on success + error
   // surfacing (on reject the message is preserved so the user can retry).
-  async function runSubmit(kind: 'commit' | 'commitPush', action: (m: string) => Promise<void>) {
+  async function runSubmit(
+    kind: 'commit' | 'commitPush',
+    action: (m: string, sign: boolean | null) => Promise<void>,
+  ) {
     if (disabled) return;
     setSubmitting(kind);
     try {
-      await action(message);
+      await action(message, signArg);
       setMessage('');
       setError(null);
     } catch (e) {
@@ -228,6 +252,36 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
           }
         >
           {firstLineLen}/{SUMMARY_LIMIT}
+        </div>
+      )}
+      {showSign && (
+        <div className="commit-sign-row">
+          <label className="commit-sign-toggle">
+            <input
+              type="checkbox"
+              checked={signChecked}
+              disabled={submitting !== null || blocked}
+              onChange={(e) => setSignOverride(e.target.checked)}
+            />
+            <span>Sign commit</span>
+          </label>
+          {signChecked &&
+            (signingStatus?.hasKey ? (
+              <span className="commit-sign-hint">Commits will be signed ({signFormatLabel})</span>
+            ) : (
+              <span className="commit-sign-warn" role="note">
+                No signing key set — set user.signingkey
+                {onOpenIdentitySettings !== undefined && (
+                  <button
+                    type="button"
+                    className="commit-sign-fix"
+                    onClick={() => onOpenIdentitySettings()}
+                  >
+                    Set key…
+                  </button>
+                )}
+              </span>
+            ))}
         </div>
       )}
       {error !== null && (

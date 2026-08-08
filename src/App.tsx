@@ -142,6 +142,7 @@ export default function App() {
     dateBasis: 'author',
     showAheadBehind: true,
     compact: false,
+    showSignatureBadge: true,
   });
   // P11d §4.3: bumped on every graph-knob change → GraphCanvas full re-measure.
   const [metricsVersion, setMetricsVersion] = useState(0);

@@ -36,6 +36,7 @@ function disp(over: Partial<GraphDisplayOptions> = {}): GraphDisplayOptions {
     dateBasis: 'author',
     showAheadBehind: true,
     branchStats: new Map(),
+    showSignatureBadge: false,
     ...over,
   };
 }

@@ -98,8 +98,24 @@ panel line + sign toggle + `showSignatureBadge` pref).
   add `--ignore-missing` to build_verify_args (a valid-hex-nonexistent oid — e.g. stale layout post-rebase
   — currently fatal-exits git → whole batch degrades to CannotCheck; the flag makes "unresolvable omitted"
   true) + extend the oracle with a real nonexistent 40-hex oid.
-**Current step:** P58a+b DONE (committed). Next: **P58c** — frontend (light badge + CommitPanel signature
-line + CommitBox sign toggle + `showSignatureBadge` pref) AND fold the P58b `--ignore-missing` should-fix.
+- **P58c** (reviewer APPROVE, 0 must-fix; 1 should-fix = doc reconciliation) — frontend + the P58b fold.
+  Folded `--ignore-missing` into `build_verify_args` (valid-hex-nonexistent oid now per-oid omitted, not
+  whole-batch CannotCheck) + oracle extended (real+ghost oid). GraphPrefs `showSignatureBadge` (default
+  true, back-compat test). New `useCommitVerification` (oid cache; only UNCACHED visible oids; debounce
+  150ms; ≤MAX_VERIFY_BATCH; reqId last-wins; refresh() on Refresh + after commit) + `verifyBadge.ts`
+  (shared glyph kind + label). GraphCanvas verifyStatus prop + onVisibleRangeChange (lastRangeRef guard);
+  drawBadge state-aware (OQ7: good=filled check, bad/expired/…=warn, unsigned=nothing; slot geometry
+  UNCHANGED from P51). CommitPanel signature line; CommitBox sign toggle (default=signingStatus.enabled;
+  explicit bool OQ6; no-key warning); SettingsGraphSection "Signature badge" checkbox. Reviewer VERIFIED
+  the D4 double-gate: showSignatureBadge=false → ZERO verifyCommits requests AND faint-stub draw (identical
+  to P51). cmd 141 unchanged; signing 8 + signing_cli 12 + settings 40 + vitest src/graph 33; clippy -D +
+  build/tsc clean. **SHOULD-FIX (deferred to USER CHECKPOINT — glyph = perception call):** the unknown/
+  cannotCheck badge is drawn SOLID neutral (not "hollow" per OQ7) — intentional (a hollow neutral would be
+  indistinguishable from the P51 faint not-yet-checked stub); `verifyBadge.ts:13` comment says "hollow" and
+  is now stale → reconcile when the user confirms final iconography. Nits: hardcoded #ffffff badge fg;
+  external (watcher) commits at an unchanged visible range show the faint stub until scroll/Refresh (OQ8-consistent).
+**Current step:** P58a+b+c DONE (committed). Next: **P58 tester** (regression + `P58-user-checklist.md` —
+SSH/GPG signing + verified-badge + sign toggle, real keys) → P58 AI gate → P58 done.
 
 ## P57 — semantic commit-history search (Phase 2 · milestone 5/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 

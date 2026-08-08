@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { relativeDate } from '../graph/draw';
-import type { CommitDiff, GraphNode, ListView } from '../ipc';
+import { verifyBadgeKind, verifyStatusLabel } from '../graph/verifyBadge';
+import type { CommitDiff, CommitVerification, GraphNode, ListView } from '../ipc';
 import { DiffFileTree } from './DiffFileTree';
 import type { DiffScope } from './DiffFileTree';
 
@@ -14,6 +15,38 @@ const BODY_COLLAPSE_LINES = 8;
 
 function shortOid(oid: string): string {
   return oid.slice(0, 7);
+}
+
+/** Compact a signing key / fingerprint for the inline signature line. */
+function shortKey(key: string): string {
+  return key.length > 26 ? `${key.slice(0, 25)}…` : key;
+}
+
+/** P58c: signature-status line under the author/date rows. Renders NOTHING for
+ *  `unsigned` (no clutter) or when the selected commit is not yet verified (the
+ *  verify map is the single source — no extra IPC for the selected commit). */
+function SignatureLine({ signature }: { signature: CommitVerification }) {
+  const kind = verifyBadgeKind(signature.status);
+  if (kind === null) return null; // unsigned
+  const glyph = kind === 'good' ? '✓' : kind === 'warn' ? '⚠' : '●';
+  return (
+    <div className={`commit-signature commit-signature-${kind}`}>
+      <span className="commit-signature-icon" aria-hidden="true">
+        {glyph}
+      </span>
+      <span className="commit-signature-text">{verifyStatusLabel(signature.status)}</span>
+      {signature.signer !== undefined && (
+        <span className="commit-signature-signer" title={signature.signer}>
+          {signature.signer}
+        </span>
+      )}
+      {signature.key !== undefined && (
+        <span className="commit-signature-key mono" title={signature.key}>
+          {shortKey(signature.key)}
+        </span>
+      )}
+    </div>
+  );
 }
 
 /** Body = message minus its first line and the following blank separator lines
@@ -71,6 +104,9 @@ export interface CommitPanelProps {
   aiEligible: boolean;
   /** P15b: request an AI explanation of this commit (App owns the call). */
   onExplain(): void;
+  /** P58c: this commit's signature verdict from the shared verify map, or null
+   *  when unverified / disabled. `unsigned` renders nothing. */
+  signature: CommitVerification | null;
 }
 
 export function CommitPanel({
@@ -85,6 +121,7 @@ export function CommitPanel({
   onClose,
   aiEligible,
   onExplain,
+  signature,
 }: CommitPanelProps) {
   const details = data?.details ?? null;
   const now = Math.floor(Date.now() / 1000);
@@ -129,6 +166,7 @@ export function CommitPanel({
               {' · '}
               {new Date(details.authorTs * 1000).toLocaleString()}
             </div>
+            {signature !== null && <SignatureLine signature={signature} />}
             {details.parents.length > 0 && (
               <div className="commit-parents">
                 <span className="commit-parents-label">Parents:</span>

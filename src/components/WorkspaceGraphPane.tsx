@@ -46,6 +46,10 @@ export interface WorkspaceGraphPaneProps {
   /** P51b: per-row display toggles + date basis + ahead/behind, forwarded to
    *  GraphCanvas (built from graphPrefs/branches in RepoWorkspace). */
   display: GraphCanvasProps['display'];
+  /** P58c: oid → signature verdict for the LIT badge (visible rows, cached). */
+  verifyStatus: GraphCanvasProps['verifyStatus'];
+  /** P58c: visible-window callback driving the debounced verify request. */
+  onVisibleRangeChange: GraphCanvasProps['onVisibleRangeChange'];
 
   /** P50b: commit-search state (bar + graph highlight + next/prev jump). */
   search: UseCommitSearch;
@@ -138,6 +142,8 @@ export function WorkspaceGraphPane({
   metrics,
   metricsVersion,
   display,
+  verifyStatus,
+  onVisibleRangeChange,
   search,
   searchScopeOptions,
   historySearch,
@@ -280,6 +286,8 @@ export function WorkspaceGraphPane({
             // are memoized in their hooks, so this stays reference-stable.
             matchRows={historySearch.open ? historySearch.matchRows : search.matchRows}
             display={display}
+            verifyStatus={verifyStatus}
+            onVisibleRangeChange={onVisibleRangeChange}
           />
         </ErrorBoundary>
       ) : null}

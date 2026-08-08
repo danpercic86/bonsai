@@ -20,6 +20,11 @@ export interface Theme {
   warning: string;
   /** P50b: search-match ring color (distinct from head/selection rings). */
   matchRing: string;
+  /** P58c: signature-badge palette (OQ7) — green good / red warn / neutral
+   *  unknown. Read once per mount/theme like the rest of the theme. */
+  badgeGood: string;
+  badgeWarn: string;
+  badgeUnknown: string;
 }
 
 /** Tag pill color is fixed across themes (ui-reference §6). */
@@ -70,5 +75,8 @@ export function resolveTheme(el: HTMLElement): Theme {
     danger: read('--danger'),
     warning: read('--warning'),
     matchRing: read('--match-ring'),
+    badgeGood: read('--badge-good'),
+    badgeWarn: read('--badge-warn'),
+    badgeUnknown: read('--badge-unknown'),
   };
 }

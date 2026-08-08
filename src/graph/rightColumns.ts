@@ -20,6 +20,10 @@ export interface GraphDisplayOptions {
   showAheadBehind: boolean;
   /** P51c: name → ahead/behind for local branches (empty map ok in P51b). */
   branchStats: ReadonlyMap<string, { ahead: number | null; behind: number | null }>;
+  /** P58c: light the signature badge in the SHA column's badge slot. When
+   *  false, the P51 faint stub renders unchanged (slot geometry is untouched
+   *  either way — this only swaps the glyph drawn in the existing slot). */
+  showSignatureBadge: boolean;
 }
 
 /** One packed column, in canvas CSS-px. `rightX` is the right-align anchor the

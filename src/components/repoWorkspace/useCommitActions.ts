@@ -7,7 +7,9 @@ import type { BranchesSnapshot, FileDiff, HeadInfo, ResetMode, StatusSnapshot } 
 import type { DiffSlot } from '../StatusPanel';
 import type { BaseActionDeps, PendingDiscardForce, Setter } from './types';
 
-type CommitPushResolver = { current: { resolve: () => void; reject: (e: unknown) => void } | null };
+type CommitPushResolver = {
+  current: { resolve: () => void; reject: (e: unknown) => void; sign: boolean | null } | null;
+};
 
 /** Stage/unstage/commit/amend/reset/discard + Commit & Push (M3/M6/P20). */
 export function useCommitActions(
@@ -29,6 +31,9 @@ export function useCommitActions(
     setPendingCommitPush: Setter<string | null>;
     commitPushResolver: CommitPushResolver;
     setPendingDiscardForce: Setter<PendingDiscardForce | null>;
+    /** P58c: drop + re-request the signature-verify cache after a successful
+     *  commit so the new HEAD's badge lights (contract §7.1). */
+    refreshVerification: () => void;
   },
 ) {
   const {
@@ -52,6 +57,7 @@ export function useCommitActions(
     setPendingCommitPush,
     commitPushResolver,
     setPendingDiscardForce,
+    refreshVerification,
   } = deps;
 
   async function handleStage(paths: string[]) {
@@ -123,11 +129,12 @@ export function useCommitActions(
     }
   }
 
-  async function handleCommit(message: string) {
+  async function handleCommit(message: string, sign: boolean | null = null) {
     setMutating(true);
     try {
-      await ipc.commit(repoId, message);
+      await ipc.commit(repoId, message, sign);
       await refreshAll();
+      refreshVerification();
     } finally {
       setMutating(false);
     }
@@ -135,27 +142,28 @@ export function useCommitActions(
 
   // Commit & Push (normal commit box, primary button). If the current branch has
   // no upstream, gate on a ConfirmDialog first; otherwise commit + push directly.
-  async function handleCommitAndPush(message: string): Promise<void> {
+  async function handleCommitAndPush(message: string, sign: boolean | null = null): Promise<void> {
     if (headBranch !== null && headBranch.upstream === null) {
-      // Park the message + defer resolution until the dialog is answered.
+      // Park the message + sign + defer resolution until the dialog is answered.
       return new Promise<void>((resolve, reject) => {
-        commitPushResolver.current = { resolve, reject };
+        commitPushResolver.current = { resolve, reject, sign };
         setPendingCommitPush(message);
       });
     }
-    await doCommitAndPush(message);
+    await doCommitAndPush(message, sign);
   }
 
   // The actual commit-then-push. Commit errors rethrow (surfaced by CommitBox);
   // push errors are toasted and the commit is kept.
-  async function doCommitAndPush(message: string): Promise<void> {
+  async function doCommitAndPush(message: string, sign: boolean | null): Promise<void> {
     setMutating(true);
     try {
-      await ipc.commit(repoId, message);
+      await ipc.commit(repoId, message, sign);
     } finally {
       setMutating(false);
     }
     await refreshAll();
+    refreshVerification();
     await pushCurrentBranch();
   }
 
@@ -168,9 +176,10 @@ export function useCommitActions(
       resolver?.resolve();
       return;
     }
+    const sign = resolver?.sign ?? null;
     void (async () => {
       try {
-        await doCommitAndPush(message);
+        await doCommitAndPush(message, sign);
         resolver?.resolve();
       } catch (e) {
         resolver?.reject(e);
@@ -189,13 +198,14 @@ export function useCommitActions(
 
   // P20 §2: amend the current tip. Rethrows so CommitBox surfaces
   // configMissing/emptyMessage in its own error banner.
-  async function handleCommitAmend(message: string) {
+  async function handleCommitAmend(message: string, sign: boolean | null = null) {
     setMutating(true);
     try {
-      await ipc.commitAmend(repoId, message);
+      await ipc.commitAmend(repoId, message, sign);
       setAmend(false);
       setAmendMessage(null);
       await refreshAll();
+      refreshVerification();
       pushToast('success', 'Amended last commit');
     } finally {
       setMutating(false);

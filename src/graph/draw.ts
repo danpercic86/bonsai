@@ -8,7 +8,7 @@
  * formatters to `dates.ts`. This module keeps geometry, edges, avatars, the
  * stash/WIP rows, and the `drawGraph` orchestration. */
 
-import type { GraphEdge, GraphLayout, GraphNode } from '../ipc';
+import type { GraphEdge, GraphLayout, GraphNode, VerifyStatus } from '../ipc';
 import { STASH_COLOR } from './colors';
 import type { Theme } from './colors';
 import { AVATAR, FONT_UI } from './metrics';
@@ -46,6 +46,9 @@ export interface Interaction {
   /** P50b: rows carrying a commit-search match → an outer `--match-ring` ring.
    *  `null` when search is closed / has no visible matches (no ring pass). */
   matchRows: Set<number> | null;
+  /** P58c: oid → signature verdict for the LIT badge (visible rows only,
+   *  cached by oid). `null` / a missing oid ⇒ the faint P51 stub. */
+  verifyStatus: ReadonlyMap<string, VerifyStatus> | null;
 }
 
 /** Long-edge middle segments are clamped to this margin around the canvas. */
@@ -447,7 +450,10 @@ export function drawGraph(
 
     // 5b–5e (RIGHT): summary (flex) + optional author / SHA(+badge) / date
     // columns, packed by `cols`. Toggling a column off reclaims its width.
-    drawRowText(ctx, node, y, sx, cols, display, theme, m, now);
+    // P58c: the SHA-slot badge lights from this row's cached verdict (undefined
+    // ⇒ the faint stub, so off-screen/unverified rows stay faint).
+    const status = ix.verifyStatus?.get(node.id);
+    drawRowText(ctx, node, y, sx, cols, display, theme, m, now, status);
   }
   ctx.textAlign = 'left';
 }

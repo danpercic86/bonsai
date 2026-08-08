@@ -982,6 +982,10 @@ export interface GraphPrefs {
   showAheadBehind: boolean;
   /** P51: compact (denser) rows. Default false. */
   compact: boolean;
+  /** P58c: light the per-row signature badge from `verifyCommits`. Default true.
+   *  When false the P51 faint stub renders unchanged and NO verification is
+   *  requested (individually toggleable, like the other detail columns). */
+  showSignatureBadge: boolean;
 }
 
 /** AI conflict-resolution autonomy (P13). proposeReview = user accepts before

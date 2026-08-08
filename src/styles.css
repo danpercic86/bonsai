@@ -20,6 +20,12 @@
   --warning: #d4a72c;
   /* P50b: commit-search match ring on graph dots (distinct from head/selection). */
   --match-ring: #ff4dd2;
+  /* P58c: signature-badge palette (OQ7). Concrete hex (not var() indirection)
+     so getComputedStyle in graph/colors.ts reads a resolved color. Mirror the
+     semantic --success / --danger / --text-3 of this theme. */
+  --badge-good: #57ab5a;
+  --badge-warn: #e5534b;
+  --badge-unknown: #6b7280;
 
   --font-ui: 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --font-mono: 'Cascadia Code', 'Cascadia Mono', Consolas, 'JetBrains Mono', monospace;
@@ -75,6 +81,10 @@
   --success: #1a7f37;
   --warning: #9a6700;
   --match-ring: #c026a3;
+  /* P58c: signature-badge palette — light (mirror --success/--danger/--text-3). */
+  --badge-good: #1a7f37;
+  --badge-warn: #d13438;
+  --badge-unknown: #8a919e;
 
   /* Syntax-token palette (P4e Step 2) — light. */
   --syn-keyword: #cf222e;  --syn-string: #0a7d33;  --syn-comment: #6e7781;
@@ -2552,6 +2562,44 @@ body {
   color: var(--warning);
 }
 
+/* P58c: "Sign commit" toggle + inline will-sign / no-key hint. */
+.commit-sign-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 2px 0 4px;
+  font-size: 12px;
+}
+.commit-sign-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.commit-sign-toggle input {
+  accent-color: var(--accent);
+}
+.commit-sign-hint {
+  color: var(--success);
+}
+.commit-sign-warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--warning);
+}
+.commit-sign-fix {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .commit-error {
   margin-bottom: 0;
 }
@@ -3628,6 +3676,40 @@ span.file-row-main {
   font-size: 12px;
   color: var(--text-3);
   margin-top: 4px;
+}
+
+/* P58c: commit-details signature-status line (icon + text + signer + short key).
+   Icon color tracks the badge palette; text stays readable. */
+.commit-signature {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.commit-signature-icon {
+  font-size: 12px;
+  line-height: 1;
+}
+.commit-signature-good .commit-signature-icon {
+  color: var(--badge-good);
+}
+.commit-signature-warn .commit-signature-icon,
+.commit-signature-warn .commit-signature-text {
+  color: var(--badge-warn);
+}
+.commit-signature-unknown .commit-signature-icon {
+  color: var(--badge-unknown);
+}
+.commit-signature-signer {
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+.commit-signature-key {
+  color: var(--text-3);
+  font-size: 11px;
 }
 
 /* P5 §5.7: Compare (HEAD → commit) two-endpoint header. */

@@ -92,6 +92,8 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
     dateBasis: 'author',
     showAheadBehind: true,
     compact: false,
+    // P58c: signature badge on by default (mirrors GraphPrefs::default).
+    showSignatureBadge: true,
   },
   // AI assistance (P13): enabled by default, but consent gates the feature.
   aiEnabled: true,
@@ -231,6 +233,11 @@ export function readUiSettings(): UiSettings {
           ? g.showAheadBehind
           : DEFAULT_UI_SETTINGS.graph.showAheadBehind,
       compact: typeof g?.compact === 'boolean' ? g.compact : DEFAULT_UI_SETTINGS.graph.compact,
+      // P58c: legacy `graph` object without the key ⇒ default true.
+      showSignatureBadge:
+        typeof g?.showSignatureBadge === 'boolean'
+          ? g.showSignatureBadge
+          : DEFAULT_UI_SETTINGS.graph.showSignatureBadge,
     });
     // P13 AI fields (additive, like autoFetch/graph): fall back to defaults.
     const aiEnabled =

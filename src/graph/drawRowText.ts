@@ -6,13 +6,14 @@
  *  before the row loop and passed in — this function is called per visible row
  *  with `ctx.textBaseline === 'middle'` already set by the caller. */
 
-import type { GraphNode } from '../ipc';
+import type { GraphNode, VerifyStatus } from '../ipc';
 import type { Theme } from './colors';
 import { relativeDate, shortSha } from './dates';
 import { FONT_MONO, FONT_UI } from './metrics';
 import type { EffectiveMetrics } from './metrics';
 import type { GraphDisplayOptions, RightColumns } from './rightColumns';
 import { truncateToWidth } from './textMeasure';
+import { verifyBadgeKind } from './verifyBadge';
 
 export function drawRowText(
   ctx: CanvasRenderingContext2D,
@@ -24,6 +25,9 @@ export function drawRowText(
   theme: Theme,
   m: EffectiveMetrics,
   now: number,
+  /** P58c: this commit's signature verdict, or `undefined` when not yet
+   *  verified (⇒ the faint P51 stub). Looked up by oid in draw.ts. */
+  status: VerifyStatus | undefined,
 ): void {
   // summary — flexes from summaryStartX to cols.summaryEndX, reclaiming the
   // space of any disabled right column. With only the date column shown this
@@ -45,10 +49,17 @@ export function drawRowText(
     ctx.fillText(truncateToWidth(ctx, node.author, m.authorColWidth), cols.author.rightX, cy);
   }
 
-  // sha — 7-char short SHA (mono), right-aligned; the verified-badge stub sits
-  // in the slot at the column's LEFT.
+  // sha — 7-char short SHA (mono), right-aligned; the signature badge sits in
+  // the slot at the column's LEFT (lit when known + enabled, else the faint stub).
   if (cols.sha !== null) {
-    drawBadgeStub(ctx, cols.sha.leftX + m.badgeSlotWidth / 2, cy, theme);
+    drawBadge(
+      ctx,
+      cols.sha.leftX + m.badgeSlotWidth / 2,
+      cy,
+      theme,
+      status,
+      display.showSignatureBadge,
+    );
     ctx.font = `${m.shaFont} ${FONT_MONO}`;
     ctx.fillStyle = theme.text2;
     ctx.textAlign = 'right';
@@ -66,15 +77,90 @@ export function drawRowText(
   }
 }
 
-/** P51b §6.5 / D6: verified-badge STUB — a faint unlit hollow glyph centered in
- *  the SHA column's badge slot. Placeholder only; it carries no meaning and no
- *  GraphNode verification field exists yet.
- *  P58 lights this (verified / unverified / unknown) as a pure draw swap — the
- *  badge-slot geometry does NOT change, so no layout is affected. */
-function drawBadgeStub(ctx: CanvasRenderingContext2D, cx: number, cy: number, theme: Theme): void {
+/** P58c §7.2: the signature badge, centered in the SHA column's badge slot. A
+ *  pure draw swap over the P51 stub — the slot geometry (P51 §6.5) is unchanged.
+ *
+ *  - `showBadge` && a KNOWN status ⇒ a LIT glyph per {@link verifyBadgeKind}
+ *    (green check = good; red triangle = bad/expired/expiredKey/revoked; solid
+ *    neutral disc = goodUnknown/cannotCheck; NOTHING for unsigned).
+ *  - otherwise (badge off, or the status is not yet verified) ⇒ the faint P51
+ *    hollow stub, rendering exactly as before P58. */
+function drawBadge(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  theme: Theme,
+  status: VerifyStatus | undefined,
+  showBadge: boolean,
+): void {
+  if (showBadge && status !== undefined) {
+    const kind = verifyBadgeKind(status);
+    if (kind === null) return; // unsigned ⇒ nothing (no clutter)
+    // save/restore so the glyphs' lineJoin/lineCap/fillStyle never leak into
+    // the SHA text or the next paint's edge pass.
+    ctx.save();
+    if (kind === 'good') drawGoodBadge(ctx, cx, cy, theme);
+    else if (kind === 'warn') drawWarnBadge(ctx, cx, cy, theme);
+    else drawUnknownBadge(ctx, cx, cy, theme);
+    ctx.restore();
+    return;
+  }
+  // Faint P51 stub — not yet verified, or the badge is toggled off.
   ctx.beginPath();
   ctx.arc(cx, cy, 4, 0, Math.PI * 2);
   ctx.strokeStyle = theme.text3;
   ctx.lineWidth = 1;
   ctx.stroke();
+}
+
+/** Good — a filled green disc with a white check (the "verified" glyph). */
+function drawGoodBadge(ctx: CanvasRenderingContext2D, cx: number, cy: number, theme: Theme): void {
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4.6, 0, Math.PI * 2);
+  ctx.fillStyle = theme.badgeGood;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(cx - 2.2, cy + 0.1);
+  ctx.lineTo(cx - 0.6, cy + 1.9);
+  ctx.lineTo(cx + 2.4, cy - 2.1);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1.3;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+}
+
+/** Bad/expired/revoked — a filled red warning triangle with a white "!". */
+function drawWarnBadge(ctx: CanvasRenderingContext2D, cx: number, cy: number, theme: Theme): void {
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 4.6);
+  ctx.lineTo(cx + 4.4, cy + 3.6);
+  ctx.lineTo(cx - 4.4, cy + 3.6);
+  ctx.closePath();
+  ctx.fillStyle = theme.badgeWarn;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 1.6);
+  ctx.lineTo(cx, cy + 1.0);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1.2;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx, cy + 2.5, 0.7, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+}
+
+/** goodUnknown/cannotCheck — a solid neutral disc (signed, trust not
+ *  established). Solid so it never reads as the hollow "not yet checked" stub. */
+function drawUnknownBadge(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  theme: Theme,
+): void {
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4.2, 0, Math.PI * 2);
+  ctx.fillStyle = theme.badgeUnknown;
+  ctx.fill();
 }

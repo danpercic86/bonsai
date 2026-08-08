@@ -126,6 +126,18 @@ export function SettingsGraphSection({ graph, onChange }: SettingsGraphSectionPr
         <span>Ahead/behind on branches</span>
       </label>
 
+      {/* P58c: light the per-row signature badge (verified/unverified/unknown)
+          from git's signature check. Off ⇒ the faint stub renders and NO
+          verification is requested. */}
+      <label className="settings-checkbox">
+        <input
+          type="checkbox"
+          checked={graph.showSignatureBadge}
+          onChange={(e) => patch({ showSignatureBadge: e.target.checked })}
+        />
+        <span>Signature badge</span>
+      </label>
+
       <label className="settings-checkbox">
         <input
           type="checkbox"

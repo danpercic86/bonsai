@@ -11,10 +11,12 @@ import type {
   AiAnalysisMode,
   AiDiffTarget,
   BranchInfo,
+  CommitVerification,
   GraphLayout,
   HeadInfo,
   ListView,
   RepoOpState,
+  SigningStatus,
   StashScope,
 } from '../ipc';
 
@@ -99,6 +101,11 @@ export interface WorkspaceRightPanelProps {
   /** P40b: open Settings → Git config → Identity from a `configMissing` commit
    *  error banner. */
   onOpenIdentitySettings: CommitBoxProps['onOpenIdentitySettings'];
+  /** P58c: effective signing config (drives the CommitBox sign toggle + hint). */
+  signingStatus: SigningStatus | null;
+  /** P58c: the selected commit's signature verdict (CommitPanel line); null when
+   *  unverified / disabled / unsigned. */
+  commitSignature: CommitVerification | null;
 }
 
 /** P3e: the right panel — op banner + the compare / commit-details / status
@@ -168,6 +175,8 @@ export function WorkspaceRightPanel({
   workingDirty,
   onCompose,
   onOpenIdentitySettings,
+  signingStatus,
+  commitSignature,
 }: WorkspaceRightPanelProps) {
   return (
     <aside className="right-panel" style={{ width: rightPanelWidth }}>
@@ -216,6 +225,7 @@ export function WorkspaceRightPanel({
             const oid = graph.nodes[selectedIndex].id;
             runAnalyze({ kind: 'commit', oid }, 'explain', `Explain commit ${shortOid(oid)}`);
           }}
+          signature={commitSignature}
         />
       ) : (
         <>
@@ -319,6 +329,7 @@ export function WorkspaceRightPanel({
             workingDirty={workingDirty}
             onCompose={onCompose}
             onOpenIdentitySettings={onOpenIdentitySettings}
+            signingStatus={signingStatus}
           />
         </>
       )}

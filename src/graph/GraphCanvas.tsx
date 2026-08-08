@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { GraphLayout, GraphNode, RefLabel } from '../ipc';
+import type { GraphLayout, GraphNode, RefLabel, VerifyStatus } from '../ipc';
 import { resolveTheme } from './colors';
 import type { Theme } from './colors';
 import {
@@ -74,6 +74,14 @@ export interface GraphCanvasProps {
    *  basis, ahead/behind data). Fed straight into `drawGraph` and the date-
    *  column hover hit-test; a new object identity triggers a repaint. */
   display: GraphDisplayOptions;
+  /** P58c: oid → signature verdict for the LIT badge (visible rows only, cached
+   *  by oid in `useCommitVerification`). Absent/missing oid ⇒ the faint P51
+   *  stub. A new map identity triggers a repaint so badges light in place. */
+  verifyStatus?: ReadonlyMap<string, VerifyStatus>;
+  /** P58c: fired once per paint after the visible window is computed (only when
+   *  first/last changed). Drives the debounced verify request for exactly the
+   *  visible (overscanned) rows — the badge is virtualized. */
+  onVisibleRangeChange?(first: number, last: number): void;
 }
 
 /** P2c §5.2: imperative escape hatch — App needs the DOM-measured visible row
@@ -174,6 +182,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     metricsVersion,
     matchRows,
     display,
+    verifyStatus,
+    onVisibleRangeChange,
   },
   ref,
 ) {
@@ -234,8 +244,30 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   );
 
   // Latest props for the stable paint callback.
-  const propsRef = useRef({ layout, selectedIndex, edgeIndex, wip, matchSet, display });
-  propsRef.current = { layout, selectedIndex, edgeIndex, wip, matchSet, display };
+  const propsRef = useRef({
+    layout,
+    selectedIndex,
+    edgeIndex,
+    wip,
+    matchSet,
+    display,
+    verifyStatus,
+    onVisibleRangeChange,
+  });
+  propsRef.current = {
+    layout,
+    selectedIndex,
+    edgeIndex,
+    wip,
+    matchSet,
+    display,
+    verifyStatus,
+    onVisibleRangeChange,
+  };
+
+  // P58c: last visible window reported to onVisibleRangeChange — guards
+  // redundant fires (only when first/last actually changed).
+  const lastRangeRef = useRef<{ first: number; last: number } | null>(null);
 
   const recordFrame = useCallback((kind: 'paint' | 'gap', durMs: number) => {
     const rec = kind === 'paint' ? paintRecorderRef.current : gapRecorderRef.current;
@@ -268,8 +300,16 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     const t0 = STATS_ENABLED ? performance.now() : 0;
     const m = metricsRef.current;
     const rowHeight = m.rowHeight;
-    const { layout: lay, selectedIndex: sel, edgeIndex: ix, wip, matchSet, display } =
-      propsRef.current;
+    const {
+      layout: lay,
+      selectedIndex: sel,
+      edgeIndex: ix,
+      wip,
+      matchSet,
+      display,
+      verifyStatus,
+      onVisibleRangeChange,
+    } = propsRef.current;
     const { w, h } = cssSizeRef.current;
     const scrollTop = scrollerRef.current?.scrollTop ?? scrollTopRef.current;
     scrollTopRef.current = scrollTop;
@@ -281,6 +321,16 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       n - 1,
       Math.ceil((layoutScrollTop + h) / rowHeight) + OVERSCAN,
     );
+    // P58c: report the (overscanned) visible window ONCE per change so the
+    // verify hook fetches badges for exactly these rows. Fires after the window
+    // is computed; guarded so a redundant same-range paint does not re-request.
+    if (onVisibleRangeChange !== undefined && n > 0) {
+      const prev = lastRangeRef.current;
+      if (prev === null || prev.first !== firstRow || prev.last !== lastRow) {
+        lastRangeRef.current = { first: firstRow, last: lastRow };
+        onVisibleRangeChange(firstRow, lastRow);
+      }
+    }
     const hoverRow = hoverRowRef.current !== null && hoverRowRef.current >= 0 ? hoverRowRef.current : null;
     // P7e §13.2: reserve the native vertical-scrollbar width on the right (0 when
     // no scrollbar is present — dynamic).
@@ -293,7 +343,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       edgesInRange(lay, ix, firstRow, lastRow),
       { firstRow, lastRow, scrollTop: layoutScrollTop, width: w, height: h, rightInset },
       themeRef.current,
-      { hoverRow, selectedIndex: sel, matchRows: matchSet },
+      { hoverRow, selectedIndex: sel, matchRows: matchSet, verifyStatus: verifyStatus ?? null },
       display,
       m,
     );
@@ -410,7 +460,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       return;
     }
     paintNow();
-  }, [paintNow, layout, selectedIndex, wip, matchSet, display]);
+  }, [paintNow, layout, selectedIndex, wip, matchSet, display, verifyStatus]);
 
   // P2b §4.4: theme changes re-resolve the cached CSS-variable colors and
   // repaint. Runs once on mount too (themeVersion starts at 0), which is
@@ -680,6 +730,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
           dateBasis: 'author',
           showAheadBehind: false,
           branchStats: new Map(),
+          showSignatureBadge: false,
         };
         const laid = layoutRefLabels(ctx, entities, node, theme, startX, testBudget, noChipsDisplay);
         check('layoutRefLabels first entity laid', laid.length >= 1 && laid[0].entity !== null);

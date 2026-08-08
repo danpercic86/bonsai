@@ -284,15 +284,19 @@ pub struct VerifyResults {
 pub const MAX_VERIFY_BATCH: usize = 512;
 
 /// Fixed leading args (before the oid list) produced by [`build_verify_args`].
-const VERIFY_ARG_PREFIX: usize = 3;
+const VERIFY_ARG_PREFIX: usize = 4;
 
 /// Verify `oids` in ONE `git log --no-walk` subprocess (P58 D2). BLOCKING. Each
 /// oid is validated as 40-hex (non-hex dropped) and capped at [`MAX_VERIFY_BATCH`]
 /// by [`build_verify_args`]. An empty / all-invalid set returns `Ok(empty)`
-/// WITHOUT spawning. A wholesale git failure (non-zero exit) degrades EVERY
-/// resolvable requested oid to [`VerifyStatus::CannotCheck`] rather than
-/// erroring (so a missing gpg/ssh toolchain still renders); only a spawn / I/O
-/// failure surfaces as [`AppError::Git`].
+/// WITHOUT spawning. A valid-40-hex oid that no longer resolves to an object
+/// (a stale layout after rebase/amend/reset) is per-oid OMITTED by git via
+/// `--ignore-missing` (git still exits 0), so ONE ghost oid can no longer make
+/// the whole batch fatal-exit and degrade to `CannotCheck`. A genuine wholesale
+/// git failure (non-zero exit) degrades EVERY resolvable requested oid to
+/// [`VerifyStatus::CannotCheck`] rather than erroring (so a missing gpg/ssh
+/// toolchain still renders); only a spawn / I/O failure surfaces as
+/// [`AppError::Git`].
 pub fn verify_commits(
     exec: &dyn GitExec,
     workdir: &Path,
@@ -326,13 +330,17 @@ pub fn verify_commits(
 }
 
 /// Assemble the `git log` argv (P58 D2): a fixed `log --no-walk=unsorted
-/// --format=…` prefix ([`VERIFY_ARG_PREFIX`] entries) then the 40-hex oids
-/// (non-hex dropped, capped at [`MAX_VERIFY_BATCH`], order preserved). The
-/// `%x1f` US separator cannot collide with oid/signer/key text. Pure.
+/// --ignore-missing --format=…` prefix ([`VERIFY_ARG_PREFIX`] entries) then the
+/// 40-hex oids (non-hex dropped, capped at [`MAX_VERIFY_BATCH`], order
+/// preserved). `--ignore-missing` makes git per-oid SKIP a valid-hex oid that
+/// no longer names an object (stale layout) and still exit 0, instead of a
+/// fatal exit that would degrade the whole batch. The `%x1f` US separator
+/// cannot collide with oid/signer/key text. Pure.
 fn build_verify_args(oids: &[String]) -> Vec<String> {
     let mut args = vec![
         "log".to_string(),
         "--no-walk=unsorted".to_string(),
+        "--ignore-missing".to_string(),
         "--format=%H%x1f%G?%x1f%GS%x1f%GK".to_string(),
     ];
     args.extend(
@@ -422,7 +430,8 @@ mod tests {
         let args = build_verify_args(&oids);
         assert_eq!(args[0], "log");
         assert_eq!(args[1], "--no-walk=unsorted");
-        assert_eq!(args[2], "--format=%H%x1f%G?%x1f%GS%x1f%GK");
+        assert_eq!(args[2], "--ignore-missing");
+        assert_eq!(args[3], "--format=%H%x1f%G?%x1f%GS%x1f%GK");
         assert_eq!(&args[VERIFY_ARG_PREFIX..], &[good, upper, mixed][..], "only 40-hex, in order");
     }
 
