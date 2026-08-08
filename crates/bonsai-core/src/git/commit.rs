@@ -8,6 +8,8 @@ use std::path::Path;
 
 use crate::error::AppError;
 use crate::git::bisect::require_no_bisect;
+use crate::git::exec::SpawnGitExec;
+use crate::git::signing::{self, resolve_signing};
 use crate::git::stage::open_workdir_repo;
 
 /// Result of a successful commit.
@@ -72,7 +74,17 @@ pub fn resolve_signature(cfg: &git2::Config) -> Result<git2::Signature<'static>,
 /// Blocking. Creates a commit from the current index (M3 contract §2.4 —
 /// exact step order, cheap checks first). On unborn HEAD, git2 creates the
 /// branch HEAD symbolically points at (first-commit flow).
-pub fn create_commit(workdir: &Path, message: &str) -> Result<CommitResult, AppError> {
+///
+/// `sign` (P58 D3): `None` ⇒ follow effective `commit.gpgsign` (git default
+/// false); `Some(true)` ⇒ force sign; `Some(false)` ⇒ force unsigned. When
+/// signing is NOT resolved, the commit is created by git2 EXACTLY as before P58
+/// (byte-identical, no `gpgsig` header); signing branches to
+/// [`signing::create_signed_commit`] (`git commit-tree -S` + `git update-ref`).
+pub fn create_commit(
+    workdir: &Path,
+    message: &str,
+    sign: Option<bool>,
+) -> Result<CommitResult, AppError> {
     let repo = open_workdir_repo(workdir)?;
 
     // A Bonsai bisect runs on a clean detached HEAD, so `state()` below can't
@@ -104,7 +116,10 @@ pub fn create_commit(workdir: &Path, message: &str) -> Result<CommitResult, AppE
         return Err(AppError::EmptyMessage);
     }
 
-    let sig = resolve_signature(&repo.config()?.snapshot()?)?;
+    // One config snapshot drives BOTH identity (ConfigMissing before any write)
+    // and the signing decision below.
+    let cfg = repo.config()?.snapshot()?;
+    let sig = resolve_signature(&cfg)?;
 
     let tree_oid = index.write_tree()?;
 
@@ -128,16 +143,31 @@ pub fn create_commit(workdir: &Path, message: &str) -> Result<CommitResult, AppE
     }
 
     let full = format!("{msg}\n");
-    let tree = repo.find_tree(tree_oid)?;
-    let parents: Vec<&git2::Commit> = head.iter().collect();
-    let oid = repo.commit(Some("HEAD"), &sig, &sig, &full, &tree, &parents)?;
-
-    let branch = repo
-        .head()
-        .ok()
-        .filter(|h| h.is_branch())
-        .and_then(|h| h.shorthand().ok().map(String::from));
     let summary = msg.lines().next().unwrap_or(msg).to_string();
+
+    let signing = resolve_signing(&cfg, sign);
+    let oid = if !signing.sign {
+        // Unsigned path: byte-identical to pre-P58.
+        let tree = repo.find_tree(tree_oid)?;
+        let parents: Vec<&git2::Commit> = head.iter().collect();
+        repo.commit(Some("HEAD"), &sig, &sig, &full, &tree, &parents)?
+    } else {
+        let parent_oids: Vec<git2::Oid> = head.iter().map(git2::Commit::id).collect();
+        let old_head = head.as_ref().map(git2::Commit::id);
+        signing::create_signed_commit(
+            &SpawnGitExec,
+            workdir,
+            tree_oid,
+            &parent_oids,
+            &sig,
+            &sig,
+            &full,
+            old_head,
+            &format!("commit: {summary}"),
+        )?
+    };
+
+    let branch = branch_shorthand_after(&repo, workdir, signing.sign)?;
 
     Ok(CommitResult {
         oid: oid.to_string(),
@@ -146,12 +176,43 @@ pub fn create_commit(workdir: &Path, message: &str) -> Result<CommitResult, AppE
     })
 }
 
+/// Resolve the branch HEAD points at after a commit. The unsigned git2 path
+/// updated `repo`'s own refdb, so `repo.head()` is authoritative; the signed
+/// path moved HEAD via an EXTERNAL `git update-ref`, so re-open a fresh handle
+/// to avoid a stale (possibly still-unborn) refdb view. `None` ⇒ detached HEAD.
+fn branch_shorthand_after(
+    repo: &git2::Repository,
+    workdir: &Path,
+    signed: bool,
+) -> Result<Option<String>, AppError> {
+    let read = |r: &git2::Repository| {
+        r.head()
+            .ok()
+            .filter(|h| h.is_branch())
+            .and_then(|h| h.shorthand().ok().map(String::from))
+    };
+    if signed {
+        Ok(read(&open_workdir_repo(workdir)?))
+    } else {
+        Ok(read(repo))
+    }
+}
+
 /// Blocking. Replaces HEAD with a new commit built from the current index, on
 /// HEAD's EXISTING parents (preserves merge parents), reusing HEAD's ORIGINAL
 /// author and stamping a fresh committer. `message` is the final message (the
 /// frontend prefills + lets the user edit HEAD's message). Mirrors
 /// `git commit --amend -m <message>` (P20 contract §2.1).
-pub fn amend_commit(workdir: &Path, message: &str) -> Result<CommitResult, AppError> {
+///
+/// `sign` (P58 D3): as [`create_commit`]. The unsigned path is byte-identical
+/// to pre-P58 (`Commit::amend`); the signed path rebuilds on HEAD's ORIGINAL
+/// parents via [`signing::create_signed_commit`] (preserving the original
+/// author + author date, re-stamping the committer).
+pub fn amend_commit(
+    workdir: &Path,
+    message: &str,
+    sign: Option<bool>,
+) -> Result<CommitResult, AppError> {
     let repo = open_workdir_repo(workdir)?;
 
     // A clean detached-HEAD bisect is invisible to `state()` below — refuse.
@@ -188,7 +249,8 @@ pub fn amend_commit(workdir: &Path, message: &str) -> Result<CommitResult, AppEr
     }
 
     // Fresh committer (ConfigMissing before any write); original author preserved.
-    let committer = resolve_signature(&repo.config()?.snapshot()?)?;
+    let cfg = repo.config()?.snapshot()?;
+    let committer = resolve_signature(&cfg)?;
     let author = head_commit.author().to_owned();
 
     // Tree from the current index. NO NothingToCommit guard — a message-only
@@ -197,26 +259,41 @@ pub fn amend_commit(workdir: &Path, message: &str) -> Result<CommitResult, AppEr
     let tree_oid = index.write_tree()?;
     let tree = repo.find_tree(tree_oid)?;
 
-    // `Commit::amend` REPLACES the current commit onto its EXISTING parents
-    // (preserving merge parents) and moves HEAD to the new commit — unlike
-    // `repo.commit(Some("HEAD"), …)`, which would reject the amend because the
-    // new commit's first parent (HEAD^) is not the current tip.
     let full = format!("{msg}\n");
-    let oid = head_commit.amend(
-        Some("HEAD"),
-        Some(&author),
-        Some(&committer),
-        None,
-        Some(&full),
-        Some(&tree),
-    )?;
-
-    let branch = repo
-        .head()
-        .ok()
-        .filter(|h| h.is_branch())
-        .and_then(|h| h.shorthand().ok().map(String::from));
     let summary = msg.lines().next().unwrap_or(msg).to_string();
+
+    let signing = resolve_signing(&cfg, sign);
+    let oid = if !signing.sign {
+        // Unsigned path: byte-identical to pre-P58. `Commit::amend` REPLACES the
+        // current commit onto its EXISTING parents (preserving merge parents) and
+        // moves HEAD — unlike `repo.commit(Some("HEAD"), …)`, which would reject
+        // the amend because the new first parent (HEAD^) is not the current tip.
+        head_commit.amend(
+            Some("HEAD"),
+            Some(&author),
+            Some(&committer),
+            None,
+            Some(&full),
+            Some(&tree),
+        )?
+    } else {
+        // Signed amend: rebuild on HEAD's ORIGINAL parents (not HEAD itself), with
+        // the CAS old-oid = current HEAD so update-ref replaces the tip.
+        let parent_oids: Vec<git2::Oid> = head_commit.parent_ids().collect();
+        signing::create_signed_commit(
+            &SpawnGitExec,
+            workdir,
+            tree_oid,
+            &parent_oids,
+            &author,
+            &committer,
+            &full,
+            Some(head_commit.id()),
+            &format!("commit (amend): {summary}"),
+        )?
+    };
+
+    let branch = branch_shorthand_after(&repo, workdir, signing.sign)?;
 
     Ok(CommitResult {
         oid: oid.to_string(),
@@ -308,21 +385,21 @@ mod tests {
         // CRLF input (Windows textarea), incl. a trailing lone \r.
         std::fs::write(dir.path().join("a.txt"), "one\n").expect("write a.txt");
         crate::git::stage::stage_paths(dir.path(), &["a.txt".to_string()]).expect("stage");
-        let res = create_commit(dir.path(), "subject line\r\nsecond line\r").expect("commit");
+        let res = create_commit(dir.path(), "subject line\r\nsecond line\r", None).expect("commit");
         assert_eq!(res.summary, "subject line");
         head_message("subject line\nsecond line\n");
 
         // Lone-CR interior endings.
         std::fs::write(dir.path().join("a.txt"), "two\n").expect("modify a.txt");
         crate::git::stage::stage_paths(dir.path(), &["a.txt".to_string()]).expect("stage");
-        let res = create_commit(dir.path(), "first\rsecond\rthird").expect("commit");
+        let res = create_commit(dir.path(), "first\rsecond\rthird", None).expect("commit");
         assert_eq!(res.summary, "first");
         head_message("first\nsecond\nthird\n");
 
         // A CR-only message is whitespace after normalization -> EmptyMessage.
         std::fs::write(dir.path().join("a.txt"), "three\n").expect("modify a.txt");
         crate::git::stage::stage_paths(dir.path(), &["a.txt".to_string()]).expect("stage");
-        let err = create_commit(dir.path(), "\r\n\r").expect_err("CR-only message");
+        let err = create_commit(dir.path(), "\r\n\r", None).expect_err("CR-only message");
         assert!(matches!(err, AppError::EmptyMessage), "got: {err:?}");
     }
 
@@ -336,7 +413,7 @@ mod tests {
             cfg.set_str("user.name", "Test User").expect("name");
             cfg.set_str("user.email", "test@example.com").expect("email");
         }
-        let err = amend_commit(dir.path(), "msg").expect_err("unborn");
+        let err = amend_commit(dir.path(), "msg", None).expect_err("unborn");
         match err {
             AppError::Git(m) => assert!(m.contains("no commits yet"), "got: {m}"),
             other => panic!("expected Git, got {other:?}"),
@@ -356,7 +433,7 @@ mod tests {
         }
         std::fs::write(dir.path().join("a.txt"), "one\n").expect("write");
         crate::git::stage::stage_paths(dir.path(), &["a.txt".to_string()]).expect("stage");
-        create_commit(dir.path(), "original subject").expect("commit");
+        create_commit(dir.path(), "original subject", None).expect("commit");
         let orig_tree = repo
             .head()
             .expect("head")
@@ -365,7 +442,7 @@ mod tests {
             .tree_id();
 
         // Empty message rejected.
-        let err = amend_commit(dir.path(), "   ").expect_err("empty");
+        let err = amend_commit(dir.path(), "   ", None).expect_err("empty");
         assert!(matches!(err, AppError::EmptyMessage), "got: {err:?}");
 
         // Change committer identity so we can prove author is preserved.
@@ -374,7 +451,7 @@ mod tests {
             cfg.set_str("user.name", "New Committer").expect("name");
             cfg.set_str("user.email", "new@example.com").expect("email");
         }
-        let res = amend_commit(dir.path(), "amended subject").expect("amend");
+        let res = amend_commit(dir.path(), "amended subject", None).expect("amend");
         assert_eq!(res.summary, "amended subject");
 
         let head = repo.head().expect("head").peel_to_commit().expect("peel");

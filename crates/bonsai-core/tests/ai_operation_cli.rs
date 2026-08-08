@@ -37,7 +37,7 @@ fn env_lock() -> MutexGuard<'static, ()> {
 fn commit(dir: &Path, file: &str, content: &str, msg: &str) -> String {
     std::fs::write(dir.join(file), content).expect("write");
     stage_paths(dir, &[file.to_string()]).expect("stage");
-    create_commit(dir, msg).expect("commit").oid
+    create_commit(dir, msg, None).expect("commit").oid
 }
 
 /// git2-init an A→B scratch repo (identity + autocrlf off). Returns (dir, a, b).

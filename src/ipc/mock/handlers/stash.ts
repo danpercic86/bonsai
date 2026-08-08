@@ -113,7 +113,8 @@ export const stashHandlers = {
     state.stashes.forEach((e, i) => (e.index = i));
   },
 
-  async commitAmend(repoId: string, message: string): Promise<CommitResult> {
+  // P58: `sign` accepted but ignored (mock cannot sign; native-only).
+  async commitAmend(repoId: string, message: string, _sign?: boolean | null): Promise<CommitResult> {
     await delay(150);
     const state = requireRepo(repoId);
     if (message.trim() === '') {

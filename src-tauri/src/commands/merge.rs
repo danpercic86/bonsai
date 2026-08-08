@@ -47,15 +47,17 @@ pub(crate) async fn merge_branch_inner(
 }
 
 /// Finalizes a paused merge as a 2(+)-parent commit (P3c contract §4.4).
-/// Errors: `noOperationInProgress` | `unresolvedConflicts` | `emptyMessage`
-/// | `configMissing` | `git` | `noRepo`.
+/// `sign` (P58 OQ4): `null`/absent ⇒ follow `commit.gpgsign`; `true`/`false`
+/// force. Errors: `noOperationInProgress` | `unresolvedConflicts` |
+/// `emptyMessage` | `configMissing` | `git` | `noRepo`.
 #[tauri::command]
 pub async fn commit_merge(
     state: tauri::State<'_, AppState>,
     repo_id: String,
     message: String,
+    sign: Option<bool>,
 ) -> Result<CommitResult, AppError> {
-    commit_merge_inner(state.inner(), &repo_id, message).await
+    commit_merge_inner(state.inner(), &repo_id, message, sign).await
 }
 
 /// Runtime-free core of `commit_merge` (unit-testable without a Tauri app).
@@ -63,9 +65,10 @@ pub(crate) async fn commit_merge_inner(
     state: &AppState,
     repo_id: &str,
     message: String,
+    sign: Option<bool>,
 ) -> Result<CommitResult, AppError> {
     let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || merge::commit_merge(&path, &message))
+    tauri::async_runtime::spawn_blocking(move || merge::commit_merge(&path, &message, sign))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

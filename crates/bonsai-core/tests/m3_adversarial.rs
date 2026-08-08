@@ -140,7 +140,7 @@ fn crlf_message_matches_cli_cleanup() {
         git(p, &["add", "--", "new.txt"]);
     }
 
-    let res = create_commit(a.path(), msg).expect("create_commit");
+    let res = create_commit(a.path(), msg, None).expect("create_commit");
     git(b.path(), &["commit", "-m", msg]);
 
     let message_of = |dir: &Path| {

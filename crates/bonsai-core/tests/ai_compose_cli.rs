@@ -56,7 +56,7 @@ fn dirty_repo() -> tempfile::TempDir {
     write(d, "app.rs", "fn main() {}\n");
     write(d, "lib.rs", "pub fn a() {}\n");
     stage_paths(d, &["app.rs".into(), "lib.rs".into()]).expect("stage base");
-    create_commit(d, "base").expect("base commit");
+    create_commit(d, "base", None).expect("base commit");
 
     // Three distinct change kinds vs HEAD: a STAGED edit, an UNSTAGED edit, and
     // an UNTRACKED add — all must appear in the one grounding payload.

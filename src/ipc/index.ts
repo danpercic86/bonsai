@@ -138,6 +138,8 @@ export type {
   SearchResults,
   Section,
   SessionState,
+  SignFormat,
+  SigningStatus,
   StaleBranch,
   StaleReason,
   StaleReport,

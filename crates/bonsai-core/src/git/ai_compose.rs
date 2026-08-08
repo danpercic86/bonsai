@@ -470,7 +470,7 @@ mod tests {
         let p = dir.path();
         std::fs::write(p.join("base.txt"), "base\n").expect("write");
         stage_paths(p, &["base.txt".into()]).expect("stage");
-        create_commit(p, "base").expect("commit");
+        create_commit(p, "base", None).expect("commit");
         // Worktree is now clean => no change set.
 
         let err = compose_commits(p, None, RunOpts::default())

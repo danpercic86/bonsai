@@ -49,6 +49,48 @@ Checklists: `docs/contracts/P<N>-user-checklist.md`.
 **Untouched throughout:** your 4 in-progress files (Cargo.lock, package.json, src-tauri/Cargo.toml,
 tauri.conf.json = the 0.3.0→0.3.1 bump) and `docs/audit-2026-08-07.md` (another session's file).
 
+## P58 — real commit signing + verification (Phase 3 · milestone 1/4) — **IN PROGRESS** (2026-08-08)
+
+Contract: `docs/contracts/P58-commit-signing.md`. Phase 3 (correctness & parity) — NO OD1 dependency.
+Lights the P51 verified-badge stub.
+
+**P58 goal:** sign commits at creation (SSH-first + GPG, via `git commit-tree -S` + `git update-ref` —
+git2 keeps the M3 path/guards, the git binary does the crypto in BOTH formats; unsigned path byte-identical)
+following `commit.gpgsign` + a per-commit `sign` override; verify signatures (`git log --format=%G?…`, one
+subprocess per visible batch) to LIGHT the P51 badge + a CommitPanel signature line + a CommitBox "will sign"
+indicator/toggle. Adds `verify_commits` + `signing_status` (139→141); `commit`/`commit_amend`/`commit_merge`
+gain a `sign` param (no new cmd). New shared `exec.rs` git seam (reused by P59). New `GraphPrefs.showSignatureBadge`
+(default true, toggleable). NATIVE USER CHECKPOINT (real keys — SSH is AI-gate-testable hermetically; GPG native).
+
+**Orchestrator OQ decisions — accept ALL architect recs:** OQ1 mechanism C (commit-tree -S + update-ref) ·
+OQ2 openpgp-no-key → git selects by committer email (only ssh requires a key) · OQ3 dedicated signing_status ·
+OQ4 sign merge commits too (in P58a) · OQ5 update-ref ref-move (CAS old-oid) · OQ6 UI sends explicit bool ·
+OQ7 badge glyphs green-check/neutral-hollow/amber-warn/none (final look = checkpoint) · OQ8 oid cache, drop
+on Refresh + after commit.
+
+Sub-increments: **P58a** signing backend (`exec.rs` GitExec/SpawnGitExec; `signing.rs`
+resolve_signing/create_signed_commit/signing_status; commit.rs/merge.rs `sign` param + signed branch;
+`signing_status` cmd →140) + IPC + mock + SSH+config oracle → **P58b** verification (`verify_commits` +
+build_verify_args/parse_verify_output/map_status_code; cmd →141) + oracle → **P58c** frontend (light badge +
+panel line + sign toggle + `showSignatureBadge` pref).
+
+- **P58a** (reviewer APPROVE, 0 must-fix / 0 should-fix; 4 nits) — signing backend. New `exec.rs`
+  (GitExec/SpawnGitExec: never-prompt env + GIT_ASKPASS/SSH_ASKPASS removed → locked agent fails fast,
+  CREATE_NO_WINDOW, argv vector no shell injection) + `signing.rs` (resolve_signing; create_signed_commit
+  = `git commit-tree -S` + `git update-ref` CAS, mechanism C; signing_status). commit.rs/merge.rs +`sign:
+  Option<bool>` — **unsigned path reviewer-verified BYTE-IDENTICAL** (signing branch only when resolved
+  true; resolve_signature/ConfigMissing before any spawn; no-gpgsig asserted via cat-file). ssh+no-key →
+  ConfigMissing (before spawn); openpgp-no-key → git decides. `signing_status` cmd (139→140). ~80-caller
+  `sign` fan-out — all PRODUCTION sites (compose_apply, bonsai-mcp ×2, clean-merge auto-commit) pass None
+  (follow config); staging/merge thread the user's sign. SSH oracle RAN (ssh-keygen 2.51): signed commit
+  verify-commits + has gpgsig; signed amend preserves author+date. cargo -p bonsai-core 918 pass; clippy -D
+  + build/tsc clean. Nits: extract signing.rs oracle (562 lines) → tests/signing_cli.rs in P58b; behavior
+  delta (correct D3): composer/MCP commits now sign when commit.gpgsign=true; cherry-pick/revert/rebase
+  still unsigned (out of scope, follow-up).
+**Current step:** P58a DONE (committed). Next: **P58b** — verification (`verify_commits` +
+build_verify_args/parse_verify_output/map_status_code; cmd →141) + oracle; EXTRACT the signing.rs test
+oracle to `tests/signing_cli.rs` (keep signing.rs under the ~500 limit).
+
 ## P57 — semantic commit-history search (Phase 2 · milestone 5/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
 Contract: `docs/contracts/P57-semantic-history-search.md`. OD1 = local-`claude`-CLI-only. Highest build

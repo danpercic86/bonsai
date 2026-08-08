@@ -728,7 +728,7 @@ mod tests {
         std::fs::write(p.join("staged.txt"), "s1\n").expect("write");
         std::fs::write(p.join("unstaged.txt"), "u1\n").expect("write");
         stage_paths(p, &["staged.txt".into(), "unstaged.txt".into()]).expect("stage");
-        create_commit(p, "base").expect("commit");
+        create_commit(p, "base", None).expect("commit");
 
         // Clean worktree => empty gather.
         assert!(
@@ -768,7 +768,7 @@ mod tests {
         // Summary line + a body line whose text lives ONLY in the body — proving
         // the whole message body (not merely the summary) reaches the grounding.
         let msg = "Add greeting\n\nExplains WHY: users needed a friendly hello.";
-        let oid = create_commit(p, msg).expect("commit").oid;
+        let oid = create_commit(p, msg, None).expect("commit").oid;
 
         let (prefix, files) =
             build_payload(p, &AiDiffTarget::Commit { oid }).expect("build payload");
@@ -796,7 +796,7 @@ mod tests {
         let p = dir.path();
         std::fs::write(p.join("a.txt"), "a\n").expect("write");
         stage_paths(p, &["a.txt".into()]).expect("stage");
-        let head = create_commit(p, "A").expect("commit").oid;
+        let head = create_commit(p, "A", None).expect("commit").oid;
 
         let repo = git2::Repository::open(p).expect("open");
         let head_commit = commit_of(&repo, &head);
@@ -816,7 +816,7 @@ mod tests {
         let p = dir.path();
         std::fs::write(p.join("a.txt"), "a\n").expect("write");
         stage_paths(p, &["a.txt".into()]).expect("stage");
-        let head = create_commit(p, "A").expect("commit").oid;
+        let head = create_commit(p, "A", None).expect("commit").oid;
 
         let repo = git2::Repository::open(p).expect("open");
         let head_commit = commit_of(&repo, &head);
@@ -854,7 +854,7 @@ mod tests {
         let p = dir.path();
         std::fs::write(p.join("a.txt"), "a\n").expect("write");
         stage_paths(p, &["a.txt".into()]).expect("stage");
-        let head = create_commit(p, "A").expect("commit").oid;
+        let head = create_commit(p, "A", None).expect("commit").oid;
 
         let repo = git2::Repository::open(p).expect("open");
         let head_commit = commit_of(&repo, &head);
@@ -881,7 +881,7 @@ mod tests {
         let p = dir.path();
         std::fs::write(p.join("a.txt"), "a\n").expect("write");
         stage_paths(p, &["a.txt".into()]).expect("stage");
-        let head = create_commit(p, "A").expect("commit").oid;
+        let head = create_commit(p, "A", None).expect("commit").oid;
 
         let repo = git2::Repository::open(p).expect("open");
         let head_commit = commit_of(&repo, &head);

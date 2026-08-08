@@ -100,7 +100,7 @@ fn essentials_1_amend_matches_cli() {
     git(a, &["add", "a.txt"]);
     git(b, &["add", "a.txt"]);
 
-    amend_commit(a, "amended subject").expect("bonsai amend");
+    amend_commit(a, "amended subject", None).expect("bonsai amend");
     git_env(
         b,
         &["commit", "--amend", "-m", "amended subject"],
@@ -144,7 +144,7 @@ fn essentials_1b_message_only_amend_matches_cli() {
     }
     let tree_before = tree_oid(a);
 
-    amend_commit(a, "reworded").expect("bonsai amend");
+    amend_commit(a, "reworded", None).expect("bonsai amend");
     git_env(
         b,
         &["commit", "--amend", "-m", "reworded"],
@@ -185,7 +185,7 @@ fn essentials_1c_merge_amend_preserves_both_parents() {
     // Stage a new change and amend the merge commit.
     write(d, "extra.txt", "extra\n");
     git(d, &["add", "extra.txt"]);
-    amend_commit(d, "merge topic (amended)").expect("amend merge");
+    amend_commit(d, "merge topic (amended)", None).expect("amend merge");
 
     let repo = git2::Repository::open(d).expect("open");
     let head = repo.head().expect("head").peel_to_commit().expect("peel");

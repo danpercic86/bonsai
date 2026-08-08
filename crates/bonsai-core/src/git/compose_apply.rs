@@ -144,7 +144,8 @@ pub fn apply_composed_commits(
         let paths = files_with_rename_origs(&rename_origs, &g.files);
         // Stage ONLY this group, then commit the whole (cumulative) index. Because
         // the partition is disjoint, the commit's delta-to-parent is exactly `g`.
-        let step = stage_paths(workdir, &paths).and_then(|()| create_commit(workdir, &g.message));
+        let step =
+            stage_paths(workdir, &paths).and_then(|()| create_commit(workdir, &g.message, None));
         match step {
             Ok(cr) => commits.push(ComposeCommit {
                 oid: cr.oid,
@@ -417,7 +418,7 @@ mod tests {
         let p = dir.path();
         write(p, "base.txt", "base\n");
         stage(p, &["base.txt"]);
-        create_commit(p, "base").expect("commit");
+        create_commit(p, "base", None).expect("commit");
         let base = head_oid(p).expect("base head");
 
         write(p, "f1.txt", "1\n");
@@ -463,7 +464,7 @@ mod tests {
         let p = dir.path();
         write(p, "base.txt", "base\n");
         stage(p, &["base.txt"]);
-        create_commit(p, "base").expect("commit");
+        create_commit(p, "base", None).expect("commit");
 
         write(p, "covered.txt", "c\n");
         write(p, "uncovered.txt", "u\n");
@@ -495,7 +496,7 @@ mod tests {
         let p = dir.path();
         write(p, "base.txt", "base\n");
         stage(p, &["base.txt"]);
-        create_commit(p, "base").expect("commit");
+        create_commit(p, "base", None).expect("commit");
         write(p, "f1.txt", "1\n");
         write(p, "f2.txt", "2\n");
         let orig = head_oid(p).expect("head");
@@ -573,7 +574,7 @@ mod tests {
         write(p, "a.txt", "a\n");
         write(p, "b.txt", "b\n");
         stage(p, &["a.txt", "b.txt"]);
-        create_commit(p, "base").expect("commit");
+        create_commit(p, "base", None).expect("commit");
         let orig = head_oid(p).expect("head");
 
         // a.txt: a genuine working-tree change. b.txt: staged then reverted — its
@@ -632,7 +633,7 @@ mod tests {
         write(p, "a.txt", "a\n");
         write(p, "b.txt", "b\n");
         stage(p, &["a.txt", "b.txt"]);
-        create_commit(p, "base").expect("commit");
+        create_commit(p, "base", None).expect("commit");
         let orig = head_oid(p).expect("head");
 
         // Detach HEAD at the base commit (mirrors `git checkout <sha>`).
@@ -737,7 +738,7 @@ mod tests {
         // 1's root commit, then roll back from the `None` (unborn) anchor.
         reset_index_to_head(&repo2, None).expect("reset");
         stage(p2, &["g1.txt"]);
-        create_commit(p2, "root: g1").expect("commit");
+        create_commit(p2, "root: g1", None).expect("commit");
         assert!(head_oid(p2).is_some(), "root landed");
         rollback(&repo2, None).expect("rollback");
 
@@ -758,7 +759,7 @@ mod tests {
         let p = dir.path();
         write(p, "tracked.txt", "orig\n");
         stage(p, &["tracked.txt"]);
-        create_commit(p, "base").expect("commit");
+        create_commit(p, "base", None).expect("commit");
 
         // A tracked modification + two untracked additions.
         write(p, "tracked.txt", "modified body\n");

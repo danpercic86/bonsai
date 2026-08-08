@@ -11,6 +11,8 @@ use crate::git::autostash::{self, PopResult};
 use crate::git::bisect::require_no_bisect;
 use crate::git::commit::{resolve_signature, CommitResult};
 use crate::git::conflict::list_conflicts;
+use crate::git::exec::SpawnGitExec;
+use crate::git::signing::{self, resolve_signing};
 use crate::git::repo::read_head_info;
 use crate::git::stage::open_workdir_repo;
 
@@ -278,7 +280,9 @@ pub fn merge_branch(workdir: &Path, branch_name: &str) -> Result<MergeOutcome, A
     // `annotated` / `incoming` already dropped above; release the index borrow
     // before the &mut finalize below.
     drop(index);
-    let result = finalize_merge_commit(&mut repo, &message)?;
+    // Auto-commit follows commit.gpgsign (None) — a clean merge signs iff the
+    // user opted in; byte-identical to pre-P58 when gpgsign is off (the default).
+    let result = finalize_merge_commit(&mut repo, &message, None)?;
     let oid = result.oid;
     if stashed {
         return Ok(match autostash::pop_after_success(&mut repo, workdir)? {
@@ -292,9 +296,14 @@ pub fn merge_branch(workdir: &Path, branch_name: &str) -> Result<MergeOutcome, A
 /// Shared core of commit_merge and the clean-merge auto-commit path
 /// (contract §4.4 steps 3–9): normalize the message, resolve the signature,
 /// collect HEAD + every MERGE_HEAD as parents, commit, cleanup_state.
+///
+/// `sign` (P58 D3 / OQ4): `None` ⇒ follow `commit.gpgsign`; `Some(b)` ⇒ `b`.
+/// The unsigned path is byte-identical to pre-P58; signing routes the SAME
+/// parents through [`signing::create_signed_commit`].
 fn finalize_merge_commit(
     repo: &mut git2::Repository,
     message: &str,
+    sign: Option<bool>,
 ) -> Result<CommitResult, AppError> {
     // Normalize exactly like create_commit (CRLF/CR -> \n, trim).
     let normalized = message.replace("\r\n", "\n").replace('\r', "\n");
@@ -302,6 +311,9 @@ fn finalize_merge_commit(
     if msg.is_empty() {
         return Err(AppError::EmptyMessage);
     }
+    // Owned workdir for the signing spawn (releases the immutable borrow before
+    // the &mut mergehead_foreach below).
+    let workdir_buf = repo.workdir().map(std::path::Path::to_path_buf);
 
     let sig = resolve_signature(&repo.config()?.snapshot()?)?;
 
@@ -327,17 +339,42 @@ fn finalize_merge_commit(
     // NO nothing-to-commit check: an empty-diff merge commit is legitimate —
     // it records ancestry.
     let mut index = repo.index()?;
-    let tree = repo.find_tree(index.write_tree()?)?;
-    let oid = repo.commit(Some("HEAD"), &sig, &sig, &format!("{msg}\n"), &tree, &parent_refs)?;
+    let tree_oid = index.write_tree()?;
+    let tree = repo.find_tree(tree_oid)?;
+    let full = format!("{msg}\n");
+    let summary = msg.lines().next().unwrap_or(msg).to_string();
+
+    let signing = resolve_signing(&repo.config()?.snapshot()?, sign);
+    let oid = if !signing.sign {
+        // Unsigned path: byte-identical to pre-P58.
+        repo.commit(Some("HEAD"), &sig, &sig, &full, &tree, &parent_refs)?
+    } else {
+        let workdir = workdir_buf.as_deref().ok_or_else(|| {
+            AppError::Git("cannot sign a merge in a bare repository".to_string())
+        })?;
+        let parent_oids: Vec<git2::Oid> = parents.iter().map(git2::Commit::id).collect();
+        signing::create_signed_commit(
+            &SpawnGitExec,
+            workdir,
+            tree_oid,
+            &parent_oids,
+            &sig,
+            &sig,
+            &full,
+            Some(parents[0].id()),
+            &format!("commit (merge): {summary}"),
+        )?
+    };
 
     repo.cleanup_state()?; // removes MERGE_HEAD/MERGE_MSG/MERGE_MODE -> Clean
 
+    // HEAD's symref (branch NAME) is stable across the signed external ref move,
+    // so reading it off the same handle is authoritative for both paths.
     let branch = repo
         .head()
         .ok()
         .filter(|h| h.is_branch())
         .and_then(|h| h.shorthand().ok().map(String::from));
-    let summary = msg.lines().next().unwrap_or(msg).to_string();
     Ok(CommitResult {
         oid: oid.to_string(),
         summary,
@@ -346,8 +383,13 @@ fn finalize_merge_commit(
 }
 
 /// Blocking. Finalizes a paused merge as a 2(+)-parent commit
-/// (contract §4.4 — cheap checks first).
-pub fn commit_merge(workdir: &Path, message: &str) -> Result<CommitResult, AppError> {
+/// (contract §4.4 — cheap checks first). `sign` (P58 D3 / OQ4): `None` ⇒ follow
+/// `commit.gpgsign`; `Some(b)` ⇒ `b`.
+pub fn commit_merge(
+    workdir: &Path,
+    message: &str,
+    sign: Option<bool>,
+) -> Result<CommitResult, AppError> {
     let mut repo = open_workdir_repo(workdir)?;
 
     if repo.state() != git2::RepositoryState::Merge {
@@ -362,7 +404,7 @@ pub fn commit_merge(workdir: &Path, message: &str) -> Result<CommitResult, AppEr
             "cannot commit: {n} unresolved conflict(s) remain"
         )));
     }
-    finalize_merge_commit(&mut repo, message)
+    finalize_merge_commit(&mut repo, message, sign)
 }
 
 /// Blocking. Aborts a paused merge; restores pre-merge index + the worktree
@@ -527,7 +569,7 @@ mod tests {
                 &files.iter().map(|(n, _)| n.to_string()).collect::<Vec<_>>(),
             )
             .expect("stage");
-            crate::git::commit::create_commit(dir.path(), msg).expect("commit")
+            crate::git::commit::create_commit(dir.path(), msg, None).expect("commit")
         };
 
         // Base commit with the conflict file + an unrelated file.
@@ -603,7 +645,7 @@ mod tests {
         }
 
         // commit_merge / abort_merge with no merge in progress.
-        let err = commit_merge(dir.path(), "msg").expect_err("no merge");
+        let err = commit_merge(dir.path(), "msg", None).expect_err("no merge");
         assert!(matches!(err, AppError::NoOperationInProgress(_)));
         let err = abort_merge(dir.path()).expect_err("no merge");
         assert!(matches!(err, AppError::NoOperationInProgress(_)));
@@ -636,7 +678,7 @@ mod tests {
             &files.iter().map(|(n, _)| n.to_string()).collect::<Vec<_>>(),
         )
         .expect("stage");
-        crate::git::commit::create_commit(dir, msg).expect("commit");
+        crate::git::commit::create_commit(dir, msg, None).expect("commit");
     }
 
     /// Build a commit on `refname` from `parent`'s tree with the given top-level

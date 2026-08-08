@@ -11,6 +11,7 @@ import { composeHandlers } from './mock/handlers/compose';
 import { rebaseHandlers } from './mock/handlers/rebase';
 import { bisectHistoryHandlers } from './mock/handlers/bisectHistory';
 import { searchHandlers } from './mock/handlers/search';
+import { signingHandlers } from './mock/handlers/signing';
 import { historyHandlers } from './mock/handlers/history';
 import { configHandlers } from './mock/handlers/config';
 import { stashHandlers } from './mock/handlers/stash';
@@ -37,6 +38,7 @@ export const mockIpc: IpcApi = {
   ...rebaseHandlers,
   ...bisectHistoryHandlers,
   ...searchHandlers,
+  ...signingHandlers,
   ...historyHandlers,
   ...configHandlers,
   ...stashHandlers,

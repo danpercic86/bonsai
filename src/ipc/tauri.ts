@@ -84,6 +84,7 @@ import type {
   SearchQuery,
   SearchResults,
   SessionState,
+  SigningStatus,
   StaleReport,
   StashEntry,
   StatusSnapshot,
@@ -169,8 +170,8 @@ export const tauriIpc: IpcApi = {
     return invoke<void>('unstage', { repoId, paths });
   },
 
-  commit(repoId: string, message: string): Promise<CommitResult> {
-    return invoke<CommitResult>('commit', { repoId, message });
+  commit(repoId: string, message: string, sign: boolean | null = null): Promise<CommitResult> {
+    return invoke<CommitResult>('commit', { repoId, message, sign });
   },
 
   getWorkdirFileDiff(
@@ -470,6 +471,10 @@ export const tauriIpc: IpcApi = {
     return invoke<SearchResults>('search_commits', { repoId, query });
   },
 
+  signingStatus(repoId: string): Promise<SigningStatus> {
+    return invoke<SigningStatus>('signing_status', { repoId });
+  },
+
   historyIndexBuild(
     repoId: string,
     onProgress: (p: IndexProgress) => void,
@@ -543,8 +548,8 @@ export const tauriIpc: IpcApi = {
     return invoke<void>('drop_stash', { repoId, index });
   },
 
-  commitAmend(repoId: string, message: string): Promise<CommitResult> {
-    return invoke<CommitResult>('commit_amend', { repoId, message });
+  commitAmend(repoId: string, message: string, sign: boolean | null = null): Promise<CommitResult> {
+    return invoke<CommitResult>('commit_amend', { repoId, message, sign });
   },
 
   resetBranch(repoId: string, oid: string, mode: ResetMode): Promise<void> {

@@ -449,7 +449,7 @@ seven-branch
         let p = dir.path();
         std::fs::write(p.join("base.txt"), "base\n").expect("write");
         stage_paths(p, &["base.txt".into()]).expect("stage");
-        create_commit(p, "base").expect("commit");
+        create_commit(p, "base", None).expect("commit");
         // Worktree is now clean => no grounding.
 
         let err = suggest_branch_name(p, &BranchNameSource::Working, RunOpts::default())
@@ -485,7 +485,7 @@ seven-branch
         let p = dir.path();
         std::fs::write(p.join("base.txt"), "base\n").expect("write");
         stage_paths(p, &["base.txt".into()]).expect("stage");
-        create_commit(p, "base").expect("commit");
+        create_commit(p, "base", None).expect("commit");
 
         // from == to => merge-base is that same commit, which the revwalk both
         // pushes and hides => zero commits in the range => empty grounding.

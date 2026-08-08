@@ -156,7 +156,7 @@ mod tests {
             &files.iter().map(|(n, _)| n.to_string()).collect::<Vec<_>>(),
         )
         .expect("stage");
-        crate::git::commit::create_commit(dir, msg).expect("commit");
+        crate::git::commit::create_commit(dir, msg, None).expect("commit");
     }
 
     /// An empty paths vec is a no-op Ok (never clobbers the whole worktree).

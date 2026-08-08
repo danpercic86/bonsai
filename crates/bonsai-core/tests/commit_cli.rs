@@ -117,7 +117,7 @@ fn normal_commit_matches_cli() {
         git(p, &["add", "--", "new.txt"]);
     });
 
-    let res = create_commit(a.path(), "add new file").expect("create_commit");
+    let res = create_commit(a.path(), "add new file", None).expect("create_commit");
     git(b.path(), &["commit", "-m", "add new file"]);
 
     let obj = assert_same_commit_fields(a.path(), b.path());
@@ -141,7 +141,7 @@ fn multiline_message_preserved() {
         git(p, &["add", "--", "new.txt"]);
     });
 
-    let res = create_commit(a.path(), msg).expect("create_commit");
+    let res = create_commit(a.path(), msg, None).expect("create_commit");
     git(b.path(), &["commit", "-m", msg]);
 
     let obj = assert_same_commit_fields(a.path(), b.path());
@@ -157,7 +157,7 @@ fn message_trimmed_with_single_trailing_newline() {
     std::fs::write(a.path().join("new.txt"), "content\n").expect("write new.txt");
     git(a.path(), &["add", "--", "new.txt"]);
 
-    let res = create_commit(a.path(), "   hello world  \n\n").expect("create_commit");
+    let res = create_commit(a.path(), "   hello world  \n\n", None).expect("create_commit");
     assert_eq!(res.summary, "hello world");
     assert_eq!(cat_file_head(a.path()).message, "hello world\n");
 }
@@ -171,7 +171,7 @@ fn unborn_first_commit() {
         git(p, &["add", "--", "first.txt"]);
     });
 
-    let res = create_commit(a.path(), "first commit").expect("create_commit");
+    let res = create_commit(a.path(), "first commit", None).expect("create_commit");
     git(b.path(), &["commit", "-m", "first commit"]);
 
     let obj = assert_same_commit_fields(a.path(), b.path());
@@ -195,7 +195,7 @@ fn empty_message_rejected() {
     let head_before = git(a.path(), &["rev-parse", "HEAD"]);
 
     for msg in ["", "   ", " \n\t \n"] {
-        let err = create_commit(a.path(), msg).expect_err("empty message must be rejected");
+        let err = create_commit(a.path(), msg, None).expect_err("empty message must be rejected");
         assert!(matches!(err, AppError::EmptyMessage), "got: {err:?}");
     }
     assert_eq!(git(a.path(), &["rev-parse", "HEAD"]), head_before);
@@ -204,7 +204,7 @@ fn empty_message_rejected() {
     let unborn = init_repo();
     std::fs::write(unborn.path().join("f.txt"), "x\n").expect("write f.txt");
     git(unborn.path(), &["add", "--", "f.txt"]);
-    let err = create_commit(unborn.path(), "  ").expect_err("empty message on unborn");
+    let err = create_commit(unborn.path(), "  ", None).expect_err("empty message on unborn");
     assert!(matches!(err, AppError::EmptyMessage), "got: {err:?}");
     assert!(
         !git_ok(unborn.path(), &["rev-parse", "--verify", "HEAD"]),
@@ -218,12 +218,12 @@ fn nothing_to_commit_rejected() {
     require_git!();
     let clean = base_repo();
     let head_before = git(clean.path(), &["rev-parse", "HEAD"]);
-    let err = create_commit(clean.path(), "no changes").expect_err("clean repo");
+    let err = create_commit(clean.path(), "no changes", None).expect_err("clean repo");
     assert!(matches!(err, AppError::NothingToCommit), "got: {err:?}");
     assert_eq!(git(clean.path(), &["rev-parse", "HEAD"]), head_before);
 
     let unborn = init_repo();
-    let err = create_commit(unborn.path(), "nothing yet").expect_err("unborn empty index");
+    let err = create_commit(unborn.path(), "nothing yet", None).expect_err("unborn empty index");
     assert!(matches!(err, AppError::NothingToCommit), "got: {err:?}");
     assert!(!git_ok(unborn.path(), &["rev-parse", "--verify", "HEAD"]));
 }
@@ -239,7 +239,7 @@ fn detached_head_commit() {
     std::fs::write(a.path().join("tracked.txt"), "detached change\n").expect("modify");
     stage_paths(a.path(), &["tracked.txt".to_string()]).expect("stage_paths");
 
-    let res = create_commit(a.path(), "detached commit").expect("create_commit");
+    let res = create_commit(a.path(), "detached commit", None).expect("create_commit");
     assert_eq!(res.branch, None);
     let new_head = git(a.path(), &["rev-parse", "HEAD"]);
     assert_ne!(new_head, base_oid, "HEAD must advance");
@@ -255,7 +255,7 @@ fn commit_then_status_clean() {
     std::fs::write(a.path().join("feature.rs"), "fn main() {}\n").expect("write feature.rs");
     stage_paths(a.path(), &["feature.rs".to_string()]).expect("stage_paths");
 
-    create_commit(a.path(), "add feature").expect("create_commit");
+    create_commit(a.path(), "add feature", None).expect("create_commit");
 
     let snapshot = read_status(a.path()).expect("read_status");
     assert!(snapshot.staged.is_empty());

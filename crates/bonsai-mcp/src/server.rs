@@ -722,7 +722,7 @@ impl BonsaiServer {
     #[tool]
     async fn bonsai_commit(&self, Parameters(args): Parameters<MessageArgs>) -> CallToolResult {
         match self
-            .run_blocking(move |wd| bonsai_core::git::commit::create_commit(wd, &args.message))
+            .run_blocking(move |wd| bonsai_core::git::commit::create_commit(wd, &args.message, None))
             .await
         {
             Ok(v) => ok_json(&v),
@@ -789,7 +789,7 @@ impl BonsaiServer {
         Parameters(args): Parameters<MessageArgs>,
     ) -> CallToolResult {
         match self
-            .run_blocking(move |wd| bonsai_core::git::merge::commit_merge(wd, &args.message))
+            .run_blocking(move |wd| bonsai_core::git::merge::commit_merge(wd, &args.message, None))
             .await
         {
             Ok(v) => ok_json(&v),

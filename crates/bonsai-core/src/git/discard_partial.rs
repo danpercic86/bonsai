@@ -256,7 +256,7 @@ mod tests {
             &files.iter().map(|(n, _)| n.to_string()).collect::<Vec<_>>(),
         )
         .expect("stage");
-        crate::git::commit::create_commit(dir, msg).expect("commit");
+        crate::git::commit::create_commit(dir, msg, None).expect("commit");
     }
 
     fn sel(kind: LineKind, old_no: Option<u32>, new_no: Option<u32>) -> LineSelection {
@@ -323,7 +323,7 @@ mod tests {
         init(d);
         std::fs::write(d.join("bin.dat"), b"a\0b\n").expect("write");
         crate::git::stage::stage_paths(d, &["bin.dat".to_string()]).expect("stage");
-        crate::git::commit::create_commit(d, "bin").expect("commit");
+        crate::git::commit::create_commit(d, "bin", None).expect("commit");
         std::fs::write(d.join("bin.dat"), b"c\0d\n").expect("edit");
 
         let s = vec![sel(LineKind::Add, None, Some(1))];
@@ -553,7 +553,7 @@ mod tests {
         // CRLF worktree file; autocrlf stores LF in the index blob.
         std::fs::write(d.join("c.txt"), b"one\r\ntwo\r\nthree\r\n").expect("write");
         crate::git::stage::stage_paths(d, &["c.txt".to_string()]).expect("stage");
-        crate::git::commit::create_commit(d, "crlf base").expect("commit");
+        crate::git::commit::create_commit(d, "crlf base", None).expect("commit");
         // Worktree deletes line "two" (still CRLF).
         std::fs::write(d.join("c.txt"), b"one\r\nthree\r\n").expect("edit");
 

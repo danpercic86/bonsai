@@ -700,6 +700,24 @@ export interface SearchResults {
   truncated: boolean;
 }
 
+// ---- P58: commit signing ---------------------------------------------------
+
+/** `gpg.format` — how commits are signed. Mirrors the Rust `SignFormat`
+ *  (lowercase). */
+export type SignFormat = 'ssh' | 'openpgp';
+
+/** Effective signing config for the commit-box indicator/toggle (P58a D6).
+ *  Mirrors the Rust `SigningStatus` (camelCase). `enabled` = effective
+ *  `commit.gpgsign`; `format` is null when `gpg.format` is unset (git default =
+ *  openpgp); `hasKey` = `user.signingkey` set + non-empty; `key` (path or id) is
+ *  omitted when unset. */
+export interface SigningStatus {
+  enabled: boolean;
+  format: SignFormat | null;
+  hasKey: boolean;
+  key?: string;
+}
+
 // ---- P57: semantic commit-history search (BM25 index) ----------------------
 
 /** Build phase of `historyIndexBuild` (P57a). Mirrors the Rust `IndexPhase`
@@ -1504,9 +1522,10 @@ export interface IpcApi {
   stage(repoId: string, paths: string[]): Promise<void>;
   /** Unstage paths. Atomic. Safe (worktree never touched). */
   unstage(repoId: string, paths: string[]): Promise<void>;
-  /** Create a commit from the index. Rejects with AppError kinds
-   *  emptyMessage | configMissing | nothingToCommit | git | noRepo. */
-  commit(repoId: string, message: string): Promise<CommitResult>;
+  /** Create a commit from the index. `sign` (P58): null/undefined ⇒ follow
+   *  `commit.gpgsign`; true ⇒ force sign; false ⇒ force unsigned. Rejects with
+   *  AppError kinds emptyMessage | configMissing | nothingToCommit | git | noRepo. */
+  commit(repoId: string, message: string, sign?: boolean | null): Promise<CommitResult>;
   /** Diff of one working-dir file. staged=false: index vs workdir; staged=true: HEAD vs index.
    *  origPath: pass StatusEntry.origPath (renames). Rejects AppError ('noRepo', 'git'). */
   getWorkdirFileDiff(
@@ -1689,6 +1708,9 @@ export interface IpcApi {
    *  `{ matches: [], truncated: false }`. Read-only, does NOT emit repo-changed.
    *  Rejects git (bad pathspec / invalid `-G` regex) | noRepo. */
   searchCommits(repoId: string, query: SearchQuery): Promise<SearchResults>;
+  /** Effective signing config for the commit-box indicator/toggle (P58a D6).
+   *  Read-only; does NOT emit repo-changed. Rejects noRepo | git. */
+  signingStatus(repoId: string): Promise<SigningStatus>;
   /** Build/refresh the per-commit semantic-search INDEX (BM25 over message+diff),
    *  streaming `IndexProgress`. Incremental: only commits absent from the store are
    *  (re)documented. Writes to the app data dir keyed by repo — NOT the repo; does
@@ -1751,9 +1773,9 @@ export interface IpcApi {
   /** Permanently discard stash `index` (UI confirms). Rejects git | noRepo. */
   dropStash(repoId: string, index: number): Promise<void>;
   /** Amend HEAD with a new message + the current index (P20). Preserves HEAD's
-   *  parents + original author. Rejects operationInProgress | emptyMessage |
-   *  configMissing | git | noRepo. */
-  commitAmend(repoId: string, message: string): Promise<CommitResult>;
+   *  parents + original author. `sign` (P58): as {@link commit}. Rejects
+   *  operationInProgress | emptyMessage | configMissing | git | noRepo. */
+  commitAmend(repoId: string, message: string, sign?: boolean | null): Promise<CommitResult>;
   /** Move the current branch (HEAD) to `oid` in `mode` (P20). Hard is
    *  destructive — the UI confirms first. Rejects operationInProgress | git | noRepo. */
   resetBranch(repoId: string, oid: string, mode: ResetMode): Promise<void>;

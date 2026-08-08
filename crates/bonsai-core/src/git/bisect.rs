@@ -899,7 +899,7 @@ mod tests {
 
         assert!(
             matches!(
-                create_commit(d, "blocked").expect_err("commit blocked"),
+                create_commit(d, "blocked", None).expect_err("commit blocked"),
                 AppError::OperationInProgress(_)
             ),
             "commit must be refused mid-bisect"

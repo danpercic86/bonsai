@@ -412,15 +412,15 @@ mod tests {
 
         std::fs::write(p.join("f.txt"), "a\nb\nc\n").expect("write");
         stage_paths(p, &["f.txt".into()]).expect("stage");
-        let c1 = create_commit(p, "add f").expect("commit").oid;
+        let c1 = create_commit(p, "add f", None).expect("commit").oid;
 
         std::fs::write(p.join("f.txt"), "a\nb2\nc\n").expect("write");
         stage_paths(p, &["f.txt".into()]).expect("stage");
-        let c2 = create_commit(p, "edit line 2").expect("commit").oid;
+        let c2 = create_commit(p, "edit line 2", None).expect("commit").oid;
 
         std::fs::write(p.join("f.txt"), "a\nb2\nc3\n").expect("write");
         stage_paths(p, &["f.txt".into()]).expect("stage");
-        let c3 = create_commit(p, "edit line 3").expect("commit").oid;
+        let c3 = create_commit(p, "edit line 3", None).expect("commit").oid;
 
         let l1 = blame_line(p, "f.txt", 1, None).expect("blame l1");
         assert_eq!(l1.oid, c1, "line 1 last touched by the first commit");

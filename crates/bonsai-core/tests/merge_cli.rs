@@ -575,7 +575,7 @@ fn commit_merge_after_resolving_matches_cli_twin() {
         .expect("MERGE_MSG")
         .trim_end()
         .to_string();
-    let result = commit_merge(bonsai.path(), &msg).expect("commit merge");
+    let result = commit_merge(bonsai.path(), &msg, None).expect("commit merge");
     assert_eq!(result.oid, head_oid(bonsai.path()));
     assert_eq!(result.branch.as_deref(), Some("main"));
     assert_eq!(result.summary, "Merge branch 'topic'");
@@ -621,7 +621,7 @@ fn commit_merge_with_unresolved_conflicts_is_rejected() {
     }
     resolve_conflict(d, "a.txt", ConflictResolution::Ours).expect("resolve a");
     // b.txt still conflicted.
-    let err = commit_merge(d, "msg").expect_err("unresolved");
+    let err = commit_merge(d, "msg", None).expect_err("unresolved");
     assert!(
         matches!(err, AppError::UnresolvedConflicts(_)),
         "expected UnresolvedConflicts, got {err:?}"
@@ -637,7 +637,7 @@ fn commit_merge_without_a_merge_is_rejected() {
     git(d, &["add", "-A"]);
     commit_fixed(d, "base");
 
-    let err = commit_merge(d, "msg").expect_err("no merge");
+    let err = commit_merge(d, "msg", None).expect_err("no merge");
     assert!(
         matches!(err, AppError::NoOperationInProgress(_)),
         "expected NoOperationInProgress, got {err:?}"
@@ -754,7 +754,7 @@ fn plain_commit_during_paused_merge_is_rejected() {
     }
     resolve_conflict(d, "a.txt", ConflictResolution::Ours).expect("resolve");
 
-    let err = create_commit(d, "sneaky plain commit").expect_err("gated");
+    let err = create_commit(d, "sneaky plain commit", None).expect_err("gated");
     assert!(
         matches!(err, AppError::OperationInProgress(_)),
         "expected OperationInProgress, got {err:?}"

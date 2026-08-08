@@ -130,7 +130,9 @@ export const statusHandlers = {
     state.mainRs.workdir = reconstructLines('unstage', hunks, index, workdir, selAdd, selDel);
   },
 
-  async commit(repoId: string, message: string): Promise<CommitResult> {
+  // P58: `sign` is accepted but ignored — the browser mock cannot sign (real
+  // signing is native-only). `signingStatus` drives the commit-box indicator.
+  async commit(repoId: string, message: string, _sign?: boolean | null): Promise<CommitResult> {
     await delay(150);
     const state = requireRepo(repoId);
     if (message.trim() === '') {

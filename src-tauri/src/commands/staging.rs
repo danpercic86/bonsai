@@ -45,15 +45,17 @@ pub(crate) async fn unstage_inner(
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
-/// Creates a commit from the current index. Errors:
+/// Creates a commit from the current index. `sign` (P58): `null`/absent ⇒ follow
+/// `commit.gpgsign`; `true` ⇒ force sign; `false` ⇒ force unsigned. Errors:
 /// `emptyMessage` | `configMissing` | `nothingToCommit` | `git` | `noRepo`.
 #[tauri::command]
 pub async fn commit(
     state: tauri::State<'_, AppState>,
     repo_id: String,
     message: String,
+    sign: Option<bool>,
 ) -> Result<CommitResult, AppError> {
-    commit_inner(state.inner(), &repo_id, message).await
+    commit_inner(state.inner(), &repo_id, message, sign).await
 }
 
 /// Runtime-free core of `commit` (unit-testable without a Tauri app).
@@ -61,9 +63,10 @@ pub(crate) async fn commit_inner(
     state: &AppState,
     repo_id: &str,
     message: String,
+    sign: Option<bool>,
 ) -> Result<CommitResult, AppError> {
     let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || create_commit(&path, &message))
+    tauri::async_runtime::spawn_blocking(move || create_commit(&path, &message, sign))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
@@ -131,16 +134,18 @@ pub(crate) async fn unstage_partial_inner(
 }
 
 /// Amends the current HEAD commit with a new message + the current index
-/// (P20 contract §2). Preserves HEAD's parents + original author. Errors:
-/// `operationInProgress` | `git` | `emptyMessage` | `configMissing` | `noRepo`.
-/// Does NOT emit `repo-changed` — the frontend refetches.
+/// (P20 contract §2). Preserves HEAD's parents + original author. `sign` (P58):
+/// as `commit`. Errors: `operationInProgress` | `git` | `emptyMessage` |
+/// `configMissing` | `noRepo`. Does NOT emit `repo-changed` — the frontend
+/// refetches.
 #[tauri::command]
 pub async fn commit_amend(
     state: tauri::State<'_, AppState>,
     repo_id: String,
     message: String,
+    sign: Option<bool>,
 ) -> Result<CommitResult, AppError> {
-    commit_amend_inner(state.inner(), &repo_id, message).await
+    commit_amend_inner(state.inner(), &repo_id, message, sign).await
 }
 
 /// Runtime-free core of `commit_amend` (unit-testable without a Tauri app).
@@ -148,9 +153,10 @@ pub(crate) async fn commit_amend_inner(
     state: &AppState,
     repo_id: &str,
     message: String,
+    sign: Option<bool>,
 ) -> Result<CommitResult, AppError> {
     let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || amend_commit(&path, &message))
+    tauri::async_runtime::spawn_blocking(move || amend_commit(&path, &message, sign))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
