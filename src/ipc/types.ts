@@ -311,7 +311,15 @@ export interface FetchResult {
 export type PullResult =
   | { kind: 'upToDate' }
   | { kind: 'fastForwarded'; branch: string; from: string; to: string }
-  | { kind: 'wouldNotFastForward'; branch: string; ahead: number; behind: number };
+  | {
+      kind: 'wouldNotFastForward';
+      branch: string;
+      ahead: number;
+      behind: number;
+      /** P60b: resolved upstream shorthand ("origin/main") — the exact name the
+       *  frontend hands to mergeBranch/rebaseBranch when reconciling. */
+      upstream: string;
+    };
 
 export type RepoOpState =
   | { kind: 'none' }
@@ -594,6 +602,17 @@ export interface CheckoutResult {
   fastForwarded: boolean;
   /** Present only when `stashed`; null otherwise (serde None → null). */
   apply: ApplyStashOutcome | null;
+}
+
+/** Result of a branch rename (P60a). Mirrors Rust `RenameBranchResult`. */
+export interface RenameBranchResult {
+  /** true when the renamed branch was the checked-out branch (HEAD followed the
+   *  rename) — the frontend then refetches HEAD/status, not just the list. */
+  wasHead: boolean;
+  /** The upstream shorthand still configured after the rename (e.g. "origin/main"),
+   *  or null. libgit2 renames the `branch.<name>.*` config section, so tracking
+   *  is preserved. */
+  upstream: string | null;
 }
 
 export type MergeOutcome =
@@ -1646,6 +1665,10 @@ export interface IpcApi {
   /** Delete a LOCAL, fully merged, non-current branch. Rejects
    *  branchNotFound | unmergedBranch | git | noRepo. */
   deleteBranch(repoId: string, name: string): Promise<void>;
+  /** Rename a local branch (git branch -m). Preserves upstream + reflog; rewrites
+   *  HEAD when the renamed branch is checked out. Rejects
+   *  invalidName | branchNotFound | branchExists | git | noRepo. */
+  renameBranch(repoId: string, oldName: string, newName: string): Promise<RenameBranchResult>;
   /** GitKraken-style remote checkout: create/reuse a local tracking branch for
    *  `name` ("<remote>/<branch>") and switch to it. Rejects
    *  invalidName | branchNotFound | checkoutConflict | git | noRepo. */

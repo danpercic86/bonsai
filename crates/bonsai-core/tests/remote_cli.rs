@@ -277,9 +277,17 @@ fn pull_diverged_reports_and_changes_nothing() {
 
     let res = pull_ff(&f.work).expect("pull");
     match res {
-        PullResult::WouldNotFastForward { branch, ahead, behind } => {
+        PullResult::WouldNotFastForward {
+            branch,
+            ahead,
+            behind,
+            upstream,
+        } => {
             assert_eq!(branch, "main");
             assert_eq!((ahead, behind), (1, 1));
+            // P60b: the resolved shorthand matches git's own @{u} abbreviation.
+            let want = git(&f.work, &["rev-parse", "--abbrev-ref", "@{u}"]);
+            assert_eq!(upstream, want.trim(), "upstream shorthand matches @{{u}}");
         }
         other => panic!("expected WouldNotFastForward, got {other:?}"),
     }

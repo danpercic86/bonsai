@@ -4,6 +4,7 @@ import type { ContextMenuItem } from './ContextMenu';
 import { WorkspaceToolbar } from './WorkspaceToolbar';
 import { WorkspaceDialogs } from './WorkspaceDialogs';
 import { CherrypickMessageDialog } from './CherrypickMessageDialog';
+import { NonFfPullDialog } from './dialogs/NonFfPullDialog';
 import { WorkspaceGraphPane } from './WorkspaceGraphPane';
 import { WorkspaceRightPanel } from './WorkspaceRightPanel';
 import { isUsableRepo, shortOid } from './workspaceUtils';
@@ -57,7 +58,7 @@ import type {
 import { usePushToast } from '../ToastContext';
 import { errorMessage } from '../utils/errors';
 
-import { useRemoteOps } from './repoWorkspace/useRemoteOps';
+import { useRemoteOps, type NonFfPullInfo } from './repoWorkspace/useRemoteOps';
 import { useCommitActions } from './repoWorkspace/useCommitActions';
 import { useHookGate } from './repoWorkspace/useHookGate';
 import { useBranchActions } from './repoWorkspace/useBranchActions';
@@ -314,6 +315,10 @@ export function RepoWorkspace({
   const [amendMessage, setAmendMessage] = useState<string | null>(null);
   // P11 §1.4: "Create branch here" target commit → drives the PromptDialog.
   const [pendingCreateBranch, setPendingCreateBranch] = useState<{ oid: string } | null>(null);
+  // P60a: "Rename…" a local branch → drives the shared PromptDialog (prefilled).
+  const [pendingRenameBranch, setPendingRenameBranch] = useState<{ name: string } | null>(null);
+  // P60b: a non-fast-forward pull → drives NonFfPullDialog (Merge / Rebase).
+  const [pendingNonFfPull, setPendingNonFfPull] = useState<NonFfPullInfo | null>(null);
   // P39b: two-click bisect start. Holds the oid marked BAD (via the commit menu)
   // while the user picks an older known-GOOD commit; cleared on start / cancel.
   const [pendingBisectBad, setPendingBisectBad] = useState<string | null>(null);
@@ -417,6 +422,8 @@ export function RepoWorkspace({
     pendingHunkDiscard !== null ||
     pendingLineDiscard !== null ||
     pendingCreateBranch !== null ||
+    pendingRenameBranch !== null ||
+    pendingNonFfPull !== null ||
     pendingCherrypick !== null ||
     pendingCreateTag !== null ||
     pendingDeleteTag !== null ||
@@ -1259,6 +1266,7 @@ export function RepoWorkspace({
       refetchGraph,
       setRemoteOp,
       setPendingForcePush,
+      setPendingNonFfPull,
       runWithHookGate: hookGate.runWithHookGate,
     });
 
@@ -1306,6 +1314,7 @@ export function RepoWorkspace({
     handleCheckoutBranch,
     handleCreateBranchHere,
     handleDeleteBranch,
+    handleRenameBranch,
     handleCheckoutRemote,
     handleDeleteRemoteTracking,
   } = useBranchActions({
@@ -1318,6 +1327,7 @@ export function RepoWorkspace({
     branches,
     setBranchesError,
     setPendingCreateBranch,
+    setPendingRenameBranch,
   });
 
   const {
@@ -2234,6 +2244,7 @@ export function RepoWorkspace({
     handleCompareWithHead,
     setPendingDeleteRemote,
     setPendingDeleteBranch,
+    setPendingRenameBranch,
     handleApplyStash,
     handlePopStash,
     setPendingDropStash,
@@ -2581,6 +2592,9 @@ export function RepoWorkspace({
         pendingCreateBranch={pendingCreateBranch}
         setPendingCreateBranch={setPendingCreateBranch}
         handleCreateBranchHere={(oid, name) => void handleCreateBranchHere(oid, name)}
+        pendingRenameBranch={pendingRenameBranch}
+        setPendingRenameBranch={setPendingRenameBranch}
+        handleRenameBranch={(oldName, newName) => void handleRenameBranch(oldName, newName)}
         aiEligible={aiEligible}
         workingDirty={workingDirty}
         suggestBranchName={suggestBranchName}
@@ -2637,6 +2651,28 @@ export function RepoWorkspace({
           if (p !== null) void confirmCherrypick(p.oid, message);
         }}
         onCancel={() => setPendingCherrypick(null)}
+      />
+      {/* P60b: non-FF pull → Merge / Rebase, each routed through the EXISTING
+          merge_branch / rebase_branch handlers (conflict overlay, op-state,
+          toasts). Cancel is a no-op. This dialog is the confirm gate. */}
+      <NonFfPullDialog
+        open={pendingNonFfPull !== null}
+        branch={pendingNonFfPull?.branch ?? ''}
+        upstream={pendingNonFfPull?.upstream ?? ''}
+        ahead={pendingNonFfPull?.ahead ?? 0}
+        behind={pendingNonFfPull?.behind ?? 0}
+        busy={mutating}
+        onMerge={() => {
+          const p = pendingNonFfPull;
+          setPendingNonFfPull(null);
+          if (p !== null) void handleMergeBranch(p.upstream);
+        }}
+        onRebase={() => {
+          const p = pendingNonFfPull;
+          setPendingNonFfPull(null);
+          if (p !== null) void handleRebaseBranch(p.upstream);
+        }}
+        onCancel={() => setPendingNonFfPull(null)}
       />
       <CommandPalette
         open={palette.open}

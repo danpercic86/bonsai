@@ -52,8 +52,10 @@ export const remotesSyncHandlers = {
     const ahead = branch.ahead ?? 0;
     const behind = branch.behind ?? 0;
     if (ahead > 0 && behind > 0) {
-      // Would not fast-forward: change NOTHING (fetch already "happened").
-      return { kind: 'wouldNotFastForward', branch: branch.name, ahead, behind };
+      // Would not fast-forward: change NOTHING (fetch already "happened"). P60b:
+      // carry the resolved upstream shorthand so the dialog can offer merge/rebase.
+      const upstream = branch.upstream ?? `origin/${branch.name}`;
+      return { kind: 'wouldNotFastForward', branch: branch.name, ahead, behind, upstream };
     }
     if (behind > 0) {
       const from = state.headOid;

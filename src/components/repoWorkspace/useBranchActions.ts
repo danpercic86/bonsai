@@ -12,6 +12,7 @@ export function useBranchActions(
     branches: BranchesSnapshot | null;
     setBranchesError: Setter<string | null>;
     setPendingCreateBranch: Setter<{ oid: string } | null>;
+    setPendingRenameBranch: Setter<{ name: string } | null>;
   },
 ) {
   const {
@@ -24,6 +25,7 @@ export function useBranchActions(
     branches,
     setBranchesError,
     setPendingCreateBranch,
+    setPendingRenameBranch,
   } = deps;
 
   async function handleCreateBranch(name: string) {
@@ -108,6 +110,40 @@ export function useBranchActions(
     }
   }
 
+  // P60a: rename a local branch (git branch -m). Preserves upstream + reflog. On
+  // wasHead the HEAD symref moved, so refreshAll (HEAD/status); otherwise refetch
+  // branches + graph (the graph ref pills carry branch names). Errors toast (this
+  // is a PromptDialog action, mirroring handleCreateBranchHere).
+  async function handleRenameBranch(oldName: string, newName: string) {
+    // P60a: renaming to the unchanged name is a no-op. The dialog intentionally
+    // permits submitting the prefilled name, but the backend would reject the
+    // self-collision (Exists) with a confusing "already exists" toast — so just
+    // close the dialog and return without an ipc call.
+    if (oldName.trim() === newName.trim()) {
+      setPendingRenameBranch(null);
+      return;
+    }
+    setMutating(true);
+    try {
+      const res = await ipc.renameBranch(repoId, oldName, newName);
+      if (res.wasHead) {
+        await refreshAll();
+      } else {
+        await Promise.all([refetchBranches(), refetchGraph()]);
+      }
+      pushToast(
+        'success',
+        `Renamed ${oldName} → ${newName}` +
+          (res.upstream !== null ? ` (tracking ${res.upstream} preserved)` : ''),
+      );
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+      setPendingRenameBranch(null);
+    }
+  }
+
   // P6 §4.4: GitKraken-style remote checkout — create/reuse a local tracking
   // branch and switch to it (HEAD moves, so refreshAll like handleCheckoutBranch).
   async function handleCheckoutRemote(name: string) {
@@ -143,6 +179,7 @@ export function useBranchActions(
     handleCheckoutBranch,
     handleCreateBranchHere,
     handleDeleteBranch,
+    handleRenameBranch,
     handleCheckoutRemote,
     handleDeleteRemoteTracking,
   };

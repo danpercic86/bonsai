@@ -4,6 +4,16 @@ import { shortOid } from '../workspaceUtils';
 import { COMMIT_HOOK_CANCELED } from '../commitPushSignal';
 import type { BaseActionDeps, Setter } from './types';
 
+/** P60b: a fast-forward-only pull hit a diverged branch — drives NonFfPullDialog.
+ *  `upstream` is the resolved shorthand the reconcile actions pass to
+ *  mergeBranch/rebaseBranch. */
+export interface NonFfPullInfo {
+  branch: string;
+  upstream: string;
+  ahead: number;
+  behind: number;
+}
+
 /** M6 + P37b: fetch / pull / push / force-push-with-lease. */
 export function useRemoteOps(
   deps: BaseActionDeps & {
@@ -12,6 +22,8 @@ export function useRemoteOps(
     refetchGraph: () => Promise<void>;
     setRemoteOp: Setter<'fetch' | 'pull' | 'push' | null>;
     setPendingForcePush: Setter<boolean>;
+    /** P60b: open the non-FF reconcile dialog (Merge / Rebase / Cancel). */
+    setPendingNonFfPull: Setter<NonFfPullInfo | null>;
     /** P59a-2: wrap a push attempt so a `pre-push` `hookRejected` opens the
      *  HookOutputDialog (+ "Push anyway" retry with skipHooks:true) instead of
      *  surfacing raw. Shared with the commit paths (one dialog + one retry). */
@@ -30,6 +42,7 @@ export function useRemoteOps(
     refetchGraph,
     setRemoteOp,
     setPendingForcePush,
+    setPendingNonFfPull,
     runWithHookGate,
   } = deps;
 
@@ -74,11 +87,14 @@ export function useRemoteOps(
           pushToast('success', `Fast-forwarded ${res.branch} to ${shortOid(res.to)}`);
           break;
         case 'wouldNotFastForward':
-          pushToast(
-            'warning',
-            `Cannot fast-forward: '${res.branch}' has ${res.ahead} local commit(s) not on ` +
-              'upstream. Bonsai v1 does not merge — push your commits or reconcile via the CLI.',
-          );
+          // P60b: the fetch DID land but the branch diverged — offer Merge /
+          // Rebase (routed through the existing commands) via the confirm dialog.
+          setPendingNonFfPull({
+            branch: res.branch,
+            upstream: res.upstream,
+            ahead: res.ahead,
+            behind: res.behind,
+          });
           break;
       }
       await refreshAll();

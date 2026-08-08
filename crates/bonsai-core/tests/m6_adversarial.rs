@@ -129,9 +129,15 @@ fn pull_after_upstream_force_rewrite_changes_nothing() {
     let porcelain_before = git(&f.work, &["status", "--porcelain"]);
     let res = pull_ff(&f.work).expect("pull after rewrite must not error");
     match res {
-        PullResult::WouldNotFastForward { branch, ahead, behind } => {
+        PullResult::WouldNotFastForward {
+            branch,
+            ahead,
+            behind,
+            upstream,
+        } => {
             assert_eq!(branch, "main");
             assert_eq!((ahead, behind), (1, 1), "X vs rewritten Y diverge 1/1");
+            assert_eq!(upstream, "origin/main", "P60b: resolved tracking shorthand");
         }
         other => panic!("expected WouldNotFastForward, got {other:?}"),
     }

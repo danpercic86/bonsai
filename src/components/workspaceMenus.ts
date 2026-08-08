@@ -106,6 +106,8 @@ export interface WorkspaceMenuDeps {
   handleCompareWithHead(oid: string): void;
   setPendingDeleteRemote(name: string): void;
   setPendingDeleteBranch(name: string): void;
+  /** P60a: arm the rename PromptDialog for a local branch (prefilled name). */
+  setPendingRenameBranch(v: { name: string }): void;
   handleApplyStash(index: number): void;
   handlePopStash(index: number): void;
   setPendingDropStash(index: number): void;
@@ -182,6 +184,7 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     handleCompareWithHead,
     setPendingDeleteRemote,
     setPendingDeleteBranch,
+    setPendingRenameBranch,
     handleApplyStash,
     handlePopStash,
     setPendingDropStash,
@@ -264,6 +267,18 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
         },
       },
     ];
+    // P60a: rename this local branch (git branch -m) — opens the shared
+    // PromptDialog prefilled with the current name (reuses the create-branch
+    // idiom). Local branches only; gated like the other mutations. (The current
+    // HEAD branch returns [] above, so its own pill shows the commit fallback.)
+    if (kind === 'localBranch') {
+      items.push({
+        label: 'Rename…',
+        icon: createElement(BranchIcon),
+        disabled: gate,
+        onSelect: () => setPendingRenameBranch({ name }),
+      });
+    }
     // P38 §7.3: view this branch's reflog (local branches only — remote-tracking
     // reflogs are out of v1 scope). Read-only, so never gated.
     if (kind === 'localBranch') {
@@ -732,7 +747,23 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
           ? snapshot.local.find((b) => b.name === r.name)
           : snapshot.remote.find((b) => b.name === r.name);
       if (entry === undefined) return [];
-      return commitMenuItems(entry.tip);
+      const commitItems = commitMenuItems(entry.tip);
+      // P60a: the current HEAD branch's own branch menu is empty (branchMenuItems
+      // returns [] for isHead), so its graph pill / whole-row lands on this commit
+      // fallback. PREPEND "Rename…" so the current branch — the most common rename
+      // target — is renamable from the graph HEAD pill (exercising the wasHead
+      // refresh path). Local branches only.
+      // TODO(P60): sidebar HEAD-row rename parity.
+      if (kind !== 'localBranch') return commitItems;
+      return [
+        {
+          label: 'Rename…',
+          icon: createElement(BranchIcon),
+          disabled: mutating || opActive,
+          onSelect: () => setPendingRenameBranch({ name: r.name }),
+        },
+        ...commitItems,
+      ];
     }
     // Commit row → Create branch here + Compare with HEAD.
     return commitMenuItems(target.oid);

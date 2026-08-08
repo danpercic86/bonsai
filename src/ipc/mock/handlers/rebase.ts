@@ -9,7 +9,7 @@ import { INTERACTIVE_REBASE_CONFLICT_OID_SUFFIX, delay, requireRepo } from '../r
 import type { AppError, RebaseOutcome, RebaseTodoOp } from '../../types';
 
 export const rebaseHandlers = {
-  async rebaseBranch(repoId: string, _onto: string): Promise<RebaseOutcome> {
+  async rebaseBranch(repoId: string, onto: string): Promise<RebaseOutcome> {
     await delay(150);
     const state = requireRepo(repoId);
     if (state.opState.kind !== 'none') {
@@ -18,6 +18,36 @@ export const rebaseHandlers = {
         message: 'an operation is already in progress — commit or abort it first',
       };
       throw err;
+    }
+    // P60b harness seam: `?remote=rebaseconflict` pauses a plain rebase on a
+    // conflict, seeding the op-state + conflict fixture that drive the EXISTING
+    // OpBanner + conflict rows + rebaseContinue/Skip/Abort (state.interactive
+    // stays null → the plain-rebase continue path). Lets the non-FF-pull "Rebase"
+    // route exercise the conflict overlay in the browser harness.
+    if (state.remoteTrigger === 'rebaseconflict') {
+      state.opState = {
+        kind: 'rebase',
+        headName: state.headBranch,
+        onto,
+        currentStep: 1,
+        totalSteps: 3,
+      };
+      state.conflicts = [
+        { path: 'src/auth.ts', kind: 'bothModified', hasBase: true, hasOurs: true, hasTheirs: true },
+      ];
+      state.conflictTexts = new Map();
+      state.conflictTexts.set('src/auth.ts', {
+        path: 'src/auth.ts',
+        kind: 'bothModified',
+        binary: false,
+        tooLarge: false,
+        missing: false,
+        text: MERGE_AUTH_TEXT,
+        ours: MERGE_AUTH_OURS,
+        theirs: MERGE_AUTH_THEIRS,
+      });
+      state.status.conflicted = [{ path: 'src/auth.ts', origPath: null, status: 'conflicted' }];
+      return { kind: 'conflicts', paths: ['src/auth.ts'], currentStep: 1, totalSteps: 3 };
     }
     // Clean-rebase demo: replay 3 plain commits atop the graph so they appear.
     // commits[0] is the topmost row = the new HEAD tip, so it carries the oid.

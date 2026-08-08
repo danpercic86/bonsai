@@ -117,6 +117,11 @@ export interface WorkspaceDialogsProps {
   pendingCreateBranch: { oid: string } | null;
   setPendingCreateBranch: (v: { oid: string } | null) => void;
   handleCreateBranchHere(oid: string, name: string): void;
+
+  /** P60a: rename a local branch (prefilled PromptDialog). */
+  pendingRenameBranch: { name: string } | null;
+  setPendingRenameBranch: (v: { name: string } | null) => void;
+  handleRenameBranch(oldName: string, newName: string): void;
   /** P53c: AI "Suggest name" gate + grounding for the branch-create dialog.
    *  `aiEligible` = installed && enabled && consented; `workingDirty` = the
    *  worktree has any staged/unstaged/untracked change; `suggestBranchName`
@@ -264,6 +269,9 @@ export function WorkspaceDialogs(props: WorkspaceDialogsProps) {
         pendingCreateBranch={props.pendingCreateBranch}
         setPendingCreateBranch={props.setPendingCreateBranch}
         handleCreateBranchHere={props.handleCreateBranchHere}
+        pendingRenameBranch={props.pendingRenameBranch}
+        setPendingRenameBranch={props.setPendingRenameBranch}
+        handleRenameBranch={props.handleRenameBranch}
         aiEligible={props.aiEligible}
         workingDirty={props.workingDirty}
         suggestBranchName={props.suggestBranchName}

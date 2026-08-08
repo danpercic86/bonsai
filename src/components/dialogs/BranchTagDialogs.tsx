@@ -19,6 +19,11 @@ export interface BranchTagDialogsProps {
   pendingCreateBranch: { oid: string } | null;
   setPendingCreateBranch: (v: { oid: string } | null) => void;
   handleCreateBranchHere(oid: string, name: string): void;
+
+  /** P60a: rename a local branch (git branch -m) via a prefilled PromptDialog. */
+  pendingRenameBranch: { name: string } | null;
+  setPendingRenameBranch: (v: { name: string } | null) => void;
+  handleRenameBranch(oldName: string, newName: string): void;
   /** P53c: gate + grounding for the "Suggest name ✨" affordance. */
   aiEligible: boolean;
   workingDirty: boolean;
@@ -47,6 +52,9 @@ export function BranchTagDialogs({
   pendingCreateBranch,
   setPendingCreateBranch,
   handleCreateBranchHere,
+  pendingRenameBranch,
+  setPendingRenameBranch,
+  handleRenameBranch,
   aiEligible,
   workingDirty,
   suggestBranchName,
@@ -122,6 +130,28 @@ export function BranchTagDialogs({
             onPick={setValue}
           />
         )}
+      />
+
+      {/* P60a: rename a local branch (git branch -m), prefilled with the current
+          name. Same validation as create, except an unchanged name is allowed
+          (only a clash with a DIFFERENT existing branch blocks submit). */}
+      <PromptDialog
+        open={pendingRenameBranch !== null}
+        title="Rename branch"
+        label="New branch name"
+        placeholder="feature/my-branch"
+        initialValue={pendingRenameBranch?.name ?? ''}
+        confirmLabel="Rename"
+        busy={mutating}
+        validate={(v) => {
+          const t = v.trim();
+          if (t === '' || t.startsWith('-')) return 'Enter a valid branch name';
+          if (t !== pendingRenameBranch?.name && branches?.local.some((b) => b.name === t) === true)
+            return 'A branch with that name already exists';
+          return null;
+        }}
+        onSubmit={(v) => void handleRenameBranch(pendingRenameBranch!.name, v.trim())}
+        onCancel={() => setPendingRenameBranch(null)}
       />
 
       {/* P22: create tag at the right-clicked commit. */}

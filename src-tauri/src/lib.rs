@@ -88,6 +88,7 @@ pub fn run() {
             commands::create_branch_here,
             commands::checkout_branch,
             commands::delete_branch,
+            commands::rename_branch,
             commands::checkout_remote,
             commands::delete_remote_tracking,
             commands::list_stale_branches,

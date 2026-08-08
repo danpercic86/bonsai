@@ -52,7 +52,15 @@ pub enum PullResult {
     FastForwarded { branch: String, from: String, to: String },
     /// ahead > 0 && behind > 0. NOTHING was changed (fetch already happened —
     /// remote-tracking refs updated — but branch/worktree untouched).
-    WouldNotFastForward { branch: String, ahead: u32, behind: u32 },
+    WouldNotFastForward {
+        branch: String,
+        ahead: u32,
+        behind: u32,
+        /// Upstream tracking shorthand ("origin/main") resolved AFTER the fetch —
+        /// the exact `name` the frontend hands to `merge_branch`/`rebase_branch`
+        /// (P60b). Reuse only; the backend never merges/rebases here.
+        upstream: String,
+    },
 }
 
 /// Outcome of pushing the current branch.
@@ -480,6 +488,16 @@ pub fn pull_ff(workdir: &Path) -> Result<PullResult, AppError> {
     let upstream_oid = upstream.get().target().ok_or_else(|| {
         AppError::Git(format!("upstream of '{name}' has no target commit"))
     })?;
+    // Resolved tracking shorthand ("origin/main") from the ALREADY-resolved
+    // upstream branch (post-fetch) — the exact name the frontend passes back to
+    // merge_branch/rebase_branch on a non-FF result. NOT recomputed from config;
+    // falls back to "{remote}/{local}" only if the ref name is unreadable.
+    let upstream_shorthand = upstream
+        .name()
+        .ok()
+        .flatten()
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("{remote_name}/{name}"));
     let local_oid = branch
         .get()
         .target()
@@ -496,6 +514,7 @@ pub fn pull_ff(workdir: &Path) -> Result<PullResult, AppError> {
             branch: name,
             ahead: to_u32(ahead),
             behind: to_u32(behind),
+            upstream: upstream_shorthand,
         });
     }
 
@@ -1107,11 +1126,12 @@ mod tests {
             branch: "main".to_string(),
             ahead: 2,
             behind: 1,
+            upstream: "origin/main".to_string(),
         })
         .expect("json");
         assert_eq!(
             v,
-            serde_json::json!({ "kind": "wouldNotFastForward", "branch": "main", "ahead": 2, "behind": 1 })
+            serde_json::json!({ "kind": "wouldNotFastForward", "branch": "main", "ahead": 2, "behind": 1, "upstream": "origin/main" })
         );
 
         let v = serde_json::to_value(PushResult::Pushed {

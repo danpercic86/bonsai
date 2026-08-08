@@ -49,6 +49,42 @@ Checklists: `docs/contracts/P<N>-user-checklist.md`.
 **Untouched throughout:** your 4 in-progress files (Cargo.lock, package.json, src-tauri/Cargo.toml,
 tauri.conf.json = the 0.3.0→0.3.1 bump) and `docs/audit-2026-08-07.md` (another session's file).
 
+## P60 — parity batch: rename · non-FF pull · undo · submodule add/deinit/remove (Phase 3 · milestone 3/4) — **IN PROGRESS** (2026-08-08)
+
+Contract: `docs/contracts/P60-parity-batch.md`. 4 independent table-stakes items, max reuse of shipped
+primitives. Adds +5 commands (141→146; non-FF pull adds NONE). NO OD1 dependency.
+
+**P60 goal:** (a) branch rename (git2 `Branch::rename` — preserves upstream+reflog; `wasHead`); (b) non-FF
+pull (WouldNotFastForward gains `upstream`; frontend NonFfPullDialog offers Merge/Rebase → REUSE
+merge_branch/rebase_branch, NO new git logic); (c) one-click undo (READ-ONLY `describe_last_undo` classifies
+HEAD reflog[0] → UndoPlan{kind,target,mode,safety}; execution reuses reset_branch; mixed for commit/amend/
+reset, hard for merge/rebase/ff/cherry-pick/revert requiring a clean worktree); (d) submodule add (git2 +
+acquire_cred) / deinit / remove (shell-out via GitRunner, path after `--`).
+
+**Orchestrator OQ decisions — accept ALL architect recs:** OQ1 branch-switch undo OUT of v1 · OQ2 submodule
+add via git2 · OQ3 hard-undo on dirty → undoable:true + requiresCleanWorktree (show plan, block button "stash
+first") · OQ4 amend-undo loses the amended message (dialog says so). D5 no new AppError; D6 mutations don't
+emit repo-changed (frontend refetches).
+
+Sub-increments: **P60a+b** rename (`rename_branch` cmd→142) + non-FF pull (PullResult.upstream field +
+NonFfPullDialog, no cmd) → **P60c** undo (`undo.rs` describe_last_undo cmd→143 + Undo toolbar + UndoDialog
+reusing resetBranch) → **P60d** submodules (add/deinit/remove cmds→146 + menu). Command counts RELATIVE —
+recount vs lib.rs (base 141).
+
+- **P60a+b** (reviewer REQUEST-CHANGES → 2 SHOULD-FIX FOLDED → approve; nits) — rename + non-FF pull.
+  P60a: `rename_branch` (git2 Branch::rename non-force; validate-new-first; was_head pre-capture;
+  Exists→BranchExists/NotFound→BranchNotFound; upstream re-read + PRESERVED) + RenameBranchResult; cmd
+  (141→142); IPC + mock; "Rename…" in branchMenuItems + (FOLDED FIX1) the current-HEAD pill fallback → the
+  checked-out branch is now renamable (graph pill; wasHead refresh reachable). FOLDED FIX2: same-name submit
+  = clean no-op. rename 7/7 + CLI oracle (upstream survives, wasHead). P60b: PullResult.WouldNotFastForward
+  +`upstream` (derived from resolved post-fetch upstream, NOT recomputed; backend does ONLY fetch+FF);
+  NonFfPullDialog (Merge/Rebase/Cancel) is the confirm gate → REUSES mergeBranch/rebaseBranch outcome
+  handlers (no new git logic); `?remote=rebaseconflict` seam. pull-diverged oracle returns upstream==`@{u}`.
+  clippy -D + tsc/build clean; cmd 142. Nits: sidebar HEAD-row rename parity (TODO); dead mock
+  upstream-fallback; branches.rs 2197 lines (pre-existing).
+**Current step:** P60a+b DONE (committed). Next: **P60c** — one-click undo (`undo.rs` READ-ONLY
+describe_last_undo classifier + cmd→143 + Undo toolbar + UndoDialog reusing resetBranch).
+
 ## P59 — git hooks execution + force-push-lease hardening (Phase 3 · milestone 2/4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
 Contract: `docs/contracts/P59-hooks-and-lease-hardening.md`. Reuses the P58 `exec.rs` seam. Two trust fixes.

@@ -38,7 +38,9 @@ pub(crate) use bonsai_core::git::history_index::{
     self, HistoryQuery, HistorySearchResults, IndexProgress, IndexStatus,
 };
 pub(crate) use bonsai_core::git::reflog::{self, ReflogEntry};
-pub(crate) use bonsai_core::git::branches::{self, BranchesSnapshot, CheckoutResult, CreateBranchHereResult};
+pub(crate) use bonsai_core::git::branches::{
+    self, BranchesSnapshot, CheckoutResult, CreateBranchHereResult, RenameBranchResult,
+};
 pub(crate) use bonsai_core::git::cherrypick::{self, CherrypickOutcome};
 pub(crate) use bonsai_core::git::clone::{clone_repo as clone_repo_core, init_repo as init_repo_core, CloneProgress};
 pub(crate) use bonsai_core::git::commit::{amend_commit, create_commit, CommitResult};

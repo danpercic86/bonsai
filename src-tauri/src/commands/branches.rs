@@ -124,6 +124,35 @@ pub(crate) async fn delete_branch_inner(
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Renames LOCAL branch `old_name` → `new_name` (git `branch -m`, non-force,
+/// P60a). Preserves upstream + reflog; rewrites HEAD when `old_name` is the
+/// checked-out branch. Errors: `invalidName` | `branchNotFound` | `branchExists`
+/// | `git` | `noRepo`. Does NOT emit `repo-changed` — the frontend refetches.
+#[tauri::command]
+pub async fn rename_branch(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    old_name: String,
+    new_name: String,
+) -> Result<RenameBranchResult, AppError> {
+    rename_branch_inner(state.inner(), &repo_id, old_name, new_name).await
+}
+
+/// Runtime-free core of `rename_branch` (unit-testable without a Tauri app).
+pub(crate) async fn rename_branch_inner(
+    state: &AppState,
+    repo_id: &str,
+    old_name: String,
+    new_name: String,
+) -> Result<RenameBranchResult, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        branches::rename_branch(&path, &old_name, &new_name)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// GitKraken-style remote checkout: create/reuse a local tracking branch for
 /// `name` ("<remote>/<branch>") and safe-checkout it (P6 §2.2).
 /// Errors: `invalidName` | `branchNotFound` | `checkoutConflict` | `git` | `noRepo`.

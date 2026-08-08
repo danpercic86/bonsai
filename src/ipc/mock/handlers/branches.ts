@@ -3,7 +3,7 @@ import type { IpcApi } from '../../types';
 import { randomOid } from '../../fixtures/oids';
 import { buildStaleReport, delay, isInvalidBranchName, query, requireRepo } from '../repoState';
 import { upsert } from '../statusHelpers';
-import type { AppError, BranchDeleteResult, BranchDeleteStatus, BranchesSnapshot, CheckoutResult, CreateBranchHereResult, StaleReport } from '../../types';
+import type { AppError, BranchDeleteResult, BranchDeleteStatus, BranchesSnapshot, CheckoutResult, CreateBranchHereResult, RenameBranchResult, StaleReport } from '../../types';
 
 export const branchHandlers = {
   async listBranches(repoId: string): Promise<BranchesSnapshot> {
@@ -191,6 +191,46 @@ export const branchHandlers = {
       throw err;
     }
     state.branches.local = state.branches.local.filter((b) => b.name !== name);
+  },
+
+  // P60a: rename a local branch (git branch -m). Preserves the entry's
+  // upstream/ahead/behind/tip; moves HEAD when the renamed branch was current.
+  // Error order mirrors the backend: invalidName → branchNotFound → branchExists.
+  async renameBranch(
+    repoId: string,
+    oldName: string,
+    newName: string,
+  ): Promise<RenameBranchResult> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    if (isInvalidBranchName(newName)) {
+      const err: AppError = { kind: 'invalidName', message: `invalid branch name: '${newName}'` };
+      throw err;
+    }
+    const trimmed = newName.trim();
+    const entry = state.branches.local.find((b) => b.name === oldName);
+    if (entry === undefined) {
+      const err: AppError = { kind: 'branchNotFound', message: `branch '${oldName}' not found` };
+      throw err;
+    }
+    if (state.branches.local.some((b) => b.name === trimmed)) {
+      const err: AppError = { kind: 'branchExists', message: `branch '${trimmed}' already exists` };
+      throw err;
+    }
+    const wasHead = state.kind !== 'detached' && state.headBranch === oldName;
+    // Rename in place → preserves upstream/ahead/behind/tip/isHead on the entry.
+    entry.name = trimmed;
+    if (wasHead) {
+      state.headBranch = trimmed;
+      state.branches.head = {
+        branchName: trimmed,
+        oid: state.headOid,
+        detached: false,
+        unborn: false,
+      };
+    }
+    state.branches.local.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+    return { wasHead, upstream: entry.upstream };
   },
 
   // P6 §3.5: GitKraken-style remote checkout — create/reuse a local tracking

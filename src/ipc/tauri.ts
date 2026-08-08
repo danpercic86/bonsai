@@ -71,6 +71,7 @@ import type {
   PushResult,
   RebaseOutcome,
   RebaseTodoOp,
+  RenameBranchResult,
   RecentRepo,
   RemoteInfo,
   RepoChangedPayload,
@@ -275,6 +276,10 @@ export const tauriIpc: IpcApi = {
 
   deleteBranch(repoId: string, name: string): Promise<void> {
     return invoke<void>('delete_branch', { repoId, name });
+  },
+
+  renameBranch(repoId: string, oldName: string, newName: string): Promise<RenameBranchResult> {
+    return invoke<RenameBranchResult>('rename_branch', { repoId, oldName, newName });
   },
 
   checkoutRemoteBranch(repoId: string, name: string): Promise<void> {
