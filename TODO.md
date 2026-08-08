@@ -49,7 +49,7 @@ Checklists: `docs/contracts/P<N>-user-checklist.md`.
 **Untouched throughout:** your 4 in-progress files (Cargo.lock, package.json, src-tauri/Cargo.toml,
 tauri.conf.json = the 0.3.0→0.3.1 bump) and `docs/audit-2026-08-07.md` (another session's file).
 
-## P56 — local AI changelog / release-notes (Phase 2 · milestone 4/5) — **IN PROGRESS** (2026-08-08)
+## P56 — local AI changelog / release-notes (Phase 2 · milestone 4/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
 Contract: `docs/contracts/P56-local-changelog.md`. OD1 = local-`claude`-CLI-only. Smaller milestone (S–M).
 
@@ -87,8 +87,18 @@ Sub-increments: **P56a** core (`ai_changelog.rs`: `generate_changelog` + `resolv
   WorkspaceGraphPane; draft reseeds via intermediate null → no stale-draft). tsc/build clean; paletteActions
   vitest 11/11. Nits: edits lost on Esc/close (Copy is the persistence, per spec); refNames not deduped;
   RepoWorkspace AI-runner bloat (future useAiPanel hook).
-**Current step:** P56a+b DONE (committed). Next: **P56 tester** (regression + `P56-user-checklist.md` +
-optional ChangelogDialog range vitest) → P56 done (live flow = USER CHECKPOINT, same headless limits).
+- **P56 tester** — orchestrator-verified regression: `cargo test --workspace` GREEN (exit 0; 3 perf gates
+  ignored), clippy -D clean, vitest 109/109. ChangelogDialog range vitest SKIPPED (range logic inline in the
+  submit closure — no exported pure builder; vitest env is node w/o @testing-library; barred from adding a
+  dep/refactoring; palette entry already covered by paletteActions 11/11 → follow-up: extract a pure
+  `buildChangelogRange()`). Wrote `docs/contracts/P56-user-checklist.md`.
+- **P56 AI GATE PASSED (2026-08-08).** Backend: 10 ai_changelog tests (resolve_last_tag + git-oracle +
+  pre-CLI bails + wire/deserialize) + reviewer verification; frontend: reviewer-verified runChangelog
+  last-wins + AiOutputPanel back-compat + tag-pill/palette entries; workspace green + vitest 109. Live flow
+  (tag-pill → grouped notes; dialog; Copy/editable) is USER CHECKPOINT (headless pane 0×0; canvas tag pill
+  not drivable).
+**Current step:** P56 DONE (AI gate passed, awaiting USER CHECKPOINT). Phase 2 FINAL milestone: **P57
+(semantic commit-history search — BM25 v1, embeddings deferred per OD1 / FOR USER)**.
 
 ## P55 — natural-language → SAFE git operation (Phase 2 · milestone 3/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
