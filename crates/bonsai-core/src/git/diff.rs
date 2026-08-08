@@ -51,6 +51,16 @@ pub struct DiffLine {
     /// own line).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub no_newline: bool,
+    /// P61a: CHANGED sub-ranges within `content` as `[start, len]`, measured in
+    /// Unicode SCALAR VALUES (code points / `char`s), NOT bytes and NOT UTF-16
+    /// units. Present only on `add`/`del` lines PAIRED with a counterpart when
+    /// `intraline=true`; empty on context lines, unpaired pure-add/pure-del
+    /// blocks, and whenever `intraline=false`. Ascending + non-overlapping.
+    /// Default-empty => wire-invisible (byte-identical to pre-P61a when off).
+    /// Char offsets (over UTF-16) are natural in Rust (`char_indices`); the
+    /// frontend slices via `Array.from(content)`. Guarded by a multibyte test.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub spans: Vec<[u32; 2]>,
 }
 
 /// One hunk. No raw header string on the wire: the frontend renders
@@ -321,6 +331,7 @@ pub(crate) fn collect_file_diff(diff: &git2::Diff) -> Result<Option<FileDiff>, A
                         new_no: line.new_lineno(),
                         content: normalize_content(line.content()),
                         no_newline: false,
+                        spans: Vec::new(),
                     };
                     if let Some(cur) = s.cur.as_mut() {
                         cur.lines.push(dl);
@@ -521,6 +532,7 @@ pub(crate) fn collect_file_diffs(diff: &git2::Diff) -> Result<Vec<FileDiff>, App
                         new_no: line.new_lineno(),
                         content: normalize_content(line.content()),
                         no_newline: false,
+                        spans: Vec::new(),
                     };
                     if let Some(cur) = s.cur.as_mut() {
                         cur.lines.push(dl);
@@ -635,6 +647,19 @@ fn commit_trees<'r>(
     Ok((old, commit.tree()?))
 }
 
+/// P61a: when `intraline` is set (and the file has renderable hunks), run the
+/// word-level pass on each hunk in place. Binary / too-large diffs carry no
+/// hunks, so they are left untouched. `intraline=false` is a no-op, keeping the
+/// `FileDiff` wire byte-identical to pre-P61a.
+fn maybe_annotate(mut fd: FileDiff, intraline: bool) -> FileDiff {
+    if intraline && !fd.binary && !fd.too_large {
+        for hunk in &mut fd.hunks {
+            crate::git::intraline::annotate_hunk(hunk);
+        }
+    }
+    fd
+}
+
 /// Pathspec list for one file: the path itself plus the rename OLD side.
 pub(crate) fn pathspecs<'a>(path: &'a str, orig_path: Option<&'a str>) -> Vec<&'a str> {
     let mut paths = vec![path];
@@ -664,6 +689,7 @@ pub fn workdir_file_diff(
     orig_path: Option<&str>,
     staged: bool,
     full_context: bool,
+    intraline: bool,
 ) -> Result<FileDiff, AppError> {
     validate_rel_path(path)?;
     if let Some(op) = orig_path {
@@ -679,14 +705,15 @@ pub fn workdir_file_diff(
         repo.diff_index_to_workdir(None, Some(&mut opts))?
     };
     apply_find_similar(&mut diff)?;
-    Ok(collect_file_diff(&diff)?.unwrap_or_else(|| FileDiff {
+    let fd = collect_file_diff(&diff)?.unwrap_or_else(|| FileDiff {
         path: path.to_string(),
         orig_path: None,
         status: FileStatus::Modified,
         binary: false,
         too_large: false,
         hunks: Vec::new(),
-    }))
+    });
+    Ok(maybe_annotate(fd, intraline))
 }
 
 /// Commit details + per-file headers for `oid` vs its FIRST parent
@@ -713,6 +740,7 @@ pub fn commit_file_diff(
     path: &str,
     orig_path: Option<&str>,
     full_context: bool,
+    intraline: bool,
 ) -> Result<FileDiff, AppError> {
     validate_rel_path(path)?;
     if let Some(op) = orig_path {
@@ -725,8 +753,9 @@ pub fn commit_file_diff(
     let mut opts = build_diff_options(&paths, full_context);
     let mut diff = repo.diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut opts))?;
     apply_find_similar(&mut diff)?;
-    collect_file_diff(&diff)?
-        .ok_or_else(|| AppError::Git(format!("path not changed in commit: {path}")))
+    let fd = collect_file_diff(&diff)?
+        .ok_or_else(|| AppError::Git(format!("path not changed in commit: {path}")))?;
+    Ok(maybe_annotate(fd, intraline))
 }
 
 /// Resolve HEAD (attached or detached) as the OLD endpoint of a comparison
@@ -793,6 +822,7 @@ pub fn compare_head_file_diff(
     path: &str,
     orig_path: Option<&str>,
     full_context: bool,
+    intraline: bool,
 ) -> Result<FileDiff, AppError> {
     validate_rel_path(path)?;
     if let Some(op) = orig_path {
@@ -807,8 +837,9 @@ pub fn compare_head_file_diff(
     let mut diff =
         repo.diff_tree_to_tree(old_tree.as_ref(), Some(&to_tree), Some(&mut opts))?;
     apply_find_similar(&mut diff)?;
-    collect_file_diff(&diff)?
-        .ok_or_else(|| AppError::Git(format!("path not changed in comparison: {path}")))
+    let fd = collect_file_diff(&diff)?
+        .ok_or_else(|| AppError::Git(format!("path not changed in comparison: {path}")))?;
+    Ok(maybe_annotate(fd, intraline))
 }
 
 #[cfg(test)]
@@ -880,6 +911,7 @@ mod tests {
                         new_no: None,
                         content: "old".to_string(),
                         no_newline: false,
+                        spans: Vec::new(),
                     },
                     DiffLine {
                         kind: LineKind::Add,
@@ -887,6 +919,7 @@ mod tests {
                         new_no: Some(1),
                         content: "new".to_string(),
                         no_newline: true,
+                        spans: Vec::new(),
                     },
                 ],
             }],
@@ -900,6 +933,45 @@ mod tests {
         assert!(json.contains("\"noNewline\":true"), "{json}");
         // no_newline: false is skipped entirely.
         assert_eq!(json.matches("noNewline").count(), 1, "{json}");
+        // P61a: empty `spans` is wire-invisible (byte-identical to pre-P61a).
+        // `intraline=false` never populates spans, so the key must not appear.
+        assert!(!json.contains("spans"), "empty spans must be skipped: {json}");
+    }
+
+    /// P61a: when a diff is intraline-annotated, changed paired lines serialize
+    /// a `spans` array of `[start, len]` code-point ranges; the byte-off case is
+    /// the same fixture with `annotate_hunk` NOT run (guarded above).
+    #[test]
+    fn wire_serialization_spans_present_when_annotated() {
+        let mut hunk = Hunk {
+            old_start: 1,
+            old_lines: 1,
+            new_start: 1,
+            new_lines: 1,
+            lines: vec![
+                DiffLine {
+                    kind: LineKind::Del,
+                    old_no: Some(1),
+                    new_no: None,
+                    content: "const x = 1;".to_string(),
+                    no_newline: false,
+                    spans: Vec::new(),
+                },
+                DiffLine {
+                    kind: LineKind::Add,
+                    old_no: None,
+                    new_no: Some(1),
+                    content: "const x = 42;".to_string(),
+                    no_newline: false,
+                    spans: Vec::new(),
+                },
+            ],
+        };
+        crate::git::intraline::annotate_hunk(&mut hunk);
+        let json = serde_json::to_string(&hunk).expect("serialize Hunk");
+        // Emphasis only on 1 -> 42 (code-point index 10).
+        assert!(json.contains("\"spans\":[[10,1]]"), "del spans: {json}");
+        assert!(json.contains("\"spans\":[[10,2]]"), "add spans: {json}");
     }
 
     /// The benign-race contract (§2.2): a clean path yields an empty FileDiff,
@@ -919,7 +991,7 @@ mod tests {
         crate::git::commit::create_commit(dir.path(), "base", None, false).expect("commit");
 
         for staged in [false, true] {
-            let fd = workdir_file_diff(dir.path(), "a.txt", None, staged, false)
+            let fd = workdir_file_diff(dir.path(), "a.txt", None, staged, false, false)
                 .expect("clean path must not error");
             assert_eq!(fd.path, "a.txt");
             assert_eq!(fd.status, FileStatus::Modified);
@@ -956,7 +1028,7 @@ mod tests {
             std::fs::write(dir.path().join(name), format!("{name} new\n")).expect("rewrite");
         }
 
-        let fd = workdir_file_diff(dir.path(), "a[ab].txt", None, false, false).expect("diff");
+        let fd = workdir_file_diff(dir.path(), "a[ab].txt", None, false, false, false).expect("diff");
         assert_eq!(fd.path, "a[ab].txt");
         assert_eq!(fd.status, FileStatus::Modified);
         assert_eq!(fd.hunks.len(), 1, "exactly one delta must match");
@@ -971,12 +1043,12 @@ mod tests {
         let dir = crate::testutil::scratch_dir();
         git2::Repository::init(dir.path()).expect("init repo");
         for bad in ["", "../escape", "/abs", "a\\b"] {
-            let err = workdir_file_diff(dir.path(), bad, None, false, false)
+            let err = workdir_file_diff(dir.path(), bad, None, false, false, false)
                 .expect_err(&format!("must reject {bad:?}"));
             assert!(matches!(err, AppError::Other(m) if m.contains("invalid path")));
         }
         // orig_path is validated too.
-        let err = workdir_file_diff(dir.path(), "ok.txt", Some("../escape"), false, false)
+        let err = workdir_file_diff(dir.path(), "ok.txt", Some("../escape"), false, false, false)
             .expect_err("must reject bad orig_path");
         assert!(matches!(err, AppError::Other(m) if m.contains("invalid path")));
     }
@@ -1239,7 +1311,7 @@ mod tests {
         stage_paths(p, &["f.txt".into()]).expect("stage");
         create_commit(p, "B", None, false).expect("commit B");
 
-        let fd = compare_head_file_diff(p, &a, "f.txt", None, false).expect("file diff");
+        let fd = compare_head_file_diff(p, &a, "f.txt", None, false, false).expect("file diff");
         assert_eq!(fd.path, "f.txt");
         assert_eq!(fd.status, FileStatus::Modified);
         assert!(!fd.binary && !fd.too_large);

@@ -512,6 +512,7 @@ mod tests {
                         new_no: None,
                         content: "    new_line();".into(),
                         no_newline: false,
+                        spans: Vec::new(),
                     }],
                 }],
             },

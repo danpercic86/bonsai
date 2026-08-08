@@ -75,7 +75,7 @@ pub fn explain_line(
 
     // 2. That commit's change to THIS file (rename origin not tracked — OQ7).
     //    An empty file diff is fine: we do NOT hard-fail (§3.2 step 2).
-    let file_diff = commit_file_diff(workdir, &bl.oid, path, None, false)?;
+    let file_diff = commit_file_diff(workdir, &bl.oid, path, None, false, false)?;
 
     // 3. The introducing commit's full message (lossy UTF-8).
     let repo = open_workdir_repo(workdir)?;
@@ -141,6 +141,7 @@ mod tests {
                     new_no: Some(3),
                     content: "if x.is_none() { return; }".to_string(),
                     no_newline: false,
+                    spans: Vec::new(),
                 }],
             }],
         }

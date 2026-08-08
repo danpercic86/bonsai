@@ -265,6 +265,7 @@
             None,
             false,
             false,
+            false,
         ))
         .expect_err("get_workdir_file_diff with no repo");
         assert!(matches!(err, AppError::NoRepo));
@@ -281,6 +282,7 @@
             oid,
             "file.txt".to_string(),
             None,
+            false,
             false,
         ))
         .expect_err("get_commit_file_diff with no repo");
@@ -446,6 +448,7 @@
             oid,
             "file.txt".to_string(),
             None,
+            false,
             false,
         ))
         .expect_err("compare_with_head_file_diff with no repo");

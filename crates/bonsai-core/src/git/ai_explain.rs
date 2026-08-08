@@ -145,7 +145,7 @@ fn gather_staged(workdir: &Path) -> Result<Vec<FileDiff>, AppError> {
     }
     let mut file_diffs = Vec::with_capacity(staged.len());
     for entry in &staged {
-        let fd = workdir_file_diff(workdir, &entry.path, entry.orig_path.as_deref(), true, false)?;
+        let fd = workdir_file_diff(workdir, &entry.path, entry.orig_path.as_deref(), true, false, false)?;
         file_diffs.push(fd);
     }
     Ok(file_diffs)
@@ -298,7 +298,7 @@ fn build_payload(workdir: &Path, target: &AiDiffTarget) -> Result<(String, Vec<F
             );
             let mut file_diffs = Vec::with_capacity(cd.files.len());
             for h in &cd.files {
-                let fd = commit_file_diff(workdir, oid, &h.path, h.orig_path.as_deref(), false)?;
+                let fd = commit_file_diff(workdir, oid, &h.path, h.orig_path.as_deref(), false, false)?;
                 file_diffs.push(fd);
             }
             Ok((prefix, file_diffs))
@@ -314,7 +314,7 @@ fn build_payload(workdir: &Path, target: &AiDiffTarget) -> Result<(String, Vec<F
             // that `validate_rel_path` yields — before any git tree access.
             validate_rel_path(path)
                 .map_err(|_| AppError::InvalidName(format!("invalid path: {path}")))?;
-            let fd = workdir_file_diff(workdir, path, orig_path.as_deref(), *staged, false)?;
+            let fd = workdir_file_diff(workdir, path, orig_path.as_deref(), *staged, false, false)?;
             Ok((String::new(), vec![fd]))
         }
         AiDiffTarget::Staged => Ok((String::new(), gather_staged(workdir)?)),

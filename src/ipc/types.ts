@@ -125,6 +125,11 @@ export interface DiffLine {
   content: string;
   /** Present (true) only on the last line of a file lacking a trailing newline. */
   noNewline?: boolean;
+  /** P61a: CHANGED sub-ranges within `content` as `[startCodePoint, lenCodePoints]`,
+   *  ascending + non-overlapping. Present only on paired add/del lines when the
+   *  diff was fetched with `intraline=true`; absent/empty => render plain. Slice
+   *  via `Array.from(content)` (code-point aware — offsets are NOT UTF-16 units). */
+  spans?: [number, number][];
 }
 
 export interface Hunk {
@@ -1627,6 +1632,8 @@ export interface IpcApi {
     origPath: string | null,
     staged: boolean,
     fullContext: boolean,
+    /** P61a: when true, paired add/del lines carry `spans` (word-level ranges). */
+    intraline: boolean,
   ): Promise<FileDiff>;
   /** Commit details + per-file headers vs first parent. Rejects AppError ('noRepo', 'git'). */
   getCommitDiff(repoId: string, oid: string): Promise<CommitDiff>;
@@ -1638,6 +1645,8 @@ export interface IpcApi {
     path: string,
     origPath: string | null,
     fullContext: boolean,
+    /** P61a: when true, paired add/del lines carry `spans` (word-level ranges). */
+    intraline: boolean,
   ): Promise<FileDiff>;
   /** Stage only the selected changed lines of one working-dir file (index moves
    *  toward the workdir). Empty selection is a no-op. Rejects AppError
@@ -1678,6 +1687,8 @@ export interface IpcApi {
     path: string,
     origPath: string | null,
     fullContext: boolean,
+    /** P61a: when true, paired add/del lines carry `spans` (word-level ranges). */
+    intraline: boolean,
   ): Promise<FileDiff>;
   /** Local branches + remotes + tags + HEAD in one snapshot. Rejects noRepo | git. */
   listBranches(repoId: string): Promise<BranchesSnapshot>;

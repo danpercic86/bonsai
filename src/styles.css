@@ -17,6 +17,10 @@
   --selection: #2a3b57;
   --danger: #e5534b;
   --success: #57ab5a;
+  /* P61a: word-level intraline emphasis — more saturated than the row tint so
+     the changed sub-range reads clearly over .diff-line-add/-del AND selection. */
+  --intra-add: #2ea043;
+  --intra-del: #f85149;
   --warning: #d4a72c;
   /* P50b: commit-search match ring on graph dots (distinct from head/selection). */
   --match-ring: #ff4dd2;
@@ -79,6 +83,8 @@
      (ui-reference §2: both themes use white text on the blue accent). */
   --danger: #d13438;
   --success: #1a7f37;
+  --intra-add: #1a7f37;
+  --intra-del: #cf222e;
   --warning: #9a6700;
   --match-ring: #c026a3;
   /* P58c: signature-badge palette — light (mirror --success/--danger/--text-3). */
@@ -3218,6 +3224,24 @@ span.file-row-main {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
+/* P61a: word-level intraline emphasis on the CHANGED sub-range of a modified
+   line. A stronger tint PLUS an underline keeps it legible over the row's faint
+   add/del wash AND over the accent selection gradient (.diff-line-selected). */
+.diff-intra {
+  border-radius: 2px;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.diff-intra-add {
+  background: color-mix(in srgb, var(--intra-add) 40%, transparent);
+  text-decoration-color: var(--intra-add);
+}
+.diff-intra-del {
+  background: color-mix(in srgb, var(--intra-del) 40%, transparent);
+  text-decoration-color: var(--intra-del);
+}
+
 .diff-nonewline .diff-content {
   color: var(--text-3);
   font-style: italic;
@@ -3436,6 +3460,26 @@ span.file-row-main {
 .diff-view-toggle button.active {
   background: var(--bg-2);
   color: var(--text-1);
+}
+
+/* P61a: standalone "Highlight changes" pill beside the Diff/File/Split group. */
+.diff-intra-toggle {
+  flex: none;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.diff-intra-toggle.active {
+  background: var(--bg-2);
+  color: var(--text-1);
+  border-color: var(--accent);
 }
 
 /* ---------- All-files DiffBrowser (P11g §6) ---------- */

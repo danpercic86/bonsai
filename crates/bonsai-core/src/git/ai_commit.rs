@@ -52,7 +52,7 @@ pub fn generate_commit_message(
     //    respecting the entry's origPath for renames.
     let mut file_diffs = Vec::with_capacity(staged.len());
     for entry in &staged {
-        let fd = workdir_file_diff(workdir, &entry.path, entry.orig_path.as_deref(), true, false)?;
+        let fd = workdir_file_diff(workdir, &entry.path, entry.orig_path.as_deref(), true, false, false)?;
         file_diffs.push(fd);
     }
 

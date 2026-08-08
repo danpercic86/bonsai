@@ -493,6 +493,7 @@ impl BonsaiServer {
                     &args.path,
                     args.orig_path.as_deref(),
                     false,
+                    false, // P61a intraline: MCP serves plain typed hunks
                 )
             })
             .await
@@ -517,6 +518,7 @@ impl BonsaiServer {
                     args.orig_path.as_deref(),
                     args.staged,
                     false,
+                    false, // P61a intraline: MCP serves plain typed hunks
                 )
             })
             .await
@@ -555,6 +557,7 @@ impl BonsaiServer {
                     &args.path,
                     args.orig_path.as_deref(),
                     false,
+                    false, // P61a intraline: MCP serves plain typed hunks
                 )
             })
             .await

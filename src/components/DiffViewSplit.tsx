@@ -2,6 +2,7 @@ import { Fragment, useRef } from 'react';
 import type React from 'react';
 import type { DiffLine, Hunk, LineSelection } from '../ipc';
 import { toSelection } from './DiffView';
+import { intralineNodes, showIntraline } from './intralineContent';
 import { pairSplitRows } from '../utils/splitRows';
 
 // P46 Workstream 1: presentational side-by-side (split) renderer. Owns NO state —
@@ -21,6 +22,8 @@ export interface DiffViewSplitProps {
   selectedBounds: { lo: number; hi: number } | null;
   /** stageable !== null (App gates working-dir diffs). Read-only when false. */
   interactive: boolean;
+  /** P61a: "Highlight changes" toggle — CHANGED cells render word-level emphasis. */
+  intraline: boolean;
   /** Direction of a granular action; drives marker glyphs + button labels. */
   stageable: null | 'stage' | 'unstage';
   /** stageable === 'stage' && onDiscardLines wired (widens the marker column, adds ×). */
@@ -48,6 +51,7 @@ export function DiffViewSplit({
   globalIndexByLine,
   selectedBounds,
   interactive,
+  intraline,
   stageable,
   discardable,
   highlight,
@@ -152,7 +156,9 @@ export function DiffViewSplit({
           )}
         </span>
         <span className="diff-content diff-split-content">
-          {html !== null ? (
+          {showIntraline(line, intraline) ? (
+            intralineNodes(line)
+          ) : html !== null ? (
             <span dangerouslySetInnerHTML={{ __html: html }} />
           ) : (
             line.content

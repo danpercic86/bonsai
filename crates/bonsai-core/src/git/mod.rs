@@ -28,6 +28,7 @@ pub mod discard_partial;
 pub mod exec;
 pub mod history_index;
 pub mod hooks;
+pub mod intraline;
 pub mod maintenance;
 pub mod merge;
 pub mod opstate;

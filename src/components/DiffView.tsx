@@ -3,6 +3,7 @@ import type { ConflictFile, DiffLine, FileDiff, LineSelection } from '../ipc';
 import { detectLanguage } from '../utils/language';
 import { useHighlighter } from '../utils/useHighlighter';
 import { DiffViewSplit } from './DiffViewSplit';
+import { intralineNodes, showIntraline } from './intralineContent';
 
 // Pure unified-diff renderer (M4 contract §4.1). No ipc imports: diffs arrive
 // precomputed from Rust (or the mock); this component only lays them out.
@@ -18,6 +19,9 @@ export interface DiffViewProps {
   /** 'diff' (hunks) | 'file' (one continuous full-context listing) | 'split'
    *  (side-by-side old/new). Default 'diff'. */
   viewMode?: 'diff' | 'file' | 'split';
+  /** P61a: "Highlight changes" toggle. When true, CHANGED lines carrying `spans`
+   *  render word-level emphasis instead of syntax highlight (D5). Default false. */
+  intraline?: boolean;
   /** null = read-only (commit/compare/conflict, or binary/tooLarge/renamed). Otherwise the
    *  direction a granular action performs. */
   stageable?: null | 'stage' | 'unstage';
@@ -68,6 +72,7 @@ export function toSelection(line: DiffLine): LineSelection {
 export const DiffView = memo(function DiffView({
   diff,
   viewMode = 'diff',
+  intraline = false,
   stageable = null,
   onStageLines,
   onStageHunk,
@@ -283,7 +288,9 @@ export const DiffView = memo(function DiffView({
               </button>
             )}
           </span>
-          {html !== null ? (
+          {showIntraline(line, intraline) ? (
+            <span className="diff-content">{intralineNodes(line)}</span>
+          ) : html !== null ? (
             <span className="diff-content" dangerouslySetInnerHTML={{ __html: html }} />
           ) : (
             <span className="diff-content">{line.content}</span>
@@ -354,6 +361,7 @@ export const DiffView = memo(function DiffView({
           globalIndexByLine={globalIndexByLine}
           selectedBounds={selectedBounds}
           interactive={interactive}
+          intraline={intraline}
           stageable={stageable}
           discardable={discardable}
           highlight={highlight}
@@ -413,6 +421,8 @@ export interface DiffSlotViewProps {
   onDismissError(): void;
   /** P17c: forwarded to DiffView (File/Diff/Split toggle + partial-staging affordances). */
   viewMode?: 'diff' | 'file' | 'split';
+  /** P61a: forwarded to DiffView ("Highlight changes" word-level emphasis). */
+  intraline?: boolean;
   stageable?: null | 'stage' | 'unstage';
   onStageLines?(selection: LineSelection[]): void;
   onStageHunk?(hunkIndex: number): void;
@@ -429,6 +439,7 @@ export function DiffSlotView({
   slot,
   onDismissError,
   viewMode,
+  intraline,
   stageable,
   onStageLines,
   onStageHunk,
@@ -464,6 +475,7 @@ export function DiffSlotView({
       <DiffView
         diff={slot.diff}
         viewMode={viewMode}
+        intraline={intraline}
         stageable={stageable}
         onStageLines={onStageLines}
         onStageHunk={onStageHunk}

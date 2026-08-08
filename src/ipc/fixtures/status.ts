@@ -12,6 +12,9 @@ export const INITIAL_STATUS: StatusSnapshot = {
   ],
   unstaged: [
     { path: 'src/shared/util.rs', origPath: null, status: 'modified' },
+    // P61a: a same-line edit (`const x = 1;` -> `const x = 42;`) so the
+    // "Highlight changes" toggle demo emphasises only the changed token.
+    { path: 'src/counter.ts', origPath: null, status: 'modified' },
     { path: 'README.md', origPath: null, status: 'modified' },
     { path: 'old-config.toml', origPath: null, status: 'deleted' },
     // M4 contract §5: exercise the binary + too-large diff placeholders.

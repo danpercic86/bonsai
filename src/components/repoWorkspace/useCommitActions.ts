@@ -29,6 +29,9 @@ export function useCommitActions(
     statusRef: { current: StatusSnapshot | null };
     diffSlotRef: { current: DiffSlot | null };
     diffViewModeRef: { current: 'diff' | 'file' | 'split' };
+    /** P61a: current "Highlight changes" flag, read when refetching the
+     *  auto-advance target slot after a stage. */
+    intralineRef: { current: boolean };
     head: HeadInfo | null;
     headBranch: BranchesSnapshot['local'][number] | null;
     setAmend: Setter<boolean>;
@@ -61,6 +64,7 @@ export function useCommitActions(
     statusRef,
     diffSlotRef,
     diffViewModeRef,
+    intralineRef,
     head,
     headBranch,
     setAmend,
@@ -119,6 +123,7 @@ export function useCommitActions(
               target.origPath,
               false,
               diffViewModeRef.current === 'file',
+              intralineRef.current,
             ),
           );
         }

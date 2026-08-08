@@ -4,6 +4,7 @@ import { asFullContext, lineDiff, mockCommitDiff, mockCommitFileDiff, mockCompar
 import { buildMockGraph, buildMockGraphDetached, prependCommits } from '../../fixtures/graph';
 import { generateLayout20k } from '../../fixtures/graph20k';
 import { resolveLayout } from './layout';
+import { annotateIntraline } from '../intralineMock';
 import { delay, isRefTip, requireRepo } from '../repoState';
 import { MAIN_RS_PATH } from '../statusHelpers';
 import type { AppError, CommitDiff, CompareDiff, FileDiff, GraphLayout } from '../../types';
@@ -15,6 +16,7 @@ export const diffHandlers = {
     origPath: string | null,
     staged: boolean,
     fullContext: boolean,
+    intraline: boolean,
   ): Promise<FileDiff> {
     await delay(150);
     const state = requireRepo(repoId);
@@ -26,10 +28,12 @@ export const diffHandlers = {
       const fd = staged
         ? lineDiff(head, index, MAIN_RS_PATH, 'modified', fullContext)
         : lineDiff(index, workdir, MAIN_RS_PATH, 'modified', fullContext);
-      return structuredClone(fd);
+      const cloned = structuredClone(fd);
+      return intraline ? annotateIntraline(cloned) : cloned;
     }
     const base = mockWorkdirDiff(path, origPath, staged);
-    return structuredClone(fullContext ? asFullContext(base) : base);
+    const cloned = structuredClone(fullContext ? asFullContext(base) : base);
+    return intraline ? annotateIntraline(cloned) : cloned;
   },
 
   async getCommitDiff(repoId: string, oid: string): Promise<CommitDiff> {
@@ -66,12 +70,14 @@ export const diffHandlers = {
     path: string,
     origPath: string | null,
     fullContext: boolean,
+    intraline: boolean,
   ): Promise<FileDiff> {
     await delay(150);
     requireRepo(repoId);
     // Commit diffs are read-only: honor fullContext with the best-effort collapse.
     const base = mockCommitFileDiff(oid, path, origPath);
-    return structuredClone(fullContext ? asFullContext(base) : base);
+    const cloned = structuredClone(fullContext ? asFullContext(base) : base);
+    return intraline ? annotateIntraline(cloned) : cloned;
   },
 
   async compareWithHead(repoId: string, oid: string): Promise<CompareDiff> {
@@ -113,13 +119,15 @@ export const diffHandlers = {
     path: string,
     origPath: string | null,
     fullContext: boolean,
+    intraline: boolean,
   ): Promise<FileDiff> {
     await delay(150);
     requireRepo(repoId);
     // A compare file diff has the same FileDiff shape — reuse the commit builder.
     // Read-only: honor fullContext with the best-effort collapse.
     const base = mockCommitFileDiff(oid, path, origPath);
-    return structuredClone(fullContext ? asFullContext(base) : base);
+    const cloned = structuredClone(fullContext ? asFullContext(base) : base);
+    return intraline ? annotateIntraline(cloned) : cloned;
   },
 
   async getGraph(repoId: string): Promise<GraphLayout> {

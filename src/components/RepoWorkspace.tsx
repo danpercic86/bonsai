@@ -473,6 +473,12 @@ export function RepoWorkspace({
   const [diffViewMode, setDiffViewMode] = useState<'diff' | 'file' | 'split'>('diff');
   const diffViewModeRef = useRef(diffViewMode);
   diffViewModeRef.current = diffViewMode;
+  // P61a: "Highlight changes" (word-level intraline emphasis) for the overlay
+  // diff. Drives the `intraline` arg of every overlay fetch; read through a ref
+  // by the stable refetch callbacks so toggling never re-creates them.
+  const [intraline, setIntraline] = useState(false);
+  const intralineRef = useRef(intraline);
+  intralineRef.current = intraline;
 
   // P5 §5.2: graph right-click context menu (position + prebuilt items).
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(
@@ -805,6 +811,7 @@ export function RepoWorkspace({
               entry.origPath,
               section === 'staged',
               diffViewModeRef.current === 'file',
+              intralineRef.current,
             ),
           );
         }
@@ -1311,6 +1318,7 @@ export function RepoWorkspace({
     statusRef,
     diffSlotRef,
     diffViewModeRef,
+    intralineRef,
     head,
     headBranch,
     setAmend,
@@ -1469,7 +1477,41 @@ export function RepoWorkspace({
       if (meta.kind === 'staged' || meta.kind === 'unstaged' || meta.kind === 'untracked') {
         const staged = meta.kind === 'staged';
         void fetchDiffSlot(slot.key, () =>
-          ipc.getWorkdirFileDiff(repoId, meta.path, meta.origPath, staged, m === 'file'),
+          ipc.getWorkdirFileDiff(
+            repoId,
+            meta.path,
+            meta.origPath,
+            staged,
+            m === 'file',
+            intralineRef.current,
+          ),
+        );
+      }
+    },
+    [repoId, fetchDiffSlot],
+  );
+
+  // P61a: flip "Highlight changes" and refetch the open workdir slot with the
+  // new `intraline` flag (same refetch pattern as handleSetViewMode; the same
+  // key keeps stale content visible during the swap). Commit/compare diffs live
+  // in DiffBrowser, not the overlay slot, so nothing else refetches here.
+  const handleToggleIntraline = useCallback(
+    (next: boolean) => {
+      setIntraline(next);
+      const meta = overlayMetaRef.current;
+      const slot = diffSlotRef.current;
+      if (slot === null || meta === null) return;
+      if (meta.kind === 'staged' || meta.kind === 'unstaged' || meta.kind === 'untracked') {
+        const staged = meta.kind === 'staged';
+        void fetchDiffSlot(slot.key, () =>
+          ipc.getWorkdirFileDiff(
+            repoId,
+            meta.path,
+            meta.origPath,
+            staged,
+            diffViewModeRef.current === 'file',
+            next,
+          ),
         );
       }
     },
@@ -1928,7 +1970,7 @@ export function RepoWorkspace({
       if (entry === undefined) {
         return Promise.reject(new Error(`No working-tree diff available for ${path}`));
       }
-      return ipc.getWorkdirFileDiff(repoId, entry.path, entry.origPath, staged, false);
+      return ipc.getWorkdirFileDiff(repoId, entry.path, entry.origPath, staged, false, false);
     },
     [repoId],
   );
@@ -2090,6 +2132,7 @@ export function RepoWorkspace({
         entry.origPath,
         section === 'staged',
         diffViewMode === 'file',
+        intraline,
       ),
     );
   }
@@ -2466,6 +2509,8 @@ export function RepoWorkspace({
           overlayExplain={overlayExplain}
           diffViewMode={diffViewMode}
           onSetViewMode={handleSetViewMode}
+          intraline={intraline}
+          onSetIntraline={handleToggleIntraline}
           stageable={stageable}
           onStageLines={handleStageLines}
           onStageHunk={handleStageHunk}

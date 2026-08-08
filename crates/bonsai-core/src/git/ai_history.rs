@@ -153,7 +153,7 @@ pub(crate) fn build_history_payload(
         let date = epoch_to_ymd(cd.details.author_ts);
         let mut file_diffs: Vec<FileDiff> = Vec::with_capacity(cd.files.len());
         for h in &cd.files {
-            let fd = commit_file_diff(workdir, &hit.oid, &h.path, h.orig_path.as_deref(), false)?;
+            let fd = commit_file_diff(workdir, &hit.oid, &h.path, h.orig_path.as_deref(), false, false)?;
             file_diffs.push(fd);
         }
         let rendered = payload::render_file_diffs(&file_diffs);

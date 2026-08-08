@@ -209,7 +209,7 @@ fn index_invariant_with_staged_and_unstaged_edits() {
     assert!(!cached_before.is_empty(), "fixture must have a staged edit");
     assert_eq!(xy(p, "f.txt").as_deref(), Some("MM"));
 
-    let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+    let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     assert_eq!(fd.hunks.len(), 2, "two unstaged edits => two hunks");
 
     // Discard the FIRST unstaged hunk (the line-20 edit).
@@ -244,7 +244,7 @@ fn remainder_matches_git_apply_reverse() {
     let p = dir.path();
     write(p, "f.txt", &edited);
     let cached_before = cached_diff(p);
-    let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+    let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     assert_eq!(fd.hunks.len(), 3, "three separated edits => three hunks");
     discard_partial(p, "f.txt", None, &hunk_changed(&fd, 1)).expect("discard middle hunk");
 
@@ -283,7 +283,7 @@ fn remainder_matches_git_apply_reverse_deletion_hunk() {
     write(p, "f.txt", &edited);
 
     let cached_before = cached_diff(p);
-    let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+    let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     assert_eq!(fd.hunks.len(), 2);
     // Discard the deletion hunk (hunk 0) -> lines 5-6 restored from the index.
     discard_partial(p, "f.txt", None, &hunk_changed(&fd, 0)).expect("discard del hunk");
@@ -323,7 +323,7 @@ fn crlf_autocrlf_false_byte_exact() {
     write(p, "f.txt", &edited);
 
     let cached_before = cached_diff(p);
-    let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+    let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     assert_eq!(fd.hunks.len(), 2);
     discard_partial(p, "f.txt", None, &hunk_changed(&fd, 0)).expect("discard hunk 0");
 
@@ -370,7 +370,7 @@ fn crlf_autocrlf_true_restored_lines_normalized() {
     write(p, "f.txt", &edited);
 
     let cached_before = cached_diff(p);
-    let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+    let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     assert_eq!(fd.hunks.len(), 2, "two edits => two hunks");
     // Discard hunk 0: its Del line ("line 3") is restored FROM THE LF INDEX
     // BLOB and must be spliced back as CRLF.
@@ -393,7 +393,7 @@ fn crlf_autocrlf_true_restored_lines_normalized() {
     assert!(!remaining.contains("line 3 X"), "discarded hunk gone:\n{remaining}");
 
     // Discard the rest -> file clean (no perpetual-modified CRLF artifact).
-    let fd2 = workdir_file_diff(p, "f.txt", None, false, false).expect("diff 2");
+    let fd2 = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff 2");
     discard_partial(p, "f.txt", None, &all_changed(&fd2)).expect("discard remainder");
     assert_eq!(xy(p, "f.txt"), None, "file clean after discarding everything");
 }
@@ -411,7 +411,7 @@ fn no_final_newline_roundtrip() {
     write(p, "f.txt", b"a\nb\nd"); // edit the terminator-less last line
 
     let cached_before = cached_diff(p);
-    let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+    let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     discard_partial(p, "f.txt", None, &all_changed(&fd)).expect("discard last-line edit");
     assert_eq!(read(p, "f.txt"), b"a\nb\nc", "restored byte-exactly, still no trailing newline");
     assert_eq!(cached_diff(p), cached_before, "index invariant");
@@ -431,7 +431,7 @@ fn no_final_newline_added_terminator_discarded() {
     write(p, "f.txt", b"a\nb\nc\n"); // worktree adds the terminator
 
     let cached_before = cached_diff(p);
-    let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+    let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     assert!(!all_changed(&fd).is_empty(), "terminator change must diff");
     discard_partial(p, "f.txt", None, &all_changed(&fd)).expect("discard terminator add");
     assert_eq!(read(p, "f.txt"), b"a\nb\nc", "trailing newline removed again");
@@ -453,7 +453,7 @@ fn all_hunks_equals_git_checkout() {
     let p = dir.path();
     write(p, "f.txt", &edited);
     let cached_before = cached_diff(p);
-    let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+    let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     assert_eq!(fd.hunks.len(), 3);
     discard_partial(p, "f.txt", None, &all_changed(&fd)).expect("discard all hunks");
 
@@ -488,7 +488,7 @@ fn all_hunks_equals_git_checkout_with_staged_edit() {
     git(p, &["add", "f.txt"]);
     write(p, "f.txt", &edited);
     let cached_before = cached_diff(p);
-    let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+    let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     discard_partial(p, "f.txt", None, &all_changed(&fd)).expect("discard all unstaged");
 
     let twin = repo_with(40);

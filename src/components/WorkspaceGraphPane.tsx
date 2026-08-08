@@ -66,6 +66,8 @@ export interface WorkspaceGraphPaneProps {
   overlayExplain: (() => void) | undefined;
   diffViewMode: 'diff' | 'file' | 'split';
   onSetViewMode: DiffOverlayProps['onSetViewMode'];
+  intraline: boolean;
+  onSetIntraline: DiffOverlayProps['onSetIntraline'];
   stageable: null | 'stage' | 'unstage';
   onStageLines: DiffOverlayProps['onStageLines'];
   onStageHunk: DiffOverlayProps['onStageHunk'];
@@ -155,6 +157,8 @@ export function WorkspaceGraphPane({
   overlayExplain,
   diffViewMode,
   onSetViewMode,
+  intraline,
+  onSetIntraline,
   stageable,
   onStageLines,
   onStageHunk,
@@ -301,6 +305,8 @@ export function WorkspaceGraphPane({
           onExplain={overlayExplain}
           viewMode={diffViewMode}
           onSetViewMode={onSetViewMode}
+          intraline={intraline}
+          onSetIntraline={onSetIntraline}
           stageable={stageable}
           onStageLines={onStageLines}
           onStageHunk={onStageHunk}

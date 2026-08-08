@@ -188,6 +188,7 @@ export const tauriIpc: IpcApi = {
     origPath: string | null,
     staged: boolean,
     fullContext: boolean,
+    intraline: boolean,
   ): Promise<FileDiff> {
     return invoke<FileDiff>('get_workdir_file_diff', {
       repoId,
@@ -195,6 +196,7 @@ export const tauriIpc: IpcApi = {
       origPath,
       staged,
       fullContext,
+      intraline,
     });
   },
 
@@ -235,8 +237,16 @@ export const tauriIpc: IpcApi = {
     path: string,
     origPath: string | null,
     fullContext: boolean,
+    intraline: boolean,
   ): Promise<FileDiff> {
-    return invoke<FileDiff>('get_commit_file_diff', { repoId, oid, path, origPath, fullContext });
+    return invoke<FileDiff>('get_commit_file_diff', {
+      repoId,
+      oid,
+      path,
+      origPath,
+      fullContext,
+      intraline,
+    });
   },
 
   compareWithHead(repoId: string, oid: string): Promise<CompareDiff> {
@@ -249,6 +259,7 @@ export const tauriIpc: IpcApi = {
     path: string,
     origPath: string | null,
     fullContext: boolean,
+    intraline: boolean,
   ): Promise<FileDiff> {
     return invoke<FileDiff>('compare_with_head_file_diff', {
       repoId,
@@ -256,6 +267,7 @@ export const tauriIpc: IpcApi = {
       path,
       origPath,
       fullContext,
+      intraline,
     });
   },
 

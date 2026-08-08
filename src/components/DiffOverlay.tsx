@@ -165,6 +165,10 @@ export interface DiffOverlayProps {
   /** P17c: File/Diff/Split toggle state (available for ALL kinds). */
   viewMode: 'diff' | 'file' | 'split';
   onSetViewMode(m: 'diff' | 'file' | 'split'): void;
+  /** P61a: "Highlight changes" (word-level intraline emphasis) toggle. Flipping
+   *  it refetches the open slot with the new `intraline` flag (App owns that). */
+  intraline: boolean;
+  onSetIntraline(v: boolean): void;
   /** P17c: partial-staging direction (null = read-only). App derives this from
    *  the slot kind + loaded diff; forwarded to the DiffSlotView branch ONLY. */
   stageable: null | 'stage' | 'unstage';
@@ -192,6 +196,8 @@ export function DiffOverlay({
   onStageHunk,
   onDiscardHunk,
   onDiscardLines,
+  intraline,
+  onSetIntraline,
 }: DiffOverlayProps) {
   const lang = detectLanguage(meta.path);
   return (
@@ -227,32 +233,43 @@ export function DiffOverlay({
         {/* File/Diff/Split does nothing for the conflict/proposal CodeMirror
             editor (it has its own Unified/Side-by-side toggle) — hide it there. */}
         {meta.kind !== 'conflict' && meta.kind !== 'aiProposal' && (
-          <div className="diff-view-toggle" role="group" aria-label="View mode">
+          <>
+            <div className="diff-view-toggle" role="group" aria-label="View mode">
+              <button
+                type="button"
+                className={viewMode === 'file' ? 'active' : ''}
+                aria-pressed={viewMode === 'file'}
+                onClick={() => onSetViewMode('file')}
+              >
+                File
+              </button>
+              <button
+                type="button"
+                className={viewMode === 'diff' ? 'active' : ''}
+                aria-pressed={viewMode === 'diff'}
+                onClick={() => onSetViewMode('diff')}
+              >
+                Diff
+              </button>
+              <button
+                type="button"
+                className={viewMode === 'split' ? 'active' : ''}
+                aria-pressed={viewMode === 'split'}
+                onClick={() => onSetViewMode('split')}
+              >
+                Split
+              </button>
+            </div>
             <button
               type="button"
-              className={viewMode === 'file' ? 'active' : ''}
-              aria-pressed={viewMode === 'file'}
-              onClick={() => onSetViewMode('file')}
+              className={`diff-intra-toggle${intraline ? ' active' : ''}`}
+              aria-pressed={intraline}
+              title="Highlight the changed words within each modified line"
+              onClick={() => onSetIntraline(!intraline)}
             >
-              File
+              {'Highlight changes'}
             </button>
-            <button
-              type="button"
-              className={viewMode === 'diff' ? 'active' : ''}
-              aria-pressed={viewMode === 'diff'}
-              onClick={() => onSetViewMode('diff')}
-            >
-              Diff
-            </button>
-            <button
-              type="button"
-              className={viewMode === 'split' ? 'active' : ''}
-              aria-pressed={viewMode === 'split'}
-              onClick={() => onSetViewMode('split')}
-            >
-              Split
-            </button>
-          </div>
+          </>
         )}
         <button
           type="button"
@@ -287,6 +304,7 @@ export function DiffOverlay({
               slot={slot}
               onDismissError={onClose}
               viewMode={viewMode}
+              intraline={intraline}
               stageable={stageable}
               onStageLines={onStageLines}
               onStageHunk={onStageHunk}

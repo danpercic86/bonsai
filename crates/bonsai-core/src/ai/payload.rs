@@ -191,6 +191,7 @@ mod tests {
             new_no: None,
             content: content.to_string(),
             no_newline: false,
+            spans: Vec::new(),
         }
     }
 

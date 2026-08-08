@@ -336,7 +336,7 @@ fn unstaged_modified_multi_hunk() {
     edit_line(dir.path(), "f.txt", 3, "line 3 CHANGED");
     edit_line(dir.path(), "f.txt", 30, "line 30 CHANGED");
 
-    let fd = workdir_file_diff(dir.path(), "f.txt", None, false, false).expect("unstaged diff");
+    let fd = workdir_file_diff(dir.path(), "f.txt", None, false, false, false).expect("unstaged diff");
     assert_eq!(fd.status, FileStatus::Modified);
     assert_eq!(fd.hunks.len(), 2, "edits at lines 3 and 30 must be 2 hunks");
     assert_matches_oracle(
@@ -355,7 +355,7 @@ fn staged_modified() {
     edit_line(dir.path(), "f.txt", 3, "line 3 STAGED");
     git(dir.path(), &["add", "--", "f.txt"]);
 
-    let staged = workdir_file_diff(dir.path(), "f.txt", None, true, false).expect("staged diff");
+    let staged = workdir_file_diff(dir.path(), "f.txt", None, true, false, false).expect("staged diff");
     assert_eq!(staged.status, FileStatus::Modified);
     assert_matches_oracle(
         &staged,
@@ -363,7 +363,7 @@ fn staged_modified() {
         &["diff", "--cached", "--no-color", "-U3", "-M", "--", "f.txt"],
     );
 
-    let unstaged = workdir_file_diff(dir.path(), "f.txt", None, false, false).expect("unstaged diff");
+    let unstaged = workdir_file_diff(dir.path(), "f.txt", None, false, false, false).expect("unstaged diff");
     assert!(unstaged.hunks.is_empty(), "workdir == index -> no hunks");
     assert!(!unstaged.binary && !unstaged.too_large);
 }
@@ -378,8 +378,8 @@ fn staged_vs_unstaged_split() {
     git(dir.path(), &["add", "--", "f.txt"]);
     edit_line(dir.path(), "f.txt", 30, "line 30 WORKDIR");
 
-    let staged = workdir_file_diff(dir.path(), "f.txt", None, true, false).expect("staged diff");
-    let unstaged = workdir_file_diff(dir.path(), "f.txt", None, false, false).expect("unstaged diff");
+    let staged = workdir_file_diff(dir.path(), "f.txt", None, true, false, false).expect("staged diff");
+    let unstaged = workdir_file_diff(dir.path(), "f.txt", None, false, false, false).expect("unstaged diff");
     assert_ne!(staged, unstaged);
     assert_matches_oracle(
         &staged,
@@ -406,7 +406,7 @@ fn untracked_file() {
     )
     .expect("write u.txt");
 
-    let fd = workdir_file_diff(dir.path(), "u.txt", None, false, false).expect("untracked diff");
+    let fd = workdir_file_diff(dir.path(), "u.txt", None, false, false, false).expect("untracked diff");
     assert_eq!(fd.status, FileStatus::Untracked);
     assert!(!fd.binary && !fd.too_large);
     assert_eq!(fd.hunks.len(), 1);
@@ -430,7 +430,7 @@ fn deleted_file() {
     let dir = repo_with_f40();
     std::fs::remove_file(dir.path().join("f.txt")).expect("delete f.txt");
 
-    let fd = workdir_file_diff(dir.path(), "f.txt", None, false, false).expect("unstaged diff");
+    let fd = workdir_file_diff(dir.path(), "f.txt", None, false, false, false).expect("unstaged diff");
     assert_eq!(fd.status, FileStatus::Deleted);
     assert!(fd.hunks[0].lines.iter().all(|l| l.kind == LineKind::Del));
     assert_matches_oracle(
@@ -440,7 +440,7 @@ fn deleted_file() {
     );
 
     git(dir.path(), &["add", "-A", "--", "f.txt"]);
-    let staged = workdir_file_diff(dir.path(), "f.txt", None, true, false).expect("staged diff");
+    let staged = workdir_file_diff(dir.path(), "f.txt", None, true, false, false).expect("staged diff");
     assert_eq!(staged.status, FileStatus::Deleted);
     assert_matches_oracle(
         &staged,
@@ -463,7 +463,7 @@ fn renamed_modified_staged() {
     edit_line(dir.path(), "new.txt", 10, "line 10 TWEAKED");
     git(dir.path(), &["add", "--", "new.txt"]);
 
-    let fd = workdir_file_diff(dir.path(), "new.txt", Some("old.txt"), true, false)
+    let fd = workdir_file_diff(dir.path(), "new.txt", Some("old.txt"), true, false, false)
         .expect("staged rename diff");
     assert_eq!(fd.status, FileStatus::Renamed);
     assert_eq!(fd.orig_path.as_deref(), Some("old.txt"));
@@ -488,7 +488,7 @@ fn no_trailing_newline() {
     commit_fixed(dir.path(), "base");
     std::fs::write(dir.path().join("n.txt"), "alpha\nbeta\ndelta").expect("modify n.txt");
 
-    let fd = workdir_file_diff(dir.path(), "n.txt", None, false, false).expect("diff");
+    let fd = workdir_file_diff(dir.path(), "n.txt", None, false, false, false).expect("diff");
     assert_matches_oracle(
         &fd,
         dir.path(),
@@ -518,7 +518,7 @@ fn binary_file() {
     modified.extend_from_slice(&[0, 1, 2, 3]);
     std::fs::write(dir.path().join("blob.bin"), &modified).expect("modify blob.bin");
 
-    let fd = workdir_file_diff(dir.path(), "blob.bin", None, false, false).expect("binary diff");
+    let fd = workdir_file_diff(dir.path(), "blob.bin", None, false, false, false).expect("binary diff");
     assert!(fd.binary);
     assert!(!fd.too_large);
     assert!(fd.hunks.is_empty());
@@ -547,12 +547,12 @@ fn too_large_cap() {
     std::fs::remove_file(dir.path().join("big.txt")).expect("delete big.txt");
     std::fs::remove_file(dir.path().join("small.txt")).expect("delete small.txt");
 
-    let big = workdir_file_diff(dir.path(), "big.txt", None, false, false).expect("big diff");
+    let big = workdir_file_diff(dir.path(), "big.txt", None, false, false, false).expect("big diff");
     assert!(big.too_large, "6000 del lines > {MAX_FILE_DIFF_LINES}");
     assert!(!big.binary);
     assert!(big.hunks.is_empty(), "all-or-nothing: no partial hunks");
 
-    let small = workdir_file_diff(dir.path(), "small.txt", None, false, false).expect("small diff");
+    let small = workdir_file_diff(dir.path(), "small.txt", None, false, false, false).expect("small diff");
     assert!(!small.too_large);
     assert_eq!(
         small.hunks.iter().map(|h| h.lines.len()).sum::<usize>(),
@@ -581,7 +581,7 @@ fn crlf_content() {
     )
     .expect("modify c.txt");
 
-    let fd = workdir_file_diff(dir.path(), "c.txt", None, false, false).expect("crlf diff");
+    let fd = workdir_file_diff(dir.path(), "c.txt", None, false, false, false).expect("crlf diff");
     assert_eq!(fd.hunks.len(), 1, "single edit must stay a single hunk");
     assert!(
         fd.hunks[0]
@@ -709,7 +709,7 @@ fn commit_file_diff_matches_show() {
     let (dir, tip) = commit_fixture();
 
     for path in ["a.txt", "m.txt", "z.txt"] {
-        let fd = commit_file_diff(dir.path(), &tip, path, None, false)
+        let fd = commit_file_diff(dir.path(), &tip, path, None, false, false)
             .unwrap_or_else(|e| panic!("commit_file_diff({path}): {e:?}"));
         assert_matches_oracle(
             &fd,
@@ -746,7 +746,7 @@ fn root_commit() {
     assert_eq!(cd.files[0].additions, 4);
     assert_eq!(cd.files[0].deletions, 0);
 
-    let fd = commit_file_diff(dir.path(), &root, "first.txt", None, false).expect("root file diff");
+    let fd = commit_file_diff(dir.path(), &root, "first.txt", None, false, false).expect("root file diff");
     assert_eq!(fd.status, FileStatus::Added);
     assert_matches_oracle(
         &fd,
@@ -802,7 +802,7 @@ fn merge_commit_first_parent() {
     assert_eq!(cd.files.len(), 1);
     assert_eq!(cd.files[0].path, "feat.txt");
 
-    let fd = commit_file_diff(p, &merge, "feat.txt", None, false).expect("merge file diff");
+    let fd = commit_file_diff(p, &merge, "feat.txt", None, false, false).expect("merge file diff");
     assert_matches_oracle(
         &fd,
         p,
@@ -827,7 +827,7 @@ fn unborn_staged() {
     std::fs::write(dir.path().join("seed.txt"), numbered_lines(3)).expect("write seed.txt");
     git(dir.path(), &["add", "--", "seed.txt"]);
 
-    let fd = workdir_file_diff(dir.path(), "seed.txt", None, true, false).expect("unborn staged diff");
+    let fd = workdir_file_diff(dir.path(), "seed.txt", None, true, false, false).expect("unborn staged diff");
     assert_eq!(fd.status, FileStatus::Added);
     assert!(fd.hunks[0].lines.iter().all(|l| l.kind == LineKind::Add));
     assert_matches_oracle(
@@ -857,7 +857,7 @@ fn utf8_bom_non_ascii_modified() {
     let edited = "\u{feff}café HEADER v2\n日本語のテキスト（更新）\nplain ascii\nüber alles\n";
     std::fs::write(p.join("bom.txt"), edited).expect("modify bom.txt");
 
-    let fd = workdir_file_diff(p, "bom.txt", None, false, false).expect("bom diff");
+    let fd = workdir_file_diff(p, "bom.txt", None, false, false, false).expect("bom diff");
     assert_eq!(fd.status, FileStatus::Modified);
     assert!(!fd.binary, "BOM + valid UTF-8 must not be treated as binary");
     // The deleted and added first lines must both retain the BOM.
@@ -909,7 +909,7 @@ fn commit_renamed_modified_file() {
     assert_eq!((h.additions, h.deletions), (1, 1));
 
     // Hunks: parity with the CLI including rename from/to capture.
-    let fd = commit_file_diff(p, &tip, "renamed.txt", Some("old.txt"), false)
+    let fd = commit_file_diff(p, &tip, "renamed.txt", Some("old.txt"), false, false)
         .expect("commit rename file diff");
     assert_eq!(fd.status, FileStatus::Renamed);
     assert_eq!(fd.orig_path.as_deref(), Some("old.txt"));
@@ -949,12 +949,12 @@ fn empty_file_added_and_file_emptied() {
     git(p, &["add", "--", "empty.txt"]);
     std::fs::write(p.join("content.txt"), "").expect("truncate content.txt");
 
-    let staged = workdir_file_diff(p, "empty.txt", None, true, false).expect("staged empty diff");
+    let staged = workdir_file_diff(p, "empty.txt", None, true, false, false).expect("staged empty diff");
     assert_eq!(staged.status, FileStatus::Added, "not the benign-race shape");
     assert!(!staged.binary && !staged.too_large);
     assert!(staged.hunks.is_empty());
 
-    let emptied = workdir_file_diff(p, "content.txt", None, false, false).expect("emptied diff");
+    let emptied = workdir_file_diff(p, "content.txt", None, false, false, false).expect("emptied diff");
     assert_eq!(emptied.status, FileStatus::Modified);
     assert!(emptied.hunks[0].lines.iter().all(|l| l.kind == LineKind::Del));
     assert_matches_oracle(
@@ -983,7 +983,7 @@ fn empty_file_added_and_file_emptied() {
         .expect("content.txt header");
     assert_eq!((c.additions, c.deletions), (0, 3));
 
-    let fd = commit_file_diff(p, &tip, "empty.txt", None, false)
+    let fd = commit_file_diff(p, &tip, "empty.txt", None, false, false)
         .expect("empty added file must be a delta, not 'path not changed'");
     assert_eq!(fd.status, FileStatus::Added);
     assert!(fd.hunks.is_empty());
@@ -1007,19 +1007,19 @@ fn bad_oid_and_path_validation() {
     assert!(matches!(err, AppError::Git(_)), "got: {err:?}");
 
     // Path validation (reused validate_rel_path).
-    let err = workdir_file_diff(p, "../escape", None, false, false).expect_err("escaping path");
+    let err = workdir_file_diff(p, "../escape", None, false, false, false).expect_err("escaping path");
     assert!(
         matches!(&err, AppError::Other(m) if m.contains("invalid path")),
         "got: {err:?}"
     );
-    let err = commit_file_diff(p, &tip, "../escape", None, false).expect_err("escaping path (commit)");
+    let err = commit_file_diff(p, &tip, "../escape", None, false, false).expect_err("escaping path (commit)");
     assert!(
         matches!(&err, AppError::Other(m) if m.contains("invalid path")),
         "got: {err:?}"
     );
 
     // Untouched path in an immutable commit: an error, not an empty diff.
-    let err = commit_file_diff(p, &tip, "b.txt", None, false).expect_err("untouched path");
+    let err = commit_file_diff(p, &tip, "b.txt", None, false, false).expect_err("untouched path");
     match err {
         AppError::Git(m) => assert!(m.contains("path not changed in commit"), "got: {m}"),
         other => panic!("expected AppError::Git, got: {other:?}"),

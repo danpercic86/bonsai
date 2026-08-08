@@ -131,7 +131,7 @@ fn one_hunk_of_many() {
     let edited = numbered_edited(40, &[(3, "line 3 X"), (20, "line 20 X"), (37, "line 37 X")]);
     write(p, "f.txt", &edited);
 
-    let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+    let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     assert_eq!(fd.hunks.len(), 3, "three separated edits => three hunks");
 
     // Our op: stage exactly the middle hunk's changed lines.
@@ -228,7 +228,7 @@ fn single_add() {
     // Insert two new lines after "a".
     write(p, "f.txt", b"a\nNEW1\nNEW2\nb\nc\n");
 
-    let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+    let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     // Pick only the first added line (new_no of "NEW1" == 2).
     let sel = vec![LineSelection {
         kind: LineKind::Add,
@@ -254,7 +254,7 @@ fn del_only() {
     // Delete "b" and "c" in the workdir.
     write(p, "f.txt", b"a\nd\n");
 
-    let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+    let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     // Stage only the deletion of "b" (old_no 2), leaving "c" in the index.
     let sel = vec![LineSelection {
         kind: LineKind::Del,
@@ -319,7 +319,7 @@ fn range_across_two_hunks() {
     // Edits at line 3 and line 8 -> two hunks (separated by >6 context lines? 8-3=5, may merge). Use 3 and 12.
     let edited = numbered_edited(20, &[(3, "line 3 X"), (12, "line 12 X")]);
     write(p, "f.txt", &edited);
-    let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+    let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     assert_eq!(fd.hunks.len(), 2, "edits at 3 and 12 must be two hunks");
 
     // Select the changed lines from BOTH hunks (whole-file, via all_changed).
@@ -340,7 +340,7 @@ fn no_newline_stage() {
     commit_fixed(p, "base");
     write(p, "f.txt", b"a\nb\nd"); // still no trailing newline
 
-    let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+    let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     stage_partial(p, "f.txt", None, &all_changed(&fd)).expect("stage last-line change");
     assert_eq!(staged_bytes(p, "f.txt"), b"a\nb\nd", "no phantom trailing newline");
 }
@@ -358,7 +358,7 @@ fn no_newline_unstage() {
     write(p, "f.txt", b"a\nb\nd");
     git(p, &["add", "-A"]);
 
-    let fd = workdir_file_diff(p, "f.txt", None, true, false).expect("staged diff");
+    let fd = workdir_file_diff(p, "f.txt", None, true, false, false).expect("staged diff");
     // Unstage the whole change -> index reverts to HEAD ("a\nb\nc", no newline).
     unstage_partial(p, "f.txt", None, &all_changed(&fd)).expect("unstage last-line change");
     assert_eq!(staged_bytes(p, "f.txt"), b"a\nb\nc");
@@ -376,7 +376,7 @@ fn crlf() {
     commit_fixed(p, "base");
     write(p, "f.txt", b"one\r\ntwo CHANGED\r\nthree\r\n");
 
-    let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+    let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     stage_partial(p, "f.txt", None, &all_changed(&fd)).expect("stage crlf change");
     assert_eq!(
         staged_bytes(p, "f.txt"),
@@ -401,7 +401,7 @@ fn crlf_no_final_newline() {
     commit_fixed(p, "base");
     write(p, "f.txt", b"one\r\ntwo\r\nTHREE"); // change the terminator-less last line
 
-    let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+    let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     stage_partial(p, "f.txt", None, &all_changed(&fd)).expect("stage crlf/no-eol change");
     assert_eq!(
         staged_bytes(p, "f.txt"),
@@ -433,7 +433,7 @@ fn stage_then_unstage_same_line_round_trips() {
     assert_eq!(xy(p, "f.txt").as_deref(), Some("M "), "fully staged, workdir clean vs index");
 
     // Now unstage the SAME line from the staged (HEAD -> index) diff.
-    let staged = workdir_file_diff(p, "f.txt", None, true, false).expect("staged diff");
+    let staged = workdir_file_diff(p, "f.txt", None, true, false, false).expect("staged diff");
     let staged_add = hunk_changed(&staged, 0);
     assert_eq!(staged_add.len(), 1, "one staged add to reverse");
     unstage_partial(p, "f.txt", None, &staged_add).expect("unstage the same add");
@@ -450,7 +450,7 @@ fn untracked_partial_and_full() {
         let dir = repo_with(3);
         let p = dir.path();
         write(p, "u.txt", b"x\ny\nz\n"); // untracked
-        let fd = workdir_file_diff(p, "u.txt", None, false, false).expect("diff");
+        let fd = workdir_file_diff(p, "u.txt", None, false, false, false).expect("diff");
         assert_eq!(fd.hunks.len(), 1);
         // Stage only the first added line.
         let sel = vec![LineSelection {
@@ -467,7 +467,7 @@ fn untracked_partial_and_full() {
         let dir = repo_with(3);
         let p = dir.path();
         write(p, "u.txt", b"x\ny\nz\n");
-        let fd = workdir_file_diff(p, "u.txt", None, false, false).expect("diff");
+        let fd = workdir_file_diff(p, "u.txt", None, false, false, false).expect("diff");
         stage_partial(p, "u.txt", None, &all_changed(&fd)).expect("stage whole untracked");
         assert_eq!(staged_bytes(p, "u.txt"), b"x\ny\nz\n");
         assert_eq!(xy(p, "u.txt").as_deref(), Some("A "));
@@ -488,7 +488,7 @@ fn deleted_partial_and_full() {
         commit_fixed(p, "base");
         std::fs::remove_file(p.join("f.txt")).expect("delete f.txt");
 
-        let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+        let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
         assert_eq!(fd.status, bonsai_core::git::status::FileStatus::Deleted);
         // Stage the deletion of "a" and "c" only; "b" stays in the index.
         let sel = vec![
@@ -507,7 +507,7 @@ fn deleted_partial_and_full() {
         commit_fixed(p, "base");
         std::fs::remove_file(p.join("f.txt")).expect("delete f.txt");
 
-        let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+        let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
         stage_partial(p, "f.txt", None, &all_changed(&fd)).expect("stage full deletion");
         assert_eq!(xy(p, "f.txt").as_deref(), Some("D "), "staged deletion");
     }
@@ -527,7 +527,7 @@ fn stage_emptied_tracked_file_is_modified_not_deleted() {
     commit_fixed(p, "base");
     write(p, "f.txt", b""); // truncate to zero bytes; file still exists
 
-    let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+    let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     assert_eq!(
         fd.status,
         bonsai_core::git::status::FileStatus::Modified,
@@ -551,7 +551,7 @@ fn unstage_committed_empty_file_restores_empty_blob() {
     write(p, "e.txt", b"x\ny\n"); // add content
     git(p, &["add", "-A"]); // staged
 
-    let staged = workdir_file_diff(p, "e.txt", None, true, false).expect("staged diff");
+    let staged = workdir_file_diff(p, "e.txt", None, true, false, false).expect("staged diff");
     unstage_partial(p, "e.txt", None, &all_changed(&staged)).expect("unstage all");
     // Index restored to HEAD's empty blob -> no staged deletion; workdir still
     // has content -> unstaged M.
@@ -568,7 +568,7 @@ fn compose_on_partial() {
     let edited = numbered_edited(20, &[(3, "line 3 X"), (12, "line 12 X")]);
     write(p, "f.txt", &edited);
 
-    let fd = workdir_file_diff(p, "f.txt", None, false, false).expect("diff");
+    let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     // Stage hunk 0 first.
     stage_partial(p, "f.txt", None, &hunk_changed(&fd, 0)).expect("stage hunk 0");
     assert_eq!(
@@ -577,7 +577,7 @@ fn compose_on_partial() {
         "only first edit staged"
     );
     // Recompute against the CURRENT index and stage the remainder.
-    let fd2 = workdir_file_diff(p, "f.txt", None, false, false).expect("diff 2");
+    let fd2 = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff 2");
     stage_partial(p, "f.txt", None, &all_changed(&fd2)).expect("stage remainder");
     assert_eq!(staged_bytes(p, "f.txt"), edited, "composed == whole-file stage");
     assert_eq!(xy(p, "f.txt").as_deref(), Some("M "));
@@ -594,7 +594,7 @@ fn symmetric_unstage() {
     write(p, "f.txt", &edited);
     git(p, &["add", "-A"]); // fully staged
 
-    let staged = workdir_file_diff(p, "f.txt", None, true, false).expect("staged diff");
+    let staged = workdir_file_diff(p, "f.txt", None, true, false, false).expect("staged diff");
     assert_eq!(staged.hunks.len(), 2);
     // Unstage only hunk 0 (line 3 reverts to original; line 12 stays changed).
     unstage_partial(p, "f.txt", None, &hunk_changed(&staged, 0)).expect("unstage hunk 0");
@@ -617,7 +617,7 @@ fn unborn_head_unstage() {
         write(p, "f.txt", b"a\nb\nc\n");
         git(p, &["add", "-A"]); // staged, all Add vs empty tree
 
-        let staged = workdir_file_diff(p, "f.txt", None, true, false).expect("staged diff");
+        let staged = workdir_file_diff(p, "f.txt", None, true, false, false).expect("staged diff");
         // Unstage just the middle added line (new_no 2).
         let sel = vec![LineSelection { kind: LineKind::Add, old_no: None, new_no: Some(2) }];
         unstage_partial(p, "f.txt", None, &sel).expect("unstage one add (unborn)");
@@ -632,7 +632,7 @@ fn unborn_head_unstage() {
         write(p, "f.txt", b"a\nb\nc\n");
         git(p, &["add", "-A"]);
 
-        let staged = workdir_file_diff(p, "f.txt", None, true, false).expect("staged diff");
+        let staged = workdir_file_diff(p, "f.txt", None, true, false, false).expect("staged diff");
         unstage_partial(p, "f.txt", None, &all_changed(&staged)).expect("unstage all (unborn)");
         assert_eq!(xy(p, "f.txt").as_deref(), Some("??"), "back to untracked");
     }
@@ -712,7 +712,7 @@ fn rejections() {
     git(p, &["mv", "old.txt", "new.txt"]);
     write(p, "new.txt", &numbered_edited(20, &[(10, "line 10 X")]));
     git(p, &["add", "-A"]);
-    let staged = workdir_file_diff(p, "new.txt", Some("old.txt"), true, false).expect("diff");
+    let staged = workdir_file_diff(p, "new.txt", Some("old.txt"), true, false, false).expect("diff");
     assert_eq!(staged.status, bonsai_core::git::status::FileStatus::Renamed);
     let err = unstage_partial(p, "new.txt", Some("old.txt"), &all_changed(&staged))
         .expect_err("renamed");
@@ -738,11 +738,11 @@ fn full_context_regression() {
     write(p, "f.txt", &edited);
 
     // full_context = false -> the M4 3-context multi-hunk view.
-    let three = workdir_file_diff(p, "f.txt", None, false, false).expect("3-context");
+    let three = workdir_file_diff(p, "f.txt", None, false, false, false).expect("3-context");
     assert_eq!(three.hunks.len(), 2, "two separated edits -> two hunks");
 
     // full_context = true -> exactly one whole-file hunk covering all 20 lines.
-    let full = workdir_file_diff(p, "f.txt", None, false, true).expect("full-context");
+    let full = workdir_file_diff(p, "f.txt", None, false, true, false).expect("full-context");
     assert_eq!(full.hunks.len(), 1, "whole file is one hunk");
     let h = &full.hunks[0];
     assert_eq!((h.old_start, h.old_lines), (1, 20));
@@ -755,7 +755,7 @@ fn full_context_regression() {
     git(p, &["add", "-A"]);
     commit_fixed(p, "big");
     std::fs::remove_file(p.join("big.txt")).expect("remove big");
-    let big = workdir_file_diff(p, "big.txt", None, false, true).expect("big full-context");
+    let big = workdir_file_diff(p, "big.txt", None, false, true, false).expect("big full-context");
     assert!(big.too_large, "cap enforced regardless of context");
     assert!(big.hunks.is_empty());
 }

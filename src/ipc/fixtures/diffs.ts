@@ -202,8 +202,21 @@ const THEME_CSS: FileDiff = fileDiff('src/styles/theme.css', 'modified', [
   ]),
 ]);
 
+// P61a: a crisp SAME-LINE edit so the "Highlight changes" toggle visibly
+// emphasises only the changed token (`1` -> `42`), nothing else on the line.
+const COUNTER_TS: FileDiff = fileDiff('src/counter.ts', 'modified', [
+  hunk(1, 4, 1, 4, [
+    ctx(1, 1, 'export function counter() {'),
+    del(2, 'const x = 1;'),
+    add(2, 'const x = 42;'),
+    ctx(3, 3, '  return x;'),
+    ctx(4, 4, '}'),
+  ]),
+]);
+
 const WORKDIR_DIFFS: Record<string, FileDiff> = {
   'src/app.rs': APP_RS,
+  'src/counter.ts': COUNTER_TS,
   'old-config.toml': OLD_CONFIG,
   'docs/getting-started.md': GETTING_STARTED,
   'notes/todo.txt': TODO_TXT,

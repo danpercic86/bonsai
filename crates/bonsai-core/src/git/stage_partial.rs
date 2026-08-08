@@ -512,6 +512,7 @@ mod tests {
             new_no,
             content: String::new(),
             no_newline: false,
+            spans: Vec::new(),
         }
     }
 

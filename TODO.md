@@ -49,6 +49,45 @@ Checklists: `docs/contracts/P<N>-user-checklist.md`.
 **Untouched throughout:** your 4 in-progress files (Cargo.lock, package.json, src-tauri/Cargo.toml,
 tauri.conf.json = the 0.3.0→0.3.1 bump) and `docs/audit-2026-08-07.md` (another session's file).
 
+## P61 — diff quality: word-level/intraline highlighting + image diff (Phase 3 · milestone 4/4, FINAL) — **IN PROGRESS** (2026-08-08)
+
+Contract: `docs/contracts/P61-diff-quality.md`. Both backend-computed + React-rendered + opt-in/toggleable.
+Adds +1 command (get_image_diff; 146→147; intraline adds NONE). NO OD1 dependency.
+
+**P61 goal:** (a) intraline/word-level highlighting — a backend token-diff pass emits char-offset `spans` on
+paired changed DiffLines, gated by a new `intraline:bool` param on the 3 hunk-diff commands (OFF = wire
+byte-identical); DiffView/Split render emphasis on changed sub-ranges (intraline WINS over syntax highlight
+per changed line; context keeps highlight); "Highlight changes" toggle. (b) image diff — new `get_image_diff`
+returns both sides as base64-over-IPC (D2: FORCED by the harness invariant — asset:// can't be mocked;
+HAND-ROLLED base64, NO new crate per FOR-USER); DiffImageView side-by-side/onion/swipe; extension-gated
+(svg stays text).
+
+**Orchestrator OQ decisions — accept ALL recs + FOR-USER:** OQ1 intraline-wins-per-changed-line (mutually
+exclusive w/ syntax highlight) · OQ2 MAX_IMAGE_BYTES=8 MiB · OQ3 SVG=text diff · OQ4 code-point offsets +
+Array.from slicing · **OQ5 HAND-ROLL base64 (NO base64 crate — avoids touching the user's dirty Cargo files)**.
+D6 no new AppError.
+
+Sub-increments: **P61a** intraline (`intraline.rs` annotate_hunk/token_diff/tokenize/lcs; DiffLine.spans;
+intraline param on 3 diff cmds [NO new cmd]; DiffView/Split render + "Highlight changes" toggle;
+`intralineSegments.ts`) → **P61b** image diff (`image_diff.rs` get_image_diff + hand-rolled base64; cmd→147;
+DiffImageView 3 modes).
+
+- **P61a** (reviewer APPROVE, 0 must-fix / 0 should-fix; 3 non-blocking nits) — intraline/word-level
+  highlighting. New pure `intraline.rs` (annotate_hunk pairs del/add index-by-index; token_diff = hand-rolled
+  LCS over tokens [alnum+_/ws/each-punct]; merge_adjacent; CODE-POINT offsets; MAX_INTRALINE_CHARS=2000 skip;
+  pure-add/del→empty). `DiffLine.spans` (skip_serializing_if empty → **wire BYTE-IDENTICAL when intraline=false**,
+  serde-tested). `intraline:bool` param on the 3 diff cmds (NO new cmd) — diff-fn caller fan-out
+  (ai_*/stage_partial/mcp/tests all pass false). Frontend: `intralineSegments.ts` (Array.from code-point
+  slicing) + `intralineContent.tsx` render (emphasis ONLY on changed lines w/ spans; context keeps syntax
+  highlight — D5) + DiffOverlay "Highlight changes" toggle (refetch-once) + `intralineMock.ts`. Reviewer
+  VERIFIED the multibyte code-point contract (👍 distinguishes from byte AND UTF-16). intraline 9/9 + diff
+  15/15 + lib 573; vitest 147/147; clippy -D + build/tsc clean. **Cmd = 147** (lib.rs untouched — my earlier
+  "146" label was off-by-one; no new command). Nits: segmentLine zero-len-span dup (unreachable, doc); lcs
+  nested-Vec DP (contract-blessed); mock tokenizer exotic-Unicode parity (harness-only).
+**Current step:** P61a DONE (committed). Next: **P61b** — image diff (`image_diff.rs` get_image_diff +
+HAND-ROLLED base64; cmd 147→148; DiffImageView side-by-side/onion/swipe; extension-gated, svg=text) →
+P61 tester → **P61 done → mark PHASE 3 FINISHED**.
+
 ## P60 — parity batch: rename · non-FF pull · undo · submodule add/deinit/remove (Phase 3 · milestone 3/4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
 Contract: `docs/contracts/P60-parity-batch.md`. 4 independent table-stakes items, max reuse of shipped

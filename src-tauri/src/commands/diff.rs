@@ -13,8 +13,18 @@ pub async fn get_workdir_file_diff(
     orig_path: Option<String>,
     staged: bool,
     full_context: bool,
+    intraline: bool,
 ) -> Result<FileDiff, AppError> {
-    get_workdir_file_diff_inner(state.inner(), &repo_id, path, orig_path, staged, full_context).await
+    get_workdir_file_diff_inner(
+        state.inner(),
+        &repo_id,
+        path,
+        orig_path,
+        staged,
+        full_context,
+        intraline,
+    )
+    .await
 }
 
 /// Runtime-free core of `get_workdir_file_diff` (unit-testable without a Tauri app).
@@ -25,10 +35,11 @@ pub(crate) async fn get_workdir_file_diff_inner(
     orig_path: Option<String>,
     staged: bool,
     full_context: bool,
+    intraline: bool,
 ) -> Result<FileDiff, AppError> {
     let workdir = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        workdir_file_diff(&workdir, &path, orig_path.as_deref(), staged, full_context)
+        workdir_file_diff(&workdir, &path, orig_path.as_deref(), staged, full_context, intraline)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -66,8 +77,18 @@ pub async fn get_commit_file_diff(
     path: String,
     orig_path: Option<String>,
     full_context: bool,
+    intraline: bool,
 ) -> Result<FileDiff, AppError> {
-    get_commit_file_diff_inner(state.inner(), &repo_id, oid, path, orig_path, full_context).await
+    get_commit_file_diff_inner(
+        state.inner(),
+        &repo_id,
+        oid,
+        path,
+        orig_path,
+        full_context,
+        intraline,
+    )
+    .await
 }
 
 /// Runtime-free core of `get_commit_file_diff` (unit-testable without a Tauri app).
@@ -78,10 +99,11 @@ pub(crate) async fn get_commit_file_diff_inner(
     path: String,
     orig_path: Option<String>,
     full_context: bool,
+    intraline: bool,
 ) -> Result<FileDiff, AppError> {
     let workdir = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        commit_file_diff(&workdir, &oid, &path, orig_path.as_deref(), full_context)
+        commit_file_diff(&workdir, &oid, &path, orig_path.as_deref(), full_context, intraline)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -118,9 +140,18 @@ pub async fn compare_with_head_file_diff(
     path: String,
     orig_path: Option<String>,
     full_context: bool,
+    intraline: bool,
 ) -> Result<FileDiff, AppError> {
-    compare_with_head_file_diff_inner(state.inner(), &repo_id, oid, path, orig_path, full_context)
-        .await
+    compare_with_head_file_diff_inner(
+        state.inner(),
+        &repo_id,
+        oid,
+        path,
+        orig_path,
+        full_context,
+        intraline,
+    )
+    .await
 }
 
 /// Runtime-free core of `compare_with_head_file_diff`.
@@ -131,10 +162,11 @@ pub(crate) async fn compare_with_head_file_diff_inner(
     path: String,
     orig_path: Option<String>,
     full_context: bool,
+    intraline: bool,
 ) -> Result<FileDiff, AppError> {
     let workdir = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        compare_head_file_diff(&workdir, &oid, &path, orig_path.as_deref(), full_context)
+        compare_head_file_diff(&workdir, &oid, &path, orig_path.as_deref(), full_context, intraline)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?

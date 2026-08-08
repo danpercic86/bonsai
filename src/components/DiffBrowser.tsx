@@ -130,6 +130,7 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
               header.path,
               header.origPath,
               fullContext,
+              false, // P61a: intraline emphasis is an overlay-only toggle
             )
           : ipc.compareWithHeadFileDiff(
               repoIdRef.current,
@@ -137,6 +138,7 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
               header.path,
               header.origPath,
               fullContext,
+              false, // P61a: intraline emphasis is an overlay-only toggle
             );
       void request
         .then(
