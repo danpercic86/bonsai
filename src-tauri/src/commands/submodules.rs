@@ -1,6 +1,7 @@
 //! `submodules` commands — split from the former monolithic `commands.rs`.
 
 use super::shared::*;
+use bonsai_core::git::search::SpawnGitRunner;
 
 /// Lists every submodule with its classified status (P19 contract §3). Errors:
 /// `git` | `noRepo`. Does NOT emit `repo-changed` — the frontend refetches.
@@ -92,4 +93,83 @@ pub(crate) async fn sync_submodule_inner(
     tauri::async_runtime::spawn_blocking(move || submodule::sync_submodule(&path, &name))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Adds a submodule at repo-relative `path` from `url` (P60d §D4): git2 clone
+/// via the shared M6 credential chain, then stage .gitmodules + the gitlink.
+/// Errors: `invalidName` | `git` (incl. network/auth) | `noRepo`. Does NOT emit
+/// `repo-changed` — the frontend refetches submodules + status + graph.
+#[tauri::command]
+pub async fn add_submodule(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    url: String,
+    path: String,
+) -> Result<SubmoduleInfo, AppError> {
+    add_submodule_inner(state.inner(), &repo_id, url, path).await
+}
+
+/// Runtime-free core of `add_submodule` (unit-testable without a Tauri app).
+pub(crate) async fn add_submodule_inner(
+    state: &AppState,
+    repo_id: &str,
+    url: String,
+    path: String,
+) -> Result<SubmoduleInfo, AppError> {
+    let repo = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || submodule::add_submodule(&repo, &url, &path))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Deinits submodule `name` (P60d §D4, shell-out): `git submodule deinit -f --
+/// <path>` — clears its config + empties the worktree, KEEPS .gitmodules.
+/// Errors: `invalidName` | `git` | `noRepo`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn deinit_submodule(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    name: String,
+) -> Result<(), AppError> {
+    deinit_submodule_inner(state.inner(), &repo_id, name).await
+}
+
+/// Runtime-free core of `deinit_submodule` (unit-testable without a Tauri app).
+pub(crate) async fn deinit_submodule_inner(
+    state: &AppState,
+    repo_id: &str,
+    name: String,
+) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        submodule::deinit_submodule(&path, &SpawnGitRunner, &name)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Removes submodule `name` entirely (P60d §D4, shell-out): deinit → `git rm -f
+/// -- <path>` → best-effort drop of `.git/modules/<name>`. DESTRUCTIVE. Errors:
+/// `invalidName` | `git` | `noRepo`. Does NOT emit `repo-changed`.
+#[tauri::command]
+pub async fn remove_submodule(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    name: String,
+) -> Result<(), AppError> {
+    remove_submodule_inner(state.inner(), &repo_id, name).await
+}
+
+/// Runtime-free core of `remove_submodule` (unit-testable without a Tauri app).
+pub(crate) async fn remove_submodule_inner(
+    state: &AppState,
+    repo_id: &str,
+    name: String,
+) -> Result<(), AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        submodule::remove_submodule(&path, &SpawnGitRunner, &name)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

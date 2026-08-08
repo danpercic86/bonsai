@@ -114,6 +114,8 @@ export interface WorkspaceMenuDeps {
   handleInitSubmodule(name: string): void;
   handleUpdateSubmodule(name: string): void;
   handleSyncSubmodule(name: string): void;
+  setPendingDeinitSubmodule(name: string): void;
+  setPendingRemoveSubmodule(name: string): void;
   onOpenRepoPath(path: string): void;
   setWorktreeContextOpen(v: boolean): void;
   setPendingWorktreeLock(name: string): void;
@@ -191,6 +193,8 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     handleInitSubmodule,
     handleUpdateSubmodule,
     handleSyncSubmodule,
+    setPendingDeinitSubmodule,
+    setPendingRemoveSubmodule,
     onOpenRepoPath,
     setWorktreeContextOpen,
     setPendingWorktreeLock,
@@ -424,6 +428,21 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
         icon: createElement(RebaseIcon),
         disabled: gate,
         onSelect: () => void handleSyncSubmodule(sub.name),
+      },
+      // P60d: deinit (clears config + empties the worktree; keeps .gitmodules)
+      // is a no-op once uninitialized → disabled then; remove is destructive.
+      {
+        label: 'Deinitialize…',
+        icon: createElement(ResetIcon),
+        disabled: gate || sub.status === 'uninitialized',
+        onSelect: () => setPendingDeinitSubmodule(sub.name),
+      },
+      {
+        label: 'Remove…',
+        icon: createElement(DeleteIcon),
+        disabled: gate,
+        tone: 'danger',
+        onSelect: () => setPendingRemoveSubmodule(sub.name),
       },
       {
         label: 'Open in new tab',

@@ -1,27 +1,22 @@
-//! P19 CLI-oracle submodule tests (contract §8).
+//! P60d CLI-oracle: submodule add / deinit / remove parity with the `git` CLI.
 //!
-//! Every "remote" is a LOCAL repo referenced by a plain absolute path (the
-//! local transport needs NO network and NO credentials — mirrors
-//! `tests/remote_cli.rs`). Fixture (contract §8.1): a bare submodule origin +
-//! seed clone that publishes commits A then B; a superproject `super` with the
-//! submodule added (pinned at B); and a fresh clone `work` Bonsai operates on.
+//! Add is done via git2 (`Repository::submodule` + clone + `add_finalize`);
+//! deinit/remove shell out to `git submodule deinit` / `git rm`. The oracle
+//! builds a hermetic superproject with a LOCAL (`file://`) submodule (no creds,
+//! no network) and asserts our ops leave the same on-disk state the real `git`
+//! sequence would.
 //!
-//! Honest coverage note: the local transport never invokes the credentials
-//! callback (the retry guard / error mapping are covered structurally by the
-//! unit tests in `src/git/remote.rs`); the real credential path is a USER
-//! CHECKPOINT. `protocol.file.allow=always` is set on the CLI submodule
-//! commands so recent Git allows the local-path submodule transport.
-//!
-//! Each test skips (passes with a note) if `git` is not on PATH.
+//! HARD RULE: all scratch repos live on D: via `common::scratch_dir()` (through
+//! `init_repo`). Each test skips (passes with a note) if `git` is not on PATH.
 
 mod common;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::process::Command;
 
-use bonsai_core::git::submodule::{
-    init_submodule, list_submodules, sync_submodule, update_submodule, SubmoduleStatus,
-};
-use common::{commit_fixed, git, git_raw};
+use bonsai_core::git::search::SpawnGitRunner;
+use bonsai_core::git::submodule::{add_submodule, deinit_submodule, remove_submodule};
+use common::{file_url, git, git_ok, git_raw, init_repo};
 
 macro_rules! require_git {
     () => {
@@ -32,218 +27,130 @@ macro_rules! require_git {
     };
 }
 
-/// git URLs want forward slashes even on Windows (the local transport parses
-/// backslashes poorly). Absolute path only — no `file://` scheme (matches
-/// remote_cli's proven Windows approach).
-fn url_for(p: &Path) -> String {
-    p.to_string_lossy().replace('\\', "/")
+/// Write `content` to `dir/name`, then stage + commit it (deterministic date).
+fn commit_file(dir: &Path, name: &str, content: &str, msg: &str) {
+    std::fs::write(dir.join(name), content).expect("write file");
+    git(dir, &["add", name]);
+    common::commit_fixed(dir, msg);
 }
 
-fn configure_identity(repo: &Path) {
-    git(repo, &["config", "user.name", "Test User"]);
-    git(repo, &["config", "user.email", "test@example.com"]);
-    git(repo, &["config", "core.autocrlf", "false"]);
-}
-
-/// Superproject `super`, a fresh `work` clone of it (submodule NOT recursed →
-/// `sub` registered but uninitialized), and the submodule commit oids A/B.
-struct Fixture {
-    _dir: tempfile::TempDir,
-    root: PathBuf,
-    work: PathBuf,
-    /// First submodule commit (parent of the pinned tip).
-    oid_a: String,
-    /// Pinned submodule commit (recorded in the superproject).
-    oid_b: String,
-}
-
-/// Builds the §8.1 fixture. The submodule name defaults to its path, "sub".
-fn setup() -> Fixture {
-    let dir = common::scratch_dir();
-    let root = dir.path().to_path_buf();
-
-    // 1. Bare submodule origin + seed clone publishing commits A then B.
-    git(&root, &["init", "--bare", "-b", "main", "sub-origin.git"]);
-    let sub_origin = root.join("sub-origin.git");
-
-    git(&root, &["clone", &url_for(&sub_origin), "sub-seed"]);
-    let sub_seed = root.join("sub-seed");
-    configure_identity(&sub_seed);
-    git(&sub_seed, &["checkout", "-B", "main"]);
-    std::fs::write(sub_seed.join("mod.txt"), "A\n").expect("write A");
-    git(&sub_seed, &["add", "-A"]);
-    commit_fixed(&sub_seed, "submodule commit A");
-    let oid_a = git(&sub_seed, &["rev-parse", "HEAD"]);
-    std::fs::write(sub_seed.join("mod.txt"), "B\n").expect("write B");
-    git(&sub_seed, &["add", "-A"]);
-    commit_fixed(&sub_seed, "submodule commit B");
-    let oid_b = git(&sub_seed, &["rev-parse", "HEAD"]);
-    git(&sub_seed, &["push", "-u", "origin", "main"]);
-
-    // 2. Superproject with the submodule added (pins at tip B) + committed.
-    git(&root, &["init", "-b", "main", "super"]);
-    let superp = root.join("super");
-    configure_identity(&superp);
-    std::fs::write(superp.join("README.md"), "super\n").expect("write readme");
-    git(&superp, &["add", "-A"]);
-    commit_fixed(&superp, "superproject initial");
-    git(
-        &superp,
-        &[
-            "-c",
-            "protocol.file.allow=always",
-            "submodule",
-            "add",
-            &url_for(&sub_origin),
-            "sub",
-        ],
-    );
-    git(&superp, &["add", "-A"]);
-    commit_fixed(&superp, "add submodule sub");
-
-    // 3. Fresh clone `work` WITHOUT recursing → `sub` registered but empty.
-    git(&root, &["clone", &url_for(&superp), "work"]);
-    let work = root.join("work");
-    configure_identity(&work);
-
-    Fixture {
-        _dir: dir,
-        root,
-        work,
-        oid_a,
-        oid_b,
+/// `git config --get <key>` → Some(value) on success, None on non-zero exit.
+fn config_get(dir: &Path, key: &str) -> Option<String> {
+    let out = Command::new("git")
+        .args(["config", "--get", key])
+        .current_dir(dir)
+        .output()
+        .expect("run git config");
+    if out.status.success() {
+        Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    } else {
+        None
     }
 }
 
-/// Leading sigil of `git -C <super> submodule status` for the single submodule
-/// (`-` uninitialized, ` ` up-to-date, `+` out-of-sync). Read RAW (not trimmed)
-/// so the space sigil survives.
-fn status_sigil(superp: &Path) -> char {
-    let raw = git_raw(superp, &["submodule", "status"], &[]);
-    let s = String::from_utf8_lossy(&raw);
-    s.chars().next().unwrap_or('?')
+/// The staged gitlink oid at `path`, or None when there is no 160000 entry.
+/// `git ls-files --stage -- <path>` line format: "<mode> <oid> <stage>\t<path>".
+fn staged_gitlink_opt(dir: &Path, path: &str) -> Option<String> {
+    let raw = git_raw(dir, &["ls-files", "--stage", "--", path], &[]);
+    let text = String::from_utf8_lossy(&raw);
+    for line in text.lines() {
+        let mut it = line.split_whitespace();
+        let mode = it.next().unwrap_or("");
+        let oid = it.next().unwrap_or("");
+        if mode == "160000" {
+            return Some(oid.to_string());
+        }
+    }
+    None
 }
 
-/// Convenience: the single submodule's status via the system under test.
-fn only_status(workdir: &Path) -> SubmoduleStatus {
-    let subs = list_submodules(workdir).expect("list_submodules");
-    assert_eq!(subs.len(), 1, "fixture has exactly one submodule");
-    assert_eq!(subs[0].name, "sub", "submodule name defaults to its path");
-    subs[0].status
+fn staged_gitlink(dir: &Path, path: &str) -> String {
+    staged_gitlink_opt(dir, path).unwrap_or_else(|| panic!("no staged gitlink at {path}"))
 }
 
-/// §8.2 #1 + #3 + #4: uninitialized → init+update reaches the pinned commit.
+/// True when `dir` does not exist or contains no entries.
+fn dir_empty(dir: &Path) -> bool {
+    match std::fs::read_dir(dir) {
+        Ok(mut rd) => rd.next().is_none(),
+        Err(_) => true,
+    }
+}
+
+/// Full round-trip: `add_submodule` (git2) matches `git submodule add`, then
+/// `deinit_submodule` / `remove_submodule` (shell-out) match the real teardown.
 #[test]
-fn init_then_update_reaches_pinned_commit() {
+fn oracle_add_deinit_remove_roundtrip() {
     require_git!();
-    let fx = setup();
-    let work = &fx.work;
-    let sub = work.join("sub");
 
-    // Uninitialized before we touch it. Parity: `-` sigil.
-    assert_eq!(only_status(work), SubmoduleStatus::Uninitialized);
-    assert_eq!(status_sigil(work), '-', "git sees uninitialized as `-`");
-    // wt_oid is null while uninitialized.
+    // 1. Upstream sub-repo with one commit, referenced by a LOCAL file:// URL.
+    let sub = init_repo();
+    commit_file(sub.path(), "lib.txt", "sub v1\n", "sub: initial");
+    let url = file_url(sub.path());
+    let sub_head = git(sub.path(), &["rev-parse", "HEAD"]);
+
+    // 2. Two superprojects: one driven by add_submodule, one by real git.
+    let ours = init_repo();
+    commit_file(ours.path(), "top.txt", "super\n", "super: initial");
+    let cli = init_repo();
+    commit_file(cli.path(), "top.txt", "super\n", "super: initial");
+
+    let path = "vendor/sub";
+    let url_key = format!("submodule.{path}.url");
+
+    // --- add: git2 vs `git -c protocol.file.allow=always submodule add` ------
+    let info = add_submodule(ours.path(), &url, path).expect("add_submodule");
+    assert_eq!(info.path, path, "wire path");
+    assert_eq!(info.name, path, "name defaults to the path");
+    assert_eq!(info.url.as_deref(), Some(url.as_str()), "url recorded");
+
+    // `protocol.file.allow=always` unblocks the file:// transport that modern
+    // git refuses for submodules by default (CVE-2022-39253); libgit2 (our add)
+    // is not subject to that CLI guard.
+    let cli_added = git_ok(
+        cli.path(),
+        &["-c", "protocol.file.allow=always", "submodule", "add", &url, path],
+    );
+    assert!(cli_added, "real `git submodule add` should succeed");
+
+    // .gitmodules + .git/config parity: both register submodule.<path>.url.
+    assert!(ours.path().join(".gitmodules").exists(), "our .gitmodules written");
+    assert_eq!(config_get(ours.path(), &url_key).as_deref(), Some(url.as_str()));
+    // Staged gitlink parity: both index a 160000 entry at <path> pointing at the
+    // SAME upstream HEAD (both cloned the same sub-repo).
+    let ours_link = staged_gitlink(ours.path(), path);
+    assert_eq!(ours_link, staged_gitlink(cli.path(), path), "gitlink oid == git");
+    assert_eq!(ours_link, sub_head, "gitlink points at the sub-repo HEAD");
+
+    // --- deinit: config cleared, worktree emptied, .gitmodules RETAINED ------
+    deinit_submodule(ours.path(), &SpawnGitRunner, path).expect("deinit_submodule");
     assert!(
-        list_submodules(work).unwrap()[0].wt_oid.is_none(),
-        "uninitialized submodule has no checked-out commit"
+        config_get(ours.path(), &url_key).is_none(),
+        "submodule config entry cleared by deinit",
     );
-
-    // System under test: init then update (fetch over the local transport).
-    init_submodule(work, "sub").expect("init_submodule");
-    update_submodule(work, "sub").expect("update_submodule");
-
-    // Now up-to-date; wt_oid == index_oid == pinned B.
-    let subs = list_submodules(work).expect("list after update");
-    assert_eq!(subs[0].status, SubmoduleStatus::UpToDate);
-    assert_eq!(status_sigil(work), ' ', "git sees up-to-date as ` `");
-    assert_eq!(subs[0].wt_oid.as_deref(), subs[0].index_oid.as_deref());
-    assert_eq!(subs[0].index_oid.as_deref(), Some(fx.oid_b.as_str()));
-
-    // Oracle cross-checks: the submodule HEAD is the recorded oid, and a
-    // subsequent CLI `submodule update` is a no-op (already at the pin).
-    assert_eq!(git(&sub, &["rev-parse", "HEAD"]), fx.oid_b);
-    git(
-        work,
-        &["-c", "protocol.file.allow=always", "submodule", "update"],
+    assert!(
+        ours.path().join(".gitmodules").exists(),
+        ".gitmodules RETAINED after deinit (re-init-able)",
     );
-    assert_eq!(git(&sub, &["rev-parse", "HEAD"]), fx.oid_b, "update was a no-op");
-}
-
-/// §8.2 #1: a checked-out commit different from the pin → outOfSync / `+`.
-#[test]
-fn checked_out_other_commit_is_out_of_sync() {
-    require_git!();
-    let fx = setup();
-    let work = &fx.work;
-    let sub = work.join("sub");
-
-    init_submodule(work, "sub").expect("init");
-    update_submodule(work, "sub").expect("update");
-    assert_eq!(only_status(work), SubmoduleStatus::UpToDate);
-
-    // Detach the submodule onto A (≠ the pinned B).
-    git(&sub, &["checkout", &fx.oid_a]);
-
-    assert_eq!(only_status(work), SubmoduleStatus::OutOfSync);
-    assert_eq!(status_sigil(work), '+', "git sees a commit mismatch as `+`");
-}
-
-/// §8.2 #2: pinned commit matches but the submodule worktree is dirty →
-/// modifiedWorkdir, cross-checked against the submodule's own porcelain status.
-#[test]
-fn dirty_but_matching_is_modified_workdir() {
-    require_git!();
-    let fx = setup();
-    let work = &fx.work;
-    let sub = work.join("sub");
-
-    init_submodule(work, "sub").expect("init");
-    update_submodule(work, "sub").expect("update");
-    assert_eq!(only_status(work), SubmoduleStatus::UpToDate);
-
-    // Edit a TRACKED file inside the submodule (no commit → pin still matches).
-    std::fs::write(sub.join("mod.txt"), "dirty\n").expect("dirty edit");
-
-    assert_eq!(only_status(work), SubmoduleStatus::ModifiedWorkdir);
-    // Oracle: the submodule's own status is non-empty, yet the commit still
-    // matches the pin (no `+` sigil).
-    let porcelain = git(&sub, &["status", "--porcelain"]);
-    assert!(!porcelain.is_empty(), "submodule worktree must be dirty");
-    assert_ne!(status_sigil(work), '+', "commit still matches the pin");
-}
-
-/// §8.2 #5: sync propagates a changed .gitmodules URL into .git/config.
-#[test]
-fn sync_propagates_changed_url() {
-    require_git!();
-    let fx = setup();
-    let work = &fx.work;
-
-    // Initialize so .git/config carries submodule.sub.url.
-    init_submodule(work, "sub").expect("init");
-    update_submodule(work, "sub").expect("update");
-
-    // Rewrite the .gitmodules URL to a second (arbitrary) path — sync only
-    // copies the config string, so the target need not exist.
-    let new_url = url_for(&fx.root.join("sub-origin2.git"));
-    git(
-        work,
-        &[
-            "config",
-            "-f",
-            ".gitmodules",
-            "submodule.sub.url",
-            &new_url,
-        ],
+    assert!(
+        dir_empty(&ours.path().join(path)),
+        "submodule worktree emptied by deinit",
     );
+    // Deinit does NOT touch the index — the gitlink is still staged.
+    assert!(staged_gitlink_opt(ours.path(), path).is_some(), "gitlink kept by deinit");
 
-    // System under test.
-    sync_submodule(work, "sub").expect("sync_submodule");
-
-    assert_eq!(
-        git(work, &["config", "submodule.sub.url"]),
-        new_url,
-        "sync must copy the .gitmodules URL into .git/config"
+    // --- remove: gitlink + .gitmodules entry gone, worktree deleted ---------
+    remove_submodule(ours.path(), &SpawnGitRunner, path).expect("remove_submodule");
+    assert!(
+        staged_gitlink_opt(ours.path(), path).is_none(),
+        "gitlink dropped from the index by remove",
+    );
+    let gm = std::fs::read_to_string(ours.path().join(".gitmodules")).unwrap_or_default();
+    assert!(
+        !gm.contains(&format!("[submodule \"{path}\"]")),
+        ".gitmodules entry dropped by remove; got: {gm:?}",
+    );
+    assert!(
+        !ours.path().join(path).exists(),
+        "submodule worktree directory deleted by remove",
     );
 }

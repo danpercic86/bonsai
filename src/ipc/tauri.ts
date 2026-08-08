@@ -632,6 +632,18 @@ export const tauriIpc: IpcApi = {
     return invoke<void>('sync_submodule', { repoId, name });
   },
 
+  addSubmodule(repoId: string, url: string, path: string): Promise<SubmoduleInfo> {
+    return invoke<SubmoduleInfo>('add_submodule', { repoId, url, path });
+  },
+
+  deinitSubmodule(repoId: string, name: string): Promise<void> {
+    return invoke<void>('deinit_submodule', { repoId, name });
+  },
+
+  removeSubmodule(repoId: string, name: string): Promise<void> {
+    return invoke<void>('remove_submodule', { repoId, name });
+  },
+
   // P27: worktrees.
   listWorktrees(repoId: string): Promise<WorktreeInfo[]> {
     return invoke<WorktreeInfo[]>('list_worktrees', { repoId });

@@ -74,6 +74,8 @@ export interface SidebarProps {
   submodules: SubmoduleInfo[];
   /** Right-click a submodule row → open the shared context menu at the cursor. */
   onSubmoduleContextMenu(name: string, clientX: number, clientY: number): void;
+  /** P60d: click the section "+" → open the add-submodule (url + path) dialog. */
+  onNewSubmodule(): void;
   /** P27 §6.1: worktrees (main first) with resolved branch/badges. */
   worktrees: WorktreeInfo[];
   /** Right-click a worktree row → open the shared context menu at the cursor. */
@@ -410,6 +412,7 @@ export function Sidebar({
   onStashContextMenu,
   submodules,
   onSubmoduleContextMenu,
+  onNewSubmodule,
   worktrees,
   onWorktreeContextMenu,
   onNewWorktree,
@@ -839,26 +842,40 @@ export function Sidebar({
               ))}
           </section>
 
-          {submodules.length > 0 && (
-            <section className="sidebar-section">
-              <SectionHeader
-                label="Submodules"
-                collapsed={submodulesCollapsed}
-                onToggle={() => setSubmodulesCollapsed((c) => !c)}
-              />
-              {!submodulesCollapsed && (
+          {/* P60d: always shown so a submodule can be added even when none
+              exist yet; the "+" opens the add (url + path) dialog. */}
+          <section className="sidebar-section">
+            <SectionHeader
+              label="Submodules"
+              collapsed={submodulesCollapsed}
+              onToggle={() => setSubmodulesCollapsed((c) => !c)}
+              extra={
+                <button
+                  type="button"
+                  className="sidebar-add"
+                  aria-label="Add submodule"
+                  title="Add submodule"
+                  disabled={actionsDisabled}
+                  onClick={() => {
+                    setSubmodulesCollapsed(false);
+                    onNewSubmodule();
+                  }}
+                >
+                  {'+'}
+                </button>
+              }
+            />
+            {!submodulesCollapsed &&
+              (submodules.length === 0 ? (
+                <p className="branch-muted">No submodules</p>
+              ) : (
                 <ul className="branch-list">
                   {submodules.map((s) => (
-                    <SubmoduleRow
-                      key={s.name}
-                      sub={s}
-                      onContextMenu={onSubmoduleContextMenu}
-                    />
+                    <SubmoduleRow key={s.name} sub={s} onContextMenu={onSubmoduleContextMenu} />
                   ))}
                 </ul>
-              )}
-            </section>
-          )}
+              ))}
+          </section>
 
           {/* P27 §6.1: Worktrees — always shown when a repo is open (the main
               row is always present in real repos). */}

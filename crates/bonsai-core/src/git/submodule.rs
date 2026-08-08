@@ -14,7 +14,8 @@ use std::path::Path;
 
 use crate::error::AppError;
 use crate::git::remote::{acquire_cred, map_remote_err, CredAttempts};
-use crate::git::stage::open_workdir_repo;
+use crate::git::search::GitRunner;
+use crate::git::stage::{open_workdir_repo, validate_rel_path};
 
 /// Consolidated state of one submodule. Wire: a camelCase string enum (no
 /// data). Derived from git2's `Repository::submodule_status` bitflags (§2.4),
@@ -83,6 +84,29 @@ fn classify_status(f: git2::SubmoduleStatus) -> SubmoduleStatus {
     SubmoduleStatus::UpToDate
 }
 
+/// Build one [`SubmoduleInfo`] row from an opened submodule handle and its
+/// already-resolved (UTF-8) `name`. `sm_workdir` is the superproject workdir
+/// (used for the absolute `abs_path`). Shared by [`list_submodules`] and
+/// [`add_submodule`] so the wire shape is produced in exactly one place.
+fn submodule_info(
+    repo: &git2::Repository,
+    sm: &git2::Submodule,
+    name: String,
+    sm_workdir: &Path,
+) -> Result<SubmoduleInfo, AppError> {
+    let flags = repo.submodule_status(&name, git2::SubmoduleIgnore::None)?; // §OPEN-2
+    Ok(SubmoduleInfo {
+        name,
+        path: sm.path().to_string_lossy().replace('\\', "/"), // forward slashes on the wire
+        abs_path: sm_workdir.join(sm.path()).to_string_lossy().into_owned(),
+        url: sm.url().ok().flatten().map(str::to_string),
+        head_oid: sm.head_id().map(|o| o.to_string()),
+        index_oid: sm.index_id().map(|o| o.to_string()),
+        wt_oid: sm.workdir_id().map(|o| o.to_string()),
+        status: classify_status(flags),
+    })
+}
+
 /// Blocking. List every submodule with its classified status. No submodules →
 /// Ok(vec![]). Order: `Repository::submodules()` order (stable).
 pub fn list_submodules(workdir: &Path) -> Result<Vec<SubmoduleInfo>, AppError> {
@@ -102,19 +126,7 @@ pub fn list_submodules(workdir: &Path) -> Result<Vec<SubmoduleInfo>, AppError> {
                 continue;
             }
         };
-        let rel = sm.path().to_string_lossy().replace('\\', "/"); // forward slashes on the wire
-        let abs = sm_workdir.join(sm.path()).to_string_lossy().into_owned();
-        let flags = repo.submodule_status(&name, git2::SubmoduleIgnore::None)?; // §OPEN-2
-        out.push(SubmoduleInfo {
-            name,
-            path: rel,
-            abs_path: abs,
-            url: sm.url().ok().flatten().map(str::to_string),
-            head_oid: sm.head_id().map(|o| o.to_string()),
-            index_oid: sm.index_id().map(|o| o.to_string()),
-            wt_oid: sm.workdir_id().map(|o| o.to_string()),
-            status: classify_status(flags),
-        });
+        out.push(submodule_info(&repo, &sm, name, &sm_workdir)?);
     }
     Ok(out)
 }
@@ -174,6 +186,131 @@ pub fn sync_submodule(workdir: &Path, name: &str) -> Result<(), AppError> {
     let repo = open_workdir_repo(workdir)?;
     let mut sm = open_submodule(&repo, name)?;
     sm.sync()?;
+    Ok(())
+}
+
+/// Blocking. Adds a submodule at repo-relative `path` from `url` (D4): git2
+/// `Repository::submodule(url, Path::new(path), /*use_gitlink*/ true)` →
+/// clone the subrepo with the shared M6 credential callback (`acquire_cred`,
+/// exactly as [`update_submodule`]) → `Submodule::init(false)` (write
+/// `submodule.<name>.*` into .git/config so it is "initialized", matching
+/// `git submodule add`) → `Submodule::add_finalize()` (stage .gitmodules + the
+/// new gitlink). `path` is validated with `validate_rel_path`; a blank url/path
+/// → InvalidName. Errors: `invalidName` | `git` (incl. network/auth via
+/// `map_remote_err`) | `noRepo`.
+pub fn add_submodule(workdir: &Path, url: &str, path: &str) -> Result<SubmoduleInfo, AppError> {
+    if url.trim().is_empty() {
+        return Err(AppError::InvalidName("submodule url is empty".to_string()));
+    }
+    if path.trim().is_empty() {
+        return Err(AppError::InvalidName("submodule path is empty".to_string()));
+    }
+    validate_rel_path(path)?; // reject absolute / `..` / backslash traversal
+
+    let repo = open_workdir_repo(workdir)?;
+    let sm_workdir = repo
+        .workdir()
+        .ok_or_else(|| AppError::Git("repository has no working directory".to_string()))?
+        .to_path_buf();
+
+    // add-setup: write .gitmodules + register the submodule (use_gitlink = true).
+    let mut sm = repo
+        .submodule(url, Path::new(path), true)
+        .map_err(|e| map_remote_err(e, path))?;
+
+    // Clone the subrepo with the shared M6 credential chain (uniform with
+    // `update_submodule`; never prompts, never stores passwords).
+    {
+        let attempts = RefCell::new(CredAttempts::default());
+        let mut callbacks = git2::RemoteCallbacks::new();
+        callbacks.credentials(|url, username_from_url, allowed| {
+            acquire_cred(repo.workdir(), &attempts, url, username_from_url, allowed)
+        });
+        let mut fo = git2::FetchOptions::new();
+        fo.remote_callbacks(callbacks);
+        let mut opts = git2::SubmoduleUpdateOptions::new();
+        opts.fetch(fo);
+        sm.clone(Some(&mut opts))
+            .map_err(|e| map_remote_err(e, url))?;
+    }
+
+    // Register in .git/config (like `git submodule add`) then stage .gitmodules
+    // + the gitlink for the next commit.
+    sm.init(false)?;
+    sm.add_finalize()?;
+
+    let Some(name) = sm.name().ok() else {
+        return Err(AppError::Git("submodule has a non-UTF-8 name".to_string()));
+    };
+    submodule_info(&repo, &sm, name.to_string(), &sm_workdir)
+}
+
+/// Resolve submodule `name` → its repo-relative path with forward slashes,
+/// validating the name via [`open_submodule`] (blank → InvalidName, unknown →
+/// Git). Shared by the deinit/remove shell-out ops so the pathspec fed to `git`
+/// is always the tracked submodule path.
+fn submodule_path(repo: &git2::Repository, name: &str) -> Result<String, AppError> {
+    let sm = open_submodule(repo, name)?;
+    Ok(sm.path().to_string_lossy().replace('\\', "/"))
+}
+
+/// Pure argv for `git submodule deinit -f -- <path>`. `path` is ALWAYS the
+/// final token, after `--` — never interpolated into a flag — so a space/`;`
+/// in it stays one token and can never become a second command.
+fn deinit_args(path: &str) -> Vec<String> {
+    vec![
+        "submodule".to_string(),
+        "deinit".to_string(),
+        "-f".to_string(),
+        "--".to_string(),
+        path.to_string(),
+    ]
+}
+
+/// Pure argv for `git rm -f -- <path>` (drops the gitlink + .gitmodules entry
+/// and stages the removal). `path` is the final token, after `--`.
+fn rm_args(path: &str) -> Vec<String> {
+    vec![
+        "rm".to_string(),
+        "-f".to_string(),
+        "--".to_string(),
+        path.to_string(),
+    ]
+}
+
+/// Blocking. `git submodule deinit -f -- <path>` via `runner` (no libgit2
+/// primitive; D4). Clears `submodule.<name>` from .git/config and empties the
+/// submodule worktree; KEEPS the .gitmodules entry (re-init-able). `name` is
+/// resolved to its path via `find_submodule`. Errors: `invalidName` | `git`
+/// (stderr tail) | `noRepo`.
+pub fn deinit_submodule(
+    workdir: &Path,
+    runner: &dyn GitRunner,
+    name: &str,
+) -> Result<(), AppError> {
+    let repo = open_workdir_repo(workdir)?;
+    let path = submodule_path(&repo, name)?;
+    runner.run(&deinit_args(&path), workdir)?;
+    Ok(())
+}
+
+/// Blocking. Full removal (git's documented sequence): `git submodule deinit -f
+/// -- <path>` → `git rm -f -- <path>` → best-effort `remove_dir_all(.git/
+/// modules/<name>)`. DESTRUCTIVE (deletes the worktree, edits the index, drops
+/// the .gitmodules entry + gitlink). Errors: `invalidName` | `git` | `noRepo`.
+pub fn remove_submodule(
+    workdir: &Path,
+    runner: &dyn GitRunner,
+    name: &str,
+) -> Result<(), AppError> {
+    let repo = open_workdir_repo(workdir)?;
+    let path = submodule_path(&repo, name)?;
+    // The cached submodule git dir lives under the superproject's git dir.
+    let modules_dir = repo.path().join("modules").join(name);
+    runner.run(&deinit_args(&path), workdir)?;
+    runner.run(&rm_args(&path), workdir)?;
+    // Best-effort: drop the cached git dir (`git rm` leaves it; may be absent).
+    let _ = std::fs::remove_dir_all(&modules_dir);
     Ok(())
 }
 
@@ -295,6 +432,58 @@ mod tests {
         match open_submodule(&repo, "does/not/exist").map(|_| ()) {
             Err(AppError::Git(m)) => assert!(m.contains("does/not/exist"), "{m}"),
             other => panic!("expected Git error, got {other:?}"),
+        }
+    }
+
+    /// P60d: the deinit/remove argv builders are byte-exact — `path` is the
+    /// FINAL token, immediately after `--`.
+    #[test]
+    fn deinit_args_exact() {
+        assert_eq!(
+            deinit_args("vendor/sub"),
+            ["submodule", "deinit", "-f", "--", "vendor/sub"]
+                .map(String::from)
+                .to_vec()
+        );
+    }
+
+    #[test]
+    fn rm_args_exact() {
+        assert_eq!(
+            rm_args("vendor/sub"),
+            ["rm", "-f", "--", "vendor/sub"].map(String::from).to_vec()
+        );
+    }
+
+    /// P60d injection-safety: a space/`;`-bearing path stays exactly ONE argv
+    /// token, always the element AFTER `--` — never split, never a 2nd command.
+    #[test]
+    fn args_keep_metachar_path_as_single_token_after_dashdash() {
+        let evil = "a b; rm -rf /";
+        let d = deinit_args(evil);
+        assert_eq!(d.last().unwrap(), evil);
+        assert_eq!(d[d.len() - 2], "--");
+        let r = rm_args(evil);
+        assert_eq!(r.last().unwrap(), evil);
+        assert_eq!(r[r.len() - 2], "--");
+    }
+
+    /// P60d: `add_submodule` rejects blank url/path and traversing paths BEFORE
+    /// opening the repo (so no git/network is touched on obviously bad input).
+    #[test]
+    fn add_submodule_rejects_bad_url_and_path() {
+        let dir = crate::testutil::scratch_dir();
+        match add_submodule(dir.path(), "   ", "vendor/x") {
+            Err(AppError::InvalidName(_)) => {}
+            other => panic!("blank url ⇒ InvalidName, got {other:?}"),
+        }
+        match add_submodule(dir.path(), "https://example.com/x.git", "  ") {
+            Err(AppError::InvalidName(_)) => {}
+            other => panic!("blank path ⇒ InvalidName, got {other:?}"),
+        }
+        match add_submodule(dir.path(), "https://example.com/x.git", "../escape") {
+            Err(AppError::Other(_)) => {}
+            other => panic!("traversing path ⇒ Other (validate_rel_path), got {other:?}"),
         }
     }
 }

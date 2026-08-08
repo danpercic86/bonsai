@@ -3,45 +3,9 @@ import type { IpcApi } from '../../types';
 import { randomOid } from '../../fixtures/oids';
 import { delay, requireRepo } from '../repoState';
 import { worktreesFor } from '../worktreeState';
-import type { AppError, CopyCandidate, CopyPlanEntry, CopySelection, SubmoduleInfo, WorktreeInfo } from '../../types';
+import type { AppError, CopyCandidate, CopyPlanEntry, CopySelection, WorktreeInfo } from '../../types';
 
 export const worktreeHandlers = {
-  async listSubmodules(repoId: string): Promise<SubmoduleInfo[]> {
-    await delay(150);
-    const state = requireRepo(repoId);
-    return structuredClone(state.submodules);
-  },
-
-  async initSubmodule(repoId: string, name: string): Promise<void> {
-    await delay(150);
-    const state = requireRepo(repoId);
-    const sub = state.submodules.find((s) => s.name === name);
-    // Unknown name → no-op (the mock list is authoritative; unreachable from UI).
-    if (sub !== undefined && sub.status === 'uninitialized') {
-      sub.status = 'upToDate';
-      sub.wtOid = sub.indexOid;
-    }
-  },
-
-  async updateSubmodule(repoId: string, name: string): Promise<void> {
-    await delay(150);
-    const state = requireRepo(repoId);
-    const sub = state.submodules.find((s) => s.name === name);
-    // Init-then-update semantics — clears uninitialized / outOfSync.
-    if (sub !== undefined) {
-      sub.status = 'upToDate';
-      sub.wtOid = sub.indexOid;
-    }
-  },
-
-  async syncSubmodule(repoId: string, name: string): Promise<void> {
-    await delay(150);
-    // Sync mutates config (URL propagation), not the listed fields — no-op here.
-    // Validate the repo is open (mirrors the real command surface).
-    void name;
-    requireRepo(repoId);
-  },
-
   // Stateful worktree mock (P27 §5): list + add/remove/lock/unlock over the
   // shared module-level list (all default-kind tabs view one repository, so
   // mutations show up everywhere). Refusal errors mirror the backend's

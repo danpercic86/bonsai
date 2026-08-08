@@ -94,8 +94,18 @@ recount vs lib.rs (base 141).
   IPC + mock (mirrors classifier; `?undo=` seam). 10 tests (truth-table + wire + CLI oracle
   commit→merge→reset→branch-switch, target==`HEAD@{1}`); clippy -D + build/tsc clean. Nits: `pull <ref>:
   Merge`→fastForward (both Hard→same reversal); Undo in toolbar-center; summary shows raw prefix.
-**Current step:** P60a+b+c DONE (committed). Next: **P60d** — submodules (add via git2+acquire_cred / deinit
-+ remove via GitRunner shell-out, path after `--`; add/deinit/remove cmds →146 + submodule menu).
+- **P60d** (reviewer APPROVE, 0 must-fix / 0 should-fix; 3 nits) — submodules. `add_submodule` (git2
+  Repository::submodule + acquire_cred clone + init(false) + add_finalize; validate_rel_path; blank→
+  InvalidName) / `deinit_submodule` (git submodule deinit -f -- <path>; clears config + empties worktree,
+  RETAINS .gitmodules) / `remove_submodule` (deinit → git rm -f -- <path> → best-effort rm .git/modules/<n>;
+  drops gitlink+.gitmodules+worktree) — deinit/remove via GitRunner shell-out, path=git's own sm.path() as
+  the FINAL token after `--` (reviewer: injection-safe). Pure deinit_args/rm_args. 3 cmds (143→146); none
+  emit repo-changed. list_submodules refactored onto a shared submodule_info builder (byte-identical). IPC +
+  mock (moved to submodules.ts). Frontend: Sidebar submodule section + "+"; Add(url+path)/Deinit(confirm)/
+  Remove(DESTRUCTIVE). submodule 9/9 + CLI oracle roundtrip (parity w/ real git) + argv injection test;
+  clippy -D + build/tsc clean. Nits: add-traversal→Other (doc); always-shown empty section; empty .git/modules parent.
+**Current step:** P60a+b+c+d DONE (committed). Next: **P60 tester** (full regression + `P60-user-checklist.md`
+— rename / non-FF pull / undo / submodules native) → P60 AI gate → P60 done → P61.
 
 ## P59 — git hooks execution + force-push-lease hardening (Phase 3 · milestone 2/4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 

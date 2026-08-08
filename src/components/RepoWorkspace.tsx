@@ -84,6 +84,7 @@ import { CommandPalette } from './CommandPalette';
 import { buildPaletteActions, type PaletteAction } from './paletteActions';
 import { ProposedOpDialog } from './ProposedOpDialog';
 import { PromptDialog } from './PromptDialog';
+import { SubmoduleDialogs } from './dialogs/SubmoduleDialogs';
 import { ChangelogDialog } from './ChangelogDialog';
 import { safeOpDispatch } from './safeOpDispatch';
 import type { ComboboxOption } from './Combobox';
@@ -319,6 +320,10 @@ export function RepoWorkspace({
   const [pendingCreateBranch, setPendingCreateBranch] = useState<{ oid: string } | null>(null);
   // P60a: "Rename…" a local branch → drives the shared PromptDialog (prefilled).
   const [pendingRenameBranch, setPendingRenameBranch] = useState<{ name: string } | null>(null);
+  // P60d: submodule add (url + path) / deinit / remove dialog state.
+  const [pendingAddSubmodule, setPendingAddSubmodule] = useState(false);
+  const [pendingDeinitSubmodule, setPendingDeinitSubmodule] = useState<string | null>(null);
+  const [pendingRemoveSubmodule, setPendingRemoveSubmodule] = useState<string | null>(null);
   // P60b: a non-fast-forward pull → drives NonFfPullDialog (Merge / Rebase).
   const [pendingNonFfPull, setPendingNonFfPull] = useState<NonFfPullInfo | null>(null);
   // P60c: one-click undo. The toolbar Undo button describes the last op
@@ -428,6 +433,9 @@ export function RepoWorkspace({
     pendingLineDiscard !== null ||
     pendingCreateBranch !== null ||
     pendingRenameBranch !== null ||
+    pendingAddSubmodule ||
+    pendingDeinitSubmodule !== null ||
+    pendingRemoveSubmodule !== null ||
     pendingNonFfPull !== null ||
     pendingUndo !== null ||
     pendingCherrypick !== null ||
@@ -1365,11 +1373,20 @@ export function RepoWorkspace({
     setPendingReservedStash,
   });
 
-  const { handleInitSubmodule, handleUpdateSubmodule, handleSyncSubmodule } = useSubmoduleActions({
+  const {
+    handleInitSubmodule,
+    handleUpdateSubmodule,
+    handleSyncSubmodule,
+    handleAddSubmodule,
+    handleDeinitSubmodule,
+    handleRemoveSubmodule,
+  } = useSubmoduleActions({
     repoId,
     pushToast,
     setMutating,
     refetchSubmodules,
+    refetchStatus,
+    refetchGraph,
   });
 
   const { handleAddWorktree, handleLockWorktree, handleUnlockWorktree, handleRemoveWorktree } =
@@ -2269,6 +2286,8 @@ export function RepoWorkspace({
     handleInitSubmodule,
     handleUpdateSubmodule,
     handleSyncSubmodule,
+    setPendingDeinitSubmodule,
+    setPendingRemoveSubmodule,
     onOpenRepoPath,
     setWorktreeContextOpen,
     setPendingWorktreeLock,
@@ -2407,6 +2426,7 @@ export function RepoWorkspace({
           onStashContextMenu={handleStashContextMenu}
           submodules={submodules}
           onSubmoduleContextMenu={handleSubmoduleContextMenu}
+          onNewSubmodule={() => setPendingAddSubmodule(true)}
           worktrees={worktrees}
           onWorktreeContextMenu={handleWorktreeContextMenu}
           onNewWorktree={() => setNewWorktreeOpen(true)}
@@ -2764,6 +2784,20 @@ export function RepoWorkspace({
       {composer.open && (
         <ComposerDialog composer={composer} statusByPath={composerStatusByPath} />
       )}
+      {/* P60d: submodule add (url + path) / deinit / remove. add + deinit + remove
+          refetch submodules + status + graph on success (see useSubmoduleActions). */}
+      <SubmoduleDialogs
+        mutating={mutating}
+        addOpen={pendingAddSubmodule}
+        setAddOpen={setPendingAddSubmodule}
+        handleAddSubmodule={(url, path) => void handleAddSubmodule(url, path)}
+        pendingDeinit={pendingDeinitSubmodule}
+        setPendingDeinit={setPendingDeinitSubmodule}
+        handleDeinitSubmodule={(name) => void handleDeinitSubmodule(name)}
+        pendingRemove={pendingRemoveSubmodule}
+        setPendingRemove={setPendingRemoveSubmodule}
+        handleRemoveSubmodule={(name) => void handleRemoveSubmodule(name)}
+      />
     </>
   );
 }

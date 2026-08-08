@@ -17,6 +17,7 @@ import { historyHandlers } from './mock/handlers/history';
 import { configHandlers } from './mock/handlers/config';
 import { stashHandlers } from './mock/handlers/stash';
 import { resetRevertHandlers } from './mock/handlers/resetRevert';
+import { submoduleHandlers } from './mock/handlers/submodules';
 import { worktreeHandlers } from './mock/handlers/worktrees';
 import { repoMetaHandlers } from './mock/handlers/repoMeta';
 import { sessionHandlers } from './mock/handlers/session';
@@ -45,6 +46,7 @@ export const mockIpc: IpcApi = {
   ...configHandlers,
   ...stashHandlers,
   ...resetRevertHandlers,
+  ...submoduleHandlers,
   ...worktreeHandlers,
   ...repoMetaHandlers,
   ...sessionHandlers,

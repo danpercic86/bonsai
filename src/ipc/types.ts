@@ -1939,6 +1939,15 @@ export interface IpcApi {
   updateSubmodule(repoId: string, name: string): Promise<void>;
   /** Copy the .gitmodules URL into config + the submodule remote. Rejects noRepo | invalidName | git. */
   syncSubmodule(repoId: string, name: string): Promise<void>;
+  /** P60d: add a submodule from `url` at repo-relative `path` (clones it).
+   *  Rejects noRepo | invalidName | git. */
+  addSubmodule(repoId: string, url: string, path: string): Promise<SubmoduleInfo>;
+  /** P60d: deinit — clear its config + empty the worktree; keep .gitmodules.
+   *  Rejects noRepo | invalidName | git. */
+  deinitSubmodule(repoId: string, name: string): Promise<void>;
+  /** P60d: remove entirely (deinit + git rm + drop .git/modules). DESTRUCTIVE.
+   *  Rejects noRepo | invalidName | git. */
+  removeSubmodule(repoId: string, name: string): Promise<void>;
   // --- P27: worktrees ---
   /** All worktrees (main first) with resolved branch/oid/badges. Rejects noRepo | git. */
   listWorktrees(repoId: string): Promise<WorktreeInfo[]>;
