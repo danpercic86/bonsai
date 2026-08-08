@@ -97,11 +97,13 @@ right-pane PR panel. **+7 cmd (147→154, RECOUNT at impl).** Sub-increments:
 - **P62c** — PR panel: `PrPanel` container + `PrList`/`PrListItem`/`PrDetailView`/`PrReviewComments`/
   `PrCreateForm`/`ForgeConnect` + right-pane `'work'|'prs'` tab in `RepoWorkspace`/`WorkspaceRightPanel`.
 
-**Current step:** P62a ✅ DONE (committed) — `bonsai-forge` crate + 4 `AppError` variants; reviewer
-APPROVE-WITH-NITS (0 must-fix; `dto.rs` 631→448 split to `rollup.rs` 229; dropped unused thiserror +
-reqwest json feature). AI gate: `cargo test -p bonsai-forge` 57/0, clippy -D clean, workspace build green.
-Cmd still 147 (the 7 forge commands land in P62b). Next: **P62b** — `commands/forge.rs` (7 triples) +
-register + frontend IPC (`types.ts`/`tauri.ts`/`index.ts` + 4 `AppError.kind`) + `mock/handlers/forge.ts` + `fixtures/forge.ts`.
+**Current step:** P62a ✅ + P62b ✅ DONE (committed). P62a = `bonsai-forge` crate + 4 `AppError` variants.
+P62b = 7 `forge_*` command triples + crate-level `set_token`/`clear_token`/`validate_token` + full TS IPC
+(types/tauri/index + 4 `AppError.kind`) + offline `forgeHandlers` mock + `fixtures/forge.ts`. Both reviewer
+APPROVE-WITH-NITS (0 must-fix / 0 should-fix on P62b). **Cmd = 154** (147+7, confirmed by grep). AI gate:
+`bonsai-forge` 60/0, `bonsai --lib` 117/0, clippy -D clean, workspace build 0-warn, tsc+build green.
+Next: **P62c** — PR panel UI (`PrPanel` container + `PrList`/`PrListItem`/`PrDetailView`/`PrReviewComments`/
+`PrCreateForm`/`ForgeConnect`) + right-pane `'work'|'prs'` tab; then browser-harness the full flow on mock.
 
 ### P63 — forge signals on graph — **PENDING** (contract ready `docs/contracts/P63-forge-graph-signals.md`)
 ### P64 — more providers + AI PR descriptions — **PENDING** (contract ready; recommend split B+GitLab, then P64b/c)

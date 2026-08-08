@@ -377,6 +377,7 @@ version = "0.3.1"
 dependencies = [
  "axum",
  "bonsai-core",
+ "bonsai-forge",
  "bonsai-mcp",
  "git2",
  "notify",

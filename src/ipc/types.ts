@@ -1587,6 +1587,123 @@ export interface AiGeneratedAsset {
 
 export type Unsubscribe = () => void;
 
+// --- P62 forge / PR integration (mirrors crates/bonsai-forge/src/types.rs) ---
+
+/** Which forge backs `origin` (detected from the remote URL). */
+export type ForgeKind = 'gitHub' | 'unknown';
+/** PR lifecycle state. */
+export type PrState = 'open' | 'closed' | 'merged';
+/** List-query filter (maps to GitHub's `?state=`). */
+export type PrStateFilter = 'open' | 'closed' | 'all';
+/** Normalized CI/commit-status rollup (defined in P62; P63 renders it as a
+ *  commit-graph badge). */
+export type CheckRollup = 'success' | 'pending' | 'failure' | 'error' | 'neutral' | 'none';
+/** Whether a comment is a diff-line review comment or a PR conversation comment. */
+export type CommentKind = 'review' | 'conversation';
+
+/** The authenticated user (GitHub `GET /user`). */
+export interface ForgeViewer {
+  login: string;
+  avatarUrl: string | null;
+}
+/** Repo identity derived from `origin` + keychain presence (no network). */
+export interface ForgeRepoContext {
+  provider: ForgeKind;
+  host: string;
+  owner: string;
+  repo: string;
+  remoteName: string;
+  webUrl: string;
+  /** A token is present in the keychain for `host` (no network check). */
+  authenticated: boolean;
+  /** Non-null only when a validated viewer is cache-warm (after set-token). */
+  viewer: ForgeViewer | null;
+}
+/** One row in a PR list. */
+export interface PrSummary {
+  number: number;
+  title: string;
+  state: PrState;
+  isDraft: boolean;
+  author: string;
+  authorAvatarUrl: string | null;
+  /** head ref (branch name only). */
+  sourceBranch: string;
+  /** base ref (branch name only). */
+  targetBranch: string;
+  comments: number;
+  createdAt: string;
+  updatedAt: string;
+  /** `html_url` for opening in a browser. */
+  url: string;
+  /** head sha, for the P63 status lookup. */
+  headSha: string;
+}
+/** A single PR with its body + diff stats. */
+export interface PrDetail {
+  summary: PrSummary;
+  /** Markdown body; may be empty. */
+  body: string;
+  /** null while GitHub is still computing mergeability. */
+  mergeable: boolean | null;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  labels: string[];
+}
+/** PR list request. `perPage` is capped `<= 50` by the provider. */
+export interface PrListQuery {
+  state: PrStateFilter;
+  page: number;
+  perPage: number;
+}
+/** One page of PR summaries. `hasNext` derives from the `Link` header. */
+export interface PrPage {
+  items: PrSummary[];
+  page: number;
+  hasNext: boolean;
+}
+/** Inputs for creating a PR. `maintainerCanModify` defaults to true in the UI. */
+export interface CreatePrInput {
+  title: string;
+  body: string;
+  sourceBranch: string;
+  targetBranch: string;
+  draft: boolean;
+  maintainerCanModify: boolean;
+}
+/** A merged review/conversation comment. */
+export interface ReviewComment {
+  id: number;
+  author: string;
+  authorAvatarUrl: string | null;
+  body: string;
+  path: string | null;
+  line: number | null;
+  createdAt: string;
+  url: string;
+  kind: CommentKind;
+}
+/** One check/status context inside a {@link CommitStatus}. */
+export interface StatusContext {
+  name: string;
+  state: CheckRollup;
+  description: string | null;
+  targetUrl: string | null;
+}
+/** Merged legacy-status + check-runs rollup for one commit. Defined + populated
+ *  in P62; wired to an IPC command + rendered as a graph badge in P63.
+ *  `contexts` is capped at 50 individual checks. */
+export interface CommitStatus {
+  sha: string;
+  state: CheckRollup;
+  total: number;
+  passed: number;
+  failed: number;
+  pending: number;
+  contexts: StatusContext[];
+}
+
 export interface AppError {
   kind:
     | 'git'
@@ -1614,7 +1731,11 @@ export interface AppError {
     | 'aiFailed'
     | 'updateFailed'
     | 'externalToolFailed'
-    | 'hookRejected';
+    | 'hookRejected'
+    | 'forgeUnsupported'
+    | 'forgeAuthRequired'
+    | 'forgeRateLimited'
+    | 'forgeApi';
   message: string;
 }
 
@@ -2258,4 +2379,34 @@ export interface IpcApi {
    *  Never resolves in practice (process exits). In the mock it is a logged
    *  no-op. */
   relaunchApp(): Promise<void>;
+  // --- P62: forge / PR integration ---
+  /** Repo identity from `origin` + keychain presence (no network). An
+   *  unrecognized/unparseable origin returns a friendly `unknown`-provider
+   *  context, NOT an error. Rejects AppError (`noRepo` | `noRemote` | `git`). */
+  forgeRepoContext(repoId: string): Promise<ForgeRepoContext>;
+  /** One page of PR summaries for the state filter (`perPage` capped at 50).
+   *  Rejects AppError (`noRepo` | `forgeUnsupported` | `noRemote` |
+   *  `forgeRateLimited` | `forgeApi` | `networkError` | `git`). */
+  forgeListPrs(repoId: string, query: PrListQuery): Promise<PrPage>;
+  /** A single PR (body, diff stats, mergeable, labels). Rejects AppError
+   *  (`noRepo` | `forgeUnsupported` | `forgeApi` | `forgeRateLimited` |
+   *  `networkError` | `git`). */
+  forgeGetPr(repoId: string, number: number): Promise<PrDetail>;
+  /** Open a new PR; REQUIRES a stored token. Rejects AppError (`noRepo` |
+   *  `forgeAuthRequired` | `forgeUnsupported` | `forgeApi` | `forgeRateLimited`
+   *  | `networkError` | `git`). */
+  forgeCreatePr(repoId: string, input: CreatePrInput): Promise<PrDetail>;
+  /** Merged review + conversation comments, sorted by creation time. Rejects
+   *  AppError (`noRepo` | `forgeUnsupported` | `forgeApi` | `forgeRateLimited`
+   *  | `networkError` | `git`). */
+  forgeListReviewComments(repoId: string, number: number): Promise<ReviewComment[]>;
+  /** Validate a pasted PAT (`GET /user`) and store it in the OS keychain keyed
+   *  by host; resolves with the authenticated viewer. A rejected token stores
+   *  NOTHING and the token is never logged/echoed. Rejects AppError (`noRepo` |
+   *  `authFailed` | `forgeUnsupported` | `noRemote` | `forgeRateLimited` |
+   *  `networkError`). */
+  forgeSetToken(repoId: string, token: string): Promise<ForgeViewer>;
+  /** Sign out: delete the host's PAT from the keychain + evict the cached
+   *  viewer. Idempotent. Rejects AppError (`noRepo` | `noRemote`). */
+  forgeClearToken(repoId: string): Promise<void>;
 }

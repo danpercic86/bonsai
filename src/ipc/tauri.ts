@@ -41,6 +41,13 @@ import type {
   CompareDiff,
   ComposeApplyResult,
   ComposePlan,
+  CreatePrInput,
+  ForgeRepoContext,
+  ForgeViewer,
+  PrDetail,
+  PrListQuery,
+  PrPage,
+  ReviewComment,
   ComposeProposal,
   OperationPlan,
   ConflictEntry,
@@ -982,5 +989,35 @@ export const tauriIpc: IpcApi = {
 
   relaunchApp(): Promise<void> {
     return relaunch();
+  },
+
+  // P62: forge / PR integration. Thin invoke wrappers; arg keys match the
+  // command signatures (camelCase repoId first). No events, no channels.
+  forgeRepoContext(repoId: string): Promise<ForgeRepoContext> {
+    return invoke<ForgeRepoContext>('forge_repo_context', { repoId });
+  },
+
+  forgeListPrs(repoId: string, query: PrListQuery): Promise<PrPage> {
+    return invoke<PrPage>('forge_list_prs', { repoId, query });
+  },
+
+  forgeGetPr(repoId: string, number: number): Promise<PrDetail> {
+    return invoke<PrDetail>('forge_get_pr', { repoId, number });
+  },
+
+  forgeCreatePr(repoId: string, input: CreatePrInput): Promise<PrDetail> {
+    return invoke<PrDetail>('forge_create_pr', { repoId, input });
+  },
+
+  forgeListReviewComments(repoId: string, number: number): Promise<ReviewComment[]> {
+    return invoke<ReviewComment[]>('forge_list_review_comments', { repoId, number });
+  },
+
+  forgeSetToken(repoId: string, token: string): Promise<ForgeViewer> {
+    return invoke<ForgeViewer>('forge_set_token', { repoId, token });
+  },
+
+  forgeClearToken(repoId: string): Promise<void> {
+    return invoke<void>('forge_clear_token', { repoId });
   },
 };

@@ -529,6 +529,70 @@
         assert!(matches!(err, AppError::NoRepo));
     }
 
+    /// The P62b forge commands all return `NoRepo` for an unknown id. Every
+    /// inner gates on `repo_path` BEFORE any `spawn_blocking`, so the missing-id
+    /// path never opens a provider, touches the network, or reads the OS
+    /// keychain (the tauri "test" feature is avoided on this machine — see
+    /// `config_commands_require_an_open_repo`). `PrStateFilter` is not among the
+    /// DTO names `shared` re-exports, so it is referenced fully qualified here.
+    #[test]
+    fn forge_commands_require_an_open_repo() {
+        let state = AppState::default();
+
+        let err = tauri::async_runtime::block_on(forge_repo_context_inner(&state, MISSING_ID))
+            .expect_err("forge_repo_context with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(forge_list_prs_inner(
+            &state,
+            MISSING_ID,
+            PrListQuery {
+                state: bonsai_forge::PrStateFilter::Open,
+                page: 1,
+                per_page: 30,
+            },
+        ))
+        .expect_err("forge_list_prs with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(forge_get_pr_inner(&state, MISSING_ID, 1))
+            .expect_err("forge_get_pr with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(forge_create_pr_inner(
+            &state,
+            MISSING_ID,
+            CreatePrInput {
+                title: "t".to_string(),
+                body: "b".to_string(),
+                source_branch: "feature".to_string(),
+                target_branch: "main".to_string(),
+                draft: false,
+                maintainer_can_modify: true,
+            },
+        ))
+        .expect_err("forge_create_pr with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(forge_list_review_comments_inner(
+            &state, MISSING_ID, 1,
+        ))
+        .expect_err("forge_list_review_comments with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(forge_set_token_inner(
+            &state,
+            MISSING_ID,
+            "tok".to_string(),
+        ))
+        .expect_err("forge_set_token with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(forge_clear_token_inner(&state, MISSING_ID))
+            .expect_err("forge_clear_token with no repo");
+        assert!(matches!(err, AppError::NoRepo));
+    }
+
     /// The P3c merge/conflict commands all return `NoRepo` for an unknown id
     /// (contract §6).
     #[test]

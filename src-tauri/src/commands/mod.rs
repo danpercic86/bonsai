@@ -37,6 +37,7 @@ mod tags;
 mod ai_assets;
 mod profiles;
 mod external;
+mod forge;
 
 #[cfg(test)]
 mod tests;
@@ -80,3 +81,4 @@ pub use tags::*;
 pub use ai_assets::*;
 pub use profiles::*;
 pub use external::*;
+pub use forge::*;

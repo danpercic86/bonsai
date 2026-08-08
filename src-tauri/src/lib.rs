@@ -215,7 +215,14 @@ pub fn run() {
             commands::ai_generate_asset,
             commands::open_in_terminal,
             commands::reveal_in_file_manager,
-            commands::open_in_editor
+            commands::open_in_editor,
+            commands::forge_repo_context,
+            commands::forge_list_prs,
+            commands::forge_get_pr,
+            commands::forge_create_pr,
+            commands::forge_list_review_comments,
+            commands::forge_set_token,
+            commands::forge_clear_token
         ])
         .build(tauri::generate_context!())
         .expect("error while running Bonsai")
