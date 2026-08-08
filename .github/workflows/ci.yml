@@ -1,0 +1,97 @@
+# Bonsai — CI gate (audit 2026-08-07 §4.4).
+#
+# Runs the full AI gate on every push/PR to main: Rust tests, clippy
+# (warnings = errors), frontend unit tests, and the tsc + vite build.
+# Rust steps run SEQUENTIALLY in one job — cargo test and clippy sharing
+# a target dir concurrently causes spurious failures (known race).
+#
+# Ubuntu only: the suite is platform-independent logic (Windows/macOS
+# specifics are covered by unit tests with mocked runners); the 3-OS
+# matrix stays in release.yml where the native bundles are built.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust — cargo test + clippy
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Same native deps as release.yml — src-tauri (tauri v2 + webkit2gtk)
+      # must compile for --workspace test/clippy runs.
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy
+          # swatinem/rust-cache below handles caching (matches release.yml).
+          cache: false
+
+      - name: Rust build cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: ci-${{ runner.os }}
+
+      # git identity for the fixture/scratch repos the test suites create.
+      - name: Configure git identity for tests
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@bonsai.test"
+
+      - name: cargo test
+        run: cargo test --workspace
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  frontend:
+    name: Frontend — vitest + build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        # Version is read from package.json "packageManager".
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: pnpm test
+        run: pnpm test
+
+      - name: pnpm build (tsc + vite)
+        run: pnpm build
