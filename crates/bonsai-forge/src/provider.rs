@@ -34,4 +34,10 @@ pub trait ForgeProvider: Send + Sync {
 
     /// Defined + implemented in P62; exposed as an IPC command in P63.
     fn combined_status(&self, sha: &str) -> Result<CommitStatus, AppError>;
+
+    /// Batch form of [`combined_status`](Self::combined_status): one
+    /// [`CommitStatus`] per input sha, in the SAME order (nothing skipped).
+    /// P63 wires this to the `forge_commit_statuses` IPC command, which runs
+    /// the whole batch inside a single `spawn_blocking`.
+    fn commit_statuses(&self, shas: &[String]) -> Result<Vec<CommitStatus>, AppError>;
 }

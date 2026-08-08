@@ -182,3 +182,29 @@ pub(crate) async fn forge_clear_token_inner(
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
+
+/// Batch commit/CI statuses (P63): one [`CommitStatus`] per requested sha, in
+/// the SAME order (nothing skipped). Runs the whole batch of combined-status
+/// lookups inside ONE `spawn_blocking`, mirroring `verify_commits`. Errors:
+/// `noRepo` | `forgeUnsupported` | `noRemote` | `forgeApi` | `forgeRateLimited`
+/// | `authFailed` | `networkError` | `git`.
+#[tauri::command]
+pub async fn forge_commit_statuses(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    shas: Vec<String>,
+) -> Result<Vec<CommitStatus>, AppError> {
+    forge_commit_statuses_inner(state.inner(), &repo_id, shas).await
+}
+
+/// Runtime-free core of `forge_commit_statuses`.
+pub(crate) async fn forge_commit_statuses_inner(
+    state: &AppState,
+    repo_id: &str,
+    shas: Vec<String>,
+) -> Result<Vec<CommitStatus>, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || bonsai_forge::open(&workdir)?.commit_statuses(&shas))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}

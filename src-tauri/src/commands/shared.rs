@@ -10,13 +10,15 @@ pub(crate) use bonsai_core::assets::{
     ProfileStore, WorktreeContextStatus,
 };
 pub(crate) use bonsai_core::error::AppError;
-// P62b forge command layer. Only the DTO names the command signatures NAME are
+// P62b/P63 forge command layer. Only the DTOs the command signatures NAME are
 // re-exported (mirrors the `compose_apply` / `ai_operation` convention below —
-// avoids an unused-import warning under -D warnings); the nested DTOs
+// avoids an unused-import warning under -D warnings); the still-nested DTOs
 // (`PrSummary`/`PrState`/`PrStateFilter`/`CommentKind`/`StatusContext`/
-// `CheckRollup`/`CommitStatus`) travel inside these and are never named here.
+// `CheckRollup`) travel inside these and are never named here. `CommitStatus`
+// is named directly by P63's `forge_commit_statuses`.
 pub(crate) use bonsai_forge::{
-    CreatePrInput, ForgeRepoContext, ForgeViewer, PrDetail, PrListQuery, PrPage, ReviewComment,
+    CommitStatus, CreatePrInput, ForgeRepoContext, ForgeViewer, PrDetail, PrListQuery, PrPage,
+    ReviewComment,
 };
 pub(crate) use bonsai_core::git::ai_branch_name::{self, BranchNameProposal, BranchNameSource};
 pub(crate) use bonsai_core::git::ai_changelog::{self, AiChangelog, ChangelogRange};

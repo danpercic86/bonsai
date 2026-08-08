@@ -26,6 +26,11 @@ const REMOTE_NAME: &str = "origin";
 /// Hard cap on `per_page` (§3).
 const MAX_PER_PAGE: u32 = 50;
 
+/// Hard cap on the number of shas a single `commit_statuses` batch resolves
+/// (contract §4 backstop). Bounds the serial HTTP calls regardless of caller;
+/// the P63b `useForgeSignals` hook also caps/dedups — defense-in-depth.
+const MAX_STATUS_BATCH: usize = 100;
+
 pub struct GitHubProvider {
     target: ForgeTarget,
     token: Option<String>,
@@ -162,6 +167,37 @@ impl ForgeProvider for GitHubProvider {
         let checks = rest::get(self.transport(), &checks_url, self.token.as_deref())?;
 
         dto::build_combined_status(sha, &combined.body, &checks.body)
+    }
+
+    fn commit_statuses(&self, shas: &[String]) -> Result<Vec<CommitStatus>, AppError> {
+        // Dedup + cap the input (contract §4 backstop): bounds the serial HTTP
+        // calls regardless of caller. The P63b hook also caps/dedups — this is
+        // defense-in-depth.
+        let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        let deduped: Vec<&String> = shas
+            .iter()
+            .filter(|s| seen.insert(s.as_str()))
+            .take(MAX_STATUS_BATCH)
+            .collect();
+
+        // Loop the existing per-sha combined-status logic, classifying failures:
+        //   * `ForgeApi` (almost always a 404 — the commit isn't on the remote,
+        //     e.g. an unpushed local branch tip or a fork PR head) ⇒ OMIT just
+        //     that sha; a single missing tip must not blank ALL CI dots.
+        //   * any OTHER error (auth / rate-limit / network / unsupported) is
+        //     account/transport-level ⇒ propagate and fail the whole batch, so
+        //     the hook can back off.
+        // Returns only the resolved shas (the P63b hook keys by `status.sha`, so
+        // the order among them is irrelevant).
+        let mut out = Vec::with_capacity(deduped.len());
+        for sha in deduped {
+            match self.combined_status(sha) {
+                Ok(status) => out.push(status),
+                Err(AppError::ForgeApi(_)) => {} // not-found ⇒ omit this sha
+                Err(e) => return Err(e),          // fatal ⇒ fail the batch
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -404,6 +440,79 @@ mod tests {
         assert_eq!(status.total, 2);
         assert_eq!(status.passed, 1);
         assert_eq!(status.failed, 1);
+    }
+
+    #[test]
+    fn commit_statuses_batch_resolves_each_sha() {
+        // Two shas with DISTINCT rollups. Routes are keyed by "{sha}/status" +
+        // "{sha}/check-runs" so each sha returns its own body (the URL is
+        // `.../commits/{sha}/status`), letting us assert each resolves to its
+        // own rollup (the hook keys by `status.sha`, so order is irrelevant).
+        let ok = r#"{ "state": "success", "statuses": [
+            { "state": "success", "context": "ci", "description": null, "target_url": null } ] }"#;
+        let bad = r#"{ "state": "failure", "statuses": [
+            { "state": "failure", "context": "ci", "description": null, "target_url": null } ] }"#;
+        let no_checks = r#"{ "check_runs": [] }"#;
+        let p = provider(
+            Some("tok"),
+            vec![
+                ("aa11/status", 200, ok),
+                ("aa11/check-runs", 200, no_checks),
+                ("bb22/status", 200, bad),
+                ("bb22/check-runs", 200, no_checks),
+            ],
+        );
+        let shas = vec!["aa11".to_string(), "bb22".to_string()];
+        let out = p.commit_statuses(&shas).unwrap();
+        // Both shas resolve, each with its own rollup.
+        assert_eq!(out.len(), 2);
+        let find = |sha: &str| out.iter().find(|s| s.sha == sha);
+        assert_eq!(find("aa11").unwrap().state, CheckRollup::Success);
+        assert_eq!(find("bb22").unwrap().state, CheckRollup::Failure);
+    }
+
+    #[test]
+    fn commit_statuses_omits_not_found_and_propagates_fatal() {
+        let ok = r#"{ "state": "success", "statuses": [
+            { "state": "success", "context": "ci", "description": null, "target_url": null } ] }"#;
+        let bad = r#"{ "state": "failure", "statuses": [
+            { "state": "failure", "context": "ci", "description": null, "target_url": null } ] }"#;
+        let no_checks = r#"{ "check_runs": [] }"#;
+
+        // (a) 3 shas, one of which 404s on its status URL (not on the remote):
+        // the two resolved come back with their rollups intact, the 404 sha is
+        // OMITTED — not an error that nukes the whole batch.
+        let p = provider(
+            Some("tok"),
+            vec![
+                ("aa11/status", 200, ok),
+                ("aa11/check-runs", 200, no_checks),
+                ("bb22/status", 200, bad),
+                ("bb22/check-runs", 200, no_checks),
+                ("cc33/status", 404, "{}"), // 404 ⇒ ForgeApi ⇒ omit this sha
+            ],
+        );
+        let shas = vec!["aa11".to_string(), "bb22".to_string(), "cc33".to_string()];
+        let out = p.commit_statuses(&shas).unwrap();
+        assert_eq!(out.len(), 2, "the 404 sha is omitted, the two resolved remain");
+        let find = |sha: &str| out.iter().find(|s| s.sha == sha);
+        assert_eq!(find("aa11").unwrap().state, CheckRollup::Success);
+        assert_eq!(find("bb22").unwrap().state, CheckRollup::Failure);
+        assert!(find("cc33").is_none(), "not-found sha omitted from the batch");
+
+        // (b) a FATAL error (401 on a sha's status URL ⇒ AuthFailed) fails the
+        // WHOLE batch — account/transport-level errors are not silently dropped.
+        let p_fatal = provider(
+            Some("bad"),
+            vec![
+                ("aa11/status", 200, ok),
+                ("aa11/check-runs", 200, no_checks),
+                ("bb22/status", 401, "{}"), // rejected token ⇒ AuthFailed ⇒ propagate
+            ],
+        );
+        let shas2 = vec!["aa11".to_string(), "bb22".to_string()];
+        let err = p_fatal.commit_statuses(&shas2).unwrap_err();
+        assert!(matches!(err, AppError::AuthFailed(_)), "got {err:?}");
     }
 
     #[test]

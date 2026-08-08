@@ -143,6 +143,9 @@ export default function App() {
     showAheadBehind: true,
     compact: false,
     showSignatureBadge: true,
+    // P63: forge signal badges OFF by default (network+auth-gated, opt-in).
+    showPrBadge: false,
+    showCiStatus: false,
   });
   // P11d §4.3: bumped on every graph-knob change → GraphCanvas full re-measure.
   const [metricsVersion, setMetricsVersion] = useState(0);

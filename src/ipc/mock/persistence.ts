@@ -94,6 +94,9 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
     compact: false,
     // P58c: signature badge on by default (mirrors GraphPrefs::default).
     showSignatureBadge: true,
+    // P63: forge signal badges off by default (mirrors GraphPrefs::default).
+    showPrBadge: false,
+    showCiStatus: false,
   },
   // AI assistance (P13): enabled by default, but consent gates the feature.
   aiEnabled: true,
@@ -261,6 +264,15 @@ export function readUiSettings(): UiSettings {
         typeof g?.showSignatureBadge === 'boolean'
           ? g.showSignatureBadge
           : DEFAULT_UI_SETTINGS.graph.showSignatureBadge,
+      // P63: legacy `graph` object without the forge-badge keys ⇒ default false.
+      showPrBadge:
+        typeof g?.showPrBadge === 'boolean'
+          ? g.showPrBadge
+          : DEFAULT_UI_SETTINGS.graph.showPrBadge,
+      showCiStatus:
+        typeof g?.showCiStatus === 'boolean'
+          ? g.showCiStatus
+          : DEFAULT_UI_SETTINGS.graph.showCiStatus,
     });
     // P13 AI fields (additive, like autoFetch/graph): fall back to defaults.
     const aiEnabled =

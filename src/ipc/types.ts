@@ -1072,6 +1072,12 @@ export interface GraphPrefs {
    *  When false the P51 faint stub renders unchanged and NO verification is
    *  requested (individually toggleable, like the other detail columns). */
   showSignatureBadge: boolean;
+  /** P63: PR-state badge on branch-tip pills. Default false (network+auth-gated
+   *  — inert without a connected forge, so opt-in). */
+  showPrBadge: boolean;
+  /** P63: CI/build-status dot on branch-tip pills. Default false (same
+   *  network+auth gating as showPrBadge). */
+  showCiStatus: boolean;
 }
 
 /** AI conflict-resolution autonomy (P13). proposeReview = user accepts before
@@ -2409,4 +2415,9 @@ export interface IpcApi {
   /** Sign out: delete the host's PAT from the keychain + evict the cached
    *  viewer. Idempotent. Rejects AppError (`noRepo` | `noRemote`). */
   forgeClearToken(repoId: string): Promise<void>;
+  /** P63: batch commit/CI statuses for graph badges — one CommitStatus per
+   *  requested sha, in the SAME order (one round-trip / one spawn_blocking).
+   *  Rejects AppError (`noRepo` | `forgeUnsupported` | `noRemote` | `forgeApi`
+   *  | `forgeRateLimited` | `authFailed` | `networkError` | `git`). */
+  forgeCommitStatuses(repoId: string, shas: string[]): Promise<CommitStatus[]>;
 }

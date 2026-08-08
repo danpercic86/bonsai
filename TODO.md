@@ -106,7 +106,14 @@ w/ path)→create→new #999; `?forge=off`→offline+Retry; commit draft survive
 working panel still fills/scrolls; console clean. Native USER CHECKPOINT (real GitHub PAT/PRs) pending.
 Next: **P63** — forge signals on graph (PR + CI badges; +1 cmd `forge_commit_statuses`).
 
-### P63 — forge signals on graph — **PENDING** (contract ready `docs/contracts/P63-forge-graph-signals.md`)
+### P63 — forge signals on graph — **IN PROGRESS** (contract `docs/contracts/P63-forge-graph-signals.md`)
+- **P63a** ✅ DONE (committed) — batch `forge_commit_statuses` (154→**155**; omits per-sha 404, propagates
+  fatal, dedup + cap 100) + `GraphPrefs.showPrBadge`/`showCiStatus` (default off, back-compat) + mock/fixtures
+  aligned to graph branch tips (all 5 CheckRollups). bonsai-forge 62/0, bonsai --lib 117/0, clippy -D clean,
+  tsc+build, vitest 163. Reviewer approve (per-sha-404 should-fix folded).
+- **P63b** — NEXT: graph badge rendering (`forgeBadges.ts` + `LaidRefLabel.signals`), `useForgeSignals` hook
+  (per-branch cache TTL 60s, silent-fail, refresh on fetch/focus), PR + CI badges on branch-tip pills
+  (toggleable + compact-suppressed), click→PR (`onOpenPr` + `PrPanel.openToPr`), SettingsPanel toggles.
 ### P64 — more providers + AI PR descriptions — **PENDING** (contract ready; recommend split B+GitLab, then P64b/c)
 ### P65 — paged/streaming graph loading — **PENDING** (contract ready; independent; land after graph-pane work)
 

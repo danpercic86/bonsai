@@ -591,6 +591,14 @@
         let err = tauri::async_runtime::block_on(forge_clear_token_inner(&state, MISSING_ID))
             .expect_err("forge_clear_token with no repo");
         assert!(matches!(err, AppError::NoRepo));
+
+        let err = tauri::async_runtime::block_on(forge_commit_statuses_inner(
+            &state,
+            MISSING_ID,
+            vec!["deadbeef".to_string()],
+        ))
+        .expect_err("forge_commit_statuses with no repo");
+        assert!(matches!(err, AppError::NoRepo));
     }
 
     /// The P3c merge/conflict commands all return `NoRepo` for an unknown id

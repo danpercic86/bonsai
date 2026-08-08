@@ -9,6 +9,7 @@
 // Spread into mockIpc via forgeHandlers.
 import { delay, query as urlParam, requireRepo } from '../repoState';
 import {
+  commitStatusFor,
   FORGE_PR_DETAIL,
   FORGE_PR_LIST,
   FORGE_REPO_CONTEXT,
@@ -17,6 +18,7 @@ import {
 } from '../../fixtures/forge';
 import type {
   AppError,
+  CommitStatus,
   CreatePrInput,
   ForgeRepoContext,
   ForgeViewer,
@@ -138,5 +140,17 @@ export const forgeHandlers = {
     requireRepo(repoId);
     offGuard();
     authenticated = false;
+  },
+
+  async forgeCommitStatuses(repoId: string, shas: string[]): Promise<CommitStatus[]> {
+    await delay(150);
+    requireRepo(repoId);
+    offGuard();
+    // Best-effort parity with the batch contract (§9): map each sha via
+    // commitStatusFor, dropping unknowns (the real backend omits not-found).
+    // The frontend keys the result by sha, so order/gaps are harmless.
+    return shas
+      .map((sha) => commitStatusFor(sha))
+      .filter((s): s is CommitStatus => s !== null);
   },
 } satisfies Partial<IpcApi>;

@@ -38,6 +38,7 @@ import type {
   CommitMessageProposal,
   CherrypickOutcome,
   CommitResult,
+  CommitStatus,
   CompareDiff,
   ComposeApplyResult,
   ComposePlan,
@@ -1019,5 +1020,9 @@ export const tauriIpc: IpcApi = {
 
   forgeClearToken(repoId: string): Promise<void> {
     return invoke<void>('forge_clear_token', { repoId });
+  },
+
+  forgeCommitStatuses(repoId: string, shas: string[]): Promise<CommitStatus[]> {
+    return invoke<CommitStatus[]>('forge_commit_statuses', { repoId, shas });
   },
 };

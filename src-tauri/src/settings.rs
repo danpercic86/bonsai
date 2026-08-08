@@ -211,6 +211,13 @@ pub struct GraphPrefs {
     /// renders unchanged AND no verification is requested (clutter principle;
     /// individually toggleable, like every other detail column).
     pub show_signature_badge: bool,
+    /// P63: PR-state badge on branch-tip pills. Default false — forge signals
+    /// need a network round-trip AND a stored PAT, so they are inert (a dead
+    /// toggle firing surprise API calls) without a connected forge; opt-in.
+    pub show_pr_badge: bool,
+    /// P63: CI/build-status dot on branch-tip pills. Default false (same
+    /// network+auth gating as `show_pr_badge`).
+    pub show_ci_status: bool,
 }
 
 impl Default for GraphPrefs {
@@ -226,6 +233,8 @@ impl Default for GraphPrefs {
             show_ahead_behind: true,
             compact: false,
             show_signature_badge: true,
+            show_pr_badge: false,
+            show_ci_status: false,
         }
     }
 }
@@ -1040,6 +1049,10 @@ mod tests {
                 show_ahead_behind: false,
                 compact: true,
                 show_signature_badge: false,
+                // P63: both forge-badge toggles flipped to their NON-default
+                // (true) so the round-trip proves they persist.
+                show_pr_badge: true,
+                show_ci_status: true,
             },
             ..Default::default()
         };
@@ -1053,12 +1066,16 @@ mod tests {
         assert!(!loaded.graph.show_ahead_behind);
         assert!(loaded.graph.compact);
         assert!(!loaded.graph.show_signature_badge);
+        assert!(loaded.graph.show_pr_badge);
+        assert!(loaded.graph.show_ci_status);
 
         let raw = std::fs::read_to_string(&file).expect("read settings.json");
         assert!(raw.contains("\"showSha\": false"));
         assert!(raw.contains("\"dateBasis\": \"committer\""));
         assert!(raw.contains("\"compact\": true"));
         assert!(raw.contains("\"showSignatureBadge\": false"));
+        assert!(raw.contains("\"showPrBadge\": true"));
+        assert!(raw.contains("\"showCiStatus\": true"));
     }
 
     /// P51 D7 back-compat: a legacy `graph` object that still carries the
@@ -1094,6 +1111,11 @@ mod tests {
         // P58c: a legacy `graph` object without `showSignatureBadge` loads with
         // it defaulted true (the badge is on unless explicitly turned off).
         assert!(loaded.graph.show_signature_badge);
+        // P63: a legacy `graph` object without the forge-badge keys loads with
+        // BOTH defaulted false (network+auth-gated — opt-in, so a fresh/legacy
+        // file never fires surprise forge API calls).
+        assert!(!loaded.graph.show_pr_badge);
+        assert!(!loaded.graph.show_ci_status);
     }
 
     /// An old `settings.json` written before P11 (no `autoFetch`/`graph` keys)

@@ -222,7 +222,8 @@ pub fn run() {
             commands::forge_create_pr,
             commands::forge_list_review_comments,
             commands::forge_set_token,
-            commands::forge_clear_token
+            commands::forge_clear_token,
+            commands::forge_commit_statuses
         ])
         .build(tauri::generate_context!())
         .expect("error while running Bonsai")
