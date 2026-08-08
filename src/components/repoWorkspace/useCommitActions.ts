@@ -8,7 +8,13 @@ import type { DiffSlot } from '../StatusPanel';
 import type { BaseActionDeps, PendingDiscardForce, Setter } from './types';
 
 type CommitPushResolver = {
-  current: { resolve: () => void; reject: (e: unknown) => void; sign: boolean | null } | null;
+  current: {
+    resolve: () => void;
+    reject: (e: unknown) => void;
+    sign: boolean | null;
+    /** P59a: the "Skip hooks" choice parked alongside the message. */
+    skipHooks: boolean;
+  } | null;
 };
 
 /** Stage/unstage/commit/amend/reset/discard + Commit & Push (M3/M6/P20). */
@@ -34,6 +40,12 @@ export function useCommitActions(
     /** P58c: drop + re-request the signature-verify cache after a successful
      *  commit so the new HEAD's badge lights (contract §7.1). */
     refreshVerification: () => void;
+    /** P59a: wrap a commit attempt so a `hookRejected` opens the
+     *  HookOutputDialog (+ "Commit anyway" retry) instead of surfacing raw. */
+    runWithHookGate: (
+      attempt: (skipHooks: boolean) => Promise<void>,
+      skipHooks: boolean,
+    ) => Promise<void>;
   },
 ) {
   const {
@@ -58,6 +70,7 @@ export function useCommitActions(
     commitPushResolver,
     setPendingDiscardForce,
     refreshVerification,
+    runWithHookGate,
   } = deps;
 
   async function handleStage(paths: string[]) {
@@ -129,42 +142,60 @@ export function useCommitActions(
     }
   }
 
-  async function handleCommit(message: string, sign: boolean | null = null) {
-    setMutating(true);
-    try {
-      await ipc.commit(repoId, message, sign);
-      await refreshAll();
-      refreshVerification();
-    } finally {
-      setMutating(false);
-    }
+  // P59a: `skipHooks` is the "Skip hooks" checkbox; the attempt runs through the
+  // hook gate so a blocking hook opens the dialog (+ "Commit anyway" retry with
+  // skipHooks:true) rather than surfacing raw. configMissing/emptyMessage still
+  // rethrow to CommitBox's own banner.
+  async function handleCommit(message: string, sign: boolean | null = null, skipHooks = false) {
+    await runWithHookGate(async (sh) => {
+      setMutating(true);
+      try {
+        await ipc.commit(repoId, message, sign, sh);
+        await refreshAll();
+        refreshVerification();
+      } finally {
+        setMutating(false);
+      }
+    }, skipHooks);
   }
 
   // Commit & Push (normal commit box, primary button). If the current branch has
   // no upstream, gate on a ConfirmDialog first; otherwise commit + push directly.
-  async function handleCommitAndPush(message: string, sign: boolean | null = null): Promise<void> {
+  async function handleCommitAndPush(
+    message: string,
+    sign: boolean | null = null,
+    skipHooks = false,
+  ): Promise<void> {
     if (headBranch !== null && headBranch.upstream === null) {
-      // Park the message + sign + defer resolution until the dialog is answered.
+      // Park the message + sign + skipHooks; defer resolution until the dialog
+      // is answered.
       return new Promise<void>((resolve, reject) => {
-        commitPushResolver.current = { resolve, reject, sign };
+        commitPushResolver.current = { resolve, reject, sign, skipHooks };
         setPendingCommitPush(message);
       });
     }
-    await doCommitAndPush(message, sign);
+    await doCommitAndPush(message, sign, skipHooks);
   }
 
-  // The actual commit-then-push. Commit errors rethrow (surfaced by CommitBox);
-  // push errors are toasted and the commit is kept.
-  async function doCommitAndPush(message: string, sign: boolean | null): Promise<void> {
-    setMutating(true);
-    try {
-      await ipc.commit(repoId, message, sign);
-    } finally {
-      setMutating(false);
-    }
-    await refreshAll();
-    refreshVerification();
-    await pushCurrentBranch();
+  // The actual commit-then-push. The commit runs through the hook gate; commit
+  // errors rethrow (surfaced by CommitBox), a hook rejection opens the dialog,
+  // and push errors are toasted and the commit is kept.
+  async function doCommitAndPush(
+    message: string,
+    sign: boolean | null,
+    skipHooks: boolean,
+  ): Promise<void> {
+    await runWithHookGate(async (sh) => {
+      setMutating(true);
+      try {
+        await ipc.commit(repoId, message, sign, sh);
+      } finally {
+        setMutating(false);
+      }
+      await refreshAll();
+      refreshVerification();
+      await pushCurrentBranch();
+    }, skipHooks);
   }
 
   function handleConfirmCommitPush() {
@@ -177,9 +208,10 @@ export function useCommitActions(
       return;
     }
     const sign = resolver?.sign ?? null;
+    const skipHooks = resolver?.skipHooks ?? false;
     void (async () => {
       try {
-        await doCommitAndPush(message, sign);
+        await doCommitAndPush(message, sign, skipHooks);
         resolver?.resolve();
       } catch (e) {
         resolver?.reject(e);
@@ -197,19 +229,23 @@ export function useCommitActions(
   }
 
   // P20 §2: amend the current tip. Rethrows so CommitBox surfaces
-  // configMissing/emptyMessage in its own error banner.
-  async function handleCommitAmend(message: string, sign: boolean | null = null) {
-    setMutating(true);
-    try {
-      await ipc.commitAmend(repoId, message, sign);
-      setAmend(false);
-      setAmendMessage(null);
-      await refreshAll();
-      refreshVerification();
-      pushToast('success', 'Amended last commit');
-    } finally {
-      setMutating(false);
-    }
+  // configMissing/emptyMessage in its own error banner. P59a: git runs the
+  // commit hooks on amend too, so route through the hook gate (skipHooks from
+  // the "Skip hooks" checkbox / the dialog's "Commit anyway").
+  async function handleCommitAmend(message: string, sign: boolean | null = null, skipHooks = false) {
+    await runWithHookGate(async (sh) => {
+      setMutating(true);
+      try {
+        await ipc.commitAmend(repoId, message, sign, sh);
+        setAmend(false);
+        setAmendMessage(null);
+        await refreshAll();
+        refreshVerification();
+        pushToast('success', 'Amended last commit');
+      } finally {
+        setMutating(false);
+      }
+    }, skipHooks);
   }
 
   // P20 §2.3: toggle amend on/off. Toggling ON fetches HEAD's full message once

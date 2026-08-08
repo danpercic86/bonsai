@@ -1,4 +1,5 @@
 import { DestructiveDialogs } from './dialogs/DestructiveDialogs';
+import { HookOutputDialog } from './HookOutputDialog';
 import { StashDialogs } from './dialogs/StashDialogs';
 import { BranchTagDialogs } from './dialogs/BranchTagDialogs';
 import { RemoteDialogs } from './dialogs/RemoteDialogs';
@@ -92,6 +93,13 @@ export interface WorkspaceDialogsProps {
   doForcePush(): void;
   /** Drives the confirm button's busy state while the push is in flight. */
   remoteOp: 'fetch' | 'pull' | 'push' | null;
+
+  /** P59a: a git hook blocked the commit/amend/merge — its output to show, or
+   *  null when closed. `hookRetrying` drives the "Commit anyway" busy state. */
+  pendingHook: string | null;
+  hookRetrying: boolean;
+  onHookSkipRetry(): void;
+  onHookCancel(): void;
 
   pendingHunkDiscard: { path: string; origPath: string | null; hunkIndex: number } | null;
   setPendingHunkDiscard: (v: { path: string; origPath: string | null; hunkIndex: number } | null) => void;
@@ -190,6 +198,14 @@ export interface WorkspaceDialogsProps {
 export function WorkspaceDialogs(props: WorkspaceDialogsProps) {
   return (
     <>
+      <HookOutputDialog
+        open={props.pendingHook !== null}
+        message={props.pendingHook ?? ''}
+        busy={props.hookRetrying}
+        onSkipRetry={props.onHookSkipRetry}
+        onCancel={props.onHookCancel}
+      />
+
       <DestructiveDialogs
         mutating={props.mutating}
         opState={props.opState}

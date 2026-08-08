@@ -1,6 +1,7 @@
 import { ipc } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
 import { hasUnresolvedMarkers } from '../../utils/conflictRegions';
+import { COMMIT_HOOK_CANCELED } from '../commitPushSignal';
 import type { AiAutonomy, AiResolveProposal, ConflictResolution } from '../../ipc';
 import type { DiffSlot } from '../StatusPanel';
 import type { BaseActionDeps, Setter } from './types';
@@ -13,6 +14,12 @@ export function useMergeActions(
     setAiResolvingPath: Setter<string | null>;
     setDiffSlot: Setter<DiffSlot | null>;
     fileDiffReqId: { current: number };
+    /** P59a: wrap the merge commit so a `hookRejected` opens the
+     *  HookOutputDialog (+ "Commit anyway" retry) instead of surfacing raw. */
+    runWithHookGate: (
+      attempt: (skipHooks: boolean) => Promise<void>,
+      skipHooks: boolean,
+    ) => Promise<void>;
   },
 ) {
   const {
@@ -24,6 +31,7 @@ export function useMergeActions(
     setAiResolvingPath,
     setDiffSlot,
     fileDiffReqId,
+    runWithHookGate,
   } = deps;
 
   async function handleMergeBranch(name: string) {
@@ -160,16 +168,30 @@ export function useMergeActions(
     }
   }
 
-  async function handleCommitMerge(message: string) {
-    setMutating(true);
+  // P59a: git runs the commit hooks around a merge commit too. `sign` is unused
+  // (merge mode hides the sign toggle → CommitBox passes null); `skipHooks`
+  // comes from the "Skip hooks" checkbox / the dialog's "Commit anyway". A hook
+  // rejection is parked by the gate; other errors keep the existing toast path;
+  // a dialog cancel rethrows the sentinel so CommitBox keeps the merge message.
+  async function handleCommitMerge(
+    message: string,
+    _sign: boolean | null = null,
+    skipHooks = false,
+  ) {
     try {
-      await ipc.commitMerge(repoId, message);
-      await refreshAll();
-      pushToast('success', 'Merge committed');
+      await runWithHookGate(async (sh) => {
+        setMutating(true);
+        try {
+          await ipc.commitMerge(repoId, message, sh);
+          await refreshAll();
+          pushToast('success', 'Merge committed');
+        } finally {
+          setMutating(false);
+        }
+      }, skipHooks);
     } catch (e) {
+      if (e === COMMIT_HOOK_CANCELED) throw e;
       pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
     }
   }
 

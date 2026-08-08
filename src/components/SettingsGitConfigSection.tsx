@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ipc } from '../ipc';
 import type { ConfigLevelArg, ConfigLevelName, ConfigView, CuratedConfigEntry } from '../ipc';
 import { errorMessage } from '../utils/errors';
+import { SettingsHooksToggle } from './SettingsHooksToggle';
 
 export interface SettingsGitConfigSectionProps {
   /** Open repo id (== workdir path). Null → a disabled "open a repo" note. */
@@ -305,6 +306,9 @@ export function SettingsGitConfigSection({ repoId, initialFocus }: SettingsGitCo
       <p className="settings-section-desc">
         Read and edit Git configuration at the repository (Local) or user-wide (Global) level.
       </p>
+
+      {/* P59a: repo-scoped "Run git hooks" toggle (always Local — self-contained). */}
+      <SettingsHooksToggle repoId={repoId} />
 
       <div className="settings-row">
         <span className="settings-control-label">Level</span>

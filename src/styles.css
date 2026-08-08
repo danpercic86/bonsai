@@ -2600,6 +2600,29 @@ body {
   text-decoration: underline;
 }
 
+/* P59a: pre-emptive "Skip hooks" (--no-verify) toggle — mirrors the sign row. */
+.commit-skip-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 2px 0 4px;
+  font-size: 12px;
+}
+.commit-skip-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.commit-skip-toggle input {
+  accent-color: var(--accent);
+}
+.commit-skip-hint {
+  color: var(--warning);
+}
+
 .commit-error {
   margin-bottom: 0;
 }
@@ -4154,6 +4177,41 @@ span.file-row-main {
   font-size: 12px;
   color: var(--danger);
   overflow-wrap: anywhere;
+}
+
+/* ---------- P59a: git-hook rejection (HookOutputDialog) ---------- */
+.hook-output {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hook-output-heading {
+  margin: 0;
+  font-weight: 600;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+/* The hook's own stdout+stderr, verbatim: monospace, newlines preserved, and
+   scrollable in both axes so long lint output never blows out the dialog. */
+.hook-output-body {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
+  tab-size: 4;
+}
+.hook-output-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-3);
 }
 
 /* ---------- P55c: NL → safe-git-op preview (ProposedOpDialog) ---------- */

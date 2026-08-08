@@ -59,6 +59,7 @@ import { errorMessage } from '../utils/errors';
 
 import { useRemoteOps } from './repoWorkspace/useRemoteOps';
 import { useCommitActions } from './repoWorkspace/useCommitActions';
+import { useHookGate } from './repoWorkspace/useHookGate';
 import { useBranchActions } from './repoWorkspace/useBranchActions';
 import { useMergeActions } from './repoWorkspace/useMergeActions';
 import { useStashActions } from './repoWorkspace/useStashActions';
@@ -286,7 +287,12 @@ export function RepoWorkspace({
     // P58c: the sign choice parked alongside the message (forwarded to
     // doCommitAndPush once the set-upstream dialog is answered).
     sign: boolean | null;
+    // P59a: the "Skip hooks" choice parked alongside the message.
+    skipHooks: boolean;
   } | null>(null);
+  // P59a: the shared hook gate — parks a commit/amend/merge behind the
+  // HookOutputDialog when a git hook blocks it, with a "Commit anyway" retry.
+  const hookGate = useHookGate();
   // P37b: force-push-with-lease confirm gate (targets the current branch).
   const [pendingForcePush, setPendingForcePush] = useState(false);
   // P28: pending "Discard hunk" confirmation (unstaged diffs only).
@@ -427,6 +433,7 @@ export function RepoWorkspace({
     pendingWorktreeRemove !== null ||
     pendingWorktreeLock !== null ||
     worktreeContextOpen ||
+    hookGate.pendingHook !== null ||
     rebasePlan !== null;
 
   const [graph, setGraph] = useState<GraphLayout | null>(null);
@@ -1290,6 +1297,7 @@ export function RepoWorkspace({
     commitPushResolver,
     setPendingDiscardForce,
     refreshVerification: verification.refresh,
+    runWithHookGate: hookGate.runWithHookGate,
   });
 
   const {
@@ -1327,6 +1335,7 @@ export function RepoWorkspace({
     setAiResolvingPath,
     setDiffSlot,
     fileDiffReqId,
+    runWithHookGate: hookGate.runWithHookGate,
   });
 
   const { handleCreateStash, handleApplyStash, handlePopStash, handleDropStash } = useStashActions({
@@ -2495,7 +2504,9 @@ export function RepoWorkspace({
           onCommitAmend={handleCommitAmend}
           onCommitMergeSubmit={handleCommitMerge}
           onCommit={handleCommit}
-          onCommitAndPush={headBranch ? (m, sign) => handleCommitAndPush(m, sign) : undefined}
+          onCommitAndPush={
+            headBranch ? (m, sign, skipHooks) => handleCommitAndPush(m, sign, skipHooks) : undefined
+          }
           onGenerate={handleGenerateCommitMessage}
           workingDirty={workingDirty}
           onCompose={() => composer.openComposer()}
@@ -2552,6 +2563,10 @@ export function RepoWorkspace({
         setPendingForcePush={setPendingForcePush}
         doForcePush={() => void doForcePush()}
         remoteOp={remoteOp}
+        pendingHook={hookGate.pendingHook}
+        hookRetrying={hookGate.hookRetrying}
+        onHookSkipRetry={hookGate.onHookSkipRetry}
+        onHookCancel={hookGate.onHookCancel}
         pendingHunkDiscard={pendingHunkDiscard}
         setPendingHunkDiscard={setPendingHunkDiscard}
         handleConfirmHunkDiscard={(pending) => void handleConfirmHunkDiscard(pending)}

@@ -2,7 +2,7 @@ import { forwardRef, useImperativeHandle, useState } from 'react';
 import { isAppError } from '../utils/errors';
 import type { SigningStatus } from '../ipc';
 import { ConfirmDialog } from './ConfirmDialog';
-import { COMMIT_PUSH_CANCELED } from './commitPushSignal';
+import { COMMIT_HOOK_CANCELED, COMMIT_PUSH_CANCELED } from './commitPushSignal';
 
 export interface CommitBoxProps {
   stagedCount: number;
@@ -10,13 +10,14 @@ export interface CommitBoxProps {
   busy: boolean;
   /** Resolves on success (box clears its textarea); rejects with AppError on
    * failure. P58c: `sign` is the explicit checkbox value (OQ6) — true/false to
-   * force, null when the toggle is hidden (merge / no signing status). */
-  onCommit(message: string, sign: boolean | null): Promise<void>;
+   * force, null when the toggle is hidden (merge / no signing status). P59a:
+   * `skipHooks` is the "Skip hooks" checkbox (≡ `--no-verify`). */
+  onCommit(message: string, sign: boolean | null, skipHooks: boolean): Promise<void>;
   /** Normal-commit-mode only: commit then push the current branch. When provided
    * (and not merge/amend), the box renders a split control — primary
    * "Commit & Push" (this) + secondary "Commit" (onCommit). Same resolve/reject
-   * contract as onCommit. */
-  onCommitAndPush?: (message: string, sign: boolean | null) => Promise<void>;
+   * contract as onCommit (incl. the P59a `skipHooks` arg). */
+  onCommitAndPush?: (message: string, sign: boolean | null, skipHooks: boolean) => Promise<void>;
   /** P3c §8.4: 'merge' repurposes the box as the merge-message editor —
    * prefilled once (App remounts via key on the merge transition), button
    * label "Commit merge", submit routed to commitMerge by the parent. */
@@ -84,6 +85,10 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
   // P58c: signing toggle. `null` ⇒ follow signingStatus.enabled (config default)
   // until the user flips it; then the explicit bool sticks for the session.
   const [signOverride, setSignOverride] = useState<boolean | null>(null);
+  // P59a: pre-emptive "Skip hooks" (≡ --no-verify). Default false; sent as
+  // `skipHooks` to the commit action. The dialog's "Commit anyway" is the other
+  // route to the same skip.
+  const [skipHooks, setSkipHooks] = useState(false);
   // null = idle; otherwise which control is in flight (label + shared disable).
   const [submitting, setSubmitting] = useState<null | 'commit' | 'commitPush'>(null);
   const [error, setError] = useState<{ kind: string; text: string } | null>(null);
@@ -158,18 +163,18 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
   // surfacing (on reject the message is preserved so the user can retry).
   async function runSubmit(
     kind: 'commit' | 'commitPush',
-    action: (m: string, sign: boolean | null) => Promise<void>,
+    action: (m: string, sign: boolean | null, skipHooks: boolean) => Promise<void>,
   ) {
     if (disabled) return;
     setSubmitting(kind);
     try {
-      await action(message, signArg);
+      await action(message, signArg, skipHooks);
       setMessage('');
       setError(null);
     } catch (e) {
-      // Set-upstream dialog dismissed: nothing was committed. Leave the typed
-      // message + any existing error untouched, no new error banner.
-      if (e === COMMIT_PUSH_CANCELED) return;
+      // Set-upstream / hook dialog dismissed: nothing was committed. Leave the
+      // typed message + any existing error untouched, no new error banner.
+      if (e === COMMIT_PUSH_CANCELED || e === COMMIT_HOOK_CANCELED) return;
       if (isAppError(e)) {
         setError({ kind: e.kind, text: e.message });
       } else {
@@ -284,6 +289,24 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
             ))}
         </div>
       )}
+      {/* P59a: pre-emptive --no-verify. Shown in every commit-like mode (git
+          runs the commit hooks on plain commits, amends and merge commits). */}
+      <div className="commit-skip-row">
+        <label className="commit-skip-toggle">
+          <input
+            type="checkbox"
+            checked={skipHooks}
+            disabled={submitting !== null || blocked}
+            onChange={(e) => setSkipHooks(e.target.checked)}
+          />
+          <span>Skip hooks</span>
+        </label>
+        {skipHooks && (
+          <span className="commit-skip-hint" role="note">
+            Git hooks (pre-commit, commit-msg) won’t run for this commit
+          </span>
+        )}
+      </div>
       {error !== null && (
         <div className="error-banner error-banner-dismissible commit-error" role="alert">
           <span className="error-banner-text">

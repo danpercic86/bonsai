@@ -88,8 +88,19 @@ fan-out (like P58 sign; all pass false) — flag a future `CommitOpts` struct.
   index.read(true); MCP/normal commits keep hooks-on). Hooks oracle 12 RAN (git 2.51); clippy -D + build/tsc
   clean; cmd 141. Notes: merge.rs 1289-line god-file (pre-existing); clean auto-merge runs no hooks (contract
   gap; comment→P59a-ui); post-commit output dropped (surface in P59a-ui); hooks.rs stat-error→Skip nit.
-**Current step:** P59a DONE (committed). Next: **P59a-ui** (HookOutputDialog + "Commit anyway" retry +
-CommitBox "Skip hooks" + Settings "Run git hooks" toggle) → **P59b** (remote.rs pre-push + lease hardening).
+- **P59a-ui** (reviewer APPROVE, 0 must-fix; 1 should-fix FOLDED, 2 nits) — hooks frontend. New
+  `HookOutputDialog` (on ConfirmDialog; hook name + scrollable monospace output; "Commit anyway (skip
+  hooks)" primary), `useHookGate` (runWithHookGate parks ONLY on hookRejected — other errors pass through;
+  retry re-runs the SAME attempt with skipHooks:true preserving message/mode/sign + resolves the original
+  submit; cancel → COMMIT_HOOK_CANCELED keeps the message, no banner), `SettingsHooksToggle` ("Run git hooks"
+  → bonsai.runHooks Local via get/setConfig; unset⇒ON). CommitBox "Skip hooks" checkbox threaded through all
+  commit/amend/merge/push paths (incl. set-upstream resolver). **FOLDED the should-fix:** onHookSkipRetry
+  nulls gateRef BEFORE the async retry → a concurrent Cancel no-ops (fixes the cancel-during-retry
+  double-settle). Frontend-only; tsc/build clean. Nits: skip-hooks checkbox persists across commits (like
+  P58c sign — consider per-commit reset); composer path ungated (intentional — P59a composer skips hooks).
+**Current step:** P59a+P59a-ui DONE (committed). Next: **P59b** — remote.rs: pre-push (push_current +
+force_push) + force-push-lease hardening (git --force-with-lease --force-if-includes; build_force_push_args/
+classify_push_stderr; extend force_push_cli oracle).
 
 ## P58 — real commit signing + verification (Phase 3 · milestone 1/4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
