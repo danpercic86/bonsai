@@ -59,6 +59,50 @@ workdir/commit/compare). Checklists retained for reference: `docs/contracts/P<N>
 **Untouched throughout:** your 4 in-progress files (Cargo.lock, package.json, src-tauri/Cargo.toml,
 tauri.conf.json = the 0.3.0→0.3.1 bump) and `docs/audit-2026-08-07.md` (another session's file).
 
+## 🚀 PHASE 4 — forge/PR integration + paged loading (P62–P65) — **IN PROGRESS** (2026-08-08)
+
+Final phase of the approved roadmap `~/.claude/plans/do-thorough-analysis-of-purrfect-moth.md`. User
+granted autonomous implementation 2026-08-08 ("the other AI finished, you can start implementing
+autonomously") after the other AI committed the 5 Phase-4 contracts (`15067e6`) + an audit fix batch.
+Started from clean HEAD `6686108`. Sequencing: **forge-first** (P62 → P63 → P64) then P65 (independent perf).
+
+Contracts: `docs/contracts/phase4-forge-overview.md` + `P62`/`P63`/`P64`/`P65-*.md`.
+**Command math:** 147 → **157** (P62 +7, P63 +1, P64 +1, P65 +1 — RECOUNT `generate_handler!` at each increment).
+
+**FOR-USER (accepted defaults, autonomous — change anytime):**
+- **NEW Rust deps** for forge: `reqwest{blocking,json,rustls-tls}` + `keyring` (OS keychain for the PAT).
+  Accepted as default — Cargo files are now clean/committed, so adding is mechanically clean. Alts:
+  `ureq` instead of reqwest; `git credential` helper instead of keyring (no keychain guarantee).
+  `keyring` pulls a Secret-Service/D-Bus backend on Linux.
+- **Auth** = PAT-only v1 (paste → keychain); OAuth device-flow deferred.
+- **P64 provider order** = GitLab → Bitbucket → Azure DevOps (Azure may split to P64b/c).
+- **OD1** still holds: AI PR descriptions (P64) run local-`claude`-CLI only.
+
+**Cross-contract couplings to reconcile during build:**
+- P62 gets a `viewer()` trait method (`forge_set_token` validates via `GET /user`; P64 reuses it).
+- P64 later adds `ForgeTarget.project` + the extra provider arms (additive to P62 types).
+- P63 later adds an `openToPr?` prop on `PrPanel` + `showPrBadge`/`showCiStatus` `GraphPrefs` fields (additive).
+- P65 touches `GraphCanvas` edge handling + `RepoWorkspace.refetchGraph` — land after any in-flight graph-pane work.
+
+### P62 — forge foundation (GitHub first) — **IN PROGRESS**
+Contract: `docs/contracts/P62-forge-foundation.md`. New pure crate `crates/bonsai-forge/` + 7 commands +
+right-pane PR panel. **+7 cmd (147→154, RECOUNT at impl).** Sub-increments:
+- **P62a** — pure `bonsai-forge` crate: `Cargo.toml` (reqwest+keyring), `lib.rs`, `types.rs` (+wire tests),
+  `detect.rs` (+table test), `provider.rs` (trait + `viewer()`), `http.rs` (HttpTransport seam + redaction),
+  `auth.rs` (keyring TokenStore + in-proc cache), `github/{mod,rest,dto}.rs` (REST v3 + status rollup);
+  + 4 `AppError` variants in `bonsai-core/src/error.rs`. Offline tests via a fake transport.
+- **P62b** — Tauri `commands/forge.rs` (7 triples) + register + `shared.rs` re-exports; frontend IPC
+  (`types.ts` mirrors + 7 `IpcApi` methods + 4 `AppError.kind`, `tauri.ts`, `index.ts`) +
+  `mock/handlers/forge.ts` + `fixtures/forge.ts` (offline parity).
+- **P62c** — PR panel: `PrPanel` container + `PrList`/`PrListItem`/`PrDetailView`/`PrReviewComments`/
+  `PrCreateForm`/`ForgeConnect` + right-pane `'work'|'prs'` tab in `RepoWorkspace`/`WorkspaceRightPanel`.
+
+**Current step:** P62a — delegated to senior-dev (pure `bonsai-forge` crate + `AppError` variants).
+
+### P63 — forge signals on graph — **PENDING** (contract ready `docs/contracts/P63-forge-graph-signals.md`)
+### P64 — more providers + AI PR descriptions — **PENDING** (contract ready; recommend split B+GitLab, then P64b/c)
+### P65 — paged/streaming graph loading — **PENDING** (contract ready; independent; land after graph-pane work)
+
 ## P61 — diff quality: word-level/intraline highlighting + image diff (Phase 3 · milestone 4/4, FINAL) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-08)
 
 Contract: `docs/contracts/P61-diff-quality.md`. Both backend-computed + React-rendered + opt-in/toggleable.
