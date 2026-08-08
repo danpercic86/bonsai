@@ -1,0 +1,32 @@
+[package]
+name = "bonsai-forge"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "bonsai_forge"
+
+[dependencies]
+bonsai-core = { path = "../bonsai-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# Blocking HTTP so the crate stays runtime-free (the command layer wraps calls
+# in spawn_blocking); rustls-tls avoids an OpenSSL dependency on Windows. No
+# "json" feature: request bodies are serialized with serde_json and sent as a
+# string, responses are read via .text() and parsed in github/dto.rs.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+
+# keyring 3.x ships no backend by default — each platform selects its native
+# store explicitly. Linux uses the sync secret-service wrapper with a pure-Rust
+# crypto provider (no OpenSSL on the D-Bus transport).
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }

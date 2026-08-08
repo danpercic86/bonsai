@@ -7,7 +7,8 @@
 /// | "noRemote" | "noUpstream" | "authFailed" | "networkError"
 /// | "pushRejected" | "operationInProgress" | "noOperationInProgress"
 /// | "unresolvedConflicts" | "aiUnavailable" | "aiFailed"
-/// | "externalToolFailed" | "hookRejected",
+/// | "externalToolFailed" | "hookRejected"
+/// | "forgeUnsupported" | "forgeAuthRequired" | "forgeRateLimited" | "forgeApi",
 /// "message": "..." }`.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
@@ -69,6 +70,26 @@ pub enum AppError {
     /// blocking hook is NEVER a silent success — the operation aborts with this.
     #[error("{0}")]
     HookRejected(String),
+    // Forge / PR integration (P62). Provider-abstracted; GitHub first.
+    /// The `origin` host is not a known forge provider (non-`github.com` or an
+    /// unparseable remote URL). A DATA command was invoked against it; the
+    /// friendly empty state comes from `forge_repo_context`, not this error.
+    #[error("{0}")]
+    ForgeUnsupported(String),
+    /// The requested forge operation needs a stored PAT but none is present for
+    /// the host. Raised BEFORE any network request (e.g. `create_pr` unauthed).
+    #[error("{0}")]
+    ForgeAuthRequired(String),
+    /// The forge API returned a rate-limit response (403 with
+    /// `X-RateLimit-Remaining: 0`, or 429). Carries a message including the
+    /// `X-RateLimit-Reset` epoch hint when available.
+    #[error("{0}")]
+    ForgeRateLimited(String),
+    /// A forge API call failed with an unexpected status (404, other 4xx/5xx)
+    /// or a malformed/unparseable response body. NEVER carries a token or an
+    /// `Authorization` header value.
+    #[error("{0}")]
+    ForgeApi(String),
 }
 
 impl AppError {
@@ -99,6 +120,10 @@ impl AppError {
             AppError::AiFailed(_) => "aiFailed",
             AppError::ExternalToolFailed(_) => "externalToolFailed",
             AppError::HookRejected(_) => "hookRejected",
+            AppError::ForgeUnsupported(_) => "forgeUnsupported",
+            AppError::ForgeAuthRequired(_) => "forgeAuthRequired",
+            AppError::ForgeRateLimited(_) => "forgeRateLimited",
+            AppError::ForgeApi(_) => "forgeApi",
         }
     }
 
@@ -125,7 +150,11 @@ impl AppError {
             | AppError::AiUnavailable(m)
             | AppError::AiFailed(m)
             | AppError::ExternalToolFailed(m)
-            | AppError::HookRejected(m) => m,
+            | AppError::HookRejected(m)
+            | AppError::ForgeUnsupported(m)
+            | AppError::ForgeAuthRequired(m)
+            | AppError::ForgeRateLimited(m)
+            | AppError::ForgeApi(m) => m,
             AppError::NoRepo => "no repository is open",
             AppError::EmptyMessage => "commit message is empty",
             AppError::NothingToCommit => "nothing to commit (index matches HEAD)",
