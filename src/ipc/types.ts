@@ -700,6 +700,40 @@ export interface SearchResults {
   truncated: boolean;
 }
 
+// ---- P57: semantic commit-history search (BM25 index) ----------------------
+
+/** Build phase of `historyIndexBuild` (P57a). Mirrors the Rust `IndexPhase`
+ *  (lowercase camelCase wire values). */
+export type IndexPhase = 'counting' | 'extracting' | 'writing' | 'done';
+
+/** One streamed build-progress tick (P57a). Mirrors the Rust `IndexProgress`
+ *  (camelCase). `total`/`newCommits` are 0 until the counting phase completes;
+ *  `processed` climbs during extraction. */
+export interface IndexProgress {
+  phase: IndexPhase;
+  /** Commits documented so far THIS build. */
+  processed: number;
+  /** Commits to document THIS build (0 until counted). */
+  total: number;
+  /** Of `total`, how many were newly-added (incremental). */
+  newCommits: number;
+}
+
+/** Cheap status of the persisted history index (P57a). Mirrors the Rust
+ *  `IndexStatus` (camelCase). `built` is true iff an index file exists AND parsed
+ *  at the current schema; `stale` means the current ref tips differ from the last
+ *  build's; `newCommits` counts reachable commits not yet indexed (0 when fresh).
+ *  `headOid`/`builtAt` are null before the first successful build. */
+export interface IndexStatus {
+  built: boolean;
+  indexedCommits: number;
+  headOid: string | null;
+  stale: boolean;
+  newCommits: number;
+  schema: number;
+  builtAt: number | null;
+}
+
 /** Write-target level (P40). System is never a write target. */
 export type ConfigLevelArg = 'local' | 'global';
 /** Where a value actually lives (read result). */
@@ -1615,6 +1649,16 @@ export interface IpcApi {
    *  `{ matches: [], truncated: false }`. Read-only, does NOT emit repo-changed.
    *  Rejects git (bad pathspec / invalid `-G` regex) | noRepo. */
   searchCommits(repoId: string, query: SearchQuery): Promise<SearchResults>;
+  /** Build/refresh the per-commit semantic-search INDEX (BM25 over message+diff),
+   *  streaming `IndexProgress`. Incremental: only commits absent from the store are
+   *  (re)documented. Writes to the app data dir keyed by repo — NOT the repo; does
+   *  NOT emit repo-changed. NOT AI-gated. The frontend passes a plain callback; the
+   *  Tauri impl bridges it through a `Channel`, the mock invokes it directly.
+   *  Rejects git | io | noRepo. */
+  historyIndexBuild(repoId: string, onProgress: (p: IndexProgress) => void): Promise<IndexStatus>;
+  /** Cheap status of the persisted index (built?, count, staleness vs current
+   *  refs). Read-only, NOT AI-gated, does NOT emit repo-changed. Rejects git | noRepo. */
+  historyIndexStatus(repoId: string): Promise<IndexStatus>;
   /** Config view for `level` of `repoId`: curated keys (effective value + level
    *  + target-level value) + advanced entries. Read-only. Rejects git | noRepo. */
   getConfig(repoId: string, level: ConfigLevelArg): Promise<ConfigView>;

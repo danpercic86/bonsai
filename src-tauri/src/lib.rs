@@ -136,6 +136,8 @@ pub fn run() {
             commands::blame_file,
             commands::file_history,
             commands::read_reflog,
+            commands::history_index_build,
+            commands::history_index_status,
             commands::search_commits,
             commands::get_config,
             commands::set_config,

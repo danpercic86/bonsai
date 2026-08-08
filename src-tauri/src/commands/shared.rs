@@ -29,6 +29,7 @@ pub(crate) use bonsai_core::git::ai_resolve::{self, AiResolveProposal};
 pub(crate) use bonsai_core::git::ai_summary::{self, AiSummary};
 pub(crate) use bonsai_core::git::bisect::{self, BisectOutcome};
 pub(crate) use bonsai_core::git::blame::{self, BlameLine, FileHistoryEntry};
+pub(crate) use bonsai_core::git::history_index::{self, IndexProgress, IndexStatus};
 pub(crate) use bonsai_core::git::reflog::{self, ReflogEntry};
 pub(crate) use bonsai_core::git::branches::{self, BranchesSnapshot, CheckoutResult, CreateBranchHereResult};
 pub(crate) use bonsai_core::git::cherrypick::{self, CherrypickOutcome};
@@ -78,6 +79,16 @@ pub(crate) use crate::settings::{
 };
 pub(crate) use crate::state::{AppState, RepoEntry};
 pub(crate) use crate::watcher::spawn_watcher;
+
+/// App-data base dir (`%APPDATA%/com.bonsai.app` on Windows), where the history
+/// index is persisted keyed by repo (P57 §4). Mirrors `settings::settings_file`
+/// but resolves `app_data_dir()` (regenerable derived data, not user config).
+pub(crate) fn app_data_root(app: &tauri::AppHandle) -> Result<std::path::PathBuf, AppError> {
+    use tauri::Manager;
+    app.path()
+        .app_data_dir()
+        .map_err(|e| AppError::Other(format!("cannot resolve app data dir: {e}")))
+}
 
 /// Canonical workdir path for `repo_id`, or `NoRepo` if it isn't open
 /// (P3e contract §3).

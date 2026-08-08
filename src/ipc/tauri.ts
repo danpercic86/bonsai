@@ -54,6 +54,8 @@ import type {
   FileDiff,
   FileHistoryEntry,
   GraphLayout,
+  IndexProgress,
+  IndexStatus,
   IpcApi,
   JobKind,
   JobStatus,
@@ -463,6 +465,21 @@ export const tauriIpc: IpcApi = {
 
   searchCommits(repoId: string, query: SearchQuery): Promise<SearchResults> {
     return invoke<SearchResults>('search_commits', { repoId, query });
+  },
+
+  historyIndexBuild(
+    repoId: string,
+    onProgress: (p: IndexProgress) => void,
+  ): Promise<IndexStatus> {
+    const channel = new Channel<IndexProgress>();
+    channel.onmessage = onProgress;
+    // Tauri auto-serializes the Channel as the `on_progress` command argument
+    // (mirrors cloneRepo).
+    return invoke<IndexStatus>('history_index_build', { repoId, onProgress: channel });
+  },
+
+  historyIndexStatus(repoId: string): Promise<IndexStatus> {
+    return invoke<IndexStatus>('history_index_status', { repoId });
   },
 
   getConfig(repoId: string, level: ConfigLevelArg): Promise<ConfigView> {

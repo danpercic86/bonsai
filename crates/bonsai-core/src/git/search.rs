@@ -389,7 +389,10 @@ fn push_scope(repo: &git2::Repository, walk: &mut git2::Revwalk, r: &str) -> Res
 /// Seed the walk from all refs like `git log --all`: local + remote-tracking
 /// branches (skip `*/HEAD`), tags peeled to a commit, and HEAD. Mirrors
 /// `graph::collect_refs`. Unresolvable / non-committish refs are skipped.
-fn seed_all_refs(repo: &git2::Repository, walk: &mut git2::Revwalk) -> Result<(), AppError> {
+///
+/// `pub(crate)` so `history_index` reuses the same all-refs seeding for its
+/// reachable walk (P57 OQ9) instead of carrying a fourth private copy.
+pub(crate) fn seed_all_refs(repo: &git2::Repository, walk: &mut git2::Revwalk) -> Result<(), AppError> {
     for entry in repo.branches(Some(git2::BranchType::Local))? {
         let (b, _) = entry?;
         if let Ok(c) = b.get().peel_to_commit() {

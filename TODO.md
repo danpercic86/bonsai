@@ -49,6 +49,42 @@ Checklists: `docs/contracts/P<N>-user-checklist.md`.
 **Untouched throughout:** your 4 in-progress files (Cargo.lock, package.json, src-tauri/Cargo.toml,
 tauri.conf.json = the 0.3.0→0.3.1 bump) and `docs/audit-2026-08-07.md` (another session's file).
 
+## P57 — semantic commit-history search (Phase 2 · milestone 5/5) — **IN PROGRESS** (2026-08-08)
+
+Contract: `docs/contracts/P57-semantic-history-search.md`. OD1 = local-`claude`-CLI-only. Highest build
+cost; Phase-2 FINAL. **Retriever = BM25 v1 (embeddings DEFERRED per OD1 / FOR USER).**
+
+**P57 goal:** ask an NL question about history → prose answer grounded in REAL commit diffs + ranked
+commits (jump-to-graph). 3-stage: persisted per-commit BM25 doc index (app_data_dir, NOT .git;
+incremental; schema-invalidated; progress channel) → pure-IR retrieval → local-claude synthesis
+re-fetching real diffs for the top-K. Complements P50 (does NOT touch search.rs). Adds 4 commands (135→139).
+
+**Orchestrator OQ decisions — accept ALL architect recs:** OQ1 BM25 v1 (embeddings deferred — user's call,
+flagged in FOR USER) · OQ2 app_data_dir/history-index/<repo-hash>/store.json serde-JSON atomic · OQ3
+missing-index→AiFailed (no new error variant) · OQ4 plain BM25 (k1 1.2/b 0.75) + MSG_BOOST=3 · OQ5
+history_search its own command · OQ6 dedicated HistorySearchPanel · OQ7 immutable oid-keyed docs + Rebuild ·
+OQ8 git2-only extraction · OQ9 reuse `seed_all_refs` via a pub(crate) visibility bump (DEFER the full
+`git/refs.rs` extraction — minimize overnight churn to working code) · OQ10 load-per-query.
+
+Sub-increments (strictly ordered): **P57a** index builder + persistence + status + progress channel
+(`history_index/{mod,doc,bm25,store}.rs`; `history_index_build`[channel] + `history_index_status` →137) →
+**P57b** retrieval (`search_history` + `history_search` →138) → **P57c** AI synthesis (`ai_history.rs`) + UI
+(`HistorySearchPanel`/`HistoryResultsList`/`useHistorySearch`; `ai_search_history` →139).
+
+- **P57a** (reviewer APPROVE, 0 must-fix / 0 should-fix; 3 nits) — index builder. New 4-file
+  `history_index/` module (mod 500 / doc 443 / bm25 205 / store 207): PURE Okapi BM25 (k1 1.2/b 0.75,
+  non-neg idf, MSG_BOOST=3 — reviewer verified exact), `extract_doc` (git2 first-parent diff, byte-capped
+  line sampling, paths always tokenized, binary skipped, never stores raw diff), incremental build
+  (absent-only, immutable docs) + schema invalidation + atomic JSON persist under app_data_dir (NOT .git)
+  keyed by FNV-1a repo hash, staleness via tip-set compare. `history_index_build` (channel, mirrors
+  clone_repo) + `history_index_status` cmds (135→137; not AI-gated; no repo-changed). OQ9: `seed_all_refs`
+  → pub(crate) reused (+ collect_tip_hexes). No new dep (FNV hand-rolled; git2-only). IPC + mock
+  (`?historyFail`). 21 tests; clippy -D + build/tsc clean. Nits→P57b: uses `stage::open_workdir_repo`
+  (bare→wrong "cannot modify index" msg; unreachable) → switch to `open_repo_at`; index_status loads full
+  store (OQ10 defer); tf/df HashMap non-byte-deterministic (value-equal, fine).
+**Current step:** P57a DONE (committed). Next: **P57b** — retrieval (`search_history` + `history_search`
+cmd →138 + HistoryQuery/HistoryHit/HistorySearchResults types + mock; fold the open_repo_at nit).
+
 ## P56 — local AI changelog / release-notes (Phase 2 · milestone 4/5) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
 Contract: `docs/contracts/P56-local-changelog.md`. OD1 = local-`claude`-CLI-only. Smaller milestone (S–M).

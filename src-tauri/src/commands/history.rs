@@ -79,3 +79,48 @@ pub(crate) async fn read_reflog_inner(
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
+
+/// Build/refresh the per-commit semantic-search INDEX (BM25 over message+diff),
+/// streaming `IndexProgress` over `on_progress` (channel command, mirrors
+/// `clone_repo`). CPU-heavy diff walk ⇒ `spawn_blocking`. Incremental. Writes to
+/// the app data dir keyed by repo — NOT the repo — so it does NOT emit
+/// `repo-changed`, and is NOT AI-gated (P57a contract §4). Rejects git | io | noRepo.
+#[tauri::command]
+pub async fn history_index_build(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    on_progress: tauri::ipc::Channel<IndexProgress>,
+) -> Result<IndexStatus, AppError> {
+    let base = app_data_root(&app)?;
+    let workdir = repo_path(state.inner(), &repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = history_index::index_dir_for(&base, &workdir);
+        history_index::build_index(&workdir, &dir, move |p| {
+            // A send failure means the frontend dropped the channel — ignore it,
+            // the build completes and the final IndexStatus still resolves.
+            let _ = on_progress.send(p);
+        })
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Cheap status of the persisted index (built?, count, staleness vs current
+/// refs). Read-only; NOT AI-gated; does NOT emit `repo-changed` (P57a §4).
+/// Rejects git | noRepo.
+#[tauri::command]
+pub async fn history_index_status(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+) -> Result<IndexStatus, AppError> {
+    let base = app_data_root(&app)?;
+    let workdir = repo_path(state.inner(), &repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = history_index::index_dir_for(&base, &workdir);
+        history_index::index_status(&workdir, &dir)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
