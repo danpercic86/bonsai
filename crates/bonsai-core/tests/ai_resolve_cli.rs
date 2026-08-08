@@ -219,7 +219,7 @@ fn applying_proposal_clears_conflict_and_commit_merge_finalizes() {
     );
 
     // commit_merge finalizes a clean 2-parent merge commit.
-    let result = commit_merge(d, "Merge branch 'topic'", None).expect("commit_merge");
+    let result = commit_merge(d, "Merge branch 'topic'", None, false).expect("commit_merge");
     assert_eq!(result.oid, git(d, &["rev-parse", "HEAD"]));
     let p = parents(d);
     assert_eq!(p.len(), 2, "merge commit must have 2 parents");

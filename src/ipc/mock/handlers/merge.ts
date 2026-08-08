@@ -2,6 +2,7 @@
 import type { IpcApi } from '../../types';
 import { randomOid } from '../../fixtures/oids';
 import { delay, requireRepo } from '../repoState';
+import { hookRejectionFor } from '../hooksGate';
 import { sortByPath, upsert } from '../statusHelpers';
 import type { AppError, CommitResult, ConflictEntry, ConflictFile, ConflictResolution, MergeOutcome, RepoOpState } from '../../types';
 
@@ -48,7 +49,9 @@ export const mergeHandlers = {
     return { kind: 'merged', oid: state.headOid, stashed };
   },
 
-  async commitMerge(repoId: string, message: string): Promise<CommitResult> {
+  // P59a: `skipHooks` ≡ --no-verify; the commit hooks fire around the merge
+  // commit (after the unresolved-conflicts guard, matching the backend order).
+  async commitMerge(repoId: string, message: string, skipHooks?: boolean): Promise<CommitResult> {
     await delay(150);
     const state = requireRepo(repoId);
     if (state.opState.kind !== 'merge') {
@@ -62,6 +65,8 @@ export const mergeHandlers = {
       };
       throw err;
     }
+    const rejection = hookRejectionFor(state, message, skipHooks);
+    if (rejection) throw rejection;
     if (message.trim() === '') {
       const err: AppError = { kind: 'emptyMessage', message: 'commit message is empty' };
       throw err;

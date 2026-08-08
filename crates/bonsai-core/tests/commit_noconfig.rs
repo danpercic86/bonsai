@@ -46,7 +46,7 @@ fn commit_without_identity_fails_then_local_identity_fixes_it() {
     stage_paths(dir.path(), &["first.txt".to_string()]).expect("stage_paths");
 
     // No identity anywhere -> ConfigMissing naming BOTH keys.
-    match create_commit(dir.path(), "first commit", None).expect_err("identity is not configured") {
+    match create_commit(dir.path(), "first commit", None, false).expect_err("identity is not configured") {
         AppError::ConfigMissing(m) => {
             assert!(m.contains("user.name"), "must name user.name, got: {m}");
             assert!(m.contains("user.email"), "must name user.email, got: {m}");
@@ -64,7 +64,7 @@ fn commit_without_identity_fails_then_local_identity_fixes_it() {
         cfg.set_str("user.name", "Local User").expect("set user.name");
         cfg.set_str("user.email", "local@example.com").expect("set user.email");
     }
-    let res = create_commit(dir.path(), "first commit", None).expect("commit with local identity");
+    let res = create_commit(dir.path(), "first commit", None, false).expect("commit with local identity");
     assert_eq!(res.summary, "first commit");
     assert!(res.branch.is_some(), "first commit creates the branch");
 

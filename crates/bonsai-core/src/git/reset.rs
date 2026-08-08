@@ -117,7 +117,7 @@ mod tests {
         }
         std::fs::write(dir.path().join("a.txt"), "one\n").expect("write");
         crate::git::stage::stage_paths(dir.path(), &["a.txt".to_string()]).expect("stage");
-        crate::git::commit::create_commit(dir.path(), "base", None).expect("commit");
+        crate::git::commit::create_commit(dir.path(), "base", None, false).expect("commit");
 
         let err = reset_branch(dir.path(), "not-a-hex-oid", ResetMode::Mixed).expect_err("bad oid");
         match err {

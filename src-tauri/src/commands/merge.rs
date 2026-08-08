@@ -48,16 +48,19 @@ pub(crate) async fn merge_branch_inner(
 
 /// Finalizes a paused merge as a 2(+)-parent commit (P3c contract §4.4).
 /// `sign` (P58 OQ4): `null`/absent ⇒ follow `commit.gpgsign`; `true`/`false`
-/// force. Errors: `noOperationInProgress` | `unresolvedConflicts` |
-/// `emptyMessage` | `configMissing` | `git` | `noRepo`.
+/// force. `skipHooks` (P59a): `true` ≡ `--no-verify`; else run hooks per
+/// `bonsai.runHooks` (default true). Errors: `noOperationInProgress` |
+/// `unresolvedConflicts` | `emptyMessage` | `configMissing` | `hookRejected` |
+/// `git` | `noRepo`.
 #[tauri::command]
 pub async fn commit_merge(
     state: tauri::State<'_, AppState>,
     repo_id: String,
     message: String,
     sign: Option<bool>,
+    skip_hooks: Option<bool>,
 ) -> Result<CommitResult, AppError> {
-    commit_merge_inner(state.inner(), &repo_id, message, sign).await
+    commit_merge_inner(state.inner(), &repo_id, message, sign, skip_hooks).await
 }
 
 /// Runtime-free core of `commit_merge` (unit-testable without a Tauri app).
@@ -66,9 +69,11 @@ pub(crate) async fn commit_merge_inner(
     repo_id: &str,
     message: String,
     sign: Option<bool>,
+    skip_hooks: Option<bool>,
 ) -> Result<CommitResult, AppError> {
     let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || merge::commit_merge(&path, &message, sign))
+    let skip = skip_hooks.unwrap_or(false);
+    tauri::async_runtime::spawn_blocking(move || merge::commit_merge(&path, &message, sign, skip))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

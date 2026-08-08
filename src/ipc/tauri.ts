@@ -171,8 +171,13 @@ export const tauriIpc: IpcApi = {
     return invoke<void>('unstage', { repoId, paths });
   },
 
-  commit(repoId: string, message: string, sign: boolean | null = null): Promise<CommitResult> {
-    return invoke<CommitResult>('commit', { repoId, message, sign });
+  commit(
+    repoId: string,
+    message: string,
+    sign: boolean | null = null,
+    skipHooks = false,
+  ): Promise<CommitResult> {
+    return invoke<CommitResult>('commit', { repoId, message, sign, skipHooks });
   },
 
   getWorkdirFileDiff(
@@ -312,8 +317,8 @@ export const tauriIpc: IpcApi = {
     return invoke<MergeOutcome>('merge_branch', { repoId, name });
   },
 
-  commitMerge(repoId: string, message: string): Promise<CommitResult> {
-    return invoke<CommitResult>('commit_merge', { repoId, message });
+  commitMerge(repoId: string, message: string, skipHooks = false): Promise<CommitResult> {
+    return invoke<CommitResult>('commit_merge', { repoId, message, skipHooks });
   },
 
   abortMerge(repoId: string): Promise<void> {
@@ -553,8 +558,13 @@ export const tauriIpc: IpcApi = {
     return invoke<void>('drop_stash', { repoId, index });
   },
 
-  commitAmend(repoId: string, message: string, sign: boolean | null = null): Promise<CommitResult> {
-    return invoke<CommitResult>('commit_amend', { repoId, message, sign });
+  commitAmend(
+    repoId: string,
+    message: string,
+    sign: boolean | null = null,
+    skipHooks = false,
+  ): Promise<CommitResult> {
+    return invoke<CommitResult>('commit_amend', { repoId, message, sign, skipHooks });
   },
 
   resetBranch(repoId: string, oid: string, mode: ResetMode): Promise<void> {

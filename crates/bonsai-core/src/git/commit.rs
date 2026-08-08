@@ -9,6 +9,7 @@ use std::path::Path;
 use crate::error::AppError;
 use crate::git::bisect::require_no_bisect;
 use crate::git::exec::SpawnGitExec;
+use crate::git::hooks::{hooks_enabled, run_hook, run_hook_nonblocking, HookName};
 use crate::git::signing::{self, resolve_signing};
 use crate::git::stage::open_workdir_repo;
 
@@ -80,10 +81,20 @@ pub fn resolve_signature(cfg: &git2::Config) -> Result<git2::Signature<'static>,
 /// signing is NOT resolved, the commit is created by git2 EXACTLY as before P58
 /// (byte-identical, no `gpgsig` header); signing branches to
 /// [`signing::create_signed_commit`] (`git commit-tree -S` + `git update-ref`).
+///
+/// `skip_hooks` (P59a): `true` ≡ `git commit --no-verify`. Otherwise the effective
+/// toggle is `bonsai.runHooks` (default true). When enabled, git's hook order is
+/// honoured: `pre-commit` (before `write_tree`, may re-stage) → `commit-msg` (may
+/// rewrite the message) → create the commit → `post-commit` (non-blocking). A
+/// BLOCKING hook's non-zero exit aborts as [`AppError::HookRejected`] — no commit,
+/// no ref move.
+// TODO(P59): fold `sign` + `skip_hooks` into a `CommitOpts` struct (2nd per-flag
+// fan-out) instead of growing positional bools.
 pub fn create_commit(
     workdir: &Path,
     message: &str,
     sign: Option<bool>,
+    skip_hooks: bool,
 ) -> Result<CommitResult, AppError> {
     let repo = open_workdir_repo(workdir)?;
 
@@ -99,7 +110,22 @@ pub fn create_commit(
         ));
     }
 
+    // One config snapshot drives the hook toggle, identity, and signing.
+    let cfg = repo.config()?.snapshot()?;
+    let hooks = hooks_enabled(&cfg, skip_hooks);
+
+    // pre-commit runs BEFORE write_tree (git order); a non-zero exit aborts with
+    // HookRejected before anything is written or any ref moves.
+    if hooks {
+        run_hook(&SpawnGitExec, workdir, HookName::PreCommit, &[], None)?;
+    }
+
     let mut index = repo.index()?;
+    if hooks {
+        // Reload from disk so a hook that re-staged (formatter, generator) is
+        // included in the committed tree.
+        index.read(true)?;
+    }
 
     if index.has_conflicts() {
         return Err(AppError::Git(
@@ -107,18 +133,17 @@ pub fn create_commit(
         ));
     }
 
-    // Normalize line endings BEFORE trim: `git commit -m` (cleanup=whitespace)
-    // strips the trailing `\r` of every line, so interior CRLF/CR must not
-    // survive into the commit object (stray ^M in other clients otherwise).
-    let normalized = message.replace("\r\n", "\n").replace('\r', "\n");
-    let msg = normalized.trim();
+    let mut msg = normalize_message(message);
     if msg.is_empty() {
         return Err(AppError::EmptyMessage);
     }
 
-    // One config snapshot drives BOTH identity (ConfigMissing before any write)
-    // and the signing decision below.
-    let cfg = repo.config()?.snapshot()?;
+    // commit-msg may REWRITE the message file (trailer/template); re-read after.
+    if hooks {
+        msg = run_commit_msg_hook(&repo, workdir, &msg)?;
+    }
+
+    // Identity: ConfigMissing surfaces before any object/index write.
     let sig = resolve_signature(&cfg)?;
 
     let tree_oid = index.write_tree()?;
@@ -143,7 +168,7 @@ pub fn create_commit(
     }
 
     let full = format!("{msg}\n");
-    let summary = msg.lines().next().unwrap_or(msg).to_string();
+    let summary = msg.lines().next().unwrap_or(&msg).to_string();
 
     let signing = resolve_signing(&cfg, sign);
     let oid = if !signing.sign {
@@ -166,6 +191,11 @@ pub fn create_commit(
             &format!("commit: {summary}"),
         )?
     };
+
+    // post-commit is best-effort: the commit already landed — never block on it.
+    if hooks {
+        let _ = run_hook_nonblocking(&SpawnGitExec, workdir, HookName::PostCommit, &[]);
+    }
 
     let branch = branch_shorthand_after(&repo, workdir, signing.sign)?;
 
@@ -198,6 +228,45 @@ fn branch_shorthand_after(
     }
 }
 
+/// Normalize a message for the commit object: CRLF / lone-CR → `\n`, then trim.
+/// `git commit -m` (cleanup=whitespace) strips a trailing `\r` on every line, so
+/// interior CRLF/CR must not survive into the object (stray ^M in other clients).
+/// Shared by create/amend and the `commit-msg` re-read.
+pub(crate) fn normalize_message(message: &str) -> String {
+    message
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .trim()
+        .to_string()
+}
+
+/// Write `msg` to the repo's `COMMIT_EDITMSG`, run the `commit-msg` hook with
+/// that file as `$1` (git's contract), then re-read + re-normalize the (possibly
+/// rewritten) message. Empty after the hook ⇒ [`AppError::EmptyMessage`]. Shared
+/// by create/amend (P59a) and the merge-commit finalize.
+pub(crate) fn run_commit_msg_hook(
+    repo: &git2::Repository,
+    workdir: &Path,
+    msg: &str,
+) -> Result<String, AppError> {
+    let msg_file = repo.path().join("COMMIT_EDITMSG");
+    std::fs::write(&msg_file, format!("{msg}\n"))?;
+    let arg = msg_file.to_string_lossy().into_owned();
+    run_hook(
+        &SpawnGitExec,
+        workdir,
+        HookName::CommitMsg,
+        std::slice::from_ref(&arg),
+        None,
+    )?;
+    let rewritten = std::fs::read_to_string(&msg_file)?;
+    let out = normalize_message(&rewritten);
+    if out.is_empty() {
+        return Err(AppError::EmptyMessage);
+    }
+    Ok(out)
+}
+
 /// Blocking. Replaces HEAD with a new commit built from the current index, on
 /// HEAD's EXISTING parents (preserves merge parents), reusing HEAD's ORIGINAL
 /// author and stamping a fresh committer. `message` is the final message (the
@@ -208,10 +277,14 @@ fn branch_shorthand_after(
 /// to pre-P58 (`Commit::amend`); the signed path rebuilds on HEAD's ORIGINAL
 /// parents via [`signing::create_signed_commit`] (preserving the original
 /// author + author date, re-stamping the committer).
+///
+/// `skip_hooks` (P59a): as [`create_commit`]. git runs the commit hooks on an
+/// amend too — `pre-commit` → `commit-msg` → (amend) → `post-commit`.
 pub fn amend_commit(
     workdir: &Path,
     message: &str,
     sign: Option<bool>,
+    skip_hooks: bool,
 ) -> Result<CommitResult, AppError> {
     let repo = open_workdir_repo(workdir)?;
 
@@ -241,26 +314,39 @@ pub fn amend_commit(
         Err(e) => return Err(e.into()),
     };
 
-    // Normalize line endings before trim, identical to `create_commit`.
-    let normalized = message.replace("\r\n", "\n").replace('\r', "\n");
-    let msg = normalized.trim();
-    if msg.is_empty() {
-        return Err(AppError::EmptyMessage);
-    }
-
-    // Fresh committer (ConfigMissing before any write); original author preserved.
     let cfg = repo.config()?.snapshot()?;
-    let committer = resolve_signature(&cfg)?;
-    let author = head_commit.author().to_owned();
+    let hooks = hooks_enabled(&cfg, skip_hooks);
+
+    // pre-commit BEFORE write_tree (may re-stage); non-zero ⇒ HookRejected, abort.
+    if hooks {
+        run_hook(&SpawnGitExec, workdir, HookName::PreCommit, &[], None)?;
+    }
 
     // Tree from the current index. NO NothingToCommit guard — a message-only
     // amend (tree == HEAD's tree, 0 staged) is valid.
     let mut index = repo.index()?;
+    if hooks {
+        index.read(true)?; // pick up any hook re-staging
+    }
+
+    // Normalize line endings before trim, identical to `create_commit`.
+    let mut msg = normalize_message(message);
+    if msg.is_empty() {
+        return Err(AppError::EmptyMessage);
+    }
+    if hooks {
+        msg = run_commit_msg_hook(&repo, workdir, &msg)?;
+    }
+
+    // Fresh committer (ConfigMissing before any write); original author preserved.
+    let committer = resolve_signature(&cfg)?;
+    let author = head_commit.author().to_owned();
+
     let tree_oid = index.write_tree()?;
     let tree = repo.find_tree(tree_oid)?;
 
     let full = format!("{msg}\n");
-    let summary = msg.lines().next().unwrap_or(msg).to_string();
+    let summary = msg.lines().next().unwrap_or(&msg).to_string();
 
     let signing = resolve_signing(&cfg, sign);
     let oid = if !signing.sign {
@@ -292,6 +378,10 @@ pub fn amend_commit(
             &format!("commit (amend): {summary}"),
         )?
     };
+
+    if hooks {
+        let _ = run_hook_nonblocking(&SpawnGitExec, workdir, HookName::PostCommit, &[]);
+    }
 
     let branch = branch_shorthand_after(&repo, workdir, signing.sign)?;
 
@@ -385,21 +475,21 @@ mod tests {
         // CRLF input (Windows textarea), incl. a trailing lone \r.
         std::fs::write(dir.path().join("a.txt"), "one\n").expect("write a.txt");
         crate::git::stage::stage_paths(dir.path(), &["a.txt".to_string()]).expect("stage");
-        let res = create_commit(dir.path(), "subject line\r\nsecond line\r", None).expect("commit");
+        let res = create_commit(dir.path(), "subject line\r\nsecond line\r", None, false).expect("commit");
         assert_eq!(res.summary, "subject line");
         head_message("subject line\nsecond line\n");
 
         // Lone-CR interior endings.
         std::fs::write(dir.path().join("a.txt"), "two\n").expect("modify a.txt");
         crate::git::stage::stage_paths(dir.path(), &["a.txt".to_string()]).expect("stage");
-        let res = create_commit(dir.path(), "first\rsecond\rthird", None).expect("commit");
+        let res = create_commit(dir.path(), "first\rsecond\rthird", None, false).expect("commit");
         assert_eq!(res.summary, "first");
         head_message("first\nsecond\nthird\n");
 
         // A CR-only message is whitespace after normalization -> EmptyMessage.
         std::fs::write(dir.path().join("a.txt"), "three\n").expect("modify a.txt");
         crate::git::stage::stage_paths(dir.path(), &["a.txt".to_string()]).expect("stage");
-        let err = create_commit(dir.path(), "\r\n\r", None).expect_err("CR-only message");
+        let err = create_commit(dir.path(), "\r\n\r", None, false).expect_err("CR-only message");
         assert!(matches!(err, AppError::EmptyMessage), "got: {err:?}");
     }
 
@@ -413,7 +503,7 @@ mod tests {
             cfg.set_str("user.name", "Test User").expect("name");
             cfg.set_str("user.email", "test@example.com").expect("email");
         }
-        let err = amend_commit(dir.path(), "msg", None).expect_err("unborn");
+        let err = amend_commit(dir.path(), "msg", None, false).expect_err("unborn");
         match err {
             AppError::Git(m) => assert!(m.contains("no commits yet"), "got: {m}"),
             other => panic!("expected Git, got {other:?}"),
@@ -433,7 +523,7 @@ mod tests {
         }
         std::fs::write(dir.path().join("a.txt"), "one\n").expect("write");
         crate::git::stage::stage_paths(dir.path(), &["a.txt".to_string()]).expect("stage");
-        create_commit(dir.path(), "original subject", None).expect("commit");
+        create_commit(dir.path(), "original subject", None, false).expect("commit");
         let orig_tree = repo
             .head()
             .expect("head")
@@ -442,7 +532,7 @@ mod tests {
             .tree_id();
 
         // Empty message rejected.
-        let err = amend_commit(dir.path(), "   ", None).expect_err("empty");
+        let err = amend_commit(dir.path(), "   ", None, false).expect_err("empty");
         assert!(matches!(err, AppError::EmptyMessage), "got: {err:?}");
 
         // Change committer identity so we can prove author is preserved.
@@ -451,7 +541,7 @@ mod tests {
             cfg.set_str("user.name", "New Committer").expect("name");
             cfg.set_str("user.email", "new@example.com").expect("email");
         }
-        let res = amend_commit(dir.path(), "amended subject", None).expect("amend");
+        let res = amend_commit(dir.path(), "amended subject", None, false).expect("amend");
         assert_eq!(res.summary, "amended subject");
 
         let head = repo.head().expect("head").peel_to_commit().expect("peel");

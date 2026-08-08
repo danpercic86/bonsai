@@ -1527,7 +1527,8 @@ export interface AppError {
     | 'aiUnavailable'
     | 'aiFailed'
     | 'updateFailed'
-    | 'externalToolFailed';
+    | 'externalToolFailed'
+    | 'hookRejected';
   message: string;
 }
 
@@ -1557,9 +1558,16 @@ export interface IpcApi {
   /** Unstage paths. Atomic. Safe (worktree never touched). */
   unstage(repoId: string, paths: string[]): Promise<void>;
   /** Create a commit from the index. `sign` (P58): null/undefined ⇒ follow
-   *  `commit.gpgsign`; true ⇒ force sign; false ⇒ force unsigned. Rejects with
-   *  AppError kinds emptyMessage | configMissing | nothingToCommit | git | noRepo. */
-  commit(repoId: string, message: string, sign?: boolean | null): Promise<CommitResult>;
+   *  `commit.gpgsign`; true ⇒ force sign; false ⇒ force unsigned. `skipHooks`
+   *  (P59a): true ≡ `--no-verify`; null/undefined/false ⇒ run hooks per
+   *  `bonsai.runHooks` (default true). Rejects with AppError kinds emptyMessage |
+   *  configMissing | nothingToCommit | hookRejected | git | noRepo. */
+  commit(
+    repoId: string,
+    message: string,
+    sign?: boolean | null,
+    skipHooks?: boolean,
+  ): Promise<CommitResult>;
   /** Diff of one working-dir file. staged=false: index vs workdir; staged=true: HEAD vs index.
    *  origPath: pass StatusEntry.origPath (renames). Rejects AppError ('noRepo', 'git'). */
   getWorkdirFileDiff(
@@ -1671,9 +1679,10 @@ export interface IpcApi {
    *  operationInProgress | branchNotFound | checkoutConflict | configMissing
    *  | git | noRepo. */
   mergeBranch(repoId: string, name: string): Promise<MergeOutcome>;
-  /** Finalize a paused merge. Rejects noOperationInProgress
-   *  | unresolvedConflicts | emptyMessage | configMissing | git | noRepo. */
-  commitMerge(repoId: string, message: string): Promise<CommitResult>;
+  /** Finalize a paused merge. `skipHooks` (P59a) as {@link commit}. Rejects
+   *  noOperationInProgress | unresolvedConflicts | emptyMessage | configMissing
+   *  | hookRejected | git | noRepo. */
+  commitMerge(repoId: string, message: string, skipHooks?: boolean): Promise<CommitResult>;
   /** Abort a paused merge (worktree-destructive for merge-touched files).
    *  Rejects noOperationInProgress | git | noRepo. */
   abortMerge(repoId: string): Promise<void>;
@@ -1813,9 +1822,15 @@ export interface IpcApi {
   /** Permanently discard stash `index` (UI confirms). Rejects git | noRepo. */
   dropStash(repoId: string, index: number): Promise<void>;
   /** Amend HEAD with a new message + the current index (P20). Preserves HEAD's
-   *  parents + original author. `sign` (P58): as {@link commit}. Rejects
-   *  operationInProgress | emptyMessage | configMissing | git | noRepo. */
-  commitAmend(repoId: string, message: string, sign?: boolean | null): Promise<CommitResult>;
+   *  parents + original author. `sign` (P58) + `skipHooks` (P59a): as
+   *  {@link commit}. Rejects operationInProgress | emptyMessage | configMissing
+   *  | hookRejected | git | noRepo. */
+  commitAmend(
+    repoId: string,
+    message: string,
+    sign?: boolean | null,
+    skipHooks?: boolean,
+  ): Promise<CommitResult>;
   /** Move the current branch (HEAD) to `oid` in `mode` (P20). Hard is
    *  destructive — the UI confirms first. Rejects operationInProgress | git | noRepo. */
   resetBranch(repoId: string, oid: string, mode: ResetMode): Promise<void>;

@@ -916,7 +916,7 @@ mod tests {
         }
         std::fs::write(dir.path().join("a.txt"), "one\n").expect("write");
         crate::git::stage::stage_paths(dir.path(), &["a.txt".to_string()]).expect("stage");
-        crate::git::commit::create_commit(dir.path(), "base", None).expect("commit");
+        crate::git::commit::create_commit(dir.path(), "base", None, false).expect("commit");
 
         for staged in [false, true] {
             let fd = workdir_file_diff(dir.path(), "a.txt", None, staged, false)
@@ -951,7 +951,7 @@ mod tests {
             &["a[ab].txt".into(), "aa.txt".into(), "ab.txt".into()],
         )
         .expect("stage");
-        crate::git::commit::create_commit(dir.path(), "base", None).expect("commit");
+        crate::git::commit::create_commit(dir.path(), "base", None, false).expect("commit");
         for name in ["a[ab].txt", "aa.txt", "ab.txt"] {
             std::fs::write(dir.path().join(name), format!("{name} new\n")).expect("rewrite");
         }
@@ -991,12 +991,12 @@ mod tests {
 
         std::fs::write(p.join("file1.txt"), "one\n").expect("write");
         stage_paths(p, &["file1.txt".into()]).expect("stage");
-        let a = create_commit(p, "A", None).expect("commit A").oid;
+        let a = create_commit(p, "A", None, false).expect("commit A").oid;
 
         std::fs::write(p.join("file1.txt"), "one changed\n").expect("write");
         std::fs::write(p.join("file2.txt"), "two\n").expect("write");
         stage_paths(p, &["file1.txt".into(), "file2.txt".into()]).expect("stage");
-        let b = create_commit(p, "B", None).expect("commit B").oid;
+        let b = create_commit(p, "B", None, false).expect("commit B").oid;
 
         let cmp = compare_head_diff(p, &a).expect("compare");
         assert_eq!(cmp.to.oid, a);
@@ -1028,7 +1028,7 @@ mod tests {
 
         std::fs::write(p.join("file1.txt"), "base\n").expect("write");
         stage_paths(p, &["file1.txt".into()]).expect("stage");
-        let base = create_commit(p, "A", None).expect("commit A");
+        let base = create_commit(p, "A", None, false).expect("commit A");
         // Default branch name is git2's choice (master/main) — resolve it.
         let main_name = base.branch.expect("base commit is on a branch");
 
@@ -1037,13 +1037,13 @@ mod tests {
         crate::git::branches::checkout_branch(p, "feat").expect("checkout feat");
         std::fs::write(p.join("file_feat.txt"), "feat\n").expect("write");
         stage_paths(p, &["file_feat.txt".into()]).expect("stage");
-        let c = create_commit(p, "C", None).expect("commit C").oid;
+        let c = create_commit(p, "C", None, false).expect("commit C").oid;
 
         // Back to the default branch, add a divergent commit B (now HEAD = B).
         crate::git::branches::checkout_branch(p, &main_name).expect("checkout base branch");
         std::fs::write(p.join("file_main.txt"), "main\n").expect("write");
         stage_paths(p, &["file_main.txt".into()]).expect("stage");
-        let b = create_commit(p, "B", None).expect("commit B").oid;
+        let b = create_commit(p, "B", None, false).expect("commit B").oid;
 
         let cmp = compare_head_diff(p, &c).expect("compare");
         assert_eq!(cmp.from.oid, b);
@@ -1071,7 +1071,7 @@ mod tests {
         let p = dir.path();
         std::fs::write(p.join("a.txt"), "one\n").expect("write");
         stage_paths(p, &["a.txt".into()]).expect("stage");
-        let a = create_commit(p, "A", None).expect("commit").oid;
+        let a = create_commit(p, "A", None, false).expect("commit").oid;
 
         let cmp = compare_head_diff(p, &a).expect("compare HEAD to itself");
         assert_eq!(cmp.from.oid, cmp.to.oid);
@@ -1088,7 +1088,7 @@ mod tests {
         std::fs::write(p.join("a.txt"), "one\n").expect("write");
         std::fs::write(p.join("b.txt"), "two\n").expect("write");
         stage_paths(p, &["a.txt".into(), "b.txt".into()]).expect("stage");
-        let a = create_commit(p, "A", None).expect("commit").oid;
+        let a = create_commit(p, "A", None, false).expect("commit").oid;
 
         // Force HEAD unborn: point it at a branch with no commit. Commit A
         // still lives in the object DB (reachable via refs/heads/main).
@@ -1115,7 +1115,7 @@ mod tests {
         let p = dir.path();
         std::fs::write(p.join("a.txt"), "one\n").expect("write");
         stage_paths(p, &["a.txt".into()]).expect("stage");
-        create_commit(p, "A", None).expect("commit");
+        create_commit(p, "A", None, false).expect("commit");
 
         // Malformed hex.
         let err = compare_head_diff(p, "notahexoid").expect_err("malformed oid");
@@ -1154,12 +1154,12 @@ mod tests {
         std::fs::write(p.join("a.txt"), "a1\n").expect("write");
         std::fs::write(p.join("b.txt"), "b1\n").expect("write");
         stage_paths(p, &["a.txt".into(), "b.txt".into()]).expect("stage");
-        let base = create_commit(p, "base", None).expect("commit").oid;
+        let base = create_commit(p, "base", None, false).expect("commit").oid;
 
         std::fs::write(p.join("a.txt"), "a1 changed\n").expect("write");
         std::fs::write(p.join("b.txt"), "b1 changed\n").expect("write");
         stage_paths(p, &["a.txt".into(), "b.txt".into()]).expect("stage");
-        let head = create_commit(p, "head", None).expect("commit").oid;
+        let head = create_commit(p, "head", None, false).expect("commit").oid;
 
         let repo = git2::Repository::open(p).expect("open");
         let old = tree_of(&repo, &base);
@@ -1202,7 +1202,7 @@ mod tests {
         std::fs::write(p.join("big.txt"), &big).expect("write big");
         std::fs::write(p.join("small.txt"), "small\n").expect("write small");
         stage_paths(p, &["big.txt".into(), "small.txt".into()]).expect("stage");
-        let head = create_commit(p, "add files", None).expect("commit").oid;
+        let head = create_commit(p, "add files", None, false).expect("commit").oid;
 
         let repo = git2::Repository::open(p).expect("open");
         let new = tree_of(&repo, &head);
@@ -1233,11 +1233,11 @@ mod tests {
 
         std::fs::write(p.join("f.txt"), "line1\nline2\n").expect("write");
         stage_paths(p, &["f.txt".into()]).expect("stage");
-        let a = create_commit(p, "A", None).expect("commit A").oid;
+        let a = create_commit(p, "A", None, false).expect("commit A").oid;
 
         std::fs::write(p.join("f.txt"), "line1\nCHANGED\n").expect("write");
         stage_paths(p, &["f.txt".into()]).expect("stage");
-        create_commit(p, "B", None).expect("commit B");
+        create_commit(p, "B", None, false).expect("commit B");
 
         let fd = compare_head_file_diff(p, &a, "f.txt", None, false).expect("file diff");
         assert_eq!(fd.path, "f.txt");

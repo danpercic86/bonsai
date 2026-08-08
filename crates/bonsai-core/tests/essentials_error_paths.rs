@@ -167,7 +167,7 @@ fn amend_during_paused_cherrypick_errors() {
         git2::RepositoryState::CherryPick
     );
 
-    let err = amend_commit(d, "sneaky amend", None).expect_err("amend mid-op must refuse");
+    let err = amend_commit(d, "sneaky amend", None, false).expect_err("amend mid-op must refuse");
     assert!(
         matches!(err, AppError::OperationInProgress(_)),
         "expected OperationInProgress, got {err:?}"

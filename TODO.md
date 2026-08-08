@@ -49,6 +49,48 @@ Checklists: `docs/contracts/P<N>-user-checklist.md`.
 **Untouched throughout:** your 4 in-progress files (Cargo.lock, package.json, src-tauri/Cargo.toml,
 tauri.conf.json = the 0.3.0→0.3.1 bump) and `docs/audit-2026-08-07.md` (another session's file).
 
+## P59 — git hooks execution + force-push-lease hardening (Phase 3 · milestone 2/4) — **IN PROGRESS** (2026-08-08)
+
+Contract: `docs/contracts/P59-hooks-and-lease-hardening.md`. Reuses the P58 `exec.rs` seam. Two trust fixes.
+
+**P59 goal:** (a) run pre-commit/commit-msg/post-commit (+pre-push) hooks via `git hook run` (Git ≥2.36)
+around the existing commit/merge/push ops — a failing BLOCKING hook shows its output + blocks (NEVER a
+silent success); per-repo `bonsai.runHooks` opt-out + per-action `skip_hooks` (≡ --no-verify). (b) rewrite
+force_push_with_lease to git's atomic `git push --force-with-lease=<ref>:<expected> --force-if-includes`
+(closes P37's client-side TOCTOU). +1 AppError `HookRejected` (carries hook output for a dialog); NO new
+command (skip_hooks param on commit/amend/merge/push; toggle via read_config/set_config; force_push
+signature unchanged). Cmd stays 141.
+
+**Orchestrator OQ decisions — accept ALL architect recs:** OQ-A1 require Git ≥2.36 (else a one-time error
+if hooks exist — never silent bypass) · OQ-A2 add HookRejected · OQ-A3 include pre-push (P59a-2) · OQ-A4
+"Run git hooks" repo-scoped Settings row via config commands · OQ-B1 include --force-if-includes · OQ-B2
+accept git's credential helper for the lease op (price of the atomic guarantee; same never-prompt helper as reads).
+
+Sub-increments: **P59a** commit-hooks backend (`hooks.rs` run_hook/run_hook_nonblocking/hooks_enabled +
+pure builders; commit.rs/amend/merge.rs orchestration [pre-commit→reload→commit-msg→create→post-commit];
+`HookRejected`; commands `skip_hooks`; IPC types + mock + §A6 oracle) → **P59a-ui** frontend (HookOutputDialog
++ "Commit anyway" retry; CommitBox "Skip hooks"; Settings "Run git hooks" toggle) → **P59b** remote.rs
+hardening (pre-push in push_current + force_push_with_lease; lease rewrite to git --force-with-lease;
+build_force_push_args/classify_push_stderr; force_push_cli oracle). `skip_hooks` = 2nd mechanical caller
+fan-out (like P58 sign; all pass false) — flag a future `CommitOpts` struct.
+
+- **P59a** (reviewer APPROVE, 0 must-fix; 2 should-fix, 5 nits) — commit-hooks backend. New `hooks.rs`
+  (`run_hook` = `git hook run <name>` [--to-stdin][-- args]; non-zero→HookRejected w/ output, missing/exit0
+  →Ok, spawn-fail→Git, NEVER silent success; `run_hook_nonblocking` post-commit; `hooks_enabled`; Git<2.36
+  fallback = block-if-hook-present else proceed; pure build_hook_run_args). commit.rs/amend/merge.rs
+  orchestration (pre-commit→index.read(true)→commit-msg[temp file, re-read→EmptyMessage]→create[signed/
+  unsigned]→post-commit-nonblocking); resolve_signature ConfigMissing still before writes; hooks-off path
+  byte-identical. `AppError::HookRejected` (kind hookRejected). `skip_hooks` param — 2nd 100-caller fan-out
+  (all pass false; TODO(P59) fold sign+skip_hooks into CommitOpts). IPC + mock (`?hooks=fail`/`#hookfail`).
+  Reviewer VERIFIED the trust-critical pre-check (core.hooksPath set→always delegate; unset→correct
+  commondir/hooks incl. worktree; never skips a real hook). **ORCHESTRATOR FIX applied:** compose_apply
+  passes skip_hooks=TRUE (a re-staging pre-commit hook would break the composer's file-level partition via
+  index.read(true); MCP/normal commits keep hooks-on). Hooks oracle 12 RAN (git 2.51); clippy -D + build/tsc
+  clean; cmd 141. Notes: merge.rs 1289-line god-file (pre-existing); clean auto-merge runs no hooks (contract
+  gap; comment→P59a-ui); post-commit output dropped (surface in P59a-ui); hooks.rs stat-error→Skip nit.
+**Current step:** P59a DONE (committed). Next: **P59a-ui** (HookOutputDialog + "Commit anyway" retry +
+CommitBox "Skip hooks" + Settings "Run git hooks" toggle) → **P59b** (remote.rs pre-push + lease hardening).
+
 ## P58 — real commit signing + verification (Phase 3 · milestone 1/4) — **DONE (AI gate passed, awaiting USER CHECKPOINT)** (2026-08-08)
 
 Contract: `docs/contracts/P58-commit-signing.md`. Phase 3 (correctness & parity) — NO OD1 dependency.

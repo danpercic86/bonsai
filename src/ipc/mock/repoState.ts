@@ -101,6 +101,10 @@ export interface MockRepoState {
   config: MockConfigStore;
   /** `?remote=` failure trigger (authfail | network | rejected | conflict). */
   remoteTrigger: string | null;
+  /** P59a: `?hooks=fail` — a blocking pre-commit hook rejects commit/amend/merge
+   *  (unless skipHooks or `bonsai.runHooks` is false). A `#hookfail` message
+   *  sentinel triggers it per-call regardless of this flag. */
+  hooksFail: boolean;
 
   status: StatusSnapshot;
   headOid: string;
@@ -231,6 +235,7 @@ export function createRepoState(path: string): MockRepoState {
     // commit-error / Set-identity flow is demoable (P40 §6.3).
     config: makeMockConfigStore(query('fixture') !== 'noconfig'),
     remoteTrigger: query('remote'),
+    hooksFail: query('hooks') === 'fail',
     status: structuredClone(INITIAL_STATUS),
     headOid: MOCK_OID,
     branches: structuredClone(INITIAL_BRANCHES),

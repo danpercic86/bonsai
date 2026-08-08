@@ -9,9 +9,10 @@ use std::path::Path;
 use crate::error::AppError;
 use crate::git::autostash::{self, PopResult};
 use crate::git::bisect::require_no_bisect;
-use crate::git::commit::{resolve_signature, CommitResult};
+use crate::git::commit::{self, resolve_signature, CommitResult};
 use crate::git::conflict::list_conflicts;
 use crate::git::exec::SpawnGitExec;
+use crate::git::hooks::{hooks_enabled, run_hook, run_hook_nonblocking, HookName};
 use crate::git::signing::{self, resolve_signing};
 use crate::git::repo::read_head_info;
 use crate::git::stage::open_workdir_repo;
@@ -282,7 +283,10 @@ pub fn merge_branch(workdir: &Path, branch_name: &str) -> Result<MergeOutcome, A
     drop(index);
     // Auto-commit follows commit.gpgsign (None) — a clean merge signs iff the
     // user opted in; byte-identical to pre-P58 when gpgsign is off (the default).
-    let result = finalize_merge_commit(&mut repo, &message, None)?;
+    // Hooks are NOT run on a clean auto-merge commit (matches `git merge`, which
+    // fires pre-commit/commit-msg only when you conclude the merge via a commit —
+    // that path is `commit_merge`, below).
+    let result = finalize_merge_commit(&mut repo, &message, None, false)?;
     let oid = result.oid;
     if stashed {
         return Ok(match autostash::pop_after_success(&mut repo, workdir)? {
@@ -300,20 +304,45 @@ pub fn merge_branch(workdir: &Path, branch_name: &str) -> Result<MergeOutcome, A
 /// `sign` (P58 D3 / OQ4): `None` ⇒ follow `commit.gpgsign`; `Some(b)` ⇒ `b`.
 /// The unsigned path is byte-identical to pre-P58; signing routes the SAME
 /// parents through [`signing::create_signed_commit`].
+///
+/// `run_hooks` (P59a): when true, the commit hooks fire around the merge commit
+/// in git order — `pre-commit` (before `write_tree`) → `commit-msg` (may rewrite
+/// the merge message) → create the commit → `post-commit` (non-blocking). Only
+/// `commit_merge` passes `true`; the clean auto-merge path passes `false`.
 fn finalize_merge_commit(
     repo: &mut git2::Repository,
     message: &str,
     sign: Option<bool>,
+    run_hooks: bool,
 ) -> Result<CommitResult, AppError> {
+    // Owned workdir: releases the immutable borrow before the &mut
+    // mergehead_foreach below, and is the base for any hook run.
+    let workdir_buf = repo.workdir().map(std::path::Path::to_path_buf);
+    if run_hooks && workdir_buf.is_none() {
+        return Err(AppError::Git(
+            "cannot run commit hooks in a bare repository".to_string(),
+        ));
+    }
+
+    // pre-commit BEFORE write_tree (git order); non-zero ⇒ HookRejected, abort
+    // (no commit, no ref move, merge state left intact for retry/abort).
+    if run_hooks {
+        if let Some(wd) = workdir_buf.as_deref() {
+            run_hook(&SpawnGitExec, wd, HookName::PreCommit, &[], None)?;
+        }
+    }
+
     // Normalize exactly like create_commit (CRLF/CR -> \n, trim).
-    let normalized = message.replace("\r\n", "\n").replace('\r', "\n");
-    let msg = normalized.trim();
+    let mut msg = commit::normalize_message(message);
     if msg.is_empty() {
         return Err(AppError::EmptyMessage);
     }
-    // Owned workdir for the signing spawn (releases the immutable borrow before
-    // the &mut mergehead_foreach below).
-    let workdir_buf = repo.workdir().map(std::path::Path::to_path_buf);
+    // commit-msg may rewrite the merge message file.
+    if run_hooks {
+        if let Some(wd) = workdir_buf.as_deref() {
+            msg = commit::run_commit_msg_hook(repo, wd, &msg)?;
+        }
+    }
 
     let sig = resolve_signature(&repo.config()?.snapshot()?)?;
 
@@ -339,10 +368,13 @@ fn finalize_merge_commit(
     // NO nothing-to-commit check: an empty-diff merge commit is legitimate —
     // it records ancestry.
     let mut index = repo.index()?;
+    if run_hooks {
+        index.read(true)?; // pick up any pre-commit hook re-staging
+    }
     let tree_oid = index.write_tree()?;
     let tree = repo.find_tree(tree_oid)?;
     let full = format!("{msg}\n");
-    let summary = msg.lines().next().unwrap_or(msg).to_string();
+    let summary = msg.lines().next().unwrap_or(&msg).to_string();
 
     let signing = resolve_signing(&repo.config()?.snapshot()?, sign);
     let oid = if !signing.sign {
@@ -366,6 +398,15 @@ fn finalize_merge_commit(
         )?
     };
 
+    // post-commit (non-blocking) runs AFTER the commit is made but BEFORE
+    // cleanup_state, so a hook that inspects MERGE_HEAD still sees it. Never
+    // blocks — the commit already landed.
+    if run_hooks {
+        if let Some(wd) = workdir_buf.as_deref() {
+            let _ = run_hook_nonblocking(&SpawnGitExec, wd, HookName::PostCommit, &[]);
+        }
+    }
+
     repo.cleanup_state()?; // removes MERGE_HEAD/MERGE_MSG/MERGE_MODE -> Clean
 
     // HEAD's symref (branch NAME) is stable across the signed external ref move,
@@ -384,11 +425,14 @@ fn finalize_merge_commit(
 
 /// Blocking. Finalizes a paused merge as a 2(+)-parent commit
 /// (contract §4.4 — cheap checks first). `sign` (P58 D3 / OQ4): `None` ⇒ follow
-/// `commit.gpgsign`; `Some(b)` ⇒ `b`.
+/// `commit.gpgsign`; `Some(b)` ⇒ `b`. `skip_hooks` (P59a): `true` ≡ `--no-verify`;
+/// otherwise the effective toggle is `bonsai.runHooks` (default true), and the
+/// commit hooks fire around the merge commit exactly as `git commit` would.
 pub fn commit_merge(
     workdir: &Path,
     message: &str,
     sign: Option<bool>,
+    skip_hooks: bool,
 ) -> Result<CommitResult, AppError> {
     let mut repo = open_workdir_repo(workdir)?;
 
@@ -404,7 +448,8 @@ pub fn commit_merge(
             "cannot commit: {n} unresolved conflict(s) remain"
         )));
     }
-    finalize_merge_commit(&mut repo, message, sign)
+    let run_hooks = hooks_enabled(&repo.config()?.snapshot()?, skip_hooks);
+    finalize_merge_commit(&mut repo, message, sign, run_hooks)
 }
 
 /// Blocking. Aborts a paused merge; restores pre-merge index + the worktree
@@ -569,7 +614,7 @@ mod tests {
                 &files.iter().map(|(n, _)| n.to_string()).collect::<Vec<_>>(),
             )
             .expect("stage");
-            crate::git::commit::create_commit(dir.path(), msg, None).expect("commit")
+            crate::git::commit::create_commit(dir.path(), msg, None, false).expect("commit")
         };
 
         // Base commit with the conflict file + an unrelated file.
@@ -645,7 +690,7 @@ mod tests {
         }
 
         // commit_merge / abort_merge with no merge in progress.
-        let err = commit_merge(dir.path(), "msg", None).expect_err("no merge");
+        let err = commit_merge(dir.path(), "msg", None, false).expect_err("no merge");
         assert!(matches!(err, AppError::NoOperationInProgress(_)));
         let err = abort_merge(dir.path()).expect_err("no merge");
         assert!(matches!(err, AppError::NoOperationInProgress(_)));
@@ -678,7 +723,7 @@ mod tests {
             &files.iter().map(|(n, _)| n.to_string()).collect::<Vec<_>>(),
         )
         .expect("stage");
-        crate::git::commit::create_commit(dir, msg, None).expect("commit");
+        crate::git::commit::create_commit(dir, msg, None, false).expect("commit");
     }
 
     /// Build a commit on `refname` from `parent`'s tree with the given top-level

@@ -523,7 +523,7 @@ mod tests {
     fn commit(dir: &Path, file: &str, content: &str, msg: &str) -> String {
         std::fs::write(dir.join(file), content).expect("write");
         stage_paths(dir, &[file.to_string()]).expect("stage");
-        create_commit(dir, msg, None).expect("commit").oid
+        create_commit(dir, msg, None, false).expect("commit").oid
     }
 
     fn oid(s: &str) -> git2::Oid {

@@ -71,6 +71,15 @@ export function hasIdentity(store: MockConfigStore): boolean {
   return Boolean(name && name.value.trim() && email && email.value.trim());
 }
 
+/** P59a: effective `bonsai.runHooks` (default true; local overrides global).
+ *  Only an explicit `false` disables — mirrors the Rust `hooks_enabled`. The
+ *  "Run git hooks" Settings toggle round-trips through the generic config
+ *  read/write on this key. */
+export function runHooksEnabled(store: MockConfigStore): boolean {
+  const eff = effective(store, 'bonsai.runHooks');
+  return !(eff !== null && eff.value.trim().toLowerCase() === 'false');
+}
+
 /** Builds a `ConfigView` for one target level from the store (mirrors §4.4). */
 export function buildConfigView(store: MockConfigStore, level: ConfigLevelArg): ConfigView {
   const target = store[level];

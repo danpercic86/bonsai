@@ -240,13 +240,13 @@ fn oracle_ssh_sign_creates_verifiable_commit() {
     let d = dir.path();
     // Unsigned base first (also gives an oid to move HEAD from).
     stage_write(d, "base.txt", "base\n");
-    create_commit(d, "base", None).expect("base commit");
+    create_commit(d, "base", None, false).expect("base commit");
     let base = git(d, &["rev-parse", "HEAD"]);
     assert!(!cat(d, &base).contains("gpgsig"), "base must be unsigned");
 
     setup_ssh_signing(d, false);
     stage_write(d, "a.txt", "alpha\n");
-    let res = create_commit(d, "signed subject", Some(true)).expect("signed commit");
+    let res = create_commit(d, "signed subject", Some(true), false).expect("signed commit");
 
     assert_eq!(git(d, &["rev-parse", "HEAD"]), res.oid, "HEAD moved to the signed commit");
     assert_ne!(res.oid, base);
@@ -263,12 +263,12 @@ fn oracle_ssh_amend_preserves_author_and_resigns() {
     let dir = init_repo();
     let d = dir.path();
     stage_write(d, "a.txt", "one\n");
-    create_commit(d, "orig subject", None).expect("commit");
+    create_commit(d, "orig subject", None, false).expect("commit");
     let orig_author = git(d, &["log", "--format=%an <%ae>", "-1"]);
     let orig_adate = git(d, &["log", "--format=%at", "-1"]);
 
     setup_ssh_signing(d, false);
-    let res = amend_commit(d, "amended subject", Some(true)).expect("amend");
+    let res = amend_commit(d, "amended subject", Some(true), false).expect("amend");
     assert_eq!(git(d, &["log", "--format=%an <%ae>", "-1"]), orig_author, "author preserved");
     assert_eq!(git(d, &["log", "--format=%at", "-1"]), orig_adate, "author date preserved");
     assert_eq!(git(d, &["log", "--format=%s", "-1"]), "amended subject");
@@ -284,18 +284,18 @@ fn config_gates_decide_signing() {
 
     // (a) sign=None + gpgsign=false ⇒ UNSIGNED (byte-identical: no gpgsig header).
     stage_write(d, "a.txt", "a\n");
-    let a = create_commit(d, "a", None).expect("a").oid;
+    let a = create_commit(d, "a", None, false).expect("a").oid;
     assert!(!cat(d, &a).contains("gpgsig"), "None + gpgsign=false ⇒ unsigned");
 
     // (b) commit.gpgsign=true + sign=None ⇒ SIGNED.
     git(d, &["config", "commit.gpgsign", "true"]);
     stage_write(d, "b.txt", "b\n");
-    let b = create_commit(d, "b", None).expect("b").oid;
+    let b = create_commit(d, "b", None, false).expect("b").oid;
     assert!(cat(d, &b).contains("gpgsig"), "gpgsign=true ⇒ signed");
 
     // (c) sign=Some(false) overrides gpgsign=true ⇒ UNSIGNED.
     stage_write(d, "c.txt", "c\n");
-    let c = create_commit(d, "c", Some(false)).expect("c").oid;
+    let c = create_commit(d, "c", Some(false), false).expect("c").oid;
     assert!(!cat(d, &c).contains("gpgsig"), "Some(false) overrides ⇒ unsigned");
 }
 
@@ -305,12 +305,12 @@ fn ssh_signing_without_key_is_config_missing() {
     let dir = init_repo();
     let d = dir.path();
     stage_write(d, "base.txt", "base\n");
-    create_commit(d, "base", None).expect("base");
+    create_commit(d, "base", None, false).expect("base");
     let base = git(d, &["rev-parse", "HEAD"]);
     git(d, &["config", "gpg.format", "ssh"]); // ssh format, NO user.signingkey
 
     stage_write(d, "a.txt", "a\n");
-    let err = create_commit(d, "signed", Some(true)).expect_err("must be ConfigMissing");
+    let err = create_commit(d, "signed", Some(true), false).expect_err("must be ConfigMissing");
     match err {
         AppError::ConfigMissing(m) => assert!(m.contains("user.signingkey"), "names the key: {m}"),
         other => panic!("expected ConfigMissing, got {other:?}"),
@@ -332,12 +332,12 @@ fn oracle_verify_signed_and_unsigned() {
     let dir = init_repo();
     let d = dir.path();
     stage_write(d, "base.txt", "base\n");
-    create_commit(d, "base", None).expect("base");
+    create_commit(d, "base", None, false).expect("base");
     let base = git(d, &["rev-parse", "HEAD"]);
 
     setup_ssh_signing(d, false); // allowed_signers names the committer ⇒ trusted
     stage_write(d, "a.txt", "alpha\n");
-    let signed = create_commit(d, "signed", Some(true)).expect("signed").oid;
+    let signed = create_commit(d, "signed", Some(true), false).expect("signed").oid;
 
     let res = verify_commits(&SpawnGitExec, d, &[base.clone(), signed.clone()]).expect("verify");
     assert_eq!(res.verifications.len(), 2, "both oids resolvable");
@@ -360,7 +360,7 @@ fn oracle_verify_trust_unavailable_never_errs() {
     let d = dir.path();
     setup_ssh_signing(d, false);
     stage_write(d, "a.txt", "a\n");
-    let signed = create_commit(d, "signed", Some(true)).expect("signed").oid;
+    let signed = create_commit(d, "signed", Some(true), false).expect("signed").oid;
     // Drop the allowed-signers file ⇒ git cannot establish trust for the SSH
     // signature. The invariant under test: verify_commits still returns Ok (never
     // hard-fails) with a non-`good` verdict — the exact `%G?` is git's call
@@ -388,7 +388,7 @@ fn oracle_verify_bogus_and_empty_omitted() {
     let dir = init_repo();
     let d = dir.path();
     stage_write(d, "a.txt", "a\n");
-    let real = create_commit(d, "a", None).expect("a").oid;
+    let real = create_commit(d, "a", None, false).expect("a").oid;
 
     // Three kinds of "not the real commit", all omitted for different reasons:
     //  * a non-hex string        → dropped before spawning by `is_hex40`;

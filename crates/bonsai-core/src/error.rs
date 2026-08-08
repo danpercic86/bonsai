@@ -7,7 +7,7 @@
 /// | "noRemote" | "noUpstream" | "authFailed" | "networkError"
 /// | "pushRejected" | "operationInProgress" | "noOperationInProgress"
 /// | "unresolvedConflicts" | "aiUnavailable" | "aiFailed"
-/// | "externalToolFailed",
+/// | "externalToolFailed" | "hookRejected",
 /// "message": "..." }`.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
@@ -63,6 +63,12 @@ pub enum AppError {
     /// tried; the frontend adds a "set a command in Settings" hint.
     #[error("{0}")]
     ExternalToolFailed(String),
+    /// A BLOCKING git hook (pre-commit / commit-msg / pre-push) exited non-zero
+    /// (P59a). Carries `"<hook> hook failed:\n<combined stdout+stderr>"` so the
+    /// frontend can render the hook's own output in a dedicated dialog. A failing
+    /// blocking hook is NEVER a silent success — the operation aborts with this.
+    #[error("{0}")]
+    HookRejected(String),
 }
 
 impl AppError {
@@ -92,6 +98,7 @@ impl AppError {
             AppError::AiUnavailable(_) => "aiUnavailable",
             AppError::AiFailed(_) => "aiFailed",
             AppError::ExternalToolFailed(_) => "externalToolFailed",
+            AppError::HookRejected(_) => "hookRejected",
         }
     }
 
@@ -117,7 +124,8 @@ impl AppError {
             | AppError::UnresolvedConflicts(m)
             | AppError::AiUnavailable(m)
             | AppError::AiFailed(m)
-            | AppError::ExternalToolFailed(m) => m,
+            | AppError::ExternalToolFailed(m)
+            | AppError::HookRejected(m) => m,
             AppError::NoRepo => "no repository is open",
             AppError::EmptyMessage => "commit message is empty",
             AppError::NothingToCommit => "nothing to commit (index matches HEAD)",

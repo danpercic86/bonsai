@@ -40,7 +40,7 @@
         std::fs::write(workdir.join(rel), contents).expect("write file");
         tauri::async_runtime::block_on(stage_inner(state, repo_id, vec![rel.to_string()]))
             .expect("stage");
-        tauri::async_runtime::block_on(commit_inner(state, repo_id, message.to_string(), None))
+        tauri::async_runtime::block_on(commit_inner(state, repo_id, message.to_string(), None, None))
             .expect("commit")
     }
 
@@ -166,7 +166,7 @@
         assert!(matches!(err, AppError::NoRepo));
 
         let err =
-            tauri::async_runtime::block_on(commit_inner(&state, MISSING_ID, "msg".to_string(), None))
+            tauri::async_runtime::block_on(commit_inner(&state, MISSING_ID, "msg".to_string(), None, None))
                 .expect_err("commit with no repo");
         assert!(matches!(err, AppError::NoRepo));
     }
@@ -548,6 +548,7 @@
             &state,
             MISSING_ID,
             "msg".to_string(),
+            None,
             None,
         ))
         .expect_err("commit_merge with no repo");

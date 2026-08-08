@@ -4,6 +4,7 @@ import { hasIdentity } from '../../fixtures/config';
 import { lineDiff, reconstructLines } from '../../fixtures/diffs';
 import { randomOid } from '../../fixtures/oids';
 import { delay, requireRepo } from '../repoState';
+import { hookRejectionFor } from '../hooksGate';
 import { MAIN_RS_PATH, collectSelection, linesEqual, sortByPath, takeMatching, upsert } from '../statusHelpers';
 import type { AppError, CommitResult, LineSelection, StatusSnapshot } from '../../types';
 
@@ -132,9 +133,18 @@ export const statusHandlers = {
 
   // P58: `sign` is accepted but ignored — the browser mock cannot sign (real
   // signing is native-only). `signingStatus` drives the commit-box indicator.
-  async commit(repoId: string, message: string, _sign?: boolean | null): Promise<CommitResult> {
+  // P59a: `skipHooks` ≡ --no-verify; a `?hooks=fail` repo / `#hookfail` message
+  // rejects here (pre-commit runs first, before any mutation) unless skipped.
+  async commit(
+    repoId: string,
+    message: string,
+    _sign?: boolean | null,
+    skipHooks?: boolean,
+  ): Promise<CommitResult> {
     await delay(150);
     const state = requireRepo(repoId);
+    const rejection = hookRejectionFor(state, message, skipHooks);
+    if (rejection) throw rejection;
     if (message.trim() === '') {
       const err: AppError = { kind: 'emptyMessage', message: 'commit message is empty' };
       throw err;

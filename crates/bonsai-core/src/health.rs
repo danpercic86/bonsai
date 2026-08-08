@@ -596,7 +596,7 @@ mod tests {
             &files.iter().map(|(n, _)| n.to_string()).collect::<Vec<_>>(),
         )
         .expect("stage");
-        crate::git::commit::create_commit(dir, msg, None).expect("commit");
+        crate::git::commit::create_commit(dir, msg, None, false).expect("commit");
         let repo = git2::Repository::open(dir).expect("open");
         let oid = repo.head().expect("HEAD").peel_to_commit().expect("peel").id();
         oid

@@ -117,7 +117,7 @@ mod tests {
     fn commit_file(dir: &Path, name: &str, content: &str, msg: &str) -> String {
         std::fs::write(dir.join(name), content).expect("write file");
         crate::git::stage::stage_paths(dir, &[name.to_string()]).expect("stage");
-        crate::git::commit::create_commit(dir, msg, None).expect("commit").oid
+        crate::git::commit::create_commit(dir, msg, None, false).expect("commit").oid
     }
 
     /// `ReflogEntry` serializes with EXACTLY the camelCase keys the TS wire type

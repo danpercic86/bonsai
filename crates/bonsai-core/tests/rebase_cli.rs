@@ -855,7 +855,7 @@ fn plain_commit_during_paused_rebase_is_rejected() {
     // Resolve so the only thing blocking a plain commit is the op-state guard.
     resolve_conflict(d, "a.txt", ConflictResolution::Ours).expect("resolve");
 
-    let err = create_commit(d, "sneaky plain commit", None).expect_err("gated");
+    let err = create_commit(d, "sneaky plain commit", None, false).expect_err("gated");
     assert!(
         matches!(err, AppError::OperationInProgress(_)),
         "expected OperationInProgress, got {err:?}"

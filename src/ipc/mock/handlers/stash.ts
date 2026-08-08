@@ -5,6 +5,7 @@ import { buildMockGraph, prependCommits } from '../../fixtures/graph';
 import { randomOid } from '../../fixtures/oids';
 import { RESERVED_STASH_PATHS, stashHasReserved } from '../../fixtures/stashes';
 import { delay, requireRepo } from '../repoState';
+import { hookRejectionFor } from '../hooksGate';
 import type { AppError, ApplyStashOutcome, CommitResult, CreateStashResult, StashEntry, StashScope } from '../../types';
 
 export const stashHandlers = {
@@ -114,9 +115,17 @@ export const stashHandlers = {
   },
 
   // P58: `sign` accepted but ignored (mock cannot sign; native-only).
-  async commitAmend(repoId: string, message: string, _sign?: boolean | null): Promise<CommitResult> {
+  // P59a: `skipHooks` ≡ --no-verify; git runs the commit hooks on amend too.
+  async commitAmend(
+    repoId: string,
+    message: string,
+    _sign?: boolean | null,
+    skipHooks?: boolean,
+  ): Promise<CommitResult> {
     await delay(150);
     const state = requireRepo(repoId);
+    const rejection = hookRejectionFor(state, message, skipHooks);
+    if (rejection) throw rejection;
     if (message.trim() === '') {
       const err: AppError = { kind: 'emptyMessage', message: 'commit message is empty' };
       throw err;
