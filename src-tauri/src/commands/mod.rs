@@ -41,6 +41,9 @@ mod external;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod registration_tests;
+
 // `shared` re-exports the cross-cutting imports and `repo_path`; only the test
 // module reaches them through `commands::` (via `use super::*`), so gate the
 // re-export to test builds to avoid an unused-import warning in normal builds.

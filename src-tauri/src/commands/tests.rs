@@ -1533,6 +1533,123 @@
         assert!(matches!(err, AppError::NoRepo), "got {err:?}");
     }
 
+    /// P53a: `ai_explain_line` enforces the same backend consent gate BEFORE
+    /// touching the repo: default settings (`ai_consented=false`) →
+    /// `AiUnavailable`; consented-but-disabled must also refuse (AND, not OR);
+    /// once enabled+consented, an unknown repo id → `NoRepo` (the gate passed,
+    /// `repo_path` then fails). No CLI needed.
+    #[test]
+    fn ai_explain_line_enforces_consent_gate_then_no_repo() {
+        let state = AppState::default();
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let file = dir.path().join("settings.json");
+
+        // No settings file → defaults → not consented → the gate refuses.
+        let err = tauri::async_runtime::block_on(ai_explain_line_inner(
+            &state,
+            &file,
+            MISSING_ID,
+            "a.txt".to_string(),
+            1,
+            None,
+        ))
+        .expect_err("disabled gate must refuse");
+        assert!(matches!(err, AppError::AiUnavailable(_)), "got {err:?}");
+
+        // Consented but DISABLED must still refuse (the gate is AND, not OR).
+        let s = settings::Settings {
+            ai_enabled: false,
+            ai_consented: true,
+            ..settings::Settings::default()
+        };
+        settings::save_to(&file, &s).expect("save settings");
+        let err = tauri::async_runtime::block_on(ai_explain_line_inner(
+            &state,
+            &file,
+            MISSING_ID,
+            "a.txt".to_string(),
+            1,
+            None,
+        ))
+        .expect_err("enabled=false must refuse even when consented");
+        assert!(matches!(err, AppError::AiUnavailable(_)), "got {err:?}");
+
+        // Enable + consent; now the gate passes and the missing repo → NoRepo.
+        let s = settings::Settings {
+            ai_enabled: true,
+            ai_consented: true,
+            ..settings::Settings::default()
+        };
+        settings::save_to(&file, &s).expect("save settings");
+        let err = tauri::async_runtime::block_on(ai_explain_line_inner(
+            &state,
+            &file,
+            MISSING_ID,
+            "a.txt".to_string(),
+            1,
+            Some("0123456789abcdef0123456789abcdef01234567".to_string()),
+        ))
+        .expect_err("no repo open must be NoRepo");
+        assert!(matches!(err, AppError::NoRepo), "got {err:?}");
+    }
+
+    /// P53c: `ai_suggest_branch_name` enforces the same backend consent gate
+    /// BEFORE touching the repo: default settings (`ai_consented=false`) →
+    /// `AiUnavailable`; consented-but-disabled must also refuse (AND, not OR);
+    /// once enabled+consented, an unknown repo id → `NoRepo`. Exercises BOTH
+    /// `BranchNameSource` variants across the stages. No CLI needed.
+    #[test]
+    fn ai_suggest_branch_name_enforces_consent_gate_then_no_repo() {
+        let state = AppState::default();
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let file = dir.path().join("settings.json");
+
+        // No settings file → defaults → not consented → the gate refuses.
+        let err = tauri::async_runtime::block_on(ai_suggest_branch_name_inner(
+            &state,
+            &file,
+            MISSING_ID,
+            BranchNameSource::Working,
+        ))
+        .expect_err("disabled gate must refuse");
+        assert!(matches!(err, AppError::AiUnavailable(_)), "got {err:?}");
+
+        // Consented but DISABLED must still refuse (the gate is AND, not OR).
+        let s = settings::Settings {
+            ai_enabled: false,
+            ai_consented: true,
+            ..settings::Settings::default()
+        };
+        settings::save_to(&file, &s).expect("save settings");
+        let err = tauri::async_runtime::block_on(ai_suggest_branch_name_inner(
+            &state,
+            &file,
+            MISSING_ID,
+            BranchNameSource::CommitRange {
+                from: "a".repeat(40),
+                to: "b".repeat(40),
+            },
+        ))
+        .expect_err("enabled=false must refuse even when consented");
+        assert!(matches!(err, AppError::AiUnavailable(_)), "got {err:?}");
+
+        // Enable + consent; now the gate passes and the missing repo → NoRepo.
+        let s = settings::Settings {
+            ai_enabled: true,
+            ai_consented: true,
+            ..settings::Settings::default()
+        };
+        settings::save_to(&file, &s).expect("save settings");
+        let err = tauri::async_runtime::block_on(ai_suggest_branch_name_inner(
+            &state,
+            &file,
+            MISSING_ID,
+            BranchNameSource::Working,
+        ))
+        .expect_err("no repo open must be NoRepo");
+        assert!(matches!(err, AppError::NoRepo), "got {err:?}");
+    }
+
     /// P28 §5: `ai_digest` enforces the same backend consent gate BEFORE
     /// touching the repo: default settings (`ai_consented=false`) →
     /// `AiUnavailable`; once enabled+consented, an unknown repo id → `NoRepo`

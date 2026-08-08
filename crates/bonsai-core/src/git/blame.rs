@@ -442,6 +442,43 @@ mod tests {
         assert!(matches!(err0, AppError::Git(_)), "got {err0:?}");
     }
 
+    /// `at_oid = Some(..)` is honored: two commits touch the SAME line, so
+    /// blaming that line at the PAST commit returns a different introducing
+    /// commit (and the past line text) than blaming at HEAD. If the parameter
+    /// were ignored (always HEAD), both calls would agree and this fails.
+    #[test]
+    fn blame_line_honors_at_oid() {
+        use crate::git::commit::create_commit;
+        use crate::git::stage::stage_paths;
+
+        let dir = init_scratch();
+        let p = dir.path();
+
+        // c1 introduces line 2 as "old"; c2 rewrites the SAME line to "new".
+        std::fs::write(p.join("f.txt"), "a\nold\nc\n").expect("write");
+        stage_paths(p, &["f.txt".into()]).expect("stage");
+        let c1 = create_commit(p, "introduce old", None, false).expect("commit").oid;
+
+        std::fs::write(p.join("f.txt"), "a\nnew\nc\n").expect("write");
+        stage_paths(p, &["f.txt".into()]).expect("stage");
+        let c2 = create_commit(p, "rewrite line 2", None, false).expect("commit").oid;
+
+        // At HEAD (both None and the explicit HEAD oid) line 2 blames to c2.
+        let head = blame_line(p, "f.txt", 2, None).expect("blame at HEAD");
+        assert_eq!(head.oid, c2);
+        assert_eq!(head.line_text, "new");
+        let at_c2 = blame_line(p, "f.txt", 2, Some(&c2)).expect("blame at c2");
+        assert_eq!(at_c2.oid, c2);
+
+        // At the PAST commit the same line blames to c1 with the OLD text —
+        // proving `at_oid` seeds the blame walk, not HEAD.
+        let past = blame_line(p, "f.txt", 2, Some(&c1)).expect("blame at c1");
+        assert_eq!(past.oid, c1, "at c1 the line must blame to c1, not HEAD's c2");
+        assert_eq!(past.line_text, "old", "line text must come from the c1 blob");
+        assert_eq!(past.summary, "introduce old");
+        assert_ne!(past.oid, head.oid, "past and HEAD blames must differ");
+    }
+
     /// A traversing path is rejected as `Other` (via `validate_rel_path`) before
     /// any repo access, exactly like `blame_file`.
     #[test]
