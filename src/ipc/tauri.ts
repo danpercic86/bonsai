@@ -54,6 +54,8 @@ import type {
   FileDiff,
   FileHistoryEntry,
   GraphLayout,
+  ImageDiff,
+  ImageDiffRequest,
   HistoryAnswer,
   HistoryQuery,
   HistorySearchResults,
@@ -269,6 +271,10 @@ export const tauriIpc: IpcApi = {
       fullContext,
       intraline,
     });
+  },
+
+  getImageDiff(repoId: string, request: ImageDiffRequest): Promise<ImageDiff> {
+    return invoke<ImageDiff>('get_image_diff', { repoId, request });
   },
 
   listBranches(repoId: string): Promise<BranchesSnapshot> {

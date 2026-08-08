@@ -83,6 +83,7 @@ pub fn run() {
             commands::get_commit_file_diff,
             commands::compare_with_head,
             commands::compare_with_head_file_diff,
+            commands::get_image_diff,
             commands::list_branches,
             commands::create_branch,
             commands::create_branch_here,

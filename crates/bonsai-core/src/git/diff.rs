@@ -635,8 +635,9 @@ fn commit_details(commit: &git2::Commit) -> CommitDetails {
 }
 
 /// Trees for the commit-vs-first-parent diff: `(parent tree or None for a
-/// root commit, the commit's own tree)`.
-fn commit_trees<'r>(
+/// root commit, the commit's own tree)`. `pub(crate)` so `image_diff` (P61b)
+/// can resolve the old/new blob for the Commit request without a diff walk.
+pub(crate) fn commit_trees<'r>(
     commit: &git2::Commit<'r>,
 ) -> Result<(Option<git2::Tree<'r>>, git2::Tree<'r>), AppError> {
     let old = if commit.parent_count() == 0 {
@@ -761,7 +762,9 @@ pub fn commit_file_diff(
 /// Resolve HEAD (attached or detached) as the OLD endpoint of a comparison
 /// plus its tree. Unborn HEAD / `NotFound` -> `CompareEndpoint{"",""}` and no
 /// tree (the compare-vs-empty-tree side, so everything shows Added).
-fn head_endpoint(
+/// `pub(crate)` so `image_diff` (P61b) can resolve the HEAD-side blob for the
+/// Compare request.
+pub(crate) fn head_endpoint(
     repo: &git2::Repository,
 ) -> Result<(CompareEndpoint, Option<git2::Tree<'_>>), AppError> {
     match repo.head() {

@@ -7,7 +7,29 @@ import { resolveLayout } from './layout';
 import { annotateIntraline } from '../intralineMock';
 import { delay, isRefTip, requireRepo } from '../repoState';
 import { MAIN_RS_PATH } from '../statusHelpers';
-import type { AppError, CommitDiff, CompareDiff, FileDiff, GraphLayout } from '../../types';
+import type {
+  AppError,
+  CommitDiff,
+  CompareDiff,
+  FileDiff,
+  GraphLayout,
+  ImageDiff,
+  ImageDiffRequest,
+  ImageSide,
+} from '../../types';
+
+// P61b: canned tiny (2×2) solid-colour PNGs — red for the OLD side, green for
+// the NEW side — so the browser harness renders real images without the native
+// asset protocol (D2). Generated once; plausible byteLen (raw PNG length = 73).
+const RED_PNG_B64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR42mO4Y6QPRAwQCgAlbgT1jRBw7gAAAABJRU5ErkJggg==';
+const GREEN_PNG_B64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR42mOw2eINRAwQCgAiRgTtyyemIAAAAABJRU5ErkJggg==';
+const PNG_BYTE_LEN = 73;
+
+function imageSide(base64: string): ImageSide {
+  return { base64, mime: 'image/png', byteLen: PNG_BYTE_LEN };
+}
 
 export const diffHandlers = {
   async getWorkdirFileDiff(
@@ -128,6 +150,25 @@ export const diffHandlers = {
     const base = mockCommitFileDiff(oid, path, origPath);
     const cloned = structuredClone(fullContext ? asFullContext(base) : base);
     return intraline ? annotateIntraline(cloned) : cloned;
+  },
+
+  async getImageDiff(repoId: string, request: ImageDiffRequest): Promise<ImageDiff> {
+    await delay(150);
+    requireRepo(repoId);
+    // Seams keyed on the path substring (mirrors the harness fixture names):
+    // `added.` -> add (old null), `deleted.` -> delete (new null), `huge.` ->
+    // old side over-cap (null + oldTooLarge). Everything else is red -> green.
+    const path = request.path;
+    const added = path.includes('added.');
+    const deleted = path.includes('deleted.');
+    const huge = path.includes('huge.');
+    return {
+      path,
+      old: added || huge ? null : imageSide(RED_PNG_B64),
+      new: deleted ? null : imageSide(GREEN_PNG_B64),
+      oldTooLarge: huge,
+      newTooLarge: false,
+    };
   },
 
   async getGraph(repoId: string): Promise<GraphLayout> {

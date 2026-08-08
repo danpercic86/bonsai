@@ -18,7 +18,12 @@ export const INITIAL_STATUS: StatusSnapshot = {
     { path: 'README.md', origPath: null, status: 'modified' },
     { path: 'old-config.toml', origPath: null, status: 'deleted' },
     // M4 contract §5: exercise the binary + too-large diff placeholders.
+    // P61b: assets/logo.png is an image (D4) — opening it shows the image-diff
+    // switcher (red old -> green new). The seam paths below exercise the mock's
+    // delete / too-large branches (added is untracked, below).
     { path: 'assets/logo.png', origPath: null, status: 'modified' },
+    { path: 'assets/deleted.png', origPath: null, status: 'deleted' },
+    { path: 'assets/huge.png', origPath: null, status: 'modified' },
     { path: 'data/big-report.csv', origPath: null, status: 'modified' },
   ],
   untracked: [
@@ -26,6 +31,8 @@ export const INITIAL_STATUS: StatusSnapshot = {
     // P3b §3.4: single-child chain — collapses to one "src/git" dir in tree mode.
     { path: 'src/git/status.rs', origPath: null, status: 'untracked' },
     { path: 'scratch.rs', origPath: null, status: 'untracked' },
+    // P61b: a new image — the mock's `added.` seam returns old:null ("Added").
+    { path: 'assets/added.png', origPath: null, status: 'untracked' },
   ],
   conflicted: [],
 };

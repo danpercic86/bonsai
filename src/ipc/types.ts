@@ -196,6 +196,36 @@ export interface CompareDiff {
   files: FileDiffHeader[];
 }
 
+/** P61b: one resolved side of an image comparison (base64 over IPC — D2).
+ *  The frontend builds `data:${mime};base64,${base64}` for a plain `<img>`. */
+export interface ImageSide {
+  /** Raw blob bytes, standard base64 (NO `data:` prefix). */
+  base64: string;
+  /** MIME from the path extension, e.g. "image/png". */
+  mime: string;
+  /** Raw byte length pre-base64 (for the "N KB" label). */
+  byteLen: number;
+}
+
+/** P61b: both sides of an image comparison. A `null` side is either absent
+ *  (add/delete) or over the 8 MiB cap; the `*TooLarge` flags disambiguate. */
+export interface ImageDiff {
+  path: string;
+  /** OLD side (index / HEAD / parent tree). null when added, missing, or over-cap. */
+  old: ImageSide | null;
+  /** NEW side (workdir / index / commit tree). null when deleted, missing, or over-cap. */
+  new: ImageSide | null;
+  oldTooLarge: boolean;
+  newTooLarge: boolean;
+}
+
+/** P61b: which pair to load — mirrors the three file-diff contexts. Tagged on
+ *  `kind`; matches the Rust `ImageDiffRequest` (camelCase keys + fields). */
+export type ImageDiffRequest =
+  | { kind: 'workdir'; path: string; origPath: string | null; staged: boolean }
+  | { kind: 'commit'; oid: string; path: string; origPath: string | null }
+  | { kind: 'compare'; toOid: string; path: string; origPath: string | null };
+
 export interface CommitResult {
   /** Full 40-char hex oid of the new commit. */
   oid: string;
@@ -1690,6 +1720,9 @@ export interface IpcApi {
     /** P61a: when true, paired add/del lines carry `spans` (word-level ranges). */
     intraline: boolean,
   ): Promise<FileDiff>;
+  /** P61b: both sides of an image comparison as base64 (D2). `request` picks the
+   *  context (workdir/commit/compare). Rejects AppError (`noRepo`, `git`). */
+  getImageDiff(repoId: string, request: ImageDiffRequest): Promise<ImageDiff>;
   /** Local branches + remotes + tags + HEAD in one snapshot. Rejects noRepo | git. */
   listBranches(repoId: string): Promise<BranchesSnapshot>;
   /** Create branch at current HEAD (no checkout). Rejects

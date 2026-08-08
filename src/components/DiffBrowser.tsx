@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { ipc } from '../ipc';
 import type { FileDiff, FileDiffHeader, FileStatus, ListView } from '../ipc';
 import { errorMessage } from '../utils/errors';
+import { isImagePath } from '../utils/imagePaths';
 import { buildPathTree, flattenTreeLeaves } from '../utils/pathTree';
 import { SkeletonRows } from './CommitPanel';
 import type { DiffScope } from './DiffFileTree';
+import { DiffImageCard } from './DiffImageCard';
 import { DiffView } from './DiffView';
 
 // P11g §6 (revised by P11g-revision A + D): the all-files diff view. NO longer
@@ -41,12 +43,15 @@ type CardState =
   | { state: 'ready'; diff: FileDiff }
   | { state: 'error'; error: string };
 
+/** Which commands to call + how to label the header (§6.2). Exported so the
+ *  per-file image card (DiffImageCard) can map it to an ImageDiffRequest. */
+export type DiffBrowserSource =
+  | { mode: 'commit'; oid: string; title: string }
+  | { mode: 'compare'; oid: string; fromLabel: string; toLabel: string };
+
 export interface DiffBrowserProps {
   repoId: string;
-  /** Which commands to call + how to label the header (§6.2). */
-  source:
-    | { mode: 'commit'; oid: string; title: string }
-    | { mode: 'compare'; oid: string; fromLabel: string; toLabel: string };
+  source: DiffBrowserSource;
   /** Header list for the active source (RepoWorkspace: CommitDiff/CompareDiff files). */
   files: FileDiffHeader[];
   /** P11g-rev §1: current scope (lifted to RepoWorkspace). Drives which cards render. */
@@ -321,6 +326,8 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
           visibleFiles.map((f) => (
             <DiffCard
               key={f.path}
+              repoId={repoId}
+              source={source}
               header={f}
               entry={f.binary ? undefined : cacheRef.current.get(`${source.oid}:${f.path}:${mode}`)}
               viewMode={mode}
@@ -338,6 +345,8 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
 // ---------- per-file card (§6.4) ----------
 
 function DiffCard({
+  repoId,
+  source,
   header,
   entry,
   viewMode,
@@ -345,6 +354,8 @@ function DiffCard({
   collapsed,
   onToggle,
 }: {
+  repoId: string;
+  source: DiffBrowserSource;
   header: FileDiffHeader;
   /** undefined for binary headers (never fetched). */
   entry: CardState | undefined;
@@ -392,7 +403,14 @@ function DiffCard({
           removed from the DOM entirely — the whole point of this feature. */}
       {!collapsed && (
         <div className="diff-card-body">
-          <DiffCardBody header={header} entry={entry} viewMode={viewMode} onRetry={onRetry} />
+          <DiffCardBody
+            repoId={repoId}
+            source={source}
+            header={header}
+            entry={entry}
+            viewMode={viewMode}
+            onRetry={onRetry}
+          />
         </div>
       )}
     </div>
@@ -400,16 +418,26 @@ function DiffCard({
 }
 
 function DiffCardBody({
+  repoId,
+  source,
   header,
   entry,
   viewMode,
   onRetry,
 }: {
+  repoId: string;
+  source: DiffBrowserSource;
   header: FileDiffHeader;
   entry: CardState | undefined;
   viewMode: 'diff' | 'file';
   onRetry(path: string): void;
 }) {
+  // P61b: image files (D4; svg excluded) render the image comparison card, which
+  // does its own getImageDiff fetch. Checked BEFORE the binary placeholder since
+  // images are `binary:true` too; non-image binaries keep the placeholder below.
+  if (isImagePath(header.path)) {
+    return <DiffImageCard repoId={repoId} source={source} header={header} />;
+  }
   if (header.binary) return <div className="diff-placeholder">Binary file</div>;
   if (entry === undefined || entry.state === 'idle' || entry.state === 'loading') {
     return (

@@ -1,9 +1,12 @@
-import { lazy, Suspense } from 'react';
-import type { ConflictFile, FileStatus, LineSelection } from '../ipc';
+import { lazy, Suspense, useState } from 'react';
+import type { ConflictFile, FileStatus, ImageDiff, LineSelection } from '../ipc';
 import { DiffSlotView } from './DiffView';
 import type { DiffSlot } from './DiffView';
+import { DiffImageView } from './DiffImageView';
+import type { ImageMode } from './DiffImageView';
 import { ErrorBoundary } from './ErrorBoundary';
 import { detectLanguage } from '../utils/language';
+import { isImagePath } from '../utils/imagePaths';
 
 // Lazy so CodeMirror is code-split out of the main bundle — it must not load
 // until a text-mergeable conflict is actually opened (P12b SHOULD-FIX).
@@ -148,6 +151,53 @@ function ConflictSlotView({
   );
 }
 
+/** P61b: loading / error / ready body for an image slot — the same state recipe
+ *  as DiffSlotView, rendering DiffImageView once the ImageDiff has loaded. */
+function ImageDiffBody({
+  loading,
+  error,
+  diff,
+  mode,
+  onDismissError,
+}: {
+  loading: boolean;
+  error: string | null;
+  diff: ImageDiff | null;
+  mode: ImageMode;
+  onDismissError(): void;
+}) {
+  if (error !== null) {
+    return (
+      <div className="error-banner error-banner-dismissible diff-slot-error" role="alert">
+        <span className="error-banner-text">{error}</span>
+        <button
+          type="button"
+          className="error-dismiss"
+          aria-label="Dismiss error"
+          onClick={onDismissError}
+        >
+          {'×'}
+        </button>
+      </div>
+    );
+  }
+  if (diff === null) {
+    // Loading (or a transient null before the first fetch resolves).
+    return (
+      <div className="diff-slot-loading skeleton-group" aria-hidden="true">
+        {Array.from({ length: 3 }, (_, i) => (
+          <div key={i} className="skeleton-row" />
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className={loading ? 'diff-stale' : undefined}>
+      <DiffImageView diff={diff} mode={mode} />
+    </div>
+  );
+}
+
 export interface DiffOverlayProps {
   /** Non-null by construction — App only mounts the overlay when a slot is open. */
   slot: DiffSlot;
@@ -169,6 +219,13 @@ export interface DiffOverlayProps {
    *  it refetches the open slot with the new `intraline` flag (App owns that). */
   intraline: boolean;
   onSetIntraline(v: boolean): void;
+  /** P61b: image-diff data for the open slot when its path is an image (D4).
+   *  App fetches getImageDiff in parallel with the slot; when the path is an
+   *  image the overlay swaps the Diff/File/Split group for an image-mode
+   *  switcher and renders DiffImageView instead of DiffSlotView. */
+  imageDiff?: ImageDiff | null;
+  imageLoading?: boolean;
+  imageError?: string | null;
   /** P17c: partial-staging direction (null = read-only). App derives this from
    *  the slot kind + loaded diff; forwarded to the DiffSlotView branch ONLY. */
   stageable: null | 'stage' | 'unstage';
@@ -198,8 +255,17 @@ export function DiffOverlay({
   onDiscardLines,
   intraline,
   onSetIntraline,
+  imageDiff = null,
+  imageLoading = false,
+  imageError = null,
 }: DiffOverlayProps) {
   const lang = detectLanguage(meta.path);
+  // P61b: image slots (D4) replace the text diff with DiffImageView. Never for
+  // conflict/ai-proposal slots (those are the CodeMirror editor). SVG is a text
+  // diff (excluded by isImagePath). `imageMode` is the switcher's local state.
+  const isImage =
+    meta.kind !== 'conflict' && meta.kind !== 'aiProposal' && isImagePath(meta.path);
+  const [imageMode, setImageMode] = useState<ImageMode>('sideBySide');
   return (
     <div className="diff-overlay" role="region" aria-label={`Diff: ${meta.path}`}>
       <div className="diff-overlay-header">
@@ -231,45 +297,75 @@ export function DiffOverlay({
           </button>
         )}
         {/* File/Diff/Split does nothing for the conflict/proposal CodeMirror
-            editor (it has its own Unified/Side-by-side toggle) — hide it there. */}
+            editor (it has its own Unified/Side-by-side toggle) — hide it there.
+            P61b: an image slot shows the image-mode switcher instead. */}
         {meta.kind !== 'conflict' && meta.kind !== 'aiProposal' && (
-          <>
-            <div className="diff-view-toggle" role="group" aria-label="View mode">
+          isImage ? (
+            <div className="diff-view-toggle" role="group" aria-label="Image compare mode">
               <button
                 type="button"
-                className={viewMode === 'file' ? 'active' : ''}
-                aria-pressed={viewMode === 'file'}
-                onClick={() => onSetViewMode('file')}
+                className={imageMode === 'sideBySide' ? 'active' : ''}
+                aria-pressed={imageMode === 'sideBySide'}
+                onClick={() => setImageMode('sideBySide')}
               >
-                File
+                Side-by-side
               </button>
               <button
                 type="button"
-                className={viewMode === 'diff' ? 'active' : ''}
-                aria-pressed={viewMode === 'diff'}
-                onClick={() => onSetViewMode('diff')}
+                className={imageMode === 'onion' ? 'active' : ''}
+                aria-pressed={imageMode === 'onion'}
+                onClick={() => setImageMode('onion')}
               >
-                Diff
+                Onion
               </button>
               <button
                 type="button"
-                className={viewMode === 'split' ? 'active' : ''}
-                aria-pressed={viewMode === 'split'}
-                onClick={() => onSetViewMode('split')}
+                className={imageMode === 'swipe' ? 'active' : ''}
+                aria-pressed={imageMode === 'swipe'}
+                onClick={() => setImageMode('swipe')}
               >
-                Split
+                Swipe
               </button>
             </div>
-            <button
-              type="button"
-              className={`diff-intra-toggle${intraline ? ' active' : ''}`}
-              aria-pressed={intraline}
-              title="Highlight the changed words within each modified line"
-              onClick={() => onSetIntraline(!intraline)}
-            >
-              {'Highlight changes'}
-            </button>
-          </>
+          ) : (
+            <>
+              <div className="diff-view-toggle" role="group" aria-label="View mode">
+                <button
+                  type="button"
+                  className={viewMode === 'file' ? 'active' : ''}
+                  aria-pressed={viewMode === 'file'}
+                  onClick={() => onSetViewMode('file')}
+                >
+                  File
+                </button>
+                <button
+                  type="button"
+                  className={viewMode === 'diff' ? 'active' : ''}
+                  aria-pressed={viewMode === 'diff'}
+                  onClick={() => onSetViewMode('diff')}
+                >
+                  Diff
+                </button>
+                <button
+                  type="button"
+                  className={viewMode === 'split' ? 'active' : ''}
+                  aria-pressed={viewMode === 'split'}
+                  onClick={() => onSetViewMode('split')}
+                >
+                  Split
+                </button>
+              </div>
+              <button
+                type="button"
+                className={`diff-intra-toggle${intraline ? ' active' : ''}`}
+                aria-pressed={intraline}
+                title="Highlight the changed words within each modified line"
+                onClick={() => onSetIntraline(!intraline)}
+              >
+                {'Highlight changes'}
+              </button>
+            </>
+          )
         )}
         <button
           type="button"
@@ -296,6 +392,16 @@ export function DiffOverlay({
               onClose={onClose}
               onResolveConflictText={onResolveConflictText}
               mutating={mutating}
+            />
+          </ErrorBoundary>
+        ) : isImage ? (
+          <ErrorBoundary label="Image diff">
+            <ImageDiffBody
+              loading={imageLoading}
+              error={imageError}
+              diff={imageDiff}
+              mode={imageMode}
+              onDismissError={onClose}
             />
           </ErrorBoundary>
         ) : (

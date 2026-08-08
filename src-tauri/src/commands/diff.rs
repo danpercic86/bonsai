@@ -171,3 +171,26 @@ pub(crate) async fn compare_with_head_file_diff_inner(
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
+
+/// Both sides of an image comparison as base64 (P61b §D2). Read-only; emits no
+/// `repo-changed`. Errors: `noRepo` | `git`.
+#[tauri::command]
+pub async fn get_image_diff(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    request: ImageDiffRequest,
+) -> Result<ImageDiff, AppError> {
+    get_image_diff_inner(state.inner(), &repo_id, request).await
+}
+
+/// Runtime-free core of `get_image_diff` (unit-testable without a Tauri app).
+pub(crate) async fn get_image_diff_inner(
+    state: &AppState,
+    repo_id: &str,
+    request: ImageDiffRequest,
+) -> Result<ImageDiff, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || image_diff::get_image_diff(&workdir, &request))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}

@@ -37,6 +37,8 @@ import type {
   GraphLayout,
   GraphPrefs,
   HeadInfo,
+  ImageDiff,
+  ImageDiffRequest,
   JobStatus,
   LineSelection,
   ListView,
@@ -59,6 +61,7 @@ import type {
 } from '../ipc';
 import { usePushToast } from '../ToastContext';
 import { errorMessage } from '../utils/errors';
+import { isImagePath } from '../utils/imagePaths';
 
 import { useRemoteOps, type NonFfPullInfo } from './repoWorkspace/useRemoteOps';
 import { useCommitActions } from './repoWorkspace/useCommitActions';
@@ -479,6 +482,18 @@ export function RepoWorkspace({
   const [intraline, setIntraline] = useState(false);
   const intralineRef = useRef(intraline);
   intralineRef.current = intraline;
+  // P61b: image-diff data for the open overlay slot when its path is an image
+  // (D4). Fetched in parallel with the text slot (getWorkdirFileDiff still runs
+  // and returns a cheap binary FileDiff); DiffOverlay renders DiffImageView from
+  // this instead of the text diff. `imageDiffReqId` guards against races.
+  const [imageDiff, setImageDiff] = useState<ImageDiff | null>(null);
+  const [imageDiffLoading, setImageDiffLoading] = useState(false);
+  const [imageDiffError, setImageDiffError] = useState<string | null>(null);
+  const imageDiffReqId = useRef(0);
+  // Last image path fetched: keep the previous image dimmed during a same-file
+  // refresh, but clear it when a DIFFERENT image opens (no wrong image under the
+  // new header).
+  const imageDiffPathRef = useRef<string | null>(null);
 
   // P5 §5.2: graph right-click context menu (position + prebuilt items).
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(
@@ -626,6 +641,56 @@ export function RepoWorkspace({
   // toggle without widening their (stable) callback deps.
   const overlayMetaRef = useRef(overlayMeta);
   overlayMetaRef.current = overlayMeta;
+
+  // P61b: when the open overlay slot is an image (D4), fetch getImageDiff for
+  // the current context and hand it to DiffOverlay. The overlay only ever serves
+  // workdir kinds (staged/unstaged/untracked) — commit/compare per-file diffs
+  // live in DiffBrowser — so the request is always a Workdir one. Depends on the
+  // status snapshot identity so a repo-changed refresh re-reads the image too
+  // (mirrors how the text slot refetches on status change). Non-image or
+  // conflict/proposal slots clear the image state.
+  useEffect(() => {
+    const meta = overlayMetaRef.current;
+    const isWorkdirKind =
+      meta !== null &&
+      (meta.kind === 'staged' || meta.kind === 'unstaged' || meta.kind === 'untracked');
+    if (meta === null || !isWorkdirKind || !isImagePath(meta.path)) {
+      imageDiffReqId.current += 1;
+      imageDiffPathRef.current = null;
+      setImageDiff(null);
+      setImageDiffLoading(false);
+      setImageDiffError(null);
+      return;
+    }
+    const request: ImageDiffRequest = {
+      kind: 'workdir',
+      path: meta.path,
+      origPath: meta.origPath,
+      staged: meta.kind === 'staged',
+    };
+    const id = ++imageDiffReqId.current;
+    // A different image than the one currently shown -> drop the stale preview.
+    if (imageDiffPathRef.current !== meta.path) setImageDiff(null);
+    imageDiffPathRef.current = meta.path;
+    setImageDiffLoading(true);
+    setImageDiffError(null);
+    void ipc.getImageDiff(repoId, request).then(
+      (d) => {
+        if (id !== imageDiffReqId.current) return;
+        setImageDiff(d);
+        setImageDiffLoading(false);
+      },
+      (e) => {
+        if (id !== imageDiffReqId.current) return;
+        setImageDiff(null);
+        setImageDiffError(errorMessage(e));
+        setImageDiffLoading(false);
+      },
+    );
+    // overlayMeta is read via ref; the primitive deps below capture every change
+    // that matters (which file, which section) plus a status-driven refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repoId, overlayMeta?.path, overlayMeta?.kind, overlayMeta?.origPath, status]);
 
   // P17c: which granular action the open overlay offers, or null (read-only).
   // Workdir kinds only; renamed/binary/tooLarge/no-diff fall back to whole-file
@@ -2511,6 +2576,9 @@ export function RepoWorkspace({
           onSetViewMode={handleSetViewMode}
           intraline={intraline}
           onSetIntraline={handleToggleIntraline}
+          imageDiff={imageDiff}
+          imageDiffLoading={imageDiffLoading}
+          imageDiffError={imageDiffError}
           stageable={stageable}
           onStageLines={handleStageLines}
           onStageHunk={handleStageHunk}
