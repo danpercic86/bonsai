@@ -299,17 +299,21 @@ impl CredCache {
         });
     }
 
-    // ---- small lock helpers (poisoning is an unrecoverable bug, §10.5) ----
+    // ---- small lock helpers (§10.5: RECOVER from poison, never panic) ----
+    // These run inside libgit2's credentials C-callback trampoline: a panic
+    // here would permanently kill every fetch/pull/push until app restart.
+    // Poison is benign for this map — every slot is left consistent between
+    // statements — so recover the inner value instead of propagating.
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Slot>> {
-        self.state.lock().expect("cred cache mutex poisoned")
+        self.state.lock().unwrap_or_else(|p| p.into_inner())
     }
 
     fn wait<'a>(
         &self,
         guard: std::sync::MutexGuard<'a, HashMap<String, Slot>>,
     ) -> std::sync::MutexGuard<'a, HashMap<String, Slot>> {
-        self.cv.wait(guard).expect("cred cache mutex poisoned")
+        self.cv.wait(guard).unwrap_or_else(|p| p.into_inner())
     }
 
     /// Insert the slot if absent, and remember the latest fill inputs so a
@@ -691,5 +695,33 @@ mod tests {
             "key un-wedged: a subsequent fresh fill succeeds"
         );
         assert_eq!(counter.load(Ordering::SeqCst), 2);
+    }
+
+    /// Audit 2026-08-07 §3.4: a poisoned mutex must be RECOVERED, not
+    /// propagated — a panic here runs inside libgit2's credentials C-callback
+    /// trampoline and would kill every remote op until restart.
+    #[test]
+    fn poisoned_lock_recovers_instead_of_panicking() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let cache = CredCache::new(
+            counting_fill(Arc::clone(&counter)),
+            Duration::from_secs(60),
+            Duration::from_secs(30),
+        );
+
+        // Poison the mutex: panic on a helper thread while holding the guard.
+        let poisoner = Arc::clone(&cache);
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.state.lock().expect("first lock");
+            panic!("deliberate poison");
+        })
+        .join();
+        assert!(cache.state.lock().is_err(), "mutex must actually be poisoned");
+
+        // The cache keeps working through the recovering lock helpers.
+        let r = cache
+            .resolve(None, "https://example.com/repo.git", false)
+            .expect("resolve must survive a poisoned mutex");
+        assert_eq!(r.creds, ("u".to_string(), "p".to_string()));
     }
 }

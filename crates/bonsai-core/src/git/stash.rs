@@ -263,9 +263,13 @@ fn create_staged_stash(
         let abs = workdir.join(p);
         if abs.is_file() {
             // Staged add/modify with the file present → FOLD the worktree content.
-            let bytes = std::fs::read(&abs)
+            // `blob_path` (libgit2 `git_blob_create_fromdisk`) runs the CHECK-IN
+            // filter chain (CRLF/ident) for files inside the workdir — raw
+            // `fs::read` would embed CRLF blobs in the stash tree under
+            // core.autocrlf=true (audit 2026-08-07 §2.2).
+            let blob = repo
+                .blob_path(&abs)
                 .map_err(|e| AppError::Git(format!("read {}: {e}", p.display())))?;
-            let blob = repo.blob(&bytes)?;
             let mode = staged_entry_mode(&index, &head_tree, p);
             wt.add(&make_index_entry(p, blob, mode)?)?;
         } else if let Some(e) = index.get_path(p, 0) {
@@ -557,9 +561,9 @@ pub fn apply_stash(
                     Ok(ApplyStashOutcome::Applied)
                 }
             }
-            Err(e) if e.code() == git2::ErrorCode::Conflict => Ok(ApplyStashOutcome::Conflicts {
-                paths: conflict_paths(workdir)?,
-            }),
+            Err(e) if e.code() == git2::ErrorCode::Conflict => {
+                checkout_conflict_outcome(workdir, &e)
+            }
             Err(e) => Err(e.into()),
         };
     }
@@ -597,9 +601,7 @@ pub fn apply_stash(
                 Ok(ApplyStashOutcome::AppliedSkippingReserved { skipped: reserved })
             }
         }
-        Err(e) if e.code() == git2::ErrorCode::Conflict => Ok(ApplyStashOutcome::Conflicts {
-            paths: conflict_paths(workdir)?,
-        }),
+        Err(e) if e.code() == git2::ErrorCode::Conflict => checkout_conflict_outcome(workdir, &e),
         Err(e) => Err(e.into()),
     }
 }
@@ -651,9 +653,9 @@ pub fn pop_stash(
             }
             // A checkout-level conflict means nothing droppable was applied →
             // stash retained.
-            Err(e) if e.code() == git2::ErrorCode::Conflict => Ok(ApplyStashOutcome::Conflicts {
-                paths: conflict_paths(workdir)?,
-            }),
+            Err(e) if e.code() == git2::ErrorCode::Conflict => {
+                checkout_conflict_outcome(workdir, &e)
+            }
             Err(e) => Err(e.into()),
         };
     }
@@ -689,9 +691,7 @@ pub fn pop_stash(
                 Ok(ApplyStashOutcome::AppliedSkippingReserved { skipped: reserved })
             }
         }
-        Err(e) if e.code() == git2::ErrorCode::Conflict => Ok(ApplyStashOutcome::Conflicts {
-            paths: conflict_paths(workdir)?,
-        }),
+        Err(e) if e.code() == git2::ErrorCode::Conflict => checkout_conflict_outcome(workdir, &e),
         Err(e) => Err(e.into()),
     }
 }
@@ -703,6 +703,27 @@ pub fn drop_stash(workdir: &Path, index: usize) -> Result<(), AppError> {
     let mut repo = open_workdir_repo(workdir)?;
     repo.stash_drop(index)?;
     Ok(())
+}
+
+/// Maps a `GIT_ECONFLICT` from `stash_apply` to an outcome. A MERGE-level
+/// conflict leaves conflict entries in the index → `Conflicts { paths }`. A
+/// CHECKOUT-level conflict (a dirty/untracked file in the way) means NOTHING
+/// was applied and the index has no conflict entries — an empty `Conflicts`
+/// would render as "conflicts" with no paths, so surface libgit2's message
+/// (it names the blocking file) as a hard error instead. The stash is
+/// retained either way (apply never drops).
+fn checkout_conflict_outcome(
+    workdir: &Path,
+    e: &git2::Error,
+) -> Result<ApplyStashOutcome, AppError> {
+    let paths = conflict_paths(workdir)?;
+    if paths.is_empty() {
+        return Err(AppError::Git(format!(
+            "stash apply was blocked at checkout: {}. Stash retained.",
+            e.message()
+        )));
+    }
+    Ok(ApplyStashOutcome::Conflicts { paths })
 }
 
 /// Sorted conflicted paths — the exact set `list_conflicts` returns (P8 reuse).
@@ -1970,5 +1991,79 @@ mod tests {
             "preflight must not write anything"
         );
         assert_eq!(list_stashes(d).expect("list").len(), 1, "stash retained");
+    }
+
+    // ===================================================== audit 2026-08-07
+
+    /// §2.2: `create_staged_stash` must fold CHECK-IN FILTERED worktree bytes.
+    /// Under `core.autocrlf=true` a CRLF worktree file must land in the stash
+    /// tree as an LF blob (what `git add` would stage), never raw CRLF.
+    #[test]
+    fn staged_stash_folds_filtered_worktree_bytes_under_autocrlf() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        let repo = s9_init(d);
+        repo.config()
+            .expect("config")
+            .set_bool("core.autocrlf", true)
+            .expect("autocrlf");
+        s9_commit(d, "base", &[("f.txt", "one\r\n")]); // blob is LF via filter
+
+        // Stage a CRLF modification, then edit the worktree AGAIN (CRLF) so the
+        // stash fold has fresher worktree content than the staged blob.
+        std::fs::write(d.join("f.txt"), "one\r\ntwo\r\n").expect("edit");
+        crate::git::stage::stage_paths(d, &["f.txt".to_string()]).expect("stage");
+        std::fs::write(d.join("f.txt"), "one\r\ntwo\r\nthree\r\n").expect("edit again");
+
+        let res = create_stash(d, None, StashScope::Staged).expect("staged stash");
+        assert!(res.created);
+
+        let entries = list_stashes(d).expect("list");
+        let repo2 = git2::Repository::open(d).expect("open");
+        let tree = repo2
+            .find_commit(git2::Oid::from_str(&entries[0].oid).expect("oid"))
+            .expect("stash commit")
+            .tree()
+            .expect("stash tree");
+        let blob_id = tree.get_name("f.txt").expect("f.txt in stash tree").id();
+        let content = repo2.find_blob(blob_id).expect("blob").content().to_vec();
+        assert_eq!(
+            content, b"one\ntwo\nthree\n",
+            "stash tree blob must be LF-only (check-in filtered)"
+        );
+    }
+
+    /// §3.2: a CHECKOUT-level GIT_ECONFLICT (a dirty file in the way; nothing
+    /// applied, no index conflict entries) must surface as `AppError::Git`
+    /// carrying libgit2's message — NOT as `Conflicts { paths: [] }`. The
+    /// stash is retained and the dirty file untouched.
+    #[test]
+    fn apply_blocked_at_checkout_errors_instead_of_empty_conflicts() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        s9_init(d);
+        s9_commit(d, "base", &[("f.txt", "base\n")]);
+
+        // Stash a change (worktree reverts to base), then dirty the same file.
+        std::fs::write(d.join("f.txt"), "stashed\n").expect("edit");
+        assert!(create_stash(d, None, StashScope::All).expect("stash").created);
+        std::fs::write(d.join("f.txt"), "dirty\n").expect("dirty");
+
+        for (label, result) in [
+            ("apply", apply_stash(d, 0, false)),
+            ("pop", pop_stash(d, 0, false)),
+        ] {
+            let err = result.expect_err(&format!("{label} must error, not empty Conflicts"));
+            assert!(
+                matches!(&err, AppError::Git(m) if m.contains("blocked at checkout")),
+                "{label}: got {err:?}"
+            );
+        }
+        assert_eq!(list_stashes(d).expect("list").len(), 1, "stash retained");
+        assert_eq!(
+            std::fs::read_to_string(d.join("f.txt")).expect("read"),
+            "dirty\n",
+            "the blocking dirty file is untouched"
+        );
     }
 }

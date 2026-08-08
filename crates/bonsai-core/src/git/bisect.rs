@@ -498,6 +498,13 @@ pub fn bisect_reset(workdir: &Path) -> Result<(), AppError> {
 /// to the original head, hard-restore the worktree+index, drop the state file.
 fn restore_to_original(repo: &git2::Repository, state: &BisectState) -> Result<(), AppError> {
     let orig = oid(&state.original_head)?;
+    let orig_commit = repo.find_commit(orig)?;
+    // Data-loss guard (mirrors `checkout_commit`): refuse BEFORE touching HEAD
+    // if the force checkout would clobber an untracked file (e.g. one generated
+    // during a bisect test run) present in the original tree. The state file is
+    // only removed at the end, so a refusal leaves the bisect intact — the user
+    // can remove/stash the file and retry the reset.
+    ensure_no_untracked_collision(repo, &orig_commit.tree()?)?;
     match &state.original_branch {
         Some(name) => {
             repo.set_head(&format!("refs/heads/{name}"))?;
@@ -506,7 +513,6 @@ fn restore_to_original(repo: &git2::Repository, state: &BisectState) -> Result<(
             repo.set_head_detached(orig)?;
         }
     }
-    let orig_commit = repo.find_commit(orig)?;
     let mut co = git2::build::CheckoutBuilder::new();
     co.force();
     repo.checkout_tree(orig_commit.as_object(), Some(&mut co))?;
@@ -921,6 +927,50 @@ mod tests {
 
         // The bisect state is intact — the refusals mutated nothing.
         assert!(bisect_in_progress(&repo), "bisect still active after refusals");
+    }
+
+    /// Audit 2026-08-07 §3.1: the restore path shares the untracked-clobber
+    /// guard. An untracked file (e.g. generated during a bisect test run)
+    /// colliding with a tracked path at the ORIGINAL head makes `bisect_reset`
+    /// refuse: file content preserved, bisect state intact and retryable.
+    #[test]
+    fn reset_refuses_untracked_collision_and_stays_retryable() {
+        let (dir, oids) = linear_repo_with_bug(6, 3);
+        let d = dir.path();
+        start_bisect(d, &oids[5], &[oids[0].clone()]).expect("start");
+        let repo = git2::Repository::open(d).expect("open");
+        assert!(bisect_in_progress(&repo));
+
+        // The midpoint predates c5, so its checkout removed f5.txt. Plant an
+        // UNTRACKED f5.txt that the restore's force checkout would clobber.
+        assert!(!d.join("f5.txt").exists(), "midpoint must predate c5");
+        std::fs::write(d.join("f5.txt"), "precious build artifact\n").expect("plant");
+
+        let err = bisect_reset(d).expect_err("must refuse the clobber");
+        assert!(
+            matches!(&err, AppError::Git(m) if m.contains("f5.txt")
+                && m.contains("would be overwritten")),
+            "got {err:?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(d.join("f5.txt")).expect("read"),
+            "precious build artifact\n",
+            "untracked file untouched"
+        );
+        assert!(
+            bisect_in_progress(&repo),
+            "state intact — the refusal must leave the bisect retryable"
+        );
+
+        // Clear the collision → the retry succeeds and restores the branch.
+        std::fs::remove_file(d.join("f5.txt")).expect("remove");
+        bisect_reset(d).expect("retry succeeds");
+        let re = git2::Repository::open(d).expect("open");
+        assert!(!bisect_in_progress(&re));
+        assert_eq!(
+            re.head().expect("head").peel_to_commit().expect("c").id().to_string(),
+            oids[5]
+        );
     }
 
     #[test]

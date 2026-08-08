@@ -350,12 +350,12 @@ mod tests {
     }
 
     /// A rename-shaped unstaged state (worktree rename, orig_path passed like
-    /// the frontend does) is rejected with `Other`; neither file is touched
-    /// (§6.1.4). NOTE: `apply_find_similar` does not set FIND_FOR_UNTRACKED,
-    /// so `diff_index_to_workdir` never actually pairs an untracked rename
-    /// target into one `Renamed` delta — the explicit renamed guard is purely
-    /// defensive and this state is rejected as a stale selection instead
-    /// (still `AppError::Other`, still zero writes).
+    /// the frontend does) is rejected; neither file is touched (§6.1.4).
+    /// NOTE: `apply_find_similar` does not set FIND_FOR_UNTRACKED, so
+    /// `diff_index_to_workdir` never actually pairs an untracked rename
+    /// target into one `Renamed` delta — the two-token pathspec instead
+    /// matches TWO deltas, which `collect_file_diff` refuses outright (audit
+    /// 2026-08-07 §3.3) rather than merging them. Still zero writes.
     #[test]
     fn renamed_rejected() {
         let dir = crate::testutil::scratch_dir();
@@ -367,13 +367,13 @@ mod tests {
         std::fs::rename(d.join("old.txt"), d.join("new.txt")).expect("rename");
 
         // Called with the TRACKED side (passes the tracked-only guard) and the
-        // rename partner as orig_path — the diff pairs them into one Renamed
-        // delta and the guard rejects it.
+        // rename partner as orig_path — the pathspec matches both unpaired
+        // deltas and the multi-delta guard rejects before any write.
         let s = vec![sel(LineKind::Del, Some(1), None)];
         let err =
             discard_partial(d, "old.txt", Some("new.txt"), &s).expect_err("renamed diff");
         assert!(
-            matches!(&err, AppError::Other(m) if m.contains("renamed") || m.contains("stale")),
+            matches!(&err, AppError::Git(m) if m.contains("multiple")),
             "got: {err:?}"
         );
         // Nothing changed on disk.

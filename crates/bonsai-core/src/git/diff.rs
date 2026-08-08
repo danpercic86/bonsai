@@ -250,6 +250,10 @@ struct Collect {
     status: FileStatus,
     binary: bool,
     aborted: bool,
+    /// The pathspec matched a SECOND, different-path delta (rename pairing
+    /// failed): merging both files' hunks would corrupt the FileDiff → abort
+    /// the walk and error out.
+    multi: bool,
     hunks: Vec<Hunk>,
     cur: Option<Hunk>,
     emitted: usize,
@@ -266,6 +270,7 @@ pub(crate) fn collect_file_diff(diff: &git2::Diff) -> Result<Option<FileDiff>, A
         status: FileStatus::Modified,
         binary: false,
         aborted: false,
+        multi: false,
         hunks: Vec::new(),
         cur: None,
         emitted: 0,
@@ -273,14 +278,22 @@ pub(crate) fn collect_file_diff(diff: &git2::Diff) -> Result<Option<FileDiff>, A
 
     let mut file_cb = |delta: git2::DiffDelta, _progress: f32| -> bool {
         let mut s = state.borrow_mut();
-        s.seen = true;
-        s.status = map_status(delta.status());
-        s.path = delta
+        let path = delta
             .new_file()
             .path_bytes()
             .or_else(|| delta.old_file().path_bytes())
             .map(lossy)
             .unwrap_or_default();
+        // A second delta with a DIFFERENT path: refuse rather than silently
+        // merging two files' hunks into one FileDiff. A same-path re-entry
+        // (split hunk batches) keeps accumulating as before.
+        if s.seen && path != s.path {
+            s.multi = true;
+            return false; // aborts foreach with GIT_EUSER
+        }
+        s.seen = true;
+        s.status = map_status(delta.status());
+        s.path = path;
         s.orig_path = match delta.status() {
             git2::Delta::Renamed | git2::Delta::Copied => {
                 delta.old_file().path_bytes().map(lossy)
@@ -359,6 +372,11 @@ pub(crate) fn collect_file_diff(diff: &git2::Diff) -> Result<Option<FileDiff>, A
     let mut s = state.into_inner();
     match result {
         Ok(()) => {}
+        Err(e) if e.code() == git2::ErrorCode::User && s.multi => {
+            return Err(AppError::Git(
+                "pathspec matched multiple diff deltas; refresh the diff".to_string(),
+            ));
+        }
         Err(e) if e.code() == git2::ErrorCode::User && s.aborted => {}
         Err(e) => return Err(e.into()),
     }
@@ -1328,5 +1346,57 @@ mod tests {
         assert!(lines.contains(&(LineKind::Del, "CHANGED")), "{lines:?}");
         assert!(lines.contains(&(LineKind::Add, "line2")), "{lines:?}");
         assert!(lines.contains(&(LineKind::Context, "line1")), "{lines:?}");
+    }
+
+    /// Audit 2026-08-07 §3.3: `collect_file_diff` must ERROR when the walked
+    /// diff contains two deltas with DIFFERENT paths (a pathspec that matched
+    /// twice), never merge both files' hunks into one corrupted FileDiff.
+    /// Exercised directly with an unrestricted two-file diff.
+    #[test]
+    fn collect_file_diff_refuses_second_delta() {
+        let dir = init_scratch();
+        let p = dir.path();
+
+        std::fs::write(p.join("a.txt"), "a1\n").expect("write");
+        std::fs::write(p.join("b.txt"), "b1\n").expect("write");
+        stage_paths(p, &["a.txt".into(), "b.txt".into()]).expect("stage");
+        create_commit(p, "base", None, false).expect("commit");
+        std::fs::write(p.join("a.txt"), "a2\n").expect("edit a");
+        std::fs::write(p.join("b.txt"), "b2\n").expect("edit b");
+
+        let repo = git2::Repository::open(p).expect("open");
+        let diff = repo
+            .diff_index_to_workdir(None, None)
+            .expect("two-delta diff");
+        let err = collect_file_diff(&diff).expect_err("second delta must error");
+        assert!(
+            matches!(&err, AppError::Git(m) if m.contains("multiple")),
+            "got {err:?}"
+        );
+    }
+
+    /// Same-path re-entry must KEEP working: a single-file diff with two
+    /// far-apart edits (two hunks, one delta) still collects normally.
+    #[test]
+    fn collect_file_diff_same_path_two_hunks_still_collects() {
+        let dir = init_scratch();
+        let p = dir.path();
+
+        let base: String = (1..=20).map(|i| format!("line{i}\n")).collect();
+        std::fs::write(p.join("f.txt"), &base).expect("write");
+        stage_paths(p, &["f.txt".into()]).expect("stage");
+        create_commit(p, "base", None, false).expect("commit");
+        let edited = base.replace("line2\n", "LINE2\n").replace("line19\n", "LINE19\n");
+        std::fs::write(p.join("f.txt"), edited).expect("edit");
+
+        let repo = git2::Repository::open(p).expect("open");
+        let diff = repo
+            .diff_index_to_workdir(None, None)
+            .expect("one-delta diff");
+        let fd = collect_file_diff(&diff)
+            .expect("collect")
+            .expect("one delta present");
+        assert_eq!(fd.path, "f.txt");
+        assert_eq!(fd.hunks.len(), 2, "two far-apart hunks, one file");
     }
 }

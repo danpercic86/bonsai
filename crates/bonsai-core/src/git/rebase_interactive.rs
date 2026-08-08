@@ -524,6 +524,12 @@ fn finish_interactive(
     state: &InteractiveState,
 ) -> Result<RebaseOutcome, AppError> {
     let final_tip = repo.head()?.peel_to_commit()?.id();
+    // Data-loss guard (mirrors Start, rebase_interactive.rs `start`): refuse
+    // BEFORE any ref mutation if the force checkout would clobber an untracked
+    // file present in the final tree. The state file survives a refusal (it is
+    // removed last), so the rebase stays finishable/abortable after the user
+    // clears the file.
+    ensure_no_untracked_collision(repo, &repo.find_commit(final_tip)?.tree()?)?;
     // Clear any residual sequencer state (e.g. a lingering CHERRY_PICK_HEAD when
     // finish is reached via the M1 out-of-range-cursor path, which skips
     // `commit_current_op`'s own cleanup).
@@ -640,12 +646,17 @@ fn restore_to_original(
 ) -> Result<(), AppError> {
     let orig_oid = git2::Oid::from_str(&state.original_tip)
         .map_err(|_| AppError::Git("corrupt state: bad original tip".to_string()))?;
+    let orig = repo.find_commit(orig_oid)?;
+    // Data-loss guard (mirrors Start): refuse BEFORE any ref mutation if the
+    // force checkout back to the original tip would clobber an untracked file
+    // (e.g. one created mid-rebase). The state file is removed last, so a
+    // refusal keeps the rebase abortable — clear the file and retry.
+    ensure_no_untracked_collision(repo, &orig.tree()?)?;
     let _ = repo.cleanup_state();
     let branch_ref = format!("refs/heads/{}", state.head_name);
     // Move the branch ref back FIRST (a partial finish may have advanced it).
     repo.reference(&branch_ref, orig_oid, true, "rebase -i (abort)")?;
     repo.set_head(&branch_ref)?;
-    let orig = repo.find_commit(orig_oid)?;
     let mut co = git2::build::CheckoutBuilder::new();
     co.force();
     repo.checkout_tree(orig.as_object(), Some(&mut co))?;

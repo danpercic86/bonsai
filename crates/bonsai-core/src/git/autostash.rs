@@ -115,9 +115,20 @@ pub fn pop_after_success(
             }
         }
         // A checkout-level conflict (rare) means nothing droppable was applied
-        // → stash retained.
+        // → stash retained. When the index holds no conflict entries (nothing
+        // was applied at all), an empty Conflicted list would render as
+        // "conflicts" with no paths — surface libgit2's message instead (it
+        // names the blocking file); the stash stays safe at stash@{0}.
         Err(e) if e.code() == git2::ErrorCode::Conflict => {
-            let paths = list_conflicts(workdir)?.into_iter().map(|c| c.path).collect();
+            let paths: Vec<String> =
+                list_conflicts(workdir)?.into_iter().map(|c| c.path).collect();
+            if paths.is_empty() {
+                return Err(AppError::Git(format!(
+                    "operation succeeded, but re-applying your stashed changes was \
+                     blocked at checkout: {}. Your changes are safe at stash@{{0}}.",
+                    e.message()
+                )));
+            }
             Ok(PopResult::Conflicted(paths))
         }
         // Rare non-conflict failure: the operation HAS ALREADY landed and

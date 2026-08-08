@@ -345,6 +345,15 @@ pub fn checkout_branch(workdir: &Path, name: &str) -> Result<(), AppError> {
         return Ok(());
     }
 
+    // Refuse if the branch is checked out in ANOTHER worktree (git-like:
+    // "fatal: '<b>' is already checked out at '<path>'") — two worktrees on
+    // one branch corrupt each other's view. Runs before any side effect.
+    if let Some(other) = worktree::branch_checked_out_elsewhere(workdir, name)? {
+        return Err(AppError::BranchCheckedOutElsewhere(format!(
+            "branch '{name}' is already checked out at '{other}'"
+        )));
+    }
+
     let target_oid = branch
         .get()
         .target()
@@ -718,6 +727,17 @@ pub fn checkout_remote(workdir: &Path, remote_shorthand: &str) -> Result<(), App
         Err(e) if e.code() == git2::ErrorCode::NotFound => (remote_tip, true),
         Err(e) => return Err(e.into()),
     };
+
+    // Reusing an EXISTING local branch: refuse if it is checked out in another
+    // worktree (a just-created branch cannot be). Mirrors `checkout_branch`;
+    // runs before any side effect.
+    if !created {
+        if let Some(other) = worktree::branch_checked_out_elsewhere(workdir, local_name)? {
+            return Err(AppError::BranchCheckedOutElsewhere(format!(
+                "branch '{local_name}' is already checked out at '{other}'"
+            )));
+        }
+    }
 
     // SAFE checkout FIRST (matches `checkout_branch`): a conflict leaves HEAD +
     // worktree untouched AND nothing has been created yet.
@@ -1904,6 +1924,65 @@ mod checkout_autostash_tests {
             Some("free"),
             "switched to the free branch"
         );
+    }
+
+    /// Audit 2026-08-07 §3.5: the plain `checkout_branch` shares the
+    /// other-worktree guard — git itself refuses checking out a branch that is
+    /// already checked out in another worktree. Refusal precedes any side
+    /// effect (HEAD and worktree unchanged).
+    #[test]
+    fn checkout_branch_refuses_branch_in_other_worktree() {
+        use crate::git::worktree::add_worktree;
+
+        let dir = crate::testutil::scratch_dir();
+        let repo_dir = dir.path().join("repo");
+        let d = repo_dir.as_path();
+        ca_init(d);
+        ca_commit(d, "base", &[("a.txt", "base\n")]);
+        create_branch(d, "feature").expect("create feature");
+        let created = add_worktree(d, "feature", "feature").expect("add worktree on feature");
+
+        let head_before = ca_head_oid(d);
+        let branch_before = ca_head_branch(d);
+        let err = checkout_branch(d, "feature").expect_err("must refuse");
+        match &err {
+            AppError::BranchCheckedOutElsewhere(m) => {
+                assert!(m.contains("already checked out at"), "git-like message: {m}");
+                assert!(m.contains(&created.abs_path), "names the worktree: {m}");
+            }
+            other => panic!("expected BranchCheckedOutElsewhere, got {other:?}"),
+        }
+        assert_eq!(ca_head_oid(d), head_before, "HEAD oid unchanged");
+        assert_eq!(ca_head_branch(d), branch_before, "HEAD branch unchanged");
+    }
+
+    /// Audit 2026-08-07 §3.5: `checkout_remote` reusing an EXISTING local
+    /// branch that lives in another worktree must refuse the same way (a
+    /// freshly-created tracking branch cannot be elsewhere).
+    #[test]
+    fn checkout_remote_refuses_existing_local_in_other_worktree() {
+        use crate::git::worktree::add_worktree;
+
+        let dir = crate::testutil::scratch_dir();
+        let repo_dir = dir.path().join("repo");
+        let d = repo_dir.as_path();
+        let repo = ca_init(d);
+        ca_commit(d, "base", &[("a.txt", "base\n")]);
+        create_branch(d, "feature").expect("create feature");
+        add_worktree(d, "feature", "feature").expect("add worktree on feature");
+        // Fabricate the remote-tracking ref locally (no network needed).
+        let tip = repo.head().expect("head").peel_to_commit().expect("c").id();
+        repo.reference("refs/remotes/origin/feature", tip, true, "test remote ref")
+            .expect("remote-tracking ref");
+
+        let branch_before = ca_head_branch(d);
+        let err = checkout_remote(d, "origin/feature").expect_err("must refuse");
+        assert!(
+            matches!(&err, AppError::BranchCheckedOutElsewhere(m)
+                if m.contains("already checked out at")),
+            "got {err:?}"
+        );
+        assert_eq!(ca_head_branch(d), branch_before, "HEAD branch unchanged");
     }
 }
 

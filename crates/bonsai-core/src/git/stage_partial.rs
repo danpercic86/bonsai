@@ -6,6 +6,8 @@
 //! both blobs, and splice line-slices by their `old_no`/`new_no` to build the
 //! new index blob, written with `Index::add_frombuffer`. Each line slice keeps
 //! its own terminator, so CRLF and no-newline-at-EOF round-trip byte-exact.
+//! The workdir side is read as the CHECK-IN FILTERED blob (what `git add`
+//! would stage), never raw disk bytes — see `workdir_filtered_bytes`.
 //!
 //! Direction is encoded by the command (§0.2): `stage_partial` moves the index
 //! toward the workdir for the selected lines; `unstage_partial` moves it toward
@@ -13,7 +15,6 @@
 //! calls compose. No Tauri types here; no `repo-changed` emit.
 
 use std::collections::HashSet;
-use std::fs;
 use std::path::Path;
 
 use crate::error::AppError;
@@ -180,15 +181,14 @@ fn apply_partial(
     let mut index = repo.index()?;
     let rel = Path::new(path);
 
-    // Raw bytes of both sides (NEVER `DiffLine.content`).
+    // Exact bytes of both sides (NEVER `DiffLine.content`). The workdir side
+    // is the check-in FILTERED content: the diff above already compares the
+    // filtered workdir against the index, so line numbers line up, and the
+    // reconstructed blob must match what `git add` would stage.
     let (old_bytes, new_bytes) = match dir {
         Direction::Stage => {
             let old = index_blob_bytes(&repo, &index, rel)?; // b"" if untracked
-            let new = match fs::read(wd.join(rel)) {
-                Ok(b) => b,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-                Err(e) => return Err(e.into()),
-            };
+            let new = workdir_filtered_bytes(&repo, &wd, rel)?; // b"" if deleted
             (old, new)
         }
         Direction::Unstage => {
@@ -244,6 +244,30 @@ pub(crate) fn index_blob_bytes(
         Some(entry) => Ok(repo.find_blob(entry.id)?.content().to_vec()),
         None => Ok(Vec::new()),
     }
+}
+
+/// Check-in FILTERED workdir bytes for `path`, or `b""` when the file is
+/// absent (an unstaged deletion). `Repository::blob_path` (libgit2
+/// `git_blob_create_fromdisk`, absolute path) runs the check-in filter chain
+/// (CRLF/ident) for files inside the workdir — exactly what `git add` stages.
+/// Raw `fs::read` here would embed CRLF against an LF index under
+/// `core.autocrlf=true`, desyncing both the reconstruction input and the
+/// no-op comparison.
+fn workdir_filtered_bytes(
+    repo: &git2::Repository,
+    wd: &Path,
+    path: &Path,
+) -> Result<Vec<u8>, AppError> {
+    let abs = wd.join(path);
+    // Only a genuinely-missing file maps to the deletion path (`b""`); every
+    // other error (EACCES, sharing violation, ...) must propagate — and there
+    // is no pre-check, so a racing delete lands on the same NotFound arm.
+    let oid = match repo.blob_path(&abs) {
+        Ok(oid) => oid,
+        Err(e) if e.code() == git2::ErrorCode::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e.into()),
+    };
+    Ok(repo.find_blob(oid)?.content().to_vec())
 }
 
 /// HEAD blob bytes for `path`, or `b""` when HEAD is unborn / the file is
@@ -704,6 +728,67 @@ mod tests {
         let missing = dir.path().join("not-a-repo");
         assert!(stage_partial(&missing, "file.txt", None, &[]).is_ok());
         assert!(unstage_partial(&missing, "file.txt", None, &[]).is_ok());
+    }
+
+    /// Audit 2026-08-07 §2.1: partial staging must apply CHECK-IN filters.
+    /// Under `core.autocrlf=true` a CRLF workdir file must stage an LF blob,
+    /// and a full-selection partial stage must produce the EXACT index blob
+    /// `git add` (`Index::add_path`, which filters) would produce.
+    #[test]
+    fn stage_partial_applies_checkin_filters_under_autocrlf() {
+        let dir = crate::testutil::scratch_dir();
+        let repo = git2::Repository::init(dir.path()).expect("init");
+        repo.config()
+            .expect("config")
+            .set_bool("core.autocrlf", true)
+            .expect("autocrlf");
+        let sig = git2::Signature::now("Test", "t@example.com").expect("sig");
+
+        // Base commit: CRLF on disk -> LF in the ODB via the filtering add_path.
+        std::fs::write(dir.path().join("f.txt"), "one\r\ntwo\r\n").expect("write base");
+        let mut idx = repo.index().expect("index");
+        idx.add_path(Path::new("f.txt")).expect("add base");
+        idx.write().expect("write index");
+        let tree_oid = idx.write_tree().expect("tree");
+        let tree = repo.find_tree(tree_oid).expect("find tree");
+        repo.commit(Some("HEAD"), &sig, &sig, "base", &tree, &[])
+            .expect("commit");
+        drop(tree);
+
+        // Workdir edit (CRLF): append line 3.
+        std::fs::write(dir.path().join("f.txt"), "one\r\ntwo\r\nthree\r\n").expect("edit");
+
+        // Oracle: the blob oid `git add` would stage, then reset the index back
+        // to HEAD so the partial stage starts from a clean index.
+        idx.add_path(Path::new("f.txt")).expect("oracle add");
+        let expected_oid = idx.get_path(Path::new("f.txt"), 0).expect("oracle entry").id;
+        let head_tree = repo.head().expect("head").peel_to_tree().expect("head tree");
+        idx.read_tree(&head_tree).expect("reset index");
+        idx.write().expect("write reset index");
+        drop(head_tree);
+        drop(idx);
+
+        // Partial-stage the single added line — the FULL selection of this diff.
+        let sel = vec![LineSelection {
+            kind: LineKind::Add,
+            old_no: None,
+            new_no: Some(3),
+        }];
+        stage_partial(dir.path(), "f.txt", None, &sel).expect("stage_partial");
+
+        // Fresh open: stage_partial wrote through its own Repository handle.
+        let repo2 = git2::Repository::open(dir.path()).expect("reopen");
+        let entry = repo2
+            .index()
+            .expect("index")
+            .get_path(Path::new("f.txt"), 0)
+            .expect("staged entry");
+        let content = repo2.find_blob(entry.id).expect("blob").content().to_vec();
+        assert_eq!(content, b"one\ntwo\nthree\n", "staged blob must be LF-only");
+        assert_eq!(
+            entry.id, expected_oid,
+            "full-selection partial stage must equal `git add` byte-for-byte"
+        );
     }
 
     /// Invalid paths are rejected by the reused validator, before repo work.
