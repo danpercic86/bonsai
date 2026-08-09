@@ -553,3 +553,72 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
   overflow boundaries exclusive). +84 unit tests (geometry/viewport/hitTest .test.ts; vitest
   1113→1197); pnpm build green; full Playwright suite 88 passed / 1 skipped (specs 02/03
   exercise the canvas directly — behavior-preservation oracle).
+
+## T5a Rust — property-based + corrupt-repo + race/lifecycle pass (2026-08-10)
+
+New suites (bonsai-core dev-dep `proptest = "1.6"`, in-file default 64 cases, local
+`PROPTEST_CASES=256`): `tests/prop_common/mod.rs` (RepoShape strategy + repo builder + diff_pair +
+status oracle mapping), `prop_graph_layout.rs`, `prop_intraline.rs`, `prop_history_index.rs`,
+`prop_status.rs` (32-cap in-file), `prop_stash_roundtrip.rs`, `corrupt_repo_cli.rs`,
+`race_lifecycle_cli.rs`. All green; clippy `-D warnings` clean on `--all-targets`.
+
+- [T5a] TEST-SEAM (not a bug) — added `#[doc(hidden)] pub fn annotate_hunk_for_tests(&mut Hunk)` to
+  `src/git/intraline.rs`, a one-line verbatim forwarder to the `pub(crate) annotate_hunk` so the
+  cross-crate property suite can reach it. ZERO behavior change. Contract §2.2/§8.2-approved.
+
+- [T5a] F-T5-4 · HIGH (UI freeze / DoS) · `graph::compute_graph`, `status::read_status`,
+  `commit::create_commit` — truncating the HEAD **loose commit** object to half length makes every
+  surface that peels HEAD **HANG (effectively forever)** instead of returning an `AppError`; only
+  `git2::Repository::open_ext` (which does not peel HEAD) stays responsive. A truncated **tree** or
+  **blob** is handled cleanly (`Ok`). Root cause is a libgit2 spin inflating a truncated zlib loose
+  object during the revwalk / HEAD-peel. A single corrupt loose commit thus freezes the app.
+  Repro pinned deterministically by `corrupt_repo_cli.rs` cell C1 (10s watchdog ⇒ `Hung`). Status:
+  **open — for senior-dev** (harden the object read to time out / error; the corrupt matrix must
+  then be re-pinned Ok/Err). Do NOT fix in test code.
+
+- [T5a] F-T5-3 · MEDIUM (porcelain-equivalence violation) · `status::read_status` — when a tracked
+  file is deleted in the worktree and an untracked file with identical bytes appears, `read_status`
+  (git2 `renames_index_to_workdir`) reports ONE unstaged **rename** (orig→new), whereas
+  `git status --porcelain` reports the two events separately (`D <orig>` + `?? <new>`): git2
+  rename-detects an untracked destination, the git CLI does not. Pinned by
+  `prop_status.rs::regression_f_t5_3_untracked_worktree_rename`; the broad mutation property excludes
+  fs-renames (staged `git mv` renames stay covered by `status_porcelain.rs`). Status: **open —
+  orchestrator/senior-dev** (decide: match git by suppressing untracked-target worktree renames, or
+  accept git2's richer view as intended).
+
+- [T5a] F-T5-1 · LOW/DESIGN (scroll-color-stability promise) · `graph::compute_graph` — appending a
+  commit to the HEAD branch can change the **lane** (hence color) of commits that were NOT in HEAD's
+  lane, because the lane assignment re-runs over a re-seeded topological+time walk. The PROVABLE
+  invariant (identical repo ⇒ identical layout, contract item 7) holds and is asserted as a property;
+  the stronger append-stability clause (item 8) does not. Note this is instability under a NEW COMMIT
+  (full recompute), NOT under scrolling a fixed layout (which never recomputes), so the CLAUDE.md
+  "lanes stay stable while scrolling" promise is not directly broken. Pinned by
+  `prop_graph_layout.rs::regression_f_t5_1_lane_shift_on_head_append`. Status: **open — orchestrator
+  decision** (contract §8.1: fix the engine for append-stability vs. accept same-input determinism
+  only).
+
+- [T5a] F-T5-2 · BY-DESIGN (pinned behavior, not a defect) · `git/intraline.rs` token diff — the
+  changed-code-point SET is NOT symmetric under swapping old/new (`(a,b)` vs `(b,a)`): the LCS
+  backtrack tie-break (`>=`, biased to advance OLD) picks a different common subsequence, so the
+  highlighted chars differ by direction. Per-side spans stay individually well-formed (ascending,
+  in-bounds, coalesced — asserted). Inherent to a directional diff. Pinned by
+  `prop_intraline.rs::regression_f_t5_2_intraline_diff_is_directional`. No action needed.
+
+- [T5a] Corrupt-repo matrix — pinned behavior (no panics anywhere; only C1 hangs, see F-T5-4).
+  C2 corrupt-pack ⇒ open/status Ok, graph/commit Err · C3 dangling-symref HEAD ⇒ all Ok (unborn-like)
+  · C4 HEAD=missing-oid ⇒ graph/commit Err · C5 garbage ref ⇒ graph Ok, commit Err · C6 objects dir
+  removed ⇒ all Err · C7 truncated index / C8 garbage index ⇒ status+commit Err, graph Ok ·
+  C9 invalid config ⇒ all Err · C10 binary COMMIT_EDITMSG ⇒ no-op (open/status/graph Ok) ·
+  X1 bogus rebase-merge / X2 bogus BISECT_LOG ⇒ read surfaces Ok · X3 invalid-UTF-8 index path ⇒
+  lossy, all Ok. No panic, no lock left behind.
+
+- [T5a] Race/lifecycle — all green. Scenario 1 adapted: the `notify` watcher lives in `src-tauri`
+  (not core), so the "watcher emits ≥1 signal" clause is out of scope for a core test; substituted a
+  worktree write-storm during `create_commit` (commit succeeds, no thread panics, `git fsck` clean).
+  Scenario 2 (read_status×50 ∥ stage+commit×10) and Scenario 3 (ops on a deleted repo all Err, no
+  panic) pass as specified.
+
+- [T5a] Timing (`PROPTEST_CASES=256`, Windows debug): prop_graph_layout 107s (2 props, ~100-commit
+  temp repos built + walked twice/case) · prop_stash_roundtrip 33.5s · prop_status 58s (git shellout
+  per case) · prop_history_index 0.33s · prop_intraline 0.35s. corrupt_repo_cli ~35s (C1 10s
+  watchdog). In-file defaults (64; status 32; stash 48) keep the normal `cargo test` fast.

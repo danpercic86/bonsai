@@ -53,3 +53,31 @@ cargo llvm-cov --workspace --html --output-dir D:\Temp\bonsai-llvm-cov
 
 Per-crate line/region % baseline: PENDING (run deferred to the orchestrator —
 full-workspace instrumented rebuild + test run).
+
+### T5a — property-based + corrupt-repo + race/lifecycle (2026-08-10)
+
+New bonsai-core integration suites (dev-dep `proptest = "1.6"`):
+
+- `tests/prop_common/mod.rs` — bounded `RepoShape` strategy (≤200 commits, ≤8 branches/tags,
+  ~20% merges, ~2% duplicate-parent), `build_repo` (unique tree/commit, auto leaf branches for full
+  reachability), `diff_pair`, and the status porcelain-oracle mapping (ported from
+  `status_porcelain.rs`).
+- `prop_graph_layout.rs` — `compute_graph` node bijection / topological order / parent truth / lane
+  density / edge=parent-link set / head_index+detached / same-input determinism. Lane-append
+  stability pinned as F-T5-1.
+- `prop_intraline.rs` — span well-formedness (ascending, in-bounds code points, coalesced),
+  identical/over-cap ⇒ empty, astral offsets, context/surplus rows empty. Swap-asymmetry pinned
+  F-T5-2.
+- `prop_history_index.rs` — BM25 round-trip (unique token ⇒ sole top hit; absent ⇒ none), idf finite
+  ≥0, tf monotonicity, rank sort/cap contract; + one git-backed `build_index`→`search_history` e2e.
+- `prop_status.rs` — random create/modify/delete/stage/unstage sequences vs `git status --porcelain`
+  (32-cap in-file). fs-rename divergence pinned F-T5-3.
+- `prop_stash_roundtrip.rs` — random staged/unstaged/untracked ⇒ create_stash → apply_stash worktree
+  byte-identity (AllWithUntracked + All); index split intentionally NOT restored (no REINSTATE_INDEX,
+  pinned per contract §8.4).
+- `corrupt_repo_cli.rs` — 10-cell matrix + 3 extras (each surface watchdog'd, no panic; behaviors
+  pinned; C1 hang = F-T5-4).
+- `race_lifecycle_cli.rs` — write-storm-during-commit, concurrent status∥commit, ops-on-deleted-repo.
+
+App-code touched (test-only): `src/git/intraline.rs` gained the `#[doc(hidden)]
+annotate_hunk_for_tests` forwarder (zero behavior change).

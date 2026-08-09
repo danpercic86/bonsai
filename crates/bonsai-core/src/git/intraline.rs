@@ -199,6 +199,16 @@ fn annotate_run(run: &mut [DiffLine]) {
     }
 }
 
+/// Test-only seam (T5 contract §2.2): `annotate_hunk` is `pub(crate)`, so an
+/// integration test in a separate crate cannot reach it. This thin
+/// `#[doc(hidden)]` wrapper forwards verbatim — ZERO behavior change — so the
+/// `tests/prop_intraline.rs` property suite can exercise the real annotator.
+/// Not part of the public API; do not depend on it.
+#[doc(hidden)]
+pub fn annotate_hunk_for_tests(hunk: &mut Hunk) {
+    annotate_hunk(hunk);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
