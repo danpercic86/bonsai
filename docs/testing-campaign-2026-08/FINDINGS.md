@@ -297,3 +297,18 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
   last-wins + empty-reset; read-overlay cross-invalidation + stale-guards + reflog-restore
   refetch; verify batching (512 chunk) + cache + enable/repo transitions; hook-gate
   park/skip/cancel incl. cancel-during-retry race; updater state machine guards + ?update= seam.
+- [T3.3a] F-T33a-1 · MINOR (a11y) — PrCreateForm.tsx: the "✨ Generate with AI" button is
+  rendered INSIDE the Description `<label>`, so its computed accessible name is "Description"
+  (label text names descendants) — screen readers announce it as "Description", and
+  role-based queries can't target it. Fix: move the button out of the `<label>` (or add an
+  explicit aria-label). Tests select it by class as a workaround (see note in
+  PrCreateForm.test.tsx) — **open**
+- [T3.3a] Verified clean: destructive-dialog safety (initial focus on Cancel ⇒ stray Enter
+  cancels, never confirms — verified on ConfirmDialog + a DestructiveDialogs instance);
+  PromptDialog Enter-submits with validation gating; CommitBox gating/sign/skip-hooks/generate
+  replace-confirm; PrCreateForm generate fill-never-submit + generating lock + rejection toast;
+  CommandPalette nav/dispatch/dynamic rows; ErrorBoundary catch+reset; Tree, ContextMenu
+  (submenu/danger/dismiss), Combobox (strict revert/free input), TabStrip (recents filter/DnD
+  reorder), PaneDivider (delta normalization), Toasts (order/roles). Note: Toasts is
+  presentational — auto-dismiss timers live in App, not testable here; TabStrip middle-click
+  close is not implemented (no auxclick handler) — by design, not a bug.

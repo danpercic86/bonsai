@@ -23,6 +23,10 @@ const ctx2d = new Proxy(
 );
 HTMLCanvasElement.prototype.getContext = vi.fn(() => ctx2d) as never;
 
+// scrollIntoView stub — jsdom has no layout, so keyboard-nav "keep the active
+// row visible" effects (CommandPalette, Combobox) need a no-op.
+Element.prototype.scrollIntoView ??= () => {};
+
 // ResizeObserver stub
 class ResizeObserverStub {
   observe() {}
