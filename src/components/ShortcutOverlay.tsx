@@ -13,6 +13,8 @@ const SHORTCUTS: { keys: string[]; action: string }[] = [
   { keys: ['Ctrl', 'R'], action: 'Refresh' },
   { keys: ['F5'], action: 'Refresh' },
   { keys: ['Ctrl', 'O'], action: 'Open repository' },
+  { keys: ['Ctrl', 'F'], action: 'Search commits' },
+  { keys: ['Ctrl', 'K'], action: 'Open command palette' },
   { keys: ['Ctrl', 'Shift', 'F'], action: 'Fetch all remotes' },
   { keys: ['Ctrl', 'Shift', 'P'], action: 'Pull (fast-forward only)' },
   { keys: ['Ctrl', 'Shift', 'U'], action: 'Push current branch' },

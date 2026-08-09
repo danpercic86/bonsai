@@ -453,10 +453,10 @@ describe('ShortcutOverlay sync', () => {
     }
   });
 
-  // FINDING [T3.2b]: useWorkspaceKeyboard also binds Ctrl/Cmd-F (commit search,
-  // P50b) and Ctrl/Cmd-K (command palette, P50c), but the ShortcutOverlay
-  // §6.1 table was never updated — the reference overlay omits both.
-  it.skip('documents Ctrl+F (search) and Ctrl+K (palette) — FAILS: overlay table is stale (FINDINGS T3.2b)', () => {
+  // FINDING [T3.2b] F-T32b-1 (FIXED): useWorkspaceKeyboard binds Ctrl/Cmd-F
+  // (commit search, P50b) and Ctrl/Cmd-K (command palette, P50c); the
+  // ShortcutOverlay §6.1 table was stale until the campaign fix added both rows.
+  it('documents Ctrl+F (search) and Ctrl+K (palette) in the overlay table', () => {
     const text = overlayText();
     expect(text).toContain('Ctrl+F');
     expect(text).toContain('Ctrl+K');
