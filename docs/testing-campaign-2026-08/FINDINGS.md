@@ -5,6 +5,14 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
 
 ## FOR USER REVIEW — behavior changes made autonomously
 
+- F-A8-a: MCP success responses no longer echo the full JSON payload in the `content` text block —
+  it now carries a compact summary (e.g. `{nodes, edges, headIndex}` / `[N items]`). The complete
+  data is still in `structured_content` (what every MCP client should read). A client that instead
+  parsed the `content` text as JSON would break; none of ours do. Revert = restore
+  `CallToolResult::structured(value)` in `ok_json`.
+- F-A8-d NIT: MCP `bonsai_select_repo` on a standalone (`--repo`) server now returns error kind
+  `invalidName` (was `other`), matching the unknown-repo rejection. Wire-visible `kind` change.
+- F-A8-d NIT: `bonsai-mcp --help` now prints usage to STDOUT and exits 0 (was stderr + exit 1).
 - F-A2-2: AI operation planner now only accepts commit references as hex hashes (4-40 chars) from the
   model; revspecs like `HEAD~1` return "Unsupported" instead of resolving. Rationale: prompt only ever
   promises hashes from the grounding state; closes a defense-in-depth gap. Revert = drop the hex gate
@@ -376,15 +384,31 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
 
 - [T2.8] F-A8-a · SHOULD-FIX (perf) · bonsai-mcp/server.rs:189 — ok_json double-transmits every
   response (structured + full text echo via rmcp structured()); multi-MB graph responses sent twice.
-  Replace text echo with compact summary — **open**
+  Replace text echo with compact summary — **fixed (pending commit)**: `ok_json` now builds the
+  result via `structured()` then OVERWRITES the echoed text block with a payload-free
+  `compact_summary` (array→`[N items]`, object→top-level keys capped at 12, scalar→char-safe
+  truncation). Full payload still in `structured_content` (client unaffected); doc comment
+  corrected. Units `ok_json_puts_full_payload_in_structured_and_compact_text`, `compact_summary_shapes`.
 - [T2.8] F-A8-b · SHOULD-FIX (drift) · src-tauri/mcp.rs:54 — READ/WRITE tool counts hard-coded (3
-  catalog copies, no sync test); derive from routers + drift test — **open**
+  catalog copies, no sync test); derive from routers + drift test — **fixed (pending commit)**: added
+  `BonsaiServer::{read,write}_tool_{names,count}()` deriving from the live routers; src-tauri's
+  `read_tool_count()`/`write_tool_count()` now call them (no more `const 14`/`20`). Drift test
+  `tool_catalogs_match_live_routers` (mcp_stdio_3.rs) asserts catalogs == routers == counts (14/20);
+  `live_tools_list_matches_router_names` asserts a live `tools/list` == the routers. The src-tauri
+  `tool_count_reflects_write_gate` (14/34) now also guards drift.
 - [T2.8] F-A8-c · SHOULD-FIX · src-tauri/mcp.rs:224 — set_allow_write bounce failure leaves server
   down, settings say enabled, no mcp-server-changed emitted → stale UI. Emit stopped status on
-  bounce failure — **open**
-- [T2.8] F-A8-d · LOW · bonsai_get_graph unbounded (P65 deferred); warn in tool description — **open**
-- [T2.8] NITs: lib.rs tool-count doc (34 not 32); --help to stderr+FAILURE; select_repo-on-Fixed
-  error kind `other`; parse_args/validate_repo have 0 tests — **fold into fix/test pass**
+  bounce failure — **fixed (pending commit)**: new `start_or_signal_stopped` wraps `start`; on
+  failure it persists `mcp_enabled=false` (best-effort) and emits a stopped `mcp-server-changed`
+  before returning the error. Used by BOTH the `set_allow_write` bounce restart AND `set_enabled`'s
+  initial start, so a failed (re)start can never leave a dead-but-"enabled" server in the UI.
+- [T2.8] F-A8-d · LOW · bonsai_get_graph unbounded (P65 deferred); warn in tool description —
+  **fixed (pending commit)**: `bonsai_get_graph` doc now warns the whole layout is returned in one
+  (possibly multi-MB) response and P65 paging is deferred.
+- [T2.8] NITs — **fixed (pending commit)**: lib.rs tool-count doc 32→34; `--help` now prints usage
+  to STDOUT and exits SUCCESS (was stderr + FAILURE) via a `ParseOutcome::Help` arm; select_repo on a
+  `Fixed` (standalone) server now returns `invalidName` (was `other`) to match the unknown-repo
+  rejection; parse_args/validate_repo gained 8 inline units, parse_resolution/err_result gained units.
 - [T2.8] Verified sound: write gating structural (20 mutation tools only in write_router, both
   constructors funnel through the gate), select_repo restricted to open tabs, validate_rel_path on
   conflict paths, no locks across await, git2 in spawn_blocking, constant-time token auth +

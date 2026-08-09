@@ -50,16 +50,24 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::settings;
 use crate::state::AppState;
 
-/// Read-tool count (P14's 12 + the two P16 repo-selection tools).
-const READ_TOOL_COUNT: u32 = 14;
-/// Mutation-tool count (registered only when the write-gate is on — P16c).
-const WRITE_TOOL_COUNT: u32 = 20;
+/// Read-tool count (P14's 12 + the two P16 repo-selection tools), DERIVED from
+/// the live `bonsai-mcp` read router so it can never drift from the actual tool
+/// set (F-A8-b — previously a hand-maintained `const 14`).
+fn read_tool_count() -> u32 {
+    BonsaiServer::read_tool_count() as u32
+}
+
+/// Mutation-tool count (registered only when the write-gate is on — P16c),
+/// derived from the live write router.
+fn write_tool_count() -> u32 {
+    BonsaiServer::write_tool_count() as u32
+}
 
 fn tool_count(allow_write: bool) -> u32 {
     if allow_write {
-        READ_TOOL_COUNT + WRITE_TOOL_COUNT
+        read_tool_count() + write_tool_count()
     } else {
-        READ_TOOL_COUNT
+        read_tool_count()
     }
 }
 
@@ -144,7 +152,7 @@ fn stopped_status() -> McpStatus {
         port: None,
         url: None,
         token: None,
-        tool_count: READ_TOOL_COUNT,
+        tool_count: read_tool_count(),
     }
 }
 
@@ -180,9 +188,36 @@ pub async fn set_enabled(
                 return Ok(running_status(r));
             }
         }
-        start(app, mcp_state).await
+        start_or_signal_stopped(app, mcp_state).await
     } else {
         stop(app, mcp_state).await
+    }
+}
+
+/// Run [`start`], but on failure leave a CONSISTENT stopped state before
+/// surfacing the error (F-A8-c). A failed start (or a failed restart during a
+/// bounce) leaves the server DOWN — `inner` is `None` and no listener is bound —
+/// yet without this the persisted `mcp_enabled` would stay `true` and no
+/// `mcp-server-changed` would fire, so the Settings UI would keep showing
+/// "running" over a dead server (and P44a would try to auto-start it again next
+/// launch). We persist `mcp_enabled = false` (best-effort) and emit a stopped
+/// status, then return the original error so the caller still sees the failure.
+async fn start_or_signal_stopped(
+    app: &AppHandle,
+    mcp_state: &McpServerState,
+) -> Result<McpStatus, AppError> {
+    match start(app, mcp_state).await {
+        Ok(status) => Ok(status),
+        Err(e) => {
+            if let Ok(file) = settings::settings_file(app) {
+                let _ = tauri::async_runtime::spawn_blocking(move || {
+                    let _ = settings::update(&file, |s| s.mcp_enabled = false);
+                })
+                .await;
+            }
+            let _ = app.emit("mcp-server-changed", stopped_status());
+            Err(e)
+        }
     }
 }
 
@@ -226,8 +261,11 @@ pub async fn set_allow_write(
             r.stop();
             // Restart reuses the persisted token + port (D-4); `start` reads the
             // just-persisted `mcp_allow_write` and `bind_listener` retries the
-            // same port to ride out the brief post-abort release window.
-            start(app, mcp_state).await
+            // same port to ride out the brief post-abort release window. If the
+            // restart FAILS the old server is already gone, so signal a stopped
+            // state rather than leaving the UI showing a dead-but-enabled server
+            // (F-A8-c).
+            start_or_signal_stopped(app, mcp_state).await
         }
         None => {
             // Stopped: nothing to bounce; the setting is persisted for next start.

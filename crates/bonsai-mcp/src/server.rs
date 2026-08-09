@@ -182,14 +182,93 @@ impl BonsaiServer {
             .await
             .map_err(|e| AppError::Other(format!("task join error: {e}")))?
     }
+
+    /// Sorted names of the always-registered read tools (§7.1), read from the
+    /// live read router — the single source of truth so `src-tauri`'s status
+    /// counts and the test catalogs cannot silently drift (F-A8-b).
+    pub fn read_tool_names() -> Vec<String> {
+        let mut names: Vec<String> = Self::tool_router()
+            .list_all()
+            .iter()
+            .map(|t| t.name.to_string())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// Sorted names of the mutation tools (§7.3), read from the live write
+    /// router. See [`read_tool_names`](Self::read_tool_names).
+    pub fn write_tool_names() -> Vec<String> {
+        let mut names: Vec<String> = Self::write_router()
+            .list_all()
+            .iter()
+            .map(|t| t.name.to_string())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// Count of always-registered read tools, derived from the live router.
+    pub fn read_tool_count() -> usize {
+        Self::tool_router().list_all().len()
+    }
+
+    /// Count of mutation tools, derived from the live write router.
+    pub fn write_tool_count() -> usize {
+        Self::write_router().list_all().len()
+    }
 }
 
-/// Success result: structured JSON content (serde of the core type) plus a
-/// compact text echo of the same JSON.
+/// Success result: the full payload lives in `structured_content` (serde of the
+/// core type); the `content` text block is a COMPACT one-line summary (shape +
+/// count, never the payload).
+///
+/// `CallToolResult::structured` would echo the *entire* JSON a SECOND time as a
+/// text `ContentBlock` (`value.to_string()`), so a multi-MB `bonsai_get_graph`
+/// response would be transmitted twice (F-A8-a). We build the result directly:
+/// the MCP client still receives the complete structured payload, plus a tiny
+/// human-readable descriptor instead of the duplicated blob.
 fn ok_json<T: serde::Serialize>(v: &T) -> CallToolResult {
     match serde_json::to_value(v) {
-        Ok(value) => CallToolResult::structured(value),
+        Ok(value) => {
+            // `structured` sets `is_error=false` + `structured_content`, but ALSO
+            // echoes the full JSON as a text block; overwrite that text with the
+            // compact summary so the payload is transmitted exactly once.
+            let summary = compact_summary(&value);
+            let mut result = CallToolResult::structured(value);
+            result.content = vec![ContentBlock::text(summary)];
+            result
+        }
         Err(e) => err_result(AppError::Other(format!("serialization error: {e}"))),
+    }
+}
+
+/// A tiny, payload-free descriptor of a JSON value for the `content` text block:
+/// arrays report their length, objects report their top-level keys (capped),
+/// and scalars are rendered char-safe-truncated. Never echoes large strings or
+/// nested structures — the full data is in `structured_content`.
+fn compact_summary(value: &serde_json::Value) -> String {
+    use serde_json::Value;
+    match value {
+        Value::Array(a) => format!("[{} items]", a.len()),
+        Value::Object(m) => {
+            const MAX_KEYS: usize = 12;
+            let shown: Vec<&str> = m.keys().take(MAX_KEYS).map(String::as_str).collect();
+            let mut s = format!("{{{}", shown.join(", "));
+            if m.len() > shown.len() {
+                s.push_str(", …");
+            }
+            s.push('}');
+            s
+        }
+        Value::Null => "null".to_string(),
+        other => {
+            let s = other.to_string();
+            match s.char_indices().nth(80) {
+                Some((idx, _)) => format!("{}…", &s[..idx]),
+                None => s,
+            }
+        }
     }
 }
 
@@ -437,6 +516,11 @@ impl BonsaiServer {
     /// Precomputed commit-graph layout: lane/edge topology, HEAD index, and ref
     /// pills for the whole repo. Seeded from all local branches, remote-tracking
     /// branches, and tags; ordered topologically then by commit date.
+    ///
+    /// WARNING: returns the ENTIRE layout in one response — for very large
+    /// histories (tens of thousands of commits) this can be a multi-MB payload.
+    /// Incremental/paged loading is not yet available (P65 deferred); prefer the
+    /// narrower diff/status tools when you do not need the whole topology.
     #[tool]
     async fn bonsai_get_graph(&self) -> CallToolResult {
         match self.run_blocking(bonsai_core::graph::compute_graph).await {
@@ -667,7 +751,11 @@ impl BonsaiServer {
         Parameters(args): Parameters<SelectRepoArgs>,
     ) -> CallToolResult {
         match &self.workdir {
-            WorkdirSource::Fixed(_) => err_result(AppError::Other(
+            // A standalone (`--repo`) server has exactly one, fixed repo, so
+            // selection is a client-usage error, not an internal fault — surface
+            // it as `invalidName` (matching the unknown-repo rejection) rather
+            // than the catch-all `other` (F-A8-d NIT).
+            WorkdirSource::Fixed(_) => err_result(AppError::InvalidName(
                 "single-repo (standalone) server; repo selection unavailable".to_string(),
             )),
             WorkdirSource::Session(s) => {
@@ -1081,5 +1169,101 @@ mod tests {
             s.resolve_workdir().expect("just-selected tab resolves"),
             PathBuf::from("/repo/a")
         );
+    }
+
+    // ------------------------------------------------ parse_resolution units
+
+    #[test]
+    fn parse_resolution_accepts_the_three_valid_variants() {
+        use bonsai_core::git::conflict::ConflictResolution;
+        assert!(matches!(
+            parse_resolution("ours"),
+            Ok(ConflictResolution::Ours)
+        ));
+        assert!(matches!(
+            parse_resolution("theirs"),
+            Ok(ConflictResolution::Theirs)
+        ));
+        assert!(matches!(
+            parse_resolution("markResolved"),
+            Ok(ConflictResolution::MarkResolved)
+        ));
+    }
+
+    #[test]
+    fn parse_resolution_rejects_unknown_and_wrong_case() {
+        // Unknown token → invalidName carrying the offending value.
+        match parse_resolution("bogus") {
+            Err(AppError::InvalidName(m)) => assert!(m.contains("bogus"), "msg: {m}"),
+            other => panic!("expected InvalidName, got {other:?}"),
+        }
+        // camelCase is exact — snake_case / other casings are rejected.
+        assert!(parse_resolution("mark_resolved").is_err());
+        assert!(parse_resolution("Ours").is_err());
+        assert!(parse_resolution("").is_err());
+    }
+
+    // -------------------------------------------------------- err_result units
+
+    /// `err_result` must set `is_error=true`, carry the `{ kind, message }`
+    /// discriminant in `structured_content`, and render a single
+    /// `"<kind>: <message>"` text block (no duplicated payload).
+    #[test]
+    fn err_result_preserves_kind_and_message_and_flags_error() {
+        let r = err_result(AppError::EmptyMessage);
+        assert_eq!(r.is_error, Some(true));
+        let sc = r.structured_content.expect("structured content present");
+        assert_eq!(sc.get("kind").and_then(|v| v.as_str()), Some("emptyMessage"));
+        assert!(sc.get("message").and_then(|v| v.as_str()).is_some());
+        assert_eq!(r.content.len(), 1, "exactly one text block");
+    }
+
+    #[test]
+    fn err_result_text_block_is_kind_colon_message() {
+        let r = err_result(AppError::InvalidName("bad/name".to_string()));
+        let sc = r.structured_content.clone().expect("structured content");
+        let kind = sc.get("kind").and_then(|v| v.as_str()).unwrap();
+        let msg = sc.get("message").and_then(|v| v.as_str()).unwrap();
+        let text = &r.content[0].as_text().expect("text block").text;
+        assert_eq!(*text, format!("{kind}: {msg}"));
+        assert_eq!(kind, "invalidName");
+    }
+
+    // ------------------------------------------------------ ok_json / summary
+
+    #[test]
+    fn ok_json_puts_full_payload_in_structured_and_compact_text() {
+        let value = serde_json::json!({
+            "nodes": [1, 2, 3],
+            "edges": [],
+            "headIndex": 0,
+        });
+        let r = ok_json(&value);
+        assert_eq!(r.is_error, Some(false));
+        // Full payload survives in structured_content.
+        assert_eq!(r.structured_content.as_ref(), Some(&value));
+        // The text block is a compact key summary, NOT the full JSON echo.
+        let text = &r.content[0].as_text().expect("text block").text;
+        assert!(text.starts_with('{') && text.contains("nodes"), "summary: {text}");
+        assert!(
+            text.len() < value.to_string().len(),
+            "compact summary must be shorter than the full payload"
+        );
+    }
+
+    #[test]
+    fn compact_summary_shapes() {
+        use serde_json::json;
+        assert_eq!(compact_summary(&json!([1, 2, 3, 4])), "[4 items]");
+        assert_eq!(compact_summary(&json!([])), "[0 items]");
+        assert_eq!(compact_summary(&json!(null)), "null");
+        assert_eq!(compact_summary(&json!({"a": 1, "b": 2})), "{a, b}");
+        // > MAX_KEYS keys are truncated with an ellipsis marker.
+        let big: serde_json::Value = (0..20)
+            .map(|i| (format!("k{i:02}"), json!(i)))
+            .collect::<serde_json::Map<_, _>>()
+            .into();
+        let s = compact_summary(&big);
+        assert!(s.ends_with(", …}"), "expected truncation marker: {s}");
     }
 }
