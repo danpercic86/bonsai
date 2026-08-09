@@ -115,6 +115,18 @@ pub fn build_index(
         .unwrap_or_else(IndexStore::empty);
 
     let reachable = reachable_oids(&repo)?;
+    // F-A9-2: drop docs for commits no longer reachable (rewritten by rebase/
+    // amend, or GC'd) so search never returns dead oids and BM25 idf isn't
+    // skewed by ghosts. SKIP pruning when the walk hit the cap — beyond
+    // MAX_INDEX_COMMITS we cannot distinguish a ghost from a still-reachable
+    // commit, so pruning there would wrongly evict live docs (the "cap-before-
+    // filter" drift, F-A9-4).
+    let truncated = reachable.len() >= MAX_INDEX_COMMITS;
+    if !truncated {
+        let reachable_set: std::collections::HashSet<String> =
+            reachable.iter().map(|oid| oid.to_string()).collect();
+        store.docs.retain(|oid, _| reachable_set.contains(oid));
+    }
     let todo: Vec<git2::Oid> = reachable
         .into_iter()
         .filter(|oid| !store.docs.contains_key(&oid.to_string()))
@@ -131,12 +143,27 @@ pub fn build_index(
     };
 
     emit(IndexPhase::Counting, 0);
+    // F-A9-3: one unreadable object (corrupt/missing blob or tree, a broken
+    // pack) skips-and-counts rather than aborting the whole build — a partial
+    // index over the good commits is far better than none, and the next build
+    // retries the skipped oids (they stay out of the store).
+    let mut skipped: u32 = 0;
     for (i, oid) in todo.iter().enumerate() {
-        let document = doc::extract_doc(&repo, *oid)?;
-        store.docs.insert(oid.to_string(), document);
+        match doc::extract_doc(&repo, *oid) {
+            Ok(document) => {
+                store.docs.insert(oid.to_string(), document);
+            }
+            Err(e) => {
+                skipped = skipped.saturating_add(1);
+                eprintln!("bonsai: history-index skipping unreadable commit {oid}: {e}");
+            }
+        }
         if i % PROGRESS_TICK == 0 {
             emit(IndexPhase::Extracting, i as u32);
         }
+    }
+    if skipped > 0 {
+        eprintln!("bonsai: history-index build skipped {skipped} unreadable commit(s)");
     }
 
     store.bm25 = Bm25Index::build_stats(&store.docs);
@@ -286,6 +313,7 @@ fn now_unix() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     /// git2-init a `main`-headed scratch repo with pinned identity + autocrlf off.
     fn init_scratch() -> (tempfile::TempDir, git2::Repository) {
@@ -404,6 +432,78 @@ mod tests {
             .expect("a Counting tick");
         assert_eq!(counting.new_commits, 1, "only the new commit is documented");
         assert_eq!(counting.total, 1, "existing docs are NOT re-extracted");
+    }
+
+    // ---------------------------------------------------- F-A9-2 ghost prune
+
+    /// A rebuild drops docs whose oid is no longer reachable (rewritten-away /
+    /// GC'd), so search never returns dead oids and idf isn't skewed.
+    #[test]
+    fn build_prunes_ghost_docs_absent_from_reachable() {
+        let (dir, idx, _) = build_fixture();
+        build_index(dir.path(), idx.path(), silent).expect("build 1");
+        let mut store = store::load(idx.path()).expect("load");
+        assert_eq!(store.docs.len(), 4);
+
+        // Inject a ghost doc for an oid that is NOT in the repo (as if a commit
+        // were rewritten away since the last build).
+        let ghost = "f".repeat(40);
+        store.docs.insert(
+            ghost.clone(),
+            CommitDoc {
+                summary: "ghost rewritten commit".to_string(),
+                author_name: "Nobody".to_string(),
+                author_ts: 1,
+                dl: 3,
+                tf: HashMap::new(),
+            },
+        );
+        store::save(idx.path(), &store).expect("save with ghost");
+        assert_eq!(store::load(idx.path()).expect("reload").docs.len(), 5);
+
+        // The next build prunes the ghost and keeps the 4 real docs.
+        build_index(dir.path(), idx.path(), silent).expect("build 2");
+        let after = store::load(idx.path()).expect("load after");
+        assert_eq!(after.docs.len(), 4, "ghost pruned");
+        assert!(!after.docs.contains_key(&ghost), "ghost oid dropped");
+    }
+
+    // ---------------------------------------------------- F-A9-3 skip-and-go
+
+    /// One unreadable object skips-and-counts instead of aborting the whole
+    /// build: a corrupt loose blob for c.txt makes extracting c2 fail, but the
+    /// other three commits still index and the build returns `Ok`.
+    #[test]
+    #[allow(clippy::permissions_set_readonly_false)] // test-only: un-protect a git object to corrupt it
+    fn build_skips_unreadable_object_and_indexes_the_rest() {
+        let (dir, idx, [_c0, _c1, c2, _c3]) = build_fixture();
+
+        // Locate + corrupt the loose blob object for c.txt ("zebracorn ...").
+        let repo = git2::Repository::open(dir.path()).expect("open");
+        let blob_oid = repo.blob(b"zebracorn special payload\n").expect("hash blob");
+        let hex = blob_oid.to_string();
+        let obj_path = dir
+            .path()
+            .join(".git")
+            .join("objects")
+            .join(&hex[..2])
+            .join(&hex[2..]);
+        assert!(obj_path.exists(), "loose blob present: {}", obj_path.display());
+        // Clear any read-only bit git set (Windows attr / *nix 0444) before overwrite.
+        let mut perms = std::fs::metadata(&obj_path).expect("meta").permissions();
+        perms.set_readonly(false);
+        let _ = std::fs::set_permissions(&obj_path, perms);
+        std::fs::write(&obj_path, b"corrupt-not-zlib").expect("corrupt object");
+
+        let status =
+            build_index(dir.path(), idx.path(), silent).expect("build tolerates bad object");
+        assert!(status.built);
+        let store = store::load(idx.path()).expect("load");
+        assert_eq!(store.docs.len(), 3, "3 good commits indexed, corrupt one skipped");
+        assert!(
+            !store.docs.contains_key(&c2.to_string()),
+            "the unreadable commit is skipped"
+        );
     }
 
     // ---------------------------------------------------- §7.8 schema bump

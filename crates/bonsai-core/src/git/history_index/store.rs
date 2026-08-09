@@ -8,7 +8,8 @@
 //! (`build_index`/`index_status`) comparing [`IndexStore::schema`].
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::error::AppError;
 
@@ -18,6 +19,16 @@ use super::HISTORY_INDEX_SCHEMA;
 
 /// The single persisted file under a repo's `index_dir`.
 pub const STORE_FILE: &str = "store.json";
+
+/// The tmp-file infix that marks an in-progress atomic write:
+/// `store.json.<pid>.<nonce>.tmp`. Used to build a unique tmp name AND to
+/// recognize stale leftovers for best-effort cleanup on load.
+const TMP_INFIX: &str = "store.json.";
+const TMP_SUFFIX: &str = ".tmp";
+
+/// Per-process monotonic nonce so two saves from the SAME process still get
+/// distinct tmp names (the pid alone is not enough under concurrency).
+static TMP_NONCE: AtomicU64 = AtomicU64::new(0);
 
 /// The full persisted index for one repo (contract §3.4). `docs` is a `BTreeMap`
 /// so the doc ORDER on disk is deterministic; `bm25` is rebuilt from `docs` on
@@ -54,15 +65,39 @@ impl IndexStore {
 
 /// Load `index_dir/store.json`. Missing/unreadable/unparsable -> `None` (the
 /// caller treats that as "not built" / "start empty"). Never errors — a corrupt
-/// cache is regenerable derived data, not a fatal condition.
+/// cache is regenerable derived data, not a fatal condition. Also best-effort
+/// removes stale `store.json.<pid>.<nonce>.tmp` leftovers from a crashed or
+/// killed build (F-A9-1); a tmp still open by a concurrent build cannot be
+/// deleted on Windows, so an in-flight write is left untouched.
 pub fn load(index_dir: &Path) -> Option<IndexStore> {
+    cleanup_stale_tmp(index_dir);
     let bytes = std::fs::read(index_dir.join(STORE_FILE)).ok()?;
     serde_json::from_slice(&bytes).ok()
 }
 
+/// Best-effort removal of leftover atomic-write tmp files. Ignores every error:
+/// a tmp still held open by a concurrent build fails to delete (Windows) and is
+/// correctly left in place; a truly-stale tmp (crashed build, no open handle) is
+/// reclaimed.
+fn cleanup_stale_tmp(index_dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(index_dir) else {
+        return; // dir absent / unreadable -> nothing to clean
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with(TMP_INFIX) && name.ends_with(TMP_SUFFIX) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
 /// Atomically write `store` to `index_dir/store.json`: create the dir, write to
-/// `store.json.tmp`, then rename over the target (mirrors `settings.rs::save_to`;
-/// on Windows `rename` replaces an existing destination).
+/// a UNIQUE `store.json.<pid>.<nonce>.tmp`, then rename over the target (mirrors
+/// `settings.rs::save_to`; on Windows `rename` replaces an existing
+/// destination). The tmp name is per-process + per-call unique (F-A9-1) so two
+/// concurrent builds never write the same tmp and corrupt each other's
+/// rename-into-place (or hit Windows `ACCESS_DENIED` sharing the tmp handle).
 pub fn save(index_dir: &Path, store: &IndexStore) -> Result<(), AppError> {
     std::fs::create_dir_all(index_dir)
         .map_err(|e| AppError::Io(format!("create index dir {}: {e}", index_dir.display())))?;
@@ -70,9 +105,11 @@ pub fn save(index_dir: &Path, store: &IndexStore) -> Result<(), AppError> {
     let json =
         serde_json::to_vec(store).map_err(|e| AppError::Io(format!("serialize index: {e}")))?;
 
-    let mut tmp_name = file.as_os_str().to_owned();
-    tmp_name.push(".tmp");
-    let tmp = PathBuf::from(tmp_name);
+    let nonce = TMP_NONCE.fetch_add(1, Ordering::Relaxed);
+    let tmp = index_dir.join(format!(
+        "{TMP_INFIX}{}.{nonce}{TMP_SUFFIX}",
+        std::process::id()
+    ));
 
     std::fs::write(&tmp, &json).map_err(|e| AppError::Io(format!("write {}: {e}", tmp.display())))?;
     std::fs::rename(&tmp, &file).map_err(|e| {
@@ -172,6 +209,61 @@ mod tests {
     fn load_missing_is_none() {
         let dir = crate::testutil::scratch_dir();
         assert!(load(&dir.path().join("nope")).is_none());
+    }
+
+    // -------------------------------------------- F-A9-1 tmp isolation/cleanup
+
+    /// Concurrent saves into the SAME index dir must each use a unique tmp file
+    /// (pid+nonce), so no build corrupts another's rename-into-place. After the
+    /// storm the store parses and NO `store.json.*.tmp` leftover remains.
+    #[test]
+    fn concurrent_saves_use_isolated_tmp_and_leave_no_leftover() {
+        let dir = crate::testutil::scratch_dir();
+        let index_dir = std::sync::Arc::new(dir.path().join("idx"));
+        std::fs::create_dir_all(index_dir.as_path()).expect("mkdir");
+
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let index_dir = std::sync::Arc::clone(&index_dir);
+            handles.push(std::thread::spawn(move || {
+                let store = sample_store();
+                // Each thread saves repeatedly to widen the interleave window.
+                for _ in 0..10 {
+                    save(&index_dir, &store).expect("concurrent save");
+                }
+            }));
+        }
+        for h in handles {
+            h.join().expect("join");
+        }
+
+        // The store is intact and no tmp file survives.
+        assert!(load(index_dir.as_path()).is_some(), "store parses after storm");
+        let leftovers: Vec<_> = std::fs::read_dir(index_dir.as_path())
+            .expect("read_dir")
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with("store.json.") && n.ends_with(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "no leftover tmp files: {leftovers:?}");
+    }
+
+    /// A stale tmp (crashed build) is reclaimed on the next `load`; the real
+    /// `store.json` is never touched.
+    #[test]
+    fn load_cleans_up_stale_tmp() {
+        let dir = crate::testutil::scratch_dir();
+        let index_dir = dir.path().join("idx");
+        save(&index_dir, &sample_store()).expect("save");
+
+        // Simulate a crashed build's orphan tmp.
+        let stale = index_dir.join(format!("store.json.{}.999.tmp", std::process::id()));
+        std::fs::write(&stale, b"partial garbage").expect("write stale tmp");
+        assert!(stale.exists());
+
+        let back = load(&index_dir).expect("load still works");
+        assert_eq!(back, sample_store(), "real store untouched");
+        assert!(!stale.exists(), "stale tmp reclaimed on load");
     }
 
     // ---------------------------------------------------- §7.11 repo_key

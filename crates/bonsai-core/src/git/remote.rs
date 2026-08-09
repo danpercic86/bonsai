@@ -123,6 +123,11 @@ pub(crate) struct CredAttempts {
     helper: HelperState,
     agent: bool,
     default_: bool,
+    /// The url whose FRESH-fill credential we handed to libgit2 this operation
+    /// (a cache miss or a post-rejection bypass re-fill — NOT a first cache
+    /// hit). On an operation-level auth failure the caller evicts this key so
+    /// the next op re-fills instead of re-serving the known-bad cred (F-A5-b).
+    fresh_fill_url: Option<String>,
 }
 
 /// Returns the next untried method compatible with `allowed`, marking
@@ -255,7 +260,7 @@ pub(crate) fn acquire_cred(
                 // (invalidation on rejection, §9).
                 let bypass = attempts.borrow().helper == HelperState::RetryAllowed;
                 if bypass {
-                    cred_cache::evict(url);
+                    cred_cache::evict(repo_path, url);
                 }
                 match cred_cache::resolve(repo_path, url, bypass) {
                     Some(Resolved {
@@ -265,11 +270,19 @@ pub(crate) fn acquire_cred(
                         if let Ok(cred) = git2::Cred::userpass_plaintext(&user, &pass) {
                             // Only a FIRST-attempt cache hit earns a retry; a
                             // fresh fill (miss or bypass) is terminal.
-                            attempts.borrow_mut().helper = if from_cache && !bypass {
-                                HelperState::RetryAllowed
-                            } else {
+                            let fresh = !(from_cache && !bypass);
+                            let mut a = attempts.borrow_mut();
+                            a.helper = if fresh {
                                 HelperState::Done
+                            } else {
+                                HelperState::RetryAllowed
                             };
+                            // Remember a FRESH fill so op-level auth failure can
+                            // evict it (F-A5-b); a plain cache hit stays evictable
+                            // only through the existing RetryAllowed bypass path.
+                            if fresh {
+                                a.fresh_fill_url = Some(url.to_string());
+                            }
                             return Ok(cred);
                         }
                         // userpass_plaintext failing is theoretical (string-only
@@ -353,6 +366,32 @@ pub(crate) fn map_remote_err(e: git2::Error, context: &str) -> AppError {
     }
 }
 
+/// F-A5-b: on an operation-level auth failure, evict the credential this op
+/// FRESH-filled (cache miss / post-rejection bypass) so the NEXT op re-fills
+/// through the helper instead of re-serving the just-rejected cred for the full
+/// TTL. Returns `err` unchanged (identity on the non-auth / no-fresh-fill path).
+///
+/// We deliberately do NOT invoke `git credential reject` here: a proper reject
+/// must feed the helper the exact `username`/`password` it stored, but Bonsai's
+/// `cred_cache` keeps the plaintext deliberately walled off from `remote.rs`
+/// (it never surfaces the secret back out). Evicting our in-process entry is the
+/// safe, sufficient fix — the next op's fresh fill re-consults the helper, which
+/// will re-prompt/re-issue as its own policy dictates. (Behavior change:
+/// FOR USER REVIEW.)
+fn evict_fresh_on_auth_fail(
+    repo: &git2::Repository,
+    attempts: &RefCell<CredAttempts>,
+    err: AppError,
+) -> AppError {
+    if matches!(err, AppError::AuthFailed(_)) {
+        let fresh = attempts.borrow().fresh_fill_url.clone();
+        if let Some(url) = fresh {
+            cred_cache::evict(repo.workdir(), &url);
+        }
+    }
+    err
+}
+
 /// Opens the repo at `workdir` with `NO_SEARCH` (same as every git/ module).
 fn open_repo_at(workdir: &Path) -> Result<git2::Repository, AppError> {
     Ok(git2::Repository::open_ext(
@@ -397,9 +436,13 @@ fn fetch_remote(repo: &git2::Repository, name: &str) -> Result<RemoteFetchResult
         opts.remote_callbacks(callbacks);
         opts.download_tags(git2::AutotagOption::Auto);
 
-        remote
-            .fetch(&[] as &[&str], Some(&mut opts), None)
-            .map_err(|e| map_remote_err(e, name))?;
+        if let Err(e) = remote.fetch(&[] as &[&str], Some(&mut opts), None) {
+            return Err(evict_fresh_on_auth_fail(
+                repo,
+                &attempts,
+                map_remote_err(e, name),
+            ));
+        }
         to_u32(remote.stats().received_objects())
     };
 
@@ -670,9 +713,13 @@ pub fn push_current(
 
         // NO leading '+' — never force.
         let refspec = format!("{refname}:{remote_ref}");
-        remote
-            .push(&[refspec.as_str()], Some(&mut opts))
-            .map_err(|e| map_remote_err(e, &remote_name))?;
+        if let Err(e) = remote.push(&[refspec.as_str()], Some(&mut opts)) {
+            return Err(evict_fresh_on_auth_fail(
+                &repo,
+                &attempts,
+                map_remote_err(e, &remote_name),
+            ));
+        }
     }
 
     if let Some(msg) = rejected.into_inner() {
@@ -931,6 +978,10 @@ fn build_force_push_args(
         format!("--force-with-lease={remote_ref}:{expected_hex}"),
         "--force-if-includes".to_string(),
         "--no-verify".to_string(),
+        // F-A5-d: `--` end-of-options so the positional <remote> <refspec> can
+        // never be reinterpreted as flags (defense-in-depth against a remote
+        // name / branch that begins with `-`; config-write-level arg-injection).
+        "--".to_string(),
         remote.to_string(),
         format!("refs/heads/{branch}:{remote_ref}"),
     ]
@@ -1196,14 +1247,17 @@ mod tests {
                     .to_string(),
                 "--force-if-includes".to_string(),
                 "--no-verify".to_string(),
+                "--".to_string(),
                 "origin".to_string(),
                 "refs/heads/main:refs/heads/main".to_string(),
             ]
         );
         // No leading '+': an unconditional force would defeat --force-with-lease.
-        assert!(!args[5].starts_with('+'), "refspec must not force unconditionally");
+        assert!(!args[6].starts_with('+'), "refspec must not force unconditionally");
         // --no-verify present so git does not re-run the pre-push hook we ran.
         assert!(args.contains(&"--no-verify".to_string()), "must suppress git's own pre-push");
+        // F-A5-d: `--` immediately precedes the positional remote + refspec.
+        assert_eq!(args[4], "--", "end-of-options guards the positionals");
     }
 
     /// A slashed branch name flows verbatim into both the lease ref and the
@@ -1220,8 +1274,9 @@ mod tests {
             args[1],
             "--force-with-lease=refs/heads/feature/x:2222222222222222222222222222222222222222"
         );
-        assert_eq!(args[4], "upstream");
-        assert_eq!(args[5], "refs/heads/feature/x:refs/heads/feature/x");
+        assert_eq!(args[4], "--");
+        assert_eq!(args[5], "upstream");
+        assert_eq!(args[6], "refs/heads/feature/x:refs/heads/feature/x");
     }
 
     // ------------------------------------- P59a-2 build_pre_push_stdin (pure)
@@ -1449,6 +1504,34 @@ mod tests {
         assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::SshAgent));
         assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::Default));
         assert_eq!(next_cred_method(&mut attempts, allowed), None);
+    }
+
+    /// (F-A5-b) `evict_fresh_on_auth_fail` returns the error unchanged and only
+    /// touches the cache on an AuthFailed with a recorded fresh-fill url. The
+    /// eviction targets the process-global cache (a no-op for an unknown key),
+    /// so we assert the identity + no-panic contract across all three arms.
+    #[test]
+    fn evict_fresh_on_auth_fail_is_identity_and_scoped() {
+        let dir = crate::testutil::scratch_dir();
+        let repo = git2::Repository::init(dir.path()).expect("init");
+
+        // Non-auth error: returned unchanged even with a fresh-fill url recorded.
+        let attempts = RefCell::new(CredAttempts {
+            fresh_fill_url: Some("https://host.example/repo.git".to_string()),
+            ..CredAttempts::default()
+        });
+        let out = evict_fresh_on_auth_fail(&repo, &attempts, AppError::NetworkError("x".into()));
+        assert!(matches!(out, AppError::NetworkError(_)));
+
+        // AuthFailed + fresh-fill url: eviction fires (no-op on the global cache
+        // for this test url), error still returned unchanged.
+        let out = evict_fresh_on_auth_fail(&repo, &attempts, AppError::AuthFailed("y".into()));
+        assert!(matches!(out, AppError::AuthFailed(_)));
+
+        // AuthFailed + NO fresh-fill url (a cache HIT op): nothing to evict.
+        let attempts = RefCell::new(CredAttempts::default());
+        let out = evict_fresh_on_auth_fail(&repo, &attempts, AppError::AuthFailed("z".into()));
+        assert!(matches!(out, AppError::AuthFailed(_)));
     }
 
     /// (10c) Exhaustion (nothing allowed) returns the CRED_EXHAUSTED sentinel

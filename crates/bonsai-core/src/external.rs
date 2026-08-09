@@ -16,6 +16,22 @@
 //! user template is tokenized and `{path}` is substituted **inside a single argv
 //! token**, so a path with spaces or a shell metacharacter (`;`, `&&`, `|`) can
 //! never break out into a second command — nothing is ever handed to a shell.
+//!
+//! ACCEPTED RESIDUAL RISKS (not exploitable from Bonsai's own inputs; the
+//! template is USER-configured and `{path}` is a repo path the user already
+//! opened — so this is self-inflicted at worst, never attacker-controlled):
+//!  * **Windows `.cmd`/`.bat` shims** (e.g. VS Code's `code.cmd`): when the
+//!    resolved program is a batch shim, Windows runs it via `cmd.exe`, which
+//!    performs `%VAR%` environment-variable expansion on the argv it receives.
+//!    A `{path}` (or template token) literally containing `%FOO%` would be
+//!    expanded by that shim. We do NOT quote/escape `%` because there is no
+//!    robust cross-shim escaping and the value is user-owned; the post-CVE
+//!    (2024-24576) Rust argv-quoting still applies to the raw argument.
+//!  * **Windows Terminal (`wt`) `;`**: `wt` treats `;` in ITS OWN argument
+//!    parsing as a sub-command delimiter (independent of any shell). A template
+//!    that puts a `;` in a `wt` argument can therefore start a second `wt`
+//!    pane/tab. This is a `wt`-specific arg convention, not shell injection, and
+//!    only reachable through the user's own terminal template — accepted.
 
 use crate::error::AppError;
 use std::path::{Path, PathBuf};

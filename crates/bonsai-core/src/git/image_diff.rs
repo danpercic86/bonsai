@@ -10,9 +10,14 @@
 //! `head_endpoint`, together with `stage::open_workdir_repo`. A tree side reads
 //! the blob at the path, the workdir-new side reads the file bytes, and the
 //! index side reads the staged blob. Each side is `None` when absent
-//! (add/delete) or missing; a side over `MAX_IMAGE_BYTES` is `None` with its
-//! `*_too_large` flag set. The `orig_path` is used for the OLD side on renames.
-//! A bad oid maps to `git`; an unknown repo maps to `noRepo`.
+//! (add/delete), missing, or empty (0-byte, which has no renderable image); a
+//! side over `MAX_IMAGE_BYTES` is `None` with its `*_too_large` flag set. The
+//! `orig_path` is used for the OLD side on renames.
+//!
+//! Error kinds: an invalid `path`/`orig_path` (empty, absolute, `..`-escaping,
+//! or backslash-bearing) is rejected up-front by `validate_rel_path` as
+//! [`AppError::Other`] ("invalid path"); a bad/malformed oid maps to
+//! [`AppError::Git`]; an unknown repo maps to `noRepo` (via `open_workdir_repo`).
 
 use std::path::Path;
 
@@ -46,10 +51,10 @@ pub struct ImageSide {
 pub struct ImageDiff {
     pub path: String,
     /// OLD side (index / HEAD / parent tree). `None` when added OR missing OR
-    /// over-cap (`old_too_large` then `true`).
+    /// empty (0-byte) OR over-cap (`old_too_large` then `true`).
     pub old: Option<ImageSide>,
     /// NEW side (workdir / index / commit tree). `None` when deleted OR missing
-    /// OR over-cap.
+    /// OR empty (0-byte) OR over-cap.
     pub new: Option<ImageSide>,
     pub old_too_large: bool,
     pub new_too_large: bool,
@@ -170,10 +175,15 @@ fn bytes_from_workdir(workdir: &Path, path: &str) -> Result<Option<Vec<u8>>, App
 }
 
 /// Turn resolved bytes into `(side, too_large)`: absent -> `(None, false)`;
-/// over-cap -> `(None, true)`; else the base64-encoded side.
+/// empty (0-byte) -> `(None, false)`; over-cap -> `(None, true)`; else the
+/// base64-encoded side.
 fn make_side(bytes: Option<Vec<u8>>, mime: &str) -> (Option<ImageSide>, bool) {
     match bytes {
         None => (None, false),
+        // F-A9-13: a 0-byte side (empty/placeholder file) has no renderable
+        // image — treat it as absent rather than emit `data:${mime};base64,`
+        // with an empty payload, which resolves to a broken image element.
+        Some(b) if b.is_empty() => (None, false),
         Some(b) if b.len() > MAX_IMAGE_BYTES => (None, true),
         Some(b) => (
             Some(ImageSide {
@@ -374,6 +384,8 @@ mod tests {
     fn make_side_flags_over_cap_and_encodes() {
         // Absent -> (None, false).
         assert_eq!(make_side(None, "image/png"), (None, false));
+        // Empty (0-byte) -> (None, false): absent, NOT too_large (F-A9-13).
+        assert_eq!(make_side(Some(Vec::new()), "image/png"), (None, false));
         // Over cap -> (None, true).
         let big = vec![0u8; MAX_IMAGE_BYTES + 1];
         assert_eq!(make_side(Some(big), "image/png"), (None, true));
@@ -553,6 +565,30 @@ mod tests {
         assert!(!diff.old_too_large);
         assert!(diff.new.is_none(), "over-cap new -> None");
         assert!(diff.new_too_large, "over-cap new -> flag true");
+    }
+
+    /// A 0-byte side comes back `None` (absent), not an empty-base64 side that
+    /// would render as a broken `data:` URL (F-A9-13). Exercised end-to-end on
+    /// the workdir-new side: index holds RED, the workdir file is truncated to 0.
+    #[test]
+    fn zero_byte_side_is_absent_not_empty_base64() {
+        let dir = init_scratch();
+        let p = dir.path();
+        commit_bytes(p, "img.png", RED, "add image"); // index = RED
+        std::fs::write(p.join("img.png"), b"").expect("truncate to 0 bytes"); // workdir = empty
+
+        let diff = get_image_diff(
+            p,
+            &ImageDiffRequest::Workdir {
+                path: "img.png".into(),
+                orig_path: None,
+                staged: false,
+            },
+        )
+        .expect("zero-byte diff");
+        assert!(diff.old.is_some(), "small old side present");
+        assert!(diff.new.is_none(), "0-byte new -> None (absent)");
+        assert!(!diff.new_too_large, "0-byte is absent, NOT flagged too_large");
     }
 
     /// Compare variant: HEAD (old) vs the to-commit (new).

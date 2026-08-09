@@ -47,6 +47,15 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
   safe deletion is blocked except the tip-moved race.
 - F-A3-1 (queued): plain rebase Abort will refuse (retryable) instead of silently overwriting an
   untracked file that collides with the original tip — matching bisect/interactive abort semantics.
+- F-A5-b: on an operation-level auth failure (fetch/push) of a FRESHLY-filled credential (cache miss
+  or a post-rejection bypass re-fill), Bonsai now EVICTS that just-stored in-process entry instead of
+  re-serving it for the full 10-min TTL. Effect: the next fetch/push re-consults the configured
+  credential helper (which re-prompts/re-issues per its own policy) rather than double-failing on the
+  known-bad cred. We deliberately do NOT call `git credential reject` — that would require handing the
+  helper the exact plaintext, which `cred_cache` intentionally never surfaces back to `remote.rs`;
+  eviction is the safe, sufficient equivalent. No effect on a successful op or a first cache-HIT (the
+  existing one-shot RetryAllowed bypass already covers hit-then-reject). Revert = drop the
+  `evict_fresh_on_auth_fail` calls in `remote.rs::fetch_remote`/push and the `fresh_fill_url` field.
 
 ## Findings
 
@@ -216,22 +225,40 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
 
 - [T2.5] F-A5-a · SHOULD-FIX · cred_cache.rs:351 normalize_key — host-scoped key defeats
   credential.useHttpPath: token filled for org A replayed to org B on same host (dev.azure.com)
-  before self-healing via 401. Fix: include path in key when useHttpPath set (mirror git) — **open**
+  before self-healing via 401. Fix: include path in key when useHttpPath set (mirror git) — **fixed
+  (pending commit)**: `normalize_key(url, use_http_path)` appends the case-preserved URL path when set;
+  new `key_for(repo_path, url)` reads `credential.<host>.useHttpPath` (URL-scoped) then unscoped from
+  git2 config; resolve/evict/warm all key through it (evict + module facade gained a `repo_path` arg
+  so the SAME key is computed). Behavior change? N (host-only unchanged when unset). Tests
+  `normalize_key_with_http_path_includes_path`, `key_for_honors_use_http_path_config`,
+  `key_for_honors_host_scoped_use_http_path`
 - [T2.5] F-A5-b · SHOULD-FIX · remote.rs:268/310 — server-rejected fresh-fill cred stays cached for
   full 10-min TTL and helper never receives `credential reject` → every subsequent op double-fails.
   Fix: evict + send credential reject on op-level AuthFailed. Behavior change: Y, FOR USER REVIEW —
-  **open**
+  **fixed (pending commit)**: `CredAttempts.fresh_fill_url` records a FRESH fill; `fetch_remote`/push
+  route the mapped error through `evict_fresh_on_auth_fail`, which evicts that key on AuthFailed. NO
+  `credential reject` (would need plaintext cred_cache deliberately walls off — doc-noted). FOR USER
+  REVIEW bullet added. Test `evict_fresh_on_auth_fail_is_identity_and_scoped`
 - [T2.5] F-A5-c · LOW · exec.rs:115 — no timeout + unbounded output capture. DECISION: add output
-  size cap; document no-timeout as git-parity limitation (hooks can hang git too) — **open**
+  size cap; document no-timeout as git-parity limitation (hooks can hang git too) — **fixed (pending
+  commit)**: 64 MB combined stdout+stderr cap via `read_capped` (shared AtomicUsize counter, dual-
+  thread drain-to-EOF, overflow → AppError::Git); no-timeout documented as git-parity in the module
+  doc. Env-hygiene invariant now TESTED via `build_command` extraction + `get_envs`/`get_args`. Tests
+  `build_command_enforces_never_prompt_env_hygiene`, `build_command_layers_caller_env_over_defaults`,
+  `read_capped_flags_overflow_but_drains_to_eof`, `read_capped_shares_counter_across_streams`
 - [T2.5] F-A5-d · LOW · remote.rs:929 — build_force_push_args lacks `--` end-of-options before
   positional remote/refspec (config-write-level argument-injection defense-in-depth). One-line —
-  **open**
+  **fixed (pending commit)**: `--` inserted before `<remote> <refspec>`; `force_push_args_exact_vec` /
+  `force_push_args_nested_branch` updated for the shifted indices
 - [T2.5] F-A5-e · NIT · exec.rs:101 — stdin write-then-wait deadlock constraint for future callers;
-  document on trait — **open (fold in)**
+  document on trait — **noted (deferred)**: the new exec body now takes+drops stdin (explicit EOF) and
+  documents that git stdin is small so a pre-read write can't deadlock in practice; a formal
+  trait-level constraint note stays deferred (fold in)
 - [T2.5] NITs: slots never removed from map (raw URL retained, bounded); zeroization DECISION —
   docs honestly state not-implemented, no false claim ⇒ defer zeroize dep (log as deferred, not a
   bug); search.rs SpawnGitRunner askpass-hygiene drift (consider unifying on GitExec later);
-  default-port duplicate keys (document). Exec env-hygiene invariant needs its recording-fake test.
+  default-port duplicate keys (document). Exec env-hygiene invariant **now has its recording-fake
+  test** (F-A5-c, via `build_command`).
 - [T2.5] Verified sound: no secrets in Debug/errors, poison recovery, single-flight RAII, stale-
   while-revalidate math, hooks argv already uses `--`.
 
@@ -367,18 +394,30 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
 
 - [T2.9] F-A9-1 · SHOULD-FIX · history_index/store.rs:73 — non-unique store.json.tmp races
   concurrent builds (corrupted rename-into-place; Windows ACCESS_DENIED). Unique tmp suffix or
-  per-dir lock — **open**
+  per-dir lock — **fixed (pending commit)**: tmp is now `store.json.<pid>.<nonce>.tmp` (per-process
+  AtomicU64 nonce); `load` best-effort reclaims stale `store.json.*.tmp` (an in-flight tmp still open
+  can't be deleted on Windows → left alone). Tests `concurrent_saves_use_isolated_tmp_and_leave_no_leftover`
+  (8-thread storm), `load_cleans_up_stale_tmp`
 - [T2.9] F-A9-2 · SHOULD-FIX · history_index/mod.rs:117 — add-only store retains rewritten-away
   commits forever (dead oids in results, skewed idf, unbounded growth). Prune docs absent from
-  reachable_oids during build — **open**
-- [T2.9] F-A9-3..7 · LOW/NIT — one bad object aborts build (skip+count); 50k cap-before-filter
-  drift (document); CJK single-token limitation (document); repo_key FNV collision (accept, note);
-  orphan tmp cleanup — **fold into fix pass**
-- [T2.9] F-A9-8..13 · LOW/NIT — cmd.exe %VAR% expansion in .cmd shims (accepted-risk comment +
-  Windows test); wt `;` splitting (comment); Unix zombie on spawn-and-drop (cosmetic); maintenance
-  Skipped never logged (add debug log or fix doc); image_diff error-kind doc drift (fix Rust doc;
-  types.ts frozen); 0-byte image side → empty data URL (decide render-vs-absent; DECISION: treat
-  0-byte side as absent=None, cleaner UI) — **fold in**
+  reachable_oids during build — **fixed (pending commit)**: `build_index` prunes `store.docs` to the
+  reachable oid set BEFORE extraction; SKIPS pruning when the walk hit `MAX_INDEX_COMMITS` (can't tell
+  a ghost from a beyond-cap live commit — also closes the F-A9-4 cap-before-filter drift). Test
+  `build_prunes_ghost_docs_absent_from_reachable`
+- [T2.9] F-A9-3 · LOW — one bad object aborts build — **fixed (pending commit)**: extraction loop
+  skips-and-counts an unreadable object (eprintln diagnostic per skip + total) instead of `?`-aborting;
+  the skipped oid stays out of the store so the next build retries it. Test
+  `build_skips_unreadable_object_and_indexes_the_rest` (corrupts a loose blob).
+  F-A9-4 (cap-before-filter) folded into F-A9-2 (prune only when not truncated). F-A9-5..7 (CJK
+  single-token, repo_key FNV collision) remain documented-accept, no code change.
+- [T2.9] F-A9-8..13 · LOW/NIT — **fixed (pending commit)** where actionable: external.rs got the
+  accepted-risk module-doc note (`.cmd`/`.bat` shim `%VAR%` expansion + `wt` `;` sub-command
+  splitting — user-owned template, not attacker-controlled); maintenance.rs now `eprintln!`s the
+  `Skipped` reason (bonsai-core has no `log` dep — mirrors other git/ diagnostics); image_diff.rs
+  module+field docs corrected (invalid path → `AppError::Other`, and the 0-byte=absent behavior);
+  F-A9-13 0-byte image side now returns `None` (absent) not empty base64 — tests
+  `zero_byte_side_is_absent_not_empty_base64` + `make_side_flags_over_cap_and_encodes` (empty arm).
+  Unix zombie-on-spawn-and-drop stays cosmetic (no change).
 - [T2.9] Verified clean: error.rs full wire parity with types.ts (29 kinds), base64 RFC 4648-correct,
   store load never panics on garbage/foreign schema, no partial index ever visible, maintenance
   genuinely best-effort, external.rs argv discrete-token injection-safe (post-CVE-2024-24576).

@@ -52,7 +52,20 @@ pub fn commit_graph_args() -> Vec<String> {
 pub fn write_commit_graph(workdir: &Path, runner: &dyn GitRunner) -> CommitGraphOutcome {
     match runner.run(&commit_graph_args(), workdir) {
         Ok(_) => CommitGraphOutcome::Written,
-        Err(e) => CommitGraphOutcome::Skipped(e.to_string()),
+        Err(e) => {
+            // Best-effort optimization: a skip is never surfaced to the user
+            // (libgit2 works without the file), but emit the reason to stderr
+            // for optional debug logging instead of dropping it silently — the
+            // "reason for optional debug logging" the `Skipped` doc promises.
+            // (bonsai-core carries no `log`/`tracing` dep; eprintln! mirrors the
+            // other git/ diagnostic sites.)
+            let reason = e.to_string();
+            eprintln!(
+                "bonsai: commit-graph write skipped for {}: {reason}",
+                workdir.display()
+            );
+            CommitGraphOutcome::Skipped(reason)
+        }
     }
 }
 

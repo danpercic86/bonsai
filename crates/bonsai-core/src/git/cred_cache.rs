@@ -148,7 +148,7 @@ impl CredCache {
         url: &str,
         bypass: bool,
     ) -> Option<Resolved> {
-        let key = normalize_key(url);
+        let key = key_for(repo_path, url);
         let req = FillRequest {
             repo_path: repo_path.map(Path::to_path_buf),
             url: url.to_string(),
@@ -237,9 +237,11 @@ impl CredCache {
     }
 
     /// Drop the cached entry for `url`'s key (keeps `in_flight`/`request`).
-    /// Called when a cache-hit credential is rejected by the server.
-    pub(crate) fn evict(&self, url: &str) {
-        let key = normalize_key(url);
+    /// Called when a cache-hit credential is rejected by the server. `repo_path`
+    /// must match the one used to `resolve`/`warm` so the SAME key is computed
+    /// under `credential.useHttpPath` (F-A5-a).
+    pub(crate) fn evict(&self, repo_path: Option<&Path>, url: &str) {
+        let key = key_for(repo_path, url);
         let mut g = self.lock();
         if let Some(slot) = g.get_mut(&key) {
             slot.entry = None;
@@ -249,7 +251,7 @@ impl CredCache {
     /// Non-blocking background pre-fill. No-op if already Fresh or a fill is in
     /// flight. Warm-on-open (contract §8).
     pub(crate) fn warm(self: &Arc<Self>, repo_path: Option<&Path>, url: &str) {
-        let key = normalize_key(url);
+        let key = key_for(repo_path, url);
         let req = FillRequest {
             repo_path: repo_path.map(Path::to_path_buf),
             url: url.to_string(),
@@ -345,25 +347,64 @@ impl CredCache {
     }
 }
 
-/// Cache key normalization (contract §4): `scheme://host[:port]`, lowercased,
-/// dropping userinfo/path/query/fragment. A non-`://` input (e.g. an SCP-like
-/// SSH url) falls back to the lowercased input.
-fn normalize_key(url: &str) -> String {
+/// Cache key normalization (contract §4). Base key is `scheme://host[:port]`,
+/// lowercased, dropping userinfo/query/fragment. When `use_http_path` is set
+/// (mirroring git's `credential.useHttpPath`), the URL PATH is appended so a
+/// token filled for `host/orgA` is NOT replayed to `host/orgB` on the same
+/// host (F-A5-a — the dev.azure.com case). git lowercases scheme+host but NOT
+/// the path, so the path is kept verbatim. A non-`://` input (e.g. an SCP-like
+/// SSH url) falls back to the lowercased input (no path concept there).
+fn normalize_key(url: &str, use_http_path: bool) -> String {
     let Some((scheme, rest)) = url.split_once("://") else {
         return url.to_ascii_lowercase();
     };
-    let authority_end = rest
-        .find(['/', '?', '#'])
-        .unwrap_or(rest.len());
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
     let mut authority = &rest[..authority_end];
     if let Some(at) = authority.rfind('@') {
         authority = &authority[at + 1..]; // drop userinfo
     }
-    format!(
+    let base = format!(
         "{}://{}",
         scheme.to_ascii_lowercase(),
         authority.to_ascii_lowercase()
-    )
+    );
+    if !use_http_path {
+        return base;
+    }
+    // Append the path only (strip query/fragment), case-preserved.
+    let path_end = rest.find(['?', '#']).unwrap_or(rest.len());
+    let path = &rest[authority_end..path_end];
+    format!("{base}{path}")
+}
+
+/// Resolve the cache key for `url`, honoring `credential.useHttpPath` read from
+/// the repo (or global) git config. When set, the key includes the URL path so
+/// per-org tokens on a shared host don't cross-contaminate (F-A5-a). Reading
+/// config per call is cheap relative to a network auth op and keeps `resolve` /
+/// `evict` / `warm` computing the SAME key for the same inputs.
+fn key_for(repo_path: Option<&Path>, url: &str) -> String {
+    normalize_key(url, use_http_path(repo_path, url))
+}
+
+/// Whether git's `credential.useHttpPath` is enabled for `url`. Checks the
+/// URL-host-scoped key (`credential.<scheme://host>.useHttpPath`, how Azure
+/// DevOps setups typically enable it) first, then the unscoped
+/// `credential.useHttpPath`. Any config-open/lookup failure ⇒ `false` (the
+/// host-only key, unchanged prior behavior). NEVER panics.
+fn use_http_path(repo_path: Option<&Path>, url: &str) -> bool {
+    let cfg = match repo_path {
+        Some(p) => git2::Repository::open(p).ok().and_then(|r| r.config().ok()),
+        None => git2::Config::open_default().ok(),
+    };
+    let Some(cfg) = cfg else {
+        return false;
+    };
+    // Most-specific-wins (a subset of git's URL matching): scheme://host scope.
+    let host_scope = normalize_key(url, false);
+    if let Ok(b) = cfg.get_bool(&format!("credential.{host_scope}.useHttpPath")) {
+        return b;
+    }
+    cfg.get_bool("credential.useHttpPath").unwrap_or(false)
 }
 
 // ---- process-global instance + thin facade the Helper arm calls ----
@@ -380,8 +421,8 @@ pub(crate) fn resolve(repo_path: Option<&Path>, url: &str, bypass: bool) -> Opti
     GLOBAL.resolve(repo_path, url, bypass)
 }
 
-pub(crate) fn evict(url: &str) {
-    GLOBAL.evict(url);
+pub(crate) fn evict(repo_path: Option<&Path>, url: &str) {
+    GLOBAL.evict(repo_path, url);
 }
 
 /// Warm-on-open entry point (contract §8, §16). Public so the command layer MAY
@@ -581,7 +622,7 @@ mod tests {
         assert_eq!(r1.creds.1, "p1");
         assert_eq!(counter.load(Ordering::SeqCst), 1);
 
-        cache.evict("https://host.com/a");
+        cache.evict(None, "https://host.com/a");
         let r2 = cache.resolve(None, "https://host.com/a", true).expect("some");
         assert_eq!(counter.load(Ordering::SeqCst), 2, "bypass forces a fresh fill");
         assert!(!r2.from_cache);
@@ -636,26 +677,123 @@ mod tests {
         assert_eq!(counter.load(Ordering::SeqCst), 1, "warm on Fresh key does not re-fill");
     }
 
-    // 9. key normalization table.
+    // 9. key normalization table (host-only, useHttpPath OFF).
     #[test]
     fn normalize_key_table() {
-        assert_eq!(normalize_key("https://Host.COM/a/b.git?x=1#f"), "https://host.com");
-        assert_eq!(normalize_key("https://user:pw@host.com/a"), "https://host.com");
-        assert_eq!(normalize_key("https://host.com/other"), "https://host.com");
-        assert_eq!(normalize_key("https://host.com:8443/a"), "https://host.com:8443");
-        assert_eq!(normalize_key("HTTPS://HOST.com"), "https://host.com");
+        assert_eq!(normalize_key("https://Host.COM/a/b.git?x=1#f", false), "https://host.com");
+        assert_eq!(normalize_key("https://user:pw@host.com/a", false), "https://host.com");
+        assert_eq!(normalize_key("https://host.com/other", false), "https://host.com");
+        assert_eq!(normalize_key("https://host.com:8443/a", false), "https://host.com:8443");
+        assert_eq!(normalize_key("HTTPS://HOST.com", false), "https://host.com");
         // non-`://` fallback -> lowercased input.
         assert_eq!(
-            normalize_key("Git@GitHub.com:owner/repo.git"),
+            normalize_key("Git@GitHub.com:owner/repo.git", false),
             "git@github.com:owner/repo.git"
         );
 
         // The first three collapse to one shared key (host+scheme only).
-        let a = normalize_key("https://Host.COM/a/b.git?x=1#f");
-        let b = normalize_key("https://user:pw@host.com/a");
-        let c = normalize_key("https://host.com/other");
+        let a = normalize_key("https://Host.COM/a/b.git?x=1#f", false);
+        let b = normalize_key("https://user:pw@host.com/a", false);
+        let c = normalize_key("https://host.com/other", false);
         assert_eq!(a, b);
         assert_eq!(b, c);
+    }
+
+    // 9b. key normalization with useHttpPath ON: the PATH disambiguates
+    // per-org tokens on a shared host (F-A5-a — the dev.azure.com case). Path
+    // is case-preserved; scheme+host still lowercased; userinfo/query/fragment
+    // still dropped.
+    #[test]
+    fn normalize_key_with_http_path_includes_path() {
+        // Two orgs on the SAME host now yield DISTINCT keys.
+        let org_a = normalize_key("https://dev.azure.com/OrgA/_git/repo", true);
+        let org_b = normalize_key("https://dev.azure.com/OrgB/_git/repo", true);
+        assert_ne!(org_a, org_b, "different paths => different keys");
+        assert_eq!(org_a, "https://dev.azure.com/OrgA/_git/repo");
+
+        // Without useHttpPath they collapse to the shared host key (the old,
+        // cross-contaminating behavior we are guarding against).
+        assert_eq!(
+            normalize_key("https://dev.azure.com/OrgA/_git/repo", false),
+            normalize_key("https://dev.azure.com/OrgB/_git/repo", false)
+        );
+
+        // Path case is preserved; scheme+host lowercased; query/fragment dropped.
+        assert_eq!(
+            normalize_key("HTTPS://Dev.Azure.COM/OrgA/repo.git?x=1#f", true),
+            "https://dev.azure.com/OrgA/repo.git"
+        );
+        // userinfo still dropped, path kept.
+        assert_eq!(
+            normalize_key("https://user:pw@host.com/a/b", true),
+            "https://host.com/a/b"
+        );
+        // No path -> just the base (trailing slash-less).
+        assert_eq!(normalize_key("https://host.com", true), "https://host.com");
+    }
+
+    // 9c. key_for reads credential.useHttpPath from the repo config: unset =>
+    // host-only key; set true => path-scoped key (F-A5-a). Also exercises the
+    // per-URL-scoped `credential.<host>.useHttpPath` form.
+    #[test]
+    fn key_for_honors_use_http_path_config() {
+        let dir = crate::testutil::scratch_dir();
+        let repo = git2::Repository::init(dir.path()).expect("init");
+        // Use a host that cannot appear in the machine's GLOBAL git config, and
+        // set the LOCAL value explicitly so the test is immune to a global
+        // `credential.useHttpPath` default (Azure DevOps devs often set one).
+        let url = "https://git.example.test/OrgA/repo";
+
+        {
+            let mut cfg = repo.config().expect("config");
+            cfg.set_bool("credential.useHttpPath", false).expect("off");
+        }
+        assert_eq!(
+            key_for(Some(dir.path()), url),
+            "https://git.example.test",
+            "useHttpPath off => host-only key"
+        );
+
+        {
+            let mut cfg = repo.config().expect("config");
+            cfg.set_bool("credential.useHttpPath", true).expect("on");
+        }
+        assert_eq!(
+            key_for(Some(dir.path()), url),
+            "https://git.example.test/OrgA/repo",
+            "useHttpPath on => path-scoped key"
+        );
+
+        // Two orgs on the same host now key distinctly.
+        assert_ne!(
+            key_for(Some(dir.path()), "https://git.example.test/OrgA/repo"),
+            key_for(Some(dir.path()), "https://git.example.test/OrgB/repo"),
+        );
+    }
+
+    // 9d. the URL-host-scoped config key wins independently of the unscoped one
+    // (how Azure DevOps users typically enable it).
+    #[test]
+    fn key_for_honors_host_scoped_use_http_path() {
+        let dir = crate::testutil::scratch_dir();
+        let repo = git2::Repository::init(dir.path()).expect("init");
+        {
+            let mut cfg = repo.config().expect("config");
+            // Unscoped OFF locally (override any global default), host-scoped ON.
+            cfg.set_bool("credential.useHttpPath", false).expect("unscoped off");
+            cfg.set_bool("credential.https://azdo.example.test.useHttpPath", true)
+                .expect("set scoped");
+        }
+        // Host-scoped true => path included for that host.
+        assert_eq!(
+            key_for(Some(dir.path()), "https://azdo.example.test/OrgA/_git/repo"),
+            "https://azdo.example.test/OrgA/_git/repo"
+        );
+        // A different host without the scoped key falls to the unscoped OFF.
+        assert_eq!(
+            key_for(Some(dir.path()), "https://other.example.test/OrgA/repo.git"),
+            "https://other.example.test"
+        );
     }
 
     // 10. panic recovery: a filler that PANICS on its first call must not leave
