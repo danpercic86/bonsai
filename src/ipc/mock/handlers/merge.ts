@@ -2,6 +2,7 @@
 import type { IpcApi } from '../../types';
 import { randomOid } from '../../fixtures/oids';
 import { delay, requireRepo } from '../repoState';
+import { seedOpState } from '../opStateSeed';
 import { hookRejectionFor } from '../hooksGate';
 import { sortByPath, upsert } from '../statusHelpers';
 import type { AppError, CommitResult, ConflictEntry, ConflictFile, ConflictResolution, MergeOutcome, RepoOpState } from '../../types';
@@ -32,7 +33,17 @@ export const mergeHandlers = {
       return { kind: 'stashPopConflicts', head: randomOid(), paths: ['src/app.ts'] };
     }
     if (name.includes('conflict')) {
-      return { kind: 'conflicts', paths: ['src/app.ts', 'README.md'], stashed: true };
+      // T3.4 gap fix: a FRESH conflicted merge seeds the SAME coherent paused
+      // state as `?op=merge` (opState + conflict entries/texts + conflicted
+      // status rows), so listConflicts/getConflict/commitMerge/abortMerge work
+      // without the URL seed. Only incoming/message reflect the actual branch.
+      seedOpState(state, 'merge');
+      state.opState = {
+        kind: 'merge',
+        incoming: name,
+        message: `Merge branch '${name}'\n\nConflicts:\n\tREADME.md\n\tsrc/auth.ts`,
+      };
+      return { kind: 'conflicts', paths: state.conflicts.map((c) => c.path), stashed: true };
     }
     const stashed = name.includes('autostash');
     // Clean-merge demo: auto-committed 2-parent node on top of the graph.

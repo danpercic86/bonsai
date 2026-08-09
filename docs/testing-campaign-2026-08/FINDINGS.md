@@ -350,3 +350,30 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
   reorder), PaneDivider (delta normalization), Toasts (order/roles). Note: Toasts is
   presentational — auto-dismiss timers live in App, not testable here; TabStrip middle-click
   close is not implemented (no auxclick handler) — by design, not a bug.
+- [T3.4] F-T34-1 · FIXED (mock) — merge.ts: a FRESH `mergeBranch('…conflict…')` returned the
+  conflicts outcome WITHOUT seeding opState/conflict entries/texts/conflicted status (the T4
+  contract's known gap): getOpState stayed `none`, listConflicts was empty, and
+  getConflict/commitMerge/abortMerge were unreachable without the `?op=merge` URL seed.
+  Fixed by reusing `seedOpState(state,'merge')` on that path, then overriding
+  `incoming`/`message` with the actual branch name; the returned outcome paths now mirror the
+  seeded conflicts (['README.md','src/auth.ts'] path-ascending, replacing the incoherent
+  ['src/app.ts','README.md'] that never matched listConflicts). `?op=merge` behavior unchanged;
+  e2e/06-merge-conflicts.spec.ts (incl. its render-only downgrade test) still passes 7/7 —
+  its §5.06.7 [RENDER] downgrade can now be upgraded to the full editor flow.
+- [T3.4] Note (fixture semantics, not a bug) — getGraph injects stash offshoot rows at
+  nodes[0..2] with `author: ''` (withStashNodes prepends), while getCommitDiff /
+  getInteractivePlan resolve rows WITHOUT the stash nodes. Tests (and any harness automation)
+  must skip `author === ''` rows / use the raw fixture layout when picking commit oids.
+- [T3.4] Verified clean: persistence corrupt-storage matrix (garbage JSON, wrong-shape JSON,
+  partial objects, huge blob, `__proto__` pollution, per-field clamps, profile sanitize);
+  repoState seeding/canonicalization/stale report; stage↔unstage↔commit↔graph coherence +
+  identity/emptyMessage/nothingToCommit gates; composer atomic rollback; branches
+  create/checkout(FF/dirty/conflicted)/rename/delete/remote-checkout/stale-cleanup safety
+  rules; fresh-merge full conflict cycle + guards; rebase clean/paused/interactive
+  (reword/drop/squash guards/conflict pause) + bisect converge/skip/cannotDetermine; stash
+  scopes/reserved-path recovery/amend; undo ?undo= seam plans; fetch→pull FF/diverged/push
+  upstream-create/force-push lease; diff routing + ref-tip fallback + image seams; search
+  caps/#fail; history build→status→retrieve→AI answer; signing ?sign= seam + deterministic
+  verify; worktrees lifecycle/copy-plan; submodules transitions/#fail; scheduler backoff
+  table + event ordering + timer arming; ?ai=off / ?historyFail / ?hooks= / ?fixture=noconfig
+  / 20k / ?op=merge / ?branch=cbhconflict seams. (13 new files, 208 tests; vitest 776→984.)

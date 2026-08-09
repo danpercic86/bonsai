@@ -1,0 +1,128 @@
+/** T3.4 — URL-flag seams. Module-init flags (?ai=off, ?historyFail) need
+ *  vi.resetModules + a rewritten location (the useUpdateController.test.tsx
+ *  pattern); openRepo-time flags (?hooks=, ?fixture=, ?op=, ?branch=) only
+ *  need replaceState before opening. */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { freshRepoPath, run, runErr } from '../../test/mockIpcKit';
+
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.resetModules();
+  window.history.replaceState({}, '', '/');
+});
+
+/** Reload the mock module graph under `search` and open a fresh default repo. */
+async function loadWith(search: string) {
+  vi.resetModules();
+  window.history.replaceState({}, '', search === '' ? '/' : `/?${search}`);
+  const repo = (await import('./handlers/repo')).repoHandlers;
+  const { repoId } = await run(repo.openRepo(freshRepoPath('seam')));
+  return { repoId };
+}
+
+describe('?ai=off (module-init AI_OFF)', () => {
+  it('availability reports not-installed; AI commands reject aiFailed', async () => {
+    const { repoId } = await loadWith('ai=off');
+    const ai = (await import('./handlers/ai')).aiHandlers;
+    expect(await run(ai.checkAiAvailability())).toMatchObject({
+      installed: false,
+      loggedIn: false,
+      version: null,
+    });
+    expect((await runErr(ai.generateCommitMessage(repoId))).kind).toBe('aiFailed');
+    expect((await runErr(ai.aiPlanOperation(repoId, 'stash it'))).kind).toBe('aiFailed');
+    expect(
+      (await runErr(ai.aiDigest(repoId, { kind: 'lastDays', days: 1 }))).kind,
+    ).toBe('aiFailed');
+    const history = (await import('./handlers/history')).historyHandlers;
+    expect((await runErr(history.aiSearchHistory(repoId, 'q', 5))).kind).toBe('aiFailed');
+  });
+});
+
+describe('?historyFail (module-init)', () => {
+  it('historyIndexBuild rejects with a git AppError', async () => {
+    const { repoId } = await loadWith('historyFail=1');
+    const history = (await import('./handlers/history')).historyHandlers;
+    const err = await runErr(history.historyIndexBuild(repoId, () => undefined));
+    expect(err).toEqual({ kind: 'git', message: 'Mock: index build failed' });
+  });
+});
+
+describe('?hooks= (read at openRepo)', () => {
+  it('hooks=fail blocks commit/amend/commitMerge; skipHooks bypasses', async () => {
+    const { repoId } = await loadWith('hooks=fail');
+    const status = (await import('./handlers/status')).statusHandlers;
+    const stash = (await import('./handlers/stash')).stashHandlers;
+    const err = await runErr(status.commit(repoId, 'feat: blocked'));
+    expect(err.kind).toBe('hookRejected');
+    expect(err.message).toContain('pre-commit hook failed');
+    expect((await runErr(stash.commitAmend(repoId, 'amend blocked'))).kind).toBe(
+      'hookRejected',
+    );
+    const result = await run(status.commit(repoId, 'feat: skipped', null, true));
+    expect(result.oid).toHaveLength(40);
+  });
+
+  it('hooks=failpush blocks push/forcePush; skipHooks bypasses', async () => {
+    const { repoId } = await loadWith('hooks=failpush');
+    const status = (await import('./handlers/status')).statusHandlers;
+    const sync = (await import('./handlers/remotesSync')).remotesSyncHandlers;
+    await run(status.commit(repoId, 'to push'));
+    const err = await runErr(sync.push(repoId));
+    expect(err.kind).toBe('hookRejected');
+    expect(err.message).toContain('pre-push hook failed');
+    expect(await run(sync.push(repoId, true))).toMatchObject({ kind: 'pushed' });
+  });
+});
+
+describe('?fixture= (read at openRepo)', () => {
+  it('noconfig: commit rejects configMissing until an identity is set', async () => {
+    const { repoId } = await loadWith('fixture=noconfig');
+    const status = (await import('./handlers/status')).statusHandlers;
+    const config = (await import('./handlers/config')).configHandlers;
+    expect((await runErr(status.commit(repoId, 'msg'))).kind).toBe('configMissing');
+    await run(config.setConfig(repoId, 'local', 'user.name', 'A'));
+    await run(config.setConfig(repoId, 'local', 'user.email', 'a@x.dev'));
+    expect((await run(status.commit(repoId, 'msg'))).oid).toHaveLength(40);
+  });
+
+  it('20k: getGraph serves the synthetic 20k layout', async () => {
+    const { repoId } = await loadWith('fixture=20k');
+    const diff = (await import('./handlers/diff')).diffHandlers;
+    const layout = await run(diff.getGraph(repoId));
+    expect(layout.nodes.length).toBeGreaterThanOrEqual(20_000);
+  });
+});
+
+describe('?op=merge (query fallback when the path has no substring)', () => {
+  it('opens paused with the seeded conflicts', async () => {
+    const { repoId } = await loadWith('op=merge');
+    const merge = (await import('./handlers/merge')).mergeHandlers;
+    const op = await run(merge.getOpState(repoId));
+    expect(op).toMatchObject({ kind: 'merge', incoming: 'feature/login' });
+    expect((await run(merge.listConflicts(repoId))).map((c) => c.path)).toEqual([
+      'README.md',
+      'src/auth.ts',
+    ]);
+  });
+});
+
+describe('?branch=cbhconflict (read per call)', () => {
+  it('createBranchHere on a dirty tree reports a conflicted carry-over', async () => {
+    const { repoId } = await loadWith('branch=cbhconflict');
+    const branches = (await import('./handlers/branches')).branchHandlers;
+    const result = await run(
+      branches.createBranchHere(repoId, 'hot/conflicted-carry', '9'.repeat(40)),
+    );
+    expect(result).toEqual({
+      stashed: true,
+      apply: { kind: 'conflicts', paths: ['src/app.ts'] },
+    });
+    const { requireRepo } = await import('./repoState');
+    expect(
+      requireRepo(repoId).status.conflicted.some((e) => e.path === 'src/app.ts'),
+    ).toBe(true);
+  });
+});
