@@ -148,6 +148,7 @@ export function PrCreateForm({
             <button
               type="button"
               className="section-action pr-generate-button"
+              aria-label="Generate description with AI"
               disabled={generateDisabled}
               title={generateTitle}
               onClick={() => void runGenerate()}
