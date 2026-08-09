@@ -178,8 +178,15 @@ export async function openBranchContextMenu(page: Page, name: string): Promise<L
     .locator('li')
     .filter({ has: page.getByTitle(name, { exact: true }) })
     .first();
-  await row.click({ button: 'right' });
+  // ContextMenu dismisses on ANY capture-phase scroll — pre-scroll the row into
+  // view so the click's own auto-scroll can't fire a trailing scroll event that
+  // instantly closes the menu (flaky on bottom-of-sidebar rows), and retry the
+  // right-click if a residual scroll still races the open.
+  await row.scrollIntoViewIfNeeded();
   const menu = page.getByRole('menu');
-  await expect(menu).toBeVisible();
+  await expect(async () => {
+    await row.click({ button: 'right' });
+    await expect(menu).toBeVisible({ timeout: 1000 });
+  }).toPass();
   return menu;
 }
