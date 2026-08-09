@@ -61,6 +61,21 @@ mod tests_merge_rebase;
 mod tests_bisect_stash;
 
 #[cfg(test)]
+mod tests_diff_search_history;
+
+#[cfg(test)]
+mod tests_config_worktree_submodule;
+
+#[cfg(test)]
+mod tests_repo_session_misc;
+
+#[cfg(test)]
+mod tests_remotes;
+
+#[cfg(test)]
+mod tests_ai;
+
+#[cfg(test)]
 mod registration_tests;
 
 // `shared` re-exports the cross-cutting imports and `repo_path`; only the test

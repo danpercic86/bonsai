@@ -62,6 +62,44 @@ pub(crate) fn repo_count(state: &AppState) -> usize {
     state.repos.lock().expect("repos lock").len()
 }
 
+/// True when the `git` CLI is on PATH — the remotes/submodule twin-repo
+/// fixtures shell out to it. Tests skip-with-note when it is absent.
+pub(crate) fn have_git() -> bool {
+    std::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// `git <args>` in `dir`, asserting success; returns trimmed stdout. Used by
+/// the file:// twin-repo fixtures (remotes/submodules) — never against a real
+/// repo.
+pub(crate) fn git(dir: &std::path::Path, args: &[&str]) -> String {
+    let out = std::process::Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .unwrap_or_else(|e| panic!("run git {args:?}: {e}"));
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+/// `file://` URL for a local path (libgit2-friendly 3-slash form; Windows
+/// drive paths get the extra slash). Mirrors `bonsai-core`'s `common::file_url`.
+pub(crate) fn file_url(path: &std::path::Path) -> String {
+    let s = path.display().to_string().replace('\\', "/");
+    if s.starts_with('/') {
+        format!("file://{s}")
+    } else {
+        format!("file:///{s}")
+    }
+}
+
 /// Full 40-hex oid of HEAD's target commit (panics on unborn — fixtures only).
 pub(crate) fn head_oid(workdir: &std::path::Path) -> String {
     let repo = git2::Repository::open(workdir).expect("open repo");
