@@ -15,7 +15,8 @@ describe('commit cancellation sentinels', () => {
   });
 
   it('sentinels are not Errors and not registered global symbols', () => {
-    expect(COMMIT_PUSH_CANCELED instanceof Object).toBe(false);
+    // Cast: TS bans `symbol instanceof Object` outright (TS2358) — assert via unknown.
+    expect((COMMIT_PUSH_CANCELED as unknown) instanceof Object).toBe(false);
     expect(Symbol.keyFor(COMMIT_PUSH_CANCELED)).toBeUndefined();
     expect(Symbol.keyFor(COMMIT_HOOK_CANCELED)).toBeUndefined();
   });

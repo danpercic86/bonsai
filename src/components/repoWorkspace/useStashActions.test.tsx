@@ -1,0 +1,162 @@
+/** T3.2a — useStashActions: scope-aware create + apply/pop (incl. reserved-path gate) + drop. */
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { mockIpc } from '../../ipc/mock';
+import { useStashActions } from './useStashActions';
+import {
+  appErr,
+  asyncFn,
+  base,
+  expectMutatingCycle,
+  REPO,
+} from '../../test/actionHookKit';
+
+afterEach(() => vi.restoreAllMocks());
+
+type Deps = Parameters<typeof useStashActions>[0];
+
+function makeDeps(over: Partial<Deps> = {}): Deps {
+  return {
+    ...base(),
+    refreshAll: asyncFn(),
+    refetchStashes: asyncFn(),
+    refetchGraph: asyncFn(),
+    setPendingReservedStash: vi.fn(),
+    ...over,
+  };
+}
+
+describe('handleCreateStash', () => {
+  it('created → scope-specific success toast + refreshAll', async () => {
+    const create = vi.spyOn(mockIpc, 'createStash').mockResolvedValue({ created: true });
+    const deps = makeDeps();
+    await useStashActions(deps).handleCreateStash('staged');
+    expect(create).toHaveBeenCalledWith(REPO, null, 'staged');
+    expect(deps.pushToast).toHaveBeenCalledWith('success', 'Stashed staged changes');
+    expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expectMutatingCycle(deps.setMutating);
+  });
+
+  it('clean tree (created:false) → info toast, still refreshes', async () => {
+    vi.spyOn(mockIpc, 'createStash').mockResolvedValue({ created: false });
+    const deps = makeDeps();
+    await useStashActions(deps).handleCreateStash('all');
+    expect(deps.pushToast).toHaveBeenCalledWith('info', 'Nothing to stash — working tree is clean');
+  });
+
+  it('errors toast and never throw', async () => {
+    vi.spyOn(mockIpc, 'createStash').mockRejectedValue(appErr('git', 'stash failed'));
+    const deps = makeDeps();
+    await useStashActions(deps).handleCreateStash('allWithUntracked');
+    expect(deps.pushToast).toHaveBeenCalledWith('error', 'stash failed');
+    expect(deps.setMutating).toHaveBeenLastCalledWith(false);
+  });
+});
+
+describe('handleApplyStash', () => {
+  it('applied → success toast + refreshAll', async () => {
+    const apply = vi.spyOn(mockIpc, 'applyStash').mockResolvedValue({ kind: 'applied' });
+    const deps = makeDeps();
+    await useStashActions(deps).handleApplyStash(1);
+    expect(apply).toHaveBeenCalledWith(REPO, 1, false);
+    expect(deps.pushToast).toHaveBeenCalledWith('success', 'Applied stash@{1}');
+    expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('reservedPaths → arms the confirm dialog, SKIPS refreshAll, clears mutating', async () => {
+    vi.spyOn(mockIpc, 'applyStash').mockResolvedValue({
+      kind: 'reservedPaths',
+      paths: ['NUL', 'aux.txt'],
+    });
+    const deps = makeDeps();
+    await useStashActions(deps).handleApplyStash(0);
+    expect(deps.setPendingReservedStash).toHaveBeenCalledWith({
+      index: 0,
+      op: 'apply',
+      paths: ['NUL', 'aux.txt'],
+    });
+    expect(deps.refreshAll).not.toHaveBeenCalled();
+    expect(deps.pushToast).not.toHaveBeenCalled();
+    expect(deps.setMutating).toHaveBeenLastCalledWith(false);
+  });
+
+  it('retry with skipReserved → appliedSkippingReserved success toast naming the files', async () => {
+    const apply = vi.spyOn(mockIpc, 'applyStash').mockResolvedValue({
+      kind: 'appliedSkippingReserved',
+      skipped: ['NUL'],
+    });
+    const deps = makeDeps();
+    await useStashActions(deps).handleApplyStash(0, true);
+    expect(apply).toHaveBeenCalledWith(REPO, 0, true);
+    expect(deps.pushToast).toHaveBeenCalledWith('success', expect.stringContaining('NUL'));
+    expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('conflicts → INFO toast (stash kept)', async () => {
+    vi.spyOn(mockIpc, 'applyStash').mockResolvedValue({ kind: 'conflicts', paths: ['a.ts'] });
+    const deps = makeDeps();
+    await useStashActions(deps).handleApplyStash(2);
+    expect(deps.pushToast).toHaveBeenCalledWith(
+      'info',
+      expect.stringContaining('the stash is kept (stash@{2})'),
+    );
+  });
+});
+
+describe('handlePopStash', () => {
+  it('applied → "Popped" toast; conflicts → ERROR toast (stash retained)', async () => {
+    const pop = vi.spyOn(mockIpc, 'popStash').mockResolvedValue({ kind: 'applied' });
+    const deps = makeDeps();
+    const actions = useStashActions(deps);
+    await actions.handlePopStash(0);
+    expect(pop).toHaveBeenCalledWith(REPO, 0, false);
+    expect(deps.pushToast).toHaveBeenCalledWith('success', 'Popped stash@{0}');
+
+    pop.mockResolvedValue({ kind: 'conflicts', paths: ['a.ts', 'b.ts'] });
+    await actions.handlePopStash(0);
+    expect(deps.pushToast).toHaveBeenCalledWith(
+      'error',
+      expect.stringContaining('still on the stash (stash@{0})'),
+    );
+  });
+
+  it('reservedPaths → dialog armed with op:pop, no refresh', async () => {
+    vi.spyOn(mockIpc, 'popStash').mockResolvedValue({ kind: 'reservedPaths', paths: ['NUL'] });
+    const deps = makeDeps();
+    await useStashActions(deps).handlePopStash(3);
+    expect(deps.setPendingReservedStash).toHaveBeenCalledWith({
+      index: 3,
+      op: 'pop',
+      paths: ['NUL'],
+    });
+    expect(deps.refreshAll).not.toHaveBeenCalled();
+  });
+
+  it('errors toast', async () => {
+    vi.spyOn(mockIpc, 'popStash').mockRejectedValue(appErr('git', 'pop failed'));
+    const deps = makeDeps();
+    await useStashActions(deps).handlePopStash(0);
+    expect(deps.pushToast).toHaveBeenCalledWith('error', 'pop failed');
+  });
+});
+
+describe('handleDropStash (confirm-gated upstream)', () => {
+  it('drops, toasts, and refetches ONLY stashes + graph (worktree untouched)', async () => {
+    const drop = vi.spyOn(mockIpc, 'dropStash').mockResolvedValue(undefined);
+    const deps = makeDeps();
+    await useStashActions(deps).handleDropStash(1);
+    expect(drop).toHaveBeenCalledWith(REPO, 1);
+    expect(deps.pushToast).toHaveBeenCalledWith('success', 'Dropped stash@{1}');
+    expect(deps.refetchStashes).toHaveBeenCalledTimes(1);
+    expect(deps.refetchGraph).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).not.toHaveBeenCalled();
+  });
+
+  it('errors toast and clear mutating', async () => {
+    vi.spyOn(mockIpc, 'dropStash').mockRejectedValue(appErr('git', 'gone'));
+    const deps = makeDeps();
+    await useStashActions(deps).handleDropStash(0);
+    expect(deps.pushToast).toHaveBeenCalledWith('error', 'gone');
+    expect(deps.setMutating).toHaveBeenLastCalledWith(false);
+  });
+});
