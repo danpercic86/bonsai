@@ -22,16 +22,20 @@ pub(crate) async fn get_op_state_inner(state: &AppState, repo_id: &str) -> Resul
 }
 
 /// Merges a local or remote-tracking branch into the current branch (P3c
-/// contract §4). Errors: `operationInProgress` | `branchNotFound`
-/// | `checkoutConflict` | `configMissing` | `git` | `noRepo`. Does NOT emit
+/// contract §4). `skipHooks` (F-A4-2): `true` ≡ `--no-verify` for the clean
+/// auto-merge's `commit-msg` hook; absent ⇒ `false` (run hooks per
+/// `bonsai.runHooks`) so existing callers are unchanged on the wire. Errors:
+/// `operationInProgress` | `branchNotFound` | `checkoutConflict`
+/// | `configMissing` | `hookRejected` | `git` | `noRepo`. Does NOT emit
 /// `repo-changed` — the frontend refetches imperatively.
 #[tauri::command]
 pub async fn merge_branch(
     state: tauri::State<'_, AppState>,
     repo_id: String,
     name: String,
+    skip_hooks: Option<bool>,
 ) -> Result<MergeOutcome, AppError> {
-    merge_branch_inner(state.inner(), &repo_id, name).await
+    merge_branch_inner(state.inner(), &repo_id, name, skip_hooks).await
 }
 
 /// Runtime-free core of `merge_branch` (unit-testable without a Tauri app).
@@ -39,9 +43,11 @@ pub(crate) async fn merge_branch_inner(
     state: &AppState,
     repo_id: &str,
     name: String,
+    skip_hooks: Option<bool>,
 ) -> Result<MergeOutcome, AppError> {
     let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || merge::merge_branch(&path, &name))
+    let skip = skip_hooks.unwrap_or(false);
+    tauri::async_runtime::spawn_blocking(move || merge::merge_branch(&path, &name, skip))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

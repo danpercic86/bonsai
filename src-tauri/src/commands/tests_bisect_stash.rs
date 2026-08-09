@@ -82,7 +82,7 @@ fn start_bisect_guards() {
     write_stage_commit(&state, &id, dir.path(), "a.txt", "side\n", "side edit");
     block_on(checkout_branch_inner(&state, &id, main)).expect("back");
     write_stage_commit(&state, &id, dir.path(), "a.txt", "main2\n", "main edit");
-    let out = block_on(merge_branch_inner(&state, &id, "side".into())).expect("merge");
+    let out = block_on(merge_branch_inner(&state, &id, "side".into(), None)).expect("merge");
     assert!(matches!(out, MergeOutcome::Conflicts { .. }), "{out:?}");
 
     let err = block_on(start_bisect_inner(&state, &id, oids[4].clone(), vec![oids[0].clone()]))

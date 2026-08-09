@@ -121,7 +121,7 @@ fn both_modified_conflict() -> tempfile::TempDir {
     git(d, &["add", "-A"]);
     commit_fixed(d, "main change");
 
-    match merge_branch(d, "topic").expect("merge") {
+    match merge_branch(d, "topic", false).expect("merge") {
         MergeOutcome::Conflicts { paths, .. } => {
             assert!(paths.iter().any(|p| p == "a.txt"), "expected a.txt conflict");
         }
@@ -147,7 +147,7 @@ fn deleted_by_them_conflict() -> tempfile::TempDir {
     git(d, &["add", "-A"]);
     commit_fixed(d, "main modifies a.txt");
 
-    match merge_branch(d, "topic").expect("merge") {
+    match merge_branch(d, "topic", false).expect("merge") {
         MergeOutcome::Conflicts { paths, .. } => {
             assert!(paths.iter().any(|p| p == "a.txt"), "expected a.txt conflict");
         }

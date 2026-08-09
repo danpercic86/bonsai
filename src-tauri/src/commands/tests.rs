@@ -571,6 +571,7 @@
             &state,
             MISSING_ID,
             "topic".to_string(),
+            None,
         ))
         .expect_err("merge_branch with no repo");
         assert!(matches!(err, AppError::NoRepo));
@@ -863,7 +864,7 @@
 
         // Merge topic → guaranteed conflict, repo pauses in Merge state.
         let outcome =
-            tauri::async_runtime::block_on(merge_branch_inner(state, id, "topic".to_string()))
+            tauri::async_runtime::block_on(merge_branch_inner(state, id, "topic".to_string(), None))
                 .expect("merge_branch");
         match outcome {
             MergeOutcome::Conflicts { paths, .. } => {

@@ -14,21 +14,42 @@
 //! unknown-subcommand error) we surface a one-time [`AppError::Git`] rather than
 //! committing unverified (A-D6).
 //!
+//! # Absent hooks (F-A4-1)
+//! Bare `git hook run <name>` EXITS 1 for an absent hook ("cannot find a
+//! hook named …") — it is NOT a no-op. Before the F-A4-1 fix that exit was
+//! misread as a hook rejection, so a Husky-style repo (`core.hooksPath`
+//! set) missing any one of pre-commit/commit-msg/pre-push had EVERY
+//! commit/amend/merge/push blocked. Two layers fix it:
+//! - the argv always carries `--ignore-missing` (same Git ≥ 2.36 floor as
+//!   the `hook run` subcommand itself), so an absent — or, on unix,
+//!   present-but-non-executable — hook is a clean exit-0 no-op, exactly as
+//!   `git commit` treats it;
+//! - the existence pre-check below skips the spawn entirely when the hook
+//!   provably cannot run.
+//!
 //! # Why we pre-check hook-file existence (behaviour-preserving refinement)
-//! The contract's normative flow calls `git hook run` unconditionally whenever
-//! hooks are enabled, relying on git's "absent hook ⇒ exit 0" no-op. Doing that
-//! would make EVERY commit spawn three `git` processes and would make
-//! `create_commit` hard-depend on the git binary even for a repo with no hooks.
-//! Instead we first resolve whether a hook COULD run and skip the spawn when it
-//! provably cannot:
-//! - if `core.hooksPath` is set (rare) ⇒ we do NOT second-guess git's
-//!   resolution and always delegate to `git hook run`;
+//! Calling `git hook run` unconditionally whenever hooks are enabled would
+//! make EVERY commit spawn three `git` processes and would make
+//! `create_commit` hard-depend on the git binary even for a repo with no
+//! hooks. Instead we first resolve whether a hook COULD run and skip the
+//! spawn when it provably cannot:
+//! - if `core.hooksPath` is set, we resolve it the way git does (tilde
+//!   expansion via the config layer; a relative path is relative to the
+//!   worktree root, where git chdirs before running hooks — githooks(5))
+//!   and skip when `<hooksPath>/<name>` is absent; if the value cannot be
+//!   read/expanded we delegate to git rather than guess;
 //! - otherwise the sole location git consults is `<commondir>/hooks/<name>` —
 //!   if that file is absent, git would run nothing, so we skip the spawn.
 //!
-//! This can NEVER skip a hook git would run (git resolves hooks only from
-//! `core.hooksPath` or `<commondir>/hooks`), so the trust invariant is intact,
-//! while a no-hook commit stays pure-git2 and git-less-tolerant.
+//! A wrong "run" decision is harmless (`--ignore-missing` makes git no-op);
+//! a "skip" is only taken when git's own resolution rules find no file, so
+//! the trust invariant — never skip a hook git would run — is intact, while
+//! a no-hook commit stays pure-git2 and git-less-tolerant.
+//!
+//! # Timeouts (deliberate git parity)
+//! Hooks run with NO timeout — a hung hook hangs the operation, exactly as
+//! it hangs `git commit` itself. Bonsai adds no watchdog; the user's
+//! recourse is the same as with git (kill the hook / fix the script).
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -77,11 +98,23 @@ pub fn hooks_enabled(cfg: &git2::Config, skip: bool) -> bool {
     cfg.get_bool("bonsai.runHooks").unwrap_or(true)
 }
 
-/// Run one BLOCKING hook via `git hook run <name> [--to-stdin=<file>] [-- <args>]`.
-/// Exit 0 or hook-absent ⇒ `Ok(())`. Non-zero ⇒ [`AppError::HookRejected`]
-/// (`"<name> hook failed:\n" + stdout + stderr`). A Git < 2.36 unknown
-/// `hook` subcommand WITH a hook file present ⇒ [`AppError::Git`] (A-D6). A
-/// spawn / I/O failure ⇒ [`AppError::Git`]. NEVER panics.
+/// Run one BLOCKING hook via
+/// `git hook run --ignore-missing <name> [--to-stdin=<file>] [-- <args>]`.
+///
+/// Exit 0 ⇒ `Ok(())`. An ABSENT hook ⇒ `Ok(())` — via the pre-check skip
+/// when resolvable, else via `--ignore-missing` (bare `git hook run` would
+/// exit 1 for it; F-A4-1). A non-zero exit from the HOOK ⇒
+/// [`AppError::HookRejected`] (`"<name> hook failed:\n" + stdout + stderr`).
+/// A git-infrastructure failure (git's own `fatal:`/`error:` before the hook
+/// ran, F-A4-5) or a Git < 2.36 unknown `hook` subcommand WITH a hook file
+/// present ⇒ [`AppError::Git`] (A-D6). A spawn / I/O failure ⇒
+/// [`AppError::Git`]. NEVER panics.
+///
+/// No timeout (git parity — see the module doc). `args` are passed as `$1…`
+/// to the hook; callers build them from paths via lossy UTF-8 conversion, so
+/// a theoretical non-UTF-8 repo path would reach the hook mangled (the hook
+/// itself still runs; the repo paths Bonsai manages are UTF-8-checked at
+/// open time).
 pub fn run_hook(
     exec: &dyn GitExec,
     workdir: &Path,
@@ -112,6 +145,14 @@ pub fn run_hook(
             "hook execution needs Git ≥ 2.36 (this git cannot run the '{}' hook). \
              Upgrade git, or disable hooks (unset bonsai.runHooks / use Skip hooks).",
             hook.as_str()
+        )));
+    }
+    if is_git_infra_failure(&out.stderr) {
+        // git itself failed BEFORE the hook ran (F-A4-5) — not a rejection.
+        return Err(AppError::Git(format!(
+            "git could not run the {} hook: {}",
+            hook.as_str(),
+            combined_output(&out.stdout, &out.stderr)
         )));
     }
     Err(AppError::HookRejected(format!(
@@ -155,13 +196,15 @@ pub fn run_hook_nonblocking(
 }
 
 /// Pure `git hook run` argv builder (A2):
-/// `["hook","run",<name>,("--to-stdin=<path>")?,("--")?,<args>…]`. The `--`
-/// separator is emitted ONLY when there are trailing args, so git never sees a
-/// dangling `--`.
+/// `["hook","run","--ignore-missing",<name>,("--to-stdin=<path>")?,("--")?,<args>…]`.
+/// `--ignore-missing` is ALWAYS present (F-A4-1): without it an absent hook
+/// exits 1 and would block the operation. The `--` separator is emitted ONLY
+/// when there are trailing args, so git never sees a dangling `--`.
 fn build_hook_run_args(hook: HookName, args: &[String], stdin_path: Option<&Path>) -> Vec<String> {
     let mut out = vec![
         "hook".to_string(),
         "run".to_string(),
+        "--ignore-missing".to_string(),
         hook.as_str().to_string(),
     ];
     if let Some(p) = stdin_path {
@@ -190,10 +233,20 @@ fn plan_hook(workdir: &Path, hook: HookName) -> HookPlan {
         Ok(c) => c,
         Err(_) => return HookPlan::Run,
     };
-    // core.hooksPath (rare): don't second-guess git's own resolution.
-    if let Ok(p) = cfg.get_string("core.hooksPath") {
-        if !p.trim().is_empty() {
-            return HookPlan::Run;
+    // core.hooksPath: resolve like git — `get_path` applies the config
+    // layer's tilde expansion; a relative value is relative to the worktree
+    // root (githooks(5): git chdirs there before running hooks), which is
+    // exactly `workdir` for every caller. If the hook file is absent we skip
+    // the spawn (F-A4-1: bare `git hook run` would exit 1 for it). A wrong
+    // "run" here is harmless — the argv carries `--ignore-missing`.
+    if let Ok(p) = cfg.get_path("core.hooksPath") {
+        if !p.as_os_str().is_empty() {
+            let base = if p.is_absolute() { p } else { workdir.join(p) };
+            return if base.join(hook.as_str()).is_file() {
+                HookPlan::Run
+            } else {
+                HookPlan::Skip
+            };
         }
     }
     // Default location is unambiguous: `<commondir>/hooks/<name>` (commondir so
@@ -210,6 +263,25 @@ fn plan_hook(workdir: &Path, hook: HookName) -> HookPlan {
 /// `git: 'hook' is not a git command.` — stable across git versions.
 fn is_unknown_subcommand(stderr: &str) -> bool {
     stderr.contains("is not a git command")
+}
+
+/// Whether a non-zero `git hook run` exit is GIT's own failure rather than a
+/// hook rejection (F-A4-5). Deliberately NARROW — a hook's stderr may itself
+/// contain `error:`/`fatal:` lines (e.g. it runs git internally), so only the
+/// specific messages `builtin/hook.c` / run-command emit BEFORE the hook runs
+/// are matched, and only at the START of stderr: "cannot find a hook named"
+/// (near-unreachable now that `--ignore-missing` is passed — kept as a
+/// belt-and-braces classifier), a spawn failure, and not-a-repository.
+fn is_git_infra_failure(stderr: &str) -> bool {
+    let first = stderr.lines().next().unwrap_or("");
+    let msg = first
+        .strip_prefix("error: ")
+        .or_else(|| first.strip_prefix("fatal: "))
+        .unwrap_or("");
+    msg.starts_with("cannot find a hook named")
+        || msg.starts_with("cannot run ")
+        || msg.starts_with("cannot spawn ")
+        || msg.starts_with("not a git repository")
 }
 
 /// Combined hook output for the error/info body: stdout then stderr, each
@@ -285,15 +357,15 @@ mod tests {
 
     #[test]
     fn build_hook_run_args_shapes() {
-        // No args, no stdin.
+        // No args, no stdin. `--ignore-missing` is ALWAYS present (F-A4-1).
         assert_eq!(
             build_hook_run_args(HookName::PreCommit, &[], None),
-            vec!["hook", "run", "pre-commit"]
+            vec!["hook", "run", "--ignore-missing", "pre-commit"]
         );
         // Args after `--`, no stdin (commit-msg's message-file arg).
         assert_eq!(
             build_hook_run_args(HookName::CommitMsg, &[".git/COMMIT_EDITMSG".to_string()], None),
-            vec!["hook", "run", "commit-msg", "--", ".git/COMMIT_EDITMSG"]
+            vec!["hook", "run", "--ignore-missing", "commit-msg", "--", ".git/COMMIT_EDITMSG"]
         );
         // --to-stdin present, plus args after `--` (pre-push shape).
         let args = vec!["origin".to_string(), "https://x/y.git".to_string()];
@@ -302,6 +374,7 @@ mod tests {
             vec![
                 "hook",
                 "run",
+                "--ignore-missing",
                 "pre-push",
                 "--to-stdin=/tmp/refs",
                 "--",
@@ -312,8 +385,23 @@ mod tests {
         // --to-stdin present, NO trailing args ⇒ no dangling `--`.
         assert_eq!(
             build_hook_run_args(HookName::PrePush, &[], Some(Path::new("/tmp/refs"))),
-            vec!["hook", "run", "pre-push", "--to-stdin=/tmp/refs"]
+            vec!["hook", "run", "--ignore-missing", "pre-push", "--to-stdin=/tmp/refs"]
         );
+    }
+
+    #[test]
+    fn git_infra_failure_classifier_is_narrow() {
+        // git's own pre-hook failures ⇒ infra.
+        assert!(is_git_infra_failure("error: cannot find a hook named pre-commit"));
+        assert!(is_git_infra_failure("fatal: cannot run .husky/pre-commit: No such file"));
+        assert!(is_git_infra_failure("error: cannot spawn .git/hooks/pre-commit: exec failed"));
+        assert!(is_git_infra_failure("fatal: not a git repository (or any of the parent directories)"));
+        // A hook's OWN output — even git-flavored — stays a rejection.
+        assert!(!is_git_infra_failure("lint failed: bad code"));
+        assert!(!is_git_infra_failure("error: your commit message is bad"));
+        assert!(!is_git_infra_failure("fatal: pre-commit checks failed"));
+        assert!(!is_git_infra_failure("hook output\nerror: cannot find a hook named x"));
+        assert!(!is_git_infra_failure(""));
     }
 
     #[test]

@@ -777,7 +777,7 @@ impl BonsaiServer {
     #[tool]
     async fn bonsai_merge_branch(&self, Parameters(args): Parameters<NameArgs>) -> CallToolResult {
         match self
-            .run_blocking(move |wd| bonsai_core::git::merge::merge_branch(wd, &args.name))
+            .run_blocking(move |wd| bonsai_core::git::merge::merge_branch(wd, &args.name, false))
             .await
         {
             Ok(v) => ok_json(&v),

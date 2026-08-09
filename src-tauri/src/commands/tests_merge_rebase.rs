@@ -50,7 +50,7 @@ fn op_state_none_and_merge() {
     );
 
     diverge(&state, &id, dir.path(), true);
-    let out = block_on(merge_branch_inner(&state, &id, "feature".into())).expect("merge");
+    let out = block_on(merge_branch_inner(&state, &id, "feature".into(), None)).expect("merge");
     assert!(matches!(out, MergeOutcome::Conflicts { .. }), "{out:?}");
 
     match block_on(get_op_state_inner(&state, &id)).expect("op state") {
@@ -70,7 +70,7 @@ fn merge_branch_clean_happy() {
     let (dir, id, _c0) = fixture_repo(&state);
     let (_main, f_tip, m_tip) = diverge(&state, &id, dir.path(), false);
 
-    let out = block_on(merge_branch_inner(&state, &id, "feature".into())).expect("merge");
+    let out = block_on(merge_branch_inner(&state, &id, "feature".into(), None)).expect("merge");
     let oid = match out {
         MergeOutcome::Merged { oid, stashed } => {
             assert!(!stashed);
@@ -96,7 +96,7 @@ fn merge_conflict_pause_trio_and_abort() {
     let (dir, id, _c0) = fixture_repo(&state);
     diverge(&state, &id, dir.path(), true);
 
-    let out = block_on(merge_branch_inner(&state, &id, "feature".into())).expect("merge");
+    let out = block_on(merge_branch_inner(&state, &id, "feature".into(), None)).expect("merge");
     match &out {
         MergeOutcome::Conflicts { paths, stashed } => {
             assert_eq!(paths, &vec!["a.txt".to_string()]);
@@ -140,7 +140,7 @@ fn resolve_conflict_ours_then_theirs() {
     let state = AppState::default();
     let (dir, id, _c0) = fixture_repo(&state);
     diverge(&state, &id, dir.path(), true);
-    block_on(merge_branch_inner(&state, &id, "feature".into())).expect("merge");
+    block_on(merge_branch_inner(&state, &id, "feature".into(), None)).expect("merge");
     block_on(resolve_conflict_inner(&state, &id, "a.txt".into(), ConflictResolution::Ours))
         .expect("resolve ours");
     assert_eq!(read(dir.path(), "a.txt"), "main\n");
@@ -159,7 +159,7 @@ fn resolve_conflict_ours_then_theirs() {
     let state = AppState::default();
     let (dir, id, _c0) = fixture_repo(&state);
     diverge(&state, &id, dir.path(), true);
-    block_on(merge_branch_inner(&state, &id, "feature".into())).expect("merge");
+    block_on(merge_branch_inner(&state, &id, "feature".into(), None)).expect("merge");
     block_on(resolve_conflict_inner(&state, &id, "a.txt".into(), ConflictResolution::Theirs))
         .expect("resolve theirs");
     assert_eq!(read(dir.path(), "a.txt"), "feature\n");
@@ -173,7 +173,7 @@ fn resolve_conflict_text_happy_and_traversal() {
     let state = AppState::default();
     let (dir, id, _c0) = fixture_repo(&state);
     diverge(&state, &id, dir.path(), true);
-    block_on(merge_branch_inner(&state, &id, "feature".into())).expect("merge");
+    block_on(merge_branch_inner(&state, &id, "feature".into(), None)).expect("merge");
 
     let err = block_on(resolve_conflict_text_inner(
         &state,

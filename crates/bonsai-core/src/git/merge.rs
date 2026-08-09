@@ -64,7 +64,18 @@ fn prepared_merge_message(name: &str, incoming_is_remote: bool) -> String {
 /// as CheckoutConflict if the merge would overwrite them, in which case
 /// nothing is left behind); git identity configured (a clean merge
 /// auto-commits).
-pub fn merge_branch(workdir: &Path, branch_name: &str) -> Result<MergeOutcome, AppError> {
+///
+/// `skip_hooks` (F-A4-2): the clean auto-merge commit runs the `commit-msg`
+/// hook (only — see [`MergeHooks::MessageOnly`]); `true` ≡ `--no-verify`
+/// bypasses it, as does `bonsai.runHooks=false`. A commit-msg rejection
+/// returns [`AppError::HookRejected`] with the merge left PAUSED (MERGE_HEAD
+/// retained — recover via commit_merge or abort_merge), the one deliberate
+/// exception to the "failed merge_branch leaves state Clean" guarantee.
+pub fn merge_branch(
+    workdir: &Path,
+    branch_name: &str,
+    skip_hooks: bool,
+) -> Result<MergeOutcome, AppError> {
     let mut repo = open_workdir_repo(workdir)?;
 
     // A clean detached-HEAD bisect is invisible to `state()` below — refuse.
@@ -289,10 +300,21 @@ pub fn merge_branch(workdir: &Path, branch_name: &str) -> Result<MergeOutcome, A
     drop(index);
     // Auto-commit follows commit.gpgsign (None) — a clean merge signs iff the
     // user opted in; byte-identical to pre-P58 when gpgsign is off (the default).
-    // Hooks are NOT run on a clean auto-merge commit (matches `git merge`, which
-    // fires pre-commit/commit-msg only when you conclude the merge via a commit —
-    // that path is `commit_merge`, below).
-    let result = finalize_merge_commit(&mut repo, &message, None, false)?;
+    // Hooks (F-A4-2): the auto-merge commit runs the `commit-msg` hook only
+    // (git parity for message policy; pre-merge-commit/prepare-commit-msg are
+    // unsupported — see MergeHooks::MessageOnly). If commit-msg REJECTS, the
+    // `?` propagates HookRejected and the merge is left PAUSED — MERGE_HEAD
+    // retained, merged content staged, HEAD unchanged — exactly git's "Not
+    // committing merge; use 'git commit' to complete the merge." state. The
+    // user can fix the message via commit_merge (optionally skipping hooks)
+    // or abort_merge; a pre-merge autostash stays retained on the stack
+    // (same recoverable pause as the Conflicts outcome above).
+    let hooks = if hooks_enabled(&repo.config()?.snapshot()?, skip_hooks) {
+        MergeHooks::MessageOnly
+    } else {
+        MergeHooks::Off
+    };
+    let result = finalize_merge_commit(&mut repo, &message, None, hooks)?;
     let oid = result.oid;
     if let Some(stash) = stash_oid {
         return Ok(match autostash::pop_after_success(&mut repo, workdir, stash)? {
@@ -303,6 +325,22 @@ pub fn merge_branch(workdir: &Path, branch_name: &str) -> Result<MergeOutcome, A
     Ok(MergeOutcome::Merged { oid, stashed: false })
 }
 
+/// Which commit hooks [`finalize_merge_commit`] fires (F-A4-2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MergeHooks {
+    /// No hooks (`skip_hooks` / `bonsai.runHooks=false`).
+    Off,
+    /// `commit-msg` only — the clean auto-merge path. git's `git merge`
+    /// auto-commit runs pre-merge-commit + prepare-commit-msg + commit-msg;
+    /// Bonsai supports neither pre-merge-commit nor prepare-commit-msg
+    /// (documented v1 divergence, F-A4-3), but honors commit-msg so message
+    /// policy hooks apply to merge commits too.
+    MessageOnly,
+    /// pre-commit + commit-msg + post-commit — `commit_merge` (concluding a
+    /// paused merge, like `git commit` with MERGE_HEAD present).
+    Full,
+}
+
 /// Shared core of commit_merge and the clean-merge auto-commit path
 /// (contract §4.4 steps 3–9): normalize the message, resolve the signature,
 /// collect HEAD + every MERGE_HEAD as parents, commit, cleanup_state.
@@ -311,20 +349,27 @@ pub fn merge_branch(workdir: &Path, branch_name: &str) -> Result<MergeOutcome, A
 /// The unsigned path is byte-identical to pre-P58; signing routes the SAME
 /// parents through [`signing::create_signed_commit`].
 ///
-/// `run_hooks` (P59a): when true, the commit hooks fire around the merge commit
-/// in git order — `pre-commit` (before `write_tree`) → `commit-msg` (may rewrite
-/// the merge message) → create the commit → `post-commit` (non-blocking). Only
-/// `commit_merge` passes `true`; the clean auto-merge path passes `false`.
+/// `hooks` (P59a + F-A4-2): which commit hooks fire around the merge commit.
+/// `commit_merge` passes [`MergeHooks::Full`] — git order: `pre-commit`
+/// (before `write_tree`) → `commit-msg` (may rewrite the merge message) →
+/// create the commit → `post-commit` (non-blocking), exactly as `git commit`
+/// concluding a merge would. The clean auto-merge path passes
+/// [`MergeHooks::MessageOnly`] — `commit-msg` only, matching git's
+/// message-policy behavior for `git merge`'s auto-commit. On ANY blocking
+/// hook rejection the merge is left PAUSED (MERGE_HEAD retained), never
+/// half-committed.
 fn finalize_merge_commit(
     repo: &mut git2::Repository,
     message: &str,
     sign: Option<bool>,
-    run_hooks: bool,
+    hooks: MergeHooks,
 ) -> Result<CommitResult, AppError> {
+    let run_pre_post = hooks == MergeHooks::Full;
+    let run_commit_msg = hooks != MergeHooks::Off;
     // Owned workdir: releases the immutable borrow before the &mut
     // mergehead_foreach below, and is the base for any hook run.
     let workdir_buf = repo.workdir().map(std::path::Path::to_path_buf);
-    if run_hooks && workdir_buf.is_none() {
+    if run_commit_msg && workdir_buf.is_none() {
         return Err(AppError::Git(
             "cannot run commit hooks in a bare repository".to_string(),
         ));
@@ -332,7 +377,7 @@ fn finalize_merge_commit(
 
     // pre-commit BEFORE write_tree (git order); non-zero ⇒ HookRejected, abort
     // (no commit, no ref move, merge state left intact for retry/abort).
-    if run_hooks {
+    if run_pre_post {
         if let Some(wd) = workdir_buf.as_deref() {
             run_hook(&SpawnGitExec, wd, HookName::PreCommit, &[], None)?;
         }
@@ -344,7 +389,7 @@ fn finalize_merge_commit(
         return Err(AppError::EmptyMessage);
     }
     // commit-msg may rewrite the merge message file.
-    if run_hooks {
+    if run_commit_msg {
         if let Some(wd) = workdir_buf.as_deref() {
             msg = commit::run_commit_msg_hook(repo, wd, &msg)?;
         }
@@ -374,7 +419,7 @@ fn finalize_merge_commit(
     // NO nothing-to-commit check: an empty-diff merge commit is legitimate —
     // it records ancestry.
     let mut index = repo.index()?;
-    if run_hooks {
+    if run_pre_post {
         index.read(true)?; // pick up any pre-commit hook re-staging
     }
     let tree_oid = index.write_tree()?;
@@ -407,7 +452,7 @@ fn finalize_merge_commit(
     // post-commit (non-blocking) runs AFTER the commit is made but BEFORE
     // cleanup_state, so a hook that inspects MERGE_HEAD still sees it. Never
     // blocks — the commit already landed.
-    if run_hooks {
+    if run_pre_post {
         if let Some(wd) = workdir_buf.as_deref() {
             let _ = run_hook_nonblocking(&SpawnGitExec, wd, HookName::PostCommit, &[]);
         }
@@ -454,8 +499,12 @@ pub fn commit_merge(
             "cannot commit: {n} unresolved conflict(s) remain"
         )));
     }
-    let run_hooks = hooks_enabled(&repo.config()?.snapshot()?, skip_hooks);
-    finalize_merge_commit(&mut repo, message, sign, run_hooks)
+    let hooks = if hooks_enabled(&repo.config()?.snapshot()?, skip_hooks) {
+        MergeHooks::Full
+    } else {
+        MergeHooks::Off
+    };
+    finalize_merge_commit(&mut repo, message, sign, hooks)
 }
 
 /// Blocking. Aborts a paused merge; restores pre-merge index + the worktree
@@ -654,7 +703,7 @@ mod tests {
         // unrelated UNSTAGED edit is made AFTER the merge pauses, so it is not
         // captured by the autostash and must survive the abort (this test's
         // regression concern is abort's empty-touched-set guard, not P8).
-        let outcome = merge_branch(dir.path(), "topic").expect("merge");
+        let outcome = merge_branch(dir.path(), "topic", false).expect("merge");
         assert_eq!(
             outcome,
             MergeOutcome::Conflicts {
@@ -689,7 +738,7 @@ mod tests {
         git2::Repository::init(dir.path()).expect("init repo");
 
         // Unborn HEAD refuses before branch resolution.
-        let err = merge_branch(dir.path(), "topic").expect_err("unborn");
+        let err = merge_branch(dir.path(), "topic", false).expect_err("unborn");
         match err {
             AppError::Git(m) => assert!(m.contains("no commits yet"), "got: {m}"),
             other => panic!("expected Git, got {other:?}"),
@@ -808,7 +857,7 @@ mod tests {
             .expect("shorthand")
             .to_string();
 
-        let outcome = merge_branch(dir.path(), "topic").expect("merge");
+        let outcome = merge_branch(dir.path(), "topic", false).expect("merge");
         assert_eq!(
             outcome,
             MergeOutcome::FastForwarded {
@@ -862,7 +911,7 @@ mod tests {
         std::fs::write(dir.path().join("unrelated.txt"), "locally edited\n")
             .expect("edit unrelated");
 
-        let outcome = merge_branch(dir.path(), "topic").expect("merge");
+        let outcome = merge_branch(dir.path(), "topic", false).expect("merge");
         assert_eq!(
             outcome,
             MergeOutcome::FastForwarded {
@@ -998,7 +1047,7 @@ mod tests {
         std::fs::write(dir.path().join("unrelated.txt"), "staged edit\n").expect("edit");
         stage_paths(dir.path(), &["unrelated.txt".to_string()]).expect("stage");
 
-        let outcome = merge_branch(dir.path(), "topic").expect("merge");
+        let outcome = merge_branch(dir.path(), "topic", false).expect("merge");
         assert_eq!(
             outcome,
             MergeOutcome::FastForwarded {
@@ -1068,7 +1117,7 @@ mod tests {
         // Dirty: unrelated tracked edit the merge never touches, UNSTAGED.
         std::fs::write(dir.path().join("unrelated.txt"), "locally edited\n").expect("edit");
 
-        let outcome = merge_branch(dir.path(), "topic").expect("merge");
+        let outcome = merge_branch(dir.path(), "topic", false).expect("merge");
         let oid = match &outcome {
             MergeOutcome::Merged { oid, stashed } => {
                 assert!(*stashed, "clean normal merge over dirty tree must be stashed:true");
@@ -1127,7 +1176,7 @@ mod tests {
         // Local UNSTAGED edit of the SAME line -> conflicts on stash re-apply.
         std::fs::write(dir.path().join("x.txt"), "line1\nLOCAL\nline3\n").expect("edit x");
 
-        let outcome = merge_branch(dir.path(), "topic").expect("merge");
+        let outcome = merge_branch(dir.path(), "topic", false).expect("merge");
         match &outcome {
             MergeOutcome::StashPopConflicts { head, paths } => {
                 assert_eq!(head, &topic.to_string(), "head = FF target");
@@ -1192,7 +1241,7 @@ mod tests {
         // lands on the autostash and the paused merge does not restore it.
         std::fs::write(dir.path().join("y.txt"), "y-locally-edited\n").expect("edit y");
 
-        let outcome = merge_branch(dir.path(), "topic").expect("merge");
+        let outcome = merge_branch(dir.path(), "topic", false).expect("merge");
         assert_eq!(
             outcome,
             MergeOutcome::Conflicts {
@@ -1259,7 +1308,7 @@ mod tests {
         // checkout with a Conflict.
         std::fs::write(dir.path().join("new.txt"), "untracked in the way\n").expect("untracked");
 
-        let err = merge_branch(dir.path(), "topic").expect_err("blocked FF must error");
+        let err = merge_branch(dir.path(), "topic", false).expect_err("blocked FF must error");
         assert!(
             matches!(err, AppError::CheckoutConflict(_)),
             "an untracked file blocking the FF checkout must map to CheckoutConflict, got {err:?}"

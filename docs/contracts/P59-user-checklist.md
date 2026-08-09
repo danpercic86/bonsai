@@ -29,6 +29,21 @@ perceive**, so their real interaction + legibility is the native part below. The
 underlying DATA paths (rejection surfaces as `hookRejected`; the skip-hooks retry succeeds; the lease
 refuses) — that is what the AI gate covers.
 
+## Known v1 hook divergences (documented, deliberate — T2 Area 4 audit 2026-08-09)
+
+- **`prepare-commit-msg` is not run** (F-A4-3): ticket-ID/template injectors that rely on it
+  silently no-op in Bonsai. `commit-msg` IS run (on commit, amend, merge-conclude, and — since
+  F-A4-2 — the clean auto-merge commit), so message *validators/rewriters* work; message
+  *pre-fillers* do not. Revisit if users ask.
+- **`pre-merge-commit` is not run** (F-A4-2 decision): the clean auto-merge commit runs
+  `commit-msg` only; concluding a paused merge (`commit_merge`) runs pre-commit + commit-msg +
+  post-commit like `git commit`.
+- **AI-composed commits skip all hooks** (F-A4-4, deliberate): the P54 composer's split commits
+  hard-code skip-hooks — a re-staging pre-commit (lint-staged style) would pull other groups'
+  changes into the wrong commit and break the partition invariant, and a commit-msg rewriter
+  would mangle the generated per-group messages. A normal commit still runs hooks. Flagged FOR
+  USER REVIEW in `docs/testing-campaign-2026-08/FINDINGS.md`.
+
 ## Already proved by the AI gate (do NOT re-verify manually)
 
 - **Hooks oracle** (`cargo test -p bonsai-core hooks`, 12 tests) with **real hook scripts on git 2.51,

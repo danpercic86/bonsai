@@ -228,7 +228,7 @@ fn conflicted_pair(f: Fixture) -> (tempfile::TempDir, tempfile::TempDir, Vec<Str
         "fixture scripts must produce identical base histories"
     );
 
-    let outcome = merge_branch(bonsai.path(), "topic").expect("merge");
+    let outcome = merge_branch(bonsai.path(), "topic", false).expect("merge");
     let paths = match outcome {
         MergeOutcome::Conflicts { paths, .. } => paths,
         other => panic!("fixture {f:?}: expected Conflicts, got {other:?}"),

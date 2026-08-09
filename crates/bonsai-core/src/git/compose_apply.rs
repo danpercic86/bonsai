@@ -144,11 +144,16 @@ pub fn apply_composed_commits(
         let paths = files_with_rename_origs(&rename_origs, &g.files);
         // Stage ONLY this group, then commit the whole (cumulative) index. Because
         // the partition is disjoint, the commit's delta-to-parent is exactly `g`.
-        // skip_hooks = TRUE (P59): a re-staging pre-commit hook (`git add -u` / lint-staged)
-        // would, via the commit's `index.read(true)`, pull OTHER groups' working-tree changes
-        // into this commit and silently break that partition invariant; a commit-msg hook would
-        // rewrite each generated group message. The composer is a mechanical history-organizer,
-        // so hooks stay OFF for its split commits (a normal commit still runs them).
+        // skip_hooks = TRUE (P59; F-A4-4 DECISION, T2 Area 4 audit 2026-08-09): AI-composed
+        // commits BYPASS ALL GIT HOOKS — deliberately. A re-staging pre-commit hook
+        // (`git add -u` / lint-staged) would, via the commit's `index.read(true)`, pull OTHER
+        // groups' working-tree changes into this commit and silently break that partition
+        // invariant; a commit-msg hook would rewrite each generated group message. The composer
+        // is a mechanical history-organizer, so hooks stay OFF for its split commits (a normal
+        // commit still runs them). Consequence a hook-policy shop should know: commit-message
+        // policy hooks do NOT vet composer-generated messages. Documented in the P59 user
+        // checklist ("Known v1 hook divergences") and flagged FOR USER REVIEW in
+        // docs/testing-campaign-2026-08/FINDINGS.md; revisit commit-msg-only execution later.
         let step =
             stage_paths(workdir, &paths).and_then(|()| create_commit(workdir, &g.message, None, true));
         match step {

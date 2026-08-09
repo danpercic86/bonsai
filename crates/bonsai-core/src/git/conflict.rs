@@ -538,7 +538,7 @@ mod tests {
         commit_all(&repo, "main change", &[&base_commit]);
 
         // merge topic -> produces an index conflict + worktree markers
-        let outcome = crate::git::merge::merge_branch(dir.path(), "topic").expect("merge");
+        let outcome = crate::git::merge::merge_branch(dir.path(), "topic", false).expect("merge");
         assert!(
             matches!(outcome, crate::git::merge::MergeOutcome::Conflicts { .. }),
             "expected conflicts, got {outcome:?}"

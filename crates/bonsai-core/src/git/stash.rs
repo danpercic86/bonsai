@@ -1253,7 +1253,7 @@ mod tests {
         // can exercise the guard AND prove drop still works.
         std::fs::write(d.join("y.txt"), "y-edited\n").expect("edit y");
 
-        crate::git::merge::merge_branch(d, "topic").expect("merge");
+        crate::git::merge::merge_branch(d, "topic", false).expect("merge");
         let repo = git2::Repository::open(d).expect("reopen");
         assert_eq!(
             repo.state(),
@@ -1794,7 +1794,7 @@ mod tests {
 
         // Dirty unrelated file → conflicting merge pauses in Merge state.
         std::fs::write(d.join("y.txt"), "y-edited\n").expect("edit y");
-        crate::git::merge::merge_branch(d, "topic").expect("merge");
+        crate::git::merge::merge_branch(d, "topic", false).expect("merge");
         assert_eq!(
             git2::Repository::open(d).expect("reopen").state(),
             git2::RepositoryState::Merge,

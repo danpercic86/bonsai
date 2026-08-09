@@ -1145,7 +1145,7 @@ mod create_branch_here_tests {
 
         // Dirty an unrelated file so the merge auto-stashes then pauses in Merge.
         std::fs::write(d.join("y.txt"), "y-edited\n").expect("edit y");
-        crate::git::merge::merge_branch(d, "topic").expect("merge");
+        crate::git::merge::merge_branch(d, "topic", false).expect("merge");
 
         let repo = git2::Repository::open(d).expect("reopen");
         assert_eq!(
@@ -1767,7 +1767,7 @@ mod checkout_autostash_tests {
 
         // Dirty an unrelated file so the merge auto-stashes then pauses in Merge.
         std::fs::write(d.join("y.txt"), "y-edited\n").expect("edit y");
-        crate::git::merge::merge_branch(d, "topic").expect("merge");
+        crate::git::merge::merge_branch(d, "topic", false).expect("merge");
 
         let repo = git2::Repository::open(d).expect("reopen");
         assert_eq!(

@@ -454,7 +454,9 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
   exactly the hostile-payload defense the doc claims. Fix (app code, senior-dev): advance
   `cursor = s` when emitting the gap, or drop `len <= 0`/empty-after-clamp spans before the gap
   emit. Repro pinned as it.skip 'F-T5fe-1' in src/utils/intralineSegments.adversarial.test.ts
-  (fuzz generator constrained to len>=1, start<=n-1 until fixed — widen back after) — **open**
+  (regression test un-skipped; fuzz generator widened to Infinity/past-end starts + len 0/-3) —
+  **fixed**: gap emit now advances `cursor = s` independent of the changed run. behavior change? Y
+  (hostile payload no longer duplicates text; well-formed IPC unaffected).
 - [T5.fe] NIT (awareness, not a bug) — StatusPanel/Sidebar key rows by path/branch-name; a
   hostile snapshot with DUPLICATE paths/names renders with React duplicate-key warnings
   (rows may collapse) but never crashes. Real backends never emit duplicates within a section.

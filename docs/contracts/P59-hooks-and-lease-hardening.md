@@ -23,7 +23,12 @@ already exist — reused by the lease),
 (`push`/`force_push`), `src/components/WorkspaceDialogs.tsx` (`pendingForcePush`/`doForcePush` L88-91 —
 force-push confirm), `docs/contracts/P37-force-push-with-lease.md` (the lease origin + CLI-oracle
 harness). `git hook run` confirmed: Git ≥2.36; `git hook run [--ignore-missing] [--to-stdin=<path>]
-<name> [-- <args>]`; a missing hook is a no-op exit 0.
+<name> [-- <args>]`. CORRECTION (F-A4-1, audit 2026-08-09): a missing hook is NOT a no-op —
+bare `git hook run <name>` exits 1 with "cannot find a hook named <name>" (verified git 2.51),
+so a Husky-style repo (`core.hooksPath` set) missing one of the hooks had every
+commit/amend/merge/push blocked. Fix: Bonsai always passes `--ignore-missing` (same ≥2.36
+floor as the subcommand), which makes absent — and, on unix, present-but-non-executable —
+hooks a clean exit-0 no-op, plus a `core.hooksPath`-aware existence pre-check in `plan_hook`.
 
 **P59a: +1 `AppError` variant `HookRejected`. No new command** (hooks run inside existing
 commit/amend/merge/push; the per-repo toggle rides existing `read_config`/`set_config`; a `skip_hooks`

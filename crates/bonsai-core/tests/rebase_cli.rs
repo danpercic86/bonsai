@@ -785,7 +785,7 @@ fn precondition_rebase_during_op_is_rejected() {
     let (bonsai, _twin) = twin_pair(script_conflict_one);
     let d = bonsai.path();
     git(d, &["branch", "other"]); // a second candidate onto
-    match merge_branch(d, "topic").expect("merge") {
+    match merge_branch(d, "topic", false).expect("merge") {
         MergeOutcome::Conflicts { .. } => {}
         other => panic!("expected merge Conflicts, got {other:?}"),
     }

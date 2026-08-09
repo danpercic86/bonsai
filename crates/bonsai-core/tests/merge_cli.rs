@@ -180,7 +180,7 @@ fn clean_merge_matches_cli_twin() {
     let (bonsai, twin) = twin_pair(script_clean_diverged);
     let pre_head = head_oid(bonsai.path());
 
-    let outcome = merge_branch(bonsai.path(), "topic").expect("merge");
+    let outcome = merge_branch(bonsai.path(), "topic", false).expect("merge");
     let oid = match outcome {
         MergeOutcome::Merged { oid, .. } => oid,
         other => panic!("expected Merged, got {other:?}"),
@@ -225,7 +225,7 @@ fn fast_forward_matches_cli_twin() {
     };
     let (bonsai, twin) = twin_pair(script);
 
-    let outcome = merge_branch(bonsai.path(), "topic").expect("merge");
+    let outcome = merge_branch(bonsai.path(), "topic", false).expect("merge");
     cli_merge(twin.path(), "topic"); // fast-forwards
 
     let twin_head = head_oid(twin.path());
@@ -259,11 +259,11 @@ fn merging_an_ancestor_is_up_to_date() {
     commit_fixed(d, "main change");
     let pre = head_oid(d);
 
-    assert_eq!(merge_branch(d, "topic").expect("merge"), MergeOutcome::UpToDate);
+    assert_eq!(merge_branch(d, "topic", false).expect("merge"), MergeOutcome::UpToDate);
     assert_eq!(head_oid(d), pre, "HEAD must not move");
 
     // Merging the current branch by name also falls out as UpToDate.
-    assert_eq!(merge_branch(d, "main").expect("merge self"), MergeOutcome::UpToDate);
+    assert_eq!(merge_branch(d, "main", false).expect("merge self"), MergeOutcome::UpToDate);
     assert_eq!(head_oid(d), pre);
 }
 
@@ -315,7 +315,7 @@ fn remote_tracking_merge_matches_cli_twin() {
     assert_eq!(head_oid(work), head_oid(twin));
     let pre_head = head_oid(work);
 
-    let outcome = merge_branch(work, "origin/topic").expect("merge origin/topic");
+    let outcome = merge_branch(work, "origin/topic", false).expect("merge origin/topic");
     let oid = match outcome {
         MergeOutcome::Merged { oid, .. } => oid,
         other => panic!("expected Merged, got {other:?}"),
@@ -346,7 +346,7 @@ fn conflicted_merge_matches_cli_conflicted_set() {
     require_git!();
     let (bonsai, twin) = twin_pair(script_conflict);
 
-    let outcome = merge_branch(bonsai.path(), "topic").expect("merge");
+    let outcome = merge_branch(bonsai.path(), "topic", false).expect("merge");
     let paths = match outcome {
         MergeOutcome::Conflicts { paths, .. } => paths,
         other => panic!("expected Conflicts, got {other:?}"),
@@ -387,7 +387,7 @@ fn detached_head_is_rejected() {
     git(d, &["branch", "topic"]);
     git(d, &["checkout", "--detach"]);
 
-    let err = merge_branch(d, "topic").expect_err("detached");
+    let err = merge_branch(d, "topic", false).expect_err("detached");
     match err {
         AppError::Git(m) => assert!(m.contains("detached"), "got: {m}"),
         other => panic!("expected Git, got {other:?}"),
@@ -398,7 +398,7 @@ fn detached_head_is_rejected() {
 fn unborn_head_is_rejected() {
     require_git!();
     let repo = init_repo();
-    let err = merge_branch(repo.path(), "topic").expect_err("unborn");
+    let err = merge_branch(repo.path(), "topic", false).expect_err("unborn");
     match err {
         AppError::Git(m) => assert!(m.contains("no commits yet"), "got: {m}"),
         other => panic!("expected Git, got {other:?}"),
@@ -421,7 +421,7 @@ fn staged_change_is_autostashed_and_merge_proceeds() {
     write(d, "a.txt", "staged edit\n");
     git(d, &["add", "a.txt"]);
 
-    let outcome = merge_branch(d, "topic").expect("merge");
+    let outcome = merge_branch(d, "topic", false).expect("merge");
     let oid = match &outcome {
         MergeOutcome::Merged { oid, stashed } => {
             assert!(*stashed, "staged change must be autostashed -> stashed:true");
@@ -463,12 +463,12 @@ fn merge_during_merge_is_rejected() {
     let (bonsai, _twin) = twin_pair(script_conflict);
     let d = bonsai.path();
     git(d, &["branch", "other"]); // second candidate branch
-    match merge_branch(d, "topic").expect("merge") {
+    match merge_branch(d, "topic", false).expect("merge") {
         MergeOutcome::Conflicts { .. } => {}
         other => panic!("expected Conflicts, got {other:?}"),
     }
 
-    let err = merge_branch(d, "other").expect_err("nested merge");
+    let err = merge_branch(d, "other", false).expect_err("nested merge");
     assert!(
         matches!(err, AppError::OperationInProgress(_)),
         "expected OperationInProgress, got {err:?}"
@@ -484,7 +484,7 @@ fn unknown_branch_is_rejected() {
     git(d, &["add", "-A"]);
     commit_fixed(d, "base");
 
-    let err = merge_branch(d, "no-such-branch").expect_err("unknown");
+    let err = merge_branch(d, "no-such-branch", false).expect_err("unknown");
     assert!(
         matches!(err, AppError::BranchNotFound(_)),
         "expected BranchNotFound, got {err:?}"
@@ -506,7 +506,7 @@ fn unstaged_edit_to_merge_touched_file_autostashes_then_pop_conflicts() {
     let local = "b local unstaged\n";
     write(d, "b.txt", local);
 
-    let (head, paths) = match merge_branch(d, "topic").expect("merge") {
+    let (head, paths) = match merge_branch(d, "topic", false).expect("merge") {
         MergeOutcome::StashPopConflicts { head, paths } => (head, paths),
         other => panic!("expected StashPopConflicts, got {other:?}"),
     };
@@ -562,7 +562,7 @@ fn commit_merge_after_resolving_matches_cli_twin() {
     let pre_head = head_oid(bonsai.path());
 
     // Bonsai: merge -> conflicts on a.txt + b.txt; resolve a=Ours, b=Theirs.
-    match merge_branch(bonsai.path(), "topic").expect("merge") {
+    match merge_branch(bonsai.path(), "topic", false).expect("merge") {
         MergeOutcome::Conflicts { paths, .. } => {
             assert_eq!(paths, vec!["a.txt".to_string(), "b.txt".to_string()])
         }
@@ -615,7 +615,7 @@ fn commit_merge_with_unresolved_conflicts_is_rejected() {
     require_git!();
     let (bonsai, _twin) = twin_pair(script_conflict_two_files);
     let d = bonsai.path();
-    match merge_branch(d, "topic").expect("merge") {
+    match merge_branch(d, "topic", false).expect("merge") {
         MergeOutcome::Conflicts { .. } => {}
         other => panic!("expected Conflicts, got {other:?}"),
     }
@@ -679,7 +679,7 @@ fn abort_after_autostashed_merge_keeps_unrelated_edit_on_stash() {
     let pre_head = head_oid(d);
 
     // Dirty tree -> autostash -> conflicting merge pauses; stash RETAINED.
-    match merge_branch(d, "topic").expect("merge") {
+    match merge_branch(d, "topic", false).expect("merge") {
         MergeOutcome::Conflicts { paths, stashed } => {
             assert_eq!(paths, vec!["a.txt".to_string()]);
             assert!(stashed, "the pre-merge edit must have been autostashed");
@@ -748,7 +748,7 @@ fn plain_commit_during_paused_merge_is_rejected() {
     require_git!();
     let (bonsai, _twin) = twin_pair(script_conflict);
     let d = bonsai.path();
-    match merge_branch(d, "topic").expect("merge") {
+    match merge_branch(d, "topic", false).expect("merge") {
         MergeOutcome::Conflicts { .. } => {}
         other => panic!("expected Conflicts, got {other:?}"),
     }

@@ -244,6 +244,11 @@ pub(crate) fn normalize_message(message: &str) -> String {
 /// that file as `$1` (git's contract), then re-read + re-normalize the (possibly
 /// rewritten) message. Empty after the hook ⇒ [`AppError::EmptyMessage`]. Shared
 /// by create/amend (P59a) and the merge-commit finalize.
+///
+/// `$1` is built with `to_string_lossy` — a NON-UTF-8 repo path would reach the
+/// hook mangled (theoretical: Bonsai validates repo paths as UTF-8 at open). A
+/// hook that rewrites the file to non-UTF-8 bytes surfaces as a clean
+/// `AppError::Io` from the re-read, never a panic.
 pub(crate) fn run_commit_msg_hook(
     repo: &git2::Repository,
     workdir: &Path,
