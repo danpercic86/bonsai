@@ -140,6 +140,17 @@ pub(crate) fn ensure_no_untracked_collision(
         .include_untracked(true)
         .recurse_untracked_dirs(true)
         .include_ignored(false);
+    // On a case-insensitive filesystem the worktree path `README.md` and the
+    // tree path `readme.md` are the same physical file, so an exact-case tree
+    // lookup would MISS the collision and let `.force()` clobber the untracked
+    // file (finding F-A3-6). Key off git's own `core.ignorecase`: git sets it
+    // true at init/clone on a case-insensitive FS. Unset falls back to the
+    // build target (`cfg!(windows)`), matching git's default probe.
+    let ignorecase = repo
+        .config()
+        .and_then(|c| c.get_bool("core.ignorecase"))
+        .unwrap_or(cfg!(windows));
+
     let statuses = repo.statuses(Some(&mut sopts))?;
     for entry in statuses.iter() {
         if !entry.status().contains(git2::Status::WT_NEW) {
@@ -152,7 +163,7 @@ pub(crate) fn ensure_no_untracked_collision(
             .index_to_workdir()
             .and_then(|d| d.new_file().path().map(|p| p.to_string_lossy().into_owned()))
             .unwrap_or_else(|| String::from_utf8_lossy(entry.path_bytes()).into_owned());
-        if target_path_collides(target_tree, &path) {
+        if target_path_collides(repo, target_tree, &path, ignorecase) {
             return Err(AppError::Git(format!(
                 "untracked working-tree file '{path}' would be overwritten by checkout; \
                  remove or stash it first"
@@ -164,30 +175,75 @@ pub(crate) fn ensure_no_untracked_collision(
 
 /// True iff checking out `target_tree` would overwrite/delete the untracked
 /// worktree file at `path`. Two ways this happens:
-/// 1. **Direct** — the exact `path` exists in the target tree (blob, or a tree
-///    that replaces the untracked file with a directory).
+/// 1. **Direct** — `path` exists in the target tree (blob, or a tree that
+///    replaces the untracked file with a directory).
 /// 2. **Type-swap** — an ANCESTOR prefix of `path` (e.g. `foo` for
 ///    `foo/bar.txt`) is a BLOB in the target tree. The checkout replaces that
 ///    directory with a file, deleting everything under it, including this
-///    untracked file. `get_path(path)` alone misses this: traversing a blob as
-///    an interior component returns Err, a false negative.
-fn target_path_collides(target_tree: &git2::Tree, path: &str) -> bool {
-    if target_tree.get_path(Path::new(path)).is_ok() {
-        return true;
-    }
-    let components: Vec<&str> = path.split('/').collect();
-    let mut prefix = String::new();
-    // Proper ancestor prefixes only (exclude the full path, handled above).
-    for comp in &components[..components.len().saturating_sub(1)] {
-        if !prefix.is_empty() {
-            prefix.push('/');
+///    untracked file. An exact `get_path(path)` alone misses this: traversing
+///    a blob as an interior component returns Err, a false negative.
+///
+/// When `ignorecase` is true (case-insensitive FS per `core.ignorecase`) the
+/// name comparison is ASCII case-folded at every path component — git itself
+/// uses simple ASCII case-folding, not full Unicode — so `README.md` in the
+/// worktree collides with `readme.md` in the tree. When false, the original
+/// exact-case behavior is preserved.
+fn target_path_collides(
+    repo: &git2::Repository,
+    target_tree: &git2::Tree,
+    path: &str,
+    ignorecase: bool,
+) -> bool {
+    if !ignorecase {
+        if target_tree.get_path(Path::new(path)).is_ok() {
+            return true;
         }
-        prefix.push_str(comp);
-        if let Ok(entry) = target_tree.get_path(Path::new(&prefix)) {
-            if entry.kind() == Some(git2::ObjectType::Blob) {
-                return true;
+        let components: Vec<&str> = path.split('/').collect();
+        let mut prefix = String::new();
+        // Proper ancestor prefixes only (exclude the full path, handled above).
+        for comp in &components[..components.len().saturating_sub(1)] {
+            if !prefix.is_empty() {
+                prefix.push('/');
+            }
+            prefix.push_str(comp);
+            if let Ok(entry) = target_tree.get_path(Path::new(&prefix)) {
+                if entry.kind() == Some(git2::ObjectType::Blob) {
+                    return true;
+                }
             }
         }
+        return false;
+    }
+    let components: Vec<&str> = path.split('/').collect();
+    ci_path_collides(repo, target_tree, &components)
+}
+
+/// Case-insensitive (ASCII case-fold) walk of `components` through `tree`,
+/// implementing the same Direct + Type-swap collision logic as the exact-case
+/// branch. Descends one tree level per component; a BLOB found at an interior
+/// component is a type-swap collision, and any entry matching the final
+/// component is a direct collision.
+fn ci_path_collides(repo: &git2::Repository, tree: &git2::Tree, components: &[&str]) -> bool {
+    let (first, rest) = match components.split_first() {
+        Some(split) => split,
+        None => return false,
+    };
+    for entry in tree.iter() {
+        if !entry.name_bytes().eq_ignore_ascii_case(first.as_bytes()) {
+            continue;
+        }
+        if rest.is_empty() {
+            // Final component present (blob, tree, or submodule) -> collision.
+            return true;
+        }
+        return match entry.kind() {
+            Some(git2::ObjectType::Blob) => true, // type-swap: dir replaced by file
+            Some(git2::ObjectType::Tree) => match repo.find_tree(entry.id()) {
+                Ok(subtree) => ci_path_collides(repo, &subtree, rest),
+                Err(_) => false,
+            },
+            _ => false, // submodule/other interior component: nothing under it
+        };
     }
     false
 }
@@ -265,6 +321,70 @@ mod tests {
                 AppError::Git(m) => assert!(m.contains("bare"), "got: {m}"),
                 other => panic!("expected AppError::Git, got: {other:?}"),
             }
+        }
+    }
+
+    /// Builds a repo whose `core.ignorecase` is forced to `ignorecase` (so the
+    /// test is deterministic regardless of the host filesystem), a one-entry
+    /// in-memory target tree containing `tree_entry` (a blob), and an untracked
+    /// worktree file `worktree_file`. Returns the guard result of checking out
+    /// that tree. The tree entry is built in memory (not written to the
+    /// worktree) so the two file names never collide physically on a real
+    /// case-insensitive host.
+    fn collision_guard_result(
+        ignorecase: bool,
+        tree_entry: &str,
+        worktree_file: &str,
+    ) -> Result<(), AppError> {
+        let dir = crate::testutil::scratch_dir();
+        let repo = git2::Repository::init(dir.path()).expect("init repo");
+        repo.config()
+            .expect("config")
+            .set_bool("core.ignorecase", ignorecase)
+            .expect("set ignorecase");
+
+        let blob = repo.blob(b"tree side").expect("blob");
+        let mut tb = repo.treebuilder(None).expect("treebuilder");
+        tb.insert(tree_entry, blob, 0o100644).expect("insert");
+        let tree_oid = tb.write().expect("write tree");
+        let tree = repo.find_tree(tree_oid).expect("find tree");
+
+        std::fs::write(dir.path().join(worktree_file), b"worktree side")
+            .expect("write untracked file");
+
+        // `dir`/`repo` stay in scope through the guard call and drop naturally
+        // at end of function (repo holds the worktree path).
+        ensure_no_untracked_collision(&repo, &tree)
+    }
+
+    /// F-A3-6 (T2.3): on a case-insensitive FS an untracked `README.md` must
+    /// collide with the tree entry `readme.md`, so the force-checkout refuses.
+    #[test]
+    fn ignorecase_untracked_case_variant_is_detected() {
+        let err = collision_guard_result(true, "readme.md", "README.md")
+            .expect_err("case-insensitive collision must be refused");
+        match err {
+            AppError::Git(m) => assert!(m.contains("would be overwritten"), "got: {m}"),
+            other => panic!("expected AppError::Git, got: {other:?}"),
+        }
+    }
+
+    /// F-A3-6 (T2.3): with `core.ignorecase=false` the two names are distinct
+    /// paths, so the guard must NOT flag a collision (no regression of the
+    /// case-sensitive path).
+    #[test]
+    fn case_sensitive_case_variant_is_not_a_collision() {
+        collision_guard_result(false, "readme.md", "README.md")
+            .expect("case-sensitive: distinct names must not collide");
+    }
+
+    /// Regression: an exact-case match is still a collision under both modes.
+    #[test]
+    fn exact_case_match_is_a_collision_both_modes() {
+        for ignorecase in [true, false] {
+            let err = collision_guard_result(ignorecase, "readme.md", "readme.md")
+                .expect_err("exact-case collision must be refused");
+            assert!(matches!(err, AppError::Git(_)), "ignorecase={ignorecase}");
         }
     }
 }

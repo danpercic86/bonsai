@@ -184,7 +184,17 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
   `skip_first_conflicting_op_works`; both comment blocks rewritten to describe the 8219ebd fix
   (paths-only reset preserves rebase-merge state; branch field now asserted too)
 - [T2.3] F-A3-6 · NIT · stage.rs:174 — clobber guard tree lookup is exact-case; Windows case-collision
-  false negative; adversarial-test then fix-or-document — **open**
+  false negative; adversarial-test then fix-or-document — **fixed (pending commit)**:
+  `ensure_no_untracked_collision` now reads `core.ignorecase` (git2 Config; unset falls back to
+  `cfg!(windows)`) and, when case-insensitive, walks the target tree with ASCII case-folded name
+  comparison (`ci_path_collides`), preserving the Direct + Type-swap logic; exact-case path unchanged
+  when ignorecase=false. Tests (inline in stage.rs, config-forced so deterministic cross-platform):
+  `ignorecase_untracked_case_variant_is_detected` (untracked `README.md` vs tree `readme.md` now
+  REFUSED), `case_sensitive_case_variant_is_not_a_collision` (ignorecase=false keeps them distinct),
+  `exact_case_match_is_a_collision_both_modes`. Evidence: `cargo test -p bonsai-core` 1193 passed / 0
+  failed / 3 ignored; `cargo clippy -p bonsai-core --all-targets -- -D warnings` clean. Behavior
+  change: on a case-insensitive FS a rebase/bisect/interactive-abort force-checkout now REFUSES when
+  an untracked case-variant would be clobbered (previously silent overwrite).
 - [T2.3] F-A3-7 · NIT · bisect.rs:414 — adjacent good/bad refuses vs git's immediate verdict (P39
   contract-sanctioned); pin with test — **open (tester)**
 - [T2.3] Verified sound: atomic state writes, start rollback, autostash apply-not-pop discipline,
