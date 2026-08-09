@@ -93,14 +93,28 @@ pub async fn history_index_build(
     on_progress: tauri::ipc::Channel<IndexProgress>,
 ) -> Result<IndexStatus, AppError> {
     let base = app_data_root(&app)?;
-    let workdir = repo_path(state.inner(), &repo_id)?;
+    history_index_build_inner(state.inner(), &base, &repo_id, move |p| {
+        // A send failure means the frontend dropped the channel — ignore it,
+        // the build completes and the final IndexStatus still resolves.
+        let _ = on_progress.send(p);
+    })
+    .await
+}
+
+/// Runtime-free core of `history_index_build` (unit-testable without a Tauri
+/// app): the AppHandle-derived data dir arrives as `base` and the Channel is
+/// abstracted to a plain progress callback (mirrors `ai_search_history_inner`).
+pub(crate) async fn history_index_build_inner(
+    state: &AppState,
+    base: &std::path::Path,
+    repo_id: &str,
+    on_progress: impl Fn(IndexProgress) + Send + 'static,
+) -> Result<IndexStatus, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    let base = base.to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
         let dir = history_index::index_dir_for(&base, &workdir);
-        history_index::build_index(&workdir, &dir, move |p| {
-            // A send failure means the frontend dropped the channel — ignore it,
-            // the build completes and the final IndexStatus still resolves.
-            let _ = on_progress.send(p);
-        })
+        history_index::build_index(&workdir, &dir, on_progress)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -116,7 +130,19 @@ pub async fn history_index_status(
     repo_id: String,
 ) -> Result<IndexStatus, AppError> {
     let base = app_data_root(&app)?;
-    let workdir = repo_path(state.inner(), &repo_id)?;
+    history_index_status_inner(state.inner(), &base, &repo_id).await
+}
+
+/// Runtime-free core of `history_index_status` (unit-testable without a Tauri
+/// app); `base` is the AppHandle-derived app-data dir (mirrors
+/// `ai_search_history_inner`).
+pub(crate) async fn history_index_status_inner(
+    state: &AppState,
+    base: &std::path::Path,
+    repo_id: &str,
+) -> Result<IndexStatus, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    let base = base.to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
         let dir = history_index::index_dir_for(&base, &workdir);
         history_index::index_status(&workdir, &dir)
@@ -138,7 +164,20 @@ pub async fn history_search(
     query: HistoryQuery,
 ) -> Result<HistorySearchResults, AppError> {
     let base = app_data_root(&app)?;
-    let workdir = repo_path(state.inner(), &repo_id)?;
+    history_search_inner(state.inner(), &base, &repo_id, query).await
+}
+
+/// Runtime-free core of `history_search` (unit-testable without a Tauri app);
+/// `base` is the AppHandle-derived app-data dir (mirrors
+/// `ai_search_history_inner`).
+pub(crate) async fn history_search_inner(
+    state: &AppState,
+    base: &std::path::Path,
+    repo_id: &str,
+    query: HistoryQuery,
+) -> Result<HistorySearchResults, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    let base = base.to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
         let dir = history_index::index_dir_for(&base, &workdir);
         history_index::search_history(&workdir, &dir, &query)

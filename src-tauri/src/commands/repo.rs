@@ -36,8 +36,9 @@ pub struct OpenRepoResult {
 /// canonical workdir path (`repoId`, P3e contract §2) and (re)arms that
 /// entry's file watcher: re-invoking on the same path is idempotent and
 /// self-heals a dead watcher (this is what the refresh button relies on).
-/// Opening an already-open path (case-insensitive match) FOCUSES the existing
-/// entry — its id is returned, no duplicate is created.
+/// Opening an already-open path (same-directory match via canonicalization,
+/// see `same_repo_path`) FOCUSES the existing entry — its id is returned, no
+/// duplicate is created.
 ///
 /// A non-usable open (non-repo or bare) inserts NO entry and touches no other
 /// entry — there is no single "current repo" anymore, so other tabs are
@@ -79,7 +80,7 @@ pub async fn open_repo(
                 let saved = tauri::async_runtime::spawn_blocking(move || {
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs() as i64)
+                        .map(|d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
                         .unwrap_or(0);
                     // Serialized load→mutate→save (audit §2.3).
                     settings::update(&file, |s| settings::record_recent(s, &repo_path, now))
@@ -151,8 +152,8 @@ pub async fn get_recent_repos(app: tauri::AppHandle) -> Result<Vec<RecentRepo>, 
         .map_err(|e| AppError::Other(format!("task join error: {e}")))
 }
 
-/// Removes one recents entry (case-insensitive path match) and returns the
-/// updated list (P1 contract §3.2).
+/// Removes one recents entry (same-directory match via `same_repo_path`) and
+/// returns the updated list (P1 contract §3.2).
 #[tauri::command]
 pub async fn remove_recent_repo(
     app: tauri::AppHandle,
@@ -162,8 +163,7 @@ pub async fn remove_recent_repo(
     tauri::async_runtime::spawn_blocking(move || {
         // Serialized load→mutate→save (audit §2.3).
         let s = settings::update(&file, |s| {
-            s.recent_repos
-                .retain(|r| !r.path.eq_ignore_ascii_case(&path));
+            s.recent_repos.retain(|r| !same_repo_path(&r.path, &path));
         })?;
         Ok(s.recent_repos)
     })
@@ -213,9 +213,10 @@ where
     if info.is_repo && !info.bare {
         let workdir = std::path::PathBuf::from(&info.path);
 
-        // Dedupe scan (P3e contract §2): if a case-insensitive match is already
-        // open, reuse its exact key so we FOCUS it instead of inserting a
-        // duplicate. Only compute the callback once we know the final id.
+        // Dedupe scan (P3e contract §2): if the same directory is already open
+        // (canonical-path match, `same_repo_path`), reuse its exact key so we
+        // FOCUS it instead of inserting a duplicate. Only compute the callback
+        // once we know the final id.
         {
             // Poison recovery (audit §3.8): the guarded map is structurally
             // valid at every point (plain insert/remove), so recover instead
@@ -226,7 +227,7 @@ where
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(existing) = repos
                 .keys()
-                .find(|k| k.eq_ignore_ascii_case(&repo_id))
+                .find(|k| same_repo_path(k, &repo_id))
                 .cloned()
             {
                 repo_id = existing;
@@ -330,4 +331,19 @@ pub async fn init_repo(path: String) -> Result<String, AppError> {
     tauri::async_runtime::spawn_blocking(move || init_repo_core(std::path::Path::new(&path)))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Same-directory test for the open-repo dedupe scan and recents removal
+/// (T2.1 BUG-1). Compares `fs::canonicalize` results when BOTH sides resolve —
+/// this folds filesystem case (including non-ASCII, e.g. `Übung`/`übung` on
+/// NTFS), separators (`/` vs `\`), trailing slashes, and 8.3 short names,
+/// none of which the previous `eq_ignore_ascii_case` handled. When either
+/// side cannot be canonicalized (e.g. a recents entry whose directory was
+/// deleted) it falls back to the previous ASCII-case-insensitive string
+/// compare, so existing behavior is preserved for unresolvable paths.
+pub(crate) fn same_repo_path(a: &str, b: &str) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(ca), Ok(cb)) => ca == cb,
+        _ => a.eq_ignore_ascii_case(b),
+    }
 }

@@ -40,8 +40,9 @@ pub async fn set_mcp_allow_write(
 /// (register in the open repo, private/not committed). cwd = `repo_path` when
 /// given (required for a meaningful `local` registration), else the process cwd.
 /// The `claude mcp add` argv is built in `bonsai-core` as an argument list, so
-/// the variadic `--header` cannot swallow the URL. Errors:
-/// `aiUnavailable` | `aiFailed` | `other`.
+/// the variadic `--header` cannot swallow the URL. A provided `repo_path` is
+/// prechecked to exist as a directory (T2.1 BUG-3). Errors:
+/// `aiUnavailable` | `aiFailed` | `io` (missing repo dir) | `other`.
 #[tauri::command]
 pub async fn register_mcp_with_claude(
     scope: String,
@@ -53,14 +54,34 @@ pub async fn register_mcp_with_claude(
         (Some(u), Some(t)) => (u, t),
         _ => return Err(AppError::Other("MCP server is not running".to_string())),
     };
-    let cwd = match repo_path {
-        Some(p) => std::path::PathBuf::from(p),
-        None => std::env::current_dir()
-            .map_err(|e| AppError::Other(format!("could not resolve current dir: {e}")))?,
-    };
+    let cwd = resolve_register_cwd(repo_path)?;
     tauri::async_runtime::spawn_blocking(move || {
         ai::register_with_claude(&url, &token, &scope, &cwd)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Resolves the cwd for `register_mcp_with_claude` (T2.1 BUG-3): a provided
+/// `repo_path` must be an existing directory — a deleted/mistyped path returns
+/// a clean `AppError::Io` (same shape as `read_repo_info`'s missing-path
+/// error) instead of surfacing a raw OS spawn failure from the `claude` CLI.
+/// `None` falls back to the process cwd (unchanged).
+pub(crate) fn resolve_register_cwd(
+    repo_path: Option<String>,
+) -> Result<std::path::PathBuf, AppError> {
+    match repo_path {
+        Some(p) => {
+            let path = std::path::PathBuf::from(p);
+            if !path.is_dir() {
+                return Err(AppError::Io(format!(
+                    "path does not exist or is not a directory: {}",
+                    path.display()
+                )));
+            }
+            Ok(path)
+        }
+        None => std::env::current_dir()
+            .map_err(|e| AppError::Other(format!("could not resolve current dir: {e}"))),
+    }
 }

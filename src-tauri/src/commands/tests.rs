@@ -1965,3 +1965,158 @@
         .expect_err("unknown worktree key");
         assert!(matches!(err, AppError::Git(m) if m.contains("not found")));
     }
+
+    /// T2.1 BUG-1: the open-repo dedupe must match the SAME directory through
+    /// path-form variants (canonicalization), not just ASCII case. Re-opening
+    /// via a trailing-separator variant FOCUSES the existing entry (same
+    /// `repo_id`, still one entry) — this failed under the previous
+    /// `eq_ignore_ascii_case` compare. `same_repo_path` keeps the old
+    /// string compare as the fallback when a side does not resolve.
+    #[test]
+    fn open_repo_dedupes_canonical_path_variants() {
+        let state = AppState::default();
+        let dir = init_repo_with_identity();
+        let first = open(&state, dir.path()).expect("open repo");
+        assert_eq!(repo_count(&state), 1);
+
+        // Same directory, different string form (trailing separator).
+        let variant = format!("{}/", path_string(dir.path()));
+        let second = tauri::async_runtime::block_on(open_repo_inner(
+            &state,
+            variant,
+            |_id| Box::new(|| {}),
+        ))
+        .expect("re-open via path variant");
+        assert_eq!(second.repo_id, first.repo_id, "must FOCUS, not duplicate");
+        assert_eq!(repo_count(&state), 1);
+
+        // Helper direct checks: canonical match through separators…
+        let with_sep = format!("{}/", path_string(dir.path()));
+        assert!(same_repo_path(&path_string(dir.path()), &with_sep));
+        // …and the ASCII-case-insensitive fallback for unresolvable paths
+        // (e.g. a deleted recents entry) — previous behavior preserved.
+        assert!(same_repo_path(
+            "C:/definitely/missing/Repo",
+            "c:/definitely/missing/repo"
+        ));
+        assert!(!same_repo_path(
+            "C:/definitely/missing/repo-a",
+            "C:/definitely/missing/repo-b"
+        ));
+    }
+
+    /// T2.1 BUG-2: the history-index `_inner` seams are runtime-free — unknown
+    /// id is `NoRepo`; on an open repo with a fresh (never-built) base dir,
+    /// `status` reports not-built and `search` mirrors that shape instead of
+    /// erroring. The build seam takes a plain callback (Channel abstracted).
+    #[test]
+    fn history_index_inner_seams_guard_and_report_unbuilt() {
+        let state = AppState::default();
+        let base = tempfile::TempDir::new().expect("create temp base dir");
+
+        let err = tauri::async_runtime::block_on(history_index_status_inner(
+            &state,
+            base.path(),
+            MISSING_ID,
+        ))
+        .expect_err("unknown id must be NoRepo");
+        assert!(matches!(err, AppError::NoRepo));
+        let err = tauri::async_runtime::block_on(history_search_inner(
+            &state,
+            base.path(),
+            MISSING_ID,
+            HistoryQuery { text: "x".to_string(), top_k: 0 },
+        ))
+        .expect_err("unknown id must be NoRepo");
+        assert!(matches!(err, AppError::NoRepo));
+        let err = tauri::async_runtime::block_on(history_index_build_inner(
+            &state,
+            base.path(),
+            MISSING_ID,
+            |_p| {},
+        ))
+        .expect_err("unknown id must be NoRepo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let dir = init_repo_with_identity();
+        let opened = open(&state, dir.path()).expect("open repo");
+        write_stage_commit(&state, &opened.repo_id, dir.path(), "a.txt", "a\n", "C0");
+
+        let status = tauri::async_runtime::block_on(history_index_status_inner(
+            &state,
+            base.path(),
+            &opened.repo_id,
+        ))
+        .expect("status on a never-built index");
+        assert!(!status.built);
+        assert_eq!(status.indexed_commits, 0);
+
+        let results = tauri::async_runtime::block_on(history_search_inner(
+            &state,
+            base.path(),
+            &opened.repo_id,
+            HistoryQuery { text: "anything".to_string(), top_k: 0 },
+        ))
+        .expect("search with a missing index is Ok(empty), not Err");
+        assert!(results.hits.is_empty());
+        assert!(results.index_stale);
+        assert_eq!(results.indexed_commits, 0);
+    }
+
+    /// T2.1 BUG-4: `apply_identity_profile_inner` guards unknown ids with
+    /// `NoRepo` and, on an open repo, writes the identity to LOCAL config and
+    /// returns the refreshed Local view.
+    #[test]
+    fn apply_identity_profile_inner_norepo_and_happy_path() {
+        let state = AppState::default();
+        let err = tauri::async_runtime::block_on(apply_identity_profile_inner(
+            &state,
+            MISSING_ID,
+            "N".to_string(),
+            "n@example.com".to_string(),
+            None,
+        ))
+        .expect_err("unknown id must be NoRepo");
+        assert!(matches!(err, AppError::NoRepo));
+
+        let dir = init_repo_with_identity();
+        let opened = open(&state, dir.path()).expect("open repo");
+        let view = tauri::async_runtime::block_on(apply_identity_profile_inner(
+            &state,
+            &opened.repo_id,
+            "Applied Name".to_string(),
+            "applied@example.com".to_string(),
+            None,
+        ))
+        .expect("apply identity");
+        let target_of = |key: &str| {
+            view.curated
+                .iter()
+                .find(|c| c.key == key)
+                .and_then(|c| c.target_value.clone())
+        };
+        assert_eq!(target_of("user.name").as_deref(), Some("Applied Name"));
+        assert_eq!(
+            target_of("user.email").as_deref(),
+            Some("applied@example.com")
+        );
+    }
+
+    /// T2.1 BUG-3: `resolve_register_cwd` prechecks a provided repo path —
+    /// a missing directory is a clean `Io` error (not a raw OS spawn failure
+    /// later), an existing directory passes through, and `None` falls back to
+    /// the process cwd.
+    #[test]
+    fn resolve_register_cwd_prechecks_repo_path() {
+        let missing = "D:/definitely/missing/bonsai-mcp-cwd";
+        let err = resolve_register_cwd(Some(missing.to_string()))
+            .expect_err("missing dir must be a clean error");
+        assert!(matches!(err, AppError::Io(m) if m.contains("missing")));
+
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let resolved = resolve_register_cwd(Some(path_string(dir.path())))
+            .expect("existing dir passes the precheck");
+        assert_eq!(resolved, dir.path());
+
+        resolve_register_cwd(None).expect("None falls back to the process cwd");
+    }

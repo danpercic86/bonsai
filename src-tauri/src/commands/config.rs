@@ -94,7 +94,20 @@ pub async fn apply_identity_profile(
     user_email: String,
     signing_key: Option<String>,
 ) -> Result<ConfigView, AppError> {
-    let workdir = repo_path(state.inner(), &repo_id)?; // NoRepo if unknown
+    apply_identity_profile_inner(state.inner(), &repo_id, user_name, user_email, signing_key)
+        .await
+}
+
+/// Runtime-free core of `apply_identity_profile` (unit-testable without a
+/// Tauri app).
+pub(crate) async fn apply_identity_profile_inner(
+    state: &AppState,
+    repo_id: &str,
+    user_name: String,
+    user_email: String,
+    signing_key: Option<String>,
+) -> Result<ConfigView, AppError> {
+    let workdir = repo_path(state, repo_id)?; // NoRepo if unknown
     tauri::async_runtime::spawn_blocking(move || {
         config::apply_identity_profile(
             &workdir,
