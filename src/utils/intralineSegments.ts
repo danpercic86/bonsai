@@ -39,6 +39,10 @@ export function segmentLine(content: string, spans?: [number, number][]): LineSe
     const e = Math.min(s + Math.max(0, len), n);
     if (s > cursor) {
       out.push({ text: chars.slice(cursor, s).join(''), changed: false });
+      // Advance past the gap even when the span itself is zero-length after
+      // clamping (`e <= s`); otherwise the final tail emit re-slices from the
+      // stale cursor and duplicates this gap's text.
+      cursor = s;
     }
     if (e > s) {
       out.push({ text: chars.slice(s, e).join(''), changed: true });
