@@ -10,6 +10,7 @@
 //!   server-side re-verification against a freshly recomputed safe set plus the
 //!   not-current / not-base guards — it NEVER trusts the caller's classification.
 
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::error::AppError;
@@ -93,7 +94,9 @@ pub enum BranchDeleteStatus {
 pub struct BranchDeleteResult {
     pub name: String,
     pub status: BranchDeleteStatus,
-    /// Human detail for skipped/failed rows; None when Deleted.
+    /// Human detail. Skipped/failed rows carry the reason; Deleted rows carry
+    /// `"was at <short-oid>"` — the deleted tip, for recovery via reflog/undo
+    /// (F-A7-5).
     pub message: Option<String>,
 }
 
@@ -112,34 +115,105 @@ fn ci_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     a.to_lowercase().cmp(&b.to_lowercase()).then_with(|| a.cmp(b))
 }
 
-/// Resolves the base for merged-detection. Returns (shorthand, commit).
+/// Resolved base identity for the stale scan (F-A7-1 / F-A7-4).
+struct BaseIdentity<'r> {
+    /// Shorthand echoed to the caller (`StaleReport::base`).
+    name: String,
+    /// Base tip commit.
+    commit: git2::Commit<'r>,
+    /// LOCAL branch names that must never be classified stale: the base itself
+    /// when it names (or resolves to) a local branch, the local counterpart of
+    /// a remote-tracking base (F-A7-4), and the repo's default branch
+    /// (origin/HEAD's target — never auto-classified).
+    protected: HashSet<String>,
+    /// True when the base carried NO local-branch identity (bare OID, tag, or
+    /// other non-branch ref): any local branch AT the base tip is then treated
+    /// as the base itself and protected by oid identity (F-A7-1).
+    protect_tip: bool,
+}
+
+/// `"refs/remotes/<remote>/<branch>"` → `Some("<branch>")` (F-A7-4). Remote
+/// names cannot contain `/`, so the first component after the prefix is the
+/// remote name.
+fn local_counterpart(refname: &str) -> Option<String> {
+    let rest = refname.strip_prefix("refs/remotes/")?;
+    let (_, branch) = rest.split_once('/')?;
+    if branch.is_empty() || branch == "HEAD" {
+        return None;
+    }
+    Some(branch.to_string())
+}
+
+/// The repo's default branch's LOCAL name, best-effort: origin/HEAD's resolved
+/// target's local counterpart (`None` when origin/HEAD is absent/unreadable).
+fn default_branch_local_name(repo: &git2::Repository) -> Option<String> {
+    let head_ref = repo.find_reference("refs/remotes/origin/HEAD").ok()?;
+    let resolved = head_ref.resolve().ok()?;
+    resolved.name().ok().and_then(local_counterpart)
+}
+
+/// Resolves the base for merged-detection to a full [`BaseIdentity`].
 /// Precedence (OPEN #8): explicit `base` (revparse) → `origin/HEAD` target →
 /// local `main` → local `master` → current HEAD (attached) → Err(Git).
 fn resolve_stale_base<'r>(
     repo: &'r git2::Repository,
     base: Option<&str>,
-) -> Result<(String, git2::Commit<'r>), AppError> {
-    // 1. Explicit base wins (any ref/oid the caller pins).
-    if let Some(b) = base {
-        let commit = repo
-            .revparse_single(b)
-            .and_then(|o| o.peel_to_commit())
-            .map_err(|_| {
-                AppError::Git(format!("cannot resolve base '{b}' to a commit"))
-            })?;
-        return Ok((b.to_string(), commit));
+) -> Result<BaseIdentity<'r>, AppError> {
+    // The default branch is never auto-classified, whatever the base is.
+    let mut protected: HashSet<String> = HashSet::new();
+    if let Some(default) = default_branch_local_name(repo) {
+        protected.insert(default);
     }
 
-    // 2. origin/HEAD → its resolved target (e.g. "origin/main").
+    // 1. Explicit base wins (any ref/oid the caller pins). Resolve to the ref
+    //    identity, not just the string (F-A7-1): `refs/heads/main`, `main`, a
+    //    remote-tracking `origin/main` (F-A7-4), an OID, or a tag at the tip
+    //    must all protect the branch they denote.
+    if let Some(b) = base {
+        let bad_base = || AppError::Git(format!("cannot resolve base '{b}' to a commit"));
+        let (obj, reference) = repo.revparse_ext(b).map_err(|_| bad_base())?;
+        let commit = obj.peel_to_commit().map_err(|_| bad_base())?;
+        let mut protect_tip = true;
+        if let Some(r) = reference {
+            if let Ok(refname) = r.name() {
+                if let Some(local) = refname.strip_prefix("refs/heads/") {
+                    protected.insert(local.to_string());
+                    protect_tip = false;
+                } else if let Some(local) = local_counterpart(refname) {
+                    // Remote-tracking base: protect the local counterpart.
+                    protected.insert(local);
+                    protect_tip = false;
+                }
+            }
+        }
+        return Ok(BaseIdentity {
+            name: b.to_string(),
+            commit,
+            protected,
+            protect_tip,
+        });
+    }
+
+    // 2. origin/HEAD → its resolved target (e.g. "origin/main"); protect the
+    //    local counterpart (F-A7-4).
     if let Ok(head_ref) = repo.find_reference("refs/remotes/origin/HEAD") {
         if let Ok(resolved) = head_ref.resolve() {
             if let Ok(commit) = resolved.peel_to_commit() {
-                let shorthand = resolved
-                    .shorthand()
-                    .ok()
+                let refname = resolved.name().ok().map(str::to_string);
+                let shorthand = refname
+                    .as_deref()
+                    .and_then(|n| n.strip_prefix("refs/remotes/"))
                     .map(str::to_string)
                     .unwrap_or_else(|| "origin/HEAD".to_string());
-                return Ok((shorthand, commit));
+                if let Some(local) = refname.as_deref().and_then(local_counterpart) {
+                    protected.insert(local);
+                }
+                return Ok(BaseIdentity {
+                    name: shorthand,
+                    commit,
+                    protected,
+                    protect_tip: false,
+                });
             }
         }
     }
@@ -147,8 +221,14 @@ fn resolve_stale_base<'r>(
     // 3. local `main`, then 4. local `master`.
     for name in ["main", "master"] {
         if let Ok(branch) = repo.find_branch(name, git2::BranchType::Local) {
-            if let Ok(commit) = branch.get().peel_to_commit() {
-                return Ok((name.to_string(), commit));
+            if let Ok(commit) = branch.into_reference().peel_to_commit() {
+                protected.insert(name.to_string());
+                return Ok(BaseIdentity {
+                    name: name.to_string(),
+                    commit,
+                    protected,
+                    protect_tip: false,
+                });
             }
         }
     }
@@ -158,7 +238,13 @@ fn resolve_stale_base<'r>(
     if let Some(name) = head.branch_name {
         if !head.unborn {
             if let Ok(commit) = repo.head().and_then(|h| h.peel_to_commit()) {
-                return Ok((name, commit));
+                protected.insert(name.clone());
+                return Ok(BaseIdentity {
+                    name,
+                    commit,
+                    protected,
+                    protect_tip: false,
+                });
             }
         }
     }
@@ -214,16 +300,35 @@ fn upstream_state(
 /// (`None` => auto-resolve, OPEN #8). Read-only; touches nothing. Errors:
 /// `git` (bad base / bare / no resolvable base) | `noRepo` (command layer).
 pub fn find_stale_branches(workdir: &Path, base: Option<&str>) -> Result<StaleReport, AppError> {
+    stale_scan(workdir, base).map(|(report, _)| report)
+}
+
+/// Shared scan core: the [`StaleReport`] plus the set of protected local
+/// branch names (base identity + remote-base local counterpart + default
+/// branch + branches at the base tip under an OID/tag base). The protected set
+/// is what [`delete_branches`] uses for its `SkippedBase` guard.
+fn stale_scan(
+    workdir: &Path,
+    base: Option<&str>,
+) -> Result<(StaleReport, HashSet<String>), AppError> {
     let repo = open_repo_at(workdir)?;
-    let (base_name, base_commit) = resolve_stale_base(&repo, base)?;
-    let base_oid = base_commit.id();
+    let base = resolve_stale_base(&repo, base)?;
+    let base_oid = base.commit.id();
+    let mut protected = base.protected;
     // Some(name) when HEAD is attached to a branch; None when detached/unborn.
     let current = read_head_info(&repo)?.branch_name;
     let cfg = repo.config()?;
 
     let mut out = Vec::new();
     for item in repo.branches(Some(git2::BranchType::Local))? {
-        let (branch, _) = item?;
+        // Best-effort: one unreadable ref must not abort the scan (F-A7-9).
+        let (branch, _) = match item {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("bonsai: skipping unreadable local branch ref: {}", e.message());
+                continue;
+            }
+        };
         let name = match branch.name()? {
             Some(n) => n.to_string(),
             None => {
@@ -232,8 +337,9 @@ pub fn find_stale_branches(workdir: &Path, base: Option<&str>) -> Result<StaleRe
             }
         };
 
-        // Never the base, never the current HEAD branch (OPEN #9).
-        if name == base_name {
+        // Never the base (by name OR resolved identity, F-A7-1/F-A7-4), never
+        // the current HEAD branch (OPEN #9).
+        if name == base.name || protected.contains(&name) {
             continue;
         }
         if current.as_deref() == Some(name.as_str()) {
@@ -249,8 +355,26 @@ pub fn find_stale_branches(workdir: &Path, base: Option<&str>) -> Result<StaleRe
             }
         };
 
-        // merged = base contains every commit of the branch.
-        let merged = tip == base_oid || repo.graph_descendant_of(base_oid, tip)?;
+        // F-A7-1: under an OID/tag base (no branch identity) a local branch AT
+        // the base tip IS the base — protect it instead of classifying it.
+        if base.protect_tip && tip == base_oid {
+            protected.insert(name);
+            continue;
+        }
+
+        // merged = base contains every commit of the branch. A dangling/corrupt
+        // tip must not abort the whole scan (F-A7-9) — skip that branch.
+        let merged = tip == base_oid
+            || match repo.graph_descendant_of(base_oid, tip) {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!(
+                        "bonsai: skipping branch '{name}' (unreadable tip {tip}): {}",
+                        e.message()
+                    );
+                    continue;
+                }
+            };
         let (upstream, gone) = upstream_state(&cfg, &name, &branch);
         if !(merged || gone) {
             continue;
@@ -268,7 +392,17 @@ pub fn find_stale_branches(workdir: &Path, base: Option<&str>) -> Result<StaleRe
             StaleReason::GoneUpstream
         };
 
-        let commit = repo.find_commit(tip)?;
+        // Missing tip object (corrupt/dangling ref): skip, don't abort (F-A7-9).
+        let commit = match repo.find_commit(tip) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!(
+                    "bonsai: skipping branch '{name}' (tip commit {tip} unreadable): {}",
+                    e.message()
+                );
+                continue;
+            }
+        };
         let last_commit_summary = commit.summary().ok().flatten().unwrap_or("").to_string();
         let last_commit_author = commit.author().name().unwrap_or("").to_string();
         let last_commit_time = commit.time().seconds();
@@ -290,11 +424,47 @@ pub fn find_stale_branches(workdir: &Path, base: Option<&str>) -> Result<StaleRe
     }
     out.sort_by(|a, b| ci_cmp(&a.name, &b.name));
 
-    Ok(StaleReport {
-        base: base_name,
-        base_oid: base_oid.to_string(),
-        branches: out,
-    })
+    Ok((
+        StaleReport {
+            base: base.name,
+            base_oid: base_oid.to_string(),
+            branches: out,
+        },
+        protected,
+    ))
+}
+
+/// First 7 hex chars of an oid (a `to_string` is always 40 hex — safe slice).
+fn short_oid(oid: git2::Oid) -> String {
+    oid.to_string()[..7].to_string()
+}
+
+/// F-A7-3 (TOCTOU guard): re-read the branch tip at delete time. Returns
+/// `Some(Failed row)` when the tip no longer matches the freshly-scanned
+/// `expected` oid (the branch moved between scan and delete — do NOT delete),
+/// `None` when it is unchanged and safe to delete.
+fn recheck_tip(
+    branch: &git2::Branch,
+    name: &str,
+    expected: git2::Oid,
+) -> Option<BranchDeleteResult> {
+    match branch.get().target() {
+        Some(now) if now == expected => None,
+        Some(now) => Some(BranchDeleteResult {
+            name: name.to_string(),
+            status: BranchDeleteStatus::Failed,
+            message: Some(format!(
+                "tip moved since scan ({} -> {}); not deleted — re-run the scan",
+                short_oid(expected),
+                short_oid(now)
+            )),
+        }),
+        None => Some(BranchDeleteResult {
+            name: name.to_string(),
+            status: BranchDeleteStatus::Failed,
+            message: Some("tip changed since scan (no longer a direct ref); not deleted".to_string()),
+        }),
+    }
 }
 
 /// Blocking. Deletes each caller-supplied name that is STILL safe, refusing the
@@ -304,17 +474,24 @@ pub fn find_stale_branches(workdir: &Path, base: Option<&str>) -> Result<StaleRe
 /// guard would wrongly block a branch merged into the base while a different
 /// branch is checked out). Returns a per-branch result; a per-branch failure is
 /// reported, NEVER a whole-call error. `base` mirrors `find_stale_branches` so
-/// the safe set is recomputed against the same base. Errors (whole-call): `git`
-/// (bad base / bare) | `noRepo` (command layer).
+/// the safe set is recomputed against the same base. Each branch's tip is
+/// re-read immediately before deletion and the delete refused if it moved
+/// since the recompute (F-A7-3). Errors (whole-call): `git` (bad base / bare)
+/// | `noRepo` (command layer).
 pub fn delete_branches(
     workdir: &Path,
     names: &[String],
     base: Option<&str>,
 ) -> Result<Vec<BranchDeleteResult>, AppError> {
-    // Recompute the safe set + base name from scratch — the load-bearing guard.
-    let report = find_stale_branches(workdir, base)?;
-    let safe: std::collections::HashSet<&str> =
-        report.branches.iter().map(|b| b.name.as_str()).collect();
+    // Recompute the safe set + base identity from scratch — the load-bearing
+    // guard. Carry each safe branch's SCANNED tip oid into the delete loop so
+    // a tip that moves between scan and delete is refused (F-A7-3).
+    let (report, protected) = stale_scan(workdir, base)?;
+    let safe: HashMap<&str, git2::Oid> = report
+        .branches
+        .iter()
+        .filter_map(|b| git2::Oid::from_str(&b.tip).ok().map(|oid| (b.name.as_str(), oid)))
+        .collect();
 
     let repo = open_repo_at(workdir)?;
     let current = read_head_info(&repo)?.branch_name;
@@ -329,22 +506,23 @@ pub fn delete_branches(
             });
             continue;
         }
-        if name == &report.base {
+        // Base by name OR resolved identity (F-A7-1/F-A7-4) OR default branch.
+        if name == &report.base || protected.contains(name.as_str()) {
             results.push(BranchDeleteResult {
                 name: name.clone(),
                 status: BranchDeleteStatus::SkippedBase,
-                message: Some("base branch".to_string()),
+                message: Some("base/default branch".to_string()),
             });
             continue;
         }
-        if !safe.contains(name.as_str()) {
+        let Some(&expected_tip) = safe.get(name.as_str()) else {
             results.push(BranchDeleteResult {
                 name: name.clone(),
                 status: BranchDeleteStatus::SkippedNotStale,
                 message: Some("not detected as stale".to_string()),
             });
             continue;
-        }
+        };
 
         match repo.find_branch(name, git2::BranchType::Local) {
             Err(e) if e.code() == git2::ErrorCode::NotFound => {
@@ -361,18 +539,26 @@ pub fn delete_branches(
                     message: Some(e.message().to_string()),
                 });
             }
-            Ok(mut branch) => match branch.delete() {
-                Ok(()) => results.push(BranchDeleteResult {
-                    name: name.clone(),
-                    status: BranchDeleteStatus::Deleted,
-                    message: None,
-                }),
-                Err(e) => results.push(BranchDeleteResult {
-                    name: name.clone(),
-                    status: BranchDeleteStatus::Failed,
-                    message: Some(e.message().to_string()),
-                }),
-            },
+            Ok(mut branch) => {
+                // F-A7-3: refuse if the tip moved since the scan above.
+                if let Some(row) = recheck_tip(&branch, name, expected_tip) {
+                    results.push(row);
+                    continue;
+                }
+                match branch.delete() {
+                    Ok(()) => results.push(BranchDeleteResult {
+                        name: name.clone(),
+                        status: BranchDeleteStatus::Deleted,
+                        // F-A7-5: record the deleted tip for recovery.
+                        message: Some(format!("was at {}", short_oid(expected_tip))),
+                    }),
+                    Err(e) => results.push(BranchDeleteResult {
+                        name: name.clone(),
+                        status: BranchDeleteStatus::Failed,
+                        message: Some(e.message().to_string()),
+                    }),
+                }
+            }
         }
     }
     Ok(results)
@@ -679,6 +865,17 @@ mod tests {
         assert_eq!(status_of("not-stale"), BranchDeleteStatus::SkippedNotStale);
         assert_eq!(status_of("ghost"), BranchDeleteStatus::SkippedNotStale);
 
+        // F-A7-5: the Deleted row records the deleted tip for recovery.
+        let deleted_row = results
+            .iter()
+            .find(|r| r.name == "merged-stale")
+            .expect("row present");
+        assert!(
+            deleted_row.message.as_deref().unwrap_or("").starts_with("was at "),
+            "Deleted row must carry 'was at <short-oid>', got {:?}",
+            deleted_row.message
+        );
+
         // Only the stale branch is gone; every other ref survives.
         assert!(!branch_exists(d, "merged-stale"), "stale branch deleted");
         assert!(branch_exists(d, "not-stale"), "non-stale branch untouched");
@@ -759,6 +956,196 @@ mod tests {
             Err(AppError::Git(_)) => {}
             other => panic!("bad base must be Git error, got {other:?}"),
         }
+    }
+
+    // --------------------------------------------- F-A7-1/4 base identity guard
+
+    /// The base given as `refs/heads/main`, a bare OID, or a tag at the tip
+    /// must all protect `main` (F-A7-1). A twin branch AT the base tip is only
+    /// protected under the OID/tag forms (no branch identity) — under
+    /// `refs/heads/main` it stays a normal merged candidate.
+    #[test]
+    fn base_identity_protects_main_for_refname_oid_and_tag() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        let repo = init(d);
+
+        let _c0 = commit(d, "C0", &[("a.txt", "a\n")]);
+        let c1 = commit(d, "C1", &[("b.txt", "b\n")]);
+        let c2 = commit(d, "C2", &[("c.txt", "c\n")]); // main tip
+
+        branch_at(&repo, "dead", c1); // merged, below the tip
+        branch_at(&repo, "twin", c2); // merged, AT the base tip
+        // HEAD off main so the base guard (not the current guard) is exercised.
+        branch_at(&repo, "topic", c2);
+        crate::git::branches::checkout_branch(d, "topic").expect("checkout");
+
+        let tip_commit = repo.find_commit(c2).expect("tip");
+        repo.tag_lightweight("release", tip_commit.as_object(), false)
+            .expect("tag");
+
+        let oid_spec = c2.to_string();
+        for (spec, twin_protected) in [
+            ("refs/heads/main", false),
+            (oid_spec.as_str(), true),
+            ("release", true),
+        ] {
+            let report = find_stale_branches(d, Some(spec)).expect("classify");
+            let names: Vec<&str> = report.branches.iter().map(|b| b.name.as_str()).collect();
+            assert!(!names.contains(&"main"), "base {spec}: main never listed: {names:?}");
+            assert!(names.contains(&"dead"), "base {spec}: dead still listed: {names:?}");
+            assert_eq!(
+                !names.contains(&"twin"),
+                twin_protected,
+                "base {spec}: twin protection mismatch: {names:?}"
+            );
+
+            let results =
+                delete_branches(d, &["main".to_string()], Some(spec)).expect("delete");
+            assert_eq!(
+                results[0].status,
+                BranchDeleteStatus::SkippedBase,
+                "base {spec}: deleting main must be SkippedBase, got {results:?}"
+            );
+            assert!(branch_exists(d, "main"), "base {spec}: main survives");
+        }
+    }
+
+    /// A remote-tracking base (`origin/main`) protects the LOCAL `main`
+    /// (F-A7-4) even when it is fully merged relative to that base.
+    #[test]
+    fn remote_base_protects_local_counterpart() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        let repo = init(d);
+
+        let c0 = commit(d, "C0", &[("a.txt", "a\n")]);
+        let c1 = commit(d, "C1", &[("b.txt", "b\n")]); // main tip
+        repo.reference("refs/remotes/origin/main", c1, true, "seed")
+            .expect("remote ref");
+        branch_at(&repo, "dead", c0);
+        branch_at(&repo, "topic", c1);
+        crate::git::branches::checkout_branch(d, "topic").expect("checkout");
+
+        let report = find_stale_branches(d, Some("origin/main")).expect("classify");
+        let names: Vec<&str> = report.branches.iter().map(|b| b.name.as_str()).collect();
+        assert!(!names.contains(&"main"), "local counterpart never listed: {names:?}");
+        assert!(names.contains(&"dead"), "other merged branches still listed");
+
+        let results = delete_branches(d, &["main".to_string()], Some("origin/main"))
+            .expect("delete");
+        assert_eq!(results[0].status, BranchDeleteStatus::SkippedBase);
+        assert!(branch_exists(d, "main"), "local main survives a remote base");
+    }
+
+    /// The repo's default branch (origin/HEAD target) is never auto-classified
+    /// stale, whatever base the caller reviews against (F-A7-4).
+    #[test]
+    fn default_branch_never_auto_classified() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        let repo = init(d);
+
+        let _c0 = commit(d, "C0", &[("a.txt", "a\n")]);
+        let c1 = commit(d, "C1", &[("b.txt", "b\n")]);
+        let _c2 = commit(d, "C2", &[("c.txt", "c\n")]); // main tip, HEAD=main
+
+        branch_at(&repo, "dev", c1); // merged — but it is the DEFAULT branch
+        branch_at(&repo, "dead", c1); // merged — an ordinary candidate
+        repo.reference("refs/remotes/origin/dev", c1, true, "seed")
+            .expect("remote dev");
+        repo.reference_symbolic(
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/dev",
+            true,
+            "seed origin/HEAD",
+        )
+        .expect("origin/HEAD");
+
+        let report = find_stale_branches(d, Some("main")).expect("classify");
+        let names: Vec<&str> = report.branches.iter().map(|b| b.name.as_str()).collect();
+        assert!(!names.contains(&"dev"), "default branch never listed: {names:?}");
+        assert!(names.contains(&"dead"), "ordinary merged branch still listed");
+
+        let results = delete_branches(d, &["dev".to_string()], Some("main")).expect("delete");
+        assert_eq!(results[0].status, BranchDeleteStatus::SkippedBase);
+        assert!(branch_exists(d, "dev"), "default branch survives");
+    }
+
+    // ------------------------------------------------- F-A7-3 tip-moved guard
+
+    /// The delete-time tip recheck: unchanged tip → proceed (None); a moved
+    /// tip → a Failed row naming both oids, never a delete.
+    #[test]
+    fn recheck_tip_detects_moved_tip() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        let repo = init(d);
+
+        let c0 = commit(d, "C0", &[("a.txt", "a\n")]);
+        let c1 = commit(d, "C1", &[("b.txt", "b\n")]);
+        branch_at(&repo, "b", c1);
+        let branch = repo
+            .find_branch("b", git2::BranchType::Local)
+            .expect("find branch");
+
+        assert!(
+            recheck_tip(&branch, "b", c1).is_none(),
+            "unchanged tip → safe to delete"
+        );
+        let row = recheck_tip(&branch, "b", c0).expect("moved tip must be refused");
+        assert_eq!(row.status, BranchDeleteStatus::Failed);
+        let msg = row.message.as_deref().unwrap_or("");
+        assert!(msg.contains("tip moved"), "message names the move: {msg}");
+        assert!(
+            msg.contains(&c0.to_string()[..7]) && msg.contains(&c1.to_string()[..7]),
+            "message carries both short oids: {msg}"
+        );
+    }
+
+    // -------------------------------------------- F-A7-9 dangling-ref skipping
+
+    /// One dangling branch ref (loose ref file pointing at a nonexistent
+    /// object) must not abort the scan or the delete batch — it is skipped and
+    /// everything else still works.
+    #[test]
+    fn dangling_branch_ref_is_skipped_not_fatal() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        let repo = init(d);
+
+        let c0 = commit(d, "C0", &[("a.txt", "a\n")]);
+        let _c1 = commit(d, "C1", &[("b.txt", "b\n")]); // main tip
+        branch_at(&repo, "dead", c0); // merged → stale
+
+        // A loose ref to an object that does not exist in the odb.
+        std::fs::write(
+            d.join(".git").join("refs").join("heads").join("dangling"),
+            format!("{}\n", "a".repeat(40)),
+        )
+        .expect("write dangling ref");
+
+        let report = find_stale_branches(d, Some("main")).expect("scan survives");
+        let names: Vec<&str> = report.branches.iter().map(|b| b.name.as_str()).collect();
+        assert!(names.contains(&"dead"), "healthy stale branch listed: {names:?}");
+        assert!(!names.contains(&"dangling"), "dangling ref never classified");
+
+        let results = delete_branches(
+            d,
+            &["dead".to_string(), "dangling".to_string()],
+            Some("main"),
+        )
+        .expect("delete survives");
+        let status_of = |n: &str| {
+            results
+                .iter()
+                .find(|r| r.name == n)
+                .map(|r| r.status)
+                .expect("row present")
+        };
+        assert_eq!(status_of("dead"), BranchDeleteStatus::Deleted);
+        assert_eq!(status_of("dangling"), BranchDeleteStatus::SkippedNotStale);
+        assert!(!branch_exists(d, "dead"));
     }
 
     // --------------------------------------------------- §9.2 CLI oracle (git)

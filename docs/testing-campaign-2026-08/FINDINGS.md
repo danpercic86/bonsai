@@ -15,6 +15,13 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
 - F-A4-4 (no code change, awareness): AI-composed commits (P54 composer) intentionally bypass ALL
   git hooks — re-staging hooks would corrupt the split plan. Now documented; revisit if you want
   commit-msg-only enforcement there.
+- F-A7-1/3/4/5 (stale-branch cleanup, safety-tightening): base branch now protected under ANY
+  spelling (refname/OID/tag); remote base protects its local counterpart; the repo default branch is
+  never offered as stale; deletion re-checks the tip and refuses with "tip moved since scan"; Deleted
+  rows now carry "was at <short-oid>" for manual recovery. Strictly more conservative — no previously-
+  safe deletion is blocked except the tip-moved race.
+- F-A3-1 (queued): plain rebase Abort will refuse (retryable) instead of silently overwriting an
+  untracked file that collides with the original tip — matching bisect/interactive abort semantics.
 
 ## Findings
 
@@ -186,16 +193,29 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
 
 - [T2.7] F-A7-1 · MUST-FIX (HIGH, deletes default branch) · stale.rs:236/:332 — base excluded by
   string equality only; base passed as refs/heads/main, OID, or tag ⇒ `main` classified merged-stale
-  and deletable. Fix: resolve base ref, exclude by resolved identity — **open**
+  and deletable. Fix: resolve base ref, exclude by resolved identity — **fixed (pending commit)**:
+  `resolve_stale_base` → `BaseIdentity` (revparse_ext, protected-name set + OID-tip protection);
+  test `base_identity_protects_main_for_refname_oid_and_tag` pins all 3 forms
 - [T2.7] F-A7-2 · MUST-FIX (HIGH, path traversal) · submodule.rs:309 — remove_submodule joins
   .gitmodules-supplied name into .git/modules/<name> for remove_dir_all; name `../../dir` escapes
-  .git (CVE-2018-11235 vector). Fix: reject `..`/separators or canonicalize-and-contain — **open**
+  .git (CVE-2018-11235 vector). Fix: reject `..`/separators or canonicalize-and-contain — **fixed
+  (pending commit)**: `validate_modules_name` (rejects `..`/`.`/empty components + absolute, before
+  any destructive step) + `remove_cached_git_dir` canonicalize-and-contain; tests
+  `modules_name_validation_rejects_traversal`, `remove_submodule_rejects_hostile_name_before_running_git`
 - [T2.7] F-A7-3 · MUST-FIX (TOCTOU) · stale.rs:315-376 — tips not re-verified at delete time;
-  Branch::delete is -D-equivalent. Fix: keep tip OID in safe map, skip if moved — **open**
+  Branch::delete is -D-equivalent. Fix: keep tip OID in safe map, skip if moved — **fixed (pending
+  commit)**: safe set is now name→scanned-tip HashMap; `recheck_tip` re-reads at delete time and
+  emits a Failed "tip moved" row (no new enum variant — types.ts untouched); test
+  `recheck_tip_detects_moved_tip`
 - [T2.7] F-A7-4 · SHOULD-FIX · stale.rs:134/:236 — remote base (origin/main) doesn't protect local
-  `main`. Protect local counterpart of base unless explicitly targeted — **open**
+  `main`. Protect local counterpart of base unless explicitly targeted — **fixed (pending commit)**:
+  remote-tracking base protects its local counterpart; origin/HEAD's target (default branch) is
+  never auto-classified; tests `remote_base_protects_local_counterpart`,
+  `default_branch_never_auto_classified`
 - [T2.7] F-A7-5 · SHOULD-FIX · stale.rs:93/:364 — Deleted rows carry no tip oid; goneUpstream+ahead
-  branches unrecoverable and P60 undo can't restore. Add "was at <short-oid>" / tip field — **open**
+  branches unrecoverable and P60 undo can't restore. Add "was at <short-oid>" / tip field — **fixed
+  (pending commit)**: Deleted rows' `message` = "was at <short-oid>" (existing field, no wire-type
+  change); asserted in `delete_branches_safety`
 - [T2.7] F-A7-6 · SHOULD-FIX (wrong-stash) · autostash.rs:41/:73/:104 — apply/drop stash@{0} blindly;
   foreign stash pushed between save and pop ⇒ wrong stash applied AND dropped. Fix: track saved Oid,
   locate by identity, error-with-retain if absent — **open**
@@ -205,12 +225,19 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
 - [T2.7] F-A7-8 · DECISION · tags.rs — tag.gpgSign ignored (annotated tags never signed). DECISION:
   document as known v1 limitation + FINDINGS/user-docs entry; revisit with signing area — **open (docs)**
 - [T2.7] F-A7-9 · LOW · stale.rs:253/:271 — one dangling/corrupt branch ref aborts whole scan+delete
-  batch; best-effort skip like the non-UTF-8 arm — **open**
+  batch; best-effort skip like the non-UTF-8 arm — **fixed (pending commit)**: iterator item,
+  `graph_descendant_of`, and `find_commit` errors now skip that branch (eprintln) instead of `?`;
+  test `dangling_branch_ref_is_skipped_not_fatal`
 - [T2.7] F-A7-10 · LOW · submodule.rs:217-245 — add_submodule partial-failure residue (.gitmodules +
-  config entries linger; retry hits Exists). Cleanup or clear error — **open**
-- [T2.7] NITs: delete_tag skips validate_tag_name (add it); create_tag can tag tree/blob (pin);
-  autostash conflicted-path list_conflicts `?` loses safety message (cheap fix); opstate
-  current_step>total cosmetic; eprintln! diagnostics invisible in-app — **fold into fix pass**
+  config entries linger; retry hits Exists). Cleanup or clear error — **fixed (pending commit)**:
+  `rollback_partial_add` (best-effort: .gitmodules entries, .git/config `submodule.<name>.*`,
+  partial checkout dir, cached .git/modules dir; original error returned; residual limits
+  documented on the fn); test `add_submodule_rolls_back_on_clone_failure` (fail → retry succeeds)
+- [T2.7] NITs: delete_tag skips validate_tag_name — **fixed (pending commit)** (same validation as
+  create; test `delete_tag_validates_name`); autostash conflicted-path list_conflicts `?` loses
+  safety message — **fixed (pending commit)** (falls back to plain "safe at stash@{0}" message in
+  both `pop_after_success` arms). Still open, fold into a later pass: create_tag can tag tree/blob
+  (pin); opstate current_step>total cosmetic; eprintln! diagnostics invisible in-app
 - [T2.7] Verified sound: submodule add/update pure libgit2 (ext:: transport unreachable), deinit/rm
   argv injection-safe, push_tag refspec injection precluded, opstate reads panic-free, stale
   recompute-fresh design + per-branch result rows.

@@ -218,31 +218,81 @@ pub fn add_submodule(workdir: &Path, url: &str, path: &str) -> Result<SubmoduleI
         .submodule(url, Path::new(path), true)
         .map_err(|e| map_remote_err(e, path))?;
 
-    // Clone the subrepo with the shared M6 credential chain (uniform with
-    // `update_submodule`; never prompts, never stores passwords).
-    {
-        let attempts = RefCell::new(CredAttempts::default());
-        let mut callbacks = git2::RemoteCallbacks::new();
-        callbacks.credentials(|url, username_from_url, allowed| {
-            acquire_cred(repo.workdir(), &attempts, url, username_from_url, allowed)
-        });
-        let mut fo = git2::FetchOptions::new();
-        fo.remote_callbacks(callbacks);
-        let mut opts = git2::SubmoduleUpdateOptions::new();
-        opts.fetch(fo);
-        sm.clone(Some(&mut opts))
-            .map_err(|e| map_remote_err(e, url))?;
+    // The name is path-derived at add-setup; grab it up front so a failure
+    // below can be rolled back by name (F-A7-10).
+    let name = match sm.name().ok() {
+        Some(n) => n.to_string(),
+        None => {
+            rollback_partial_add(&repo, path, path);
+            return Err(AppError::Git("submodule has a non-UTF-8 name".to_string()));
+        }
+    };
+
+    // Clone + register + finalize. On ANY failure, best-effort rollback of the
+    // add-setup residue (.gitmodules entries, .git/config registration, the
+    // partial checkout dir, the cached .git/modules dir) so a retry does not
+    // hit "submodule already exists" (F-A7-10); the ORIGINAL error is returned.
+    let finalize = (|| -> Result<(), AppError> {
+        // Clone the subrepo with the shared M6 credential chain (uniform with
+        // `update_submodule`; never prompts, never stores passwords).
+        {
+            let attempts = RefCell::new(CredAttempts::default());
+            let mut callbacks = git2::RemoteCallbacks::new();
+            callbacks.credentials(|url, username_from_url, allowed| {
+                acquire_cred(repo.workdir(), &attempts, url, username_from_url, allowed)
+            });
+            let mut fo = git2::FetchOptions::new();
+            fo.remote_callbacks(callbacks);
+            let mut opts = git2::SubmoduleUpdateOptions::new();
+            opts.fetch(fo);
+            sm.clone(Some(&mut opts))
+                .map_err(|e| map_remote_err(e, url))?;
+        }
+
+        // Register in .git/config (like `git submodule add`) then stage
+        // .gitmodules + the gitlink for the next commit.
+        sm.init(false)?;
+        sm.add_finalize()?;
+        Ok(())
+    })();
+    if let Err(e) = finalize {
+        rollback_partial_add(&repo, &name, path);
+        return Err(e);
     }
 
-    // Register in .git/config (like `git submodule add`) then stage .gitmodules
-    // + the gitlink for the next commit.
-    sm.init(false)?;
-    sm.add_finalize()?;
+    submodule_info(&repo, &sm, name, &sm_workdir)
+}
 
-    let Some(name) = sm.name().ok() else {
-        return Err(AppError::Git("submodule has a non-UTF-8 name".to_string()));
-    };
-    submodule_info(&repo, &sm, name.to_string(), &sm_workdir)
+/// Best-effort rollback of a failed [`add_submodule`] (F-A7-10): removes the
+/// `.gitmodules` entries written by add-setup, the `submodule.<name>.*`
+/// registration `init` may have written to .git/config, the (partial) checkout
+/// dir at `path` (already contained in the workdir via `validate_rel_path`),
+/// and the cached `.git/modules/<name>` dir the clone may have created. Every
+/// step is independent and its own failure ignored — the caller reports the
+/// ORIGINAL error. An empty `.gitmodules` file may remain (harmless to git),
+/// and anything `add_finalize` staged before failing stays staged; both
+/// self-heal on the next successful add or a manual `git checkout .gitmodules`.
+fn rollback_partial_add(repo: &git2::Repository, name: &str, path: &str) {
+    if let Some(wd) = repo.workdir() {
+        // .gitmodules entries (written by add-setup).
+        if let Ok(mut cfg) = git2::Config::open(&wd.join(".gitmodules")) {
+            let _ = cfg.remove(&format!("submodule.{name}.path"));
+            let _ = cfg.remove(&format!("submodule.{name}.url"));
+        }
+        // The partial checkout dir at `path` (validated repo-relative).
+        let _ = std::fs::remove_dir_all(wd.join(path));
+    }
+    // .git/config registration (written by `init`, when reached).
+    if let Ok(mut cfg) = repo.config() {
+        let _ = cfg.remove(&format!("submodule.{name}.url"));
+        let _ = cfg.remove(&format!("submodule.{name}.update"));
+        let _ = cfg.remove(&format!("submodule.{name}.active"));
+    }
+    // Cached git dir under .git/modules (created by the clone), with the same
+    // traversal guard as `remove_submodule` (F-A7-2).
+    if validate_modules_name(name).is_ok() {
+        remove_cached_git_dir(repo, name);
+    }
 }
 
 /// Resolve submodule `name` → its repo-relative path with forward slashes,
@@ -304,14 +354,48 @@ pub fn remove_submodule(
     name: &str,
 ) -> Result<(), AppError> {
     let repo = open_workdir_repo(workdir)?;
+    // F-A7-2: `name` comes from .gitmodules (attacker-controllable) and is
+    // joined under .git/modules — refuse traversal BEFORE any destructive step.
+    validate_modules_name(name)?;
     let path = submodule_path(&repo, name)?;
-    // The cached submodule git dir lives under the superproject's git dir.
-    let modules_dir = repo.path().join("modules").join(name);
     runner.run(&deinit_args(&path), workdir)?;
     runner.run(&rm_args(&path), workdir)?;
     // Best-effort: drop the cached git dir (`git rm` leaves it; may be absent).
-    let _ = std::fs::remove_dir_all(&modules_dir);
+    remove_cached_git_dir(&repo, name);
     Ok(())
+}
+
+/// F-A7-2: reject submodule names that could escape `.git/modules` when joined
+/// (CVE-2018-11235 vector). Names MAY contain `/` (nested defaults such as
+/// `vendor/libcore`), but never `..`/`.`/empty components (across `/` AND `\`)
+/// or absolute paths.
+fn validate_modules_name(name: &str) -> Result<(), AppError> {
+    let bytes = name.as_bytes();
+    let absolute = name.starts_with('/')
+        || (bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':');
+    let bad_component = name
+        .split(['/', '\\'])
+        .any(|c| c.is_empty() || c == "." || c == "..");
+    if name.trim().is_empty() || absolute || bad_component {
+        return Err(AppError::Git(format!(
+            "refusing to touch .git/modules for submodule '{name}': unsafe name"
+        )));
+    }
+    Ok(())
+}
+
+/// Best-effort removal of the cached `.git/modules/<name>` dir with
+/// belt-and-braces containment (F-A7-2): even after name validation, delete
+/// only when the canonicalized dir is strictly inside the canonicalized
+/// modules root. An absent dir is a silent no-op (canonicalize fails).
+fn remove_cached_git_dir(repo: &git2::Repository, name: &str) {
+    let root = repo.path().join("modules");
+    let dir = root.join(name);
+    if let (Ok(canon_root), Ok(canon_dir)) = (root.canonicalize(), dir.canonicalize()) {
+        if canon_dir.starts_with(&canon_root) && canon_dir != canon_root {
+            let _ = std::fs::remove_dir_all(&canon_dir);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -466,6 +550,110 @@ mod tests {
         let r = rm_args(evil);
         assert_eq!(r.last().unwrap(), evil);
         assert_eq!(r[r.len() - 2], "--");
+    }
+
+    /// F-A7-2: the .git/modules name guard — traversal/absolute/dot components
+    /// reject; ordinary (incl. nested) names pass.
+    #[test]
+    fn modules_name_validation_rejects_traversal() {
+        for bad in [
+            "..",
+            "../x",
+            "a/../b",
+            "..\\evil",
+            "a\\..\\b",
+            "/abs",
+            "C:/abs",
+            "C:\\abs",
+            "",
+            "   ",
+            "a//b",
+            "./x",
+            "a/.",
+        ] {
+            match validate_modules_name(bad) {
+                Err(AppError::Git(_)) => {}
+                other => panic!("name {bad:?} must be rejected, got {other:?}"),
+            }
+        }
+        for good in ["sub", "vendor/libcore", "a.b", "with space", "..dots", "x.."] {
+            validate_modules_name(good)
+                .unwrap_or_else(|e| panic!("name {good:?} must pass: {e:?}"));
+        }
+    }
+
+    /// F-A7-2: `remove_submodule` refuses a hostile name BEFORE running any
+    /// git command (the runner panics if invoked).
+    #[test]
+    fn remove_submodule_rejects_hostile_name_before_running_git() {
+        struct PanicRunner;
+        impl GitRunner for PanicRunner {
+            fn run(&self, _args: &[String], _cwd: &Path) -> Result<String, AppError> {
+                panic!("runner must not be invoked for a hostile submodule name");
+            }
+        }
+        let dir = crate::testutil::scratch_dir();
+        git2::Repository::init(dir.path()).expect("init");
+        match remove_submodule(dir.path(), &PanicRunner, "../../escape") {
+            Err(AppError::Git(m)) => assert!(m.contains("unsafe name"), "{m}"),
+            other => panic!("hostile name must be Git error, got {other:?}"),
+        }
+    }
+
+    /// F-A7-10: a failed clone rolls back the add-setup residue (.gitmodules
+    /// entry, config, dirs) so a retry with a good url succeeds instead of
+    /// hitting "already exists".
+    #[test]
+    fn add_submodule_rolls_back_on_clone_failure() {
+        let sup_dir = crate::testutil::scratch_dir();
+        let d = sup_dir.path();
+        let repo = git2::Repository::init(d).expect("init superproject");
+        seed_commit(&repo);
+
+        // A url that fails fast via the local transport (no network).
+        let bad_url = d
+            .join("definitely-missing-source")
+            .to_string_lossy()
+            .replace('\\', "/");
+        let err = add_submodule(d, &bad_url, "vendor/sub");
+        assert!(err.is_err(), "clone from a missing source must fail");
+
+        // Residue is gone: no .gitmodules entry, no registered submodule.
+        assert!(
+            repo.find_submodule("vendor/sub").is_err(),
+            ".gitmodules entry must be rolled back"
+        );
+        assert!(
+            !d.join("vendor").join("sub").exists(),
+            "partial checkout dir must be rolled back"
+        );
+
+        // Retry with a valid LOCAL source now succeeds (no Exists collision).
+        let src_dir = crate::testutil::scratch_dir();
+        let src = git2::Repository::init(src_dir.path()).expect("init source");
+        seed_commit(&src);
+        let src_url = src_dir.path().to_string_lossy().replace('\\', "/");
+        let info = add_submodule(d, &src_url, "vendor/sub").expect("retry succeeds");
+        assert_eq!(info.path, "vendor/sub");
+    }
+
+    /// Minimal deterministic commit so a repo has a HEAD (used by the rollback
+    /// test's superproject + source repos).
+    fn seed_commit(repo: &git2::Repository) {
+        let mut cfg = repo.config().expect("config");
+        cfg.set_str("user.name", "Test User").expect("name");
+        cfg.set_str("user.email", "test@example.com").expect("email");
+        drop(cfg);
+        let wd = repo.workdir().expect("workdir");
+        std::fs::write(wd.join("seed.txt"), "seed\n").expect("write");
+        let mut index = repo.index().expect("index");
+        index.add_path(Path::new("seed.txt")).expect("add");
+        index.write().expect("write index");
+        let tree_oid = index.write_tree().expect("tree");
+        let tree = repo.find_tree(tree_oid).expect("find tree");
+        let sig = git2::Signature::now("Test User", "test@example.com").expect("sig");
+        repo.commit(Some("HEAD"), &sig, &sig, "seed\n", &tree, &[])
+            .expect("commit");
     }
 
     /// P60d: `add_submodule` rejects blank url/path and traversing paths BEFORE

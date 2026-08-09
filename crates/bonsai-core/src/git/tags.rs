@@ -88,11 +88,10 @@ pub fn create_tag(
 
 /// Blocking. Delete LOCAL tag `name` (`Repository::tag_delete`). Local-only —
 /// does NOT contact any remote (§OPEN-3). Errors: not-found →
-/// `Git("tag '<name>' not found")`; blank name → `InvalidName`.
+/// `Git("tag '<name>' not found")`; blank/invalid name (same validation as
+/// create — leading `-`, bad ref chars) → `InvalidName`.
 pub fn delete_tag(workdir: &Path, name: &str) -> Result<(), AppError> {
-    if name.trim().is_empty() {
-        return Err(AppError::InvalidName("tag name is empty".to_string()));
-    }
+    validate_tag_name(name)?;
     let repo = open_repo_at(workdir)?;
     match repo.tag_delete(name) {
         Ok(()) => Ok(()),
@@ -186,6 +185,19 @@ mod tests {
         }
         for good in ["v1.0.0", "release-1", "feature/x", "a"] {
             validate_tag_name(good).unwrap_or_else(|e| panic!("name {good:?} must pass: {e:?}"));
+        }
+    }
+
+    /// NIT (T2.7): `delete_tag` runs the SAME name validation as create —
+    /// blank / leading-`-` names are `InvalidName` before touching libgit2.
+    #[test]
+    fn delete_tag_validates_name() {
+        let dir = crate::testutil::scratch_dir();
+        for bad in ["", "   ", "-x", "-"] {
+            match delete_tag(dir.path(), bad) {
+                Err(AppError::InvalidName(_)) => {}
+                other => panic!("delete of {bad:?} must be InvalidName, got {other:?}"),
+            }
         }
     }
 }

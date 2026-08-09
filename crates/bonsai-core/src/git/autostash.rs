@@ -105,9 +105,20 @@ pub fn pop_after_success(
         Ok(()) => {
             if repo.index()?.has_conflicts() {
                 // Conflicted re-apply: LEAVE the stash on the stack (do NOT
-                // drop) → retained at stash@{0} for the user to resolve.
-                let paths = list_conflicts(workdir)?.into_iter().map(|c| c.path).collect();
-                Ok(PopResult::Conflicted(paths))
+                // drop) → retained at stash@{0} for the user to resolve. A
+                // failure LISTING the conflicts must not lose the "your
+                // changes are safe" message (T2.7 NIT) — fall back to a plain
+                // message instead of `?`-propagating a bare error.
+                match list_conflicts(workdir) {
+                    Ok(list) => Ok(PopResult::Conflicted(
+                        list.into_iter().map(|c| c.path).collect(),
+                    )),
+                    Err(e) => Err(AppError::Git(format!(
+                        "operation succeeded, but re-applying your stashed changes \
+                         produced conflicts (listing them failed: {e}). Your changes \
+                         are safe at stash@{{0}}."
+                    ))),
+                }
             } else {
                 // Clean apply → now drop, equivalent to a clean pop.
                 repo.stash_drop(0)?;
@@ -120,8 +131,11 @@ pub fn pop_after_success(
         // "conflicts" with no paths — surface libgit2's message instead (it
         // names the blocking file); the stash stays safe at stash@{0}.
         Err(e) if e.code() == git2::ErrorCode::Conflict => {
-            let paths: Vec<String> =
-                list_conflicts(workdir)?.into_iter().map(|c| c.path).collect();
+            // Best-effort listing (same NIT as above): an error here degrades
+            // to the plain "safe at stash@{0}" message below, never a bare `?`.
+            let paths: Vec<String> = list_conflicts(workdir)
+                .map(|v| v.into_iter().map(|c| c.path).collect())
+                .unwrap_or_default();
             if paths.is_empty() {
                 return Err(AppError::Git(format!(
                     "operation succeeded, but re-applying your stashed changes was \
