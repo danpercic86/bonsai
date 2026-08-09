@@ -106,12 +106,32 @@ pub(crate) fn require_no_bisect(repo: &git2::Repository) -> Result<(), AppError>
     Ok(())
 }
 
-/// Reads + parses `.git/bonsai-bisect/state.json`. Missing/corrupt -> `Git`.
+/// Why the bisect state file could not be read (F-A3-2 / F-A3-4): the caller
+/// must distinguish "no file" (no bisect) from an io fault (surface the real
+/// error) from "file exists but undecodable" (salvageable corruption).
+enum StateReadError {
+    Missing,
+    Io(std::io::Error),
+    Corrupt(serde_json::Error),
+}
+
+fn read_state_raw(repo: &git2::Repository) -> Result<BisectState, StateReadError> {
+    let raw = match std::fs::read_to_string(state_path(repo)) {
+        Ok(r) => r,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(StateReadError::Missing),
+        Err(e) => return Err(StateReadError::Io(e)),
+    };
+    serde_json::from_str(&raw).map_err(StateReadError::Corrupt)
+}
+
+/// Reads + parses `.git/bonsai-bisect/state.json`. Missing → "no bisect";
+/// unreadable → the REAL io error (F-A3-4, not "missing"); corrupt → `Git`.
 pub(crate) fn read_state(repo: &git2::Repository) -> Result<BisectState, AppError> {
-    let raw = std::fs::read_to_string(state_path(repo))
-        .map_err(|_| AppError::Git("bisect state is missing".to_string()))?;
-    serde_json::from_str(&raw)
-        .map_err(|e| AppError::Git(format!("bisect state is corrupt: {e}")))
+    read_state_raw(repo).map_err(|e| match e {
+        StateReadError::Missing => AppError::Git("bisect state is missing".to_string()),
+        StateReadError::Io(e) => AppError::Git(format!("failed to read bisect state: {e}")),
+        StateReadError::Corrupt(e) => AppError::Git(format!("bisect state is corrupt: {e}")),
+    })
 }
 
 /// Writes the state file (create_dir_all + temp-file rename for atomicity).
@@ -343,6 +363,14 @@ pub fn start_bisect(
             "a bisect is already in progress — reset it first".to_string(),
         ));
     }
+    // F-A3-3: the Bonsai interactive-rebase sequencer also runs on a detached
+    // HEAD with `repo.state() == Clean`, so the check below does not see it —
+    // guard against it explicitly (mirrors `start_interactive_rebase`).
+    if crate::git::rebase_interactive::interactive_in_progress(&repo) {
+        return Err(AppError::OperationInProgress(
+            "an interactive rebase is in progress — continue or abort it first".to_string(),
+        ));
+    }
     if repo.state() != git2::RepositoryState::Clean {
         return Err(AppError::OperationInProgress(
             "an operation is already in progress — commit or abort it first".to_string(),
@@ -483,6 +511,9 @@ pub fn bisect_skip(workdir: &Path) -> Result<BisectOutcome, AppError> {
 
 /// Abort/finish: force-restore the ORIGINAL HEAD/branch + worktree, delete
 /// `.git/bonsai-bisect/`. Errors: NoOperationInProgress, Git (checkout failure).
+/// A CORRUPT state file is salvaged (F-A3-2): the state dir is cleared so the
+/// app is no longer wedged, HEAD is left in place, and a distinct Git error
+/// explains what happened.
 pub fn bisect_reset(workdir: &Path) -> Result<(), AppError> {
     let repo = open_workdir_repo(workdir)?;
     if !bisect_in_progress(&repo) {
@@ -490,7 +521,29 @@ pub fn bisect_reset(workdir: &Path) -> Result<(), AppError> {
             "no bisect in progress".to_string(),
         ));
     }
-    let state = read_state(&repo)?;
+    let state = match read_state_raw(&repo) {
+        Ok(s) => s,
+        // F-A3-2 salvage: the state file EXISTS but cannot be decoded. Without
+        // this, reset fails forever while `require_no_bisect` (existence-only)
+        // keeps blocking every mutation — an in-app deadlock. Clear the state
+        // dir, leave HEAD exactly where it is, and say so.
+        Err(StateReadError::Corrupt(e)) => {
+            remove_state(&repo);
+            return Err(AppError::Git(format!(
+                "the bisect state file was corrupt ({e}); it has been cleared and the bisect \
+                 abandoned. HEAD was left where it is — check out your original branch manually \
+                 if needed"
+            )));
+        }
+        Err(StateReadError::Missing) => {
+            return Err(AppError::NoOperationInProgress(
+                "no bisect in progress".to_string(),
+            ))
+        }
+        Err(StateReadError::Io(e)) => {
+            return Err(AppError::Git(format!("failed to read bisect state: {e}")))
+        }
+    };
     restore_to_original(&repo, &state)
 }
 

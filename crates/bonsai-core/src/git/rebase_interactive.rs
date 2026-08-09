@@ -95,12 +95,38 @@ pub(crate) fn interactive_in_progress(repo: &git2::Repository) -> bool {
     state_path(repo).exists()
 }
 
-/// Reads + parses `.git/bonsai-rebase/state.json`. Missing/corrupt -> `Git`.
+/// Why the state file could not be read (F-A3-2 / F-A3-4 mirror of `bisect`):
+/// "no file" (no rebase) vs an io fault (surface the real error) vs "file
+/// exists but undecodable" (salvageable corruption).
+enum StateReadError {
+    Missing,
+    Io(std::io::Error),
+    Corrupt(serde_json::Error),
+}
+
+fn read_state_raw(repo: &git2::Repository) -> Result<InteractiveState, StateReadError> {
+    let raw = match std::fs::read_to_string(state_path(repo)) {
+        Ok(r) => r,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(StateReadError::Missing),
+        Err(e) => return Err(StateReadError::Io(e)),
+    };
+    serde_json::from_str(&raw).map_err(StateReadError::Corrupt)
+}
+
+/// Reads + parses `.git/bonsai-rebase/state.json`. Missing → "no rebase";
+/// unreadable → the REAL io error; corrupt → `Git`.
 pub(crate) fn read_state(repo: &git2::Repository) -> Result<InteractiveState, AppError> {
-    let raw = std::fs::read_to_string(state_path(repo))
-        .map_err(|_| AppError::Git("interactive rebase state is missing".to_string()))?;
-    serde_json::from_str(&raw)
-        .map_err(|e| AppError::Git(format!("interactive rebase state is corrupt: {e}")))
+    read_state_raw(repo).map_err(|e| match e {
+        StateReadError::Missing => {
+            AppError::Git("interactive rebase state is missing".to_string())
+        }
+        StateReadError::Io(e) => {
+            AppError::Git(format!("failed to read interactive rebase state: {e}"))
+        }
+        StateReadError::Corrupt(e) => {
+            AppError::Git(format!("interactive rebase state is corrupt: {e}"))
+        }
+    })
 }
 
 /// Writes the state file (create_dir_all + temp-file rename for atomicity).
@@ -264,6 +290,14 @@ pub fn start_interactive_rebase(
     if interactive_in_progress(&repo) {
         return Err(AppError::OperationInProgress(
             "an interactive rebase is already in progress — continue or abort it first".to_string(),
+        ));
+    }
+    // F-A3-3: a Bonsai bisect also runs on a detached HEAD with
+    // `repo.state() == Clean`, so the check below does not see it — guard
+    // against it explicitly (mirrors `start_bisect`).
+    if crate::git::bisect::bisect_in_progress(&repo) {
+        return Err(AppError::OperationInProgress(
+            "a bisect is in progress — finish or reset it first".to_string(),
         ));
     }
     if repo.state() != git2::RepositoryState::Clean {
@@ -621,7 +655,10 @@ pub fn interactive_skip(workdir: &Path) -> Result<RebaseOutcome, AppError> {
 
 /// Blocking. Aborts: re-attach HEAD to the original branch (its ref never
 /// moved), restore the worktree to the original tip, remove
-/// `.git/bonsai-rebase/`. Reused via `rebase::rebase_abort`.
+/// `.git/bonsai-rebase/`. Reused via `rebase::rebase_abort`. A CORRUPT state
+/// file is salvaged (F-A3-2): the state dir is cleared so the app is no longer
+/// wedged, HEAD is left in place, and a distinct Git error explains what
+/// happened.
 pub fn interactive_abort(workdir: &Path) -> Result<(), AppError> {
     let repo = open_workdir_repo(workdir)?;
     if !interactive_in_progress(&repo) {
@@ -629,7 +666,29 @@ pub fn interactive_abort(workdir: &Path) -> Result<(), AppError> {
             "no rebase in progress".to_string(),
         ));
     }
-    let state = read_state(&repo)?;
+    let state = match read_state_raw(&repo) {
+        Ok(s) => s,
+        // F-A3-2 salvage: the state file EXISTS but cannot be decoded — abort
+        // would otherwise fail forever while opstate/UI offer no escape.
+        Err(StateReadError::Corrupt(e)) => {
+            remove_state(&repo);
+            return Err(AppError::Git(format!(
+                "the interactive rebase state file was corrupt ({e}); it has been cleared and \
+                 the rebase abandoned. HEAD was left where it is — check out your original \
+                 branch manually if needed"
+            )));
+        }
+        Err(StateReadError::Missing) => {
+            return Err(AppError::NoOperationInProgress(
+                "no rebase in progress".to_string(),
+            ))
+        }
+        Err(StateReadError::Io(e)) => {
+            return Err(AppError::Git(format!(
+                "failed to read interactive rebase state: {e}"
+            )))
+        }
+    };
     restore_to_original(&repo, &state)
 }
 

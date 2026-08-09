@@ -14,8 +14,8 @@
 
 use crate::error::AppError;
 use crate::git::ai_operation::{
-    current_branch_name, revparse_commit, short7, summary_of, CommitRef, DangerLevel,
-    OperationPreview, RefChange, SafeOp, MAX_PREVIEW_DROPPED,
+    current_branch_name, revparse_commit, sanitize_model_text, short7, summary_of, CommitRef,
+    DangerLevel, OperationPreview, RefChange, SafeOp, MAX_PREVIEW_DROPPED,
 };
 use crate::git::reset::ResetMode;
 
@@ -139,8 +139,11 @@ pub(crate) fn build_preview(
             } else {
                 ""
             };
+            // F-A2-1: the stash message is model text — sanitize before display.
             let named = match message {
-                Some(m) if !m.trim().is_empty() => format!(" as \"{}\"", m.trim()),
+                Some(m) if !m.trim().is_empty() => {
+                    format!(" as \"{}\"", sanitize_model_text(m.trim()))
+                }
                 _ => String::new(),
             };
             Ok(simple_preview(
@@ -159,9 +162,22 @@ pub(crate) fn build_preview(
                 DangerLevel::Destructive,
                 "Discard changes",
             );
+            // F-A2-3: cap the listed paths like MAX_PREVIEW_DROPPED — an
+            // unbounded join could balloon the IPC/dialog payload.
+            let listed: Vec<&str> = paths
+                .iter()
+                .take(MAX_PREVIEW_DROPPED)
+                .map(String::as_str)
+                .collect();
+            let more = n.saturating_sub(listed.len());
+            let more_note = if more > 0 {
+                format!(" (+{more} more)")
+            } else {
+                String::new()
+            };
             preview.worktree_warning = Some(format!(
-                "This permanently discards uncommitted changes to {}.",
-                paths.join(", ")
+                "This permanently discards uncommitted changes to {}{more_note}.",
+                listed.join(", ")
             ));
             Ok(preview)
         }
@@ -223,4 +239,66 @@ fn dropped_commits(
         }
     }
     Ok((listed, total))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Bare-bones repo with one commit (build_preview's Discard arm never
+    /// touches the repo, but the signature requires one).
+    fn tiny_repo() -> tempfile::TempDir {
+        let dir = crate::testutil::scratch_dir();
+        let repo = git2::Repository::init(dir.path()).expect("init");
+        let mut cfg = repo.config().expect("config");
+        cfg.set_str("user.name", "Test User").expect("name");
+        cfg.set_str("user.email", "test@example.com").expect("email");
+        dir
+    }
+
+    /// F-A2-3: the Discard worktree warning lists at most MAX_PREVIEW_DROPPED
+    /// paths and collapses the rest into a "(+N more)" note; at or under the
+    /// cap there is no note.
+    #[test]
+    fn discard_warning_caps_listed_paths() {
+        let dir = tiny_repo();
+        let repo = git2::Repository::open(dir.path()).expect("open");
+
+        // 25 paths → 20 listed + "(+5 more)".
+        let paths: Vec<String> = (0..25).map(|i| format!("f{i:02}.txt")).collect();
+        let preview =
+            build_preview(&repo, &SafeOp::Discard { paths: paths.clone() }).expect("preview");
+        let warn = preview.worktree_warning.expect("warning present");
+        assert!(warn.contains("f00.txt"), "first path listed: {warn}");
+        assert!(warn.contains("f19.txt"), "20th path listed: {warn}");
+        assert!(!warn.contains("f20.txt"), "21st path NOT listed: {warn}");
+        assert!(warn.contains("(+5 more)"), "overflow note: {warn}");
+        assert!(preview.summary.contains("25 file"), "summary keeps the real count");
+
+        // Exactly at the cap → all listed, no note.
+        let paths: Vec<String> = (0..MAX_PREVIEW_DROPPED).map(|i| format!("g{i}.txt")).collect();
+        let preview = build_preview(&repo, &SafeOp::Discard { paths }).expect("preview");
+        let warn = preview.worktree_warning.expect("warning present");
+        assert!(warn.contains("g19.txt"), "all paths listed: {warn}");
+        assert!(!warn.contains("more)"), "no overflow note at the cap: {warn}");
+    }
+
+    /// F-A2-1: the stash message (free model text) is sanitized in the preview
+    /// summary — bidi/control chars stripped, length capped.
+    #[test]
+    fn stash_message_is_sanitized_in_preview() {
+        let dir = tiny_repo();
+        let repo = git2::Repository::open(dir.path()).expect("open");
+        let preview = build_preview(
+            &repo,
+            &SafeOp::Stash {
+                message: Some(format!("wip\u{202e}\x1b[0m {}", "x".repeat(400))),
+                include_untracked: false,
+            },
+        )
+        .expect("preview");
+        assert!(!preview.summary.contains('\u{202e}'), "bidi stripped");
+        assert!(!preview.summary.contains('\x1b'), "ESC stripped");
+        assert!(preview.summary.contains('…'), "long message truncated");
+    }
 }

@@ -47,6 +47,43 @@ use crate::git::stage::open_workdir_repo;
 /// note in the summary).
 pub const MAX_PREVIEW_DROPPED: usize = 20;
 
+/// Max chars of a model-derived substring surfaced verbatim in a UI string
+/// (F-A2-1). Anything longer is truncated with a `…` marker.
+pub(crate) const MAX_MODEL_TEXT: usize = 200;
+
+/// Sanitizes a MODEL-DERIVED substring before it is interpolated into any
+/// user-visible string (Unsupported reasons, resolver echoes of branch/commit
+/// names — F-A2-1). Three defenses:
+/// - `\n`/`\t` become a single space (keep word separation);
+/// - every other control char (C0, DEL, C1) is stripped;
+/// - Unicode bidi-override/isolate chars (U+202A–U+202E, U+2066–U+2069) are
+///   stripped — they can visually reverse surrounding UI text;
+/// - the result is capped at [`MAX_MODEL_TEXT`] chars (char-boundary safe)
+///   with a trailing `…` when truncated.
+pub(crate) fn sanitize_model_text(s: &str) -> String {
+    let mut out = String::with_capacity(s.len().min(MAX_MODEL_TEXT * 4));
+    let mut count = 0usize;
+    for c in s.chars() {
+        let mapped = match c {
+            '\n' | '\t' => Some(' '),
+            // `is_control` covers C0 (U+0000–U+001F), DEL (U+007F) and C1
+            // (U+0080–U+009F).
+            c if c.is_control() => None,
+            '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' => None,
+            c => Some(c),
+        };
+        if let Some(m) = mapped {
+            if count == MAX_MODEL_TEXT {
+                out.push('…');
+                return out;
+            }
+            out.push(m);
+            count += 1;
+        }
+    }
+    out
+}
+
 /// System prompt (via `--append-system-prompt`, contract §5.2 — verbatim). SINGLE
 /// line: on Windows the `claude` CLI is a `.cmd` shim and Rust's `Command` REFUSES
 /// an argv arg containing a newline (asserted by `prompts_are_single_line`). Lists
@@ -66,7 +103,12 @@ pub const PLAN_PROMPT: &str =
 /// `include_untracked`↔`includeUntracked`) — the enum-level `rename_all` only
 /// renames the variant tags. (Same idiom as `opstate::RepoOpState`.)
 #[derive(Debug, Clone, serde::Deserialize)]
-#[serde(tag = "intent", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "intent",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
 pub enum AiOpIntent {
     UndoLastCommit {
         #[serde(default)]
@@ -329,12 +371,22 @@ pub(crate) fn current_branch_name(repo: &git2::Repository) -> String {
         .unwrap_or_else(|| "HEAD".to_string())
 }
 
-/// `revparse_single(spec)` → commit, or `None` on any miss (the model referenced
-/// something unresolvable ⇒ a precondition miss, NOT a git error; §2 L4).
+/// Resolves a MODEL-SUPPLIED commit reference to a commit, or `None` on any
+/// miss (the model referenced something unresolvable ⇒ a precondition miss,
+/// NOT a git error; §2 L4).
+///
+/// F-A2-2 hardening: the system prompt promises a hash literally taken from
+/// the REPO STATE, so anything that is not a plain (possibly short) hex hash —
+/// `^[0-9a-fA-F]{4,40}$` — is rejected BEFORE revparse. This closes the gap
+/// where arbitrary revspecs (`HEAD~50`, `@{2.days.ago}`, `:/pattern`, ref
+/// names) would silently resolve to a commit the grounding never showed.
 pub(crate) fn revparse_commit<'r>(
     repo: &'r git2::Repository,
     spec: &str,
 ) -> Option<git2::Commit<'r>> {
+    if !(4..=40).contains(&spec.len()) || !spec.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
     repo.revparse_single(spec)
         .ok()
         .and_then(|o| o.peel_to_commit().ok())
@@ -759,5 +811,118 @@ mod tests {
             assert!(!s.contains('\n'), "prompt must be single-line: {s:?}");
             assert!(!s.contains('\r'), "prompt must be single-line: {s:?}");
         }
+    }
+
+    // ------------------------------------------------- F-A2-1 sanitize_model_text
+
+    /// F-A2-1 truth table: `\n`/`\t` → space; other C0/C1 controls stripped;
+    /// bidi override/isolate chars stripped; ≤200 chars pass through; longer
+    /// input is char-boundary truncated with a `…` marker.
+    #[test]
+    fn sanitize_model_text_truth_table() {
+        // Plain text is untouched.
+        assert_eq!(sanitize_model_text("hello world"), "hello world");
+        assert_eq!(sanitize_model_text(""), "");
+        // Newline / tab become a single space each.
+        assert_eq!(sanitize_model_text("a\nb\tc"), "a b c");
+        // Other C0 controls (CR, ESC, NUL, BEL) and DEL are stripped.
+        assert_eq!(sanitize_model_text("a\r\x1b\x00\x07\x7fb"), "ab");
+        // C1 controls (U+0080–U+009F) are stripped.
+        assert_eq!(sanitize_model_text("a\u{0085}\u{009f}b"), "ab");
+        // Bidi override + isolate chars are stripped (U+202A–E, U+2066–69).
+        assert_eq!(
+            sanitize_model_text("a\u{202a}\u{202b}\u{202c}\u{202d}\u{202e}b"),
+            "ab"
+        );
+        assert_eq!(
+            sanitize_model_text("x\u{2066}\u{2067}\u{2068}\u{2069}y"),
+            "xy"
+        );
+        // Classic RTL-override spoof is neutralized.
+        assert_eq!(sanitize_model_text("gpj.\u{202e}exe"), "gpj.exe");
+        // Exactly MAX chars: no truncation marker.
+        let exact: String = "a".repeat(MAX_MODEL_TEXT);
+        assert_eq!(sanitize_model_text(&exact), exact);
+        // MAX+1 chars: capped at MAX + '…'.
+        let long: String = "a".repeat(MAX_MODEL_TEXT + 50);
+        let out = sanitize_model_text(&long);
+        assert_eq!(out.chars().count(), MAX_MODEL_TEXT + 1);
+        assert!(out.ends_with('…'));
+        // Multibyte chars: cap counts CHARS, never splits a boundary.
+        let multi: String = "é".repeat(MAX_MODEL_TEXT + 5);
+        let out = sanitize_model_text(&multi);
+        assert_eq!(out.chars().count(), MAX_MODEL_TEXT + 1);
+        assert!(out.ends_with('…'));
+        assert!(out.chars().take(MAX_MODEL_TEXT).all(|c| c == 'é'));
+        // Stripped controls do not count toward the cap.
+        let padded = format!("{}{}", "\x01".repeat(300), "ok");
+        assert_eq!(sanitize_model_text(&padded), "ok");
+    }
+
+    // ---------------------------------------------------- F-A2-2 revparse hex gate
+
+    /// F-A2-2: `revparse_commit` accepts ONLY `[0-9a-fA-F]{4,40}` — every
+    /// non-hex revspec (HEAD~n, reflog, branch names, :/pattern, too short,
+    /// too long) is rejected without touching revparse.
+    #[test]
+    fn revparse_commit_is_hex_gated() {
+        let (dir, a, _b) = linear_repo();
+        let repo = git2::Repository::open(dir.path()).expect("open");
+        let short_a: String = a.chars().take(7).collect();
+
+        // Accepted: full oid, short oid, 4-char prefix, uppercase gate-pass.
+        assert!(revparse_commit(&repo, &a).is_some(), "full oid resolves");
+        assert!(revparse_commit(&repo, &short_a).is_some(), "short oid resolves");
+        assert!(revparse_commit(&repo, &a[..4]).is_some(), "4-char prefix resolves");
+
+        // Rejected by the gate (would otherwise resolve!): revspecs + refs.
+        for spec in [
+            "HEAD",
+            "HEAD~1",
+            "HEAD^",
+            "@{0}",
+            "HEAD@{2.days.ago}",
+            ":/A",
+            "main",
+            "refs/heads/main",
+            "abc",                       // 3 chars: too short
+            &"a".repeat(41),             // 41 chars: too long
+            "deadbeeg",                  // non-hex char
+            "",                          //
+            "	deadbeef",                // leading control char
+        ] {
+            assert!(
+                revparse_commit(&repo, spec).is_none(),
+                "spec {spec:?} must be rejected"
+            );
+        }
+    }
+
+    // ------------------------------------------------ NIT deny_unknown_fields
+
+    /// An otherwise-valid intent carrying an EXTRA field must fail the parse
+    /// (`deny_unknown_fields`) and therefore fail CLOSED to `Unsupported` at
+    /// the plan level — off-schema output is never partially honored.
+    #[test]
+    fn extra_fields_fail_closed_to_unsupported() {
+        for raw in [
+            r#"{"intent":"undoLastCommit","keepChanges":true,"force":true}"#,
+            r#"{"intent":"deleteBranch","branch":"x","cascade":true}"#,
+            r#"{"intent":"unsupported","reason":"r","hint":"h"}"#,
+        ] {
+            assert!(
+                serde_json::from_str::<AiOpIntent>(raw).is_err(),
+                "extra field must not parse: {raw}"
+            );
+        }
+        let (dir, _a, _b) = linear_repo();
+        let repo = git2::Repository::open(dir.path()).expect("open");
+        let outcome = plan_from_reply(
+            &repo,
+            r#"{"intent":"undoLastCommit","keepChanges":true,"force":true}"#,
+            None,
+        )
+        .expect("Ok");
+        expect_unsupported(outcome);
     }
 }

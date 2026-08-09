@@ -14,8 +14,8 @@
 
 use crate::error::AppError;
 use crate::git::ai_operation::{
-    current_branch_name, head_commit, revparse_commit, short7, unsupported, AiOpIntent,
-    DangerLevel, PlanOutcome, ProposedOperation, SafeOp,
+    current_branch_name, head_commit, revparse_commit, sanitize_model_text, short7, unsupported,
+    AiOpIntent, DangerLevel, PlanOutcome, ProposedOperation, SafeOp,
 };
 use crate::git::ai_operation_preview::build_preview;
 use crate::git::branches::validate_branch_name;
@@ -33,7 +33,11 @@ pub(crate) fn resolve_intent(
     cost_usd: Option<f64>,
 ) -> Result<PlanOutcome, AppError> {
     match intent {
-        AiOpIntent::Unsupported { reason } => Ok(unsupported(reason, cost_usd)),
+        // F-A2-1: the reason is FREE MODEL TEXT headed straight for the dialog —
+        // sanitize (strip controls/bidi, cap length) before it reaches the UI.
+        AiOpIntent::Unsupported { reason } => {
+            Ok(unsupported(sanitize_model_text(&reason), cost_usd))
+        }
         AiOpIntent::UndoLastCommit { keep_changes } => {
             resolve_undo_last_commit(repo, keep_changes, cost_usd)
         }
@@ -167,7 +171,10 @@ fn resolve_reset_to_commit(
         Some(c) => c,
         None => {
             return Ok(unsupported(
-                format!("I couldn't find a commit matching '{commit}'."),
+                format!(
+                    "I couldn't find a commit matching '{}'.",
+                    sanitize_model_text(commit)
+                ),
                 cost_usd,
             ))
         }
@@ -211,7 +218,10 @@ fn resolve_revert_commit(
         Some(c) => c,
         None => {
             return Ok(unsupported(
-                format!("I couldn't find a commit matching '{commit}'."),
+                format!(
+                    "I couldn't find a commit matching '{}'.",
+                    sanitize_model_text(commit)
+                ),
                 cost_usd,
             ))
         }
@@ -241,13 +251,14 @@ fn resolve_switch_branch(
     if let Some(reason) = op_in_progress_reason(repo) {
         return Ok(unsupported(reason, cost_usd));
     }
+    let shown = sanitize_model_text(branch); // F-A2-1: model echo, display only
     let remote = if repo.find_branch(branch, git2::BranchType::Local).is_ok() {
         false
     } else if repo.find_branch(branch, git2::BranchType::Remote).is_ok() {
         true
     } else {
         return Ok(unsupported(
-            format!("I couldn't find a branch named '{branch}' to switch to."),
+            format!("I couldn't find a branch named '{shown}' to switch to."),
             cost_usd,
         ));
     };
@@ -257,9 +268,9 @@ fn resolve_switch_branch(
     };
     let preview = build_preview(repo, &op)?;
     let rationale = if remote {
-        format!("Interpreted your request as checking out the remote branch `{branch}`.")
+        format!("Interpreted your request as checking out the remote branch `{shown}`.")
     } else {
-        format!("Interpreted your request as switching to the local branch `{branch}`.")
+        format!("Interpreted your request as switching to the local branch `{shown}`.")
     };
     Ok(proposed(op, preview, rationale, cost_usd))
 }
@@ -276,15 +287,16 @@ fn resolve_create_branch(
     if let Some(reason) = op_in_progress_reason(repo) {
         return Ok(unsupported(reason, cost_usd));
     }
+    let shown = sanitize_model_text(name); // F-A2-1: model echo, display only
     if validate_branch_name(name).is_err() {
         return Ok(unsupported(
-            format!("'{name}' isn't a valid branch name."),
+            format!("'{shown}' isn't a valid branch name."),
             cost_usd,
         ));
     }
     if repo.find_branch(name, git2::BranchType::Local).is_ok() {
         return Ok(unsupported(
-            format!("a branch named '{name}' already exists."),
+            format!("a branch named '{shown}' already exists."),
             cost_usd,
         ));
     }
@@ -293,7 +305,10 @@ fn resolve_create_branch(
             Some(c) => Some(c.id().to_string()),
             None => {
                 return Ok(unsupported(
-                    format!("I couldn't find a commit matching '{spec}'."),
+                    format!(
+                        "I couldn't find a commit matching '{}'.",
+                        sanitize_model_text(spec)
+                    ),
                     cost_usd,
                 ))
             }
@@ -305,7 +320,7 @@ fn resolve_create_branch(
         at_oid,
     };
     let preview = build_preview(repo, &op)?;
-    let rationale = format!("Interpreted your request as creating a new branch named `{name}`.");
+    let rationale = format!("Interpreted your request as creating a new branch named `{shown}`.");
     Ok(proposed(op, preview, rationale, cost_usd))
 }
 
@@ -319,18 +334,19 @@ fn resolve_delete_branch(
     if let Some(reason) = op_in_progress_reason(repo) {
         return Ok(unsupported(reason, cost_usd));
     }
+    let shown = sanitize_model_text(branch); // F-A2-1: model echo, display only
     let local = match repo.find_branch(branch, git2::BranchType::Local) {
         Ok(b) => b,
         Err(_) => {
             return Ok(unsupported(
-                format!("there's no local branch named '{branch}' to delete."),
+                format!("there's no local branch named '{shown}' to delete."),
                 cost_usd,
             ))
         }
     };
     if local.is_head() {
         return Ok(unsupported(
-            format!("`{branch}` is the current branch — switch away before deleting it."),
+            format!("`{shown}` is the current branch — switch away before deleting it."),
             cost_usd,
         ));
     }
@@ -338,7 +354,7 @@ fn resolve_delete_branch(
         name: branch.to_string(),
     };
     let preview = build_preview(repo, &op)?;
-    let rationale = format!("Interpreted your request as deleting the local branch `{branch}`.");
+    let rationale = format!("Interpreted your request as deleting the local branch `{shown}`.");
     Ok(proposed(op, preview, rationale, cost_usd))
 }
 
@@ -393,9 +409,12 @@ fn resolve_discard_changes(
     let status = read_status(workdir)?;
     let modified: std::collections::HashSet<&str> =
         status.unstaged.iter().map(|e| e.path.as_str()).collect();
+    // HashSet dedup (T2.2 NIT): the model may repeat paths; keep first
+    // occurrence order without an O(n²) `Vec::contains` scan.
+    let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
     let mut kept: Vec<String> = Vec::new();
     for p in &paths {
-        if modified.contains(p.as_str()) && !kept.contains(p) {
+        if modified.contains(p.as_str()) && seen.insert(p.as_str()) {
             kept.push(p.clone());
         }
     }
@@ -422,11 +441,12 @@ fn resolve_merge_branch(
     if let Some(reason) = op_in_progress_reason(repo) {
         return Ok(unsupported(reason, cost_usd));
     }
+    let shown = sanitize_model_text(branch); // F-A2-1: model echo, display only
     let resolves = repo.find_branch(branch, git2::BranchType::Local).is_ok()
         || repo.find_branch(branch, git2::BranchType::Remote).is_ok();
     if !resolves {
         return Ok(unsupported(
-            format!("I couldn't find a branch named '{branch}' to merge."),
+            format!("I couldn't find a branch named '{shown}' to merge."),
             cost_usd,
         ));
     }
@@ -434,7 +454,7 @@ fn resolve_merge_branch(
         name: branch.to_string(),
     };
     let preview = build_preview(repo, &op)?;
-    let rationale = format!("Interpreted your request as merging `{branch}` into the current branch.");
+    let rationale = format!("Interpreted your request as merging `{shown}` into the current branch.");
     Ok(proposed(op, preview, rationale, cost_usd))
 }
 
@@ -1100,5 +1120,57 @@ mod tests {
             other => panic!("expected Merge, got {other:?}"),
         }
         assert!(matches!(op.preview.danger, DangerLevel::Caution));
+    }
+
+    // ------------------------------------------- F-A2-1 model-echo sanitization
+
+    /// F-A2-1: model-derived text surfaced to the UI is sanitized — the
+    /// Unsupported.reason passthrough and the branch/commit echoes in resolver
+    /// messages strip control/bidi chars and are length-capped.
+    #[test]
+    fn model_echoes_are_sanitized() {
+        let (dir, _a, _b) = linear_repo();
+        let repo = git2::Repository::open(dir.path()).expect("open");
+
+        // Unsupported.reason passthrough: controls + bidi stripped, capped.
+        let evil = format!(
+            "run\u{202e}\x1b[31m rm -rf\n{}",
+            "A".repeat(500)
+        );
+        let reason = expect_unsupported(
+            resolve_intent(&repo, AiOpIntent::Unsupported { reason: evil }, None).expect("Ok"),
+        );
+        assert!(!reason.contains('\u{202e}'), "bidi stripped: {reason:?}");
+        assert!(!reason.contains('\x1b'), "ESC stripped: {reason:?}");
+        assert!(!reason.contains('\n'), "newline replaced: {reason:?}");
+        assert!(reason.chars().count() <= 201, "capped: {}", reason.chars().count());
+        assert!(reason.ends_with('…'), "truncation marker present");
+
+        // Branch echo in an Unsupported message: bidi/control chars removed.
+        let reason = expect_unsupported(
+            resolve_intent(
+                &repo,
+                AiOpIntent::SwitchBranch {
+                    branch: "gh\u{202e}\x07ost".to_string(),
+                },
+                None,
+            )
+            .expect("Ok"),
+        );
+        assert!(reason.contains("'ghost'"), "sanitized echo, got: {reason:?}");
+
+        // Commit echo: a non-hex spec is gated (F-A2-2) and echoed sanitized.
+        let reason = expect_unsupported(
+            resolve_intent(
+                &repo,
+                AiOpIntent::ResetToCommit {
+                    commit: "HEAD~1\u{2066}\n".to_string(),
+                    keep_changes: true,
+                },
+                None,
+            )
+            .expect("Ok"),
+        );
+        assert!(reason.contains("'HEAD~1 '"), "sanitized echo, got: {reason:?}");
     }
 }

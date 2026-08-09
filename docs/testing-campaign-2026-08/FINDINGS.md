@@ -7,8 +7,17 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
 
 - F-A2-2: AI operation planner now only accepts commit references as hex hashes (4-40 chars) from the
   model; revspecs like `HEAD~1` return "Unsupported" instead of resolving. Rationale: prompt only ever
-  promises hashes from the grounding state; closes a defense-in-depth gap. Revert = drop the regex
-  check in revparse_commit.
+  promises hashes from the grounding state; closes a defense-in-depth gap. Revert = drop the hex gate
+  at the top of revparse_commit.
+- F-A3-1: plain `rebase_abort` now refuses (retryable AppError, rebase state intact) when the abort's
+  hard reset would overwrite an untracked file present in the orig-head tree — same 46a34d4 guard
+  bisect/interactive already run. Revert = drop the `ensure_no_untracked_collision` call in
+  rebase.rs::rebase_abort.
+- F-A3-2: a CORRUPT (undecodable) bonsai sequencer state file no longer deadlocks the app —
+  `bisect_reset` / `interactive_abort` (and `rebase_abort` via delegation) now clear the state dir,
+  leave HEAD in place, and return a distinct explanatory error instead of failing forever while all
+  mutations stay blocked. Missing-state and io-error behavior unchanged. Revert = drop the
+  `StateReadError::Corrupt` salvage arms.
 - F-A4-2: clean (non-conflict) merge commits now run the commit-msg hook (previously NO hooks ran on
   clean merges). Matches real git's message-policy behavior; pre-merge-commit remains unsupported and
   is now documented as such. Revert = pass run_hooks=false again in merge_branch's finalize call.
@@ -71,21 +80,29 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
 
 - [T2.2] F-A2-1 · SHOULD-FIX · ai_operation_resolve.rs:36 + reason interpolations — model-supplied
   strings (Unsupported.reason, branch/commit/name echoes) reach the dialog verbatim: unbounded size,
-  control/RTL chars, social-engineering text. Fix: cap ~200 chars + strip control chars for any
-  model-derived substring — **open**
+  control/RTL chars, social-engineering text — **fixed (pending commit)**: new
+  `sanitize_model_text` (ai_operation.rs) — \n/\t → space, all other C0/C1 controls stripped, bidi
+  override/isolates U+202A–E + U+2066–69 stripped, char-boundary cap 200 + `…` — applied at the
+  Unsupported passthrough, every resolver echo site, and the stash-message preview · tests:
+  `sanitize_model_text_truth_table`, `model_echoes_are_sanitized`,
+  `stash_message_is_sanitized_in_preview`
 - [T2.2] F-A2-2 · SHOULD-FIX · ai_operation.rs:334 revparse_commit accepts arbitrary revspecs
   (HEAD~50, @{2.days.ago}, :/pattern) though prompt promises short-hash-from-state. DECISION
-  (orchestrator, 2026-08-09): harden — restrict model-supplied commit/atCommit to hex [0-9a-f]{4,40}.
-  Behavior change: model revspec answers now → Unsupported (preview already showed real target, so
-  user-visible impact is nil) — **open, FOR USER REVIEW entry below**
+  (orchestrator, 2026-08-09): harden — restrict model-supplied commit/atCommit to hex [0-9a-f]{4,40} —
+  **fixed (pending commit)**: hex gate (case-insensitive, 4–40 chars) BEFORE revparse; non-matching →
+  None → the existing "couldn't find a commit" Unsupported. PLAN_SYSTEM_PROMPT already says
+  hashes-from-state-only — unchanged. Behavior change: Y, FOR USER REVIEW entry above · test:
+  `revparse_commit_is_hex_gated`
 - [T2.2] F-A2-3 · SHOULD-FIX · ai_operation_preview.rs:162-165 — Discard preview warning joins every
-  kept path unbounded → potential MB-scale IPC/dialog payload. Cap like MAX_PREVIEW_DROPPED — **open**
+  kept path unbounded → potential MB-scale IPC/dialog payload — **fixed (pending commit)**: lists at
+  most MAX_PREVIEW_DROPPED (20) paths + "(+N more)" · test: `discard_warning_caps_listed_paths`
 - [T2.2] F-A2-4 · coverage gap — ai_operation_grounding.rs + ai_operation_preview.rs have 0 tests;
   injection-containment claim asserted only in a doc comment — **open (tester)**
-- [T2.2] NIT — add serde deny_unknown_fields to AiOpIntent (matches "off-schema ⇒ Unsupported"
-  design); HashSet for resolve_discard_changes path scan; grounding revwalk silent truncation
-  (quality-only, leave); TOCTOU plan→confirm documented as accepted (exec-time guards limit blast
-  radius) — **open (fold into fix pass)**
+- [T2.2] NIT — **fixed (pending commit)**: `deny_unknown_fields` added to AiOpIntent (verified
+  effective on the internally-tagged enum — an extra field now fails the parse ⇒ Unsupported; test
+  `extra_fields_fail_closed_to_unsupported`); HashSet dedup in resolve_discard_changes. Still
+  by-design/left: grounding revwalk silent truncation (quality-only), TOCTOU plan→confirm accepted
+  (exec-time guards limit blast radius)
 - [T2.2] Verified sound: allowlist non-escapable (typed AiOpIntent only), destructive classification
   consistent, preview derived from parsed op, execution impossible without dialog Confirm, ref-name
   argument injection inert (git2 APIs, no argv).
@@ -98,20 +115,34 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
   No fix needed; doc cleanup = F-A3-5.
 - [T2.3] F-A3-1 · MEDIUM · rebase.rs:503-505 — plain rebase_abort is the ONLY force-checkout path
   without the 46a34d4 untracked-clobber guard (libgit2 rebase.abort() hard-resets); untracked file
-  matching an orig-head path is silently overwritten. Fix: ensure_no_untracked_collision(orig_head
-  tree) before abort. Behavior change: Y (abort may refuse-and-retry, matching bisect/interactive) —
-  **open**
+  matching an orig-head path is silently overwritten — **fixed (pending commit)**:
+  `ensure_no_untracked_collision(orig-head tree)` before `rebase.abort()` (orig oid via
+  `rebase.orig_head_id()`, fallback `.git/rebase-{merge,apply}/orig-head`; undeterminable → unguarded
+  abort, no worse than before); refusal leaves rebase state intact (retryable, same wording as
+  bisect/interactive). Behavior change: Y, FOR USER REVIEW entry above · test:
+  `plain_rebase_abort_refuses_untracked_clobber_then_retries` (tests/sequencer_salvage_cli.rs)
 - [T2.3] F-A3-2 · MEDIUM · bisect.rs:493 + rebase_interactive.rs:632 — corrupt/truncated bonsai
   sequencer state.json ⇒ in-app deadlock: reset/abort fail on parse, require_no_bisect (existence-
-  only) blocks all mutations, opstate shows None → no UI escape. Fix: salvage path in reset/abort on
-  parse failure (delete state dir, leave HEAD, explanatory message) — **open**
+  only) blocks all mutations, opstate shows None → no UI escape — **fixed (pending commit)**: salvage
+  arm in bisect_reset + interactive_abort (plain rebase_abort delegates on file existence → covered):
+  on a PARSE failure (file exists, undecodable) the state dir is removed, HEAD left in place.
+  CHOICE: a distinct `AppError::Git` explaining corruption/clearing/HEAD-left-in-place (the
+  `Result<(), _>` return has no Ok-message channel, so an error toast is the cleaner fit).
+  Missing-state behavior unchanged. Behavior change: Y, FOR USER REVIEW entry above · tests:
+  `corrupt_bisect_state_is_salvaged_by_reset`, `corrupt_interactive_state_is_salvaged_by_abort`,
+  `missing_bisect_state_still_reports_no_operation`
 - [T2.3] F-A3-3 · LOW · bisect.rs:341 + rebase_interactive.rs:264 — cross-sequencer start guards
-  asymmetric (start_bisect ignores interactive state; interactive start ignores bisect) — reachable
-  via crash window; one-line cross-checks — **open**
-- [T2.3] F-A3-4 · NIT · bisect.rs:111 — io errors reported as "state missing"; map NotFound vs other —
-  **open (fold in)**
-- [T2.3] F-A3-5 · NIT · rebase_cli.rs:467/535 — stale known-bug comments + misleading test name; doc-
-  only cleanup — **open (fold in)**
+  asymmetric (start_bisect ignores interactive state; interactive start ignores bisect) — **fixed
+  (pending commit)**: symmetric cross-checks, each naming the other operation · test:
+  `cross_sequencer_start_guards_are_symmetric`
+- [T2.3] F-A3-4 · NIT · bisect.rs:111 — io errors reported as "state missing" — **fixed (pending
+  commit)**: `StateReadError{Missing,Io,Corrupt}` in BOTH sequencers; NotFound → "missing", other io
+  → "failed to read … state: {real error}" (and io errors do NOT trigger salvage) · test:
+  `unreadable_bisect_state_surfaces_real_io_error`
+- [T2.3] F-A3-5 · NIT · rebase_cli.rs:467/535 — stale known-bug comments + misleading test name —
+  **fixed (pending commit)**: `skip_first_op_is_broken_known_bug` →
+  `skip_first_conflicting_op_works`; both comment blocks rewritten to describe the 8219ebd fix
+  (paths-only reset preserves rebase-merge state; branch field now asserted too)
 - [T2.3] F-A3-6 · NIT · stage.rs:174 — clobber guard tree lookup is exact-case; Windows case-collision
   false negative; adversarial-test then fix-or-document — **open**
 - [T2.3] F-A3-7 · NIT · bisect.rs:414 — adjacent good/bad refuses vs git's immediate verdict (P39

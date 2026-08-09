@@ -466,13 +466,10 @@ fn continue_after_resolving_matches_cli_twin() {
 /// drops the offending commit and completes; the result matches the CLI twin's
 /// `git rebase --skip` byte-for-byte (final tree, surviving commit).
 ///
-/// NOTE: the contract's §9.6 wording specifies skipping the FIRST conflicting
-/// commit; that exact case is a confirmed app bug (see the `#[ignore]`d
-/// reproduction `skip_first_op_is_broken_known_bug` below). This test therefore
-/// exercises the skip machinery on the path that works, so we still have an
-/// oracle-verified skip test. It deliberately does NOT assert the outcome's
-/// `branch` field — `rebase_skip` currently returns an empty branch name (a
-/// second, cosmetic symptom of the same `repo.reset` step; see the bug report).
+/// The contract's §9.6 exact wording (skip the FIRST conflicting commit) is
+/// covered by `skip_first_conflicting_op_works` below — a historical
+/// skip-on-first-op state corruption was fixed in 8219ebd, so both paths are
+/// exercised against the CLI oracle.
 #[test]
 fn skip_later_conflicting_commit_matches_cli_twin() {
     require_git!();
@@ -532,18 +529,15 @@ fn skip_later_conflicting_commit_matches_cli_twin() {
     assert!(!has_rebase_dir(b));
 }
 
-/// §9.6 exact requirement: skip the FIRST conflicting commit. CONFIRMED APP BUG
-/// (reported to the orchestrator — do NOT modify rebase.rs to make this pass):
-/// `rebase_skip` fails when NO commit has been replayed yet (first op) with
-///   Git("could not open '.../rebase-merge/msgnum' for writing: The system
-///        cannot find the path specified")
-/// i.e. the `repo.reset(HEAD, Hard)` + `rebase.next()` recipe in §3.8 corrupts
-/// the on-disk rebase state on the first operation (Windows/libgit2). The
-/// equivalent `git rebase --skip` succeeds and yields exactly one commit. This
-/// test encodes the CORRECT expected behavior and is `#[ignore]`d until the bug
-/// is fixed; remove `#[ignore]` once it is.
+/// §9.6 exact requirement: skip the FIRST conflicting commit (no commit
+/// replayed yet). REGRESSION test for a bug fixed in 8219ebd: the original
+/// `repo.reset(HEAD, Hard)` step deleted the on-disk `rebase-merge` state
+/// (msgnum et al.) on Windows/libgit2, so the follow-up `rebase.next()` failed;
+/// the fix reverts the conflicted paths only (paths-only reset), leaving the
+/// sequencer state intact. Bonsai now matches `git rebase --skip` exactly —
+/// final tree, surviving commit, and the `branch` field in the outcome.
 #[test]
-fn skip_first_op_is_broken_known_bug() {
+fn skip_first_conflicting_op_works() {
     require_git!();
     let (bonsai, twin) = twin_pair(script_skip_first);
     let (b, t) = (bonsai.path(), twin.path());

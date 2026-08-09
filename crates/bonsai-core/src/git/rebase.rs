@@ -11,7 +11,7 @@ use crate::git::bisect::require_no_bisect;
 use crate::git::commit::resolve_signature;
 use crate::git::conflict::list_conflicts;
 use crate::git::repo::read_head_info;
-use crate::git::stage::open_workdir_repo;
+use crate::git::stage::{ensure_no_untracked_collision, open_workdir_repo};
 
 /// Shared message for a checkout/base conflict (the initial base checkout or a
 /// mid-replay checkout that would overwrite local changes). Byte-identical to
@@ -501,8 +501,37 @@ pub fn rebase_abort(workdir: &Path) -> Result<(), AppError> {
     // A git2 error (e.g. a CLI apply-backend rebase open_rebase cannot load)
     // surfaces as AppError::Git -> honest toast.
     let mut rebase = repo.open_rebase(None)?;
+    // Data-loss guard (F-A3-1, the 46a34d4 guard bisect/interactive already
+    // run): `rebase.abort()` hard-resets the worktree to the original HEAD, so
+    // an untracked file whose path exists in the orig-head tree would be
+    // silently overwritten. Refuse BEFORE aborting — the rebase state is
+    // untouched, so the user can remove/stash the file and retry.
+    if let Some(orig) = rebase_orig_head(&repo, &rebase) {
+        if let Ok(commit) = repo.find_commit(orig) {
+            ensure_no_untracked_collision(&repo, &commit.tree()?)?;
+        }
+    }
     rebase.abort()?; // restores original HEAD/branch + worktree
     Ok(())
+}
+
+/// Oid of the rebase's original HEAD, for the abort clobber guard. Prefer
+/// libgit2's `orig_head_id()`; fall back to the on-disk `orig-head` file the
+/// git CLI writes (merge and apply backends). `None` = undeterminable — the
+/// abort then proceeds unguarded, which is no worse than the pre-F-A3-1
+/// behavior.
+fn rebase_orig_head(repo: &git2::Repository, rebase: &git2::Rebase<'_>) -> Option<git2::Oid> {
+    if let Some(oid) = rebase.orig_head_id() {
+        return Some(oid);
+    }
+    for dir in ["rebase-merge", "rebase-apply"] {
+        if let Ok(raw) = std::fs::read_to_string(repo.path().join(dir).join("orig-head")) {
+            if let Ok(oid) = git2::Oid::from_str(raw.trim()) {
+                return Some(oid);
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]
