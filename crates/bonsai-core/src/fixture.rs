@@ -292,10 +292,14 @@ fn ensure_commit_graph(repo_path: &Path) {
 
 /// Whether the `git` CLI is on PATH (the commit-graph writer shells out to it).
 fn have_git() -> bool {
-    std::process::Command::new("git")
+    let ok = std::process::Command::new("git")
         .arg("--version")
         .output()
-        .is_ok()
+        .is_ok();
+    if !ok && std::env::var("BONSAI_REQUIRE_GIT_STRICT").as_deref() == Ok("1") {
+        panic!("BONSAI_REQUIRE_GIT_STRICT=1: `git` CLI required on PATH but not found");
+    }
+    ok
 }
 
 #[cfg(test)]

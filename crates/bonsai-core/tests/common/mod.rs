@@ -77,7 +77,11 @@ pub fn claude_stub_path() -> std::path::PathBuf {
 }
 
 pub fn have_git() -> bool {
-    Command::new("git").arg("--version").output().is_ok()
+    let ok = Command::new("git").arg("--version").output().is_ok();
+    if !ok && std::env::var("BONSAI_REQUIRE_GIT_STRICT").as_deref() == Ok("1") {
+        panic!("BONSAI_REQUIRE_GIT_STRICT=1: `git` CLI required on PATH but not found");
+    }
+    ok
 }
 
 /// True when the git on PATH is ≥ `(major, minor)`. The P59a-2 `pre-push` hook

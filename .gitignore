@@ -6,6 +6,10 @@ crates/*/target/
 src-tauri/gen/schemas/
 *.log
 .DS_Store
+# T1 test infrastructure — generated reports
+coverage/
+test-results/
+playwright-report/
 .idea/
 # P42: updater signing keys — DEV verification key + password. NEVER commit.
 # The private key + password go into CI as TAURI_SIGNING_PRIVATE_KEY /

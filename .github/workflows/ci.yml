@@ -64,8 +64,23 @@ jobs:
           git config --global user.name "CI"
           git config --global user.email "ci@bonsai.test"
 
+      # BONSAI_REQUIRE_GIT_STRICT=1: a missing `git` CLI turns every would-be
+      # runtime skip into a loud failure — CI can never silently skip
+      # git-dependent tests (T1 contract §4).
       - name: cargo test
-        run: cargo test --workspace
+        env:
+          BONSAI_REQUIRE_GIT_STRICT: '1'
+        run: |
+          set -o pipefail
+          cargo test --workspace 2>&1 | tee /tmp/cargo-test.log
+
+      # Known baseline: 3 #[ignore]d perf gates + 1 #[ignore]d rebase known-bug
+      # — visible in the summary, not failed on.
+      - name: Surface ignored/skipped test counts
+        run: |
+          echo '## cargo test summary' >> "$GITHUB_STEP_SUMMARY"
+          grep -E '^test result:' /tmp/cargo-test.log >> "$GITHUB_STEP_SUMMARY"
+          grep -c 'skipping:' /tmp/cargo-test.log | xargs -I{} echo 'runtime skips: {}' >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
@@ -90,8 +105,49 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: pnpm test
-        run: pnpm test
+      # Runs BOTH vitest projects (node + dom) and writes coverage/.
+      - name: pnpm test:coverage
+        run: pnpm test:coverage
+
+      - name: Upload coverage summary
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-summary
+          path: coverage/coverage-summary.json
 
       - name: pnpm build (tsc + vite)
         run: pnpm build
+
+  e2e:
+    name: E2E — Playwright vs mock harness
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      # CI env is set by Actions → chromium project + webServer autostart.
+      - name: pnpm test:e2e
+        run: pnpm test:e2e
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/

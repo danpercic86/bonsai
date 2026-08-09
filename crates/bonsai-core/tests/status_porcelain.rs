@@ -15,7 +15,11 @@ use bonsai_core::git::status::{read_status, FileStatus, StatusSnapshot};
 type Tuple = (String, String, Option<String>, String);
 
 fn have_git() -> bool {
-    Command::new("git").arg("--version").output().is_ok()
+    let ok = Command::new("git").arg("--version").output().is_ok();
+    if !ok && std::env::var("BONSAI_REQUIRE_GIT_STRICT").as_deref() == Ok("1") {
+        panic!("BONSAI_REQUIRE_GIT_STRICT=1: `git` CLI required on PATH but not found");
+    }
+    ok
 }
 
 fn git(dir: &Path, args: &[&str]) -> String {

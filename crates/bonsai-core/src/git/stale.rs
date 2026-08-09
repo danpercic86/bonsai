@@ -461,7 +461,11 @@ mod tests {
     }
 
     fn have_git() -> bool {
-        Command::new("git").arg("--version").output().is_ok()
+        let ok = Command::new("git").arg("--version").output().is_ok();
+        if !ok && std::env::var("BONSAI_REQUIRE_GIT_STRICT").as_deref() == Ok("1") {
+            panic!("BONSAI_REQUIRE_GIT_STRICT=1: `git` CLI required on PATH but not found");
+        }
+        ok
     }
 
     // ------------------------------------------------------- §9.1(6) wire shapes
