@@ -18,9 +18,18 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
   leave HEAD in place, and return a distinct explanatory error instead of failing forever while all
   mutations stay blocked. Missing-state and io-error behavior unchanged. Revert = drop the
   `StateReadError::Corrupt` salvage arms.
-- F-A4-2: clean (non-conflict) merge commits now run the commit-msg hook (previously NO hooks ran on
-  clean merges). Matches real git's message-policy behavior; pre-merge-commit remains unsupported and
-  is now documented as such. Revert = pass run_hooks=false again in merge_branch's finalize call.
+- F-A4-2: clean (non-conflict) merge commits now run the commit-msg hook — ONLY that hook (previously
+  NO hooks ran on clean merges). Matches real git's message-policy behavior; pre-merge-commit remains
+  unsupported and is now documented as such. If the hook rejects, the merge is left PAUSED (MERGE_HEAD
+  retained, HEAD unchanged — recover via "commit merge" with skip-hooks, or abort), which is exactly
+  git's "Not committing merge; use 'git commit' to complete the merge" state. `merge_branch` gained a
+  `skip_hooks` param (command arg `skipHooks` optional, absent ⇒ false — wire-compatible; UI wiring
+  deferred, types.ts frozen). Revert = pass MergeHooks::Off again in merge_branch's finalize call.
+- F-A4-4 (documented default, behavior unchanged): AI-composer split commits bypass ALL git hooks
+  (deliberate — re-staging pre-commit hooks would corrupt the split-plan partition; commit-msg would
+  rewrite generated messages). Consequence: commit-message policy hooks do not vet composer commits.
+  Now documented in compose_apply.rs + P59 user checklist "Known v1 hook divergences". Revisit
+  commit-msg-only execution if desired.
 - F-A6-A: `Staged` stash of a staged DELETION whose file was rewritten on disk (`git rm --cached` +
   edit) now FOLDS the rewritten worktree content into the stash (the staged deletion is subsumed,
   same FOLD rule as mixed staged+unstaged edits) instead of losing the content entirely. Plain
@@ -31,9 +40,6 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
 - F-A7-6: after merge/cherry-pick/revert with autostash, the autostash is re-applied/dropped BY
   COMMIT OID, not "stash@{0}"; if it was dropped externally mid-operation the op reports "your
   autostashed changes were not found; check `git stash list`" instead of applying a foreign stash.
-- F-A4-4 (no code change, awareness): AI-composed commits (P54 composer) intentionally bypass ALL
-  git hooks — re-staging hooks would corrupt the split plan. Now documented; revisit if you want
-  commit-msg-only enforcement there.
 - F-A7-1/3/4/5 (stale-branch cleanup, safety-tightening): base branch now protected under ANY
   spelling (refname/OID/tag); remote base protects its local counterpart; the repo default branch is
   never offered as stale; deletion re-checks the tip and refuses with "tip moved since scan"; Deleted
@@ -158,22 +164,50 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
   in a Husky-style repo missing one of pre-commit/commit-msg/pre-push, EVERY commit/amend/merge/push
   is blocked (empirically verified, git 2.51). Module doc + P59 contract wrongly claim hook-absent ⇒
   Ok. Fix: add --ignore-missing to argv (+ doc corrections). Also restores git parity for present-
-  but-non-executable hooks on unix — **open**
+  but-non-executable hooks on unix — **fixed (pending commit)**: `--ignore-missing` always in the
+  `git hook run` argv (same ≥2.36 floor; pre-2.36 unknown-subcommand path unchanged) + `plan_hook`
+  now resolves `core.hooksPath` like git (git2 `get_path` tilde expansion; relative ⇒ worktree
+  root) and skips the spawn when the hook file is absent, so `run_hook_nonblocking` reports
+  `ran:false`; a doubtful resolution still delegates to git (--ignore-missing backstops). Docs
+  corrected: hooks.rs module doc, run_hook doc, P59 contract L26. Regression tests (RED first —
+  all 3 failed with `HookRejected("...cannot find a hook...")` pre-fix, green post-fix):
+  `hooks_commit_cli.rs::absent_hook_under_hookspath_allows_{commit_and_amend,commit_merge,push}`
+  + `relative_hookspath_failing_hook_still_blocks` (real hook under relative hooksPath still runs)
 - [T2.4] F-A4-2 · MED · merge.rs:311 — clean auto-merge commits run NO hooks (real git runs
   pre-merge-commit/prepare-commit-msg/commit-msg). DECISION (orchestrator, 2026-08-09): run the
   commit-msg hook on clean merge commits (git parity for message policy); pre-merge-commit stays
-  unsupported+documented. Behavior change: Y, FOR USER REVIEW — **open**
+  unsupported+documented. Behavior change: Y, FOR USER REVIEW — **fixed (pending commit)**:
+  `finalize_merge_commit` takes `MergeHooks::{Off,MessageOnly,Full}`; the clean auto-merge passes
+  MessageOnly (commit-msg only — no pre-commit/post-commit), commit_merge keeps Full;
+  `merge_branch` gained `skip_hooks` (core bool; command `skipHooks: Option<bool>`, absent ⇒ false
+  — wire-compatible, types.ts untouched; MCP passes false). Rejection outcome PINNED: merge left
+  PAUSED (MERGE_HEAD retained, HEAD unchanged) = git's "Not committing merge" state, recoverable
+  via commit_merge/abort_merge; autostash retained. Tests: `hooks_commit_cli.rs::
+  clean_merge_runs_commit_msg_hook_not_pre_commit`, `clean_merge_commit_msg_fail_leaves_merge_paused`
+  (incl. recovery), `clean_merge_skip_hooks_bypasses_commit_msg`
 - [T2.4] F-A4-3 · MED · hooks.rs:41 — prepare-commit-msg unsupported (ticket-ID/template injectors
   silently no-op). DECISION: document as a known v1 divergence in P59 checklist + user docs; not
-  implementing now — **open (docs)**
+  implementing now — **done (docs, pending commit)**: "Known v1 hook divergences" section added to
+  P59-user-checklist.md (prepare-commit-msg, pre-merge-commit, composer skip-hooks)
 - [T2.4] F-A4-4 · MED · compose_apply.rs:147 — AI-composed commits hard-code skip_hooks=true
   (deliberate: re-staging hooks would corrupt the split plan). DECISION: keep behavior, document
-  prominently + FOR USER REVIEW; revisit commit-msg-only execution later — **open (docs)**
+  prominently + FOR USER REVIEW; revisit commit-msg-only execution later — **done (docs, pending
+  commit)**: compose_apply.rs comment expanded (F-A4-4 reference + consequence for policy shops),
+  P59 checklist divergences section, FOR USER REVIEW bullet above
 - [T2.4] F-A4-5 · LOW · hooks.rs:108 — git-infrastructure failures misclassified as HookRejected;
-  near-unreachable after F-A4-1; fold a prefix-match improvement into the fix pass — **open**
-- [T2.4] NITs: no hook timeout (git parity, document); non-UTF-8 $1/temp-path theoretical lossiness;
-  hook-writes-non-UTF-8-message → clean Io error (test it); pre-push stdin remote-oid is fetch-time
-  baseline (documented) — **tester pins**
+  near-unreachable after F-A4-1; fold a prefix-match improvement into the fix pass — **fixed
+  (pending commit)**: `is_git_infra_failure` classifies stderr whose FIRST line is git's own
+  pre-hook failure ("cannot find a hook named", "cannot run", "cannot spawn", "not a git
+  repository" under `error:`/`fatal:`) as AppError::Git; deliberately narrow so a hook's own
+  git-flavored stderr stays HookRejected. Unit test `git_infra_failure_classifier_is_narrow`
+- [T2.4] NITs: no hook timeout (git parity) — **documented** (hooks.rs module doc + run_hook doc);
+  non-UTF-8 $1/temp-path theoretical lossiness — **documented** (run_hook + run_commit_msg_hook
+  docs; non-UTF-8 rewrite ⇒ clean Io error noted); hook-writes-non-UTF-8-message Io-error test +
+  pre-push stdin remote-oid fetch-time baseline — **remaining tester pins**. Fix pass also added
+  tester-pinned integration cases: amend hooks (block/trailer/skip), commit_merge hooks
+  (fail⇒MERGE_HEAD retained, rewrite, post-commit sees MERGE_HEAD), CRLF trailer normalization,
+  hook-emptied message ⇒ EmptyMessage, skip_hooks sentinel matrix over all commit-side sites
+  (tests/hooks_commit_cli.rs, 14 tests)
 - [T2.4] Verified sound: hook order matches git incl. amend + commit_merge (post-commit before
   cleanup_state), skip_hooks reaches all 5 sites, force-push --no-verify prevents double execution,
   linked-worktree commondir handling, no hooks on read ops, CRLF message re-normalization.
@@ -408,6 +442,40 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
   verify; worktrees lifecycle/copy-plan; submodules transitions/#fail; scheduler backoff
   table + event ordering + timer arming; ?ai=off / ?historyFail / ?hooks= / ?fixture=noconfig
   / 20k / ?op=merge / ?branch=cbhconflict seams. (13 new files, 208 tests; vitest 776→984.)
+
+- [T5.fe] F-T5fe-1 · LOW (defensive-contract violation) · src/utils/intralineSegments.ts:39-47 —
+  segmentLine DUPLICATES text on a zero-length-after-clamp span: when a span's clamped range is
+  empty but starts past the cursor (len <= 0, or start >= end e.g. +Infinity / start > n with the
+  gap still pending), the unchanged gap is emitted WITHOUT advancing the cursor, so later spans /
+  the final tail re-emit the same characters. Minimal repro: `segmentLine('hello', [[2, 0]])` →
+  'he' + 'hello' = 'hehello'. Contradicts the module doc ("out-of-order / overlapping /
+  out-of-range entries are clamped defensively so a bad payload can never throw or duplicate
+  text"). Backend never emits len-0 spans, so unreachable via well-formed IPC — but this is
+  exactly the hostile-payload defense the doc claims. Fix (app code, senior-dev): advance
+  `cursor = s` when emitting the gap, or drop `len <= 0`/empty-after-clamp spans before the gap
+  emit. Repro pinned as it.skip 'F-T5fe-1' in src/utils/intralineSegments.adversarial.test.ts
+  (fuzz generator constrained to len>=1, start<=n-1 until fixed — widen back after) — **open**
+- [T5.fe] NIT (awareness, not a bug) — StatusPanel/Sidebar key rows by path/branch-name; a
+  hostile snapshot with DUPLICATE paths/names renders with React duplicate-key warnings
+  (rows may collapse) but never crashes. Real backends never emit duplicates within a section.
+  Pinned in adversarial-dto.test.tsx with the duplicate-key console pattern allowlisted.
+- [T5.fe] Verified clean (T5b adversarial pass, 2026-08-09): GraphCanvas mounts inside the real
+  ErrorBoundary under 7 hostile GraphLayout shapes (negative/NaN/1e9 lanes, parents[99999],
+  edge from>to, laneCount 0 with nodes, 0-row layout with edges + headIndex) — no throw escapes;
+  edgeIndex/viewport/geometry pure math no-throw + well-formed for finite inputs (NaN scrollTop
+  propagates NaN — unreachable from the DOM scroller, pinned as observed); DiffView renders
+  out-of-bounds/overlapping/negative/NaN spans with content verbatim, 0-line + out-of-order hunks
+  fine; CommitPanel survives 10k-char summary, NUL+RTL message, null author, NaN timestamps,
+  out-of-layout parents (plain text, no jump); Sidebar renders 1000 branches + `<script>` name as
+  inert text (no live element). Rapid-fire: CommitBox double-click/Ctrl-Enter-spam/split-control
+  = exactly ONE commit call; palette Enter-spam dispatches once (closes first), 10× toggle +
+  type/arrow spam no desync, fresh query per open; 10× interleaved mock stage/unstage settles
+  last-wins with the file in exactly one section. Pure-fn fuzz (seeded, no fast-check):
+  segmentLine 200 iters (concat-exact, astral-safe, 1MB), pairSplitRows 150 iters (identity
+  placement, no both-null), conflictRegions 150 iters (parse shape, bounded resolution to
+  marker-free, 20k-line doc), buildPathTree 150 iters (leaf multiset identity, unique dir
+  prefixes, deep/huge/unicode paths). §5.1 persistence garbage: T3.4 already covers all listed
+  cases incl. "null" and __proto__ — nothing added. (4 new files, 41 tests; vitest 1197→1237.)
 
 - [T3.6] Canvas-internals refactor (behavior-preserving): extracted the pure logic out of
   GraphCanvas.tsx (1071→821 LOC) and draw.ts (459→381) into geometry.ts (laneX/rowY/refColArea/
