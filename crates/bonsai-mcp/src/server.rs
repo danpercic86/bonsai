@@ -950,7 +950,7 @@ impl BonsaiServer {
     ) -> CallToolResult {
         match self
             .run_blocking(move |wd| {
-                bonsai_core::git::stash::apply_stash(wd, args.index, args.skip_reserved)
+                bonsai_core::git::stash::apply_stash(wd, args.index, args.skip_reserved, None)
             })
             .await
         {
@@ -973,7 +973,7 @@ impl BonsaiServer {
     ) -> CallToolResult {
         match self
             .run_blocking(move |wd| {
-                bonsai_core::git::stash::pop_stash(wd, args.index, args.skip_reserved)
+                bonsai_core::git::stash::pop_stash(wd, args.index, args.skip_reserved, None)
             })
             .await
         {
@@ -989,7 +989,7 @@ impl BonsaiServer {
         Parameters(args): Parameters<StashIndexArgs>,
     ) -> CallToolResult {
         match self
-            .run_blocking(move |wd| bonsai_core::git::stash::drop_stash(wd, args.index))
+            .run_blocking(move |wd| bonsai_core::git::stash::drop_stash(wd, args.index, None))
             .await
         {
             Ok(()) => ok_null(),

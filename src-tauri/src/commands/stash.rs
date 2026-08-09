@@ -55,14 +55,20 @@ pub(crate) async fn create_stash_inner(
 /// Applies stash `index` WITHOUT dropping it (P9 contract §3). Conflicts →
 /// `Conflicts{paths}` (stash retained). Errors: `operationInProgress` | `git`
 /// | `noRepo`. Does NOT emit `repo-changed`.
+///
+/// `expected_oid` (T2.6 F-A6-B): optional stash commit oid the UI rendered for
+/// `index`; a stack shift between render and confirm → "stash list changed"
+/// error before anything is applied. Optional on the wire (missing → `None`),
+/// so existing callers stay compatible (types.ts frozen — UI wiring deferred).
 #[tauri::command]
 pub async fn apply_stash(
     state: tauri::State<'_, AppState>,
     repo_id: String,
     index: usize,
     skip_reserved: bool,
+    expected_oid: Option<String>,
 ) -> Result<ApplyStashOutcome, AppError> {
-    apply_stash_inner(state.inner(), &repo_id, index, skip_reserved).await
+    apply_stash_inner(state.inner(), &repo_id, index, skip_reserved, expected_oid).await
 }
 
 /// Runtime-free core of `apply_stash` (unit-testable without a Tauri app).
@@ -71,24 +77,30 @@ pub(crate) async fn apply_stash_inner(
     repo_id: &str,
     index: usize,
     skip_reserved: bool,
+    expected_oid: Option<String>,
 ) -> Result<ApplyStashOutcome, AppError> {
     let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || stash::apply_stash(&path, index, skip_reserved))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    tauri::async_runtime::spawn_blocking(move || {
+        stash::apply_stash(&path, index, skip_reserved, expected_oid.as_deref())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Applies stash `index` and drops it on clean success only (P9 contract §3).
 /// Conflicts → `Conflicts{paths}` and the entry is RETAINED. Errors:
 /// `operationInProgress` | `git` | `noRepo`. Does NOT emit `repo-changed`.
+/// `expected_oid` (T2.6 F-A6-B): see `apply_stash` — a mismatch blocks the pop
+/// before anything is applied or dropped.
 #[tauri::command]
 pub async fn pop_stash(
     state: tauri::State<'_, AppState>,
     repo_id: String,
     index: usize,
     skip_reserved: bool,
+    expected_oid: Option<String>,
 ) -> Result<ApplyStashOutcome, AppError> {
-    pop_stash_inner(state.inner(), &repo_id, index, skip_reserved).await
+    pop_stash_inner(state.inner(), &repo_id, index, skip_reserved, expected_oid).await
 }
 
 /// Runtime-free core of `pop_stash` (unit-testable without a Tauri app).
@@ -97,23 +109,29 @@ pub(crate) async fn pop_stash_inner(
     repo_id: &str,
     index: usize,
     skip_reserved: bool,
+    expected_oid: Option<String>,
 ) -> Result<ApplyStashOutcome, AppError> {
     let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || stash::pop_stash(&path, index, skip_reserved))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    tauri::async_runtime::spawn_blocking(move || {
+        stash::pop_stash(&path, index, skip_reserved, expected_oid.as_deref())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Permanently discards stash `index` (P9 contract §3). Allowed in any repo
 /// state (the UI confirms first — destructive). Errors: `git` | `noRepo`. Does
 /// NOT emit `repo-changed`.
+/// `expected_oid` (T2.6 F-A6-B): see `apply_stash` — the wrong-target guard
+/// matters most here because a dropped stash is unrecoverable.
 #[tauri::command]
 pub async fn drop_stash(
     state: tauri::State<'_, AppState>,
     repo_id: String,
     index: usize,
+    expected_oid: Option<String>,
 ) -> Result<(), AppError> {
-    drop_stash_inner(state.inner(), &repo_id, index).await
+    drop_stash_inner(state.inner(), &repo_id, index, expected_oid).await
 }
 
 /// Runtime-free core of `drop_stash` (unit-testable without a Tauri app).
@@ -121,9 +139,12 @@ pub(crate) async fn drop_stash_inner(
     state: &AppState,
     repo_id: &str,
     index: usize,
+    expected_oid: Option<String>,
 ) -> Result<(), AppError> {
     let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || stash::drop_stash(&path, index))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    tauri::async_runtime::spawn_blocking(move || {
+        stash::drop_stash(&path, index, expected_oid.as_deref())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

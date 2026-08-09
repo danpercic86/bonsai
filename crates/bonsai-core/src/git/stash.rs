@@ -21,6 +21,12 @@ use crate::git::commit::resolve_signature;
 use crate::git::conflict::list_conflicts;
 use crate::git::stage::open_workdir_repo;
 
+// T2.6 hardening tests live in a sibling file (this module already carries the
+// P9/P34 inline matrices; soft 500-line file discipline).
+#[cfg(test)]
+#[path = "stash_hardening_tests.rs"]
+mod stash_hardening_tests;
+
 /// One stash stack entry. Wire: camelCase.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -255,8 +261,30 @@ fn create_staged_stash(
     wt.read_tree(&head_tree)?;
     for (p, is_delete) in &staged {
         if *is_delete {
-            // Staged deletion (incl. `git rm --cached` where the file is still on
-            // disk) → capture the deletion regardless of worktree presence.
+            // Staged deletion. If the file is STILL on disk with content that
+            // DIFFERS from HEAD (`git rm --cached` + rewrite), capturing only
+            // the deletion would be data loss (F-A6-A): the mutation window
+            // below force-restores HEAD over the path, so the rewritten bytes
+            // would then exist nowhere. FOLD semantics (same rule as a mixed
+            // staged+unstaged modification): fold the full worktree content
+            // into the stash tree — the staged deletion is subsumed by the
+            // fold. A file absent from disk, or present with HEAD content
+            // (plain `git rm --cached`), still records the deletion.
+            let abs = workdir.join(p);
+            if abs.is_file() {
+                let blob = repo
+                    .blob_path(&abs)
+                    .map_err(|e| AppError::Git(format!("read {}: {e}", p.display())))?;
+                let differs_from_head = head_tree
+                    .get_path(p)
+                    .map(|te| te.id() != blob)
+                    .unwrap_or(true);
+                if differs_from_head {
+                    let mode = staged_entry_mode(&index, &head_tree, p);
+                    wt.add(&make_index_entry(p, blob, mode)?)?;
+                    continue;
+                }
+            }
             wt.remove_path(p)?;
             continue;
         }
@@ -454,9 +482,9 @@ fn stash_commit_oid(repo: &git2::Repository, index: usize) -> Result<git2::Oid, 
 /// `(reserved, allowed)`. Sources:
 ///
 /// - tracked: `commit.parent(0)` tree vs `commit` tree diff — each delta's
-///   `new_file().path()` (utf8; None skipped);
-/// - untracked: if `parent_count() >= 3`, `commit.parent(2)`'s tree walked
-///   pre-order, every BLOB entry's full path (directory entries skipped).
+///   path bytes (non-UTF-8 → hard `AppError`, never silently dropped, F-A6-E);
+/// - untracked: if `parent_count() >= 3`, an empty-tree → `commit.parent(2)`
+///   tree diff, whose deltas are exactly the leaf blob paths (same UTF-8 rule).
 ///
 /// Only leaf blob paths are collected — never a directory prefix. This matters
 /// because `git_stash_apply`'s untracked-checkout phase reassigns
@@ -475,28 +503,56 @@ fn stash_path_sets(
 
     let mut paths: Vec<String> = Vec::new();
 
+    // A path we cannot represent must be a HARD error, never a silent drop
+    // (F-A6-E): a silently-missing entry in `allowed` means a skip-reserved
+    // apply would silently fail to restore that file. Uses `path_bytes()`
+    // (never `path()`, whose bytes→Path conversion can panic on Windows for
+    // non-UTF-8 bytes) + explicit UTF-8 validation.
+    let push_utf8 = |bytes: &[u8], paths: &mut Vec<String>| -> Result<(), AppError> {
+        match std::str::from_utf8(bytes) {
+            Ok(p) => {
+                paths.push(p.to_string());
+                Ok(())
+            }
+            Err(_) => Err(AppError::Git(format!(
+                "stash contains a non-unicode path ({}); cannot compute the \
+                 reserved-path safety sets",
+                String::from_utf8_lossy(bytes)
+            ))),
+        }
+    };
+
     // Tracked changes: parent(0) tree → stash tree.
     let stash_tree = commit.tree()?;
     let base_tree = commit.parent(0)?.tree()?;
     let diff = repo.diff_tree_to_tree(Some(&base_tree), Some(&stash_tree), None)?;
     for delta in diff.deltas() {
-        if let Some(p) = delta.new_file().path().and_then(|p| p.to_str()) {
-            paths.push(p.to_string());
+        if let Some(bytes) = delta
+            .new_file()
+            .path_bytes()
+            .or_else(|| delta.old_file().path_bytes())
+        {
+            push_utf8(bytes, &mut paths)?;
         }
     }
 
     // Untracked commit (stash@{N}^3) — present only when created with
-    // INCLUDE_UNTRACKED. Walk its tree pre-order, collecting blob paths.
+    // INCLUDE_UNTRACKED. Diff empty→tree instead of Tree::walk: the deltas
+    // yield exactly the leaf blob paths, and `path_bytes()` stays available for
+    // non-UTF-8 names (Tree::walk's `&str` root would panic on those before we
+    // ever saw them).
     if commit.parent_count() >= 3 {
         let untracked_tree = commit.parent(2)?.tree()?;
-        untracked_tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
-            if entry.kind() == Some(git2::ObjectType::Blob) {
-                if let Ok(name) = entry.name() {
-                    paths.push(format!("{root}{name}"));
-                }
+        let udiff = repo.diff_tree_to_tree(None, Some(&untracked_tree), None)?;
+        for delta in udiff.deltas() {
+            if let Some(bytes) = delta
+                .new_file()
+                .path_bytes()
+                .or_else(|| delta.old_file().path_bytes())
+            {
+                push_utf8(bytes, &mut paths)?;
             }
-            git2::TreeWalkResult::Ok
-        })?;
+        }
     }
 
     paths.sort();
@@ -508,19 +564,74 @@ fn stash_path_sets(
     Ok((reserved, allowed))
 }
 
+/// Escape fnmatch/pathspec metacharacters (`\ * ? [ ]`) so `p` self-matches
+/// when a checkout phase treats the allowlist entries as PATTERNS. Returns
+/// `None` when the path contains no metacharacter (escaped == raw).
+fn escape_pathspec(p: &str) -> Option<String> {
+    const META: [char; 5] = ['\\', '*', '?', '[', ']'];
+    if !p.contains(META) {
+        return None;
+    }
+    let mut out = String::with_capacity(p.len() + 4);
+    for c in p.chars() {
+        if META.contains(&c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    Some(out)
+}
+
 /// Build the SAFE `StashApplyOptions` for a skip-reserved apply: a checkout
 /// allowlist of exactly the `allowed` paths (pathspec match disabled so only the
 /// listed paths are written). The reserved paths are simply left out, so both
 /// libgit2 checkout phases skip them.
+///
+/// DUAL-FORM entries (F-A6-F): the tracked-checkout phase honors
+/// `disable_pathspec_match` (entries are LITERAL paths → the raw form matches),
+/// but `git_stash_apply`'s untracked-checkout phase reassigns the checkout
+/// strategy and silently drops that flag (entries become PATTERNS → a raw
+/// `foo[1].txt` would NOT self-match and the file would silently not be
+/// restored). So every metachar-bearing path is added twice: raw (literal
+/// phase) + glob-escaped (pattern phase). An escaped entry matches nothing in
+/// the literal phase and exactly its raw path in the pattern phase; the
+/// post-apply reserved-path guard in apply/pop still backstops any pattern
+/// over-match.
 fn skip_reserved_opts(allowed: &[String]) -> git2::StashApplyOptions<'_> {
     let mut co = git2::build::CheckoutBuilder::new();
     co.disable_pathspec_match(true);
     for p in allowed {
         co.path(p);
+        if let Some(escaped) = escape_pathspec(p) {
+            co.path(escaped);
+        }
     }
     let mut opts = git2::StashApplyOptions::new();
     opts.checkout_options(co);
     opts
+}
+
+/// F-A6-B guard: apply/pop/drop are index-addressed into a MUTATING stack; a
+/// shift between the UI render and the confirm (external `git stash`, or an
+/// in-app autostash retained on conflict) would silently target the WRONG,
+/// unrecoverable entry. When the caller supplies the stash commit oid it saw,
+/// verify it still lives at `index` before acting; mismatch → error, nothing
+/// touched. `None` (legacy/internal callers) preserves the old behavior.
+fn verify_expected_oid(
+    repo: &git2::Repository,
+    index: usize,
+    expected_oid: Option<&str>,
+) -> Result<(), AppError> {
+    let Some(expected) = expected_oid else {
+        return Ok(());
+    };
+    let actual = stash_commit_oid(repo, index)?;
+    if !actual.to_string().eq_ignore_ascii_case(expected.trim()) {
+        return Err(AppError::Git(
+            "stash list changed; refresh and retry".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 /// Blocking. Apply stash `index` WITHOUT dropping it. Precondition: state Clean
@@ -531,15 +642,20 @@ fn skip_reserved_opts(allowed: &[String]) -> git2::StashApplyOptions<'_> {
 /// exactly as before. `skip_reserved == true`: apply with a checkout allowlist
 /// that skips the reserved paths and return `AppliedSkippingReserved` on clean
 /// success.
+///
+/// `expected_oid` (F-A6-B): the stash commit oid the caller saw for `index`;
+/// `Some` + mismatch → "stash list changed" error before anything is applied.
 pub fn apply_stash(
     workdir: &Path,
     index: usize,
     skip_reserved: bool,
+    expected_oid: Option<&str>,
 ) -> Result<ApplyStashOutcome, AppError> {
     let mut repo = open_workdir_repo(workdir)?;
     require_clean(&repo)?;
     // A clean detached-HEAD bisect is invisible to `require_clean` — refuse.
     require_no_bisect(&repo)?;
+    verify_expected_oid(&repo, index, expected_oid)?;
 
     if !skip_reserved {
         // Preflight: block (mutate nothing) if reserved paths are present.
@@ -620,15 +736,21 @@ pub fn apply_stash(
 /// clean success as before. `skip_reserved == true`: apply skipping the reserved
 /// paths; because those blobs live ONLY in the stash, a skip-apply must stay
 /// lossless — return `AppliedSkippingReserved` and RETAIN the stash (do NOT drop).
+///
+/// `expected_oid` (F-A6-B): the stash commit oid the caller saw for `index`;
+/// `Some` + mismatch → "stash list changed" error before anything is applied
+/// or dropped.
 pub fn pop_stash(
     workdir: &Path,
     index: usize,
     skip_reserved: bool,
+    expected_oid: Option<&str>,
 ) -> Result<ApplyStashOutcome, AppError> {
     let mut repo = open_workdir_repo(workdir)?;
     require_clean(&repo)?;
     // A clean detached-HEAD bisect is invisible to `require_clean` — refuse.
     require_no_bisect(&repo)?;
+    verify_expected_oid(&repo, index, expected_oid)?;
 
     if !skip_reserved {
         // Preflight: block (mutate nothing, never drop) on reserved paths.
@@ -699,8 +821,14 @@ pub fn pop_stash(
 /// Blocking. Permanently discard stash `index`. Allowed in ANY repo state
 /// (touches only the stash reflog). UI confirms first (destructive). An
 /// out-of-range index surfaces as the underlying git2 error → AppError::Git.
-pub fn drop_stash(workdir: &Path, index: usize) -> Result<(), AppError> {
+///
+/// `expected_oid` (F-A6-B): the stash commit oid the caller saw for `index`;
+/// `Some` + mismatch → "stash list changed" error and NOTHING is dropped —
+/// this is the wrong-target-destructive guard (a dropped stash is
+/// unrecoverable).
+pub fn drop_stash(workdir: &Path, index: usize, expected_oid: Option<&str>) -> Result<(), AppError> {
     let mut repo = open_workdir_repo(workdir)?;
+    verify_expected_oid(&repo, index, expected_oid)?;
     repo.stash_drop(index)?;
     Ok(())
 }
@@ -906,7 +1034,7 @@ mod tests {
         assert_eq!(list[0].base_oid, head, "base_oid must == HEAD at stash time");
         assert!(!list[0].message.is_empty(), "default message must be non-empty");
 
-        let outcome = apply_stash(d, 0, false).expect("apply");
+        let outcome = apply_stash(d, 0, false, None).expect("apply");
         assert_eq!(outcome, ApplyStashOutcome::Applied, "clean apply");
         assert_eq!(s9_read(d, "a.txt"), "edited\n", "edit restored to worktree");
 
@@ -928,7 +1056,7 @@ mod tests {
         assert!(res.created);
         assert_eq!(s9_read(d, "a.txt"), "base\n");
 
-        let outcome = pop_stash(d, 0, false).expect("pop");
+        let outcome = pop_stash(d, 0, false, None).expect("pop");
         assert_eq!(outcome, ApplyStashOutcome::Applied, "clean pop");
         assert_eq!(s9_read(d, "a.txt"), "edited\n", "edit restored to worktree");
 
@@ -976,7 +1104,7 @@ mod tests {
         let list = list_stashes(d).expect("list");
         assert_eq!(list.len(), 1);
 
-        let outcome = pop_stash(d, 0, false).expect("pop");
+        let outcome = pop_stash(d, 0, false, None).expect("pop");
         assert_eq!(outcome, ApplyStashOutcome::Applied);
         assert!(
             d.join("untracked.txt").exists(),
@@ -1014,7 +1142,7 @@ mod tests {
         let dir = s9_conflict_fixture();
         let d = dir.path();
 
-        let outcome = pop_stash(d, 0, false).expect("pop");
+        let outcome = pop_stash(d, 0, false, None).expect("pop");
         assert_eq!(
             outcome,
             ApplyStashOutcome::Conflicts {
@@ -1049,7 +1177,7 @@ mod tests {
         let dir = s9_conflict_fixture();
         let d = dir.path();
 
-        let outcome = apply_stash(d, 0, false).expect("apply");
+        let outcome = apply_stash(d, 0, false, None).expect("apply");
         assert_eq!(
             outcome,
             ApplyStashOutcome::Conflicts {
@@ -1089,7 +1217,7 @@ mod tests {
         let survivor_oid = before[1].oid.clone();
 
         // Drop the most recent (index 0). Entries above shift down by one.
-        drop_stash(d, 0).expect("drop");
+        drop_stash(d, 0, None).expect("drop");
 
         let after = list_stashes(d).expect("list after drop");
         assert_eq!(after.len(), 1, "one entry survives");
@@ -1143,17 +1271,17 @@ mod tests {
             Err(AppError::OperationInProgress(_)) => {}
             other => panic!("create_stash: expected OperationInProgress, got {other:?}"),
         }
-        match apply_stash(d, 0, false) {
+        match apply_stash(d, 0, false, None) {
             Err(AppError::OperationInProgress(_)) => {}
             other => panic!("apply_stash: expected OperationInProgress, got {other:?}"),
         }
-        match pop_stash(d, 0, false) {
+        match pop_stash(d, 0, false, None) {
             Err(AppError::OperationInProgress(_)) => {}
             other => panic!("pop_stash: expected OperationInProgress, got {other:?}"),
         }
 
         // Drop is allowed in ANY repo state (touches only the stash reflog).
-        drop_stash(d, 0).expect("drop must succeed mid-merge");
+        drop_stash(d, 0, None).expect("drop must succeed mid-merge");
         assert_eq!(
             list_stashes(d).expect("list after drop").len(),
             0,
@@ -1315,7 +1443,7 @@ mod tests {
         assert_eq!(list_stashes(d).expect("list").len(), 1);
 
         // Round-trip restores the untracked file too.
-        let outcome = pop_stash(d, 0, false).expect("pop");
+        let outcome = pop_stash(d, 0, false, None).expect("pop");
         assert_eq!(outcome, ApplyStashOutcome::Applied);
         assert!(d.join("u.txt").exists(), "untracked restored on pop");
         assert_eq!(s9_read(d, "u.txt"), "untracked\n");
@@ -1375,7 +1503,7 @@ mod tests {
         assert_eq!(list_stashes(d).expect("list").len(), 1);
 
         // Pop restores the staged content as an UNSTAGED edit (F-1: no reinstate).
-        let outcome = pop_stash(d, 0, false).expect("pop");
+        let outcome = pop_stash(d, 0, false, None).expect("pop");
         assert_eq!(outcome, ApplyStashOutcome::Applied);
         assert_eq!(s9_read(d, "a.txt"), "a-staged\n", "staged content restored");
         p34_assert_index_clean(d);
@@ -1409,7 +1537,7 @@ mod tests {
         p34_assert_index_clean(d);
         assert_eq!(list_stashes(d).expect("list").len(), 1);
 
-        let outcome = pop_stash(d, 0, false).expect("pop");
+        let outcome = pop_stash(d, 0, false, None).expect("pop");
         assert_eq!(outcome, ApplyStashOutcome::Applied);
         assert_eq!(
             s9_read(d, "b.txt"),
@@ -1493,7 +1621,7 @@ mod tests {
         p34_assert_index_clean(d);
         assert_eq!(list_stashes(d).expect("list").len(), 1);
 
-        let outcome = pop_stash(d, 0, false).expect("pop");
+        let outcome = pop_stash(d, 0, false, None).expect("pop");
         assert_eq!(outcome, ApplyStashOutcome::Applied);
         assert!(d.join("new.txt").exists(), "pop restores the added file");
         assert_eq!(s9_read(d, "new.txt"), "new\n", "added content restored");
@@ -1523,7 +1651,7 @@ mod tests {
         p34_assert_index_clean(d);
         assert_eq!(list_stashes(d).expect("list").len(), 1);
 
-        let outcome = pop_stash(d, 0, false).expect("pop");
+        let outcome = pop_stash(d, 0, false, None).expect("pop");
         assert_eq!(outcome, ApplyStashOutcome::Applied);
         assert!(
             !d.join("del.txt").exists(),
@@ -1560,7 +1688,7 @@ mod tests {
         assert_eq!(list_stashes(d).expect("list").len(), 1);
 
         // Pop reintroduces the deletion (proves the deletion was in the entry).
-        let outcome = pop_stash(d, 0, false).expect("pop");
+        let outcome = pop_stash(d, 0, false, None).expect("pop");
         assert_eq!(outcome, ApplyStashOutcome::Applied);
         assert!(
             !d.join("rm.txt").exists(),
@@ -1604,7 +1732,7 @@ mod tests {
         let native_oid = list[1].oid.clone();
 
         // drop@{0} leaves the native survivor intact and re-indexed to 0.
-        drop_stash(d, 0).expect("drop 0");
+        drop_stash(d, 0, None).expect("drop 0");
         let after = list_stashes(d).expect("list after drop");
         assert_eq!(after.len(), 1, "native survivor remains");
         assert_eq!(after[0].index, 0, "re-indexed to 0");
@@ -1612,7 +1740,7 @@ mod tests {
         assert!(after[0].message.contains("native-stash"));
 
         // apply-by-index resolves the survivor (restores a.txt's native edit).
-        let outcome = apply_stash(d, 0, false).expect("apply survivor");
+        let outcome = apply_stash(d, 0, false, None).expect("apply survivor");
         assert_eq!(outcome, ApplyStashOutcome::Applied);
         assert_eq!(s9_read(d, "a.txt"), "a-native\n", "native edit re-applied");
     }
@@ -1905,7 +2033,7 @@ mod tests {
         let d = dir.path();
 
         // Attempt 1: skip_reserved=false → blocked, nothing applied, stash retained.
-        match apply_stash(d, 0, false).expect("apply(false)") {
+        match apply_stash(d, 0, false, None).expect("apply(false)") {
             ApplyStashOutcome::ReservedPaths { paths } => assert!(
                 paths.iter().any(|p| p == "dir/NUL"),
                 "ReservedPaths must name dir/NUL, got {paths:?}"
@@ -1917,7 +2045,7 @@ mod tests {
         assert_eq!(list_stashes(d).expect("list").len(), 1, "stash retained");
 
         // Attempt 2: skip_reserved=true → applies everything but the NUL leaf.
-        match apply_stash(d, 0, true).expect("apply(true)") {
+        match apply_stash(d, 0, true, None).expect("apply(true)") {
             ApplyStashOutcome::AppliedSkippingReserved { skipped } => assert!(
                 skipped.iter().any(|p| p == "dir/NUL"),
                 "skipped must name dir/NUL, got {skipped:?}"
@@ -1940,7 +2068,7 @@ mod tests {
         let dir = rs_b_nul_stash_fixture();
         let d = dir.path();
 
-        match pop_stash(d, 0, true).expect("pop(true)") {
+        match pop_stash(d, 0, true, None).expect("pop(true)") {
             ApplyStashOutcome::AppliedSkippingReserved { skipped } => assert!(
                 skipped.iter().any(|p| p == "dir/NUL"),
                 "skipped must name dir/NUL, got {skipped:?}"
@@ -1979,7 +2107,7 @@ mod tests {
 
         // The `false` path validates Windows detection + reflog resolution without
         // needing the un-writable file: preflight blocks, mutating nothing.
-        match apply_stash(d, 0, false).expect("apply(false)") {
+        match apply_stash(d, 0, false, None).expect("apply(false)") {
             ApplyStashOutcome::ReservedPaths { paths } => assert!(
                 paths.iter().any(|p| p == "dir/NUL"),
                 "ReservedPaths must name dir/NUL, got {paths:?}"
@@ -2050,8 +2178,8 @@ mod tests {
         std::fs::write(d.join("f.txt"), "dirty\n").expect("dirty");
 
         for (label, result) in [
-            ("apply", apply_stash(d, 0, false)),
-            ("pop", pop_stash(d, 0, false)),
+            ("apply", apply_stash(d, 0, false, None)),
+            ("pop", pop_stash(d, 0, false, None)),
         ] {
             let err = result.expect_err(&format!("{label} must error, not empty Conflicts"));
             assert!(

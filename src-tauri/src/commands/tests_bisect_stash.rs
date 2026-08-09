@@ -192,7 +192,7 @@ fn stash_chain_create_list_apply_drop_pop() {
     assert!(list[0].message.contains("my stash"), "{}", list[0].message);
 
     // Apply keeps the entry.
-    let out = block_on(apply_stash_inner(&state, &id, 0, false)).expect("apply");
+    let out = block_on(apply_stash_inner(&state, &id, 0, false, None)).expect("apply");
     assert_eq!(out, ApplyStashOutcome::Applied);
     assert_eq!(std::fs::read_to_string(dir.path().join("a.txt")).unwrap(), "edited\n");
     assert_eq!(std::fs::read_to_string(dir.path().join("u.txt")).unwrap(), "untracked\n");
@@ -202,13 +202,13 @@ fn stash_chain_create_list_apply_drop_pop() {
     block_on(create_stash_inner(&state, &id, Some("second".into()), StashScope::AllWithUntracked))
         .expect("second stash");
     assert_eq!(block_on(list_stashes_inner(&state, &id)).expect("list").len(), 2);
-    block_on(drop_stash_inner(&state, &id, 0)).expect("drop");
+    block_on(drop_stash_inner(&state, &id, 0, None)).expect("drop");
     let list = block_on(list_stashes_inner(&state, &id)).expect("list");
     assert_eq!(list.len(), 1);
     assert!(list[0].message.contains("my stash"), "index shifted: {}", list[0].message);
 
     // Pop the survivor cleanly → empty stack, changes in the worktree.
-    let out = block_on(pop_stash_inner(&state, &id, 0, false)).expect("pop");
+    let out = block_on(pop_stash_inner(&state, &id, 0, false, None)).expect("pop");
     assert_eq!(out, ApplyStashOutcome::Applied);
     assert!(block_on(list_stashes_inner(&state, &id)).expect("list").is_empty());
     assert_eq!(std::fs::read_to_string(dir.path().join("a.txt")).unwrap(), "edited\n");
@@ -226,7 +226,7 @@ fn stash_clean_tree_and_bad_index() {
     assert!(!res.created, "created:false on a clean tree");
     assert!(block_on(list_stashes_inner(&state, &id)).expect("list").is_empty());
 
-    let err = block_on(drop_stash_inner(&state, &id, usize::MAX)).expect_err("huge index");
+    let err = block_on(drop_stash_inner(&state, &id, usize::MAX, None)).expect_err("huge index");
     assert!(matches!(err, AppError::Git(_)), "{err:?}");
 }
 
@@ -244,7 +244,7 @@ fn pop_with_conflict_retains_stash() {
     // Commit a DIFFERENT change to the same line so the pop conflicts.
     write_stage_commit(&state, &id, dir.path(), "a.txt", "committed\n", "diverge");
 
-    let out = block_on(pop_stash_inner(&state, &id, 0, false)).expect("pop");
+    let out = block_on(pop_stash_inner(&state, &id, 0, false, None)).expect("pop");
     match out {
         ApplyStashOutcome::Conflicts { paths } => assert_eq!(paths, vec!["a.txt".to_string()]),
         other => panic!("expected Conflicts, got {other:?}"),

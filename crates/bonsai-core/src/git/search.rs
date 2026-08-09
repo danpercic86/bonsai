@@ -71,8 +71,9 @@ pub struct SearchQuery {
     /// CONTENT only: false = `-S` literal, true = `-G` regex. Ignored elsewhere (v1).
     #[serde(default)]
     pub regex: bool,
-    /// Default false ⇒ case-insensitive (`-i` for grep/author/`-G`); a `-S`
-    /// literal is always case-sensitive regardless.
+    /// Default false ⇒ case-insensitive: `-i` applies to `--grep`/`--author`/
+    /// `-G` AND the `-S` literal (git sets `DIFF_PICKAXE_IGNORE_CASE` for the
+    /// pickaxe too — T2.6 F-A6-C pinned decision).
     #[serde(default)]
     pub case_sensitive: bool,
     /// 0 ⇒ [`MAX_SEARCH_RESULTS`]; otherwise clamped to that hard cap.
@@ -228,7 +229,8 @@ fn build_log_args(q: &SearchQuery, cap: u32) -> Vec<String> {
         (cap + 1).to_string(),
     ];
     if !q.case_sensitive {
-        // Affects --grep/--author/-G; harmless for the literal -S.
+        // Affects --grep/--author/-G AND the -S literal (DIFF_PICKAXE_IGNORE_CASE
+        // — F-A6-C: -S under the default is case-INsensitive, by decision).
         args.push("-i".to_string());
     }
     let scope = q.scope_ref.clone().unwrap_or_else(|| "--all".to_string());
@@ -417,19 +419,22 @@ fn push_scope(repo: &git2::Repository, walk: &mut git2::Revwalk, r: &str) -> Res
 
 /// Seed the walk from all refs like `git log --all`: local + remote-tracking
 /// branches (skip `*/HEAD`), tags peeled to a commit, and HEAD. Mirrors
-/// `graph::collect_refs`. Unresolvable / non-committish refs are skipped.
+/// `graph::collect_refs`. Unresolvable / non-committish refs are skipped, and
+/// so is a GARBLED entry (corrupt loose-ref file, invalid name) — one bad ref
+/// must degrade to a skip, never abort the whole search (F-A6-D, same
+/// best-effort rule as the per-commit path).
 ///
 /// `pub(crate)` so `history_index` reuses the same all-refs seeding for its
 /// reachable walk (P57 OQ9) instead of carrying a fourth private copy.
 pub(crate) fn seed_all_refs(repo: &git2::Repository, walk: &mut git2::Revwalk) -> Result<(), AppError> {
     for entry in repo.branches(Some(git2::BranchType::Local))? {
-        let (b, _) = entry?;
+        let Ok((b, _)) = entry else { continue }; // garbled ref → skip (F-A6-D)
         if let Ok(c) = b.get().peel_to_commit() {
             walk.push(c.id())?;
         }
     }
     for entry in repo.branches(Some(git2::BranchType::Remote))? {
-        let (b, _) = entry?;
+        let Ok((b, _)) = entry else { continue }; // garbled ref → skip (F-A6-D)
         if matches!(b.name(), Ok(Some(n)) if n.ends_with("/HEAD")) {
             continue;
         }
@@ -438,7 +443,7 @@ pub(crate) fn seed_all_refs(repo: &git2::Repository, walk: &mut git2::Revwalk) -
         }
     }
     for entry in repo.references_glob("refs/tags/*")? {
-        let reference = entry?;
+        let Ok(reference) = entry else { continue }; // garbled ref → skip (F-A6-D)
         if let Ok(obj) = reference.peel(git2::ObjectType::Commit) {
             walk.push(obj.id())?;
         }
@@ -1223,5 +1228,37 @@ mod tests {
         let calls = runner.calls.borrow();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0], build_log_args(&query, MAX_SEARCH_RESULTS));
+    }
+
+    // ---------------------------------------------------------- F-A6-D
+
+    /// One garbled loose ref (branch AND tag) must be SKIPPED, not abort the
+    /// whole seeding — the walk still yields every reachable commit.
+    #[test]
+    fn seed_all_refs_skips_garbled_loose_refs() {
+        let dir = crate::testutil::scratch_dir();
+        let d = dir.path();
+        let repo = git2::Repository::init(d).expect("init");
+        {
+            let mut cfg = repo.config().expect("config");
+            cfg.set_str("user.name", "Test User").expect("name");
+            cfg.set_str("user.email", "t@example.com").expect("email");
+        }
+        std::fs::write(d.join("f.txt"), "x\n").expect("write");
+        crate::git::stage::stage_paths(d, &["f.txt".to_string()]).expect("stage");
+        crate::git::commit::create_commit(d, "base", None, false).expect("commit");
+        let head = repo.head().expect("HEAD").target().expect("oid");
+
+        // Garbled loose refs: not-40-hex content in branch + tag ref files.
+        std::fs::write(d.join(".git/refs/heads/garbled"), "not-a-hex-oid\n")
+            .expect("garbled branch");
+        std::fs::create_dir_all(d.join(".git/refs/tags")).expect("tags dir");
+        std::fs::write(d.join(".git/refs/tags/garbled"), "also-garbage\n")
+            .expect("garbled tag");
+
+        let mut walk = repo.revwalk().expect("revwalk");
+        seed_all_refs(&repo, &mut walk).expect("garbled refs must be skipped, not abort");
+        let oids: Vec<git2::Oid> = walk.collect::<Result<_, _>>().expect("walk");
+        assert!(oids.contains(&head), "HEAD commit still seeded, got {oids:?}");
     }
 }

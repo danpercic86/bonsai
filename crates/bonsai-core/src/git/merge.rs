@@ -127,12 +127,18 @@ pub fn merge_branch(workdir: &Path, branch_name: &str) -> Result<MergeOutcome, A
 
     // Dirty = any TRACKED change (staged or unstaged); untracked/ignored
     // excluded (§2.2, mirrors git's autostash default §2.4).
-    let stashed = if autostash::is_dirty(&repo)? {
-        autostash::stash_save(&mut repo, &sig, "bonsai: autostash before merge")?;
-        true
+    // Keep the saved stash OID so every later apply/drop addresses it by
+    // IDENTITY, never by stack position (F-A7-6).
+    let stash_oid = if autostash::is_dirty(&repo)? {
+        Some(autostash::stash_save(
+            &mut repo,
+            &sig,
+            "bonsai: autostash before merge",
+        )?)
     } else {
-        false
+        None
     };
+    let stashed = stash_oid.is_some();
 
     // SAFETY NOTE (applies to every bare `?` between here and the terminal
     // outcome — find_object, find_annotated_commit, repo.index(), the MERGE_MSG
@@ -159,11 +165,11 @@ pub fn merge_branch(workdir: &Path, branch_name: &str) -> Result<MergeOutcome, A
                      Commit or discard them first.";
                 return Err(autostash::rollback_and_map(
                     &mut repo,
-                    stashed,
+                    stash_oid,
                     AppError::CheckoutConflict(msg.to_string()),
                 ));
             }
-            Err(e) => return Err(autostash::rollback_and_map(&mut repo, stashed, e.into())),
+            Err(e) => return Err(autostash::rollback_and_map(&mut repo, stash_oid, e.into())),
         }
         // `.map(|_| ())` discards the returned Reference so no borrow of `repo`
         // is retained across the following &mut rollback / pop calls.
@@ -177,11 +183,11 @@ pub fn merge_branch(workdir: &Path, branch_name: &str) -> Result<MergeOutcome, A
             // The ref move itself failed; worktree already checked out but the
             // branch still points at the old tip — restore the stash so the
             // user's original state is recoverable.
-            return Err(autostash::rollback_and_map(&mut repo, stashed, e.into()));
+            return Err(autostash::rollback_and_map(&mut repo, stash_oid, e.into()));
         }
         let to = incoming_id.to_string();
-        if stashed {
-            return Ok(match autostash::pop_after_success(&mut repo, workdir)? {
+        if let Some(oid) = stash_oid {
+            return Ok(match autostash::pop_after_success(&mut repo, workdir, oid)? {
                 PopResult::Restored => MergeOutcome::FastForwarded {
                     branch: head_branch,
                     to,
@@ -250,7 +256,7 @@ pub fn merge_branch(workdir: &Path, branch_name: &str) -> Result<MergeOutcome, A
         } else {
             e.into()
         };
-        return Err(autostash::rollback_and_map(&mut repo, stashed, mapped));
+        return Err(autostash::rollback_and_map(&mut repo, stash_oid, mapped));
     }
 
     let index = repo.index()?;
@@ -288,8 +294,8 @@ pub fn merge_branch(workdir: &Path, branch_name: &str) -> Result<MergeOutcome, A
     // that path is `commit_merge`, below).
     let result = finalize_merge_commit(&mut repo, &message, None, false)?;
     let oid = result.oid;
-    if stashed {
-        return Ok(match autostash::pop_after_success(&mut repo, workdir)? {
+    if let Some(stash) = stash_oid {
+        return Ok(match autostash::pop_after_success(&mut repo, workdir, stash)? {
             PopResult::Restored => MergeOutcome::Merged { oid, stashed: true },
             PopResult::Conflicted(paths) => MergeOutcome::StashPopConflicts { head: oid, paths },
         });

@@ -12,6 +12,16 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
 - F-A4-2: clean (non-conflict) merge commits now run the commit-msg hook (previously NO hooks ran on
   clean merges). Matches real git's message-policy behavior; pre-merge-commit remains unsupported and
   is now documented as such. Revert = pass run_hooks=false again in merge_branch's finalize call.
+- F-A6-A: `Staged` stash of a staged DELETION whose file was rewritten on disk (`git rm --cached` +
+  edit) now FOLDS the rewritten worktree content into the stash (the staged deletion is subsumed,
+  same FOLD rule as mixed staged+unstaged edits) instead of losing the content entirely. Plain
+  `rm --cached` (file == HEAD) still stashes the deletion. Revert = drop the differs-from-HEAD fold
+  branch in create_staged_stash's delete arm.
+- F-A6-E: applying/popping a stash that contains a non-UTF-8 path now errors ("non-unicode path",
+  stash retained) instead of silently omitting that path from the reserved-path preflight/allowlist.
+- F-A7-6: after merge/cherry-pick/revert with autostash, the autostash is re-applied/dropped BY
+  COMMIT OID, not "stash@{0}"; if it was dropped externally mid-operation the op reports "your
+  autostashed changes were not found; check `git stash list`" instead of applying a foreign stash.
 - F-A4-4 (no code change, awareness): AI-composed commits (P54 composer) intentionally bypass ALL
   git hooks — re-staging hooks would corrupt the split plan. Now documented; revisit if you want
   commit-msg-only enforcement there.
@@ -165,23 +175,44 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
 - [T2.6] F-A6-A · MUST-FIX (data loss) · stash.rs:256-262/:320-336 create_staged_stash — staged
   deletion + rewritten worktree content: delete branch captures only the deletion, then the
   force-checkout restores HEAD over the new content → content exists nowhere. Fix: fold worktree
-  blob for differing delete-branch files or exclude from force-checkout — **open**
+  blob for differing delete-branch files or exclude from force-checkout — **fixed (pending
+  commit)**: delete branch now folds the worktree blob when the on-disk content differs from HEAD
+  (FOLD semantics, same rule as mixed staged+unstaged); file absent or ==HEAD still records the
+  deletion (rm --cached case preserved, p34 case 10 still green). Test
+  `staged_delete_plus_rewrite_folds_worktree_content` (stash tree holds rewritten bytes; pop
+  restores them unstaged)
 - [T2.6] F-A6-B · MUST-FIX (wrong-target destructive) · stash.rs apply/pop/drop + commands — index-
   only addressing, no identity check; stack shift between render and confirm (external git stash OR
   in-app autostash-retained-on-conflict) makes drop_stash(0) destroy the wrong, unrecoverable entry.
   Fix: expected_oid: Option<String> verified against stash_commit_oid before acting. NOTE: types.ts
   frozen (paused session) → core+command take the optional param now (serde default None keeps IPC
-  compatible); UI wiring deferred until types.ts unfreezes — **open**
+  compatible); UI wiring deferred until types.ts unfreezes — **fixed (pending commit)**:
+  `verify_expected_oid` guard in core apply/pop/drop (mismatch → AppError::Git "stash list changed;
+  refresh and retry", nothing touched); commands take `expectedOid: Option<String>` (missing → None
+  on the wire, existing callers unchanged; MCP/branches pass None). Tests
+  `expected_oid_mismatch_blocks_apply_pop_drop`, `expected_oid_on_missing_index_errors_cleanly`
 - [T2.6] F-A6-C · LOW · search.rs:75/:230 — docs claim -S ignores case-insensitivity; actually -i
   sets DIFF_PICKAXE_IGNORE_CASE for both -S and -G. DECISION: keep actual behavior (case-insensitive
-  -S under default), fix docs + TS doc mirror, pin with mixed-case oracle test — **open (docs+test)**
+  -S under default), fix docs + TS doc mirror, pin with mixed-case oracle test — **fixed (pending
+  commit, Rust docs)**: SearchQuery.case_sensitive doc + build_log_args comment now state -i applies
+  to -S via DIFF_PICKAXE_IGNORE_CASE. TS doc mirror + oracle test deferred (types.ts frozen) —
+  **tester: mixed-case -S oracle still open**
 - [T2.6] F-A6-D · LOW · search.rs:426-441 seed_all_refs — one garbled loose ref aborts whole search;
-  skip bad entries like the per-commit path — **open**
+  skip bad entries like the per-commit path — **fixed (pending commit)**: branch/remote/tag iterator
+  entry errors now `continue` (best-effort skip); test `seed_all_refs_skips_garbled_loose_refs`
+  (garbled loose branch + tag ref files; HEAD commit still seeded)
 - [T2.6] F-A6-E · LOW · stash.rs:483/:494 — non-UTF-8 paths silently dropped from preflight/allowlist
-  sets (skip-reserved apply silently fails to restore them). Surface an error instead — **open**
+  sets (skip-reserved apply silently fails to restore them). Surface an error instead — **fixed
+  (pending commit)**: stash_path_sets now uses `path_bytes()` + explicit UTF-8 validation (also
+  avoids git2's bytes→Path panic on Windows) and hard-errors "non-unicode path"; untracked ^3
+  collection switched from Tree::walk (whose `&str` root can panic) to an empty-tree diff. Test
+  `non_utf8_stash_path_errors_instead_of_silent_drop`
 - [T2.6] F-A6-F · LOW · stash.rs:515-524 — skip-reserved allowlist entries act as pathspec patterns
   (untracked `foo[1].txt` may not self-match → silently not restored). Escape glob metachars —
-  **open**
+  **fixed (pending commit)**: dual-form allowlist — raw entry (literal tracked-checkout phase, which
+  honors disable_pathspec_match) + glob-escaped entry (untracked phase, which drops the flag);
+  post-apply reserved-path guard unchanged as backstop. Tests `escape_pathspec_truth_table` +
+  end-to-end `skip_reserved_restores_metachar_untracked_path` (non-Windows)
 - [T2.6] NITs: 0x1f in subject shifts parse fields (garbage row, no panic — document); `:`-magic
   path queries (document); unicode case-fold divergence (tests compare semantics); SpawnGitRunner
   env alignment with exec seam (uniformity only) — **tester pins / docs**
@@ -218,7 +249,14 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
   change); asserted in `delete_branches_safety`
 - [T2.7] F-A7-6 · SHOULD-FIX (wrong-stash) · autostash.rs:41/:73/:104 — apply/drop stash@{0} blindly;
   foreign stash pushed between save and pop ⇒ wrong stash applied AND dropped. Fix: track saved Oid,
-  locate by identity, error-with-retain if absent — **open**
+  locate by identity, error-with-retain if absent — **fixed (pending commit)**: `stash_save` returns
+  the saved Oid; `rollback_and_map(Option<Oid>)` / `pop_after_success(Oid)` locate it via
+  `stash_foreach` before apply/drop; absent → error "your autostashed changes were not found; check
+  `git stash list`" (nothing touched); messages name the real stash@{N}. Threaded through merge.rs /
+  cherrypick.rs / revert.rs (undo.rs only uses is_dirty; branches.rs uses stash:: directly). Tests
+  `pop_after_success_locates_stash_by_oid_not_position`,
+  `pop_after_success_missing_oid_errors_and_touches_nothing`,
+  `rollback_and_map_restores_by_oid_under_foreign_stash` (+2)
 - [T2.7] F-A7-7 · DECISION · submodule.rs:286 — deinit -f/rm -f destroy dirty submodule work with
   only the UI confirm as gate. Adding a force param needs types.ts (frozen). DECISION: document now
   + FOR USER REVIEW; implement refuse-unless-force after types.ts unfreezes — **open (docs)**

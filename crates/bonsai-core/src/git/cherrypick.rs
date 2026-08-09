@@ -181,12 +181,18 @@ pub fn cherrypick_commit(
 
     // Autostash a dirty TRACKED worktree (mirrors merge) so the pick checkout
     // cannot clobber the user's edits.
-    let stashed = if autostash::is_dirty(&repo)? {
-        autostash::stash_save(&mut repo, &sig, "bonsai: autostash before cherry-pick")?;
-        true
+    // Keep the saved stash OID so later apply/drop address it by IDENTITY,
+    // never by stack position (F-A7-6).
+    let stash_oid = if autostash::is_dirty(&repo)? {
+        Some(autostash::stash_save(
+            &mut repo,
+            &sig,
+            "bonsai: autostash before cherry-pick",
+        )?)
     } else {
-        false
+        None
     };
+    let stashed = stash_oid.is_some();
 
     // Mutation: sets index/worktree + writes CHERRY_PICK_HEAD, state →
     // CherryPick. On failure, guarantee a Clean state (mirror merge_branch) and
@@ -207,7 +213,7 @@ pub fn cherrypick_commit(
         } else {
             e.into()
         };
-        return Err(autostash::rollback_and_map(&mut repo, stashed, mapped));
+        return Err(autostash::rollback_and_map(&mut repo, stash_oid, mapped));
     }
 
     if repo.index()?.has_conflicts() {
@@ -227,8 +233,8 @@ pub fn cherrypick_commit(
         CherrypickOutcome::Committed { oid, .. } => oid,
         other => return Ok(other),
     };
-    if stashed {
-        return Ok(match autostash::pop_after_success(&mut repo, workdir)? {
+    if let Some(stash) = stash_oid {
+        return Ok(match autostash::pop_after_success(&mut repo, workdir, stash)? {
             PopResult::Restored => CherrypickOutcome::Committed {
                 oid,
                 stashed: true,

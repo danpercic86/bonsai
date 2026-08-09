@@ -285,7 +285,7 @@ pub fn create_branch_here(
     //    stashed work onto the original branch (best-effort) before returning.
     if let Err(e) = repo.branch(name, &target, /* force */ false) {
         if stashed {
-            let _ = stash::pop_stash(workdir, 0, false);
+            let _ = stash::pop_stash(workdir, 0, false, None);
         }
         if e.code() == git2::ErrorCode::Exists {
             return Err(AppError::BranchExists(format!(
@@ -301,7 +301,7 @@ pub fn create_branch_here(
     if let Err(e) = checkout_branch(workdir, name) {
         let _ = delete_branch(workdir, name);
         if stashed {
-            let _ = stash::pop_stash(workdir, 0, false);
+            let _ = stash::pop_stash(workdir, 0, false, None);
         }
         return Err(e);
     }
@@ -310,7 +310,7 @@ pub fn create_branch_here(
     //    and RETAINS on conflict (never lossy). A `Conflicts` outcome is a
     //    SUCCESS return (branch created & checked out; changes present w/ markers).
     if stashed {
-        let outcome = stash::pop_stash(workdir, 0, false)?;
+        let outcome = stash::pop_stash(workdir, 0, false, None)?;
         return Ok(CreateBranchHereResult {
             stashed: true,
             apply: Some(outcome),
@@ -447,7 +447,7 @@ pub fn checkout_branch_autostash(
     //    Post-stash the worktree is clean, so a real conflict here is defensive.
     if let Err(e) = checkout_branch(workdir, name) {
         if stashed {
-            let _ = stash::pop_stash(workdir, 0, false);
+            let _ = stash::pop_stash(workdir, 0, false, None);
         }
         return Err(e);
     }
@@ -463,7 +463,7 @@ pub fn checkout_branch_autostash(
     //    and RETAINS on conflict (never lossy). A `Conflicts` outcome is a
     //    SUCCESS return (branch switched; changes present w/ markers).
     if stashed {
-        let outcome = stash::pop_stash(workdir, 0, false)?;
+        let outcome = stash::pop_stash(workdir, 0, false, None)?;
         return Ok(CheckoutResult {
             stashed: true,
             fast_forwarded,
