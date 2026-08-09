@@ -279,3 +279,21 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
 - [T2.9] Verified clean: error.rs full wire parity with types.ts (29 kinds), base64 RFC 4648-correct,
   store load never panics on garbage/foreign schema, no partial index ever visible, maintenance
   genuinely best-effort, external.rs argv discrete-token injection-safe (post-CVE-2024-24576).
+
+## T3 pass 2b — repoWorkspace hooks + updater (2026-08-09)
+
+- [T3.2b] F-T32b-1 · SHOULD-FIX · src/components/ShortcutOverlay.tsx:10 — the documented
+  shortcut table is stale: useWorkspaceKeyboard.ts also binds Ctrl/Cmd-F (commit search, P50b)
+  and Ctrl/Cmd-K (command palette, P50c), but the overlay never lists them. Repro:
+  useWorkspaceKeyboard.test.tsx › "ShortcutOverlay sync" (test.skip'd assertion) — **open**
+- [T3.2b] F-T32b-2 · NIT/fragility — the binding table exists twice (SHORTCUTS literal in
+  ShortcutOverlay.tsx, not exported; imperative handler in useWorkspaceKeyboard.ts). The sync
+  test necessarily duplicates key literals a third time; exporting SHORTCUTS (or a shared bindings
+  module) would make divergence a compile-time/test-time certainty instead of a manual audit —
+  **finding candidate for a cohesion pass**
+- [T3.2b] Verified clean: Esc peel order (palette>composer>typing-bail>aiPanel>blame>history>
+  reflog>commitBrowser>search>historySearch>diffSlot>compare>deselect), Ctrl-vs-Cmd via
+  `ctrlKey||metaKey`, typing/dialog guards, nav clamping; commit/history search debounce +
+  last-wins + empty-reset; read-overlay cross-invalidation + stale-guards + reflog-restore
+  refetch; verify batching (512 chunk) + cache + enable/repo transitions; hook-gate
+  park/skip/cancel incl. cancel-during-retry race; updater state machine guards + ?update= seam.
