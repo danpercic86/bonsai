@@ -408,3 +408,15 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
   verify; worktrees lifecycle/copy-plan; submodules transitions/#fail; scheduler backoff
   table + event ordering + timer arming; ?ai=off / ?historyFail / ?hooks= / ?fixture=noconfig
   / 20k / ?op=merge / ?branch=cbhconflict seams. (13 new files, 208 tests; vitest 776→984.)
+
+- [T3.6] Canvas-internals refactor (behavior-preserving): extracted the pure logic out of
+  GraphCanvas.tsx (1071→821 LOC) and draw.ts (459→381) into geometry.ts (laneX/rowY/refColArea/
+  summaryStartX/initials/avatarColor/avatarHit — re-exported from draw.ts for existing callers),
+  viewport.ts (visible-row range/overscan, scroll-into-view, tooltip clamp, DPR backing-store,
+  spacer height), hitTest.ts (row/pill/chip/PR/CI hit resolution, targetRefOf, tooltip identity)
+  and selfTest.ts (the mock-only p7SelfTest body, moved verbatim). All logic moved verbatim —
+  NO bugs found in the pure hit-test/viewport math (boundary semantics confirmed by tests:
+  row bottom edge belongs to the next row, pill/badge edges inclusive, tooltip right/bottom
+  overflow boundaries exclusive). +84 unit tests (geometry/viewport/hitTest .test.ts; vitest
+  1113→1197); pnpm build green; full Playwright suite 88 passed / 1 skipped (specs 02/03
+  exercise the canvas directly — behavior-preservation oracle).
