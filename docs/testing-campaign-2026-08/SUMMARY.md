@@ -17,7 +17,7 @@ work; the forge e2e spec and a few UI wirings are parked until it lands and `ipc
 
 | Gate | Result |
 |---|---|
-| `cargo test --workspace` | **1568 passed, 0 failed**, 3 ignored (perf gates) |
+| `cargo test --workspace` | **1571 passed, 0 failed**, 3 ignored (perf gates) |
 | `cargo clippy --workspace --all-targets -D warnings` | clean |
 | `pnpm test` (vitest) | **1317 passed, 0 failed** (109 files) |
 | `pnpm build` (tsc + vite) | green |
@@ -30,7 +30,11 @@ infrastructure: jsdom+RTL vitest project, Playwright harness (msedge locally / c
 `proptest`, strict `require_git!` (CI can no longer silently skip git-gated tests), v8 + llvm-cov
 coverage wired.
 
-## Bugs found & fixed (47 fixed, 2 documented-by-design, a few deferred)
+Rust coverage (cargo llvm-cov, workspace): **88.3% lines / 90.1% regions / 75.6% functions** — the
+uncovered remainder is declarative Tauri-runtime glue (`lib.rs`/`main.rs`) and the `#[tauri::command]`
+wrapper shells whose logic is tested through the `_inner` seams.
+
+## Bugs found & fixed (48 fixed, 2 documented-by-design, a few deferred)
 
 Highlights by severity:
 
