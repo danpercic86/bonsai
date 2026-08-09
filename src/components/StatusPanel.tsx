@@ -594,7 +594,10 @@ export function StatusPanel({
     snapshot.conflicted.length === 0;
 
   return (
-    <div className={isEmpty ? 'status-panel status-panel-empty' : 'status-panel'}>
+    <div
+      className={isEmpty ? 'status-panel status-panel-empty' : 'status-panel'}
+      data-testid="status-panel"
+    >
       {visibleError !== null && (
         <div className="error-banner error-banner-dismissible" role="alert">
           <span className="error-banner-text">{visibleError.message}</span>

@@ -1035,10 +1035,11 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
 
   return (
     <div ref={hostRef} className="graph-canvas-host">
-      <canvas ref={canvasRef} className="graph-canvas" />
+      <canvas ref={canvasRef} className="graph-canvas" data-testid="graph-canvas" />
       <div
         ref={scrollerRef}
         className="graph-scroll"
+        data-testid="graph-scroller"
         onScroll={handleScroll}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}

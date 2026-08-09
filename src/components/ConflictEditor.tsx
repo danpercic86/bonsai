@@ -472,7 +472,7 @@ export function ConflictEditor({ file, onResolve, onCancel, mutating }: Conflict
   };
 
   return (
-    <div className="conflict-editor">
+    <div className="conflict-editor" data-testid="conflict-editor">
       <div className="conflict-editor-header">
         <span className="conflict-editor-spacer" />
         <div className="conflict-editor-mode-toggle" role="group" aria-label="Editor view mode">
