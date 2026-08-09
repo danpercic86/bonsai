@@ -20,6 +20,22 @@ Baseline (2026-08-09, T1 increment):
 (Expected low: pre-T1 the suite was pure-logic `node` tests only; component
 coverage starts in Phase T3.)
 
+After T3 (2026-08-09, 109 files / 1317 tests):
+
+| metric | % (all files) |
+|---|---|
+| statements | 61.18 |
+| branches | 54.51 |
+| functions | 56.44 |
+| lines | 62.71 |
+
+The uncovered remainder is dominated by the `RepoWorkspace.tsx` container (state
+wiring — exercised end-to-end by Playwright, not unit tests), the `GraphCanvas.tsx`
+imperative paint loop (pure geometry/viewport/hitTest extracted + unit-tested in
+T3.6; the `ctx.*` draw calls are covered by e2e specs 02/03), and `ipc/tauri.ts`
+(Tauri-runtime-only, coverage-excluded). Component/hook/util/mock logic is broadly
+covered; the e2e suite (88 journeys) covers the integrated container paths.
+
 ## Rust (cargo llvm-cov)
 
 One-time setup: `rustup component add llvm-tools-preview` then
