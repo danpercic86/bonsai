@@ -85,7 +85,12 @@ pub fn read_status(workdir: &std::path::Path) -> Result<StatusSnapshot, AppError
         .include_ignored(false)
         .include_unmodified(false)
         .renames_head_to_index(true) // staged rename detection
-        .renames_index_to_workdir(true) // worktree rename detection
+        // Do NOT enable renames_index_to_workdir: `git status --porcelain` does
+        // NOT rename-detect an untracked destination in the worktree. With it on,
+        // git2 collapses a delete + identical-bytes untracked file into a single
+        // WT_RENAMED, diverging from porcelain (F-T5-3). Off ⇒ the delete shows as
+        // WT_DELETED and the new file as WT_NEW/untracked, matching git exactly.
+        .renames_index_to_workdir(false)
         .exclude_submodules(true); // v1: no submodule support
                                    // Do NOT set update_index(true): status stays strictly read-only.
 

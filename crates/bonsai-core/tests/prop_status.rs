@@ -28,24 +28,22 @@ fn path_strat() -> impl Strategy<Value = String> {
     prop::collection::vec("[a-z]{1,5}", 1..=2).prop_map(|segs| segs.join("/"))
 }
 
-/// Multi-line content keyed by PATH (and a modify seed) so no two distinct
-/// paths ever share bytes. This eliminates the git2-vs-CLI worktree-rename-to-
-/// untracked divergence (pinned separately as F-T5-3 /
-/// `regression_f_t5_3_untracked_worktree_rename`), keeping this broad
-/// create/modify/delete/stage/unstage property meaningful and green.
+/// Multi-line content keyed by PATH (and a modify seed).
 fn content_for(path: &str, seed: u32) -> String {
     (0..6).map(|i| format!("{path}:line {seed}-{i}\n")).collect()
 }
 
 /// A raw op: (kind, path selector, content seed, new-name). Kinds:
-/// 0 create, 1 modify, 2 delete, 3 stage, 4 unstage. (fs-rename is deliberately
-/// excluded — it is the F-T5-3 divergence, covered by staged `git mv` in
-/// `status_porcelain.rs`.)
+/// 0 create, 1 modify, 2 delete, 3 stage, 4 unstage, 5 fs-rename. The fs-rename
+/// (move a tracked file to an untracked destination with IDENTICAL bytes) is the
+/// exact F-T5-3 scenario — now that index-to-workdir rename detection is off,
+/// bonsai reports delete+untracked like git, so this mutation is back in the
+/// broad property (previously excluded while F-T5-3 was open).
 type RawOp = (u8, usize, u32, String);
 
 fn ops_strat() -> impl Strategy<Value = Vec<RawOp>> {
     prop::collection::vec(
-        (0u8..=4, any::<usize>(), any::<u32>(), path_strat()),
+        (0u8..=5, any::<usize>(), any::<u32>(), path_strat()),
         1..=12,
     )
 }
@@ -105,11 +103,27 @@ fn apply(repo: &git2::Repository, root: &Path, known: &mut Vec<String>, op: &Raw
                 let _ = index.write();
             }
         }
-        _ => {
+        4 => {
             // Unstage a path (reset index entry to HEAD).
             if let (Some(p), Ok(head)) = (pick(known), repo.head()) {
                 if let Ok(obj) = head.peel(git2::ObjectType::Commit) {
                     let _ = repo.reset_default(Some(&obj), [Path::new(&p)].iter());
+                }
+            }
+        }
+        _ => {
+            // fs-rename: move a known file to a fresh path, preserving bytes.
+            if let Some(p) = pick(known) {
+                let dst = newname.clone();
+                if !known.contains(&dst) && dst != p {
+                    let full_dst = root.join(&dst);
+                    if let Some(parent) = full_dst.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    if std::fs::rename(root.join(&p), &full_dst).is_ok() {
+                        known.retain(|x| x != &p);
+                        known.push(dst);
+                    }
                 }
             }
         }
@@ -170,16 +184,15 @@ proptest! {
     }
 }
 
-// ---- F-T5-3: worktree rename to an UNTRACKED target (pinned divergence) -----
+// ---- F-T5-3: worktree rename to an UNTRACKED target (FIXED) -----------------
 //
 // When a tracked file is deleted from the worktree and an untracked file with
-// identical bytes appears, `read_status` (git2, `renames_index_to_workdir`)
-// reports a single UNSTAGED RENAME (orig -> new), whereas `git status`
-// (porcelain v1) reports the two events SEPARATELY: `D <orig>` + `?? <new>`.
-// git2 rename-detects an untracked destination; the git CLI does not. This
-// VIOLATES the porcelain-equivalence contract (§2.4) and is logged as FINDINGS
-// F-T5-3 for the orchestrator. Pinned here; the broad property above excludes
-// fs-renames so it exercises every OTHER mutation cleanly.
+// identical bytes appears, `read_status` must match `git status --porcelain`:
+// the two events are reported SEPARATELY as `D <orig>` (unstaged delete) +
+// `?? <new>` (untracked). Previously git2's `renames_index_to_workdir` collapsed
+// them into one UNSTAGED RENAME, diverging from porcelain (FINDINGS F-T5-3). The
+// fix disables index-to-workdir rename detection (git does not rename-detect an
+// untracked destination), so bonsai now agrees with git. Pinned here.
 #[test]
 fn regression_f_t5_3_untracked_worktree_rename() {
     if !common::have_git() {
@@ -196,13 +209,23 @@ fn regression_f_t5_3_untracked_worktree_rename() {
 
     let read = flatten_snapshot(&read_status(root).unwrap());
     let porcelain = porcelain_tuples(root);
-    // PINNED: the two disagree (git2 sees a rename; the CLI sees delete+untracked).
-    assert_ne!(read, porcelain, "F-T5-3: expected the known divergence to reproduce");
+    // FIXED: read_status now matches git porcelain exactly (delete + untracked).
+    assert_eq!(read, porcelain, "F-T5-3 fixed: read_status must match git porcelain");
     assert!(
-        read.iter().any(|(list, path, orig, st)| list == "unstaged"
-            && path == "b"
-            && orig.as_deref() == Some("a")
-            && st == "renamed"),
-        "git2 reports an unstaged rename b<-a; got {read:?}"
+        read.iter()
+            .any(|(list, path, orig, st)| list == "unstaged"
+                && path == "a"
+                && orig.is_none()
+                && st == "deleted"),
+        "expected unstaged delete of `a`; got {read:?}"
+    );
+    assert!(
+        read.iter()
+            .any(|(list, path, _orig, st)| list == "untracked" && path == "b" && st == "untracked"),
+        "expected untracked `b`; got {read:?}"
+    );
+    assert!(
+        !read.iter().any(|(_l, _p, _o, st)| st == "renamed"),
+        "expected NO rename row; got {read:?}"
     );
 }

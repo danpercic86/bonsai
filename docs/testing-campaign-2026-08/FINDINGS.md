@@ -5,6 +5,21 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
 
 ## FOR USER REVIEW — behavior changes made autonomously
 
+- F-T5-3: working-dir **status now matches `git status` porcelain for worktree renames-to-untracked**.
+  Deleting a tracked file and creating an untracked file with identical bytes previously showed as a
+  single unstaged **rename** row (git2 rename-detected the untracked destination); it now shows as
+  **two rows — an unstaged delete of the original + an untracked new file** (exactly what
+  `git status` reports). Implemented by turning OFF `StatusOptions::renames_index_to_workdir`
+  (staged-rename detection via `renames_head_to_index` is unchanged, so `git mv` staged renames still
+  show as renames). Revert = set `renames_index_to_workdir(true)` in `git/status.rs::read_status`.
+- F-T5-4 (recommendation, NO code change yet): a repository with a **truncated/corrupt loose HEAD
+  commit object hangs the app forever** (libgit2 spins inflating the truncated zlib during any
+  HEAD-peel — graph/status/commit). A bounded pre-check was investigated and rejected:
+  `git2::Odb::read_header`/`exists` return a healthy-looking result on the truncated object (the
+  header inflates before the truncation point), so they cannot gate it. The real fix is a deliberate
+  architecture decision for you: wrap heavy git2 reads at the Tauri command layer in a bounded
+  timeout and surface a clean `AppError` instead of freezing. Left un-hacked per instructions; C1
+  corrupt-matrix test still pins the current `Hung` behavior. Details in the F-T5-4 entry below.
 - F-A8-a: MCP success responses no longer echo the full JSON payload in the `content` text block —
   it now carries a compact summary (e.g. `{nodes, edges, headIndex}` / `[N items]`). The complete
   data is still in `structured_content` (what every MCP client should read). A client that instead
@@ -572,19 +587,39 @@ status oracle mapping), `prop_graph_layout.rs`, `prop_intraline.rs`, `prop_histo
   `git2::Repository::open_ext` (which does not peel HEAD) stays responsive. A truncated **tree** or
   **blob** is handled cleanly (`Ok`). Root cause is a libgit2 spin inflating a truncated zlib loose
   object during the revwalk / HEAD-peel. A single corrupt loose commit thus freezes the app.
-  Repro pinned deterministically by `corrupt_repo_cli.rs` cell C1 (10s watchdog ⇒ `Hung`). Status:
-  **open — for senior-dev** (harden the object read to time out / error; the corrupt matrix must
-  then be re-pinned Ok/Err). Do NOT fix in test code.
+  Repro pinned deterministically by `corrupt_repo_cli.rs` cell C1 (10s watchdog ⇒ `Hung`).
+  **Status: DOCUMENTED — bounded probe NOT viable; command-layer timeout wrapper is the real fix
+  (architecture decision → FOR USER REVIEW).** Timeboxed mitigation investigation (2026-08-09):
+  probed the `git2::Odb` header path against the truncated HEAD commit oid on a watchdog thread.
+  Result — `odb.read_header(oid)` returns **`Ok((size=213, Commit))`** and `odb.exists(oid)` returns
+  **`true`**, i.e. neither hangs BUT neither detects the truncation: the loose-object header
+  (`commit <size>\0`) sits at the START of the zlib stream and inflates fine, while the truncation
+  removed the LATTER half of the compressed body — so `read_header` reports the object's *declared*
+  size and a healthy type. Only the full-inflate paths (`odb.read(oid)` / `repo.find_commit(oid)`)
+  HANG. A `read_header`-based "is HEAD structurally readable" gate is therefore a **false-negative**
+  for this corruption (it passes the truncated commit) and cannot prevent the hang. No other bounded
+  libgit2 API validates a loose object without full inflation. Per the task's explicit guardrail,
+  NO thread-kill hack was added and the corrupt-matrix C1 pin (watchdog ⇒ `Hung`) is retained as the
+  honest recorded behavior. Recommended real fix (deliberate, user-owned): wrap each heavy git2 read
+  at the Tauri command layer in `spawn_blocking` + a bounded `timeout`, surfacing a clean
+  `AppError::Git("operation timed out — repository may be corrupt")` and abandoning the worker
+  (libgit2 offers no cooperative cancellation for a zlib spin, so the worker thread is leaked until
+  process exit — acceptable for a rare corrupt-repo case, and strictly better than a frozen UI).
 
 - [T5a] F-T5-3 · MEDIUM (porcelain-equivalence violation) · `status::read_status` — when a tracked
   file is deleted in the worktree and an untracked file with identical bytes appears, `read_status`
-  (git2 `renames_index_to_workdir`) reports ONE unstaged **rename** (orig→new), whereas
+  (git2 `renames_index_to_workdir`) reported ONE unstaged **rename** (orig→new), whereas
   `git status --porcelain` reports the two events separately (`D <orig>` + `?? <new>`): git2
-  rename-detects an untracked destination, the git CLI does not. Pinned by
-  `prop_status.rs::regression_f_t5_3_untracked_worktree_rename`; the broad mutation property excludes
-  fs-renames (staged `git mv` renames stay covered by `status_porcelain.rs`). Status: **open —
-  orchestrator/senior-dev** (decide: match git by suppressing untracked-target worktree renames, or
-  accept git2's richer view as intended).
+  rename-detects an untracked destination, the git CLI does not. **Status: FIXED (2026-08-09).**
+  `read_status` now calls `StatusOptions::renames_index_to_workdir(false)` (staged
+  `renames_head_to_index(true)` is unchanged) — git porcelain never rename-detects an untracked
+  worktree destination, so with detection off git2 reports the delete as `WT_DELETED` and the new
+  file as `WT_NEW`/untracked, matching git byte-for-byte. Evidence:
+  `prop_status.rs::regression_f_t5_3_untracked_worktree_rename` now asserts
+  `read_status == git porcelain` (unstaged delete `a` + untracked `b`, NO rename row); the broad
+  `status_matches_porcelain` property had its **fs-rename exclusion widened back in** (new op kind 5
+  moves a tracked file to an untracked path preserving bytes — the exact former divergence) and
+  stays green at 32 in-file / 256-case runs. FOR USER REVIEW below.
 
 - [T5a] F-T5-1 · LOW/DESIGN (scroll-color-stability promise) · `graph::compute_graph` — appending a
   commit to the HEAD branch can change the **lane** (hence color) of commits that were NOT in HEAD's
