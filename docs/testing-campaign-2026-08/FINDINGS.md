@@ -135,7 +135,9 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
   kept path unbounded → potential MB-scale IPC/dialog payload — **fixed (pending commit)**: lists at
   most MAX_PREVIEW_DROPPED (20) paths + "(+N more)" · test: `discard_warning_caps_listed_paths`
 - [T2.2] F-A2-4 · coverage gap — ai_operation_grounding.rs + ai_operation_preview.rs have 0 tests;
-  injection-containment claim asserted only in a doc comment — **open (tester)**
+  injection-containment claim asserted only in a doc comment — **fixed**: inline test modules added
+  to both + tests/ai_operation_safety_cli.rs (injection/malformed/adversarial-repo corpus proving the
+  planner never escapes the SafeOp allowlist)
 - [T2.2] NIT — **fixed (pending commit)**: `deny_unknown_fields` added to AiOpIntent (verified
   effective on the internally-tagged enum — an extra field now fails the parse ⇒ Unsupported; test
   `extra_fields_fail_closed_to_unsupported`); HashSet dedup in resolve_discard_changes. Still
@@ -466,7 +468,8 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
 - [T3.2b] F-T32b-1 · SHOULD-FIX · src/components/ShortcutOverlay.tsx:10 — the documented
   shortcut table is stale: useWorkspaceKeyboard.ts also binds Ctrl/Cmd-F (commit search, P50b)
   and Ctrl/Cmd-K (command palette, P50c), but the overlay never lists them. Repro:
-  useWorkspaceKeyboard.test.tsx › "ShortcutOverlay sync" (test.skip'd assertion) — **open**
+  useWorkspaceKeyboard.test.tsx › "ShortcutOverlay sync" — **fixed** (commit 7f547f4): Ctrl+F /
+  Ctrl+K rows added to the overlay; sync test un-skipped and passing
 - [T3.2b] F-T32b-2 · NIT/fragility — the binding table exists twice (SHORTCUTS literal in
   ShortcutOverlay.tsx, not exported; imperative handler in useWorkspaceKeyboard.ts). The sync
   test necessarily duplicates key literals a third time; exporting SHORTCUTS (or a shared bindings
@@ -483,7 +486,7 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
   (label text names descendants) — screen readers announce it as "Description", and
   role-based queries can't target it. Fix: move the button out of the `<label>` (or add an
   explicit aria-label). Tests select it by class as a workaround (see note in
-  PrCreateForm.test.tsx) — **open**
+  PrCreateForm.test.tsx) — **fixed** (commit 8a8d70c): aria-label="Generate description with AI"
 - [T3.3a] Verified clean: destructive-dialog safety (initial focus on Cancel ⇒ stray Enter
   cancels, never confirms — verified on ConfirmDialog + a DestructiveDialogs instance);
   PromptDialog Enter-submits with validation gating; CommitBox gating/sign/skip-hooks/generate
@@ -628,9 +631,11 @@ status oracle mapping), `prop_graph_layout.rs`, `prop_intraline.rs`, `prop_histo
   the stronger append-stability clause (item 8) does not. Note this is instability under a NEW COMMIT
   (full recompute), NOT under scrolling a fixed layout (which never recomputes), so the CLAUDE.md
   "lanes stay stable while scrolling" promise is not directly broken. Pinned by
-  `prop_graph_layout.rs::regression_f_t5_1_lane_shift_on_head_append`. Status: **open — orchestrator
-  decision** (contract §8.1: fix the engine for append-stability vs. accept same-input determinism
-  only).
+  `prop_graph_layout.rs::regression_f_t5_1_lane_shift_on_head_append`. Status: **by-design (orchestrator
+  decision 2026-08-10)** — accept same-input determinism only. The CLAUDE.md promise is scroll-stability
+  of a fixed layout (holds); full-recompute reshuffle on a NEW commit is normal for a GitKraken-style
+  engine and not worth the complexity/perf cost of incremental-stable lane assignment now. Revisit if
+  users report jarring lane jumps after commits. FOR USER REVIEW.
 
 - [T5a] F-T5-2 · BY-DESIGN (pinned behavior, not a defect) · `git/intraline.rs` token diff — the
   changed-code-point SET is NOT symmetric under swapping old/new (`(a,b)` vs `(b,a)`): the LCS
