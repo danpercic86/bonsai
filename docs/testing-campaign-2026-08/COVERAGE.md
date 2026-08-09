@@ -51,8 +51,20 @@ cargo llvm-cov --workspace --summary-only
 cargo llvm-cov --workspace --html --output-dir D:\Temp\bonsai-llvm-cov
 ```
 
-Per-crate line/region % baseline: PENDING (run deferred to the orchestrator —
-full-workspace instrumented rebuild + test run).
+Workspace baseline (2026-08-10, `cargo llvm-cov --workspace --summary-only`, full suite):
+
+| metric | coverage |
+|---|---|
+| regions | 90.08% (7708/77737 missed) |
+| functions | 75.62% (1062/4356 missed) |
+| lines | 88.32% (4736/40538 missed) |
+
+Well-covered core (git logic, graph, diff, status, sequencers, settings 97.8%, scheduler 96.1%,
+watcher 94.8%). The uncovered remainder is concentrated in declarative/runtime-only glue —
+`src-tauri/src/lib.rs` (the `generate_handler!` wiring, 0% — exercised only under the real Tauri
+runtime, which STATUS_ENTRYPOINT_NOT_FOUND blocks on this machine) and `main.rs` — plus the
+`#[tauri::command]` wrapper shells whose logic lives in the `_inner` seams the command tests drive.
+Function% trails line% mainly because of small never-hit error-mapping/Debug helpers.
 
 ### T5a — property-based + corrupt-repo + race/lifecycle (2026-08-10)
 
