@@ -40,7 +40,25 @@ mod external;
 mod forge;
 
 #[cfg(test)]
+mod tests_support;
+
+#[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod tests_staging;
+
+#[cfg(test)]
+mod tests_discard_reset_compose;
+
+#[cfg(test)]
+mod tests_branches_tags;
+
+#[cfg(test)]
+mod tests_merge_rebase;
+
+#[cfg(test)]
+mod tests_bisect_stash;
 
 #[cfg(test)]
 mod registration_tests;

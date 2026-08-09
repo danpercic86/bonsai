@@ -1,52 +1,8 @@
     use super::*;
-
-    const MISSING_ID: &str = "missing";
-
-    fn path_string(p: &std::path::Path) -> String {
-        p.to_string_lossy().into_owned()
-    }
-
-    /// Opens `path` runtime-free with a no-op watcher factory (P3e contract
-    /// §9.1: `open_repo_inner(state, path, |_id| Box::new(|| {}))`).
-    fn open(state: &AppState, path: &std::path::Path) -> Result<OpenRepoResult, AppError> {
-        tauri::async_runtime::block_on(open_repo_inner(
-            state,
-            path_string(path),
-            |_id| Box::new(|| {}),
-        ))
-    }
-
-    /// git2-init a repo with a committable identity; returns the temp dir.
-    fn init_repo_with_identity() -> tempfile::TempDir {
-        let dir = tempfile::TempDir::new().expect("create temp dir");
-        let repo = git2::Repository::init(dir.path()).expect("init repo");
-        let mut cfg = repo.config().expect("open config");
-        cfg.set_str("user.name", "Test User").expect("set user.name");
-        cfg.set_str("user.email", "test@example.com")
-            .expect("set user.email");
-        dir
-    }
-
-    /// Writes `rel` under the workdir, stages it, and commits — via the command
-    /// inners, so the whole round-trip is keyed by `repo_id`.
-    fn write_stage_commit(
-        state: &AppState,
-        repo_id: &str,
-        workdir: &std::path::Path,
-        rel: &str,
-        contents: &str,
-        message: &str,
-    ) -> CommitResult {
-        std::fs::write(workdir.join(rel), contents).expect("write file");
-        tauri::async_runtime::block_on(stage_inner(state, repo_id, vec![rel.to_string()]))
-            .expect("stage");
-        tauri::async_runtime::block_on(commit_inner(state, repo_id, message.to_string(), None, None))
-            .expect("commit")
-    }
-
-    fn repo_count(state: &AppState) -> usize {
-        state.repos.lock().expect("repos lock").len()
-    }
+    // Shared fixture helpers hoisted to `tests_support.rs` (T2 Area 1):
+    // MISSING_ID, path_string, open, init_repo_with_identity,
+    // write_stage_commit, repo_count, …
+    use super::tests_support::*;
 
     /// Opening a non-repo path inserts NO entry and touches no other open tab
     /// (P3e contract §4.2 — there is no single "current repo" to clear).
