@@ -74,8 +74,8 @@ jobs:
           set -o pipefail
           cargo test --workspace 2>&1 | tee /tmp/cargo-test.log
 
-      # Known baseline: 3 #[ignore]d perf gates + 1 #[ignore]d rebase known-bug
-      # — visible in the summary, not failed on.
+      # Known baseline: 3 #[ignore]d perf gates (large-fixture benchmarks) —
+      # visible in the summary, not failed on. No other ignores.
       - name: Surface ignored/skipped test counts
         run: |
           echo '## cargo test summary' >> "$GITHUB_STEP_SUMMARY"
