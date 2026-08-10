@@ -121,7 +121,7 @@ Next: **P63** — forge signals on graph (PR + CI badges; +1 cmd `forge_commit_s
 **Current step:** ✅ **P63 COMPLETE** (P63a data/settings + P63b render/interaction, committed). Cmd **155**.
 Next: **P64** — more providers (GitLab→Bitbucket→Azure) + AI PR descriptions; recommend split (P64 = AI
 descriptions + GitLab, then Bitbucket/Azure as P64b/c).
-### P64 — more providers + AI PR descriptions — **IN PROGRESS** (contract `docs/contracts/P64-forge-providers-ai-pr.md`)
+### P64 — more providers + AI PR descriptions — **DONE ✅ (AI gate passed; native USER CHECKPOINT pending — `docs/contracts/P64-user-checklist.md`)** (contract `docs/contracts/P64-forge-providers-ai-pr.md`)
 Split (architect rec): **P64a** AI PR descriptions (Part B, +1 cmd 155→156) → **P64b** GitLab provider
 (Part A #1, +0 cmd; adds `ForgeKind` arms + detect host + `ForgeTarget.project` + `viewer()` reuse) →
 **P64c** Bitbucket provider + deferred §3e connect hints (+0 cmd) → **P64d** Azure DevOps provider,
@@ -157,10 +157,27 @@ closes P64 (+0 cmd). OD1: AI stays local-`claude`-CLI-only.
   **122/0**, clippy -D clean, `cargo check --workspace` green, tsc 0, cmd **156** (unchanged). Harness
   (`?forge=bitbucket`): supported forge, connect→list shows 3 PRs mapped; Working subtree hidden under PR tab.
 
-**Current step:** P64c ✅ DONE. Next: **P64d** — Azure DevOps provider (Part A #3, closes P64): new `azure/`
-module on the same trait; `ForgeKind` += `azureDevOps` (forces the TS `CONNECT_HINTS.azureDevOps` entry);
-`ForgeTarget.project` (org/project/repo); Basic/PAT auth; `dev.azure.com`/`visualstudio.com` detection;
-ref-name stripping (`refs/heads/`); Azure DOES support `searchCriteria.status=all`; `?forge=azure` mock. +0 cmd.
+- **P64d** ✅ DONE (committed `502ce01`) — Azure DevOps provider: `azure/{mod,rest,dto,dto/tests}.rs` on the
+  same trait (REST 7.1). Basic auth `base64(":"+PAT)` via a hand-rolled RFC-4648 encoder (no crate dep,
+  known-vector tested; PAT only in the `Authorization` header, never in a URL/log — redaction test proves
+  plaintext AND base64 absent from Debug); `api-version=7.1` on every URL; `$skip/$top` paging; ref-name
+  stripping both ways; cross-host `viewer()` (app.vssps.visualstudio.com); state active/completed/abandoned→
+  neutral; `combined_status` by sha→shared `crate::rollup`. 3-part identity via new `ForgeTarget.project` +
+  `ForgeRepoContext.project` (`Option<String>`/`string|null`, `None` for the other 3), threaded
+  detect→build_provider→coords→repo_context→TS. `detect_azure`+`detect_table_azure` (dev.azure.com / ssh /
+  legacy visualstudio.com); `ForgeKind::AzureDevOps` + TS `'azureDevOps'` + CONNECT_HINTS entry; `?forge=azure`
+  mock. Reviewer approve (0 must-fix/0 should-fix; base64 traced vs RFC-4648). AI gate: bonsai-forge **153/0/0**
+  (+31 Azure), clippy -D clean, `cargo check -p bonsai` links, tsc 0, cmd **156**. Harness (`?forge=azure`):
+  supported forge, connect→list shows 3 PRs mapped.
+  ↳ P64 polish (committed `699dc2d`): generalized 2 GitHub-specific UI strings for all 4 providers
+  (PrDetailView "Open on GitHub"→"Open in browser"; Settings forge-signals hint lists all 4) — reviewer NIT.
+  ↳ Reviewer NITs deferred to native checkpoint (in P64 checklist §D): Azure bad-PAT HTTP-203→"malformed"
+  (not "auth failed"); `dev.azure.com/{org}/_git/{repo}` shorthand→Unknown.
+
+**Current step:** ✅ **P64 COMPLETE** (P64a AI PR descriptions + P64b GitLab + P64c Bitbucket + P64d Azure
+DevOps — all committed, AI-gate-passed, native checkpoint `docs/contracts/P64-user-checklist.md` pending).
+**Phase 4 forge/PR (P62–P64) is now code-complete.** Next: **P65** — paged/streaming graph loading
+(independent perf milestone; land after graph-pane work). Cmd 156→**157** (P65 +1 `stream_graph`).
 ### P65 — paged/streaming graph loading — **PENDING** (contract ready; independent; land after graph-pane work)
 
 ## P61 — diff quality: word-level/intraline highlighting + image diff (Phase 3 · milestone 4/4, FINAL) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-08)
