@@ -124,7 +124,8 @@ descriptions + GitLab, then Bitbucket/Azure as P64b/c).
 ### P64 — more providers + AI PR descriptions — **IN PROGRESS** (contract `docs/contracts/P64-forge-providers-ai-pr.md`)
 Split (architect rec): **P64a** AI PR descriptions (Part B, +1 cmd 155→156) → **P64b** GitLab provider
 (Part A #1, +0 cmd; adds `ForgeKind` arms + detect host + `ForgeTarget.project` + `viewer()` reuse) →
-**P64c** Bitbucket + Azure DevOps providers (+0 cmd). OD1: AI stays local-`claude`-CLI-only.
+**P64c** Bitbucket provider + deferred §3e connect hints (+0 cmd) → **P64d** Azure DevOps provider,
+closes P64 (+0 cmd). OD1: AI stays local-`claude`-CLI-only.
 - **P64a** ✅ DONE (committed) — `ai_generate_pr_description` (cmd **156**) reusing `run_claude` +
   `resolve_digest_range` + `payload::render_*`/`cap_review_payload` + AI consent gate; writes nothing; empty-range
   guard pre-CLI; byte-safe title parse (multibyte). Create-form seam wired shown-but-disabled (contract §4e /
@@ -144,10 +145,22 @@ Split (architect rec): **P64a** AI PR descriptions (Part B, +1 cmd 155→156) �
   ↳ DEFERRED to P64c: per-provider ForgeConnect hint (contract §3e — GitLab `api`-scope guidance + token-help
   link); do all providers' hints in one pass. GitLab 403 msg already mentions the `api` scope as a fallback.
 
-**Current step:** P64b ✅ DONE. Next: **P64c** — Bitbucket + Azure DevOps providers (Part A #2/#3): new
-`bitbucket/` + `azure/` modules on the same trait; `ForgeKind` += 2; Azure needs `ForgeTarget.project`
-(org/project/repo) + Basic/PAT auth; Bitbucket access-token→Bearer; + the deferred §3e per-provider connect
-hints (all providers). +0 commands.
+- **P64c** ✅ DONE (committed `509d450`) — Bitbucket Cloud provider: `bitbucket/{mod,rest,dto,dto/tests}.rs`
+  on the same trait; `ForgeKind::Bitbucket` + `bitbucket.org` detection; Bearer access-token auth (token only
+  in the `Authorization` header, never in a URL/log); body-based pagination (`has_next` from `next`); PR state
+  OPEN/MERGED/DECLINED/SUPERSEDED→neutral; inline-vs-general comment partition; build-status→shared
+  `crate::rollup`. Delivered the deferred §3e per-provider connect hints (`CONNECT_HINTS Record<ForgeKind,
+  ConnectHint>`). Reviewer approve (0 must-fix). **Reviewer correctness fix:** Bitbucket has NO `state=all`
+  and defaults to OPEN when omitted → `list_prs` now fans out repeated `state` params (open→OPEN,
+  closed→MERGED&DECLINED&SUPERSEDED, all→OPEN&MERGED&DECLINED&SUPERSEDED) — merged PRs were invisible before;
+  contract §3c amended. Also split dto.rs 581→395; connect-hint URL→access-token docs. AI gate: bonsai-forge
+  **122/0**, clippy -D clean, `cargo check --workspace` green, tsc 0, cmd **156** (unchanged). Harness
+  (`?forge=bitbucket`): supported forge, connect→list shows 3 PRs mapped; Working subtree hidden under PR tab.
+
+**Current step:** P64c ✅ DONE. Next: **P64d** — Azure DevOps provider (Part A #3, closes P64): new `azure/`
+module on the same trait; `ForgeKind` += `azureDevOps` (forces the TS `CONNECT_HINTS.azureDevOps` entry);
+`ForgeTarget.project` (org/project/repo); Basic/PAT auth; `dev.azure.com`/`visualstudio.com` detection;
+ref-name stripping (`refs/heads/`); Azure DOES support `searchCriteria.status=all`; `?forge=azure` mock. +0 cmd.
 ### P65 — paged/streaming graph loading — **PENDING** (contract ready; independent; land after graph-pane work)
 
 ## P61 — diff quality: word-level/intraline highlighting + image diff (Phase 3 · milestone 4/4, FINAL) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-08)
