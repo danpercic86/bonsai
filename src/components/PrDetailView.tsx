@@ -49,7 +49,7 @@ export function PrDetailView({ detail, onBack, children }: PrDetailViewProps) {
             target="_blank"
             rel="noreferrer noopener"
           >
-            Open on GitHub ↗
+            Open in browser ↗
           </a>
         </div>
         <div className="pr-detail-title">

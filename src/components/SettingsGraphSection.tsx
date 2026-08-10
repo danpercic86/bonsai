@@ -151,7 +151,7 @@ export function SettingsGraphSection({ graph, onChange }: SettingsGraphSectionPr
           connected forge + network) and are suppressed while Compact is on. */}
       <h4 className="settings-subsection-title">Forge signals</h4>
       <p className="settings-section-desc">
-        Requires a connected forge (GitHub). Hidden in Compact mode.
+        Requires a connected forge (GitHub, GitLab, Bitbucket, or Azure DevOps). Hidden in Compact mode.
       </p>
       <label className="settings-checkbox">
         <input
