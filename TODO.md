@@ -59,7 +59,15 @@ workdir/commit/compare). Checklists retained for reference: `docs/contracts/P<N>
 **Untouched throughout:** your 4 in-progress files (Cargo.lock, package.json, src-tauri/Cargo.toml,
 tauri.conf.json = the 0.3.0→0.3.1 bump) and `docs/audit-2026-08-07.md` (another session's file).
 
-## 🚀 PHASE 4 — forge/PR integration + paged loading (P62–P65) — **IN PROGRESS** (2026-08-08)
+## 🚀 PHASE 4 — forge/PR integration + paged loading (P62–P65) — ✅ **COMPLETE** (2026-08-10; P66 deferred)
+
+> **STATUS 2026-08-10:** Phase 4 shipped — **P62** forge foundation (GitHub) · **P63** graph forge signals ·
+> **P64** GitLab + Bitbucket + Azure DevOps + AI PR descriptions · **P65** streaming/paged graph loading
+> (shipped with an honest first-paint reframe — see the P65/P65c sections + finding). **The entire approved
+> roadmap P49–P65 is now code-complete.** One item deliberately deferred by the user: **P66** (lazy
+> generation-number topo-order for instant first paint on huge repos — the fix for the P65c finding; spike in
+> `docs/contracts/P65a-lazy-topo-spike.md`). Native USER CHECKPOINTs for P62–P65 remain (checklists in
+> `docs/contracts/P6*-user-checklist.md`) — the AI gate is green.
 
 Final phase of the approved roadmap `~/.claude/plans/do-thorough-analysis-of-purrfect-moth.md`. User
 granted autonomous implementation 2026-08-08 ("the other AI finished, you can start implementing
@@ -205,17 +213,33 @@ channel-drop `is_ok()`-break cancellation (OQ1), `Meta.total=None` grow-as-you-g
   build, vitest **1331/0** (+14). Harness (`?fixture=20k`): streamed load fills the 20 001-row extent, canvas
   renders, full-range scroll clean (no console errors).
 
-**Current step:** ⚠️ **P65c BLOCKED on an architecture finding — awaiting a feasibility spike, then USER go/no-go.**
-The P65c 200k first-paint latency test (`crates/bonsai-core/tests/stream_perf.rs`, UNCOMMITTED) proved the
-contract's `<150 ms` first-batch target is **unachievable with libgit2's topo-sort**: `Sort::TOPOLOGICAL`'s
-`prepare_walk` drains the WHOLE reachable graph before yielding row 0 → first paint is O(total): 40k~730ms,
-120k~1.37s, 200k~2.3s. So P65's "instant first paint on huge repos" headline is NOT met (streaming still gives
-lane-stable progressive render + scroll-ahead + no giant IPC). **USER chose option B (fix properly):** a lazy
-generation-number topo-order (git's `--topo-order`). Architect is running a go/no-go feasibility spike →
-`docs/contracts/P65a-lazy-topo-spike.md` (git2 0.21 exposes gen numbers? equivalence blast radius on
-compute_graph/get_graph? fallback = shell `git log --topo-order`?). **`docs/contracts/P65-user-checklist.md`
-(UNCOMMITTED) over-claims the <150ms gate — must be revised after the decision; do NOT commit as-is.** After
-the spike I relay the estimate to the user for go/no-go on the build.
+- **P65c** ✅ DONE (honest reframe) — `crates/bonsai-core/tests/stream_perf.rs`: `#[ignore]` release-gate test
+  builds a 120k-commit git2 fixture and asserts full-stream correctness (`total_rows==120000`,
+  `truncated==false`, incremental delivery) + PRINTS the measured latencies. It deliberately does NOT assert
+  `<150 ms` — that target is unachievable (see finding). Checklist revised to match.
+  - **FINDING:** libgit2's `Sort::TOPOLOGICAL` runs an eager `prepare_walk` (full reachable in-degree pass)
+    before yielding row 0, so first paint is **O(total commits)** (release/warm: 40k≈0.73s, 120k≈1.37s,
+    200k≈2.3s), NOT O(first 512). P65 streaming still delivers lane-stable **progressive** render +
+    scroll-ahead + no giant IPC, but "instant first paint on 1M repos" is NOT met by the topo walk.
+
+**Current step:** ✅ **P65 COMPLETE (shipped with an honest first-paint reframe).** P65a (streaming core) +
+P65b (frontend+mock) + P65c (correctness test + finding) all committed; native scroll/visual + progressive-load
+checkpoints in `docs/contracts/P65-user-checklist.md`. **This completes the entire approved roadmap P49–P65.**
+USER decided (2026-08-10): **defer the instant-first-paint fix to a future P66** rather than take on the Large
+build now.
+
+### P66 — lazy generation-number topo order (instant first paint on huge repos) — **DEFERRED (approved future work)**
+The proper fix for the P65c finding, scoped by the feasibility spike `docs/contracts/P65a-lazy-topo-spike.md`
+(VERDICT: TRACTABLE via path (c), effort **L**). Reimplement git's lazy `--topo-order` (Stolee generation
+numbers) in Rust as a shared order stage replacing `seeded_revwalk`, sourcing generation numbers from the P52
+commit-graph file (git2 0.21 / libgit2-sys 0.18 expose NONE — grepped, 0 hits) via pure-Rust `gix-commitgraph`
+or an own parser. Committed P65a/P65b stay as-is (IPC / `GraphChunk` / `LaneWalker` unchanged); only the
+internal walk order changes. Costs: one-time regeneration of ALL graph fixtures (lazy order differs from
+libgit2 in commit-date TIE-BREAKS only — still "topological, then commit date"), guarded by a new
+`get_graph ≡ stream_graph` equivalence test + a differential test vs `git rev-list --topo-order`. Pre-build:
+re-verify newest git2 still lacks the gen API (F5); confirm `gix-commitgraph` reads P52 split/chain graphs (F1).
+Architect advises AGAINST the `git log --topo-order` shell-out (would make the git binary a hard runtime dep of
+the core read path). Sets the deferred `stream_perf.rs` first-batch threshold.
 
 ## P61 — diff quality: word-level/intraline highlighting + image diff (Phase 3 · milestone 4/4, FINAL) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-08)
 
