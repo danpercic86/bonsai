@@ -93,6 +93,7 @@ impl ForgeProvider for GitLabProvider {
             host: self.target.host.clone(),
             owner: self.target.owner.clone(),
             repo: self.target.repo.clone(),
+            project: self.target.project.clone(),
             remote_name: REMOTE_NAME.to_string(),
             web_url: self.target.web_url.clone(),
             authenticated: self.token.is_some(),
@@ -228,6 +229,7 @@ mod tests {
             host: "gitlab.com".to_string(),
             owner: "group/sub".to_string(),
             repo: "proj".to_string(),
+            project: None,
             web_url: "https://gitlab.com/group/sub/proj".to_string(),
         }
     }
@@ -461,6 +463,7 @@ mod tests {
             host: "gitlab.example.com".to_string(),
             owner: "o".to_string(),
             repo: "r".to_string(),
+            project: None,
             web_url: "https://gitlab.example.com/o/r".to_string(),
         };
         let transport = FakeTransport::with_seen(vec![], Arc::new(Mutex::new(Vec::new())));

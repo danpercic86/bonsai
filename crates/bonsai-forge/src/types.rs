@@ -9,13 +9,14 @@
 use serde::{Deserialize, Serialize};
 
 /// Which forge backs `origin`. Unit variants ⇒ plain camelCase string on the
-/// wire (`"gitHub"` | `"gitLab"` | `"bitbucket"` | `"unknown"`).
+/// wire (`"gitHub"` | `"gitLab"` | `"bitbucket"` | `"azureDevOps"` | `"unknown"`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ForgeKind {
     GitHub,
     GitLab,
     Bitbucket,
+    AzureDevOps,
     Unknown,
 }
 
@@ -36,6 +37,9 @@ pub struct ForgeRepoContext {
     pub host: String,
     pub owner: String,
     pub repo: String,
+    /// Azure DevOps needs a 3-part org/project/repo identity; `owner` carries the
+    /// org and this carries the project. `None` for GitHub/GitLab/Bitbucket.
+    pub project: Option<String>,
     pub remote_name: String,
     pub web_url: String,
     /// A token is present in the keychain for `host` (NO network check).
@@ -211,12 +215,15 @@ mod tests {
         assert_eq!(value_of(&ForgeKind::GitHub), json!("gitHub"));
         assert_eq!(value_of(&ForgeKind::GitLab), json!("gitLab"));
         assert_eq!(value_of(&ForgeKind::Bitbucket), json!("bitbucket"));
+        assert_eq!(value_of(&ForgeKind::AzureDevOps), json!("azureDevOps"));
         assert_eq!(value_of(&ForgeKind::Unknown), json!("unknown"));
         // Round-trips from the wire string the TS union sends.
         let got: ForgeKind = serde_json::from_value(json!("gitLab")).unwrap();
         assert_eq!(got, ForgeKind::GitLab);
         let bb: ForgeKind = serde_json::from_value(json!("bitbucket")).unwrap();
         assert_eq!(bb, ForgeKind::Bitbucket);
+        let az: ForgeKind = serde_json::from_value(json!("azureDevOps")).unwrap();
+        assert_eq!(az, ForgeKind::AzureDevOps);
     }
 
     #[test]
@@ -268,6 +275,7 @@ mod tests {
             host: "github.com".into(),
             owner: "o".into(),
             repo: "r".into(),
+            project: None,
             remote_name: "origin".into(),
             web_url: "https://github.com/o/r".into(),
             authenticated: true,
@@ -280,6 +288,7 @@ mod tests {
                 "host",
                 "owner",
                 "repo",
+                "project",
                 "remoteName",
                 "webUrl",
                 "authenticated",

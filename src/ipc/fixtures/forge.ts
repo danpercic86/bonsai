@@ -48,6 +48,7 @@ export const FORGE_REPO_CONTEXT: ForgeRepoContext = {
   host: 'github.com',
   owner: 'octo-org',
   repo: 'bonsai',
+  project: null,
   remoteName: 'origin',
   webUrl: 'https://github.com/octo-org/bonsai',
   authenticated: false,

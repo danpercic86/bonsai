@@ -17,6 +17,7 @@ pub mod http;
 pub mod provider;
 pub mod types;
 
+mod azure;
 mod bitbucket;
 mod github;
 mod gitlab;
@@ -31,6 +32,7 @@ pub use http::{HttpMethod, HttpRequest, HttpResponse, HttpTransport, ReqwestTran
 pub use provider::ForgeProvider;
 pub use types::*;
 
+use crate::azure::AzureDevOpsProvider;
 use crate::bitbucket::BitbucketProvider;
 use crate::github::GitHubProvider;
 use crate::gitlab::GitLabProvider;
@@ -39,10 +41,11 @@ use crate::gitlab::GitLabProvider;
 /// [`open`] and [`validate_token`] so both resolve the SAME provider for a host.
 ///
 /// GitLab hosts get [`GitLabProvider`]; Bitbucket hosts get
-/// [`BitbucketProvider`]; GitHub AND unparseable/unknown origins both go through
-/// [`GitHubProvider`] (an `Unknown` target yields a friendly `repo_context` but
-/// `ForgeUnsupported` on any data method — unchanged P62 behavior). Adding a
-/// provider = one arm here + one `detect` host mapping.
+/// [`BitbucketProvider`]; Azure DevOps hosts get [`AzureDevOpsProvider`]; GitHub
+/// AND unparseable/unknown origins both go through [`GitHubProvider`] (an
+/// `Unknown` target yields a friendly `repo_context` but `ForgeUnsupported` on
+/// any data method — unchanged P62 behavior). Adding a provider = one arm here +
+/// one `detect` host mapping.
 fn build_provider(
     target: ForgeTarget,
     token: Option<String>,
@@ -51,6 +54,7 @@ fn build_provider(
     match target.kind {
         ForgeKind::GitLab => Box::new(GitLabProvider::new(target, token, http)),
         ForgeKind::Bitbucket => Box::new(BitbucketProvider::new(target, token, http)),
+        ForgeKind::AzureDevOps => Box::new(AzureDevOpsProvider::new(target, token, http)),
         _ => Box::new(GitHubProvider::new(target, token, http)),
     }
 }
@@ -77,6 +81,7 @@ fn resolve_target(workdir: &Path) -> Result<ForgeTarget, AppError> {
         host: String::new(),
         owner: String::new(),
         repo: String::new(),
+        project: None,
         web_url: String::new(),
     }))
 }
@@ -189,6 +194,7 @@ mod tests {
             host: "github.com".to_string(),
             owner: "o".to_string(),
             repo: "r".to_string(),
+            project: None,
             web_url: "https://github.com/o/r".to_string(),
         }
     }
@@ -224,6 +230,7 @@ mod tests {
             host: "gitlab.example.com".to_string(),
             owner: "o".to_string(),
             repo: "r".to_string(),
+            project: None,
             web_url: "https://gitlab.example.com/o/r".to_string(),
         };
         let http = CannedTransport {

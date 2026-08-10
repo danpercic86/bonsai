@@ -1596,7 +1596,7 @@ export type Unsubscribe = () => void;
 // --- P62 forge / PR integration (mirrors crates/bonsai-forge/src/types.rs) ---
 
 /** Which forge backs `origin` (detected from the remote URL). */
-export type ForgeKind = 'gitHub' | 'gitLab' | 'bitbucket' | 'unknown';
+export type ForgeKind = 'gitHub' | 'gitLab' | 'bitbucket' | 'azureDevOps' | 'unknown';
 /** PR lifecycle state. */
 export type PrState = 'open' | 'closed' | 'merged';
 /** List-query filter (maps to GitHub's `?state=`). */
@@ -1618,6 +1618,8 @@ export interface ForgeRepoContext {
   host: string;
   owner: string;
   repo: string;
+  /** Azure DevOps' team project (`owner` carries the org). Null elsewhere. */
+  project: string | null;
   remoteName: string;
   webUrl: string;
   /** A token is present in the keychain for `host` (no network check). */

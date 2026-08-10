@@ -50,6 +50,11 @@ const CONNECT_HINTS: Record<ForgeKind, ConnectHint> = {
     url: 'https://support.atlassian.com/bitbucket-cloud/docs/create-a-repository-access-token/',
     placeholder: 'access token',
   },
+  azureDevOps: {
+    scopes: 'Use an Azure DevOps personal access token with Code (Read & Write).',
+    url: 'https://learn.microsoft.com/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate',
+    placeholder: 'Azure DevOps PAT',
+  },
   unknown: {
     scopes: 'Use a personal access token with read and write access to pull requests.',
     url: '',
