@@ -15,7 +15,9 @@ use std::path::Path;
 
 use crate::error::AppError;
 use crate::git::commit::resolve_signature;
+use crate::git::exec::SpawnGitExec;
 use crate::git::remote::{acquire_cred, map_remote_err, CredAttempts};
+use crate::git::signing;
 
 /// Opens the repo at `workdir` with `NO_SEARCH` (same as every git/ module).
 fn open_repo_at(workdir: &Path) -> Result<git2::Repository, AppError> {
@@ -48,15 +50,24 @@ fn validate_tag_name(name: &str) -> Result<(), AppError> {
 /// `force` overwrites an existing tag of the same name; the v1 UI always passes
 /// `false` (§OPEN-4).
 ///
+/// `sign` (F-A7-8): only meaningful for an ANNOTATED tag. The tag is SIGNED when
+/// `sign == true` OR git config `tag.gpgSign` is true (git parity with
+/// `git tag -a`) — signing goes through [`signing::create_signed_tag`]
+/// (`git tag -s`, the same exec seam as commit signing). `sign == false` +
+/// `tag.gpgSign` unset/false ⇒ the unsigned git2 path, byte-identical to before.
+/// LIGHTWEIGHT tags are NEVER signed (git parity), regardless of `sign`.
+///
 /// Errors: invalid/blank name → `InvalidName`; bad/unknown `target_oid` →
 /// `Git`; duplicate (Exists, !force) → `Git("tag '<name>' already exists")`;
-/// missing identity (annotated) → `ConfigMissing`.
+/// missing identity (annotated) → `ConfigMissing`; signing requested with an ssh
+/// format and no `user.signingkey` → `ConfigMissing` (no tag is created).
 pub fn create_tag(
     workdir: &Path,
     name: &str,
     target_oid: &str,
     message: Option<String>,
     force: bool,
+    sign: bool,
 ) -> Result<(), AppError> {
     validate_tag_name(name)?;
 
@@ -72,9 +83,26 @@ pub fn create_tag(
 
     let result = match &message {
         Some(msg) => {
-            let sig = resolve_signature(&repo.config()?.snapshot()?)?;
+            let cfg = repo.config()?.snapshot()?;
+            // Identity (ConfigMissing) surfaces before any signer runs, both paths.
+            let sig = resolve_signature(&cfg)?;
+            // `tag.gpgSign` mirrors `git tag -a`'s implicit-sign behaviour.
+            let want_sign = sign || cfg.get_bool("tag.gpgsign").unwrap_or(false);
+            if want_sign {
+                // Signed annotated tag → git builds+signs the object (git2 cannot).
+                return signing::create_signed_tag(
+                    &SpawnGitExec,
+                    workdir,
+                    name,
+                    oid,
+                    &sig,
+                    msg,
+                    force,
+                );
+            }
             repo.tag(name, &target, &sig, msg, force)
         }
+        // Lightweight tags are never signed (git parity).
         None => repo.tag_lightweight(name, &target, force),
     };
     match result {

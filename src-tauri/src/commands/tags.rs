@@ -4,7 +4,10 @@ use super::shared::*;
 
 /// Creates a tag at `target_oid` (P22 contract §2.2). `message: Some(_)` →
 /// annotated (needs a git identity); `message: None` → lightweight. `force`
-/// overwrites an existing tag (the v1 UI passes `false`). Errors:
+/// overwrites an existing tag (the v1 UI passes `false`). `sign` (F-A7-8, optional
+/// / wire-compatible with the frozen `types.ts`): absent/`false` ⇒ config-driven
+/// (git `tag.gpgSign` still signs an annotated tag); `true` ⇒ force-sign the
+/// annotated tag. Ignored for lightweight tags. Errors:
 /// `noRepo` | `invalidName` | `configMissing` | `git`. Does NOT emit
 /// `repo-changed` — the frontend refetches.
 #[tauri::command]
@@ -15,8 +18,9 @@ pub async fn create_tag(
     target_oid: String,
     message: Option<String>,
     force: bool,
+    sign: Option<bool>,
 ) -> Result<(), AppError> {
-    create_tag_inner(state.inner(), &repo_id, name, target_oid, message, force).await
+    create_tag_inner(state.inner(), &repo_id, name, target_oid, message, force, sign).await
 }
 
 /// Runtime-free core of `create_tag` (unit-testable without a Tauri app).
@@ -27,10 +31,13 @@ pub(crate) async fn create_tag_inner(
     target_oid: String,
     message: Option<String>,
     force: bool,
+    sign: Option<bool>,
 ) -> Result<(), AppError> {
     let path = repo_path(state, repo_id)?;
+    // Absent `sign` ⇒ config-driven (false): core still honours `tag.gpgSign`.
+    let sign = sign.unwrap_or(false);
     tauri::async_runtime::spawn_blocking(move || {
-        tags::create_tag(&path, &name, &target_oid, message, force)
+        tags::create_tag(&path, &name, &target_oid, message, force, sign)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?

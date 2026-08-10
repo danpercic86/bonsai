@@ -241,7 +241,7 @@ fn tag_create_delete_round_trip() {
     let state = AppState::default();
     let (dir, id, c0) = fixture_repo(&state);
 
-    block_on(create_tag_inner(&state, &id, "light".into(), c0.clone(), None, false))
+    block_on(create_tag_inner(&state, &id, "light".into(), c0.clone(), None, false, None))
         .expect("lightweight tag");
     block_on(create_tag_inner(
         &state,
@@ -250,9 +250,10 @@ fn tag_create_delete_round_trip() {
         c0.clone(),
         Some("annotated ✨".into()),
         false,
+        None,
     ))
     .expect("annotated tag");
-    block_on(create_tag_inner(&state, &id, "v1.0-ünïcode".into(), c0.clone(), None, false))
+    block_on(create_tag_inner(&state, &id, "v1.0-ünïcode".into(), c0.clone(), None, false, None))
         .expect("unicode tag name");
 
     let snap = block_on(list_branches_inner(&state, &id)).expect("list");
@@ -265,14 +266,14 @@ fn tag_create_delete_round_trip() {
     assert_eq!(obj.kind(), Some(git2::ObjectType::Tag));
 
     // Duplicate, non-force.
-    let err = block_on(create_tag_inner(&state, &id, "light".into(), c0.clone(), None, false))
+    let err = block_on(create_tag_inner(&state, &id, "light".into(), c0.clone(), None, false, None))
         .expect_err("duplicate tag");
     match err {
         AppError::Git(m) => assert!(m.contains("already exists"), "{m}"),
         other => panic!("expected Git(exists), got {other:?}"),
     }
     // Invalid name.
-    let err = block_on(create_tag_inner(&state, &id, "-bad".into(), c0.clone(), None, false))
+    let err = block_on(create_tag_inner(&state, &id, "-bad".into(), c0.clone(), None, false, None))
         .expect_err("invalid tag name");
     assert!(matches!(err, AppError::InvalidName(_)), "{err:?}");
 
@@ -302,7 +303,7 @@ fn push_tag_to_file_remote() {
         repo.remote("origin", &file_url(bare_dir.path())).expect("remote add");
     }
 
-    block_on(create_tag_inner(&state, &id, "rel".into(), c0.clone(), Some("m".into()), false))
+    block_on(create_tag_inner(&state, &id, "rel".into(), c0.clone(), Some("m".into()), false, None))
         .expect("create tag");
     block_on(push_tag_inner(&state, &id, "origin".into(), "rel".into(), false))
         .expect("push tag to bare file:// remote");

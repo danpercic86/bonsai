@@ -5,6 +5,16 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
 
 ## FOR USER REVIEW — behavior changes made autonomously
 
+- F-A7-8: **annotated tags now honour signing** (previously never signed — a documented divergence
+  from `git tag -a`/`git tag -s`). An annotated tag is now SIGNED when git config `tag.gpgSign=true`
+  OR the new optional `sign` flag is `true`, via `git tag -s` through the same exec seam as commit
+  signing (respects `gpg.format` / `user.signingkey` / `gpg.program` | `gpg.ssh.program`).
+  **Lightweight tags are never signed** (git parity). Signing requested with `gpg.format=ssh` and no
+  `user.signingkey` now returns a clear `ConfigMissing` (no unsigned tag is created silently), exactly
+  like commit signing. The unsigned annotated path is byte-unchanged. The `create_tag` IPC command
+  gained an optional `sign?: boolean` (absent ⇒ config-driven, wire-compatible with the frozen
+  `types.ts`). Revert = drop the `sign` param + the `signing::create_signed_tag` branch in
+  `git/tags.rs::create_tag`.
 - F-T5-3: working-dir **status now matches `git status` porcelain for worktree renames-to-untracked**.
   Deleting a tracked file and creating an untracked file with identical bytes previously showed as a
   single unstaged **rename** row (git2 rename-detected the untracked destination); it now shows as
@@ -388,7 +398,15 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
   only the UI confirm as gate. Adding a force param needs types.ts (frozen). DECISION: document now
   + FOR USER REVIEW; implement refuse-unless-force after types.ts unfreezes — **open (docs)**
 - [T2.7] F-A7-8 · DECISION · tags.rs — tag.gpgSign ignored (annotated tags never signed). DECISION:
-  document as known v1 limitation + FINDINGS/user-docs entry; revisit with signing area — **open (docs)**
+  document as known v1 limitation + FINDINGS/user-docs entry; revisit with signing area —
+  **fixed (pending commit)**: annotated tags now sign when `tag.gpgSign=true` OR the new optional
+  `sign` flag is set, via `signing::create_signed_tag` (`git tag -s`, same exec seam / key resolution
+  as commit signing). Lightweight tags never signed (git parity); ssh + no `user.signingkey` ⇒
+  `ConfigMissing` (no silent unsigned tag). `create_tag` command gained optional `sign?: boolean`
+  (absent ⇒ config-driven; wire-compatible with frozen types.ts). Tests: `tags_cli_2.rs` SSH-hermetic
+  suite (tag.gpgSign-signs / sign-flag-signs / missing-key-ConfigMissing / lightweight-never-signed /
+  unsigned-unchanged), gated by `require_git_ssh!`. Tag-signature *verification* left out of scope
+  (`verify_commits` is commit-only) — FOR USER REVIEW bullet above.
 - [T2.7] F-A7-9 · LOW · stale.rs:253/:271 — one dangling/corrupt branch ref aborts whole scan+delete
   batch; best-effort skip like the non-UTF-8 arm — **fixed (pending commit)**: iterator item,
   `graph_descendant_of`, and `find_commit` errors now skip that branch (eprintln) instead of `?`;

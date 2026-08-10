@@ -53,7 +53,7 @@ fn lightweight_tag_parity() {
     let (dir, c1, _c2) = repo_two_commits();
     let path = dir.path();
 
-    create_tag(path, "lw", &c1, None, false).expect("create lightweight tag");
+    create_tag(path, "lw", &c1, None, false, false).expect("create lightweight tag");
 
     // Points straight at the commit — no tag object.
     assert_eq!(git(path, &["cat-file", "-t", "lw"]), "commit");
@@ -77,7 +77,7 @@ fn annotated_tag_parity() {
     let (dir, c1, _c2) = repo_two_commits();
     let path = dir.path();
 
-    create_tag(path, "ann", &c1, Some("release notes".to_string()), false)
+    create_tag(path, "ann", &c1, Some("release notes".to_string()), false, false)
         .expect("create annotated tag");
 
     // A real tag object, not a straight ref.
@@ -144,7 +144,7 @@ fn annotated_tag_needs_identity() {
     let c1 = git(path, &["rev-parse", "HEAD"]);
 
     // Annotated fails with ConfigMissing naming user.email/user.name.
-    let err = create_tag(path, "ann", &c1, Some("m".to_string()), false)
+    let err = create_tag(path, "ann", &c1, Some("m".to_string()), false, false)
         .expect_err("annotated must fail without identity");
     match err {
         AppError::ConfigMissing(m) => {
@@ -157,7 +157,7 @@ fn annotated_tag_needs_identity() {
     }
 
     // Lightweight still succeeds.
-    create_tag(path, "lw", &c1, None, false).expect("lightweight tag without identity");
+    create_tag(path, "lw", &c1, None, false, false).expect("lightweight tag without identity");
     assert_eq!(git(path, &["cat-file", "-t", "lw"]), "commit");
 }
 
@@ -170,16 +170,16 @@ fn duplicate_and_force() {
     let (dir, c1, c2) = repo_two_commits();
     let path = dir.path();
 
-    create_tag(path, "v", &c1, None, false).expect("first create");
+    create_tag(path, "v", &c1, None, false, false).expect("first create");
 
-    let err = create_tag(path, "v", &c1, None, false).expect_err("duplicate must error");
+    let err = create_tag(path, "v", &c1, None, false, false).expect_err("duplicate must error");
     match err {
         AppError::Git(m) => assert!(m.contains("already exists"), "got: {m}"),
         other => panic!("expected Git already-exists, got {other:?}"),
     }
 
     // Force moves the tag to C2.
-    create_tag(path, "v", &c2, None, true).expect("force overwrite");
+    create_tag(path, "v", &c2, None, true, false).expect("force overwrite");
     assert_eq!(git(path, &["rev-parse", "refs/tags/v"]), c2);
 }
 
@@ -193,13 +193,13 @@ fn bad_target_and_bad_name() {
 
     // Unknown but well-formed 40-hex oid.
     let ghost = "0".repeat(40);
-    match create_tag(path, "ghost", &ghost, None, false) {
+    match create_tag(path, "ghost", &ghost, None, false, false) {
         Err(AppError::Git(_)) => {}
         other => panic!("unknown oid must be Git error, got {other:?}"),
     }
 
     // Not even hex.
-    match create_tag(path, "bad", "not-an-oid", None, false) {
+    match create_tag(path, "bad", "not-an-oid", None, false, false) {
         Err(AppError::Git(_)) => {}
         other => panic!("bad oid must be Git error, got {other:?}"),
     }
@@ -207,7 +207,7 @@ fn bad_target_and_bad_name() {
     // Bad names.
     let good = git(path, &["rev-parse", "HEAD"]);
     for bad in ["", "-x"] {
-        match create_tag(path, bad, &good, None, false) {
+        match create_tag(path, bad, &good, None, false, false) {
             Err(AppError::InvalidName(_)) => {}
             other => panic!("name {bad:?} must be InvalidName, got {other:?}"),
         }
@@ -222,7 +222,7 @@ fn delete_parity() {
     let (dir, c1, _c2) = repo_two_commits();
     let path = dir.path();
 
-    create_tag(path, "gone", &c1, None, false).expect("create");
+    create_tag(path, "gone", &c1, None, false, false).expect("create");
     assert_eq!(git(path, &["tag", "-l", "gone"]), "gone");
 
     delete_tag(path, "gone").expect("delete");
@@ -261,7 +261,7 @@ fn push_to_bare_remote() {
     git(path, &["remote", "add", "origin", &path_str(&bare)]);
     git(path, &["push", "origin", "main"]);
 
-    create_tag(path, "rel", &c1, Some("m".to_string()), false).expect("create annotated tag");
+    create_tag(path, "rel", &c1, Some("m".to_string()), false, false).expect("create annotated tag");
 
     push_tag(path, "origin", "rel", false).expect("push tag to bare");
 
@@ -273,7 +273,7 @@ fn push_to_bare_remote() {
     assert_eq!(git(&bare, &["tag", "-l", "rel"]), "rel");
 
     // Twin oracle: `git push origin rel2` yields the same ref presence.
-    create_tag(path, "rel2", &c1, None, false).expect("create lightweight");
+    create_tag(path, "rel2", &c1, None, false, false).expect("create lightweight");
     git(path, &["push", "origin", "rel2"]);
     assert!(git_ok(&bare, &["show-ref", "--verify", "refs/tags/rel2"]));
 
@@ -310,7 +310,7 @@ fn push_annotated_tag_transfers_object() {
     git(path, &["remote", "add", "origin", &path_str(&bare)]);
     git(path, &["push", "origin", "main"]);
 
-    create_tag(path, "annrel", &c1, Some("annotated payload".to_string()), false)
+    create_tag(path, "annrel", &c1, Some("annotated payload".to_string()), false, false)
         .expect("create annotated tag");
 
     push_tag(path, "origin", "annrel", false).expect("push annotated tag to bare");
@@ -342,7 +342,7 @@ fn list_refs_resurfaces_tags() {
     let (dir, c1, _c2) = repo_two_commits();
     let path = dir.path();
 
-    create_tag(path, "surf", &c1, None, false).expect("create");
+    create_tag(path, "surf", &c1, None, false, false).expect("create");
     let snap = list_refs(path).expect("list_refs after create");
     assert!(
         snap.tags.iter().any(|t| t == "surf"),

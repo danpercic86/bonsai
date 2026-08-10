@@ -130,7 +130,7 @@ pub fn create_signed_commit(
         resolve_signing(&repo.config()?.snapshot()?, Some(true))
     };
     if signing.format == SignFormat::Ssh && signing.key.is_none() {
-        return Err(config_missing_key());
+        return Err(config_missing_key("commit"));
     }
 
     // ---- git commit-tree -S <tree> [-p <parent>…]  (message on stdin) ----
@@ -186,15 +186,94 @@ pub fn create_signed_commit(
     Ok(new_oid)
 }
 
+/// Create a SIGNED ANNOTATED tag object + ref via `git tag -s` through the same
+/// exec seam as [`create_signed_commit`] (F-A7-8). BLOCKING. git2 cannot sign, so
+/// git itself builds the tag object, produces the detached signature (honouring
+/// `gpg.format` / `user.signingkey` / `gpg.program` | `gpg.ssh.program`), and
+/// writes `refs/tags/<name>`. The tagger identity is passed via `GIT_COMMITTER_*`
+/// (git derives the tag's tagger from the committer identity) so it matches the
+/// caller's resolved [`crate::git::commit::resolve_signature`], and the verbatim
+/// `message` is piped on stdin with `--cleanup=verbatim` (byte-parity with the
+/// unsigned git2 `Repository::tag` path). `force` maps to `-f`.
+///
+/// Errors: [`AppError::ConfigMissing`] (ssh + no `user.signingkey`) surfaces
+/// BEFORE spawning so no ref is written; a duplicate name without `force` maps to
+/// the same `tag '<name>' already exists` message as the git2 path; any other
+/// signer failure is [`AppError::Git`] with the git stderr tail. NEVER prompts.
+pub fn create_signed_tag(
+    exec: &dyn GitExec,
+    workdir: &Path,
+    name: &str,
+    target: git2::Oid,
+    tagger: &git2::Signature<'_>,
+    message: &str,
+    force: bool,
+) -> Result<(), AppError> {
+    // ssh REQUIRES user.signingkey (git errors cryptically without it) — surface
+    // ConfigMissing naming the key BEFORE spawning so no ref is written (mirrors
+    // create_signed_commit / OQ2). openpgp/x509 defer to git's key selection.
+    let signing = {
+        let repo = open_repo_at(workdir)?;
+        resolve_signing(&repo.config()?.snapshot()?, Some(true))
+    };
+    if signing.format == SignFormat::Ssh && signing.key.is_none() {
+        return Err(config_missing_key("tag"));
+    }
+
+    // ---- git tag -s --cleanup=verbatim -F - [-f] <name> <target>  (msg on stdin) ----
+    let target_hex = target.to_string();
+    let mut args: Vec<&str> = vec!["tag", "-s", "--cleanup=verbatim", "-F", "-"];
+    if force {
+        args.push("-f");
+    }
+    args.push(name);
+    args.push(target_hex.as_str());
+
+    // Tagger comes from git's committer identity; pass Bonsai's resolved identity
+    // (+ raw date) via env for parity with the unsigned git2 tagger.
+    let tagger_name = lossy(tagger.name_bytes());
+    let tagger_email = lossy(tagger.email_bytes());
+    let tagger_date = git_raw_date(&tagger.when());
+    let env: [(&str, &str); 3] = [
+        ("GIT_COMMITTER_NAME", tagger_name.as_str()),
+        ("GIT_COMMITTER_EMAIL", tagger_email.as_str()),
+        ("GIT_COMMITTER_DATE", tagger_date.as_str()),
+    ];
+
+    // The message MUST end in a newline: with `--cleanup=verbatim`, git appends
+    // the signature block verbatim after the body, so a body without a trailing
+    // `\n` glues `-----BEGIN … SIGNATURE-----` onto the last line and `git tag -v`
+    // then reports "no signature found". Mirrors the commit path's `{msg}\n`.
+    let body = if message.ends_with('\n') {
+        message.to_string()
+    } else {
+        format!("{message}\n")
+    };
+
+    let out = exec.exec(&args, workdir, Some(body.as_bytes()), &env)?;
+    if !out.success {
+        // Map a duplicate-name failure to the same message as the git2 path so the
+        // command layer / UI sees one consistent error regardless of sign.
+        if out.stderr.contains("already exists") {
+            return Err(AppError::Git(format!("tag '{name}' already exists")));
+        }
+        return Err(AppError::Git(format!(
+            "tag signing failed: {}",
+            tail_chars(out.stderr.trim(), 400)
+        )));
+    }
+    Ok(())
+}
+
 // ---- helpers ------------------------------------------------------------------
 
-/// ConfigMissing naming `user.signingkey` (mirrors `resolve_signature`'s shape).
-fn config_missing_key() -> AppError {
-    AppError::ConfigMissing(
-        "commit signing requires a key: user.signingkey is not set. \
+/// ConfigMissing naming `user.signingkey` for the given `op` ("commit" / "tag";
+/// mirrors `resolve_signature`'s shape).
+fn config_missing_key(op: &str) -> AppError {
+    AppError::ConfigMissing(format!(
+        "{op} signing requires a key: user.signingkey is not set. \
          Run: git config user.signingkey <key>"
-            .to_string(),
-    )
+    ))
 }
 
 /// Format a git2 time as git's internal `<unix-seconds> <±HHMM>` date, accepted

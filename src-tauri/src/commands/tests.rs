@@ -139,6 +139,7 @@
             "0".repeat(40),
             None,
             false,
+            None,
         ))
         .expect_err("create_tag with no repo");
         assert!(matches!(err, AppError::NoRepo));
