@@ -178,7 +178,19 @@ closes P64 (+0 cmd). OD1: AI stays local-`claude`-CLI-only.
 DevOps — all committed, AI-gate-passed, native checkpoint `docs/contracts/P64-user-checklist.md` pending).
 **Phase 4 forge/PR (P62–P64) is now code-complete.** Next: **P65** — paged/streaming graph loading
 (independent perf milestone; land after graph-pane work). Cmd 156→**157** (P65 +1 `stream_graph`).
-### P65 — paged/streaming graph loading — **PENDING** (contract ready; independent; land after graph-pane work)
+### P65 — paged/streaming graph loading — **IN PROGRESS** (contract `docs/contracts/P65-paged-loading.md`)
+Decision (contract §0): a single `stream_graph` Tauri channel (Meta→Batch*→Done), NOT stateless `loadMore`
+paging — the lane algorithm needs the accumulated walk state, so a channel makes lane-color stability true
+by construction. 3 senior-dev passes: **P65a** Rust core (extract shared `LaneWalker`; `compute_graph` output
+UNCHANGED; `stream_graph_core` + `stream_graph` channel cmd) → **P65b** frontend (incrementalEdgeIndex +
+streamAssembler + GraphCanvas 2 optional props + RepoWorkspace.refetchGraph switches to streamGraph) →
+**P65c** mock + harness (20k scroll gate) + 200k first-paint latency test. Architect OQ recs all ACCEPTED:
+channel-drop `is_ok()`-break cancellation (OQ1), `Meta.total=None` grow-as-you-go (OQ2), 1M cap + `truncated`
+(OQ3), OQ4 bounded/resume deferred, running-max lane width (OQ5), keep `ord` (OQ6). **Command count 156→157**
+(contract's "147→148" is design-time stale — recount `generate_handler!`).
+
+**Current step:** P65a IN PROGRESS (senior-dev) — LaneWalker extraction + stream_graph_core + stream_graph
+command + graph.rs lane-stability equivalence test (forced batch sizes {1,2,3,7,512} == compute_graph).
 
 ## P61 — diff quality: word-level/intraline highlighting + image diff (Phase 3 · milestone 4/4, FINAL) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-08)
 
