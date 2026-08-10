@@ -189,8 +189,18 @@ channel-drop `is_ok()`-break cancellation (OQ1), `Meta.total=None` grow-as-you-g
 (OQ3), OQ4 bounded/resume deferred, running-max lane width (OQ5), keep `ord` (OQ6). **Command count 156→157**
 (contract's "147→148" is design-time stale — recount `generate_handler!`).
 
-**Current step:** P65a IN PROGRESS (senior-dev) — LaneWalker extraction + stream_graph_core + stream_graph
-command + graph.rs lane-stability equivalence test (forced batch sizes {1,2,3,7,512} == compute_graph).
+- **P65a** ✅ DONE (committed `5568f2f`) — shared `LaneWalker` (`graph/lane.rs`) + streaming core
+  (`graph/stream.rs`: StreamNode/GraphStreamEdge/GraphChunk + `stream_graph_core`) + `stream_graph` channel
+  command. `compute_graph` output byte-for-byte UNCHANGED (E1–E6 fixtures intact + equivalence test at batch
+  sizes 1/2/3/7/512 + 5 serde wire-shape tests guarding the P65b seam). graph.rs test module → `graph/tests.rs`
+  (523→470). Reviewer approve (0 must-fix; equivalence verified); both should-fix landed. Cmd **157**. Gate:
+  bonsai-core 674/0/1-perf-ignored, bonsai --lib 220/0, clippy -D clean, cargo check --workspace links.
+
+**Current step:** P65b IN PROGRESS (senior-dev) — frontend + mock as ONE end-to-end increment (contract puts
+mock in P65c, but RepoWorkspace.refetchGraph switching to streamGraph needs it now): TS wire types + tauri
+Channel bridge + `incrementalEdgeIndex.ts` + `streamAssembler.ts` + GraphCanvas 2 optional props +
+refetchGraph stream switch + mock `streamGraph` + vitest (assembler equivalence + edgeIndex oracle). P65c =
+200k fixture + first-paint latency test + 20k scroll no-jank harness gate.
 
 ## P61 — diff quality: word-level/intraline highlighting + image diff (Phase 3 · milestone 4/4, FINAL) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-08)
 
