@@ -17,6 +17,7 @@ pub mod http;
 pub mod provider;
 pub mod types;
 
+mod bitbucket;
 mod github;
 mod gitlab;
 mod rollup;
@@ -30,16 +31,18 @@ pub use http::{HttpMethod, HttpRequest, HttpResponse, HttpTransport, ReqwestTran
 pub use provider::ForgeProvider;
 pub use types::*;
 
+use crate::bitbucket::BitbucketProvider;
 use crate::github::GitHubProvider;
 use crate::gitlab::GitLabProvider;
 
 /// Construct the concrete [`ForgeProvider`] for `target` over `http`. Shared by
 /// [`open`] and [`validate_token`] so both resolve the SAME provider for a host.
 ///
-/// GitLab hosts get [`GitLabProvider`]; GitHub AND unparseable/unknown origins
-/// both go through [`GitHubProvider`] (an `Unknown` target yields a friendly
-/// `repo_context` but `ForgeUnsupported` on any data method — unchanged P62
-/// behavior). Adding a provider = one arm here + one `detect` host mapping.
+/// GitLab hosts get [`GitLabProvider`]; Bitbucket hosts get
+/// [`BitbucketProvider`]; GitHub AND unparseable/unknown origins both go through
+/// [`GitHubProvider`] (an `Unknown` target yields a friendly `repo_context` but
+/// `ForgeUnsupported` on any data method — unchanged P62 behavior). Adding a
+/// provider = one arm here + one `detect` host mapping.
 fn build_provider(
     target: ForgeTarget,
     token: Option<String>,
@@ -47,6 +50,7 @@ fn build_provider(
 ) -> Box<dyn ForgeProvider> {
     match target.kind {
         ForgeKind::GitLab => Box::new(GitLabProvider::new(target, token, http)),
+        ForgeKind::Bitbucket => Box::new(BitbucketProvider::new(target, token, http)),
         _ => Box::new(GitHubProvider::new(target, token, http)),
     }
 }

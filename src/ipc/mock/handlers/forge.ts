@@ -33,11 +33,25 @@ import type {
 } from '../../types';
 
 const FORGE_OFF = urlParam('forge') === 'off';
-// P64b: a `?forge=gitlab` sentinel makes forgeRepoContext report a GitLab
-// provider so the panel exercises connect → list → detail → create for a
-// non-GitHub forge. The neutral PR/status fixtures render UNCHANGED (the mock
-// sits at the neutral-DTO boundary) — only the repo-context provider/host swap.
-const FORGE_KIND: ForgeKind = urlParam('forge') === 'gitlab' ? 'gitLab' : 'gitHub';
+// P64b/P64c: a `?forge=gitlab` or `?forge=bitbucket` sentinel makes
+// forgeRepoContext report that provider so the panel exercises connect → list →
+// detail → create for a non-GitHub forge. The neutral PR/status fixtures render
+// UNCHANGED (the mock sits at the neutral-DTO boundary) — only the repo-context
+// provider/host swap.
+const FORGE_KIND: ForgeKind =
+  urlParam('forge') === 'gitlab'
+    ? 'gitLab'
+    : urlParam('forge') === 'bitbucket'
+      ? 'bitbucket'
+      : 'gitHub';
+// Host + web URL matching the detected provider, so the connect hint + "open in
+// browser" links look right in the harness.
+const FORGE_HOST: Record<ForgeKind, string> = {
+  gitHub: FORGE_REPO_CONTEXT.host,
+  gitLab: 'gitlab.com',
+  bitbucket: 'bitbucket.org',
+  unknown: FORGE_REPO_CONTEXT.host,
+};
 // Mutable across the browser session: forgeSetToken / forgeClearToken toggle it
 // and forgeRepoContext reflects it. Seeded true only by ?forge=auth.
 let authenticated = urlParam('forge') === 'auth';
@@ -55,15 +69,16 @@ export const forgeHandlers = {
     await delay(120);
     requireRepo(repoId);
     offGuard();
+    const host = FORGE_HOST[FORGE_KIND];
     return {
       ...FORGE_REPO_CONTEXT,
       provider: FORGE_KIND,
-      ...(FORGE_KIND === 'gitLab'
-        ? {
-            host: 'gitlab.com',
-            webUrl: `https://gitlab.com/${FORGE_REPO_CONTEXT.owner}/${FORGE_REPO_CONTEXT.repo}`,
-          }
-        : {}),
+      ...(FORGE_KIND === 'gitHub'
+        ? {}
+        : {
+            host,
+            webUrl: `https://${host}/${FORGE_REPO_CONTEXT.owner}/${FORGE_REPO_CONTEXT.repo}`,
+          }),
       authenticated,
       viewer: authenticated ? FORGE_VIEWER : null,
     };

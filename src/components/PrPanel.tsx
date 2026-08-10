@@ -261,6 +261,7 @@ export function PrPanel({
       case 'connect':
         return (
           <ForgeConnect
+            provider={ctx?.provider ?? 'unknown'}
             host={ctx?.host ?? 'the forge'}
             owner={ctx?.owner ?? ''}
             repo={ctx?.repo ?? ''}

@@ -135,7 +135,8 @@ single-secret model). App-password fallback = paste `user:app_password`, backend
 
 | Trait method | Endpoint / mapping |
 |---|---|
-| `list_prs` | `GET /repositories/{ws}/{slug}/pullrequests?state=&page=&pagelen=` → state `OPEN→Open, MERGED→Merged, DECLINED|SUPERSEDED→Closed`; filter maps `open→OPEN, closed→DECLINED, all→` (omit param). `id`→number, `draft`→isDraft, `title`, `author.display_name`/`links.avatar.href`, `source.branch.name`/`destination.branch.name`, `comment_count`→comments, `links.html.href`→url, `source.commit.hash`→headSha |
+| `list_prs` | `GET /repositories/{ws}/{slug}/pullrequests?state=&page=&pagelen=` → state `OPEN→Open, MERGED→Merged, DECLINED|SUPERSEDED→Closed`; filter emits **repeated** `state` params (Bitbucket supports repetition and defaults to `OPEN` when omitted — there is NO `state=all`): `open→state=OPEN`, `closed→state=MERGED&state=DECLINED&state=SUPERSEDED`, `all→state=OPEN&state=MERGED&state=DECLINED&state=SUPERSEDED`. `id`→number, `draft`→isDraft, `title`, `author.display_name`/`links.avatar.href`, `source.branch.name`/`destination.branch.name`, `comment_count`→comments, `links.html.href`→url, `source.commit.hash`→headSha |
+| _P64c review-correction_ | The original row read `closed→DECLINED, all→(omit param)`. That was **wrong**: omitting `state` returns OPEN-only, so `all` hid merged/declined PRs and `closed` hid merged PRs. Corrected above to repeated-param fan-out. |
 | `get_pr` | `GET .../pullrequests/{id}` → body=`description` (rendered `raw` if present); mergeable ⇒ `None` (not directly exposed); labels ⇒ `[]`; additions/deletions via `.../diffstat` (heavy — v1 may leave `0`, OQ-A2) |
 | `create_pr` | `POST .../pullrequests` `{title,description,source:{branch:{name}},destination:{branch:{name}},draft}` |
 | `list_review_comments` | `GET .../pullrequests/{id}/comments` → `inline`≠null ⇒ `Review` (`inline.path`/`inline.to`) else `Conversation`; skip deleted; sort by `created_on` |

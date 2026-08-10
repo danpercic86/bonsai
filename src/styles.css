@@ -6789,6 +6789,23 @@ button.asset-row-clickable:hover {
   color: var(--text-3);
 }
 
+/* P64c: per-provider token-scope hint + "create a token" help link. */
+.forge-connect-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.forge-connect-link {
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.forge-connect-link:hover {
+  text-decoration: underline;
+}
+
 .forge-connect-submit {
   align-self: flex-start;
 }

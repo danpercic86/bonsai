@@ -5,9 +5,10 @@
 //! extracts `host`/`owner`/`repo`. `github.com` ⇒ [`ForgeKind::GitHub`];
 //! `gitlab.com` ⇒ [`ForgeKind::GitLab`] — GitLab supports nested groups, so
 //! `owner` is the FULL namespace path (may contain `/`) and `repo` is the last
-//! segment (OQ-A6). Any other parseable host ⇒ [`ForgeKind::Unknown`]
-//! (enterprise host override is a deferred setting, OQ-6); an unparseable URL ⇒
-//! `None`.
+//! segment (OQ-A6); `bitbucket.org` ⇒ [`ForgeKind::Bitbucket`] with the flat
+//! `workspace/repo` split (exactly-two, like GitHub — `owner` = workspace).
+//! Any other parseable host ⇒ [`ForgeKind::Unknown`] (enterprise host override
+//! is a deferred setting, OQ-6); an unparseable URL ⇒ `None`.
 
 use crate::types::ForgeKind;
 
@@ -70,6 +71,7 @@ fn kind_for_host(host: &str) -> ForgeKind {
     match host {
         "github.com" => ForgeKind::GitHub,
         "gitlab.com" => ForgeKind::GitLab,
+        "bitbucket.org" => ForgeKind::Bitbucket,
         _ => ForgeKind::Unknown,
     }
 }
@@ -271,5 +273,47 @@ mod tests {
         assert_eq!(gh.kind, ForgeKind::GitHub);
         assert_eq!(gh.owner, "group");
         assert_eq!(gh.repo, "subgroup");
+    }
+
+    /// bitbucket.org in every remote form resolves to the same identity. Unlike
+    /// GitLab, Bitbucket uses the flat `workspace/repo` split (exactly-two, like
+    /// GitHub): `owner` = workspace, extra path segments are ignored.
+    #[test]
+    fn detect_table_bitbucket() {
+        // https (+.git / trailing slash), ssh, scp all yield workspace/repo.
+        for url in [
+            "https://bitbucket.org/workspace/repo",
+            "https://bitbucket.org/workspace/repo.git",
+            "https://bitbucket.org/workspace/repo/",
+            "https://bitbucket.org/workspace/repo.git/",
+            "ssh://git@bitbucket.org/workspace/repo.git",
+            "ssh://git@bitbucket.org:22/workspace/repo.git",
+            "git@bitbucket.org:workspace/repo.git",
+            "git@bitbucket.org:workspace/repo",
+        ] {
+            let got = t(url).unwrap_or_else(|| panic!("expected Some for {url}"));
+            assert_eq!(got.kind, ForgeKind::Bitbucket, "{url}");
+            assert_eq!(got.host, "bitbucket.org", "{url}");
+            assert_eq!(got.owner, "workspace", "{url}");
+            assert_eq!(got.repo, "repo", "{url}");
+            assert_eq!(got.web_url, "https://bitbucket.org/workspace/repo", "{url}");
+        }
+
+        // Extra path segments clip to the first two (workspace/repo) — Bitbucket
+        // does NOT nest like GitLab.
+        let extra = t("https://bitbucket.org/workspace/repo/pull-requests/7").unwrap();
+        assert_eq!(extra.kind, ForgeKind::Bitbucket);
+        assert_eq!(extra.owner, "workspace");
+        assert_eq!(extra.repo, "repo");
+
+        // Host lowercased; owner/repo case preserved.
+        let mixed = t("https://BitBucket.org/Team/Proj.git").unwrap();
+        assert_eq!(mixed.kind, ForgeKind::Bitbucket);
+        assert_eq!(mixed.host, "bitbucket.org");
+        assert_eq!(mixed.owner, "Team");
+        assert_eq!(mixed.repo, "Proj");
+
+        // Single segment is still not a repo.
+        assert!(t("https://bitbucket.org/workspace").is_none(), "single segment");
     }
 }
