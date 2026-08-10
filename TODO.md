@@ -196,11 +196,26 @@ channel-drop `is_ok()`-break cancellation (OQ1), `Meta.total=None` grow-as-you-g
   (523→470). Reviewer approve (0 must-fix; equivalence verified); both should-fix landed. Cmd **157**. Gate:
   bonsai-core 674/0/1-perf-ignored, bonsai --lib 220/0, clippy -D clean, cargo check --workspace links.
 
-**Current step:** P65b IN PROGRESS (senior-dev) — frontend + mock as ONE end-to-end increment (contract puts
-mock in P65c, but RepoWorkspace.refetchGraph switching to streamGraph needs it now): TS wire types + tauri
-Channel bridge + `incrementalEdgeIndex.ts` + `streamAssembler.ts` + GraphCanvas 2 optional props +
-refetchGraph stream switch + mock `streamGraph` + vitest (assembler equivalence + edgeIndex oracle). P65c =
-200k fixture + first-paint latency test + 20k scroll no-jank harness gate.
+- **P65b** ✅ DONE (committed `e009034`) — frontend + mock end-to-end: TS wire types + tauri Channel bridge +
+  `incrementalEdgeIndex.ts` (order-independent, gen-stamped dedupe) + `streamAssembler.ts` (folds chunks →
+  GraphLayout, deep-equals getGraph on a complete walk) + GraphCanvas 2 optional props (one-shot path
+  unchanged when absent) + refetchGraph streams via streamGraph (last-wins guard, progressive selection
+  remap) + mock `streamGraph` (supersede generation). Reviewer request-changes → fixed a real crash
+  (3 unguarded `graph.nodes[selectedIndex]` derefs during the mid-stream partial-layout window). Gate: tsc 0,
+  build, vitest **1331/0** (+14). Harness (`?fixture=20k`): streamed load fills the 20 001-row extent, canvas
+  renders, full-range scroll clean (no console errors).
+
+**Current step:** ⚠️ **P65c BLOCKED on an architecture finding — awaiting a feasibility spike, then USER go/no-go.**
+The P65c 200k first-paint latency test (`crates/bonsai-core/tests/stream_perf.rs`, UNCOMMITTED) proved the
+contract's `<150 ms` first-batch target is **unachievable with libgit2's topo-sort**: `Sort::TOPOLOGICAL`'s
+`prepare_walk` drains the WHOLE reachable graph before yielding row 0 → first paint is O(total): 40k~730ms,
+120k~1.37s, 200k~2.3s. So P65's "instant first paint on huge repos" headline is NOT met (streaming still gives
+lane-stable progressive render + scroll-ahead + no giant IPC). **USER chose option B (fix properly):** a lazy
+generation-number topo-order (git's `--topo-order`). Architect is running a go/no-go feasibility spike →
+`docs/contracts/P65a-lazy-topo-spike.md` (git2 0.21 exposes gen numbers? equivalence blast radius on
+compute_graph/get_graph? fallback = shell `git log --topo-order`?). **`docs/contracts/P65-user-checklist.md`
+(UNCOMMITTED) over-claims the <150ms gate — must be revised after the decision; do NOT commit as-is.** After
+the spike I relay the estimate to the user for go/no-go on the build.
 
 ## P61 — diff quality: word-level/intraline highlighting + image diff (Phase 3 · milestone 4/4, FINAL) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-08)
 
