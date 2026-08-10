@@ -38,3 +38,29 @@ pub(crate) async fn get_graph_inner(state: &AppState, repo_id: &str) -> Result<G
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
+
+/// Streams the commit-graph layout of `repo_id` as ordered [`GraphChunk`]
+/// batches over `on_chunk` (channel command; mirrors `history_index_build` /
+/// `clone_repo`). The heavy git2 walk runs in `spawn_blocking`.
+///
+/// Wire order: exactly one `Meta`, then N `Batch`, then exactly one `Done`.
+/// Unborn / zero-ref repos yield a `Meta` + `Done` pair, NOT an error (parity
+/// with `get_graph`). `get_graph` is retained (small-repo / tests / mock reuse).
+/// Rejects `NoRepo` when nothing is open under that id; git errors surface as
+/// `AppError` (the command rejects instead of sending `Done`).
+#[tauri::command]
+pub async fn stream_graph(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    on_chunk: tauri::ipc::Channel<GraphChunk>,
+) -> Result<(), AppError> {
+    let path = repo_path(state.inner(), &repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        // `Channel::send` errs once the frontend drops the channel (component
+        // unmount / repo switch / `close_repo`); `is_ok() == false` stops the
+        // walk promptly with `Ok` (contract §6 cancellation).
+        stream_graph_core(&path, |chunk| on_chunk.send(chunk).is_ok())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}

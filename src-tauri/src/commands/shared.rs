@@ -90,7 +90,7 @@ pub(crate) use bonsai_core::git::submodule::{self, SubmoduleInfo};
 pub(crate) use bonsai_core::git::worktree::{self, WorktreeInfo};
 pub(crate) use bonsai_core::git::worktree_copy::{self, CopyCandidate, CopyPlanEntry, CopySelection};
 pub(crate) use bonsai_core::git::tags;
-pub(crate) use bonsai_core::graph::{compute_graph, GraphLayout};
+pub(crate) use bonsai_core::graph::{compute_graph, stream_graph_core, GraphChunk, GraphLayout};
 pub(crate) use bonsai_core::health::{collect_repo_health, RepoHealth};
 pub(crate) use crate::scheduler::{self, JobKind, JobOutcome, SchedulerState};
 pub(crate) use crate::settings::{

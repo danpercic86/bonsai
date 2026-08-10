@@ -73,6 +73,7 @@ pub fn run() {
             commands::close_repo,
             commands::get_status,
             commands::get_graph,
+            commands::stream_graph,
             commands::stage,
             commands::unstage,
             commands::stage_partial,
