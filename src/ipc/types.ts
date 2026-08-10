@@ -104,6 +104,50 @@ export interface GraphLayout {
   truncated: boolean;
 }
 
+/** P65 (streamed graph): one commit row as delivered by `streamGraph`. Identical
+ *  to {@link GraphNode} MINUS `parents` — a child's parent rows are not known
+ *  when it is emitted (parents are always at HIGHER, not-yet-walked rows), so the
+ *  frontend reconstructs `parents` from the edge ordinals ({@link StreamEdge.ord}).
+ *  Mirrors the Rust `StreamNode` (camelCase; `refs` omitted when empty). */
+export interface StreamNode {
+  id: string;
+  lane: number;
+  refs?: RefLabel[];
+  summary: string;
+  author: string;
+  ts: number;
+  committerTs: number;
+}
+
+/** P65 (streamed graph): a {@link GraphEdge} PLUS the child's parent ordinal
+ *  (`ord`) so the frontend can rebuild each node's ordered `parents`. `ord === 0`
+ *  is the first parent (the lane-inheriting edge). Mirrors the Rust
+ *  `GraphStreamEdge`. `from` (child) < `to` (parent). */
+export interface StreamEdge {
+  from: number;
+  to: number;
+  lane: number;
+  ord: number;
+}
+
+/** P65 (streamed graph): one `streamGraph` channel message. Wire order: exactly
+ *  one `meta`, then N `batch`, then exactly one `done`. On any error the command
+ *  REJECTS (AppError) instead of sending `done`. Mirrors the Rust `GraphChunk`
+ *  serde enum (tagged `kind`, camelCase) byte-for-byte.
+ *  - `meta`: first message. `total` = exact reachable-commit count if cheaply
+ *    known, else null (frontend grows the scroll extent as rows arrive).
+ *    `headOid` lets the frontend resolve `headIndex` the moment HEAD's row lands.
+ *  - `batch`: a run of consecutive rows `[startRow, startRow + nodes.length)`
+ *    plus the edges FINALIZED within them (parent `to` in this batch).
+ *    `laneCountSoFar` is the running max (monotonic) — drives the graph-area
+ *    width without ever shrinking.
+ *  - `done`: terminal authoritative scalars. `totalRows` == nodes emitted;
+ *    `headIndex` resolved; `truncated` set at the streaming cap. */
+export type GraphChunk =
+  | { kind: 'meta'; total: number | null; headOid: string | null }
+  | { kind: 'batch'; startRow: number; laneCountSoFar: number; nodes: StreamNode[]; edges: StreamEdge[] }
+  | { kind: 'done'; totalRows: number; laneCount: number; headIndex: number | null; truncated: boolean };
+
 export type LineKind = 'context' | 'add' | 'del';
 
 /** One selected changed line for partial staging (P17). Context lines are
@@ -1790,6 +1834,12 @@ export interface IpcApi {
   getStatus(repoId: string): Promise<StatusSnapshot>;
   /** Full graph layout for a repo. Rejects with {@link AppError} (`noRepo` when the id is not open). */
   getGraph(repoId: string): Promise<GraphLayout>;
+  /** P65: stream the graph layout for a repo as ordered chunks (meta -> batch* ->
+   *  done). The frontend passes a plain callback; the Tauri impl bridges it
+   *  through a `Channel`, the mock invokes it directly. Resolves when the stream
+   *  completes (after the `done` chunk). Rejects with {@link AppError} (`noRepo`
+   *  when the id is not open, `git`). `getGraph` is retained (small-repo/tests). */
+  streamGraph(repoId: string, onChunk: (c: GraphChunk) => void): Promise<void>;
   /** Stage paths (worktree-relative, forward slashes — StatusEntry.path strings). Atomic. */
   stage(repoId: string, paths: string[]): Promise<void>;
   /** Unstage paths. Atomic. Safe (worktree never touched). */

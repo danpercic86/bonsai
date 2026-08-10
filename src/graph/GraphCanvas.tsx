@@ -48,6 +48,7 @@ import { computeRightColumns } from './rightColumns';
 import type { GraphDisplayOptions } from './rightColumns';
 import type { P7SelfTestResult } from './frameStats';
 import { buildEdgeIndex, edgesInRange } from './edgeIndex';
+import type { IncrementalEdgeIndex } from './incrementalEdgeIndex';
 import { createFrameRecorder } from './frameStats';
 import type { FrameStats } from './frameStats';
 import type { EffectiveMetrics } from './metrics';
@@ -104,6 +105,15 @@ export interface GraphCanvasProps {
    *  right-pane PR panel. When absent, PR-badge clicks fall through to the
    *  normal row-select. */
   onOpenPr?(number: number): void;
+  /** P65b (streamed path): the incremental edge index owned by the stream
+   *  assembler. When present it REPLACES the internal `buildEdgeIndex(layout)`
+   *  memo (which would be O(n) per streamed batch). Absent ⇒ one-shot path,
+   *  byte-for-byte unchanged. */
+  edgeIndex?: IncrementalEdgeIndex;
+  /** P65b (streamed path): total row count for the scroll extent while rows are
+   *  still arriving. Absent ⇒ the spacer uses `layout.nodes.length` (one-shot /
+   *  grow-as-you-go). */
+  totalRows?: number;
 }
 
 /** P2c §5.2: imperative escape hatch — App needs the DOM-measured visible row
@@ -146,6 +156,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     verifyStatus,
     onVisibleRangeChange,
     onOpenPr,
+    edgeIndex,
+    totalRows,
   },
   ref,
 ) {
@@ -195,8 +207,14 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     [],
   );
 
-  // Edge culling index, built once per layout object (§4.4).
-  const edgeIndex = useMemo(() => buildEdgeIndex(layout), [layout]);
+  // Edge culling index, built once per layout object (§4.4). P65b: on the
+  // streamed path the assembler supplies `edgeIndex` (its own incremental index),
+  // so we skip the internal build entirely — otherwise it would be an O(n)
+  // rebuild on every streamed batch (layout identity bumps per batch).
+  const memoIndex = useMemo(
+    () => (edgeIndex !== undefined ? null : buildEdgeIndex(layout)),
+    [layout, edgeIndex],
+  );
 
   // P50b: search-match set, rebuilt once per matchRows prop change (not per
   // frame). null when there are no matches so the draw pass skips the ring.
@@ -205,11 +223,14 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     [matchRows],
   );
 
-  // Latest props for the stable paint callback.
+  // Latest props for the stable paint callback. `edgeIndex` is the streamed
+  // incremental index (or undefined); `memoIndex` is the one-shot index (or null
+  // when streamed) — paintNow picks whichever is present (§4.3).
   const propsRef = useRef({
     layout,
     selectedIndex,
     edgeIndex,
+    memoIndex,
     wip,
     matchSet,
     display,
@@ -220,6 +241,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     layout,
     selectedIndex,
     edgeIndex,
+    memoIndex,
     wip,
     matchSet,
     display,
@@ -265,7 +287,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     const {
       layout: lay,
       selectedIndex: sel,
-      edgeIndex: ix,
+      edgeIndex: incIx,
+      memoIndex: memoIx,
       wip,
       matchSet,
       display,
@@ -301,10 +324,18 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     const rightInset = scrollerRef.current
       ? scrollerRef.current.offsetWidth - scrollerRef.current.clientWidth
       : 0;
+    // §4.3: streamed path queries the assembler's incremental index; one-shot
+    // path uses the (from,to)-sorted memo. When both are absent (empty layout
+    // guard) nothing is drawn — identical to the prior one-shot behavior.
+    const visibleEdges = incIx
+      ? incIx.edgesInRange(firstRow, lastRow)
+      : memoIx !== null
+        ? edgesInRange(lay, memoIx, firstRow, lastRow)
+        : [];
     drawGraph(
       ctx,
       lay,
-      edgesInRange(lay, ix, firstRow, lastRow),
+      visibleEdges,
       { firstRow, lastRow, scrollTop: layoutScrollTop, width: w, height: h, rightInset },
       themeRef.current,
       { hoverRow, selectedIndex: sel, matchRows: matchSet, verifyStatus: verifyStatus ?? null },
@@ -780,8 +811,14 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   };
 
   // P11d §4.3: spacer (total scroll extent) tracks the live rowHeight knob so
-  // the scrollbar range re-maps on every graph-metric change.
-  const spacerH = spacerHeight(layout.nodes.length, wip !== null ? 1 : 0, metrics.rowHeight);
+  // the scrollbar range re-maps on every graph-metric change. P65b: on the
+  // streamed path `totalRows` extends the extent to the full repo while rows are
+  // still arriving (grow-as-you-go); absent ⇒ layout.nodes.length (unchanged).
+  const spacerH = spacerHeight(
+    Math.max(layout.nodes.length, totalRows ?? 0),
+    wip !== null ? 1 : 0,
+    metrics.rowHeight,
+  );
 
   return (
     <div ref={hostRef} className="graph-canvas-host">

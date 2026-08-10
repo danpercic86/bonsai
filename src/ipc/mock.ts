@@ -3,6 +3,7 @@ import type { IpcApi } from './types';
 import { repoHandlers } from './mock/handlers/repo';
 import { statusHandlers } from './mock/handlers/status';
 import { diffHandlers } from './mock/handlers/diff';
+import { graphStreamHandlers } from './mock/handlers/graphStream';
 import { branchHandlers } from './mock/handlers/branches';
 import { remotesSyncHandlers } from './mock/handlers/remotesSync';
 import { mergeHandlers } from './mock/handlers/merge';
@@ -33,6 +34,7 @@ export const mockIpc: IpcApi = {
   ...repoHandlers,
   ...statusHandlers,
   ...diffHandlers,
+  ...graphStreamHandlers,
   ...branchHandlers,
   ...remotesSyncHandlers,
   ...mergeHandlers,

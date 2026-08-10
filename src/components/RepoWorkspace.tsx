@@ -18,6 +18,8 @@ import type { DiffSlot, WorkdirSection } from './StatusPanel';
 import type { GraphCanvasHandle, GraphContextTarget, WipSummary } from '../graph/GraphCanvas';
 import { effectiveMetrics } from '../graph/metrics';
 import type { GraphDisplayOptions } from '../graph/rightColumns';
+import { createGraphStream } from '../graph/streamAssembler';
+import type { IncrementalEdgeIndex } from '../graph/incrementalEdgeIndex';
 import { ipc } from '../ipc';
 import type {
   AiAnalysisMode,
@@ -93,6 +95,14 @@ import { SubmoduleDialogs } from './dialogs/SubmoduleDialogs';
 import { ChangelogDialog } from './ChangelogDialog';
 import { safeOpDispatch } from './safeOpDispatch';
 import type { ComboboxOption } from './Combobox';
+
+/** P65b: bump the layout object identity per applied stream batch (the growing
+ *  arrays inside are shared) so GraphCanvas's `[..., layout]` repaint effect
+ *  fires once per batch. A shallow spread is enough — a fresh outer object each
+ *  call is the repaint trigger. */
+function wrapStreamLayout(layout: GraphLayout): GraphLayout {
+  return { ...layout };
+}
 
 export interface RepoWorkspaceProps {
   /** Canonical workdir path (== repoId, P3e §2). */
@@ -451,6 +461,11 @@ export function RepoWorkspace({
     rebasePlan !== null;
 
   const [graph, setGraph] = useState<GraphLayout | null>(null);
+  // P65b: the stream assembler's incremental edge index + total row count for the
+  // active graph, threaded into GraphCanvas alongside `graph` (set together with
+  // it per applied batch so they never disagree).
+  const [graphEdgeIndex, setGraphEdgeIndex] = useState<IncrementalEdgeIndex | null>(null);
+  const [graphTotal, setGraphTotal] = useState<number | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
@@ -938,26 +953,47 @@ export function RepoWorkspace({
   }, [collapseDiffSlot]);
 
   const refetchGraph = useCallback(async () => {
+    // The `graphReqId` generation is the cancellation crux (P65 §6): it now gates
+    // chunk APPLICATION — chunks from a superseded stream (repo switch / new
+    // refetch) are dropped before they ever touch the assembler.
     const id = ++graphReqId.current;
     // Preserve selection across refetches (activation self-heal, focus rescan,
-    // watcher ticks) by commit OID: capture it BEFORE the fetch, remap after.
+    // watcher ticks) by commit OID: capture it BEFORE the stream, remap during.
     const prevSelectedId =
       selectedIndexRef.current != null
         ? (graphDataRef.current?.nodes[selectedIndexRef.current]?.id ?? null)
         : null;
+    const stream = createGraphStream();
+    let remapped = false;
     setGraphLoading(true);
     try {
-      const layout = await ipc.getGraph(repoId);
+      await ipc.streamGraph(repoId, (chunk) => {
+        if (id !== graphReqId.current) return; // stale / superseded stream
+        stream.apply(chunk);
+        // No-flicker: keep showing the PREVIOUS layout until the first paintable
+        // chunk of the NEW stream lands. `meta` only stashes total/headOid — it
+        // carries no rows, so update just the scroll extent and wait.
+        if (chunk.kind === 'meta') {
+          setGraphTotal(stream.total);
+          return;
+        }
+        // Identity bump -> GraphCanvas repaints; edge index + total set together
+        // with the layout so the three never disagree in one render.
+        setGraph(wrapStreamLayout(stream.layout));
+        setGraphEdgeIndex(stream.edgeIndex);
+        setGraphTotal(stream.total);
+        // Progressive selection remap: reselect the prior commit the instant its
+        // row arrives (don't wait for the full stream).
+        if (prevSelectedId !== null && !remapped && stream.oidToRow.has(prevSelectedId)) {
+          setSelectedIndex(stream.oidToRow.get(prevSelectedId) ?? null);
+          remapped = true;
+        }
+      });
       if (id !== graphReqId.current) return;
-      setGraph(layout);
       setGraphError(null);
-      if (prevSelectedId !== null) {
-        const idx = layout.nodes.findIndex((n) => n.id === prevSelectedId);
-        // Found -> remap to its (possibly shifted) row; gone -> clear.
-        setSelectedIndex(idx >= 0 ? idx : null);
-      } else {
-        setSelectedIndex(null);
-      }
+      // Post-stream selection resolution: a prior selection that never reappeared
+      // is gone -> clear; no prior selection -> null.
+      if (prevSelectedId === null || !remapped) setSelectedIndex(null);
     } catch (e) {
       if (id !== graphReqId.current) return;
       setGraphError(errorMessage(e));
@@ -1060,6 +1096,8 @@ export function RepoWorkspace({
   const clearGraph = useCallback(() => {
     graphReqId.current += 1;
     setGraph(null);
+    setGraphEdgeIndex(null);
+    setGraphTotal(null);
     setGraphError(null);
     setGraphLoading(false);
     setSelectedIndex(null);
@@ -1162,7 +1200,12 @@ export function RepoWorkspace({
   // expansion slot (its keys belong to the previous mode/commit).
   useEffect(() => {
     if (selectedIndex !== null && graph !== null) {
-      const oid = graph.nodes[selectedIndex].id;
+      const node = graph.nodes[selectedIndex];
+      // Mid-stream partial layout: the selected commit's row is not in the
+      // streamed window yet. Skip — leave the current panel untouched until the
+      // refetch remap re-points selectedIndex and this effect re-runs.
+      if (!node) return;
+      const oid = node.id;
       const key = `${repoId}:${oid}`;
       // Same commit as already loaded (a refetch only shifted its row, or the
       // graph object churned) -> keep the panel + open file diff untouched.
@@ -2278,7 +2321,9 @@ export function RepoWorkspace({
 
   function handleSelectParent(parentOrdinal: number) {
     if (selectedIndex === null || graph === null) return;
-    const parentIndex = graph.nodes[selectedIndex].parents[parentOrdinal];
+    const node = graph.nodes[selectedIndex];
+    if (!node) return; // selection not yet in the streamed (partial) window
+    const parentIndex = node.parents[parentOrdinal];
     if (parentIndex !== undefined) setSelectedIndex(parentIndex);
   }
 
@@ -2545,16 +2590,22 @@ export function RepoWorkspace({
     }
     // Commit mode: EXPLICIT-open only.
     if (selectedIndex !== null && graph !== null && commitBrowserOpen && commitDiff !== null) {
-      const oid = graph.nodes[selectedIndex].id;
-      return {
-        source: {
-          mode: 'commit' as const,
-          oid,
-          title: `${shortOid(oid)} · ${commitDiff.details.summary}`,
-        },
-        files: commitDiff.files,
-        onClose: () => setCommitBrowserOpen(false),
-      };
+      // Mid-stream partial layout: the selected commit's row is not in the
+      // streamed window yet -> fall through to null (no browser) until the
+      // refetch remap re-points selectedIndex and this memo re-runs.
+      const node = graph.nodes[selectedIndex];
+      if (node) {
+        const oid = node.id;
+        return {
+          source: {
+            mode: 'commit' as const,
+            oid,
+            title: `${shortOid(oid)} · ${commitDiff.details.summary}`,
+          },
+          files: commitDiff.files,
+          onClose: () => setCommitBrowserOpen(false),
+        };
+      }
     }
     return null;
   }, [compare, compareData, selectedIndex, graph, commitBrowserOpen, commitDiff, headBranch, clearCompare]);
@@ -2638,6 +2689,8 @@ export function RepoWorkspace({
           verifyStatus={verification.verifyStatus}
           onVisibleRangeChange={verification.onVisibleRangeChange}
           onOpenPr={onOpenPr}
+          edgeIndex={graphEdgeIndex ?? undefined}
+          totalRows={graphTotal ?? undefined}
           search={search}
           searchScopeOptions={searchScopeOptions}
           historySearch={historySearch}

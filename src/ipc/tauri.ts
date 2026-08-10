@@ -62,6 +62,7 @@ import type {
   FetchResult,
   FileDiff,
   FileHistoryEntry,
+  GraphChunk,
   GraphLayout,
   ImageDiff,
   ImageDiffRequest,
@@ -174,6 +175,14 @@ export const tauriIpc: IpcApi = {
 
   getGraph(repoId: string): Promise<GraphLayout> {
     return invoke<GraphLayout>('get_graph', { repoId });
+  },
+
+  streamGraph(repoId: string, onChunk: (c: GraphChunk) => void): Promise<void> {
+    const channel = new Channel<GraphChunk>();
+    channel.onmessage = onChunk;
+    // Tauri auto-serializes the Channel as the `on_chunk` command argument
+    // (mirrors historyIndexBuild / cloneRepo).
+    return invoke<void>('stream_graph', { repoId, onChunk: channel });
   },
 
   stage(repoId: string, paths: string[]): Promise<void> {
