@@ -35,6 +35,13 @@ test.describe('09 search & palette @smoke', () => {
     page,
   }) => {
     await openRepo(page);
+    // Boot-settle: the palette's action list is disabled/enabled off the same
+    // refreshing/statusLoading/graphLoading flags as the toolbar Refresh button
+    // (WorkspaceToolbar). Opening the palette while those are still settling
+    // races the highlight-reset effect against the arrow-key nav below (the
+    // registry identity changes mid-navigation and snaps the highlight back to
+    // row 0) — wait for Refresh to go enabled first, same signal, no flake.
+    await expect(page.getByRole('button', { name: 'Refresh' })).toBeEnabled();
     const dialog = await openPalette(page);
     // Empty query → full registry; the highlight starts on the first enabled row.
     const selected = dialog.getByRole('option', { selected: true });
