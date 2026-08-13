@@ -808,21 +808,28 @@
         assert_eq!(first, again, "re-opening the same path must reuse the id");
         assert_eq!(repo_count(&state), 1, "no duplicate entry on re-open");
 
-        // Re-open via an ASCII case-variant of the path (Windows is
-        // case-insensitive): still the same entry.
-        let variant = path_string(dir_a.path()).to_uppercase();
-        let cased = tauri::async_runtime::block_on(open_repo_inner(
-            &state,
-            variant,
-            |_id| Box::new(|| {}),
-        ))
-        .expect("re-open A (case-variant)")
-        .repo_id;
-        assert_eq!(
-            first, cased,
-            "a case-variant path must dedupe to the same id"
-        );
-        assert_eq!(repo_count(&state), 1, "case-variant must not add an entry");
+        // Re-open via an ASCII case-variant of the path: only meaningful on a
+        // case-insensitive filesystem (Windows NTFS, macOS's default APFS).
+        // On Linux's case-sensitive ext4 the uppercased path is a genuinely
+        // different, nonexistent directory, so `read_repo_info`'s `is_dir()`
+        // precheck correctly rejects it before the dedupe scan ever runs —
+        // gate this half of the test to the platforms where it can hold.
+        #[cfg(any(windows, target_os = "macos"))]
+        {
+            let variant = path_string(dir_a.path()).to_uppercase();
+            let cased = tauri::async_runtime::block_on(open_repo_inner(
+                &state,
+                variant,
+                |_id| Box::new(|| {}),
+            ))
+            .expect("re-open A (case-variant)")
+            .repo_id;
+            assert_eq!(
+                first, cased,
+                "a case-variant path must dedupe to the same id"
+            );
+            assert_eq!(repo_count(&state), 1, "case-variant must not add an entry");
+        }
     }
 
     /// Closing an unknown id is a no-op `Ok(())` (idempotent).
