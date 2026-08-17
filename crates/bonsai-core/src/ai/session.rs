@@ -284,7 +284,22 @@ impl<'a> ClaudeSession<'a> {
     /// One stdout line. `Ok(Some(res))` = the run is done (a non-question result).
     fn on_stdout(&mut self, line: &str, limits: &RunLimits) -> Result<Option<AiResult>, LoopEnd> {
         match classify_line(line) {
-            LineOutcome::Heartbeat => {} // A4: watchdog reset (above) only.
+            // A4: the watchdog reset (done by the caller for every stdout line) and
+            // NOTHING in the log — one heartbeat per second would drown the dock.
+            //
+            // P68d: when the line carried a cumulative `estimated_tokens`, forward it
+            // as a METRICS-ONLY event: `kind: Log` with `text: None`. Deliberately
+            // not an 8th event kind — the 7-kind union is locked (§3.2) — and
+            // deliberately not a log line, so the dock stays readable while still
+            // having a live number to show before the first `cost_usd` exists.
+            // Consumers MUST treat a `log` event with `text == None` as metrics.
+            LineOutcome::Heartbeat(tokens) => {
+                if let Some(n) = tokens {
+                    let mut ev = self.event(AiRunEventKind::Log);
+                    ev.thinking_tokens = Some(n);
+                    self.send(ev);
+                }
+            }
             LineOutcome::Log(items) => {
                 for item in items {
                     if item.assistant_text {

@@ -7,6 +7,7 @@ import type {
   StatusSnapshot,
 } from '../ipc';
 import type { DiffSlot } from './DiffView';
+import type { AiRowState } from './repoWorkspace/useAiRuns';
 import { StatusConflictsSection } from './StatusConflictsSection';
 import { StatusSection } from './StatusSection';
 import type { WorkdirSection } from './StatusSection';
@@ -43,8 +44,11 @@ export interface StatusPanelProps {
   conflicts: ConflictEntry[];
   /** P13 §8.2: aiEnabled && aiConsented && aiAvailability?.installed. */
   aiEligible: boolean;
-  /** P13 §8.3: path whose AI resolution is in flight (per-path busy), or null. */
-  aiResolvingPath: string | null;
+  /** P68d §5.4: per-path AI run state for the conflict rows' affordance. Replaces
+   *  the old `aiResolvingPath` scalar, which disabled every row during any run. */
+  aiRows: Record<string, AiRowState>;
+  /** P68d/OQ1: at the AI concurrency cap — no NEW run may start. */
+  aiAtCapacity: boolean;
   /** P15b: true while an AI explain/review call is in flight — disables Review. */
   aiAnalyzing: boolean;
   onStage(paths: string[]): void;
@@ -67,6 +71,10 @@ export interface StatusPanelProps {
   onToggleConflictView(path: string): void;
   /** P13 §8.3: request an AI resolution for one conflicted path. */
   onAiResolve(path: string): void;
+  /** P68d: re-open an already-computed proposal (never re-runs the CLI). */
+  onAiReview(path: string): void;
+  /** P68e: reveal the AI activity dock for a live run. */
+  onAiReveal?(path: string): void;
   /** P23d: open per-line blame for a tracked file (staged/unstaged rows). */
   onBlame(path: string): void;
   /** P23d: open per-file commit history for a tracked file. */
@@ -83,7 +91,8 @@ export function StatusPanel({
   listView,
   conflicts,
   aiEligible,
-  aiResolvingPath,
+  aiRows,
+  aiAtCapacity,
   aiAnalyzing,
   onStage,
   onUnstage,
@@ -95,6 +104,8 @@ export function StatusPanel({
   onResolveConflict,
   onToggleConflictView,
   onAiResolve,
+  onAiReview,
+  onAiReveal,
   onBlame,
   onFileHistory,
 }: StatusPanelProps) {
@@ -157,10 +168,13 @@ export function StatusPanel({
               disabled={disabled}
               diffSlot={diffSlot}
               aiEligible={aiEligible}
-              aiResolvingPath={aiResolvingPath}
+              aiRows={aiRows}
+              aiAtCapacity={aiAtCapacity}
               onResolveConflict={onResolveConflict}
               onToggleConflictView={onToggleConflictView}
               onAiResolve={onAiResolve}
+              onAiReview={onAiReview}
+              onAiReveal={onAiReveal}
             />
           )}
           <StatusSection

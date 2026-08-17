@@ -171,7 +171,7 @@ REM ---- P68a streaming (NDJSON) modes ----
 :stream_success
 set /p _turn=
 echo {"type":"system","subtype":"init","session_id":"sess-stream","model":"sonnet","tools":["Read","Grep","Glob"]}
-echo {"type":"system","subtype":"thinking_tokens","tokens":42}
+echo {"type":"system","subtype":"thinking_tokens","estimated_tokens":420,"estimated_tokens_delta":420}
 echo {"type":"assistant","message":{"content":[{"type":"text","text":"MERGED_STREAM_BODY"}]}}
 echo {"type":"system","subtype":"post_turn_summary","status_category":"review_ready","needs_action":false}
 echo {"type":"result","subtype":"success","is_error":false,"result":"MERGED_STREAM_BODY","total_cost_usd":0.0238,"session_id":"sess-stream"}

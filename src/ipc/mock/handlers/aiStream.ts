@@ -8,7 +8,15 @@
  * D15 — every event kind and every terminal state must be reachable in a plain
  * browser: `?aiSlow` (long run, cancellable), `?aiAsk` (mid-run question + reply
  * round trip), `?aiFail` (single ⇒ rejection, bulk ⇒ ONE per-file failure), and
- * `?ai=off` (no CLI). The `?ai=off` seam is honoured HERE deliberately —
+ * `?ai=off` (no CLI). P68d adds two more:
+ *   `?aiMarkers` — the proposal comes back with its conflict markers INTACT, which is
+ *      the only way to actually exercise the frontend safety gate. The single-path
+ *      stream returns the model's body verbatim (P13 parity), so `hasUnresolvedMarkers`
+ *      in `useAiRuns` is the ONLY thing standing between a markerful body and a silent
+ *      `autoResolve` stage. Without this seam that gate is unprovable end-to-end.
+ *   `?aiFlood` — ~700 log lines, one of them exactly `AI_EVENT_TEXT_MAX` chars, to
+ *      exercise the 500-line cap, `logDropped`, the truncation chip and jump-to-latest.
+ * The `?ai=off` seam is honoured HERE deliberately —
  * `ai.ts:29`'s `aiResolveConflict` ignores it, a known pre-P68 gap left untouched
  * so P68c changes no existing behaviour.
  *
@@ -33,6 +41,14 @@ import type {
 const AI_SLOW = query('aiSlow') !== null;
 const AI_ASK = query('aiAsk') !== null;
 const AI_FAIL = query('aiFail') !== null;
+/** Return the body with markers INTACT — the frontend safety-gate seam (see above). */
+const AI_MARKERS = query('aiMarkers') !== null;
+/** Overrun the 500-line log cap in one run. */
+const AI_FLOOD = query('aiFlood') !== null;
+
+/** MIRRORS `bonsai_core::ai::stream::MAX_EVENT_TEXT`: Rust truncates to exactly this
+ *  many chars and appends `…`, which is what the dock's "truncated" chip detects. */
+const MAX_EVENT_TEXT = 2000;
 
 /** Mock costs. Distinct per turn so "LAST value wins within a run" (A10) is
  *  observable in the harness instead of being a comment. */
@@ -79,6 +95,7 @@ function sequencer(runId: string, onEvent: (e: AiRunEvent) => void, onlyPath: st
         path: onlyPath,
         turn,
         partialText: null,
+        thinkingTokens: null,
         ...extra,
       });
     },
@@ -91,6 +108,12 @@ function sequencer(runId: string, onEvent: (e: AiRunEvent) => void, onlyPath: st
     },
     partialText(): string {
       return partial;
+    },
+    /** P68d: the CLI's `system`/`thinking_tokens` heartbeat as Rust forwards it — a
+     *  METRICS-ONLY `log` event (`text: null`), never a log line (A4). This is the
+     *  run's only live spend signal before the first `costUsd`. */
+    heartbeat(tokens: number): void {
+      this.emit('log', { text: null, thinkingTokens: tokens });
     },
   };
 }
@@ -194,13 +217,26 @@ export const aiStreamHandlers = {
         ev.setTurn(1);
       }
 
-      const ticks = AI_SLOW ? 12 : 3;
-      const gap = AI_SLOW ? 1500 : 200;
+      // `?aiFlood` deliberately overruns AI_LOG_MAX (500) so the cap, `logDropped`
+      // and the dock's jump-to-latest affordance are all reachable in the harness.
+      const ticks = AI_FLOOD ? 700 : AI_SLOW ? 12 : 3;
+      const gap = AI_FLOOD ? 1 : AI_SLOW ? 1500 : 200;
+      let tokens = 0;
       for (let i = 1; i <= ticks; i++) {
         await delay(gap);
         if (run.cancelled) cancelNow(ev);
         // Assistant prose ⇒ it accumulates into `partialText`.
         ev.log(`analysing… (${i}/${ticks})`, undefined, true);
+        // One heartbeat every few lines, cumulative and monotonic like the real CLI.
+        if (i % 3 === 0) {
+          tokens += 150;
+          ev.heartbeat(tokens);
+        }
+      }
+      if (AI_FLOOD) {
+        // Exactly MAX_EVENT_TEXT chars with a trailing `…` — Rust's truncate_text
+        // shape, which is how the dock knows to show the "truncated" chip.
+        ev.log(`${'x'.repeat(MAX_EVENT_TEXT - 1)}…`);
       }
 
       ev.emit('turnEnd', { costUsd: COST_LAST_TURN });
@@ -210,7 +246,11 @@ export const aiStreamHandlers = {
         return {
           path,
           // Derived from the marker fixture; state is NOT mutated (D4).
-          proposedText: file !== undefined ? stripConflictMarkers(file.text) : '',
+          // `?aiMarkers` hands back the markerful body VERBATIM — exactly what the
+          // real single-path stream does with a model that failed to merge — so the
+          // frontend's `hasUnresolvedMarkers` gate can be proven, not assumed.
+          proposedText:
+            file === undefined ? '' : AI_MARKERS ? file.text : stripConflictMarkers(file.text),
           // Per-file cost is unknowable: one run covered them all.
           costUsd: null,
         };

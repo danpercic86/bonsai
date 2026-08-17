@@ -101,8 +101,25 @@ fn stream_success_emits_started_logs_turn_end_and_done() {
     );
     assert!(sink.has_text("MERGED_STREAM_BODY"), "assistant text missing");
     assert!(sink.has_text("summary: status=review_ready needsAction=false"));
-    // A4: heartbeats reset the watchdog but emit nothing.
+    // A4: heartbeats never become a LOG LINE.
     assert!(!sink.has_text("thinking"), "heartbeat leaked into the log");
+    // P68d: they DO surface their cumulative `estimated_tokens` as a metrics-only
+    // event — `kind: Log`, `text: None` — which is the run's only live spend proxy
+    // before the first `cost_usd` (that arrives only at a turn boundary).
+    let metrics: Vec<_> = sink
+        .of_kind(AiRunEventKind::Log)
+        .into_iter()
+        .filter(|e| e.text.is_none())
+        .collect();
+    assert_eq!(metrics.len(), 1, "one heartbeat -> one metrics event");
+    assert_eq!(metrics[0].thinking_tokens, Some(420));
+    // And no ordinary log line ever carries the field, so a consumer can key on it.
+    assert!(
+        sink.of_kind(AiRunEventKind::Log)
+            .iter()
+            .all(|e| e.text.is_none() == e.thinking_tokens.is_some()),
+        "text and thinkingTokens must be mutually exclusive on a log event"
+    );
 }
 
 #[test]

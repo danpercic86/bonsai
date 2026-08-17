@@ -122,8 +122,13 @@ impl<'a> RunEvents<'a> {
     pub(super) fn forward(&self, ev: AiRunEvent) {
         match ev.kind {
             AiRunEventKind::Started => {}
+            // P68d: a `Log` event with NO text is a metrics-only heartbeat carrying
+            // `thinkingTokens` — the run's only live spend proxy before the first
+            // `costUsd`. It bypasses `stream_log` on purpose: that switch suppresses
+            // log NOISE, and silencing the spend readout with it would remove the
+            // very thing that made "no spend cap" acceptable.
             AiRunEventKind::Log => {
-                if self.stream_log {
+                if self.stream_log || ev.text.is_none() {
                     self.relabel(ev);
                 }
             }

@@ -39,10 +39,39 @@ impl AiRunRegistry {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Mint a run id and register it. NO new dependency (A7): the id is
+    /// Mint a run id and register it, unconditionally. Prefer
+    /// [`Self::register_within`] anywhere a concurrency cap applies.
+    pub fn register(&self) -> (String, RunControl) {
+        Self::insert(&mut self.map())
+    }
+
+    /// Register ONLY while fewer than `cap` runs are live. `Err(live)` = at
+    /// capacity, carrying the count observed under the SAME lock as the check.
+    ///
+    /// This exists because a check-then-act pair is a real race here, not a
+    /// theoretical one: Tauri polls every command as its own task, so two invokes
+    /// arriving in the same JS tick (a double-clicked "Resolve all with AI", a
+    /// retried IPC call, a second window) can both read `active() == cap - 1`,
+    /// both fall through, and both `register()` — giving `cap + 1` live `claude`
+    /// process trees against a metered subscription, with no wall-clock deadline
+    /// and no default spend cap to bound them (D3/D7). Doing the check and the
+    /// insert under one `MutexGuard` makes that impossible by construction.
+    pub fn register_within(&self, cap: usize) -> Result<(String, RunControl), usize> {
+        let mut map = self.map();
+        let live = map.len();
+        if live >= cap {
+            return Err(live);
+        }
+        Ok(Self::insert(&mut map))
+    }
+
+    /// Mint + insert with the map lock ALREADY held (the caller owns the guard, so
+    /// a capped registration cannot be split into two critical sections).
+    ///
+    /// NO new dependency (A7): the id is
     /// `ai-<nanos since UNIX_EPOCH, hex>-<process-global counter>` — unique per
     /// process and unguessable enough for a local channel key.
-    pub fn register(&self) -> (String, RunControl) {
+    fn insert(map: &mut HashMap<String, AiRunHandle>) -> (String, RunControl) {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -56,7 +85,7 @@ impl AiRunRegistry {
         let pid = Arc::new(AtomicU32::new(0));
         let (reply_tx, replies) = channel::<String>();
 
-        self.map().insert(
+        map.insert(
             run_id.clone(),
             AiRunHandle {
                 cancel: Arc::clone(&cancel),
@@ -169,6 +198,56 @@ mod tests {
         assert!(reg.is_awaiting(&id));
         reg.reply(&id, "answer".into()).expect("awaiting -> Ok");
         assert_eq!(ctl.replies.try_recv().ok().as_deref(), Some("answer"));
+    }
+
+    #[test]
+    fn register_within_refuses_at_the_cap_and_reports_the_live_count() {
+        let reg = AiRunRegistry::default();
+        let (a, _ctl_a) = reg.register_within(2).expect("first fits");
+        let (_b, _ctl_b) = reg.register_within(2).expect("second fits");
+        assert_eq!(reg.register_within(2).err(), Some(2), "at cap -> Err(live)");
+        reg.finish(&a);
+        assert!(reg.register_within(2).is_ok(), "a freed slot is reusable");
+    }
+
+    /// P68d FIX 1 (the P68c review's must-fix): the OLD shape was
+    /// `active()` → drop the lock → `register()`, which two tasks racing inside one
+    /// tick could both pass. Hammer the capped path from many threads released by a
+    /// spin barrier and assert the cap is NEVER exceeded — with the old code this
+    /// over-registers reproducibly.
+    #[test]
+    fn racing_registrations_can_never_both_pass_the_cap() {
+        use std::sync::atomic::AtomicUsize;
+        use std::sync::Barrier;
+
+        const THREADS: usize = 8;
+        const CAP: usize = 1;
+
+        for _ in 0..50 {
+            let reg = AiRunRegistry::default();
+            let barrier = Arc::new(Barrier::new(THREADS));
+            let wins = Arc::new(AtomicUsize::new(0));
+            let mut handles = Vec::with_capacity(THREADS);
+            for _ in 0..THREADS {
+                let reg = reg.clone();
+                let barrier = Arc::clone(&barrier);
+                let wins = Arc::clone(&wins);
+                handles.push(std::thread::spawn(move || {
+                    barrier.wait();
+                    // Keep the RunControl alive for the whole attempt window so a
+                    // winner really does occupy its slot.
+                    let got = reg.register_within(CAP);
+                    if got.is_ok() {
+                        wins.fetch_add(1, Ordering::SeqCst);
+                    }
+                    got.ok()
+                }));
+            }
+            let kept: Vec<_> = handles.into_iter().filter_map(|h| h.join().ok()).collect();
+            assert_eq!(wins.load(Ordering::SeqCst), CAP, "exactly `cap` registrations may win");
+            assert_eq!(reg.active(), CAP, "the map itself must never exceed the cap");
+            drop(kept);
+        }
     }
 
     #[test]

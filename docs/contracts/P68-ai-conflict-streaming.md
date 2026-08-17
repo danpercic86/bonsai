@@ -574,7 +574,7 @@ Mapping table — **normative**:
 | NDJSON line | Outcome | Emitted text |
 |---|---|---|
 | `type:"system"`, `subtype:"init"` | `Log` | `session <session_id> · model <model> · tools: <tools.join(", ")>` (empty `tools` ⇒ `tools: none`) |
-| `type:"system"`, `subtype:"thinking_tokens"` | **`Heartbeat`** | *(nothing — A4)* |
+| `type:"system"`, `subtype:"thinking_tokens"` | **`Heartbeat(Some(estimated_tokens))`** | *(no log line — A4; a **metrics-only** event, see the P68d amendment below)* |
 | `type:"system"`, `subtype:"post_turn_summary"` | `Log` | `summary: status=<status_category ?? "?"> needsAction=<needs_action ?? false>` — **hint only, never authoritative (D9)** |
 | `type:"system"`, any other subtype | `Log` | `system/<subtype>` |
 | `type:"rate_limit_event"` | `Log` | `rate limit: <compact re-serialization, ≤200 chars>` |
@@ -589,6 +589,52 @@ Mapping table — **normative**:
 
 stderr lines are not classified: the session emits them as `Log` with a `stderr: ` prefix and keeps
 the last 2000 chars as `stderr_tail` for the failure message.
+
+> **AMENDED by P68d (2026-08-17) — the LIVE TOKEN COUNT. Payload VERIFIED, not assumed.**
+>
+> *Why:* `cost_usd` only exists at a turn boundary (`TurnEnd`/`Done`), so a long single-turn run
+> shows `$—` for minutes. The user accepted "no spend cap" **because** spend would be visible, so
+> that gap is part of the safety story, not cosmetics (P68e §12-B1). The agreed remedy was a live
+> token count *if* the heartbeat actually carries one.
+>
+> *What the payload actually contains* — run against the installed `claude` **v2.1.233**,
+> `-p --verbose --output-format stream-json`, with a prompt that forces extended thinking:
+> ```json
+> {"type":"system","subtype":"thinking_tokens","estimated_tokens":350,
+>  "estimated_tokens_delta":150,"uuid":"…","session_id":"…"}
+> ```
+> Five such lines in one run: `estimated_tokens` 100 → 200 → 350 → 450 → 600, i.e. **cumulative and
+> monotonic**, roughly one line per few seconds. The run's real
+> `usage.output_tokens_details.thinking_tokens` on the `result` line was **679**, so the estimate is
+> a good live approximation of the final figure.
+>
+> *Scope limits — state them, do not paper over them:*
+> - It is **THINKING tokens only, and estimated**. It is not a total-token count.
+> - A run that never enters extended thinking emits **no heartbeats at all** (verified: a trivial
+>   prompt produced zero), so the readout legitimately stays absent for short runs.
+> - The `assistant` line's `usage` is **NOT** a usable alternative: mid-run it reports
+>   `output_tokens: 2` (a placeholder). The real 1398 only appears on `result`.
+> - It is **never converted to money.** No price table exists anywhere in Bonsai, and inventing one
+>   would be worse than showing nothing (P68e §12-B1 option (c), rejected).
+>
+> *Wire change (additive):* `AiRunEvent` gains `thinking_tokens: Option<u64>` → `thinkingTokens` in
+> TS. `LineOutcome::Heartbeat` becomes `Heartbeat(Option<u64>)`; a missing, non-integer or negative
+> `estimated_tokens` degrades to `None` (D12 — never an error).
+>
+> *Delivery, without breaking the locked 7-kind union:* the session emits a **metrics-only event** —
+> `kind: Log` with **`text: None`** and `thinkingTokens: Some(n)`. So:
+> - **`text` and `thinkingTokens` are mutually exclusive on a `log` event** (asserted in
+>   `ai::session_tests`), which is how a consumer tells the two apart;
+> - the dock gets no extra noise (A4 stands: heartbeats never become log lines);
+> - `AiRunEventKind` still has exactly seven variants.
+>
+> A metrics event **bypasses the `ai_stream_log` setting** in `RunEvents::forward`: that switch
+> suppresses log *noise*, and silencing the spend readout with it would remove the thing that made
+> "no spend cap" acceptable.
+>
+> Frontend: `useAiRuns` stores it as `AiRunState.thinkingTokens` (last value wins), buffered on the
+> same 50 ms flush as log lines (D5). The mock emits one heartbeat every third tick so the harness
+> can see it climb.
 
 ### 3.3 `ai/session.rs` — `ClaudeSession` lifecycle
 
@@ -1107,6 +1153,29 @@ export const AI_LOG_MAX = 500;
  *  subscription-rate-limit hazard and unreadable in one dock. */
 export const AI_MAX_CONCURRENT_RUNS = 3;
 ```
+
+> **AMENDED by the P68d implementation (2026-08-17) — the landed layout and the deviations.**
+>
+> `useAiRuns.ts` as one ~300-line file was not achievable once it also owned the buffered flush, the
+> elapsed clock, the autonomy routing and the prune policy: the first working version was **668
+> lines**. Split per the ~500-line rule, in the same increment:
+>
+> | File | Lines | Responsibility |
+> |---|---|---|
+> | `repoWorkspace/useAiRuns.ts` | **475** | The hook only: `runsRef` + render mirror, the 50 ms log/metrics buffers, the elapsed interval, `start`/`cancel`/`reply`/`review`/`dismiss`, `drive` + `settle`, the prune effect. |
+> | `repoWorkspace/aiRunState.ts` | **231** | The state SHAPE (`AiRunState`, `AiRunFileState`, `AiRowState`, `AiRunStatus`) + the pure transforms: **`settleBatch` (which owns the markerful safety gate)**, `deriveRowStates`, `pruneRuns`, `newRun`, `conflictKey`. |
+> | `repoWorkspace/aiRunEvent.ts` | **98** | `decideEvent` — the §5.2 table as a PURE decision function (`{patch, logLine, thinkingTokens, flushNow, fireQueuedCancel}`). Mirrors the Rust `stream.rs`/`session.rs` split (D12): interpretation apart from the machinery that acts on it. |
+> | `repoWorkspace/aiRunLog.ts` | **69** | `AiRunLogLine` + `AiRunLogKind` + **`classifyLogLine` (P68e §12-A1: kind decided ONCE, at ingest)**, `AI_LOG_FLUSH_MS`, `AI_LOG_MAX`, `AI_EVENT_TEXT_MAX`, `appendCapped`. |
+>
+> Deviations from §5.2/§5.4, all deliberate:
+> 1. **`applyResolution` takes an optional third argument** (`successMessage`). `handleResolveConflictText` toasts `Staged resolution for <path>`; routing autoResolve through it (D4: one writer) would otherwise either lose the P13 copy `Resolved <path> with AI — review the staged result` or emit two toasts. One writer, one toast, exact copy preserved.
+> 2. **`tick` is a TIMESTAMP, not a counter.** `deriveRowStates(view, tick)` is then a pure function of state — no `Date.now()` inside a memo, so React and eslint see the real dependency (the counter version needed an `eslint-disable`). Refreshed from exactly two places: the once-a-second interval that runs only while a run is live (D5), and every commit.
+> 3. **`AiRowState` carries `key` and `error`** as well as `{status, elapsedSecs}` — the row needs the error for the `⚠` tooltip, and the key to address the dock entry in P68e.
+> 4. **The store exposes `rowStates` and `runningCount`**, so `RepoWorkspace` passes `aiRuns.rowStates` / `aiRuns.atCapacity` straight through instead of deriving them in a 3050-line container.
+> 5. **`onAiReveal` is an OPTIONAL prop and P68d does not pass it.** §5.4 has a `running`/`awaitingInput` row click "reveal + expand the dock", and there is no dock until P68e. So while `onAiReveal` is absent the live-run button renders as a read-only status badge (`…12s` / `?`, disabled, with an explanatory `title`); P68e passes the handler and it becomes clickable. It never disables any OTHER row — that is the item-5 invariant and it is tested.
+> 6. **Two extra prop hops**: §5.2 lists only `StatusConflictsSection.tsx`, but `aiResolvingPath` was also threaded through `StatusPanel.tsx` and `WorkspaceRightPanel.tsx`; both now carry `aiRows` / `aiAtCapacity` / `onAiReview` / `onAiReveal`.
+> 7. **Fixture change**: the paused-merge mock fixture gains a second `bothModified` path (`MERGE_DEEP_PATH`, a deep i18n JSON path). The item-5 scenario needs a second AI-eligible file to switch to, P68f's "Resolve all with AI" needs ≥2 to appear at all, and the deep path exercises path truncation in the dock. Five fixture-count assertions were updated with it.
+> 8. **New mock seams** `?aiMarkers` (markerful proposal — the only way to exercise the safety gate through the real IPC surface) and `?aiFlood` (~700 lines + one exactly-2000-char line, for the cap / truncation chip / jump-to-latest).
 
 Event handling (normative):
 

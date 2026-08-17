@@ -92,19 +92,23 @@ pub(crate) async fn ai_resolve_conflict_stream_inner(
     // queued run with no visible state is worse than an error. The message is
     // deliberately distinct (and stable) so the UI can say "too many AI runs"
     // instead of showing a generic `aiFailed`.
-    let active = registry.active();
-    if active >= ai::AI_MAX_CONCURRENT_RUNS {
-        return Err(AppError::AiFailed(format!(
-            "too many AI runs in progress ({active} of {} allowed) — cancel one and try again",
-            ai::AI_MAX_CONCURRENT_RUNS
-        )));
-    }
-
-    // The registry entry must go away on EVERY exit path — including a panic
+    //
+    // ATOMIC on purpose (P68d FIX 1): the check and the registration happen under
+    // ONE registry lock. Tauri polls every command as its own task, so the earlier
+    // `active()` → register() pair let two invokes in the same JS tick both pass —
+    // a double-clicked "Resolve all with AI" really could leave 4 live `claude`
+    // trees against a cap of 3. `register_within` makes that unrepresentable.
+    //
+    // The registry entry must then go away on EVERY exit path — including a panic
     // inside the blocking task — or `ai_cancel_run` would keep accepting a dead id
     // and the app-exit hook would try to kill a stale pid. A drop guard is the only
     // shape that survives an early `?`.
-    let (run_id, ctl) = registry.register();
+    let (run_id, ctl) = registry.register_within(ai::AI_MAX_CONCURRENT_RUNS).map_err(|live| {
+        AppError::AiFailed(format!(
+            "too many AI runs in progress ({live} of {} allowed) — cancel one and try again",
+            ai::AI_MAX_CONCURRENT_RUNS
+        ))
+    })?;
     let _guard = FinishGuard { registry: registry.clone(), run_id };
 
     tauri::async_runtime::spawn_blocking(move || {

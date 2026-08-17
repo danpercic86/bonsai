@@ -1,9 +1,15 @@
 /** P67 §5.6: the conflicts section + its rows, split out of `StatusPanel.tsx`
  *  verbatim. Renders FLAT and above STAGED (P3c §8.2) — `StatusPanel` owns that
- *  ordering. */
+ *  ordering.
+ *
+ *  P68d §5.4: the single `aiResolvingPath` scalar became a per-path `aiRows` map.
+ *  That scalar's `aiDisabled={aiResolvingPath !== null}` disabled EVERY row's ✨AI
+ *  button during any single run — the reported item-5 bug, part (a). Now the ONLY
+ *  thing that disables an idle row is the concurrency cap. */
 import { useMemo } from 'react';
 import type { ConflictEntry, ConflictKind, ConflictResolution, StatusEntry } from '../ipc';
 import type { DiffSlot } from './DiffView';
+import type { AiRowState } from './repoWorkspace/useAiRuns';
 import { BADGES, splitPath } from './StatusFileRow';
 
 // P3c §8.2: lowercase spaced text of ConflictKind for the per-row badge.
@@ -17,17 +23,52 @@ const CONFLICT_KIND_LABELS: Record<ConflictKind, string> = {
   bothDeleted: 'both deleted',
 };
 
+/** The ✨AI button's label / tooltip / `data-state` per store status (§5.4). */
+function aiButtonView(
+  path: string,
+  row: AiRowState | undefined,
+  aiEligible: boolean,
+): { label: string; title: string; state: string } {
+  if (!aiEligible) {
+    return { label: '✨ AI', title: 'Enable AI features in Settings to use this', state: 'idle' };
+  }
+  switch (row?.status) {
+    case 'running':
+      return {
+        label: `…${row.elapsedSecs}s`,
+        title: `Resolving ${path} with AI — ${row.elapsedSecs}s elapsed`,
+        state: 'running',
+      };
+    case 'awaitingInput':
+      return { label: '?', title: 'Claude asked a question — answer it to continue', state: 'ask' };
+    case 'ready':
+      return { label: '✓ review', title: `Review the AI proposal for ${path}`, state: 'ready' };
+    case 'failed':
+      return {
+        label: '⚠',
+        title: `${row.error ?? 'AI resolution failed'} — click to retry`,
+        state: 'failed',
+      };
+    // A cancelled run leaves nothing to review: offer a plain retry.
+    case 'cancelled':
+    default:
+      return { label: '✨ AI', title: 'Resolve with AI', state: 'idle' };
+  }
+}
+
 function ConflictRow({
   entry,
   kind,
   disabled,
   expanded,
   aiEligible,
-  aiBusy,
-  aiDisabled,
+  aiRow,
+  aiAtCapacity,
   onResolve,
   onToggleView,
   onAiResolve,
+  onAiReview,
+  onAiReveal,
 }: {
   entry: StatusEntry;
   /** null = kind lookup miss (conflicts list momentarily stale) — no badge. */
@@ -36,18 +77,34 @@ function ConflictRow({
   expanded: boolean;
   /** P13 §8.2: AI enabled+consented+CLI installed (button shown but usable). */
   aiEligible: boolean;
-  /** This row's AI resolution is in flight. */
-  aiBusy: boolean;
-  /** Any AI resolution in flight (only one at a time) — disables this button. */
-  aiDisabled: boolean;
+  /** P68d: THIS path's run state, or undefined when it has none. A run on another
+   *  path is invisible here by design — that is the item-5 fix. */
+  aiRow: AiRowState | undefined;
+  /** P68d/OQ1: the concurrency cap is reached, so a NEW run cannot start. */
+  aiAtCapacity: boolean;
   onResolve: (r: ConflictResolution) => void;
   onToggleView: () => void;
   onAiResolve: () => void;
+  /** Re-open the finished proposal (`✓ review`) — the store still has it. */
+  onAiReview: () => void;
+  /** P68e: reveal/expand the activity dock for a live run. Absent until the dock
+   *  exists, in which case a live row's button is a read-only status badge. */
+  onAiReveal?: () => void;
 }) {
   const { dir, name } = splitPath(entry.path);
   // P13 §8.2: AI only makes sense for the two text-mergeable kinds (matches the
   // ConflictEditor mount guard); hidden for deletion/add/binary kinds.
   const aiShown = kind === 'bothModified' || kind === 'bothAdded';
+  const status = aiRow?.status;
+  const live = status === 'running' || status === 'awaitingInput';
+  const view = aiButtonView(entry.path, aiRow, aiEligible);
+  // A run elsewhere never disables this row (item-5 part a); only the cap does, and
+  // only for a row that would START something.
+  const aiDisabled =
+    !aiEligible ||
+    disabled ||
+    (live ? onAiReveal === undefined : status !== 'ready' && aiAtCapacity);
+  const onAiClick = live ? onAiReveal : status === 'ready' ? onAiReview : onAiResolve;
   return (
     <li
       className={`file-row file-status-conflicted conflict-row${expanded ? ' file-row-expanded' : ''}`}
@@ -100,12 +157,13 @@ function ConflictRow({
         <button
           type="button"
           className="row-action conflict-action conflict-action-ai"
-          title={aiEligible ? 'Resolve with AI' : 'Enable AI features in Settings to use this'}
+          data-state={view.state}
+          title={view.title}
           aria-label={`Resolve ${entry.path} with AI`}
-          disabled={!aiEligible || disabled || aiDisabled}
-          onClick={onAiResolve}
+          disabled={aiDisabled}
+          onClick={onAiClick}
         >
-          {aiBusy ? '…' : '✨ AI'}
+          {view.label}
         </button>
       )}
     </li>
@@ -120,21 +178,31 @@ export function StatusConflictsSection({
   disabled,
   diffSlot,
   aiEligible,
-  aiResolvingPath,
+  aiRows,
+  aiAtCapacity,
   onResolveConflict,
   onToggleConflictView,
   onAiResolve,
+  onAiReview,
+  onAiReveal,
 }: {
   entries: StatusEntry[];
   conflicts: ConflictEntry[];
   disabled: boolean;
   diffSlot: DiffSlot | null;
   aiEligible: boolean;
-  /** Path whose AI resolution is currently in flight, or null. */
-  aiResolvingPath: string | null;
+  /** P68d: per-path AI run state, keyed by conflicted path. Replaces the single
+   *  `aiResolvingPath` scalar. */
+  aiRows: Record<string, AiRowState>;
+  /** P68d/OQ1: at the concurrency cap — no NEW run may start. */
+  aiAtCapacity: boolean;
   onResolveConflict: (path: string, r: ConflictResolution) => void;
   onToggleConflictView: (path: string) => void;
   onAiResolve: (path: string) => void;
+  /** Re-open a finished proposal from the store (never re-runs the CLI). */
+  onAiReview: (path: string) => void;
+  /** P68e: reveal the AI activity dock for a live run. */
+  onAiReveal?: (path: string) => void;
 }) {
   const kindByPath = useMemo(
     () => new Map(conflicts.map((c) => [c.path, c.kind] as const)),
@@ -154,11 +222,13 @@ export function StatusConflictsSection({
             disabled={disabled}
             expanded={diffSlot !== null && diffSlot.key === `conflict:${entry.path}`}
             aiEligible={aiEligible}
-            aiBusy={aiResolvingPath === entry.path}
-            aiDisabled={aiResolvingPath !== null}
+            aiRow={aiRows[entry.path]}
+            aiAtCapacity={aiAtCapacity}
             onResolve={(r) => onResolveConflict(entry.path, r)}
             onToggleView={() => onToggleConflictView(entry.path)}
             onAiResolve={() => onAiResolve(entry.path)}
+            onAiReview={() => onAiReview(entry.path)}
+            onAiReveal={onAiReveal === undefined ? undefined : () => onAiReveal(entry.path)}
           />
         ))}
       </ul>

@@ -71,6 +71,7 @@ import { useRemoteOps, type NonFfPullInfo } from './repoWorkspace/useRemoteOps';
 import { useCommitActions } from './repoWorkspace/useCommitActions';
 import { useHookGate } from './repoWorkspace/useHookGate';
 import { useBranchActions } from './repoWorkspace/useBranchActions';
+import { useAiRuns } from './repoWorkspace/useAiRuns';
 import { useMergeActions } from './repoWorkspace/useMergeActions';
 import { useStashActions } from './repoWorkspace/useStashActions';
 import { useSubmoduleActions } from './repoWorkspace/useSubmoduleActions';
@@ -238,9 +239,6 @@ export function RepoWorkspace({
   // Tracks conflict count across renders so we auto-open the first conflicted
   // file exactly once per conflict episode (0 -> >0 edge), not on every refetch.
   const prevConflictCountRef = useRef(0);
-  // P13 §8.3: path whose AI resolution is in flight (calls take seconds). Gates
-  // the per-row ✨ AI button without freezing the whole panel like `mutating`.
-  const [aiResolvingPath, setAiResolvingPath] = useState<string | null>(null);
   // P15b: explain/review output panel (read-only prose). RepoWorkspace owns the
   // ipc.aiAnalyzeDiff call + the panel's loading/error/result state; the panel is
   // presentational. `null` => not shown. A req-id guards against a stale response
@@ -1543,7 +1541,7 @@ export function RepoWorkspace({
     handleMergeBranch,
     handleResolveConflict,
     handleResolveConflictText,
-    handleAiResolveConflict,
+    openAiProposal,
     handleCommitMerge,
     handleAbortMerge,
   } = useMergeActions({
@@ -1551,11 +1549,25 @@ export function RepoWorkspace({
     pushToast,
     setMutating,
     refreshAll,
-    aiConflictAutonomy,
-    setAiResolvingPath,
     setDiffSlot,
     fileDiffReqId,
     runWithHookGate: hookGate.runWithHookGate,
+  });
+
+  // P68d §C: the per-path AI run store — THE item-5 fix. It replaces the single
+  // `aiResolvingPath` scalar (which disabled every conflict row during any run) and
+  // the single `diffSlot`-behind-`fileDiffReqId` result sink (which silently threw
+  // away a finished proposal when the user opened another file). Proposals live here;
+  // opening the review editor is the separate, explicit `openAiProposal`.
+  const conflictPaths = useMemo(() => conflicts.map((c) => c.path), [conflicts]);
+  const aiRuns = useAiRuns({
+    repoId,
+    pushToast,
+    aiConflictAutonomy,
+    aiEligible,
+    applyResolution: handleResolveConflictText,
+    openAiProposal,
+    conflictPaths,
   });
 
   const { handleCreateStash, handleApplyStash, handlePopStash, handleDropStash } = useStashActions({
@@ -2786,7 +2798,8 @@ export function RepoWorkspace({
           statusLoading={statusLoading}
           statusError={statusError}
           diffSlot={diffSlot}
-          aiResolvingPath={aiResolvingPath}
+          aiRows={aiRuns.rowStates}
+          aiAtCapacity={aiRuns.atCapacity}
           aiPanelLoading={aiPanel?.loading === true}
           onStage={(paths) => void handleStage(paths)}
           onUnstage={(paths) => void handleUnstage(paths)}
@@ -2795,7 +2808,11 @@ export function RepoWorkspace({
           onToggleDiff={handleToggleWorkdirDiff}
           onResolveConflict={(path, r) => void handleResolveConflict(path, r)}
           onToggleConflictView={handleToggleConflictView}
-          onAiResolve={(path) => void handleAiResolveConflict(path)}
+          onAiResolve={(path) => aiRuns.startConflictRun(path)}
+          onAiReview={(path) => {
+            const run = aiRuns.runForPath(path);
+            if (run !== null) aiRuns.reviewProposal(run.key, path);
+          }}
           onBlame={(path) => void handleBlame(path)}
           onFileHistory={(path) => void handleFileHistory(path)}
           onCreateStash={(scope) => void handleCreateStash(scope)}

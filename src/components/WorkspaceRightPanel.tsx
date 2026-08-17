@@ -86,7 +86,8 @@ export interface WorkspaceRightPanelProps {
   statusLoading: boolean;
   statusError: StatusPanelProps['error'];
   diffSlot: StatusPanelProps['diffSlot'];
-  aiResolvingPath: StatusPanelProps['aiResolvingPath'];
+  aiRows: StatusPanelProps['aiRows'];
+  aiAtCapacity: StatusPanelProps['aiAtCapacity'];
   aiPanelLoading: boolean;
   onStage: StatusPanelProps['onStage'];
   onUnstage: StatusPanelProps['onUnstage'];
@@ -96,6 +97,8 @@ export interface WorkspaceRightPanelProps {
   onResolveConflict: StatusPanelProps['onResolveConflict'];
   onToggleConflictView: StatusPanelProps['onToggleConflictView'];
   onAiResolve: StatusPanelProps['onAiResolve'];
+  onAiReview: StatusPanelProps['onAiReview'];
+  onAiReveal?: StatusPanelProps['onAiReveal'];
   onBlame: StatusPanelProps['onBlame'];
   onFileHistory: StatusPanelProps['onFileHistory'];
   /** P34: stash the worktree per scope (staging-panel split button + sidebar). */
@@ -168,7 +171,8 @@ export function WorkspaceRightPanel({
   statusLoading,
   statusError,
   diffSlot,
-  aiResolvingPath,
+  aiRows,
+  aiAtCapacity,
   aiPanelLoading,
   onStage,
   onUnstage,
@@ -178,6 +182,8 @@ export function WorkspaceRightPanel({
   onResolveConflict,
   onToggleConflictView,
   onAiResolve,
+  onAiReview,
+  onAiReveal,
   onBlame,
   onFileHistory,
   onCreateStash,
@@ -283,7 +289,8 @@ export function WorkspaceRightPanel({
             listView={listView}
             conflicts={conflicts}
             aiEligible={aiEligible}
-            aiResolvingPath={aiResolvingPath}
+            aiRows={aiRows}
+            aiAtCapacity={aiAtCapacity}
             aiAnalyzing={aiPanelLoading}
             onStage={onStage}
             onUnstage={onUnstage}
@@ -299,6 +306,8 @@ export function WorkspaceRightPanel({
             onResolveConflict={onResolveConflict}
             onToggleConflictView={onToggleConflictView}
             onAiResolve={onAiResolve}
+            onAiReview={onAiReview}
+            onAiReveal={onAiReveal}
             onBlame={onBlame}
             onFileHistory={onFileHistory}
           />

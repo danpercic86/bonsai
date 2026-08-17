@@ -258,6 +258,76 @@ describe('?aiFail', () => {
   });
 });
 
+describe('?aiMarkers — the frontend safety-gate seam (P68d)', () => {
+  /**
+   * Why this seam has to exist. `AiResolveBatch.proposedText` is a REVIEWABLE proposal,
+   * not a verified-clean merge: bulk marks a markerful body `failed` in Rust, but the
+   * SINGLE-path stream returns the model's body verbatim (P13 parity). The only thing
+   * standing between such a body and a silent `autoResolve` stage is the frontend's
+   * `hasUnresolvedMarkers` check in `useAiRuns`. Without `?aiMarkers` the mock could
+   * only ever hand back a stripped body, so that gate could be unit-tested with a
+   * fabricated batch but never exercised through the real IPC surface — which is
+   * exactly the class of gap the P68b review refused to accept on trust.
+   */
+  it('returns the conflict body with its markers INTACT, and mutates nothing', async () => {
+    const { repoId, stream } = await loadWith('aiMarkers');
+    const { requireRepo } = await import('../repoState');
+    const before = structuredClone(requireRepo(repoId).status.conflicted);
+    const sink = collector();
+
+    const batch = await run(stream.aiResolveConflictStream(repoId, [AUTH], sink.onEvent));
+
+    const body = batch.proposals[0]?.proposedText ?? '';
+    expect(body).toContain('<<<<<<< HEAD');
+    expect(body).toContain('=======');
+    expect(body).toContain('>>>>>>>');
+    // Still a normal SUCCESSFUL run: the danger is precisely that it looks clean.
+    expect(sink.kinds().at(-1)).toBe('done');
+    expect(batch.failed).toEqual([]);
+    // D4: nothing was written.
+    expect(requireRepo(repoId).status.conflicted).toEqual(before);
+  });
+
+  it('the default (no seam) still strips the markers', async () => {
+    const { repoId, stream } = await loadWith('');
+    const batch = await run(stream.aiResolveConflictStream(repoId, [AUTH], () => {}));
+    expect(batch.proposals[0]?.proposedText).not.toContain('<<<<<<<');
+  });
+});
+
+describe('?aiFlood — the 500-line log cap and the truncation chip (P68d)', () => {
+  it('emits well over AI_LOG_MAX lines, one of them exactly MAX_EVENT_TEXT chars', async () => {
+    const { repoId, stream } = await loadWith('aiFlood');
+    const sink = collector();
+    await run(stream.aiResolveConflictStream(repoId, [AUTH], sink.onEvent));
+
+    const { AI_LOG_MAX, AI_EVENT_TEXT_MAX } = await import(
+      '../../../components/repoWorkspace/aiRunLog'
+    );
+    const lines = sink.texts();
+    expect(lines.length).toBeGreaterThan(AI_LOG_MAX);
+    // Rust's truncate_text shape: exactly the cap, last char an ellipsis.
+    const truncated = lines.filter((t) => t.length === AI_EVENT_TEXT_MAX);
+    expect(truncated).toHaveLength(1);
+    expect(truncated[0]?.endsWith('…')).toBe(true);
+  });
+
+  it('heartbeats arrive as metrics-only log events with a monotonic token count', async () => {
+    const { repoId, stream } = await loadWith('');
+    const sink = collector();
+    await run(stream.aiResolveConflictStream(repoId, [AUTH], sink.onEvent));
+
+    const metrics = sink.events.filter((e) => e.kind === 'log' && e.text === null);
+    expect(metrics.length).toBeGreaterThan(0);
+    // Never a log line AND a token count on the same event (the consumer keys on it).
+    expect(metrics.every((e) => e.thinkingTokens !== null)).toBe(true);
+    expect(sink.events.every((e) => e.text === null || e.thinkingTokens === null)).toBe(true);
+    const counts = metrics.map((e) => e.thinkingTokens ?? 0);
+    expect(counts).toEqual([...counts].sort((a, b) => a - b));
+    expect(counts[0]).toBeGreaterThan(0);
+  });
+});
+
 describe('?ai=off and the concurrency cap', () => {
   it('?ai=off ⇒ aiUnavailable with no event and no run', async () => {
     const { repoId, stream } = await loadWith('ai=off');

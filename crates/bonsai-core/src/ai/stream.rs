@@ -58,6 +58,23 @@ pub struct AiRunEvent {
     /// is not counted twice. Do NOT "fix" that exclusion — the dock log, not this
     /// field, is the complete record.
     pub partial_text: Option<String>,
+    /// P68d: the CLI's own CUMULATIVE `estimated_tokens` from the latest
+    /// `system`/`thinking_tokens` heartbeat, when one carried it.
+    ///
+    /// Why this field exists: `cost_usd` only arrives at a turn boundary
+    /// (`TurnEnd`/`Done`), so a long single-turn run shows `$—` for minutes — and
+    /// the user accepted "no spend cap" *because* spend would be visible. This is
+    /// the agreed live proxy. **Verified against `claude` v2.1.233** (2026-08-17):
+    /// the heartbeat is `{"type":"system","subtype":"thinking_tokens",
+    /// "estimated_tokens":350,"estimated_tokens_delta":150,…}`, cumulative and
+    /// monotonic, roughly ~1 line per few seconds while the model thinks.
+    ///
+    /// SCOPE, precisely — it is THINKING tokens only, and estimated: the observed
+    /// run ended at `estimated_tokens: 600` against a real
+    /// `usage.output_tokens_details.thinking_tokens: 679`. A run that never enters
+    /// extended thinking emits NO heartbeats and this stays `None` throughout. It is
+    /// deliberately NOT converted to money anywhere — no price table is hard-coded.
+    pub thinking_tokens: Option<u64>,
 }
 
 impl AiRunEvent {
@@ -74,6 +91,7 @@ impl AiRunEvent {
             path: None,
             turn,
             partial_text: None,
+            thinking_tokens: None,
         }
     }
 }
@@ -131,8 +149,14 @@ pub enum LineOutcome {
     /// This is a `result` line: the session re-parses the RAW line through
     /// [`super::parse_result_envelope`] (spike §1.3) and does turn accounting.
     Result,
-    /// A heartbeat: it RESETS the idle watchdog but produces no event (A4).
-    Heartbeat,
+    /// A heartbeat: it RESETS the idle watchdog but produces NO log line (A4 — one
+    /// per second would drown the dock).
+    ///
+    /// `Some(n)` = the line carried a cumulative `estimated_tokens` count (P68d);
+    /// the session forwards it as a *metrics-only* event (no `text`) so the UI has a
+    /// live number while `cost_usd` is still unknown. `None` = pure liveness (a
+    /// blank line, or a `stream_event` with no text delta).
+    Heartbeat(Option<u64>),
 }
 
 /// Classify one NDJSON line (PURE, D12). NEVER errors — an unknown `type`, an
@@ -141,7 +165,7 @@ pub enum LineOutcome {
 pub fn classify_line(raw: &str) -> LineOutcome {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        return LineOutcome::Heartbeat;
+        return LineOutcome::Heartbeat(None);
     }
     let Ok(v) = serde_json::from_str::<Value>(trimmed) else {
         return log_one(trimmed);
@@ -166,7 +190,7 @@ pub fn classify_line(raw: &str) -> LineOutcome {
         // echo by design — the dock log is the complete record (D2/A5).
         Some("stream_event") => match find_text_delta(&v) {
             Some(t) => LineOutcome::Log(vec![StreamLogItem::log(t)]),
-            None => LineOutcome::Heartbeat,
+            None => LineOutcome::Heartbeat(None),
         },
         _ => log_one(trimmed),
     }
@@ -186,8 +210,16 @@ fn classify_system(v: &Value) -> LineOutcome {
             log_one(&format!("session {session} · model {model} · tools: {tools}"))
         }
         // A4: resets the watchdog (the session does that for every stdout line)
-        // but emits nothing — one heartbeat per second would drown the dock.
-        Some("thinking_tokens") => LineOutcome::Heartbeat,
+        // and emits NO log line — one heartbeat per second would drown the dock.
+        //
+        // P68d: it does carry the run's only LIVE spend signal, though. Verified
+        // shape (`claude` v2.1.233): `estimated_tokens` is cumulative thinking
+        // tokens, `estimated_tokens_delta` the step. Forward the cumulative value;
+        // a missing/negative/non-integer field degrades to `None`, never an error
+        // (D12), and the session then treats the line as pure liveness.
+        Some("thinking_tokens") => LineOutcome::Heartbeat(
+            v.get("estimated_tokens").and_then(Value::as_u64),
+        ),
         // D9: a corroborating HINT only. It never drives `AwaitingInput`.
         Some("post_turn_summary") => {
             let status = v.get("status_category").and_then(Value::as_str).unwrap_or("?");
@@ -330,10 +362,21 @@ mod tests {
         assert_eq!(log_text(bare), "session ? · model ? · tools: none");
     }
 
+    /// P68d: the heartbeat is still a heartbeat (never a log line — A4) but it now
+    /// carries the run's only LIVE spend proxy. Payload verified against `claude`
+    /// v2.1.233; a missing or non-integer count degrades to `None`, never an error.
     #[test]
-    fn thinking_tokens_is_a_heartbeat() {
-        let raw = r#"{"type":"system","subtype":"thinking_tokens","tokens":12}"#;
-        assert_eq!(classify_line(raw), LineOutcome::Heartbeat);
+    fn thinking_tokens_is_a_heartbeat_carrying_the_cumulative_estimate() {
+        let real = r#"{"type":"system","subtype":"thinking_tokens","estimated_tokens":350,"estimated_tokens_delta":150,"uuid":"u","session_id":"s"}"#;
+        assert_eq!(classify_line(real), LineOutcome::Heartbeat(Some(350)));
+        // Field absent (older/newer CLI) -> pure liveness, still not an error.
+        let bare = r#"{"type":"system","subtype":"thinking_tokens"}"#;
+        assert_eq!(classify_line(bare), LineOutcome::Heartbeat(None));
+        // Wrong type / negative -> `None`, never a panic and never a log line.
+        let junk = r#"{"type":"system","subtype":"thinking_tokens","estimated_tokens":"lots"}"#;
+        assert_eq!(classify_line(junk), LineOutcome::Heartbeat(None));
+        let neg = r#"{"type":"system","subtype":"thinking_tokens","estimated_tokens":-5}"#;
+        assert_eq!(classify_line(neg), LineOutcome::Heartbeat(None));
     }
 
     #[test]
@@ -433,7 +476,7 @@ mod tests {
         let nested = r#"{"type":"stream_event","event":{"delta":{"text":"tial"}}}"#;
         assert_eq!(log_text(nested), "tial");
         let framing = r#"{"type":"stream_event","event":{"type":"message_start"}}"#;
-        assert_eq!(classify_line(framing), LineOutcome::Heartbeat);
+        assert_eq!(classify_line(framing), LineOutcome::Heartbeat(None));
     }
 
     #[test]
@@ -447,8 +490,8 @@ mod tests {
 
     #[test]
     fn blank_line_is_a_heartbeat() {
-        assert_eq!(classify_line(""), LineOutcome::Heartbeat);
-        assert_eq!(classify_line("   \t"), LineOutcome::Heartbeat);
+        assert_eq!(classify_line(""), LineOutcome::Heartbeat(None));
+        assert_eq!(classify_line("   \t"), LineOutcome::Heartbeat(None));
     }
 
     #[test]
@@ -505,8 +548,16 @@ mod tests {
         ev.text = Some("q?".to_string());
         ev.cost_usd = Some(0.02);
         ev.partial_text = Some("half".to_string());
+        ev.thinking_tokens = Some(600);
         let json = serde_json::to_string(&ev).expect("event serializes");
-        for key in ["\"runId\"", "\"costUsd\"", "\"elapsedMs\"", "\"partialText\"", "\"awaitingInput\""] {
+        for key in [
+            "\"runId\"",
+            "\"costUsd\"",
+            "\"elapsedMs\"",
+            "\"partialText\"",
+            "\"thinkingTokens\"",
+            "\"awaitingInput\"",
+        ] {
             assert!(json.contains(key), "missing {key} in {json}");
         }
         assert!(!json.contains("run_id"), "snake_case leaked: {json}");

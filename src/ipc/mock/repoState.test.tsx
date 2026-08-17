@@ -3,6 +3,8 @@
  *  report, repo-kind/fixture routing, buildInfo shapes, requireRepo guard. */
 import { describe, expect, it } from 'vitest';
 
+import { MERGE_DEEP_PATH } from '../fixtures/conflicts';
+
 import {
   buildInfo,
   buildStaleReport,
@@ -124,9 +126,13 @@ describe('createRepoState / buildInfo', () => {
   it('a path containing "merge" seeds a paused conflicted merge', () => {
     const s = createRepoState('/mock/t34-merge-tab');
     expect(s.opState.kind).toBe('merge');
-    expect(s.conflicts.map((c) => c.path)).toEqual(['README.md', 'src/auth.ts']);
+    expect(s.conflicts.map((c) => c.path)).toEqual([
+      'README.md',
+      'src/auth.ts',
+      MERGE_DEEP_PATH,
+    ]);
     expect(s.conflictTexts.get('src/auth.ts')?.kind).toBe('bothModified');
-    expect(s.status.conflicted).toHaveLength(2);
+    expect(s.status.conflicted).toHaveLength(3);
     // README.md is conflicted, not plain-modified, while paused.
     expect(s.status.unstaged.some((e) => e.path === 'README.md')).toBe(false);
   });

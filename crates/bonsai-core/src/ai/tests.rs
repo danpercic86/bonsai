@@ -243,3 +243,16 @@ fn kill_pid_tree_ignores_pid_zero() {
     // "not spawned" must never turn into a kill of an unrelated process.
     kill_pid_tree(0);
 }
+
+/// P68d FIX 2 — the Rust half of the constant mirror. `AI_MAX_CONCURRENT_RUNS` is
+/// used only symbolically by the command layer, so before this test bumping the cap
+/// compiled, passed, and silently left the frontend's hard-coded copy in
+/// `src/settings/ranges.ts` disabling the 4th run. The TS half is pinned by
+/// `src/settings/ranges.test.ts`. Change BOTH numbers or neither.
+#[test]
+fn ai_max_concurrent_runs_matches_the_typescript_mirror() {
+    assert_eq!(
+        AI_MAX_CONCURRENT_RUNS, 3,
+        "AI_MAX_CONCURRENT_RUNS changed: update src/settings/ranges.ts (and its test) to match"
+    );
+}

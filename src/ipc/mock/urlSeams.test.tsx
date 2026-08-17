@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { freshRepoPath, run, runErr } from '../../test/mockIpcKit';
+import { MERGE_DEEP_PATH } from '../fixtures/conflicts';
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => {
@@ -102,9 +103,11 @@ describe('?op=merge (query fallback when the path has no substring)', () => {
     const merge = (await import('./handlers/merge')).mergeHandlers;
     const op = await run(merge.getOpState(repoId));
     expect(op).toMatchObject({ kind: 'merge', incoming: 'feature/login' });
+    // P68d added a second bothModified path (deep, i18n JSON) to the merge fixture.
     expect((await run(merge.listConflicts(repoId))).map((c) => c.path)).toEqual([
       'README.md',
       'src/auth.ts',
+      MERGE_DEEP_PATH,
     ]);
   });
 });

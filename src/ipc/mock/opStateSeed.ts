@@ -1,5 +1,14 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
-import { MERGE_AUTH_OURS, MERGE_AUTH_TEXT, MERGE_AUTH_THEIRS, MERGE_README_TEXT } from '../fixtures/conflicts';
+import {
+  MERGE_AUTH_OURS,
+  MERGE_AUTH_TEXT,
+  MERGE_AUTH_THEIRS,
+  MERGE_DEEP_OURS,
+  MERGE_DEEP_PATH,
+  MERGE_DEEP_TEXT,
+  MERGE_DEEP_THEIRS,
+  MERGE_README_TEXT,
+} from '../fixtures/conflicts';
 import type { MockRepoState } from './repoState';
 
 /** Seeds (or clears) a repo's paused-op state + conflicted status rows. */
@@ -45,10 +54,14 @@ export function seedOpState(state: MockRepoState, op: 'merge' | 'rebase' | null)
     incoming: 'feature/login',
     message: "Merge branch 'feature/login'\n\nConflicts:\n\tsrc/auth.ts\n\tREADME.md",
   };
-  // Path-ascending, like the backend's list_conflicts.
+  // Path-ascending, like the backend's list_conflicts. P68d added MERGE_DEEP_PATH so
+  // the fixture has TWO text-mergeable conflicts: the item-5 scenario needs a second
+  // AI-eligible file to switch to, P68f's "Resolve all with AI" needs >= 2 to appear
+  // at all, and the deep path exercises path truncation in the dock.
   state.conflicts = [
     { path: 'README.md', kind: 'deletedByThem', hasBase: true, hasOurs: true, hasTheirs: false },
     { path: 'src/auth.ts', kind: 'bothModified', hasBase: true, hasOurs: true, hasTheirs: true },
+    { path: MERGE_DEEP_PATH, kind: 'bothModified', hasBase: true, hasOurs: true, hasTheirs: true },
   ];
   state.conflictTexts.set('src/auth.ts', {
     path: 'src/auth.ts',
@@ -59,6 +72,16 @@ export function seedOpState(state: MockRepoState, op: 'merge' | 'rebase' | null)
     text: MERGE_AUTH_TEXT,
     ours: MERGE_AUTH_OURS,
     theirs: MERGE_AUTH_THEIRS,
+  });
+  state.conflictTexts.set(MERGE_DEEP_PATH, {
+    path: MERGE_DEEP_PATH,
+    kind: 'bothModified',
+    binary: false,
+    tooLarge: false,
+    missing: false,
+    text: MERGE_DEEP_TEXT,
+    ours: MERGE_DEEP_OURS,
+    theirs: MERGE_DEEP_THEIRS,
   });
   // deletedByThem: the worktree keeps OUR version (no markers). ours/theirs are
   // editor-irrelevant for this quick-action kind (§0.5) → '' per §1.4.

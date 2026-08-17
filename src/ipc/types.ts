@@ -1192,6 +1192,20 @@ export interface AiRunEvent {
   /** Only on `cancelled`/`failed`: the assistant text accumulated so far (D2).
    *  DISPLAY-ONLY and lossy by construction — never offer it as a proposal. */
   partialText: string | null;
+  /** P68d: the CLI's CUMULATIVE `estimated_tokens` from a `thinking_tokens`
+   *  heartbeat — the run's only LIVE spend signal, since `costUsd` exists only at a
+   *  turn boundary and a long single-turn run would otherwise read `$—` for minutes.
+   *
+   *  A `kind: 'log'` event with `text === null` and this set is a METRICS-ONLY
+   *  heartbeat: record the number, do NOT append a log line (A4 — one heartbeat per
+   *  second would drown the dock). The two fields are mutually exclusive on a
+   *  `log` event.
+   *
+   *  Scope, verified against `claude` v2.1.233: THINKING tokens only, and estimated
+   *  (600 reported vs 679 actual at the end of one run); a run that never enters
+   *  extended thinking emits no heartbeats and this stays null throughout. Never
+   *  convert it to a dollar figure — there is no price table anywhere in Bonsai. */
+  thinkingTokens: number | null;
 }
 
 /** One path a streaming resolve could not handle. NEVER fatal to the batch (D11). */
