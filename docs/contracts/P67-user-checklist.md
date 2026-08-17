@@ -29,13 +29,25 @@ user's own display and DPR.
 
 ## AI GATE — the automated half (listed for context, do NOT re-ask the user)
 
-> **STATUS DISCIPLINE (corrected 2026-08-17, was wrong):** this section originally claimed every item
-> below was "already green". It was written at contract time, before any code existed. Only tick an
-> item once its sub-increment has actually landed. Current truth:
-> **P67a ✅ PROVED** (vitest 1344/0 across 111 files; pre-P67 baseline 1331; tsc 0; build green).
-> **P67b / P67c / P67e ⏳ NOT YET IMPLEMENTED** — every `WorkspaceRightPanel.test.tsx`,
-> `CommitOptionsRow`, `panelDensity`, `--rp-*` and `StatusPanel`-split line below is a *planned*
-> gate, not a result. Do not present any of it to the user as evidence until it is.
+> **STATUS (updated 2026-08-17 — P67 code-complete).** This section originally claimed every item
+> below was "already green" when none of it existed yet; it was corrected to per-increment tracking
+> mid-milestone, and every line below has now actually landed. Keep this discipline: only tick an item
+> once its sub-increment is committed.
+> **P67a ✅ · P67b ✅ · P67c ✅ · P67e ✅ · P67d ✅ (docs).**
+> Commits: P67a 0ec69f9 · P67b e607d2c · P67c 5e68db5 · P67e d50361a.
+> Final AI gate: vitest **1361/0 across 112 files** (pre-P67 baseline 1331/111), tsc 0, build green,
+> cargo test -p bonsai --lib **222/0**, cargo clippy --workspace --tests -D warnings clean, command
+> count **157 (+0)**.
+>
+> **Measured space reclaimed (item 2)** — measurements, not the contract's ~110px estimate:
+> the status list went **452.47 → 568.00 px = +115.53 px ≈ 4.8 file rows** in cozy (≈129.5 px / ≈5.4
+> rows counting the tighter in-scroller padding), and compact adds **+30 px** more (408 → 438 px,
+> measured live in the harness).
+>
+> **What none of the above proves: any canvas pixel.** The harness pane is headless — rAF is paused and
+> it does not composite, so even computer{screenshot} fails outright. The guideline's geometry is
+> pinned by unit tests and the window.__bonsai.p7 seam, but its APPEARANCE is entirely unverified.
+> That is what the NATIVE section below is for; do not self-declare any of it.
 
 Frontend (vitest):
 - **[P67a ✅]** `headGuide` (`src/graph/viewport.test.ts`, **13** cases — 11 as specified plus the two
@@ -48,25 +60,25 @@ Frontend (vitest):
   6-periodicity, because a periodicity-only check passes with the sign inverted (the A6.1 bug); the avatar-halo
   shortening in both directions; `wipOffset: 0` (clean tree) anchoring at `-8`; sub-1 px collapse
   → `null`.
-- **[P67b ⏳]** `WorkspaceRightPanel.test.tsx` (new): one merged actions row; the `⋯` menu exposes all three stash
+- **[P67b ✅]** `WorkspaceRightPanel.test.tsx` (new): one merged actions row; the `⋯` menu exposes all three stash
   scopes with the *same* per-scope disabled gating the old `StashSplitButton` had; outside-click and
   Escape close it; the row is hidden while an operation is in progress or HEAD is unborn;
   `data-density` reflects the prop; no `.stash-split` element remains.
-- **[P67b ⏳]** `CommitBox.test.tsx` passes **unchanged** (role+name queries survive the Sign/Skip row merge),
+- **[P67b ✅]** `CommitBox.test.tsx` passes **unchanged** (role+name queries survive the Sign/Skip row merge),
   plus one new assertion that both checkboxes are siblings in a single `.commit-options-row`.
-- **[P67c/P67e ⏳]** `StatusPanel.test.tsx` passes **unchanged** in both P67c and P67e — that is the P67e refactor's
+- **[P67c/P67e ✅]** `StatusPanel.test.tsx` passes **unchanged** in both P67c and P67e — that is the P67e refactor's
   acceptance test.
-- **[P67c ⏳]** `SettingsPanel.test.tsx` extended: the Appearance section's Cozy/Compact button patches exactly
+- **[P67c ✅]** `SettingsPanel.test.tsx` extended: the Appearance section's Cozy/Compact button patches exactly
   `{ panelDensity: 'compact' }`.
 - **[P67a ✅]** `src/graph/draw.ts` stays untested **by design** (all guideline arithmetic lives in `viewport.ts`;
   a canvas mock would assert paint calls, not behaviour).
 
 Backend (cargo):
-- **[P67c ⏳]** `settings.rs`: `panel_density_roundtrips_both_variants` (raw JSON shows
+- **[P67c ✅]** `settings.rs`: `panel_density_roundtrips_both_variants` (raw JSON shows
   `"panelDensity": "cozy"` / `"compact"`) and
   `old_settings_file_without_panel_density_loads_default` — the additive-migration guard behind the
   **no version bump** decision.
-- **[P67c ⏳]** `commands/tests.rs` `set_ui_settings_patch_is_partial` gains a `panel_density` arm proving it
+- **[P67c ✅]** `commands/tests.rs` `set_ui_settings_patch_is_partial` gains a `panel_density` arm proving it
   patches independently of `listView` and `graph`.
 - `cargo clippy --workspace --tests -- -D warnings` clean; `clamp_graph_prefs` untouched.
 

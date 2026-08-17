@@ -287,7 +287,7 @@ sequencing choice — **UX polish first, then AI**. Started from clean HEAD `0ac
   a prompt-level sentinel `BONSAI_NEEDS_INPUT: <question>`.
 - `--tools "Read,Grep,Glob"` is a valid allowlist (init echoes the exact subset).
 
-### P67 — HEAD guideline + right-panel density — **IN PROGRESS**
+### P67 — HEAD guideline + right-panel density — ✅ **AI GATE PASSED** (awaiting native USER CHECKPOINT)
 Contract: `docs/contracts/P67-ux-polish-batch.md` (+ `P67-user-checklist.md`). **+0 Tauri commands**
 (157 unchanged; `panelDensity` rides the existing `set_ui_settings` patch).
 - **P67a** — HEAD guideline: new pure `headGuide()` in `src/graph/viewport.ts`; split
@@ -307,13 +307,60 @@ Contract: `docs/contracts/P67-ux-polish-batch.md` (+ `P67-user-checklist.md`). *
 - **P67e** — `StatusPanel.tsx` 700→~250 split (pure refactor, droppable; `StatusPanel.test.tsx`
   must pass UNTOUCHED — that is the acceptance test).
 
-**Current step:** P67a — implemented + reviewed (REQUEST-CHANGES); contract amendments **A5** (edge
-marker must survive a collapsed segment), **A6.1** (`dashOffset` sign was inverted → dashes would
-crawl, a regression vs pre-P67), **A6.2** (crawl guard must assert phase, not periodicity) and
-**A6.3** (drop the redundant `dir === 0` early return) written; fixes routed back to `senior-dev`.
-Baseline before P67 (measured 2026-08-17): **vitest 1331/0 across 111 files**; cargo workspace green
-except the one pre-existing load-sensitive flake noted under P68a. AI-gate numbers for P67a so far:
-vitest 1344/0, tsc 0, build green.
+**Current step:** ✅ **P67 CODE-COMPLETE — AI gate PASSED, awaiting native USER CHECKPOINT**
+(`docs/contracts/P67-user-checklist.md`). All five sub-increments committed and reviewer-approved:
+**P67a** `0ec69f9` · **P67b** `e607d2c` · **P67c** `5e68db5` · **P67e** `d50361a` · **P67d** = this
+docs pass. Next milestone: **P68** (contract being written).
+
+**Baseline before P67** (measured 2026-08-17, so later regressions are attributable): vitest
+**1331/0 across 111 files**; cargo workspace green except the one pre-existing load-sensitive flake
+noted under P68a. **Final P67 AI gate:** vitest **1361/0 across 112 files**, tsc 0, build green,
+`cargo test -p bonsai --lib` **222/0**, `cargo clippy --workspace --tests -- -D warnings` clean,
+command count **157 (+0)**.
+
+**MEASURED result for the user's item 2** (not estimated — the contract's ~110px was a guess and
+told the implementer to re-measure): `.status-panel` height **452.47 → 568.00 px = +115.53 px ≈ 4.8
+file rows** in the cozy default, plus ~14px per two sections inside the scroller (≈129.5px, ≈5.4
+rows). Compact adds a further **+30px** (408 → 438px measured live in the harness) ≈ 5.5 rows total.
+
+**Contract amendments written during P67** (all binding, in `P67-ux-polish-batch.md`):
+- **A5** — the collapse check ran before `edge`, making `edge:'top'` unreachable whenever a WIP row
+  exists (the WIP row is always above HEAD, so scrolling *past* HEAD clamped both ends together and
+  drew neither line nor marker). Now suppresses only the segment, never the marker.
+- **A6.1** — `dashOffset` sign was inverted. Canvas advances the pattern by `lineDashOffset`, so the
+  on-screen grid sits at `y ≡ y0 - off`; content-anchoring needs `off ≡ y0 - anchor`. The inverted
+  form is wrong by `-2·(y0-anchor)`, which VARIES WITH SCROLL → ~1px/px dash crawl, and a regression
+  versus pre-P67 (which was content-anchored for free via its unclamped start).
+- **A6.2** — the crawl guard only asserted 6-periodicity, which passes with the sign inverted; it now
+  asserts dash *phase* across 1px scroll steps, and was negative-controlled against the old sign.
+- **A6.3** — dropped a redundant `dir === 0` early return that could still suppress the marker for one
+  scroll position. ⚠️ `dir === 0` REMAINS REACHABLE and is tested — do not "simplify" it back.
+- Acceptance corrections: `headIndex 1500`→`2000` (the original was arithmetically impossible),
+  `CommitBox.tsx ≤ ~310`→`≤ ~350` (unreachable from §5.5's own change list), case count 11→14, and
+  §1.1a bullet 3 `segment===false`→`true` after implementation measured it.
+
+**Cross-platform fix worth remembering:** `field-sizing: content` (the auto-growing commit box) is
+**Chromium-only**. WebView2 has it; macOS WKWebView and Linux webkit2gtk do NOT, and without a guard
+the textarea became FIXED and *shorter* than before on those platforms. Guarded with
+`@supports not (field-sizing: content) { min-height: 70px }` — **70px, not the pre-P67 declared
+60px**, because that 60px was inert: the real pre-P67 height came from `rows={3}` (~70.5px
+border-box). Chosen over setting `rows={3}` in the TSX, which risks Chromium honouring `rows` for the
+initial height and giving back ~22px of the reclaim on the platform that does support field-sizing.
+
+**Harness gate results (`pnpm dev:mock`, measured live):** cozy `data-density="cozy"` / `--rp-row-h`
+24px / `.file-row` 24px+13px; compact `"compact"` / 20px / 20px+12px; toggles both directions;
+persists across reload; **`graph.compact` stays `false` while panel density is compact** (the
+independence the user asked for, proven empirically); **D8 proven** — the sidebar renders the SAME
+`.file-row`/`.section-label` classes but sits outside `.right-panel`, where `--rp-row-h` resolves to
+empty, so it kept 24px/11px while the panel shrank. Post-P67e `?op=merge` re-check: section order
+Conflicts(2) → Staged → Changes preserved, and the ✨AI button still appears on only the
+both-modified row.
+
+⚠️ **NOT self-certifiable:** the harness pane is headless (`requestAnimationFrame` paused, pane not
+compositing) so **no canvas pixel is ever produced** and `computer{screenshot}` fails outright. The
+dashed guideline's geometry is proven arithmetically + via the `window.__bonsai.p7` seam, but nobody
+has SEEN it. Line visibility while scrolling, absence of dash crawl, halo termination, marker
+direction, and whether compact is readable on the user's display are all native-only.
 
 ### P68 — streaming/interactive/bulk AI conflict resolution — **PENDING** (after P67)
 Contract to write: `docs/contracts/P68-ai-conflict-streaming.md` (+ `P68-user-checklist.md`).
