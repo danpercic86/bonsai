@@ -60,6 +60,11 @@ export function useWorkspaceKeyboard(deps: {
   selectedIndex: number | null;
   graph: GraphLayout | null;
   graphRef: { current: GraphCanvasHandle | null };
+  /** P68e §4.4: `Ctrl/Cmd+Shift+A` — expand the AI activity dock and focus the reply
+   *  box if a run is blocked, else the log. Bound BEFORE the typing guard on purpose:
+   *  Claude's question can arrive while the user is mid-commit-message, and this is
+   *  the DELIBERATE way in that never steals the caret by itself. */
+  onAiActivity: () => void;
   handleRefresh: () => Promise<void> | void;
   handleFetch: () => Promise<void> | void;
   handlePull: () => Promise<void> | void;
@@ -107,6 +112,7 @@ export function useWorkspaceKeyboard(deps: {
     selectedIndex,
     graph,
     graphRef,
+    onAiActivity,
     handleRefresh,
     handleFetch,
     handlePull,
@@ -249,6 +255,14 @@ export function useWorkspaceKeyboard(deps: {
         return;
       }
 
+      // P68e §4.4: also before the typing guard (the Ctrl+F / Ctrl+K precedent
+      // above), so a user with a half-typed commit message can reach the reply box.
+      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        if (!dialogOpen && !abortConfirmOpen) onAiActivity();
+        return;
+      }
+
       const target = e.target as HTMLElement | null;
       const typing =
         target !== null &&
@@ -338,6 +352,7 @@ export function useWorkspaceKeyboard(deps: {
     paletteOpen,
     togglePalette,
     composerOpen,
+    onAiActivity,
     selectedIndex,
     graph,
   ]);

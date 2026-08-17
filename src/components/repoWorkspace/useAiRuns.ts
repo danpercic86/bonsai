@@ -103,6 +103,26 @@ export interface AiRunsDeps {
   /** Currently conflicted paths: a terminal run whose paths are all resolved is
    *  pruned, so the store does not accumulate stale entries across a long merge. */
   conflictPaths: string[];
+  /**
+   * P68e FOLD-IN 1 — identity of whatever the CENTER PANE currently shows (the diff
+   * slot's key, or null).
+   *
+   * Fixing item-5 removed an accidental side benefit: the old reqId guard meant a
+   * finished run could never steal the center pane, because a superseded open simply
+   * returned. With the guard gone, `settle → openAiProposal` opens unconditionally,
+   * so a user reading file B's diff can have it replaced 40 s later by file A's
+   * proposal — repeatedly under a bulk run.
+   *
+   * USER DECISION: auto-open only if the user has NOT navigated away. This callback
+   * is sampled when the run STARTS and again at settle; if the two differ, nothing is
+   * stolen — the row's `✓ review` badge, the dock's `Review proposal` button and the
+   * toast are the affordance, and the proposal stays in the store either way.
+   *
+   * Optional so the six other (non-conflict) runners can adopt the store later
+   * without inventing a slot; absent ⇒ never suppress, i.e. the pre-fold-in
+   * behaviour.
+   */
+  diffSlotKey?: () => string | null;
 }
 
 export function useAiRuns(deps: AiRunsDeps): AiRunsApi {
@@ -129,6 +149,8 @@ export function useAiRuns(deps: AiRunsDeps): AiRunsApi {
   const metaBuf = useRef(new Map<string, { thinkingTokens?: number; turn?: number }>());
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(true);
+  /** FOLD-IN 1: which diff slot the user was looking at when each run started. */
+  const slotAtStart = useRef(new Map<string, string | null>());
 
   // Latest deps for the async run driver, which outlives any single render.
   const depsRef = useRef(deps);
@@ -185,13 +207,19 @@ export function useAiRuns(deps: AiRunsDeps): AiRunsApi {
     runsRef.current[key] = { ...entry, ...next };
   }, []);
 
-  useEffect(
-    () => () => {
+  // P68e BUGFIX. This used to be cleanup-only, relying on `useRef(true)` for the
+  // mounted state — which is wrong under React 19 StrictMode, where the dev-mode
+  // mount → cleanup → mount cycle runs on the SAME component instance and therefore
+  // the same ref. The cleanup latched `mounted.current = false` and nothing ever set
+  // it back, so `commit()` returned early FOREVER: no row status, no dock, no visible
+  // run at all in `pnpm dev` / `pnpm tauri dev`. Re-arming it on mount is the fix.
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
       mounted.current = false;
       if (flushTimer.current !== null) clearTimeout(flushTimer.current);
-    },
-    [],
-  );
+    };
+  }, []);
 
   // ---------------------------------------------------------------- events
 
@@ -274,19 +302,38 @@ export function useAiRuns(deps: AiRunsDeps): AiRunsApi {
 
       // ONE center pane opens: the marker fallback under autoResolve, otherwise the
       // first ready proposal. A bulk run with several ready files opens nothing and
-      // points at the activity panel instead.
+      // points at the activity dock instead.
       const toOpen = autonomy === 'autoResolve' ? out.markerful[0] : out.stageable[0];
       const text = toOpen?.proposal ?? null;
       if (toOpen === undefined || text === null) return;
       if (autonomy === 'proposeReview') {
+        // FOLD-IN 1: the pane is only taken when the user is still looking at what
+        // they were looking at when the run started.
+        const stayed = slotAtStart.current.get(key) === (d.diffSlotKey?.() ?? null);
+        if (out.stageable.length > 1) {
+          d.pushToast(
+            'success',
+            `AI proposals ready for ${out.stageable.length} files — review them from the AI activity dock`,
+          );
+          return;
+        }
         d.pushToast(
           'success',
-          out.stageable.length > 1
-            ? `AI proposals ready for ${out.stageable.length} files — review them from the AI activity panel`
-            : `AI proposal ready for ${toOpen.path} — opened for review`,
+          stayed
+            ? `AI proposal ready for ${toOpen.path} — opened for review`
+            : `AI proposal ready for ${toOpen.path} — review it from the AI activity dock`,
         );
-        if (out.stageable.length > 1) return;
+        if (!stayed) return;
       }
+      // The markerful fallback under `autoResolve` opens UNCONDITIONALLY: its row
+      // shows `⚠` (retry), so this open is the only path to that body, and the whole
+      // point is that the user must see what the model actually produced.
+      //
+      // P68e M1: record that the pane really was taken, BEFORE the await, so the dock
+      // renders `Proposal is open in the center pane.` only in this branch — the
+      // suppressed branch gets the sentence that points at the dock instead.
+      patch(key, { openedInPane: true });
+      flush();
       await d.openAiProposal(toOpen.path, text);
     },
     [flush, patch],
@@ -338,6 +385,7 @@ export function useAiRuns(deps: AiRunsDeps): AiRunsApi {
       // all, so a stale log cannot bleed into the new run.
       logBuf.current.delete(key);
       metaBuf.current.delete(key);
+      slotAtStart.current.set(key, d.diffSlotKey?.() ?? null);
       runsRef.current[key] = newRun(key, label, paths, Date.now());
       commit();
       void drive(key, paths);
@@ -387,14 +435,21 @@ export function useAiRuns(deps: AiRunsDeps): AiRunsApi {
     [commit, patch],
   );
 
-  const reviewProposal = useCallback((key: string, path: string) => {
-    const entry = runsRef.current[key];
-    if (entry === undefined) return;
-    const file = entry.files.find((f) => f.path === path);
-    const text = file?.proposal ?? (entry.paths.length === 1 ? entry.proposal : null);
-    if (text === null || text === undefined) return;
-    void depsRef.current.openAiProposal(path, text);
-  }, []);
+  const reviewProposal = useCallback(
+    (key: string, path: string) => {
+      const entry = runsRef.current[key];
+      if (entry === undefined) return;
+      const file = entry.files.find((f) => f.path === path);
+      const text = file?.proposal ?? (entry.paths.length === 1 ? entry.proposal : null);
+      if (text === null || text === undefined) return;
+      // M1: the user opened it themselves, so the pane IS showing it — the dock's hint
+      // flips to the "open in the center pane" sentence from here on.
+      patch(key, { openedInPane: true });
+      commit();
+      void depsRef.current.openAiProposal(path, text);
+    },
+    [commit, patch],
+  );
 
   const dismissRun = useCallback(
     (key: string) => {
@@ -404,6 +459,7 @@ export function useAiRuns(deps: AiRunsDeps): AiRunsApi {
       runsRef.current = rest;
       logBuf.current.delete(key);
       metaBuf.current.delete(key);
+      slotAtStart.current.delete(key);
       commit();
     },
     [commit],
@@ -430,6 +486,7 @@ export function useAiRuns(deps: AiRunsDeps): AiRunsApi {
     for (const key of pruned.dropped) {
       logBuf.current.delete(key);
       metaBuf.current.delete(key);
+      slotAtStart.current.delete(key);
     }
     runsRef.current = pruned.kept;
     commit();

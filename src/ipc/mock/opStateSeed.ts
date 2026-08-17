@@ -52,7 +52,17 @@ export function seedOpState(state: MockRepoState, op: 'merge' | 'rebase' | null)
   state.opState = {
     kind: 'merge',
     incoming: 'feature/login',
-    message: "Merge branch 'feature/login'\n\nConflicts:\n\tsrc/auth.ts\n\tREADME.md",
+    // Git lists EVERY conflicted path here, in the same path-ascending order as the
+    // `conflicts` array below. P68d seeded a third path but left this message at two,
+    // which made the OpBanner's commit message disagree with the conflicts list.
+    message: [
+      "Merge branch 'feature/login'",
+      '',
+      'Conflicts:',
+      '\tREADME.md',
+      '\tsrc/auth.ts',
+      `\t${MERGE_DEEP_PATH}`,
+    ].join('\n'),
   };
   // Path-ascending, like the backend's list_conflicts. P68d added MERGE_DEEP_PATH so
   // the fixture has TWO text-mergeable conflicts: the item-5 scenario needs a second

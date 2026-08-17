@@ -69,6 +69,17 @@ export interface AiRunState {
   turn: number;
   /** Display-only partial assistant text on a cancelled/failed run (D2). */
   partialText: string | null;
+  /**
+   * P68e M1 — did Bonsai actually OPEN this run's proposal in the center pane?
+   *
+   * FOLD-IN 1 suppresses the auto-open when the user navigated away, and the dock used
+   * to say `Proposal is open in the center pane.` regardless — telling the user a
+   * result is somewhere it is not, which is the exact bug class P68 exists to remove.
+   * The outcome is recorded here so the dock can render the right sentence for each
+   * branch (set at settle when the open is issued, and by `reviewProposal` when the
+   * user opens it themselves).
+   */
+  openedInPane: boolean;
   startedAt: number;
   endedAt: number | null;
   /** Stale/duplicate guard: an event whose `seq <= lastSeq` is ignored. */
@@ -102,6 +113,7 @@ export function newRun(key: string, label: string, paths: string[], now: number)
     thinkingTokens: null,
     turn: 0,
     partialText: null,
+    openedInPane: false,
     startedAt: now,
     endedAt: null,
     lastSeq: -1,

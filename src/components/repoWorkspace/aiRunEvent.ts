@@ -45,12 +45,19 @@ function decide(patch: Partial<AiRunState>): AiRunDecision {
  * mutating: `seq <= lastSeq` drops stales and duplicates (D8), and a run that already
  * reached a terminal status is never resurrected — the command PROMISE, not the event
  * stream, is authoritative for the final data, so a late `awaitingInput` arriving
- * after a cancel must not un-cancel the run. `log` is the one exception: log lines
- * that were already in flight still belong in the record (D2).
+ * after a cancel must not un-cancel the run.
+ *
+ * `log` is the one exception, and only for its TEXT: lines that were already in
+ * flight still belong in the record (D2). A metrics-only heartbeat arriving after a
+ * terminal status used to slip through the same door and could still move
+ * `thinkingTokens` after `done` — harmless (monotonic, display-only) but inconsistent
+ * with "a terminal status is never resurrected", so it is now dropped explicitly
+ * (P68e FOLD-IN 3).
  */
 export function decideEvent(entry: AiRunState, ev: AiRunEvent, now: number): AiRunDecision {
   if (ev.seq <= entry.lastSeq) return IGNORE;
-  if (isTerminalStatus(entry.status) && ev.kind !== 'log') return IGNORE;
+  const terminal = isTerminalStatus(entry.status);
+  if (terminal && (ev.kind !== 'log' || ev.text === null)) return IGNORE;
   const seen: Partial<AiRunState> = { lastSeq: ev.seq };
 
   switch (ev.kind) {

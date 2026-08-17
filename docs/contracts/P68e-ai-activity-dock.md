@@ -131,8 +131,9 @@ no resizer.
 ```
 
 Order, left → right: collapse chevron · status pill · subject · **latest output line** (collapsed
-only) · turn counter (only when `turn ≥ 2`) · elapsed · cost · `Review proposal` (ready single
-run) · `Cancel` (active) · `✕` dismiss (terminal).
+only) · turn counter (only when `turn ≥ 2`) · elapsed · **thinking-token estimate** (when the run
+reports one — §12-B1) · cost · `Review proposal` (ready single run) · `Cancel` (active) · `✕`
+dismiss (terminal).
 
 Collapsed variants:
 
@@ -210,6 +211,12 @@ Each chip: glyph + short label (basename for a path run, `3 conflicts` for bulk)
 radius 6px, `--bg-2` idle / `--bg-3` + 1px `--accent` when `aria-selected`. Long labels
 ellipsize at 120 px with `title` = full label.
 
+The glyph is `pillFor(status, cancelRequested).glyph` — the SAME set as the status pill (U8), so a
+`failed`/`cancelled` chip never shows `✨`. Arrow/Home/End move selection **and focus** (ARIA tabs
+pattern): the strip focuses the newly selected chip directly, because leaving DOM focus on a chip
+that has just dropped to `tabIndex={-1}` desyncs the focus ring from `aria-selected` and sends the
+next `Tab` from the wrong place.
+
 ### 1.7 Spacing and sizes (4/8/12/16/24 scale only)
 
 | Property | Cozy | Compact |
@@ -241,8 +248,9 @@ Element order and classes are part of the contract.
 | `.ai-dock-activity` | latest log line | mono 11px `--ai-dock-meta`, 1 line, ellipsis | **collapsed only**; hidden when `status !== 'running'` |
 | `.ai-dock-turn` | `turn 2` | 11px `--ai-dock-meta` | only when `turn >= 2`; `title="Each reply from Claude is one turn"` |
 | `.ai-dock-elapsed` | `1:07` | mono 12px `--ai-dock-meta`, `font-variant-numeric: tabular-nums` | `title="Elapsed"` while active, `title="Took 2:14"` when terminal |
+| `.ai-dock-thinking` | `~450 tok` | mono 12px `--ai-dock-meta`, tabular, nowrap | **IMPLEMENTED (P68e review S4)**, sits between elapsed and cost. Absent when `thinkingTokens` is null/0. `title="Thinking tokens so far (Claude’s own estimate, not a price)"`. NEVER priced — see §12-B1 |
 | `.ai-dock-cost` | `$0.0238` or `$—` | mono 12px `--ai-dock-meta`, tabular | `$—` title: `Cost appears when Claude finishes a turn` |
-| `.ai-dock-review` `.btn-primary` | `Review proposal` | primary | only `status === 'ready' && files.length === 0` |
+| `.ai-dock-review` `.btn-primary` | `Review proposal` | primary | **CORRECTION (N4): `status === 'ready' && files.length <= 1`.** A single-path run has `files.length === 1` (one `AiRunFileState` per requested path), so the `=== 0` written here would make `Review proposal` unreachable for exactly the run that needs it. The queue is the mirror condition: `files.length > 1`, not §5's `> 0`. Do not revert either one |
 | `.ai-dock-answer` `.btn-primary` | `Answer` | primary | **collapsed only**, `status === 'awaitingInput'`; expands + focuses the reply box |
 | `.ai-dock-cancel` `.btn-danger` | `Cancel` → `Stopping…` | danger | present for `running`/`awaitingInput`; disabled once `cancelRequested` |
 | `.ai-dock-dismiss` `.btn-icon` | `✕` | icon | terminal only; `aria-label="Dismiss this run"`, `title="Remove from the AI activity dock"` |
@@ -366,9 +374,12 @@ none`, only when `status === 'awaitingInput'`.
   §12-F2).
 - `.ai-dock-ask-question`: the question verbatim, UI font 13px `--text-1`, `white-space:
   pre-wrap`, `max-height: 96px; overflow: auto`, user-selectable.
-- When collapsed and any run is `awaitingInput`, the collapsed bar gets
-  `data-attention="true"` → the same 14% `--warning` background, so the bar reads as "needs you"
-  without expanding. No blinking, ever.
+- When any run is `awaitingInput`, the bar gets `data-attention="true"` → the same 14% `--warning`
+  background, so the bar reads as "needs you" without expanding. No blinking, ever.
+  **AS BUILT (N7): the attribute is set regardless of `collapsed`, not only when collapsed** — the
+  tint is on `.ai-dock-header`, which is the same row in both states, and scoping it to the
+  collapsed bar would make the header lose its "needs you" colour the moment the user expands it to
+  answer. Harmless superset; documented so it is not "fixed" back.
 
 ### 4.2 Reply control
 
@@ -392,6 +403,14 @@ max. Placeholder: `Type your answer for Claude…`. `aria-label="Your answer to 
 On send: `onReply(key, draft)`, clear the draft, disable the textarea and `Send`
 (`Send` label becomes `Sending…`) until `status` leaves `awaitingInput`. The store already
 appends `» answered (n bytes)` to the log — the UI adds no synthetic line.
+
+**WIRED, not hard-coded (P68e review S6).** `AiActivityPanel` owns the `{ runKey, question }` of
+the in-flight reply and releases the lock when that run leaves `awaitingInput`, disappears, **or
+asks a new question** — the question is part of the key so a second question on the same run always
+arrives unlocked, and no failure mode can latch the reply box shut. In the real app the store flips
+the status optimistically inside `replyRun`, so the locked state is normally one render long; it is
+still the thing that prevents a double-send and it is now directly testable
+(`AiActivityPanel.test.tsx` — "locks the reply box and says Sending…").
 
 ### 4.4 Arrival behaviour (U6, the delicate part)
 
@@ -450,8 +469,30 @@ pane while the button is in the right panel. Four redundant paths, in increasing
 2. **Row affordance** (P68d): `✓ review` on the conflict row.
 3. **Dock, single run**: `Review proposal` button in the **header** (this is why
    `AiActivityRun.paths` is needed — §12-A2). Plus the one-line hint
-   `.ai-dock-hint`: `Proposal is open in the center pane.` shown for 1 run / `status === 'ready'`
-   / `files.length === 0`, 11px `--ai-dock-meta`, in the body above the log.
+   `.ai-dock-hint`, shown for 1 run / `status === 'ready'` / `files.length <= 1` (see N4 in §2),
+   11px `--ai-dock-meta`, in the body above the log.
+
+   **TWO BRANCHES, LOCKED (P68e review M1).** FOLD-IN 1 suppresses the auto-open when the user
+   navigated away, so a single sentence here would tell the user a result is somewhere it is not —
+   the exact bug class P68 exists to eliminate ("I don't see no proposals"). `AiRunState` therefore
+   records `openedInPane: boolean` (set at settle when the open is actually issued, and by
+   `reviewProposal` when the user opens it themselves); `AiActivityRun` carries it through and the
+   panel maps it:
+
+   | `openedInPane` | Hint copy | Matching toast |
+   |---|---|---|
+   | `true` | `Proposal is open in the center pane.` | `AI proposal ready for <path> — opened for review` |
+   | `false` | `Proposal is ready — choose “Review proposal” to open it in the center pane.` | `AI proposal ready for <path> — review it from the AI activity dock` |
+
+   The dock and the toast must never disagree; both branches are covered by tests
+   (`AiActivityPanel.runs.test.tsx`, `useAiRuns.paneFocus.test.tsx`).
+
+   **Accepted limit:** `openedInPane` records *what Bonsai did*, not what the pane shows right now,
+   so if the user closes or replaces the diff afterwards the hint still reads "is open in the
+   center pane". Tracking that live would mean feeding the diff slot into the dock on every change;
+   the `Review proposal` button re-opens it either way, and the wrong-by-omission case (a stale
+   "is open") is strictly milder than the wrong-by-construction case M1 fixed (claiming an open
+   that never happened).
 4. **Dock, bulk run**: the queue's per-row `Review` buttons — the only place a user can reach
    proposal #2 and #3 at all.
 
@@ -586,6 +627,13 @@ export interface AiActivityRun {
   /** Last seen `AiRunEvent.turn`. Header turn counter. Requires the store to
    *  retain it (§12-A3). */
   turn: number;
+  /** Live cumulative thinking-token estimate. RENDERED as `.ai-dock-thinking`
+   *  beside the cost (§2, §12-B1) — it is the only spend signal that exists
+   *  before the first `costUsd`, and never priced. */
+  thinkingTokens: number | null;
+  /** M1: did Bonsai actually open this proposal in the center pane? FOLD-IN 1 can
+   *  suppress that open, and the §5.1-3 hint must say which happened. */
+  openedInPane: boolean;
 }
 
 export interface AiActivityPanelProps {
@@ -621,7 +669,8 @@ export interface AiActivityPanelProps {
 ## 10. Tokens — `--ai-dock-*`
 
 Declared on `.ai-dock`, consumed everywhere as `var(--x, <fallback>)` (the P67b `--rp-*`
-discipline). **No token below introduces a raw colour**: every colour is an alias of an existing
+discipline) — the geometry tokens now carry their cozy value as the fallback, matching the colour
+tokens (N1, folded in P68e review). **No token below introduces a raw colour**: every colour is an alias of an existing
 themed custom property or a `color-mix` over one, so light and dark work from one rule set and
 no `[data-theme='light']` block is needed. Geometry tokens are theme-independent by nature.
 
@@ -695,7 +744,7 @@ used once each):
 |---|---|
 | `.ai-dock` | `<section role="region" aria-label="AI activity">` |
 | `.ai-dock-toggle` | `<button aria-expanded aria-controls="ai-dock-body" aria-label="AI activity">` |
-| `.ai-dock-runs` | `role="tablist" aria-label="AI runs"`; chips `role="tab" aria-selected` + `id`; roving `tabindex` (0 on selected, −1 elsewhere); `ArrowLeft/ArrowRight/Home/End` move selection |
+| `.ai-dock-runs` | `role="tablist" aria-label="AI runs"`; chips `role="tab" aria-selected` + `id`; roving `tabindex` (0 on selected, −1 elsewhere); `ArrowLeft/ArrowRight/Home/End` move selection **and focus together** (§1.6) |
 | `.ai-dock-body` | `id="ai-dock-body" role="tabpanel" aria-labelledby="<selected chip id>"` (only when >1 run; a single run needs no tab semantics) |
 | `.ai-log` | `<ol tabindex="0" aria-label="AI output">` — **no `role="log"`, no `aria-live`** |
 | `.ai-run-queue` | `<ul aria-label="Files in this AI run">` |
@@ -771,7 +820,17 @@ Each is a field the store already computes or trivially can; none is a new backe
 
 ### B — Genuinely blocked / data-limited (flagged, not invented around)
 
-- **B1 — Cost during the first turn is unknowable.** `costUsd` only exists on `turnEnd`/`done`,
+- **B1 — RESOLVED IN P68e (review S4), not merely flagged.** Option (a) below shipped *plus* the
+  live `thinking_tokens` estimate rendered beside the cost (`.ai-dock-thinking`, §2). The reasoning
+  the reviewer accepted: `$—` is only honest **because something else moves** — the user accepted
+  "no default spend cap" on the basis that spend is visible, and a 4-minute single-turn run would
+  otherwise show nothing moving at all. Three limits are kept deliberately and stated in the UI:
+  it counts **thinking tokens only** (not input/output), it is the **CLI's own estimate** (rendered
+  with a leading `~`), and it is **absent** on a run that never reports one (no `~0 tok`
+  placeholder). It is **NEVER priced** — no price table, no tokens×rate arithmetic, no derived
+  dollar figure anywhere in the codebase; that remains rejected option (c). This supersedes the
+  "no token counters" bullet in §14, which was written against a cost *chart*, not a live signal.
+- **B1 (original text) — Cost during the first turn is unknowable.** `costUsd` only exists on `turnEnd`/`done`,
   so a 4-minute single-turn run shows `$—` the whole way. The user accepted "no spend cap"
   *because* cost is visible, so this is a real gap in the safety story. Options: (a) ship `$—`
   with the explanatory title (**this contract's choice**); (b) ask the backend to pass
@@ -793,6 +852,8 @@ Each is a field the store already computes or trivially can; none is a new backe
 - Six files instead of three (U14, §9) — the named three all exist with the same class names.
 - `Enter` sends in addition to `Ctrl/Cmd+Enter` (U5) — the parent's test still passes.
 - `onRetryFile`, `density`, `streamLogEnabled`, `atCapacity` props added (§9.1).
+- One new class name beyond the parent's §7.2 list: `.ai-dock-thinking` (§12-B1's mitigation). The
+  new `AiActivityRun` fields `thinkingTokens` and `openedInPane` are likewise additive (§9.1).
 - The parent's `.ai-dock-question` becomes `.ai-dock-ask-question` inside `.ai-dock-ask`; every
   other class name from §7.2 (`.ai-dock-header`, `.ai-dock-status`, `.ai-dock-elapsed`,
   `.ai-dock-cost`, `.ai-dock-runs`, `.ai-dock-reply` → `.ai-dock-ask-input`, `.ai-dock-resizer`,
@@ -881,6 +942,33 @@ Two entries, appended after the existing `ai.ask` / `ai.changelog` pair in
 20. Focus: rendering an `awaitingInput` run does **not** move focus when an unrelated `<input>`
     is focused (jsdom-verifiable); it *does* focus the textarea when `document.body` is active.
 
+Added by the P68e review (each item names the failure it would have caught):
+
+21. **M1** — a ready single run with `openedInPane: false` renders
+    `Proposal is ready — choose “Review proposal” to open it in the center pane.` and **not**
+    `Proposal is open in the center pane.`; with `openedInPane: true` the opposite. A live run
+    renders neither. In `useAiRuns.paneFocus.test.tsx`, the store sets `openedInPane` true exactly
+    in the branch where `openAiProposal` was called (and after `reviewProposal`), false when
+    FOLD-IN 1 suppressed the open — so the dock can never contradict the toast.
+22. **S1** — `renderHook(() => useAiRuns(...), { wrapper: StrictMode })` followed by
+    `startConflictRun` lands a row status. NEGATIVE CONTROL, run by hand: removing
+    `mounted.current = true` from the mount effect fails this test and only this test (12 other
+    cases in the file stay green) — jsdom `renderHook` is not StrictMode-wrapped, which is why the
+    P68d dev-only blackout shipped with 1440 green tests.
+23. **S3** — `ArrowRight`/`Home` in the run strip move `onSelectRun` **and** `document.activeElement`
+    to the newly selected chip.
+24. **N2/N3** — chip glyphs are `⚠`/`⊘`/`✓` for `failed`/`cancelled`/`ready` (never `✨`), and the
+    chip label is the basename with `title` = the full path.
+25. **S4** — `thinkingTokens: 1450` renders `~1,450 tok` beside the cost with a title containing
+    "not a price" and no `$` anywhere in it; `null`/`0`/negative/NaN render nothing; several runs
+    sum. `formatThinkingTokens` has its own known-answer test.
+26. **S6** — after a send, the textarea and `Send` are `disabled`, the label reads `Sending…`, a
+    second `Enter` cannot double-send, and a NEW question on the same run arrives unlocked.
+27. **S2** (`useAiDock.test.tsx`) — `paletteEntries` and `focusDock` keep their identity across log,
+    tick and heartbeat commits, and `paletteEntries` still rebuilds when a run starts asking. The
+    harness passes ONE stable `onAskBonsai`/`onChangelog` pair, mirroring `RepoWorkspace`, where the
+    dock hook is called after those two `useCallback`s so they can be passed by reference.
+
 ### 13.2 AI gate — harness (`pnpm dev:mock`, DOM + computed CSS only)
 
 Machine-verifiable via `read_page` / `get_page_text` / one batched `javascript_tool`:
@@ -905,6 +993,16 @@ Machine-verifiable via `read_page` / `get_page_text` / one batched `javascript_t
    `--ai-dock-log-font` / `color` values change as specified; no computed `color` in the dock
    resolves to the `--text-3` value.
 10. `tsc` + `pnpm build` clean; console clean.
+
+Added by the P68e review (`e2e/17-ai-dock.spec.ts`):
+
+11. **S4** — under `?aiSlow` (the mock emits a `thinking_tokens` heartbeat every third tick),
+    `.ai-dock-thinking` appears as `~N tok`, its `title` says "not a price", it contains no `$`, and
+    its text CHANGES as the run works — i.e. something really does move while the cost reads `$—`.
+12. **S5** — `Ctrl/Cmd+Shift+A` is pressed **with the caret in a filled commit-message box** (the
+    reported scenario), not from `body`: the reply box takes focus and the commit message is
+    unchanged. This is the whole point of binding the chord before the `typing` guard, and clicking
+    `body` first proved nothing.
 
 **Harness limitation, stated plainly:** `pnpm dev:mock` runs headless — the Browser pane
 composites at 0×0, `document.visibilityState === 'hidden'`, `requestAnimationFrame` is paused,
@@ -955,7 +1053,9 @@ Add to `docs/contracts/P68-user-checklist.md`:
 - No height animation (U3).
 - No terminal emulator / PTY (U11).
 - No per-run desktop notification or sound.
-- No cost chart, no token counters, no model picker in the dock — Settings owns configuration.
+- No cost chart, no model picker in the dock — Settings owns configuration. (**Amended, §12-B1:**
+  the ONE live `~N tok` thinking-token estimate beside the cost IS built — it is the pre-first-turn
+  spend signal, not a counter panel, and it is never converted into money.)
 - No "apply all proposals" button in the dock: staging N AI results in one click from the surface
   that also shows unfinished output is exactly the confusion D2/D4 exist to prevent. Applying
   stays a per-file, reviewed action.

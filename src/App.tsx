@@ -158,6 +158,13 @@ export default function App() {
   const [aiEnabled, setAiEnabled] = useState(true);
   const [aiConflictAutonomy, setAiConflictAutonomy] = useState<AiAutonomy>('proposeReview');
   const [aiConsented, setAiConsented] = useState(false);
+  // P68e §8: the AI activity dock's persisted geometry. Both ride the debounced
+  // `handleSettingsChange` patch path (one write per drag / per toggle), and
+  // `aiStreamLog` is threaded down so the dock can say "live output is off"
+  // instead of showing an empty log the user reads as another dead button.
+  const [aiDockHeight, setAiDockHeight] = useState(180);
+  const [aiDockCollapsed, setAiDockCollapsed] = useState(false);
+  const [aiStreamLog, setAiStreamLog] = useState(true);
   // CLI health probe result; null while probing. Re-fetched on Settings open and
   // on repo open (§8.3). A req-id guards against out-of-order probe resolutions.
   const [aiAvailability, setAiAvailability] = useState<AiAvailability | null>(null);
@@ -394,6 +401,9 @@ export default function App() {
       if (patch.profiles !== undefined) setProfiles(patch.profiles);
       if (patch.terminalCommand !== undefined) setTerminalCommand(patch.terminalCommand);
       if (patch.editorCommand !== undefined) setEditorCommand(patch.editorCommand);
+      if (patch.aiDockHeight !== undefined) setAiDockHeight(patch.aiDockHeight);
+      if (patch.aiDockCollapsed !== undefined) setAiDockCollapsed(patch.aiDockCollapsed);
+      if (patch.aiStreamLog !== undefined) setAiStreamLog(patch.aiStreamLog);
       pendingSettingsPatchRef.current = { ...pendingSettingsPatchRef.current, ...patch };
       if (settingsSaveTimerRef.current !== null) {
         window.clearTimeout(settingsSaveTimerRef.current);
@@ -754,6 +764,9 @@ export default function App() {
         setProfiles(s.profiles);
         setTerminalCommand(s.terminalCommand);
         setEditorCommand(s.editorCommand);
+        setAiDockHeight(s.aiDockHeight);
+        setAiDockCollapsed(s.aiDockCollapsed);
+        setAiStreamLog(s.aiStreamLog);
         if (!s.onboardingSeen) showOnboard = true;
         // P42b D4: auto-check on launch when the setting is on. A `?update=`
         // query (harness) forces one too, mirroring `?onboarding=1`. Silent —
@@ -1020,6 +1033,10 @@ export default function App() {
                 aiConflictAutonomy={aiConflictAutonomy}
                 aiConsented={aiConsented}
                 aiAvailability={aiAvailability}
+                aiDockHeight={aiDockHeight}
+                aiDockCollapsed={aiDockCollapsed}
+                aiStreamLog={aiStreamLog}
+                onAiDockChange={handleSettingsChange}
                 onSidebarResize={handleSidebarResize}
                 onRightPanelResize={handleRightPanelResize}
                 onPaneResizeEnd={handlePaneResizeEnd}

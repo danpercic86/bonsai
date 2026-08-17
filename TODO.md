@@ -362,6 +362,36 @@ dashed guideline's geometry is proven arithmetically + via the `window.__bonsai.
 has SEEN it. Line visibility while scrolling, absence of dash crawl, halo termination, marker
 direction, and whether compact is readable on the user's display are all native-only.
 
+## 🐞 SPUN-OUT ITEMS (found during P68, deliberately NOT bundled into it)
+
+### CommandPalette highlight resets on `actions` array identity — **OPEN**
+`src/components/CommandPalette.tsx:103→107→118` re-lands the highlight on the first enabled row whenever
+the `actions` **array identity** changes, and `filterActions` always returns a fresh array. Any producer
+whose memo deps churn therefore steals the user's keyboard selection mid-typing:
+- **P65** bumps `graph` identity per streamed batch → the highlight jumps while a large graph streams
+  (this is the real root cause of the `e2e/09-search-palette` flake, which was worked around by
+  settling the stream first rather than fixed).
+- **P68e** made it fire ~once a **second** during any live AI run (inline-arrow palette thunks +
+  `focusDock` closing over `orderedRuns`). The P68e-side churn was fixed; the component was not.
+**Correct fix (reviewer's recommendation):** reset on the filtered **ids**, not array identity — that
+immunises every future `actions` producer instead of requiring each one to stay identity-stable forever.
+Do NOT keep patching producers.
+
+### `App.tsx` per-field settings pattern is driving unbounded growth — **OPEN**
+`App.tsx` is 1212 lines, and each new setting costs N × `useState` + N × `if (patch.x !== undefined)` +
+N × `setX(s.x)` + N × prop-pass. P67c (`panelDensity`) and P68e (dock height/collapsed) each paid it.
+Fold into a single `UiSettings` state object or a `useUiSettingsState` hook — reclaims far more than the
++17 P68e added and stops the bleed permanently. **Schedule before the next settings-adding increment.**
+
+### `cargo fmt` has never been run on this repo — **OPEN**
+No `rustfmt.toml` anywhere, no fmt check in any hook or CI. `cargo fmt --all --check` reports **1773
+hunks across 221 files**; `--config use_small_heuristics=Max` is *worse* (2065), so no single config
+matches the existing hand style. Right shape: its own commit — pick a config, add `rustfmt.toml`,
+one-shot reformat, then add `cargo fmt --check` to the gate. **Do it between milestones, never inside
+one** (it would bury a review in a mechanical diff).
+
+---
+
 ### P68 — streaming/interactive/bulk AI conflict resolution — **IN PROGRESS**
 Contract: `docs/contracts/P68-ai-conflict-streaming.md` (+ `P68-user-checklist.md`), invariants D1–D15,
 ambiguities A1–A12 pre-resolved. **+3 cmd: 157 → 160** (all three land in P68b; P68a adds none).

@@ -258,3 +258,69 @@ export function filterActions(actions: PaletteAction[], query: string): PaletteA
   scored.sort((x, y) => y.s - x.s || x.i - y.i);
   return scored.map((e) => e.a);
 }
+
+/** The AI palette rows, split out of `RepoWorkspace.tsx` (P68e) so the container
+ *  keeps one call instead of two inline registries.
+ *
+ *  `lead` is unshifted so the two P55c/P56b entries head the Action group; `trail`
+ *  is pushed and holds the P68e dock entries, both gated on there BEING a run —
+ *  an empty dock is never advertised. */
+export interface AiPaletteDeps {
+  /** P13 §8.2: enabled + consented + CLI installed. */
+  aiEligible: boolean;
+  onAskBonsai(): void;
+  onChangelog(): void;
+  /** P68e: `runs.length > 0`. */
+  hasAiRuns: boolean;
+  /** P68e: some run is `awaitingInput`. */
+  aiAwaitingInput: boolean;
+  onAiActivity(): void;
+}
+
+export function aiPaletteEntries(deps: AiPaletteDeps): {
+  lead: PaletteAction[];
+  trail: PaletteAction[];
+} {
+  const lead: PaletteAction[] = deps.aiEligible
+    ? [
+        {
+          id: 'ai.ask',
+          title: 'Ask Bonsai to…',
+          hint: '✨',
+          group: 'action',
+          keywords: 'ai natural language nl request undo revert switch stash discard merge branch',
+          run: deps.onAskBonsai,
+        },
+        {
+          id: 'ai.changelog',
+          title: 'Release notes…',
+          hint: '✨',
+          group: 'action',
+          keywords: 'ai changelog release notes tag range markdown between refs since last tag',
+          run: deps.onChangelog,
+        },
+      ]
+    : [];
+  const trail: PaletteAction[] = [];
+  if (deps.hasAiRuns) {
+    trail.push({
+      id: 'ai.activity',
+      title: 'AI activity',
+      hint: 'Ctrl+Shift+A',
+      group: 'action',
+      keywords: 'ai dock log output run streaming cancel claude progress',
+      run: deps.onAiActivity,
+    });
+    if (deps.aiAwaitingInput) {
+      trail.push({
+        id: 'ai.answer',
+        title: 'Answer Claude…',
+        hint: '✨',
+        group: 'action',
+        keywords: 'ai question reply input awaiting blocked claude',
+        run: deps.onAiActivity,
+      });
+    }
+  }
+  return { lead, trail };
+}

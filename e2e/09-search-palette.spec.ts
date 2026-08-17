@@ -5,7 +5,24 @@
  * (options run on click / Enter on the highlighted row).
  */
 import { test, expect } from './fixtures';
-import { openPalette, openRepo } from './helpers';
+import { graphScrollHeight, openPalette, openRepo } from './helpers';
+import type { Page } from '@playwright/test';
+
+/** Two consecutive identical scroll extents = the P65 graph stream has finished. */
+async function settleGraph(page: Page): Promise<void> {
+  let previous = -1;
+  await expect
+    .poll(
+      async () => {
+        const current = await graphScrollHeight(page);
+        const stable = current === previous;
+        previous = current;
+        return stable;
+      },
+      { intervals: [200, 200, 200, 200, 200, 200] },
+    )
+    .toBe(true);
+}
 
 test.describe('09 search & palette @smoke', () => {
   test('search finds a fixture commit and reveals it; results list renders', async ({ page }) => {
@@ -35,6 +52,14 @@ test.describe('09 search & palette @smoke', () => {
     page,
   }) => {
     await openRepo(page);
+    // PRE-EXISTING FLAKE, root cause: `CommandPalette` re-lands the highlight on the
+    // first enabled row whenever the `actions` ARRAY IDENTITY changes, and
+    // `RepoWorkspace.paletteActions` depends on `graph` — whose identity P65 bumps
+    // once per streamed batch. Under parallel load a batch can land between the
+    // ArrowDown and the assertion, silently resetting the highlight. Let the stream
+    // settle first (two identical extents) so the test measures the keyboard, not
+    // the streamer.
+    await settleGraph(page);
     const dialog = await openPalette(page);
     // Empty query → full registry; the highlight starts on the first enabled row.
     const selected = dialog.getByRole('option', { selected: true });

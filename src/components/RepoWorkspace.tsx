@@ -60,6 +60,7 @@ import type {
   StatusEntry,
   StatusSnapshot,
   SubmoduleInfo,
+  UiSettingsPatch,
   Unsubscribe,
   WorktreeInfo,
 } from '../ipc';
@@ -72,6 +73,8 @@ import { useCommitActions } from './repoWorkspace/useCommitActions';
 import { useHookGate } from './repoWorkspace/useHookGate';
 import { useBranchActions } from './repoWorkspace/useBranchActions';
 import { useAiRuns } from './repoWorkspace/useAiRuns';
+import { AiActivityPanel } from './AiActivityPanel';
+import { useAiDock } from './repoWorkspace/useAiDock';
 import { useMergeActions } from './repoWorkspace/useMergeActions';
 import { useStashActions } from './repoWorkspace/useStashActions';
 import { useSubmoduleActions } from './repoWorkspace/useSubmoduleActions';
@@ -133,6 +136,12 @@ export interface RepoWorkspaceProps {
   aiConsented: boolean;
   /** CLI health status; null while App is probing. */
   aiAvailability: AiAvailability | null;
+  /** P68e §8: persisted AI-dock geometry + `aiStreamLog`; `onAiDockChange` patches
+   *  `aiDockHeight`/`aiDockCollapsed` (App debounces the write). */
+  aiDockHeight: number;
+  aiDockCollapsed: boolean;
+  aiStreamLog: boolean;
+  onAiDockChange(patch: UiSettingsPatch): void;
   onSidebarResize(delta: number): void;
   onRightPanelResize(delta: number): void;
   onPaneResizeEnd(): void;
@@ -164,6 +173,10 @@ export function RepoWorkspace({
   aiConflictAutonomy,
   aiConsented,
   aiAvailability,
+  aiDockHeight,
+  aiDockCollapsed,
+  aiStreamLog,
+  onAiDockChange,
   onSidebarResize,
   onRightPanelResize,
   onPaneResizeEnd,
@@ -1568,6 +1581,9 @@ export function RepoWorkspace({
     applyResolution: handleResolveConflictText,
     openAiProposal,
     conflictPaths,
+    // FOLD-IN 1: never steal the center pane from a user who navigated away while
+    // the run worked (the rationale lives on `AiRunsDeps.diffSlotKey`).
+    diffSlotKey: () => diffSlotRef.current?.key ?? null,
   });
 
   const { handleCreateStash, handleApplyStash, handlePopStash, handleDropStash } = useStashActions({
@@ -2037,6 +2053,22 @@ export function RepoWorkspace({
     setAskOpen(true);
   }, []);
 
+  // P68e: all of the dock's container-side glue lives in the hook (§9). It sits HERE,
+  // after `openChangelog`/`openAskBonsai`, so those two stable `useCallback`s can be
+  // passed BY REFERENCE — inline-arrow thunks made `aiDock.paletteEntries` (and so the
+  // palette's `actions` array) a fresh object every render, resetting its highlight.
+  const aiDock = useAiDock({
+    aiRuns,
+    height: aiDockHeight,
+    collapsed: aiDockCollapsed,
+    onChange: onAiDockChange,
+    density: panelDensity,
+    streamLogEnabled: aiStreamLog,
+    aiEligible,
+    onAskBonsai: openAskBonsai,
+    onChangelog: openChangelog,
+  });
+
   // P60c: describe the last HEAD-moving op (READ-ONLY) and open the UndoDialog.
   // Confirming there reuses the shipped resetBranch (handleResetBranch) with the
   // plan's target + mode; the dialog gates on undoable / requiresCleanWorktree.
@@ -2249,31 +2281,10 @@ export function RepoWorkspace({
       revealCommitByOid,
       appCommands,
     });
-    // P55c / P56b: prepend the AI entries (registry pattern, gated aiEligible) so
-    // they lead the Action group and are fuzzy-filterable. "Ask Bonsai to…" opens
-    // the read-only NL input (nothing mutates until the resolved op's confirm);
-    // "Release notes…" opens the read-only ChangelogDialog range picker. unshift
-    // with two args keeps Ask first, Release notes second.
-    if (aiEligible) {
-      actions.unshift(
-        {
-          id: 'ai.ask',
-          title: 'Ask Bonsai to…',
-          hint: '✨',
-          group: 'action',
-          keywords: 'ai natural language nl request undo revert switch stash discard merge branch',
-          run: openAskBonsai,
-        },
-        {
-          id: 'ai.changelog',
-          title: 'Release notes…',
-          hint: '✨',
-          group: 'action',
-          keywords: 'ai changelog release notes tag range markdown between refs since last tag',
-          run: openChangelog,
-        },
-      );
-    }
+    // P55c / P56b lead the Action group; P68e's dock rows trail it. Both registries
+    // live in `paletteActions.ts` (§E) so this container stays a composition site.
+    actions.unshift(...aiDock.paletteEntries.lead);
+    actions.push(...aiDock.paletteEntries.trail);
     return actions;
   }, [
     palette.open,
@@ -2296,9 +2307,7 @@ export function RepoWorkspace({
     graph,
     revealCommitByOid,
     appCommands,
-    aiEligible,
-    openAskBonsai,
-    openChangelog,
+    aiDock.paletteEntries,
   ]);
 
   function handleToggleConflictView(path: string) {
@@ -2467,6 +2476,7 @@ export function RepoWorkspace({
     selectedIndex,
     graph,
     graphRef,
+    onAiActivity: aiDock.focusDock,
     handleRefresh,
     handleFetch: onFetch, // P63: refresh forge signals after fetch
     handlePull: onPull, // P63: refresh forge signals after pull
@@ -2813,6 +2823,7 @@ export function RepoWorkspace({
             const run = aiRuns.runForPath(path);
             if (run !== null) aiRuns.reviewProposal(run.key, path);
           }}
+          onAiReveal={aiDock.revealForPath}
           onBlame={(path) => void handleBlame(path)}
           onFileHistory={(path) => void handleFileHistory(path)}
           onCreateStash={(scope) => void handleCreateStash(scope)}
@@ -2835,6 +2846,10 @@ export function RepoWorkspace({
           commitSignature={commitSignature}
         />
       </div>
+
+      {/* P68e: `.workspace-host`'s THIRD child (toolbar → .panes → dock), full
+          width on purpose; renders null until the first run exists. */}
+      <AiActivityPanel {...aiDock.panelProps} />
 
       <WorkspaceDialogs
         repoId={repoId}

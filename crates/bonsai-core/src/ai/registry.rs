@@ -212,9 +212,16 @@ mod tests {
 
     /// P68d FIX 1 (the P68c review's must-fix): the OLD shape was
     /// `active()` → drop the lock → `register()`, which two tasks racing inside one
-    /// tick could both pass. Hammer the capped path from many threads released by a
-    /// spin barrier and assert the cap is NEVER exceeded — with the old code this
-    /// over-registers reproducibly.
+    /// tick could both pass.
+    ///
+    /// WHAT ACTUALLY GUARANTEES THE CAP is structural, not this test: `register_within`
+    /// does the count-and-insert under a SINGLE `MutexGuard` and returns `Err(live)`
+    /// when it would overflow, so no interleaving exists in which two callers both
+    /// observe a free slot. This test is a PROBABILISTIC smoke check over that
+    /// property: `std::sync::Barrier` (a blocking rendezvous, not a spin barrier)
+    /// releases 8 threads as close to simultaneously as the OS allows, 50 times, and
+    /// the cap must hold every time. It reproduced the old bug reliably; it does not,
+    /// and cannot, prove the new code correct.
     #[test]
     fn racing_registrations_can_never_both_pass_the_cap() {
         use std::sync::atomic::AtomicUsize;

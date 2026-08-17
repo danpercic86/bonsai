@@ -9,6 +9,7 @@
  *
  * Log batching, autonomy routing and store hygiene live in `useAiRuns.routing.test.tsx`.
  */
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 
@@ -150,6 +151,31 @@ describe('useAiRuns — the item-5 fix', () => {
       'error',
       expect.stringContaining('Too many AI runs in progress'),
     );
+  });
+});
+
+/**
+ * P68e S1 — THE STRICTMODE TRAP, guarded directly.
+ *
+ * The `mounted` ref used to be latched `false` by the cleanup and never re-armed. Under
+ * React 19 StrictMode the dev-mode mount → cleanup → mount cycle runs on the SAME
+ * component instance (and therefore the same ref), so `commit()` returned early
+ * FOREVER: no row status, no dock, no visible run at all in `pnpm dev` / `pnpm tauri
+ * dev`. It shipped in P68d with 1440 green tests because jsdom `renderHook` is NOT
+ * StrictMode-wrapped, so every other test in this file renders the non-double-invoked
+ * path. This is the one that would have caught it.
+ *
+ * NEGATIVE CONTROL (run by hand): drop the `mounted.current = true` line from the mount
+ * effect in `useAiRuns.ts` and this test fails with `status === undefined` while the
+ * whole rest of the suite stays green.
+ */
+describe('useAiRuns — under StrictMode', () => {
+  it('still commits state after the double mount (the P68d dev-only blackout)', () => {
+    stubStream();
+    const { result } = renderHook(() => useAiRuns(makeDeps()), { wrapper: StrictMode });
+    act(() => result.current.startConflictRun('a.ts'));
+    expect(result.current.runForPath('a.ts')?.status).toBe('running');
+    expect(result.current.rowStates['a.ts']?.status).toBe('running');
   });
 });
 
