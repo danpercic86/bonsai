@@ -45,7 +45,7 @@ fn a_stderr_only_failure_surfaces_the_cli_s_own_message() {
         "payload",
         RunOpts::default(),
         RunLimits { idle_timeout: Duration::from_secs(10), ..RunLimits::default() },
-        ctl,
+        &ctl,
         &collect,
     )
     .expect_err("a non-zero exit with no result is a failure");
@@ -92,7 +92,7 @@ fn cancel_works_while_the_stdin_write_is_blocked() {
 
     let mut cancelled_at = Instant::now();
     let outcome = thread::scope(|scope| {
-        let handle = scope.spawn(|| {
+        let handle = scope.spawn(move || {
             run_claude_streaming(
                 Path::new("."),
                 "prompt",
@@ -101,7 +101,7 @@ fn cancel_works_while_the_stdin_write_is_blocked() {
                 // No watchdog and no cap: cancel is the ONLY thing that can stop
                 // this run, exactly as in the real (deadline-free) streaming path.
                 RunLimits { idle_timeout: Duration::ZERO, hard_cap: None, ..RunLimits::default() },
-                ctl,
+                &ctl,
                 &collect,
             )
         });

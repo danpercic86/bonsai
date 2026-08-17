@@ -3,7 +3,11 @@
 
 pub(crate) use tauri::Emitter;
 
-pub(crate) use bonsai_core::ai::{self, AiAvailability, RunOpts};
+// P68b streaming conflict resolve. Only the names the command layer NAMES are
+// re-exported (the `compose_apply` convention — avoids an unused-import warning
+// under -D warnings): `RunLimits`/`ToolPolicy`/`RunControl` travel inside
+// `StreamResolveOpts` / the registry and are reached through `ai::` there.
+pub(crate) use bonsai_core::ai::{self, AiAvailability, AiRunEvent, AiRunRegistry, RunOpts};
 pub(crate) use bonsai_core::assets::{
     self, AgentAsset, AgentAssetInput, AgentAssetInventory, AgentAssetKind, AiAssetInventory,
     AiGeneratedAsset, AssetContent, ContextProfile, ProfileActivation, ProfilePreviewEntry,
@@ -38,6 +42,9 @@ pub(crate) use bonsai_core::git::ai_line;
 pub(crate) use bonsai_core::git::ai_operation::{self, PlanOutcome};
 pub(crate) use bonsai_core::git::ai_pr_description::{self, PrDescription};
 pub(crate) use bonsai_core::git::ai_resolve::{self, AiResolveProposal};
+// P68b. Only the names the command signatures NAME (the `compose_apply`
+// convention): `AiResolveFailure` travels nested inside `AiResolveBatch.failed`.
+pub(crate) use bonsai_core::git::ai_resolve_stream::{self, AiResolveBatch, StreamResolveOpts};
 pub(crate) use bonsai_core::git::ai_summary::{self, AiSummary};
 pub(crate) use bonsai_core::git::bisect::{self, BisectOutcome};
 pub(crate) use bonsai_core::git::blame::{self, BlameLine, FileHistoryEntry};
@@ -94,9 +101,9 @@ pub(crate) use bonsai_core::graph::{compute_graph, stream_graph_core, GraphChunk
 pub(crate) use bonsai_core::health::{collect_repo_health, RepoHealth};
 pub(crate) use crate::scheduler::{self, JobKind, JobOutcome, SchedulerState};
 pub(crate) use crate::settings::{
-    self, clamp_auto_fetch, clamp_graph_prefs, clamp_health_refresh, clamp_pane_widths,
-    AiAutonomy, AutoFetch, GraphPrefs, HealthRefresh, IdentityProfile, ListView, PaneWidths,
-    PanelDensity, RecentRepo, ThemeChoice,
+    self, clamp_ai_settings, clamp_auto_fetch, clamp_graph_prefs, clamp_health_refresh,
+    clamp_pane_widths, AiAutonomy, AiConflictTools, AutoFetch, GraphPrefs, HealthRefresh,
+    IdentityProfile, ListView, PaneWidths, PanelDensity, RecentRepo, ThemeChoice,
 };
 pub(crate) use crate::state::{AppState, RepoEntry};
 pub(crate) use crate::watcher::spawn_watcher;

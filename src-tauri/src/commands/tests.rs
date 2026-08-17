@@ -1106,6 +1106,93 @@
         assert_eq!(s.pane_widths.right_panel, settings::RIGHT_PANEL_MAX);
     }
 
+    /// P68 §8.3: each of the ten streaming-AI knobs patches INDEPENDENTLY of
+    /// `graph` / `listView` / `panelDensity` (and of each other), is clamped on
+    /// write, and keeps its documented `0` sentinels — a plain `clamp` would turn
+    /// "no hard cap" into 60 s and quietly restore the deadline P68 removes.
+    #[test]
+    fn set_ui_settings_patch_ai_run_fields() {
+        let mut s = settings::Settings::default();
+        // Non-default neighbours first, so "untouched" means something.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                list_view: Some(settings::ListView::Flat),
+                panel_density: Some(settings::PanelDensity::Compact),
+                graph: Some(settings::GraphPrefs {
+                    row_height: 40,
+                    ..settings::GraphPrefs::default()
+                }),
+                ..Default::default()
+            },
+        );
+        let graph_before = s.graph;
+
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                ai_idle_timeout_secs: Some(600),
+                ..Default::default()
+            },
+        );
+        assert_eq!(s.ai_idle_timeout_secs, 600);
+        // Nothing else moved — not even the other nine AI fields.
+        assert_eq!(s.ai_hard_cap_secs, 0);
+        assert_eq!(s.ai_max_turns, bonsai_core::ai::DEFAULT_MAX_TURNS);
+        assert!(s.ai_stream_log);
+        assert_eq!(s.ai_conflict_tools, settings::AiConflictTools::ReadOnly);
+        assert_eq!(s.list_view, settings::ListView::Flat);
+        assert_eq!(s.panel_density, settings::PanelDensity::Compact);
+        assert_eq!(s.graph, graph_before);
+
+        // Each remaining field patches on its own.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                ai_conflict_tools: Some(settings::AiConflictTools::None),
+                ai_stream_log: Some(false),
+                ai_include_partial_messages: Some(true),
+                ai_dock_collapsed: Some(true),
+                ai_dock_height: Some(320),
+                ai_bulk_max_bytes: Some(250_000),
+                ai_max_budget_usd: Some(2.5),
+                ai_hard_cap_secs: Some(900),
+                ai_max_turns: Some(3),
+                ..Default::default()
+            },
+        );
+        assert_eq!(s.ai_conflict_tools, settings::AiConflictTools::None);
+        assert!(!s.ai_stream_log);
+        assert!(s.ai_include_partial_messages);
+        assert!(s.ai_dock_collapsed);
+        assert_eq!(s.ai_dock_height, 320);
+        assert_eq!(s.ai_bulk_max_bytes, 250_000);
+        assert_eq!(s.ai_max_budget_usd, 2.5);
+        assert_eq!(s.ai_hard_cap_secs, 900);
+        assert_eq!(s.ai_max_turns, 3);
+        assert_eq!(s.ai_idle_timeout_secs, 600, "the earlier patch survives");
+
+        // Out-of-range values are clamped on write; the `0` sentinels are not.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                ai_idle_timeout_secs: Some(0),
+                ai_hard_cap_secs: Some(0),
+                ai_max_turns: Some(999),
+                ai_bulk_max_bytes: Some(1),
+                ai_max_budget_usd: Some(1e9),
+                ai_dock_height: Some(9_000),
+                ..Default::default()
+            },
+        );
+        assert_eq!(s.ai_idle_timeout_secs, 0, "0 = watchdog disabled");
+        assert_eq!(s.ai_hard_cap_secs, 0, "0 = unbounded");
+        assert_eq!(s.ai_max_turns, settings::AI_MAX_TURNS_MAX);
+        assert_eq!(s.ai_bulk_max_bytes, settings::AI_BULK_MAX_BYTES_MIN);
+        assert_eq!(s.ai_max_budget_usd, settings::AI_MAX_BUDGET_USD_MAX);
+        assert_eq!(s.ai_dock_height, settings::AI_DOCK_HEIGHT_MAX);
+    }
+
     /// `auto_fetch` and `graph` patch independently, leave the other fields
     /// unchanged when `None`, and are clamped on write (P11 §2.4).
     #[test]

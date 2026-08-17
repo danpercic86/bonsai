@@ -58,6 +58,13 @@ REM   stream_partial - init + assistant text, then exits WITHOUT a result.
 REM   stream_garbage - a non-JSON line, an unknown `type`, then a valid result.
 REM   stream_bulk    - a result body carrying two `===== BONSAI RESULT: ... =====`
 REM                    blocks (the P68b bulk-split fixture).
+REM P68b tester mode:
+REM   stream_tools   - reports the received `--tools` value in the result body:
+REM                    TOOLS_READONLY when argv contains `--tools Read,Grep,Glob`,
+REM                    else TOOLS_EMPTY. Proves the read-only allowlist (D10) is
+REM                    really what the settings default sends — the actual fix for
+REM                    the "Claude never looked at the repo" report. Same argv-echo
+REM                    trick as :check_model, in NDJSON form.
 REM   stream_stderr_fail - writes a usage-style error to STDERR and exits NON-ZERO
 REM                    without ever touching stdout. Proves the child's real error
 REM                    text survives the stdout-EOF/stderr race (P68a review S1).
@@ -76,6 +83,7 @@ if /i "%BONSAI_STUB_MODE%"=="stream_ask"         goto :stream_ask
 if /i "%BONSAI_STUB_MODE%"=="stream_partial"     goto :stream_partial
 if /i "%BONSAI_STUB_MODE%"=="stream_garbage"     goto :stream_garbage
 if /i "%BONSAI_STUB_MODE%"=="stream_bulk"        goto :stream_bulk
+if /i "%BONSAI_STUB_MODE%"=="stream_tools"       goto :stream_tools
 if /i "%BONSAI_STUB_MODE%"=="emit_file"          goto :emit_file
 if /i "%BONSAI_STUB_MODE%"=="dump_stdin"        goto :dump_stdin
 if /i "%BONSAI_STUB_MODE%"=="version"          goto :version
@@ -225,6 +233,21 @@ exit /b 0
 set /p _turn=
 echo {"type":"system","subtype":"init","session_id":"sess-bulk","model":"sonnet","tools":["Read"]}
 echo {"type":"result","subtype":"success","is_error":false,"result":"===== BONSAI RESULT: a/one.json =====\nONE_BODY\n===== BONSAI RESULT: b/two.json =====\nTWO_BODY","total_cost_usd":0.03,"session_id":"sess-bulk"}
+exit /b 0
+
+:stream_tools
+REM Echoes back WHICH tool allowlist arrived (P68b acceptance 3). `%*` is the argv
+REM as cmd.exe re-expanded it — the same trick :check_model uses for --model.
+REM Matches the VALUE alone, deliberately: Rust quotes a batch-file argument that
+REM contains a comma, so the argv reads `--tools "Read,Grep,Glob"` and a
+REM `--tools Read,Grep,Glob` pattern would never match (verified — it didn't).
+set /p _turn=
+echo {"type":"system","subtype":"init","session_id":"sess-tools","model":"sonnet","tools":[]}
+REM Also on stderr, so a failing assertion can print the argv it actually saw
+REM (the session forwards stderr as `stderr: ` log lines).
+echo ARGV: %* 1>&2
+echo %* | findstr /C:"Read,Grep,Glob" >nul
+if errorlevel 1 (echo {"type":"result","subtype":"success","is_error":false,"result":"TOOLS_EMPTY","total_cost_usd":0.001,"session_id":"sess-tools"}) else (echo {"type":"result","subtype":"success","is_error":false,"result":"TOOLS_READONLY","total_cost_usd":0.001,"session_id":"sess-tools"})
 exit /b 0
 
 :emit_file

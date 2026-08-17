@@ -28,6 +28,8 @@
 # P68a streaming (NDJSON) modes — one `echo` per protocol line, a single
 # `read -r` per turn (never `cat >/dev/null`: the streaming session holds stdin
 # OPEN for a second turn, so draining to EOF would block forever):
+# P68b adds one mode: stream_tools — reports TOOLS_READONLY / TOOLS_EMPTY
+# depending on the `--tools` value in argv (the D10 allowlist assertion).
 #   stream_success | stream_slow | stream_ask | stream_partial | stream_garbage
 #   | stream_bulk | stream_stderr_fail | stream_hang_stdin. stream_slow and
 #   stream_hang_stdin both TICK $BONSAI_STUB_MARKER (append one line ~every second)
@@ -104,6 +106,23 @@ case "$BONSAI_STUB_MODE" in
     echo 'this is not json at all'
     echo '{"type":"brand_new_event","payload":"ignored"}'
     echo '{"type":"result","subtype":"success","is_error":false,"result":"GARBAGE_TOLERATED","total_cost_usd":0.001,"session_id":"sess-garbage"}'
+    exit 0
+    ;;
+  stream_tools)
+    # P68b: report WHICH tool allowlist arrived, so a test can prove the read-only
+    # default (D10) really reaches the CLI. Twin of the .cmd `:stream_tools` mode.
+    IFS= read -r _turn
+    echo '{"type":"system","subtype":"init","session_id":"sess-tools","model":"sonnet","tools":[]}'
+    # Also on stderr, so a failing assertion can print the argv it actually saw.
+    echo "ARGV: $*" 1>&2
+    case " $* " in
+      *"Read,Grep,Glob"*)
+        echo '{"type":"result","subtype":"success","is_error":false,"result":"TOOLS_READONLY","total_cost_usd":0.001,"session_id":"sess-tools"}'
+        ;;
+      *)
+        echo '{"type":"result","subtype":"success","is_error":false,"result":"TOOLS_EMPTY","total_cost_usd":0.001,"session_id":"sess-tools"}'
+        ;;
+    esac
     exit 0
     ;;
   stream_bulk)

@@ -344,7 +344,11 @@ fn kill_child_tree(child: &mut std::process::Child) {
 /// If the trimmed text opens with a fence line and closes with a fence line, the
 /// two fence lines are removed and the inner lines returned; otherwise the text
 /// is returned unchanged (§3.3). (P13)
-fn strip_fence(text: &str) -> String {
+///
+/// `pub(crate)` since P68 §6.2: each per-file block of a BULK reply gets the same
+/// defensive de-fencing that [`parse_result_envelope`] applies to a whole reply,
+/// from this one implementation.
+pub(crate) fn strip_fence(text: &str) -> String {
     let trimmed = text.trim();
     let lines: Vec<&str> = trimmed.lines().collect();
     if lines.len() >= 2 {
@@ -507,13 +511,18 @@ pub(crate) fn parse_result_envelope(
 /// Errors: `AiUnavailable` (spawn/NotFound) | `AiFailed` (protocol, watchdog,
 /// hard cap, turn budget, unparseable/`is_error` result) | `AiCancelled`. On
 /// EVERY error path the events already emitted stand (D2).
+///
+/// `ctl` is BORROWED (not consumed) since P68b: a bulk resolve is several
+/// sequential child processes under ONE run id (§6.3), and they must share the
+/// same cancel flag, the same `awaiting` flag and the same reply channel. The
+/// registry mints exactly one [`RunControl`] per run, whatever the batch count.
 pub fn run_claude_streaming(
     cwd: &Path,
     prompt: &str,
     payload: &str,
     opts: RunOpts,
     limits: RunLimits,
-    ctl: RunControl,
+    ctl: &RunControl,
     on_event: &(dyn Fn(AiRunEvent) + Send + Sync),
 ) -> Result<AiResult, AppError> {
     session::run(cwd, prompt, payload, opts, limits, ctl, on_event)

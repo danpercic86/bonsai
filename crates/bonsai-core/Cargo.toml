@@ -20,3 +20,13 @@ tempfile = { workspace = true }
 [[bench]]
 name = "graph_layout"
 harness = false
+
+# P68b test fixture, NOT product code: a tiny `claude`-CLI stand-in that speaks
+# NDJSON. Declared as a `[[bin]]` (kept under tests/fixtures, beside its
+# `claude_stub.{cmd,sh}` siblings) purely so cargo builds it for integration tests
+# and exposes its path as `CARGO_BIN_EXE_claude_echo` — an `examples/` target is not
+# built by `cargo test --test <name>` and has no such env var. It adds no
+# dependency; see the file header for why the batch stub cannot cover its case.
+[[bin]]
+name = "claude_echo"
+path = "tests/fixtures/claude_echo.rs"

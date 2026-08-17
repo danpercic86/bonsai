@@ -75,7 +75,7 @@ fn stream_success_emits_started_logs_turn_end_and_done() {
         "payload",
         RunOpts::default(),
         limits(10),
-        ctl,
+        &ctl,
         &collect,
     )
     .expect("stream_success should resolve");
@@ -123,7 +123,7 @@ fn stream_slow_watchdog_fails_and_keeps_the_collected_log() {
         "payload",
         RunOpts::default(),
         RunLimits { idle_timeout: WATCHDOG_IDLE, ..RunLimits::default() },
-        ctl,
+        &ctl,
         &collect,
     )
     .expect_err("a 2s idle limit must fire on the ~3s silent stub");
@@ -167,7 +167,7 @@ fn cancel_mid_run_keeps_partial_output_and_leaves_no_child() {
     };
 
     let outcome = thread::scope(|scope| {
-        let handle = scope.spawn(|| {
+        let handle = scope.spawn(move || {
             run_claude_streaming(
                 Path::new("."),
                 "prompt",
@@ -175,7 +175,7 @@ fn cancel_mid_run_keeps_partial_output_and_leaves_no_child() {
                 RunOpts::default(),
                 // No watchdog at all: the ONLY thing that stops this run is cancel.
                 RunLimits { idle_timeout: Duration::ZERO, ..RunLimits::default() },
-                ctl,
+                &ctl,
                 &collect,
             )
         });
@@ -219,14 +219,14 @@ fn stream_ask_completes_after_a_registry_reply() {
     };
 
     let res = thread::scope(|scope| {
-        let handle = scope.spawn(|| {
+        let handle = scope.spawn(move || {
             run_claude_streaming(
                 Path::new("."),
                 "prompt",
                 "payload",
                 RunOpts::default(),
                 limits(10),
-                ctl,
+                &ctl,
                 &collect,
             )
         });
@@ -267,7 +267,7 @@ fn watchdog_does_not_fire_while_awaiting_input() {
     };
 
     let res = thread::scope(|scope| {
-        let handle = scope.spawn(|| {
+        let handle = scope.spawn(move || {
             run_claude_streaming(
                 Path::new("."),
                 "prompt",
@@ -276,7 +276,7 @@ fn watchdog_does_not_fire_while_awaiting_input() {
                 // A live watchdog, and a human who takes far longer than it to
                 // answer (D3). Without the pause this run would be killed.
                 RunLimits { idle_timeout: WATCHDOG_IDLE, ..RunLimits::default() },
-                ctl,
+                &ctl,
                 &collect,
             )
         });
@@ -309,7 +309,7 @@ fn turn_budget_fails_a_repeatedly_questioning_model() {
         "payload",
         RunOpts::default(),
         RunLimits { max_turns: 1, ..limits(10) },
-        ctl,
+        &ctl,
         &collect,
     )
     .expect_err("one turn of budget must not allow a question");
@@ -345,7 +345,7 @@ fn one_shot_mode_rejects_a_question_it_cannot_answer() {
         "payload\n",
         RunOpts::default(),
         RunLimits { interactive: false, tools: ToolPolicy::None, ..limits(10) },
-        ctl,
+        &ctl,
         &collect,
     )
     .expect_err("a sentinel in one-shot mode is a failure");
@@ -374,7 +374,7 @@ fn stream_partial_fails_naming_the_missing_result_and_keeps_the_body() {
         "payload",
         RunOpts::default(),
         limits(10),
-        ctl,
+        &ctl,
         &collect,
     )
     .expect_err("a child that exits before `result` is a failure");
@@ -412,7 +412,7 @@ fn stream_garbage_lines_degrade_to_logs_and_the_run_still_succeeds() {
         "payload",
         RunOpts::default(),
         limits(10),
-        ctl,
+        &ctl,
         &collect,
     )
     .expect("D12: unknown lines must never fail a run");
@@ -441,7 +441,7 @@ fn stream_bulk_returns_both_delimited_blocks() {
         "payload",
         RunOpts::default(),
         limits(10),
-        ctl,
+        &ctl,
         &collect,
     )
     .expect("bulk stub should resolve");
@@ -472,7 +472,7 @@ fn missing_binary_emits_failed_then_returns_ai_unavailable() {
         "payload",
         RunOpts::default(),
         limits(10),
-        ctl,
+        &ctl,
         &collect,
     )
     .expect_err("a missing CLI is AiUnavailable, as in run_claude");

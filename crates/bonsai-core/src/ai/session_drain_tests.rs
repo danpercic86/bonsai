@@ -9,10 +9,18 @@
 use super::*;
 use crate::ai::AiRunRegistry;
 
-/// A session wired to a throwaway registry entry and a no-op event sink.
-fn session(on_event: &(dyn Fn(AiRunEvent) + Send + Sync)) -> ClaudeSession<'_> {
-    let reg = AiRunRegistry::default();
-    let (_id, ctl) = reg.register();
+/// A throwaway registry entry's `RunControl`. The CALLER keeps it: since P68b a
+/// session only BORROWS its control (a bulk run drives several sessions from one),
+/// so the value has to outlive the session.
+fn control() -> RunControl {
+    AiRunRegistry::default().register().1
+}
+
+/// A session wired to `ctl` and a no-op event sink.
+fn session<'a>(
+    ctl: &'a RunControl,
+    on_event: &'a (dyn Fn(AiRunEvent) + Send + Sync),
+) -> ClaudeSession<'a> {
     ClaudeSession::new(ctl, on_event)
 }
 
@@ -34,7 +42,8 @@ fn failure(end: Result<AiResult, LoopEnd>) -> String {
 #[test]
 fn stderr_arriving_after_stdout_eof_still_reaches_the_failure_message() {
     let noop = |_ev: AiRunEvent| {};
-    let mut s = session(&noop);
+    let ctl = control();
+    let mut s = session(&ctl, &noop);
     let (tx, rx) = channel::<Msg>();
     // Queued 50 ms LATE: the exact ordering mpsc refuses to guarantee against
     // `OutEof`, and the one a bad flag / expired login produces in practice.
@@ -60,7 +69,8 @@ fn stderr_arriving_after_stdout_eof_still_reaches_the_failure_message() {
 fn a_result_arriving_during_the_drain_completes_the_run() {
     const RESULT_LINE: &str = r#"{"type":"result","subtype":"success","is_error":false,"result":"LATE_BODY","total_cost_usd":0.02,"session_id":"sess-late"}"#;
     let noop = |_ev: AiRunEvent| {};
-    let mut s = session(&noop);
+    let ctl = control();
+    let mut s = session(&ctl, &noop);
     let (tx, rx) = channel::<Msg>();
     thread::spawn(move || {
         thread::sleep(Duration::from_millis(30));
@@ -83,9 +93,10 @@ fn a_result_arriving_during_the_drain_completes_the_run() {
 #[test]
 fn a_write_error_reports_stderr_when_there_is_any_and_the_io_error_otherwise() {
     let noop = |_ev: AiRunEvent| {};
+    let ctl = control();
 
     // Nothing on stderr: the io error IS the diagnosis (§3.3's wording).
-    let mut bare = session(&noop);
+    let mut bare = session(&ctl, &noop);
     let (tx, rx) = channel::<Msg>();
     drop(tx);
     let m = failure(bare.ended_without_result(
@@ -97,7 +108,7 @@ fn a_write_error_reports_stderr_when_there_is_any_and_the_io_error_otherwise() {
 
     // With stderr, the child's own words win over our `BrokenPipe` — the two race
     // by construction, so the message must not depend on who got there first.
-    let mut with_stderr = session(&noop);
+    let mut with_stderr = session(&ctl, &noop);
     let (tx, rx) = channel::<Msg>();
     thread::spawn(move || {
         thread::sleep(Duration::from_millis(30));
@@ -114,7 +125,8 @@ fn a_write_error_reports_stderr_when_there_is_any_and_the_io_error_otherwise() {
 #[test]
 fn a_chatty_stderr_cannot_stall_the_drain() {
     let noop = |_ev: AiRunEvent| {};
-    let mut s = session(&noop);
+    let ctl = control();
+    let mut s = session(&ctl, &noop);
     let (tx, rx) = channel::<Msg>();
     // Never sends ErrEof; stops only when the receiver goes away. THROTTLED on
     // purpose: the consumer does an O(MAX_EVENT_TEXT) trim plus an event build per
@@ -143,7 +155,8 @@ fn a_chatty_stderr_cannot_stall_the_drain() {
 #[test]
 fn a_silent_exit_yields_the_generic_message_without_waiting() {
     let noop = |_ev: AiRunEvent| {};
-    let mut s = session(&noop);
+    let ctl = control();
+    let mut s = session(&ctl, &noop);
     let (tx, rx) = channel::<Msg>();
     let _ = tx.send(Msg::ErrEof);
     let started = Instant::now();

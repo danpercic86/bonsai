@@ -63,7 +63,9 @@ enum LoopEnd {
 /// Private on purpose: [`run`] (i.e. `super::run_claude_streaming`) is the only
 /// way to drive a session, so there is no public surface to misuse.
 struct ClaudeSession<'a> {
-    ctl: RunControl,
+    /// Borrowed: a bulk run drives SEVERAL sessions sequentially under one
+    /// `RunControl` (P68b §6.3), so a session can never own it.
+    ctl: &'a RunControl,
     on_event: &'a (dyn Fn(AiRunEvent) + Send + Sync),
     seq: u64,
     started: Instant,
@@ -83,14 +85,14 @@ pub(crate) fn run(
     payload: &str,
     opts: RunOpts,
     limits: RunLimits,
-    ctl: RunControl,
+    ctl: &RunControl,
     on_event: &(dyn Fn(AiRunEvent) + Send + Sync),
 ) -> Result<AiResult, AppError> {
     ClaudeSession::new(ctl, on_event).drive(cwd, prompt, payload, &opts, &limits)
 }
 
 impl<'a> ClaudeSession<'a> {
-    fn new(ctl: RunControl, on_event: &'a (dyn Fn(AiRunEvent) + Send + Sync)) -> Self {
+    fn new(ctl: &'a RunControl, on_event: &'a (dyn Fn(AiRunEvent) + Send + Sync)) -> Self {
         let now = Instant::now();
         ClaudeSession {
             ctl,

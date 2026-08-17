@@ -94,6 +94,22 @@ pub enum AiAutonomy {
     AutoResolve,
 }
 
+/// Repo access granted to a streaming conflict-resolution run (P68 §B/D10).
+/// `ReadOnly` maps to `--tools "Read,Grep,Glob"` — the model must be able to look
+/// at the rest of the repository to resolve a conflict sensibly, which is the
+/// actual fix for the "Claude timed out without understanding the app" report:
+/// today's run passes `--tools ""` and is BLIND to the repo. `None` reproduces
+/// that older behaviour. There is deliberately NO write/edit/bash option: Bonsai
+/// writes nothing itself either — staging stays the separate, explicit
+/// `resolve_conflict_text` call after review (D4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AiConflictTools {
+    #[default]
+    ReadOnly,
+    None,
+}
+
 /// Persisted sidebar/right-panel widths in px (P2 contract §2.1). Clamped to
 /// documented sane bounds on BOTH read (`load_from`) and write (setter
 /// commands) — this is the "persisted sanity" bound; the frontend additionally
@@ -285,6 +301,52 @@ pub fn clamp_graph_prefs(g: GraphPrefs) -> GraphPrefs {
     }
 }
 
+// ---- P68 §8.3: streaming AI-run ranges. `0` is a documented SENTINEL for the
+// first two (watchdog disabled / no hard cap) and for the budget (no flag), so the
+// clamps are "0 or in range", never a plain `clamp` that would silently turn an
+// intentional 0 into a minimum.
+pub const AI_IDLE_TIMEOUT_DEFAULT: u32 = 300;
+pub const AI_IDLE_TIMEOUT_MIN: u32 = 30;
+pub const AI_IDLE_TIMEOUT_MAX: u32 = 3600;
+pub const AI_HARD_CAP_MIN: u32 = 60;
+pub const AI_HARD_CAP_MAX: u32 = 86_400;
+pub const AI_MAX_TURNS_MIN: u32 = 1;
+pub const AI_MAX_TURNS_MAX: u32 = 20;
+pub const AI_BULK_MAX_BYTES_DEFAULT: u32 = 400_000;
+pub const AI_BULK_MAX_BYTES_MIN: u32 = 20_000;
+pub const AI_BULK_MAX_BYTES_MAX: u32 = 4_000_000;
+pub const AI_MAX_BUDGET_USD_MAX: f64 = 100.0;
+pub const AI_DOCK_HEIGHT_DEFAULT: u32 = 180;
+pub const AI_DOCK_HEIGHT_MIN: u32 = 120;
+pub const AI_DOCK_HEIGHT_MAX: u32 = 600;
+
+/// Clamps the P68 streaming-AI knobs to their documented ranges; called by both
+/// `load_from` (defend a hand-edited file) and `apply_patch` (defend a future UI
+/// bug), exactly like `clamp_pane_widths` / `clamp_graph_prefs`.
+///
+/// Mutates in place rather than returning a struct, because these are ten
+/// TOP-LEVEL fields (A8) rather than one nested preference object.
+pub fn clamp_ai_settings(s: &mut Settings) {
+    if s.ai_idle_timeout_secs != 0 {
+        s.ai_idle_timeout_secs =
+            s.ai_idle_timeout_secs.clamp(AI_IDLE_TIMEOUT_MIN, AI_IDLE_TIMEOUT_MAX);
+    }
+    if s.ai_hard_cap_secs != 0 {
+        s.ai_hard_cap_secs = s.ai_hard_cap_secs.clamp(AI_HARD_CAP_MIN, AI_HARD_CAP_MAX);
+    }
+    s.ai_max_turns = s.ai_max_turns.clamp(AI_MAX_TURNS_MIN, AI_MAX_TURNS_MAX);
+    s.ai_bulk_max_bytes =
+        s.ai_bulk_max_bytes.clamp(AI_BULK_MAX_BYTES_MIN, AI_BULK_MAX_BYTES_MAX);
+    // NaN/inf would poison the `{:.4}` argv formatting, and a negative budget is
+    // meaningless — both collapse to "no cap".
+    if !s.ai_max_budget_usd.is_finite() || s.ai_max_budget_usd < 0.0 {
+        s.ai_max_budget_usd = 0.0;
+    } else if s.ai_max_budget_usd > AI_MAX_BUDGET_USD_MAX {
+        s.ai_max_budget_usd = AI_MAX_BUDGET_USD_MAX;
+    }
+    s.ai_dock_height = s.ai_dock_height.clamp(AI_DOCK_HEIGHT_MIN, AI_DOCK_HEIGHT_MAX);
+}
+
 /// On-disk settings wire format:
 /// `{ "version": 1, "recentRepos": [ { "path": "...", "lastOpened": 0 } ],
 ///    "theme": "dark", "paneWidths": { "sidebar": 240, "rightPanel": 380 },
@@ -293,7 +355,11 @@ pub fn clamp_graph_prefs(g: GraphPrefs) -> GraphPrefs {
 ///
 /// `SETTINGS_VERSION` stays `1`: `theme`, `pane_widths`, `list_view`,
 /// `panel_density`, `open_repos`, `active_repo`, `auto_fetch`, `graph`,
-/// `ai_enabled`, `ai_conflict_autonomy`, and `ai_consented` are all additive
+/// `ai_enabled`, `ai_conflict_autonomy`, `ai_consented`, and the P68 streaming-AI
+/// run knobs (`ai_idle_timeout_secs`, `ai_hard_cap_secs`, `ai_max_turns`,
+/// `ai_stream_log`, `ai_include_partial_messages`, `ai_conflict_tools`,
+/// `ai_bulk_max_bytes`, `ai_max_budget_usd`, `ai_dock_height`,
+/// `ai_dock_collapsed`) are all additive
 /// `#[serde(default)]` fields
 /// (on the whole struct already, via the container-level `default`) — an old
 /// settings.json containing only `recentRepos` deserializes fine, missing
@@ -382,6 +448,44 @@ pub struct Settings {
     /// auto-detect the VS Code family. Additive `#[serde(default)]` ⇒ a pre-P49
     /// file loads `""`.
     pub editor_command: String,
+    // ---- P68 §8.3: streaming AI-run knobs. All additive `#[serde(default)]`
+    // (via the container-level `default`), all clamped by `clamp_ai_settings`, NO
+    // version bump — a pre-P68 settings.json loads every one of them at its
+    // default (asserted by `old_settings_file_without_ai_run_fields_loads_defaults`).
+    /// Seconds with NO output from the CLI before a streaming run is killed.
+    /// `0` disables the watchdog. Streaming has no wall-clock deadline by design
+    /// (the user cancels instead — D3/D7), so this is the only automatic reaper.
+    pub ai_idle_timeout_secs: u32,
+    /// Absolute cap on one streaming run, in seconds. **`0` = UNBOUNDED, and that
+    /// is the shipped default** (the locked user decision: no hard timeout +
+    /// Cancel). Paused while the run awaits a human answer (D3).
+    pub ai_hard_cap_secs: u32,
+    /// Max `result` lines (turns) before a still-questioning model is failed
+    /// (P68 §B rule 3). Shares `bonsai_core::ai::DEFAULT_MAX_TURNS` with
+    /// `RunLimits::default()` rather than repeating the literal.
+    pub ai_max_turns: u32,
+    /// Stream the CLI's log lines to the dock. `false` suppresses `Log` events at
+    /// the SOURCE, so turning it off costs no IPC (§8.3).
+    pub ai_stream_log: bool,
+    /// `--include-partial-messages`. Default OFF: the delta shape is unverified
+    /// (spike §1.8) and unknown lines only degrade to `log`.
+    pub ai_include_partial_messages: bool,
+    /// Repo access for a conflict run (D10). Default `ReadOnly`.
+    pub ai_conflict_tools: AiConflictTools,
+    /// Payload byte cap that triggers batch SPLITTING for a bulk resolve (§6.3).
+    /// Never a truncation point — a request too big for one payload is split into
+    /// sequential batches, and a single file that alone exceeds it is reported as
+    /// an individual failure.
+    pub ai_bulk_max_bytes: u32,
+    /// `--max-budget-usd`. **`0.0` = NO CAP, the shipped default** (the locked
+    /// decision: opt-in, because a surprise mid-run stop is worse than a run the
+    /// user can see and cancel). The flag is passed ONLY when > 0.
+    pub ai_max_budget_usd: f64,
+    /// Persisted px height of the AI activity dock (P68 §E, A8: a top-level
+    /// field, NOT a member of `PaneWidths` — that struct is about widths).
+    pub ai_dock_height: u32,
+    /// Persisted collapsed state of the AI activity dock (P68 §E).
+    pub ai_dock_collapsed: bool,
 }
 
 impl Default for Settings {
@@ -412,6 +516,18 @@ impl Default for Settings {
             profiles: Vec::new(),
             terminal_command: String::new(),
             editor_command: String::new(),
+            ai_idle_timeout_secs: AI_IDLE_TIMEOUT_DEFAULT,
+            // 0 = unbounded (locked user decision).
+            ai_hard_cap_secs: 0,
+            ai_max_turns: bonsai_core::ai::DEFAULT_MAX_TURNS,
+            ai_stream_log: true,
+            ai_include_partial_messages: false,
+            ai_conflict_tools: AiConflictTools::default(),
+            ai_bulk_max_bytes: AI_BULK_MAX_BYTES_DEFAULT,
+            // 0.0 = no `--max-budget-usd` flag at all (locked user decision).
+            ai_max_budget_usd: 0.0,
+            ai_dock_height: AI_DOCK_HEIGHT_DEFAULT,
+            ai_dock_collapsed: false,
         }
     }
 }
@@ -430,6 +546,7 @@ pub fn load_from(file: &Path) -> Settings {
     s.auto_fetch = clamp_auto_fetch(s.auto_fetch);
     s.health_refresh = clamp_health_refresh(s.health_refresh);
     s.graph = clamp_graph_prefs(s.graph);
+    clamp_ai_settings(&mut s);
     s
 }
 
@@ -801,6 +918,110 @@ mod tests {
         assert_eq!(load_from(&file_compact).panel_density, PanelDensity::Compact);
         let raw_compact = std::fs::read_to_string(&file_compact).expect("read compact.json");
         assert!(raw_compact.contains("\"panelDensity\": \"compact\""));
+    }
+
+    /// Both `AiConflictTools` wire strings ("readOnly"/"none") round-trip through
+    /// save/load with the documented camelCase key + values (P68 §8.3). The `none`
+    /// variant must NOT serialize as JSON `null` — that would silently reload as
+    /// the default and re-grant repo access the user turned off.
+    #[test]
+    fn ai_conflict_tools_roundtrips_both_variants() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+
+        let file_ro = settings_path(&dir).with_file_name("readonly.json");
+        let s_ro = Settings { ai_conflict_tools: AiConflictTools::ReadOnly, ..Default::default() };
+        save_to(&file_ro, &s_ro).expect("save readOnly");
+        assert_eq!(load_from(&file_ro).ai_conflict_tools, AiConflictTools::ReadOnly);
+        let raw_ro = std::fs::read_to_string(&file_ro).expect("read readonly.json");
+        assert!(raw_ro.contains("\"aiConflictTools\": \"readOnly\""), "{raw_ro}");
+
+        let file_none = settings_path(&dir).with_file_name("none.json");
+        let s_none = Settings { ai_conflict_tools: AiConflictTools::None, ..Default::default() };
+        save_to(&file_none, &s_none).expect("save none");
+        assert_eq!(load_from(&file_none).ai_conflict_tools, AiConflictTools::None);
+        let raw_none = std::fs::read_to_string(&file_none).expect("read none.json");
+        assert!(raw_none.contains("\"aiConflictTools\": \"none\""), "{raw_none}");
+    }
+
+    /// THE no-version-bump guard for P68 (§8.3): a settings.json written before
+    /// P68 (no `ai*` run keys at all) loads every new field at its documented
+    /// default — including the two LOCKED user decisions, `aiHardCapSecs = 0`
+    /// (unbounded) and `aiMaxBudgetUsd = 0.0` (no `--max-budget-usd` flag) —
+    /// while every pre-existing field survives untouched.
+    #[test]
+    fn old_settings_file_without_ai_run_fields_loads_defaults() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let json = r#"{
+            "version": 1,
+            "recentRepos": [ { "path": "D:\\Repos\\legacy", "lastOpened": 123 } ],
+            "theme": "light",
+            "listView": "flat",
+            "panelDensity": "compact",
+            "aiEnabled": true,
+            "aiConsented": true,
+            "aiConflictAutonomy": "autoResolve"
+        }"#;
+        std::fs::write(&file, json).expect("write pre-P68 settings.json");
+
+        let loaded = load_from(&file);
+        assert_eq!(loaded.ai_idle_timeout_secs, AI_IDLE_TIMEOUT_DEFAULT);
+        assert_eq!(loaded.ai_hard_cap_secs, 0, "0 = unbounded (locked decision)");
+        assert_eq!(loaded.ai_max_turns, bonsai_core::ai::DEFAULT_MAX_TURNS);
+        assert!(loaded.ai_stream_log);
+        assert!(!loaded.ai_include_partial_messages);
+        assert_eq!(loaded.ai_conflict_tools, AiConflictTools::ReadOnly);
+        assert_eq!(loaded.ai_bulk_max_bytes, AI_BULK_MAX_BYTES_DEFAULT);
+        assert_eq!(loaded.ai_max_budget_usd, 0.0, "0.0 = no cap (locked decision)");
+        assert_eq!(loaded.ai_dock_height, AI_DOCK_HEIGHT_DEFAULT);
+        assert!(!loaded.ai_dock_collapsed);
+        // Pre-existing fields are untouched by the addition.
+        assert_eq!(loaded.theme, ThemeChoice::Light);
+        assert_eq!(loaded.list_view, ListView::Flat);
+        assert_eq!(loaded.panel_density, PanelDensity::Compact);
+        assert_eq!(loaded.ai_conflict_autonomy, AiAutonomy::AutoResolve);
+        assert_eq!(loaded.recent_repos.len(), 1);
+    }
+
+    /// A hand-edited file with out-of-range AI knobs is clamped ON LOAD, and the
+    /// documented `0` sentinels (watchdog off / no hard cap / no budget flag)
+    /// SURVIVE — a naive `clamp` would turn them into minimums and quietly
+    /// re-introduce the deadline the milestone removed.
+    #[test]
+    fn clamp_ai_settings_respects_zero_sentinels_and_ranges() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let json = r#"{
+            "version": 1,
+            "aiIdleTimeoutSecs": 0,
+            "aiHardCapSecs": 0,
+            "aiMaxTurns": 0,
+            "aiBulkMaxBytes": 10,
+            "aiMaxBudgetUsd": -5.0,
+            "aiDockHeight": 5000
+        }"#;
+        std::fs::write(&file, json).expect("write settings.json");
+        let loaded = load_from(&file);
+        assert_eq!(loaded.ai_idle_timeout_secs, 0, "0 = watchdog disabled, not 30");
+        assert_eq!(loaded.ai_hard_cap_secs, 0, "0 = unbounded, not 60");
+        assert_eq!(loaded.ai_max_turns, AI_MAX_TURNS_MIN);
+        assert_eq!(loaded.ai_bulk_max_bytes, AI_BULK_MAX_BYTES_MIN);
+        assert_eq!(loaded.ai_max_budget_usd, 0.0, "a negative budget means no cap");
+        assert_eq!(loaded.ai_dock_height, AI_DOCK_HEIGHT_MAX);
+
+        // In-range values pass through, and an over-range one is capped.
+        let mut s = Settings {
+            ai_idle_timeout_secs: 4_000,
+            ai_hard_cap_secs: 600,
+            ai_max_turns: 99,
+            ai_max_budget_usd: 250.0,
+            ..Default::default()
+        };
+        clamp_ai_settings(&mut s);
+        assert_eq!(s.ai_idle_timeout_secs, AI_IDLE_TIMEOUT_MAX);
+        assert_eq!(s.ai_hard_cap_secs, 600);
+        assert_eq!(s.ai_max_turns, AI_MAX_TURNS_MAX);
+        assert_eq!(s.ai_max_budget_usd, AI_MAX_BUDGET_USD_MAX);
     }
 
     /// An old `settings.json` written before P2 (only `version`/`recentRepos`,

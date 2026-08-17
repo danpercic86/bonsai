@@ -20,6 +20,7 @@ mod remotes;
 mod merge;
 mod scheduler;
 mod ai;
+mod ai_stream;
 mod rebase;
 mod bisect;
 mod history;
@@ -76,6 +77,9 @@ mod tests_remotes;
 mod tests_ai;
 
 #[cfg(test)]
+mod tests_ai_stream;
+
+#[cfg(test)]
 mod registration_tests;
 
 // `shared` re-exports the cross-cutting imports and `repo_path`; only the test
@@ -97,6 +101,7 @@ pub use remotes::*;
 pub use merge::*;
 pub use scheduler::*;
 pub use ai::*;
+pub use ai_stream::*;
 pub use rebase::*;
 pub use bisect::*;
 pub use history::*;

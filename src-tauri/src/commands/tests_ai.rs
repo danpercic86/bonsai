@@ -13,50 +13,16 @@
 
 use super::tests_support::*;
 use super::*;
-use std::sync::{Mutex, MutexGuard};
 
 fn block_on<F: std::future::Future>(f: F) -> F::Output {
     tauri::async_runtime::block_on(f)
 }
 
-/// Serialize env-mutating AI tests: `BONSAI_CLAUDE_BIN`/`BONSAI_STUB_MODE` are
-/// process-global and the spawned stub inherits them.
-fn env_lock() -> MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
-}
+// `env_lock()` comes from `tests_support`: it must be the SAME lock every module
+// takes, or `BONSAI_STUB_MODE` races across test files (P68b).
 
-/// Path to the committed `claude` stub (shared with the core AI tests, one dir
-/// up from `src-tauri`). Windows runs the `.cmd`; POSIX the `.sh` (mode +x).
-fn stub_path() -> std::path::PathBuf {
-    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("crates")
-        .join("bonsai-core")
-        .join("tests")
-        .join("fixtures");
-    if cfg!(windows) {
-        fixtures.join("claude_stub.cmd")
-    } else {
-        let p = fixtures.join("claude_stub.sh");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if let Ok(meta) = std::fs::metadata(&p) {
-                let mut perms = meta.permissions();
-                perms.set_mode(perms.mode() | 0o111);
-                let _ = std::fs::set_permissions(&p, perms);
-            }
-        }
-        p
-    }
-}
-
-fn set_stub(mode: &str) {
-    std::env::set_var("BONSAI_CLAUDE_BIN", stub_path());
-    std::env::set_var("BONSAI_STUB_MODE", mode);
-    std::env::remove_var("BONSAI_STUB_STDIN_DUMP");
-}
+// `set_stub()` / `stub_path()` also come from `tests_support` — one copy for every
+// module that drives the committed stub (P68b).
 
 /// A settings file with AI enabled + consented (so the gate passes).
 fn consent_file(base: &std::path::Path) -> std::path::PathBuf {
