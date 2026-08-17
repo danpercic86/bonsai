@@ -84,6 +84,22 @@ pub(crate) async fn ai_resolve_conflict_stream_inner(
     let workdir = repo_path(state, repo_id)?;
     let cfg = stream_opts(&s);
 
+    // Concurrency guard (OQ1), enforced HERE rather than only in the frontend: this
+    // is the trust boundary. Each run is a `claude` process tree with no wall-clock
+    // deadline (D3/D7) and no default spend cap, so a frontend regression, a second
+    // window, a retried IPC call or a double-fired dock action would otherwise fan
+    // out unbounded runs against a metered subscription. REJECT, never queue — a
+    // queued run with no visible state is worse than an error. The message is
+    // deliberately distinct (and stable) so the UI can say "too many AI runs"
+    // instead of showing a generic `aiFailed`.
+    let active = registry.active();
+    if active >= ai::AI_MAX_CONCURRENT_RUNS {
+        return Err(AppError::AiFailed(format!(
+            "too many AI runs in progress ({active} of {} allowed) — cancel one and try again",
+            ai::AI_MAX_CONCURRENT_RUNS
+        )));
+    }
+
     // The registry entry must go away on EVERY exit path — including a panic
     // inside the blocking task — or `ai_cancel_run` would keep accepting a dead id
     // and the app-exit hook would try to kill a stale pid. A drop guard is the only

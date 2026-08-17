@@ -18,7 +18,9 @@ import type {
   AiAvailability,
   AiAssetInventory,
   AiGeneratedAsset,
+  AiResolveBatch,
   AiResolveProposal,
+  AiRunEvent,
   AiSummary,
   ApplyStashOutcome,
   AssetContent,
@@ -534,6 +536,34 @@ export const tauriIpc: IpcApi = {
 
   verifyCommits(repoId: string, oids: string[]): Promise<VerifyResults> {
     return invoke<VerifyResults>('verify_commits', { repoId, oids });
+  },
+
+  // P68 §8.4: the streaming conflict resolver. `runId` is NOT the return value —
+  // it arrives on the first channel event (`started`), because this promise settles
+  // only when the whole run has ended (D8). Callers must therefore learn the id from
+  // `onEvent` if they want to cancel or reply.
+  aiResolveConflictStream(
+    repoId: string,
+    paths: string[],
+    onEvent: (e: AiRunEvent) => void,
+  ): Promise<AiResolveBatch> {
+    const channel = new Channel<AiRunEvent>();
+    channel.onmessage = onEvent;
+    // Tauri auto-serializes the Channel as the `on_event` command argument
+    // (mirrors historyIndexBuild / cloneRepo).
+    return invoke<AiResolveBatch>('ai_resolve_conflict_stream', {
+      repoId,
+      paths,
+      onEvent: channel,
+    });
+  },
+
+  aiCancelRun(runId: string): Promise<void> {
+    return invoke<void>('ai_cancel_run', { runId });
+  },
+
+  aiReplyRun(runId: string, text: string): Promise<void> {
+    return invoke<void>('ai_reply_run', { runId, text });
   },
 
   historyIndexBuild(

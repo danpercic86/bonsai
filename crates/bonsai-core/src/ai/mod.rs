@@ -69,6 +69,23 @@ pub const EXIT_GRACE: Duration = Duration::from_secs(2);
 /// is failed (P68 §B rule 3).
 pub const DEFAULT_MAX_TURNS: u32 = 6;
 
+/// How many streaming AI runs may be live AT ONCE (P68 OQ1, confirmed = 3: one CLI
+/// process per run, subscription rate limits, and >3 live logs is unreadable in one
+/// dock).
+///
+/// Lives HERE, and is enforced by the command layer, because the cap belongs on the
+/// far side of the trust boundary: streaming has **no wall-clock deadline by
+/// design** (D3/D7) and **no spend cap by default** (`ai_max_budget_usd = 0.0`), so
+/// the only reaper is the idle watchdog. A frontend-only cap means a `useAiRuns`
+/// regression, a second window, a retried IPC call or a double-fired dock action
+/// fans out unbounded `claude` process trees against a metered subscription. The
+/// frontend MIRRORS this number (`src/settings/ranges.ts`) instead of owning it, so
+/// the two cannot drift.
+///
+/// The guard REJECTS; it never queues. A queued run with no visible state is worse
+/// than an error the user can act on.
+pub const AI_MAX_CONCURRENT_RUNS: usize = 3;
+
 /// Which CLI tools a streaming run may use (P68 §A/D10). `ReadOnly` is the
 /// conflict default — the model must be able to look at the rest of the repo, but
 /// NEVER write, edit or run a shell. `None` reproduces today's `--tools ""`.

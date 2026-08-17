@@ -9,8 +9,11 @@
 //! write sitting on the session loop thread) — so leaving it to a manual checkpoint
 //! would mean the two hardest-won invariants have no automated guard.
 //!
-//! The CLI is therefore the `claude_echo` EXAMPLE binary (cross-platform Rust, no
-//! `.cmd`/`.sh` twin to diverge): it reads the whole first turn, reports the byte
+//! The CLI is therefore the `claude_echo` helper binary — a `[[bin]]` target, NOT
+//! an example (see its file header and `Cargo.toml:24-32`: an `examples/` target is
+//! not built by `cargo test --test <name>` and has no `CARGO_BIN_EXE_*`, so this
+//! file would silently skip and the D16 guard would be vacuous). Cross-platform
+//! Rust, with no `.cmd`/`.sh` twin to diverge: it reads the whole first turn, reports the byte
 //! count it received, asks a question on an open stdin, waits for the reply, and
 //! answers with one `===== BONSAI RESULT:` block per requested path.
 //!
@@ -24,11 +27,13 @@
 mod common;
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use bonsai_core::ai::{AiRunEvent, AiRunEventKind, AiRunRegistry, RunLimits, RunOpts};
+use bonsai_core::ai::{AiRunEvent, AiRunEventKind, AiRunRegistry, RunControl, RunLimits, RunOpts};
 use bonsai_core::error::AppError;
 use bonsai_core::git::ai_resolve_stream::{resolve_conflicts_streaming, StreamResolveOpts};
 use bonsai_core::git::merge::{merge_branch, MergeOutcome};
@@ -337,6 +342,104 @@ fn cancel_works_while_a_bulk_payload_is_in_flight() {
         .collect::<Vec<_>>();
     assert_eq!(cancelled.len(), 1);
     assert!(cancelled[0].partial_text.is_some(), "the partial echo is always present (D2)");
+}
+
+/// A reply queued while the run was NOT awaiting must never answer a LATER
+/// question (P68c FIX 1). The reply channel spans batches — one `RunControl` drives
+/// every child of a bulk run — so a second click that arrived inside one 250 ms
+/// tick used to sit in the channel and silently answer batch 2's question with
+/// batch 1's text.
+///
+/// The `RunControl` is hand-built rather than taken from the registry on purpose:
+/// `AiRunRegistry::reply` refuses a reply unless the run is awaiting, which is
+/// exactly the gate the bug slips past, and driving the channel directly makes the
+/// scenario deterministic instead of a 250 ms race.
+///
+/// Negative control (verified): with `drain_stale_replies` removed from
+/// `session.rs`, the `answered() == 1` assertion below fails — the leftover reply
+/// is consumed on the next tick and the run answers itself.
+#[test]
+fn a_stale_reply_never_answers_the_next_batchs_question() {
+    require_git!();
+    let _g = env_lock();
+    set_echo("bulk_ask");
+
+    let files = ["i18n/de.json", "i18n/en.json"];
+    let dir = bulk_conflict(&files);
+
+    let (reply_tx, replies) = channel::<String>();
+    let cancel = Arc::new(AtomicBool::new(false));
+    let awaiting = Arc::new(AtomicBool::new(false));
+    let ctl = RunControl {
+        run_id: "ai-stale-reply-test".to_string(),
+        cancel: Arc::clone(&cancel),
+        awaiting: Arc::clone(&awaiting),
+        pid: Arc::new(AtomicU32::new(0)),
+        replies,
+    };
+    let sink = Sink::default();
+    let collect = {
+        let s = sink.clone();
+        move |ev: AiRunEvent| s.push(ev)
+    };
+    let asked =
+        || sink.events().iter().filter(|e| e.kind == AiRunEventKind::AwaitingInput).count();
+    let answered = || sink.texts().iter().filter(|t| t.starts_with("» answered (")).count();
+
+    let batch = thread::scope(|scope| {
+        let handle = scope.spawn(move || {
+            // A cap below the two-file payload forces two sequential batches, each
+            // its own child, each asking its own question.
+            resolve_conflicts_streaming(dir.path(), &paths(&files), opts(200_000), &ctl, &collect)
+        });
+
+        assert!(
+            wait_until(|| asked() >= 1, Duration::from_secs(60)),
+            "batch 1 never asked: {:?}",
+            sink.texts()
+        );
+        // TWO answers for ONE question: the session consumes the first and the
+        // second is left in the channel.
+        reply_tx.send("answer for batch 1".to_string()).expect("queue reply 1");
+        reply_tx.send("a stray second click".to_string()).expect("queue reply 2");
+
+        assert!(
+            wait_until(|| asked() >= 2, Duration::from_secs(60)),
+            "batch 2 never asked: {:?}",
+            sink.texts()
+        );
+        // Batch 2 must still be waiting on a HUMAN several ticks later.
+        thread::sleep(Duration::from_millis(1500));
+        assert_eq!(
+            answered(),
+            1,
+            "batch 2's question was answered by batch 1's leftover text: {:?}",
+            sink.texts()
+        );
+        assert!(awaiting.load(Ordering::Relaxed), "the run must still be blocked on the user");
+
+        reply_tx.send("answer for batch 2".to_string()).expect("queue reply 3");
+        // Never let the scope block forever if the batch geometry ever drifts: a
+        // hung run is cancelled so the assertions below report the problem.
+        if !wait_until(|| handle.is_finished(), Duration::from_secs(60)) {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        handle.join().expect("session thread must not panic")
+    })
+    .expect("the run must complete once each question is answered");
+
+    assert_eq!(batch.proposals.len(), 2, "{:?}", batch.proposals);
+    let texts = sink.texts();
+    assert_eq!(
+        texts.iter().filter(|t| t.starts_with("batch ")).count(),
+        2,
+        "this test needs exactly two batches: {texts:?}"
+    );
+    assert!(
+        texts.iter().any(|t| t.contains("discarded 1 stale reply")),
+        "the discarded reply must be logged: {texts:?}"
+    );
+    assert_eq!(answered(), 2, "exactly one answer per question");
 }
 
 /// A reply block missing for one path marks THAT path `failed` and nothing else

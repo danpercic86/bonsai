@@ -120,6 +120,77 @@ fn stream_rejects_empty_paths() {
     assert!(matches!(err, AppError::AiFailed(_)), "{err:?}");
 }
 
+// ============================================================ concurrency cap
+
+/// The concurrency cap (OQ1) is enforced in the BACKEND, not only in `useAiRuns`
+/// (P68c FIX 4): with `AI_MAX_CONCURRENT_RUNS` runs already registered a further
+/// request is REJECTED — never queued — with a distinct, UI-matchable message, and
+/// nothing is spawned or emitted. Freeing a slot lets the next run through, so the
+/// guard does not latch.
+#[test]
+fn stream_rejects_more_runs_than_the_concurrency_cap() {
+    let _g = env_lock();
+    set_stub("stream_success");
+    let state = AppState::default();
+    let (dir, id, c0) = fixture_repo(&state);
+    let base = tempfile::TempDir::new().expect("base");
+    let file = consent_file(base.path(), |_| {});
+    conflicts_on(&state, &id, dir.path(), &c0, &[("a.txt", "main\n", "feature\n")]);
+
+    let registry = AiRunRegistry::default();
+    // Saturate the registry the way live runs would: `finish` is what frees a slot,
+    // so holding the ids is enough (the `RunControl`s are never driven).
+    let held: Vec<String> = (0..bonsai_core::ai::AI_MAX_CONCURRENT_RUNS)
+        .map(|_| registry.register().0)
+        .collect();
+    assert_eq!(registry.active(), bonsai_core::ai::AI_MAX_CONCURRENT_RUNS);
+
+    let sink = Sink::default();
+    let err = block_on(ai_resolve_conflict_stream_inner(
+        &state,
+        &registry,
+        &file,
+        &id,
+        vec!["a.txt".to_string()],
+        sink.collector(),
+    ))
+    .expect_err("over the cap ⇒ refuse");
+    match &err {
+        AppError::AiFailed(m) => {
+            assert!(m.starts_with("too many AI runs"), "the UI keys on this message: {m}")
+        }
+        other => panic!("expected AiFailed, got {other:?}"),
+    }
+    assert!(sink.events().is_empty(), "a refused run must not emit any event");
+    assert_eq!(
+        registry.active(),
+        bonsai_core::ai::AI_MAX_CONCURRENT_RUNS,
+        "a rejected run must not be registered"
+    );
+
+    // One slot freed ⇒ the next request runs normally.
+    registry.finish(&held[0]);
+    let sink2 = Sink::default();
+    let batch = block_on(ai_resolve_conflict_stream_inner(
+        &state,
+        &registry,
+        &file,
+        &id,
+        vec!["a.txt".to_string()],
+        sink2.collector(),
+    ))
+    .expect("under the cap ⇒ run");
+    assert_eq!(batch.proposals.len(), 1);
+    assert_eq!(sink2.kinds().last(), Some(&AiRunEventKind::Done));
+    assert_eq!(
+        registry.active(),
+        bonsai_core::ai::AI_MAX_CONCURRENT_RUNS - 1,
+        "only the finished slot stays free"
+    );
+
+    block_on(abort_merge_inner(&state, &id)).expect("cleanup");
+}
+
 // ============================================================ single path
 
 /// One path: the proven single-file payload/prompt, the whole `result` body as the

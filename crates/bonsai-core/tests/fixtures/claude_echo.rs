@@ -13,8 +13,13 @@
 //! A Rust helper is cross-platform by construction, with no `.cmd`/`.sh` twin to
 //! diverge, and it can prove the payload arrived IN FULL by reporting its length.
 //!
-//! An `examples/` target rather than a `[[bin]]`: it is dev-only, `cargo test`
-//! builds it automatically, and it ships in no artifact.
+//! A `[[bin]]` target (declared in `Cargo.toml:24-32`) rather than an
+//! `examples/` one — deliberately, and do NOT "simplify" it into `examples/`:
+//! `cargo test --test ai_stream_bulk_cli` does not build example targets and
+//! exposes no `CARGO_BIN_EXE_*` for them, so the test would lose its binary
+//! path and skip. A skipped test would make the D16 guard vacuous, which is the
+//! one thing this fixture exists to prevent. It is still dev-only: nothing in the
+//! app depends on it and it ships in no artifact.
 //!
 //! Protocol (mode from `BONSAI_ECHO_MODE`, default `bulk_ask`):
 //! 1. read ONE line from stdin — the whole first turn as a stream-json `user`

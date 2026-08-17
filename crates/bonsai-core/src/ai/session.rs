@@ -322,6 +322,25 @@ impl<'a> ClaudeSession<'a> {
                                 self.turn
                             )));
                         }
+                        // Drop anything already sitting in the reply channel BEFORE
+                        // arming `awaiting` (P68c FIX 1). Such a reply can only be
+                        // STALE: `AiRunRegistry::reply` refuses unless `awaiting` is
+                        // set, so a queued one belongs to a question that was
+                        // already answered — two replies landing inside one 250 ms
+                        // tick leave the second behind. The channel OUTLIVES a
+                        // session (a bulk run drives several children through one
+                        // `RunControl`), so a leftover would otherwise silently
+                        // answer the NEXT question, i.e. batch 2 answered with batch
+                        // 1's text. Order matters: drain first, arm second — a reply
+                        // sent AFTER the store is a legitimate answer to THIS
+                        // question and must never be dropped.
+                        let stale = self.drain_stale_replies();
+                        if stale > 0 {
+                            self.log(format!(
+                                "discarded {stale} stale repl{} queued before this question",
+                                if stale == 1 { "y" } else { "ies" }
+                            ));
+                        }
                         self.awaiting = true;
                         self.ctl.awaiting.store(true, Ordering::Relaxed);
                         let mut ev = self.event(AiRunEventKind::AwaitingInput);
@@ -332,6 +351,18 @@ impl<'a> ClaudeSession<'a> {
             }
         }
         Ok(None)
+    }
+
+    /// Empty the reply channel, returning how many messages were thrown away.
+    /// Called ONLY on the transition into the awaiting state, where every queued
+    /// message is by definition stale (see the call site). Never blocks; a
+    /// disconnected channel simply ends the loop — `on_tick` is what reports that.
+    fn drain_stale_replies(&self) -> usize {
+        let mut dropped = 0usize;
+        while self.ctl.replies.try_recv().is_ok() {
+            dropped += 1;
+        }
+        dropped
     }
 
     /// The 250 ms tick: pump a reply, or consult the watchdog / hard cap.

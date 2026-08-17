@@ -1,5 +1,6 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
 import type { IpcApi } from '../../types';
+import { clampAiRunSettings } from '../aiRunSettings';
 import { jobStatusListeners, mockMcp, repoChangedListeners } from '../events';
 import { clampAutoFetch, clampGraphPrefs, clampHealthRefresh, clampPaneWidths, readRecents, readSession, readUiSettings, writeRecents, writeSession, writeUiSettings } from '../persistence';
 import { delay, requireRepo } from '../repoState';
@@ -93,6 +94,22 @@ export const sessionHandlers = {
       profiles: patch.profiles ?? current.profiles,
       terminalCommand: patch.terminalCommand ?? current.terminalCommand,
       editorCommand: patch.editorCommand ?? current.editorCommand,
+      // P68 §8.3: each of the ten AI-run knobs patches independently of
+      // graph/listView/panelDensity, then the whole slice is clamped on write
+      // (mirrors apply_patch → clamp_ai_settings).
+      ...clampAiRunSettings({
+        aiIdleTimeoutSecs: patch.aiIdleTimeoutSecs ?? current.aiIdleTimeoutSecs,
+        aiHardCapSecs: patch.aiHardCapSecs ?? current.aiHardCapSecs,
+        aiMaxTurns: patch.aiMaxTurns ?? current.aiMaxTurns,
+        aiStreamLog: patch.aiStreamLog ?? current.aiStreamLog,
+        aiIncludePartialMessages:
+          patch.aiIncludePartialMessages ?? current.aiIncludePartialMessages,
+        aiConflictTools: patch.aiConflictTools ?? current.aiConflictTools,
+        aiBulkMaxBytes: patch.aiBulkMaxBytes ?? current.aiBulkMaxBytes,
+        aiMaxBudgetUsd: patch.aiMaxBudgetUsd ?? current.aiMaxBudgetUsd,
+        aiDockHeight: patch.aiDockHeight ?? current.aiDockHeight,
+        aiDockCollapsed: patch.aiDockCollapsed ?? current.aiDockCollapsed,
+      }),
     };
     writeUiSettings(next);
     // P30 §7: config round-trip re-arms the synthetic job tick timers.

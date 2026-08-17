@@ -1150,6 +1150,77 @@ export interface AiResolveProposal {
   costUsd: number | null;
 }
 
+/** P68 §F: one push event on the `ai_resolve_conflict_stream` channel. Mirrors the
+ *  Rust `AiRunEvent` exactly (camelCase serde).
+ *
+ *  `runId` arrives on the FIRST (`started`) event — the command promise settles only
+ *  when the whole run ends, so this is the ONLY way the UI learns the id in time to
+ *  cancel or reply (D8). `seq` is monotonic from 0 per run; drop any event whose
+ *  `seq` is <= the last seen (stale/duplicate guard). */
+export type AiRunEventKind =
+  /** Always first, seq 0, emitted BEFORE the child is spawned. */
+  | 'started'
+  /** One human-readable log line for the dock. High frequency ⇒ batch it (D5). */
+  | 'log'
+  /** A `result` line parsed; the run may continue with another turn. */
+  | 'turnEnd'
+  /** Blocked on `aiReplyRun`; the idle watchdog is paused (D3). */
+  | 'awaitingInput'
+  /** Terminal: success (the command promise resolves right after). */
+  | 'done'
+  /** Terminal: `text` is the same message as the `aiFailed` rejection. */
+  | 'failed'
+  /** Terminal: user cancel (the command rejects `aiCancelled`). */
+  | 'cancelled';
+
+export interface AiRunEvent {
+  /** Stable for the whole run, even across sequential bulk batches. */
+  runId: string;
+  seq: number;
+  kind: AiRunEventKind;
+  /** One log line, the question, or the terminal message; never a whole payload. */
+  text: string | null;
+  /** Cost of the turn that just ended / of the run. LAST value wins within a run —
+   *  never summed (spike §1.8). */
+  costUsd: number | null;
+  /** Since the run started, not since the turn. */
+  elapsedMs: number;
+  /** The file this event is about when known (bulk attribution); null run-level. */
+  path: string | null;
+  /** 1-based turn counter; 0 on `started`. */
+  turn: number;
+  /** Only on `cancelled`/`failed`: the assistant text accumulated so far (D2).
+   *  DISPLAY-ONLY and lossy by construction — never offer it as a proposal. */
+  partialText: string | null;
+}
+
+/** One path a streaming resolve could not handle. NEVER fatal to the batch (D11). */
+export interface AiResolveFailure {
+  path: string;
+  reason: string;
+}
+
+/** P68 §D: the outcome of ONE streaming resolve run over 1..n paths. The promise —
+ *  not the event stream — is authoritative for this data.
+ *
+ *  A `proposedText` here is a REVIEWABLE proposal, not a verified-clean merge: the
+ *  single-path stream returns the model's body verbatim (P13 parity), so callers
+ *  MUST keep applying `hasUnresolvedMarkers` before staging anything (D4). */
+export interface AiResolveBatch {
+  runId: string;
+  proposals: AiResolveProposal[];
+  failed: AiResolveFailure[];
+  /** Last value within a run, summed across sequential bulk batches (A10). */
+  costUsd: number | null;
+  /** Max turns used across batches (1 when no question was asked). */
+  turns: number;
+}
+
+/** P68 §B/D10: repo access granted to a conflict-resolution run. `readOnly` ⇒
+ *  `--tools "Read,Grep,Glob"`; `none` ⇒ the old blind `--tools ""`. There is
+ *  deliberately no write/edit/bash option. */
+export type AiConflictTools = 'readOnly' | 'none';
+
 /** The model's proposed commit message from the staged diff (P15a).
  *  Mirrors the Rust `CommitMessageProposal`; generation writes nothing. */
 export interface CommitMessageProposal {
@@ -1392,6 +1463,33 @@ export interface UiSettings {
   terminalCommand: string;
   /** P49: editor launch command template. Empty ⇒ auto-detect VS Code. */
   editorCommand: string;
+  // ---- P68 §8.3: streaming AI-run knobs. Each patches independently; the two
+  // LOCKED defaults are `aiHardCapSecs = 0` (unbounded — the user cancels instead)
+  // and `aiMaxBudgetUsd = 0` (the `--max-budget-usd` flag is omitted entirely).
+  /** Kill a run after this long with NO output from the CLI. `0` = disabled.
+   *  PAUSED while the run awaits an answer (D3). Default 300. */
+  aiIdleTimeoutSecs: number;
+  /** Absolute wall-clock cap. `0` = unbounded (the default). Also paused while
+   *  awaiting input. */
+  aiHardCapSecs: number;
+  /** Max turns before a still-questioning model is failed. Default 6. */
+  aiMaxTurns: number;
+  /** Stream `log` events at all. `false` suppresses them in RUST (no IPC cost);
+   *  status-changing events always flow. Default true. */
+  aiStreamLog: boolean;
+  /** Pass `--include-partial-messages`. Default false (unverified line shape). */
+  aiIncludePartialMessages: boolean;
+  /** Repo access for a conflict run (D10). Default `readOnly`. */
+  aiConflictTools: AiConflictTools;
+  /** Bulk payload cap in bytes; over it the run SPLITS into sequential batches,
+   *  never truncates. Default 400000. */
+  aiBulkMaxBytes: number;
+  /** `--max-budget-usd` when > 0; `0` ⇒ the flag is not passed. Default 0. */
+  aiMaxBudgetUsd: number;
+  /** Height of the AI activity dock in px. Default 180. */
+  aiDockHeight: number;
+  /** Dock starts collapsed (header only). Default false. */
+  aiDockCollapsed: boolean;
 }
 
 export interface UiSettingsPatch {
@@ -1422,6 +1520,18 @@ export interface UiSettingsPatch {
   terminalCommand?: string;
   /** P49: editor launch command template; patches independently. */
   editorCommand?: string;
+  // P68 §8.3: the ten streaming AI-run knobs; each patches independently of
+  // `graph` / `listView` / `panelDensity` and is clamped on write in Rust.
+  aiIdleTimeoutSecs?: number;
+  aiHardCapSecs?: number;
+  aiMaxTurns?: number;
+  aiStreamLog?: boolean;
+  aiIncludePartialMessages?: boolean;
+  aiConflictTools?: AiConflictTools;
+  aiBulkMaxBytes?: number;
+  aiMaxBudgetUsd?: number;
+  aiDockHeight?: number;
+  aiDockCollapsed?: boolean;
 }
 
 /** Embedded MCP server status for the Settings panel (P16). Mirrors the Rust
@@ -1811,6 +1921,9 @@ export interface AppError {
     | 'unresolvedConflicts'
     | 'aiUnavailable'
     | 'aiFailed'
+    /** P68 §B: the user cancelled a streaming AI run. NOT a failure — show a
+     *  `cancelled` run state, no error toast. */
+    | 'aiCancelled'
     | 'updateFailed'
     | 'externalToolFailed'
     | 'hookRejected'
@@ -2301,6 +2414,27 @@ export interface IpcApi {
   /** Propose an AI merge resolution for one conflicted path (P13). Writes nothing.
    *  Rejects aiUnavailable | aiFailed | git | invalidName | noRepo. */
   aiResolveConflict(repoId: string, path: string): Promise<AiResolveProposal>;
+  /** P68 §D. STREAMING AI resolution for 1..n conflicted paths — a single file is
+   *  literally `paths.length === 1` (A1). Writes NOTHING (D4): the returned bodies
+   *  are proposals that still have to go through `hasUnresolvedMarkers` and the
+   *  explicit `resolveConflictText` call.
+   *
+   *  `onEvent` receives every `AiRunEvent` as it happens; the FIRST one (`started`)
+   *  carries the `runId` needed by `aiCancelRun` / `aiReplyRun` (D8) — the promise
+   *  settles only when the run is over, so waiting for it is too late to cancel.
+   *  Rejects aiUnavailable | aiFailed (incl. "too many AI runs in progress …" when
+   *  the backend concurrency cap is hit) | aiCancelled | git | invalidName | noRepo. */
+  aiResolveConflictStream(
+    repoId: string,
+    paths: string[],
+    onEvent: (e: AiRunEvent) => void,
+  ): Promise<AiResolveBatch>;
+  /** P68 §B/D7. Cancel a streaming run. IDEMPOTENT: an unknown or already-finished
+   *  id resolves — a cancel racing a completion is normal and must not error. */
+  aiCancelRun(runId: string): Promise<void>;
+  /** P68 §B/D9. Answer a mid-run question. Rejects aiFailed when the run is unknown
+   *  or is not awaiting input (a stray reply is never silently swallowed). */
+  aiReplyRun(runId: string, text: string): Promise<void>;
   /** P15a. Generate a commit message from the staged diff. Never auto-commits.
    *  Rejects aiUnavailable | aiFailed | nothingToCommit | git | noRepo. */
   generateCommitMessage(repoId: string): Promise<CommitMessageProposal>;
