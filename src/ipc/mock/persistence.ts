@@ -1,6 +1,6 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
 import { AUTO_FETCH_INTERVAL_MAX, AUTO_FETCH_INTERVAL_MIN, AVATAR_RADIUS_MAX, AVATAR_RADIUS_MIN, HEALTH_REFRESH_INTERVAL_MAX, HEALTH_REFRESH_INTERVAL_MIN, LANE_WIDTH_MAX, LANE_WIDTH_MIN, ROW_HEIGHT_MAX, ROW_HEIGHT_MIN } from '../../settings/ranges';
-import type { AiAutonomy, AutoFetchSettings, GraphDateBasis, GraphPrefs, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, RecentRepo, SessionState, Theme, UiSettings } from '../types';
+import type { AiAutonomy, AutoFetchSettings, GraphDateBasis, GraphPrefs, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, PanelDensity, RecentRepo, SessionState, Theme, UiSettings } from '../types';
 
 // Recents persistence (P1 contract §3.4): localStorage-backed so the harness
 // reopen-on-launch story is verifiable — open once, reload, auto-reopen.
@@ -77,6 +77,8 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
   theme: 'dark',
   paneWidths: { sidebar: 240, rightPanel: 380 },
   listView: 'tree',
+  // P67 §4: right-panel density; 'cozy' is the tightened default.
+  panelDensity: 'cozy',
   autoFetch: { enabled: false, intervalMinutes: 5 },
   // P30: backend-scheduler healthRefresh signal; disabled by default.
   healthRefresh: { enabled: false, intervalMinutes: 30 },
@@ -214,6 +216,7 @@ export function readUiSettings(): UiSettings {
           : DEFAULT_UI_SETTINGS.paneWidths.rightPanel,
     });
     const listView: ListView = parsed.listView === 'flat' ? 'flat' : 'tree';
+    const panelDensity: PanelDensity = parsed.panelDensity === 'compact' ? 'compact' : 'cozy';
     const autoFetch = clampAutoFetch({
       enabled:
         typeof parsed.autoFetch?.enabled === 'boolean'
@@ -318,6 +321,7 @@ export function readUiSettings(): UiSettings {
       theme,
       paneWidths,
       listView,
+      panelDensity,
       autoFetch,
       healthRefresh,
       graph,

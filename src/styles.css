@@ -2052,6 +2052,39 @@ body {
   --rp-ctl-font: 12px;
 }
 
+/* ---------- P67c §3: "compact" density override ----------
+   The ONLY layout change P67c makes: every consuming declaration is already
+   `var(--rp-x, …)`-driven from the P67b block above, so flipping the setting is
+   a pure custom-property swap (D5). Scoped to `.right-panel[data-density]`
+   (D7 — a prop on the `<aside>`), so the diff overlay's file tree and the
+   sidebar keep their D8 fallbacks untouched.
+   Values are the MODERATE variant confirmed by the user: 20px rows and a 12px
+   row font are the floor — do NOT go tighter (an 18px/11px variant was
+   explicitly rejected as unreadable). `--rp-msg-max` RETURNS to the pre-P67
+   120px (cozy raised it to 160px), i.e. compact lowers the ceiling too — still
+   3.3x the 36px min, so the commit box can grow well past its floor. */
+.right-panel[data-density='compact'] {
+  --rp-pad-outer: 8px;
+  --rp-gap: 6px;
+  --rp-section-pad: 3px 6px 4px;
+  --rp-row-h: 20px;
+  /* Unlike the cozy default, this IS a real length — that is what makes the
+     compact file rows shrink their text as well as their height. */
+  --rp-row-font: 12px;
+  --rp-list-margin: 2px;
+  --rp-label-font: 10px;
+  --rp-tab-pad: 3px 6px;
+  --rp-tab-btn-pad: 2px 8px;
+  --rp-banner-pad: 5px 8px;
+  --rp-box-pad: 8px;
+  --rp-box-gap: 4px;
+  --rp-msg-min: 36px;
+  --rp-msg-max: 120px;
+  --rp-ctl-h: 20px;
+  --rp-ctl-gap: 6px;
+  --rp-ctl-font: 11px;
+}
+
 /* P62c: the working tri-state lives in an always-mounted wrapper (hidden while
    the 'prs' tab is active) so a half-typed commit survives a tab toggle. It
    fills the right pane below the tab strip exactly as the direct children did. */

@@ -995,7 +995,7 @@
 
     /// Patching only `theme` leaves `pane_widths`/`list_view` untouched, and
     /// each other single-field patch is equally partial (P2a contract §3.4.3;
-    /// P3b contract §2.1).
+    /// P3b contract §2.1; P67 §7.2 for `panel_density`).
     #[test]
     fn set_ui_settings_patch_is_partial() {
         let mut s = settings::Settings::default();
@@ -1055,6 +1055,39 @@
                 right_panel: 400,
             }
         );
+
+        // Give `graph` a NON-default value first. Without this, asserting
+        // `graph == GraphPrefs::default()` after the density patch would only
+        // prove the patch never *introduced* a graph change — not that it left
+        // an existing one alone. 40 is inside the row-height clamp range, so
+        // the write-side clamp cannot rewrite it and muddy the assertion.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                graph: Some(settings::GraphPrefs {
+                    row_height: 40,
+                    ..settings::GraphPrefs::default()
+                }),
+                ..Default::default()
+            },
+        );
+        let graph_before = s.graph; // GraphPrefs is Copy
+        assert_ne!(graph_before, settings::GraphPrefs::default());
+
+        // P67 §7.2: patching only `panel_density` leaves list_view / graph /
+        // theme untouched — the independence claim behind D6 (density is NOT a
+        // graph pref and is never routed through `clamp_graph_prefs`).
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                panel_density: Some(settings::PanelDensity::Compact),
+                ..Default::default()
+            },
+        );
+        assert_eq!(s.panel_density, settings::PanelDensity::Compact);
+        assert_eq!(s.list_view, settings::ListView::Flat); // from the patch above
+        assert_eq!(s.graph, graph_before); // the non-default survives untouched
+        assert_eq!(s.theme, ThemeChoice::Light);
 
         // Out-of-range pane widths in a patch get clamped on write.
         apply_patch(

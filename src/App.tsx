@@ -31,6 +31,7 @@ import type {
   ListView,
   McpStatus,
   PaneWidths,
+  PanelDensity,
   RecentRepo,
   RepoInfo,
   SessionState,
@@ -97,6 +98,9 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>('dark');
   const [themeVersion, setThemeVersion] = useState(0);
   const [listView, setListView] = useState<ListView>('tree');
+  // P67 §4: right-panel density. No toolbar button (unlike theme/listView), so
+  // it rides the debounced `handleSettingsChange` patch path only.
+  const [panelDensity, setPanelDensity] = useState<PanelDensity>('cozy');
 
   // P11c §3.2: Settings page + the live-preview knob state it drives.
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -374,6 +378,7 @@ export default function App() {
   // debounce a single merged persist (~300 ms, mirrors commitPaneWidths).
   const handleSettingsChange = useCallback(
     (patch: UiSettingsPatch) => {
+      if (patch.panelDensity !== undefined) setPanelDensity(patch.panelDensity);
       if (patch.autoFetch !== undefined) setAutoFetch(patch.autoFetch);
       if (patch.healthRefresh !== undefined) setHealthRefresh(patch.healthRefresh);
       if (patch.graph !== undefined) {
@@ -735,6 +740,7 @@ export default function App() {
         applyTheme(s.theme);
         setThemeVersion((v) => v + 1);
         setListView(s.listView);
+        setPanelDensity(s.panelDensity);
         setAutoFetch(s.autoFetch);
         setHealthRefresh(s.healthRefresh);
         setGraph(s.graph);
@@ -1004,6 +1010,7 @@ export default function App() {
                 repoId={t.repoId}
                 active={t.repoId === activeRepo}
                 listView={listView}
+                panelDensity={panelDensity}
                 themeVersion={themeVersion}
                 paneWidths={paneWidths}
                 globalModalOpen={globalModalOpen}
@@ -1054,6 +1061,7 @@ export default function App() {
           }}
           theme={theme}
           listView={listView}
+          panelDensity={panelDensity}
           autoFetch={autoFetch}
           healthRefresh={healthRefresh}
           graph={graph}

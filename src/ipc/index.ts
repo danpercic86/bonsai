@@ -128,6 +128,7 @@ export type {
   RefLabel,
   ReflogEntry,
   PaneWidths,
+  PanelDensity,
   PrDescription,
   PrDetail,
   PrListQuery,

@@ -58,6 +58,7 @@ function renderPanel(over: Partial<WorkspaceRightPanelProps> = {}) {
     compareError: null,
     headBranch: branch(),
     listView: 'flat',
+    panelDensity: 'cozy',
     scope: { kind: 'root' },
     setScope: vi.fn(),
     clearCompare: vi.fn(),
@@ -249,6 +250,19 @@ describe('WorkspaceRightPanel actions row', () => {
     const work = container.querySelector('.right-panel-work');
     expect(work).not.toBeNull();
     expect(work).not.toHaveAttribute('hidden');
+  });
+
+  // P67c §7.1 (the case P67b deferred): density is a PROP rendered as an
+  // attribute on the `<aside>` (D7), never `documentElement.dataset` — the
+  // whole compact override block hangs off this selector, so an unconditional
+  // attribute in BOTH densities is what makes the CSS cascade work.
+  it('carries data-density from the prop in both densities', () => {
+    const cozy = renderPanel().container.querySelector('.right-panel');
+    expect(cozy).toHaveAttribute('data-density', 'cozy');
+    const compact = renderPanel({ panelDensity: 'compact' }).container.querySelector(
+      '.right-panel',
+    );
+    expect(compact).toHaveAttribute('data-density', 'compact');
   });
 
   it('keeps the work wrapper MOUNTED (only `hidden`) while the PRs tab is active', () => {

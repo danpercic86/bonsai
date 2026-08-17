@@ -74,6 +74,8 @@ export const sessionHandlers = {
       paneWidths:
         patch.paneWidths !== undefined ? clampPaneWidths(patch.paneWidths) : current.paneWidths,
       listView: patch.listView ?? current.listView,
+      // P67 §4: patches independently of listView/graph.
+      panelDensity: patch.panelDensity ?? current.panelDensity,
       autoFetch:
         patch.autoFetch !== undefined ? clampAutoFetch(patch.autoFetch) : current.autoFetch,
       healthRefresh:

@@ -71,6 +71,18 @@ pub enum ListView {
     Flat,
 }
 
+/// Right-panel vertical density (P67). Pure UI preference; display-only, no Git
+/// effect. `Cozy` is the P67b tightened default; `Compact` squeezes rows,
+/// paddings and fonts further. INDEPENDENT of `GraphPrefs::compact` (which is
+/// canvas row geometry) — Settings only cross-references the two.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PanelDensity {
+    #[default]
+    Cozy,
+    Compact,
+}
+
 /// AI conflict-resolution autonomy (P13). ProposeReview = user accepts before
 /// anything is written/staged (default); AutoResolve = write+stage immediately,
 /// user reviews the staged diff before commit_merge.
@@ -280,8 +292,8 @@ pub fn clamp_graph_prefs(g: GraphPrefs) -> GraphPrefs {
 ///    "proposeReview", "aiConsented": false }`.
 ///
 /// `SETTINGS_VERSION` stays `1`: `theme`, `pane_widths`, `list_view`,
-/// `open_repos`, `active_repo`, `auto_fetch`, `graph`, `ai_enabled`,
-/// `ai_conflict_autonomy`, and `ai_consented` are all additive
+/// `panel_density`, `open_repos`, `active_repo`, `auto_fetch`, `graph`,
+/// `ai_enabled`, `ai_conflict_autonomy`, and `ai_consented` are all additive
 /// `#[serde(default)]` fields
 /// (on the whole struct already, via the container-level `default`) — an old
 /// settings.json containing only `recentRepos` deserializes fine, missing
@@ -297,6 +309,11 @@ pub struct Settings {
     pub theme: ThemeChoice,
     pub pane_widths: PaneWidths,
     pub list_view: ListView,
+    /// P67: right-panel vertical density. Additive `#[serde(default)]` (via the
+    /// container-level `default`); a pre-P67 settings.json without this key loads
+    /// `PanelDensity::default()` (Cozy). No version bump — meets the documented
+    /// bar above. NOT clamped (no numeric range; `clamp_graph_prefs` untouched).
+    pub panel_density: PanelDensity,
     /// Open tabs, in display order (repoIds == canonical workdir paths).
     /// Additive (P3e §6.1); a legacy file without this key loads as empty.
     pub open_repos: Vec<String>,
@@ -375,6 +392,7 @@ impl Default for Settings {
             theme: ThemeChoice::default(),
             pane_widths: PaneWidths::default(),
             list_view: ListView::default(),
+            panel_density: PanelDensity::default(),
             open_repos: Vec::new(),
             active_repo: None,
             auto_fetch: AutoFetch::default(),
@@ -757,6 +775,34 @@ mod tests {
         assert!(raw_flat.contains("\"listView\": \"flat\""));
     }
 
+    /// Both `PanelDensity` wire strings ("cozy"/"compact") round-trip through
+    /// save/load, and the raw JSON uses the documented camelCase key +
+    /// lowercase values (P67 §4.1).
+    #[test]
+    fn panel_density_roundtrips_both_variants() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+
+        let file_cozy = settings_path(&dir).with_file_name("cozy.json");
+        let s_cozy = Settings {
+            panel_density: PanelDensity::Cozy,
+            ..Default::default()
+        };
+        save_to(&file_cozy, &s_cozy).expect("save cozy");
+        assert_eq!(load_from(&file_cozy).panel_density, PanelDensity::Cozy);
+        let raw_cozy = std::fs::read_to_string(&file_cozy).expect("read cozy.json");
+        assert!(raw_cozy.contains("\"panelDensity\": \"cozy\""));
+
+        let file_compact = settings_path(&dir).with_file_name("compact.json");
+        let s_compact = Settings {
+            panel_density: PanelDensity::Compact,
+            ..Default::default()
+        };
+        save_to(&file_compact, &s_compact).expect("save compact");
+        assert_eq!(load_from(&file_compact).panel_density, PanelDensity::Compact);
+        let raw_compact = std::fs::read_to_string(&file_compact).expect("read compact.json");
+        assert!(raw_compact.contains("\"panelDensity\": \"compact\""));
+    }
+
     /// An old `settings.json` written before P2 (only `version`/`recentRepos`,
     /// no `theme`/`paneWidths` keys at all) still loads without error and
     /// falls back to the type defaults for the new fields — this is the
@@ -857,6 +903,33 @@ mod tests {
         let loaded = load_from(&file);
         assert_eq!(loaded.list_view, ListView::Tree);
         assert_eq!(loaded.theme, ThemeChoice::Light); // other fields untouched
+        assert_eq!(loaded.pane_widths.sidebar, 300);
+    }
+
+    /// A pre-P67 `settings.json` that has `theme`/`paneWidths`/`listView` but no
+    /// `panelDensity` key loads with the default (`Cozy`) — this is THE
+    /// migration guard behind the no-version-bump claim (P67 §4.2): the absence
+    /// of the key must be indistinguishable from an explicit `"cozy"`.
+    #[test]
+    fn old_settings_file_without_panel_density_loads_default() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let file = settings_path(&dir);
+        let json = r#"{
+            "version": 1,
+            "recentRepos": [],
+            "theme": "light",
+            "listView": "flat",
+            "paneWidths": { "sidebar": 300, "rightPanel": 400 }
+        }"#;
+        std::fs::write(&file, json).expect("write pre-P67 settings.json");
+
+        let loaded = load_from(&file);
+        assert_eq!(loaded.panel_density, PanelDensity::Cozy);
+        // Other fields untouched — the version is NOT bumped and nothing is
+        // rewritten on load.
+        assert_eq!(loaded.version, SETTINGS_VERSION);
+        assert_eq!(loaded.list_view, ListView::Flat);
+        assert_eq!(loaded.theme, ThemeChoice::Light);
         assert_eq!(loaded.pane_widths.sidebar, 300);
     }
 

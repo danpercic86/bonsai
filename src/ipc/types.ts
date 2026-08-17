@@ -1034,6 +1034,10 @@ export type Theme = 'dark' | 'light';
 /** Flat vs tree-grouped list rendering (P3b §2) — pure display preference. */
 export type ListView = 'tree' | 'flat';
 
+/** P67 §4: right-panel vertical density. Independent of `GraphPrefs.compact`
+ *  (graph row geometry). 'cozy' is the P67b tightened default. */
+export type PanelDensity = 'cozy' | 'compact';
+
 export interface PaneWidths {
   sidebar: number;
   rightPanel: number;
@@ -1362,6 +1366,8 @@ export interface UiSettings {
   theme: Theme;
   paneWidths: PaneWidths;
   listView: ListView;
+  /** P67 §4: right-panel density; display-only, patches independently. */
+  panelDensity: PanelDensity;
   autoFetch: AutoFetchSettings;
   /** P30: periodic read-only refresh signal (backend scheduler). */
   healthRefresh: HealthRefreshSettings;
@@ -1392,6 +1398,8 @@ export interface UiSettingsPatch {
   theme?: Theme;
   paneWidths?: PaneWidths;
   listView?: ListView;
+  /** P67 §4: right-panel density (P67c). */
+  panelDensity?: PanelDensity;
   autoFetch?: AutoFetchSettings;
   /** Whole-struct patch, like autoFetch (P30 D7). */
   healthRefresh?: HealthRefreshSettings;

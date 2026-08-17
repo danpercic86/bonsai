@@ -12,6 +12,8 @@ pub struct UiSettings {
     pub theme: ThemeChoice,
     pub pane_widths: PaneWidths,
     pub list_view: ListView,
+    /// P67: right-panel vertical density; display-only, patches independently.
+    pub panel_density: PanelDensity,
     pub auto_fetch: AutoFetch,
     /// Health-refresh background job (P30 D7).
     pub health_refresh: HealthRefresh,
@@ -51,6 +53,9 @@ pub struct UiSettingsPatch {
     pub theme: Option<ThemeChoice>,
     pub pane_widths: Option<PaneWidths>,
     pub list_view: Option<ListView>,
+    /// P67: right-panel density (P67c). Patches independently of `list_view`
+    /// and `graph`; NOT clamped (no numeric range).
+    pub panel_density: Option<PanelDensity>,
     /// Whole-struct patch (like `pane_widths`): the frontend sends the entire
     /// nested object when any sub-field changes.
     pub auto_fetch: Option<AutoFetch>,
@@ -91,6 +96,9 @@ pub(crate) fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     }
     if let Some(list_view) = patch.list_view {
         s.list_view = list_view;
+    }
+    if let Some(panel_density) = patch.panel_density {
+        s.panel_density = panel_density;
     }
     if let Some(auto_fetch) = patch.auto_fetch {
         s.auto_fetch = clamp_auto_fetch(auto_fetch);
@@ -145,6 +153,7 @@ pub async fn get_ui_settings(app: tauri::AppHandle) -> Result<UiSettings, AppErr
             theme: s.theme,
             pane_widths: s.pane_widths,
             list_view: s.list_view,
+            panel_density: s.panel_density,
             auto_fetch: s.auto_fetch,
             health_refresh: s.health_refresh,
             graph: s.graph,
@@ -183,6 +192,7 @@ pub async fn set_ui_settings(
             theme: s.theme,
             pane_widths: s.pane_widths,
             list_view: s.list_view,
+            panel_density: s.panel_density,
             auto_fetch: s.auto_fetch,
             health_refresh: s.health_refresh,
             graph: s.graph,

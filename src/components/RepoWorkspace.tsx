@@ -48,6 +48,7 @@ import type {
   ProposedOperation,
   RebaseTodoOp,
   PaneWidths,
+  PanelDensity,
   ReflogEntry,
   UndoPlan,
   RemoteInfo,
@@ -113,6 +114,9 @@ export interface RepoWorkspaceProps {
   active: boolean;
   /** App-global display prefs / pane sizing threaded down. */
   listView: ListView;
+  /** P67 §4: right-panel vertical density (applied as a `data-density`
+   *  attribute on the right panel's `<aside>`). */
+  panelDensity: PanelDensity;
   themeVersion: number;
   paneWidths: PaneWidths;
   /** True when a global modal (shortcut overlay / tab menu) is open — the
@@ -149,6 +153,7 @@ export function RepoWorkspace({
   repoId,
   active,
   listView,
+  panelDensity,
   themeVersion,
   paneWidths,
   globalModalOpen,
@@ -2763,6 +2768,7 @@ export function RepoWorkspace({
           compareError={compareError}
           headBranch={headBranch}
           listView={listView}
+          panelDensity={panelDensity}
           scope={scope}
           setScope={setScope}
           clearCompare={clearCompare}

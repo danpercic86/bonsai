@@ -16,6 +16,7 @@ import type {
   GraphLayout,
   HeadInfo,
   ListView,
+  PanelDensity,
   PrNavRequest,
   RepoOpState,
   SigningStatus,
@@ -62,6 +63,10 @@ export interface WorkspaceRightPanelProps {
   compareError: ComparePanelProps['error'];
   headBranch: BranchInfo | null;
   listView: ListView;
+  /** P67 §4: right-panel density — rendered as `data-density` on the `<aside>`
+   *  (D7: a prop, not `documentElement.dataset`, so the cascade stays scoped to
+   *  this panel and the value is unit-testable by `render()`). */
+  panelDensity: PanelDensity;
   scope: ComparePanelProps['scope'];
   setScope: ComparePanelProps['onSelectScope'];
   clearCompare(): void;
@@ -145,6 +150,7 @@ export function WorkspaceRightPanel({
   compareError,
   headBranch,
   listView,
+  panelDensity,
   scope,
   setScope,
   clearCompare,
@@ -197,7 +203,7 @@ export function WorkspaceRightPanel({
   prNav,
 }: WorkspaceRightPanelProps) {
   return (
-    <aside className="right-panel" style={{ width: rightPanelWidth }}>
+    <aside className="right-panel" data-density={panelDensity} style={{ width: rightPanelWidth }}>
       <div className="right-pane-tabs" role="tablist" aria-label="Right panel view">
         <button
           type="button"

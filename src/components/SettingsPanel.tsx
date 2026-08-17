@@ -15,6 +15,7 @@ import type {
   IdentityProfile,
   ListView,
   McpStatus,
+  PanelDensity,
   Theme,
   UiSettingsPatch,
 } from '../ipc';
@@ -25,6 +26,7 @@ import { SettingsGitConfigSection } from './SettingsGitConfigSection';
 import { SettingsProfilesSection } from './SettingsProfilesSection';
 import { SettingsMcpSection } from './SettingsMcpSection';
 import { SettingsUpdatesSection } from './SettingsUpdatesSection';
+import { SettingsAppearanceSection } from './SettingsAppearanceSection';
 import { SettingsGraphSection } from './SettingsGraphSection';
 import { NumberSlider } from './NumberSlider';
 import {
@@ -39,6 +41,8 @@ export interface SettingsPanelProps {
   onClose(): void;
   theme: Theme;
   listView: ListView;
+  /** P67 §4: right-panel density; patched via `onChange` (no toolbar toggle). */
+  panelDensity: PanelDensity;
   autoFetch: AutoFetchSettings;
   /** P30: periodic read-only refresh signal (backend scheduler). */
   healthRefresh: HealthRefreshSettings;
@@ -115,6 +119,7 @@ export function SettingsPanel({
   onClose,
   theme,
   listView,
+  panelDensity,
   autoFetch,
   healthRefresh,
   graph,
@@ -295,26 +300,15 @@ export function SettingsPanel({
         {/* --- Graph (geometry sliders + P51 per-row detail toggles) --- */}
         <SettingsGraphSection graph={graph} onChange={onChange} />
 
-        {/* --- Appearance --- */}
-        <section className="settings-section">
-          <h3 className="settings-section-title">Appearance</h3>
-          <div className="settings-row">
-            <span className="settings-control-label">Theme</span>
-            <button type="button" className="btn-secondary settings-toggle-btn" onClick={onToggleTheme}>
-              {theme === 'dark' ? 'Dark' : 'Light'}
-            </button>
-          </div>
-          <div className="settings-row">
-            <span className="settings-control-label">File lists</span>
-            <button
-              type="button"
-              className="btn-secondary settings-toggle-btn"
-              onClick={onToggleListView}
-            >
-              {listView === 'tree' ? 'Tree' : 'Flat'}
-            </button>
-          </div>
-        </section>
+        {/* --- Appearance (theme / file lists / P67 panel density) --- */}
+        <SettingsAppearanceSection
+          theme={theme}
+          onToggleTheme={onToggleTheme}
+          listView={listView}
+          onToggleListView={onToggleListView}
+          panelDensity={panelDensity}
+          onChange={onChange}
+        />
 
         {/* --- Git config (P40b) --- */}
         <SettingsGitConfigSection repoId={repoPath} initialFocus={configInitialFocus} />

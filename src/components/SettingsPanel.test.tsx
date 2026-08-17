@@ -39,6 +39,7 @@ function renderPanel(over: Partial<SettingsPanelProps> = {}) {
     onClose: vi.fn(),
     theme: 'dark',
     listView: 'flat',
+    panelDensity: 'cozy',
     autoFetch: { enabled: true, intervalMinutes: 10 },
     healthRefresh: { enabled: false, intervalMinutes: 30 },
     graph: GRAPH,
@@ -95,6 +96,20 @@ describe('SettingsPanel', () => {
     expect(props.onToggleTheme).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Flat' }));
     expect(props.onToggleListView).toHaveBeenCalledTimes(1);
+  });
+
+  // P67c §7.1: the density control is ONE toggling button showing the current
+  // value (same idiom as Theme / File lists), and it must patch density ALONE.
+  it('appearance: panel-density button flips cozy → compact via a lone patch', () => {
+    const { props } = renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: 'Cozy' }));
+    expect(props.onChange).toHaveBeenCalledWith({ panelDensity: 'compact' });
+  });
+
+  it('appearance: panel-density button flips compact → cozy', () => {
+    const { props } = renderPanel({ panelDensity: 'compact' });
+    fireEvent.click(screen.getByRole('button', { name: 'Compact' }));
+    expect(props.onChange).toHaveBeenCalledWith({ panelDensity: 'cozy' });
   });
 
   it('auto-fetch: checkbox + interval patch; interval clamps to the range max', () => {
