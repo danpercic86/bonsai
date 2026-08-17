@@ -843,7 +843,14 @@ states; `.status-panel` `getBoundingClientRect().height` grew — **report the m
 row equivalent at 24 px**. (4) Computed styles outside the panel are unchanged: `.file-row` inside
 `DiffFileTree` still computes `height: 24px`, `.section-label` in the sidebar still `11px`
 (the D8 fallback proof). (5) No settings field exists yet; `getUiSettings()` shape unchanged.
-(6) New files at/below their §5 budgets; `CommitBox.tsx` ≤ ~310.
+(6) New files at/below their §5 budgets; `CommitBox.tsx` **≤ ~350**.
+**Corrected 2026-08-17:** the original "≤ ~310" was unreachable from §5.5's own change list —
+removing the 46-line sign/skip JSX and adding ~13 lines of `<CommitOptionsRow>` gives 379 − 33 =
+**349**. Reaching 310 would require extracting a *second*, unspecified block (the `.commit-box-header`
+Generate/Compose pair, or the error banner). **Decision: land 349 and do not extract further** —
+`CommitBox.tsx` is comfortably inside the ~500-line soft limit, and a speculative split would add a
+file boundary that no size pressure justifies. A `CommitBoxHeader.tsx` extraction stays available if
+`CommitBox.tsx` later grows toward the limit.
 
 ### P67c — density setting end-to-end
 Scope: the §4.3 layer table (16 rows) + exactly one `.right-panel[data-density='compact']` block +

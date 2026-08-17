@@ -2016,6 +2016,42 @@ body {
   min-height: 0;
 }
 
+/* ---------- P67 §3: right-panel density variables ----------
+   Declared ONCE here; every consuming declaration uses the fallback form
+   `var(--rp-x, <pre-P67 value>)` (D8) because `.file-row`, `.file-list`,
+   `.tree-dir-row` (DiffFileTree, inside the diff overlay) and `.section-label`
+   (Sidebar / EmptyState / OnboardingSteps) also render OUTSIDE this panel and
+   never inherit these properties — the fallback is what keeps them
+   pixel-identical to today. The values below are the P67b "cozy" default: every
+   px shaved off the `flex: none` chrome goes straight to the changes tree. */
+.right-panel {
+  --rp-pad-outer: 10px;
+  --rp-gap: 10px;
+  --rp-section-pad: 5px 6px 6px;
+  --rp-row-h: 24px;
+  /* NOTE (P67b review NIT 5): a CSS-wide keyword inside a *custom property*
+     value makes the property guaranteed-invalid at computed-value time, so the
+     consumer `font-size: var(--rp-row-font, inherit)` actually resolves to its
+     FALLBACK, not to an inherited value. That is exactly the intent here — the
+     "cozy" default must leave row text at the parent's size, i.e. behave as if
+     no declaration existed — and `font-size` is inherited, so every resolution
+     path yields the same computed size. Do NOT "fix" this to a length: P67c's
+     compact density is what overrides it with a real value. */
+  --rp-row-font: inherit;
+  --rp-list-margin: 3px;
+  --rp-label-font: 11px;
+  --rp-tab-pad: 4px 8px;
+  --rp-tab-btn-pad: 3px 10px;
+  --rp-banner-pad: 6px 10px;
+  --rp-box-pad: 10px;
+  --rp-box-gap: 6px;
+  --rp-msg-min: 48px;
+  --rp-msg-max: 160px;
+  --rp-ctl-h: 22px;
+  --rp-ctl-gap: 8px;
+  --rp-ctl-font: 12px;
+}
+
 /* P62c: the working tri-state lives in an always-mounted wrapper (hidden while
    the 'prs' tab is active) so a half-typed commit survives a tab toggle. It
    fills the right pane below the tab strip exactly as the direct children did. */
@@ -2034,12 +2070,12 @@ body {
 .right-panel-work > .status-panel {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: var(--rp-pad-outer, 12px);
   min-height: 0;
 }
 
 .section-label {
-  font-size: 11px;
+  font-size: var(--rp-label-font, 11px);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-3);
@@ -2181,7 +2217,7 @@ body {
 .status-panel {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--rp-gap, 16px);
   min-height: 100%;
 }
 
@@ -2191,7 +2227,7 @@ body {
 
 .status-section {
   min-width: 0;
-  padding: 6px 8px 8px;
+  padding: var(--rp-section-pad, 6px 8px 8px);
   border-radius: 8px;
 }
 
@@ -2216,12 +2252,13 @@ body {
 
 .file-list {
   list-style: none;
-  margin: 4px 0 0;
+  margin: var(--rp-list-margin, 4px) 0 0;
   padding: 0;
 }
 
 .file-row {
-  height: 24px;
+  height: var(--rp-row-h, 24px);
+  font-size: var(--rp-row-font, inherit);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2257,7 +2294,7 @@ body {
 /* P3b: tree-grouped lists (contract §4.3). */
 .tree {
   list-style: none;
-  margin: 4px 0 0;
+  margin: var(--rp-list-margin, 4px) 0 0;
   padding: 0;
 }
 
@@ -2268,7 +2305,8 @@ body {
 }
 
 .tree-dir-row {
-  height: 24px;
+  height: var(--rp-row-h, 24px);
+  font-size: var(--rp-row-font, inherit);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2442,22 +2480,108 @@ body {
   color: var(--danger, #e5534b);
 }
 
-/* P20 §2.3: amend affordance above the commit box. */
-.amend-affordance {
+/* P67 §5.1: the single actions row above the commit box (supersedes P20 §2.3's
+   `.amend-affordance` and P34's `.stash-split`, which stacked two `flex: none`
+   rows with a border-top and 8 px top pad each). Amend checkbox left, `⋯`
+   overflow menu right; the push warning wraps below only while amend is on. */
+.rp-actions {
   flex: none;
   border-top: 1px solid var(--border);
   background: var(--bg-1);
-  padding: 8px 12px 0;
+  padding: 6px 12px 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.rp-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--rp-ctl-gap, 8px);
+  min-height: var(--rp-ctl-h, 22px);
+  font-size: var(--rp-ctl-font, 12px);
+}
+
+.rp-overflow {
+  position: relative;
+  flex: none;
+}
+
+.rp-overflow-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: var(--rp-ctl-h, 22px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-2);
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.rp-overflow-btn:hover:not(:disabled) {
+  color: var(--text-1);
+  background: var(--bg-3);
+}
+
+.rp-overflow-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Opens UPWARD (the row sits just above the commit box at the pane bottom) —
+   geometry carried over from the deleted `.stash-split-menu`. */
+.rp-overflow-menu {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  bottom: calc(100% - 4px);
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  padding: 4px;
+  gap: 2px;
+}
+
+.rp-overflow-item {
+  text-align: left;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.rp-overflow-item:hover:not(:disabled) {
+  background: var(--bg-1);
+}
+
+.rp-overflow-item:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .amend-toggle {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  /* P67b review FIX 3: inherit the row's control font like its
+     `.commit-sign-toggle` / `.commit-skip-toggle` siblings do, so a compact
+     `--rp-ctl-font` (P67c) shrinks all three labels together. */
+  font-size: var(--rp-ctl-font, 12px);
   color: var(--text-2);
   cursor: pointer;
 }
@@ -2472,95 +2596,30 @@ body {
   line-height: 1.4;
 }
 
-.amend-affordance + .commit-box {
+.rp-actions + .commit-box {
   border-top: none;
-}
-
-/* P34: staging-panel stash split button. */
-.stash-split {
-  position: relative;
-  flex: none;
-  border-top: 1px solid var(--border);
-  background: var(--bg-1);
-  padding: 8px 12px 0;
-}
-
-.stash-split + .amend-affordance {
-  border-top: none;
-}
-
-.stash-split-row {
-  display: flex;
-  gap: 0;
-}
-
-.stash-split-primary {
-  flex: 1 1 auto;
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-}
-
-.stash-split-caret {
-  flex: none;
-  width: 32px;
-  padding: 0;
-  border-left: none;
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
-}
-
-.stash-split-menu {
-  position: absolute;
-  z-index: 20;
-  right: 12px;
-  bottom: calc(100% - 4px);
-  min-width: 200px;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-  padding: 4px;
-  gap: 2px;
-}
-
-.stash-split-menu-item {
-  text-align: left;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-1);
-  font-family: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.stash-split-menu-item:hover:not(:disabled) {
-  background: var(--bg-1);
-}
-
-.stash-split-menu-item:disabled {
-  opacity: 0.45;
-  cursor: default;
 }
 
 .commit-box {
   flex: none;
   border-top: 1px solid var(--border);
   background: var(--bg-1);
-  padding: 12px;
+  padding: var(--rp-box-pad, 12px);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--rp-box-gap, 8px);
 }
 
+/* P67 §2 item 4 (D9): auto-grow between the two vars instead of a fixed 60 px
+   band. `field-sizing` is Chromium-only for now (WebView2 is evergreen, so the
+   native app has it); engines without it are handled by the `@supports not`
+   block below — progressive enhancement, no JS measuring. */
 .commit-message {
   width: 100%;
   resize: vertical;
-  min-height: 60px;
-  max-height: 120px;
+  field-sizing: content;
+  min-height: var(--rp-msg-min, 60px);
+  max-height: var(--rp-msg-max, 120px);
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg-2);
@@ -2569,6 +2628,29 @@ body {
   font-size: 13px;
   line-height: 1.45;
   padding: 6px 8px;
+}
+
+/* P67b review FIX 1 (D9 cross-platform): `field-sizing` is Chromium-only.
+   macOS WKWebView and Linux webkit2gtk do NOT support it, so there the textarea
+   can't grow and would sit at the 48px `--rp-msg-min` floor — SHORTER than
+   pre-P67. Restore the pre-P67 declared 60px floor for those engines. A plain
+   literal (not an 18th `--rp-*` var) on purpose: this is the D8 "fallback =
+   pre-P67 value" path, and a density var here would only resize a box that
+   cannot grow anyway. Must stay AFTER the base rule — `@supports` adds no
+   specificity, so source order is what wins.
+
+   The floor is 70px, NOT the pre-P67 declared 60px: that 60px was inert, because
+   the rendered height came from `rows={3}` — 3 x 13px x 1.45 line-height = 56.5,
+   + 12px padding + 2px border (border-box) = ~70.5px. So 70px reproduces what
+   these engines actually showed before P67, while 60px would have been a ~10px
+   regression. Chosen over setting `rows={3}` in the TSX because that risks
+   Chromium honouring `rows` for the INITIAL height, which would give back ~22px
+   of the measured 115px reclaim on the platform that does support field-sizing.
+   Orchestrator decision, 2026-08-17. */
+@supports not (field-sizing: content) {
+  .commit-message {
+    min-height: 70px;
+  }
 }
 
 .commit-message::placeholder {
@@ -2591,14 +2673,17 @@ body {
   color: var(--warning);
 }
 
-/* P58c: "Sign commit" toggle + inline will-sign / no-key hint. */
-.commit-sign-row {
+/* P67 §5.2: the P58c "Sign commit" and P59a "Skip hooks" toggles share ONE
+   wrapping row (was `.commit-sign-row` + `.commit-skip-row`, two stacked rows
+   each with a 2px/4px margin). Hints wrap onto a second line only when checked;
+   `.commit-box`'s gap owns the spacing, so no margin here. */
+.commit-options-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 2px 0 4px;
-  font-size: 12px;
+  gap: var(--rp-ctl-gap, 8px);
+  min-height: var(--rp-ctl-h, 22px);
+  font-size: var(--rp-ctl-font, 12px);
 }
 .commit-sign-toggle {
   display: inline-flex;
@@ -2629,15 +2714,7 @@ body {
   text-decoration: underline;
 }
 
-/* P59a: pre-emptive "Skip hooks" (--no-verify) toggle — mirrors the sign row. */
-.commit-skip-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 2px 0 4px;
-  font-size: 12px;
-}
+/* P59a: pre-emptive "Skip hooks" (--no-verify) toggle — mirrors the sign one. */
 .commit-skip-toggle {
   display: inline-flex;
   align-items: center;
@@ -5178,7 +5255,7 @@ span.file-row-main {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
+  padding: var(--rp-banner-pad, 8px 12px);
   background: var(--bg-1);
   border-top: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
@@ -6298,7 +6375,7 @@ button.asset-row-clickable:hover {
   flex: none;
   display: flex;
   gap: 2px;
-  padding: 6px 8px;
+  padding: var(--rp-tab-pad, 6px 8px);
   border-bottom: 1px solid var(--border);
 }
 
@@ -6306,7 +6383,7 @@ button.asset-row-clickable:hover {
   font-family: var(--font-ui);
   font-size: 12px;
   font-weight: 600;
-  padding: 5px 12px;
+  padding: var(--rp-tab-btn-pad, 5px 12px);
   border: none;
   border-radius: 6px;
   background: transparent;

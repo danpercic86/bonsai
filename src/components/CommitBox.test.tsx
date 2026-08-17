@@ -108,6 +108,18 @@ describe('CommitBox', () => {
     expect(onCommit).toHaveBeenCalledWith('feat: x', null, true);
   });
 
+  // P67b §7.1: the sign + skip toggles were two stacked rows; they now share one
+  // `.commit-options-row`. Guards the merge against silently re-splitting.
+  it('sign and skip-hooks checkboxes are siblings in a single .commit-options-row', () => {
+    const signingStatus: SigningStatus = { enabled: true, hasKey: true, format: 'ssh' };
+    const { container } = renderBox({ signingStatus });
+    const rows = container.querySelectorAll('.commit-options-row');
+    expect(rows).toHaveLength(1);
+    const row = rows[0];
+    expect(row.contains(screen.getByRole('checkbox', { name: /Sign commit/ }))).toBe(true);
+    expect(row.contains(screen.getByRole('checkbox', { name: /Skip hooks/ }))).toBe(true);
+  });
+
   it('merge mode: conflicts gate "Commit merge"; resolving enables it', () => {
     const onCommit = vi.fn<Props['onCommit']>().mockResolvedValue(undefined);
     const { rerender } = render(

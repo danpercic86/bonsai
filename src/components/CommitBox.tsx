@@ -2,6 +2,7 @@ import { forwardRef, useImperativeHandle, useState } from 'react';
 import { isAppError } from '../utils/errors';
 import type { SigningStatus } from '../ipc';
 import { ConfirmDialog } from './ConfirmDialog';
+import { CommitOptionsRow } from './CommitOptionsRow';
 import { COMMIT_HOOK_CANCELED, COMMIT_PUSH_CANCELED } from './commitPushSignal';
 
 export interface CommitBoxProps {
@@ -231,9 +232,18 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
           )}
         </div>
       )}
+      {/* P67 §2 item 4 / D9: `rows` is only the no-`field-sizing` FALLBACK size
+          (macOS WKWebView / Linux webkit2gtk, floored by the `@supports not`
+          rule in styles.css). On a supporting engine (WebView2 = evergreen
+          Chromium) `rows` is IGNORED for sizing: the box auto-grows with its
+          content between --rp-msg-min and --rp-msg-max. So `rows={5}` makes a
+          merge message open tall only on the fallback engines; on Chromium a
+          short `Merge branch 'x'` opens at the 48 px floor and grows as you
+          type. Giving merge mode its own taller floor is OQ4 — a native
+          checkpoint tuning call, deliberately not guessed here. */}
       <textarea
         className="commit-message"
-        rows={merge ? 5 : 3}
+        rows={merge ? 5 : 1}
         placeholder={
           blocked ? 'An operation is in progress' : merge ? 'Merge commit message' : 'Commit message'
         }
@@ -259,54 +269,19 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
           {firstLineLen}/{SUMMARY_LIMIT}
         </div>
       )}
-      {showSign && (
-        <div className="commit-sign-row">
-          <label className="commit-sign-toggle">
-            <input
-              type="checkbox"
-              checked={signChecked}
-              disabled={submitting !== null || blocked}
-              onChange={(e) => setSignOverride(e.target.checked)}
-            />
-            <span>Sign commit</span>
-          </label>
-          {signChecked &&
-            (signingStatus?.hasKey ? (
-              <span className="commit-sign-hint">Commits will be signed ({signFormatLabel})</span>
-            ) : (
-              <span className="commit-sign-warn" role="note">
-                No signing key set — set user.signingkey
-                {onOpenIdentitySettings !== undefined && (
-                  <button
-                    type="button"
-                    className="commit-sign-fix"
-                    onClick={() => onOpenIdentitySettings()}
-                  >
-                    Set key…
-                  </button>
-                )}
-              </span>
-            ))}
-        </div>
-      )}
-      {/* P59a: pre-emptive --no-verify. Shown in every commit-like mode (git
-          runs the commit hooks on plain commits, amends and merge commits). */}
-      <div className="commit-skip-row">
-        <label className="commit-skip-toggle">
-          <input
-            type="checkbox"
-            checked={skipHooks}
-            disabled={submitting !== null || blocked}
-            onChange={(e) => setSkipHooks(e.target.checked)}
-          />
-          <span>Skip hooks</span>
-        </label>
-        {skipHooks && (
-          <span className="commit-skip-hint" role="note">
-            Git hooks (pre-commit, commit-msg) won’t run for this commit
-          </span>
-        )}
-      </div>
+      {/* P67 §5.2: P58c sign + P59a skip-hooks (≡ --no-verify, offered in every
+          commit-like mode) share ONE wrapping row. State stays here. */}
+      <CommitOptionsRow
+        showSign={showSign}
+        signChecked={signChecked}
+        onChangeSign={setSignOverride}
+        signingStatus={signingStatus}
+        signFormatLabel={signFormatLabel}
+        onOpenIdentitySettings={onOpenIdentitySettings}
+        skipHooks={skipHooks}
+        onChangeSkipHooks={setSkipHooks}
+        disabled={submitting !== null || blocked}
+      />
       {error !== null && (
         <div className="error-banner error-banner-dismissible commit-error" role="alert">
           <span className="error-banner-text">
