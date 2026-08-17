@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  HEAD_GUIDE_PAD,
   backingStoreSize,
   clampTooltipPos,
+  headGuide,
   scrollRowIntoView,
   spacerHeight,
   visibleRowCount,
@@ -194,5 +196,202 @@ describe('spacerHeight', () => {
 
   it('20k rows at a custom rowHeight knob', () => {
     expect(spacerHeight(20_000, 0, 22)).toBe(440_008);
+  });
+});
+
+describe('headGuide', () => {
+  // P67 §1: METRICS baseline — avatarRadius 10 + avatarBgRingExtra 2 ⇒ halo 12.
+  // The `y1` expectations below are hand-computed LITERALS that bake that 12 in,
+  // deliberately, so they cannot drift with the implementation's own formula.
+  const H = 320; // viewport height
+  const base = {
+    headIndex: 5 as number | null,
+    layoutScrollTop: -RH, // raw scrollTop 0 with a WIP row
+    wipOffset: 1,
+    rowHeight: RH,
+    avatarRadius: 10,
+    ringExtra: 2,
+    viewportHeight: H,
+  };
+  /** The unclamped HEAD row centre in viewport px, mirroring the algorithm. */
+  const center = (headIndex: number, layoutScrollTop: number, rowHeight = RH): number =>
+    headIndex * rowHeight + rowHeight / 2 - layoutScrollTop;
+
+  it('unknown HEAD (streamed graph before HEAD arrives) → null', () => {
+    expect(headGuide({ ...base, headIndex: null })).toBeNull();
+  });
+
+  it('WIP row at raw scrollTop 0 → anchored on the WIP dot, stopped at the halo', () => {
+    const g = headGuide(base);
+    expect(g).not.toBeNull();
+    if (g === null) return;
+    expect(g.y0).toBe(RH / 2); // identical to the pre-P67 `RH/2 - vp.scrollTop`
+    // Hand-computed, NOT re-derived from the implementation's own centre formula:
+    // row 5 centre in content px = 5*32 + 16 = 176; the WIP row shifts the view up
+    // by one row (layoutScrollTop -32) ⇒ centre on screen 176 + 32 = 208;
+    // minus the halo (10 + 2) ⇒ 196.
+    expect(g.y1).toBe(196);
+    expect(g.edge).toBeNull();
+    expect(g.segment).toBe(true);
+    expect(g.dashOffset).toBe(0); // unclamped anchor ⇒ no phase compensation
+  });
+
+  it('REGRESSION (the reported bug): still returns a segment far past the WIP row', () => {
+    // Raw scrollTop 5000 ⇒ layoutScrollTop 4968. The old gate
+    // (`scrollTop < rowHeight + 56` = 88px) drew nothing at all here.
+    const g = headGuide({ ...base, headIndex: 200, layoutScrollTop: 4968 });
+    expect(g).not.toBeNull();
+    if (g === null) return;
+    expect(Math.abs(g.y1 - g.y0)).toBeGreaterThanOrEqual(1);
+    expect(g.segment).toBe(true);
+  });
+
+  it("HEAD just above the top edge → edge 'top'", () => {
+    // Clean tree, HEAD centre at -10 (inside the halo's reach of the -PAD anchor
+    // yet not collapsed): the marker points up.
+    const g = headGuide({ ...base, wipOffset: 0, headIndex: 0, layoutScrollTop: 26 });
+    expect(g).not.toBeNull();
+    if (g === null) return;
+    expect(center(0, 26)).toBe(-10);
+    expect(g.edge).toBe('top');
+    // A5: for THESE arguments the segment is genuinely drawable, not collapsed —
+    // anchor clamps to -8 and the target sits one halo BELOW the centre at +2,
+    // a 10px run. (§1.1a's "now also segment === false" assumed a tighter band.)
+    expect(g.y0).toBe(-HEAD_GUIDE_PAD);
+    expect(g.y1).toBe(2);
+    expect(g.segment).toBe(true);
+  });
+
+  it("HEAD below the bottom edge → edge 'bottom', target clamped to the edge", () => {
+    const g = headGuide({ ...base, headIndex: 200, layoutScrollTop: 4968 });
+    expect(g).not.toBeNull();
+    if (g === null) return;
+    expect(center(200, 4968)).toBeGreaterThan(H);
+    expect(g.edge).toBe('bottom');
+    expect(g.y1).toBe(H + HEAD_GUIDE_PAD);
+    expect(g.segment).toBe(true);
+  });
+
+  it('PERF guard: absurd scroll distances keep BOTH ends inside the padded viewport', () => {
+    const g = headGuide({ ...base, headIndex: 100_000, layoutScrollTop: 1e6 });
+    expect(g).not.toBeNull();
+    if (g === null) return;
+    for (const y of [g.y0, g.y1]) {
+      expect(y).toBeGreaterThanOrEqual(-HEAD_GUIDE_PAD);
+      expect(y).toBeLessThanOrEqual(H + HEAD_GUIDE_PAD);
+    }
+    // Bounded stroke length ⇒ bounded dash-segment count per frame.
+    expect(Math.abs(g.y1 - g.y0)).toBeLessThanOrEqual(H + 2 * HEAD_GUIDE_PAD);
+    expect(g.segment).toBe(true);
+  });
+
+  it('CRAWL guard (A6.2): the dash grid stays pinned to the CONTENT, not the viewport', () => {
+    // Periodicity + non-negativity alone are satisfied by EITHER sign of the
+    // clamp compensation, so they cannot catch a phase inversion. Pin the phase:
+    // canvas strokes from y0 and `lineDashOffset = off` shifts the pattern, so
+    // the on-screen dash grid sits at y ≡ y0 - off (mod 6). Content-anchoring
+    // demands that grid coincide with the anchor's own grid, y ≡ anchor.
+    const deep = { ...base, headIndex: 2000, layoutScrollTop: 50_000 };
+    const mod6 = (v: number): number => ((v % 6) + 6) % 6;
+    // The anchor is the WIP dot centre in viewport px. Derived from the INPUT
+    // contract of `visibleRowRange` (layoutScrollTop = rawScrollTop - rowHeight
+    // when a WIP row exists), not from `headGuide`'s body:
+    //   anchor = rowHeight/2 - rawScrollTop = 16 - (layoutScrollTop + 32).
+    const wipDotCentre = (layoutScrollTop: number): number => RH / 2 - (layoutScrollTop + RH);
+    expect(wipDotCentre(50_000)).toBe(-50_016); // hand check of the helper
+
+    const a = headGuide(deep);
+    const b = headGuide({ ...deep, layoutScrollTop: 50_006 });
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    if (a === null || b === null) return;
+    expect(a.dashOffset).toBe(b.dashOffset); // 6px of scroll ⇒ same phase
+    // Known answer, hand-computed: y0 = -8, anchor = -50016 ⇒ 50008 mod 6 = 4.
+    expect(a.dashOffset).toBe(4);
+
+    // Swept across CONSECUTIVE 1px scroll positions: the grid must track the
+    // content (i.e. move with the anchor), which the inverted sign does not.
+    for (let s = 50_000; s < 50_012; s++) {
+      const g = headGuide({ ...deep, layoutScrollTop: s });
+      expect(g).not.toBeNull();
+      if (g === null) continue;
+      expect(g.segment).toBe(true);
+      expect(g.dashOffset).toBeGreaterThanOrEqual(0); // plain `%` would go negative
+      expect(g.dashOffset).toBeLessThan(6);
+      expect(mod6(g.y0 - g.dashOffset)).toBe(mod6(wipDotCentre(s)));
+    }
+  });
+
+  it('stops one halo short of the HEAD centre — on the near side, both signs', () => {
+    const below = headGuide({ ...base, headIndex: 5, layoutScrollTop: -RH });
+    expect(below?.y1).toBe(196); // 5*32 + 16 + 32 (WIP shift) - 12 (halo) = 196
+    const above = headGuide({ ...base, wipOffset: 0, headIndex: 0, layoutScrollTop: 26 });
+    expect(above?.y1).toBe(2); // centre 16 - 26 = -10; sign flips ⇒ -10 + 12 = 2
+  });
+
+  it('clean tree (no WIP row) anchors at -PAD and still draws', () => {
+    const g = headGuide({ ...base, wipOffset: 0, headIndex: 5, layoutScrollTop: 0 });
+    expect(g).not.toBeNull();
+    if (g === null) return;
+    expect(g.y0).toBe(-HEAD_GUIDE_PAD);
+    expect(g.y1).toBe(164); // 5*32 + 16 = 176 (no WIP shift) - 12 (halo) = 164
+    expect(g.segment).toBe(true);
+  });
+
+  it("collapsed segment (HEAD's halo covers the anchor) → null", () => {
+    // Clean tree, HEAD centre 8px below the -PAD anchor ⇒ target clamps onto y0.
+    expect(headGuide({ ...base, wipOffset: 0, headIndex: 0, layoutScrollTop: 16 })).toBeNull();
+    // WIP row exactly one halo above the HEAD centre (rowHeight 12 ⇒ gap 12).
+    expect(
+      headGuide({ ...base, headIndex: 0, rowHeight: 12, layoutScrollTop: -12 }),
+    ).toBeNull();
+  });
+
+  it('echoes headIndex so the draw layer needs no non-null assertion', () => {
+    expect(headGuide({ ...base, headIndex: 5 })?.headIndex).toBe(5);
+    expect(headGuide({ ...base, headIndex: 200, layoutScrollTop: 4968 })?.headIndex).toBe(200);
+  });
+
+  it("A5: scrolled BELOW HEAD with a WIP row → marker-only (segment false, edge 'top')", () => {
+    // The WIP row always sits above HEAD, so once HEAD scrolls off the TOP both
+    // anchor and target clamp to -PAD. The segment collapses, but the up-marker
+    // MUST still be drawn — otherwise `edge: 'top'` is unreachable with
+    // uncommitted changes and the guide vanishes exactly when it is needed.
+    for (const args of [
+      { ...base, headIndex: 0, layoutScrollTop: 1e6 },
+      { ...base, headIndex: 3, layoutScrollTop: 500 },
+    ]) {
+      const g = headGuide(args);
+      expect(g).not.toBeNull();
+      if (g === null) continue;
+      expect(g.segment).toBe(false);
+      expect(g.edge).toBe('top');
+      expect(g.y0).toBe(-HEAD_GUIDE_PAD);
+      expect(g.y1).toBe(-HEAD_GUIDE_PAD);
+      expect(g.dashOffset).toBeGreaterThanOrEqual(0);
+      expect(g.dashOffset).toBeLessThan(6);
+    }
+  });
+
+  it('A5: WIP row with HEAD on screen and its halo over the anchor → null', () => {
+    // Nothing to point at: the segment collapsed AND HEAD's centre is visible.
+    const g = headGuide({ ...base, headIndex: 0, rowHeight: 12, layoutScrollTop: -12 });
+    expect(g).toBeNull();
+  });
+
+  it("A6.3: dir === 0 (HEAD's centre exactly ON the anchor) → marker-only, not null", () => {
+    // Clean tree ⇒ anchor = -PAD = -8. Row 0's centre is 16 - layoutScrollTop, so
+    // layoutScrollTop 24 puts it at exactly -8 ⇒ headCenter - anchor === 0.
+    // The deleted `if (dir === 0) return null` ran BEFORE `edge` and suppressed a
+    // marker that the user should see (HEAD is one row above the top edge).
+    const g = headGuide({ ...base, wipOffset: 0, headIndex: 0, layoutScrollTop: 24 });
+    expect(center(0, 24)).toBe(-8); // premise: centre == the -PAD anchor
+    expect(g).not.toBeNull();
+    if (g === null) return;
+    expect(g.edge).toBe('top');
+    expect(g.segment).toBe(false); // dir 0 ⇒ target === anchor ⇒ collapsed
+    expect(g.y0).toBe(-HEAD_GUIDE_PAD);
+    expect(g.y1).toBe(-HEAD_GUIDE_PAD);
+    expect(g.dashOffset).toBe(0); // anchor is unclamped here ⇒ no compensation
   });
 });

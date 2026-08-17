@@ -241,6 +241,112 @@ re-verify newest git2 still lacks the gen API (F5); confirm `gix-commitgraph` re
 Architect advises AGAINST the `git log --topo-order` shell-out (would make the git binary a hard runtime dep of
 the core read path). Sets the deferred `stream_perf.rs` first-batch threshold.
 
+## 🐛 USER-REPORTED BATCH (2026-08-17) — P67 UX polish + P68 AI conflict resolution
+
+User reported 7 issues from real use (real repo, live merge conflict). Plan (user-approved):
+`~/.claude/plans/1-the-dotted-line-cozy-llama.md`. Split into two milestones per the user's
+sequencing choice — **UX polish first, then AI**. Started from clean HEAD `0ac5444`.
+
+**User's 7 items → milestone mapping:**
+1. Dashed HEAD guideline disappears on scroll → **P67 §1** (confirmed bug, not intended)
+2. Right panel wastes vertical space vs the changes tree → **P67 §2**
+3. "Propose & review" shows no proposals → **P68** (not broken — the proposal opens in the CENTER
+   pane, invisible from the right panel; plus item 5 destroys it. No separate work item)
+4. Resolve ALL conflicts with AI, not one at a time → **P68 §D**
+5. No feedback on AI resolve; result lost when switching files → **P68 §C** (root cause found:
+   single-slot `aiResolvingPath` + the SHARED `fileDiffReqId` guard discarding a computed proposal)
+6. Claude timed out at 90s on an i18n JSON conflict → **P68 §A/§B** (real cause: `--tools ""` makes
+   Claude blind to the repo, so no timeout would help; fix = no-timeout + Cancel + read-only tools)
+7. Show AI logs live; let Claude ask questions mid-run → **P68 §B/§E**
+
+**LOCKED USER DECISIONS (asked + answered 2026-08-17; do not re-litigate):**
+- AI timeout = **no hard timeout + Cancel button**; idle-output watchdog ~300s; optional hard cap
+  configurable, default 0 (unbounded).
+- AI visibility = **live log stream + interactive prompts** (user can answer Claude mid-run).
+- Log panel location = **bottom dock**, collapsible, full width (does not compete with the space
+  P67 reclaims in the right panel).
+- Conflict-resolve repo access = **read-only allowlist** `--tools "Read,Grep,Glob"` (no
+  write/edit/bash; Bonsai still writes nothing — staging stays an explicit post-review call).
+- Bulk resolve = **ONE AI run for all conflicts** (single run sees them together), with per-file
+  attribution back into a per-path store.
+- Right-panel density = **tighter default AND** a Cozy/Compact toggle.
+- "Stash all" = **demote to a `⋯` overflow menu** (keeps all 3 scopes; sidebar keeps 1-click stash).
+- Panel density is **independent** of graph Compact rows (cross-reference hint in Settings only).
+- Dashed HEAD line = **always visible while scrolling**.
+
+**SPIKE FACTS (verified against installed `claude` v2.1.233 — do not re-verify):**
+- `-p --output-format stream-json` **requires** `--verbose`.
+- NDJSON order: `system(init)` → `rate_limit_event` → `system(thinking_tokens)` heartbeats →
+  `assistant` → `system(post_turn_summary)` (carries `status_category`/`needs_action`) → `result`.
+- The `result` line is **byte-compatible** with today's `--output-format json` envelope → the
+  existing parse at `ai/mod.rs:332-366` is reused verbatim.
+- A turn ends at `result`, **NOT** process exit; with `--input-format stream-json` the child stays
+  alive on open stdin and accepts a second turn → this is the interactive mechanism.
+- **DEAD END:** the CLI's own `SendMessage` tool cannot ask the user anything — in `-p` mode the CLI
+  answers its own tool call and discards an injected `tool_result`. Mid-run questions therefore use
+  a prompt-level sentinel `BONSAI_NEEDS_INPUT: <question>`.
+- `--tools "Read,Grep,Glob"` is a valid allowlist (init echoes the exact subset).
+
+### P67 — HEAD guideline + right-panel density — **IN PROGRESS**
+Contract: `docs/contracts/P67-ux-polish-batch.md` (+ `P67-user-checklist.md`). **+0 Tauri commands**
+(157 unchanged; `panelDensity` rides the existing `set_ui_settings` patch).
+- **P67a** — HEAD guideline: new pure `headGuide()` in `src/graph/viewport.ts`; split
+  `drawWipRow` (`src/graph/draw.ts:200-212` moves out) into `drawHeadGuide` + `drawHeadEdgeMarker`;
+  drop the `scrollTop < rowHeight + 56` gate for the connector at `GraphCanvas.tsx:345`; clamp BOTH
+  ends (today only the end is clamped → perf + dash-crawl regressions if the gate is merely
+  removed); `selfTest.ts` + `window.__bonsai.p7` seam; `P1-polish.md` §9.3 SUPERSEDED markers.
+- **P67b** — right-panel structure + tighter default (~110px reclaimed ≈ 4–5 more file rows): new
+  `RightPanelActionsRow.tsx` + `CommitOptionsRow.tsx`, DELETE `StashSplitButton.tsx`, `--rp-*`
+  custom properties on `.right-panel` with cozy = the new tighter values (every consumer uses the
+  `var(--rp-x, <today>)` fallback form because `.file-row`/`.tree-dir-row`/`.section-label` are also
+  rendered OUTSIDE `.right-panel` by DiffFileTree/Sidebar/EmptyState/OnboardingSteps).
+- **P67c** — `panelDensity: 'cozy'|'compact'` end-to-end (types → App → SettingsPanel →
+  mock persistence → `settings.rs` + `ui_settings.rs` mirror + migration test) + one
+  `[data-density='compact']` block.
+- **P67d** — contract + user checklist + TODO update.
+- **P67e** — `StatusPanel.tsx` 700→~250 split (pure refactor, droppable; `StatusPanel.test.tsx`
+  must pass UNTOUCHED — that is the acceptance test).
+
+**Current step:** P67a — implemented + reviewed (REQUEST-CHANGES); contract amendments **A5** (edge
+marker must survive a collapsed segment), **A6.1** (`dashOffset` sign was inverted → dashes would
+crawl, a regression vs pre-P67), **A6.2** (crawl guard must assert phase, not periodicity) and
+**A6.3** (drop the redundant `dir === 0` early return) written; fixes routed back to `senior-dev`.
+Baseline before P67 (measured 2026-08-17): **vitest 1331/0 across 111 files**; cargo workspace green
+except the one pre-existing load-sensitive flake noted under P68a. AI-gate numbers for P67a so far:
+vitest 1344/0, tsc 0, build green.
+
+### P68 — streaming/interactive/bulk AI conflict resolution — **PENDING** (after P67)
+Contract to write: `docs/contracts/P68-ai-conflict-streaming.md` (+ `P68-user-checklist.md`).
+**+3 commands: 157 → 160** (`ai_resolve_conflict_stream` = Channel, `ai_cancel_run`, `ai_reply_run`
+— RECOUNT `generate_handler!` at impl). Existing `ai_resolve_conflict` stays registered/unchanged,
+and the 13 `RunOpts::default()` call sites are deliberately NOT migrated (90s default preserved for
+unrelated AI features; streaming is an additive sibling).
+- **P68a** Rust runner core (`ai/stream.rs`, `ai/session.rs`, `ai/registry.rs`, `RunLimits`) +
+  claude_stub NDJSON modes. Key behaviour change: partial output is KEPT on cancel/watchdog
+  (today `ai/mod.rs:180-190` discards it and never joins the reader threads).
+  ⚠️ **PRE-EXISTING FLAKE in the code P68a rewrites** (measured at the P67 baseline, 2026-08-17,
+  BEFORE any change): `bonsai-core` `ai::tests::run_claude_slow_times_out_and_reaps_child`
+  (`ai/mod.rs:577`) asserts the 1s test-override deadline returns "near 1s" and took **2.97s** under
+  parallel load — it passes in isolation, fails under a loaded `--workspace` run. Do NOT read it as
+  a P68 regression, and prefer replacing the wall-clock assertion with a monotonic lower-bound +
+  generous upper bound when the streaming watchdog lands.
+- **P68b** streaming conflict resolve + the 3 commands (`commands/ai_stream.rs`, managed
+  `AiRunRegistry`, `AppError::AiCancelled`, new settings, read-only allowlist).
+- **P68c** TS types + Channel bridge + `mock/handlers/aiStream.ts` (`?aiSlow`/`?aiAsk`/`?aiFail`;
+  also finally honour `?ai=off`, which `ai.ts:29` ignores today).
+- **P68d** per-path store `useAiRuns.ts` + row feedback; delete `aiResolvingPath`; break the
+  `fileDiffReqId` coupling ← **the item-5 fix**.
+- **P68e** bottom dock `AiActivityPanel` + `AiActivityLog` (third child of `.workspace-host`).
+- **P68f** bulk single-run resolve (`useBulkAiResolve.ts` + `AiRunQueue.tsx`).
+- **P68g** Settings UI + contracts + command math + CHANGELOG.
+
+**Known limitations accepted up front:** sentinel-based questions (a model ignoring the convention
+degrades to a normal answer, still caught by `hasUnresolvedMarkers`); no re-attach to an in-flight
+run after a window reload; `total_cost_usd` may be cumulative across turns (display the last
+`result`'s value, don't sum).
+
+---
+
 ## P61 — diff quality: word-level/intraline highlighting + image diff (Phase 3 · milestone 4/4, FINAL) — **DONE ✅ USER-CONFIRMED 2026-08-08** (2026-08-08)
 
 Contract: `docs/contracts/P61-diff-quality.md`. Both backend-computed + React-rendered + opt-in/toggleable.

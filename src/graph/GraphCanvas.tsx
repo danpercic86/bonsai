@@ -15,6 +15,8 @@ import {
   avatarColor,
   avatarHit,
   drawGraph,
+  drawHeadEdgeMarker,
+  drawHeadGuide,
   drawWipRow,
   initials,
   laneX,
@@ -38,6 +40,7 @@ import type { TooltipState } from './hitTest';
 import {
   backingStoreSize,
   clampTooltipPos,
+  headGuide,
   scrollRowIntoView,
   spacerHeight,
   visibleRowCount,
@@ -342,6 +345,26 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       display,
       m,
     );
+    // P67 §1: the dashed HEAD guideline is INDEPENDENT of the WIP row's near-top
+    // gate — it must point at the checked-out commit at every scroll position.
+    // Drawn before drawWipRow so the dashed WIP marker circle paints on top.
+    const guide = headGuide({
+      headIndex: lay.headIndex,
+      layoutScrollTop,
+      wipOffset,
+      rowHeight,
+      avatarRadius: m.avatarRadius,
+      ringExtra: m.avatarBgRingExtra,
+      viewportHeight: h,
+    });
+    if (guide !== null) {
+      // A5 (§1.1a): a collapsed segment still carries an edge — the marker is
+      // drawn alone so the guide never vanishes once the user scrolls past HEAD.
+      // §1.3 calls the guide unconditionally; `drawHeadGuide` itself no-ops when
+      // `segment === false` (single owner of that check — no duplicate here).
+      drawHeadGuide(ctx, lay, guide, themeRef.current, m);
+      if (guide.edge !== null) drawHeadEdgeMarker(ctx, lay, guide, h, themeRef.current, m);
+    }
     if (wip !== null && scrollTop < rowHeight + 56) {
       drawWipRow(
         ctx,
@@ -562,7 +585,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     // P7 §10 item 2: expose the pure helpers + a self-test (mock only, mirroring
     // scrollSweep). The orchestrator reads `window.__bonsai.p7SelfTest()`.
     // T3.6: the self-test body lives in selfTest.ts now (moved verbatim).
-    const p7 = { initials, avatarColor, groupRefs, layoutRefLabels, refColArea, avatarHit, relativeDate };
+    // P67 §1.5: `headGuide` joins the bag — the only way to assert the guideline
+    // geometry from a headless pane (no canvas pixel is ever produced there).
+    const p7 = { initials, avatarColor, groupRefs, layoutRefLabels, refColArea, avatarHit, relativeDate, headGuide };
     const p7SelfTest = (): P7SelfTestResult => runP7SelfTest(canvasRef.current);
 
     window.__bonsai = { scrollSweep, p7, p7SelfTest };
