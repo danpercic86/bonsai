@@ -5,6 +5,36 @@
 /// Shared diff-payload renderer for the in-app AI features (P15).
 pub mod payload;
 
+// P68 §A: the streaming sibling of `run_claude` — pure line interpretation
+// (`stream`), process lifecycle (`session`) and the cancel/reply map
+// (`registry`), split so the NDJSON mapping is testable without a child (D12).
+pub mod registry;
+/// Private: [`RunControl`] is the module's whole public surface (re-exported
+/// below), and `run_claude_streaming` is the only way to drive a session.
+mod session;
+/// The LOCKED streaming argv (§3.4) + its pure assertions, split out of `session`
+/// so the flag set is tested without a child process.
+mod session_argv;
+/// The reader/writer threads and the mpsc funnel they report on — no policy.
+mod session_pipes;
+pub mod stream;
+
+pub use registry::{AiRunHandle, AiRunRegistry};
+pub use session::RunControl;
+pub use stream::{
+    classify_line, sentinel_question, AiRunEvent, AiRunEventKind, LineOutcome, StreamLogItem,
+    MAX_EVENT_TEXT, SENTINEL,
+};
+
+#[cfg(test)]
+mod testutil;
+#[cfg(test)]
+mod tests;
+#[cfg(test)]
+mod session_tests;
+#[cfg(test)]
+mod session_io_tests;
+
 use crate::error::AppError;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -23,6 +53,80 @@ pub const AVAILABILITY_TIMEOUT: Duration = Duration::from_secs(10);
 /// Test/override hook: when set, this binary path is spawned instead of PATH
 /// `claude` (points at the stub script in tests). (P13)
 pub const CLAUDE_BIN_ENV: &str = "BONSAI_CLAUDE_BIN";
+
+/// Default idle-output watchdog (P68 §A). A streaming run is killed only after
+/// this long with NO output from the child; `Duration::ZERO` disables it. There
+/// is deliberately NO wall-clock deadline for streaming runs — the user cancels
+/// instead. `DEFAULT_TIMEOUT` still governs every `run_claude` caller (D6).
+pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+/// How long the session loop blocks on `recv_timeout` before it polls the cancel
+/// flag / the watchdog / the reply channel. Bounds cancel latency (P68 §A).
+pub const RECV_TICK: Duration = Duration::from_millis(250);
+/// Grace period between dropping stdin and force-killing the child on a COMPLETED
+/// run (the child normally exits on stdin EOF). (P68 §A)
+pub const EXIT_GRACE: Duration = Duration::from_secs(2);
+/// Max `result` lines (turns) per streaming run before a still-questioning model
+/// is failed (P68 §B rule 3).
+pub const DEFAULT_MAX_TURNS: u32 = 6;
+
+/// Which CLI tools a streaming run may use (P68 §A/D10). `ReadOnly` is the
+/// conflict default — the model must be able to look at the rest of the repo, but
+/// NEVER write, edit or run a shell. `None` reproduces today's `--tools ""`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolPolicy {
+    ReadOnly,
+    None,
+}
+
+impl ToolPolicy {
+    /// The exact `--tools` argument value (verified allowlist, spike §1.6).
+    pub fn arg(self) -> &'static str {
+        match self {
+            ToolPolicy::ReadOnly => "Read,Grep,Glob",
+            ToolPolicy::None => "",
+        }
+    }
+}
+
+/// Limits for ONE streaming run. Deliberately a separate parameter rather than a
+/// `RunOpts` field (D6/A2) so the 13 `RunOpts::default()` sites are untouched.
+#[derive(Debug, Clone)]
+pub struct RunLimits {
+    /// Kill after this long with no child output. `Duration::ZERO` = disabled.
+    /// PAUSED while awaiting user input (D3).
+    pub idle_timeout: Duration,
+    /// Optional absolute cap. `None` = unbounded (the user's locked default).
+    /// Also paused while awaiting user input (D3).
+    pub hard_cap: Option<Duration>,
+    /// Max `result` lines (turns) per run before a still-questioning model is
+    /// failed. >= 1.
+    pub max_turns: u32,
+    /// Tool allowlist (D10).
+    pub tools: ToolPolicy,
+    /// `--max-budget-usd` when `Some`; omitted when `None`.
+    pub max_budget_usd: Option<f64>,
+    /// `--include-partial-messages`. Default false; unknown delta shapes degrade
+    /// to `log` (spike §1.8).
+    pub include_partial_messages: bool,
+    /// Feed the first turn as a stream-json user message on an OPEN stdin so a
+    /// second turn is possible (the interactive mechanism, spike §1.4). false =
+    /// one-shot: positional prompt + payload on stdin, then EOF.
+    pub interactive: bool,
+}
+
+impl Default for RunLimits {
+    fn default() -> Self {
+        RunLimits {
+            idle_timeout: DEFAULT_IDLE_TIMEOUT,
+            hard_cap: None,
+            max_turns: DEFAULT_MAX_TURNS,
+            tools: ToolPolicy::ReadOnly,
+            max_budget_usd: None,
+            include_partial_messages: false,
+            interactive: true,
+        }
+    }
+}
 
 /// Knobs for one `run_claude` call. `Default` = subscription resolver defaults. (P13)
 #[derive(Debug, Clone)]
@@ -329,13 +433,29 @@ pub fn run_claude(
     let stdout_str = String::from_utf8_lossy(&output.stdout);
     let stderr_str = String::from_utf8_lossy(&output.stderr);
 
-    let envelope: Result<ClaudeEnvelope, _> = serde_json::from_str(stdout_str.trim());
+    parse_result_envelope(stdout_str.trim(), output.success, &stderr_str)
+}
+
+/// Interpret ONE Claude JSON result envelope. EXTRACTED VERBATIM from
+/// `run_claude` (P68 §A) so the streaming `result` line and the one-shot
+/// `--output-format json` output — byte-compatible envelopes (spike §1.3) — share
+/// one copy of this logic. Branches, unchanged:
+/// (1) unparseable + non-zero exit -> stderr tail capped at 500 chars;
+/// (2) unparseable + zero exit -> "could not parse Claude output";
+/// (3) `is_error` -> result|subtype; (4) empty/blank result -> "no output";
+/// (5) success -> `strip_fence`.
+pub(crate) fn parse_result_envelope(
+    stdout: &str,
+    success: bool,
+    stderr: &str,
+) -> Result<AiResult, AppError> {
+    let envelope: Result<ClaudeEnvelope, _> = serde_json::from_str(stdout);
     let env = match envelope {
         Ok(env) => env,
         Err(pe) => {
             // 1. Non-zero exit AND unparseable stdout -> surface the stderr tail.
-            if !output.success {
-                let trimmed = stderr_str.trim();
+            if !success {
+                let trimmed = stderr.trim();
                 let msg = if trimmed.is_empty() {
                     "Claude exited with a non-zero status".to_string()
                 } else {
@@ -371,6 +491,64 @@ pub fn run_claude(
         cost_usd: env.total_cost_usd,
         session_id: env.session_id,
     })
+}
+
+/// Blocking. The single streaming entry point (P68 §A); callers invoke it under
+/// `spawn_blocking`. `opts.model` and `opts.system_prompt` are honoured;
+/// **`opts.timeout` is IGNORED** (streaming is governed by `limits`) — documented
+/// rather than removed so a caller can pass a `RunOpts` it already has.
+///
+/// Emits every event through `on_event` (seq starts at 0 with `Started`, carrying
+/// the `runId` — D8) and returns the LAST turn's parsed result.
+///
+/// `prompt` is the positional prompt in one-shot mode and is prepended to the
+/// stdin user message in interactive mode (D13 — never argv there).
+///
+/// Errors: `AiUnavailable` (spawn/NotFound) | `AiFailed` (protocol, watchdog,
+/// hard cap, turn budget, unparseable/`is_error` result) | `AiCancelled`. On
+/// EVERY error path the events already emitted stand (D2).
+pub fn run_claude_streaming(
+    cwd: &Path,
+    prompt: &str,
+    payload: &str,
+    opts: RunOpts,
+    limits: RunLimits,
+    ctl: RunControl,
+    on_event: &(dyn Fn(AiRunEvent) + Send + Sync),
+) -> Result<AiResult, AppError> {
+    session::run(cwd, prompt, payload, opts, limits, ctl, on_event)
+}
+
+/// Kill a process TREE by pid — the app-exit path (D7), where no `Child` handle
+/// survives. Windows: `taskkill /T /F /PID` with a hidden console (the npm
+/// `claude.cmd` shim orphans a node grandchild otherwise); elsewhere a
+/// best-effort `kill -9`. Never panics, never blocks longer than the spawn; pid 0
+/// means "never spawned" and is ignored.
+pub(crate) fn kill_pid_tree(pid: u32) {
+    if pid == 0 {
+        return;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &pid.to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = Command::new("kill")
+            .args(["-9", &pid.to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
 }
 
 /// Wall-clock cap for the one-shot `claude mcp add` registration call (P16).
@@ -467,174 +645,3 @@ pub fn check_availability() -> AiAvailability {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::PathBuf;
-    use std::sync::{Mutex, MutexGuard};
-
-    const STUB_MODE_ENV: &str = "BONSAI_STUB_MODE";
-
-    /// Serialize env-mutating tests: `BONSAI_CLAUDE_BIN` / `BONSAI_STUB_MODE` are
-    /// process-global and the stub inherits them, so parallel tests would race.
-    fn env_lock() -> MutexGuard<'static, ()> {
-        static LOCK: Mutex<()> = Mutex::new(());
-        LOCK.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
-    /// Windows runs the `.cmd` stub directly (`Command::new` routes `.cmd`
-    /// through cmd.exe automatically). macOS/Linux use the POSIX `.sh` twin,
-    /// with the executable bit forced on at test time — git doesn't reliably
-    /// preserve the mode bit across clones/platforms.
-    fn stub_path() -> PathBuf {
-        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-        if cfg!(windows) {
-            fixtures.join("claude_stub.cmd")
-        } else {
-            let path = fixtures.join("claude_stub.sh");
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                if let Ok(meta) = std::fs::metadata(&path) {
-                    let mut perms = meta.permissions();
-                    perms.set_mode(perms.mode() | 0o111);
-                    let _ = std::fs::set_permissions(&path, perms);
-                }
-            }
-            path
-        }
-    }
-
-    fn set_mode(mode: &str) {
-        std::env::set_var(CLAUDE_BIN_ENV, stub_path());
-        std::env::set_var(STUB_MODE_ENV, mode);
-    }
-
-    #[test]
-    fn run_claude_success_strips_and_parses() {
-        let _g = env_lock();
-        set_mode("success");
-        let res = run_claude(Path::new("."), "prompt", Some("payload"), RunOpts::default())
-            .expect("success stub should yield Ok");
-        assert_eq!(res.text, "MERGED_BODY_OK");
-        assert_eq!(res.cost_usd, Some(0.012));
-        assert_eq!(res.session_id.as_deref(), Some("sess-abc"));
-    }
-
-    #[test]
-    fn run_claude_strips_code_fence() {
-        let _g = env_lock();
-        set_mode("success_fence");
-        let res = run_claude(Path::new("."), "prompt", Some("payload"), RunOpts::default())
-            .expect("fence stub should yield Ok");
-        assert_eq!(res.text, "MERGED_FENCED");
-    }
-
-    #[test]
-    fn run_claude_is_error_maps_to_ai_failed() {
-        let _g = env_lock();
-        set_mode("error");
-        let err = run_claude(Path::new("."), "prompt", Some("payload"), RunOpts::default())
-            .expect_err("is_error envelope should map to Err");
-        match err {
-            AppError::AiFailed(m) => assert_eq!(m, "boom"),
-            other => panic!("expected AiFailed, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn run_claude_nonzero_exit_maps_to_ai_failed() {
-        let _g = env_lock();
-        set_mode("nonzero");
-        let err = run_claude(Path::new("."), "prompt", Some("payload"), RunOpts::default())
-            .expect_err("non-zero exit should map to Err");
-        match err {
-            AppError::AiFailed(m) => assert!(
-                m.contains("something broke"),
-                "stderr should surface, got: {m}"
-            ),
-            other => panic!("expected AiFailed, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn run_claude_slow_times_out_and_reaps_child() {
-        let _g = env_lock();
-        set_mode("slow");
-        let opts = RunOpts { timeout: Duration::from_secs(1), ..RunOpts::default() };
-        let start = Instant::now();
-        let err = run_claude(Path::new("."), "prompt", Some("payload"), opts)
-            .expect_err("slow stub past the timeout should map to Err");
-        let elapsed = start.elapsed();
-        match err {
-            AppError::AiFailed(m) => {
-                assert!(m.contains("timed out"), "expected timeout message, got: {m}");
-            }
-            other => panic!("expected AiFailed, got {other:?}"),
-        }
-        // The stub sleeps ~3s; returning well before that proves we killed +
-        // reaped the child at the deadline rather than waiting it out.
-        assert!(
-            elapsed < Duration::from_millis(2500),
-            "should return near the 1s deadline, took {elapsed:?}"
-        );
-    }
-
-    #[test]
-    fn run_claude_missing_binary_maps_to_ai_unavailable() {
-        let _g = env_lock();
-        std::env::set_var(CLAUDE_BIN_ENV, "D:/nonexistent/claude-does-not-exist.exe");
-        std::env::remove_var(STUB_MODE_ENV);
-        let err = run_claude(Path::new("."), "prompt", None, RunOpts::default())
-            .expect_err("missing binary should map to Err");
-        assert!(
-            matches!(err, AppError::AiUnavailable(_)),
-            "expected AiUnavailable, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn run_claude_large_payload_round_trips_without_deadlock() {
-        let _g = env_lock();
-        set_mode("success");
-        // > 128 KiB across many short lines (drain-and-poll proof).
-        let payload = "abcdefghij\n".repeat(15_000);
-        assert!(payload.len() > 128 * 1024);
-        let res = run_claude(Path::new("."), "prompt", Some(&payload), RunOpts::default())
-            .expect("large payload should round-trip");
-        assert_eq!(res.text, "MERGED_BODY_OK");
-    }
-
-    #[test]
-    fn check_availability_version_stub_reports_installed() {
-        let _g = env_lock();
-        set_mode("version");
-        let a = check_availability();
-        assert!(a.installed);
-        assert!(a.logged_in);
-        assert_eq!(a.version.as_deref(), Some("2.1.220"));
-        assert_eq!(a.detail, "Claude Code 2.1.220 ready");
-    }
-
-    #[test]
-    fn check_availability_missing_binary_reports_not_installed() {
-        let _g = env_lock();
-        std::env::set_var(CLAUDE_BIN_ENV, "D:/nonexistent/claude-does-not-exist.exe");
-        std::env::remove_var(STUB_MODE_ENV);
-        let a = check_availability();
-        assert!(!a.installed);
-        assert!(!a.logged_in);
-        assert_eq!(a.version, None);
-        assert_eq!(a.detail, "Claude Code CLI not found on PATH");
-    }
-
-    #[test]
-    fn strip_fence_only_removes_matching_fences() {
-        // Unfenced text is returned verbatim.
-        assert_eq!(strip_fence("hello\nworld"), "hello\nworld");
-        // Fenced (with lang) -> inner only.
-        assert_eq!(strip_fence("```rust\nfn a() {}\n```"), "fn a() {}");
-        // Bare fence -> inner only.
-        assert_eq!(strip_fence("```\njust text\n```"), "just text");
-    }
-}

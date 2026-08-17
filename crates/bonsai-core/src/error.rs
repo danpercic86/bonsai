@@ -59,6 +59,11 @@ pub enum AppError {
     AiUnavailable(String),
     #[error("{0}")]
     AiFailed(String),
+    /// The user cancelled a streaming AI run via `ai_cancel_run` (P68 §B). NOT a
+    /// failure — the frontend shows no error toast, only a `cancelled` run state.
+    /// Distinct from `AiFailed` so the single catch path can tell them apart.
+    #[error("{0}")]
+    AiCancelled(String),
     /// External-tool launch failed (P49): no terminal/file-manager/editor
     /// candidate could be spawned. Carries a message naming the last program
     /// tried; the frontend adds a "set a command in Settings" hint.
@@ -118,6 +123,7 @@ impl AppError {
             AppError::UnresolvedConflicts(_) => "unresolvedConflicts",
             AppError::AiUnavailable(_) => "aiUnavailable",
             AppError::AiFailed(_) => "aiFailed",
+            AppError::AiCancelled(_) => "aiCancelled",
             AppError::ExternalToolFailed(_) => "externalToolFailed",
             AppError::HookRejected(_) => "hookRejected",
             AppError::ForgeUnsupported(_) => "forgeUnsupported",
@@ -149,6 +155,7 @@ impl AppError {
             | AppError::UnresolvedConflicts(m)
             | AppError::AiUnavailable(m)
             | AppError::AiFailed(m)
+            | AppError::AiCancelled(m)
             | AppError::ExternalToolFailed(m)
             | AppError::HookRejected(m)
             | AppError::ForgeUnsupported(m)

@@ -25,7 +25,93 @@
 #                     `success` envelope. Lets a test prove that the staged/diff
 #                     lines actually reach the CLI's stdin (payload assembly).
 
+# P68a streaming (NDJSON) modes — one `echo` per protocol line, a single
+# `read -r` per turn (never `cat >/dev/null`: the streaming session holds stdin
+# OPEN for a second turn, so draining to EOF would block forever):
+#   stream_success | stream_slow | stream_ask | stream_partial | stream_garbage
+#   | stream_bulk | stream_stderr_fail | stream_hang_stdin. stream_slow and
+#   stream_hang_stdin both TICK $BONSAI_STUB_MARKER (append one line ~every second)
+#   while they live, so a test proves the killed child left nothing behind by deleting
+#   that file after the run and finding it still absent. See claude_stub.cmd
+#   for the per-mode description (including its Windows `set /p` line-length
+#   warning); the two files must stay behaviourally identical.
+
 case "$BONSAI_STUB_MODE" in
+  stream_success)
+    IFS= read -r _turn
+    echo '{"type":"system","subtype":"init","session_id":"sess-stream","model":"sonnet","tools":["Read","Grep","Glob"]}'
+    echo '{"type":"system","subtype":"thinking_tokens","tokens":42}'
+    echo '{"type":"assistant","message":{"content":[{"type":"text","text":"MERGED_STREAM_BODY"}]}}'
+    echo '{"type":"system","subtype":"post_turn_summary","status_category":"review_ready","needs_action":false}'
+    echo '{"type":"result","subtype":"success","is_error":false,"result":"MERGED_STREAM_BODY","total_cost_usd":0.0238,"session_id":"sess-stream"}'
+    exit 0
+    ;;
+  stream_slow)
+    IFS= read -r _turn
+    echo '{"type":"system","subtype":"init","session_id":"sess-slow","model":"sonnet","tools":[]}'
+    # ~3 s of stdout silence, TICKING the marker about once a second while alive
+    # (see the header): a one-shot write after the sleep made the "nothing survived"
+    # assertion race the kill path under load.
+    t=0
+    while [ "$t" -lt 3 ]; do
+      sleep 1
+      if [ -n "$BONSAI_STUB_MARKER" ]; then echo tick >> "$BONSAI_STUB_MARKER"; fi
+      t=$((t + 1))
+    done
+    echo '{"type":"result","subtype":"success","is_error":false,"result":"LATE_BODY","total_cost_usd":0.01,"session_id":"sess-slow"}'
+    exit 0
+    ;;
+  stream_stderr_fail)
+    # No stdout at all, no stdin read: the ONLY diagnosis is this stderr line
+    # (P68a review S1 — it must survive the stdout-EOF/stderr race).
+    echo 'STUB_USAGE_ERROR: unknown option --verbose' 1>&2
+    exit 2
+    ;;
+  stream_hang_stdin)
+    # Never reads stdin, so a payload larger than the pipe buffer leaves the
+    # session's write blocked (P68a review S2), and ticks the marker once a second so
+    # the cancel test can assert directly that nothing survived. THIS SHELL must stay
+    # the direct child (no `exec sleep`, unlike before): it is what writes the ticks,
+    # and it is what kill_child_tree kills on POSIX. It holds the unread stdin the
+    # whole time, so the session's write stays blocked; the 1 s `sleep` grandchild
+    # that briefly outlives the kill releases the pipe within a tick.
+    echo '{"type":"system","subtype":"init","session_id":"sess-hang","model":"sonnet","tools":[]}'
+    t=0
+    while [ "$t" -lt 20 ]; do
+      sleep 1
+      if [ -n "$BONSAI_STUB_MARKER" ]; then echo tick >> "$BONSAI_STUB_MARKER"; fi
+      t=$((t + 1))
+    done
+    exit 0
+    ;;
+  stream_ask)
+    IFS= read -r _turn
+    echo '{"type":"system","subtype":"init","session_id":"sess-ask","model":"sonnet","tools":["Read"]}'
+    echo '{"type":"result","subtype":"success","is_error":false,"result":"BONSAI_NEEDS_INPUT: which locale wins?","total_cost_usd":0.0238,"session_id":"sess-ask"}'
+    IFS= read -r _reply
+    echo '{"type":"assistant","message":{"content":[{"type":"text","text":"ANSWERED_BODY"}]}}'
+    echo '{"type":"result","subtype":"success","is_error":false,"result":"ANSWERED_BODY","total_cost_usd":0.0263,"session_id":"sess-ask"}'
+    exit 0
+    ;;
+  stream_partial)
+    IFS= read -r _turn
+    echo '{"type":"system","subtype":"init","session_id":"sess-partial","model":"sonnet","tools":[]}'
+    echo '{"type":"assistant","message":{"content":[{"type":"text","text":"HALF_A_BODY"}]}}'
+    exit 0
+    ;;
+  stream_garbage)
+    IFS= read -r _turn
+    echo 'this is not json at all'
+    echo '{"type":"brand_new_event","payload":"ignored"}'
+    echo '{"type":"result","subtype":"success","is_error":false,"result":"GARBAGE_TOLERATED","total_cost_usd":0.001,"session_id":"sess-garbage"}'
+    exit 0
+    ;;
+  stream_bulk)
+    IFS= read -r _turn
+    echo '{"type":"system","subtype":"init","session_id":"sess-bulk","model":"sonnet","tools":["Read"]}'
+    echo '{"type":"result","subtype":"success","is_error":false,"result":"===== BONSAI RESULT: a/one.json =====\nONE_BODY\n===== BONSAI RESULT: b/two.json =====\nTWO_BODY","total_cost_usd":0.03,"session_id":"sess-bulk"}'
+    exit 0
+    ;;
   dump_stdin)
     cat > "$BONSAI_STUB_STDIN_DUMP"
     echo '{"result":"MERGED_BODY_OK","is_error":false,"total_cost_usd":0.012,"session_id":"sess-abc","type":"result"}'

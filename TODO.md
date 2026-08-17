@@ -362,7 +362,62 @@ dashed guideline's geometry is proven arithmetically + via the `window.__bonsai.
 has SEEN it. Line visibility while scrolling, absence of dash crawl, halo termination, marker
 direction, and whether compact is readable on the user's display are all native-only.
 
-### P68 — streaming/interactive/bulk AI conflict resolution — **PENDING** (after P67)
+### P68 — streaming/interactive/bulk AI conflict resolution — **IN PROGRESS**
+Contract: `docs/contracts/P68-ai-conflict-streaming.md` (+ `P68-user-checklist.md`), invariants D1–D15,
+ambiguities A1–A12 pre-resolved. **+3 cmd: 157 → 160** (all three land in P68b; P68a adds none).
+
+**ADDITIONAL LOCKED DECISIONS (asked + answered 2026-08-17):**
+- **Spend cap = NONE by default**, configurable in Settings (`ai_max_budget_usd` default `0.0` = no
+  cap). Consistent with the no-hard-timeout decision; live cost shows in the dock so a runaway is
+  visible immediately rather than silent. `--max-budget-usd` is only passed when the setting is > 0.
+- **Bulk + `autoResolve` = STAGE the marker-free files** from the single run; any file still carrying
+  conflict markers falls back to review (`hasUnresolvedMarkers` gate). This is the first place Bonsai
+  stages several files from one AI call — nothing is committed, and every change stays visible and
+  revertible in the diff.
+
+**Orchestrator-settled OQs (routine; recorded so they are not re-litigated):**
+- OQ1 concurrency cap = **3** (`AI_MAX_CONCURRENT_RUNS`). 1 would re-create the reported
+  "every AI button disabled" bug; unbounded invites a rate-limit wall.
+- OQ4 = **both** "Resolve all with AI" entry points (conflicts header + merge banner).
+- OQ5 = dock adoption by the other six AI runners stays **deferred** past P68e (props are generic over
+  run key so they can adopt it later without rework).
+- A1 (architect): `ai_resolve_conflict_stream(repo_id, **paths: Vec<String>**, on_event)` returning
+  `AiResolveBatch` — a single-path call is just `paths.len() == 1`. This keeps bulk split/attribution
+  in Rust (D1) AND holds the command count at +3 (a separate bulk command would have been a 4th).
+
+- **P68a** ✅ **DONE** (AI gate passed; awaiting review verdict at time of writing) — `ai/stream.rs`
+  (490), `ai/session.rs` (498), `ai/registry.rs` (185), `RunLimits`/`ToolPolicy`/`run_claude_streaming`
+  + extracted `parse_result_envelope` + `kill_pid_tree` in `mod.rs` (640→638, test module moved to
+  `ai/tests.rs`), `AppError::AiCancelled`, 6 NDJSON stub modes in `claude_stub.{cmd,sh}`.
+  Gate: `bonsai-core --lib` **712/0/1-ignored** (baseline 673+1-flake+1-ignored → +38, **flake gone**),
+  `ai::` 55/0, `bonsai --lib` 222/0, clippy -D clean, cmd **157 (+0)**, no new deps, `src/` untouched.
+  ↳ **The pre-existing flake is FIXED**: `run_claude_slow_times_out_and_reaps_child`'s
+    `elapsed < 2500ms` wall-clock assertion became a monotonic lower bound (`>= 1s`) + a generous
+    upper bound (`< 30s`), so it no longer fails under parallel load.
+  ↳ **DEADLOCK HAZARD FOUND AND AVOIDED (carry into P68b):** the contract's §3.3 pseudocode wrote the
+    payload to stdin BEFORE spawning the reader threads. Writing ≥64 KB inline while nothing drains
+    stdout blocks on the pipe buffer forever — a live hazard for P68b's ~400 KB bulk payload. Reader
+    threads are now spawned FIRST. Do not "restore" the contract's ordering.
+  ↳ **CONTRACT RE-SYNCED after review** (`P68-ai-conflict-streaming.md`, superseded-markers, nothing
+    deleted): it still documented the write-before-readers ordering and a `ClaudeSession` owning
+    `stdin` — i.e. **both bugs that were just fixed** — so a fresh session would have faithfully
+    reimplemented them. New invariant **D16: the session loop thread NEVER blocks on I/O**, with the
+    *exactly one `WriteTx`* corollary (created once, never cloned → "drop the last" == "drop the only
+    one"; that drop IS the child's EOF) and all four drop sites. §2a file table, §3.1–§3.4, §4.x,
+    §6.3, §8.x, §10.1, §12 (A13) all amended.
+  ↳ **OQ6 SETTLED (orchestrator, 2026-08-17): P68b adds a small Rust echo-helper binary** used via
+    `BONSAI_CLAUDE_BIN`, rather than accepting "bulk payload + mid-run question" as
+    USER-CHECKPOINT-only (the architect's cheaper recommendation). Reasoning: that exact combination
+    — a large payload plus an interactive turn — is where BOTH serious P68a defects lived (the
+    pipe-buffer deadlock and the unkillable-run window), the `.cmd` stub provably cannot reach it
+    (`set /p` ~1 KB ceiling + residue eaten by the next read), and asking a human to reproduce a
+    multi-file conflict with a mid-run question on demand is neither reliable nor repeatable. A tiny
+    Rust helper is cross-platform by construction, with no `.cmd`/`.sh` twin-divergence risk.
+  ↳ Contract gaps closed conservatively (see the agent's A-list): `StreamLogItem.assistant_text: bool`
+    added because `{ text }` alone cannot separate assistant prose from `⚙ tool(...)`/system/stderr
+    decoration as D2/A5 require (partial deltas deliberately do NOT set it, to avoid double-counting);
+    a closed reply channel while awaiting input fails loudly instead of hanging forever (the watchdog
+    is paused by D3, so it would never be reaped); `assistant` with no `content` → `Log(vec![])`.
 Contract to write: `docs/contracts/P68-ai-conflict-streaming.md` (+ `P68-user-checklist.md`).
 **+3 commands: 157 → 160** (`ai_resolve_conflict_stream` = Channel, `ai_cancel_run`, `ai_reply_run`
 — RECOUNT `generate_handler!` at impl). Existing `ai_resolve_conflict` stays registered/unchanged,
