@@ -128,7 +128,12 @@ case "$BONSAI_STUB_MODE" in
   stream_bulk)
     IFS= read -r _turn
     echo '{"type":"system","subtype":"init","session_id":"sess-bulk","model":"sonnet","tools":["Read"]}'
-    echo '{"type":"result","subtype":"success","is_error":false,"result":"===== BONSAI RESULT: a/one.json =====\nONE_BODY\n===== BONSAI RESULT: b/two.json =====\nTWO_BODY","total_cost_usd":0.03,"session_id":"sess-bulk"}'
+    # printf, NOT echo: POSIX sh (dash on Ubuntu, bash-as-sh on macOS) expands
+    # `\n` inside `echo` into a real newline by default, splitting this single
+    # NDJSON line in two and corrupting the JSON (see the other printf'd modes
+    # above for the same reason). The literal `\n` here must reach the parser
+    # verbatim as a JSON string escape, not become a shell-level newline.
+    printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"===== BONSAI RESULT: a/one.json =====\nONE_BODY\n===== BONSAI RESULT: b/two.json =====\nTWO_BODY","total_cost_usd":0.03,"session_id":"sess-bulk"}'
     exit 0
     ;;
   dump_stdin)
