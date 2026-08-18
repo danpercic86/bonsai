@@ -259,7 +259,7 @@ test.describe('17 AI activity dock', () => {
     expect(compact?.ctlH).toBe('24px');
   });
 
-  test('Ctrl+Shift+A reaches the dock even from the commit message box', async ({ page }) => {
+  test('Mod+Shift+A reaches the dock even from the commit message box', async ({ page }) => {
     await startRun(page, { aiAsk: '1' });
     const reply = page.getByRole('textbox', { name: 'Your answer to Claude' });
     await expect(reply).toBeVisible();

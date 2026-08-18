@@ -1,11 +1,11 @@
 /**
- * T4 spec 09 — commit search bar, Ctrl/Cmd-K command palette, sidebar list
+ * T4 spec 09 — commit search bar, Mod-K command palette, sidebar list
  * filtering (contract §5.09) @smoke. Search live-runs on cheap fields and
  * auto-reveals the first match; the palette dispatches pre-bound handlers
  * (options run on click / Enter on the highlighted row).
  */
 import { test, expect } from './fixtures';
-import { graphScrollHeight, openPalette, openRepo } from './helpers';
+import { expectedShortcutLabel, graphScrollHeight, openPalette, openRepo } from './helpers';
 import type { Page } from '@playwright/test';
 
 /** Two consecutive identical scroll extents = the P65 graph stream has finished. */
@@ -63,6 +63,15 @@ test.describe('09 search & palette @smoke', () => {
     const dialog = await openPalette(page);
     // Empty query → full registry; the highlight starts on the first enabled row.
     const selected = dialog.getByRole('option', { selected: true });
+    // The row hint is an INLINE one-string label ('Ctrl+Shift+F' / '⌘⇧F') —
+    // derived from the app's own renderer so it holds on every platform.
+    await expect(
+      dialog
+        .getByRole('option')
+        .filter({ hasText: 'Fetch' })
+        .first()
+        .locator('.command-palette-option-hint'),
+    ).toHaveText(expectedShortcutLabel('Mod+Shift+F'));
     const first = await selected.textContent();
     await page.keyboard.press('ArrowDown');
     await expect(selected).not.toHaveText(first ?? '');

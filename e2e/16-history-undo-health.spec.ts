@@ -94,7 +94,7 @@ test.describe('16 history, undo, health', () => {
     await palette.getByRole('option', { name: /^Refresh/ }).click();
     await expect(palette).toBeHidden();
     // Refresh is silent on success; the console-error gate + live canvas are
-    // the assertion (matches spec 13's Ctrl+R case).
+    // the assertion (matches spec 13's Mod+R case).
     await expect(graphCanvas(page)).toBeVisible();
     await expect(page.getByTestId('status-panel').getByText(/Staged \(/)).toBeVisible();
   });
