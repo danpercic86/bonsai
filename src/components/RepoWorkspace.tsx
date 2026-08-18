@@ -75,6 +75,7 @@ import { useBranchActions } from './repoWorkspace/useBranchActions';
 import { useAiRuns } from './repoWorkspace/useAiRuns';
 import { AiActivityPanel } from './AiActivityPanel';
 import { useAiDock } from './repoWorkspace/useAiDock';
+import { useBulkAiResolve } from './repoWorkspace/useBulkAiResolve';
 import { useMergeActions } from './repoWorkspace/useMergeActions';
 import { useStashActions } from './repoWorkspace/useStashActions';
 import { useSubmoduleActions } from './repoWorkspace/useSubmoduleActions';
@@ -1567,11 +1568,7 @@ export function RepoWorkspace({
     runWithHookGate: hookGate.runWithHookGate,
   });
 
-  // P68d §C: the per-path AI run store — THE item-5 fix. It replaces the single
-  // `aiResolvingPath` scalar (which disabled every conflict row during any run) and
-  // the single `diffSlot`-behind-`fileDiffReqId` result sink (which silently threw
-  // away a finished proposal when the user opened another file). Proposals live here;
-  // opening the review editor is the separate, explicit `openAiProposal`.
+  // P68d §C: the per-path AI run store — THE item-5 fix (rationale in the hook's header).
   const conflictPaths = useMemo(() => conflicts.map((c) => c.path), [conflicts]);
   const aiRuns = useAiRuns({
     repoId,
@@ -1579,12 +1576,16 @@ export function RepoWorkspace({
     aiConflictAutonomy,
     aiEligible,
     applyResolution: handleResolveConflictText,
+    refreshAll, // P68f: ONE refresh after a multi-file autoResolve stage, not N.
     openAiProposal,
     conflictPaths,
     // FOLD-IN 1: never steal the center pane from a user who navigated away while
     // the run worked (the rationale lives on `AiRunsDeps.diffSlotKey`).
     diffSlotKey: () => diffSlotRef.current?.key ?? null,
   });
+
+  // P68f §6.4: "Resolve all with AI" — ONE run over every AI-eligible conflict, confirm-gated.
+  const aiBulk = useBulkAiResolve({ conflicts, aiEligible, aiConflictAutonomy, aiRuns });
 
   const { handleCreateStash, handleApplyStash, handlePopStash, handleDropStash } = useStashActions({
     repoId,
@@ -2810,6 +2811,7 @@ export function RepoWorkspace({
           diffSlot={diffSlot}
           aiRows={aiRuns.rowStates}
           aiAtCapacity={aiRuns.atCapacity}
+          aiBulk={aiBulk.control}
           aiPanelLoading={aiPanel?.loading === true}
           onStage={(paths) => void handleStage(paths)}
           onUnstage={(paths) => void handleUnstage(paths)}
@@ -2819,10 +2821,7 @@ export function RepoWorkspace({
           onResolveConflict={(path, r) => void handleResolveConflict(path, r)}
           onToggleConflictView={handleToggleConflictView}
           onAiResolve={(path) => aiRuns.startConflictRun(path)}
-          onAiReview={(path) => {
-            const run = aiRuns.runForPath(path);
-            if (run !== null) aiRuns.reviewProposal(run.key, path);
-          }}
+          onAiReview={aiDock.reviewForPath}
           onAiReveal={aiDock.revealForPath}
           onBlame={(path) => void handleBlame(path)}
           onFileHistory={(path) => void handleFileHistory(path)}
@@ -2847,8 +2846,8 @@ export function RepoWorkspace({
         />
       </div>
 
-      {/* P68e: `.workspace-host`'s THIRD child (toolbar → .panes → dock), full
-          width on purpose; renders null until the first run exists. */}
+      {/* P68e: `.workspace-host`'s THIRD child (toolbar → .panes → dock), full width on
+          purpose; renders null until the first run exists. */}
       <AiActivityPanel {...aiDock.panelProps} />
 
       <WorkspaceDialogs
@@ -2962,6 +2961,7 @@ export function RepoWorkspace({
         }
         menu={menu}
         closeMenu={closeMenu}
+        bulkAiConfirm={aiBulk.confirm}
       />
       <CherrypickMessageDialog
         open={pendingCherrypick !== null}

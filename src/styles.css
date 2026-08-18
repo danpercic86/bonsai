@@ -2476,6 +2476,24 @@ body {
   color: var(--danger, #e5534b);
 }
 
+/* P68f: "Resolve all with AI" in the conflicts header. It is a LOAD-BEARING action
+   (one AI run over every conflict), not an incidental one, so it does not inherit
+   `.section-action`'s `--text-3` — that measures 2.96:1 on light, below AA for text
+   (P68e U9). While the run is live the same button reads `Cancel all` and takes the
+   danger hue, matching the dock's own Cancel. */
+.section-action-ai-bulk {
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+.section-action-ai-bulk:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.section-action-ai-bulk[data-state='cancel'] {
+  color: var(--danger, #e5534b);
+}
+
 /* Hover-revealed row buttons (M3 §4.2): invisible until the row is hovered or
    the button itself is keyboard-focused. */
 .row-action {

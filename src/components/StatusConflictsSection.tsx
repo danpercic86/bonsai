@@ -8,8 +8,10 @@
  *  thing that disables an idle row is the concurrency cap. */
 import { useMemo } from 'react';
 import type { ConflictEntry, ConflictKind, ConflictResolution, StatusEntry } from '../ipc';
+import { BulkAiResolveButton } from './BulkAiResolveButton';
 import type { DiffSlot } from './DiffView';
 import type { AiRowState } from './repoWorkspace/useAiRuns';
+import { isAiResolvableKind, type BulkAiControl } from './repoWorkspace/useBulkAiResolve';
 import { BADGES, splitPath } from './StatusFileRow';
 
 // P3c §8.2: lowercase spaced text of ConflictKind for the per-row badge.
@@ -93,8 +95,10 @@ function ConflictRow({
 }) {
   const { dir, name } = splitPath(entry.path);
   // P13 §8.2: AI only makes sense for the two text-mergeable kinds (matches the
-  // ConflictEditor mount guard); hidden for deletion/add/binary kinds.
-  const aiShown = kind === 'bothModified' || kind === 'bothAdded';
+  // ConflictEditor mount guard); hidden for deletion/add/binary kinds. The predicate is
+  // SHARED with the bulk button (P68f) — a row and "Resolve all with AI" must offer AI
+  // for exactly the same set of files, so there is only one place to change it.
+  const aiShown = isAiResolvableKind(kind);
   const status = aiRow?.status;
   const live = status === 'running' || status === 'awaitingInput';
   const view = aiButtonView(entry.path, aiRow, aiEligible);
@@ -180,6 +184,7 @@ export function StatusConflictsSection({
   aiEligible,
   aiRows,
   aiAtCapacity,
+  aiBulk,
   onResolveConflict,
   onToggleConflictView,
   onAiResolve,
@@ -196,6 +201,10 @@ export function StatusConflictsSection({
   aiRows: Record<string, AiRowState>;
   /** P68d/OQ1: at the concurrency cap — no NEW run may start. */
   aiAtCapacity: boolean;
+  /** P68f: the "Resolve all with AI" / "Cancel all" control for the section header.
+   *  Absent (or `shown: false`) ⇒ no header button, which is the case for fewer than
+   *  two AI-eligible conflicts. */
+  aiBulk?: BulkAiControl;
   onResolveConflict: (path: string, r: ConflictResolution) => void;
   onToggleConflictView: (path: string) => void;
   onAiResolve: (path: string) => void;
@@ -212,6 +221,11 @@ export function StatusConflictsSection({
     <section className="status-section">
       <div className="section-header section-label section-label-danger">
         <span>Conflicts ({entries.length})</span>
+        {/* P68f: one run for ALL eligible conflicts. Only rendered with ≥2 of them —
+            a single one already has its row button. */}
+        {aiBulk !== undefined && (
+          <BulkAiResolveButton control={aiBulk} variant="section" busy={disabled} />
+        )}
       </div>
       <ul className="file-list">
         {entries.map((entry) => (

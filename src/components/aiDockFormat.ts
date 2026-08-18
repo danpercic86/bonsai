@@ -33,6 +33,14 @@ export interface AiActivityFile {
   status: 'pending' | 'ready' | 'failed';
   /** Rendered as the queue row's `reason` column. */
   error: string | null;
+  /**
+   * P68f — is there a body to look at, INDEPENDENT of `status`? A `failed` file can
+   * still carry one: under `autoResolve` the markerful safety gate demotes every
+   * marker-carrying body to `failed`, and bulk only auto-opens `markerful[0]`, so files
+   * 2..N of a bulk run have a real draft the user paid for and no other way to reach it.
+   * The queue row offers `Review` whenever this is true (`Retry` stays alongside).
+   */
+  hasProposal: boolean;
 }
 
 /**

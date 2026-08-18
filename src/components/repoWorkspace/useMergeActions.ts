@@ -91,17 +91,27 @@ export function useMergeActions(
   // The single WRITER for a resolved body (D4), which is why the AI store routes
   // `autoResolve` through it rather than calling `resolveConflictText` itself.
   // `successMessage` lets that caller keep the P13 copy ("Resolved <path> with AI —
-  // review the staged result") instead of adding a second toast.
+  // review the staged result") instead of adding a second toast; `null` suppresses the
+  // success toast entirely, which is how a bulk AI stage replaces N per-file toasts
+  // with one summary (errors still toast — a failure is always per-file news).
+  //
+  // P68f: `deferRefresh` skips the `refreshAll()` so a caller staging SEVERAL files
+  // can do ONE refresh after the loop. Before that flag, an N-file bulk `autoResolve`
+  // ran N full refreshes (status + graph + branches …) back to back — a P68d nit that
+  // only became visible once bulk existed.
   async function handleResolveConflictText(
     path: string,
     content: string,
-    successMessage?: string,
+    successMessage?: string | null,
+    deferRefresh = false,
   ): Promise<void> {
     setMutating(true);
     try {
       await ipc.resolveConflictText(repoId, path, content);
-      await refreshAll();
-      pushToast('success', successMessage ?? `Staged resolution for ${path}`);
+      if (!deferRefresh) await refreshAll();
+      if (successMessage !== null) {
+        pushToast('success', successMessage ?? `Staged resolution for ${path}`);
+      }
     } catch (e) {
       pushToast('error', errorMessage(e));
       throw e;

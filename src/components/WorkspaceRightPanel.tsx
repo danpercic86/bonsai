@@ -88,6 +88,9 @@ export interface WorkspaceRightPanelProps {
   diffSlot: StatusPanelProps['diffSlot'];
   aiRows: StatusPanelProps['aiRows'];
   aiAtCapacity: StatusPanelProps['aiAtCapacity'];
+  /** P68f: ONE control, rendered by BOTH entry points — the conflicts-section header
+   *  and the merge banner (OQ4). Same object ⇒ they can never disagree. */
+  aiBulk?: StatusPanelProps['aiBulk'];
   aiPanelLoading: boolean;
   onStage: StatusPanelProps['onStage'];
   onUnstage: StatusPanelProps['onUnstage'];
@@ -173,6 +176,7 @@ export function WorkspaceRightPanel({
   diffSlot,
   aiRows,
   aiAtCapacity,
+  aiBulk,
   aiPanelLoading,
   onStage,
   onUnstage,
@@ -245,6 +249,7 @@ export function WorkspaceRightPanel({
         onBisectMark={onBisectMark}
         onBisectSkip={onBisectSkip}
         bisectSummaries={bisectSummaries}
+        aiBulk={aiBulk}
       />
       {compare !== null ? (
         <ComparePanel
@@ -291,6 +296,7 @@ export function WorkspaceRightPanel({
             aiEligible={aiEligible}
             aiRows={aiRows}
             aiAtCapacity={aiAtCapacity}
+            aiBulk={aiBulk}
             aiAnalyzing={aiPanelLoading}
             onStage={onStage}
             onUnstage={onUnstage}

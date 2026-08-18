@@ -1722,6 +1722,31 @@ eligible conflicts and `aiEligible`; it starts **exactly one** `aiResolveConflic
 never included. (3) Harness: `?aiFail` bulk over 3 files ⇒ 2 rows `✓ review`, 1 row `⚠`, the dock's
 `AiRunQueue` matching.
 
+> **AMENDED by P68f implementation (2026-08-18) — three deliberate deviations, to fold into the
+> P68g doc pass.**
+>
+> 1. **§5.4 "shown when `aiEligible`" → shown-and-DISABLED with an explanatory title.** Hiding the
+>    header button when AI is off would make the affordance vanish rather than explain itself; the
+>    per-row ✨AI button already renders disabled with `Enable AI features in Settings to use this`,
+>    so this is genuine parity with the row button *and* the better behaviour. The gate that matters
+>    (no run can start) is unchanged.
+> 2. **§6.4 "disabled while `mutating`" → cancel is EXEMPTED.** A background refresh or any other
+>    mutation must never trap a live AI run: the host section ORs its own `busy` into the *Resolve*
+>    arm only, so `Cancel all` stays clickable for as long as the run lives.
+> 3. **§9-P68f (3)'s 3-file harness case shipped as 2 files, plus unit cases.** The property that
+>    clause protects is per-file independence (one bad file never costs another its result), and the
+>    1-ready + 1-failed e2e case proves it; a third `bothModified` fixture would re-churn the five
+>    fixture-count assertions P68d already churned once. The multi-file properties are asserted at
+>    the unit layer instead (`useAiRuns.routing.test.tsx`): 2 markerful + 1 clean opens the centre
+>    pane **exactly once**, and an all-markerful bulk stages nothing, refreshes nothing and
+>    summarises nothing.
+>
+> **Also landed (post-review SHOULD-FIX):** `AiRunQueue` offers **Review** on a `failed` row that
+> kept a `proposal` (`AiActivityFile.hasProposal`), not just on `ready`. Under `autoResolve` the
+> markerful gate demotes every marker-carrying body to `failed` and bulk auto-opens only
+> `markerful[0]`, so files 2..N held a paid-for draft with no reachable button — which also made
+> `BulkAiConfirmDialog`'s "is opened for review instead" false. `Retry` still renders alongside.
+
 ### P68g — Settings UI + docs
 Scope: new `SettingsAiRunSection.tsx` used from `SettingsPanel.tsx` after the autonomy fieldset
 (L367); `SettingsPanel.test.tsx` extension; this contract + `P68-user-checklist.md`; the `TODO.md`

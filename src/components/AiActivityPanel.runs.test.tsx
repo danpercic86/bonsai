@@ -26,9 +26,9 @@ describe('bulk runs and proposal discoverability (§5.1)', () => {
     status: 'ready',
     paths: ['a.json', 'b.json', 'c.json'],
     files: [
-      { path: 'a.json', status: 'ready', error: null },
-      { path: 'b.json', status: 'pending', error: null },
-      { path: 'c.json', status: 'failed', error: 'no result block returned' },
+      { path: 'a.json', status: 'ready', error: null, hasProposal: true },
+      { path: 'b.json', status: 'pending', error: null, hasProposal: false },
+      { path: 'c.json', status: 'failed', error: 'no result block returned', hasProposal: false },
     ],
   });
 
@@ -46,6 +46,52 @@ describe('bulk runs and proposal discoverability (§5.1)', () => {
     expect(screen.queryByRole('button', { name: /for b\.json/ })).toBeNull();
     const reason = screen.getByText('no result block returned');
     expect(reason).toHaveAttribute('title', 'no result block returned');
+  });
+
+  /**
+   * P68f — THE PAID-FOR DRAFT. Under `autoResolve` the markerful safety gate demotes
+   * every marker-carrying body to `failed`, and a bulk run auto-opens only
+   * `markerful[0]` (at most one pane steal). Files 2..N therefore hold a real draft the
+   * user already paid for, and `Retry`-only would make the only route to it "pay again"
+   * — while `BulkAiConfirmDialog` promises that markerful output "is opened for review
+   * instead". So `Review` follows the PROPOSAL, not the status.
+   */
+  it('a failed row offers Review when it kept a proposal, and not when it did not', () => {
+    const { p } = mount({
+      runs: [
+        run({
+          key: 'bulk:1',
+          label: '2 conflicts',
+          status: 'ready',
+          paths: ['m1.json', 'm2.json'],
+          files: [
+            {
+              path: 'm1.json',
+              status: 'failed',
+              error: 'AI left unresolved markers in m1.json',
+              hasProposal: true,
+            },
+            {
+              path: 'm2.json',
+              status: 'failed',
+              error: 'no result block returned',
+              hasProposal: false,
+            },
+          ],
+        }),
+      ],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Review AI proposal for m1.json' }));
+    expect(p.onReviewFile).toHaveBeenCalledWith('bulk:1', 'm1.json');
+    // Retry stays alongside — a bad draft is still one click from a fresh attempt.
+    expect(
+      screen.getByRole('button', { name: 'Retry AI resolution for m1.json' }),
+    ).toBeInTheDocument();
+    // No body ⇒ nothing to offer; Retry is the only honest action.
+    expect(screen.queryByRole('button', { name: 'Review AI proposal for m2.json' })).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Retry AI resolution for m2.json' }),
+    ).toBeInTheDocument();
   });
 
   it('a single ready run gets the header Review proposal button; a bulk run does not', () => {

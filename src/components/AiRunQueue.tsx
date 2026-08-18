@@ -50,12 +50,22 @@ export function AiRunQueue({ files, onReviewFile, onRetryFile }: AiRunQueueProps
                 {file.error}
               </span>
             )}
-            {file.status === 'ready' && (
+            {/* P68f: `Review` follows the PROPOSAL, not the status. A `failed` row keeps
+                its body when the markerful gate demoted it (and bulk auto-opens only the
+                first such file), so without this the user pays for a draft that has no
+                reachable button — while the confirm dialog promises it is "opened for
+                review". Retry still renders below, so a bad draft is one click from a
+                fresh attempt. */}
+            {(file.status === 'ready' || (file.status === 'failed' && file.hasProposal)) && (
               <button
                 type="button"
                 className="btn-secondary ai-run-queue-action"
                 aria-label={`Review AI proposal for ${file.path}`}
-                title="Open the proposal in the center pane"
+                title={
+                  file.status === 'failed'
+                    ? 'Open what Claude produced in the center pane — nothing is staged'
+                    : 'Open the proposal in the center pane'
+                }
                 onClick={() => onReviewFile(file.path)}
               >
                 Review

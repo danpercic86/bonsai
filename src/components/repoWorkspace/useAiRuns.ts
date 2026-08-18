@@ -96,8 +96,18 @@ export interface AiRunsDeps {
   aiEligible: boolean;
   /** = `handleResolveConflictText` — the ONLY writer (D4). The third argument
    *  overrides its success toast so the AI path keeps its own P13 copy instead of
-   *  double-toasting. */
-  applyResolution: (path: string, text: string, successMessage?: string) => Promise<void>;
+   *  double-toasting (`null` = stay silent, used for a bulk stage that summarises
+   *  once); the fourth defers the `refreshAll` to the caller (P68f — one refresh for
+   *  the whole batch, not one per file). */
+  applyResolution: (
+    path: string,
+    text: string,
+    successMessage?: string | null,
+    deferRefresh?: boolean,
+  ) => Promise<void>;
+  /** P68f: refresh status/graph ONCE after a multi-file stage. `applyResolution` used
+   *  to refresh per file, so an N-file bulk `autoResolve` did N full refreshes. */
+  refreshAll: () => Promise<void>;
   /** = `useMergeActions.openAiProposal` — opens the center-pane review editor. */
   openAiProposal: (path: string, proposedText: string) => Promise<void>;
   /** Currently conflicted paths: a terminal run whose paths are all resolved is
@@ -286,17 +296,32 @@ export function useAiRuns(deps: AiRunsDeps): AiRunsApi {
         if (f.error !== null) d.pushToast('error', f.error);
       }
 
-      if (autonomy === 'autoResolve') {
+      if (autonomy === 'autoResolve' && out.stageable.length > 0) {
+        // P68f: stage every marker-free file, then refresh ONCE. Anything markerful was
+        // already demoted to `failed` by `settleBatch` above, so it cannot get here —
+        // that is the safety gate, and it runs BEFORE `stageable` is computed.
+        const many = out.stageable.length > 1;
+        let staged = 0;
         for (const f of out.stageable) {
           try {
             await d.applyResolution(
               f.path,
               f.proposal ?? '',
-              `Resolved ${f.path} with AI — review the staged result`,
+              // Bulk: stay silent per file and summarise once, instead of N toasts.
+              many ? null : `Resolved ${f.path} with AI — review the staged result`,
+              true,
             );
+            staged += 1;
           } catch {
             // applyResolution already toasted; keep going for the other files.
           }
+        }
+        await d.refreshAll();
+        if (many && staged > 0) {
+          d.pushToast(
+            'success',
+            `Resolved ${staged} file${staged === 1 ? '' : 's'} with AI — review the staged results`,
+          );
         }
       }
 
@@ -327,7 +352,10 @@ export function useAiRuns(deps: AiRunsDeps): AiRunsApi {
       }
       // The markerful fallback under `autoResolve` opens UNCONDITIONALLY: its row
       // shows `⚠` (retry), so this open is the only path to that body, and the whole
-      // point is that the user must see what the model actually produced.
+      // point is that the user must see what the model actually produced. Under BULK
+      // (P68f) several files can be markerful at once; only `markerful[0]` is opened,
+      // so N finishing files still take the centre pane AT MOST ONCE — the rest are
+      // reachable from their queue rows and each already got its own error toast.
       //
       // P68e M1: record that the pane really was taken, BEFORE the await, so the dock
       // renders `Proposal is open in the center pane.` only in this branch — the

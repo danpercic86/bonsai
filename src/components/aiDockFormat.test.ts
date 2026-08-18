@@ -178,9 +178,9 @@ describe('announceFor (§11)', () => {
     const bulk = run({
       status: 'ready',
       files: [
-        { path: 'a.ts', status: 'ready', error: null },
-        { path: 'b.ts', status: 'ready', error: null },
-        { path: 'c.ts', status: 'failed', error: 'no result' },
+        { path: 'a.ts', status: 'ready', error: null, hasProposal: true },
+        { path: 'b.ts', status: 'ready', error: null, hasProposal: true },
+        { path: 'c.ts', status: 'failed', error: 'no result', hasProposal: false },
       ],
     });
     expect(announceFor([bulk], seen)).toBe('AI proposals ready for 2 of 3 files');

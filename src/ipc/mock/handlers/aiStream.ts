@@ -241,8 +241,15 @@ export const aiStreamHandlers = {
 
       ev.emit('turnEnd', { costUsd: COST_LAST_TURN });
 
+      // P68f: under BULK, `?aiMarkers` spoils only the LAST eligible path, so the
+      // MIXED outcome the user's locked decision describes is reachable — the
+      // marker-free files stage, the markerful one falls back to review and nothing
+      // markerful is ever presented as clean. Spoiling all of them would only ever
+      // exercise "everything failed". A single-path run is unchanged (verbatim body).
+      const markerful = AI_MARKERS ? (eligible[eligible.length - 1] ?? null) : null;
       const proposals: AiResolveProposal[] = eligible.map((path) => {
         const file = state.conflictTexts.get(path);
+        const keepMarkers = AI_MARKERS && (eligible.length === 1 || path === markerful);
         return {
           path,
           // Derived from the marker fixture; state is NOT mutated (D4).
@@ -250,7 +257,7 @@ export const aiStreamHandlers = {
           // real single-path stream does with a model that failed to merge — so the
           // frontend's `hasUnresolvedMarkers` gate can be proven, not assumed.
           proposedText:
-            file === undefined ? '' : AI_MARKERS ? file.text : stripConflictMarkers(file.text),
+            file === undefined ? '' : keepMarkers ? file.text : stripConflictMarkers(file.text),
           // Per-file cost is unknowable: one run covered them all.
           costUsd: null,
         };

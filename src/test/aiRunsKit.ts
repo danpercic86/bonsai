@@ -37,6 +37,9 @@ export function makeDeps(over: Partial<AiRunsDeps> = {}): AiRunsDeps {
     aiConflictAutonomy: 'proposeReview',
     aiEligible: true,
     applyResolution: vi.fn(async () => {}),
+    // P68f: the store batches the staging refresh itself, so this is called ONCE per
+    // settle that stages anything — never once per file.
+    refreshAll: vi.fn(async () => {}),
     openAiProposal: vi.fn(async () => {}),
     conflictPaths: ['a.ts', 'b.ts'],
     ...over,

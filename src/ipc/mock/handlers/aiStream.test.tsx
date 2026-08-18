@@ -288,6 +288,25 @@ describe('?aiMarkers — the frontend safety-gate seam (P68d)', () => {
     expect(requireRepo(repoId).status.conflicted).toEqual(before);
   });
 
+  /**
+   * P68f: under BULK the seam spoils only the LAST eligible path, so the MIXED outcome
+   * the user's locked decision describes is reachable end to end — the marker-free
+   * files stage and the markerful one falls back to review. If it spoiled all of them
+   * the harness could only ever prove "everything failed", which is not the case that
+   * needs guarding.
+   */
+  it('under bulk, spoils only the LAST path so the mixed stage/review case exists', async () => {
+    const { repoId, stream } = await loadWith('aiMarkers', [EXTRA]);
+    const batch = await run(
+      stream.aiResolveConflictStream(repoId, [AUTH, EXTRA], () => {}),
+    );
+    const byPath = new Map(batch.proposals.map((p) => [p.path, p.proposedText] as const));
+    expect(byPath.get(AUTH)).not.toContain('<<<<<<<');
+    expect(byPath.get(EXTRA)).toContain('<<<<<<<');
+    // Still ONE successful run: the danger is precisely that it looks clean.
+    expect(batch.failed).toEqual([]);
+  });
+
   it('the default (no seam) still strips the markers', async () => {
     const { repoId, stream } = await loadWith('');
     const batch = await run(stream.aiResolveConflictStream(repoId, [AUTH], () => {}));

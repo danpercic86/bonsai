@@ -34,7 +34,12 @@ function toActivityRun(run: AiRunState, tick: number): AiActivityRun {
     partialText: run.partialText,
     log: run.log,
     logDropped: run.logDropped,
-    files: run.files.map((f) => ({ path: f.path, status: f.status, error: f.error })),
+    files: run.files.map((f) => ({
+      path: f.path,
+      status: f.status,
+      error: f.error,
+      hasProposal: f.proposal !== null,
+    })),
     paths: run.paths,
     cancelRequested: run.cancelRequested,
     turn: run.turn,
@@ -50,6 +55,11 @@ export interface AiDockApi {
   paletteEntries: { lead: PaletteAction[]; trail: PaletteAction[] };
   /** The conflict row's live-run affordance: expand, select, focus the reply box. */
   revealForPath: (path: string) => void;
+  /** The conflict row's `✓ review` affordance: re-open the stored proposal for this
+   *  path from whichever run produced it (single OR bulk — P68f). Never re-runs the
+   *  CLI. Lives here, beside `revealForPath` and `retryFile`, so the container is a
+   *  composition site rather than a place that knows about run keys. */
+  reviewForPath: (path: string) => void;
   /** `Ctrl/Cmd+Shift+A`: expand; focus the reply box if anything is blocked, else
    *  the log. Bound BEFORE the typing guard, so it works from the commit box. */
   focusDock: () => void;
@@ -137,6 +147,14 @@ export function useAiDock(deps: {
     [aiRuns, setCollapsed],
   );
 
+  const reviewForPath = useCallback(
+    (path: string) => {
+      const run = aiRuns.runForPath(path);
+      if (run !== null) aiRuns.reviewProposal(run.key, path);
+    },
+    [aiRuns],
+  );
+
   // §5 Retry: a fresh single run for one failed file of a bulk run. The run `key` is
   // accepted and ignored so the dock's prop stays keyed by run, which is what lets
   // the other six AI runners adopt it later (D14).
@@ -181,6 +199,7 @@ export function useAiDock(deps: {
     },
     paletteEntries,
     revealForPath,
+    reviewForPath,
     focusDock,
     awaitingInput,
     runCount: runs.length,

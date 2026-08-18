@@ -8,6 +8,7 @@ import type {
 } from '../ipc';
 import type { DiffSlot } from './DiffView';
 import type { AiRowState } from './repoWorkspace/useAiRuns';
+import type { BulkAiControl } from './repoWorkspace/useBulkAiResolve';
 import { StatusConflictsSection } from './StatusConflictsSection';
 import { StatusSection } from './StatusSection';
 import type { WorkdirSection } from './StatusSection';
@@ -49,6 +50,8 @@ export interface StatusPanelProps {
   aiRows: Record<string, AiRowState>;
   /** P68d/OQ1: at the AI concurrency cap — no NEW run may start. */
   aiAtCapacity: boolean;
+  /** P68f: the conflicts-header "Resolve all with AI" control (§6.4). */
+  aiBulk?: BulkAiControl;
   /** P15b: true while an AI explain/review call is in flight — disables Review. */
   aiAnalyzing: boolean;
   onStage(paths: string[]): void;
@@ -93,6 +96,7 @@ export function StatusPanel({
   aiEligible,
   aiRows,
   aiAtCapacity,
+  aiBulk,
   aiAnalyzing,
   onStage,
   onUnstage,
@@ -170,6 +174,7 @@ export function StatusPanel({
               aiEligible={aiEligible}
               aiRows={aiRows}
               aiAtCapacity={aiAtCapacity}
+              aiBulk={aiBulk}
               onResolveConflict={onResolveConflict}
               onToggleConflictView={onToggleConflictView}
               onAiResolve={onAiResolve}
