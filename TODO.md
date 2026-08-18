@@ -26,9 +26,31 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 `docs/history/todo-archive.md` (P27 → P2, M0–M6) and `docs/history/milestones-mvp.md` (the M0–M6
 AI-gate vs USER CHECKPOINT split). Contract files are indexed in `docs/contracts/INDEX.md`.
 
-## 🎯 P69 — 1.0.0 release readiness — **in-progress**
+## 🎯 P69 — 1.0.0 release readiness — ✅ **SHIPPED 2026-08-18** (tag `v1.0.0`)
 
-**Current step:** P69 — awaiting reviewer round 1 on four parallel increments.
+**Current step:** none — `v1.0.0` tagged and pushed at `bd52483`; the release workflow
+builds/publishes from the tag. Reviewer verdict was APPROVE WITH NITS (no MUST-FIX); its two
+SHOULD-FIXes were landed (changelog `v0.3.1` compare link + note; CONTRIBUTING apt-list claim)
+except the branch-protection check-name question, which needs repo-settings access — **FOR USER:
+if branch protection requires the status check `Frontend — vitest + build`, the CI matrix renamed
+it to `… (ubuntu-22.04)` / `… (macos-latest)` and the old name will never report again.**
+
+**FOR USER — two open items I could not close:**
+1. **Back up `.tauri/updater-prod.key`.** It is correctly gitignored and untracked, so it exists
+   in exactly ONE place: this working copy. Losing it permanently breaks auto-update for every
+   installed client. (The committed `tauri.conf.json` pubkey was verified to match it.)
+2. **GitHub reported 2 Dependabot alerts (1 high, 1 moderate)** on push. The high is the known
+   `nanoid` GHSA-2v37-7h3g-55p8 — build/test tooling only (vite/vitest → postcss → nanoid), never
+   in the shipped app, deliberately ignored in `pnpm-workspace.yaml`. **The moderate is
+   unidentified** — `gh` is not installed here, and both project gates are green
+   (`cargo deny --all-features check` = advisories/bans/licenses/sources all ok; `pnpm audit`
+   shows only the one ignored high). Check the Dependabot page.
+
+**Final AI gate at `bd52483`:** cargo `--workspace --no-fail-fast` exit 0, 0 failed / 4 ignored
+(perf gates) · clippy `-D warnings` exit 0 · vitest 1596 / 130 files · e2e 104 passed, 1 skipped
+(the permanent `08-stash` one) · eslint 0 errors, 29 warnings (budget 40) · `lint:size` OK ·
+tsc+vite clean. Split equivalence proven: 1742 passed / 0 failed / 4 ignored **identical**
+before and after.
 
 Triggered by a full-project analysis requested 2026-08-18, after the user's first real macOS
 testing pass. Goal: the minimum credible 1.0.0, not new features. User decisions taken this
