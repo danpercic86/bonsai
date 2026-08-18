@@ -491,6 +491,14 @@ async streamGraph(repoId: string, onChunk: (c: GraphChunk) => void): Promise<voi
    time from `stream_graph_core` start to the FIRST `Batch` emitted; assert < **150 ms** (justify:
    first batch = 512 walked rows over the P52 commit-graph file). Also assert total stream (to
    `Done`) completes and `truncated == false` at 200k.
+   > **AMENDMENT (2026-08-18, binding — the `<150 ms` assert was honestly removed, not met):**
+   > libgit2's `Sort::TOPOLOGICAL` runs an eager `prepare_walk` before yielding row 0, so first
+   > paint is **O(total commits)** (release/warm: 40k ≈ 0.73 s, 120k ≈ 1.37 s, 200k ≈ 2.3 s), not
+   > O(first 512). `stream_perf.rs` **measures and logs** first-batch latency but deliberately does
+   > NOT assert a threshold; the total-stream-completes + `truncated == false` half of this
+   > criterion stands. The real fix (lazy generation-number topo order) is **deferred to P66**
+   > per the user decision of 2026-08-10 — see `TODO.md` (P65 finding + P66 entry) and the spike
+   > `docs/contracts/P65a-lazy-topo-spike.md`.
 4. **No jank at 20k+ scroll.** Harness: `VITE_MOCK_IPC=1`, `?fixture=20k`, open a mock repo, run
    `await window.__bonsai.scrollSweep(10000)`; PASS = `maxWindow5Avg <= 33 && over100 <= 3` (M2d
    §5.5 definition) — the streamed path must match the one-shot number.

@@ -4,6 +4,28 @@ All notable changes to Bonsai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Fixes from the second full-project audit (2026-08-18).
+
+### Fixed
+- **A corrupt repository no longer hangs the app.** Operations that hit a truncated or corrupt
+  loose object — status, the commit graph, streaming graph loading, and the background history
+  index — now time out and return a clear error instead of freezing forever. This closes the
+  known limitation shipped in 1.0.0; committing in such a repository is deliberately not cut off
+  by the timeout, so a slow-but-valid commit can never be aborted halfway.
+- **A Git hook that fails to start is now reported.** A `pre-commit` or `post-commit` hook that
+  could not be launched used to look exactly like "no hook installed"; commit results now carry a
+  visible warning, and the background history index reports commits it had to skip.
+- **Forge requests no longer follow redirects**, and response bodies are read with a size cap —
+  so a misbehaving or malicious server can neither bounce an access token through a redirect nor
+  stall the app with an unbounded response.
+- **Closing a repository tab now cancels its running AI conflict resolutions**, so a Claude run
+  can no longer keep running (and spending) against a tab that no longer exists.
+- A graph stream that delivers a malformed batch now surfaces as an error instead of silently
+  freezing the graph, and the bulk-AI confirmation dialog now blocks the workspace shortcuts
+  behind it like every other modal.
+
 ## [1.0.0] — 2026-08-18
 
 The first public release. Everything below landed after `0.3.0`: search and a command palette,
@@ -289,6 +311,7 @@ The MVP and first productization phase. Highlights:
 - Tauri v2 auto-update scaffolding (behind Bonsai IPC) and a first-run onboarding overlay.
 - An embedded MCP server exposing structured Git data (graph, diffs, conflicts) to AI tools.
 
+[Unreleased]: https://github.com/danpercic86/bonsai/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/danpercic86/bonsai/compare/v0.3.1...v1.0.0
 [0.3.0]: https://github.com/danpercic86/bonsai/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/danpercic86/bonsai/releases/tag/v0.2.0

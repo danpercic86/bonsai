@@ -217,7 +217,7 @@ Code-complete, **native halves outstanding**. Neither milestone is done.
 | `P68-ai-conflict-streaming.md` | P68 | Streaming / interactive / bulk AI conflict resolution; invariants D1–D16. | awaiting USER CHECKPOINT |
 | `P68e-ai-activity-dock.md` | P68e | AI activity dock UI (bottom dock, live log, cancel, ask block). | awaiting USER CHECKPOINT — file is 1064 lines and stale vs shipped code (see `TODO.md` spun-out items) |
 | `P68g-ui.md` | P68g-2 | The eight AI-run settings, honest consent copy, ask-block hardening; §5 documents harness seeds 1–9. | awaiting USER CHECKPOINT |
-| `P68-security-audit.md` | P68g | Security audit of the AI conflict surface (1 HIGH, 5 MEDIUM, 7 LOW/INFO); items 7–11 are open follow-ups. | audit delivered 2026-08-18; follow-ups open |
+| `P68-security-audit.md` | P68g | Security audit of the AI conflict surface (1 HIGH, 5 MEDIUM, 7 LOW/INFO); items 7–11 are open follow-ups (the pid-zeroing half of item 10 landed in `67539fd`). | audit delivered 2026-08-18; follow-ups open |
 | `P68-user-checklist.md` | P68 | Native checklist (real CLI past 90 s, cancel, mid-run question, read-only tools, bulk, settings, consent copy, refused read). | awaiting USER CHECKPOINT |
 
 ## Testing campaign — T1–T5
@@ -232,4 +232,7 @@ Pre-release hardening campaign (2026-08). Gate reported GREEN; 47 bugs fixed.
 | `T5-adversarial-property.md` | T5 | Redundancy, adversarial and property-based pass. | done |
 
 > **No contract file** for T3 or T6; both are recorded in the campaign memory note only.
-> One decision from T5 remains **OPEN**: `F-T5-4` (truncated-object hang).
+> The one open T5 decision, `F-T5-4` (truncated-object hang), was **RESOLVED for read surfaces**
+> on 2026-08-19 (commit `7edd23e`, audit #2 §3.2): `run_with_git_timeout` wraps
+> status/graph/stream/history-index; `create_commit` deliberately unwrapped (rationale in
+> `corrupt_repo_cli.rs` C1). The T4-contracted `e2e/11-forge.spec.ts` was written in `83a9b2f`.

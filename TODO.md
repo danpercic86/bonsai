@@ -22,9 +22,11 @@ Status vocabulary: `pending` · `in-progress` · `done` · `awaiting USER CHECKP
 native USER CHECKPOINT have both passed — the orchestrator never self-declares the second half.
 
 **History is archived, not deleted.** Anything no longer on this board is in
-`docs/history/todo-archive-2026-08.md` (P65 → P28 + the Phase 1–4 banners, moved 2026-08-18),
-`docs/history/todo-archive.md` (P27 → P2, M0–M6) and `docs/history/milestones-mvp.md` (the M0–M6
-AI-gate vs USER CHECKPOINT split). Contract files are indexed in `docs/contracts/INDEX.md`.
+`docs/history/todo-archive-2026-08.md` (P65 → P28 + the Phase 1–4 banners moved 2026-08-18; Parts
+5–9 — P69/P67/P68 build detail, the 2026-08-17 batch mapping + spike facts, resolved spun-out
+items — moved 2026-08-19), `docs/history/todo-archive.md` (P27 → P2, M0–M6) and
+`docs/history/milestones-mvp.md` (the M0–M6 AI-gate vs USER CHECKPOINT split). Contract files are
+indexed in `docs/contracts/INDEX.md`.
 
 ## 🎯 P69 — 1.0.0 release readiness — ✅ **SHIPPED 2026-08-18** (tag `v1.0.0`)
 
@@ -46,63 +48,53 @@ it to `… (ubuntu-22.04)` / `… (macos-latest)` and the old name will never re
    (`cargo deny --all-features check` = advisories/bans/licenses/sources all ok; `pnpm audit`
    shows only the one ignored high). Check the Dependabot page.
 
-**Final AI gate at `bd52483`:** cargo `--workspace --no-fail-fast` exit 0, 0 failed / 4 ignored
+**User decisions taken 2026-08-18** (full text: archive Part 5): scope = macOS defects +
+contributor docs only · ship 1.0.0 **unsigned** (per `docs/code-signing.md`; its "decision needed"
+is ANSWERED for 1.0: defer) · tag WITHOUT the six outstanding native USER CHECKPOINTs
+(P62–P65, P67, P68), forge/PR shipped **flagged beta**.
+
+**v1.0.0 AI gate at `bd52483`:** cargo `--workspace --no-fail-fast` exit 0, 0 failed / 4 ignored
 (perf gates) · clippy `-D warnings` exit 0 · vitest 1596 / 130 files · e2e 104 passed, 1 skipped
 (the permanent `08-stash` one) · eslint 0 errors, 29 warnings (budget 40) · `lint:size` OK ·
-tsc+vite clean. Split equivalence proven: 1742 passed / 0 failed / 4 ignored **identical**
-before and after.
-
-Triggered by a full-project analysis requested 2026-08-18, after the user's first real macOS
-testing pass. Goal: the minimum credible 1.0.0, not new features. User decisions taken this
-session (all three explicit):
-- **Scope** = macOS defects + contributor docs. Deeper tech debt stays deferred.
-- **Code signing** = ship 1.0.0 **unsigned**, as already locked in `docs/code-signing.md`.
-  README's per-OS Gatekeeper/SmartScreen workarounds stand. The "decision needed" in that file
-  is therefore ANSWERED for 1.0: defer.
-- **Native checkpoints** = tag 1.0.0 WITHOUT running the six outstanding USER CHECKPOINTs
-  (P62–P65, P67, P68), but ship the forge/PR surface (P62–P64) **flagged beta** in README +
-  CHANGELOG, since it needs real per-provider tokens to verify.
-
-### Increments
-- **P69a — macOS Rust fixes.** `external.rs` editor ladder silently no-ops on a Mac without
-  VS Code (`open -a` always *spawns*; it fails at *exit*, and `run()` never waits) → add
-  `wait_for_exit` for macOS `open` specs. Plus: `history_index/store.rs` keyed the repo path
-  off `cfg(windows)` so APFS split the cache per path casing → drive it off `core.ignorecase`
-  like `stage.rs:143-152` already does. Plus: `settings.rs` recents dedupe used
-  `eq_ignore_ascii_case`, merging genuinely distinct repos on ext4 → reuse the `fs::canonicalize`
-  approach from `commands/repo.rs:344`.
-- **P69b — macOS frontend fixes.** ⌘+Enter did not commit (`CommitBox.tsx:257` was the ONLY
-  handler missing `metaKey`). `--font-mono` lacked `ui-monospace`, so the DOM fell to Courier
-  while the canvas (`metrics.ts:161`) used SF Mono — the two stacks now match. New
-  `src/utils/platform.ts` so shortcut labels show ⌘ instead of a hardcoded "Ctrl". Playwright
-  pinned `channel: 'msedge'` on `!CI`, so `pnpm test:e2e` could not run on a Mac → gate on
-  `process.platform === 'win32'`.
-- **P69c — crash + symlink.** Both from `docs/audit-2026-08-18.md`, re-verified at every cited
-  line by the orchestrator before scheduling. (1) MUST-FIX: `WorkspaceRightPanel.tsx:265` gates
-  on `!== null` but never bounds-checks, and `setGraph` publishes the first 512-row batch
-  *before* the selection remap → a selection at row ≥512 renders `CommitPanel` with
-  `node === undefined` → TypeError → ErrorBoundary takes down the workspace. (2) worktree-copy
-  symlink write-through (`worktree_copy.rs:232-245`): lexical containment only, so a hostile
-  branch can make Overwrite clobber a file outside the worktree.
-- **P69d — docs.** CONTRIBUTING.md was materially stale: it claimed "there is no
-  `.github/workflows` directory at all" and "there is currently no frontend test runner" — both
-  false, both listed as *good first contributions*, and the second contradicted TESTING.md
-  outright. Also a dead README anchor, "72 documents" (actually 139), clippy missing
-  `-- -D warnings`, and a PR checklist omitting four real CI gates. CHANGELOG backfill: P49–P65
-  and the T1–T6 campaign appear in NO entry, so a 1.0.0 cut from `[Unreleased]` (P67/P68 only)
-  would misrepresent the release.
-- **P69e — CI.** `frontend` job matrixed onto `macos-latest` (was ubuntu-only, which is exactly
-  why P69b's defects reached a release branch). `e2e`/`audit` stay ubuntu-only.
-
-### Known limitation (recorded deliberately)
-The Playwright `msedge`→`win32` fix is only ever exercised **locally** — in CI the config always
-picks bundled chromium, so no CI leg can regress-test it.
+tsc+vite clean. Increment detail (P69a–P69e) + a known Playwright-CI limitation
+(the `msedge`→`win32` fix is never exercised in CI): archive Part 5.
 
 ### Still open after P69 (explicitly NOT in scope)
 `cargo fmt` adoption (1773 hunks / 221 files, no `rustfmt.toml`), SECURITY.md +
-CODE_OF_CONDUCT.md, issue/PR templates, audit §3.10 refetch storm, `CommandPalette` highlight,
-persisted-settings write path, `NumberSlider` mid-typing clamp, and the six native USER
-CHECKPOINTs themselves.
+CODE_OF_CONDUCT.md, issue/PR templates, refetch-storm coalescing (now a spun-out item below),
+`CommandPalette` highlight, persisted-settings write path, `NumberSlider` mid-typing clamp, and
+the six native USER CHECKPOINTs themselves.
+
+## 🔍 Audit #2 (`docs/audit-2026-08-18.md`) + fix batch — all confirmed bugs & SHOULD-FIXes **fixed** 2026-08-18/19
+
+Audit baseline at `3a0a153`: cargo 1727/1/4-ignored (the 1 = the §2.1 watcher flake) · vitest 1580
+· e2e 104/1-skip · harness clean. Every finding above NIT is now closed:
+- **§2.2** CommitPanel mid-stream crash (MUST-FIX) — `ffa80d0` (P69c) · **§3.1** worktree-copy
+  symlink write-through — `55acb98` (P69c). Both shipped in 1.0.0.
+- **§3.8** streamAssembler throw containment · **§3.9** BulkAiConfirmDialog in `dialogOpen` ·
+  **§3.10** AI runs cancelled on workspace unmount — `84cedb7`.
+- **§3.2** F-T5-4 corrupt-object hang — `7edd23e`: `run_with_git_timeout` (`git/timeout.rs`,
+  30 s inactivity deadline, `BONSAI_GIT_TIMEOUT_MS` override) wraps `get_status`/`get_graph`/
+  `stream_graph`/history-index build; C1 now pins Err-not-Hung for read surfaces;
+  `create_commit` deliberately UNWRAPPED (a false timeout on a mutation could race a late
+  commit — rationale in `corrupt_repo_cli.rs` C1). · **§3.3** hook spawn failures →
+  `HookRunInfo::warning`/`hookWarning`; indexer skips → `skippedCommits` + toast — same commit.
+- **§3.4** dedupe canonicalize moved off the repos lock · **§3.5** registration filter now skips
+  `tests_*` · **§3.6** forge HTTP `redirect(Policy::none())` + bounded body read · **§3.7** AI
+  pid zeroed in `reap()`/`complete()` — `67539fd`.
+- **§2.1** watcher-test sentinel-file positive sync (5× green solo AND in full workspace) + CI
+  `cargo test --no-fail-fast` — `29e72a7`.
+- **§4.1** `e2e/11-forge.spec.ts` written (9 tests, +`?forge=unsupported` seam) · **§4.2**
+  `usePartialStaging.test.tsx` (24 tests) — `83a9b2f`.
+
+**Gate at fix-batch HEAD `83a9b2f`:** cargo workspace 1754/0/4-ignored · clippy `-D` clean ·
+vitest 1629 / 134 files · e2e 114 passed / 1 skipped · lint:ci 0 errors · lint:size OK.
+
+**Still open from the audit:** §4.3–§4.8 test gaps (CommandPalette/NumberSlider pins once fixed,
+streaming-graph e2e, 08-stash conflicted-apply fixture, Linux case-sensitivity assertions,
+low-value untested units, missing journeys: updater/AI-PR-description/clone-init/worktrees etc.) ·
+§7's 13 NITs (recorded in the audit, no action required) · §5.6 perf/visual ACs stay USER
+CHECKPOINT (headless harness cannot observe rAF/compositing).
 
 ## ✅ Confirmed checkpoints and accepted decisions (condensed — full text in the archive)
 
@@ -119,15 +111,14 @@ CHECKPOINTs themselves.
 - **Forge defaults (2026-08-08, autonomous, accepted):** new Rust deps `reqwest{blocking,json,
   rustls-tls}` + `keyring` · auth = **PAT-only** v1 (OAuth device-flow deferred) · provider order
   GitLab → Bitbucket → Azure DevOps.
-- Nothing in the FOR-USER block is outstanding. Full text of every banner and decision:
-  `docs/history/todo-archive-2026-08.md` Part 1.
+- Full text of every banner and decision: `docs/history/todo-archive-2026-08.md` Part 1.
 
 ## 🚀 PHASE 4 — forge/PR + paged loading (P62–P65) — code-complete, **awaiting USER CHECKPOINT**
 
 Build detail for all four milestones (per-increment bullets, contract amendments, gate numbers) was
 moved verbatim to `docs/history/todo-archive-2026-08.md` **Part 2**. Contracts:
 `docs/contracts/phase4-forge-overview.md` + `P62`/`P63`/`P64`/`P65-*.md`. Command count reached
-**157** here (P62 +7, P63 +1, P64 +1, P65 +1).
+**157** here (P62 +7, P63 +1, P64 +1, P65 +1). Shipped in 1.0.0 **flagged beta** (forge/PR).
 
 - **P62 — forge foundation (GitHub first)** — **awaiting USER CHECKPOINT**
   (`docs/contracts/P62-user-checklist.md`). AI gate green: new `crates/bonsai-forge/` (60/0) +
@@ -170,129 +161,74 @@ moved verbatim to `docs/history/todo-archive-2026-08.md` **Part 2**. Contracts:
 
 ## 🐛 USER-REPORTED BATCH (2026-08-17) — P67 UX polish + P68 AI conflict resolution
 
-User reported 7 issues from real use (real repo, live merge conflict). Plan (user-approved):
-`~/.claude/plans/1-the-dotted-line-cozy-llama.md`. Split into two milestones per the user's
-sequencing choice — **UX polish first, then AI**. Started from clean HEAD `0ac5444`.
-
-**User's 7 items → milestone mapping:**
-1. Dashed HEAD guideline disappears on scroll → **P67 §1** (confirmed bug, not intended)
-2. Right panel wastes vertical space vs the changes tree → **P67 §2**
-3. "Propose & review" shows no proposals → **P68** (not broken — the proposal opens in the CENTER
-   pane, invisible from the right panel; plus item 5 destroys it. No separate work item)
-4. Resolve ALL conflicts with AI, not one at a time → **P68 §D**
-5. No feedback on AI resolve; result lost when switching files → **P68 §C** (root cause found:
-   single-slot `aiResolvingPath` + the SHARED `fileDiffReqId` guard discarding a computed proposal)
-6. Claude timed out at 90s on an i18n JSON conflict → **P68 §A/§B** (real cause: `--tools ""` makes
-   Claude blind to the repo, so no timeout would help; fix = no-timeout + Cancel + read-only tools)
-7. Show AI logs live; let Claude ask questions mid-run → **P68 §B/§E**
+7 issues from real use (real repo, live merge conflict); user-approved plan:
+`~/.claude/plans/1-the-dotted-line-cozy-llama.md`. Item→milestone mapping + `claude` CLI spike
+facts: archive Part 6.
 
 **LOCKED USER DECISIONS (asked + answered 2026-08-17; do not re-litigate):**
 - AI timeout = **no hard timeout + Cancel button**; idle-output watchdog ~300s; optional hard cap
   configurable, default 0 (unbounded).
 - AI visibility = **live log stream + interactive prompts** (user can answer Claude mid-run).
-- Log panel location = **bottom dock**, collapsible, full width (does not compete with the space
-  P67 reclaims in the right panel).
+- Log panel location = **bottom dock**, collapsible, full width.
 - Conflict-resolve repo access = **read-only allowlist** `--tools "Read,Grep,Glob"` (no
   write/edit/bash; Bonsai still writes nothing — staging stays an explicit post-review call).
-- Bulk resolve = **ONE AI run for all conflicts** (single run sees them together), with per-file
-  attribution back into a per-path store.
+- Bulk resolve = **ONE AI run for all conflicts**, with per-file attribution.
 - Right-panel density = **tighter default AND** a Cozy/Compact toggle.
 - "Stash all" = **demote to a `⋯` overflow menu** (keeps all 3 scopes; sidebar keeps 1-click stash).
 - Panel density is **independent** of graph Compact rows (cross-reference hint in Settings only).
 - Dashed HEAD line = **always visible while scrolling**.
 
-**SPIKE FACTS (verified against installed `claude` v2.1.233 — do not re-verify):**
-- `-p --output-format stream-json` **requires** `--verbose`.
-- NDJSON order: `system(init)` → `rate_limit_event` → `system(thinking_tokens)` heartbeats →
-  `assistant` → `system(post_turn_summary)` (carries `status_category`/`needs_action`) → `result`.
-- The `result` line is **byte-compatible** with today's `--output-format json` envelope → the
-  existing parse at `ai/mod.rs:332-366` is reused verbatim.
-- A turn ends at `result`, **NOT** process exit; with `--input-format stream-json` the child stays
-  alive on open stdin and accepts a second turn → this is the interactive mechanism.
-- **DEAD END:** the CLI's own `SendMessage` tool cannot ask the user anything — in `-p` mode the CLI
-  answers its own tool call and discards an injected `tool_result`. Mid-run questions therefore use
-  a prompt-level sentinel `BONSAI_NEEDS_INPUT: <question>`.
-- `--tools "Read,Grep,Glob"` is a valid allowlist (init echoes the exact subset).
-
 ### P67 — HEAD guideline + right-panel density — ✅ **AI GATE PASSED** (awaiting native USER CHECKPOINT)
-Contract: `docs/contracts/P67-ux-polish-batch.md` (+ `P67-user-checklist.md`). **+0 Tauri commands**
-(157 unchanged; `panelDensity` rides the existing `set_ui_settings` patch).
-- **P67a** — HEAD guideline: new pure `headGuide()` in `src/graph/viewport.ts`; split
-  `drawWipRow` (`src/graph/draw.ts:200-212` moves out) into `drawHeadGuide` + `drawHeadEdgeMarker`;
-  drop the `scrollTop < rowHeight + 56` gate for the connector at `GraphCanvas.tsx:345`; clamp BOTH
-  ends (today only the end is clamped → perf + dash-crawl regressions if the gate is merely
-  removed); `selfTest.ts` + `window.__bonsai.p7` seam; `P1-polish.md` §9.3 SUPERSEDED markers.
-- **P67b** — right-panel structure + tighter default (~110px reclaimed ≈ 4–5 more file rows): new
-  `RightPanelActionsRow.tsx` + `CommitOptionsRow.tsx`, DELETE `StashSplitButton.tsx`, `--rp-*`
-  custom properties on `.right-panel` with cozy = the new tighter values (every consumer uses the
-  `var(--rp-x, <today>)` fallback form because `.file-row`/`.tree-dir-row`/`.section-label` are also
-  rendered OUTSIDE `.right-panel` by DiffFileTree/Sidebar/EmptyState/OnboardingSteps).
-- **P67c** — `panelDensity: 'cozy'|'compact'` end-to-end (types → App → SettingsPanel →
-  mock persistence → `settings.rs` + `ui_settings.rs` mirror + migration test) + one
-  `[data-density='compact']` block.
-- **P67d** — contract + user checklist + TODO update.
-- **P67e** — `StatusPanel.tsx` 700→~250 split (pure refactor, droppable; `StatusPanel.test.tsx`
-  must pass UNTOUCHED — that is the acceptance test).
+Contract: `docs/contracts/P67-ux-polish-batch.md` (+ `P67-user-checklist.md`). **+0 Tauri commands.**
 
 **Current step:** ✅ **P67 CODE-COMPLETE — AI gate PASSED, awaiting native USER CHECKPOINT**
 (`docs/contracts/P67-user-checklist.md`). All five sub-increments committed and reviewer-approved:
-**P67a** `0ec69f9` · **P67b** `e607d2c` · **P67c** `5e68db5` · **P67e** `d50361a` · **P67d** `f3ca6e5`
-(docs). Nothing here is user-confirmed: **the dashed guideline has never been seen by anyone** (see
-the NOT-self-certifiable note below). Still green at HEAD `44067af` after P68 landed on top of it:
-tsc 0 · vitest **1580 / 128 files** · e2e **104 passed / 1 skipped** ·
-`cargo clippy --workspace --all-targets -- -D warnings` clean.
+**P67a** `0ec69f9` · **P67b** `e607d2c` · **P67c** `5e68db5` · **P67e** `d50361a` · **P67d** `f3ca6e5`.
+Nothing here is user-confirmed: **the dashed guideline has never been seen by anyone** (headless
+harness — no compositing, `rAF` paused, no canvas pixel is ever produced; geometry proven
+arithmetically + via the `window.__bonsai.p7` seam). Line visibility while scrolling, dash crawl,
+halo termination, marker direction, and compact readability are all native-only. Build detail,
+measured reclaim (+115.5 px ≈ 4.8 rows cozy, +30 px compact), contract amendments A5/A6.1–A6.3
+(binding, canonical in the contract), the Chromium-only `field-sizing: content` guard, and the
+harness gate results: archive **Part 7**.
 
-**Baseline before P67** (measured 2026-08-17, so later regressions are attributable): vitest
-**1331/0 across 111 files**; cargo workspace green except the one pre-existing load-sensitive flake
-noted under P68a. **Final P67 AI gate:** vitest **1361/0 across 112 files**, tsc 0, build green,
-`cargo test -p bonsai --lib` **222/0**, `cargo clippy --workspace --tests -- -D warnings` clean,
-command count **157 (+0)**.
+### P68 — streaming/interactive/bulk AI conflict resolution — ✅ **AI GATE PASSED** (awaiting native USER CHECKPOINT)
 
-**MEASURED result for the user's item 2** (not estimated — the contract's ~110px was a guess and
-told the implementer to re-measure): `.status-panel` height **452.47 → 568.00 px = +115.53 px ≈ 4.8
-file rows** in the cozy default, plus ~14px per two sections inside the scroller (≈129.5px, ≈5.4
-rows). Compact adds a further **+30px** (408 → 438px measured live in the harness) ≈ 5.5 rows total.
+**Current step:** ✅ **P68 CODE-COMPLETE — awaiting native USER CHECKPOINT**
+(`docs/contracts/P68-user-checklist.md`; the four runs that matter are listed at the end of it).
+Every sub-increment committed and reviewer-approved (commit list: archive **Part 8**). **Nothing
+about appearance or real-CLI behaviour has been verified by anyone** — no live log, no real tool
+use, no real cost and no pixel has been seen.
 
-**Contract amendments written during P67** (all binding, in `P67-ux-polish-batch.md`):
-- **A5** — the collapse check ran before `edge`, making `edge:'top'` unreachable whenever a WIP row
-  exists (the WIP row is always above HEAD, so scrolling *past* HEAD clamped both ends together and
-  drew neither line nor marker). Now suppresses only the segment, never the marker.
-- **A6.1** — `dashOffset` sign was inverted. Canvas advances the pattern by `lineDashOffset`, so the
-  on-screen grid sits at `y ≡ y0 - off`; content-anchoring needs `off ≡ y0 - anchor`. The inverted
-  form is wrong by `-2·(y0-anchor)`, which VARIES WITH SCROLL → ~1px/px dash crawl, and a regression
-  versus pre-P67 (which was content-anchored for free via its unclamped start).
-- **A6.2** — the crawl guard only asserted 6-periodicity, which passes with the sign inverted; it now
-  asserts dash *phase* across 1px scroll steps, and was negative-controlled against the old sign.
-- **A6.3** — dropped a redundant `dir === 0` early return that could still suppress the marker for one
-  scroll position. ⚠️ `dir === 0` REMAINS REACHABLE and is tested — do not "simplify" it back.
-- Acceptance corrections: `headIndex 1500`→`2000` (the original was arithmetically impossible),
-  `CommitBox.tsx ≤ ~310`→`≤ ~350` (unreachable from §5.5's own change list), case count 11→14, and
-  §1.1a bullet 3 `segment===false`→`true` after implementation measured it.
+**Gate history:** P68-final AI gate measured at `44067af` (2026-08-18): tsc 0 · vitest 1580/128 ·
+e2e 104/1-skip · cargo core 764/0/1 + bonsai 238/0 · clippy clean · IPC commands **160**.
+Superseded by the v1.0.0 gate at `bd52483` and then the audit-#2 fix-batch gate at `83a9b2f`
+(cargo 1754/0/4 · vitest 1629 · e2e 114/1-skip — see the audit section above).
 
-**Cross-platform fix worth remembering:** `field-sizing: content` (the auto-growing commit box) is
-**Chromium-only**. WebView2 has it; macOS WKWebView and Linux webkit2gtk do NOT, and without a guard
-the textarea became FIXED and *shorter* than before on those platforms. Guarded with
-`@supports not (field-sizing: content) { min-height: 70px }` — **70px, not the pre-P67 declared
-60px**, because that 60px was inert: the real pre-P67 height came from `rows={3}` (~70.5px
-border-box). Chosen over setting `rows={3}` in the TSX, which risks Chromium honouring `rows` for the
-initial height and giving back ~22px of the reclaim on the platform that does support field-sizing.
+Contracts: `docs/contracts/P68-ai-conflict-streaming.md` (invariants D1–D16; canonical for the
+durable warnings — D16 stdin/reader ordering, the `RunOpts::default()` non-migration,
+`StreamLogItem.assistant_text`; do NOT "fix" those back) · `P68e-ai-activity-dock.md` ·
+`P68g-ui.md` · `P68-security-audit.md` · `P68-user-checklist.md`.
+**Commands 157 → 160** (`ai_resolve_conflict_stream` = Channel, `ai_cancel_run`, `ai_reply_run`).
 
-**Harness gate results (`pnpm dev:mock`, measured live):** cozy `data-density="cozy"` / `--rp-row-h`
-24px / `.file-row` 24px+13px; compact `"compact"` / 20px / 20px+12px; toggles both directions;
-persists across reload; **`graph.compact` stays `false` while panel density is compact** (the
-independence the user asked for, proven empirically); **D8 proven** — the sidebar renders the SAME
-`.file-row`/`.section-label` classes but sits outside `.right-panel`, where `--rp-row-h` resolves to
-empty, so it kept 24px/11px while the panel shrank. Post-P67e `?op=merge` re-check: section order
-Conflicts(2) → Staged → Changes preserved, and the ✨AI button still appears on only the
-both-modified row.
+**ADDITIONAL LOCKED DECISIONS (asked + answered 2026-08-17):**
+- **Spend cap = NONE by default**, configurable (`ai_max_budget_usd` default `0.0` = no cap).
+  `--max-budget-usd` is only passed when > 0; live cost shows in the dock so a runaway is visible.
+- **Bulk + `autoResolve` = STAGE the marker-free files** from the run; any file still carrying
+  conflict markers falls back to review (`hasUnresolvedMarkers` gate). First place Bonsai stages
+  several files from one AI call — nothing is committed, everything stays visible and revertible.
 
-⚠️ **NOT self-certifiable:** the harness pane is headless (`requestAnimationFrame` paused, pane not
-compositing) so **no canvas pixel is ever produced** and `computer{screenshot}` fails outright. The
-dashed guideline's geometry is proven arithmetically + via the `window.__bonsai.p7` seam, but nobody
-has SEEN it. Line visibility while scrolling, absence of dash crawl, halo termination, marker
-direction, and whether compact is readable on the user's display are all native-only.
+**Security follow-ups still OPEN** (audit items 7–11, each with its rationale in
+`docs/contracts/P68-security-audit.md` — that file is canonical, do not duplicate them here): the
+novel-content gate (the structural defeat for H1), proposals shown as a diff, bulk path-count cap +
+per-batch reads + batch count in the dialog, process-group kill off Windows + zeroing `ctl.pid`
+after reap (the *zeroing* half landed in `67539fd`; the process-group half is still open), and a
+symlink-safe `resolve_conflict_text` write.
 
-## 🐞 SPUN-OUT ITEMS (found during P68, deliberately NOT bundled into it)
+Orchestrator-settled OQs, sub-increment commits, durable warnings, accepted limitations:
+archive **Part 8**. Original (drifted) board text: archive Part 4.
+
+## 🐞 SPUN-OUT ITEMS — open follow-ups (resolved ones move to archive Part 9)
 
 ### CommandPalette highlight resets on `actions` array identity — **OPEN**
 `src/components/CommandPalette.tsx:103→107→118` re-lands the highlight on the first enabled row whenever
@@ -307,17 +243,20 @@ whose memo deps churn therefore steals the user's keyboard selection mid-typing:
 immunises every future `actions` producer instead of requiring each one to stay identity-stable forever.
 Do NOT keep patching producers.
 
-### `App.tsx` per-field settings pattern is driving unbounded growth — **DONE 2026-08-18**
-Was: 1212 lines, each new setting costing N × `useState` + N × `if (patch.x !== undefined)` +
-N × `setX(s.x)` + N × prop-pass. P67c (`panelDensity`) and P68e (dock height/collapsed) each paid it.
-**Closed** by extracting `src/hooks/useUiSettings.ts` (210) — App.tsx **1212 → 1120**, zero call sites
-changed (no prop name or type moved, so the blast radius stayed inside App + the hook). Same pass took
-`RepoWorkspace.tsx` **3087 → 2948** via `repoWorkspace/usePartialStaging.ts` (245). Reviewed APPROVE;
-all six equivalence claims verified, including the one non-verbatim edit (11 names added to 8 dep
-arrays, each confirmed a container-level `useState` setter or `useRef`). Guarded by
-`useUiSettings.test.tsx` — 9 tests, **all 7 behaviours negative-controlled**. Baseline re-locked, so the
-reclaimed floor cannot silently regrow; `session.rs`, `stream.rs` and `useAiRuns.test.tsx` fell off the
-over-500 list entirely.
+### Refetch storm: every mutation double-fetches per open tab — **OPEN** (audit #1 §3.10, 2026-08-07)
+Every mutation runs `refreshAll` (~9 parallel fetches) and the watcher-debounced `repo-changed` for
+the same writes re-runs the identical 9 ~300 ms later, per open tab (`RepoWorkspace.tsx`, was
+:871-905/:1008-1046 at audit time). Fix = self-event suppression/coalescing; structural. Was tracked
+only in `docs/audit-2026-08-07.md:163-166`; moved onto this board 2026-08-19 (audit #2 §5.3).
+
+### Stash `expectedOid` UI wiring — **OPEN, now unblocked** (campaign deferral)
+The Rust side is oid-verified (F-A6-B/F-A7-6) but the UI does not yet pass `expectedOid`. Was parked
+on the `ipc/types.ts` freeze (`docs/testing-campaign-2026-08/SUMMARY.md`); the freeze lifted when
+forge landed. Moved onto this board 2026-08-19 (audit #2 §5.4).
+
+### Submodule dirty-deinit force flag (F-A7-7) — **OPEN, now unblocked** (campaign deferral)
+Same parking condition, now lifted; details in `docs/testing-campaign-2026-08/FINDINGS.md` F-A7-7.
+Moved onto this board 2026-08-19 (audit #2 §5.4).
 
 ### Persisted-settings write path has three latent defects — **OPEN** (all pre-existing, found 2026-08-18)
 Found while extracting `useUiSettings`; none introduced by it (each verified against `git show HEAD`).
@@ -371,105 +310,11 @@ one** (it would bury a review in a mechanical diff).
 
 ---
 
-### P68 — streaming/interactive/bulk AI conflict resolution — ✅ **AI GATE PASSED** (awaiting native USER CHECKPOINT)
-
-**Current step:** ✅ **P68 CODE-COMPLETE — AI gate PASSED at HEAD `44067af`, awaiting native USER
-CHECKPOINT** (`docs/contracts/P68-user-checklist.md`; the four runs that matter are listed at the end
-of it). Every sub-increment is committed and reviewer-approved. **Nothing about appearance or
-real-CLI behaviour has been verified by anyone** — the harness is headless (no compositing, `rAF`
-paused, `computer{screenshot}` fails outright), so no live log, no real tool use, no real cost and no
-pixel has been seen.
-
-**Final AI gate (measured at HEAD `44067af`, 2026-08-18):** tsc **0** · vitest **1580 passed / 128
-files** · e2e **104 passed / 1 skipped / 0 failed** · eslint **29 warnings, 0 errors** ·
-`check-file-size` exit **0** · cargo `bonsai-core --lib` **764 passed / 0 failed / 1 ignored** ·
-cargo `bonsai --lib` **238 / 0** · `cargo clippy --workspace --all-targets -- -D warnings` clean ·
-IPC commands **160**.
-
-Contracts: `docs/contracts/P68-ai-conflict-streaming.md` (invariants D1–D16, ambiguities A1–A12
-pre-resolved) · `docs/contracts/P68e-ai-activity-dock.md` (dock UI) · `docs/contracts/P68g-ui.md`
-(settings + consent copy + ask-block) · `docs/contracts/P68-security-audit.md` (audit) ·
-`docs/contracts/P68-user-checklist.md` (native checklist).
-**Commands 157 → 160** (`ai_resolve_conflict_stream` = Channel, `ai_cancel_run`, `ai_reply_run`).
-
-**Sub-increments — all committed:**
-- **P68a** `0f154b2` — Rust streaming runner core (`ai/stream.rs`, `ai/session.rs`, `ai/registry.rs`,
-  `RunLimits`/`ToolPolicy`/`run_claude_streaming`, extracted `parse_result_envelope` +
-  `kill_pid_tree`, `AppError::AiCancelled`, 6 NDJSON stub modes). Partial output is now **kept** on
-  cancel/watchdog (the old `ai/mod.rs` discarded it).
-- **P68b** `451457e` — the 3 commands (`commands/ai_stream.rs`, managed `AiRunRegistry`, new
-  settings, read-only `--tools "Read,Grep,Glob"` allowlist, bulk split/attribution in Rust).
-- **P68c** `8d727de` — TS types + Channel bridge + `mock/handlers/aiStream.ts`
-  (`?aiSlow`/`?aiAsk`/`?aiFail`, and `?ai=off` now honoured).
-- **P68d** `76de1bb` — per-path store `useAiRuns.ts` + row feedback; `aiResolvingPath` deleted; the
-  `fileDiffReqId` coupling broken ← **the item-5 fix**.
-- **P68e** `a75a585` — bottom dock `AiActivityPanel` + `AiActivityLog` (third child of
-  `.workspace-host`).
-- **P68f** `f1096aa` — bulk single-run resolve (`useBulkAiResolve.ts`, `AiRunQueue.tsx`,
-  `BulkAiResolveButton.tsx`, `dialogs/BulkAiConfirmDialog.tsx`) + `e2e/18-ai-bulk-resolve.spec.ts`.
-- **P68g-1** `96295ef` — security hardening (audit items 1, 3, 4, 5, 6 + L6).
-- **P68g-2** `44067af` — the eight AI-run settings UI, honest consent copy, `autoResolve` caveat at
-  the point of choice, bulk-dialog "one or more runs" correction, ask-block attribution + the
-  never-asks-for-secrets guard (audit item 2 — the one P68g-1 deferred).
-- Supporting: `cb85e55` `useUiSettings` + `usePartialStaging` extraction · `8254b46` e2e
-  persistence-race fix.
-
-**ADDITIONAL LOCKED DECISIONS (asked + answered 2026-08-17):**
-- **Spend cap = NONE by default**, configurable (`ai_max_budget_usd` default `0.0` = no cap).
-  `--max-budget-usd` is only passed when > 0; live cost shows in the dock so a runaway is visible.
-- **Bulk + `autoResolve` = STAGE the marker-free files** from the run; any file still carrying
-  conflict markers falls back to review (`hasUnresolvedMarkers` gate). First place Bonsai stages
-  several files from one AI call — nothing is committed, everything stays visible and revertible.
-
-**Orchestrator-settled OQs (recorded so they are not re-litigated):**
-- OQ1 concurrency cap = **3** (`AI_MAX_CONCURRENT_RUNS`). 1 would re-create the reported "every AI
-  button disabled" bug; unbounded invites a rate-limit wall.
-- OQ4 = **both** "Resolve all with AI" entry points (conflicts header + merge banner).
-- OQ5 = dock adoption by the other six AI runners stays **deferred** past P68e (props are generic
-  over run key, so they can adopt it later without rework).
-- OQ6 = P68b ships a small Rust echo-helper binary via `BONSAI_CLAUDE_BIN` rather than treating
-  "bulk payload + mid-run question" as checkpoint-only: that exact combination is where both serious
-  P68a defects lived, and the `.cmd` stub provably cannot reach it (`set /p` ~1 KB ceiling).
-- A1 (architect): `ai_resolve_conflict_stream(repo_id, paths: Vec<String>, on_event)` returning
-  `AiResolveBatch` — a single-path call is just `paths.len() == 1`. Keeps bulk split/attribution in
-  Rust (D1) and holds the command count at +3.
-
-**⚠️ Durable warnings — do NOT "fix" these back:**
-- **D16 — the session loop thread never blocks on I/O.** Reader threads are spawned **before**
-  anything is written to stdin. The contract's original §3.3 pseudocode wrote the payload first,
-  which deadlocks on the pipe buffer for any payload ≥64 KB (P68f's bulk payload is ~400 KB). The
-  corollary is *exactly one* `WriteTx`, created once and never cloned — dropping it **is** the
-  child's EOF. Contract re-synced accordingly (§2a, §3.1–§3.4, §4.x, §6.3, §8.x, §10.1, §12/A13).
-- The 13 `RunOpts::default()` call sites are deliberately **not** migrated — the 90 s default stays
-  for the unrelated AI features; streaming is an additive sibling. `commands/ai.rs` is unmodified.
-- The pre-existing load-sensitive flake `ai::tests::run_claude_slow_times_out_and_reaps_child` was
-  **fixed** in P68a (wall-clock assertion → monotonic lower bound + generous upper bound). It
-  measured 2.97 s for a 1 s deadline at the P67 baseline; it was never a P68 regression.
-- `StreamLogItem.assistant_text: bool` exists because `{ text }` alone cannot separate assistant
-  prose from `⚙ tool(...)`/system/stderr decoration (D2/A5). Partial deltas deliberately do **not**
-  set it, to avoid double-counting.
-
-**Known limitations accepted up front:** sentinel-based questions (a model ignoring the convention
-degrades to a normal answer, still caught by `hasUnresolvedMarkers`); no re-attach to an in-flight
-run after a window reload; `total_cost_usd` may be cumulative across turns (display the last
-`result`'s value, don't sum).
-
-**Security follow-ups still OPEN** (audit items 7–11, each with its rationale in
-`docs/contracts/P68-security-audit.md` — that file is canonical, do not duplicate them here): the
-novel-content gate (the structural defeat for H1), proposals shown as a diff, bulk path-count cap +
-per-batch reads + batch count in the dialog, process-group kill off Windows + zeroing `ctl.pid`
-after reap, and a symlink-safe `resolve_conflict_text` write.
-
-Full original board text for this milestone (with the drift it had accumulated):
-`docs/history/todo-archive-2026-08.md` **Part 4**.
-
----
-
 ## Archive
 
 | File | Covers |
 |---|---|
-| `docs/history/todo-archive-2026-08.md` | P65 → P28 build detail, the Phase 1–4 banners, and the resolved FOR-USER decisions (moved 2026-08-18) |
+| `docs/history/todo-archive-2026-08.md` | P65 → P28 build detail, the Phase 1–4 banners, resolved FOR-USER decisions (Parts 1–4, moved 2026-08-18); P69/P67/P68 build detail, the 2026-08-17 batch mapping + spike facts, resolved spun-out items (Parts 5–9, moved 2026-08-19) |
 | `docs/history/todo-archive.md` | P27 → P2, M0–M6 |
 | `docs/history/milestones-mvp.md` | the M0–M6 AI-gate vs USER CHECKPOINT split |
 | `docs/history/context-pollution-audit.md` | the context/token-cost audit |

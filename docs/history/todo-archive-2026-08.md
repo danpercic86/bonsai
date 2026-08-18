@@ -4,7 +4,8 @@
 > the live board back under its ~300-line budget. Nothing here was summarised or dropped — the text
 > is byte-for-byte what stood on the board. The companion file `docs/history/todo-archive.md` covers
 > the older span (P27 → P2 and M0–M6), and `docs/history/milestones-mvp.md` covers the M0–M6 gate
-> split.
+> split. **Parts 5–9 were added 2026-08-19** (P69 build detail, the 2026-08-17 batch mapping +
+> spike facts, P67 build detail, a second P68 condensation, and resolved spun-out items).
 >
 > **What stayed on the live board (do not treat these as archived):** P67 and P68 (code-complete,
 > AI gate passed, **awaiting native USER CHECKPOINT**), the P62–P65 status lines and P66's deferral
@@ -2507,5 +2508,245 @@ unrelated AI features; streaming is an additive sibling).
 degrades to a normal answer, still caught by `hasUnresolvedMarkers`); no re-attach to an in-flight
 run after a window reload; `total_cost_usd` may be cumulative across turns (display the last
 `result`'s value, don't sum).
+
+---
+
+## Part 5 — P69 (1.0.0 release readiness) build detail, verbatim
+
+> Moved off the board 2026-08-19. P69 shipped as tag `v1.0.0` at `bd52483`; the board keeps the
+> status line, the FOR-USER items, the condensed user decisions, the final gate, and the
+> still-open list. This is the full context + increment text.
+
+Triggered by a full-project analysis requested 2026-08-18, after the user's first real macOS
+testing pass. Goal: the minimum credible 1.0.0, not new features. User decisions taken this
+session (all three explicit):
+- **Scope** = macOS defects + contributor docs. Deeper tech debt stays deferred.
+- **Code signing** = ship 1.0.0 **unsigned**, as already locked in `docs/code-signing.md`.
+  README's per-OS Gatekeeper/SmartScreen workarounds stand. The "decision needed" in that file
+  is therefore ANSWERED for 1.0: defer.
+- **Native checkpoints** = tag 1.0.0 WITHOUT running the six outstanding USER CHECKPOINTs
+  (P62–P65, P67, P68), but ship the forge/PR surface (P62–P64) **flagged beta** in README +
+  CHANGELOG, since it needs real per-provider tokens to verify.
+
+### Increments
+- **P69a — macOS Rust fixes.** `external.rs` editor ladder silently no-ops on a Mac without
+  VS Code (`open -a` always *spawns*; it fails at *exit*, and `run()` never waits) → add
+  `wait_for_exit` for macOS `open` specs. Plus: `history_index/store.rs` keyed the repo path
+  off `cfg(windows)` so APFS split the cache per path casing → drive it off `core.ignorecase`
+  like `stage.rs:143-152` already does. Plus: `settings.rs` recents dedupe used
+  `eq_ignore_ascii_case`, merging genuinely distinct repos on ext4 → reuse the `fs::canonicalize`
+  approach from `commands/repo.rs:344`.
+- **P69b — macOS frontend fixes.** ⌘+Enter did not commit (`CommitBox.tsx:257` was the ONLY
+  handler missing `metaKey`). `--font-mono` lacked `ui-monospace`, so the DOM fell to Courier
+  while the canvas (`metrics.ts:161`) used SF Mono — the two stacks now match. New
+  `src/utils/platform.ts` so shortcut labels show ⌘ instead of a hardcoded "Ctrl". Playwright
+  pinned `channel: 'msedge'` on `!CI`, so `pnpm test:e2e` could not run on a Mac → gate on
+  `process.platform === 'win32'`.
+- **P69c — crash + symlink.** Both from `docs/audit-2026-08-18.md`, re-verified at every cited
+  line by the orchestrator before scheduling. (1) MUST-FIX: `WorkspaceRightPanel.tsx:265` gates
+  on `!== null` but never bounds-checks, and `setGraph` publishes the first 512-row batch
+  *before* the selection remap → a selection at row ≥512 renders `CommitPanel` with
+  `node === undefined` → TypeError → ErrorBoundary takes down the workspace. (2) worktree-copy
+  symlink write-through (`worktree_copy.rs:232-245`): lexical containment only, so a hostile
+  branch can make Overwrite clobber a file outside the worktree.
+- **P69d — docs.** CONTRIBUTING.md was materially stale: it claimed "there is no
+  `.github/workflows` directory at all" and "there is currently no frontend test runner" — both
+  false, both listed as *good first contributions*, and the second contradicted TESTING.md
+  outright. Also a dead README anchor, "72 documents" (actually 139), clippy missing
+  `-- -D warnings`, and a PR checklist omitting four real CI gates. CHANGELOG backfill: P49–P65
+  and the T1–T6 campaign appear in NO entry, so a 1.0.0 cut from `[Unreleased]` (P67/P68 only)
+  would misrepresent the release.
+- **P69e — CI.** `frontend` job matrixed onto `macos-latest` (was ubuntu-only, which is exactly
+  why P69b's defects reached a release branch). `e2e`/`audit` stay ubuntu-only.
+
+### Known limitation (recorded deliberately)
+The Playwright `msedge`→`win32` fix is only ever exercised **locally** — in CI the config always
+picks bundled chromium, so no CI leg can regress-test it.
+
+---
+
+## Part 6 — user-reported batch (2026-08-17): item→milestone mapping + spike facts, verbatim
+
+> Moved off the board 2026-08-19. The LOCKED USER DECISIONS blocks stayed on the board (they are
+> do-not-re-litigate operational content). This is the reported-item mapping and the CLI spike
+> facts.
+
+**User's 7 items → milestone mapping:**
+1. Dashed HEAD guideline disappears on scroll → **P67 §1** (confirmed bug, not intended)
+2. Right panel wastes vertical space vs the changes tree → **P67 §2**
+3. "Propose & review" shows no proposals → **P68** (not broken — the proposal opens in the CENTER
+   pane, invisible from the right panel; plus item 5 destroys it. No separate work item)
+4. Resolve ALL conflicts with AI, not one at a time → **P68 §D**
+5. No feedback on AI resolve; result lost when switching files → **P68 §C** (root cause found:
+   single-slot `aiResolvingPath` + the SHARED `fileDiffReqId` guard discarding a computed proposal)
+6. Claude timed out at 90s on an i18n JSON conflict → **P68 §A/§B** (real cause: `--tools ""` makes
+   Claude blind to the repo, so no timeout would help; fix = no-timeout + Cancel + read-only tools)
+7. Show AI logs live; let Claude ask questions mid-run → **P68 §B/§E**
+
+**SPIKE FACTS (verified against installed `claude` v2.1.233 — do not re-verify):**
+- `-p --output-format stream-json` **requires** `--verbose`.
+- NDJSON order: `system(init)` → `rate_limit_event` → `system(thinking_tokens)` heartbeats →
+  `assistant` → `system(post_turn_summary)` (carries `status_category`/`needs_action`) → `result`.
+- The `result` line is **byte-compatible** with today's `--output-format json` envelope → the
+  existing parse at `ai/mod.rs:332-366` is reused verbatim.
+- A turn ends at `result`, **NOT** process exit; with `--input-format stream-json` the child stays
+  alive on open stdin and accepts a second turn → this is the interactive mechanism.
+- **DEAD END:** the CLI's own `SendMessage` tool cannot ask the user anything — in `-p` mode the CLI
+  answers its own tool call and discards an injected `tool_result`. Mid-run questions therefore use
+  a prompt-level sentinel `BONSAI_NEEDS_INPUT: <question>`.
+- `--tools "Read,Grep,Glob"` is a valid allowlist (init echoes the exact subset).
+
+---
+
+## Part 7 — P67 build detail, verbatim
+
+> Moved off the board 2026-08-19. ⚠️ **P67 is NOT closed** — code-complete, AI gate passed,
+> **awaiting native USER CHECKPOINT** (`docs/contracts/P67-user-checklist.md`); it stays on the
+> live board. Only this per-increment build narrative, the measurements, and the contract-amendment
+> record moved here. The amendments are binding and also live in
+> `docs/contracts/P67-ux-polish-batch.md`, which is canonical for them.
+
+- **P67a** — HEAD guideline: new pure `headGuide()` in `src/graph/viewport.ts`; split
+  `drawWipRow` (`src/graph/draw.ts:200-212` moves out) into `drawHeadGuide` + `drawHeadEdgeMarker`;
+  drop the `scrollTop < rowHeight + 56` gate for the connector at `GraphCanvas.tsx:345`; clamp BOTH
+  ends (today only the end is clamped → perf + dash-crawl regressions if the gate is merely
+  removed); `selfTest.ts` + `window.__bonsai.p7` seam; `P1-polish.md` §9.3 SUPERSEDED markers.
+- **P67b** — right-panel structure + tighter default (~110px reclaimed ≈ 4–5 more file rows): new
+  `RightPanelActionsRow.tsx` + `CommitOptionsRow.tsx`, DELETE `StashSplitButton.tsx`, `--rp-*`
+  custom properties on `.right-panel` with cozy = the new tighter values (every consumer uses the
+  `var(--rp-x, <today>)` fallback form because `.file-row`/`.tree-dir-row`/`.section-label` are also
+  rendered OUTSIDE `.right-panel` by DiffFileTree/Sidebar/EmptyState/OnboardingSteps).
+- **P67c** — `panelDensity: 'cozy'|'compact'` end-to-end (types → App → SettingsPanel →
+  mock persistence → `settings.rs` + `ui_settings.rs` mirror + migration test) + one
+  `[data-density='compact']` block.
+- **P67d** — contract + user checklist + TODO update.
+- **P67e** — `StatusPanel.tsx` 700→~250 split (pure refactor, droppable; `StatusPanel.test.tsx`
+  must pass UNTOUCHED — that is the acceptance test).
+
+**Baseline before P67** (measured 2026-08-17, so later regressions are attributable): vitest
+**1331/0 across 111 files**; cargo workspace green except the one pre-existing load-sensitive flake
+noted under P68a. **Final P67 AI gate:** vitest **1361/0 across 112 files**, tsc 0, build green,
+`cargo test -p bonsai --lib` **222/0**, `cargo clippy --workspace --tests -- -D warnings` clean,
+command count **157 (+0)**.
+
+**MEASURED result for the user's item 2** (not estimated — the contract's ~110px was a guess and
+told the implementer to re-measure): `.status-panel` height **452.47 → 568.00 px = +115.53 px ≈ 4.8
+file rows** in the cozy default, plus ~14px per two sections inside the scroller (≈129.5px, ≈5.4
+rows). Compact adds a further **+30px** (408 → 438px measured live in the harness) ≈ 5.5 rows total.
+
+**Contract amendments written during P67** (all binding, in `P67-ux-polish-batch.md`):
+- **A5** — the collapse check ran before `edge`, making `edge:'top'` unreachable whenever a WIP row
+  exists (the WIP row is always above HEAD, so scrolling *past* HEAD clamped both ends together and
+  drew neither line nor marker). Now suppresses only the segment, never the marker.
+- **A6.1** — `dashOffset` sign was inverted. Canvas advances the pattern by `lineDashOffset`, so the
+  on-screen grid sits at `y ≡ y0 - off`; content-anchoring needs `off ≡ y0 - anchor`. The inverted
+  form is wrong by `-2·(y0-anchor)`, which VARIES WITH SCROLL → ~1px/px dash crawl, and a regression
+  versus pre-P67 (which was content-anchored for free via its unclamped start).
+- **A6.2** — the crawl guard only asserted 6-periodicity, which passes with the sign inverted; it now
+  asserts dash *phase* across 1px scroll steps, and was negative-controlled against the old sign.
+- **A6.3** — dropped a redundant `dir === 0` early return that could still suppress the marker for one
+  scroll position. ⚠️ `dir === 0` REMAINS REACHABLE and is tested — do not "simplify" it back.
+- Acceptance corrections: `headIndex 1500`→`2000` (the original was arithmetically impossible),
+  `CommitBox.tsx ≤ ~310`→`≤ ~350` (unreachable from §5.5's own change list), case count 11→14, and
+  §1.1a bullet 3 `segment===false`→`true` after implementation measured it.
+
+**Cross-platform fix worth remembering:** `field-sizing: content` (the auto-growing commit box) is
+**Chromium-only**. WebView2 has it; macOS WKWebView and Linux webkit2gtk do NOT, and without a guard
+the textarea became FIXED and *shorter* than before on those platforms. Guarded with
+`@supports not (field-sizing: content) { min-height: 70px }` — **70px, not the pre-P67 declared
+60px**, because that 60px was inert: the real pre-P67 height came from `rows={3}` (~70.5px
+border-box). Chosen over setting `rows={3}` in the TSX, which risks Chromium honouring `rows` for the
+initial height and giving back ~22px of the reclaim on the platform that does support field-sizing.
+
+**Harness gate results (`pnpm dev:mock`, measured live):** cozy `data-density="cozy"` / `--rp-row-h`
+24px / `.file-row` 24px+13px; compact `"compact"` / 20px / 20px+12px; toggles both directions;
+persists across reload; **`graph.compact` stays `false` while panel density is compact** (the
+independence the user asked for, proven empirically); **D8 proven** — the sidebar renders the SAME
+`.file-row`/`.section-label` classes but sits outside `.right-panel`, where `--rp-row-h` resolves to
+empty, so it kept 24px/11px while the panel shrank. Post-P67e `?op=merge` re-check: section order
+Conflicts(2) → Staged → Changes preserved, and the ✨AI button still appears on only the
+both-modified row.
+
+---
+
+## Part 8 — P68 board detail, second condensation (2026-08-19), verbatim
+
+> ⚠️ **P68 is NOT closed** — still **awaiting native USER CHECKPOINT**; it stays on the live board.
+> Part 4 above holds the original (drifted) board text moved 2026-08-18; this part holds the blocks
+> condensed off the board on 2026-08-19: the sub-increment commit list, the orchestrator-settled
+> OQs, and the durable warnings + known limitations. The durable warnings (D16, the
+> `RunOpts::default()` non-migration, `StreamLogItem.assistant_text`) are also recorded in
+> `docs/contracts/P68-ai-conflict-streaming.md`, which is canonical for them.
+
+**Sub-increments — all committed:**
+- **P68a** `0f154b2` — Rust streaming runner core (`ai/stream.rs`, `ai/session.rs`, `ai/registry.rs`,
+  `RunLimits`/`ToolPolicy`/`run_claude_streaming`, extracted `parse_result_envelope` +
+  `kill_pid_tree`, `AppError::AiCancelled`, 6 NDJSON stub modes). Partial output is now **kept** on
+  cancel/watchdog (the old `ai/mod.rs` discarded it).
+- **P68b** `451457e` — the 3 commands (`commands/ai_stream.rs`, managed `AiRunRegistry`, new
+  settings, read-only `--tools "Read,Grep,Glob"` allowlist, bulk split/attribution in Rust).
+- **P68c** `8d727de` — TS types + Channel bridge + `mock/handlers/aiStream.ts`
+  (`?aiSlow`/`?aiAsk`/`?aiFail`, and `?ai=off` now honoured).
+- **P68d** `76de1bb` — per-path store `useAiRuns.ts` + row feedback; `aiResolvingPath` deleted; the
+  `fileDiffReqId` coupling broken ← **the item-5 fix**.
+- **P68e** `a75a585` — bottom dock `AiActivityPanel` + `AiActivityLog` (third child of
+  `.workspace-host`).
+- **P68f** `f1096aa` — bulk single-run resolve (`useBulkAiResolve.ts`, `AiRunQueue.tsx`,
+  `BulkAiResolveButton.tsx`, `dialogs/BulkAiConfirmDialog.tsx`) + `e2e/18-ai-bulk-resolve.spec.ts`.
+- **P68g-1** `96295ef` — security hardening (audit items 1, 3, 4, 5, 6 + L6).
+- **P68g-2** `44067af` — the eight AI-run settings UI, honest consent copy, `autoResolve` caveat at
+  the point of choice, bulk-dialog "one or more runs" correction, ask-block attribution + the
+  never-asks-for-secrets guard (audit item 2 — the one P68g-1 deferred).
+- Supporting: `cb85e55` `useUiSettings` + `usePartialStaging` extraction · `8254b46` e2e
+  persistence-race fix.
+
+**Orchestrator-settled OQs (recorded so they are not re-litigated):**
+- OQ1 concurrency cap = **3** (`AI_MAX_CONCURRENT_RUNS`). 1 would re-create the reported "every AI
+  button disabled" bug; unbounded invites a rate-limit wall.
+- OQ4 = **both** "Resolve all with AI" entry points (conflicts header + merge banner).
+- OQ5 = dock adoption by the other six AI runners stays **deferred** past P68e (props are generic
+  over run key, so they can adopt it later without rework).
+- OQ6 = P68b ships a small Rust echo-helper binary via `BONSAI_CLAUDE_BIN` rather than treating
+  "bulk payload + mid-run question" as checkpoint-only: that exact combination is where both serious
+  P68a defects lived, and the `.cmd` stub provably cannot reach it (`set /p` ~1 KB ceiling).
+- A1 (architect): `ai_resolve_conflict_stream(repo_id, paths: Vec<String>, on_event)` returning
+  `AiResolveBatch` — a single-path call is just `paths.len() == 1`. Keeps bulk split/attribution in
+  Rust (D1) and holds the command count at +3.
+
+**⚠️ Durable warnings — do NOT "fix" these back:**
+- **D16 — the session loop thread never blocks on I/O.** Reader threads are spawned **before**
+  anything is written to stdin. The contract's original §3.3 pseudocode wrote the payload first,
+  which deadlocks on the pipe buffer for any payload ≥64 KB (P68f's bulk payload is ~400 KB). The
+  corollary is *exactly one* `WriteTx`, created once and never cloned — dropping it **is** the
+  child's EOF. Contract re-synced accordingly (§2a, §3.1–§3.4, §4.x, §6.3, §8.x, §10.1, §12/A13).
+- The 13 `RunOpts::default()` call sites are deliberately **not** migrated — the 90 s default stays
+  for the unrelated AI features; streaming is an additive sibling. `commands/ai.rs` is unmodified.
+- The pre-existing load-sensitive flake `ai::tests::run_claude_slow_times_out_and_reaps_child` was
+  **fixed** in P68a (wall-clock assertion → monotonic lower bound + generous upper bound). It
+  measured 2.97 s for a 1 s deadline at the P67 baseline; it was never a P68 regression.
+- `StreamLogItem.assistant_text: bool` exists because `{ text }` alone cannot separate assistant
+  prose from `⚙ tool(...)`/system/stderr decoration (D2/A5). Partial deltas deliberately do **not**
+  set it, to avoid double-counting.
+
+**Known limitations accepted up front:** sentinel-based questions (a model ignoring the convention
+degrades to a normal answer, still caught by `hasUnresolvedMarkers`); no re-attach to an in-flight
+run after a window reload; `total_cost_usd` may be cumulative across turns (display the last
+`result`'s value, don't sum).
+
+---
+
+## Part 9 — resolved spun-out items (moved 2026-08-19), verbatim
+
+### `App.tsx` per-field settings pattern is driving unbounded growth — **DONE 2026-08-18**
+Was: 1212 lines, each new setting costing N × `useState` + N × `if (patch.x !== undefined)` +
+N × `setX(s.x)` + N × prop-pass. P67c (`panelDensity`) and P68e (dock height/collapsed) each paid it.
+**Closed** by extracting `src/hooks/useUiSettings.ts` (210) — App.tsx **1212 → 1120**, zero call sites
+changed (no prop name or type moved, so the blast radius stayed inside App + the hook). Same pass took
+`RepoWorkspace.tsx` **3087 → 2948** via `repoWorkspace/usePartialStaging.ts` (245). Reviewed APPROVE;
+all six equivalence claims verified, including the one non-verbatim edit (11 names added to 8 dep
+arrays, each confirmed a container-level `useState` setter or `useRef`). Guarded by
+`useUiSettings.test.tsx` — 9 tests, **all 7 behaviours negative-controlled**. Baseline re-locked, so the
+reclaimed floor cannot silently regrow; `session.rs`, `stream.rs` and `useAiRuns.test.tsx` fell off the
+over-500 list entirely.
 
 ---
