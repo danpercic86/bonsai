@@ -605,14 +605,9 @@ mod tests {
         let dir = scratch_dir();
         // Pins the initial branch to "main" via `initial_head` rather than
         // relying on `init.defaultBranch` — libgit2 falls back to "master"
-        // when that config is unset (observed on the windows-latest runner),
-        // which `reset_restores_original_branch` below assumes (mirrors
-        // `health.rs`'s `init` fixture).
-        let repo = git2::Repository::init_opts(
-            dir.path(),
-            git2::RepositoryInitOptions::new().initial_head("main"),
-        )
-        .expect("init");
+        // when that config is unset, which `reset_restores_original_branch` assumes.
+        let repo = git2::Repository::init_opts(dir.path(), git2::RepositoryInitOptions::new().initial_head("main"))
+            .expect("init");
         {
             let mut cfg = repo.config().expect("config");
             cfg.set_str("user.name", "Test").expect("name");
