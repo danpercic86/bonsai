@@ -105,8 +105,12 @@ fn launch_first_delivers_spec_unchanged() {
     assert_eq!(seen[0].args, vec![path.display().to_string()]);
 }
 
-/// `resolve_program` resolves an existing program to a path (hit) and errors for
-/// a nonsense name (miss) — no spawn either way.
+/// `resolve_program` resolves an existing program to a path (hit) — no spawn
+/// either way. The "miss" half is platform-specific BY DESIGN (procutil.rs):
+/// Windows resolves eagerly against `PATH`/`PATHEXT`, so a nonsense name
+/// errors here; non-Windows hands the bare name to `Command` unchanged and
+/// defers "not found" to `spawn()`'s `NotFound`, so `resolve_program` itself
+/// always succeeds there.
 #[test]
 fn resolve_program_hit_and_miss() {
     let known: &str = if cfg!(windows) { "cmd" } else { "sh" };
@@ -115,7 +119,11 @@ fn resolve_program_hit_and_miss() {
         Err(e) => eprintln!("note: {known} not resolvable in this env: {e}"),
     }
     let miss = resolve_program("bonsai-definitely-not-a-real-tool-xyz123");
-    assert!(miss.is_err(), "a nonsense program name must fail to resolve");
+    if cfg!(windows) {
+        assert!(miss.is_err(), "a nonsense program name must fail to resolve");
+    } else {
+        assert!(miss.is_ok(), "non-Windows defers not-found to spawn(), not resolve_program");
+    }
 }
 
 fn is_nonempty(p: &Path) -> bool {
