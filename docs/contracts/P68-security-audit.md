@@ -226,19 +226,37 @@ such exemption. Fix: exempt `tool_use` lines too, or keep a per-run "files read"
   (`commands/ai_stream.rs:75-80`). The 13 `RunOpts::default()` call sites and `ai_resolve_conflict` are
   untouched — `run_claude` still passes `--tools ""` (`ai/mod.rs:419-433`). D6 holds.
 
-**`--safe-mode` guarantees are UNKNOWN today.** The only in-tree evidence is a spike note from CLI
-v2.1.220 (`docs/history/todo-archive.md:1000`, `docs/contracts/P13-ai-foundation.md:134`) that it keeps
-subscription auth and disables the repo's own `CLAUDE.md`/hooks/skills/MCP. That property is **far more
-load-bearing now** — with tools enabled, a hostile repo's `CLAUDE.md` being auto-loaded would be direct
-instruction injection ahead of Bonsai's own system prompt — and it has not been re-verified against
-v2.1.233 with a non-empty allowlist. Treat it as an unknown, not a control.
+**`--safe-mode` guarantees — ✅ RE-VERIFIED 2026-08-18 against CLI 2.1.234** (was: unknown, based only
+on a v2.1.220 spike note — `docs/history/todo-archive.md:1000`,
+`docs/contracts/P13-ai-foundation.md:134`). This property is **far more load-bearing now**: with tools
+enabled, a hostile repo's `CLAUDE.md` being auto-loaded would be direct instruction injection ahead of
+Bonsai's own system prompt. Measured, not assumed:
+
+- A `CLAUDE.md` planted in the run's cwd instructing the model to prefix every reply with a control
+  token was **not obeyed** under `-p --safe-mode --tools "Read,Grep,Glob" --no-session-persistence`.
+  Corroborated by a second probe in which the model reported the file "was not loaded into my
+  context — I had to discover it via glob".
+- So suppression is **not weakened by a non-empty `--tools` allowlist**. It counts as a control.
+
+The same probe session found the opposite result for tool scope, which is why the argv changed —
+see §1a of `P68-ai-conflict-streaming.md`: `Read`/`Grep`/`Glob` were **not** fenced to `cwd` (a file two
+directories above the repo was read with `permission_denials` empty), and `--permission-mode manual`
+now fences them. That fence confines the H1 chain to the repository; it does **not** close H1, since a
+hostile repo can simply vendor a `.env`.
 
 ---
 
 ## Before this milestone is called done
 
-**Must fix in P68g** — status after **P68g-1** (2026-08-18): 1 ✅, 3 ✅, 4 ✅, 5 ✅, 6 ✅;
-**2 DEFERRED** (`src/App.tsx` was owned by a concurrent refactor — it is the only item left).
+**Must fix in P68g** — ✅ **ALL SIX CLOSED** as of **P68g-2** (2026-08-18, commit `44067af`).
+1, 3, 4, 5, 6 landed in P68g-1 (`96295ef`); **2 landed in P68g-2** — it had been deferred only because
+`src/App.tsx` was owned by a concurrent refactor at the time, and it was then implemented in full:
+the four corrected consent blocks, the `autoResolve` "written without review" caveat shown **at the
+point of choice**, a UI for `ai_conflict_tools` (part of eight AI settings that had none), and the
+repo-read sentence in the bulk confirm dialog.
+
+Follow-ups **7–11 below remain OPEN** — in particular 7, the novel-content gate, which is the one
+change that structurally defeats H1. Nothing in P68g closed H1; see the note under it.
 
 1. Re-verify against the installed CLI: (a) `--safe-mode` still suppresses repo `CLAUDE.md`/skills/hooks
    **with the tool allowlist non-empty**, and (b) whether `Read`/`Grep`/`Glob` can reach outside `cwd`

@@ -46,9 +46,20 @@ renders — so the graph stays fast even over histories of 20,000+ commits.
   all with in-app conflict resolution.
 - **Repository management** — multiple repos open in tabs, named worktrees, background
   auto-fetch, first-run onboarding, and in-app Git config editing.
+- **Search & command palette** — commit/content search, a `Ctrl`/`Cmd`-K command palette, and
+  filtering for the sidebar lists.
+- **Pull requests** — connect a GitHub, GitLab, Bitbucket or Azure DevOps repository with a
+  personal access token to list, read and open PRs, and see PR/CI badges on the graph.
 - **Auto-update** — checks a signed release manifest and updates in place (opt-in).
-- **AI-ready** — an embedded MCP server exposes structured Git data (graph, diffs, conflicts)
-  to AI tools, plus an optional "what changed" digest.
+- **AI features (optional, local)** — everything AI runs through the
+  [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed on your own machine,
+  under your own subscription; nothing goes to Bonsai servers. Merge-conflict resolution with a
+  live streaming log, cancel, mid-run questions and a "resolve all conflicts" option; commit
+  messages and a WIP→commits composer; explain-commit and blame-why; semantic history search;
+  changelog and PR-description drafting. AI is off until you enable it and accept the consent
+  dialog, which spells out what is sent.
+- **AI-ready for other tools** — an embedded MCP server exposes structured Git data (graph,
+  diffs, conflicts) to AI tools, plus an optional "what changed" digest.
 
 ## Install
 
@@ -86,7 +97,7 @@ pnpm tauri build    # produce a release build + installers
 Frontend-only development (no native window) runs against mock Git data in a plain browser:
 
 ```bash
-pnpm dev            # then open the printed URL with VITE_MOCK_IPC=1
+pnpm dev:mock       # Vite in mock mode; open the printed URL (port 1420)
 ```
 
 ## Tech stack
