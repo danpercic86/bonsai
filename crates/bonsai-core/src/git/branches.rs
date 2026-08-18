@@ -1186,8 +1186,15 @@ mod checkout_autostash_tests {
     use crate::git::stash::{list_stashes, ApplyStashOutcome};
 
     /// Init a scratch repo with a deterministic identity + autocrlf off.
+    ///
+    /// Pins the initial branch to "main" via `initial_head` rather than
+    /// relying on `init.defaultBranch` — libgit2 falls back to "master" when
+    /// that config is unset (observed on the windows-latest runner), which
+    /// this module's assertions of a fixed "main" branch name assume (mirrors
+    /// `health.rs`'s `init` fixture).
     fn ca_init(dir: &Path) -> git2::Repository {
-        let repo = git2::Repository::init(dir).expect("init repo");
+        let repo = git2::Repository::init_opts(dir, git2::RepositoryInitOptions::new().initial_head("main"))
+            .expect("init repo");
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test User").expect("name");
         cfg.set_str("user.email", "test@example.com").expect("email");
