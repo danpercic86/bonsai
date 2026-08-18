@@ -415,6 +415,18 @@ Says `session_drain_tests.rs` is `#[path]`-included "as a child of `session`". A
 split it is a child of `session::session_drain` — still a descendant, so the privacy claim holds, but the
 wording is out of date.
 
+### `NumberSlider` clamps mid-typing, so a field's own minimum is hard to type — **OPEN**
+`src/components/NumberSlider.tsx` commits on every `change` while the input is controlled, so with
+`min = 60` a user typing `6` then `0` lands on **600**, not 60 (the field snaps to 60 after the first
+keystroke, then the next digit appends). Verified. Pre-existing and shared by **every** settings slider,
+so it is not P68-specific — but P68g's new limits fields (idle `min 60`, default 300) are where it is
+most likely to bite. The USD field in `SettingsAiLimits` already dodges it with a local draft string,
+because `Number('12.')` → `12` makes `12.50` otherwise unenterable. **Fix = move NumberSlider to
+draft-string + commit-on-blur/Enter**, which changes commit semantics for every settings slider and so
+needs its own increment with its own review — deliberately NOT bolted onto a security milestone.
+Related and already fixed in P68g-2: clearing the field used to snap the setting to `min`
+(`Number('') === 0`), contradicting the component's own doc comment.
+
 ### `STDERR_GRACE_TOTAL` is not the absolute cap its doc comment claims — **OPEN**
 `drain_stderr` checks `Instant::now() < deadline` *before* each `recv_timeout(STDERR_GRACE)`, so the
 drain can run up to `STDERR_GRACE_TOTAL + STDERR_GRACE` (~1150 ms vs the documented 1000 ms). Visible

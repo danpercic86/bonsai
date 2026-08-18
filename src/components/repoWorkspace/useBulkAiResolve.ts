@@ -152,15 +152,20 @@ export function useBulkAiResolve(deps: {
           ? 'Stopping…'
           : 'Cancel all'
         : '✨ Resolve all with AI',
+      // P68g §2.4: these said "the one AI run" / "in ONE AI run", which the confirm
+      // dialog now correctly denies — Rust packs the payload into batches by byte size,
+      // so a click can spend more than one metered run. Claiming a count the code does
+      // not guarantee is the same defect class as telling the user a result is somewhere
+      // it is not, so the copy states the scope (all N files) and not the run count.
       title: active
         ? stopping
           ? 'Stopping the AI run…'
-          : `Stop the one AI run covering all ${count} files`
+          : `Stop the AI work covering all ${count} files`
         : !aiEligible
           ? 'Enable AI features in Settings to use this'
           : aiRuns.atCapacity
             ? 'Too many AI runs in progress — cancel one and try again'
-            : `Resolve all ${count} conflicted files in ONE AI run`,
+            : `Resolve all ${count} conflicted files together with AI`,
       ariaLabel: active
         ? `Cancel the AI run for all ${count} files`
         : `Resolve all ${count} conflicts with AI`,

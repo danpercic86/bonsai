@@ -7,6 +7,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { SettingsPanel } from './SettingsPanel';
 import type { SettingsPanelProps } from './SettingsPanel';
 import type { GraphPrefs, McpStatus } from '../ipc';
+import type { AiRunPrefs } from '../settings/aiRunPrefs';
 import { AUTO_FETCH_INTERVAL_MAX } from '../settings/ranges';
 
 const GRAPH: GraphPrefs = {
@@ -22,6 +23,18 @@ const GRAPH: GraphPrefs = {
   showSignatureBadge: true,
   showPrBadge: false,
   showCiStatus: false,
+};
+
+/** P68g: the shipped AI-run defaults, including the two LOCKED zeros. */
+const AI_RUN: AiRunPrefs = {
+  aiConflictTools: 'readOnly',
+  aiStreamLog: true,
+  aiIncludePartialMessages: false,
+  aiIdleTimeoutSecs: 300,
+  aiHardCapSecs: 0,
+  aiMaxTurns: 6,
+  aiMaxBudgetUsd: 0,
+  aiBulkMaxBytes: 400_000,
 };
 
 const RUNNING: McpStatus = {
@@ -51,6 +64,7 @@ function renderPanel(over: Partial<SettingsPanelProps> = {}) {
     aiConsented: false,
     aiAvailability: null,
     onRequestEnableAi: vi.fn(),
+    aiRun: AI_RUN,
     mcpStatus: null,
     mcpConsented: false,
     onSetMcpEnabled: vi.fn(),
@@ -148,14 +162,55 @@ describe('SettingsPanel', () => {
     expect(off.props.onChange).toHaveBeenCalledWith({ aiEnabled: false });
   });
 
+  // P68g §2.3 acceptance 13: the second radio is "Resolve automatically" — the old
+  // "Auto-resolve, then review" promised a review step that does not happen.
   it('autonomy radios are disabled until AI is active, then patch the choice', () => {
     renderPanel();
     expect(screen.getByRole('radio', { name: /Propose & review/ })).toBeDisabled();
+    expect(screen.queryByRole('radio', { name: /Auto-resolve, then review/ })).toBeNull();
     const active = renderPanel({ aiEnabled: true, aiConsented: true });
-    const auto = active.getAllByRole('radio', { name: /Auto-resolve, then review/ })[1];
+    const auto = active.getAllByRole('radio', { name: 'Resolve automatically' })[1];
     expect(auto).toBeEnabled();
     fireEvent.click(auto);
     expect(active.props.onChange).toHaveBeenCalledWith({ aiConflictAutonomy: 'autoResolve' });
+  });
+
+  // The autonomy consequence must be readable BEFORE the choice, so BOTH hints
+  // render whatever is selected — and the autoResolve one says "no review step".
+  it('both autonomy hints render, and each radio points at its own', () => {
+    renderPanel({ aiEnabled: true, aiConsented: true });
+    expect(
+      screen.getByText(/Each result opens as a proposal\. Nothing is written to your files/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/written to your files and staged for you, with no review step/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Propose & review' })).toHaveAttribute(
+      'aria-describedby',
+      'ai-autonomy-propose-hint',
+    );
+    expect(screen.getByRole('radio', { name: 'Resolve automatically' })).toHaveAttribute(
+      'aria-describedby',
+      'ai-autonomy-auto-hint',
+    );
+  });
+
+  // P68g §1: the AI-runs section is wired through the container, inert until AI is
+  // active, and patches one field at a time.
+  it('AI runs: the section is inert until AI is active, then patches through', () => {
+    renderPanel();
+    expect(screen.getByRole('button', { name: /Repository access/ })).toBeDisabled();
+    expect(
+      screen.getByText('Turn on “Enable AI features” above to change these.'),
+    ).toBeInTheDocument();
+
+    const active = renderPanel({ aiEnabled: true, aiConsented: true });
+    const access = active.getAllByRole('button', { name: /Repository access/ })[1];
+    expect(access).toBeEnabled();
+    fireEvent.click(access);
+    expect(active.props.onChange).toHaveBeenCalledWith({ aiConflictTools: 'none' });
+    fireEvent.click(active.getAllByRole('checkbox', { name: 'Stream AI output' })[1]);
+    expect(active.props.onChange).toHaveBeenCalledWith({ aiStreamLog: false });
   });
 
   it('AI availability line: probing, installed detail, and not-found warning', () => {

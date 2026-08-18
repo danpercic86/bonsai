@@ -68,6 +68,7 @@ const HYDRATED: UiSettings = {
   ],
   terminalCommand: 'wt.exe -d {path}',
   editorCommand: 'code {path}',
+  // P68g: every one of these is now UI-reachable, so hydration must seed them all.
   aiIdleTimeoutSecs: 120,
   aiHardCapSecs: 900,
   aiMaxTurns: 9,
@@ -206,6 +207,49 @@ describe('metricsVersion', () => {
   });
 });
 
+describe('AI-run knobs (P68g)', () => {
+  it('each knob patches on its own, previews live, and coalesces into ONE write', () => {
+    vi.useFakeTimers();
+    const spy = vi.spyOn(mockIpc, 'setUiSettings').mockResolvedValue(HYDRATED);
+    const { result } = mount();
+    const before = result.current.metricsVersion;
+
+    // The two LOCKED zeros are real values, not "unset": patching 0 must stick.
+    act(() => result.current.handleSettingsChange({ aiConflictTools: 'none' }));
+    act(() => result.current.handleSettingsChange({ aiIncludePartialMessages: true }));
+    act(() => result.current.handleSettingsChange({ aiIdleTimeoutSecs: 0 }));
+    act(() => result.current.handleSettingsChange({ aiHardCapSecs: 900 }));
+    act(() => result.current.handleSettingsChange({ aiMaxTurns: 12 }));
+    act(() => result.current.handleSettingsChange({ aiMaxBudgetUsd: 12.5 }));
+    act(() => result.current.handleSettingsChange({ aiBulkMaxBytes: 800_000 }));
+
+    expect(result.current.aiRun).toEqual({
+      aiConflictTools: 'none',
+      aiStreamLog: true,
+      aiIncludePartialMessages: true,
+      aiIdleTimeoutSecs: 0,
+      aiHardCapSecs: 900,
+      aiMaxTurns: 12,
+      aiMaxBudgetUsd: 12.5,
+      aiBulkMaxBytes: 800_000,
+    });
+    // None of them is a graph knob, so the canvas never re-measures.
+    expect(result.current.metricsVersion).toBe(before);
+
+    act(() => vi.advanceTimersByTime(300));
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0][0]).toEqual({
+      aiConflictTools: 'none',
+      aiIncludePartialMessages: true,
+      aiIdleTimeoutSecs: 0,
+      aiHardCapSecs: 900,
+      aiMaxTurns: 12,
+      aiMaxBudgetUsd: 12.5,
+      aiBulkMaxBytes: 800_000,
+    });
+  });
+});
+
 describe('save failure', () => {
   it('a rejected write pushes an error toast with the exact copy prefix', async () => {
     vi.useFakeTimers();
@@ -268,6 +312,19 @@ describe('hydrateUiSettings', () => {
     expect(result.current.aiDockHeight).toBe(320);
     expect(result.current.aiDockCollapsed).toBe(true);
     expect(result.current.aiStreamLog).toBe(false);
+    // P68g: the eight AI-run knobs, exposed as one read-only struct. Asserted as a
+    // whole so a field added to `AiRunPrefs` and forgotten in `hydrateUiSettings`
+    // fails here instead of silently showing a default in Settings.
+    expect(result.current.aiRun).toEqual({
+      aiConflictTools: 'none',
+      aiStreamLog: false,
+      aiIncludePartialMessages: true,
+      aiIdleTimeoutSecs: 120,
+      aiHardCapSecs: 900,
+      aiMaxTurns: 9,
+      aiMaxBudgetUsd: 3,
+      aiBulkMaxBytes: 200_000,
+    });
 
     // Hydration is a read replay — it must never write back.
     expect(setSpy).not.toHaveBeenCalled();

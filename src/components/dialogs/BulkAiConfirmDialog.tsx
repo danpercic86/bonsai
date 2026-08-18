@@ -3,7 +3,7 @@
  *
  * Why a confirm at all, when the AI writes nothing (D4)? Two reasons the user cares
  * about, and both are spelled out in the body rather than implied:
- *   * it SPENDS — one CLI run over N files is the most expensive thing Bonsai can
+ *   * it SPENDS — a CLI run over N files is the most expensive thing Bonsai can
  *     start, and `ai_max_budget_usd` ships as opt-in (OQ2), so nothing stops it but
  *     the user's own Cancel;
  *   * it touches N files at once, and under the `autoResolve` autonomy the marker-free
@@ -45,8 +45,8 @@ export function BulkAiConfirmDialog({
       onCancel={onCancel}
     >
       <div>
-        Send {count} conflicted {count === 1 ? 'file' : 'files'} to Claude in{' '}
-        <strong>one AI run</strong>, so it can reason across them?
+        Send {count} conflicted {count === 1 ? 'file' : 'files'} to Claude so it can reason across
+        them?
       </div>
       <ul className="confirm-name-list">
         {paths.slice(0, LIST_MAX).map((p) => (
@@ -58,14 +58,23 @@ export function BulkAiConfirmDialog({
           <li className="dialog-body-note">+{count - LIST_MAX} more</li>
         )}
       </ul>
-      <div className="dialog-body-note">
+      <div className="dialog-body-detail">
         {autonomy === 'autoResolve'
           ? 'Marker-free results are staged automatically (Settings → AI: “Resolve automatically”). Anything that still contains conflict markers is opened for review instead — never staged.'
           : 'Nothing is written to your files: each result is a proposal you review before it is staged.'}
       </div>
-      <div className="dialog-body-note">
-        This runs the Claude CLI once and uses your Claude quota. You can stop it at any
-        time with Cancel all.
+      {/* M2: the read grant, stated where the user agrees to N files at once. */}
+      <div className="dialog-body-detail">
+        Claude can also read other files in this repository while it works; whatever it reads is
+        sent to Anthropic with the request.
+      </div>
+      {/* No run COUNT: batching is computed in Rust from payload bytes, and the
+          frontend cannot know the split without duplicating that arithmetic — which
+          would put payload/Git logic in React. "one or more" is true for every
+          split; the shipped "once" was false as soon as a batch split. */}
+      <div className="dialog-body-detail">
+        Depending on how much text this adds up to, Bonsai makes one or more Claude runs, one after
+        another, using your Claude quota. Cancel all stops the rest.
       </div>
     </ConfirmDialog>
   );

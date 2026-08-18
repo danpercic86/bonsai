@@ -6,6 +6,7 @@ import { RepoWorkspace } from './components/RepoWorkspace';
 import { SettingsPanel } from './components/SettingsPanel';
 import { externalToolsItems } from './components/workspaceMenus';
 import type { PaletteAction } from './components/paletteActions';
+import { AiConsentDialog } from './components/dialogs/AiConsentDialog';
 import { AiAssetsPanel } from './components/AiAssetsPanel';
 import { RepoHealthPanel } from './components/RepoHealthPanel';
 import { OnboardingOverlay } from './components/OnboardingOverlay';
@@ -196,6 +197,7 @@ export default function App() {
     aiDockHeight,
     aiDockCollapsed,
     aiStreamLog,
+    aiRun,
     handleSettingsChange,
     hydrateUiSettings,
   } = useUiSettings(pushToast);
@@ -612,7 +614,7 @@ export default function App() {
         id: 'app.settings',
         title: 'Open Settings',
         group: 'action',
-        keywords: 'preferences config options',
+        keywords: 'preferences config options ai claude limits budget tools spend',
         run: () => setSettingsOpen(true),
       },
       {
@@ -998,6 +1000,7 @@ export default function App() {
           aiConsented={aiConsented}
           aiAvailability={aiAvailability}
           onRequestEnableAi={() => setConsentOpen(true)}
+          aiRun={aiRun}
           mcpStatus={mcpStatus}
           mcpConsented={mcpConsented}
           onSetMcpEnabled={handleSetMcpEnabled}
@@ -1033,20 +1036,11 @@ export default function App() {
             repoId={activeRepo}
           />
         )}
-        <ConfirmDialog
+        <AiConsentDialog
           open={consentOpen}
-          title="Enable AI features?"
-          confirmLabel="Enable"
-          busy={false}
           onConfirm={handleConfirmConsent}
           onCancel={() => setConsentOpen(false)}
-        >
-          <div>
-            Bonsai will send the contents of conflicted files to the Claude Code CLI installed on
-            this machine, under your Claude subscription. Nothing is sent to Bonsai's own servers,
-            and no files are changed without your review. Enable AI features?
-          </div>
-        </ConfirmDialog>
+        />
         <ConfirmDialog
           open={mcpConsentOpen}
           title="Enable MCP server?"

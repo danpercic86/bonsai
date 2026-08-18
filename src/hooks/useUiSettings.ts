@@ -19,8 +19,10 @@ import { useCallback, useRef, useState } from 'react';
 
 import type { ToastTone } from '../components/Toasts';
 import { ipc } from '../ipc';
+import type { AiRunPrefs } from '../settings/aiRunPrefs';
 import type {
   AiAutonomy,
+  AiConflictTools,
   AutoFetchSettings,
   GraphPrefs,
   HealthRefreshSettings,
@@ -54,6 +56,10 @@ export interface UiSettingsController {
   aiDockHeight: number;
   aiDockCollapsed: boolean;
   aiStreamLog: boolean;
+  /** P68g §1: the eight AI-run knobs as one read-only struct for the Settings
+   *  section (`AiRunPrefs`; the `graph`/`autoFetch` prop idiom). Each field is
+   *  still stored and PATCHED independently — this is only the read view. */
+  aiRun: AiRunPrefs;
   /** Apply a Settings patch: live preview now, one debounced merged persist.
    *  Referentially stable for as long as `pushToast` is — it is handed to
    *  children as a prop, so it must not churn every render. */
@@ -105,6 +111,16 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
   const [aiDockHeight, setAiDockHeight] = useState(180);
   const [aiDockCollapsed, setAiDockCollapsed] = useState(false);
   const [aiStreamLog, setAiStreamLog] = useState(true);
+  // P68 §8.3: the rest of the AI-run knobs, mirroring the Rust field defaults.
+  // `aiHardCapSecs: 0` (no deadline — Cancel is the stop) and `aiMaxBudgetUsd: 0`
+  // (no spend cap) are LOCKED user decisions, not missing values.
+  const [aiConflictTools, setAiConflictTools] = useState<AiConflictTools>('readOnly');
+  const [aiIncludePartialMessages, setAiIncludePartialMessages] = useState(false);
+  const [aiIdleTimeoutSecs, setAiIdleTimeoutSecs] = useState(300);
+  const [aiHardCapSecs, setAiHardCapSecs] = useState(0);
+  const [aiMaxTurns, setAiMaxTurns] = useState(6);
+  const [aiMaxBudgetUsd, setAiMaxBudgetUsd] = useState(0);
+  const [aiBulkMaxBytes, setAiBulkMaxBytes] = useState(400_000);
   // P16: `mcpConsented` is the one-time consent gate for the embedded-MCP enable
   // toggle; the dialog (App-owned) defers enabling until it is recorded.
   const [mcpConsented, setMcpConsented] = useState(false);
@@ -149,6 +165,15 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
       if (patch.aiDockHeight !== undefined) setAiDockHeight(patch.aiDockHeight);
       if (patch.aiDockCollapsed !== undefined) setAiDockCollapsed(patch.aiDockCollapsed);
       if (patch.aiStreamLog !== undefined) setAiStreamLog(patch.aiStreamLog);
+      if (patch.aiConflictTools !== undefined) setAiConflictTools(patch.aiConflictTools);
+      if (patch.aiIncludePartialMessages !== undefined) {
+        setAiIncludePartialMessages(patch.aiIncludePartialMessages);
+      }
+      if (patch.aiIdleTimeoutSecs !== undefined) setAiIdleTimeoutSecs(patch.aiIdleTimeoutSecs);
+      if (patch.aiHardCapSecs !== undefined) setAiHardCapSecs(patch.aiHardCapSecs);
+      if (patch.aiMaxTurns !== undefined) setAiMaxTurns(patch.aiMaxTurns);
+      if (patch.aiMaxBudgetUsd !== undefined) setAiMaxBudgetUsd(patch.aiMaxBudgetUsd);
+      if (patch.aiBulkMaxBytes !== undefined) setAiBulkMaxBytes(patch.aiBulkMaxBytes);
       pendingSettingsPatchRef.current = { ...pendingSettingsPatchRef.current, ...patch };
       if (settingsSaveTimerRef.current !== null) {
         window.clearTimeout(settingsSaveTimerRef.current);
@@ -184,6 +209,13 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
     setAiDockHeight(s.aiDockHeight);
     setAiDockCollapsed(s.aiDockCollapsed);
     setAiStreamLog(s.aiStreamLog);
+    setAiConflictTools(s.aiConflictTools);
+    setAiIncludePartialMessages(s.aiIncludePartialMessages);
+    setAiIdleTimeoutSecs(s.aiIdleTimeoutSecs);
+    setAiHardCapSecs(s.aiHardCapSecs);
+    setAiMaxTurns(s.aiMaxTurns);
+    setAiMaxBudgetUsd(s.aiMaxBudgetUsd);
+    setAiBulkMaxBytes(s.aiBulkMaxBytes);
   }, []);
 
   return {
@@ -204,6 +236,16 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
     aiDockHeight,
     aiDockCollapsed,
     aiStreamLog,
+    aiRun: {
+      aiConflictTools,
+      aiStreamLog,
+      aiIncludePartialMessages,
+      aiIdleTimeoutSecs,
+      aiHardCapSecs,
+      aiMaxTurns,
+      aiMaxBudgetUsd,
+      aiBulkMaxBytes,
+    },
     handleSettingsChange,
     hydrateUiSettings,
   };

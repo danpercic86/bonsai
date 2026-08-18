@@ -195,7 +195,9 @@ Height: `var(--ai-dock-header-h)` + `height` prop (persisted, 120–600 px, defa
 │ … log, unchanged, still scrollable …                                        │
 ├─────────────────────────────────────────────────────────────────────────────┤ ← 1px --warning 40%
 │ (?) Claude needs your answer                                                │  warning tint
+│ Claude wrote this — Bonsai did not:                                         │  11px/600 --text-1
 │ Should the German plural form use "Einträge" or "Eintraege"?                 │  --text-1
+│ ⚠ Bonsai never asks for passwords or tokens. Don’t paste secrets here.      │  12px/600 --text-1
 │ ┌─────────────────────────────────────────────────────────────┐             │
 │ │ Type your answer for Claude…                                │  [ Send ]   │  48px min
 │ └─────────────────────────────────────────────────────────────┘             │
@@ -364,6 +366,10 @@ none`, only when `status === 'awaitingInput'`.
 
 ### 4.1 Visual distinction
 
+> **Superseded by, and replaced with, `P68g-ui.md` §3.2 (spliced in below, P68g-2).** The token
+> verdict for the two security lines — `--text-1` words plus one `--warning` glyph, never yellow
+> words — and its reasoning live in `P68g-ui.md` §3.1.
+
 - Container `.ai-dock-ask`: `border-top: 1px solid color-mix(in srgb, var(--warning) 40%,
   var(--border)); background: color-mix(in srgb, var(--warning) 14%, var(--bg-1));` padding
   `var(--ai-dock-ask-pad)`, `display: flex; flex-direction: column; gap: 8px`.
@@ -372,8 +378,23 @@ none`, only when `status === 'awaitingInput'`.
 - `.ai-dock-ask-label`: `Claude needs your answer` — 11px/600, uppercase, letter-spacing 0.08em,
   **`--text-1`** (not `--warning`: `--warning` as small text is only 3.5:1 in light theme —
   §12-F2).
+- **`.ai-dock-ask-attrib` (AS BUILT, security audit M3).** Copy, verbatim:
+  `Claude wrote this — Bonsai did not:`. 11px/**600**, `--text-1`, `margin: 0`. Sits between the
+  label and the question and renders **only when a question exists**. It is attribution, not
+  decoration: the question text is model output and is reachable by an attacker without a
+  jailbreak (a conflicted file whose *both* sides begin with the literal `BONSAI_NEEDS_INPUT:`
+  line merges faithfully into one), so the block must never read as Bonsai asking.
 - `.ai-dock-ask-question`: the question verbatim, UI font 13px `--text-1`, `white-space:
-  pre-wrap`, `max-height: 96px; overflow: auto`, user-selectable.
+  pre-wrap`, `max-height: 96px; overflow: auto`, user-selectable. Rendered as **plain text only** —
+  never as markup, never as a link, never interpolated into another string.
+- **`.ai-dock-ask-guard` (AS BUILT, security audit M3).** Copy, verbatim:
+  `Bonsai never asks for passwords or tokens. Don’t paste secrets here.` 12px/**600**, `--text-1`,
+  `id="ai-dock-ask-guard"`, preceded by an `aria-hidden` `⚠` in
+  `.ai-dock-ask-guard-glyph { color: var(--warning) }`. It is **fixed chrome the model cannot
+  influence** and is rendered **even when `question === null`**, so a request for a secret is
+  visibly refused by Bonsai itself rather than sitting unanswered. Do not fold this sentence into
+  the question string, do not template any part of it, and do not hide it to save a line. Token
+  verdict and its reasoning: §3.1 of `P68g-ui.md`.
 - When any run is `awaitingInput`, the bar gets `data-attention="true"` → the same 14% `--warning`
   background, so the bar reads as "needs you" without expanding. No blinking, ever.
   **AS BUILT (N7): the attribute is set regardless of `collapsed`, not only when collapsed** — the
@@ -381,14 +402,24 @@ none`, only when `status === 'awaitingInput'`.
   collapsed bar would make the header lose its "needs you" colour the moment the user expands it to
   answer. Harmless superset; documented so it is not "fixed" back.
 
+Vertical order inside the block (part of the contract): head row (glyph + label) → attribution →
+question → guard → reply row → keyboard hint. The guard sits **between** the question and the input
+deliberately: it is the last thing read before typing.
+
 ### 4.2 Reply control
 
 `<textarea class="ai-dock-ask-input">` — UI font 13px (prose, not code), `--bg-2`, 1px
-`--border`, radius 6px, padding 6px 8px, min/max height per §1.7, `resize: none`, autogrow up to
-max. Placeholder: `Type your answer for Claude…`. `aria-label="Your answer to Claude"`,
-`aria-describedby` → `.ai-dock-ask-hint`.
+`--border`, radius 6px, padding 6px 8px, `rows={2}`, min/max height per §1.7, `resize: none`,
+autogrow up to max. Placeholder: `Type your answer for Claude…`.
+`aria-label="Your answer to Claude"`.
+**`aria-describedby="ai-dock-ask-guard ai-dock-ask-hint"` (AS BUILT, M3) — a two-id list, in that
+order.** The guard id comes **first** so a screen-reader user hears "Bonsai never asks for
+passwords or tokens" *before* the keyboard hint; a single-id `aria-describedby` pointing only at the
+hint would leave the anti-phishing line unannounced, which is the whole control. Both ids must
+exist whenever the textarea does — the guard `<p>` is unconditional, so they do.
 `.ai-dock-send` `.btn-primary`, height `var(--ai-dock-ctl-h)`, padding 0 12px, label `Send`.
-`.ai-dock-ask-hint`: `Enter sends · Shift+Enter for a new line`, 11px `--ai-dock-meta`.
+`.ai-dock-ask-hint`: `Enter sends · Shift+Enter for a new line`, 11px `--ai-dock-meta`,
+`id="ai-dock-ask-hint"`.
 
 ### 4.3 Keyboard
 
@@ -432,6 +463,33 @@ focus the reply box; else focus the log. Registered in
 `Ctrl+F` / `Ctrl+K` precedent at 236-250) so a user mid-commit-message can reach it. Add the row
 `Ctrl/Cmd+Shift+A — AI activity dock` to `src/components/ShortcutOverlay.tsx` beside the other
 `Ctrl+Shift` entries.
+
+### 4.5 The question is untrusted input (security audit M3)
+
+The dock renders one string it did not author: `question`. `ai::stream::sentinel_question` fires on
+a line beginning `BONSAI_NEEDS_INPUT:`, and both sides of a conflicted file can carry that line, so
+a faithful merge reproduces it without any jailbreak. The contract's original A9 argument
+("impossible in practice") holds for accidents and fails for adversaries. Three halves of the fix,
+and the UI owns the third:
+
+1. **Rust** requires the sentinel line to be the only non-empty line and strips control characters.
+2. **Rust** never logs tool results (`type:"user"` lines are reduced to a byte count — A11).
+3. **This component** attributes the text (§4.1 `.ai-dock-ask-attrib`), states a fixed
+   non-model-controlled refusal (§4.1 `.ai-dock-ask-guard`), announces that refusal to screen
+   readers first (§4.2 `aria-describedby` order), and renders the question as plain text with no
+   markup, no link detection and no string interpolation.
+
+Invariants for any future change to `AiActivityAsk.tsx`:
+- the guard line is never conditional on `question`;
+- the guard line is never composed with model text;
+- the attribution line is never dropped when a question exists;
+- the announcement region (§11) never reads the question aloud — it announces
+  `Claude needs your answer about <path>`, i.e. Bonsai's own words plus a path the user chose;
+- nothing in this block links, executes, copies-to-clipboard or auto-fills anything.
+
+**Not designed here, deliberately:** the reviewer of a *proposal* still reads flat full-file text
+rather than a diff (audit M5), so "you review it" is weaker than it sounds for a 1500-line file.
+That is follow-up item 8, and no copy in this contract claims otherwise.
 
 ---
 
@@ -587,7 +645,7 @@ drag implementations must be kept in sync, which is exactly what the house style
 | `src/components/AiActivityHeader.tsx` | NEW | ~130 | The one header row: chevron, pill, subject, activity line, turn, elapsed, cost, Review/Answer/Cancel/dismiss. Pure. | `{ run, collapsed, aggregate, onToggleCollapsed, onCancel, onDismiss, onReview, onAnswer }` |
 | `src/components/AiActivityLog.tsx` | NEW | ~170 | Log list, kind styling, truncation chip, dropped note, stick-to-bottom + jump button, log empty states, **and** the partial-output disclosure. Owns `stickRef`/`scrollRef` + the disclosure's open flag. | `{ log, logDropped, status, partialText, streamLogEnabled, hint }` |
 | `src/components/AiRunQueue.tsx` | NEW | ~110 | Per-file rows for a bulk run. Pure. | `{ files, onReviewFile, onRetryFile }` |
-| `src/components/AiActivityAsk.tsx` | NEW | ~110 | Question + reply textarea + Send; owns the draft and all keyboard handling; exposes an imperative `focus()` via `forwardRef`. | `{ question, sending, onReply }` |
+| `src/components/AiActivityAsk.tsx` | NEW | ~130 | Attribution + guard line + question + reply textarea + Send; owns the draft and all keyboard handling; exposes an imperative `focus()` via `forwardRef`. | `{ question, sending, onReply }` |
 | `src/components/aiDockFormat.ts` | NEW | ~60 | Pure: `formatElapsed`, `formatCost`, `classifyLogLine` (fallback path), `pillFor(status, cancelRequested)`, `AI_EVENT_TEXT_MAX`, `AI_DOCK_HEIGHT_DEFAULT`. | — |
 | `src/components/aiDockFormat.test.ts` | NEW | ~90 | Unit tests for the above. | — |
 | `src/components/AiActivityPanel.test.tsx` | NEW | ~220 | The §13 vitest list. | — |
@@ -749,7 +807,7 @@ used once each):
 | `.ai-log` | `<ol tabindex="0" aria-label="AI output">` — **no `role="log"`, no `aria-live`** |
 | `.ai-run-queue` | `<ul aria-label="Files in this AI run">` |
 | `.ai-dock-ask` | `<div role="group" aria-label="Claude needs your answer">` |
-| `.ai-dock-ask-input` | `aria-label="Your answer to Claude"`, `aria-describedby=".ai-dock-ask-hint"` |
+| `.ai-dock-ask-input` | `aria-label="Your answer to Claude"`, **`aria-describedby="ai-dock-ask-guard ai-dock-ask-hint"` (guard FIRST — §4.2)** |
 | `.ai-dock-announce` | `<p role="status" aria-live="polite" aria-atomic="true">`, visually hidden |
 | icon-only buttons | `✕` → `aria-label="Dismiss this run"`; chevron → see above; all glyphs `aria-hidden` |
 
@@ -789,6 +847,8 @@ compromise as the shipped `.pane-divider`.
 | `--text-2` on `--bg-2` (partial body, chips) | 6.4:1 | 4.6:1 |
 | `--danger` on `--bg-0` (`stderr:` lines, reasons) | 4.6:1 | 5.1:1 |
 | `--bg-0` on `--warning` (ask glyph) | 6.4:1 | 4.8:1 |
+| `--text-1` 600 on 14% warning tint (guard + attribution, §4.1) | 9.1:1 | 12.1:1 |
+| `--warning` glyph on the same tint (graphic, ≥3:1 — the guard's `⚠`) | 5.4:1 | 3.6:1 |
 | status glyph hue on its own 14% tint (graphics, ≥3:1) | 5.4–8.1:1 | 3.5–5.0:1 |
 | `--accent` focus ring on `--bg-1` (graphics, ≥3:1) | 4.6:1 | 4.4:1 |
 

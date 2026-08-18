@@ -46,8 +46,12 @@ describe('the awaiting-input block attributes untrusted model text (M3)', () => 
   it('states that Bonsai never asks for secrets, as fixed chrome', () => {
     const { container } = mount();
     const guard = container.querySelector('.ai-dock-ask-guard');
+    // P68g §3.1: salience comes from weight plus ONE aria-hidden --warning glyph;
+    // the SENTENCE itself is unchanged and stays --text-1 (AA in both themes).
+    const glyph = guard?.querySelector('.ai-dock-ask-guard-glyph');
+    expect(glyph?.getAttribute('aria-hidden')).toBe('true');
     expect(guard?.textContent).toBe(
-      'Bonsai never asks for passwords or tokens. Don’t paste secrets here.',
+      `${glyph?.textContent ?? ''}Bonsai never asks for passwords or tokens. Don’t paste secrets here.`,
     );
     // It is its OWN element — never interpolated into the model's string, which is
     // what stops a question from "quoting" it away.

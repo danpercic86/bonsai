@@ -23,7 +23,7 @@ function control(over: Partial<BulkAiControl> = {}): BulkAiControl {
     active: false,
     disabled: false,
     label: '✨ Resolve all with AI',
-    title: 'Resolve all 2 conflicted files in ONE AI run',
+    title: 'Resolve all 2 conflicted files together with AI',
     ariaLabel: 'Resolve all 2 conflicts with AI',
     onClick: vi.fn(),
     ...over,
@@ -33,7 +33,7 @@ function control(over: Partial<BulkAiControl> = {}): BulkAiControl {
 const CANCEL = {
   active: true,
   label: 'Cancel all',
-  title: 'Stop the one AI run covering all 2 files',
+  title: 'Stop the AI work covering all 2 files',
   ariaLabel: 'Cancel the AI run for all 2 files',
 } satisfies Partial<BulkAiControl>;
 
@@ -47,7 +47,7 @@ describe('BulkAiResolveButton', () => {
     render(<BulkAiResolveButton control={control()} variant="section" />);
     const button = screen.getByRole('button', { name: 'Resolve all 2 conflicts with AI' });
     expect(button).toHaveTextContent('✨ Resolve all with AI');
-    expect(button).toHaveAttribute('title', 'Resolve all 2 conflicted files in ONE AI run');
+    expect(button).toHaveAttribute('title', 'Resolve all 2 conflicted files together with AI');
     expect(button).toHaveAttribute('data-state', 'idle');
   });
 

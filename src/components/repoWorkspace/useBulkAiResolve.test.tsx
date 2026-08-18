@@ -129,6 +129,28 @@ describe('useBulkAiResolve — the confirm gate and the ONE run', () => {
     ]);
   });
 
+  /**
+   * P68g §2.4. Bonsai issues ONE `ai_resolve_conflict_stream` call, but Rust may pack
+   * the payload into several sequential `claude` runs by byte size — so user-facing copy
+   * must not promise a run count. The confirm dialog says "one or more Claude runs"; the
+   * button copy used to say "in ONE AI run" and flatly contradicted it. Pinned on the
+   * control's own strings so the two surfaces cannot drift apart again.
+   */
+  it('the button copy never promises a number of Claude runs', () => {
+    neverSettles();
+    const { result } = renderBulk();
+    const idle = result.current.bulk.control;
+    for (const s of [idle.title, idle.label, idle.ariaLabel]) {
+      expect(s.toLowerCase()).not.toMatch(/\bone ai run\b|\bin one run\b/);
+    }
+    act(() => result.current.bulk.control.onClick());
+    act(() => result.current.bulk.confirm.onConfirm());
+    const live = result.current.bulk.control;
+    for (const s of [live.title, live.label, live.ariaLabel]) {
+      expect(s.toLowerCase()).not.toMatch(/\bone ai run\b|\bthe one ai run\b/);
+    }
+  });
+
   it('the ineligible kind is never part of the run', () => {
     const spy = neverSettles();
     const { result } = renderBulk();

@@ -93,6 +93,12 @@ export const AiActivityAsk = forwardRef<AiActivityAskHandle, AiActivityAskProps>
          *  the model cannot influence, so a request for a token is visibly refused
          *  by Bonsai itself. */}
         <p className="ai-dock-ask-guard" id="ai-dock-ask-guard">
+          {/* Salience comes from weight plus ONE glyph, not from yellow words: the
+           *  hue is a graphic (≥3:1) while the sentence stays --text-1, which is
+           *  readable in both themes (P68g §3.1). */}
+          <span className="ai-dock-ask-guard-glyph" aria-hidden="true">
+            {'⚠'}
+          </span>
           {'Bonsai never asks for passwords or tokens. Don’t paste secrets here.'}
         </p>
         <div className="ai-dock-ask-row">

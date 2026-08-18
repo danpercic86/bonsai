@@ -65,7 +65,7 @@ to them**:
   (light). That is below the 4.5:1 AA bar for text. Treat `--text-3` as **decorative only**
   (uppercase section labels that duplicate visible structure, dividers, disabled glyphs). Any text
   the user must actually read — metadata, timestamps, costs, log lines, hints — uses `--text-2`
-  (**7.9:1** dark / **4.9:1** light on `--bg-0`).
+  (**7.9:1** dark / **4.9:1** light on `--bg-0`; **7.3:1** / **7.4:1** on `--bg-1`).
 - `--warning` as *text* over its own 14% tint is **3.47:1** in light theme (`.toast-warning`,
   `styles.css:623`). Use `--warning` for borders, glyphs and fills (≥3:1 graphics bar) and
   `--text-1` for the words beside them. For a filled warning chip, `color: var(--bg-0)` on
@@ -82,7 +82,8 @@ to them**:
 - Density: the `panelDensity` setting (`cozy` | `compact`) is applied as `data-density` on a
   container which redefines a `--<scope>-*` custom-property block; every consumer reads
   `var(--x, <pre-density fallback>)`. Precedents: `--rp-*` on `.right-panel` (P67b),
-  `--ai-dock-*` on `.ai-dock` (P68e).
+  `--ai-dock-*` on `.ai-dock` (P68e). **Scope:** the right panel and the dock only — the Settings
+  overlay and dialogs have one geometry in both densities.
 - Interactive controls are **≥24px** tall in every density (AA hit target).
 
 ## 4. Commit graph metrics (canvas)
@@ -150,6 +151,10 @@ precedent. Every new status indicator pairs its hue with a letter, word, or glyp
   6px radius, dismissible. No modal error dialogs.
 - Buttons: primary (accent), secondary (bg-2 + border), icon (transparent, bg-2 on hover); all
   32px tall, 6px radius (dock-density controls may go to 28/24px — §3).
+- **Dialog body text (P68g).** Primary sentences: `.dialog-body`, 13px `--text-1`. Must-read
+  secondary lines — consent facts, spend and destructive consequences, "written without review"
+  caveats — use `.dialog-body-detail`, 12px `--text-2`. `.dialog-body-note` is `--text-3` and is
+  for genuinely decorative lines only (`+N more`); never put a consequence on it.
 
 ## 9. Bottom AI activity dock (P68e)
 
@@ -171,6 +176,11 @@ Full contract: `docs/contracts/P68e-ai-activity-dock.md`. Canonical geometry:
   border and the 100% glyph over a 14% tint.
 - Log surface: `--bg-0`, mono 12px/18px cozy · 11px/16px compact, `white-space: pre-wrap`,
   stick-to-bottom with a 24/4px hysteresis band and a `↓ Jump to latest` escape button.
+- **The mid-run question is untrusted model output** (security audit M3). The ask block carries an
+  attribution line (`Claude wrote this — Bonsai did not:`) and a fixed, non-model-controlled line
+  (`Bonsai never asks for passwords or tokens. Don’t paste secrets here.`), both `--text-1` with
+  hue only as an `aria-hidden` `⚠` glyph, and the reply box's `aria-describedby` names the guard
+  line **first**. See `P68e-ai-activity-dock.md` §4.1/§4.5 and `P68g-ui.md` §3.
 - Streaming output is **not** an `aria-live` region. A separate visually-hidden
   `role="status" aria-live="polite"` element announces status transitions only.
 - Motion: the dock never animates its height (a height transition would force repeated

@@ -67,8 +67,9 @@ test.describe('18 bulk "Resolve all with AI"', () => {
 
     await conflictsHeader(page).getByRole('button', { name: BULK_NAME }).click();
     const dialog = page.getByRole('dialog', { name: 'Resolve all conflicts with AI' });
-    await expect(dialog).toContainText('Send 2 conflicted files to Claude in one AI run');
-    await expect(dialog).toContainText('uses your Claude quota');
+    await expect(dialog).toContainText('Send 2 conflicted files to Claude');
+    await expect(dialog).toContainText('one or more Claude runs');
+    await expect(dialog).toContainText('using your Claude quota');
     await expect(dialog).toContainText('src/auth.ts');
     await expect(dialog).toContainText(MERGE_DEEP_PATH);
     // The ineligible deletion conflict is NOT part of it.
