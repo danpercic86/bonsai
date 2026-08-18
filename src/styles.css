@@ -5357,8 +5357,15 @@ span.file-row-main {
 .op-banner {
   flex: none;
   display: flex;
+  /* The actions row (flex: none, below) never shrinks — with enough action
+     buttons (e.g. the AI bulk-resolve button) it can need more width than a
+     narrow right panel has, which used to force op-banner-text's `flex: 1;
+     min-width: 0` all the way to 0 (text visually gone, not just wrapped —
+     observed in CI where the button labels render wider than locally).
+     `flex-wrap` lets the actions drop to their own row instead. */
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 6px 10px;
   padding: var(--rp-banner-pad, 8px 12px);
   background: var(--bg-1);
   border-top: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
@@ -5367,8 +5374,11 @@ span.file-row-main {
 }
 
 .op-banner-text {
-  flex: 1;
-  min-width: 0;
+  /* A real min-width (not 0) — the text must never be squeezed out; once the
+     actions row can't fit beside it at this width, `.op-banner`'s wrap takes
+     the actions to their own line instead. */
+  flex: 1 1 160px;
+  min-width: 160px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -5387,6 +5397,7 @@ span.file-row-main {
 .op-banner-actions {
   flex: none;
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
