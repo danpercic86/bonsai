@@ -109,7 +109,6 @@ or `branch -D` against a real repository while testing.
 - **CI.** There is no `.github/workflows` directory at all. `cargo test` + `cargo clippy` +
   `pnpm build` on push would be immediately valuable.
 - **Frontend tests.** See above.
-- **Screenshots.** See [`docs/assets/screenshots/README.md`](docs/assets/screenshots/README.md).
 
 ## License
 

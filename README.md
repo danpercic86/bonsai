@@ -22,12 +22,16 @@ renders — so the graph stays fast even over histories of 20,000+ commits.
 
 ## Screenshots
 
-> _A screenshot of the commit graph and workspace will be added here before the public
-> release._
+|                                                                      |                                                                    |
+| :--------------------------------------------------------------------: | :------------------------------------------------------------------: |
+| ![Multi-lane commit graph with staging](docs/assets/screenshots/workspace-graph.png) | ![Commit diff view](docs/assets/screenshots/commit-diff.png) |
+| **Commit graph & staging** — multi-colored branch lanes, ref pills, and file-level staging in the same view. | **Commit diffs** — select any commit to see it diffed against its first parent. |
+| ![Pull requests panel](docs/assets/screenshots/pull-requests.png) | ![Light theme](docs/assets/screenshots/workspace-light.png) |
+| **Pull requests** — connect GitHub, GitLab, Bitbucket, or Azure DevOps to list, read, and open PRs. | **Light theme** — every view adapts to a light or dark theme. |
 
-<!-- To add: run `pnpm dev:mock`, capture the window, save it to
-     docs/assets/screenshots/graph.png, and reference it here with:
-     ![Commit graph and diff view](docs/assets/screenshots/graph.png) -->
+_Captured against the mock-IPC browser harness with fixture data — see
+[docs/assets/screenshots/README.md](docs/assets/screenshots/README.md) for what's shown and how
+to regenerate these._
 
 ## Features
 
