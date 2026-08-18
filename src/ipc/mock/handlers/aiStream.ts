@@ -45,6 +45,12 @@ const AI_FAIL = query('aiFail') !== null;
 const AI_MARKERS = query('aiMarkers') !== null;
 /** Overrun the 500-line log cap in one run. */
 const AI_FLOOD = query('aiFlood') !== null;
+/** P68g-1: what the read fence looks like when it fires. `--permission-mode manual`
+ *  denies an out-of-repo read and reports it on the `result` line, which Rust turns
+ *  into a `⛔` log line that `ai_stream_log: false` does NOT suppress (audit M6).
+ *  There is no other way to see this state in the harness — a real denial needs a
+ *  model that actually tries to escape the repo. */
+const AI_DENIED = query('aiDenied') !== null;
 
 /** MIRRORS `bonsai_core::ai::stream::MAX_EVENT_TEXT`: Rust truncates to exactly this
  *  many chars and appends `…`, which is what the dock's "truncated" chip detects. */
@@ -192,6 +198,9 @@ export const aiStreamHandlers = {
       ev.log(`⚙ Grep(pattern: "${basename(eligible[0])}")`);
       for (const path of eligible) {
         ev.log(`⚙ Read(${path})`, path);
+      }
+      if (AI_DENIED) {
+        ev.log('⛔ denied Read(C:/Users/you/.aws/credentials) — outside this repository');
       }
 
       if (AI_FAIL && eligible.length === 1) {

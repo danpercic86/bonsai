@@ -79,6 +79,15 @@ without a permission prompt. That fact decides whether step 2 reaches `~/.aws` o
 the repo alone is still sufficient, since a hostile repo can vendor a `.env` and real repos often
 contain one. **Verify before P68g closes.**
 
+> **RESOLVED, then FENCED — P68g-1 (2026-08-18, CLI v2.1.234).** Verified: reads were **not** fenced
+> to `cwd` (a file two directories above it was read with `permission_denials: []`). As of P68g-1 the
+> streaming argv passes **`--permission-mode manual`**, which denies out-of-`cwd` reads while in-repo
+> reads keep working, and each denial is surfaced as a `⛔` dock line that `ai_stream_log: false`
+> cannot suppress. Step 2 of the chain is therefore confined to the repository — which, as the
+> paragraph above says, is still enough for a vendored `.env`, so **H1's remedy 1 (the novel-content
+> gate, follow-up #7) remains open and is still the structural fix.** Full record:
+> `P68-ai-conflict-streaming.md` §1a.
+
 ---
 
 ## MEDIUM
@@ -90,6 +99,13 @@ CLI … and no files are changed without your review." Both halves are now false
 under `autoResolve`, `resolve_conflict_text` writes and stages with no review (`conflict.rs:339`), and
 P68f makes that N files per click. `ai_conflict_tools` currently has **no UI and no disclosure** — a
 settings-file-only switch defaulting to the wider grant.
+
+> **PARTIALLY ADDRESSED — P68g-1.** The *scope* half is now fenced: `--permission-mode manual`
+> confines `Read`/`Grep`/`Glob` to the repository (H1 note above, contract §1a), so "what else it may
+> read" is bounded by the repo rather than by the process. The **copy itself is still wrong and this
+> finding stays OPEN**: `src/App.tsx:1136-1140` was off limits in P68g-1 (a concurrent refactor owns
+> that file), so repo-read egress, the `autoResolve` "written without review" caveat, the
+> `ai_conflict_tools` UI and the bulk-dialog sentence are all still to do.
 
 ### M3 — The mid-run question text is fully attacker-controllable and presented as if Bonsai were asking
 `sentinel_question` (`ai/stream.rs:312-316`) fires when the first non-empty line of the fence-stripped
@@ -221,7 +237,9 @@ v2.1.233 with a non-empty allowlist. Treat it as an unknown, not a control.
 
 ## Before this milestone is called done
 
-**Must fix in P68g**
+**Must fix in P68g** — status after **P68g-1** (2026-08-18): 1 ✅, 3 ✅, 4 ✅, 5 ✅, 6 ✅;
+**2 DEFERRED** (`src/App.tsx` was owned by a concurrent refactor — it is the only item left).
+
 1. Re-verify against the installed CLI: (a) `--safe-mode` still suppresses repo `CLAUDE.md`/skills/hooks
    **with the tool allowlist non-empty**, and (b) whether `Read`/`Grep`/`Glob` can reach outside `cwd`
    non-interactively. Record in the contract. Everything else assumes the worst case until done. (H1, M2)

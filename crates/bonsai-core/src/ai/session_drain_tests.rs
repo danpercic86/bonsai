@@ -6,8 +6,13 @@
 //! forced — the stderr line is queued only AFTER the decision point is reached, so
 //! without the drain the message is the useless generic one.
 
+use std::sync::mpsc::channel;
+use std::thread;
+
+// `super` is now `session_drain`, so the names the assertions need that the drain
+// itself does not use are imported explicitly (unchanged otherwise).
 use super::*;
-use crate::ai::AiRunRegistry;
+use crate::ai::{AiRunEvent, AiRunRegistry, RunControl};
 
 /// A throwaway registry entry's `RunControl`. The CALLER keeps it: since P68b a
 /// session only BORROWS its control (a bulk run drives several sessions from one),

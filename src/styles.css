@@ -7514,6 +7514,26 @@ button.asset-row-clickable:hover {
   color: var(--text-1);
 }
 
+/* M3 (security audit): the question is untrusted model text, so it is attributed.
+   --text-2 11px keeps it subordinate to the question it labels. */
+.ai-dock-ask-attrib {
+  margin: 0 0 -4px;
+  font-size: 11px;
+  color: var(--ai-dock-meta, var(--text-2));
+}
+
+/* Fixed chrome the model cannot influence. --text-1 (not --warning: --warning as
+   small text is only 3.5:1 in light theme, §12-F2), with the glyph as a border
+   accent instead of colour. */
+.ai-dock-ask-guard {
+  margin: 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--warning);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
 .ai-dock-ask-question {
   margin: 0;
   max-height: 96px;

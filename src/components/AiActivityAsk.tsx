@@ -15,6 +15,14 @@
  * U6 — focus is never STOLEN here: this component only focuses when its imperative
  * `focus()` is called, and the caller (`AiActivityPanel`) is the one that decides the
  * user is demonstrably idle.
+ *
+ * SECURITY (audit 2026-08-18, M3): `question` is UNTRUSTED model output, not a Bonsai
+ * prompt. Rust already requires the sentinel line to stand alone and strips control
+ * characters (`ai::stream::sentinel_question`), which stops a merged file body from
+ * arriving here at all; this component owns the other half — the text is attributed to
+ * Claude, and a fixed line the model cannot influence states that Bonsai never asks for
+ * secrets. Do not fold that line into the question string, and do not render `question`
+ * as anything but plain text.
  */
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 
@@ -71,14 +79,30 @@ export const AiActivityAsk = forwardRef<AiActivityAskHandle, AiActivityAskProps>
           <span className="ai-dock-ask-label">Claude needs your answer</span>
         </div>
         {question !== null && question !== '' && (
-          <p className="ai-dock-ask-question">{question}</p>
+          <>
+            {/* M3: attribution, NOT decoration. The question text is model output
+             *  and reachable by an attacker without a jailbreak (a conflicted file
+             *  whose both sides start with the sentinel line merges faithfully into
+             *  one), so it must never read as Bonsai asking. */}
+            <p className="ai-dock-ask-attrib">Claude wrote this — Bonsai did not:</p>
+            <p className="ai-dock-ask-question">{question}</p>
+          </>
         )}
+        {/* Fixed chrome, deliberately OUTSIDE the interpolated text and rendered even
+         *  when there is no question: the whole point is that this sentence is one
+         *  the model cannot influence, so a request for a token is visibly refused
+         *  by Bonsai itself. */}
+        <p className="ai-dock-ask-guard" id="ai-dock-ask-guard">
+          {'Bonsai never asks for passwords or tokens. Don’t paste secrets here.'}
+        </p>
         <div className="ai-dock-ask-row">
           <textarea
             ref={inputRef}
             className="ai-dock-ask-input"
             aria-label="Your answer to Claude"
-            aria-describedby="ai-dock-ask-hint"
+            // The guard line comes FIRST so a screen reader hears "never asks for
+            // tokens" before the keyboard hint (M3).
+            aria-describedby="ai-dock-ask-guard ai-dock-ask-hint"
             placeholder="Type your answer for Claude…"
             value={draft}
             disabled={sending}

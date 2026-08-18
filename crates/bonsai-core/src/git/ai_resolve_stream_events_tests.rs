@@ -95,3 +95,50 @@ fn stream_log_off_suppresses_only_log_events() {
         assert_eq!(ev.seq, i as u64, "{ev:?}");
     }
 }
+
+/// M6 (security audit 2026-08-18). `ai_stream_log: false` means "less noise", NOT
+/// "stop telling me what the model touched": `⚙` tool lines and `⛔` denials are the
+/// only evidence of what the read grant read and of what the fence refused, and that
+/// visibility is what makes the grant acceptable. Suppressing them would let a
+/// settings toggle turn the tool grant invisible.
+#[test]
+fn stream_log_off_still_lets_tool_and_denial_lines_through() {
+    let seen: Mutex<Vec<AiRunEvent>> = Mutex::new(Vec::new());
+    let sink = |ev: AiRunEvent| seen.lock().unwrap_or_else(|e| e.into_inner()).push(ev);
+    let events = RunEvents::new("ai-3".to_string(), &sink, false);
+
+    let mut chatty = AiRunEvent::new("ai-3", 0, AiRunEventKind::Log, 1, 0);
+    chatty.text = Some("session abc · model sonnet".to_string());
+    events.forward(chatty);
+
+    let mut tool = AiRunEvent::new("ai-3", 1, AiRunEventKind::Log, 2, 0);
+    tool.text = Some("⚙ Read(src/a.rs)".to_string());
+    tool.notable = true;
+    events.forward(tool);
+
+    let mut denied = AiRunEvent::new("ai-3", 2, AiRunEventKind::Log, 3, 0);
+    denied.text = Some("⛔ denied Read(/etc/passwd) — outside this repository".to_string());
+    denied.notable = true;
+    events.forward(denied);
+
+    // Metrics-only heartbeats keep their P68d exemption (text: None).
+    let mut metrics = AiRunEvent::new("ai-3", 3, AiRunEventKind::Log, 4, 0);
+    metrics.thinking_tokens = Some(350);
+    events.forward(metrics);
+
+    let out = seen.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let texts: Vec<Option<String>> = out.iter().map(|e| e.text.clone()).collect();
+    assert_eq!(
+        texts,
+        vec![
+            Some("⚙ Read(src/a.rs)".to_string()),
+            Some("⛔ denied Read(/etc/passwd) — outside this repository".to_string()),
+            None,
+        ],
+        "the chatty line is suppressed; tool, denial and metrics survive"
+    );
+    assert!(out[0].notable && out[1].notable, "the flag must survive relabelling");
+    for (i, ev) in out.iter().enumerate() {
+        assert_eq!(ev.seq, i as u64, "gap-free after suppression: {ev:?}");
+    }
+}

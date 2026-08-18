@@ -20,6 +20,14 @@ pub const MAX_EVENT_TEXT: usize = 2000;
 pub const MAX_PARTIAL_TEXT: usize = 20_000;
 /// `⚙ Tool(arg)` lines are decoration, not content — kept short (A3).
 const MAX_TOOL_TEXT: usize = 160;
+/// Prefix of a tool-use log line. A CONST, not a literal at each site: the M6
+/// exemption is keyed on [`StreamLogItem::notable`], and this glyph is what the
+/// user recognises, so the two must never drift apart.
+const TOOL_GLYPH: &str = "⚙ ";
+/// Prefix of a permission-denial log line (security audit 2026-08-18): the model
+/// asked for something `--permission-mode manual` refused, i.e. it tried to reach
+/// outside the repository. Always shown, log switch or not (M6).
+const DENIED_GLYPH: &str = "⛔ ";
 /// `rate limit: …` re-serializations are diagnostics only (§3.2 table).
 const MAX_RATE_LIMIT_TEXT: usize = 200;
 
@@ -75,6 +83,16 @@ pub struct AiRunEvent {
     /// extended thinking emits NO heartbeats and this stays `None` throughout. It is
     /// deliberately NOT converted to money anywhere — no price table is hard-coded.
     pub thinking_tokens: Option<u64>,
+    /// INTERNAL, never on the wire (`serde(skip)`): this `Log` line is one whose
+    /// visibility is load-bearing for the read grant — a `⚙ tool(arg)` line or a
+    /// `⛔` permission denial — so `RunEvents::forward` must NOT suppress it when
+    /// `ai_stream_log` is false (security audit 2026-08-18, M6).
+    ///
+    /// A FLAG, not a text-prefix test: assistant prose is attacker-controllable, so
+    /// a prose block beginning with `⚙ ` could otherwise forge an unsuppressable
+    /// "tool line" and fake a read that never happened. Only classification sets it.
+    #[serde(skip)]
+    pub notable: bool,
 }
 
 impl AiRunEvent {
@@ -92,6 +110,7 @@ impl AiRunEvent {
             turn,
             partial_text: None,
             thinking_tokens: None,
+            notable: false,
         }
     }
 }
@@ -127,16 +146,36 @@ pub struct StreamLogItem {
     /// ONLY these into `partialText`, so a cancelled run's partial is a plausible
     /// truncated file body rather than `⚙`/`system`/`stderr` decoration (D2).
     pub assistant_text: bool,
+    /// Survives `ai_stream_log: false` — see [`AiRunEvent::notable`] (M6).
+    pub notable: bool,
 }
 
 impl StreamLogItem {
-    /// Decoration (system/tool/rate-limit/unknown lines): not part of `partial`.
+    /// Decoration (system/rate-limit/unknown lines): not part of `partial`.
     fn log(text: &str) -> Self {
-        StreamLogItem { text: truncate_text(text, MAX_EVENT_TEXT), assistant_text: false }
+        StreamLogItem {
+            text: truncate_text(text, MAX_EVENT_TEXT),
+            assistant_text: false,
+            notable: false,
+        }
     }
     /// Real assistant prose — the only thing that feeds `partialText` (D2).
     fn assistant(text: &str) -> Self {
-        StreamLogItem { text: truncate_text(text, MAX_EVENT_TEXT), assistant_text: true }
+        StreamLogItem {
+            text: truncate_text(text, MAX_EVENT_TEXT),
+            assistant_text: true,
+            notable: false,
+        }
+    }
+    /// A line the user must see even with the log switched off (M6): what the model
+    /// READ (`⚙`) and what the fence REFUSED (`⛔`). Decoration for `partial`
+    /// purposes, exactly like [`Self::log`] — it is not the model's prose.
+    fn notable(text: &str) -> Self {
+        StreamLogItem {
+            text: truncate_text(text, MAX_TOOL_TEXT),
+            assistant_text: false,
+            notable: true,
+        }
     }
 }
 
@@ -243,13 +282,14 @@ fn classify_assistant(v: &Value) -> LineOutcome {
                 }
                 // A3: no new event kind — read-only tool use shows up as a log
                 // line, which is what makes D10 visible in the dock.
+                //
+                // M6: `notable`, so `ai_stream_log: false` cannot silence it — this
+                // line is the user's ONLY signal that the model read something, and
+                // that visibility is what makes the read grant acceptable.
                 Some("tool_use") => {
                     let name = item.get("name").and_then(Value::as_str).unwrap_or("tool");
                     let arg = first_string_field(item.get("input")).unwrap_or_default();
-                    items.push(StreamLogItem {
-                        text: truncate_text(&format!("⚙ {name}({arg})"), MAX_TOOL_TEXT),
-                        assistant_text: false,
-                    });
+                    items.push(StreamLogItem::notable(&format!("{TOOL_GLYPH}{name}({arg})")));
                 }
                 Some(other) => items.push(StreamLogItem::log(&format!("assistant/{other}"))),
                 None => items.push(StreamLogItem::log("assistant/?")),
@@ -288,6 +328,65 @@ fn user_payload_bytes(v: &Value, raw: &str) -> usize {
     }
 }
 
+/// The denials recorded on ONE `result` line, as ready-to-log `⛔` items (PURE).
+///
+/// Why this exists: `--permission-mode manual` fences `Read`/`Grep`/`Glob` to
+/// `cwd`, and a refusal is reported ONLY here — `{"permission_denials":[{"tool_name":
+/// "Read","tool_input":{"file_path":"…"}}]}` on the `result` envelope (verified,
+/// CLI v2.1.234). An empty array is the normal case and yields nothing. A denial
+/// means the model tried to reach OUTSIDE the repository, which the user must be
+/// told about whatever `ai_stream_log` says (M6) — hence `notable`.
+///
+/// Total, like everything else here (D12): a missing/mis-shaped field degrades to
+/// fewer lines, never an error. Bounded at [`MAX_DENIAL_LINES`] so a model in a
+/// denial loop cannot flood the dock; the count is stated when it truncates.
+pub fn permission_denial_lines(raw: &str) -> Vec<StreamLogItem> {
+    let Ok(v) = serde_json::from_str::<Value>(raw.trim()) else {
+        return Vec::new();
+    };
+    let Some(denials) = v.get("permission_denials").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let mut items: Vec<StreamLogItem> = denials
+        .iter()
+        .take(MAX_DENIAL_LINES)
+        .map(|d| {
+            let name = d.get("tool_name").and_then(Value::as_str).unwrap_or("tool");
+            let arg = first_string_field(d.get("tool_input")).unwrap_or_default();
+            // The path is model-supplied text: keep it on one line so it cannot
+            // fake extra dock rows (`truncate_text` bounds length, not newlines).
+            let arg = strip_control_chars(&arg);
+            StreamLogItem::notable(&format!(
+                "{DENIED_GLYPH}denied {name}({arg}) — outside this repository"
+            ))
+        })
+        .collect();
+    if denials.len() > MAX_DENIAL_LINES {
+        items.push(StreamLogItem::notable(&format!(
+            "{DENIED_GLYPH}{} denials in total (list truncated)",
+            denials.len()
+        )));
+    }
+    items
+}
+
+/// At most this many `⛔` lines per `result` line, plus one summary line.
+const MAX_DENIAL_LINES: usize = 20;
+
+/// Drop the characters that let one line of model text pretend to be several, or
+/// to read backwards: C0/C1 controls (so `\n`, `\r`, `\t`, `\u{7f}`) plus the
+/// bidi overrides and isolates. Used on every piece of model-authored text that
+/// Bonsai renders as a single line (the question, a denied path).
+pub(crate) fn strip_control_chars(text: &str) -> String {
+    text.chars()
+        .filter(|c| {
+            let bidi = matches!(c,
+                '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}');
+            !c.is_control() && !bidi
+        })
+        .collect()
+}
+
 /// The first string-valued field of a `tool_use` input object (serde_json orders
 /// object keys, so this is deterministic).
 fn first_string_field(input: Option<&Value>) -> Option<String> {
@@ -306,13 +405,27 @@ fn find_text_delta(v: &Value) -> Option<&str> {
 }
 
 /// The mid-run question, if this turn's (already fence-stripped) result IS one.
-/// Recognised ONLY when the FIRST non-empty line starts with [`SENTINEL`] (A9):
-/// a merged file body whose first line is the token is not a thing, while a body
-/// that merely mentions it mid-text is not a question.
+///
+/// Recognised ONLY when the sentinel line is the SOLE non-empty line of the result
+/// (A9 as amended by the security audit, M3). A9 originally argued that a merged
+/// body starting with the token "is not a thing" — true of accidents, false of
+/// adversaries: a conflicted file whose BOTH sides begin with that literal line
+/// reproduces it through a *faithful* merge, no jailbreak needed, and the result
+/// was then shown to the user as a question with a focused reply box. Requiring
+/// the line to stand alone removes that: a real question is one line and nothing
+/// else, while a file body always carries more content after it, so an injected
+/// first line now degrades to a normal (reviewable) proposal.
+///
+/// The returned text is still fully model-authored. It is control-stripped here so
+/// it cannot forge extra UI lines, and the caller must attribute it as model output
+/// (see `AiActivityAsk`) — stripping is not trust.
 pub fn sentinel_question(text: &str) -> Option<String> {
-    let first = text.lines().find(|l| !l.trim().is_empty())?;
-    let rest = first.trim_start().strip_prefix(SENTINEL)?;
-    Some(rest.trim().to_string())
+    let mut non_empty = text.lines().filter(|l| !l.trim().is_empty());
+    let rest = non_empty.next()?.trim_start().strip_prefix(SENTINEL)?;
+    if non_empty.next().is_some() {
+        return None;
+    }
+    Some(strip_control_chars(rest.trim()))
 }
 
 /// Truncate to `cap` CHARS (never bytes — a split char boundary would panic on
@@ -332,234 +445,5 @@ pub(crate) fn truncate_text(text: &str, cap: usize) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The single-item text of a `Log` outcome (panics the test on any other
-    /// shape — these are known-answer cases).
-    fn log_text(raw: &str) -> String {
-        match classify_line(raw) {
-            LineOutcome::Log(items) => {
-                assert_eq!(items.len(), 1, "expected exactly one item for {raw}");
-                items[0].text.clone()
-            }
-            other => panic!("expected Log for {raw}, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn init_line_logs_session_model_and_tools() {
-        let raw = r#"{"type":"system","subtype":"init","session_id":"s1","model":"sonnet","tools":["Read","Grep","Glob"]}"#;
-        assert_eq!(log_text(raw), "session s1 · model sonnet · tools: Read, Grep, Glob");
-    }
-
-    #[test]
-    fn init_line_with_empty_tools_says_none() {
-        let raw = r#"{"type":"system","subtype":"init","session_id":"s1","model":"sonnet","tools":[]}"#;
-        assert_eq!(log_text(raw), "session s1 · model sonnet · tools: none");
-        // Missing fields degrade, never panic.
-        let bare = r#"{"type":"system","subtype":"init"}"#;
-        assert_eq!(log_text(bare), "session ? · model ? · tools: none");
-    }
-
-    /// P68d: the heartbeat is still a heartbeat (never a log line — A4) but it now
-    /// carries the run's only LIVE spend proxy. Payload verified against `claude`
-    /// v2.1.233; a missing or non-integer count degrades to `None`, never an error.
-    #[test]
-    fn thinking_tokens_is_a_heartbeat_carrying_the_cumulative_estimate() {
-        let real = r#"{"type":"system","subtype":"thinking_tokens","estimated_tokens":350,"estimated_tokens_delta":150,"uuid":"u","session_id":"s"}"#;
-        assert_eq!(classify_line(real), LineOutcome::Heartbeat(Some(350)));
-        // Field absent (older/newer CLI) -> pure liveness, still not an error.
-        let bare = r#"{"type":"system","subtype":"thinking_tokens"}"#;
-        assert_eq!(classify_line(bare), LineOutcome::Heartbeat(None));
-        // Wrong type / negative -> `None`, never a panic and never a log line.
-        let junk = r#"{"type":"system","subtype":"thinking_tokens","estimated_tokens":"lots"}"#;
-        assert_eq!(classify_line(junk), LineOutcome::Heartbeat(None));
-        let neg = r#"{"type":"system","subtype":"thinking_tokens","estimated_tokens":-5}"#;
-        assert_eq!(classify_line(neg), LineOutcome::Heartbeat(None));
-    }
-
-    #[test]
-    fn post_turn_summary_is_a_hint_log_only() {
-        let raw = r#"{"type":"system","subtype":"post_turn_summary","status_category":"blocked","needs_action":true}"#;
-        assert_eq!(log_text(raw), "summary: status=blocked needsAction=true");
-        let bare = r#"{"type":"system","subtype":"post_turn_summary"}"#;
-        assert_eq!(log_text(bare), "summary: status=? needsAction=false");
-    }
-
-    #[test]
-    fn unknown_system_subtype_degrades_to_log() {
-        assert_eq!(log_text(r#"{"type":"system","subtype":"weird"}"#), "system/weird");
-        assert_eq!(log_text(r#"{"type":"system"}"#), "system/?");
-    }
-
-    #[test]
-    fn rate_limit_event_is_compacted_and_capped() {
-        let raw = r#"{"type":"rate_limit_event","status":"ok"}"#;
-        let text = log_text(raw);
-        assert!(text.starts_with("rate limit: {"), "got {text}");
-        let long = format!(r#"{{"type":"rate_limit_event","note":"{}"}}"#, "x".repeat(500));
-        let capped = log_text(&long);
-        // "rate limit: " + <=200 chars of JSON.
-        assert_eq!(capped.chars().count(), "rate limit: ".chars().count() + MAX_RATE_LIMIT_TEXT);
-    }
-
-    #[test]
-    fn replayed_user_message_logs_only_a_byte_count() {
-        let secret = "TOP SECRET PAYLOAD";
-        let raw = format!(
-            r#"{{"type":"user","isReplay":true,"message":{{"role":"user","content":[{{"type":"text","text":"{secret}"}}]}}}}"#
-        );
-        let text = log_text(&raw);
-        assert_eq!(text, format!("» sent {} bytes to Claude", secret.len()));
-        assert!(!text.contains("SECRET"), "content must never be logged (A11)");
-    }
-
-    #[test]
-    fn assistant_text_blocks_become_assistant_items() {
-        let raw = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"line A"},{"type":"text","text":"line B"}]}}"#;
-        match classify_line(raw) {
-            LineOutcome::Log(items) => {
-                assert_eq!(items.len(), 2);
-                assert_eq!(items[0].text, "line A");
-                assert!(items[0].assistant_text, "text blocks feed partialText (D2)");
-                assert_eq!(items[1].text, "line B");
-            }
-            other => panic!("expected Log, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn tool_use_becomes_a_decorated_log_not_a_new_kind() {
-        let raw = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"src/a.rs"}}]}}"#;
-        match classify_line(raw) {
-            LineOutcome::Log(items) => {
-                assert_eq!(items[0].text, "⚙ Read(src/a.rs)");
-                assert!(!items[0].assistant_text, "decoration must not feed partialText");
-            }
-            other => panic!("expected Log, got {other:?}"),
-        }
-        // No input / unnamed tool still classifies.
-        assert_eq!(
-            log_text(r#"{"type":"assistant","message":{"content":[{"type":"tool_use"}]}}"#),
-            "⚙ tool()"
-        );
-    }
-
-    #[test]
-    fn unknown_assistant_content_item_degrades_to_log() {
-        assert_eq!(
-            log_text(r#"{"type":"assistant","message":{"content":[{"type":"thinking"}]}}"#),
-            "assistant/thinking"
-        );
-        assert_eq!(
-            log_text(r#"{"type":"assistant","message":{"content":[{}]}}"#),
-            "assistant/?"
-        );
-        // No content array at all: an empty Log, never an error.
-        assert_eq!(
-            classify_line(r#"{"type":"assistant"}"#),
-            LineOutcome::Log(Vec::new())
-        );
-    }
-
-    #[test]
-    fn result_line_is_the_result_outcome() {
-        let raw = r#"{"type":"result","subtype":"success","is_error":false,"result":"body"}"#;
-        assert_eq!(classify_line(raw), LineOutcome::Result);
-    }
-
-    #[test]
-    fn stream_event_logs_a_delta_or_heartbeats() {
-        let raw = r#"{"type":"stream_event","delta":{"text":"par"}}"#;
-        assert_eq!(log_text(raw), "par");
-        let nested = r#"{"type":"stream_event","event":{"delta":{"text":"tial"}}}"#;
-        assert_eq!(log_text(nested), "tial");
-        let framing = r#"{"type":"stream_event","event":{"type":"message_start"}}"#;
-        assert_eq!(classify_line(framing), LineOutcome::Heartbeat(None));
-    }
-
-    #[test]
-    fn unknown_type_and_non_json_degrade_to_log_never_err() {
-        assert_eq!(log_text(r#"{"type":"brand_new_thing","x":1}"#), r#"{"type":"brand_new_thing","x":1}"#);
-        assert_eq!(log_text("not json at all"), "not json at all");
-        assert_eq!(log_text("{ truncated json"), "{ truncated json");
-        // A typeless object is still just a log line.
-        assert_eq!(log_text("{}"), "{}");
-    }
-
-    #[test]
-    fn blank_line_is_a_heartbeat() {
-        assert_eq!(classify_line(""), LineOutcome::Heartbeat(None));
-        assert_eq!(classify_line("   \t"), LineOutcome::Heartbeat(None));
-    }
-
-    #[test]
-    fn long_assistant_text_is_capped_at_max_event_text() {
-        let body = "y".repeat(5000);
-        let raw = format!(
-            r#"{{"type":"assistant","message":{{"content":[{{"type":"text","text":"{body}"}}]}}}}"#
-        );
-        let text = log_text(&raw);
-        assert_eq!(text.chars().count(), MAX_EVENT_TEXT);
-        assert!(text.ends_with('…'));
-    }
-
-    #[test]
-    fn sentinel_matches_only_the_first_non_empty_line() {
-        assert_eq!(
-            sentinel_question("BONSAI_NEEDS_INPUT: which locale wins?"),
-            Some("which locale wins?".to_string())
-        );
-        // Leading blank lines are skipped.
-        assert_eq!(
-            sentinel_question("\n\n  BONSAI_NEEDS_INPUT: which?  \n"),
-            Some("which?".to_string())
-        );
-        // A9: the token mid-body is NOT a question.
-        assert_eq!(
-            sentinel_question("{\n  \"a\": \"BONSAI_NEEDS_INPUT: nope\"\n}"),
-            None
-        );
-        assert_eq!(sentinel_question("merged body"), None);
-        assert_eq!(sentinel_question(""), None);
-        // A bare sentinel with no question text still blocks the run.
-        assert_eq!(sentinel_question("BONSAI_NEEDS_INPUT:"), Some(String::new()));
-    }
-
-    #[test]
-    fn truncate_text_never_splits_a_char() {
-        // Multi-byte chars: char-based cap, byte-based would panic/corrupt.
-        let s = "é".repeat(10);
-        assert_eq!(truncate_text(&s, 10), s);
-        let cut = truncate_text(&s, 5);
-        assert_eq!(cut.chars().count(), 5);
-        assert_eq!(cut, "éééé…");
-        // `cap` is a hard char budget, so cap 0 has room for nothing at all —
-        // not even the ellipsis.
-        assert_eq!(truncate_text("abc", 0), "");
-        assert_eq!(truncate_text("", 0), "");
-        assert_eq!(truncate_text("abc", 1), "…");
-    }
-
-    #[test]
-    fn ai_run_event_wire_shape_is_camel_case() {
-        let mut ev = AiRunEvent::new("ai-1", 3, AiRunEventKind::AwaitingInput, 1234, 2);
-        ev.text = Some("q?".to_string());
-        ev.cost_usd = Some(0.02);
-        ev.partial_text = Some("half".to_string());
-        ev.thinking_tokens = Some(600);
-        let json = serde_json::to_string(&ev).expect("event serializes");
-        for key in [
-            "\"runId\"",
-            "\"costUsd\"",
-            "\"elapsedMs\"",
-            "\"partialText\"",
-            "\"thinkingTokens\"",
-            "\"awaitingInput\"",
-        ] {
-            assert!(json.contains(key), "missing {key} in {json}");
-        }
-        assert!(!json.contains("run_id"), "snake_case leaked: {json}");
-    }
-}
+#[path = "stream_tests.rs"]
+mod tests;

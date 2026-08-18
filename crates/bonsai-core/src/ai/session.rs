@@ -19,23 +19,25 @@ use std::time::{Duration, Instant};
 use super::session_argv::build_command;
 use super::session_pipes::{send_write, spawn_reader, spawn_writer, turn_line, Msg, WriteTx};
 use super::stream::{
-    classify_line, sentinel_question, truncate_text, AiRunEvent, AiRunEventKind, LineOutcome,
-    MAX_EVENT_TEXT, MAX_PARTIAL_TEXT,
+    classify_line, permission_denial_lines, sentinel_question, truncate_text, AiRunEvent,
+    AiRunEventKind, LineOutcome, MAX_EVENT_TEXT, MAX_PARTIAL_TEXT,
 };
 use super::{
     kill_child_tree, parse_result_envelope, AiResult, RunLimits, RunOpts, EXIT_GRACE, RECV_TICK,
 };
 use crate::error::AppError;
 
+/// The post-EOF stderr drain and the failure it composes (the S1 race), plus its
+/// deterministic tests. A `#[path]`-included CHILD module so it keeps reaching
+/// `ClaudeSession`'s private state without widening anything for the move.
+#[path = "session_drain.rs"]
+mod session_drain;
+
 /// Appended (via stdin, never argv) to a user reply so the next turn produces a
 /// file body rather than more conversation. Single line by construction.
 const REPLY_SUFFIX: &str = "\n\n(Answer above. Now output ONLY the merged file contents, with no conflict markers and no commentary.)";
 /// How often the graceful-exit poll re-checks `try_wait` (mirrors `run_process`).
 const EXIT_POLL: Duration = Duration::from_millis(50);
-/// Per-`recv` grace while draining stderr after the run has already ended.
-const STDERR_GRACE: Duration = Duration::from_millis(150);
-/// Absolute cap on that drain, so a chatty stderr cannot stall shutdown.
-const STDERR_GRACE_TOTAL: Duration = Duration::from_millis(1000);
 
 /// Cancel + reply plumbing handed to a session by [`super::AiRunRegistry`].
 pub struct RunControl {
@@ -217,70 +219,6 @@ impl<'a> ClaudeSession<'a> {
         }
     }
 
-    /// Compose the "ended without a result" failure, giving stderr the last word —
-    /// or, on the `WriteErr` path only, the late `result` the drain turned up.
-    ///
-    /// stderr arrives from a DIFFERENT sender than stdout EOF, and mpsc gives no
-    /// ordering guarantee between them: a CLI that prints a usage/auth error and
-    /// exits — the most likely real failure — would otherwise lose that text
-    /// roughly half the time and report only the generic message. So drain a short
-    /// BOUNDED grace first ([`STDERR_GRACE_TOTAL`]) before deciding.
-    fn ended_without_result(
-        &mut self,
-        rx: &Receiver<Msg>,
-        write_err: Option<String>,
-        limits: &RunLimits,
-    ) -> Result<AiResult, LoopEnd> {
-        // Entered from `WriteErr`, stdout is STILL OPEN, so a `result` can legally
-        // land inside the drain window — promote it through the normal path (turn
-        // accounting + `TurnEnd`) rather than failing a run that finished. `Ok(None)`
-        // = a question, which only the turn that just failed could answer, so it
-        // falls through. Unreachable from `OutEof`: per-sender FIFO puts every
-        // stdout line ahead of stdout's own EOF.
-        if let Some(line) = self.drain_stderr(rx) {
-            match self.on_stdout(&line, limits) {
-                Ok(Some(res)) => return Ok(res),
-                Ok(None) => {}
-                Err(end) => return Err(end),
-            }
-        }
-        let tail = self.stderr_tail.trim().to_string();
-        let msg = match (tail.is_empty(), write_err) {
-            (false, _) => format!("Claude exited without a result: {tail}"),
-            (true, Some(e)) => format!("Claude closed its input: {e}"),
-            (true, None) => "Claude exited without a result".to_string(),
-        };
-        Err(LoopEnd::Failed(msg))
-    }
-
-    /// Take whatever stderr is still in flight, until `ErrEof`, an empty gap, or the
-    /// total cap. Returns a `result` line if one arrives (see
-    /// [`Self::ended_without_result`]); every OTHER stdout line is only LOGGED — the
-    /// run is already decided, and dropping them silently would break D2.
-    fn drain_stderr(&mut self, rx: &Receiver<Msg>) -> Option<String> {
-        let deadline = Instant::now() + STDERR_GRACE_TOTAL;
-        while Instant::now() < deadline {
-            match rx.recv_timeout(STDERR_GRACE) {
-                Ok(Msg::Err(line)) => {
-                    self.stderr_tail.push_str(&line);
-                    self.stderr_tail.push('\n');
-                    self.trim_stderr_tail();
-                    self.log(format!("stderr: {line}"));
-                }
-                Ok(Msg::Out(line)) => {
-                    if matches!(classify_line(&line), LineOutcome::Result) {
-                        return Some(line);
-                    }
-                    self.log(line);
-                }
-                Ok(Msg::ErrEof) => return None,
-                Ok(Msg::OutEof) | Ok(Msg::WriteErr(_)) => {}
-                Err(_) => return None, // empty gap, or every sender gone
-            }
-        }
-        None
-    }
-
     /// One stdout line. `Ok(Some(res))` = the run is done (a non-question result).
     fn on_stdout(&mut self, line: &str, limits: &RunLimits) -> Result<Option<AiResult>, LoopEnd> {
         match classify_line(line) {
@@ -307,11 +245,17 @@ impl<'a> ClaudeSession<'a> {
                         self.partial.push('\n');
                         self.trim_partial();
                     }
-                    self.log(item.text);
+                    self.log_line(item.text, item.notable);
                 }
             }
             LineOutcome::Result => {
                 self.turn = self.turn.saturating_add(1);
+                // The read fence's ONLY report channel (audit H1/M6): `--permission-mode
+                // manual` records what it refused here and nowhere else. Before the
+                // parse, so an error envelope cannot swallow the evidence.
+                for item in permission_denial_lines(line) {
+                    self.log_line(item.text, item.notable);
+                }
                 // spike §1.3: the streaming `result` line IS the one-shot envelope,
                 // so both share one copy of the is_error/empty/fence logic.
                 let res = match parse_result_envelope(line, true, &self.stderr_tail) {
@@ -518,8 +462,15 @@ impl<'a> ClaudeSession<'a> {
     }
 
     fn log(&mut self, text: String) {
+        self.log_line(text, false);
+    }
+
+    /// `notable` marks the lines that survive `ai_stream_log: false` (M6) — what the
+    /// model read, what the fence denied. Set by classification, never from text shape.
+    fn log_line(&mut self, text: String, notable: bool) {
         let mut ev = self.event(AiRunEventKind::Log);
         ev.text = Some(truncate_text(&text, MAX_EVENT_TEXT));
+        ev.notable = notable;
         self.send(ev);
     }
 
@@ -539,10 +490,3 @@ impl<'a> ClaudeSession<'a> {
         self.send(ev);
     }
 }
-
-/// Deterministic unit tests for the post-EOF stderr drain (the S1 race). A child
-/// module so it can reach `Msg`/`ended_without_result` without widening either;
-/// kept in its own file to keep this one focused.
-#[cfg(test)]
-#[path = "session_drain_tests.rs"]
-mod drain_tests;

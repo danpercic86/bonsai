@@ -247,6 +247,32 @@ not open questions. Nobody is asked to re-run them.
    the `--include-partial-messages` delta shape (setting-gated, default **off**; unknown line types
    must degrade to `log`).
 
+### 1a. Sandbox verification — RECORDED (CLI v2.1.234, 2026-08-18)
+
+Required by the security audit's must-fix #1, which treated all three of these as unknowns.
+Verified empirically against the installed CLI, non-interactively (`-p`), with a **non-empty**
+`--tools` allowlist. These are facts now, not assumptions; do not re-run them.
+
+1. **`--safe-mode` still suppresses the repo's own `CLAUDE.md`, skills and hooks even with a
+   non-empty `--tools` allowlist.** A control instruction planted in the repo's `CLAUDE.md` was not
+   obeyed under `-p --safe-mode --tools "Read,Grep,Glob" --no-session-persistence`. The pre-P68
+   assumption (spike note from v2.1.220) therefore still holds where it now matters most: a hostile
+   repo's `CLAUDE.md` is not auto-loaded ahead of Bonsai's own system prompt.
+2. **`Read`/`Grep`/`Glob` are NOT fenced to `cwd` by default.** With the same argv the model read a
+   file **two directories above `cwd`** and globbed the parent tree, and the `result` line came back
+   with `permission_denials: []` — no prompt, no denial. The read grant reaches whatever the Bonsai
+   process can reach, not the repository.
+3. **`--permission-mode manual` fences them.** With that flag added to the identical argv, an
+   in-`cwd` read (`./inside.txt`) still SUCCEEDS while an out-of-`cwd` read is DENIED and recorded
+   machine-readably in the `result` line's `permission_denials` array, as
+   `{"tool_name":"Read","tool_input":{"file_path":"…"}}`. In non-interactive `-p` there is no human
+   to prompt, so out-of-scope requests auto-deny while legitimate in-repo reads keep working.
+
+**Because of (2), `--permission-mode manual` is part of the streaming argv as of P68g-1** (§3.4).
+Denials are surfaced: `ai::stream::permission_denial_lines` turns each entry into a `⛔ denied
+<tool>(<path>) — outside this repository` dock line, marked `notable` so `ai_stream_log: false`
+cannot suppress it (§8.3, M6).
+
 ---
 
 ## 2. Module boundaries
@@ -941,6 +967,7 @@ claude [-p <prompt>]                     # positional ONLY when !interactive (sp
        [--include-partial-messages]       # limits.include_partial_messages
        --safe-mode
        --tools <limits.tools.arg()>       # "Read,Grep,Glob" | ""   (D10)
+       --permission-mode manual           # the READ FENCE — always (§1a.2/§1a.3)
        --no-session-persistence
        --model <model>
        [--append-system-prompt <sp>]      # SINGLE line (D13)
@@ -954,6 +981,13 @@ truthful.
 > **AMENDED by P68a implementation (2026-08-17)** — this argv landed unchanged, but it lives in
 > `ai/session_argv.rs::build_command` (not inline in `session.rs`), and the D13 note above the
 > builder is now backed by a test: `argv_never_contains_a_newline`.
+>
+> **AMENDED by P68g-1 (2026-08-18, security audit H1)** — `--permission-mode manual` added,
+> unconditionally (harmless under `ToolPolicy::None`, and a fence that only appears "when it
+> matters" is a fence that goes missing when the policy changes). Asserted by
+> `argv_always_fences_reads_with_permission_mode_manual`. The 13 non-streaming `RunOpts::default()`
+> call sites in `src-tauri/src/commands/ai.rs` are deliberately NOT touched — they run
+> `--tools ""` through `run_claude`, so they have nothing to fence.
 
 ---
 

@@ -46,6 +46,19 @@ pub(super) fn build_command(
     cmd.arg("--safe-mode")
         .arg("--tools")
         .arg(limits.tools.arg())
+        // THE READ FENCE (security audit 2026-08-18, H1). Empirically verified
+        // against `claude` v2.1.234: with `--tools "Read,Grep,Glob"` and NO
+        // `--permission-mode`, the model read a file two directories ABOVE `cwd`
+        // and globbed the parent tree with `permission_denials: []` — the read
+        // grant reaches everything this process can reach, not the repository.
+        // `manual` fences it: an in-`cwd` read still succeeds, an out-of-`cwd` one
+        // is denied (no human to prompt in `-p`) and recorded in the `result`
+        // line's `permission_denials`, which `stream::permission_denial_lines`
+        // turns into a visible dock line. Passed unconditionally: harmless under
+        // `ToolPolicy::None`, and a flag that only appears "when it matters" is a
+        // flag that goes missing when the policy changes.
+        .arg("--permission-mode")
+        .arg("manual")
         .arg("--no-session-persistence")
         .arg("--model")
         .arg(&model);
@@ -113,6 +126,29 @@ mod tests {
         assert!(args.iter().any(|a| a == "--no-session-persistence"), "argv: {args:?}");
         // RunOpts::default() => DEFAULT_MODEL.
         assert_eq!(value_after(&args, "--model").as_deref(), Some("sonnet"));
+    }
+
+    /// THE READ FENCE (audit H1). `--tools Read,Grep,Glob` alone is NOT scoped to
+    /// the repository — verified on CLI v2.1.234, a read two directories above
+    /// `cwd` succeeded with an empty `permission_denials`. `manual` is what makes
+    /// the grant repo-shaped, so it must be present on EVERY streaming argv,
+    /// including the `ToolPolicy::None` one (the policy is settings-driven; the
+    /// fence must not depend on it).
+    #[test]
+    fn argv_always_fences_reads_with_permission_mode_manual() {
+        for limits in [
+            interactive(),
+            one_shot(),
+            RunLimits { tools: ToolPolicy::ReadOnly, ..interactive() },
+            RunLimits { tools: ToolPolicy::None, ..interactive() },
+        ] {
+            let args = argv(PROMPT, &RunOpts::default(), &limits);
+            assert_eq!(
+                value_after(&args, "--permission-mode").as_deref(),
+                Some("manual"),
+                "argv: {args:?}"
+            );
+        }
     }
 
     #[test]

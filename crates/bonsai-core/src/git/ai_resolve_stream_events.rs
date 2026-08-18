@@ -127,8 +127,15 @@ impl<'a> RunEvents<'a> {
             // `costUsd`. It bypasses `stream_log` on purpose: that switch suppresses
             // log NOISE, and silencing the spend readout with it would remove the
             // very thing that made "no spend cap" acceptable.
+            //
+            // Security audit 2026-08-18 (M6): `notable` lines — `⚙ tool(arg)` and
+            // `⛔ denied …` — bypass it for the SAME reason. They are the user's only
+            // signal of what the read grant actually read and of what the fence
+            // refused, and that visibility is what makes granting `Read,Grep,Glob`
+            // acceptable. `ai_stream_log: false` means "less noise", never "stop
+            // telling me what the model touched".
             AiRunEventKind::Log => {
-                if self.stream_log || ev.text.is_none() {
+                if self.stream_log || ev.text.is_none() || ev.notable {
                     self.relabel(ev);
                 }
             }

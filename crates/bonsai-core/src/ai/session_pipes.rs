@@ -86,8 +86,77 @@ pub(super) fn spawn_writer(stdin: Option<ChildStdin>, reqs: Receiver<String>, tx
     });
 }
 
+/// Per-line byte cap for anything the child writes (security audit 2026-08-18,
+/// M4). NDJSON puts no bound on a line, and two reachable paths produce huge ones:
+/// `--replay-user-messages` echoes our whole payload (up to `ai_bulk_max_bytes`,
+/// 4 MB) on ONE line, and a tool-result line carries whatever `Read` returned — a
+/// hostile repo can plant a multi-GB file. Everything downstream is already
+/// truncated (`MAX_EVENT_TEXT`, `MAX_PARTIAL_TEXT`); this was the only unbounded
+/// allocation left. 8 MB clears the legitimate 4 MB replay with room to spare.
+const MAX_LINE_BYTES: usize = 8 * 1024 * 1024;
+
+/// What one capped read produced.
+enum Line {
+    /// A complete line (newline stripped), within the cap.
+    Text(String),
+    /// The line exceeded [`MAX_LINE_BYTES`] and was DROPPED, not truncated: a
+    /// truncated NDJSON prefix is unparseable noise, and forwarding 8 MB of it
+    /// would defeat the point. `usize` = bytes read before giving up.
+    TooLong(usize),
+    /// EOF, or an unrecoverable read error — same handling either way (the child's
+    /// exit status is what the session judges the run by).
+    End,
+}
+
+/// Read one line, refusing to grow the buffer past `cap`. `Take` is what enforces
+/// it: `read_until` alone will happily allocate a gigabyte.
+fn read_capped_line<R: BufRead>(reader: &mut R, cap: usize, buf: &mut Vec<u8>) -> Line {
+    buf.clear();
+    // cap + 1: reading one byte PAST the cap is how "over the cap" is detected
+    // without mistaking an exactly-cap-sized line for an over-long one.
+    match reader.by_ref().take(cap as u64 + 1).read_until(b'\n', buf) {
+        Ok(0) | Err(_) => Line::End,
+        Ok(n) => {
+            if n > cap && buf.last() != Some(&b'\n') {
+                // Still mid-line: throw the rest away so the NEXT line is read from
+                // a newline boundary and stays parseable.
+                let dropped = n + discard_to_newline(reader);
+                return Line::TooLong(dropped);
+            }
+            Line::Text(String::from_utf8_lossy(buf).trim_end_matches(['\n', '\r']).to_string())
+        }
+    }
+}
+
+/// Consume up to and including the next `\n`, allocating NOTHING (the whole point
+/// — the line we are skipping may be gigabytes). Returns the bytes discarded.
+fn discard_to_newline<R: BufRead>(reader: &mut R) -> usize {
+    let mut dropped = 0usize;
+    loop {
+        let available = match reader.fill_buf() {
+            Ok([]) => return dropped, // EOF
+            Ok(b) => b,
+            Err(_) => return dropped,
+        };
+        match available.iter().position(|b| *b == b'\n') {
+            Some(i) => {
+                reader.consume(i + 1);
+                return dropped + i + 1;
+            }
+            None => {
+                let n = available.len();
+                reader.consume(n);
+                dropped += n;
+            }
+        }
+    }
+}
+
 /// Forward `src` line by line into the funnel, then signal EOF. Lossy UTF-8 by
 /// design: one undecodable byte must not cost us the rest of the run's output.
+/// Bounded per line ([`MAX_LINE_BYTES`]) — an over-long line is dropped with ONE
+/// note on the funnel, never silently. D16 is unaffected: all of this blocks on
+/// this thread, never on the session loop.
 pub(super) fn spawn_reader<R: Read + Send + 'static>(
     src: Option<R>,
     tx: Sender<Msg>,
@@ -99,20 +168,25 @@ pub(super) fn spawn_reader<R: Read + Send + 'static>(
             let mut reader = BufReader::new(r);
             let mut buf = Vec::new();
             loop {
-                buf.clear();
-                match reader.read_until(b'\n', &mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(_) => {
-                        let line = String::from_utf8_lossy(&buf)
-                            .trim_end_matches(['\n', '\r'])
-                            .to_string();
-                        if tx.send(wrap(line)).is_err() {
-                            return; // receiver gone: the run already ended
-                        }
-                    }
+                let line = match read_capped_line(&mut reader, MAX_LINE_BYTES, &mut buf) {
+                    Line::End => break,
+                    Line::Text(line) => line,
+                    // Not JSON, so `classify_line` shows it verbatim in the dock —
+                    // which is the intent: the user learns output was lost.
+                    Line::TooLong(bytes) => format!(
+                        "… dropped one over-long line from Claude \
+                         ({bytes} bytes, cap {MAX_LINE_BYTES})"
+                    ),
+                };
+                if tx.send(wrap(line)).is_err() {
+                    return; // receiver gone: the run already ended
                 }
             }
         }
         let _ = tx.send(eof);
     });
 }
+
+#[cfg(test)]
+#[path = "session_pipes_tests.rs"]
+mod tests;
