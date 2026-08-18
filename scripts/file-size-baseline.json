@@ -3,7 +3,8 @@
   "limit": 500,
   "files": {
     "crates/bonsai-core/src/ai/mod.rs": 673,
-    "crates/bonsai-core/src/ai/session_tests.rs": 501,
+    "crates/bonsai-core/src/ai/session.rs": 505,
+    "crates/bonsai-core/src/ai/session_tests.rs": 509,
     "crates/bonsai-core/src/assets/bundle.rs": 1366,
     "crates/bonsai-core/src/assets/profiles.rs": 1205,
     "crates/bonsai-core/src/git/ai_branch_name.rs": 509,

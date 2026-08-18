@@ -38,6 +38,8 @@ const FORGE_OFF = urlParam('forge') === 'off';
 // detail → create for a non-GitHub forge. The neutral PR/status fixtures render
 // UNCHANGED (the mock sits at the neutral-DTO boundary) — only the repo-context
 // provider/host (+ Azure's project) swap.
+// `?forge=unsupported` ⇒ provider 'unknown' (an origin that is no known SaaS
+// forge) so the harness/e2e can exercise the PrPanel unsupported empty state.
 const FORGE_KIND: ForgeKind =
   urlParam('forge') === 'gitlab'
     ? 'gitLab'
@@ -45,7 +47,9 @@ const FORGE_KIND: ForgeKind =
       ? 'bitbucket'
       : urlParam('forge') === 'azure'
         ? 'azureDevOps'
-        : 'gitHub';
+        : urlParam('forge') === 'unsupported'
+          ? 'unknown'
+          : 'gitHub';
 // Host + web URL matching the detected provider, so the connect hint + "open in
 // browser" links look right in the harness.
 const FORGE_HOST: Record<ForgeKind, string> = {
@@ -53,7 +57,8 @@ const FORGE_HOST: Record<ForgeKind, string> = {
   gitLab: 'gitlab.com',
   bitbucket: 'bitbucket.org',
   azureDevOps: 'dev.azure.com',
-  unknown: FORGE_REPO_CONTEXT.host,
+  // A self-hosted-looking origin so the unsupported state names a non-forge host.
+  unknown: 'git.example.com',
 };
 // Azure DevOps needs a 3-part org/project/repo identity; the mock supplies a
 // sample project so the harness renders the Azure context faithfully. `null`
