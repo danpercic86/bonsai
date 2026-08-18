@@ -207,14 +207,20 @@ test.describe('17 AI activity dock', () => {
     await expect(grip).toHaveAttribute('aria-valuenow', '196');
     await dock(page).getByRole('button', { name: 'AI activity' }).click();
 
-    // The debounced settings write needs a beat before the reload.
-    await page.waitForTimeout(600);
-    const persisted = await page.evaluate(() => {
-      const raw = window.localStorage.getItem('bonsai.mockUiSettings') ?? '{}';
-      return JSON.parse(raw) as { aiDockHeight?: number; aiDockCollapsed?: boolean };
-    });
-    expect(persisted.aiDockHeight).toBe(196);
-    expect(persisted.aiDockCollapsed).toBe(true);
+    // Poll the persistence key rather than sleeping: the write is debounced AND the
+    // mock handler delays ~150ms before storing, so any fixed wait is a race that
+    // only loses under load. Mirrors 10-settings-persistence.spec.ts.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const raw = window.localStorage.getItem('bonsai.mockUiSettings') ?? '{}';
+            const s = JSON.parse(raw) as { aiDockHeight?: number; aiDockCollapsed?: boolean };
+            return `${s.aiDockHeight ?? ''}:${s.aiDockCollapsed ?? ''}`;
+          }),
+        { timeout: 10_000 },
+      )
+      .toBe('196:true');
   });
 
   test('density and theme are driven by tokens only; --text-3 is used nowhere', async ({

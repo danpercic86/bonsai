@@ -54,12 +54,41 @@ export async function gotoHarness(page: Page, opts?: HarnessOptions): Promise<vo
   await page.goto(qs === '' ? '/' : `/?${qs}`);
 }
 
-/** Clicks Skip on the Welcome dialog once visible (only spec 01 needs it). */
+/** Clicks Skip on the Welcome dialog, then waits for `onboardingSeen: true` to
+ *  have actually LANDED in the mock's persisted UiSettings blob.
+ *
+ *  Why the extra wait: App.tsx's `closeOnboarding` hides the dialog
+ *  synchronously but persists the flag fire-and-forget (`void
+ *  ipc.setUiSettings(...)`, not awaited), and the mock handler sleeps ~150 ms
+ *  before `writeUiSettings`. So the dialog being hidden proves nothing about
+ *  storage — a `page.reload()` right after can beat the write and boot with
+ *  onboarding unseen again (flaky only under full-suite worker contention).
+ *  Polling storage is the deterministic signal; never a fixed sleep.
+ *
+ *  Safe for every caller: all of them reach here by clicking Skip, which is
+ *  exactly what fires the write. Specs that boot with onboarding already seen
+ *  don't call this helper at all, so nothing can hang waiting on a write that
+ *  never happens. */
 export async function skipOnboarding(page: Page): Promise<void> {
   const welcome = page.getByRole('dialog', { name: 'Welcome to Bonsai' });
   await expect(welcome).toBeVisible();
   await welcome.getByRole('button', { name: 'Skip' }).click();
   await expect(welcome).toBeHidden();
+  await page.waitForFunction(
+    () => {
+      const raw = window.localStorage.getItem('bonsai.mockUiSettings');
+      if (raw === null) return false;
+      try {
+        return (JSON.parse(raw) as { onboardingSeen?: unknown }).onboardingSeen === true;
+      } catch {
+        return false;
+      }
+    },
+    undefined,
+    // rAF-independent polling (headless panes can stall rAF) + an explicit
+    // timeout so a genuinely lost write fails here with a clear cause.
+    { polling: 50, timeout: 10_000 },
+  );
 }
 
 /** gotoHarness with the fixture repo seeded into bonsai.mockSession →

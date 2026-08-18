@@ -377,11 +377,48 @@ whose memo deps churn therefore steals the user's keyboard selection mid-typing:
 immunises every future `actions` producer instead of requiring each one to stay identity-stable forever.
 Do NOT keep patching producers.
 
-### `App.tsx` per-field settings pattern is driving unbounded growth — **OPEN**
-`App.tsx` is 1212 lines, and each new setting costs N × `useState` + N × `if (patch.x !== undefined)` +
+### `App.tsx` per-field settings pattern is driving unbounded growth — **DONE 2026-08-18**
+Was: 1212 lines, each new setting costing N × `useState` + N × `if (patch.x !== undefined)` +
 N × `setX(s.x)` + N × prop-pass. P67c (`panelDensity`) and P68e (dock height/collapsed) each paid it.
-Fold into a single `UiSettings` state object or a `useUiSettingsState` hook — reclaims far more than the
-+17 P68e added and stops the bleed permanently. **Schedule before the next settings-adding increment.**
+**Closed** by extracting `src/hooks/useUiSettings.ts` (210) — App.tsx **1212 → 1120**, zero call sites
+changed (no prop name or type moved, so the blast radius stayed inside App + the hook). Same pass took
+`RepoWorkspace.tsx` **3087 → 2948** via `repoWorkspace/usePartialStaging.ts` (245). Reviewed APPROVE;
+all six equivalence claims verified, including the one non-verbatim edit (11 names added to 8 dep
+arrays, each confirmed a container-level `useState` setter or `useRef`). Guarded by
+`useUiSettings.test.tsx` — 9 tests, **all 7 behaviours negative-controlled**. Baseline re-locked, so the
+reclaimed floor cannot silently regrow; `session.rs`, `stream.rs` and `useAiRuns.test.tsx` fell off the
+over-500 list entirely.
+
+### Persisted-settings write path has three latent defects — **OPEN** (all pre-existing, found 2026-08-18)
+Found while extracting `useUiSettings`; none introduced by it (each verified against `git show HEAD`).
+1. **Four writers bypass the debounced merge.** `handleSettingsChange` coalesces into one 300 ms
+   `setUiSettings`, but `closeOnboarding` (`{onboardingSeen}`), `toggleTheme`, `toggleListView` and
+   `commitPaneWidths` each fire their own independent write. Benign **only** because the key sets happen
+   to be disjoint today — the ordering is unguaranteed, so any future overlap silently loses a field.
+2. **A failed write is dropped and never retried.** `pendingSettingsPatchRef` is emptied *before* the
+   `ipc.setUiSettings` call, so on rejection the merged patch is gone: the user gets a toast while the UI
+   keeps showing values the disk does not have. Pinned as current behaviour by a test, not fixed.
+3. **No unmount flush** for `settingsSaveTimerRef`. A pending patch still fires after unmount (so it is
+   not lost in-session), but it is lost if the JS context dies inside the 300 ms window — app quit or
+   window close right after a knob change — and a late write can outlive the unmount and race a read.
+
+### `docs/contracts/P68e-ai-activity-dock.md` is 1064 lines and now under-describes shipped code — **OPEN**
+Twice the ~500-line house limit. Also stale: P68g-1 (audit M3) added two elements to the ask block — an
+untrusted-model-output attribution line and a fixed "Bonsai never asks for passwords or tokens" guard —
+and made `aria-describedby` a two-id list, none of which §4.1/§4.2 describe. `ui-designer` produced
+splice-ready replacement blocks in `docs/contracts/P68g-ui.md` §3.1–§3.5 rather than rewriting a
+1064-line canonical contract wholesale with no line-level edit tool (correct call — a truncated write
+would have destroyed it). **Needs: apply the splice, then split the file.**
+
+### `docs/contracts/P68-ai-conflict-streaming.md:304` is one module level stale — **OPEN**
+Says `session_drain_tests.rs` is `#[path]`-included "as a child of `session`". After the `session.rs`
+split it is a child of `session::session_drain` — still a descendant, so the privacy claim holds, but the
+wording is out of date.
+
+### `STDERR_GRACE_TOTAL` is not the absolute cap its doc comment claims — **OPEN**
+`drain_stderr` checks `Instant::now() < deadline` *before* each `recv_timeout(STDERR_GRACE)`, so the
+drain can run up to `STDERR_GRACE_TOTAL + STDERR_GRACE` (~1150 ms vs the documented 1000 ms). Visible
+only as ≤150 ms extra shutdown latency; the existing test's 500 ms slack passes either way.
 
 ### `cargo fmt` has never been run on this repo — **OPEN**
 No `rustfmt.toml` anywhere, no fmt check in any hook or CI. `cargo fmt --all --check` reports **1773
