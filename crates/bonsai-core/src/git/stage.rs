@@ -143,13 +143,9 @@ pub(crate) fn ensure_no_untracked_collision(
     // On a case-insensitive filesystem the worktree path `README.md` and the
     // tree path `readme.md` are the same physical file, so an exact-case tree
     // lookup would MISS the collision and let `.force()` clobber the untracked
-    // file (finding F-A3-6). Key off git's own `core.ignorecase`: git sets it
-    // true at init/clone on a case-insensitive FS. Unset falls back to the
-    // build target (`cfg!(windows)`), matching git's default probe.
-    let ignorecase = repo
-        .config()
-        .and_then(|c| c.get_bool("core.ignorecase"))
-        .unwrap_or(cfg!(windows));
+    // file (finding F-A3-6). Key off git's own `core.ignorecase` (shared helper
+    // so every case-folding decision in the app uses one rule).
+    let ignorecase = super::repo::repo_ignorecase(repo);
 
     let statuses = repo.statuses(Some(&mut sopts))?;
     for entry in statuses.iter() {

@@ -9,8 +9,9 @@
 //!   param — never `cfg!` — so every OS branch runs in unit tests regardless of
 //!   the host. They touch no filesystem and never spawn.
 //! * A [`CommandRunner`] ([`SpawnRunner`] in production) turns a `LaunchSpec`
-//!   into a real, detached child. Tests inject a fake runner to assert the
-//!   fallback ladder without launching anything.
+//!   into a real child — detached by default, or waited-on for the macOS
+//!   `open` launchers (see [`LaunchSpec::wait_for_exit`]). Tests inject a fake
+//!   runner to assert the fallback ladder without launching anything.
 //!
 //! Safety (P49 D2): a launch is always `program + [args…] + explicit cwd`. The
 //! user template is tokenized and `{path}` is substituted **inside a single argv
@@ -77,19 +78,36 @@ pub struct LaunchSpec {
     /// Code's `code.cmd`) or `explorer` would flash. MUST be `false` for
     /// terminals — we WANT that window. Ignored on macOS/Linux.
     pub hide_console: bool,
+    /// Wait for the child to EXIT and treat a non-zero status as a failure so
+    /// the ladder advances (default `false` = detached spawn, exit ignored).
+    ///
+    /// Set ONLY for the macOS `/usr/bin/open` launchers. `open` hands the
+    /// request to LaunchServices and returns immediately, so waiting costs
+    /// milliseconds and does NOT block on the launched app's lifetime — but it
+    /// is the only way to learn that `open -a "Visual Studio Code"` printed
+    /// "Unable to find application", which it reports via its EXIT CODE, not by
+    /// failing to spawn. Without this the first `open` rung always "succeeds"
+    /// and the fallback ladder never runs (silent no-op, finding F-MAC-1).
+    ///
+    /// MUST stay `false` everywhere else: Windows `explorer` routinely exits
+    /// non-zero after successfully handing off, and a real editor/terminal
+    /// would keep us waiting for as long as the user keeps it open.
+    pub wait_for_exit: bool,
 }
 
 /// Injected so argv-building + ladder logic are testable without launching apps.
-/// `Ok(())` = spawned (we do NOT wait; the child outlives Bonsai). `Err(msg)` =
-/// this candidate failed, so [`launch_first`] tries the next ladder entry (or
-/// surfaces the error if it was the last).
+/// `Ok(())` = launched — spawned and left detached, or (when
+/// [`LaunchSpec::wait_for_exit`]) exited zero. `Err(msg)` = this candidate
+/// failed, so [`launch_first`] tries the next ladder entry (or surfaces the
+/// error if it was the last).
 pub trait CommandRunner {
     fn run(&self, spec: &LaunchSpec) -> Result<(), String>;
 }
 
 /// Production runner: builds a `std::process::Command`, sets program/args/cwd,
-/// applies `CREATE_NO_WINDOW` iff `spec.hide_console` (Windows), then `spawn()`
-/// without waiting — the child is detached.
+/// applies `CREATE_NO_WINDOW` iff `spec.hide_console` (Windows), then either
+/// `spawn()`s without waiting (default — the child is detached) or, iff
+/// `spec.wait_for_exit`, `status()`s and reports a non-zero exit as an error.
 pub struct SpawnRunner;
 
 impl CommandRunner for SpawnRunner {
@@ -102,6 +120,21 @@ impl CommandRunner for SpawnRunner {
             use std::os::windows::process::CommandExt;
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+        if spec.wait_for_exit {
+            // macOS `open` only: it returns as soon as LaunchServices has taken
+            // the request, so this does NOT wait on the launched app. Its exit
+            // code is the ONLY signal that the app was not found, so a non-zero
+            // status must be an `Err` for `launch_first` to try the next rung.
+            let status = cmd.status().map_err(|e| e.to_string())?;
+            return if status.success() {
+                Ok(())
+            } else {
+                Err(match status.code() {
+                    Some(code) => format!("exited with status {code}"),
+                    None => "terminated by signal".to_string(),
+                })
+            };
         }
         // Spawn and drop the handle: we never wait — the launched app is
         // detached and outlives us. Only a spawn failure is a failure (an
@@ -117,14 +150,30 @@ use crate::procutil::resolve_program;
 
 // ---- pure builders (no fs, no spawn) ------------------------------------------
 
-/// Small constructor keeping the ladder tables terse.
-fn spec(program: &str, args: &[&str], path: &Path, hide_console: bool) -> LaunchSpec {
+/// Small constructor keeping the ladder tables terse. `wait_for_exit` is the
+/// macOS-`open` flag documented on [`LaunchSpec::wait_for_exit`]; every other
+/// entry passes `false`.
+fn spec(
+    program: &str,
+    args: &[&str],
+    path: &Path,
+    hide_console: bool,
+    wait_for_exit: bool,
+) -> LaunchSpec {
     LaunchSpec {
         program: program.to_string(),
         args: args.iter().map(|a| a.to_string()).collect(),
         cwd: path.to_path_buf(),
         hide_console,
+        wait_for_exit,
     }
+}
+
+/// A macOS `/usr/bin/open` ladder entry: same as [`spec`] but always
+/// `wait_for_exit = true`, so `open`'s "Unable to find application" exit code
+/// makes the ladder fall through instead of silently "succeeding".
+fn open_spec(args: &[&str], path: &Path, hide_console: bool) -> LaunchSpec {
+    spec("open", args, path, hide_console, true)
 }
 
 /// Split a template into argv tokens: whitespace-separated, honoring double
@@ -174,6 +223,10 @@ pub fn parse_template(template: &str, path: &Path, hide_console: bool) -> Option
         args,
         cwd: path.to_path_buf(),
         hide_console,
+        // A user template is an arbitrary program (`subl`, `nvim`, a wrapper
+        // script) that may run for the whole editing session — NEVER wait on
+        // it, even if the user typed `open -a …`.
+        wait_for_exit: false,
     })
 }
 
@@ -187,15 +240,19 @@ pub fn terminal_ladder(os: TargetOs, template: &str, path: &Path) -> Vec<LaunchS
     let p = path.display().to_string();
     match os {
         TargetOs::Windows => vec![
-            spec("wt", &["-d", &p], path, false),
-            spec("powershell", &[], path, false),
-            spec("cmd", &["/K"], path, false),
+            spec("wt", &["-d", &p], path, false, false),
+            spec("powershell", &[], path, false, false),
+            spec("cmd", &["/K"], path, false, false),
         ],
-        TargetOs::MacOs => vec![spec("open", &["-a", "Terminal", &p], path, false)],
+        // Terminal.app ships with macOS so this rung effectively never fails,
+        // but `open` still gets the wait flag: it is the uniform rule for every
+        // `open` launcher, and it upgrades a hypothetical failure from a silent
+        // no-op to a real error instead of leaving it invisible.
+        TargetOs::MacOs => vec![open_spec(&["-a", "Terminal", &p], path, false)],
         TargetOs::Linux => vec![
-            spec("gnome-terminal", &[&format!("--working-directory={p}")], path, false),
-            spec("konsole", &["--workdir", &p], path, false),
-            spec("x-terminal-emulator", &[], path, false),
+            spec("gnome-terminal", &[&format!("--working-directory={p}")], path, false, false),
+            spec("konsole", &["--workdir", &p], path, false, false),
+            spec("x-terminal-emulator", &[], path, false, false),
         ],
     }
 }
@@ -205,9 +262,12 @@ pub fn terminal_ladder(os: TargetOs, template: &str, path: &Path) -> Vec<LaunchS
 pub fn reveal_spec(os: TargetOs, path: &Path) -> LaunchSpec {
     let p = path.display().to_string();
     match os {
-        TargetOs::Windows => spec("explorer", &[&p], path, true),
-        TargetOs::MacOs => spec("open", &[&p], path, true),
-        TargetOs::Linux => spec("xdg-open", &[&p], path, true),
+        // Windows `explorer` MUST stay detached: it habitually exits non-zero
+        // after a successful hand-off, so waiting on it would report a bogus
+        // failure.
+        TargetOs::Windows => spec("explorer", &[&p], path, true, false),
+        TargetOs::MacOs => open_spec(&[&p], path, true),
+        TargetOs::Linux => spec("xdg-open", &[&p], path, true, false),
     }
 }
 
@@ -220,13 +280,17 @@ pub fn editor_ladder(os: TargetOs, template: &str, path: &Path) -> Vec<LaunchSpe
     let p = path.display().to_string();
     match os {
         TargetOs::Windows | TargetOs::Linux => vec![
-            spec("code", &[&p], path, true),
-            spec("code-insiders", &[&p], path, true),
+            spec("code", &[&p], path, true, false),
+            spec("code-insiders", &[&p], path, true, false),
         ],
+        // The two `open -a` rungs MUST wait: `open` always spawns fine and
+        // signals "Unable to find application" only through its exit code, so
+        // without the flag rung #1 would always win and a Mac without VS Code
+        // would get a silent no-op instead of falling through to `code`.
         TargetOs::MacOs => vec![
-            spec("open", &["-a", "Visual Studio Code", &p], path, true),
-            spec("open", &["-a", "Visual Studio Code - Insiders", &p], path, true),
-            spec("code", &[&p], path, true),
+            open_spec(&["-a", "Visual Studio Code", &p], path, true),
+            open_spec(&["-a", "Visual Studio Code - Insiders", &p], path, true),
+            spec("code", &[&p], path, true, false),
         ],
     }
 }
@@ -285,252 +349,5 @@ pub fn open_in_editor(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::cell::RefCell;
-
-    fn p() -> PathBuf {
-        PathBuf::from("/tmp/work")
-    }
-
-    // ---- parse_template ----
-
-    #[test]
-    fn parse_template_standalone_path_token() {
-        let s = parse_template("myterm {path}", &p(), false).expect("parsed");
-        assert_eq!(s.program, "myterm");
-        assert_eq!(s.args, vec!["/tmp/work".to_string()]);
-        assert_eq!(s.cwd, p());
-        assert!(!s.hide_console);
-    }
-
-    #[test]
-    fn parse_template_embedded_path_in_flag() {
-        let s = parse_template("gnome-terminal --working-directory={path}", &p(), false)
-            .expect("parsed");
-        assert_eq!(s.program, "gnome-terminal");
-        assert_eq!(s.args, vec!["--working-directory=/tmp/work".to_string()]);
-    }
-
-    #[test]
-    fn parse_template_quoted_token_keeps_spaces_and_strips_quotes() {
-        // A quoted program name AND a quoted arg with spaces both survive as one
-        // token each, with the surrounding quotes removed.
-        let s = parse_template("\"my editor\" \"C:\\Program Files\\x\"", &p(), true)
-            .expect("parsed");
-        assert_eq!(s.program, "my editor");
-        assert_eq!(s.args, vec!["C:\\Program Files\\x".to_string()]);
-        assert!(s.hide_console);
-    }
-
-    #[test]
-    fn parse_template_substitutes_path_with_spaces_into_one_arg() {
-        let path = PathBuf::from("/tmp/my repo");
-        let s = parse_template("code {path}", &path, true).expect("parsed");
-        assert_eq!(s.program, "code");
-        // Space preserved AND not split into two args.
-        assert_eq!(s.args, vec!["/tmp/my repo".to_string()]);
-    }
-
-    #[test]
-    fn parse_template_empty_or_whitespace_is_none() {
-        assert!(parse_template("", &p(), false).is_none());
-        assert!(parse_template("   \t  ", &p(), false).is_none());
-    }
-
-    #[test]
-    fn parse_template_shell_metachars_stay_literal_args() {
-        // A `;` (or `&&`, `|`) is NOT a command separator — it is one more argv
-        // token, immune to Windows Terminal's `;` sub-command delimiter.
-        let s = parse_template("wt {path} ; rm -rf /", &p(), false).expect("parsed");
-        assert_eq!(s.program, "wt");
-        assert_eq!(
-            s.args,
-            vec!["/tmp/work", ";", "rm", "-rf", "/"]
-                .into_iter()
-                .map(String::from)
-                .collect::<Vec<_>>()
-        );
-    }
-
-    // ---- builder tables (per TargetOs, empty template = auto ladder) ----
-
-    #[test]
-    fn terminal_ladder_windows_auto() {
-        assert_eq!(
-            terminal_ladder(TargetOs::Windows, "", &p()),
-            vec![
-                spec("wt", &["-d", "/tmp/work"], &p(), false),
-                spec("powershell", &[], &p(), false),
-                spec("cmd", &["/K"], &p(), false),
-            ]
-        );
-    }
-
-    #[test]
-    fn terminal_ladder_macos_auto() {
-        assert_eq!(
-            terminal_ladder(TargetOs::MacOs, "", &p()),
-            vec![spec("open", &["-a", "Terminal", "/tmp/work"], &p(), false)]
-        );
-    }
-
-    #[test]
-    fn terminal_ladder_linux_auto() {
-        assert_eq!(
-            terminal_ladder(TargetOs::Linux, "", &p()),
-            vec![
-                spec("gnome-terminal", &["--working-directory=/tmp/work"], &p(), false),
-                spec("konsole", &["--workdir", "/tmp/work"], &p(), false),
-                spec("x-terminal-emulator", &[], &p(), false),
-            ]
-        );
-    }
-
-    #[test]
-    fn terminal_ladder_template_overrides_to_single_spec() {
-        // A user template yields exactly one candidate on every OS, hide_console
-        // false (visible terminal).
-        for os in [TargetOs::Windows, TargetOs::MacOs, TargetOs::Linux] {
-            assert_eq!(
-                terminal_ladder(os, "alacritty --working-directory {path}", &p()),
-                vec![spec(
-                    "alacritty",
-                    &["--working-directory", "/tmp/work"],
-                    &p(),
-                    false
-                )]
-            );
-        }
-    }
-
-    #[test]
-    fn reveal_spec_per_os() {
-        assert_eq!(
-            reveal_spec(TargetOs::Windows, &p()),
-            spec("explorer", &["/tmp/work"], &p(), true)
-        );
-        assert_eq!(
-            reveal_spec(TargetOs::MacOs, &p()),
-            spec("open", &["/tmp/work"], &p(), true)
-        );
-        assert_eq!(
-            reveal_spec(TargetOs::Linux, &p()),
-            spec("xdg-open", &["/tmp/work"], &p(), true)
-        );
-    }
-
-    #[test]
-    fn editor_ladder_windows_and_linux_auto() {
-        let expected = vec![
-            spec("code", &["/tmp/work"], &p(), true),
-            spec("code-insiders", &["/tmp/work"], &p(), true),
-        ];
-        assert_eq!(editor_ladder(TargetOs::Windows, "", &p()), expected);
-        assert_eq!(editor_ladder(TargetOs::Linux, "", &p()), expected);
-    }
-
-    #[test]
-    fn editor_ladder_macos_auto() {
-        assert_eq!(
-            editor_ladder(TargetOs::MacOs, "", &p()),
-            vec![
-                spec("open", &["-a", "Visual Studio Code", "/tmp/work"], &p(), true),
-                spec(
-                    "open",
-                    &["-a", "Visual Studio Code - Insiders", "/tmp/work"],
-                    &p(),
-                    true
-                ),
-                spec("code", &["/tmp/work"], &p(), true),
-            ]
-        );
-    }
-
-    #[test]
-    fn editor_ladder_template_overrides_to_single_spec() {
-        assert_eq!(
-            editor_ladder(TargetOs::MacOs, "subl {path}", &p()),
-            vec![spec("subl", &["/tmp/work"], &p(), true)]
-        );
-    }
-
-    // ---- ladder fallback logic (FakeRunner — NEVER spawns) ----
-
-    /// Records every `run` call and succeeds only for the programs in `succeed`.
-    struct FakeRunner {
-        succeed: Vec<String>,
-        calls: RefCell<Vec<String>>,
-    }
-
-    impl FakeRunner {
-        fn new(succeed: &[&str]) -> FakeRunner {
-            FakeRunner {
-                succeed: succeed.iter().map(|s| s.to_string()).collect(),
-                calls: RefCell::new(Vec::new()),
-            }
-        }
-    }
-
-    impl CommandRunner for FakeRunner {
-        fn run(&self, spec: &LaunchSpec) -> Result<(), String> {
-            self.calls.borrow_mut().push(spec.program.clone());
-            if self.succeed.iter().any(|s| s == &spec.program) {
-                Ok(())
-            } else {
-                Err(format!("mock: `{}` not found", spec.program))
-            }
-        }
-    }
-
-    #[test]
-    fn first_candidate_fails_second_succeeds_picks_second() {
-        // wt unresolvable ⇒ falls through to PowerShell, which succeeds; cmd is
-        // never tried.
-        let runner = FakeRunner::new(&["powershell"]);
-        open_in_terminal(&runner, TargetOs::Windows, "", &p()).expect("second candidate wins");
-        assert_eq!(*runner.calls.borrow(), vec!["wt", "powershell"]);
-    }
-
-    #[test]
-    fn all_candidates_fail_errors_naming_last_program() {
-        // wt → powershell → cmd all fail: ExternalToolFailed names the LAST
-        // program (cmd) and the "terminal" label.
-        let runner = FakeRunner::new(&[]);
-        let err = open_in_terminal(&runner, TargetOs::Windows, "", &p())
-            .expect_err("all candidates fail");
-        assert!(matches!(err, AppError::ExternalToolFailed(_)));
-        let msg = err.to_string();
-        assert!(msg.contains("cmd"), "message names last program: {msg}");
-        assert!(msg.contains("terminal"), "message carries the label: {msg}");
-        assert_eq!(*runner.calls.borrow(), vec!["wt", "powershell", "cmd"]);
-    }
-
-    #[test]
-    fn reveal_single_candidate_success_and_failure() {
-        // Success: the one reveal spec runs.
-        let ok = FakeRunner::new(&["explorer"]);
-        reveal_in_file_manager(&ok, TargetOs::Windows, &p()).expect("reveal spawns");
-        assert_eq!(*ok.calls.borrow(), vec!["explorer"]);
-
-        // Failure: the single candidate fails ⇒ ExternalToolFailed naming it.
-        let bad = FakeRunner::new(&[]);
-        let err = reveal_in_file_manager(&bad, TargetOs::Windows, &p())
-            .expect_err("reveal fails");
-        assert!(matches!(err, AppError::ExternalToolFailed(_)));
-        assert!(err.to_string().contains("explorer"));
-    }
-
-    #[test]
-    fn editor_template_is_the_only_candidate_tried() {
-        // A configured template short-circuits the auto ladder: only the
-        // template program is attempted, and on failure it is what the error
-        // names.
-        let runner = FakeRunner::new(&[]);
-        let err = open_in_editor(&runner, TargetOs::Windows, "my-editor {path}", &p())
-            .expect_err("template program missing");
-        assert!(matches!(err, AppError::ExternalToolFailed(_)));
-        assert!(err.to_string().contains("my-editor"));
-        assert_eq!(*runner.calls.borrow(), vec!["my-editor"]);
-    }
-}
+#[path = "external_tests.rs"]
+mod tests;

@@ -110,6 +110,36 @@ pub(crate) fn read_head_info(repo: &git2::Repository) -> Result<HeadInfo, AppErr
     })
 }
 
+/// Is this repo's working tree on a CASE-INSENSITIVE filesystem?
+///
+/// Keyed off git's own `core.ignorecase`, which git probes and records at
+/// `init`/`clone` time — the same rule `stage::ensure_no_untracked_collision`
+/// uses, so the two never disagree. When the key is unset we fall back to the
+/// build target (`cfg!(windows)`), matching git's default probe.
+///
+/// `cfg!(windows)` ALONE is wrong: macOS APFS/HFS+ are case-insensitive by
+/// default, so a Mac would otherwise be treated as case-sensitive.
+pub fn repo_ignorecase(repo: &git2::Repository) -> bool {
+    repo.config()
+        .and_then(|c| c.get_bool("core.ignorecase"))
+        .unwrap_or(cfg!(windows))
+}
+
+/// [`repo_ignorecase`] for a workdir path: opens the repo (no parent search) to
+/// read its config. A path that is not a repo — or a repo we cannot open —
+/// degrades to the `cfg!(windows)` default rather than erroring, because every
+/// caller only needs a case-folding hint.
+pub fn path_ignorecase(workdir: &std::path::Path) -> bool {
+    match git2::Repository::open_ext(
+        workdir,
+        git2::RepositoryOpenFlags::NO_SEARCH,
+        std::iter::empty::<&std::ffi::OsStr>(),
+    ) {
+        Ok(repo) => repo_ignorecase(&repo),
+        Err(_) => cfg!(windows),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

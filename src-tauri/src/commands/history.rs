@@ -113,7 +113,7 @@ pub(crate) async fn history_index_build_inner(
     let workdir = repo_path(state, repo_id)?;
     let base = base.to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
-        let dir = history_index::index_dir_for(&base, &workdir);
+        let dir = history_index::index_dir_for_repo(&base, &workdir);
         history_index::build_index(&workdir, &dir, on_progress)
     })
     .await
@@ -144,7 +144,7 @@ pub(crate) async fn history_index_status_inner(
     let workdir = repo_path(state, repo_id)?;
     let base = base.to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
-        let dir = history_index::index_dir_for(&base, &workdir);
+        let dir = history_index::index_dir_for_repo(&base, &workdir);
         history_index::index_status(&workdir, &dir)
     })
     .await
@@ -179,7 +179,7 @@ pub(crate) async fn history_search_inner(
     let workdir = repo_path(state, repo_id)?;
     let base = base.to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
-        let dir = history_index::index_dir_for(&base, &workdir);
+        let dir = history_index::index_dir_for_repo(&base, &workdir);
         history_index::search_history(&workdir, &dir, &query)
     })
     .await
@@ -233,7 +233,7 @@ pub(crate) async fn ai_search_history_inner(
     let base = base.to_path_buf();
     let top_k = resolve_ai_top_k(top_k);
     tauri::async_runtime::spawn_blocking(move || {
-        let dir = history_index::index_dir_for(&base, &workdir);
+        let dir = history_index::index_dir_for_repo(&base, &workdir);
         ai_history::answer_history(&workdir, &dir, &question, top_k, RunOpts::default())
     })
     .await

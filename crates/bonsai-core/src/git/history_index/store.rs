@@ -3,8 +3,9 @@
 //! One `store.json` per repo under `index_dir` (the command resolves
 //! `index_dir` via [`super::index_dir_for`]; core stays runtime-free). Writes
 //! are atomic (tmp + rename, mirroring `settings.rs`). [`repo_key`] is the
-//! FNV-1a hex of the path-normalized workdir (case-folded on Windows) — the
-//! per-repo subdirectory name. Schema invalidation is enforced by the caller
+//! FNV-1a hex of the path-normalized workdir (case-folded iff the filesystem
+//! is case-insensitive, per git's `core.ignorecase`) — the per-repo
+//! subdirectory name. Schema invalidation is enforced by the caller
 //! (`build_index`/`index_status`) comparing [`IndexStore::schema`].
 
 use std::collections::BTreeMap;
@@ -124,21 +125,28 @@ pub fn save(index_dir: &Path, store: &IndexStore) -> Result<(), AppError> {
 }
 
 /// Per-repo subdirectory name: FNV-1a hex of the path-normalized workdir.
-/// Normalization makes the key stable across separator / trailing-slash /
-/// (Windows) case differences for the same physical directory (contract §3.4).
-pub fn repo_key(workdir: &Path) -> String {
-    fnv1a_hex(normalize_path(workdir).as_bytes())
+/// Normalization makes the key stable across separator / trailing-slash / (on a
+/// case-insensitive filesystem) case differences for the same physical
+/// directory (contract §3.4).
+///
+/// `ignorecase` is INJECTED, not `cfg!`-derived: the caller resolves it from
+/// git's `core.ignorecase` via [`crate::git::repo::path_ignorecase`]. Deriving
+/// it from the build target used to fold case on Windows only, so macOS —
+/// whose APFS/HFS+ is case-insensitive by DEFAULT — built two separate index
+/// directories for `/Users/x/Repo` and `/Users/x/repo` (the same repo), and
+/// each open re-indexed from scratch.
+pub fn repo_key(workdir: &Path, ignorecase: bool) -> String {
+    fnv1a_hex(normalize_path(workdir, ignorecase).as_bytes())
 }
 
 /// Normalize a workdir path for keying: forward slashes, no trailing slash,
-/// lowercased on Windows (case-insensitive filesystem).
-fn normalize_path(p: &Path) -> String {
+/// lowercased iff the filesystem is case-insensitive.
+fn normalize_path(p: &Path, ignorecase: bool) -> String {
     let mut s = p.to_string_lossy().replace('\\', "/");
     while s.len() > 1 && s.ends_with('/') {
         s.pop();
     }
-    #[cfg(windows)]
-    {
+    if ignorecase {
         s = s.to_lowercase();
     }
     s
@@ -270,24 +278,46 @@ mod tests {
 
     #[test]
     fn repo_key_is_stable_and_path_normalized() {
-        let a = repo_key(Path::new("/home/user/repo"));
-        let b = repo_key(Path::new("/home/user/repo"));
-        assert_eq!(a, b, "same workdir => same key");
-        assert_eq!(a.len(), 16, "16 hex chars (u64)");
-        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+        for ignorecase in [true, false] {
+            let a = repo_key(Path::new("/home/user/repo"), ignorecase);
+            let b = repo_key(Path::new("/home/user/repo"), ignorecase);
+            assert_eq!(a, b, "same workdir => same key");
+            assert_eq!(a.len(), 16, "16 hex chars (u64)");
+            assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
 
-        // Trailing slash + separator flavor normalize to the same key.
-        assert_eq!(repo_key(Path::new("/home/user/repo/")), a);
+            // Trailing slash + separator flavor normalize to the same key on
+            // BOTH filesystems — neither is a case difference.
+            assert_eq!(repo_key(Path::new("/home/user/repo/"), ignorecase), a);
+            assert_eq!(repo_key(Path::new("\\home\\user\\repo"), ignorecase), a);
 
-        // Distinct repos => distinct keys.
-        assert_ne!(a, repo_key(Path::new("/home/user/other")));
-
-        // On Windows, case + backslash normalize to one key.
-        #[cfg(windows)]
-        {
-            let w = repo_key(Path::new("C:\\Repos\\Bonsai"));
-            assert_eq!(w, repo_key(Path::new("c:/repos/bonsai")));
+            // Distinct repos => distinct keys.
+            assert_ne!(a, repo_key(Path::new("/home/user/other"), ignorecase));
         }
+    }
+
+    /// The case-folding half is driven by the INJECTED `ignorecase`, never by
+    /// the build target: a case-insensitive FS (Windows, and macOS APFS by
+    /// default) folds `Repo`/`repo` into ONE index dir, while ext4 keeps them
+    /// apart because they are genuinely different directories there.
+    #[test]
+    fn repo_key_case_folding_follows_injected_ignorecase() {
+        let upper = Path::new("C:\\Repos\\Bonsai");
+        let lower = Path::new("c:/repos/bonsai");
+        assert_eq!(
+            repo_key(upper, true),
+            repo_key(lower, true),
+            "case-insensitive FS: one key"
+        );
+        assert_ne!(
+            repo_key(upper, false),
+            repo_key(lower, false),
+            "case-sensitive FS: distinct dirs keep distinct keys"
+        );
+        // Non-ASCII folds too (`to_lowercase` is unicode-aware).
+        assert_eq!(
+            repo_key(Path::new("/tmp/Café"), true),
+            repo_key(Path::new("/tmp/café"), true)
+        );
     }
 
     #[test]
