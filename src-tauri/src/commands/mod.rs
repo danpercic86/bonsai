@@ -44,7 +44,22 @@ mod forge;
 mod tests_support;
 
 #[cfg(test)]
-mod tests;
+mod tests_open_repo_guards;
+
+#[cfg(test)]
+mod tests_branch_merge_guards;
+
+#[cfg(test)]
+mod tests_repo_isolation;
+
+#[cfg(test)]
+mod tests_ui_settings_patch;
+
+#[cfg(test)]
+mod tests_ui_settings_patch_flags;
+
+#[cfg(test)]
+mod tests_ai_consent_gate;
 
 #[cfg(test)]
 mod tests_staging;
