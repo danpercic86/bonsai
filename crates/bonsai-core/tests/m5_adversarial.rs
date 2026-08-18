@@ -215,6 +215,16 @@ fn checkout_with_staged_conflicting_change_blocked() {
 // refs/heads/Feature — long-standing git-on-Windows weirdness. Bonsai never
 // takes free-text checkout input (the UI only offers names from list_refs),
 // so only the create path is reachable and is what we pin here.
+//
+// Gated to case-insensitive filesystems (Windows NTFS, macOS's default
+// APFS) — matching `isolation_focus_dedupe_on_reopen`'s precedent for the
+// same class of edge (fixed in f3ed54d). On Linux's case-sensitive ext4,
+// `refs/heads/feature` and `refs/heads/Feature` are genuinely different
+// loose-ref files: both the real CLI and libgit2's `find_branch` (which
+// `create_branch`'s precheck uses) happily create the second one — there is
+// no collision to refuse, so this test's whole premise doesn't hold there
+// (observed: the CLI oracle assertion failed on ubuntu-22.04 CI).
+#[cfg(any(windows, target_os = "macos"))]
 #[test]
 fn case_colliding_branch_create_matches_cli() {
     require_git!();
