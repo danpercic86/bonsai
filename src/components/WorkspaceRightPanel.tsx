@@ -212,6 +212,17 @@ export function WorkspaceRightPanel({
   prDefaultHead,
   prNav,
 }: WorkspaceRightPanelProps) {
+  // Audit §2.2: `selectedIndex` can point PAST the end of `graph.nodes` — a
+  // streaming refetch publishes its first partial batch BEFORE the progressive
+  // selection remap runs, and a rebased/GC'd commit never comes back at all.
+  // `graph.nodes[i]` is then `undefined`, and CommitPanel (non-optional `node`)
+  // would deref it → TypeError → the ErrorBoundary tears down the workspace.
+  // Derive the node ONCE and gate BOTH uses on it; until the row arrives (or the
+  // stream ends and RepoWorkspace clears the selection) we fall back to the
+  // status panel, exactly like the commit-diff effect already skips.
+  const selectedNode =
+    selectedIndex !== null && graph !== null ? (graph.nodes[selectedIndex] ?? null) : null;
+
   return (
     <aside className="right-panel" data-density={panelDensity} style={{ width: rightPanelWidth }}>
       <div className="right-pane-tabs" role="tablist" aria-label="Right panel view">
@@ -262,9 +273,9 @@ export function WorkspaceRightPanel({
           onSelectScope={setScope}
           onClose={clearCompare}
         />
-      ) : selectedIndex !== null && graph !== null ? (
+      ) : selectedNode !== null ? (
         <CommitPanel
-          node={graph.nodes[selectedIndex]}
+          node={selectedNode}
           data={commitDiff}
           loading={commitDiffLoading}
           error={commitDiffError}
@@ -278,7 +289,7 @@ export function WorkspaceRightPanel({
           onClose={() => setSelectedIndex(null)}
           aiEligible={aiEligible}
           onExplain={() => {
-            const oid = graph.nodes[selectedIndex].id;
+            const oid = selectedNode.id;
             runAnalyze({ kind: 'commit', oid }, 'explain', `Explain commit ${shortOid(oid)}`);
           }}
           signature={commitSignature}
