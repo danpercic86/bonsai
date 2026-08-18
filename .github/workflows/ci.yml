@@ -9,7 +9,10 @@
 # The `rust` job runs on all three target OSes (Linux/Windows/macOS): Bonsai
 # shells out to `git`, touches paths, and spawns CLI helpers, so path
 # separators, line endings and process spawning are genuinely OS-dependent.
-# `frontend`, `e2e` and `audit` stay on Linux only — they are OS-independent.
+# `frontend` also runs on macOS: the TypeScript jobs used to be Linux-only, and
+# that blind spot is what let a batch of macOS-only UI defects through. `e2e` and
+# `audit` stay on Linux only — Playwright drives the mock harness in a bundled
+# chromium, and dependency graphs are OS-independent for our targets.
 
 name: CI
 
@@ -107,8 +110,16 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
   frontend:
-    name: Frontend — vitest + build
-    runs-on: ubuntu-22.04
+    name: Frontend — vitest + build (${{ matrix.platform }})
+    strategy:
+      # A macOS leg exists deliberately: this job and `e2e` were ubuntu-only,
+      # which is exactly how a batch of macOS-only UI defects (Cmd+Enter, font
+      # fallback, shortcut labels) reached a release branch unnoticed. Windows
+      # is already covered for the parts that are OS-sensitive by the `rust` job.
+      fail-fast: false
+      matrix:
+        platform: [ubuntu-22.04, macos-latest]
+    runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -143,7 +154,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: coverage-summary
+          name: coverage-summary-${{ matrix.platform }}
           path: coverage/coverage-summary.json
 
       - name: pnpm build (tsc + vite)
