@@ -217,7 +217,14 @@ where
         // (canonical-path match, `same_repo_path`), reuse its exact key so we
         // FOCUS it instead of inserting a duplicate. Only compute the callback
         // once we know the final id.
-        {
+        //
+        // Audit §3.4: `same_repo_path` canonicalizes (blocking fs I/O), so the
+        // scan must not run under the map lock on the async executor. Snapshot
+        // the keys under the lock, release it, then compare in
+        // `spawn_blocking`. TOCTOU: a tab closed between snapshot and use just
+        // means we insert a fresh entry under that (still-canonical) key below
+        // — same behaviour as opening it anew, nothing to guard.
+        let keys: Vec<String> = {
             // Poison recovery (audit §3.8): the guarded map is structurally
             // valid at every point (plain insert/remove), so recover instead
             // of bricking every later command.
@@ -225,13 +232,16 @@ where
                 .repos
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if let Some(existing) = repos
-                .keys()
-                .find(|k| same_repo_path(k, &repo_id))
-                .cloned()
-            {
-                repo_id = existing;
-            }
+            repos.keys().cloned().collect()
+        };
+        let candidate = repo_id.clone();
+        let existing = tauri::async_runtime::spawn_blocking(move || {
+            keys.into_iter().find(|k| same_repo_path(k, &candidate))
+        })
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?;
+        if let Some(existing) = existing {
+            repo_id = existing;
         }
 
         let on_change = make_on_change(repo_id.clone());

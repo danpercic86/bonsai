@@ -3,6 +3,7 @@
 //! idle watchdog, cancel, and the D2 guarantee that partial output survives.
 
 use std::path::Path;
+use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
 
@@ -79,6 +80,9 @@ fn stream_success_emits_started_logs_turn_end_and_done() {
         &collect,
     )
     .expect("stream_success should resolve");
+    // §3.7: after `complete()` the shared pid must be back to 0 so a late
+    // `cancel_all` cannot kill a recycled pid.
+    assert_eq!(ctl.pid.load(Ordering::Relaxed), 0, "pid must reset after completion");
     reg.finish(&run_id);
 
     assert_eq!(res.text, "MERGED_STREAM_BODY");
@@ -177,6 +181,7 @@ fn cancel_mid_run_keeps_partial_output_and_leaves_no_child() {
 
     let reg = AiRunRegistry::default();
     let (run_id, ctl) = reg.register();
+    let pid = std::sync::Arc::clone(&ctl.pid);
     let sink = Sink::default();
     let collect = {
         let s = sink.clone();
@@ -204,6 +209,9 @@ fn cancel_mid_run_keeps_partial_output_and_leaves_no_child() {
         assert!(reg.cancel(&run_id), "registry should know the run");
         handle.join().expect("session thread should not panic")
     });
+    // §3.7: after `reap()` the shared pid must be back to 0 so a late
+    // `cancel_all` cannot kill a recycled pid.
+    assert_eq!(pid.load(Ordering::Relaxed), 0, "pid must reset after cancellation");
     reg.finish(&run_id);
 
     match &outcome {

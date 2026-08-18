@@ -75,6 +75,13 @@ fn commands_defined_in(source: &str) -> Vec<String> {
     out
 }
 
+/// True for file stems that hold `#[cfg(test)]` modules and must be skipped by
+/// the scanner. Audit §3.5: the tests.rs split named its files `tests_*.rs`,
+/// so the filter covers all three shapes — `tests`, `tests_*`, and `*_tests`.
+fn is_test_module_stem(stem: &str) -> bool {
+    stem == "tests" || stem.starts_with("tests_") || stem.ends_with("_tests")
+}
+
 /// All `#[tauri::command]` fn names across every `.rs` file in `src/commands/`.
 fn all_defined_commands(commands_dir: &Path) -> BTreeSet<String> {
     let mut set = BTreeSet::new();
@@ -86,7 +93,7 @@ fn all_defined_commands(commands_dir: &Path) -> BTreeSet<String> {
         // Skip `#[cfg(test)]` modules: they cannot define real handlers, and
         // THIS file's fixture strings would otherwise trip the scanner.
         let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        if stem == "tests" || stem.ends_with("_tests") {
+        if is_test_module_stem(stem) {
             continue;
         }
         let source = std::fs::read_to_string(&path)
@@ -215,4 +222,21 @@ fn source_scanners_handle_tricky_shapes() {
         .map(|s| s.to_string())
         .collect();
     assert_eq!(reg, want);
+}
+
+/// The scanner's skip filter must cover every test-module naming shape in use
+/// (audit §3.5): the split files are `tests_*.rs`, the legacy shapes are
+/// `tests.rs` and `*_tests.rs` — a miss makes fixture strings break the scan
+/// (tests_*) or silently excludes a real module (*_tests).
+#[test]
+fn test_module_filter_covers_all_naming_shapes() {
+    assert!(is_test_module_stem("tests"));
+    assert!(is_test_module_stem("tests_repo"));
+    assert!(is_test_module_stem("registration_tests"));
+    assert!(is_test_module_stem("session_io_tests"));
+    // Real command modules must NOT be skipped.
+    assert!(!is_test_module_stem("repo"));
+    assert!(!is_test_module_stem("testutil"));
+    assert!(!is_test_module_stem("contest"));
+    assert!(!is_test_module_stem("attests"));
 }

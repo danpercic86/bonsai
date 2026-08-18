@@ -175,6 +175,10 @@ pub fn map_status(resp: &HttpResponse) -> Option<AppError> {
         ),
         429 => rate_limited_error(resp),
         404 => AppError::ForgeApi("not found".to_string()),
+        // Redirects are never followed (transport pins Policy::none).
+        301 | 302 | 307 | 308 => AppError::ForgeApi(format!(
+            "the repository has moved (HTTP {s}) — it may have been renamed; update the remote URL"
+        )),
         other => AppError::ForgeApi(format!("Azure DevOps API error (HTTP {other})")),
     })
 }

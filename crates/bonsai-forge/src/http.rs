@@ -10,8 +10,33 @@
 //! or an error (see `redaction_elides_token`).
 
 use std::fmt;
+use std::io::Read;
 
 use bonsai_core::error::AppError;
+
+/// Maximum response body the transport will buffer (8 MiB). Forge API
+/// responses are paginated JSON far below this; anything larger is treated as
+/// a misbehaving/hostile server and surfaced as a network error instead of an
+/// unbounded allocation.
+pub const MAX_RESPONSE_BODY_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Read at most `cap` bytes from `reader` into a UTF-8 string (lossy).
+/// Exceeding the cap is an [`AppError::NetworkError`] naming the limit.
+fn read_body_bounded<R: Read>(reader: R, cap: u64) -> Result<String, AppError> {
+    let mut buf = Vec::new();
+    // Take cap+1 so we can distinguish "exactly cap" from "over cap".
+    reader
+        .take(cap.saturating_add(1))
+        .read_to_end(&mut buf)
+        .map_err(|e| AppError::NetworkError(format!("failed to read response body: {e}")))?;
+    if buf.len() as u64 > cap {
+        return Err(AppError::NetworkError(format!(
+            "response body exceeds the {} MiB limit",
+            cap / (1024 * 1024)
+        )));
+    }
+    Ok(String::from_utf8_lossy(&buf).into_owned())
+}
 
 /// HTTP verbs the forge layer needs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,7 +127,13 @@ impl ReqwestTransport {
     /// Build a transport with a shared blocking client. Fails only if the TLS
     /// backend cannot be initialized.
     pub fn new() -> Result<Self, AppError> {
+        // Never follow redirects: none of the forge APIs legitimately
+        // redirect, and reqwest strips Authorization only across HOSTS — a
+        // same-host https→http redirect would re-send the Bearer token in
+        // cleartext. A redirect therefore surfaces as its 3xx status and is
+        // reported as an API error by the provider layer.
         let client = reqwest::blocking::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| AppError::NetworkError(format!("failed to build HTTP client: {e}")))?;
         Ok(Self { client })
@@ -132,9 +163,8 @@ impl HttpTransport for ReqwestTransport {
             .iter()
             .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
             .collect();
-        let body = resp
-            .text()
-            .map_err(|e| AppError::NetworkError(format!("failed to read response body: {e}")))?;
+        // Bounded read: never buffer more than MAX_RESPONSE_BODY_BYTES.
+        let body = read_body_bounded(resp, MAX_RESPONSE_BODY_BYTES)?;
         Ok(HttpResponse {
             status,
             headers,
@@ -187,5 +217,40 @@ mod tests {
         let dbg = format!("{resp:?}");
         assert!(!dbg.contains("SECRET-PRIVATE-REPO-DATA"), "body leaked: {dbg}");
         assert!(dbg.contains("body_len"));
+    }
+
+    #[test]
+    fn bounded_read_accepts_body_at_the_cap() {
+        let data = [b'a'; 16];
+        let body = read_body_bounded(&data[..], 16).expect("body at cap must pass");
+        assert_eq!(body.len(), 16);
+    }
+
+    #[test]
+    fn bounded_read_rejects_body_over_the_cap() {
+        let data = [b'a'; 17];
+        let err = read_body_bounded(&data[..], 16).expect_err("body over cap must fail");
+        match err {
+            AppError::NetworkError(msg) => {
+                assert!(msg.contains("limit"), "error should mention the cap: {msg}");
+            }
+            other => panic!("expected NetworkError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bounded_read_reports_cap_in_mib() {
+        let data = vec![b'a'; (MAX_RESPONSE_BODY_BYTES + 1) as usize];
+        let err = read_body_bounded(&data[..], MAX_RESPONSE_BODY_BYTES)
+            .expect_err("oversized body must fail");
+        let msg = format!("{err}");
+        assert!(msg.contains("8 MiB"), "expected the 8 MiB cap in: {msg}");
+    }
+
+    #[test]
+    fn bounded_read_is_lossy_on_invalid_utf8() {
+        let data = [0xff, 0xfe, b'o', b'k'];
+        let body = read_body_bounded(&data[..], 16).expect("invalid utf8 must not error");
+        assert!(body.contains("ok"));
     }
 }

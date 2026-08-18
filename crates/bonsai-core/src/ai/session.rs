@@ -391,9 +391,19 @@ impl<'a> ClaudeSession<'a> {
                     }
                     thread::sleep(EXIT_POLL);
                 }
-                Err(_) => break,
+                Err(_) => {
+                    // try_wait itself failed — liveness unknowable. Kill+wait
+                    // like the deadline path so clearing the pid below can't
+                    // orphan a still-live child from cancel_all's reach.
+                    kill_child_tree(child);
+                    let _ = child.wait();
+                    break;
+                }
             }
         }
+        // §3.7: the child is reaped — clear the shared pid so a late
+        // `cancel_all` cannot taskkill a pid the OS has already recycled.
+        self.ctl.pid.store(0, Ordering::Relaxed);
         let mut ev = self.event(AiRunEventKind::Done);
         ev.cost_usd = res.cost_usd;
         self.send(ev);
@@ -427,6 +437,9 @@ impl<'a> ClaudeSession<'a> {
     fn reap(&mut self, child: &mut Child) {
         kill_child_tree(child);
         let _ = child.wait();
+        // §3.7: pid 0 = "no live child" — prevents a pid-reuse kill from
+        // `AiRunRegistry::cancel_all` after the wait has completed.
+        self.ctl.pid.store(0, Ordering::Relaxed);
         self.ctl.awaiting.store(false, Ordering::Relaxed);
     }
 

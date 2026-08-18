@@ -132,6 +132,12 @@ pub fn map_status(resp: &HttpResponse) -> Option<AppError> {
         }
         429 => rate_limited_error(resp),
         404 => AppError::ForgeApi("not found".to_string()),
+        // Redirects are never followed (the transport pins Policy::none so a
+        // same-host https->http hop can't re-send the token). GitHub answers
+        // 301 on /repos/... after a rename — say so instead of a bare code.
+        301 | 302 | 307 | 308 => AppError::ForgeApi(format!(
+            "the repository has moved (HTTP {s}) — it may have been renamed; update the remote URL"
+        )),
         other => AppError::ForgeApi(format!("GitHub API error (HTTP {other})")),
     })
 }
