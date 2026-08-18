@@ -168,7 +168,8 @@ export function useMergeActions(
       await runWithHookGate(async (sh) => {
         setMutating(true);
         try {
-          await ipc.commitMerge(repoId, message, sh);
+          const res = await ipc.commitMerge(repoId, message, sh);
+          if (res.hookWarning !== null) pushToast('warning', res.hookWarning);
           await refreshAll();
           pushToast('success', 'Merge committed');
         } finally {

@@ -33,7 +33,12 @@ const CONFLICT_FILE: ConflictFile = {
   theirs: 'theirs\n',
 };
 const MARKERFUL = CONFLICT_FILE.text;
-const COMMIT_RES: CommitResult = { oid: 'c'.repeat(40), summary: 'merge', branch: 'main' };
+const COMMIT_RES: CommitResult = {
+  oid: 'c'.repeat(40),
+  summary: 'merge',
+  branch: 'main',
+  hookWarning: null,
+};
 
 type Deps = Parameters<typeof useMergeActions>[0];
 

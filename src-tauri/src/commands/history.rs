@@ -113,8 +113,20 @@ pub(crate) async fn history_index_build_inner(
     let workdir = repo_path(state, repo_id)?;
     let base = base.to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
-        let dir = history_index::index_dir_for_repo(&base, &workdir);
-        history_index::build_index(&workdir, &dir, on_progress)
+        // F-T5-4 (audit #2 §3.2): a truncated loose object hangs the extraction
+        // walk forever, wedging the indexer thread permanently. The inactivity-
+        // deadline wrapper (each IndexProgress event ticks liveness) turns that
+        // into a clean error; the wedged worker is abandoned. If an abandoned
+        // worker later resumes it may still `store::save` — benign: the store
+        // uses unique-tmp + atomic rename (F-A9-1), so the worst case is a
+        // briefly stale last-writer-wins index corrected by the next build.
+        bonsai_core::git::timeout::run_with_git_timeout("history_index_build", move |progress| {
+            let dir = history_index::index_dir_for_repo(&base, &workdir);
+            history_index::build_index(&workdir, &dir, move |p| {
+                progress.tick();
+                on_progress(p);
+            })
+        })
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?

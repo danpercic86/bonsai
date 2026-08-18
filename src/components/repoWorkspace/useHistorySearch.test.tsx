@@ -34,6 +34,7 @@ function status(over: Partial<IndexStatus> = {}): IndexStatus {
     newCommits: 0,
     schema: 1,
     builtAt: 1,
+    skippedCommits: 0,
     ...over,
   };
 }

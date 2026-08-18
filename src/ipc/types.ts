@@ -277,6 +277,10 @@ export interface CommitResult {
   summary: string;
   /** Branch HEAD points at after the commit ("main"); null when detached. */
   branch: string | null;
+  /** Non-blocking post-commit hook trouble (spawn failure or non-zero exit).
+   *  The commit itself landed; shown as a warning toast. Null when hooks are
+   *  disabled, absent, or succeeded. Audit #2 §3.3. */
+  hookWarning: string | null;
 }
 
 export interface BranchInfo {
@@ -910,6 +914,10 @@ export interface IndexStatus {
   newCommits: number;
   schema: number;
   builtAt: number | null;
+  /** Commits skipped as UNREADABLE (corrupt/missing objects) by the build that
+   *  returned this status; always 0 from `historyIndexStatus` (only a build can
+   *  skip — skipped oids are retried next build). Audit #2 §3.3. */
+  skippedCommits: number;
 }
 
 /** Retrieval query for `historySearch` (P57b). Mirrors the Rust `HistoryQuery`

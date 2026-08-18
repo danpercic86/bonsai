@@ -17,7 +17,12 @@ import type { DiffSlot } from '../StatusPanel';
 
 afterEach(() => vi.restoreAllMocks());
 
-const COMMIT_RES: CommitResult = { oid: 'a'.repeat(40), summary: 's', branch: 'main' };
+const COMMIT_RES: CommitResult = {
+  oid: 'a'.repeat(40),
+  summary: 's',
+  branch: 'main',
+  hookWarning: null,
+};
 const entry = (path: string) => ({ path, origPath: null, status: 'modified' as const });
 const FILE_DIFF: FileDiff = {
   path: 'b.ts',

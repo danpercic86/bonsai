@@ -182,7 +182,7 @@ export const statusHandlers = {
     // P1 contract §3.5: the DEFAULT graph fixture gains a synthetic lane-0 row
     // per mock commit (newest first) so the harness shows the commit on top.
     state.commits.unshift({ oid: state.headOid, summary });
-    return { oid: state.headOid, summary, branch: state.headBranch };
+    return { oid: state.headOid, summary, branch: state.headBranch, hookWarning: null };
   },
 
 } satisfies Partial<IpcApi>;

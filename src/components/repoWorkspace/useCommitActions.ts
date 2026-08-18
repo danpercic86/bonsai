@@ -155,7 +155,8 @@ export function useCommitActions(
     await runWithHookGate(async (sh) => {
       setMutating(true);
       try {
-        await ipc.commit(repoId, message, sign, sh);
+        const res = await ipc.commit(repoId, message, sign, sh);
+        if (res.hookWarning !== null) pushToast('warning', res.hookWarning);
         await refreshAll();
         refreshVerification();
       } finally {
@@ -197,7 +198,8 @@ export function useCommitActions(
     await runWithHookGate(async (sh) => {
       setMutating(true);
       try {
-        await ipc.commit(repoId, message, sign, sh);
+        const res = await ipc.commit(repoId, message, sign, sh);
+        if (res.hookWarning !== null) pushToast('warning', res.hookWarning);
       } finally {
         setMutating(false);
       }
@@ -246,7 +248,8 @@ export function useCommitActions(
     await runWithHookGate(async (sh) => {
       setMutating(true);
       try {
-        await ipc.commitAmend(repoId, message, sign, sh);
+        const res = await ipc.commitAmend(repoId, message, sign, sh);
+        if (res.hookWarning !== null) pushToast('warning', res.hookWarning);
         setAmend(false);
         setAmendMessage(null);
         await refreshAll();

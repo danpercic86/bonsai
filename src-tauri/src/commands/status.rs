@@ -14,9 +14,15 @@ pub async fn get_status(
 /// Runtime-free core of `get_status` (unit-testable without a Tauri app).
 pub(crate) async fn get_status_inner(state: &AppState, repo_id: &str) -> Result<StatusSnapshot, AppError> {
     let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || read_status(&path))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    // F-T5-4 (audit #2 §3.2): the HEAD peel inside `read_status` spins forever
+    // on a truncated loose commit — the wrapper converts that into a clean error.
+    tauri::async_runtime::spawn_blocking(move || {
+        bonsai_core::git::timeout::run_with_git_timeout("read_status", move |_progress| {
+            read_status(&path)
+        })
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Computes the full commit-graph layout of `repo_id`.
@@ -34,9 +40,17 @@ pub async fn get_graph(
 /// Runtime-free core of `get_graph` (unit-testable without a Tauri app).
 pub(crate) async fn get_graph_inner(state: &AppState, repo_id: &str) -> Result<GraphLayout, AppError> {
     let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || compute_graph(&path))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    // F-T5-4 (audit #2 §3.2): the one-shot walk spins forever on a truncated
+    // loose commit — the wrapper converts that into a clean error. No tick seam
+    // (single-shot): the deadline bounds the WHOLE walk, generous for the
+    // MAX_COMMITS-capped layout and overridable via BONSAI_GIT_TIMEOUT_MS.
+    tauri::async_runtime::spawn_blocking(move || {
+        bonsai_core::git::timeout::run_with_git_timeout("compute_graph", move |_progress| {
+            compute_graph(&path)
+        })
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Streams the commit-graph layout of `repo_id` as ordered [`GraphChunk`]
@@ -56,10 +70,20 @@ pub async fn stream_graph(
 ) -> Result<(), AppError> {
     let path = repo_path(state.inner(), &repo_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        // `Channel::send` errs once the frontend drops the channel (component
-        // unmount / repo switch / `close_repo`); `is_ok() == false` stops the
-        // walk promptly with `Ok` (contract §6 cancellation).
-        stream_graph_core(&path, |chunk| on_chunk.send(chunk).is_ok())
+        // F-T5-4 (audit #2 §3.2): a truncated loose object makes libgit2 spin
+        // forever inside the walk, so the channel would never send `Done` and
+        // the frontend would wait on a partial graph forever. The inactivity-
+        // deadline wrapper turns that into a clean reject (each emitted chunk
+        // ticks liveness; a wedged walk stops ticking and times out).
+        bonsai_core::git::timeout::run_with_git_timeout("stream_graph", move |progress| {
+            // `Channel::send` errs once the frontend drops the channel (component
+            // unmount / repo switch / `close_repo`); `is_ok() == false` stops the
+            // walk promptly with `Ok` (contract §6 cancellation).
+            stream_graph_core(&path, |chunk| {
+                progress.tick();
+                on_chunk.send(chunk).is_ok()
+            })
+        })
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?

@@ -93,7 +93,7 @@ export const mergeHandlers = {
     if (headBranch !== undefined && headBranch.upstream !== null) {
       headBranch.ahead = (headBranch.ahead ?? 0) + 1;
     }
-    return { oid: state.headOid, summary, branch: state.headBranch };
+    return { oid: state.headOid, summary, branch: state.headBranch, hookWarning: null };
   },
 
   async abortMerge(repoId: string): Promise<void> {

@@ -23,6 +23,10 @@ pub struct CommitResult {
     pub summary: String,
     /// Branch HEAD points at after the commit ("main"); `None` when detached.
     pub branch: Option<String>,
+    /// Audit #2 §3.3: non-blocking post-commit hook trouble (spawn failure or a
+    /// non-zero exit). The commit itself landed; the frontend shows this as a
+    /// warning toast. `None` when hooks are disabled, absent, or succeeded.
+    pub hook_warning: Option<String>,
 }
 
 /// Example value shown in the `git config` hint for a missing identity key.
@@ -192,10 +196,14 @@ pub fn create_commit(
         )?
     };
 
-    // post-commit is best-effort: the commit already landed — never block on it.
-    if hooks {
-        let _ = run_hook_nonblocking(&SpawnGitExec, workdir, HookName::PostCommit, &[]);
-    }
+    // post-commit is best-effort: the commit already landed — never block on
+    // it; a failure surfaces as a warning (audit #2 §3.3), never an error.
+    let hook_warning = if hooks {
+        run_hook_nonblocking(&SpawnGitExec, workdir, HookName::PostCommit, &[])
+            .warning(HookName::PostCommit)
+    } else {
+        None
+    };
 
     let branch = branch_shorthand_after(&repo, workdir, signing.sign)?;
 
@@ -203,6 +211,7 @@ pub fn create_commit(
         oid: oid.to_string(),
         summary,
         branch,
+        hook_warning,
     })
 }
 
@@ -384,9 +393,13 @@ pub fn amend_commit(
         )?
     };
 
-    if hooks {
-        let _ = run_hook_nonblocking(&SpawnGitExec, workdir, HookName::PostCommit, &[]);
-    }
+    // Non-blocking; a failure surfaces as a warning (audit #2 §3.3).
+    let hook_warning = if hooks {
+        run_hook_nonblocking(&SpawnGitExec, workdir, HookName::PostCommit, &[])
+            .warning(HookName::PostCommit)
+    } else {
+        None
+    };
 
     let branch = branch_shorthand_after(&repo, workdir, signing.sign)?;
 
@@ -394,6 +407,7 @@ pub fn amend_commit(
         oid: oid.to_string(),
         summary,
         branch,
+        hook_warning,
     })
 }
 

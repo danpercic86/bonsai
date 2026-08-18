@@ -87,6 +87,11 @@ pub struct IndexStatus {
     pub schema: u32,
     /// Unix secs of the last build.
     pub built_at: Option<i64>,
+    /// Audit #2 §3.3: commits skipped as UNREADABLE (corrupt/missing objects)
+    /// by the build that returned this status. Only [`build_index`] can skip,
+    /// so this is always 0 from [`index_status`] (the count is not persisted;
+    /// skipped oids stay out of the store and are retried next build).
+    pub skipped_commits: u32,
 }
 
 /// Pure path builder (contract §3.1): `base/history-index/<repo_key(workdir)>`.
@@ -178,6 +183,8 @@ pub fn build_index(
         }
     }
     if skipped > 0 {
+        // Kept for terminal/CI logs; the count ALSO travels on the returned
+        // status so the UI can surface it (audit #2 §3.3).
         eprintln!("bonsai: history-index build skipped {skipped} unreadable commit(s)");
     }
 
@@ -190,7 +197,7 @@ pub fn build_index(
     store::save(index_dir, &store)?;
     emit(IndexPhase::Done, total);
 
-    Ok(fresh_status(&store))
+    Ok(fresh_status(&store, skipped))
 }
 
 /// Cheap status of the persisted index (contract §3.1). Reads the store, then a
@@ -216,11 +223,13 @@ pub fn index_status(workdir: &Path, index_dir: &Path) -> Result<IndexStatus, App
         new_commits,
         schema: store.schema,
         built_at: store.built_at,
+        skipped_commits: 0,
     })
 }
 
-/// Status right after a successful build: fresh by construction.
-fn fresh_status(store: &IndexStore) -> IndexStatus {
+/// Status right after a successful build: fresh by construction. `skipped` =
+/// unreadable commits the build skipped-and-counted (audit #2 §3.3).
+fn fresh_status(store: &IndexStore, skipped: u32) -> IndexStatus {
     IndexStatus {
         built: true,
         indexed_commits: store.docs.len() as u32,
@@ -229,6 +238,7 @@ fn fresh_status(store: &IndexStore) -> IndexStatus {
         new_commits: 0,
         schema: store.schema,
         built_at: store.built_at,
+        skipped_commits: skipped,
     }
 }
 
@@ -243,6 +253,7 @@ fn not_built(schema: u32) -> IndexStatus {
         new_commits: 0,
         schema,
         built_at: None,
+        skipped_commits: 0,
     }
 }
 

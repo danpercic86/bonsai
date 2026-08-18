@@ -123,6 +123,14 @@ export function useHistorySearch(deps: {
         setBuilding(false);
         setProgress(null);
         setStatus(s);
+        // Audit #2 §3.3: unreadable commits are skipped-and-counted by the
+        // build — surface the count instead of burying it in a backend log.
+        if (s.skippedCommits > 0) {
+          pushToast(
+            'warning',
+            `History index built, but ${s.skippedCommits} unreadable commit(s) were skipped — run git fsck to check the repository`,
+          );
+        }
       },
       (e: unknown) => {
         setBuilding(false);

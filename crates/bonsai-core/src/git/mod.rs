@@ -58,6 +58,7 @@ pub mod status;
 pub mod submodule;
 pub mod tags;
 pub mod timefmt;
+pub mod timeout;
 pub mod undo;
 pub mod worktree;
 pub mod worktree_copy;

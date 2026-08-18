@@ -316,6 +316,7 @@ fn index_status_wire_shape_is_camel_case() {
         new_commits: 0,
         schema: 1,
         built_at: Some(42),
+        skipped_commits: 3,
     };
     let v = serde_json::to_value(&base).expect("json");
     assert_eq!(v["built"], true);
@@ -324,6 +325,7 @@ fn index_status_wire_shape_is_camel_case() {
     assert_eq!(v["newCommits"], 0);
     assert_eq!(v["schema"], 1);
     assert_eq!(v["builtAt"], 42);
+    assert_eq!(v["skippedCommits"], 3);
 
     let some = IndexStatus {
         head_oid: Some("deadbeef".to_string()),

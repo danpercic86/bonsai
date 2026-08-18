@@ -451,10 +451,13 @@ fn finalize_merge_commit(
 
     // post-commit (non-blocking) runs AFTER the commit is made but BEFORE
     // cleanup_state, so a hook that inspects MERGE_HEAD still sees it. Never
-    // blocks — the commit already landed.
+    // blocks — the commit already landed; a failure surfaces as a warning
+    // (audit #2 §3.3), never an error.
+    let mut hook_warning: Option<String> = None;
     if run_pre_post {
         if let Some(wd) = workdir_buf.as_deref() {
-            let _ = run_hook_nonblocking(&SpawnGitExec, wd, HookName::PostCommit, &[]);
+            hook_warning = run_hook_nonblocking(&SpawnGitExec, wd, HookName::PostCommit, &[])
+                .warning(HookName::PostCommit);
         }
     }
 
@@ -471,6 +474,7 @@ fn finalize_merge_commit(
         oid: oid.to_string(),
         summary,
         branch,
+        hook_warning,
     })
 }
 

@@ -1005,6 +1005,10 @@ export function RepoWorkspace({
     } catch (e) {
       if (id !== graphReqId.current) return;
       setGraphError(errorMessage(e));
+      // Poison the rejected stream like a superseded one: a timed-out backend
+      // worker is detached, not stopped — late chunks must not pass the gate.
+      graphReqId.current++;
+      setGraphLoading(false);
     } finally {
       if (id === graphReqId.current) setGraphLoading(false);
     }

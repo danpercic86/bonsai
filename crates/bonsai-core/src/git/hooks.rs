@@ -89,6 +89,29 @@ pub struct HookRunInfo {
     pub output: String,
 }
 
+impl HookRunInfo {
+    /// The user-facing warning for a hook that failed to run or exited
+    /// non-zero; `None` on success (including the "no hook installed" no-op).
+    /// Audit #2 §3.3: a spawn failure used to map to `ran:false, output:""` —
+    /// indistinguishable from an absent hook — so the failure was invisible.
+    pub fn warning(&self, hook: HookName) -> Option<String> {
+        if self.success {
+            return None;
+        }
+        if self.ran {
+            let body = if self.output.is_empty() {
+                "(no output)"
+            } else {
+                self.output.as_str()
+            };
+            Some(format!("{} hook failed:\n{body}", hook.as_str()))
+        } else {
+            // `output` already carries the full "failed to run …" message.
+            Some(self.output.clone())
+        }
+    }
+}
+
 /// Effective hook toggle: `!skip && bonsai.runHooks` (default true; a missing
 /// key ⇒ true, git's own default). `cfg` is the repo's merged config snapshot.
 pub fn hooks_enabled(cfg: &git2::Config, skip: bool) -> bool {
@@ -183,15 +206,26 @@ pub fn run_hook_nonblocking(
             success: true,
             output: combined_output(&out.stdout, &out.stderr),
         },
-        Ok(out) if is_unknown_subcommand(&out.stderr) => {
-            HookRunInfo { ran: false, success: false, output: String::new() }
-        }
+        Ok(out) if is_unknown_subcommand(&out.stderr) => HookRunInfo {
+            ran: false,
+            success: false,
+            output: format!(
+                "failed to run the {} hook: this git has no `hook run` subcommand (Git ≥ 2.36 required)",
+                hook.as_str()
+            ),
+        },
         Ok(out) => HookRunInfo {
             ran: true,
             success: false,
             output: combined_output(&out.stdout, &out.stderr),
         },
-        Err(_) => HookRunInfo { ran: false, success: false, output: String::new() },
+        // Audit #2 §3.3: carry the spawn/I/O error so the caller can surface it —
+        // an empty output here was indistinguishable from "no hook installed".
+        Err(e) => HookRunInfo {
+            ran: false,
+            success: false,
+            output: format!("failed to run the {} hook: {e}", hook.as_str()),
+        },
     }
 }
 
@@ -386,6 +420,39 @@ mod tests {
         assert_eq!(
             build_hook_run_args(HookName::PrePush, &[], Some(Path::new("/tmp/refs"))),
             vec!["hook", "run", "--ignore-missing", "pre-push", "--to-stdin=/tmp/refs"]
+        );
+    }
+
+    /// Audit #2 §3.3: `warning` distinguishes every failure shape from the
+    /// silent "no hook installed" no-op.
+    #[test]
+    fn hook_run_info_warning_shapes() {
+        // Success (ran) and the absent-hook no-op ⇒ no warning.
+        let ok = HookRunInfo { ran: true, success: true, output: "out".to_string() };
+        let absent = HookRunInfo { ran: false, success: true, output: String::new() };
+        assert_eq!(ok.warning(HookName::PostCommit), None);
+        assert_eq!(absent.warning(HookName::PostCommit), None);
+        // Ran but exited non-zero ⇒ named failure with the hook's own output.
+        let failed = HookRunInfo { ran: true, success: false, output: "boom".to_string() };
+        assert_eq!(
+            failed.warning(HookName::PostCommit).as_deref(),
+            Some("post-commit hook failed:\nboom")
+        );
+        // Ran, non-zero, silent ⇒ still visibly a failure.
+        let silent = HookRunInfo { ran: true, success: false, output: String::new() };
+        assert_eq!(
+            silent.warning(HookName::PostCommit).as_deref(),
+            Some("post-commit hook failed:\n(no output)")
+        );
+        // Spawn failure ⇒ the carried "failed to run …" message passes through.
+        let spawn = HookRunInfo {
+            ran: false,
+            success: false,
+            output: "failed to run the post-commit hook: exec failed".to_string(),
+        };
+        assert_eq!(
+            spawn.warning(HookName::PostCommit).as_deref(),
+            Some("failed to run the post-commit hook: exec failed")
         );
     }
 

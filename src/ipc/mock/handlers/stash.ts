@@ -151,7 +151,7 @@ export const stashHandlers = {
     } else {
       state.commits.unshift({ oid: state.headOid, summary });
     }
-    return { oid: state.headOid, summary, branch: state.headBranch };
+    return { oid: state.headOid, summary, branch: state.headBranch, hookWarning: null };
   },
 
 } satisfies Partial<IpcApi>;
