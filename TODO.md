@@ -26,6 +26,62 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 `docs/history/todo-archive.md` (P27 → P2, M0–M6) and `docs/history/milestones-mvp.md` (the M0–M6
 AI-gate vs USER CHECKPOINT split). Contract files are indexed in `docs/contracts/INDEX.md`.
 
+## 🎯 P69 — 1.0.0 release readiness — **in-progress**
+
+**Current step:** P69 — awaiting reviewer round 1 on four parallel increments.
+
+Triggered by a full-project analysis requested 2026-08-18, after the user's first real macOS
+testing pass. Goal: the minimum credible 1.0.0, not new features. User decisions taken this
+session (all three explicit):
+- **Scope** = macOS defects + contributor docs. Deeper tech debt stays deferred.
+- **Code signing** = ship 1.0.0 **unsigned**, as already locked in `docs/code-signing.md`.
+  README's per-OS Gatekeeper/SmartScreen workarounds stand. The "decision needed" in that file
+  is therefore ANSWERED for 1.0: defer.
+- **Native checkpoints** = tag 1.0.0 WITHOUT running the six outstanding USER CHECKPOINTs
+  (P62–P65, P67, P68), but ship the forge/PR surface (P62–P64) **flagged beta** in README +
+  CHANGELOG, since it needs real per-provider tokens to verify.
+
+### Increments
+- **P69a — macOS Rust fixes.** `external.rs` editor ladder silently no-ops on a Mac without
+  VS Code (`open -a` always *spawns*; it fails at *exit*, and `run()` never waits) → add
+  `wait_for_exit` for macOS `open` specs. Plus: `history_index/store.rs` keyed the repo path
+  off `cfg(windows)` so APFS split the cache per path casing → drive it off `core.ignorecase`
+  like `stage.rs:143-152` already does. Plus: `settings.rs` recents dedupe used
+  `eq_ignore_ascii_case`, merging genuinely distinct repos on ext4 → reuse the `fs::canonicalize`
+  approach from `commands/repo.rs:344`.
+- **P69b — macOS frontend fixes.** ⌘+Enter did not commit (`CommitBox.tsx:257` was the ONLY
+  handler missing `metaKey`). `--font-mono` lacked `ui-monospace`, so the DOM fell to Courier
+  while the canvas (`metrics.ts:161`) used SF Mono — the two stacks now match. New
+  `src/utils/platform.ts` so shortcut labels show ⌘ instead of a hardcoded "Ctrl". Playwright
+  pinned `channel: 'msedge'` on `!CI`, so `pnpm test:e2e` could not run on a Mac → gate on
+  `process.platform === 'win32'`.
+- **P69c — crash + symlink.** Both from `docs/audit-2026-08-18.md`, re-verified at every cited
+  line by the orchestrator before scheduling. (1) MUST-FIX: `WorkspaceRightPanel.tsx:265` gates
+  on `!== null` but never bounds-checks, and `setGraph` publishes the first 512-row batch
+  *before* the selection remap → a selection at row ≥512 renders `CommitPanel` with
+  `node === undefined` → TypeError → ErrorBoundary takes down the workspace. (2) worktree-copy
+  symlink write-through (`worktree_copy.rs:232-245`): lexical containment only, so a hostile
+  branch can make Overwrite clobber a file outside the worktree.
+- **P69d — docs.** CONTRIBUTING.md was materially stale: it claimed "there is no
+  `.github/workflows` directory at all" and "there is currently no frontend test runner" — both
+  false, both listed as *good first contributions*, and the second contradicted TESTING.md
+  outright. Also a dead README anchor, "72 documents" (actually 139), clippy missing
+  `-- -D warnings`, and a PR checklist omitting four real CI gates. CHANGELOG backfill: P49–P65
+  and the T1–T6 campaign appear in NO entry, so a 1.0.0 cut from `[Unreleased]` (P67/P68 only)
+  would misrepresent the release.
+- **P69e — CI.** `frontend` job matrixed onto `macos-latest` (was ubuntu-only, which is exactly
+  why P69b's defects reached a release branch). `e2e`/`audit` stay ubuntu-only.
+
+### Known limitation (recorded deliberately)
+The Playwright `msedge`→`win32` fix is only ever exercised **locally** — in CI the config always
+picks bundled chromium, so no CI leg can regress-test it.
+
+### Still open after P69 (explicitly NOT in scope)
+`cargo fmt` adoption (1773 hunks / 221 files, no `rustfmt.toml`), SECURITY.md +
+CODE_OF_CONDUCT.md, issue/PR templates, audit §3.10 refetch storm, `CommandPalette` highlight,
+persisted-settings write path, `NumberSlider` mid-typing clamp, and the six native USER
+CHECKPOINTs themselves.
+
 ## ✅ Confirmed checkpoints and accepted decisions (condensed — full text in the archive)
 
 - **All native USER CHECKPOINTs for P2 → P61 are CONFIRMED.** Batches: 2026-07-30 (P4, P3a–P3f, P7,

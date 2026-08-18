@@ -4,12 +4,110 @@ All notable changes to Bonsai are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] — 2026-08-18
 
-AI merge-conflict resolution stops being a black box, and the right panel gives its space back
-to the file list.
+The first public release. Everything below landed after `0.3.0`: search and a command palette,
+external-tool launching, a much richer commit graph, seven local-AI assists, real commit signing,
+your own Git hooks, word-level and image diffs, pull requests from four forges (beta), and a
+pre-release hardening campaign that rewrote large parts of the test suite and fixed 48 bugs.
+
+(`v0.3.1` is tagged at the same commit as `v0.3.0` — it carried a version bump and no user-visible change, so it has no entry of its own.)
 
 ### Added
+
+**Finding things**
+- **Search across history** — by commit message, author, or path, and by file *content* (literal
+  or regex pickaxe). Matches are highlighted on the commit graph with jump-to-next/previous, so
+  you never lose your place. `Ctrl`/`Cmd`-F.
+- **Command palette** (`Ctrl`/`Cmd`-K) — fuzzy-launch any action, jump to a branch, tag, or
+  commit, or start a search, without hunting through menus. Destructive actions still go through
+  their usual confirmation.
+- **Type-to-filter boxes** on the branches, remotes, and tags lists in the sidebar, for repos with
+  hundreds of refs.
+
+**Working with your other tools**
+- **Open in terminal, reveal in file manager, open in editor** — for the repository, a worktree,
+  or a submodule, from the context menus, the tab menu, and the toolbar. The terminal command is a
+  per-OS template that is auto-detected and editable in Settings; paths with spaces are handled,
+  and a failed launch tells you so instead of doing nothing.
+
+**Commit graph**
+- **Row detail you can turn on and off individually** — short SHA, author, dates (with the full
+  timestamp on hover), a choice of author or committer date, an ahead/behind chip on branch tips,
+  and a signature badge. All under Settings → Graph.
+- **Compact mode** for denser rows, for people who want more history on screen than decoration.
+- **Progressive graph loading.** Large histories now stream into the view in batches instead of
+  arriving as one large payload, with lane colors stable from the first batch, so you can start
+  reading and scrolling before the walk finishes.
+- **Faster on large repositories.** Bonsai now writes Git's `commit-graph` file when a repository
+  is opened and after fetching; Git and Bonsai both read it automatically. The repository-health
+  scan got roughly five times faster.
+
+**AI assists** (all run through the Claude Code CLI on your machine, under your own subscription)
+- **"Why did this line change?"** in blame — an explanation of a single line's history rather than
+  just who touched it last.
+- **"Explain this commit"** from any graph node, grounded in the commit's full message so the
+  answer is about *why*, not a restatement of the diff.
+- **Suggested branch names** from your current changes, offered in the create-branch dialog.
+- **Commit composer** — turns a sprawling working tree into a proposed series of logical commits,
+  each with its own message. You reassign, edit, merge, and drop groups before anything happens;
+  applying is an all-or-nothing staged sequence, and your files on disk are never modified.
+- **Ask Bonsai to…** — describe what you want in plain English and get back a structured,
+  previewed, confirm-gated operation. The model may only pick and fill in one of ten known
+  operations; it never produces a command line, and the planning step cannot change your
+  repository at all.
+- **Release notes** — grouped, categorized Markdown for a tag or ref range, or "since the last
+  tag", ready to copy or edit.
+- **Semantic history search** — ask a question about the project's history and get a prose answer
+  grounded in the real diffs, with the commits it drew on ranked and clickable. The index is built
+  locally, incrementally, and outside your `.git` directory.
+
+**Trust: signing and hooks**
+- **Commit signing with SSH or GPG** — honours `commit.gpgsign` with a per-commit override and a
+  "will sign" indicator in the commit box. Annotated tags honour `tag.gpgSign` too. If signing is
+  requested but no key is configured, you get a clear error instead of a silently unsigned commit.
+- **Signature verification** — verified / unverified / unsigned badges on graph rows and a
+  signature line in commit details, with the signer and key.
+- **Your Git hooks now run.** `pre-commit`, `commit-msg`, `post-commit`, and `pre-push` execute
+  around commit, amend, merge, and push. A hook that blocks shows its output in a dialog and stops
+  the operation — never a silent success — with "Commit anyway (skip hooks)" as the explicit
+  escape hatch, a per-commit skip checkbox, and a per-repository "Run git hooks" toggle.
+
+**Everyday Git parity**
+- **Rename a branch**, including the one you have checked out, preserving its upstream and reflog.
+- **Non-fast-forward pull** — instead of just refusing, Bonsai now offers Merge or Rebase and runs
+  the one you pick, behind a confirmation.
+- **One-click Undo** — reads the reflog, tells you what it would undo, how it would do it, and how
+  destructive that is, then does it on confirmation. It refuses to run a destructive undo over a
+  dirty worktree.
+- **Submodule add, deinit, and remove**, on top of the existing list / init / update / sync.
+- **Cherry-pick from branch and tag pills**, not just the commit row, with an editable commit
+  message and an automatic stash of a dirty worktree. Revert gained the same auto-stash handling.
+
+**Diffs**
+- **Word-level (intraline) highlighting** — within a changed line, only the parts that actually
+  changed are emphasized. Toggleable per diff view.
+- **Image diffs** — old and new side by side, as an onion-skin fade, or under a swipe divider.
+  SVG keeps its text diff, where it is more useful.
+
+**Pull requests (beta)**
+- **Pull requests without leaving Bonsai** — connect a GitHub, GitLab, Bitbucket Cloud, or Azure
+  DevOps repository with a personal access token (stored in your OS keychain) to list, read, and
+  create PRs from a right-panel tab: labels, mergeability, changed files, and review comments
+  inline.
+- **PR and CI badges on the graph** — branch-tip pills show the pull-request state and the check
+  rollup for that commit; clicking a badge opens the PR. Off by default, toggleable in Settings.
+- **AI-drafted PR descriptions** from the commits in the range, filled into the create form for
+  you to edit — never submitted automatically.
+
+**Interface**
+- **Grouped context menus** — the rebase and reset variants collapse into one row each with a
+  hover submenu; clicking the parent runs the sensible default. Distinct icons per action, and
+  destructive entries are marked in red.
+- **New Worktree dialog** — a searchable branch picker that scales past a hundred branches, a
+  wider card with full paths, and per-category select-all for the files you copy across.
+
+**AI merge-conflict resolution**
 - **Live AI activity dock.** AI conflict resolution now streams its progress into a collapsible
   full-width dock at the bottom of the window: the model's output as it arrives, the tools it
   calls, elapsed time, and the run's cost. The dock is resizable and remembers its height and
@@ -51,6 +149,15 @@ to the file list.
   five more file rows in the cozy default — back to the changes tree. Compact density frees a
   further ~30px. "Stash all" moved into an overflow menu; all three stash scopes are still there,
   and the sidebar keeps its one-click stash.
+- **Force-push-with-lease is now atomic.** It runs Git's own
+  `--force-with-lease` / `--force-if-includes` instead of checking the remote and then pushing, so
+  a commit that lands in the gap between those two steps can no longer be overwritten.
+- **Working-directory status matches `git status` exactly** for a tracked file deleted and
+  recreated as an untracked copy: two rows (an unstaged delete plus an untracked file) rather than
+  one misleading rename row. Staged renames are unaffected.
+- The embedded MCP server now returns a compact summary in its text block instead of a second copy
+  of the whole payload; the full data is still in the structured content every client reads.
+- Toasts are opaque instead of ~88% see-through over the commit graph, so they stay readable.
 
 ### Fixed
 - The AI consent dialog described what happens inaccurately on two counts. It now states that
@@ -58,6 +165,37 @@ to the file list.
   with the request, that its tools are read-only and out-of-repository reads are refused, and
   that Bonsai writes to your files only when you apply a result — with the one exception spelled
   out below.
+- **Stashing "staged only" could destroy work.** If a file had a staged deletion but had been
+  rewritten on disk, the new content was lost. It is now folded into the stash.
+- **Stash and auto-stash operations could target the wrong stash.** They are now addressed by
+  commit id, so a stash list that changes between what you saw and what you confirmed can no
+  longer apply or drop the wrong entry — and an auto-stash that vanished mid-operation is reported
+  instead of quietly applying a stranger's.
+- **Stale-branch cleanup could delete your default branch** when the base was given in another
+  form (`refs/heads/main`, a commit id, a tag). The base is now protected by resolved identity, and
+  tips are re-checked at delete time.
+- **A saved HTTPS credential could be reused for the wrong account** on the same host. Cache keys
+  are now path-scoped, and a credential the server rejects is evicted immediately instead of
+  lingering for its full lifetime.
+- **A corrupt bisect or interactive-rebase state file no longer wedges the app.** Reset and abort
+  now clear the state, leave HEAD alone, and explain what happened, instead of failing forever with
+  every mutation blocked.
+- **Aborting a rebase no longer overwrites untracked files** that the abort's reset would have
+  clobbered — the same guard the other sequencers already had.
+- **Mutations are blocked during an active bisect** (commit, amend, reset, stash, merge, rebase,
+  cherry-pick, revert), including in a detached-HEAD bisect where Git itself reports a clean state.
+- **"Discard all" is all-or-nothing again** — a directory in the selection no longer left some
+  untracked siblings deleted and others not. The confirmation now lists the untracked files that
+  will be permanently deleted.
+- Plain "Rebase X onto Y" is now behind a confirmation, matching reset and force-push. The
+  delete-branch dialog no longer claims a branch is "fully merged" when it is not.
+- Merge-conflict handling got six fixes: conflicts sort above staged and changed files, the first
+  conflicted file opens automatically once per conflict episode (without re-opening one you just
+  closed), conflict rows lost their misleading expand chevron, the conflict editor is
+  syntax-highlighted in both themes, and its header no longer shows an irrelevant File/Diff/Split
+  toggle or a duplicated path.
+- The operation banner lets its actions wrap instead of squeezing its own text down to nothing.
+- The MCP server no longer leaves a dead server showing as "enabled" after a failed restart.
 
 ### Notes
 - **`Resolve automatically` writes without a review step.** Under Settings → AI assistance, the
@@ -70,11 +208,36 @@ to the file list.
   the remaining ones. No file is ever silently truncated — a single file too large to send is
   reported as failed for that file alone.
 - AI conflict features still run entirely through the Claude Code CLI installed on your machine,
-  under your own Claude subscription. Nothing goes to Bonsai servers.
+  under your own Claude subscription. Nothing goes to Bonsai servers. The same is true of every
+  other AI feature in this release.
+- **The forge / pull-request features ship as beta.** PR listing for GitHub, GitLab, Bitbucket,
+  and Azure DevOps, the PR/CI badges on the graph, and AI-drafted PR descriptions have not yet
+  been verified against real access tokens for every provider, so expect rough edges there.
+  Everything else is release-ready.
+- **Progressive loading is not instant first paint on a huge repository.** The topological ordering
+  Bonsai uses walks the whole reachable history before it can hand over the first row (about 0.7 s
+  for 40k commits, 1.4 s for 120k, 2.3 s for 200k on a warm release build). What streaming buys you
+  is a stable, progressively filling graph and no giant single transfer — not a first row in
+  milliseconds. A faster ordering is planned for a later release.
+- **AI-composed commits deliberately bypass your hooks.** A `pre-commit` hook that re-stages files
+  would corrupt the composer's carefully partitioned plan, so composer commits run with hooks off.
+  Every other commit path runs them.
+- **Known limitation.** A repository with a truncated or corrupt loose commit object can hang the
+  app; the underlying library spins on it and there is no bounded way to detect it first. It is
+  only reachable through on-disk `.git` corruption. A fix is planned.
+- **Quality.** A pre-release hardening campaign audited every public function in the Rust core, the
+  command layer, the MCP servers, and the frontend, fixed 48 bugs (the most serious of which are
+  listed above), and grew the suite to a full-workspace gate of unit, integration, component,
+  end-to-end, property-based, and corrupt-input tests run on Windows, macOS, and Linux.
+- Installers still ship **unsigned**. See the README for the one-time Windows SmartScreen /
+  macOS Gatekeeper approval steps. OS code signing is planned for a later release
+  (`docs/code-signing.md`).
 - **Verification in progress.** Everything above has passed the automated suite and the browser
-  harness; the native-window confirmation pass (real CLI, real conflicts, appearance) is still
-  outstanding. See `docs/contracts/P67-user-checklist.md` and
-  `docs/contracts/P68-user-checklist.md`.
+  harness. Native-window confirmation passes are still outstanding for the pull-request features,
+  the graph badges, progressive loading, and the AI conflict dock — the parts needing real tokens,
+  a real Claude CLI run, or human eyes on the canvas. See `docs/contracts/P62-user-checklist.md`,
+  `P63-user-checklist.md`, `P64-user-checklist.md`, `P65-user-checklist.md`,
+  `P67-user-checklist.md`, and `P68-user-checklist.md`.
 
 ## [0.3.0] — 2026-08-05
 
@@ -126,6 +289,6 @@ The MVP and first productization phase. Highlights:
 - Tauri v2 auto-update scaffolding (behind Bonsai IPC) and a first-run onboarding overlay.
 - An embedded MCP server exposing structured Git data (graph, diffs, conflicts) to AI tools.
 
-[Unreleased]: https://github.com/danpercic86/bonsai/compare/v0.3.0...HEAD
+[1.0.0]: https://github.com/danpercic86/bonsai/compare/v0.3.1...v1.0.0
 [0.3.0]: https://github.com/danpercic86/bonsai/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/danpercic86/bonsai/releases/tag/v0.2.0

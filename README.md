@@ -16,9 +16,13 @@ Bonsai is a local Git client built around a smooth, multi-lane commit graph. Rus
 the Git logic and the graph-layout math via [libgit2](https://libgit2.org/); the UI only
 renders — so the graph stays fast even over histories of 20,000+ commits.
 
-> **Status: preparing for the first public release (`1.0.0`).** The app is feature-complete
-> for everyday Git work. A set of recently added features is still finishing a final
-> native-window verification pass — see the [CHANGELOG](CHANGELOG.md).
+> **Status: shipping `1.0.0`, the first public release.** The app is feature-complete for
+> everyday Git work on Windows, macOS, and Linux.
+>
+> **The forge / pull-request features ship as beta.** PR listing for GitHub, GitLab,
+> Bitbucket, and Azure DevOps, the PR/CI badges on the graph, and AI-drafted PR descriptions
+> have not yet been verified against real access tokens for every provider, so expect rough
+> edges there. Everything else is release-ready — see the [CHANGELOG](CHANGELOG.md).
 
 ## Screenshots
 
@@ -52,8 +56,9 @@ to regenerate these._
   auto-fetch, first-run onboarding, and in-app Git config editing.
 - **Search & command palette** — commit/content search, a `Ctrl`/`Cmd`-K command palette, and
   filtering for the sidebar lists.
-- **Pull requests** — connect a GitHub, GitLab, Bitbucket or Azure DevOps repository with a
-  personal access token to list, read and open PRs, and see PR/CI badges on the graph.
+- **Pull requests (beta)** — connect a GitHub, GitLab, Bitbucket or Azure DevOps repository
+  with a personal access token to list, read and open PRs, and see PR/CI badges on the graph.
+  Not yet verified against real access tokens for every provider.
 - **Auto-update** — checks a signed release manifest and updates in place (opt-in).
 - **AI features (optional, local)** — everything AI runs through the
   [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed on your own machine,
@@ -84,13 +89,31 @@ OS code signing (Authenticode / Apple notarization) is planned for a later relea
 
 ## Build from source
 
-**Prerequisites** (all platforms): [Rust](https://rustup.rs/) (via rustup), Node LTS +
-[pnpm](https://pnpm.io/), and the Tauri CLI (installed by `pnpm install`). Plus a per-OS
-toolchain for building libgit2 and the native webview:
+**Prerequisites** (all platforms):
 
-- **Windows** — MSVC build tools; WebView2 (bundled on Windows 11).
-- **macOS** — Xcode Command Line Tools (system WebKit is used).
-- **Linux** — a C toolchain (e.g. `build-essential`) plus `webkit2gtk` dev packages.
+- **[Rust](https://rustup.rs/) 1.97** — the channel is pinned by
+  [`rust-toolchain.toml`](rust-toolchain.toml), so rustup installs the right toolchain (plus
+  `clippy` and `rustfmt`) on first build.
+- **Node 22+** and **[pnpm](https://pnpm.io/)** — the repo pins pnpm `11.17.0` via
+  `packageManager`, which itself requires Node >= 22.13. CI builds on Node 22.
+- **The Tauri CLI** — installed by `pnpm install`; no global install needed.
+
+Plus a per-OS toolchain for building libgit2 and the native webview:
+
+- **Windows** — MSVC build tools (the "Desktop development with C++" workload); WebView2
+  (bundled on Windows 11, otherwise install the Evergreen runtime).
+- **macOS** — Xcode Command Line Tools (`xcode-select --install`); the system WebKit is used,
+  so there is nothing else to install.
+- **Linux** — a C toolchain plus the GTK/WebKit development packages. On Debian/Ubuntu, these
+  are exactly what CI installs:
+
+  ```bash
+  sudo apt-get update && sudo apt-get install -y build-essential \
+    libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
+  ```
+
+  Note **webkit2gtk 4.1** specifically — Tauri v2 links against 4.1, and the older `4.0`
+  packages will not satisfy it. Other distributions need the equivalent packages.
 
 ```bash
 pnpm install
@@ -98,11 +121,19 @@ pnpm tauri dev      # run the app in development
 pnpm tauri build    # produce a release build + installers
 ```
 
+The first build vendors and compiles libgit2 — expect ten-plus minutes. It is not stuck.
+
 Frontend-only development (no native window) runs against mock Git data in a plain browser:
 
 ```bash
 pnpm dev:mock       # Vite in mock mode; open the printed URL (port 1420)
 ```
+
+## Contributing
+
+Setup, architecture rules, and the checks CI enforces are in
+[CONTRIBUTING.md](CONTRIBUTING.md); the full test-tier reference is in
+[TESTING.md](TESTING.md).
 
 ## Tech stack
 
