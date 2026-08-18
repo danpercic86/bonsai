@@ -182,6 +182,16 @@ jobs:
           name: playwright-report
           path: playwright-report/
 
+      # Trace zips (trace: 'on-first-retry' in playwright.config.ts) — the only
+      # way to diagnose a failure that doesn't reproduce locally.
+      - name: Upload Playwright traces
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results/
+          if-no-files-found: ignore
+
   # ---------------------------------------------------------------------------
   # Supply-chain scanning: Rust advisories/licenses/bans via cargo-deny, npm
   # advisories via `pnpm audit`. Both are configured to be GREEN today (see

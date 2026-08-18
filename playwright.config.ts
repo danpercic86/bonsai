@@ -12,6 +12,10 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: CI,
   retries: CI ? 1 : 0,
+  // 'list' always; add the HTML report + trace zips in CI so a CI-only
+  // failure (one that doesn't reproduce locally) is actually diagnosable
+  // from the uploaded artifact instead of just the text log.
+  reporter: CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: 'http://localhost:1420',
     trace: 'on-first-retry',
