@@ -141,8 +141,9 @@ mod tests {
     /// Serializes the fixture-based watcher tests. Each spawns a real
     /// ReadDirectoryChangesW watcher whose stale `git2::init` events are
     /// flushed lazily; under parallel load concurrent watcher fixtures delay
-    /// each other's flushes past the pre-test drain window (flake seen at
-    /// 1.5 s AND 2.5 s — widening further is not the fix, one-at-a-time is).
+    /// each other's flushes. `watch_into_channel` synchronizes positively via
+    /// a sentinel file (see there), but serialization still keeps the fixtures
+    /// from generating events into each other's drains.
     /// Poison-recovered so one failing test can't error out the rest.
     static WATCHER_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -169,20 +170,37 @@ mod tests {
             }),
         )
         .unwrap();
-        // Give ReadDirectoryChangesW a moment to be fully armed, then drain
-        // any STALE callbacks until the channel is quiet: on some volumes
-        // (observed on this machine's D: scratch drive) directory events from
-        // `git2::Repository::init` are flushed lazily and arrive AFTER the
-        // watch is registered — e.g. a late `.git\refs` creation event, which
-        // correctly passes the relevance filter and would poison the test.
-        // The quiet window must comfortably exceed the 300 ms debounce so a
-        // stale burst has fully discharged before the test body runs; 1.5 s
-        // (up from 700 ms) because heavy parallel-test load (M4 grew the lib
-        // suite) delays the lazy flush enough to slip past a shorter drain;
-        // 2.5 s (P30) because the scheduler integration tests added git-CLI
-        // heavy parallel load that delayed the flush past 1.5 s again.
-        std::thread::sleep(Duration::from_millis(500));
-        while rx.recv_timeout(Duration::from_millis(2500)).is_ok() {}
+        // POSITIVE synchronization against stale `git2::Repository::init`
+        // events. On some volumes (observed on this machine's D: scratch
+        // drive) ReadDirectoryChangesW flushes the init burst lazily, AFTER
+        // the watch is registered — e.g. a late `.git\refs` creation event,
+        // which correctly passes the relevance filter and would poison the
+        // test. A fixed-width drain window was widened three times
+        // (700 ms → 1.5 s → 2.5 s) and still flaked under full-workspace
+        // load, so instead of sleeping we synchronize on events we CAUSE:
+        //
+        // 1. Write a sentinel file and wait for its debounced callback. The
+        //    debounce is trailing-edge (300 ms of quiet), so any stale init
+        //    event that reached the watcher BEFORE the sentinel write has
+        //    been coalesced into this same callback.
+        // 2. Delete the sentinel and wait for THAT callback too, so the
+        //    deletion event can't leak into the test body.
+        // 3. Belt-and-braces residual sweep: drain anything already queued
+        //    (try_recv), then keep draining while a conservative 1 s quiet
+        //    window still yields events — this is no longer the primary
+        //    sync, just insurance against an init flush so late it landed
+        //    after step 1's callback fired.
+        let sentinel = workdir.join(".bonsai-test-sentinel");
+        std::fs::write(&sentinel, "sync").unwrap();
+        rx.recv_timeout(Duration::from_secs(10)).expect(
+            "watcher never reported the sentinel-file creation — watch not armed or events lost",
+        );
+        std::fs::remove_file(&sentinel).unwrap();
+        rx.recv_timeout(Duration::from_secs(10)).expect(
+            "watcher never reported the sentinel-file deletion — watch not armed or events lost",
+        );
+        while rx.try_recv().is_ok() {}
+        while rx.recv_timeout(Duration::from_millis(1000)).is_ok() {}
         (handle, rx)
     }
 
@@ -239,7 +257,14 @@ mod tests {
         let (_dir, workdir) = fixture_repo();
         let (_handle, rx) = watch_into_channel(&workdir);
 
-        // Writes under .git/objects must be filtered out.
+        // Writes under .git/objects must be filtered out. The 1.5 s negative
+        // window below is sound after watch_into_channel's sentinel sync: any
+        // stale init event that arrived before the sentinel-create callback
+        // was coalesced into it (trailing-edge debounce), the sentinel-delete
+        // round-trip absorbed everything up to a second quiet period, and the
+        // final 1 s residual sweep only returned once the channel stayed quiet
+        // for a full second — so a callback inside this window can only come
+        // from the writes below, which is exactly what the assertion checks.
         let obj_dir = workdir.join(".git").join("objects").join("aa");
         std::fs::create_dir_all(&obj_dir).unwrap();
         std::fs::write(obj_dir.join("dummy"), "blob").unwrap();

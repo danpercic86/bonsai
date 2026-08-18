@@ -94,7 +94,7 @@ jobs:
           BONSAI_REQUIRE_GIT_STRICT: '1'
         run: |
           set -o pipefail
-          cargo test --workspace 2>&1 | tee cargo-test.log
+          cargo test --workspace --no-fail-fast 2>&1 | tee cargo-test.log
 
       # Known baseline: 3 #[ignore]d perf gates (large-fixture benchmarks) —
       # visible in the summary, not failed on. No other ignores.
