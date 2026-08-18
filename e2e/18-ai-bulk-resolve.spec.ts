@@ -81,6 +81,24 @@ test.describe('18 bulk "Resolve all with AI"', () => {
     await expect(dock(page)).toHaveCount(0);
   });
 
+  test('workspace shortcuts are suppressed under the confirm gate (audit §3.9)', async ({
+    page,
+  }) => {
+    await openRepo(page, { flags: { op: 'merge' }, uiSettings: AI });
+    await banner(page).getByRole('button', { name: BULK_NAME }).click();
+    const dialog = page.getByRole('dialog', { name: 'Resolve all conflicts with AI' });
+    await expect(dialog).toBeVisible();
+    // Mod+K must NOT open the palette behind the modal — the bulk confirm joins
+    // `dialogOpen` like every sibling dialog.
+    await page.keyboard.press('ControlOrMeta+K');
+    await expect(page.getByRole('dialog', { name: 'Command palette' })).toHaveCount(0);
+    // The confirm stayed up, untouched, and still cancels cleanly.
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(dock(page)).toHaveCount(0);
+  });
+
   test('is not offered with fewer than two eligible conflicts, and is inert with ?ai=off', async ({
     page,
   }) => {

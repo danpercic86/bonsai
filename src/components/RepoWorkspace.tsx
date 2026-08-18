@@ -19,6 +19,7 @@ import type { GraphCanvasHandle, GraphContextTarget, WipSummary } from '../graph
 import { effectiveMetrics } from '../graph/metrics';
 import type { GraphDisplayOptions } from '../graph/rightColumns';
 import { createGraphStream } from '../graph/streamAssembler';
+import { createGraphStreamApplier } from './repoWorkspace/graphStreamApply';
 import type { IncrementalEdgeIndex } from '../graph/incrementalEdgeIndex';
 import { ipc } from '../ipc';
 import type {
@@ -102,14 +103,6 @@ import { SubmoduleDialogs } from './dialogs/SubmoduleDialogs';
 import { ChangelogDialog } from './ChangelogDialog';
 import { safeOpDispatch } from './safeOpDispatch';
 import type { ComboboxOption } from './Combobox';
-
-/** P65b: bump the layout object identity per applied stream batch (the growing
- *  arrays inside are shared) so GraphCanvas's `[..., layout]` repaint effect
- *  fires once per batch. A shallow spread is enough — a fresh outer object each
- *  call is the repaint trigger. */
-function wrapStreamLayout(layout: GraphLayout): GraphLayout {
-  return { ...layout };
-}
 
 export interface RepoWorkspaceProps {
   /** Canonical workdir path (== repoId, P3e §2). */
@@ -982,36 +975,33 @@ export function RepoWorkspace({
         ? (graphDataRef.current?.nodes[selectedIndexRef.current]?.id ?? null)
         : null;
     const stream = createGraphStream();
-    let remapped = false;
+    // Chunk application + audit-§3.8 throw containment live in
+    // graphStreamApply.ts: the assembler throws on a non-contiguous batch (a
+    // correct invariant guard), but this callback runs inside Channel.onmessage
+    // where an escaped throw never reaches the catch below. The first throw
+    // surfaces via setGraphError and poisons the stream (later chunks drop).
+    const applier = createGraphStreamApplier(
+      stream,
+      prevSelectedId,
+      { setGraph, setGraphEdgeIndex, setGraphTotal, setSelectedIndex },
+      (e) => {
+        if (id === graphReqId.current) setGraphError(errorMessage(e));
+      },
+    );
     setGraphLoading(true);
     try {
       await ipc.streamGraph(repoId, (chunk) => {
         if (id !== graphReqId.current) return; // stale / superseded stream
-        stream.apply(chunk);
-        // No-flicker: keep showing the PREVIOUS layout until the first paintable
-        // chunk of the NEW stream lands. `meta` only stashes total/headOid — it
-        // carries no rows, so update just the scroll extent and wait.
-        if (chunk.kind === 'meta') {
-          setGraphTotal(stream.total);
-          return;
-        }
-        // Identity bump -> GraphCanvas repaints; edge index + total set together
-        // with the layout so the three never disagree in one render.
-        setGraph(wrapStreamLayout(stream.layout));
-        setGraphEdgeIndex(stream.edgeIndex);
-        setGraphTotal(stream.total);
-        // Progressive selection remap: reselect the prior commit the instant its
-        // row arrives (don't wait for the full stream).
-        if (prevSelectedId !== null && !remapped && stream.oidToRow.has(prevSelectedId)) {
-          setSelectedIndex(stream.oidToRow.get(prevSelectedId) ?? null);
-          remapped = true;
-        }
+        applier.handle(chunk);
       });
       if (id !== graphReqId.current) return;
+      // A poisoned stream already surfaced its error — don't clear it, and
+      // don't resolve the selection against the partial layout.
+      if (applier.poisoned) return;
       setGraphError(null);
       // Post-stream selection resolution: a prior selection that never reappeared
       // is gone -> clear; no prior selection -> null.
-      if (prevSelectedId === null || !remapped) setSelectedIndex(null);
+      if (prevSelectedId === null || !applier.remapped) setSelectedIndex(null);
     } catch (e) {
       if (id !== graphReqId.current) return;
       setGraphError(errorMessage(e));
@@ -2333,7 +2323,11 @@ export function RepoWorkspace({
     graphLoading,
     mutating,
     canPullPush,
-    dialogOpen,
+    // Audit §3.9: the bulk-AI confirm is a sibling modal — suppress workspace
+    // shortcuts (Ctrl+K/Ctrl+F/F5, graph navigation) under it like the rest.
+    // It joins here rather than in the line-~444 disjunction because `aiBulk`
+    // is declared after that point.
+    dialogOpen: dialogOpen || aiBulk.confirm.open,
     abortConfirmOpen,
     selectedIndex,
     graph,
