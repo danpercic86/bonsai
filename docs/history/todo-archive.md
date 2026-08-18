@@ -2,6 +2,16 @@
 
 > Archived from TODO.md to keep the live status board small. Covers P27 back to P2 and
 > M0–M6. The active board (current in-progress milestones) stays in TODO.md.
+>
+> **Companion archives:** `docs/history/todo-archive-2026-08.md` (P65 → P28 + the Phase 1–4 banners,
+> moved 2026-08-18) and `docs/history/milestones-mvp.md` (the M0–M6 AI-gate vs USER CHECKPOINT
+> split). Contract files are indexed in `docs/contracts/INDEX.md`.
+>
+> **Status-vocabulary warning (added 2026-08-18):** several section headers below still read
+> `in-progress` or `awaiting USER CHECKPOINT` because they were never rewritten when the checkpoint
+> was later confirmed in a batch. **Every milestone in this file is `done` with its native USER
+> CHECKPOINT CONFIRMED** — P2–P9/P3x/P4–P7 on 2026-07-30, P10–P27 on 2026-08-03. The confirmation
+> banners (reproduced in `todo-archive-2026-08.md` Part 1) supersede any per-section header here.
 
 ## P28 — Discard hunk + status-panel UX (double-click stage, section styling) — **DONE (USER CHECKPOINT CONFIRMED 2026-08-03)**
 

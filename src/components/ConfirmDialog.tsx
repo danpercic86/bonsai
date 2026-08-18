@@ -11,6 +11,10 @@ export interface ConfirmDialogProps {
    * (destructive) call sites are unchanged; use 'primary' for non-destructive
    * confirmations (e.g. set-upstream & push). */
   confirmVariant?: 'danger' | 'primary';
+  /** P68g OQ-1: extra class on `.dialog-card`, for a body that needs more than the
+   *  default 360px (e.g. `ai-consent-card` = 420px). Width only — the focus/Esc
+   *  behaviour is unchanged. */
+  cardClass?: string;
   busy: boolean;
   onConfirm(): void;
   onCancel(): void;
@@ -27,6 +31,7 @@ export function ConfirmDialog({
   children,
   confirmLabel,
   confirmVariant = 'danger',
+  cardClass,
   busy,
   onConfirm,
   onCancel,
@@ -55,7 +60,7 @@ export function ConfirmDialog({
   return (
     <div className="dialog-overlay" onClick={onCancel}>
       <div
-        className="dialog-card"
+        className={cardClass === undefined ? 'dialog-card' : `dialog-card ${cardClass}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}

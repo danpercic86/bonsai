@@ -71,6 +71,7 @@ function makeDeps(over: Partial<Deps> = {}): Deps {
     selectedIndex: null,
     graph: null,
     graphRef: { current: null },
+    onAiActivity: vi.fn(),
     handleRefresh: vi.fn(),
     handleFetch: vi.fn(),
     handlePull: vi.fn(),
@@ -460,5 +461,10 @@ describe('ShortcutOverlay sync', () => {
     const text = overlayText();
     expect(text).toContain('Ctrl+F');
     expect(text).toContain('Ctrl+K');
+  });
+
+  // P68e §4.4: the AI activity dock's shortcut is documented too.
+  it('documents Ctrl+Shift+A (AI activity dock)', () => {
+    expect(overlayText()).toContain('Ctrl+Shift+A');
   });
 });

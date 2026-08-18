@@ -1,4 +1,6 @@
 import type { RepoOpState } from '../ipc';
+import { BulkAiResolveButton } from './BulkAiResolveButton';
+import type { BulkAiControl } from './repoWorkspace/useBulkAiResolve';
 import { shortOid } from './workspaceUtils';
 
 // P3c §8.1 / P3d §8.1: operation-state banner at the top of the right panel.
@@ -34,6 +36,11 @@ export interface OpBannerProps {
   /** Bisect mode (P39b): oid → commit summary, for the first-bad / current
    *  rows (resolved from the loaded graph; missing oids fall back to shortOid). */
   bisectSummaries?: Record<string, string>;
+  /** P68f/OQ4: "Resolve all with AI" — the MERGE arm only, because the banner is
+   *  where the user looks while a merge is paused. Rendered only with ≥2 AI-eligible
+   *  conflicts, and it becomes `Cancel all` (ONE `ai_cancel_run`) while the run is
+   *  live. Absent ⇒ nothing added to the actions row. */
+  aiBulk?: BulkAiControl;
 }
 
 export function OpBanner({
@@ -48,6 +55,7 @@ export function OpBanner({
   onBisectMark,
   onBisectSkip,
   bisectSummaries,
+  aiBulk,
 }: OpBannerProps) {
   if (op.kind === 'none') return null;
 
@@ -138,6 +146,11 @@ export function OpBanner({
           </span>
         </div>
         <div className="op-banner-actions">
+          {/* P68f: leftmost, because it is the thing that MAKES the merge
+              committable; Commit merge stays the primary action beside it. */}
+          {aiBulk !== undefined && (
+            <BulkAiResolveButton control={aiBulk} variant="banner" busy={mutating} />
+          )}
           <button
             type="button"
             className="btn-primary op-banner-btn"

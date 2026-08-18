@@ -15,17 +15,22 @@ import type {
   IdentityProfile,
   ListView,
   McpStatus,
+  PanelDensity,
   Theme,
   UiSettingsPatch,
 } from '../ipc';
 import { type McpScope } from '../lib/mcpAddCommand';
+import type { AiRunPrefs } from '../settings/aiRunPrefs';
 import type { UpdateUiState } from '../hooks/useUpdateController';
 import { SettingsExternalToolsSection } from './SettingsExternalToolsSection';
 import { SettingsGitConfigSection } from './SettingsGitConfigSection';
 import { SettingsProfilesSection } from './SettingsProfilesSection';
 import { SettingsMcpSection } from './SettingsMcpSection';
 import { SettingsUpdatesSection } from './SettingsUpdatesSection';
+import { SettingsAppearanceSection } from './SettingsAppearanceSection';
 import { SettingsGraphSection } from './SettingsGraphSection';
+import { SettingsAiSection } from './SettingsAiSection';
+import { SettingsAiRunSection } from './SettingsAiRunSection';
 import { NumberSlider } from './NumberSlider';
 import {
   AUTO_FETCH_INTERVAL_MAX,
@@ -39,6 +44,8 @@ export interface SettingsPanelProps {
   onClose(): void;
   theme: Theme;
   listView: ListView;
+  /** P67 §4: right-panel density; patched via `onChange` (no toolbar toggle). */
+  panelDensity: PanelDensity;
   autoFetch: AutoFetchSettings;
   /** P30: periodic read-only refresh signal (backend scheduler). */
   healthRefresh: HealthRefreshSettings;
@@ -58,6 +65,10 @@ export interface SettingsPanelProps {
   /** Enabling AI when consent has not yet been given: App shows the consent
    *  ConfirmDialog and only patches `{ aiEnabled, aiConsented }` on confirm. */
   onRequestEnableAi(): void;
+  /** P68g §1: the eight AI-run knobs, threaded straight through to
+   *  SettingsAiRunSection as one read-only struct (the `graph`/`autoFetch` prop
+   *  idiom). Each still PATCHES independently via `onChange`. */
+  aiRun: AiRunPrefs;
   // Embedded MCP server (P16). Live runtime status (null until first loaded);
   // consent gate + start/stop are owned by App, like the AI section.
   mcpStatus: McpStatus | null;
@@ -115,6 +126,7 @@ export function SettingsPanel({
   onClose,
   theme,
   listView,
+  panelDensity,
   autoFetch,
   healthRefresh,
   graph,
@@ -126,6 +138,7 @@ export function SettingsPanel({
   aiConsented,
   aiAvailability,
   onRequestEnableAi,
+  aiRun,
   mcpStatus,
   mcpConsented,
   onSetMcpEnabled,
@@ -295,26 +308,15 @@ export function SettingsPanel({
         {/* --- Graph (geometry sliders + P51 per-row detail toggles) --- */}
         <SettingsGraphSection graph={graph} onChange={onChange} />
 
-        {/* --- Appearance --- */}
-        <section className="settings-section">
-          <h3 className="settings-section-title">Appearance</h3>
-          <div className="settings-row">
-            <span className="settings-control-label">Theme</span>
-            <button type="button" className="btn-secondary settings-toggle-btn" onClick={onToggleTheme}>
-              {theme === 'dark' ? 'Dark' : 'Light'}
-            </button>
-          </div>
-          <div className="settings-row">
-            <span className="settings-control-label">File lists</span>
-            <button
-              type="button"
-              className="btn-secondary settings-toggle-btn"
-              onClick={onToggleListView}
-            >
-              {listView === 'tree' ? 'Tree' : 'Flat'}
-            </button>
-          </div>
-        </section>
+        {/* --- Appearance (theme / file lists / P67 panel density) --- */}
+        <SettingsAppearanceSection
+          theme={theme}
+          onToggleTheme={onToggleTheme}
+          listView={listView}
+          onToggleListView={onToggleListView}
+          panelDensity={panelDensity}
+          onChange={onChange}
+        />
 
         {/* --- Git config (P40b) --- */}
         <SettingsGitConfigSection repoId={repoPath} initialFocus={configInitialFocus} />
@@ -333,55 +335,18 @@ export function SettingsPanel({
           onProfilesChange={(next) => onChange({ profiles: next })}
         />
 
-        {/* --- AI assistance (P13 §8.1) --- */}
-        <section className="settings-section">
-          <h3 className="settings-section-title">AI assistance</h3>
-          <p className="settings-section-desc">
-            Resolve merge conflicts with the local Claude Code CLI, under your Claude subscription.
-          </p>
-          <label className="settings-checkbox">
-            <input
-              type="checkbox"
-              checked={aiEnabled}
-              onChange={(e) => handleEnableToggle(e.target.checked)}
-            />
-            <span>Enable AI features</span>
-          </label>
+        {/* --- AI assistance (P13 §8.1, P68g §2.3) --- */}
+        <SettingsAiSection
+          aiEnabled={aiEnabled}
+          aiConflictAutonomy={aiConflictAutonomy}
+          aiActive={aiActive}
+          aiAvailability={aiAvailability}
+          onToggleEnabled={handleEnableToggle}
+          onChange={onChange}
+        />
 
-          <fieldset className="settings-radio-group" disabled={!aiActive}>
-            <legend className="settings-radio-legend">Conflict resolution</legend>
-            <label className="settings-radio">
-              <input
-                type="radio"
-                name="ai-autonomy"
-                checked={aiConflictAutonomy === 'proposeReview'}
-                disabled={!aiActive}
-                onChange={() => onChange({ aiConflictAutonomy: 'proposeReview' })}
-              />
-              <span>Propose &amp; review</span>
-            </label>
-            <label className="settings-radio">
-              <input
-                type="radio"
-                name="ai-autonomy"
-                checked={aiConflictAutonomy === 'autoResolve'}
-                disabled={!aiActive}
-                onChange={() => onChange({ aiConflictAutonomy: 'autoResolve' })}
-              />
-              <span>Auto-resolve, then review</span>
-            </label>
-          </fieldset>
-
-          {aiAvailability === null ? (
-            <p className="settings-ai-status">Checking for the Claude Code CLI…</p>
-          ) : aiAvailability.installed ? (
-            <p className="settings-ai-status settings-ai-status-ok">{aiAvailability.detail}</p>
-          ) : (
-            <p className="settings-ai-status settings-ai-status-warn" role="note">
-              Claude Code CLI not found on PATH — install it and log in to use AI features
-            </p>
-          )}
-        </section>
+        {/* --- AI runs (P68g §1): the eight knobs that had no UI at all --- */}
+        <SettingsAiRunSection aiRun={aiRun} aiActive={aiActive} onChange={onChange} />
 
         {/* --- AI access (MCP server) (P16 §10.5) --- */}
         <SettingsMcpSection

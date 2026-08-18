@@ -48,6 +48,7 @@ import type {
   ProposedOperation,
   RebaseTodoOp,
   PaneWidths,
+  PanelDensity,
   ReflogEntry,
   UndoPlan,
   RemoteInfo,
@@ -59,6 +60,7 @@ import type {
   StatusEntry,
   StatusSnapshot,
   SubmoduleInfo,
+  UiSettingsPatch,
   Unsubscribe,
   WorktreeInfo,
 } from '../ipc';
@@ -68,8 +70,13 @@ import { isImagePath } from '../utils/imagePaths';
 
 import { useRemoteOps, type NonFfPullInfo } from './repoWorkspace/useRemoteOps';
 import { useCommitActions } from './repoWorkspace/useCommitActions';
+import { usePartialStaging } from './repoWorkspace/usePartialStaging';
 import { useHookGate } from './repoWorkspace/useHookGate';
 import { useBranchActions } from './repoWorkspace/useBranchActions';
+import { useAiRuns } from './repoWorkspace/useAiRuns';
+import { AiActivityPanel } from './AiActivityPanel';
+import { useAiDock } from './repoWorkspace/useAiDock';
+import { useBulkAiResolve } from './repoWorkspace/useBulkAiResolve';
 import { useMergeActions } from './repoWorkspace/useMergeActions';
 import { useStashActions } from './repoWorkspace/useStashActions';
 import { useSubmoduleActions } from './repoWorkspace/useSubmoduleActions';
@@ -113,6 +120,9 @@ export interface RepoWorkspaceProps {
   active: boolean;
   /** App-global display prefs / pane sizing threaded down. */
   listView: ListView;
+  /** P67 §4: right-panel vertical density (applied as a `data-density`
+   *  attribute on the right panel's `<aside>`). */
+  panelDensity: PanelDensity;
   themeVersion: number;
   paneWidths: PaneWidths;
   /** True when a global modal (shortcut overlay / tab menu) is open — the
@@ -128,6 +138,12 @@ export interface RepoWorkspaceProps {
   aiConsented: boolean;
   /** CLI health status; null while App is probing. */
   aiAvailability: AiAvailability | null;
+  /** P68e §8: persisted AI-dock geometry + `aiStreamLog`; `onAiDockChange` patches
+   *  `aiDockHeight`/`aiDockCollapsed` (App debounces the write). */
+  aiDockHeight: number;
+  aiDockCollapsed: boolean;
+  aiStreamLog: boolean;
+  onAiDockChange(patch: UiSettingsPatch): void;
   onSidebarResize(delta: number): void;
   onRightPanelResize(delta: number): void;
   onPaneResizeEnd(): void;
@@ -149,6 +165,7 @@ export function RepoWorkspace({
   repoId,
   active,
   listView,
+  panelDensity,
   themeVersion,
   paneWidths,
   globalModalOpen,
@@ -158,6 +175,10 @@ export function RepoWorkspace({
   aiConflictAutonomy,
   aiConsented,
   aiAvailability,
+  aiDockHeight,
+  aiDockCollapsed,
+  aiStreamLog,
+  onAiDockChange,
   onSidebarResize,
   onRightPanelResize,
   onPaneResizeEnd,
@@ -233,9 +254,6 @@ export function RepoWorkspace({
   // Tracks conflict count across renders so we auto-open the first conflicted
   // file exactly once per conflict episode (0 -> >0 edge), not on every refetch.
   const prevConflictCountRef = useRef(0);
-  // P13 §8.3: path whose AI resolution is in flight (calls take seconds). Gates
-  // the per-row ✨ AI button without freezing the whole panel like `mutating`.
-  const [aiResolvingPath, setAiResolvingPath] = useState<string | null>(null);
   // P15b: explain/review output panel (read-only prose). RepoWorkspace owns the
   // ipc.aiAnalyzeDiff call + the panel's loading/error/result state; the panel is
   // presentational. `null` => not shown. A req-id guards against a stale response
@@ -1538,7 +1556,7 @@ export function RepoWorkspace({
     handleMergeBranch,
     handleResolveConflict,
     handleResolveConflictText,
-    handleAiResolveConflict,
+    openAiProposal,
     handleCommitMerge,
     handleAbortMerge,
   } = useMergeActions({
@@ -1546,12 +1564,29 @@ export function RepoWorkspace({
     pushToast,
     setMutating,
     refreshAll,
-    aiConflictAutonomy,
-    setAiResolvingPath,
     setDiffSlot,
     fileDiffReqId,
     runWithHookGate: hookGate.runWithHookGate,
   });
+
+  // P68d §C: the per-path AI run store — THE item-5 fix (rationale in the hook's header).
+  const conflictPaths = useMemo(() => conflicts.map((c) => c.path), [conflicts]);
+  const aiRuns = useAiRuns({
+    repoId,
+    pushToast,
+    aiConflictAutonomy,
+    aiEligible,
+    applyResolution: handleResolveConflictText,
+    refreshAll, // P68f: ONE refresh after a multi-file autoResolve stage, not N.
+    openAiProposal,
+    conflictPaths,
+    // FOLD-IN 1: never steal the center pane from a user who navigated away while
+    // the run worked (the rationale lives on `AiRunsDeps.diffSlotKey`).
+    diffSlotKey: () => diffSlotRef.current?.key ?? null,
+  });
+
+  // P68f §6.4: "Resolve all with AI" — ONE run over every AI-eligible conflict, confirm-gated.
+  const aiBulk = useBulkAiResolve({ conflicts, aiEligible, aiConflictAutonomy, aiRuns });
 
   const { handleCreateStash, handleApplyStash, handlePopStash, handleDropStash } = useStashActions({
     repoId,
@@ -1646,175 +1681,35 @@ export function RepoWorkspace({
       refreshAll,
       setPendingBisectBad,
     });
-  // P17c: switch File/Diff view. When a workdir file diff is open, re-fetch it
-  // with the new `fullContext` (File View = one whole-file hunk); the same key
-  // keeps the stale content visible during the swap. Conflict/ai-proposal slots
-  // are not FileDiffs (they use getConflict), so they need no refetch.
-  const handleSetViewMode = useCallback(
-    (m: 'diff' | 'file' | 'split') => {
-      setDiffViewMode(m);
-      const meta = overlayMetaRef.current;
-      const slot = diffSlotRef.current;
-      if (slot === null || meta === null) return;
-      if (meta.kind === 'staged' || meta.kind === 'unstaged' || meta.kind === 'untracked') {
-        const staged = meta.kind === 'staged';
-        void fetchDiffSlot(slot.key, () =>
-          ipc.getWorkdirFileDiff(
-            repoId,
-            meta.path,
-            meta.origPath,
-            staged,
-            m === 'file',
-            intralineRef.current,
-          ),
-        );
-      }
-    },
-    [repoId, fetchDiffSlot],
-  );
-
-  // P61a: flip "Highlight changes" and refetch the open workdir slot with the
-  // new `intraline` flag (same refetch pattern as handleSetViewMode; the same
-  // key keeps stale content visible during the swap). Commit/compare diffs live
-  // in DiffBrowser, not the overlay slot, so nothing else refetches here.
-  const handleToggleIntraline = useCallback(
-    (next: boolean) => {
-      setIntraline(next);
-      const meta = overlayMetaRef.current;
-      const slot = diffSlotRef.current;
-      if (slot === null || meta === null) return;
-      if (meta.kind === 'staged' || meta.kind === 'unstaged' || meta.kind === 'untracked') {
-        const staged = meta.kind === 'staged';
-        void fetchDiffSlot(slot.key, () =>
-          ipc.getWorkdirFileDiff(
-            repoId,
-            meta.path,
-            meta.origPath,
-            staged,
-            diffViewModeRef.current === 'file',
-            next,
-          ),
-        );
-      }
-    },
-    [repoId, fetchDiffSlot],
-  );
-
-  // P17c: stage/unstage exactly `selection` (already Context-dropped) for the
-  // file open in the overlay. Direction + path/origPath come from the current
-  // stageable/overlay meta. Guarded by the `mutating` flag like handleStage.
-  // refetchStatus re-fetches the matching mode-A workdir slot by path in the new
-  // snapshot (honoring the current view mode), so no extra slot fetch is needed;
-  // a src/main.rs-style file persists in its section (and may now appear in both
-  // staged & unstaged). If the entry leaves its section, refetchStatus collapses.
-  const handleStageLines = useCallback(
-    async (selection: LineSelection[]) => {
-      if (selection.length === 0) return; // empty selection -> skip
-      if (mutatingRef.current) return;
-      const meta = overlayMetaRef.current;
-      const dir = stageableRef.current;
-      if (meta === null || dir === null) return;
-      setMutating(true);
-      try {
-        if (dir === 'stage') {
-          await ipc.stagePartial(repoId, meta.path, meta.origPath, selection);
-        } else {
-          await ipc.unstagePartial(repoId, meta.path, meta.origPath, selection);
-        }
-        await refetchStatus();
-      } catch (e) {
-        reportStatusError(errorMessage(e));
-      } finally {
-        setMutating(false);
-      }
-    },
-    [repoId, refetchStatus, reportStatusError],
-  );
-
-  // P17c: stage/unstage every add/del line of hunk `hunkIndex` from the open
-  // diff (Diff View hunk-header button). Builds the selection then delegates.
-  const handleStageHunk = useCallback(
-    (hunkIndex: number) => {
-      const d = diffSlotRef.current?.diff ?? null;
-      const hunk = d?.hunks[hunkIndex];
-      if (hunk === undefined) return;
-      const selection: LineSelection[] = hunk.lines
-        .filter((l) => l.kind === 'add' || l.kind === 'del')
-        .map((l) => ({ kind: l.kind, oldNo: l.oldNo, newNo: l.newNo }));
-      void handleStageLines(selection);
-    },
-    [handleStageLines],
-  );
-
-  // P28: request a hunk discard — just arms the ConfirmDialog (destructive ops
-  // always confirm first). Passed to DiffOverlay only for unstaged tracked
-  // diffs (see the render-site gating), so meta here is the unstaged file.
-  const handleDiscardHunk = useCallback((hunkIndex: number) => {
-    const meta = overlayMetaRef.current;
-    if (meta === null) return;
-    setPendingHunkDiscard({ path: meta.path, origPath: meta.origPath, hunkIndex });
-  }, []);
-
-  // P28: confirmed hunk discard — build the LineSelection from the open diff's
-  // hunk (same rule as handleStageHunk) and revert it in the worktree, then
-  // refetch like handleStageLines does. Guarded by `mutating`.
-  const handleConfirmHunkDiscard = useCallback(
-    async (pending: { path: string; origPath: string | null; hunkIndex: number }) => {
-      if (mutatingRef.current) return;
-      // The slot must still show the file the dialog was armed for.
-      if (overlayMetaRef.current?.path !== pending.path) return;
-      const d = diffSlotRef.current?.diff ?? null;
-      const hunk = d?.hunks[pending.hunkIndex];
-      if (hunk === undefined) return; // stale click; diff changed underneath
-      const selection: LineSelection[] = hunk.lines
-        .filter((l) => l.kind === 'add' || l.kind === 'del')
-        .map((l) => ({ kind: l.kind, oldNo: l.oldNo, newNo: l.newNo }));
-      if (selection.length === 0) return;
-      setMutating(true);
-      try {
-        await ipc.discardPartial(repoId, pending.path, pending.origPath, selection);
-        await refetchStatus();
-      } catch (e) {
-        reportStatusError(errorMessage(e));
-      } finally {
-        setMutating(false);
-      }
-    },
-    [repoId, refetchStatus, reportStatusError],
-  );
-
-  // P45: request a per-line discard — just arms the ConfirmDialog (destructive
-  // ops always confirm first). The selection is captured verbatim because
-  // arbitrary lines can't be re-derived after the diff refetches (unlike a hunk
-  // index). Passed to DiffOverlay only for unstaged tracked diffs (see gating).
-  const handleDiscardLines = useCallback((selection: LineSelection[]) => {
-    if (selection.length === 0) return;
-    const meta = overlayMetaRef.current;
-    if (meta === null) return;
-    setPendingLineDiscard({ path: meta.path, origPath: meta.origPath, selection });
-  }, []);
-
-  // P45: confirmed per-line discard — revert exactly the stored selection in the
-  // worktree, then refetch like handleConfirmHunkDiscard. Guarded by `mutating`;
-  // the backend's stale() guard rejects a selection whose coordinates moved.
-  const handleConfirmLineDiscard = useCallback(
-    async (pending: { path: string; origPath: string | null; selection: LineSelection[] }) => {
-      if (mutatingRef.current) return;
-      // The slot must still show the file the dialog was armed for.
-      if (overlayMetaRef.current?.path !== pending.path) return;
-      if (pending.selection.length === 0) return;
-      setMutating(true);
-      try {
-        await ipc.discardPartial(repoId, pending.path, pending.origPath, pending.selection);
-        await refetchStatus();
-      } catch (e) {
-        reportStatusError(errorMessage(e));
-      } finally {
-        setMutating(false);
-      }
-    },
-    [repoId, refetchStatus, reportStatusError],
-  );
+  // P17c/P28/P45: partial staging + hunk/line discard + the two overlay refetch
+  // toggles, all in one hook (see repoWorkspace/usePartialStaging.ts). The state
+  // they drive stays here because the render body and `opActive` read it.
+  const {
+    handleSetViewMode,
+    handleToggleIntraline,
+    handleStageLines,
+    handleStageHunk,
+    handleDiscardHunk,
+    handleConfirmHunkDiscard,
+    handleDiscardLines,
+    handleConfirmLineDiscard,
+  } = usePartialStaging({
+    repoId,
+    setMutating,
+    mutatingRef,
+    overlayMetaRef,
+    diffSlotRef,
+    stageableRef,
+    diffViewModeRef,
+    intralineRef,
+    setDiffViewMode,
+    setIntraline,
+    setPendingHunkDiscard,
+    setPendingLineDiscard,
+    fetchDiffSlot,
+    refetchStatus,
+    reportStatusError,
+  });
 
   // P15b: run an explain/review analysis of a diff target and show the prose in
   // the AiOutputPanel. Read-only — writes nothing. Guarded by a req-id so a slow
@@ -2019,6 +1914,22 @@ export function RepoWorkspace({
     setAskBusy(false);
     setAskOpen(true);
   }, []);
+
+  // P68e: all of the dock's container-side glue lives in the hook (§9). It sits HERE,
+  // after `openChangelog`/`openAskBonsai`, so those two stable `useCallback`s can be
+  // passed BY REFERENCE — inline-arrow thunks made `aiDock.paletteEntries` (and so the
+  // palette's `actions` array) a fresh object every render, resetting its highlight.
+  const aiDock = useAiDock({
+    aiRuns,
+    height: aiDockHeight,
+    collapsed: aiDockCollapsed,
+    onChange: onAiDockChange,
+    density: panelDensity,
+    streamLogEnabled: aiStreamLog,
+    aiEligible,
+    onAskBonsai: openAskBonsai,
+    onChangelog: openChangelog,
+  });
 
   // P60c: describe the last HEAD-moving op (READ-ONLY) and open the UndoDialog.
   // Confirming there reuses the shipped resetBranch (handleResetBranch) with the
@@ -2232,31 +2143,10 @@ export function RepoWorkspace({
       revealCommitByOid,
       appCommands,
     });
-    // P55c / P56b: prepend the AI entries (registry pattern, gated aiEligible) so
-    // they lead the Action group and are fuzzy-filterable. "Ask Bonsai to…" opens
-    // the read-only NL input (nothing mutates until the resolved op's confirm);
-    // "Release notes…" opens the read-only ChangelogDialog range picker. unshift
-    // with two args keeps Ask first, Release notes second.
-    if (aiEligible) {
-      actions.unshift(
-        {
-          id: 'ai.ask',
-          title: 'Ask Bonsai to…',
-          hint: '✨',
-          group: 'action',
-          keywords: 'ai natural language nl request undo revert switch stash discard merge branch',
-          run: openAskBonsai,
-        },
-        {
-          id: 'ai.changelog',
-          title: 'Release notes…',
-          hint: '✨',
-          group: 'action',
-          keywords: 'ai changelog release notes tag range markdown between refs since last tag',
-          run: openChangelog,
-        },
-      );
-    }
+    // P55c / P56b lead the Action group; P68e's dock rows trail it. Both registries
+    // live in `paletteActions.ts` (§E) so this container stays a composition site.
+    actions.unshift(...aiDock.paletteEntries.lead);
+    actions.push(...aiDock.paletteEntries.trail);
     return actions;
   }, [
     palette.open,
@@ -2279,9 +2169,7 @@ export function RepoWorkspace({
     graph,
     revealCommitByOid,
     appCommands,
-    aiEligible,
-    openAskBonsai,
-    openChangelog,
+    aiDock.paletteEntries,
   ]);
 
   function handleToggleConflictView(path: string) {
@@ -2450,6 +2338,7 @@ export function RepoWorkspace({
     selectedIndex,
     graph,
     graphRef,
+    onAiActivity: aiDock.focusDock,
     handleRefresh,
     handleFetch: onFetch, // P63: refresh forge signals after fetch
     handlePull: onPull, // P63: refresh forge signals after pull
@@ -2763,6 +2652,7 @@ export function RepoWorkspace({
           compareError={compareError}
           headBranch={headBranch}
           listView={listView}
+          panelDensity={panelDensity}
           scope={scope}
           setScope={setScope}
           clearCompare={clearCompare}
@@ -2780,7 +2670,9 @@ export function RepoWorkspace({
           statusLoading={statusLoading}
           statusError={statusError}
           diffSlot={diffSlot}
-          aiResolvingPath={aiResolvingPath}
+          aiRows={aiRuns.rowStates}
+          aiAtCapacity={aiRuns.atCapacity}
+          aiBulk={aiBulk.control}
           aiPanelLoading={aiPanel?.loading === true}
           onStage={(paths) => void handleStage(paths)}
           onUnstage={(paths) => void handleUnstage(paths)}
@@ -2789,7 +2681,9 @@ export function RepoWorkspace({
           onToggleDiff={handleToggleWorkdirDiff}
           onResolveConflict={(path, r) => void handleResolveConflict(path, r)}
           onToggleConflictView={handleToggleConflictView}
-          onAiResolve={(path) => void handleAiResolveConflict(path)}
+          onAiResolve={(path) => aiRuns.startConflictRun(path)}
+          onAiReview={aiDock.reviewForPath}
+          onAiReveal={aiDock.revealForPath}
           onBlame={(path) => void handleBlame(path)}
           onFileHistory={(path) => void handleFileHistory(path)}
           onCreateStash={(scope) => void handleCreateStash(scope)}
@@ -2812,6 +2706,10 @@ export function RepoWorkspace({
           commitSignature={commitSignature}
         />
       </div>
+
+      {/* P68e: `.workspace-host`'s THIRD child (toolbar → .panes → dock), full width on
+          purpose; renders null until the first run exists. */}
+      <AiActivityPanel {...aiDock.panelProps} />
 
       <WorkspaceDialogs
         repoId={repoId}
@@ -2924,6 +2822,7 @@ export function RepoWorkspace({
         }
         menu={menu}
         closeMenu={closeMenu}
+        bulkAiConfirm={aiBulk.confirm}
       />
       <CherrypickMessageDialog
         open={pendingCherrypick !== null}

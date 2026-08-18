@@ -1,489 +1,22 @@
 import { useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
 import type {
   ConflictEntry,
-  ConflictKind,
   ConflictResolution,
-  FileStatus,
   ListView,
   StatusEntry,
   StatusSnapshot,
 } from '../ipc';
-import { buildPathTree } from '../utils/pathTree';
 import type { DiffSlot } from './DiffView';
-import { DirRowActions } from './DirRowActions';
-import { Tree } from './Tree';
+import type { AiRowState } from './repoWorkspace/useAiRuns';
+import type { BulkAiControl } from './repoWorkspace/useBulkAiResolve';
+import { StatusConflictsSection } from './StatusConflictsSection';
+import { StatusSection } from './StatusSection';
+import type { WorkdirSection } from './StatusSection';
 
 export type { DiffSlot } from './DiffView';
-
-const BADGES: Record<FileStatus, string> = {
-  added: 'A',
-  modified: 'M',
-  deleted: 'D',
-  renamed: 'R',
-  typechange: 'T',
-  untracked: 'A',
-  conflicted: 'C',
-};
-
-/** Rename expansion (M3 contract §2.1): send BOTH sides of a rename. */
-function entryPaths(e: StatusEntry): string[] {
-  return e.origPath !== null ? [e.origPath, e.path] : [e.path];
-}
-
-function splitPath(path: string): { dir: string | null; name: string } {
-  const idx = path.lastIndexOf('/');
-  if (idx === -1) return { dir: null, name: path };
-  return { dir: path.slice(0, idx + 1), name: path.slice(idx + 1) };
-}
-
-type RowAction = 'stage' | 'unstage' | null;
-
-export type WorkdirSection = 'staged' | 'unstaged' | 'untracked';
-
-function FileRow({
-  entry,
-  action,
-  disabled,
-  expandable,
-  expanded,
-  onAction,
-  onToggle,
-  onDiscard,
-  onBlame,
-  onFileHistory,
-  treeMode = false,
-}: {
-  entry: StatusEntry;
-  /** Which button the row shows; null = no button (conflicted rows). */
-  action: RowAction;
-  disabled: boolean;
-  /** Conflicted rows are not expandable (no diff kind for conflicts in v1). */
-  expandable: boolean;
-  expanded: boolean;
-  onAction: (paths: string[]) => void;
-  onToggle: () => void;
-  /** P20 §4.3: discard this row's unstaged edits (tracked rows only). Absent
-   *  (undefined) → no discard control (untracked rows, staged section). */
-  onDiscard?: (paths: string[]) => void;
-  /** P23d: open per-line blame for this row's file. Absent → no blame control
-   *  (untracked rows — not in HEAD, nothing to blame). */
-  onBlame?: (path: string) => void;
-  /** P23d: open per-file commit history. Absent → no history control. */
-  onFileHistory?: (path: string) => void;
-  /** P3b: the tree supplies directory context — render only the basename
-   *  (renames keep the full `orig → path` text; tooltips keep full paths). */
-  treeMode?: boolean;
-}) {
-  const isRename = entry.origPath !== null;
-  const pathTitle = isRename ? `${entry.origPath} → ${entry.path}` : entry.path;
-  // P3f dir-row precedent (Tree.tsx onDoubleClick → onActivateDir): double-click
-  // acts; the two single-click toggles cancel out on the diff overlay.
-  const actionHint = disabled
-    ? null
-    : action === 'stage'
-      ? 'Double-click to stage'
-      : action === 'unstage'
-        ? 'Double-click to unstage'
-        : null;
-  const title = actionHint !== null ? `${pathTitle} — ${actionHint}` : pathTitle;
-  const { dir, name } = splitPath(entry.path);
-  const pathEl = isRename ? (
-    <span className="file-path mono file-rename">
-      {entry.origPath} {'→'} {entry.path}
-    </span>
-  ) : (
-    <span className="file-path">
-      {!treeMode && dir !== null && <span className="file-dir">{dir}</span>}
-      <span className="file-name">{name}</span>
-    </span>
-  );
-  return (
-    <li
-      className={`file-row file-status-${entry.status}${expanded ? ' file-row-expanded' : ''}`}
-      title={title}
-    >
-      {expandable ? (
-        <button
-          type="button"
-          className="file-row-main"
-          aria-expanded={expanded}
-          onClick={onToggle}
-          onDoubleClick={
-            action !== null && !disabled ? () => onAction(entryPaths(entry)) : undefined
-          }
-        >
-          <span className="file-badge mono">{BADGES[entry.status]}</span>
-          {pathEl}
-        </button>
-      ) : (
-        <span className="file-row-main">
-          <span className="file-badge mono">{BADGES[entry.status]}</span>
-          {pathEl}
-        </span>
-      )}
-      {onFileHistory !== undefined && (
-        <button
-          type="button"
-          className="row-action row-action-history"
-          title="Show file history"
-          aria-label={`Show history of ${entry.path}`}
-          onClick={() => onFileHistory(entry.path)}
-        >
-          {'🕑'}
-        </button>
-      )}
-      {onBlame !== undefined && (
-        <button
-          type="button"
-          className="row-action row-action-blame"
-          title="Blame (per-line authorship)"
-          aria-label={`Blame ${entry.path}`}
-          onClick={() => onBlame(entry.path)}
-        >
-          {'👁'}
-        </button>
-      )}
-      {onDiscard !== undefined && (
-        <button
-          type="button"
-          className="row-action row-action-discard"
-          title="Discard changes (restore to the staged/committed version)"
-          aria-label={`Discard changes to ${entry.path}`}
-          disabled={disabled}
-          onClick={() => onDiscard(entryPaths(entry))}
-        >
-          {'↺'}
-        </button>
-      )}
-      {action !== null && (
-        <button
-          type="button"
-          className="row-action"
-          aria-label={`${action === 'stage' ? 'Stage' : 'Unstage'} ${entry.path}`}
-          disabled={disabled}
-          onClick={() => onAction(entryPaths(entry))}
-        >
-          {action === 'stage' ? '+' : '−'}
-        </button>
-      )}
-    </li>
-  );
-}
-
-function Section({
-  label,
-  section,
-  sectionForEntry,
-  entries,
-  danger = false,
-  rowAction,
-  actionLabel,
-  disabled,
-  expandable,
-  diffSlot,
-  listView,
-  extraAction,
-  variant,
-  onAction,
-  onToggleDiff,
-  onDiscard,
-  onDiscardForce,
-  onBlame,
-  onFileHistory,
-}: {
-  label: string;
-  /** Visual modifier: tints the section so Staged vs Changes read differently. */
-  variant: 'staged' | 'changes';
-  /** Diff-key prefix; null for the conflicts section (not expandable). */
-  section: WorkdirSection | null;
-  /** P4c: per-entry origin resolver (Changes section merges unstaged +
-   *  untracked). When provided, the row's diff key + toggle use the resolved
-   *  origin instead of the representative `section` prop. */
-  sectionForEntry?: (e: StatusEntry) => WorkdirSection;
-  entries: StatusEntry[];
-  danger?: boolean;
-  /** Per-row button kind; null = no actions in this section. */
-  rowAction: RowAction;
-  /** Section-header bulk button label ("Stage all" / "Unstage all"). */
-  actionLabel: string | null;
-  disabled: boolean;
-  expandable: boolean;
-  diffSlot: DiffSlot | null;
-  listView: ListView;
-  /** P15b: optional extra header control (e.g. the staged-section "✨ Review"). */
-  extraAction?: ReactNode;
-  onAction: (paths: string[]) => void;
-  onToggleDiff: (section: WorkdirSection, entry: StatusEntry) => void;
-  /** P20 §4.3: discard a tracked row's unstaged edits. When provided, rows whose
-   *  resolved origin is `unstaged` get a discard control; untracked rows do not. */
-  onDiscard?: (paths: string[]) => void;
-  /** Bulk force-discard: reverts modified tracked files AND deletes new/untracked
-   *  files. Changes section only — drives the "Discard all" header button and the
-   *  folder-level discard hover button. App confirms before the IPC call. */
-  onDiscardForce?: (paths: string[]) => void;
-  /** P23d: open blame for a row's file (tracked rows only). */
-  onBlame?: (path: string) => void;
-  /** P23d: open file history for a row's file (tracked rows only). */
-  onFileHistory?: (path: string) => void;
-}) {
-  // P3b §5.1: tree placement by NEW path (origPath never affects placement).
-  const nodes = useMemo(
-    () => (listView === 'tree' ? buildPathTree(entries, (e) => e.path) : null),
-    [listView, entries],
-  );
-  const renderRow = (entry: StatusEntry, treeMode: boolean) => {
-    const rowSection = sectionForEntry ? sectionForEntry(entry) : section;
-    const key = rowSection !== null ? `${rowSection}:${entry.path}` : null;
-    const expanded = key !== null && diffSlot !== null && diffSlot.key === key;
-    // P20 §4.3: offer discard only on tracked (unstaged-origin) rows.
-    const rowDiscard =
-      onDiscard !== undefined && rowSection === 'unstaged' ? onDiscard : undefined;
-    // P23d: blame/history need a committed version — offer them on tracked rows
-    // only (untracked files are not in HEAD).
-    const tracked = rowSection !== 'untracked';
-    return (
-      <FileRow
-        key={`${entry.status}:${entry.path}`}
-        entry={entry}
-        action={rowAction}
-        disabled={disabled}
-        expandable={expandable && section !== null}
-        expanded={expanded}
-        onAction={onAction}
-        onDiscard={rowDiscard}
-        onBlame={tracked ? onBlame : undefined}
-        onFileHistory={tracked ? onFileHistory : undefined}
-        onToggle={() => {
-          if (rowSection !== null) onToggleDiff(rowSection, entry);
-        }}
-        treeMode={treeMode}
-      />
-    );
-  };
-  return (
-    <section className={`status-section status-section--${variant}`}>
-      <div
-        className={
-          danger ? 'section-header section-label section-label-danger' : 'section-header section-label'
-        }
-      >
-        <span>
-          {label} ({entries.length})
-        </span>
-        {actionLabel !== null && entries.length > 0 && (
-          <button
-            type="button"
-            className="section-action"
-            disabled={disabled}
-            onClick={() => onAction(entries.flatMap(entryPaths))}
-          >
-            {actionLabel}
-          </button>
-        )}
-        {variant === 'changes' && onDiscardForce !== undefined && entries.length > 0 && (
-          <button
-            type="button"
-            className="section-action section-action-discard"
-            disabled={disabled}
-            title="Discard all changes (reverts modified files and deletes new files)"
-            onClick={() => onDiscardForce(entries.flatMap(entryPaths))}
-          >
-            Discard all
-          </button>
-        )}
-        {extraAction}
-      </div>
-      {nodes !== null ? (
-        <Tree
-          nodes={nodes}
-          leafKey={(l) => `${l.item.status}:${l.item.path}`}
-          renderLeaf={(l) => renderRow(l.item, true)}
-          onActivateDir={(leaves) => onAction(leaves.flatMap((l) => entryPaths(l.item)))}
-          dirActionHint={
-            rowAction === 'unstage' ? 'Double-click to unstage all' : 'Double-click to stage all'
-          }
-          renderDirActions={(leaves) => {
-            const paths = leaves.flatMap((l) => entryPaths(l.item));
-            return variant === 'changes' ? (
-              <DirRowActions
-                disabled={disabled}
-                onStage={() => onAction(paths)}
-                onDiscard={
-                  onDiscardForce !== undefined ? () => onDiscardForce(paths) : undefined
-                }
-              />
-            ) : (
-              <DirRowActions disabled={disabled} onUnstage={() => onAction(paths)} />
-            );
-          }}
-        />
-      ) : (
-        <ul className="file-list">{entries.map((entry) => renderRow(entry, false))}</ul>
-      )}
-    </section>
-  );
-}
-
-// P3c §8.2: lowercase spaced text of ConflictKind for the per-row badge.
-const CONFLICT_KIND_LABELS: Record<ConflictKind, string> = {
-  bothModified: 'both modified',
-  bothAdded: 'both added',
-  deletedByUs: 'deleted by us',
-  deletedByThem: 'deleted by them',
-  addedByUs: 'added by us',
-  addedByThem: 'added by them',
-  bothDeleted: 'both deleted',
-};
-
-function ConflictRow({
-  entry,
-  kind,
-  disabled,
-  expanded,
-  aiEligible,
-  aiBusy,
-  aiDisabled,
-  onResolve,
-  onToggleView,
-  onAiResolve,
-}: {
-  entry: StatusEntry;
-  /** null = kind lookup miss (conflicts list momentarily stale) — no badge. */
-  kind: ConflictKind | null;
-  disabled: boolean;
-  expanded: boolean;
-  /** P13 §8.2: AI enabled+consented+CLI installed (button shown but usable). */
-  aiEligible: boolean;
-  /** This row's AI resolution is in flight. */
-  aiBusy: boolean;
-  /** Any AI resolution in flight (only one at a time) — disables this button. */
-  aiDisabled: boolean;
-  onResolve: (r: ConflictResolution) => void;
-  onToggleView: () => void;
-  onAiResolve: () => void;
-}) {
-  const { dir, name } = splitPath(entry.path);
-  // P13 §8.2: AI only makes sense for the two text-mergeable kinds (matches the
-  // ConflictEditor mount guard); hidden for deletion/add/binary kinds.
-  const aiShown = kind === 'bothModified' || kind === 'bothAdded';
-  return (
-    <li
-      className={`file-row file-status-conflicted conflict-row${expanded ? ' file-row-expanded' : ''}`}
-      title={entry.path}
-    >
-      <button
-        type="button"
-        className="file-row-main"
-        aria-expanded={expanded}
-        onClick={onToggleView}
-      >
-        <span className="file-badge mono">{BADGES.conflicted}</span>
-        <span className="file-path">
-          {dir !== null && <span className="file-dir">{dir}</span>}
-          <span className="file-name">{name}</span>
-        </span>
-        {kind !== null && <span className="conflict-kind">{CONFLICT_KIND_LABELS[kind]}</span>}
-      </button>
-      <button
-        type="button"
-        className="row-action conflict-action"
-        title="Take our version"
-        aria-label={`Take our version of ${entry.path}`}
-        disabled={disabled}
-        onClick={() => onResolve('ours')}
-      >
-        ours
-      </button>
-      <button
-        type="button"
-        className="row-action conflict-action"
-        title="Take their version"
-        aria-label={`Take their version of ${entry.path}`}
-        disabled={disabled}
-        onClick={() => onResolve('theirs')}
-      >
-        theirs
-      </button>
-      <button
-        type="button"
-        className="row-action conflict-action"
-        title="Mark resolved (I edited the file)"
-        aria-label={`Mark ${entry.path} resolved`}
-        disabled={disabled}
-        onClick={() => onResolve('markResolved')}
-      >
-        resolved
-      </button>
-      {aiShown && (
-        <button
-          type="button"
-          className="row-action conflict-action conflict-action-ai"
-          title={aiEligible ? 'Resolve with AI' : 'Enable AI features in Settings to use this'}
-          aria-label={`Resolve ${entry.path} with AI`}
-          disabled={!aiEligible || disabled || aiDisabled}
-          onClick={onAiResolve}
-        >
-          {aiBusy ? '…' : '✨ AI'}
-        </button>
-      )}
-    </li>
-  );
-}
-
-/** P3c §8.2: conflict rows always render FLAT (no P3b tree grouping) —
- * conflicts are few; keep the section simple. */
-function ConflictsSection({
-  entries,
-  conflicts,
-  disabled,
-  diffSlot,
-  aiEligible,
-  aiResolvingPath,
-  onResolveConflict,
-  onToggleConflictView,
-  onAiResolve,
-}: {
-  entries: StatusEntry[];
-  conflicts: ConflictEntry[];
-  disabled: boolean;
-  diffSlot: DiffSlot | null;
-  aiEligible: boolean;
-  /** Path whose AI resolution is currently in flight, or null. */
-  aiResolvingPath: string | null;
-  onResolveConflict: (path: string, r: ConflictResolution) => void;
-  onToggleConflictView: (path: string) => void;
-  onAiResolve: (path: string) => void;
-}) {
-  const kindByPath = useMemo(
-    () => new Map(conflicts.map((c) => [c.path, c.kind] as const)),
-    [conflicts],
-  );
-  return (
-    <section className="status-section">
-      <div className="section-header section-label section-label-danger">
-        <span>Conflicts ({entries.length})</span>
-      </div>
-      <ul className="file-list">
-        {entries.map((entry) => (
-          <ConflictRow
-            key={entry.path}
-            entry={entry}
-            kind={kindByPath.get(entry.path) ?? null}
-            disabled={disabled}
-            expanded={diffSlot !== null && diffSlot.key === `conflict:${entry.path}`}
-            aiEligible={aiEligible}
-            aiBusy={aiResolvingPath === entry.path}
-            aiDisabled={aiResolvingPath !== null}
-            onResolve={(r) => onResolveConflict(entry.path, r)}
-            onToggleView={() => onToggleConflictView(entry.path)}
-            onAiResolve={() => onAiResolve(entry.path)}
-          />
-        ))}
-      </ul>
-    </section>
-  );
-}
+// P67 §5.6: the type moved down to the section file that consumes it; re-exported
+// here so callers keep importing it from `./StatusPanel`.
+export type { WorkdirSection } from './StatusSection';
 
 function SkeletonRows() {
   return (
@@ -512,8 +45,13 @@ export interface StatusPanelProps {
   conflicts: ConflictEntry[];
   /** P13 §8.2: aiEnabled && aiConsented && aiAvailability?.installed. */
   aiEligible: boolean;
-  /** P13 §8.3: path whose AI resolution is in flight (per-path busy), or null. */
-  aiResolvingPath: string | null;
+  /** P68d §5.4: per-path AI run state for the conflict rows' affordance. Replaces
+   *  the old `aiResolvingPath` scalar, which disabled every row during any run. */
+  aiRows: Record<string, AiRowState>;
+  /** P68d/OQ1: at the AI concurrency cap — no NEW run may start. */
+  aiAtCapacity: boolean;
+  /** P68f: the conflicts-header "Resolve all with AI" control (§6.4). */
+  aiBulk?: BulkAiControl;
   /** P15b: true while an AI explain/review call is in flight — disables Review. */
   aiAnalyzing: boolean;
   onStage(paths: string[]): void;
@@ -536,6 +74,10 @@ export interface StatusPanelProps {
   onToggleConflictView(path: string): void;
   /** P13 §8.3: request an AI resolution for one conflicted path. */
   onAiResolve(path: string): void;
+  /** P68d: re-open an already-computed proposal (never re-runs the CLI). */
+  onAiReview(path: string): void;
+  /** P68e: reveal the AI activity dock for a live run. */
+  onAiReveal?(path: string): void;
   /** P23d: open per-line blame for a tracked file (staged/unstaged rows). */
   onBlame(path: string): void;
   /** P23d: open per-file commit history for a tracked file. */
@@ -552,7 +94,9 @@ export function StatusPanel({
   listView,
   conflicts,
   aiEligible,
-  aiResolvingPath,
+  aiRows,
+  aiAtCapacity,
+  aiBulk,
   aiAnalyzing,
   onStage,
   onUnstage,
@@ -564,6 +108,8 @@ export function StatusPanel({
   onResolveConflict,
   onToggleConflictView,
   onAiResolve,
+  onAiReview,
+  onAiReveal,
   onBlame,
   onFileHistory,
 }: StatusPanelProps) {
@@ -620,19 +166,23 @@ export function StatusPanel({
       ) : (
         <>
           {snapshot.conflicted.length > 0 && (
-            <ConflictsSection
+            <StatusConflictsSection
               entries={snapshot.conflicted}
               conflicts={conflicts}
               disabled={disabled}
               diffSlot={diffSlot}
               aiEligible={aiEligible}
-              aiResolvingPath={aiResolvingPath}
+              aiRows={aiRows}
+              aiAtCapacity={aiAtCapacity}
+              aiBulk={aiBulk}
               onResolveConflict={onResolveConflict}
               onToggleConflictView={onToggleConflictView}
               onAiResolve={onAiResolve}
+              onAiReview={onAiReview}
+              onAiReveal={onAiReveal}
             />
           )}
-          <Section
+          <StatusSection
             label="Staged"
             variant="staged"
             section="staged"
@@ -661,7 +211,7 @@ export function StatusPanel({
             onBlame={onBlame}
             onFileHistory={onFileHistory}
           />
-          <Section
+          <StatusSection
             label="Changes"
             variant="changes"
             section="unstaged"

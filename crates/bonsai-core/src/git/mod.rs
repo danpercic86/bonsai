@@ -11,6 +11,13 @@ pub mod ai_operation_preview;
 pub mod ai_operation_resolve;
 pub mod ai_pr_description;
 pub mod ai_resolve;
+/// PURE bulk payload/attribution rules for a streaming resolve (P68 §6).
+pub mod ai_resolve_bulk;
+/// Streaming + bulk conflict resolve orchestration (P68 §D).
+pub mod ai_resolve_stream;
+/// The run-level event funnel `ai_resolve_stream` sequences its batches through
+/// (P68 §6.3). Private: only that module may fabricate run events.
+mod ai_resolve_stream_events;
 pub mod ai_summary;
 pub mod autostash;
 pub mod bisect;

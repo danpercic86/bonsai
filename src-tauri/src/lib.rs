@@ -18,6 +18,11 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(state::AppState::default())
         .manage(mcp::McpServerState::default())
+        // P68 §B/D7: the streaming-AI run registry (run id -> cancel/reply
+        // handles). Managed state because `ai_cancel_run` / `ai_reply_run` are
+        // SEPARATE commands from the run they control — a Tauri command cannot be
+        // aborted from JS. Cleared on exit below.
+        .manage(bonsai_core::ai::AiRunRegistry::default())
         .manage(scheduler::SchedulerState::default())
         .setup(|app| {
             // P30: seed the scheduler config from persisted settings, then
@@ -117,6 +122,9 @@ pub fn run() {
             commands::resolve_conflict_text,
             commands::check_ai_availability,
             commands::ai_resolve_conflict,
+            commands::ai_resolve_conflict_stream,
+            commands::ai_cancel_run,
+            commands::ai_reply_run,
             commands::generate_commit_message,
             commands::ai_analyze_diff,
             commands::ai_summarize_range,
@@ -234,6 +242,11 @@ pub fn run() {
             // before the app process goes away.
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 mcp::shutdown(&app.state::<mcp::McpServerState>());
+                // P68 §B/D7: flip every cancel flag AND kill the recorded child
+                // TREES. A streaming run has NO wall-clock deadline by design, so
+                // without this a `claude` child (and the node process behind the
+                // npm shim) could outlive the window indefinitely.
+                app.state::<bonsai_core::ai::AiRunRegistry>().cancel_all();
             }
         });
 }

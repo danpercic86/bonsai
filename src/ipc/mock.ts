@@ -8,6 +8,7 @@ import { branchHandlers } from './mock/handlers/branches';
 import { remotesSyncHandlers } from './mock/handlers/remotesSync';
 import { mergeHandlers } from './mock/handlers/merge';
 import { aiHandlers } from './mock/handlers/ai';
+import { aiStreamHandlers } from './mock/handlers/aiStream';
 import { composeHandlers } from './mock/handlers/compose';
 import { rebaseHandlers } from './mock/handlers/rebase';
 import { bisectHistoryHandlers } from './mock/handlers/bisectHistory';
@@ -39,6 +40,7 @@ export const mockIpc: IpcApi = {
   ...remotesSyncHandlers,
   ...mergeHandlers,
   ...aiHandlers,
+  ...aiStreamHandlers,
   ...composeHandlers,
   ...rebaseHandlers,
   ...bisectHistoryHandlers,

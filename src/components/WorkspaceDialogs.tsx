@@ -1,3 +1,4 @@
+import { BulkAiConfirmDialog } from './dialogs/BulkAiConfirmDialog';
 import { DestructiveDialogs } from './dialogs/DestructiveDialogs';
 import { HookOutputDialog } from './HookOutputDialog';
 import { StashDialogs } from './dialogs/StashDialogs';
@@ -6,6 +7,7 @@ import { RemoteDialogs } from './dialogs/RemoteDialogs';
 import { WorktreeDialogs } from './dialogs/WorktreeDialogs';
 import { CleanupDialogs } from './dialogs/CleanupDialogs';
 import type { ContextMenuItem } from './ContextMenu';
+import type { BulkAiConfirmState } from './repoWorkspace/useBulkAiResolve';
 import type {
   AiDigestRange,
   BranchInfo,
@@ -193,6 +195,10 @@ export interface WorkspaceDialogsProps {
 
   menu: { x: number; y: number; items: ContextMenuItem[] } | null;
   closeMenu(): void;
+
+  /** P68f: the confirm gate in front of "Resolve all with AI" (one run, N files,
+   *  real spend). State lives in `useBulkAiResolve`. */
+  bulkAiConfirm: BulkAiConfirmState;
 }
 
 /** P3e: the full trailing dialog/modal cluster + graph context menu for a
@@ -341,6 +347,8 @@ export function WorkspaceDialogs(props: WorkspaceDialogsProps) {
         menu={props.menu}
         closeMenu={props.closeMenu}
       />
+
+      <BulkAiConfirmDialog {...props.bulkAiConfirm} />
     </>
   );
 }

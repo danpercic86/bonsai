@@ -522,6 +522,11 @@ export function drawWipRow(ctx: CanvasRenderingContext2D, layout: GraphLayout,
   wip: WipSummary, vp: Viewport /* raw scrollTop */, theme: Theme, hovered: boolean): void;
 ```
 
+> **SUPERSEDED by P67 §1** (applies to the bullet + signature above) — the `scrollTop < RH + 56`
+> gate now applies ONLY to the WIP marker circle, the hover background and the
+> "Uncommitted changes (n)" label. The dashed connector moved out of `drawWipRow` into
+> `drawHeadGuide`, which paints at every scroll position.
+
   - `headLane = layout.headIndex !== null ? layout.nodes[layout.headIndex].lane : 0`;
     `x = laneX(headLane)`, `y = RH/2 - vp.scrollTop`.
   - Hover background `theme.bg2` full-width when `hovered`.
@@ -529,6 +534,13 @@ export function drawWipRow(ctx: CanvasRenderingContext2D, layout: GraphLayout,
     `laneColors[headLane % 10]`, vertical from `(x, y)` to
     `(x, headIndex*RH + RH/2 - layoutScrollTop)` clamped to `[-56, height+56]`; skip when
     `headIndex === null`.
+
+  > **SUPERSEDED by P67 §1** — the connector is now `drawHeadGuide(ctx, layout, guide, theme, m)`
+  > fed by the pure `headGuide()` in `src/graph/viewport.ts`: BOTH ends are clamped to
+  > `[-8, height + 8]` (not just the target), a `lineDashOffset` keeps the dash phase anchored to
+  > content, the target stops at the HEAD avatar halo instead of painting over it, the anchor falls
+  > back to `-8` on a clean tree (`wip === null`), and an off-screen HEAD adds
+  > `drawHeadEdgeMarker`. Scroll-independent.
   - Marker: dashed circle r=4 (same dash), stroke `theme.warning`, fill `theme.bg0`; reset
     `setLineDash([])` after.
   - Text at the standard text column x: `Uncommitted changes` in `summaryFont`, `theme.text2`,

@@ -93,6 +93,9 @@ export interface P7DevHooks {
     m: import('./metrics').EffectiveMetrics,
   ): boolean;
   relativeDate(ts: number, now: number): string;
+  /** P67 §1.5: pure HEAD-guideline geometry (the headless pane cannot see the
+   *  stroked line, so the harness asserts this instead). */
+  headGuide: typeof import('./viewport').headGuide;
 }
 
 /** P7 §10 item 2: pure-fn self-test result the orchestrator reads. */

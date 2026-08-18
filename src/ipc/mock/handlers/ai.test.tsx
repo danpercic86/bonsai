@@ -51,7 +51,7 @@ describe('aiResolveConflict eligibility', () => {
     expect(proposal.proposedText.length).toBeGreaterThan(0);
     // Read-only: the conflict is still unresolved.
     expect(requireRepo(repoId).status.conflicted).toEqual(before);
-    expect(await run(mergeHandlers.listConflicts(repoId))).toHaveLength(2);
+    expect(await run(mergeHandlers.listConflicts(repoId))).toHaveLength(3);
   });
 
   it('rejects aiFailed for deletedByThem and for non-conflicted paths', async () => {

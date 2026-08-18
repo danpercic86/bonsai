@@ -18,6 +18,7 @@ const SHORTCUTS: { keys: string[]; action: string }[] = [
   { keys: ['Ctrl', 'Shift', 'F'], action: 'Fetch all remotes' },
   { keys: ['Ctrl', 'Shift', 'P'], action: 'Pull (fast-forward only)' },
   { keys: ['Ctrl', 'Shift', 'U'], action: 'Push current branch' },
+  { keys: ['Ctrl', 'Shift', 'A'], action: 'AI activity dock' },
   { keys: ['↑', '↓'], action: 'Move commit selection' },
   { keys: ['Page Up', 'Page Down'], action: 'Move commit selection by one screenful' },
   { keys: ['Home'], action: 'Select the topmost commit' },

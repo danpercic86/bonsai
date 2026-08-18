@@ -1002,7 +1002,7 @@
 
     /// Patching only `theme` leaves `pane_widths`/`list_view` untouched, and
     /// each other single-field patch is equally partial (P2a contract §3.4.3;
-    /// P3b contract §2.1).
+    /// P3b contract §2.1; P67 §7.2 for `panel_density`).
     #[test]
     fn set_ui_settings_patch_is_partial() {
         let mut s = settings::Settings::default();
@@ -1063,6 +1063,39 @@
             }
         );
 
+        // Give `graph` a NON-default value first. Without this, asserting
+        // `graph == GraphPrefs::default()` after the density patch would only
+        // prove the patch never *introduced* a graph change — not that it left
+        // an existing one alone. 40 is inside the row-height clamp range, so
+        // the write-side clamp cannot rewrite it and muddy the assertion.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                graph: Some(settings::GraphPrefs {
+                    row_height: 40,
+                    ..settings::GraphPrefs::default()
+                }),
+                ..Default::default()
+            },
+        );
+        let graph_before = s.graph; // GraphPrefs is Copy
+        assert_ne!(graph_before, settings::GraphPrefs::default());
+
+        // P67 §7.2: patching only `panel_density` leaves list_view / graph /
+        // theme untouched — the independence claim behind D6 (density is NOT a
+        // graph pref and is never routed through `clamp_graph_prefs`).
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                panel_density: Some(settings::PanelDensity::Compact),
+                ..Default::default()
+            },
+        );
+        assert_eq!(s.panel_density, settings::PanelDensity::Compact);
+        assert_eq!(s.list_view, settings::ListView::Flat); // from the patch above
+        assert_eq!(s.graph, graph_before); // the non-default survives untouched
+        assert_eq!(s.theme, ThemeChoice::Light);
+
         // Out-of-range pane widths in a patch get clamped on write.
         apply_patch(
             &mut s,
@@ -1078,6 +1111,93 @@
         );
         assert_eq!(s.pane_widths.sidebar, settings::SIDEBAR_MIN);
         assert_eq!(s.pane_widths.right_panel, settings::RIGHT_PANEL_MAX);
+    }
+
+    /// P68 §8.3: each of the ten streaming-AI knobs patches INDEPENDENTLY of
+    /// `graph` / `listView` / `panelDensity` (and of each other), is clamped on
+    /// write, and keeps its documented `0` sentinels — a plain `clamp` would turn
+    /// "no hard cap" into 60 s and quietly restore the deadline P68 removes.
+    #[test]
+    fn set_ui_settings_patch_ai_run_fields() {
+        let mut s = settings::Settings::default();
+        // Non-default neighbours first, so "untouched" means something.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                list_view: Some(settings::ListView::Flat),
+                panel_density: Some(settings::PanelDensity::Compact),
+                graph: Some(settings::GraphPrefs {
+                    row_height: 40,
+                    ..settings::GraphPrefs::default()
+                }),
+                ..Default::default()
+            },
+        );
+        let graph_before = s.graph;
+
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                ai_idle_timeout_secs: Some(600),
+                ..Default::default()
+            },
+        );
+        assert_eq!(s.ai_idle_timeout_secs, 600);
+        // Nothing else moved — not even the other nine AI fields.
+        assert_eq!(s.ai_hard_cap_secs, 0);
+        assert_eq!(s.ai_max_turns, bonsai_core::ai::DEFAULT_MAX_TURNS);
+        assert!(s.ai_stream_log);
+        assert_eq!(s.ai_conflict_tools, settings::AiConflictTools::ReadOnly);
+        assert_eq!(s.list_view, settings::ListView::Flat);
+        assert_eq!(s.panel_density, settings::PanelDensity::Compact);
+        assert_eq!(s.graph, graph_before);
+
+        // Each remaining field patches on its own.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                ai_conflict_tools: Some(settings::AiConflictTools::None),
+                ai_stream_log: Some(false),
+                ai_include_partial_messages: Some(true),
+                ai_dock_collapsed: Some(true),
+                ai_dock_height: Some(320),
+                ai_bulk_max_bytes: Some(250_000),
+                ai_max_budget_usd: Some(2.5),
+                ai_hard_cap_secs: Some(900),
+                ai_max_turns: Some(3),
+                ..Default::default()
+            },
+        );
+        assert_eq!(s.ai_conflict_tools, settings::AiConflictTools::None);
+        assert!(!s.ai_stream_log);
+        assert!(s.ai_include_partial_messages);
+        assert!(s.ai_dock_collapsed);
+        assert_eq!(s.ai_dock_height, 320);
+        assert_eq!(s.ai_bulk_max_bytes, 250_000);
+        assert_eq!(s.ai_max_budget_usd, 2.5);
+        assert_eq!(s.ai_hard_cap_secs, 900);
+        assert_eq!(s.ai_max_turns, 3);
+        assert_eq!(s.ai_idle_timeout_secs, 600, "the earlier patch survives");
+
+        // Out-of-range values are clamped on write; the `0` sentinels are not.
+        apply_patch(
+            &mut s,
+            UiSettingsPatch {
+                ai_idle_timeout_secs: Some(0),
+                ai_hard_cap_secs: Some(0),
+                ai_max_turns: Some(999),
+                ai_bulk_max_bytes: Some(1),
+                ai_max_budget_usd: Some(1e9),
+                ai_dock_height: Some(9_000),
+                ..Default::default()
+            },
+        );
+        assert_eq!(s.ai_idle_timeout_secs, 0, "0 = watchdog disabled");
+        assert_eq!(s.ai_hard_cap_secs, 0, "0 = unbounded");
+        assert_eq!(s.ai_max_turns, settings::AI_MAX_TURNS_MAX);
+        assert_eq!(s.ai_bulk_max_bytes, settings::AI_BULK_MAX_BYTES_MIN);
+        assert_eq!(s.ai_max_budget_usd, settings::AI_MAX_BUDGET_USD_MAX);
+        assert_eq!(s.ai_dock_height, settings::AI_DOCK_HEIGHT_MAX);
     }
 
     /// `auto_fetch` and `graph` patch independently, leave the other fields

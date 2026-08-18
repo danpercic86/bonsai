@@ -1,0 +1,108 @@
+# Bonsai — cargo-deny configuration (CI job `audit`).
+#
+# Four checks run in CI: advisories, bans, licenses, sources.
+#   cargo deny --all-features check
+#
+# Deliberately calibrated to be GREEN on today's dependency graph — the point of
+# landing it is that any NEW advisory, copyleft license, or unknown source turns
+# CI red. It is not a cleanup tool: vendored libgit2 plus the Tauri tree pull in
+# a very wide graph, so `bans.multiple-versions` is intentionally not an error.
+
+[graph]
+# All optional features on, matching how CI builds the workspace.
+all-features = true
+# Only the platforms we ship (see release.yml). Keeps Redox/WASM/Android-only
+# crates out of the graph so their licenses/advisories are not evaluated.
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+  "x86_64-apple-darwin",
+  "aarch64-apple-darwin",
+]
+
+[output]
+feature-depth = 1
+
+# ---------------------------------------------------------------------------
+# Security advisories (RustSec).
+# ---------------------------------------------------------------------------
+[advisories]
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# Unmaintained crates are pulled in transitively by tauri/libgit2 and cannot be
+# fixed here; surfaced as warnings instead of failing the gate.
+unmaintained = "workspace"
+yanked = "deny"
+# Any allowlisted advisory needs an ID + a reason + a removal trigger.
+ignore = []
+
+# ---------------------------------------------------------------------------
+# Licenses: permissive-only allowlist. A copyleft/unknown license fails.
+# ---------------------------------------------------------------------------
+[licenses]
+allow = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "MIT",
+  "MIT-0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "CC0-1.0",
+  "Unicode-3.0",
+  "MPL-2.0",   # file-level copyleft only; used by a few transitive crates.
+  "BSL-1.0",
+  "CDLA-Permissive-2.0",
+  "Unlicense",
+  "0BSD",
+]
+confidence-threshold = 0.8
+# Bonsai's own crates carry no `license` field in their manifests (they are
+# never published to crates.io); `private.ignore` does not cover them because
+# it only exempts members explicitly marked `publish = false`. The clarify
+# blocks below state what the repo-root LICENSE already says: MIT.
+private = { ignore = true }
+
+[[licenses.clarify]]
+crate = "bonsai"
+expression = "MIT"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bonsai-core"
+expression = "MIT"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bonsai-mcp"
+expression = "MIT"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bonsai-forge"
+expression = "MIT"
+license-files = []
+
+# ---------------------------------------------------------------------------
+# Duplicate / banned crates.
+# ---------------------------------------------------------------------------
+[bans]
+# The Tauri + libgit2 + windows-sys trees legitimately carry many duplicated
+# versions; failing on that would mean vendoring patches we do not control.
+multiple-versions = "allow"
+# The four workspace crates depend on each other by `path` with no version
+# requirement, which cargo-deny counts as a wildcard; `allow-wildcard-paths`
+# does not help because it only exempts crates marked `publish = false`.
+# Bonsai is an application, never published to crates.io, so this cannot be a
+# hard error. Re-tighten to "deny" if the crates ever gain versioned deps.
+wildcards = "allow"
+deny = []
+
+# ---------------------------------------------------------------------------
+# Where crates may come from.
+# ---------------------------------------------------------------------------
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

@@ -6,7 +6,7 @@ import { ComparePanel } from './ComparePanel';
 import { OpBanner } from './OpBanner';
 import { PrPanel } from './PrPanel';
 import { StatusPanel } from './StatusPanel';
-import { StashSplitButton } from './StashSplitButton';
+import { RightPanelActionsRow } from './RightPanelActionsRow';
 import { shortOid } from './workspaceUtils';
 import type {
   AiAnalysisMode,
@@ -16,6 +16,7 @@ import type {
   GraphLayout,
   HeadInfo,
   ListView,
+  PanelDensity,
   PrNavRequest,
   RepoOpState,
   SigningStatus,
@@ -62,6 +63,10 @@ export interface WorkspaceRightPanelProps {
   compareError: ComparePanelProps['error'];
   headBranch: BranchInfo | null;
   listView: ListView;
+  /** P67 §4: right-panel density — rendered as `data-density` on the `<aside>`
+   *  (D7: a prop, not `documentElement.dataset`, so the cascade stays scoped to
+   *  this panel and the value is unit-testable by `render()`). */
+  panelDensity: PanelDensity;
   scope: ComparePanelProps['scope'];
   setScope: ComparePanelProps['onSelectScope'];
   clearCompare(): void;
@@ -81,7 +86,11 @@ export interface WorkspaceRightPanelProps {
   statusLoading: boolean;
   statusError: StatusPanelProps['error'];
   diffSlot: StatusPanelProps['diffSlot'];
-  aiResolvingPath: StatusPanelProps['aiResolvingPath'];
+  aiRows: StatusPanelProps['aiRows'];
+  aiAtCapacity: StatusPanelProps['aiAtCapacity'];
+  /** P68f: ONE control, rendered by BOTH entry points — the conflicts-section header
+   *  and the merge banner (OQ4). Same object ⇒ they can never disagree. */
+  aiBulk?: StatusPanelProps['aiBulk'];
   aiPanelLoading: boolean;
   onStage: StatusPanelProps['onStage'];
   onUnstage: StatusPanelProps['onUnstage'];
@@ -91,6 +100,8 @@ export interface WorkspaceRightPanelProps {
   onResolveConflict: StatusPanelProps['onResolveConflict'];
   onToggleConflictView: StatusPanelProps['onToggleConflictView'];
   onAiResolve: StatusPanelProps['onAiResolve'];
+  onAiReview: StatusPanelProps['onAiReview'];
+  onAiReveal?: StatusPanelProps['onAiReveal'];
   onBlame: StatusPanelProps['onBlame'];
   onFileHistory: StatusPanelProps['onFileHistory'];
   /** P34: stash the worktree per scope (staging-panel split button + sidebar). */
@@ -145,6 +156,7 @@ export function WorkspaceRightPanel({
   compareError,
   headBranch,
   listView,
+  panelDensity,
   scope,
   setScope,
   clearCompare,
@@ -162,7 +174,9 @@ export function WorkspaceRightPanel({
   statusLoading,
   statusError,
   diffSlot,
-  aiResolvingPath,
+  aiRows,
+  aiAtCapacity,
+  aiBulk,
   aiPanelLoading,
   onStage,
   onUnstage,
@@ -172,6 +186,8 @@ export function WorkspaceRightPanel({
   onResolveConflict,
   onToggleConflictView,
   onAiResolve,
+  onAiReview,
+  onAiReveal,
   onBlame,
   onFileHistory,
   onCreateStash,
@@ -197,7 +213,7 @@ export function WorkspaceRightPanel({
   prNav,
 }: WorkspaceRightPanelProps) {
   return (
-    <aside className="right-panel" style={{ width: rightPanelWidth }}>
+    <aside className="right-panel" data-density={panelDensity} style={{ width: rightPanelWidth }}>
       <div className="right-pane-tabs" role="tablist" aria-label="Right panel view">
         <button
           type="button"
@@ -233,6 +249,7 @@ export function WorkspaceRightPanel({
         onBisectMark={onBisectMark}
         onBisectSkip={onBisectSkip}
         bisectSummaries={bisectSummaries}
+        aiBulk={aiBulk}
       />
       {compare !== null ? (
         <ComparePanel
@@ -277,7 +294,9 @@ export function WorkspaceRightPanel({
             listView={listView}
             conflicts={conflicts}
             aiEligible={aiEligible}
-            aiResolvingPath={aiResolvingPath}
+            aiRows={aiRows}
+            aiAtCapacity={aiAtCapacity}
+            aiBulk={aiBulk}
             aiAnalyzing={aiPanelLoading}
             onStage={onStage}
             onUnstage={onUnstage}
@@ -293,12 +312,28 @@ export function WorkspaceRightPanel({
             onResolveConflict={onResolveConflict}
             onToggleConflictView={onToggleConflictView}
             onAiResolve={onAiResolve}
+            onAiReview={onAiReview}
+            onAiReveal={onAiReveal}
             onBlame={onBlame}
             onFileHistory={onFileHistory}
           />
+          {/* P67 §5.1: ONE slim row replaces the former stash split button +
+              amend affordance (two `flex: none` rows, each with its own
+              border-top and padding). Amend stays owned here (D4) — CommitBox is
+              keyed on it below, so a checkbox inside that subtree would lose
+              keyboard focus on every toggle. */}
           {opState.kind === 'none' && head !== null && !head.unborn && (
-            <StashSplitButton
-              disabled={
+            <RightPanelActionsRow
+              amend={amend}
+              onToggleAmend={onToggleAmend}
+              busy={mutating}
+              showAmendPushWarning={
+                amend &&
+                headBranch !== null &&
+                headBranch.upstream !== null &&
+                headBranch.ahead === 0
+              }
+              stashDisabled={
                 mutating ||
                 ((status?.staged.length ?? 0) === 0 &&
                   (status?.unstaged.length ?? 0) === 0 &&
@@ -311,27 +346,6 @@ export function WorkspaceRightPanel({
               hasUntracked={(status?.untracked.length ?? 0) > 0}
               onStash={onCreateStash}
             />
-          )}
-          {opState.kind === 'none' && head !== null && !head.unborn && (
-            <div className="amend-affordance">
-              <label className="amend-toggle">
-                <input
-                  type="checkbox"
-                  checked={amend}
-                  disabled={mutating}
-                  onChange={(e) => void onToggleAmend(e.target.checked)}
-                />
-                <span>Amend last commit</span>
-              </label>
-              {amend &&
-                headBranch !== null &&
-                headBranch.upstream !== null &&
-                headBranch.ahead === 0 && (
-                  <div className="amend-push-warning" role="note">
-                    This commit is already pushed — amending rewrites published history.
-                  </div>
-                )}
-            </div>
           )}
           <CommitBox
             key={

@@ -1,2 +1,13 @@
 allowBuilds:
   esbuild: true
+
+# Supply-chain audit allowlist (CI job `audit` runs `pnpm audit --audit-level high`).
+# Only add entries that are dev-tooling-only AND unfixable without a dependency
+# bump; each needs a reason + a re-check trigger. Everything else must be fixed.
+auditConfig:
+  ignoreGhsas:
+    # nanoid <3.3.18 — "custom generators can loop indefinitely when size is 0".
+    # Reached only via vite/vitest -> postcss -> nanoid, i.e. build/test tooling
+    # that never runs in the shipped app, and never with a caller-supplied size.
+    # Drop this entry once vite/vitest ship a postcss with nanoid >=3.3.18.
+    - GHSA-2v37-7h3g-55p8

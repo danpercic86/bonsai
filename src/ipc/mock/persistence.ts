@@ -1,6 +1,7 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
 import { AUTO_FETCH_INTERVAL_MAX, AUTO_FETCH_INTERVAL_MIN, AVATAR_RADIUS_MAX, AVATAR_RADIUS_MIN, HEALTH_REFRESH_INTERVAL_MAX, HEALTH_REFRESH_INTERVAL_MIN, LANE_WIDTH_MAX, LANE_WIDTH_MIN, ROW_HEIGHT_MAX, ROW_HEIGHT_MIN } from '../../settings/ranges';
-import type { AiAutonomy, AutoFetchSettings, GraphDateBasis, GraphPrefs, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, RecentRepo, SessionState, Theme, UiSettings } from '../types';
+import { DEFAULT_AI_RUN_SETTINGS, parseAiRunSettings } from './aiRunSettings';
+import type { AiAutonomy, AutoFetchSettings, GraphDateBasis, GraphPrefs, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, PanelDensity, RecentRepo, SessionState, Theme, UiSettings } from '../types';
 
 // Recents persistence (P1 contract §3.4): localStorage-backed so the harness
 // reopen-on-launch story is verifiable — open once, reload, auto-reopen.
@@ -77,6 +78,8 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
   theme: 'dark',
   paneWidths: { sidebar: 240, rightPanel: 380 },
   listView: 'tree',
+  // P67 §4: right-panel density; 'cozy' is the tightened default.
+  panelDensity: 'cozy',
   autoFetch: { enabled: false, intervalMinutes: 5 },
   // P30: backend-scheduler healthRefresh signal; disabled by default.
   healthRefresh: { enabled: false, intervalMinutes: 30 },
@@ -131,6 +134,8 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
   // P49: external-tool templates default to "" ⇒ per-OS auto-detect.
   terminalCommand: '',
   editorCommand: '',
+  // P68 §8.3: the ten streaming AI-run knobs (defaults mirror settings.rs).
+  ...DEFAULT_AI_RUN_SETTINGS,
 };
 
 export function clampPaneWidths(w: PaneWidths): PaneWidths {
@@ -214,6 +219,7 @@ export function readUiSettings(): UiSettings {
           : DEFAULT_UI_SETTINGS.paneWidths.rightPanel,
     });
     const listView: ListView = parsed.listView === 'flat' ? 'flat' : 'tree';
+    const panelDensity: PanelDensity = parsed.panelDensity === 'compact' ? 'compact' : 'cozy';
     const autoFetch = clampAutoFetch({
       enabled:
         typeof parsed.autoFetch?.enabled === 'boolean'
@@ -314,10 +320,14 @@ export function readUiSettings(): UiSettings {
       typeof parsed.editorCommand === 'string'
         ? parsed.editorCommand
         : DEFAULT_UI_SETTINGS.editorCommand;
+    // P68 §8.3 (additive, like the P13 AI fields): per-field tolerant parse +
+    // the clamp mirror; a pre-P68 blob loads every default.
+    const aiRun = parseAiRunSettings(parsed);
     return {
       theme,
       paneWidths,
       listView,
+      panelDensity,
       autoFetch,
       healthRefresh,
       graph,
@@ -331,6 +341,7 @@ export function readUiSettings(): UiSettings {
       profiles,
       terminalCommand,
       editorCommand,
+      ...aiRun,
     };
   } catch {
     return structuredClone(DEFAULT_UI_SETTINGS);

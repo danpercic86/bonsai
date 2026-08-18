@@ -1,17 +1,20 @@
 import { ipc } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
-import { hasUnresolvedMarkers } from '../../utils/conflictRegions';
 import { COMMIT_HOOK_CANCELED } from '../commitPushSignal';
-import type { AiAutonomy, AiResolveProposal, ConflictResolution } from '../../ipc';
+import type { ConflictResolution } from '../../ipc';
 import type { DiffSlot } from '../StatusPanel';
 import type { BaseActionDeps, Setter } from './types';
 
-/** P3c merge + conflict handling, incl. P13 §8.3 AI conflict resolution. */
+/** P3c merge + conflict handling.
+ *
+ *  P68d moved AI conflict resolution OUT of here into `useAiRuns.ts`: the old
+ *  `handleAiResolveConflict` awaited the CLI *behind* a `fileDiffReqId` bump, so any
+ *  diff opened during the run discarded the finished proposal (user item 5, part b).
+ *  What is left is `openAiProposal`, which guards only a fast local `getConflict` —
+ *  losing that race costs the editor SLOT, never the proposal. */
 export function useMergeActions(
   deps: BaseActionDeps & {
     refreshAll: () => Promise<void>;
-    aiConflictAutonomy: AiAutonomy;
-    setAiResolvingPath: Setter<string | null>;
     setDiffSlot: Setter<DiffSlot | null>;
     fileDiffReqId: { current: number };
     /** P59a: wrap the merge commit so a `hookRejected` opens the
@@ -22,17 +25,8 @@ export function useMergeActions(
     ) => Promise<void>;
   },
 ) {
-  const {
-    repoId,
-    pushToast,
-    setMutating,
-    refreshAll,
-    aiConflictAutonomy,
-    setAiResolvingPath,
-    setDiffSlot,
-    fileDiffReqId,
-    runWithHookGate,
-  } = deps;
+  const { repoId, pushToast, setMutating, refreshAll, setDiffSlot, fileDiffReqId, runWithHookGate } =
+    deps;
 
   async function handleMergeBranch(name: string) {
     setMutating(true);
@@ -93,12 +87,31 @@ export function useMergeActions(
   }
 
   // P12 §4.3: stage user-authored resolved text from the ConflictEditor.
-  async function handleResolveConflictText(path: string, content: string): Promise<void> {
+  //
+  // The single WRITER for a resolved body (D4), which is why the AI store routes
+  // `autoResolve` through it rather than calling `resolveConflictText` itself.
+  // `successMessage` lets that caller keep the P13 copy ("Resolved <path> with AI —
+  // review the staged result") instead of adding a second toast; `null` suppresses the
+  // success toast entirely, which is how a bulk AI stage replaces N per-file toasts
+  // with one summary (errors still toast — a failure is always per-file news).
+  //
+  // P68f: `deferRefresh` skips the `refreshAll()` so a caller staging SEVERAL files
+  // can do ONE refresh after the loop. Before that flag, an N-file bulk `autoResolve`
+  // ran N full refreshes (status + graph + branches …) back to back — a P68d nit that
+  // only became visible once bulk existed.
+  async function handleResolveConflictText(
+    path: string,
+    content: string,
+    successMessage?: string | null,
+    deferRefresh = false,
+  ): Promise<void> {
     setMutating(true);
     try {
       await ipc.resolveConflictText(repoId, path, content);
-      await refreshAll();
-      pushToast('success', `Staged resolution for ${path}`);
+      if (!deferRefresh) await refreshAll();
+      if (successMessage !== null) {
+        pushToast('success', successMessage ?? `Staged resolution for ${path}`);
+      }
     } catch (e) {
       pushToast('error', errorMessage(e));
       throw e;
@@ -107,64 +120,37 @@ export function useMergeActions(
     }
   }
 
-  // P13 §8.3: AI conflict resolution for one path.
-  async function handleAiResolveConflict(path: string) {
-    setAiResolvingPath(path);
-    let proposal: AiResolveProposal;
-    try {
-      proposal = await ipc.aiResolveConflict(repoId, path);
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-      setAiResolvingPath(null);
-      return;
-    }
-    // Safety net (P13): never auto-stage a body that still carries conflict
-    // markers. The backend resolve_conflict_text trusts its input (git-add
-    // model), so a rare markerful model output would otherwise be staged
-    // silently in autoResolve. When that happens, fall through to the review
-    // editor with a warning instead — the user still resolves it by hand.
-    const markerful = hasUnresolvedMarkers(proposal.proposedText);
-    if (aiConflictAutonomy === 'autoResolve' && !markerful) {
-      setMutating(true);
-      try {
-        await ipc.resolveConflictText(repoId, path, proposal.proposedText);
-        await refreshAll();
-        pushToast('success', `Resolved ${path} with AI — review the staged result`);
-      } catch (e) {
-        pushToast('error', errorMessage(e));
-      } finally {
-        setMutating(false);
-        setAiResolvingPath(null);
-      }
-      return;
-    }
-    if (aiConflictAutonomy === 'autoResolve' && markerful) {
-      pushToast('error', `AI left unresolved markers in ${path} — opened for review`);
-    }
-    // proposeReview (or the autoResolve marker fallback): open the proposal in
-    // the conflict editor for review/edit.
-    // Guard the getConflict await with the shared fileDiffReqId (P13, same
-    // recipe as fetchConflictSlot): if the user opens another diff during the
-    // fetch, that bumps the id and we bail rather than clobber their slot.
+  /**
+   * P68d §5.3: open an ALREADY-COMPUTED AI proposal in the center-pane review
+   * editor.
+   *
+   * The `fileDiffReqId` guard wraps ONLY the fast local `getConflict` — never a CLI
+   * call. That is the binding rule from §5.1: the guard protects the diff SLOT, so a
+   * superseded open simply returns, leaving the proposal in the run store where the
+   * row's `✓ review` affordance can re-open it. Before P68d the same guard wrapped
+   * the multi-second `aiResolveConflict` await, which is how a file switch destroyed
+   * a finished proposal.
+   *
+   * Slot key `ai-proposal:<path>` is unchanged, so ConflictEditor/DiffOverlay need
+   * no change.
+   */
+  async function openAiProposal(path: string, proposedText: string): Promise<void> {
     const id = ++fileDiffReqId.current;
     try {
       const file = await ipc.getConflict(repoId, path);
       if (id !== fileDiffReqId.current) return;
-      // Synthesize a ConflictFile carrying the AI's markerless body so the
-      // editor shows the proposed result; ours/theirs are kept for split mode.
-      const synthesized = { ...file, text: proposal.proposedText };
+      // Synthesize a ConflictFile carrying the proposed body so the editor shows the
+      // result; ours/theirs are kept for split mode.
       setDiffSlot({
         key: `ai-proposal:${path}`,
         state: 'ready',
         diff: null,
-        conflict: synthesized,
+        conflict: { ...file, text: proposedText },
         error: null,
       });
     } catch (e) {
       if (id !== fileDiffReqId.current) return;
       pushToast('error', errorMessage(e));
-    } finally {
-      setAiResolvingPath(null);
     }
   }
 
@@ -212,7 +198,7 @@ export function useMergeActions(
     handleMergeBranch,
     handleResolveConflict,
     handleResolveConflictText,
-    handleAiResolveConflict,
+    openAiProposal,
     handleCommitMerge,
     handleAbortMerge,
   };
