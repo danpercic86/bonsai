@@ -7,6 +7,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { WorkspaceToolbar } from './WorkspaceToolbar';
 import type { WorkspaceToolbarProps } from './WorkspaceToolbar';
 import type { BranchInfo, JobStatus } from '../ipc';
+import { shortcutLabel } from '../utils/platform';
 
 const HEAD: BranchInfo = {
   name: 'main',
@@ -108,12 +109,13 @@ describe('WorkspaceToolbar', () => {
     renderBar();
     expect(btn('↑ Push')).toHaveAttribute(
       'title',
-      'Push main to origin/main (Ctrl+Shift+U)',
+      `Push main to origin/main (${shortcutLabel('Mod+Shift+U')})`,
     );
     renderBar({ headBranch: { ...HEAD, upstream: null } });
-    expect(
-      screen.getAllByRole('button', { name: '↑ Push' })[1],
-    ).toHaveAttribute('title', 'Push main to origin/main and set upstream (Ctrl+Shift+U)');
+    expect(screen.getAllByRole('button', { name: '↑ Push' })[1]).toHaveAttribute(
+      'title',
+      `Push main to origin/main and set upstream (${shortcutLabel('Mod+Shift+U')})`,
+    );
   });
 
   it('force-push: caret disabled without an upstream; menu item fires onForcePush', () => {

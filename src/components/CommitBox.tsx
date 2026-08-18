@@ -254,7 +254,9 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
         disabled={submitting !== null || blocked}
         onChange={(e) => setMessage(e.target.value)}
         onKeyDown={(e) => {
-          if (e.ctrlKey && e.key === 'Enter') {
+          // macOS: Cmd+Enter must commit too — same `ctrlKey || metaKey` idiom
+          // as App.tsx and useWorkspaceKeyboard.ts.
+          if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
             e.preventDefault();
             submit();
           }

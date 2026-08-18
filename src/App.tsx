@@ -12,8 +12,8 @@ import { RepoHealthPanel } from './components/RepoHealthPanel';
 import { OnboardingOverlay } from './components/OnboardingOverlay';
 import { EmptyState } from './components/EmptyState';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
-import { TabStrip } from './components/TabStrip';
-import type { TabMeta } from './components/TabStrip';
+import { TabStrip, type TabMeta } from './components/TabStrip';
+import { shortcutLabel } from './utils/platform';
 import { Toasts } from './components/Toasts';
 import type { Toast, ToastTone } from './components/Toasts';
 import { UpdateNotification } from './components/UpdateNotification';
@@ -591,7 +591,7 @@ export default function App() {
       {
         id: 'app.openRepo',
         title: 'Open repository…',
-        hint: 'Ctrl+O',
+        hint: shortcutLabel('Mod+O'),
         group: 'action',
         keywords: 'folder browse',
         run: () => void handleOpenRepository(),

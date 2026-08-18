@@ -10,6 +10,7 @@ import type { DiffOverlayMeta } from './DiffOverlay';
 import { ErrorBoundary } from './ErrorBoundary';
 import { FileHistoryView } from './FileHistoryView';
 import { ReflogView } from './ReflogView';
+import { shortcutLabel } from '../utils/platform';
 import type { DiffSlot } from './StatusPanel';
 import type { UseCommitSearch } from './repoWorkspace/useCommitSearch';
 import type { UseHistorySearch } from './repoWorkspace/useHistorySearch';
@@ -240,7 +241,7 @@ export function WorkspaceGraphPane({
           <button
             type="button"
             className="graph-search-fab"
-            title="Search commits (Ctrl+F)"
+            title={`Search commits (${shortcutLabel('Mod+F')})`}
             aria-label="Search commits"
             onClick={() => search.openSearch()}
           >

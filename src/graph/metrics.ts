@@ -152,10 +152,15 @@ export function effectiveMetrics(g: {
 /** P7 §2.3: avatar hue-hash HSL constants (theme-invariant, legible both themes). */
 export const AVATAR = { sat: 52, light: 42 } as const;
 
-/** Font family appended to the size/weight strings above at draw time. */
+/** Font family appended to the size/weight strings above at draw time.
+ *  INVARIANT: FONT_UI / FONT_MONO must stay token-for-token identical to
+ *  `--font-ui` / `--font-mono` in src/styles.css — canvas rows and DOM rows show
+ *  the same text, so a divergent stack renders two typefaces side by side.
+ *  `metrics.test.ts` pins both token lists — update all three together. */
 export const FONT_UI =
   '"Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif';
 
 /** P51 §5: monospace family for the short-SHA column (appended to `shaFont`
  *  at draw time, like FONT_UI). Consumed by the draw layer in P51b. */
-export const FONT_MONO = 'ui-monospace, "Cascadia Code", "Consolas", monospace';
+export const FONT_MONO =
+  'ui-monospace, "SF Mono", Menlo, "Cascadia Code", "Cascadia Mono", Consolas, "JetBrains Mono", monospace';

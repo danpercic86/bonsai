@@ -9,6 +9,7 @@ import { ShortcutOverlay } from '../ShortcutOverlay';
 import type { GraphLayout, GraphNode } from '../../ipc';
 import type { GraphCanvasHandle } from '../../graph/GraphCanvas';
 import type { DiffSlot } from '../StatusPanel';
+import { shortcutKeys } from '../../utils/platform';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -436,14 +437,18 @@ describe('ShortcutOverlay sync', () => {
     return screen.getByRole('dialog').textContent ?? '';
   }
 
+  /** Overlay caps stay '+'-joined on every platform; only the modifier CAP text
+   *  is platform-dependent (Ctrl vs ⌘), so build the needle through the helper. */
+  const cap = (spec: string) => shortcutKeys(spec).join('+');
+
   it('documents every workspace binding it has historically covered', () => {
     const text = overlayText();
     for (const needle of [
-      'Ctrl+R',
+      cap('Mod+R'),
       'F5',
-      'Ctrl+Shift+F',
-      'Ctrl+Shift+P',
-      'Ctrl+Shift+U',
+      cap('Mod+Shift+F'),
+      cap('Mod+Shift+P'),
+      cap('Mod+Shift+U'),
       'Esc',
       'Home',
       'End',
@@ -457,14 +462,14 @@ describe('ShortcutOverlay sync', () => {
   // FINDING [T3.2b] F-T32b-1 (FIXED): useWorkspaceKeyboard binds Ctrl/Cmd-F
   // (commit search, P50b) and Ctrl/Cmd-K (command palette, P50c); the
   // ShortcutOverlay §6.1 table was stale until the campaign fix added both rows.
-  it('documents Ctrl+F (search) and Ctrl+K (palette) in the overlay table', () => {
+  it('documents Ctrl/Cmd+F (search) and Ctrl/Cmd+K (palette) in the overlay table', () => {
     const text = overlayText();
-    expect(text).toContain('Ctrl+F');
-    expect(text).toContain('Ctrl+K');
+    expect(text).toContain(cap('Mod+F'));
+    expect(text).toContain(cap('Mod+K'));
   });
 
   // P68e §4.4: the AI activity dock's shortcut is documented too.
-  it('documents Ctrl+Shift+A (AI activity dock)', () => {
-    expect(overlayText()).toContain('Ctrl+Shift+A');
+  it('documents Ctrl/Cmd+Shift+A (AI activity dock)', () => {
+    expect(overlayText()).toContain(cap('Mod+Shift+A'));
   });
 });

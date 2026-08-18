@@ -1,11 +1,20 @@
 // T1 e2e config — runs the smoke suite against the mock-IPC browser harness.
 //
-// Local-Windows rule: NEVER download browsers to C:. The `msedge` channel uses
-// the system-installed Edge, so nothing is downloaded. If a browser install is
-// ever needed locally, set PLAYWRIGHT_BROWSERS_PATH=D:\Temp\ms-playwright first.
+// Local-Windows rule: NEVER download browsers to C:. Windows Defender ASR blocks
+// freshly-downloaded, low-prevalence executables, so a bundled-chromium install
+// is both unwanted and unreliable there — the `msedge` channel reuses the
+// system-installed Edge and downloads nothing. If a browser install is ever
+// needed on Windows anyway, set PLAYWRIGHT_BROWSERS_PATH=D:\Temp\ms-playwright
+// first.
+//
+// That workaround is Windows-specific, NOT a cross-platform default: macOS and
+// Linux contributors (and CI) get Playwright's bundled chromium, which they can
+// install with `pnpm exec playwright install chromium`.
 import { defineConfig } from '@playwright/test';
 
 const CI = !!process.env.CI;
+/** Local Windows only — see the ASR note above. */
+const USE_EDGE_CHANNEL = !CI && process.platform === 'win32';
 
 export default defineConfig({
   testDir: 'e2e',
@@ -21,9 +30,9 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   projects: [
-    CI
-      ? { name: 'chromium', use: { browserName: 'chromium' } } // bundled chromium (ubuntu CI)
-      : { name: 'msedge', use: { browserName: 'chromium', channel: 'msedge' } }, // installed Edge — no download, ASR-safe
+    USE_EDGE_CHANNEL
+      ? { name: 'msedge', use: { browserName: 'chromium', channel: 'msedge' } } // installed Edge — no download, ASR-safe
+      : { name: 'chromium', use: { browserName: 'chromium' } }, // bundled chromium (CI + local macOS/Linux)
   ],
   webServer: {
     command: 'pnpm dev:mock',

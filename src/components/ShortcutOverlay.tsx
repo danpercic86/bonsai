@@ -1,24 +1,29 @@
 // Keyboard-shortcut reference overlay (P1 contract §6.4). Static content;
 // closes on Esc (App's global handler), backdrop click, ✕, or `?` again.
 
+import { keyLabel } from '../utils/platform';
+
 export interface ShortcutOverlayProps {
   open: boolean;
   onClose(): void;
 }
 
-/** The §6.1 binding table, in display order. */
+/** The §6.1 binding table, in display order. `Mod` is the primary accelerator —
+ *  Ctrl on Windows/Linux, ⌘ on macOS (the handlers bind `ctrlKey || metaKey`).
+ *  Each token becomes its own <kbd> cap, so the caps stay '+'-separated on every
+ *  platform (inline one-string labels use `shortcutLabel` instead). */
 const SHORTCUTS: { keys: string[]; action: string }[] = [
-  { keys: ['Ctrl', 'Enter'], action: 'Commit staged changes' },
+  { keys: ['Mod', 'Enter'], action: 'Commit staged changes' },
   { keys: ['Esc'], action: 'Deselect commit / close dialog' },
-  { keys: ['Ctrl', 'R'], action: 'Refresh' },
+  { keys: ['Mod', 'R'], action: 'Refresh' },
   { keys: ['F5'], action: 'Refresh' },
-  { keys: ['Ctrl', 'O'], action: 'Open repository' },
-  { keys: ['Ctrl', 'F'], action: 'Search commits' },
-  { keys: ['Ctrl', 'K'], action: 'Open command palette' },
-  { keys: ['Ctrl', 'Shift', 'F'], action: 'Fetch all remotes' },
-  { keys: ['Ctrl', 'Shift', 'P'], action: 'Pull (fast-forward only)' },
-  { keys: ['Ctrl', 'Shift', 'U'], action: 'Push current branch' },
-  { keys: ['Ctrl', 'Shift', 'A'], action: 'AI activity dock' },
+  { keys: ['Mod', 'O'], action: 'Open repository' },
+  { keys: ['Mod', 'F'], action: 'Search commits' },
+  { keys: ['Mod', 'K'], action: 'Open command palette' },
+  { keys: ['Mod', 'Shift', 'F'], action: 'Fetch all remotes' },
+  { keys: ['Mod', 'Shift', 'P'], action: 'Pull (fast-forward only)' },
+  { keys: ['Mod', 'Shift', 'U'], action: 'Push current branch' },
+  { keys: ['Mod', 'Shift', 'A'], action: 'AI activity dock' },
   { keys: ['↑', '↓'], action: 'Move commit selection' },
   { keys: ['Page Up', 'Page Down'], action: 'Move commit selection by one screenful' },
   { keys: ['Home'], action: 'Select the topmost commit' },
@@ -55,7 +60,7 @@ export function ShortcutOverlay({ open, onClose }: ShortcutOverlayProps) {
                 {s.keys.map((k, i) => (
                   <span key={i}>
                     {i > 0 && <span className="shortcut-plus">{'+'}</span>}
-                    <kbd className="kbd">{k}</kbd>
+                    <kbd className="kbd">{keyLabel(k)}</kbd>
                   </span>
                 ))}
               </span>

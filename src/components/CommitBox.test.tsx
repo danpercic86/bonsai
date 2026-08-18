@@ -57,6 +57,15 @@ describe('CommitBox', () => {
     await waitFor(() => expect(textarea()).toHaveValue(''));
   });
 
+  it('Cmd+Enter (metaKey) submits too — macOS parity with Ctrl+Enter', async () => {
+    const { onCommit } = renderBox();
+    fireEvent.change(textarea(), { target: { value: 'feat: mac' } });
+    fireEvent.keyDown(textarea(), { key: 'Enter', metaKey: true });
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith('feat: mac', null, false);
+    await waitFor(() => expect(textarea()).toHaveValue(''));
+  });
+
   it('plain Enter does NOT submit', () => {
     const { onCommit } = renderBox();
     fireEvent.change(textarea(), { target: { value: 'feat: x' } });

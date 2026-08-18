@@ -4,6 +4,7 @@ import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
 import { FolderOpenIcon } from './menuIcons';
 import type { BranchInfo, JobStatus } from '../ipc';
+import { shortcutLabel } from '../utils/platform';
 
 export interface WorkspaceToolbarProps {
   remoteOp: 'fetch' | 'pull' | 'push' | null;
@@ -136,7 +137,7 @@ export function WorkspaceToolbar({
             className="toolbar-btn"
             disabled={refreshing || mutating}
             onClick={() => onFetch()}
-            title="Fetch all remotes (Ctrl+Shift+F)"
+            title={`Fetch all remotes (${shortcutLabel('Mod+Shift+F')})`}
           >
             {remoteOp === 'fetch' ? 'Fetching…' : '↓ Fetch'}
           </button>
@@ -150,7 +151,7 @@ export function WorkspaceToolbar({
             className="toolbar-btn"
             disabled={refreshing || mutating || !canPullPush}
             onClick={() => onPull()}
-            title="Pull (fast-forward only) (Ctrl+Shift+P)"
+            title={`Pull (fast-forward only) (${shortcutLabel('Mod+Shift+P')})`}
           >
             {remoteOp === 'pull' ? 'Pulling…' : '⇣ Pull'}
           </button>
@@ -160,7 +161,7 @@ export function WorkspaceToolbar({
               className="toolbar-btn toolbar-split-main"
               disabled={refreshing || mutating || !canPullPush}
               onClick={() => onPush()}
-              title={`${pushTitle} (Ctrl+Shift+U)`}
+              title={`${pushTitle} (${shortcutLabel('Mod+Shift+U')})`}
             >
               {remoteOp === 'push' ? 'Pushing…' : '↑ Push'}
             </button>
@@ -231,7 +232,7 @@ export function WorkspaceToolbar({
             className="btn-icon toolbar-refresh"
             disabled={refreshing || statusLoading || graphLoading || mutating}
             onClick={() => onRefresh()}
-            title="Refresh (Ctrl+R)"
+            title={`Refresh (${shortcutLabel('Mod+R')})`}
             aria-label="Refresh"
           >
             {'⟳'}

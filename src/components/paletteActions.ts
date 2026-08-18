@@ -1,4 +1,5 @@
 import type { BranchesSnapshot, GraphLayout } from '../ipc';
+import { shortcutLabel } from '../utils/platform';
 
 /** P50c: command-palette entry taxonomy. `action` = an app/repo command,
  *  `branch`/`tag`/`commit` = a navigation jump (reveal in the graph), `search` =
@@ -103,7 +104,7 @@ export function buildPaletteActions(deps: BuildPaletteDeps): PaletteAction[] {
   out.push({
     id: 'repo.fetch',
     title: 'Fetch',
-    hint: 'Ctrl+Shift+F',
+    hint: shortcutLabel('Mod+Shift+F'),
     group: 'action',
     keywords: 'remote sync download',
     disabled: busy,
@@ -112,7 +113,7 @@ export function buildPaletteActions(deps: BuildPaletteDeps): PaletteAction[] {
   out.push({
     id: 'repo.pull',
     title: 'Pull (fast-forward)',
-    hint: 'Ctrl+Shift+P',
+    hint: shortcutLabel('Mod+Shift+P'),
     group: 'action',
     keywords: 'remote sync merge',
     disabled: busy || !canPullPush,
@@ -121,7 +122,7 @@ export function buildPaletteActions(deps: BuildPaletteDeps): PaletteAction[] {
   out.push({
     id: 'repo.push',
     title: 'Push',
-    hint: 'Ctrl+Shift+U',
+    hint: shortcutLabel('Mod+Shift+U'),
     group: 'action',
     keywords: 'remote sync upload',
     disabled: busy || !canPullPush,
@@ -130,7 +131,7 @@ export function buildPaletteActions(deps: BuildPaletteDeps): PaletteAction[] {
   out.push({
     id: 'repo.refresh',
     title: 'Refresh',
-    hint: 'Ctrl+R',
+    hint: shortcutLabel('Mod+R'),
     group: 'action',
     keywords: 'reload rescan',
     disabled: refreshing || statusLoading || graphLoading || mutating,
@@ -155,7 +156,7 @@ export function buildPaletteActions(deps: BuildPaletteDeps): PaletteAction[] {
   out.push({
     id: 'repo.search',
     title: 'Search commits…',
-    hint: 'Ctrl+F',
+    hint: shortcutLabel('Mod+F'),
     group: 'action',
     keywords: 'find grep message author',
     run: onOpenSearch,
@@ -306,7 +307,7 @@ export function aiPaletteEntries(deps: AiPaletteDeps): {
     trail.push({
       id: 'ai.activity',
       title: 'AI activity',
-      hint: 'Ctrl+Shift+A',
+      hint: shortcutLabel('Mod+Shift+A'),
       group: 'action',
       keywords: 'ai dock log output run streaming cancel claude progress',
       run: deps.onAiActivity,

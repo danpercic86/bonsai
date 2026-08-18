@@ -31,8 +31,14 @@
   --badge-warn: #e5534b;
   --badge-unknown: #6b7280;
 
+  /* These two stacks MUST stay token-for-token identical to FONT_UI / FONT_MONO
+     in src/graph/metrics.ts — the canvas graph and the DOM render the same
+     summaries and SHAs, so any divergence shows up as two different typefaces
+     side by side (macOS previously fell back to Courier for the DOM SHAs). */
   --font-ui: 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, sans-serif;
-  --font-mono: 'Cascadia Code', 'Cascadia Mono', Consolas, 'JetBrains Mono', monospace;
+  --font-mono:
+    ui-monospace, 'SF Mono', Menlo, 'Cascadia Code', 'Cascadia Mono', Consolas, 'JetBrains Mono',
+    monospace;
 
   /* Lane color palette (ui-reference §5) — identical in both themes;
      resolved once per mount by src/graph/colors.ts, assigned by lane % 10. */
@@ -2038,7 +2044,7 @@ body {
   background: var(--bg-3);
   color: var(--text-1);
   border: 1px solid var(--border);
-  font: 400 12px/1.4 var(--font-ui, 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif);
+  font: 400 12px/1.4 var(--font-ui);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   white-space: nowrap;
 }
@@ -4756,7 +4762,7 @@ span.file-row-main {
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent);
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 12px;
   cursor: pointer;
 }
@@ -5442,7 +5448,7 @@ span.file-row-main {
 .conflict-view {
   margin: 0;
   padding: 8px 0;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.5;
   background: var(--bg-0);
