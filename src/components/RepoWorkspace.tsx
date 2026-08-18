@@ -70,6 +70,7 @@ import { isImagePath } from '../utils/imagePaths';
 
 import { useRemoteOps, type NonFfPullInfo } from './repoWorkspace/useRemoteOps';
 import { useCommitActions } from './repoWorkspace/useCommitActions';
+import { usePartialStaging } from './repoWorkspace/usePartialStaging';
 import { useHookGate } from './repoWorkspace/useHookGate';
 import { useBranchActions } from './repoWorkspace/useBranchActions';
 import { useAiRuns } from './repoWorkspace/useAiRuns';
@@ -1680,175 +1681,35 @@ export function RepoWorkspace({
       refreshAll,
       setPendingBisectBad,
     });
-  // P17c: switch File/Diff view. When a workdir file diff is open, re-fetch it
-  // with the new `fullContext` (File View = one whole-file hunk); the same key
-  // keeps the stale content visible during the swap. Conflict/ai-proposal slots
-  // are not FileDiffs (they use getConflict), so they need no refetch.
-  const handleSetViewMode = useCallback(
-    (m: 'diff' | 'file' | 'split') => {
-      setDiffViewMode(m);
-      const meta = overlayMetaRef.current;
-      const slot = diffSlotRef.current;
-      if (slot === null || meta === null) return;
-      if (meta.kind === 'staged' || meta.kind === 'unstaged' || meta.kind === 'untracked') {
-        const staged = meta.kind === 'staged';
-        void fetchDiffSlot(slot.key, () =>
-          ipc.getWorkdirFileDiff(
-            repoId,
-            meta.path,
-            meta.origPath,
-            staged,
-            m === 'file',
-            intralineRef.current,
-          ),
-        );
-      }
-    },
-    [repoId, fetchDiffSlot],
-  );
-
-  // P61a: flip "Highlight changes" and refetch the open workdir slot with the
-  // new `intraline` flag (same refetch pattern as handleSetViewMode; the same
-  // key keeps stale content visible during the swap). Commit/compare diffs live
-  // in DiffBrowser, not the overlay slot, so nothing else refetches here.
-  const handleToggleIntraline = useCallback(
-    (next: boolean) => {
-      setIntraline(next);
-      const meta = overlayMetaRef.current;
-      const slot = diffSlotRef.current;
-      if (slot === null || meta === null) return;
-      if (meta.kind === 'staged' || meta.kind === 'unstaged' || meta.kind === 'untracked') {
-        const staged = meta.kind === 'staged';
-        void fetchDiffSlot(slot.key, () =>
-          ipc.getWorkdirFileDiff(
-            repoId,
-            meta.path,
-            meta.origPath,
-            staged,
-            diffViewModeRef.current === 'file',
-            next,
-          ),
-        );
-      }
-    },
-    [repoId, fetchDiffSlot],
-  );
-
-  // P17c: stage/unstage exactly `selection` (already Context-dropped) for the
-  // file open in the overlay. Direction + path/origPath come from the current
-  // stageable/overlay meta. Guarded by the `mutating` flag like handleStage.
-  // refetchStatus re-fetches the matching mode-A workdir slot by path in the new
-  // snapshot (honoring the current view mode), so no extra slot fetch is needed;
-  // a src/main.rs-style file persists in its section (and may now appear in both
-  // staged & unstaged). If the entry leaves its section, refetchStatus collapses.
-  const handleStageLines = useCallback(
-    async (selection: LineSelection[]) => {
-      if (selection.length === 0) return; // empty selection -> skip
-      if (mutatingRef.current) return;
-      const meta = overlayMetaRef.current;
-      const dir = stageableRef.current;
-      if (meta === null || dir === null) return;
-      setMutating(true);
-      try {
-        if (dir === 'stage') {
-          await ipc.stagePartial(repoId, meta.path, meta.origPath, selection);
-        } else {
-          await ipc.unstagePartial(repoId, meta.path, meta.origPath, selection);
-        }
-        await refetchStatus();
-      } catch (e) {
-        reportStatusError(errorMessage(e));
-      } finally {
-        setMutating(false);
-      }
-    },
-    [repoId, refetchStatus, reportStatusError],
-  );
-
-  // P17c: stage/unstage every add/del line of hunk `hunkIndex` from the open
-  // diff (Diff View hunk-header button). Builds the selection then delegates.
-  const handleStageHunk = useCallback(
-    (hunkIndex: number) => {
-      const d = diffSlotRef.current?.diff ?? null;
-      const hunk = d?.hunks[hunkIndex];
-      if (hunk === undefined) return;
-      const selection: LineSelection[] = hunk.lines
-        .filter((l) => l.kind === 'add' || l.kind === 'del')
-        .map((l) => ({ kind: l.kind, oldNo: l.oldNo, newNo: l.newNo }));
-      void handleStageLines(selection);
-    },
-    [handleStageLines],
-  );
-
-  // P28: request a hunk discard — just arms the ConfirmDialog (destructive ops
-  // always confirm first). Passed to DiffOverlay only for unstaged tracked
-  // diffs (see the render-site gating), so meta here is the unstaged file.
-  const handleDiscardHunk = useCallback((hunkIndex: number) => {
-    const meta = overlayMetaRef.current;
-    if (meta === null) return;
-    setPendingHunkDiscard({ path: meta.path, origPath: meta.origPath, hunkIndex });
-  }, []);
-
-  // P28: confirmed hunk discard — build the LineSelection from the open diff's
-  // hunk (same rule as handleStageHunk) and revert it in the worktree, then
-  // refetch like handleStageLines does. Guarded by `mutating`.
-  const handleConfirmHunkDiscard = useCallback(
-    async (pending: { path: string; origPath: string | null; hunkIndex: number }) => {
-      if (mutatingRef.current) return;
-      // The slot must still show the file the dialog was armed for.
-      if (overlayMetaRef.current?.path !== pending.path) return;
-      const d = diffSlotRef.current?.diff ?? null;
-      const hunk = d?.hunks[pending.hunkIndex];
-      if (hunk === undefined) return; // stale click; diff changed underneath
-      const selection: LineSelection[] = hunk.lines
-        .filter((l) => l.kind === 'add' || l.kind === 'del')
-        .map((l) => ({ kind: l.kind, oldNo: l.oldNo, newNo: l.newNo }));
-      if (selection.length === 0) return;
-      setMutating(true);
-      try {
-        await ipc.discardPartial(repoId, pending.path, pending.origPath, selection);
-        await refetchStatus();
-      } catch (e) {
-        reportStatusError(errorMessage(e));
-      } finally {
-        setMutating(false);
-      }
-    },
-    [repoId, refetchStatus, reportStatusError],
-  );
-
-  // P45: request a per-line discard — just arms the ConfirmDialog (destructive
-  // ops always confirm first). The selection is captured verbatim because
-  // arbitrary lines can't be re-derived after the diff refetches (unlike a hunk
-  // index). Passed to DiffOverlay only for unstaged tracked diffs (see gating).
-  const handleDiscardLines = useCallback((selection: LineSelection[]) => {
-    if (selection.length === 0) return;
-    const meta = overlayMetaRef.current;
-    if (meta === null) return;
-    setPendingLineDiscard({ path: meta.path, origPath: meta.origPath, selection });
-  }, []);
-
-  // P45: confirmed per-line discard — revert exactly the stored selection in the
-  // worktree, then refetch like handleConfirmHunkDiscard. Guarded by `mutating`;
-  // the backend's stale() guard rejects a selection whose coordinates moved.
-  const handleConfirmLineDiscard = useCallback(
-    async (pending: { path: string; origPath: string | null; selection: LineSelection[] }) => {
-      if (mutatingRef.current) return;
-      // The slot must still show the file the dialog was armed for.
-      if (overlayMetaRef.current?.path !== pending.path) return;
-      if (pending.selection.length === 0) return;
-      setMutating(true);
-      try {
-        await ipc.discardPartial(repoId, pending.path, pending.origPath, pending.selection);
-        await refetchStatus();
-      } catch (e) {
-        reportStatusError(errorMessage(e));
-      } finally {
-        setMutating(false);
-      }
-    },
-    [repoId, refetchStatus, reportStatusError],
-  );
+  // P17c/P28/P45: partial staging + hunk/line discard + the two overlay refetch
+  // toggles, all in one hook (see repoWorkspace/usePartialStaging.ts). The state
+  // they drive stays here because the render body and `opActive` read it.
+  const {
+    handleSetViewMode,
+    handleToggleIntraline,
+    handleStageLines,
+    handleStageHunk,
+    handleDiscardHunk,
+    handleConfirmHunkDiscard,
+    handleDiscardLines,
+    handleConfirmLineDiscard,
+  } = usePartialStaging({
+    repoId,
+    setMutating,
+    mutatingRef,
+    overlayMetaRef,
+    diffSlotRef,
+    stageableRef,
+    diffViewModeRef,
+    intralineRef,
+    setDiffViewMode,
+    setIntraline,
+    setPendingHunkDiscard,
+    setPendingLineDiscard,
+    fetchDiffSlot,
+    refetchStatus,
+    reportStatusError,
+  });
 
   // P15b: run an explain/review analysis of a diff target and show the prose in
   // the AiOutputPanel. Read-only — writes nothing. Guarded by a req-id so a slow
