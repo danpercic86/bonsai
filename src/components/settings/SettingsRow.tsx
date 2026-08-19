@@ -26,6 +26,7 @@ export interface SettingsRowResetOverride {
 
 export function SettingsRow({
   id,
+  profileId,
   controlId,
   rowLabel,
   stacked,
@@ -35,6 +36,11 @@ export function SettingsRow({
   children,
 }: {
   id: SettingsRowId;
+  /** Amendment A (AM-1): the instance stamp of a `repeats: 'perProfile'` row.
+   *  Instance identity is `(data-setting-id, data-profile-id)`; the coverage
+   *  guard asserts the rendered instance set equals the fixture's profile ids,
+   *  which is what catches ONE card silently dropping a field. */
+  profileId?: string;
   /** DOM id of the control. Present ⇒ the label is a `<label for>`, which both
    *  names the control and makes the label text a second hit target. */
   controlId?: string;
@@ -90,11 +96,14 @@ export function SettingsRow({
     .filter((c) => c !== '')
     .join(' ');
 
-  const labelId = settingsRowLabelId(id);
+  // A `repeats: 'perProfile'` row exists once per card, so its label/help
+  // element ids must be per-INSTANCE or the DOM would carry N duplicates of each
+  // (and every card's `aria-describedby` would resolve to the first one).
+  const labelId = settingsRowLabelId(id, profileId);
   const labelText = rowLabel ?? label;
 
   return (
-    <div className={className} data-setting-id={id}>
+    <div className={className} data-setting-id={id} data-profile-id={profileId}>
       {controlId === undefined ? (
         <span className="settings-row-label" id={labelId}>
           {labelText}
@@ -127,7 +136,7 @@ export function SettingsRow({
       </div>
       <div className="settings-row-help-slot">
         {help !== undefined && (
-          <p className="settings-row-help" id={settingsRowHelpId(id)}>
+          <p className="settings-row-help" id={settingsRowHelpId(id, profileId)}>
             {help}
           </p>
         )}

@@ -5,7 +5,7 @@ import { SettingsProfilesSection } from '../../SettingsProfilesSection';
 import { useSettingsActions, useSettingsValues } from '../SettingsContext';
 
 export function IdentitiesCategory() {
-  const { repoPath, profiles } = useSettingsValues();
+  const { repoPath, profiles, focusProfileId } = useSettingsValues();
   const { change } = useSettingsActions();
 
   /* --- Identity profiles (P44) --- */
@@ -13,6 +13,7 @@ export function IdentitiesCategory() {
     <SettingsProfilesSection
       repoId={repoPath}
       profiles={profiles}
+      focusProfileId={focusProfileId}
       onProfilesChange={(next) => change({ profiles: next })}
     />
   );

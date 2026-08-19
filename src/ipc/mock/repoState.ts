@@ -2,7 +2,7 @@
 import { MOCK_ASSET_CONTENT, mockAgentAssets, mockInventory, mockProfiles } from '../fixtures/aiAssets';
 import { INITIAL_BRANCHES, MOCK_OID } from '../fixtures/branches';
 import { makeMockConfigStore } from '../fixtures/config';
-import type { MockConfigStore } from '../fixtures/config';
+import type { MockConfigStore, MockIdentityFixture } from '../fixtures/config';
 import { initialMainRs } from '../fixtures/diffs';
 import type { ThreeWay } from '../fixtures/diffs';
 import type { MockCommit } from '../fixtures/graph';
@@ -227,6 +227,14 @@ export function repoKind(path: string, graphFixture: GraphFixture): RepoKind {
   if (graphFixture === 'detached') return 'detached';
   return 'default';
 }
+/** P69i: which identity seed `?fixture=` asks for (see `MockIdentityFixture`). */
+function identityFixture(): MockIdentityFixture {
+  const q = query('fixture');
+  if (q === 'noconfig') return 'none';
+  if (q === 'identitymatch') return 'localMatch';
+  return 'global';
+}
+
 /** Builds a fresh MockRepoState for a usable repo (default / detached / unborn). */
 export function createRepoState(path: string): MockRepoState {
   const graphFixture = repoGraphFixture(path);
@@ -236,8 +244,10 @@ export function createRepoState(path: string): MockRepoState {
     kind,
     graphFixture,
     // Seed a WORKING identity by default; `?fixture=noconfig` drops it so the
-    // commit-error / Set-identity flow is demoable (P40 §6.3).
-    config: makeMockConfigStore(query('fixture') !== 'noconfig'),
+    // commit-error / Set-identity flow is demoable (P40 §6.3), and
+    // `?fixture=identitymatch` adds a LOCAL one equal to the seeded Work profile
+    // (P69i — the only route to identity state 1 and to the §4.5 confirm).
+    config: makeMockConfigStore(identityFixture()),
     remoteTrigger: query('remote'),
     hooksFail: query('hooks') === 'fail',
     hooksFailPush: query('hooks') === 'failpush',

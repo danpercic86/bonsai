@@ -21,6 +21,9 @@ export interface SettingsRequest {
   category: SettingsCategoryId | null;
   /** P40b: 'identity' scrolls + focuses the Git-config Identity sub-section. */
   focus: 'identity' | null;
+  /** P69i: the identity card whose Label field should take focus, for the
+   *  header menu's `Save “…” as an identity…` (UI §4.3 item 2). */
+  focusProfileId: string | null;
   seq: number;
 }
 
@@ -28,7 +31,11 @@ export interface SettingsRequestState {
   open: boolean;
   request: SettingsRequest;
   /** Open (or re-target) Settings. Always bumps `seq`. */
-  openAt(category: SettingsCategoryId | null, focus?: 'identity' | null): void;
+  openAt(
+    category: SettingsCategoryId | null,
+    focus?: 'identity' | null,
+    focusProfileId?: string | null,
+  ): void;
   /** The `configMissing` commit-error linkage (App.tsx's old
    *  `openIdentitySettings`), verbatim in behaviour. */
   openIdentity(): void;
@@ -36,15 +43,19 @@ export interface SettingsRequestState {
   close(): void;
 }
 
-const CLOSED: SettingsRequest = { category: null, focus: null, seq: 0 };
+const CLOSED: SettingsRequest = { category: null, focus: null, focusProfileId: null, seq: 0 };
 
 export function useSettingsRequest(): SettingsRequestState {
   const [open, setOpen] = useState(false);
   const [request, setRequest] = useState<SettingsRequest>(CLOSED);
 
   const openAt = useCallback(
-    (category: SettingsCategoryId | null, focus: 'identity' | null = null): void => {
-      setRequest((r) => ({ category, focus, seq: r.seq + 1 }));
+    (
+      category: SettingsCategoryId | null,
+      focus: 'identity' | null = null,
+      focusProfileId: string | null = null,
+    ): void => {
+      setRequest((r) => ({ category, focus, focusProfileId, seq: r.seq + 1 }));
       setOpen(true);
     },
     [],
@@ -54,7 +65,7 @@ export function useSettingsRequest(): SettingsRequestState {
 
   const close = useCallback((): void => {
     setOpen(false);
-    setRequest((r) => ({ category: null, focus: null, seq: r.seq }));
+    setRequest((r) => ({ category: null, focus: null, focusProfileId: null, seq: r.seq }));
   }, []);
 
   return useMemo(

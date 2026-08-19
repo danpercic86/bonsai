@@ -162,3 +162,194 @@ test.describe('24 settings shell — Git config @smoke', () => {
     ).toHaveAttribute('aria-selected', 'true');
   });
 });
+
+/**
+ * P69i — the header identity control, in a real browser.
+ *
+ * jsdom already covers the state machine; what needs a real browser is that the
+ * menu is genuinely CLICKABLE from the header (P69g shipped two bugs where a
+ * visible layer swallowed a click jsdom could not see), that the menu really
+ * lands on top of the canvas, and that a switch round-trips through the mock's
+ * config store and back out through the shared identity store.
+ */
+test.describe('24 settings shell — header identity @smoke', () => {
+  function identityTrigger(page: Page): Locator {
+    return page.locator('.identity-trigger');
+  }
+
+  test('the default harness state is an identity that matches no saved profile', async ({
+    page,
+  }) => {
+    await openRepo(page);
+    // The mock seeds the identity at GLOBAL (`Mock Fixture User`
+    // <fixture@bonsai.dev>) while the seeded profiles are Work/Personal — so the
+    // honest default is state 2, and the menu offers to save it.
+    const trigger = identityTrigger(page);
+    await expect(trigger).toHaveAttribute('aria-label', 'Commit identity: Mock Fixture User');
+    await trigger.click();
+
+    const menu = page.getByRole('menu');
+    await expect(menu).toBeVisible();
+    await expect(menu.getByText('From your global Git config')).toBeVisible();
+    await expect(menu.getByRole('menuitemradio', { name: /Work/ })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+    await expect(
+      menu.getByRole('menuitem', { name: 'Save “Mock Fixture User” as an identity…' }),
+    ).toBeVisible();
+  });
+
+  test('a matching LOCAL identity checks its row and names the repo as the source', async ({
+    page,
+  }) => {
+    await openRepo(page, { flags: { fixture: 'identitymatch' } });
+    const trigger = identityTrigger(page);
+    await expect(trigger).toHaveAttribute('aria-label', 'Commit identity: Work');
+    await trigger.click();
+
+    const menu = page.getByRole('menu');
+    await expect(menu.getByText('From this repository’s config')).toBeVisible();
+    await expect(menu.getByRole('menuitemradio', { name: /Work/ })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+  });
+
+  test('switching to a DIFFERING identity confirms, then really switches', async ({ page }) => {
+    await openRepo(page, { flags: { fixture: 'identitymatch' } });
+    await identityTrigger(page).click();
+    await page.getByRole('menuitemradio', { name: /Personal/ }).click();
+
+    const confirm = page.getByRole('dialog', { name: 'Change this repository’s identity?' });
+    await expect(confirm).toBeVisible();
+    await confirm.getByRole('button', { name: 'Change identity' }).click();
+
+    await expect(page.getByText('Now committing as Personal in this repository.')).toBeVisible();
+    await expect(identityTrigger(page)).toHaveAttribute('aria-label', 'Commit identity: Personal');
+  });
+
+  test('no repo open ⇒ no identity control at all', async ({ page }) => {
+    await gotoHarness(page);
+    await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
+    await expect(identityTrigger(page)).toHaveCount(0);
+  });
+
+  test('Esc dismisses the menu and hands global shortcuts back', async ({ page }) => {
+    await openRepo(page);
+    await identityTrigger(page).click();
+    await expect(page.getByRole('menu')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('menu')).toHaveCount(0);
+    // The suppression really lifted: a global shortcut works again immediately.
+    await page.keyboard.press('ControlOrMeta+Comma');
+    await expect(settingsDialog(page)).toBeVisible();
+  });
+
+  test('Manage identities… lands on the Identities pane', async ({ page }) => {
+    await openRepo(page);
+    await identityTrigger(page).click();
+    await page.getByRole('menuitem', { name: 'Manage identities…' }).click();
+    await expect(settingsDialog(page).getByRole('tab', { name: 'Identities' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await expect(
+      settingsDialog(page).getByRole('button', { name: 'Add identity' }),
+    ).toBeVisible();
+  });
+  test('the menu is fully keyboard-navigable and Enter activates', async ({ page }) => {
+    await openRepo(page, { flags: { fixture: 'identitymatch' } });
+    await identityTrigger(page).click();
+    const menu = page.getByRole('menu');
+    await expect(menu).toBeVisible();
+
+    // Focus lands on the first row; Arrow keys move through radio rows AND the
+    // plain tail row (the check that the role widening did not break nav).
+    await expect(menu.getByRole('menuitemradio', { name: /Work/ })).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(menu.getByRole('menuitemradio', { name: /Personal/ })).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(menu.getByRole('menuitem', { name: 'Manage identities…' })).toBeFocused();
+    await page.keyboard.press('ArrowUp');
+    await expect(menu.getByRole('menuitemradio', { name: /Personal/ })).toBeFocused();
+    await page.keyboard.press('ArrowUp');
+    await expect(menu.getByRole('menuitemradio', { name: /Work/ })).toBeFocused();
+    // Enter on the already-checked row is a harmless no-op close (UI §4.3).
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('menu')).toHaveCount(0);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test('every deep-link row really navigates', async ({ page }) => {
+    // State 2 → "Save … as an identity…" SAVES the effective identity as a new
+    // profile and lands on that card with the caret in its Label field. The
+    // whole point is that nothing has to be retyped.
+    await openRepo(page);
+    await identityTrigger(page).click();
+    await page.getByRole('menuitem', { name: 'Save “Mock Fixture User” as an identity…' }).click();
+    const dialog = settingsDialog(page);
+    await expect(dialog.getByRole('tab', { name: 'Identities' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    const cards = dialog.locator('.settings-profile');
+    await expect(cards).toHaveCount(3);
+    const draft = cards.last();
+    await expect(draft.getByLabel('user.name')).toHaveValue('Mock Fixture User');
+    await expect(draft.getByLabel('user.email')).toHaveValue('fixture@bonsai.dev');
+    await expect(draft.getByLabel('Label')).toBeFocused();
+    // Naming it is a single keystroke run, and the card is live.
+    await page.keyboard.type('Fixture');
+    await expect(draft.getByLabel('Label')).toHaveValue('Fixture');
+    await dialog.getByRole('button', { name: 'Close' }).click();
+
+    // State 3 → "Set an identity…" is the configMissing deep link.
+    await openRepo(page, { flags: { fixture: 'noconfig' } });
+    await expect(identityTrigger(page)).toHaveAttribute('aria-label', 'Commit identity not set');
+    await identityTrigger(page).click();
+    await page.getByRole('menuitem', { name: 'Set an identity…' }).click();
+    await expect(
+      settingsDialog(page).getByRole('tab', { name: 'Git config, repository' }),
+    ).toHaveAttribute('aria-selected', 'true');
+    await expect(settingsDialog(page).getByLabel('user.name')).toBeFocused();
+  });
+
+  test('a click outside dismisses, and shortcuts are suppressed while it is open', async ({
+    page,
+  }) => {
+    await openRepo(page);
+    await identityTrigger(page).click();
+    await expect(page.getByRole('menu')).toBeVisible();
+    // While the menu is open App must early-return its global shortcuts.
+    await page.keyboard.press('ControlOrMeta+Comma');
+    await expect(settingsDialog(page)).toHaveCount(0);
+
+    await page.mouse.click(400, 400);
+    await expect(page.getByRole('menu')).toHaveCount(0);
+  });
+
+  for (const theme of ['dark', 'light'] as const) {
+    test(`the unset ring is the --warning token in the ${theme} theme`, async ({ page }) => {
+      await openRepo(page, { flags: { fixture: 'noconfig' }, uiSettings: { onboardingSeen: true, theme } });
+      const avatar = page.locator('.identity-avatar');
+      await expect(avatar).toHaveAttribute('data-identity-state', 'unset');
+      // No hardcoded hex may appear: the ring must resolve to --warning itself.
+      const { border, warning } = await avatar.evaluate((el) => ({
+        border: getComputedStyle(el).borderTopColor,
+        warning: getComputedStyle(document.documentElement).getPropertyValue('--warning').trim(),
+      }));
+      const probe = await page.evaluate((raw) => {
+        const el = document.createElement('span');
+        el.style.color = raw;
+        document.body.appendChild(el);
+        const c = getComputedStyle(el).color;
+        el.remove();
+        return c;
+      }, warning);
+      expect(border).toBe(probe);
+      // The glyph, not the hue, is what carries the state.
+      await expect(avatar).toHaveText('?');
+    });
+  }
+});

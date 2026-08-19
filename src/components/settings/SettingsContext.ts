@@ -74,6 +74,8 @@ export interface SettingsRuntimeValues {
   /** Passed through verbatim (`undefined` included) so the Git-config section's
    *  scroll+focus effect sees exactly the value it sees today. */
   configInitialFocus: 'identity' | null | undefined;
+  /** P69i: the Identities card to focus on open (null ⇒ none). */
+  focusProfileId: string | null;
   /**
    * P69g — the whole-`UiSettings` view the catalog's reset descriptors compare
    * against (`SettingsRowReset.isDefault`), so `SettingsRow` can decide whether

@@ -102,6 +102,9 @@ export interface SettingsPanelProps {
   /** P40b: when 'identity', the Git-config section scrolls/focuses its Identity
    *  sub-section on open (commit-error "Set identity…" linkage). */
   configInitialFocus?: 'identity' | null;
+  /** P69i / UI §4.3 item 2: the Identities card whose Label field takes focus on
+   *  open, so `Save “…” as an identity…` lands ON the draft it just created. */
+  focusProfileId?: string | null;
   /** P44: named identity profiles (global app setting). CRUD persists via
    *  `onChange({ profiles })`; Apply is owned by the section's own IPC. */
   profiles: IdentityProfile[];
@@ -235,6 +238,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     editorCommand,
     repoPath,
     configInitialFocus,
+    focusProfileId,
     updateCurrentVersion,
     updateState,
   } = props;
@@ -331,6 +335,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       updateCurrentVersion,
       updateState,
       configInitialFocus,
+      focusProfileId: focusProfileId ?? null,
       snapshot,
     }),
     [
@@ -357,6 +362,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       updateCurrentVersion,
       updateState,
       configInitialFocus,
+      focusProfileId,
       snapshot,
     ],
   );

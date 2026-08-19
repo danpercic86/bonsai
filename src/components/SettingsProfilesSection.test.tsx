@@ -1,5 +1,6 @@
 /**
- * P69d — Identity profiles, after the pill moved onto the effective-identity store.
+ * P69d/P69i — Identities, after the pill moved onto the effective-identity store
+ * and switching moved to the header.
  *
  * The defect being closed (UI D6): the "Active on this repo" pill used to match the
  * repo's LOCAL user.name/user.email only. Git resolves local-overrides-global, so in
@@ -110,11 +111,11 @@ describe('SettingsProfilesSection — the Active pill is effective-based', () =>
     );
     renderSection('/repo/d6');
 
-    expect(await screen.findByText('Active on this repo')).toBeInTheDocument();
+    expect(await screen.findByText('in use')).toBeInTheDocument();
     // Exactly one profile is ever active.
-    expect(screen.getAllByText('Active on this repo')).toHaveLength(1);
+    expect(screen.getAllByText('in use')).toHaveLength(1);
     expect(screen.getByText('Work').closest('.settings-profile')).toContainElement(
-      screen.getByText('Active on this repo'),
+      screen.getByText('in use'),
     );
   });
 
@@ -126,7 +127,7 @@ describe('SettingsProfilesSection — the Active pill is effective-based', () =>
 
     await waitFor(() =>
       expect(screen.getByText('Personal').closest('.settings-profile')).toContainElement(
-        screen.getByText('Active on this repo'),
+        screen.getByText('in use'),
       ),
     );
   });
@@ -140,20 +141,20 @@ describe('SettingsProfilesSection — the Active pill is effective-based', () =>
     renderSection('/repo/nomatch');
 
     await waitFor(() => expect(spy).toHaveBeenCalled());
-    expect(screen.queryByText('Active on this repo')).toBeNull();
+    expect(screen.queryByText('in use')).toBeNull();
   });
 
   it('no identity anywhere, and an unreadable config, light nothing', async () => {
     vi.spyOn(mockIpc, 'getConfig').mockResolvedValue(EMPTY_VIEW);
     const first = renderSection('/repo/unset');
     await waitFor(() => expect(screen.getByText('Work')).toBeInTheDocument());
-    expect(screen.queryByText('Active on this repo')).toBeNull();
+    expect(screen.queryByText('in use')).toBeNull();
     first.unmount();
 
     vi.spyOn(mockIpc, 'getConfig').mockRejectedValue(new Error('config unreadable'));
     renderSection('/repo/broken');
     await waitFor(() => expect(screen.getByText('Work')).toBeInTheDocument());
-    expect(screen.queryByText('Active on this repo')).toBeNull();
+    expect(screen.queryByText('in use')).toBeNull();
   });
 
   it('no repo open: no config read, Apply disabled, and the reason is shown', async () => {
@@ -164,8 +165,8 @@ describe('SettingsProfilesSection — the Active pill is effective-based', () =>
 
     await Promise.resolve();
     expect(spy).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Apply to current repo' })).toBeDisabled();
-    expect(screen.getByText('Open a repository to apply a profile.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Use in this repository' })).toBeDisabled();
+    expect(screen.getByText('Open a repository to use an identity in it.')).toBeInTheDocument();
   });
 });
 
@@ -177,14 +178,14 @@ describe('SettingsProfilesSection — Apply and CRUD', () => {
     const apply = vi.spyOn(mockIpc, 'applyIdentityProfile').mockResolvedValue(EMPTY_VIEW);
     renderLive('/repo/apply', [WORK]);
     await waitFor(() => expect(getConfig).toHaveBeenCalledTimes(1));
-    expect(screen.queryByText('Active on this repo')).toBeNull();
+    expect(screen.queryByText('in use')).toBeNull();
 
     // An unsaved edit must be what gets applied — this is why the handler takes the
     // profile object, not its id.
     fireEvent.change(screen.getByLabelText('user.email'), { target: { value: 'ada@edited.dev' } });
     // What the repo will read back after the write: the EDITED identity.
     getConfig.mockResolvedValue(identityView('Ada Lovelace', 'ada@edited.dev', 'local'));
-    fireEvent.click(screen.getByRole('button', { name: 'Apply to current repo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use in this repository' }));
 
     await waitFor(() =>
       expect(apply).toHaveBeenCalledWith('/repo/apply', 'Ada Lovelace', 'ada@edited.dev', null),
@@ -192,7 +193,7 @@ describe('SettingsProfilesSection — Apply and CRUD', () => {
     expect(await screen.findByText('Applied')).toBeInTheDocument();
     // Invalidation refetched, so the pill catches up with no repo-changed event.
     await waitFor(() => expect(getConfig).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText('Active on this repo')).toBeInTheDocument();
+    expect(await screen.findByText('in use')).toBeInTheDocument();
   });
 
   it('a failed Apply shows the error on that profile and no Applied flash', async () => {
@@ -200,7 +201,7 @@ describe('SettingsProfilesSection — Apply and CRUD', () => {
     vi.spyOn(mockIpc, 'applyIdentityProfile').mockRejectedValue(new Error('identity write failed'));
     renderSection('/repo/fail', [WORK]);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Apply to current repo' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Use in this repository' }));
 
     expect(await screen.findByText('identity write failed')).toBeInTheDocument();
     expect(screen.queryByText('Applied')).toBeNull();
@@ -210,12 +211,31 @@ describe('SettingsProfilesSection — Apply and CRUD', () => {
     vi.spyOn(mockIpc, 'getConfig').mockResolvedValue(EMPTY_VIEW);
     const { onProfilesChange } = renderSection('/repo/crud', [WORK]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add profile' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add identity' }));
     expect(onProfilesChange.mock.calls[0][0]).toHaveLength(2);
     expect(onProfilesChange.mock.calls[0][0][1]).toMatchObject({ label: '', userName: '' });
 
+    // P69i / UI §4.6: Delete is an inline TWO-STEP. The first click only arms it.
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(onProfilesChange).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Delete “Work”?')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     expect(onProfilesChange).toHaveBeenLastCalledWith([]);
+  });
+
+  it('focusProfileId puts the caret in that card’s Label field', async () => {
+    // The landing half of the header menu's `Save “…” as an identity…`: the draft
+    // arrives with name+email already filled, so Label is the only thing left.
+    vi.spyOn(mockIpc, 'getConfig').mockResolvedValue(EMPTY_VIEW);
+    render(
+      <SettingsProfilesSection
+        repoId="/repo/focus"
+        profiles={[WORK, PERSONAL]}
+        focusProfileId={PERSONAL.id}
+        onProfilesChange={vi.fn()}
+      />,
+    );
+    expect(document.getElementById(`profile-label-${PERSONAL.id}`)).toHaveFocus();
   });
 
   it('field edits patch only that profile', async () => {

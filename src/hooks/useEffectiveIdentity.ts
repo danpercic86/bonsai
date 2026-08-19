@@ -39,6 +39,15 @@ export interface EffectiveIdentity {
   /** Where the effective `user.name` came from; `null` => unset everywhere. Falls
    *  back to `user.email`'s level when the name is unset. */
   source: ConfigLevelName | null;
+  /**
+   * P69i: `user.email`'s OWN level, independent of `source`.
+   *
+   * The two halves can come from different files (`user.name` global,
+   * `user.email` local is a normal per-repo override). A caller asking "would
+   * writing here overwrite something local?" must consider BOTH — reading only
+   * `source` silently clobbers a local email whenever the name is global.
+   */
+  emailSource: ConfigLevelName | null;
   /** True only while the FIRST read for this repo is in flight. */
   loading: boolean;
   /** `getConfig` rejected: name/email/source are null and the UI shows the
@@ -55,6 +64,7 @@ const UNSET: EffectiveIdentity = Object.freeze({
   email: null,
   signingKey: null,
   source: null,
+  emailSource: null,
   loading: false,
   error: null,
 });
@@ -106,6 +116,7 @@ export function identityFromConfigView(view: ConfigView): EffectiveIdentity {
     email,
     signingKey: readSigningKey(view),
     source,
+    emailSource: email !== null ? (emailEntry?.effectiveLevel ?? null) : null,
     loading: false,
     error: null,
   };

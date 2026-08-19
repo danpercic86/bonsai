@@ -11,6 +11,7 @@ import { RepoHealthPanel } from './components/RepoHealthPanel';
 import { OnboardingOverlay } from './components/OnboardingOverlay';
 import { EmptyState } from './components/EmptyState';
 import { GitMissingBanner } from './components/GitMissingBanner';
+import { HeaderToolbar } from './components/HeaderToolbar';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
 import { TabStrip, type TabMeta } from './components/TabStrip';
 import { Toasts } from './components/Toasts';
@@ -850,57 +851,20 @@ export default function App() {
             onMenuOpenChange={setMenuOpen}
             onTabMenu={(path, x, y) => setTabMenu({ path, x, y })}
           />
-          <div className="header-toolbar">
-            <button
-              type="button"
-              className="btn-icon theme-toggle"
-              onClick={toggleTheme}
-              title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-              aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-            >
-              {theme === 'dark' ? '☀' : '☾'}
-            </button>
-            <button
-              type="button"
-              className="btn-icon list-view-toggle"
-              onClick={toggleListView}
-              title={listView === 'tree' ? 'Switch to flat lists' : 'Switch to tree lists'}
-              aria-label={listView === 'tree' ? 'Switch to flat lists' : 'Switch to tree lists'}
-            >
-              {listView === 'tree' ? '☰' : '⋔'}
-            </button>
-            {activeRepo !== null && (
-              <button
-                type="button"
-                className="btn-icon ai-assets-toggle"
-                onClick={() => setAiAssetsOpen(true)}
-                title="AI Assets"
-                aria-label="AI Assets"
-              >
-                {'🤖'}
-              </button>
-            )}
-            {activeRepo !== null && (
-              <button
-                type="button"
-                className="btn-icon repo-health-toggle"
-                onClick={() => setHealthOpen(true)}
-                title="Health"
-                aria-label="Health"
-              >
-                {'📊'}
-              </button>
-            )}
-            <button
-              type="button"
-              className="btn-icon settings-toggle"
-              onClick={() => settings.openAt(null)}
-              title="Settings"
-              aria-label="Settings"
-            >
-              {'⚙'}
-            </button>
-          </div>
+          <HeaderToolbar
+            theme={theme}
+            onToggleTheme={toggleTheme}
+            listView={listView}
+            onToggleListView={toggleListView}
+            activeRepo={activeRepo}
+            onOpenAiAssets={() => setAiAssetsOpen(true)}
+            onOpenHealth={() => setHealthOpen(true)}
+            onOpenSettings={() => settings.openAt(null)}
+            onOpenSettingsAt={settings.openAt}
+            onMenuOpenChange={setMenuOpen}
+            profiles={profiles}
+            onProfilesChange={(next) => handleSettingsChange({ profiles: next })}
+          />
         </header>
 
         {/* P70: app-level, in-flow, directly below the header — git availability
@@ -995,6 +959,7 @@ export default function App() {
           onRequestEnableMcpWrite={() => setMcpWriteConsentOpen(true)}
           repoPath={activeRepo}
           configInitialFocus={settings.request.focus}
+          focusProfileId={settings.request.focusProfileId}
           profiles={profiles}
           terminalCommand={terminalCommand}
           editorCommand={editorCommand}

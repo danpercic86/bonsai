@@ -111,13 +111,13 @@ export function settingsTabId(id: SettingsCategoryId): string {
 
 /** Id of the row's visible label element — the `aria-labelledby` target for a
  *  control that cannot be wired with `<label for>` (radiogroups, segmented). */
-export function settingsRowLabelId(id: SettingsRowId): string {
-  return `${id}-label`;
+export function settingsRowLabelId(id: SettingsRowId, instance?: string): string {
+  return instance === undefined ? `${id}-label` : `${id}--${instance}-label`;
 }
 
 /** Id of the row's help paragraph — the `aria-describedby` target (UI §5.1). */
-export function settingsRowHelpId(id: SettingsRowId): string {
-  return `${id}-help`;
+export function settingsRowHelpId(id: SettingsRowId, instance?: string): string {
+  return instance === undefined ? `${id}-help` : `${id}--${instance}-help`;
 }
 
 /** '28' | 'On' | 'Off' | 'auto-detect' | 'Author' — the value named in the ↺ title. */

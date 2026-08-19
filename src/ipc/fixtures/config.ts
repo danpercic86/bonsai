@@ -40,17 +40,36 @@ export interface MockConfigStore {
 }
 
 /**
- * Fresh store. `withIdentity` false (the `?fixture=noconfig` case) drops the
- * seeded global identity so a mock commit that consults the store fails with
- * `configMissing` until the user sets an identity in Settings.
+ * Which identity the mock store starts with.
+ *
+ *  - `'global'` (default) — an identity in the GLOBAL file only, matching NO
+ *    seeded profile. This is the honest common case and stays the harness
+ *    default: a repo that commits fine with nothing set locally (UI §4.2 state 2).
+ *  - `'none'` (`?fixture=noconfig`) — nothing anywhere, so a mock commit fails
+ *    with `configMissing` and the Set-identity flow is demoable (state 3).
+ *  - `'localMatch'` (`?fixture=identitymatch`) — a LOCAL identity equal to the
+ *    seeded `Work` profile, which is the only way to reach state 1 (a checked
+ *    `menuitemradio` + `From this repository's config`) and the only way to
+ *    exercise UI §4.5's confirm, which fires only for a DIFFERING local value.
  */
-export function makeMockConfigStore(withIdentity = true): MockConfigStore {
+export type MockIdentityFixture = 'global' | 'none' | 'localMatch';
+
+/** The seeded `Work` profile's fields (`mock/persistence.ts`), duplicated here as
+ *  the `localMatch` seed. They must stay equal — that equality IS the fixture. */
+const WORK_PROFILE_IDENTITY = { name: 'Mock Fixture User', email: 'work@bonsai.dev' };
+
+export function makeMockConfigStore(identity: MockIdentityFixture = 'global'): MockConfigStore {
   const global: Record<string, string> = { 'init.defaultBranch': 'main' };
-  if (withIdentity) {
+  const local: Record<string, string> = {};
+  if (identity !== 'none') {
     global['user.name'] = 'Mock Fixture User';
     global['user.email'] = 'fixture@bonsai.dev';
   }
-  return { local: {}, global };
+  if (identity === 'localMatch') {
+    local['user.name'] = WORK_PROFILE_IDENTITY.name;
+    local['user.email'] = WORK_PROFILE_IDENTITY.email;
+  }
+  return { local, global };
 }
 
 function isCurated(name: string): boolean {

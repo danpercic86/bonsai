@@ -2,7 +2,7 @@
  *  disabled rows, keyboard nav, submenu open (keyboard), and dismiss paths
  *  (Escape, outside pointerdown, scroll). */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 
 function makeItems() {
@@ -107,5 +107,146 @@ describe('ContextMenu', () => {
     const { onClose } = renderMenu();
     fireEvent.scroll(window);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** P69i (UI §4.4) — the three additive fields. Each must be invisible when
+ *  absent: every existing call site (branch menus, the push caret, the external
+ *  tools dropdown) passes none of them and must render exactly as before. */
+describe('ContextMenu — checked / detail / header (P69i)', () => {
+  it('a row without `checked` stays a plain menuitem with no check column', () => {
+    renderMenu();
+    expect(screen.queryAllByRole('menuitemradio')).toHaveLength(0);
+    expect(document.querySelector('.context-menu-check')).toBeNull();
+    expect(document.querySelector('.context-menu-header')).toBeNull();
+    expect(document.querySelector('.context-menu-detail')).toBeNull();
+    // The label element is unchanged (no extra wrapper) when `detail` is absent.
+    const row = screen.getByRole('menuitem', { name: 'Checkout' });
+    expect(row.querySelector('.context-menu-lines')).toBeNull();
+    expect(row.querySelector('.context-menu-label')?.textContent).toBe('Checkout');
+  });
+
+  it('`checked` renders menuitemradio + aria-checked and reserves the column', () => {
+    const items: ContextMenuItem[] = [
+      { label: 'Work', checked: true, onSelect: vi.fn() },
+      { label: 'Personal', checked: false, onSelect: vi.fn() },
+    ];
+    render(<ContextMenu x={10} y={10} items={items} onClose={vi.fn()} />);
+
+    const on = screen.getByRole('menuitemradio', { name: /Work/ });
+    const off = screen.getByRole('menuitemradio', { name: /Personal/ });
+    expect(on).toHaveAttribute('aria-checked', 'true');
+    expect(off).toHaveAttribute('aria-checked', 'false');
+    // The column exists on BOTH rows, so ticking one never shifts the other.
+    expect(on.querySelector('.context-menu-check')?.textContent).toBe('✓');
+    expect(off.querySelector('.context-menu-check')?.textContent).toBe('');
+  });
+
+  it('the check column is reserved on EVERY row of a checked list', () => {
+    // The failure this pins: reserving the column per-ROW leaves the plain tail
+    // rows 24px to the left of the profile labels — a ragged menu. Comparing two
+    // radio rows to each other cannot see it; comparing a radio to a plain one can.
+    const items: ContextMenuItem[] = [
+      { label: 'Work', checked: true, onSelect: vi.fn() },
+      { label: 'Manage identities…', onSelect: vi.fn() },
+    ];
+    render(<ContextMenu x={10} y={10} items={items} onClose={vi.fn()} />);
+
+    const radio = screen.getByRole('menuitemradio', { name: /Work/ });
+    const plain = screen.getByRole('menuitem', { name: 'Manage identities…' });
+    expect(radio.querySelector('.context-menu-check')).not.toBeNull();
+    expect(plain.querySelector('.context-menu-check')).not.toBeNull();
+    expect(plain.querySelector('.context-menu-check')?.textContent).toBe('');
+    // …and a list with no checked row at all still reserves nothing.
+    cleanup();
+    render(
+      <ContextMenu x={10} y={10} items={[{ label: 'Plain', onSelect: vi.fn() }]} onClose={vi.fn()} />,
+    );
+    expect(document.querySelector('.context-menu-check')).toBeNull();
+  });
+
+  it('a row whose label mutates keeps its DOM node, and its focus', () => {
+    // The identity menu stays open while a write settles and renames the active
+    // row to "… — Applying…". A label-derived key would remount that button and
+    // drop focus to <body> for the whole in-flight window.
+    const items: ContextMenuItem[] = [
+      { label: 'Work', checked: false, onSelect: vi.fn() },
+      { label: 'Personal', checked: false, onSelect: vi.fn() },
+    ];
+    const { rerender } = render(<ContextMenu x={10} y={10} items={items} onClose={vi.fn()} />);
+    const before = screen.getByRole('menuitemradio', { name: /Work/ });
+    before.focus();
+
+    rerender(
+      <ContextMenu
+        x={10}
+        y={10}
+        items={[{ ...items[0], label: 'Work — Applying…' }, items[1]]}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const after = screen.getByRole('menuitemradio', { name: /Applying…/ });
+    expect(after).toBe(before);
+    expect(after).toHaveFocus();
+  });
+
+  it('menuitemradio rows are keyboard-navigable exactly like menuitems', () => {
+    const items: ContextMenuItem[] = [
+      { label: 'Work', checked: true, onSelect: vi.fn() },
+      { label: 'Personal', checked: false, onSelect: vi.fn() },
+      { label: 'Manage identities…', onSelect: vi.fn() },
+    ];
+    render(<ContextMenu x={10} y={10} items={items} onClose={vi.fn()} />);
+
+    // Focus queries used to scope to [role="menuitem"] only — a radio row would
+    // have been skipped by ArrowDown, which is the whole risk of this change.
+    const first = screen.getByRole('menuitemradio', { name: /Work/ });
+    expect(first).toHaveFocus();
+    fireEvent.keyDown(first, { key: 'ArrowDown' });
+    expect(screen.getByRole('menuitemradio', { name: /Personal/ })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole('menuitemradio', { name: /Personal/ }), {
+      key: 'ArrowDown',
+    });
+    expect(screen.getByRole('menuitem', { name: 'Manage identities…' })).toHaveFocus();
+  });
+
+  it('`detail` adds a second line inside the row and keeps it in the name', () => {
+    const items: ContextMenuItem[] = [
+      { label: 'Work', detail: 'Ada Lovelace · work@bonsai.dev', onSelect: vi.fn() },
+    ];
+    render(<ContextMenu x={10} y={10} items={items} onClose={vi.fn()} />);
+
+    const row = screen.getByRole('menuitem', { name: /Work/ });
+    expect(row.querySelector('.context-menu-detail')?.textContent).toBe(
+      'Ada Lovelace · work@bonsai.dev',
+    );
+    // Long details ellipsise, so the full string has to be reachable.
+    expect(row.querySelector('.context-menu-detail')).toHaveAttribute(
+      'title',
+      'Ada Lovelace · work@bonsai.dev',
+    );
+  });
+
+  it('`header` renders above the list, is presentational, and is not focusable', () => {
+    const items: ContextMenuItem[] = [{ label: 'Only', onSelect: vi.fn() }];
+    render(
+      <ContextMenu
+        x={10}
+        y={10}
+        items={items}
+        header={<p>{'Committing as'}</p>}
+        busy
+        onClose={vi.fn()}
+      />,
+    );
+
+    const header = document.querySelector('.context-menu-header');
+    expect(header).not.toBeNull();
+    expect(header).toHaveAttribute('role', 'presentation');
+    expect(screen.getByRole('menu')).toHaveAttribute('aria-busy', 'true');
+    // Focus still lands on the first ROW, never on the header.
+    expect(screen.getByRole('menuitem', { name: 'Only' })).toHaveFocus();
+    expect(screen.getAllByRole('menuitem')).toHaveLength(1);
   });
 });

@@ -34,13 +34,18 @@ import type { UiSettings } from '../../ipc/types';
 // ---------------------------------------------------------------- AM-5 partition
 
 /** Re-skinned and guarded. */
-const MIGRATED: readonly SettingsCategoryId[] = ['general', 'appearance', 'about', 'git-config'];
+const MIGRATED: readonly SettingsCategoryId[] = [
+  'general',
+  'appearance',
+  'about',
+  'git-config',
+  'identities',
+];
 
 /** Still on legacy interiors — reachable from the rail, not yet catalog-shaped. */
 const PENDING: readonly SettingsCategoryId[] = [
   'graph', // P69j
   'ai', // P69j
-  'identities', // P69i
 ];
 
 // ------------------------------------------------------------- AM-4a predicates
