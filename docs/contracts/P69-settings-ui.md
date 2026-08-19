@@ -1011,3 +1011,24 @@ grouping, the fix is `role="tab"` items in separate `role="tablist"` groups with
 **A7 — Increment sizing.** §9.5 splits P69 into four senior-dev passes. Increment D (the graph/AI
 re-skin) touches five existing sections and is the one most likely to need a second review round.
 **Recommendation: run A→B→C→D and commit each.**
+
+---
+
+## 13. Draft feedback for out-of-range / blank slider entries — see sibling file
+
+**`docs/contracts/P69c-draft-feedback-ui.md` IS section 13 of this contract** and is binding.
+It was written as a sibling because `ui-designer` has no line-level edit tool and re-emitting this
+1013-line file would have risked truncating it.
+
+Summary: P69c's draft-display fix means an out-of-range draft now persists with no affordance
+(typing `128` into Row height leaves the field reading 128 while the setting sits at max). The spec
+adds a `--warning` 1px ring (6.4:1 dark / 4.2:1 light on `--bg-2`; NOT `--danger` — the setting is
+still at a legal value and nothing is lost) plus a sentence in `--text-2`, never colour alone.
+
+**Timing rule (the crux):** an ABOVE-MAXIMUM draft warns on the keystroke that causes it, because
+appending digits only increases and the state is terminal; BELOW-MINIMUM, blank and non-integer
+drafts warn only after **600 ms idle**, because every valid entry passes through them (`30` passes
+through `3`; re-typing passes through empty). No new tokens.
+
+Its §14 is a ready-to-paste `ui-reference.md` §12.3.3 block — fold that in during P69l and reduce
+the sibling to a pointer.
