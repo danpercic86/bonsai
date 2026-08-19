@@ -25,6 +25,13 @@ export interface RefreshDeps {
   refetchRemotes: () => Promise<void>;
 }
 
+/** P73 §6.1: the submodule with an op in flight, and the present-participle
+ *  label its row badge shows meanwhile. null ⇒ no submodule op running. */
+export interface SubmoduleBusy {
+  name: string;
+  label: string;
+}
+
 /** The most common trio every mutating handler needs. */
 export interface BaseActionDeps {
   repoId: string;

@@ -41,6 +41,7 @@ function renderSidebar(over: Partial<SidebarProps> = {}) {
     onStashContextMenu: vi.fn(),
     submodules: [],
     onSubmoduleContextMenu: vi.fn(),
+    submoduleBusy: null,
     onNewSubmodule: vi.fn(),
     worktrees: [],
     onWorktreeContextMenu: vi.fn(),

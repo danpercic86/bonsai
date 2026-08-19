@@ -404,23 +404,24 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     ];
   }
 
-  // P19 §6.4: submodule row menu. "Update" on an uninitialized row
-  // init-then-updates (backend §OPEN-4), so it is always enabled; "Init" is a
-  // no-op once initialized → disabled unless uninitialized. "Open in new tab"
-  // needs a checked-out worktree → disabled while uninitialized.
+  // P19 §6.4 + P73 §3.2: submodule row menu. "Initialize and check out" and
+  // "Update" are the same backend call (sm.update(init:true)) as a mutually-
+  // exclusive pair — one is live per row state, like Lock…/Unlock below. Deinit
+  // is a no-op once uninitialized; open-in-tab needs files on disk.
   function submoduleMenuItems(sub: SubmoduleInfo): ContextMenuItem[] {
     const gate = mutating || opActive;
+    const uninit = sub.status === 'uninitialized';
     return [
       {
-        label: 'Init',
+        label: 'Initialize and check out',
         icon: createElement(BranchIcon),
-        disabled: gate || sub.status !== 'uninitialized',
+        disabled: gate || !uninit,
         onSelect: () => void handleInitSubmodule(sub.name),
       },
       {
         label: 'Update',
         icon: createElement(StashApplyIcon),
-        disabled: gate,
+        disabled: gate || uninit,
         onSelect: () => void handleUpdateSubmodule(sub.name),
       },
       {
@@ -429,12 +430,11 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
         disabled: gate,
         onSelect: () => void handleSyncSubmodule(sub.name),
       },
-      // P60d: deinit (clears config + empties the worktree; keeps .gitmodules)
-      // is a no-op once uninitialized → disabled then; remove is destructive.
+      // P60d: deinit clears config + empties the worktree (keeps .gitmodules).
       {
         label: 'Deinitialize…',
         icon: createElement(ResetIcon),
-        disabled: gate || sub.status === 'uninitialized',
+        disabled: gate || uninit,
         onSelect: () => setPendingDeinitSubmodule(sub.name),
       },
       {
@@ -447,7 +447,7 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
       {
         label: 'Open in new tab',
         icon: createElement(CompareIcon),
-        disabled: sub.status === 'uninitialized',
+        disabled: uninit,
         onSelect: () => onOpenRepoPath(sub.absPath),
       },
       // P49: launch external tools at the submodule's absolute workdir. Always

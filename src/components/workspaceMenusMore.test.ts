@@ -68,11 +68,11 @@ describe('stashMenuItems', () => {
 });
 
 describe('submoduleMenuItems', () => {
-  it('initialized submodule: Init + Deinit gating, open-in-tab enabled', () => {
+  it('initialized submodule: Update live, "Initialize and check out" dead, open-in-tab enabled', () => {
     const deps = makeDeps();
     const items = createWorkspaceMenus(deps).submoduleMenuItems(makeSubmodule());
     expect(labelsOf(items)).toEqual([
-      'Init',
+      'Initialize and check out',
       'Update',
       'Sync',
       'Deinitialize…',
@@ -80,7 +80,9 @@ describe('submoduleMenuItems', () => {
       'Open in new tab',
       ...EXT_LABELS,
     ]);
-    expect(itemByLabel(items, 'Init').disabled).toBe(true); // already initialized
+    // P73 §3.2: mutually exclusive — files are already on disk.
+    expect(itemByLabel(items, 'Initialize and check out').disabled).toBe(true);
+    expect(itemByLabel(items, 'Update').disabled).toBe(false);
     expect(itemByLabel(items, 'Deinitialize…').disabled).toBe(false);
     expect(itemByLabel(items, 'Open in new tab').disabled).toBe(false);
     expect(itemByLabel(items, 'Remove…').tone).toBe('danger');
@@ -88,12 +90,13 @@ describe('submoduleMenuItems', () => {
     expect(deps.onOpenRepoPath).toHaveBeenCalledWith('/repo/libs/dep');
   });
 
-  it('uninitialized submodule flips the gates: Init enabled, Deinit + open-in-tab disabled', () => {
+  it('uninitialized submodule flips every gate: init enabled, Update + Deinit + open-in-tab disabled', () => {
     const items = createWorkspaceMenus(makeDeps()).submoduleMenuItems(
       makeSubmodule({ status: 'uninitialized', wtOid: null }),
     );
-    expect(itemByLabel(items, 'Init').disabled).toBe(false);
-    expect(itemByLabel(items, 'Update').disabled).toBe(false); // init-then-update
+    expect(itemByLabel(items, 'Initialize and check out').disabled).toBe(false);
+    // P73 §3.2: Update is the exact inverse gate (no row to update yet).
+    expect(itemByLabel(items, 'Update').disabled).toBe(true);
     expect(itemByLabel(items, 'Deinitialize…').disabled).toBe(true);
     expect(itemByLabel(items, 'Open in new tab').disabled).toBe(true);
   });
@@ -103,6 +106,7 @@ describe('submoduleMenuItems', () => {
       makeSubmodule(),
     );
     expect(itemByLabel(items, 'Update').disabled).toBe(true);
+    expect(itemByLabel(items, 'Initialize and check out').disabled).toBe(true);
     expect(itemByLabel(items, 'Sync').disabled).toBe(true);
     expect(itemByLabel(items, 'Remove…').disabled).toBe(true);
     for (const l of EXT_LABELS) expect(itemByLabel(items, l).disabled).toBe(false);

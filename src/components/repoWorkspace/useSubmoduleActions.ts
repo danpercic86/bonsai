@@ -1,58 +1,40 @@
 import { ipc } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
-import type { BaseActionDeps } from './types';
+import type { BaseActionDeps, Setter, SubmoduleBusy } from './types';
+
+// Re-exported so the container imports the busy-state type from the hook that
+// owns it (one import line in an already-oversized RepoWorkspace.tsx).
+export type { SubmoduleBusy } from './types';
 
 /** P19 + P60d: submodule init/update/sync (non-destructive to the superproject)
  *  and add/deinit/remove (which DO change the superproject index/worktree).
  *  init/update/sync only need a submodule refetch; add/deinit/remove also
- *  refetch status + graph (the gitlink is staged/removed). */
+ *  refetch status + graph (the gitlink is staged/removed).
+ *
+ *  P73: "Initialize and check out" is `updateSubmodule` (= sm.update(init:true)),
+ *  not `initSubmodule` — init alone only writes .git/config, so the old success
+ *  toast contradicted the row badge. Every row op reports failure as
+ *  `Couldn't <verb> <name>. <backend sentence>` under the dedupe key
+ *  `submodule:<name>` (§5.2) and refetches either way, so the badge always shows
+ *  what is actually on disk. */
 export function useSubmoduleActions(
   deps: BaseActionDeps & {
     refetchSubmodules: () => Promise<void>;
     refetchStatus: () => Promise<void>;
     refetchGraph: () => Promise<void>;
+    /** P73 §6.1: row-local busy pill; set per op, cleared in `finally`. */
+    setSubmoduleBusy: Setter<SubmoduleBusy | null>;
   },
 ) {
-  const { repoId, pushToast, setMutating, refetchSubmodules, refetchStatus, refetchGraph } = deps;
-
-  async function handleInitSubmodule(name: string) {
-    setMutating(true);
-    try {
-      await ipc.initSubmodule(repoId, name);
-      pushToast('success', `Initialized ${name}`);
-      await refetchSubmodules();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleUpdateSubmodule(name: string) {
-    setMutating(true);
-    try {
-      await ipc.updateSubmodule(repoId, name);
-      pushToast('success', `Updated ${name}`);
-      await refetchSubmodules();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleSyncSubmodule(name: string) {
-    setMutating(true);
-    try {
-      await ipc.syncSubmodule(repoId, name);
-      pushToast('success', `Synced URL for ${name}`);
-      await refetchSubmodules();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
+  const {
+    repoId,
+    pushToast,
+    setMutating,
+    setSubmoduleBusy,
+    refetchSubmodules,
+    refetchStatus,
+    refetchGraph,
+  } = deps;
 
   // add/deinit/remove edit the superproject index + worktree → refetch status +
   // graph alongside the submodule list.
@@ -60,37 +42,108 @@ export function useSubmoduleActions(
     await Promise.all([refetchSubmodules(), refetchStatus(), refetchGraph()]);
   }
 
+  /** P73 §5-§6: the shared shape of every row-scoped submodule op — busy pill,
+   *  success/failure copy naming the target, and a refetch on both paths. */
+  async function runRowOp(op: {
+    name: string;
+    /** Present participle shown in the row badge while in flight. */
+    busyLabel: string;
+    /** Imperative verb for the failure prefix ("check out", "update", …). */
+    verb: string;
+    successText: string;
+    call: () => Promise<void>;
+    refresh: () => Promise<void>;
+  }) {
+    setMutating(true);
+    setSubmoduleBusy({ name: op.name, label: op.busyLabel });
+    try {
+      await op.call();
+      pushToast('success', op.successText);
+    } catch (e) {
+      // The backend sentence is appended verbatim (it carries the remedy); the
+      // prefix only names the action + target. Keyed per row so retries replace.
+      const text = `Couldn't ${op.verb} ${op.name}. ${errorMessage(e)}`;
+      pushToast('error', text, `submodule:${op.name}`);
+    } finally {
+      // Refetch on failure too: a partially-applied op — or a refusal proving the
+      // row is not what the UI thought — must not leave a stale badge.
+      // A refetch failure must not escape as an unhandled rejection (nothing
+      // above this hook awaits `runRowOp`): the op's own success/error toast has
+      // already been shown, and the next watcher tick or manual refresh will
+      // reconcile the list. Swallow it, but always clear the busy pill.
+      try {
+        await op.refresh();
+      } catch {
+        // ignored — see above
+      } finally {
+        setSubmoduleBusy(null);
+        setMutating(false);
+      }
+    }
+  }
+
+  async function handleInitSubmodule(name: string) {
+    await runRowOp({
+      name,
+      busyLabel: 'checking out…',
+      verb: 'check out',
+      successText: `Checked out ${name}`,
+      call: () => ipc.updateSubmodule(repoId, name),
+      refresh: refetchSubmodules,
+    });
+  }
+
+  async function handleUpdateSubmodule(name: string) {
+    await runRowOp({
+      name,
+      busyLabel: 'updating…',
+      verb: 'update',
+      successText: `Updated ${name}`,
+      call: () => ipc.updateSubmodule(repoId, name),
+      refresh: refetchSubmodules,
+    });
+  }
+
+  async function handleSyncSubmodule(name: string) {
+    await runRowOp({
+      name,
+      busyLabel: 'syncing…',
+      verb: 'sync',
+      successText: `Synced URL for ${name}`,
+      call: () => ipc.syncSubmodule(repoId, name),
+      refresh: refetchSubmodules,
+    });
+  }
+
+  async function handleDeinitSubmodule(name: string) {
+    await runRowOp({
+      name,
+      busyLabel: 'deinitializing…',
+      verb: 'deinitialize',
+      successText: `Deinitialized ${name}`,
+      call: () => ipc.deinitSubmodule(repoId, name),
+      refresh: refreshAfterChange,
+    });
+  }
+
+  async function handleRemoveSubmodule(name: string) {
+    await runRowOp({
+      name,
+      busyLabel: 'removing…',
+      verb: 'remove',
+      successText: `Removed ${name}`,
+      call: () => ipc.removeSubmodule(repoId, name),
+      refresh: refreshAfterChange,
+    });
+  }
+
+  // No busy pill for add: there is no row yet, and the section "+" is already
+  // disabled while mutating (P73 §6.1).
   async function handleAddSubmodule(url: string, path: string) {
     setMutating(true);
     try {
       const info = await ipc.addSubmodule(repoId, url, path);
       pushToast('success', `Added submodule ${info.path}`);
-      await refreshAfterChange();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleDeinitSubmodule(name: string) {
-    setMutating(true);
-    try {
-      await ipc.deinitSubmodule(repoId, name);
-      pushToast('success', `Deinitialized ${name}`);
-      await refreshAfterChange();
-    } catch (e) {
-      pushToast('error', errorMessage(e));
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function handleRemoveSubmodule(name: string) {
-    setMutating(true);
-    try {
-      await ipc.removeSubmodule(repoId, name);
-      pushToast('success', `Removed ${name}`);
       await refreshAfterChange();
     } catch (e) {
       pushToast('error', errorMessage(e));

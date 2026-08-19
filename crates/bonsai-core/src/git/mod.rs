@@ -57,6 +57,10 @@ pub mod stale;
 pub mod stash;
 pub mod status;
 pub mod submodule;
+/// P73 reconnect/salvage machinery for `submodule` (private to `git`).
+mod submodule_reconnect;
+/// P73 clone-path rollback for `submodule` (private to `git`).
+mod submodule_rollback;
 pub mod tags;
 pub mod timefmt;
 pub mod timeout;

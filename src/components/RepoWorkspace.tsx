@@ -80,7 +80,7 @@ import { useAiDock } from './repoWorkspace/useAiDock';
 import { useBulkAiResolve } from './repoWorkspace/useBulkAiResolve';
 import { useMergeActions } from './repoWorkspace/useMergeActions';
 import { useStashActions } from './repoWorkspace/useStashActions';
-import { useSubmoduleActions } from './repoWorkspace/useSubmoduleActions';
+import { useSubmoduleActions, type SubmoduleBusy } from './repoWorkspace/useSubmoduleActions';
 import { useWorktreeActions } from './repoWorkspace/useWorktreeActions';
 import { useTagRemoteActions } from './repoWorkspace/useTagRemoteActions';
 import { useRebaseActions } from './repoWorkspace/useRebaseActions';
@@ -231,15 +231,12 @@ export function RepoWorkspace({
   }, [branches]);
 
   const [stashes, setStashes] = useState<StashEntry[]>([]);
-
   const [submodules, setSubmodules] = useState<SubmoduleInfo[]>([]);
-
+  const [submoduleBusy, setSubmoduleBusy] = useState<SubmoduleBusy | null>(null);
   // P27 §6.3: worktrees (main first), refetched alongside submodules.
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([]);
-
   // P22 §7.1: configured remotes (name + fetch URL), refetched alongside branches.
   const [remotes, setRemotes] = useState<RemoteInfo[]>([]);
-
   const [remoteOp, setRemoteOp] = useState<'fetch' | 'pull' | 'push' | null>(null);
 
   const [opState, setOpState] = useState<RepoOpState>({ kind: 'none' });
@@ -1603,6 +1600,7 @@ export function RepoWorkspace({
     repoId,
     pushToast,
     setMutating,
+    setSubmoduleBusy,
     refetchSubmodules,
     refetchStatus,
     refetchGraph,
@@ -2502,6 +2500,7 @@ export function RepoWorkspace({
       <WorkspaceToolbar
         remoteOp={remoteOp}
         refreshing={refreshing}
+        netBusy={submoduleBusy !== null}
         mutating={mutating}
         statusLoading={statusLoading}
         graphLoading={graphLoading}
@@ -2546,6 +2545,7 @@ export function RepoWorkspace({
           onStashContextMenu={handleStashContextMenu}
           submodules={submodules}
           onSubmoduleContextMenu={handleSubmoduleContextMenu}
+          submoduleBusy={submoduleBusy}
           onNewSubmodule={() => setPendingAddSubmodule(true)}
           worktrees={worktrees}
           onWorktreeContextMenu={handleWorktreeContextMenu}

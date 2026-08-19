@@ -662,7 +662,7 @@ fn wedge(super_dir: &Path) -> PathBuf;
 |---|---|
 | `update_reconnects_orphaned_module_gitdir` | after `wedge`, `update_submodule` returns `Ok`; the sentinel inside `.git/modules/<path>` still exists (⇒ reused, not re-cloned); `<sub>/.git` is a FILE whose content is `gitdir: ` + a **relative** path (starts with `..`, no backslashes, no `\\?\`); every tracked file is back on disk with the pinned content; `only()` reports `UpToDate` with `wt_oid == index_oid`; `cli_status_char == ' '` |
 | `reconnect_works_offline` | same wedge, but the upstream `file://` source directory is DELETED first ⇒ update still returns `Ok` and repopulates (proves zero network I/O on the salvage path) |
-| `reconnect_refuses_non_empty_workdir` | wedge, then drop a stray `keepme.txt` in the submodule workdir ⇒ `Err(AppError::Git(m))` with `m.contains("no .git link")`; `keepme.txt` is untouched; the row is still `Uninitialized` |
+| `reconnect_refuses_non_empty_workdir` | wedge, then drop a stray `keepme.txt` in the submodule workdir ⇒ `Err(AppError::Git(m))` with `m` is the amended row-6 sentence (`The folder already has files in it. …`) and names the path; `keepme.txt` is untouched; the row is still `Uninitialized` |
 | `reconnect_refuses_url_mismatch` | wedge, then rewrite the module's `remote.origin.url` (or the local `submodule.<name>.url`) to a different path ⇒ `Err(AppError::Git(m))` containing both urls; nothing written (no `<sub>/.git`) |
 | `reconnect_tolerates_url_cosmetic_difference` | wedge, then set the configured url to `<same>.git/` ⇒ `Ok` (proves `urls_equivalent` normalization) |
 | `update_refuses_to_clobber_dirty_submodule` (**existing, must still pass unmodified**) | the `recreate_missing` addition did not weaken the SAFE-checkout invariant |
@@ -688,7 +688,12 @@ Extend `submodule_add_lifecycle_over_file_url` (`:226`) with a **wedge-and-repai
 between the idempotent `update` (`:260`) and the `deinit` (`:262`): wedge the submodule (delete the
 gitlink + workdir files, keep `.git/modules`), assert `list_submodules_inner` reports
 `uninitialized`, then `block_on(update_submodule_inner(&state, &id, name.clone()))` succeeds and
-the row is `upToDate` with the file content restored. This proves the fix through the real Tauri
+the row is NOT `uninitialized` with the file content restored. **AMENDED 2026-08-19:** the criterion
+originally said `upToDate`, which that fixture can never reach — it never commits the staged
+`.gitmodules`/gitlink, so `INDEX_ADDED` makes `classify_status` return `outOfSync` however healthy the
+checkout is (pre-existing P19 behaviour, unrelated to P73). Assert `OutOfSync` + `wt_oid ==
+index_oid` + gitlink-is-a-file there, and leave the `upToDate` end state to the committed fixtures in
+`crates/bonsai-core/tests/submodule_wedge_cli.rs`. This proves the fix through the real Tauri
 command wrapper (`spawn_blocking` + `repo_path`), not just the core function.
 
 ### 8.4 Frontend
@@ -720,7 +725,7 @@ over a `file://` remote:
 | 3 | **Reuse, not re-clone.** `<super>/.git/modules/<SUB_PATH>/bonsai-sentinel` still exists with its original content after criterion 2. |
 | 4 | **Offline reconnect.** Repeat the fixture, delete the upstream source dir (`sub`) so the `file://` url is dead, then wedge and `update_submodule` ⇒ still `Ok`, still repopulated (proves no network I/O and no credential use on the salvage path). |
 | 5 | **Relative gitlink.** After criterion 2, `<super>/<SUB_PATH>/.git` is a regular FILE matching `^gitdir: \.\.[^\n]*\n$` — relative, forward slashes only, no `\\?\`, no absolute drive letter; and `git -C <super>/<SUB_PATH> rev-parse --git-dir` resolves inside `<super>/.git/modules`. |
-| 6 | **Refusal A — non-empty workdir.** Wedge, then create `<super>/<SUB_PATH>/keepme.txt` ⇒ `update_submodule` returns `Err(AppError::Git)` whose message names the path and mentions `no .git link`; `keepme.txt` is byte-identical afterwards; no `<SUB_PATH>/.git` was created; the row is still `uninitialized`. |
+| 6 | **Refusal A — non-empty workdir.** Wedge, then create `<super>/<SUB_PATH>/keepme.txt` ⇒ `update_submodule` returns `Err(AppError::Git)` whose message is the amended row-6 sentence (`The folder already has files in it. Move or delete everything inside '<path>', then try again.`) and leaks no libgit2 prose; `keepme.txt` is byte-identical afterwards; no `<SUB_PATH>/.git` was created; the row is still `uninitialized`. |
 | 7 | **Refusal B — url mismatch.** Wedge, then `git -C <super>/.git/modules/<SUB_PATH> remote set-url origin <other-file-url>` ⇒ `Err(AppError::Git)` quoting BOTH urls; no `<SUB_PATH>/.git` created; the module gitdir untouched. |
 | 8 | **Rollback on a failed fresh clone.** A registered-but-never-cloned submodule with a dead url: after `update_submodule` errs, `<super>/.git/modules/<key>` does not exist, the workdir path is absent-or-empty, `git -C <super> config --local --get submodule.<name>.url` is absent, and a retry against a good url succeeds. |
 | 9 | **Traversal guard.** `reattach_module_gitdir` with name `../../escape` errs with `unsafe name` and creates/deletes nothing outside the repo; the existing `remove_submodule_rejects_hostile_name_before_running_git` test still passes. |

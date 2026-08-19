@@ -7,7 +7,6 @@ import type {
   RemoteInfo,
   StashEntry,
   SubmoduleInfo,
-  SubmoduleStatus,
   WorktreeInfo,
 } from '../ipc';
 import { relativeDate } from '../graph/draw';
@@ -16,6 +15,8 @@ import { errorMessage } from '../utils/errors';
 import { buildPathTree } from '../utils/pathTree';
 import { Tree } from './Tree';
 import { ListFilterInput } from './ListFilterInput';
+import { SubmoduleRow } from './sidebar/SubmoduleRow';
+import type { SubmoduleBusy } from './repoWorkspace/types';
 import { filterByName, filterItems, filterTree } from './repoWorkspace/listFilter';
 
 /** P50d: show a section's inline type-to-filter box only once the list is long
@@ -74,6 +75,8 @@ export interface SidebarProps {
   submodules: SubmoduleInfo[];
   /** Right-click a submodule row → open the shared context menu at the cursor. */
   onSubmoduleContextMenu(name: string, clientX: number, clientY: number): void;
+  /** P73 §6.1: the submodule row with an op in flight + its participle label. */
+  submoduleBusy: SubmoduleBusy | null;
   /** P60d: click the section "+" → open the add-submodule (url + path) dialog. */
   onNewSubmodule(): void;
   /** P27 §6.1: worktrees (main first) with resolved branch/badges. */
@@ -299,41 +302,6 @@ function StashRow({
   );
 }
 
-/** P19 §6.2: display-only status pill. Label + intent class per status. */
-const SUBMODULE_BADGE: Record<SubmoduleStatus, { label: string; intent: string }> = {
-  uninitialized: { label: 'not initialized', intent: 'submodule-badge-muted' },
-  upToDate: { label: 'up to date', intent: 'submodule-badge-ok' },
-  outOfSync: { label: 'out of sync', intent: 'submodule-badge-warn' },
-  modifiedWorkdir: { label: 'modified', intent: 'submodule-badge-warn' },
-};
-
-function SubmoduleRow({
-  sub,
-  onContextMenu,
-}: {
-  sub: SubmoduleInfo;
-  onContextMenu(name: string, clientX: number, clientY: number): void;
-}) {
-  const badge = SUBMODULE_BADGE[sub.status];
-  return (
-    <li
-      className="branch-row"
-      onContextMenu={(e) => {
-        e.preventDefault();
-        onContextMenu(sub.name, e.clientX, e.clientY);
-      }}
-    >
-      <span className="branch-glyph">{'⊡'}</span>
-      <span className="branch-name" title={sub.path}>
-        {sub.name}
-      </span>
-      <span className={`branch-badge ${badge.intent}`} title={badge.label}>
-        {badge.label}
-      </span>
-    </li>
-  );
-}
-
 /** P27 §6.2: display-only badge pills for a worktree row. A row may show more
  *  than one (e.g. current + main). Reuses the P19 badge intent classes. */
 function worktreeBadges(wt: WorktreeInfo): { label: string; intent: string; title?: string }[] {
@@ -412,6 +380,7 @@ export function Sidebar({
   onStashContextMenu,
   submodules,
   onSubmoduleContextMenu,
+  submoduleBusy,
   onNewSubmodule,
   worktrees,
   onWorktreeContextMenu,
@@ -871,7 +840,12 @@ export function Sidebar({
               ) : (
                 <ul className="branch-list">
                   {submodules.map((s) => (
-                    <SubmoduleRow key={s.name} sub={s} onContextMenu={onSubmoduleContextMenu} />
+                    <SubmoduleRow
+                      key={s.name}
+                      sub={s}
+                      submoduleBusy={submoduleBusy}
+                      onContextMenu={onSubmoduleContextMenu}
+                    />
                   ))}
                 </ul>
               ))}

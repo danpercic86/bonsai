@@ -259,6 +259,68 @@ fn submodule_add_lifecycle_over_file_url() {
     block_on(sync_submodule_inner(&state, &id, name.clone())).expect("sync");
     block_on(update_submodule_inner(&state, &id, name.clone())).expect("update");
 
+    // P73 (contract §8.3) — wedge-and-repair through the real command wrapper.
+    use bonsai_core::git::submodule::SubmoduleStatus as SubStatus;
+    // Wedge: keep `.git/modules/<name>` intact (plus a sentinel proving REUSE),
+    // delete the gitlink and every workdir file, keep the now-empty dir. libgit2
+    // alone dies here with "attempt to reinitialize"; the salvage reattaches.
+    let sub_wd = dir.path().join("vendor/sub");
+    let module_dir = dir.path().join(".git").join("modules").join(&name);
+    assert!(module_dir.join("HEAD").exists(), "precondition: a cached module gitdir");
+    let sentinel = module_dir.join("bonsai-sentinel");
+    std::fs::write(&sentinel, "keep me").expect("plant sentinel");
+    std::fs::remove_file(sub_wd.join(".git")).expect("remove gitlink");
+    for e in std::fs::read_dir(&sub_wd).expect("read submodule workdir") {
+        let e = e.expect("dir entry");
+        if std::fs::symlink_metadata(e.path()).expect("stat").is_dir() {
+            std::fs::remove_dir_all(e.path()).expect("rm dir");
+        } else {
+            std::fs::remove_file(e.path()).expect("rm file");
+        }
+    }
+    // The row survives the wedge and reads `uninitialized`.
+    let wedged = block_on(list_submodules_inner(&state, &id))
+        .expect("list while wedged")
+        .into_iter()
+        .find(|s| s.path == "vendor/sub")
+        .expect("the wedged row is still listed");
+    assert_eq!(wedged.status, SubStatus::Uninitialized, "wedged row: {wedged:?}");
+
+    // ...and the command repairs it, reusing the cached gitdir (no network).
+    block_on(update_submodule_inner(&state, &id, name.clone()))
+        .expect("update must reconnect the orphaned module gitdir");
+    assert_eq!(
+        std::fs::read_to_string(&sentinel).expect("sentinel survives"),
+        "keep me",
+        "the cached gitdir was reused, not re-cloned"
+    );
+    assert_eq!(
+        // CRLF-normalized: the module gitdir is cloned by libgit2, which inherits
+        // the developer's global `core.autocrlf`.
+        std::fs::read_to_string(sub_wd.join("lib.txt"))
+            .expect("lib.txt restored")
+            .replace("\r\n", "\n"),
+        "sub\n",
+        "the submodule content is back on disk"
+    );
+    let repaired = block_on(list_submodules_inner(&state, &id))
+        .expect("list after repair")
+        .into_iter()
+        .find(|s| s.path == "vendor/sub")
+        .expect("the repaired row");
+    // NOT `upToDate` in THIS fixture: the `.gitmodules` + gitlink are only STAGED
+    // (this lifecycle never commits them), so `INDEX_ADDED` makes
+    // `classify_status` report `outOfSync` regardless of how healthy the checkout
+    // is — pre-existing P19 behaviour, unrelated to P73. What the repair must
+    // prove here is that the row LEFT `uninitialized` and the checked-out commit
+    // now matches the pinned one. (The `upToDate` end state is asserted on a
+    // committed fixture in `bonsai-core/tests/submodule_wedge_cli.rs`.)
+    assert_ne!(repaired.status, SubStatus::Uninitialized, "repaired row: {repaired:?}");
+    assert_eq!(repaired.status, SubStatus::OutOfSync, "repaired row: {repaired:?}");
+    assert!(repaired.wt_oid.is_some() && repaired.wt_oid == repaired.index_oid,
+        "the checked-out commit matches the pinned one: {repaired:?}");
+    assert!(sub_wd.join(".git").is_file(), "a gitlink FILE was written back");
+
     block_on(deinit_submodule_inner(&state, &id, name.clone())).expect("deinit");
     block_on(remove_submodule_inner(&state, &id, name.clone())).expect("remove");
     assert!(

@@ -9,6 +9,9 @@ import { shortcutLabel } from '../utils/platform';
 export interface WorkspaceToolbarProps {
   remoteOp: 'fetch' | 'pull' | 'push' | null;
   refreshing: boolean;
+  /** P73 §6.2: a non-remote background op (submodule init/update/sync) is
+   *  running — drives the 2px sweep only; remote buttons keep `remoteOp`. */
+  netBusy?: boolean;
   mutating: boolean;
   statusLoading: boolean;
   graphLoading: boolean;
@@ -49,6 +52,7 @@ export interface WorkspaceToolbarProps {
 export function WorkspaceToolbar({
   remoteOp,
   refreshing,
+  netBusy,
   mutating,
   statusLoading,
   graphLoading,
@@ -239,7 +243,9 @@ export function WorkspaceToolbar({
           </button>
         </div>
       </div>
-      {(remoteOp !== null || refreshing) && <div className="header-progress" aria-hidden="true" />}
+      {(remoteOp !== null || refreshing || netBusy === true) && (
+        <div className="header-progress" aria-hidden="true" />
+      )}
       {pushMenu !== null && (
         <ContextMenu
           x={pushMenu.x}

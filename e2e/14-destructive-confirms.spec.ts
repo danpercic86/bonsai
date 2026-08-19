@@ -190,6 +190,7 @@ test.describe('14 destructive confirms @destructive', () => {
     menu = await openBranchContextMenu(page, 'vendor/theme');
     await menu.getByRole('menuitem', { name: 'Deinitialize…' }).click();
     await confirm(page, 'Deinitialize submodule', 'Deinitialize');
-    await expect(subRow.getByText('not initialized')).toBeVisible();
+    // P73 §4: the badge names the observable fact, not the git bookkeeping step.
+    await expect(subRow.getByText('not checked out')).toBeVisible();
   });
 });

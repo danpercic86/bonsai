@@ -8,13 +8,50 @@ import type { AppError, SubmoduleInfo } from '../../types';
 import { randomOid } from '../../fixtures/oids';
 import { delay, query, requireRepo } from '../repoState';
 
-/** Harness fail-seam: a `#fail` in the id or `?submodule=fail` → a git error,
- *  so the toast/error path is reachable without a real repo. */
-function failSeam(id: string): void {
-  if (id.includes('#fail') || query('submodule') === 'fail') {
-    const err: AppError = { kind: 'git', message: 'Mock: submodule operation failed' };
+/** P73 §8.3 harness seams: `#fail` in the id or `?submodule=<seam>` drives the
+ *  error/slow paths of every submodule op without a real repo. `notEmpty` and
+ *  `urlMismatch` mirror the two backend refusals verbatim so the composed toast
+ *  (`Couldn't check out <name>. <sentence>`) is verifiable in the harness. */
+function failSeam(name: string): void {
+  if (name.includes('#fail') || query('submodule') === 'fail') {
+    const err: AppError = {
+      kind: 'git',
+      message: 'Mock: submodule operation failed.',
+    };
     throw err;
   }
+}
+
+/** init/update/sync additionally honour the P73 refusal + slow seams. */
+async function submoduleSeam(name: string, sub?: SubmoduleInfo): Promise<void> {
+  const seam = query('submodule');
+  failSeam(name);
+  if (seam === 'notEmpty') {
+    const err: AppError = {
+      kind: 'git',
+      // The real backend interpolates the submodule PATH here (see
+      // submodule_reconnect.rs msg_dirty_workdir), which differs from the name
+      // for a renamed submodule — the mock must not diverge.
+      message: `The folder already has files in it. Move or delete everything inside '${sub?.path ?? name}', then try again.`,
+    };
+    throw err;
+  }
+  if (seam === 'urlMismatch') {
+    const err: AppError = {
+      kind: 'git',
+      message: `Bonsai has cached data for a different remote URL ('https://example.com/old-${name}.git' instead of '${sub?.url ?? name}'). Run Sync on this submodule, then try again.`,
+    };
+    throw err;
+  }
+  if (seam === 'auth') {
+    const err: AppError = {
+      kind: 'authFailed',
+      message: `Authentication failed for ${sub?.url ?? 'the submodule remote'}.`,
+    };
+    throw err;
+  }
+  // The only way to observe the P73 §6 busy badge + the header sweep.
+  if (seam === 'slow') await delay(4000);
 }
 
 export const submoduleHandlers = {
@@ -24,10 +61,14 @@ export const submoduleHandlers = {
     return structuredClone(state.submodules);
   },
 
+  // P73: init means init + CHECKOUT, so flipping to upToDate is the intended
+  // semantics — this is no longer a mock/backend divergence. Note the UI no
+  // longer calls this command; handleInitSubmodule invokes updateSubmodule.
   async initSubmodule(repoId: string, name: string): Promise<void> {
     await delay(150);
     const state = requireRepo(repoId);
     const sub = state.submodules.find((s) => s.name === name);
+    await submoduleSeam(name, sub);
     // Unknown name → no-op (the mock list is authoritative; unreachable from UI).
     if (sub !== undefined && sub.status === 'uninitialized') {
       sub.status = 'upToDate';
@@ -39,6 +80,7 @@ export const submoduleHandlers = {
     await delay(150);
     const state = requireRepo(repoId);
     const sub = state.submodules.find((s) => s.name === name);
+    await submoduleSeam(name, sub);
     // Init-then-update semantics — clears uninitialized / outOfSync.
     if (sub !== undefined) {
       sub.status = 'upToDate';
@@ -50,8 +92,11 @@ export const submoduleHandlers = {
     await delay(150);
     // Sync mutates config (URL propagation), not the listed fields — no-op here.
     // Validate the repo is open (mirrors the real command surface).
-    void name;
-    requireRepo(repoId);
+    const state = requireRepo(repoId);
+    await submoduleSeam(
+      name,
+      state.submodules.find((s) => s.name === name),
+    );
   },
 
   // P60d: add via git2 (clones) → push a new row. Blank url/path → invalidName.

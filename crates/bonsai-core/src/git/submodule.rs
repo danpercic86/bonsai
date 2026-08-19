@@ -16,6 +16,10 @@ use crate::error::AppError;
 use crate::git::remote::{acquire_cred, map_remote_err, CredAttempts};
 use crate::git::search::GitRunner;
 use crate::git::stage::{open_workdir_repo, validate_rel_path};
+use crate::git::submodule_reconnect::{
+    is_reinitialize_error, msg_unusable_module_dir, reattach_module_gitdir, Salvage,
+};
+use crate::git::submodule_rollback::{rollback_partial_update, snapshot_pre_update};
 
 /// Consolidated state of one submodule. Wire: a camelCase string enum (no
 /// data). Derived from git2's `Repository::submodule_status` bitflags (§2.4),
@@ -159,8 +163,30 @@ pub fn init_submodule(workdir: &Path, name: &str) -> Result<(), AppError> {
 /// pinned commit. git2: `Submodule::update(true, Some(&mut opts))` with the
 /// fetch callbacks wired to the credential chain (§2.5). MODIFIES the submodule
 /// worktree (safe checkout default; never force).
+///
+/// P73: before handing over to libgit2, try to reconnect an orphaned
+/// `.git/modules/<key>` gitdir to an empty, gitlink-less worktree
+/// ([`reattach_module_gitdir`]) — libgit2 would otherwise take its `NO_REINIT`
+/// clone branch and fail with `attempt to reinitialize '<...>'`. On that salvage
+/// path the checkout additionally gets `recreate_missing` (NOT `force`: dirty
+/// content is still protected) because the module index already matches the
+/// target, so a plain SAFE checkout would write nothing over the empty dir. A
+/// failed FRESH clone rolls back to the pre-attempt disk state.
 pub fn update_submodule(workdir: &Path, name: &str) -> Result<(), AppError> {
     let repo = open_workdir_repo(workdir)?;
+    let sm = open_submodule(&repo, name)?;
+    let path = sm.path().to_string_lossy().replace('\\', "/");
+
+    // Snapshot before anything can be created (used only on the clone path).
+    let pre = snapshot_pre_update(&repo, name, &path);
+
+    // P73 salvage. Any refusal propagates immediately — falling through to
+    // libgit2's clone branch would only fail with "attempt to reinitialize".
+    let salvage = reattach_module_gitdir(&repo, &sm, name)?;
+
+    // Re-open the handle: the reattach changed on-disk state and
+    // `Submodule::reload` ignores `force`. Drop the old handle first (borrowck).
+    drop(sm);
     let mut sm = open_submodule(&repo, name)?;
 
     let attempts = RefCell::new(CredAttempts::default());
@@ -174,10 +200,42 @@ pub fn update_submodule(workdir: &Path, name: &str) -> Result<(), AppError> {
     let mut opts = git2::SubmoduleUpdateOptions::new();
     opts.fetch(fo);
 
+    // On the salvage path ONLY: let the checkout recreate files that are ABSENT
+    // from the (verified empty) worktree. `recreate_missing` is not `force` —
+    // existing content is never overwritten, so the SAFE-checkout invariant
+    // asserted by `update_refuses_to_clobber_dirty_submodule` still holds.
+    if salvage == Salvage::Reattached {
+        let mut co = git2::build::CheckoutBuilder::new();
+        co.recreate_missing(true);
+        opts.checkout(co);
+    }
+
     // init=true → init-then-update in one call (§OPEN-4). SAFE checkout default.
-    sm.update(true, Some(&mut opts))
-        .map_err(|e| map_remote_err(e, name))?;
-    Ok(())
+    match sm.update(true, Some(&mut opts)) {
+        Ok(()) => Ok(()),
+        Err(raw) => {
+            // BACKSTOP (P73): the salvage stood down (`NotApplicable`) — e.g. the
+            // cached `.git/modules/<key>` exists but is not an openable repo, so
+            // step 4 bailed — and libgit2 then took its clone branch and refused
+            // with "attempt to reinitialize '<abs path>'". That raw sentence must
+            // never reach the toast; the rollback also stands down here (the
+            // module dir pre-existed), so tell the user the one remedy instead.
+            let mapped = if salvage == Salvage::NotApplicable && is_reinitialize_error(&raw) {
+                // `path`, not `name`: libgit2 keys the dir it failed to init on
+                // `sm->path`, so that is the folder the user must delete.
+                AppError::Git(msg_unusable_module_dir(&path))
+            } else {
+                map_remote_err(raw, name)
+            };
+            // Rollback ONLY the fresh-clone path: on the salvage path the module
+            // gitdir pre-existed and MUST NOT be deleted, and the freshly
+            // written gitlink is correct (it makes a retry work).
+            if salvage == Salvage::NotApplicable {
+                rollback_partial_update(&repo, name, &path, &pre);
+            }
+            Err(mapped)
+        }
+    }
 }
 
 /// Blocking. Copy the URL from .gitmodules into .git/config and the submodule's
@@ -369,7 +427,7 @@ pub fn remove_submodule(
 /// (CVE-2018-11235 vector). Names MAY contain `/` (nested defaults such as
 /// `vendor/libcore`), but never `..`/`.`/empty components (across `/` AND `\`)
 /// or absolute paths.
-fn validate_modules_name(name: &str) -> Result<(), AppError> {
+pub(super) fn validate_modules_name(name: &str) -> Result<(), AppError> {
     let bytes = name.as_bytes();
     let absolute = name.starts_with('/')
         || (bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':');
@@ -388,8 +446,12 @@ fn validate_modules_name(name: &str) -> Result<(), AppError> {
 /// belt-and-braces containment (F-A7-2): even after name validation, delete
 /// only when the canonicalized dir is strictly inside the canonicalized
 /// modules root. An absent dir is a silent no-op (canonicalize fails).
-fn remove_cached_git_dir(repo: &git2::Repository, name: &str) {
-    let root = repo.path().join("modules");
+pub(super) fn remove_cached_git_dir(repo: &git2::Repository, name: &str) {
+    // P73 §6: commondir, NOT path() — inside a linked worktree `path()` is
+    // `.git/worktrees/<wt>/`, whose `modules/` does not exist, so the cleanup
+    // silently no-opped and left a stale gitdir behind (the P73 wedge). In a
+    // plain repo `commondir() == path()`, so behaviour there is unchanged.
+    let root = repo.commondir().join("modules");
     let dir = root.join(name);
     if let (Ok(canon_root), Ok(canon_dir)) = (root.canonicalize(), dir.canonicalize()) {
         if canon_dir.starts_with(&canon_root) && canon_dir != canon_root {
@@ -399,279 +461,5 @@ fn remove_cached_git_dir(repo: &git2::Repository, name: &str) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// §8.2 #6: wire shapes must match the TS mirrors — the status enum
-    /// serializes to camelCase strings and `SubmoduleInfo` to camelCase keys.
-    #[test]
-    fn status_enum_serializes_camel_case() {
-        let cases = [
-            (SubmoduleStatus::Uninitialized, "uninitialized"),
-            (SubmoduleStatus::UpToDate, "upToDate"),
-            (SubmoduleStatus::OutOfSync, "outOfSync"),
-            (SubmoduleStatus::ModifiedWorkdir, "modifiedWorkdir"),
-        ];
-        for (variant, wire) in cases {
-            let v = serde_json::to_value(variant).expect("json");
-            assert_eq!(v, serde_json::json!(wire));
-        }
-    }
-
-    #[test]
-    fn info_serializes_camel_case_keys() {
-        let info = SubmoduleInfo {
-            name: "vendor/libcore".to_string(),
-            path: "vendor/libcore".to_string(),
-            abs_path: "/repo/vendor/libcore".to_string(),
-            url: Some("https://example.com/libcore.git".to_string()),
-            head_oid: Some("a".repeat(40)),
-            index_oid: Some("b".repeat(40)),
-            wt_oid: None,
-            status: SubmoduleStatus::Uninitialized,
-        };
-        let v = serde_json::to_value(&info).expect("json");
-        assert_eq!(
-            v,
-            serde_json::json!({
-                "name": "vendor/libcore",
-                "path": "vendor/libcore",
-                "absPath": "/repo/vendor/libcore",
-                "url": "https://example.com/libcore.git",
-                "headOid": "a".repeat(40),
-                "indexOid": "b".repeat(40),
-                "wtOid": null,
-                "status": "uninitialized"
-            })
-        );
-    }
-
-    /// §8.2 #7: `classify_status` truth table, including the priority tie-breaks.
-    #[test]
-    fn classify_status_priority_table() {
-        use git2::SubmoduleStatus as S;
-
-        // Uninitialized wins even when combined with anything else.
-        assert_eq!(
-            classify_status(S::WD_UNINITIALIZED),
-            SubmoduleStatus::Uninitialized
-        );
-        assert_eq!(
-            classify_status(S::WD_UNINITIALIZED | S::WD_MODIFIED | S::WD_WD_MODIFIED),
-            SubmoduleStatus::Uninitialized
-        );
-
-        // Superproject-pointer / checked-out-commit mismatch → OutOfSync.
-        assert_eq!(classify_status(S::WD_MODIFIED), SubmoduleStatus::OutOfSync);
-        assert_eq!(classify_status(S::INDEX_ADDED), SubmoduleStatus::OutOfSync);
-        assert_eq!(classify_status(S::INDEX_DELETED), SubmoduleStatus::OutOfSync);
-        assert_eq!(classify_status(S::INDEX_MODIFIED), SubmoduleStatus::OutOfSync);
-
-        // OutOfSync outranks internal dirtiness (documented tie-break).
-        assert_eq!(
-            classify_status(S::WD_MODIFIED | S::WD_WD_MODIFIED),
-            SubmoduleStatus::OutOfSync
-        );
-
-        // Internal dirtiness only → ModifiedWorkdir.
-        assert_eq!(
-            classify_status(S::WD_INDEX_MODIFIED),
-            SubmoduleStatus::ModifiedWorkdir
-        );
-        assert_eq!(
-            classify_status(S::WD_WD_MODIFIED),
-            SubmoduleStatus::ModifiedWorkdir
-        );
-        assert_eq!(
-            classify_status(S::WD_UNTRACKED),
-            SubmoduleStatus::ModifiedWorkdir
-        );
-
-        // Clean, checked-out, matching.
-        assert_eq!(classify_status(S::IN_HEAD), SubmoduleStatus::UpToDate);
-        assert_eq!(
-            classify_status(S::IN_HEAD | S::IN_INDEX | S::IN_CONFIG | S::IN_WD),
-            SubmoduleStatus::UpToDate
-        );
-    }
-
-    /// Blank / whitespace names are rejected before touching the repo.
-    #[test]
-    fn blank_name_is_invalid() {
-        let dir = crate::testutil::scratch_dir();
-        let repo = git2::Repository::init(dir.path()).expect("init");
-        for name in ["", "   "] {
-            match open_submodule(&repo, name).map(|_| ()) {
-                Err(AppError::InvalidName(_)) => {}
-                other => panic!("expected InvalidName for {name:?}, got {other:?}"),
-            }
-        }
-    }
-
-    /// An unknown submodule name maps NotFound → `AppError::Git` (§OPEN-3).
-    #[test]
-    fn unknown_name_maps_to_git_error() {
-        let dir = crate::testutil::scratch_dir();
-        let repo = git2::Repository::init(dir.path()).expect("init");
-        match open_submodule(&repo, "does/not/exist").map(|_| ()) {
-            Err(AppError::Git(m)) => assert!(m.contains("does/not/exist"), "{m}"),
-            other => panic!("expected Git error, got {other:?}"),
-        }
-    }
-
-    /// P60d: the deinit/remove argv builders are byte-exact — `path` is the
-    /// FINAL token, immediately after `--`.
-    #[test]
-    fn deinit_args_exact() {
-        assert_eq!(
-            deinit_args("vendor/sub"),
-            ["submodule", "deinit", "-f", "--", "vendor/sub"]
-                .map(String::from)
-                .to_vec()
-        );
-    }
-
-    #[test]
-    fn rm_args_exact() {
-        assert_eq!(
-            rm_args("vendor/sub"),
-            ["rm", "-f", "--", "vendor/sub"].map(String::from).to_vec()
-        );
-    }
-
-    /// P60d injection-safety: a space/`;`-bearing path stays exactly ONE argv
-    /// token, always the element AFTER `--` — never split, never a 2nd command.
-    #[test]
-    fn args_keep_metachar_path_as_single_token_after_dashdash() {
-        let evil = "a b; rm -rf /";
-        let d = deinit_args(evil);
-        assert_eq!(d.last().unwrap(), evil);
-        assert_eq!(d[d.len() - 2], "--");
-        let r = rm_args(evil);
-        assert_eq!(r.last().unwrap(), evil);
-        assert_eq!(r[r.len() - 2], "--");
-    }
-
-    /// F-A7-2: the .git/modules name guard — traversal/absolute/dot components
-    /// reject; ordinary (incl. nested) names pass.
-    #[test]
-    fn modules_name_validation_rejects_traversal() {
-        for bad in [
-            "..",
-            "../x",
-            "a/../b",
-            "..\\evil",
-            "a\\..\\b",
-            "/abs",
-            "C:/abs",
-            "C:\\abs",
-            "",
-            "   ",
-            "a//b",
-            "./x",
-            "a/.",
-        ] {
-            match validate_modules_name(bad) {
-                Err(AppError::Git(_)) => {}
-                other => panic!("name {bad:?} must be rejected, got {other:?}"),
-            }
-        }
-        for good in ["sub", "vendor/libcore", "a.b", "with space", "..dots", "x.."] {
-            validate_modules_name(good)
-                .unwrap_or_else(|e| panic!("name {good:?} must pass: {e:?}"));
-        }
-    }
-
-    /// F-A7-2: `remove_submodule` refuses a hostile name BEFORE running any
-    /// git command (the runner panics if invoked).
-    #[test]
-    fn remove_submodule_rejects_hostile_name_before_running_git() {
-        struct PanicRunner;
-        impl GitRunner for PanicRunner {
-            fn run(&self, _args: &[String], _cwd: &Path) -> Result<String, AppError> {
-                panic!("runner must not be invoked for a hostile submodule name");
-            }
-        }
-        let dir = crate::testutil::scratch_dir();
-        git2::Repository::init(dir.path()).expect("init");
-        match remove_submodule(dir.path(), &PanicRunner, "../../escape") {
-            Err(AppError::Git(m)) => assert!(m.contains("unsafe name"), "{m}"),
-            other => panic!("hostile name must be Git error, got {other:?}"),
-        }
-    }
-
-    /// F-A7-10: a failed clone rolls back the add-setup residue (.gitmodules
-    /// entry, config, dirs) so a retry with a good url succeeds instead of
-    /// hitting "already exists".
-    #[test]
-    fn add_submodule_rolls_back_on_clone_failure() {
-        let sup_dir = crate::testutil::scratch_dir();
-        let d = sup_dir.path();
-        let repo = git2::Repository::init(d).expect("init superproject");
-        seed_commit(&repo);
-
-        // A url that fails fast via the local transport (no network).
-        let bad_url = d
-            .join("definitely-missing-source")
-            .to_string_lossy()
-            .replace('\\', "/");
-        let err = add_submodule(d, &bad_url, "vendor/sub");
-        assert!(err.is_err(), "clone from a missing source must fail");
-
-        // Residue is gone: no .gitmodules entry, no registered submodule.
-        assert!(
-            repo.find_submodule("vendor/sub").is_err(),
-            ".gitmodules entry must be rolled back"
-        );
-        assert!(
-            !d.join("vendor").join("sub").exists(),
-            "partial checkout dir must be rolled back"
-        );
-
-        // Retry with a valid LOCAL source now succeeds (no Exists collision).
-        let src_dir = crate::testutil::scratch_dir();
-        let src = git2::Repository::init(src_dir.path()).expect("init source");
-        seed_commit(&src);
-        let src_url = src_dir.path().to_string_lossy().replace('\\', "/");
-        let info = add_submodule(d, &src_url, "vendor/sub").expect("retry succeeds");
-        assert_eq!(info.path, "vendor/sub");
-    }
-
-    /// Minimal deterministic commit so a repo has a HEAD (used by the rollback
-    /// test's superproject + source repos).
-    fn seed_commit(repo: &git2::Repository) {
-        let mut cfg = repo.config().expect("config");
-        cfg.set_str("user.name", "Test User").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
-        drop(cfg);
-        let wd = repo.workdir().expect("workdir");
-        std::fs::write(wd.join("seed.txt"), "seed\n").expect("write");
-        let mut index = repo.index().expect("index");
-        index.add_path(Path::new("seed.txt")).expect("add");
-        index.write().expect("write index");
-        let tree_oid = index.write_tree().expect("tree");
-        let tree = repo.find_tree(tree_oid).expect("find tree");
-        let sig = git2::Signature::now("Test User", "test@example.com").expect("sig");
-        repo.commit(Some("HEAD"), &sig, &sig, "seed\n", &tree, &[])
-            .expect("commit");
-    }
-
-    /// P60d: `add_submodule` rejects blank url/path and traversing paths BEFORE
-    /// opening the repo (so no git/network is touched on obviously bad input).
-    #[test]
-    fn add_submodule_rejects_bad_url_and_path() {
-        let dir = crate::testutil::scratch_dir();
-        match add_submodule(dir.path(), "   ", "vendor/x") {
-            Err(AppError::InvalidName(_)) => {}
-            other => panic!("blank url ⇒ InvalidName, got {other:?}"),
-        }
-        match add_submodule(dir.path(), "https://example.com/x.git", "  ") {
-            Err(AppError::InvalidName(_)) => {}
-            other => panic!("blank path ⇒ InvalidName, got {other:?}"),
-        }
-        match add_submodule(dir.path(), "https://example.com/x.git", "../escape") {
-            Err(AppError::Other(_)) => {}
-            other => panic!("traversing path ⇒ Other (validate_rel_path), got {other:?}"),
-        }
-    }
-}
+#[path = "submodule_tests.rs"]
+mod tests;
