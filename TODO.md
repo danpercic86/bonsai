@@ -790,8 +790,39 @@ SAME working tree. Overlap was measured: only **`src/styles.css`** is contested 
 paths only (never `git add -A`), scope vitest runs to the files under change, and run no cargo
 commands (P69 is frontend-only; concurrent cargo races the shared target dir).
 
-**Current step:** P69a done (`docs/contracts/P69-settings-ui.md` + `ui-reference.md` §12) · P69b
-code-complete, in review. P69c+ BLOCKED on P73 holding `src/styles.css`.
+**Current step:** P69a DONE — both halves (`docs/contracts/P69-settings-ui.md` +
+`ui-reference.md` §12 + `docs/contracts/P69-settings-shell.md`). P69b code-complete, reviewer
+returned CHANGES REQUESTED (2 MUST-FIX), round 2 in flight.
+
+**Increment plan re-cut by the architect (supersedes the plan's P69c-P69i):** ten increments
+P69c->P69l. **P69c-P69f are CSS-FREE** (NumberSlider fix -> standalone behaviour/a11y + two required
+splits -> data layer -> refactorer props->context behind the OLD layout) and can run while P73 holds
+`src/styles.css`. **P69g is the CSS gate** (shell + primitives + reset), then git-config, identity,
+graph/AI re-skin, search, docs.
+
+**Ratchet ceilings re-measured 2026-08-19 (earlier figures were stale/misread):**
+`src/App.tsx` 1168 (now 1161) · `src/ipc/types.ts` **2701 = exactly at baseline, ZERO slack** ·
+`src-tauri/src/settings.rs` **663 = exactly at baseline** (NOT 1778) · `SettingsPanel.tsx` and
+`src/ipc/mock/persistence.ts` are unbaselined, so a hard 500 ceiling. Consequence: new TS types for
+P69 must live in NEW modules, never appended to `types.ts`; `settings.rs` cannot take even a `mod`
+line, so the Rust half of the defaults-parity test goes in `settings_ui_tests.rs`.
+
+**Orchestrator-settled OQs:**
+- **OQ-1 `NumberSlider` = draft-DISPLAY + clamped commit per keystroke** (architect's
+  recommendation), NOT the plan's commit-on-blur/Enter. It fixes the real defect (the display
+  snapping to `min` is what made the next digit append, e.g. min 24: typing `3` snapped to 24 so
+  `30` was unreachable) while KEEPING live preview for the graph geometry sliders and leaving all
+  three pinning suites green and unedited. Commit-on-blur would have killed live preview and
+  rewritten `SettingsSections.test.tsx:56-64`, `SettingsPanel.test.tsx:129-140`,
+  `SettingsAiRunSection.test.tsx:195-226` for no user-visible gain.
+- **OQ-2** defaults-parity: land the TS half now; the Rust `assert_eq!` half is a short follow-up
+  because it needs `cargo test`, which the P73 no-cargo protocol forbids.
+- **OQ-3** prop count goes 41->44; collapsing further needs `useUiSettings` ownership to move — a
+  separate milestone, not P69.
+- **Focus trap DEFERRED** (architect §8): no shared trap hook exists and no dialog has one; a
+  Settings-only trap is an inconsistency plus risk to ~30 role queries. Ship focus RESTORE only.
+- **Search deferred to the LAST increment**: a search box that can only find 3 of 7 categories'
+  rows is a control that lies, and a disabled one is a dead control.
 
 
 ## Archive
