@@ -206,7 +206,14 @@ Equivalence is proven by all four, not just the first:
    observable surface moved and it is not this pass.
 3. **Identical patch payload sequences.** For each interaction the `onChange` mock receives the same
    `UiSettingsPatch` objects, in the same order, with the same whole-struct-vs-single-key shape.
-4. **No new IPC call and no changed call order** at mount (`getConfig` still fires once from the
+4. **No new IPC call and no changed call COUNT** at mount. ORDER may change: the section reorder
+   this increment performs necessarily reorders these calls, and that is permitted — the original
+   wording ("no changed call order") contradicted the reorder carve-out and is amended here.
+   ⚠️ CORRECTED 2026-08-19 by measurement: the three mount reads are `SettingsGitConfigSection`
+   (its own view load), **`SettingsHooksToggle`** (nested INSIDE the Git-config section), and
+   `useEffectiveIdentity` (reached only from the profiles section). The second Git-config read is
+   the hooks toggle, NOT `useEffectiveIdentity` — so P69h has THREE reads to collapse, not two.
+   Superseded original text: (`getConfig` still fires once from the
    Git-config section, once from the profiles section until P69d merges them).
 
 The one permitted visible change in P69f is **section order** (pages render in the new rail order in
