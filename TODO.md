@@ -947,9 +947,31 @@ SAME working tree. Overlap was measured: only **`src/styles.css`** is contested 
 paths only (never `git add -A`), scope vitest runs to the files under change, and run no cargo
 commands (P69 is frontend-only; concurrent cargo races the shared target dir).
 
-**Current step:** ✅ **P69h SHIPPED — Git config is now scope-explicit.** Eight increments done
-(P69a–P69h), all reviewer-APPROVED. Full gate green: vitest **1900 / 6 skipped / 158 files** ·
-e2e **125 / 1 skipped** · tsc clean · ratchet exit 0 · lint 0 errors · **+0 IPC commands**.
+**Current step:** ✅ **P69i SHIPPED — the header identity menu exists (the user's headline ask).**
+Nine increments done (P69a–P69i), all reviewer-APPROVED. Full gate green: vitest **1934 / 4 skipped
+/ 161 files** · e2e **136 / 1 skipped** · tsc clean · ratchet exit 0 (`App.tsx` **1065**/1168) ·
+lint 0 errors · **+0 IPC commands across the whole milestone**.
+
+**Categories MIGRATED:** `general`, `appearance`, `about`, `git-config`, `identities`.
+**PENDING:** `graph` + `ai` (P69j). Guard skips 8 → 6 → **4**. `PENDING` must be `[]` before P69k.
+
+**Remaining:** P69j graph/AI re-skin · P69k search · P69l docs.
+
+**Orchestrator ruling made during the P69i review (do NOT "fix" it back):** clicking an
+already-ticked identity row is a **no-op regardless of source**. UI §4.3 item 1 and §4.5's table
+disagreed — §4.5 said apply when there is no local identity to overwrite, but `checked` is computed
+from the EFFECTIVE identity, so a repo inheriting a matching global identity showed ✓ and clicking
+it wrote a fresh `user.*` block. The mental model wins. Noted in the code too.
+
+⚠️ **Still true for P69j:** delete the legacy `.settings-row` flex rule and unscope the new one.
+⚠️ **Still true before P69j:** split `src/styles.css` (the ratchet does NOT scan CSS).
+⚠️ **Flagged for P69k:** `identities.apply` / `identities.delete` carry catalog `help` strings that
+are never rendered (`ProfileActionCell` has no help slot), so search would match text that never
+appears on screen. Either render it or drop `help` from those entries.
+⚠️ **For P69l:** `ui-reference.md:494` says `ContextMenu` gained three fields; it has **four**
+(`checked`, `detail`, `header`, `busy`). Also fold in the two sibling contract files
+(`P69-settings-shell-amendment-A.md`, `P69c-draft-feedback-ui.md`) and fix the stale
+"Apply to current repo" comment at `src/ipc/mock/persistence.ts:87`.
 
 **Categories MIGRATED:** `general`, `appearance`, `about`, `git-config`. **PENDING:** `identities`
 (P69i) · `graph` + `ai` (P69j). Guard skips 8 → 6. `PENDING` must be `[]` before P69k ships search.
