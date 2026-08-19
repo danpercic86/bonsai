@@ -1,5 +1,9 @@
 pub mod commands;
 pub mod mcp;
+/// P71 guards on `tauri.conf.json` (strict JSON, so it cannot carry comments).
+#[cfg(test)]
+#[path = "bundle_config_tests.rs"]
+mod bundle_config_tests;
 pub mod scheduler;
 pub mod settings;
 pub mod state;
@@ -8,6 +12,26 @@ pub mod watcher;
 use tauri::Manager;
 
 pub fn run() {
+    // P71 R2 (BACKSTOP, not the fix — the fix is shipping NSIS only): repair a
+    // PATH inherited from an installer before anything spawns a child or caches
+    // a resolution. MUST be the first statement — it calls `std::env::set_var`,
+    // which is only sound while the process is still single-threaded, so it has
+    // to precede every thread spawn, the async runtime, and the Tauri builder.
+    // It must also precede `gitbin`'s process-lifetime cache so the P70 ladder
+    // sees the repaired PATH (and reports `source: "path"`, the C-1 oracle).
+    // Silent no-op on non-Windows and on any registry read failure.
+    //
+    // The one debug line the contract permits (§5.4 constraint 5): it is the
+    // only oracle acceptance criterion C-2 has for "R2 repaired this client in
+    // place". COUNTS ONLY — the recovered directory names are user paths and
+    // must never reach a log.
+    let rehydration = bonsai_core::winenv::rehydrate_path_once();
+    if rehydration.applied {
+        eprintln!(
+            "bonsai: rehydrated PATH from the registry ({} entries appended)",
+            rehydration.added.len()
+        );
+    }
     bonsai_core::git::relax_odb_hash_verification();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

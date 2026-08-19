@@ -10,6 +10,14 @@
 #   4. uploads the installers + their `.sig` files, and
 #   5. generates `latest.json` (the updater manifest) and attaches it to the release.
 #
+# WINDOWS ARTIFACT: NSIS `-setup.exe` ONLY — there is deliberately no `.msi`
+# (`bundle.targets` in tauri.conf.json omits it). The WiX/MSI relaunch runs the
+# app as a child of `msiexec.exe`, so it inherits the installer's environment
+# instead of the user's; NSIS relaunches with a profile-derived environment.
+# `updaterJsonPreferNsis: true` below pins `latest.json` to the NSIS artifact so
+# the defect cannot come back if `msi` is ever re-added.
+# See docs/contracts/P71-updater-relaunch-env.md (§1.2–§1.3, D3).
+#
 # The updater endpoint in `src-tauri/tauri.conf.json`
 #   (`plugins.updater.endpoints`) must point at:
 #   https://github.com/danpercic86/bonsai/releases/latest/download/latest.json
@@ -133,4 +141,10 @@ jobs:
           # tauri-action generates + attaches latest.json when updater artifacts
           # are produced (createUpdaterArtifacts: true is already set in the config).
           includeUpdaterJson: true
+          # P71: never point latest.json at a .msi. tauri-action's default is
+          # `false` "for legacy reasons", which is how v1.0.0's manifest ended up
+          # referencing the MSI (docs/contracts/P71-updater-relaunch-env.md §1.1).
+          # `bundle.targets` already omits msi; this is belt-and-braces so the
+          # manifest stays correct even if msi is ever re-added.
+          updaterJsonPreferNsis: true
           args: ${{ matrix.args }}

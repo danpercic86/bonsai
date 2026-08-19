@@ -143,10 +143,75 @@ re-run — timing-sensitive, add to the known load-flake list.
 
 ## 🔧 P71 — auto-update relaunch inherits the installer's environment — in-progress (research)
 
-**Current step:** P71 — contract CLOSED (`docs/contracts/P71-updater-relaunch-env.md`, all 4 decisions
-recorded). **Implementation starts after P70 commits.** Increment 1 = R1 (two config lines);
-increment 2 = R2 backstop. Needs `security-auditor` (6 items, incl. the new PATH-precedence one) and
-a native USER CHECKPOINT.
+**Velocity mode for the P71 remainder (user decision, 2026-08-19) — all three levers ON:**
+(1) **targeted gates on intermediate rounds** — subagents run only the suites their change can break;
+the orchestrator runs ONE full gate before commit. (2) **MUST-FIX only routed back** — SHOULD-FIX/NIT
+become filed follow-ups rather than another implement+gate cycle. (3) **independent agents run in
+parallel**, accepting occasional spurious cargo failures from the shared-target-dir race (disambiguate
+by isolated re-run, never by assuming). Rationale: each full gate is serial (cargo and clippy cannot
+overlap) and each review round costs a complete implement+gate cycle; P70 took 3 rounds. Correctness
+bar is unchanged — the levers cut redundant verification, not verification.
+
+**Current step:** P71 — both increments implemented; security audit done (no critical/high); reviewer
+**APPROVED** with zero MUST-FIX. Awaiting the orchestrator's full gate, then commit. Native USER
+CHECKPOINT (C-1…C-5) still required — a real signed update round-trip cannot be machine-verified.
+
+**Append reversal (orchestrator, 2026-08-19) — do not re-flip.** I originally chose *prepend* and
+justified it as "restoring what a Start-menu launch would have resolved". That was factually wrong:
+Windows composes **system Path first, user Path appended after**, so prepending put recovered *user*
+entries ahead of *system* ones — in the msiexec case, user-writable
+`%LOCALAPPDATA%\Microsoft\WindowsApps` ahead of `C:\Windows\System32` for every child process.
+Decisive argument: **R2 only ever adds entries that are absent, so a missing directory cannot lose a
+race it is not in** — append rescues just as well and creates no shadowing question. Guarded by
+`recovered_entries_never_precede_inherited_ones_append_reversal_p71` (byte-for-byte prefix + positional
+tail + concrete System32-before-WindowsApps), plus three exact-equality ordering tests. The audit found
+**no** privilege-boundary crossing either way (`RunAsUser` duplicates explorer's token, so the relaunch
+has strictly less privilege than the installer and no more than a Start-menu launch).
+
+**Efficacy bug the audit caught that the reviewer did not:** R2 expanded `%VAR%` against the very
+environment block it exists because it distrusts. Under msiexec that block is SYSTEM-context, so
+`%LOCALAPPDATA%`/`%APPDATA%` resolve under `C:\Windows\system32\config\systemprofile\…` — the entries
+R2 exists to rescue would be rehydrated pointing at the **wrong directory**, and C-2 could report
+`applied: true` while the rescue silently failed. Now resolved from `HKCU\Volatile Environment` via one
+un-filtered `reg query` behind a `OnceCell`; the test fake records which process vars were read, so
+"the systemprofile value was never consulted" is asserted, not assumed.
+
+**Measured cost — FOR USER:** rehydration adds **~197 ms pre-first-paint** on this machine (3 `reg.exe`
+spawns, ~100 ms each on an AV-heavy corporate box; pessimistic), hard-bounded at 1.5 s shared. Paid on
+every launch including the common case where nothing is missing. Mitigation deliberately not taken in
+the fix pass: issue the three reads concurrently (→ one spawn's latency). Filed as a follow-up —
+**needs a user call on whether 200 ms is an acceptable price for in-place repair of MSI-installed
+clients.**
+
+**P71 follow-ups (filed, non-blocking — reviewer APPROVED without them):**
+1. **`lookup_var` passes registry-sourced text to `std::env::var` as a key** (`winenv_merge.rs:94`).
+   `%%` yields an empty name and `%A=B%` a name containing `=`; `std::env::var`'s documented *Panics*
+   clause permits a panic for both. No std impl panics today, so not blocking — but it is the same
+   class as M1 (registry-controlled data reaching a may-panic std call before first paint). One-line
+   fix: return `None` when `name.is_empty() || name.contains(['=', '\0'])`. The existing test only
+   proves the *fake* returns `None` for `""`.
+2. **`WinEnv::set_path` documents no precondition** (`winenv.rs:176`). The NUL/length precondition is
+   documented on `rehydrate_path`, not on the method that actually panics, and `is_applicable` is
+   `pub(crate)` and unexported — a second call site could reintroduce M1. Better: fold the check into
+   `HostWinEnv::set_path` so it is unbypassable.
+3. **Contract §5.3 is stale** — still shows a two-method `WinEnv` trait (implementation has three;
+   `set_path` is the seam that makes the `applied: true` branch assertable) and still says
+   "`winenv.rs` (~110 lines logic + ~110 tests)" though the module became five files.
+4. **`parse_reg_values` mis-slices when the *data* contains a type token** (`winenv_merge.rs:45`).
+   Contrived, no escalation. Add an "index must be preceded by whitespace" check.
+5. **`OnceCell` one-shot semantics untested** — `FakeWinEnv` models no spawn counts, so "read the block
+   exactly once" is inspected, not asserted. A counting fake would fix that.
+6. **Pre-first-paint `eprintln!`** (`src-tauri/src/lib.rs:30`) panics on write error, and a release
+   `windows_subsystem="windows"` build launched from Explorer has no stderr handle. Matches house
+   practice elsewhere and current std returns success for a detached handle — but this is the one call
+   running *before* the window exists, in a module whose premise is "never panic before first paint".
+   `let _ = writeln!(std::io::stderr(), …)` closes it.
+7. **`merge_path` with a whitespace-only `process_path`** emits a whitespace component. Unreachable.
+8. **Startup latency** — issue the three `reg.exe` reads concurrently (~197 ms → one spawn's latency).
+   Needs the user's call on whether 200 ms pre-paint is acceptable at all.
+Deferred earlier, still open: **LOW-4** (`GetSystemDirectoryW` instead of reading `%SystemRoot%` from
+the env — shared owner with P70's `gitbin.rs`, needs a dependency decision) · **N5** (stale P42 docs
+still describing `"targets": "all"` and an MSI artifact — docs-curator scope).
 
 **Root cause found — the MSI was never a deliberate choice.** `tauri-action`'s `updaterJsonPreferNsis`
 defaults to `false` "for legacy reasons" and release.yml never overrides it, so `latest.json` points at

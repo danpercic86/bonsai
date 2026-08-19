@@ -26,6 +26,12 @@ radius P70 does *not* cover.
 dropped entirely; R2 approved as a second increment with tightened scope; `perMachine` retained;
 Q-4 rewritten as a FOR-USER item (§10).*
 
+*Amended 2026-08-19 after the reviewer + `security-auditor` passes: **§5.4/§5.5 PATH merge reversed
+from prepend to append** (§5.5 records why); §5.3 gained a normative absolute-path guard and a
+profile-variable resolution rule; §7 M-3 corrected to match the tree, M-7 promoted to an
+every-tag release-checklist assertion, C-1 gained an ACL check, C-2 gained an expansion check;
+§8 items 6–7 rewritten; §12 records two deferred items.*
+
 ---
 
 ## 0. Key decisions
@@ -129,6 +135,11 @@ gets the *security token* right (it runs as the installing user) but says nothin
 **environment block** — the new process inherits msiexec's, which is not the interactive user's.
 This is exactly the observed `ParentProcessId = msiexec.exe`. There is no configuration knob that
 fixes it; the only escape is a forked WiX template (§4, R4).
+
+> **Corollary R2 depends on (§5.3).** The relaunched app has the **user's token** but a **foreign
+> environment block**. So `HKEY_CURRENT_USER` is the *real* user's hive and is trustworthy, while
+> `%LOCALAPPDATA%` & friends in the inherited block are not. P70's `HKCU\SOFTWARE\GitForWindows`
+> rung already relies on the same property.
 
 ### 1.3 Q2b — Does NSIS have the same problem? **No — and for a documented reason.**
 
@@ -249,7 +260,7 @@ The `R2?` column is the honest scope of the §5 backstop: it repairs `PATH` and 
 
 ## 3. R1 — the fix (increment 1)
 
-Three edits. **No Rust, no TypeScript, no IPC, no UI, no mock-layer change.**
+Three edits. **No Rust logic, no TypeScript logic, no IPC, no UI, no mock-layer change.**
 
 ### 3.1 `src-tauri/tauri.conf.json`
 
@@ -258,16 +269,16 @@ Replace `"targets": "all"` with an explicit list that omits `msi`:
 ```jsonc
 "bundle": {
   "active": true,
-  // P71: NSIS is the ONE Windows artifact. The WiX/MSI relaunch custom action
-  // runs the app as a child of msiexec.exe, so it inherits msiexec's environment
-  // block instead of the user's (docs/contracts/P71-updater-relaunch-env.md §1.2).
-  // If MSI ever returns for enterprise deployment it must come back WITH
-  // Authenticode signing AND with updaterJsonPreferNsis: true retained (D3).
   "targets": ["nsis", "app", "dmg", "deb", "rpm", "appimage"],
   "createUpdaterArtifacts": true,
   // ... icon, windows.* unchanged; nsis.installMode stays "perMachine" (D4)
 }
 ```
+
+**The rationale comment cannot live here.** `tauri.conf.json` is strict JSON parsed with
+`deny_unknown_fields`: a `//` comment fails with *"key must be a string"*, and a `"//targets"`
+sentinel key fails with *"unknown field"* (both proven empirically). The explanation therefore goes
+in `src-tauri/build.rs` as a doc comment — see §3.3.
 
 Bundler behaviour to rely on: `targets` is filtered per host OS, so the Windows job produces `nsis`
 only, macOS produces `app` + `dmg`, Linux produces `deb`/`rpm`/`appimage`.
@@ -289,13 +300,18 @@ manifest correct even if `msi` is ever re-added to `targets`):
 
 ### 3.3 Documentation edits (part of increment 1)
 
+- **`src-tauri/build.rs`** — a doc comment (~26 lines) carrying the "why NSIS only" rationale that
+  strict JSON cannot host: the WiX/MSI relaunch custom action runs the app as a child of
+  `msiexec.exe` and it inherits msiexec's environment block (§1.2); if MSI ever returns for
+  enterprise deployment it must come back **with** Authenticode signing **and** with
+  `updaterJsonPreferNsis: true` retained (D3). Pointer to this contract.
 - `.github/workflows/release.yml` header comment: state that the Windows artifact is NSIS only, and
   why (one line + a pointer to this contract).
 - `README.md` / install docs: if an MSI download is advertised anywhere, remove it.
-- `src/hooks/useUpdateController.ts` — add the §11 platform note as a doc comment on `restart()`.
-  This is a **comment-only** edit, and it is required: §11 exists precisely because a future cleanup
-  pass will grep the Windows path, conclude the state is unreachable, and delete a live macOS/Linux
-  code path.
+- `src/hooks/useUpdateController.ts` — add the §11 platform note as a doc comment on
+  `UpdateController.restart()`. This is a **comment-only** edit, and it is required: §11 exists
+  precisely because a future cleanup pass will grep the Windows path, conclude the state is
+  unreachable, and delete a live macOS/Linux code path.
 
 ### 3.4 What explicitly does NOT change
 
@@ -358,17 +374,21 @@ R2 is a **`PATH` patch, not an environment repair.** It does **not** restore:
 - `BONSAI_GIT_BIN`, `BONSAI_GIT_TIMEOUT`, `BONSAI_REQUIRE_GIT_STRICT` → user overrides set in
   `HKCU\Environment` stay invisible. **#11.**
 
+R2 reads `HKCU\Volatile Environment` (§5.3) purely to *expand* PATH segments; it does **not** export
+those variables into the process. `%LOCALAPPDATA%` stays wrong for everything except the PATH
+entries R2 rebuilds.
+
 **R2 therefore does not make R1 optional and must never be described as "the fix".** R1 is the fix.
 
 ### 5.3 Design
 
 Reuses P70's D2 pattern exactly — shell out to `%SystemRoot%\System32\reg.exe` **by absolute path**
 (the whole premise is that `PATH` may be unusable), with `CREATE_NO_WINDOW`, defensive parsing, and
-every failure silently skipped. **No new crate dependency.** Reuses P70's `GitEnv`-style trait
-injection so every pure function is hermetically testable on any host OS with **zero `std::env`
-mutation in tests**.
+every failure silently skipped. **No new crate dependency**; `bonsai-core`'s dep set stays
+`git2 / serde / serde_json / thiserror`. Reuses P70's `GitEnv`-style trait injection so every pure
+function is hermetically testable on any host OS with **zero `std::env` mutation in tests**.
 
-New file `crates/bonsai-core/src/winenv.rs` (~90 lines logic + ~80 lines tests in
+New file `crates/bonsai-core/src/winenv.rs` (~110 lines logic + ~110 lines tests in
 `winenv_tests.rs`; both well under the 500-line limit).
 
 ```rust
@@ -387,27 +407,50 @@ pub struct PathRehydration {
     /// `true` iff the process PATH was actually replaced.
     pub applied: bool,
     /// Directories present in the registry PATH but absent from the process
-    /// PATH — the concrete evidence of a foreign environment. Empty when
-    /// `applied` is false.
+    /// PATH, **fully expanded**, in the order they were appended. The concrete
+    /// evidence of a foreign environment. Empty when `applied` is false.
     pub added: Vec<String>,
 }
 
-/// Expand `%NAME%` references in a REG_EXPAND_SZ value against `env`.
-/// Unknown names expand to empty. An unterminated `%` is left literal.
-/// Never panics.
-pub fn expand_percent_vars(raw: &str, env: &dyn WinEnv) -> String;
+/// Variables that must be resolved from `HKCU\Volatile Environment`, NOT from
+/// the inherited process environment (§5.3.1). Case-insensitive match.
+const PROFILE_VARS: [&str; 7] = [
+    "USERPROFILE", "APPDATA", "LOCALAPPDATA",
+    "HOMEDRIVE", "HOMEPATH", "USERNAME", "OneDrive",
+];
+
+/// Expand `%NAME%` references in one PATH segment.
+///
+/// - `NAME` in [`PROFILE_VARS`] → `HKCU\Volatile Environment` value `NAME`,
+///   falling back to `env.var(NAME)` only when the registry read fails.
+/// - any other `NAME` → `env.var(NAME)`.
+/// - **Unresolvable `NAME` ⇒ the whole segment is DROPPED** (`None`). This is
+///   deliberately stricter than Windows' `RtlExpandEnvironmentStrings`, which
+///   leaves the reference literal, and far stricter than expanding to empty —
+///   see §5.3.2.
+/// - An unterminated `%` is left literal; the §5.3.2 guard then judges it.
+pub fn expand_segment(raw: &str, env: &dyn WinEnv) -> Option<String>;
+
+/// `true` iff `seg` is an absolute Windows path: `X:\...` (drive-letter root)
+/// or `\\server\share` (UNC). Everything else — drive-relative (`\tools`),
+/// drive-current (`C:tools`), bare-relative (`tools`), `.`, `..` — is rejected.
+pub fn is_absolute_windows_path(seg: &str) -> bool;
 
 /// Compute the repaired PATH.
 ///
-/// - Comparison: case-insensitive, after trimming trailing `\` and `/` and
-///   surrounding whitespace. Empty segments are ignored.
-/// - Missing entries are **PREPENDED**, in registry order (system entries
-///   before user entries), ahead of the existing process PATH.
-/// - The existing process PATH is copied through **verbatim**: never
+/// - Each registry segment is expanded ([`expand_segment`]); a segment that
+///   fails to expand, or that fails [`is_absolute_windows_path`], is DROPPED
+///   and never appears in `added`.
+/// - Comparison against the process PATH: case-insensitive, after trimming
+///   trailing `\` and `/` and surrounding whitespace. Empty segments ignored.
+/// - The existing process PATH is emitted **FIRST and verbatim** — never
 ///   reordered, never deduplicated, never dropped.
-/// - Returns `None` when nothing is missing, so the caller skips `set_var`.
-pub fn merge_path(system_path: &str, user_path: &str, process_path: &str)
-    -> Option<(String, Vec<String>)>;
+/// - Missing entries are **APPENDED** after it, system-sourced before
+///   user-sourced (§5.5).
+/// - Returns `None` when nothing survives as missing, so the caller skips
+///   `set_var`.
+pub fn merge_path(system_path: &str, user_path: &str, process_path: &str,
+                  env: &dyn WinEnv) -> Option<(String, Vec<String>)>;
 
 /// Read both registry PATHs, merge, apply. Silent no-op returning
 /// `PathRehydration::default()` on non-Windows, on any registry read failure,
@@ -418,12 +461,75 @@ pub fn rehydrate_path(env: &dyn WinEnv) -> PathRehydration;
 pub fn rehydrate_path_once() -> PathRehydration;
 ```
 
-Registry sources, read in this order (system first, so system entries land ahead of user entries):
+Registry sources, read in this order (system first, so system-sourced entries are appended ahead of
+user-sourced ones):
 
-| Scope | Key | Value |
+| Purpose | Key | Value(s) |
 |---|---|---|
-| system | `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment` | `Path` |
-| user | `HKCU\Environment` | `Path` |
+| system PATH | `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment` | `Path` |
+| user PATH | `HKCU\Environment` | `Path` |
+| profile-var expansion | `HKCU\Volatile Environment` | each of `PROFILE_VARS` |
+
+#### 5.3.1 Profile variables must NOT be expanded from the inherited environment
+
+**This is an efficacy bug first and a security concern second, and it defeats R2's whole purpose if
+missed.** R2 exists because the inherited environment block is untrustworthy — so expanding `%VAR%`
+against that same block is self-defeating. Under msiexec the block is SYSTEM-context, where
+`%LOCALAPPDATA%` / `%APPDATA%` / `%USERPROFILE%` resolve under
+`C:\Windows\system32\config\systemprofile\…`. The result: `%LOCALAPPDATA%\Programs\Git\cmd` — the
+*exact* entry R2 exists to rescue — is rehydrated pointing at a directory that does not contain
+git, R2 reports `applied: true`, and **C-2 passes while the rescue has silently failed.**
+
+The fix is available with no new dependency: the relaunched app holds the **user's token**
+(§1.2 corollary), so `HKCU` is the real user's hive. `HKCU\Volatile Environment` is written at
+interactive logon and carries `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `HOMEDRIVE`, `HOMEPATH`,
+`USERNAME`, `OneDrive` — read through the existing `reg.exe` seam.
+
+Machine-scope variables (`SystemRoot`, `ProgramFiles`, `ProgramW6432`, `ProgramData`, …) are
+identical for every process on the box, so the inherited value is fine and they take the
+`env.var()` path. *(`GetSystemDirectoryW` as a stronger source for `SystemRoot` is deferred — §12,
+LOW-4.)*
+
+#### 5.3.2 Absolute-path guard (normative)
+
+`merge_path` **must reject any post-expansion segment that is not absolute** (drive-letter root or
+UNC). Rationale:
+
+- If an unresolvable `%VAR%` were expanded to empty, `%SOMEVAR%\tools` becomes the **drive-relative**
+  `\tools`, which Windows resolves against the *current drive's* root. `C:\` is writable by
+  `Authenticated Users` by default, so `C:\tools\git.exe` is a plantable binary. Dropping the
+  segment (§5.3) plus this guard closes that path twice.
+- Windows' own `RtlExpandEnvironmentStrings` leaves an unresolvable `%VAR%` **literal**, so
+  expand-to-empty would have been strictly *less* safe than the mechanism R2 emulates. Recorded so
+  the trade-off is not re-litigated.
+- The guard also catches a literal `.` or `..` registry entry, and any bare-relative segment,
+  regardless of expansion.
+
+Rejected segments are dropped silently and never appear in `PathRehydration::added`.
+
+### 5.4 Hard constraints for the implementer
+
+1. **Append missing entries; never replace, reorder, or deduplicate the existing PATH.** The
+   inherited PATH is emitted first, byte-for-byte; recovered entries follow, system-sourced before
+   user-sourced. *(Reversed from prepend — §5.5.)*
+2. **Never write to the parent, user, or machine environment. Never persist anything.** The only
+   mutation is `set_var("PATH", …)` on this process. No registry writes, no `WM_SETTINGCHANGE`
+   broadcast, no file writes. `HKCU\Volatile Environment` is read-only input.
+3. **`set_var` runs before any thread is spawned** — before `relax_odb_hash_verification()`, before
+   the Tauri builder, before the async runtime. Rust 2024 marks `set_var` `unsafe` precisely for
+   this; document the single-threaded precondition at the call site.
+4. **Must run before `gitbin`'s process-lifetime cache is populated**, so the P70 ladder sees the
+   repaired PATH and reports `source: "path"` (§7 C-1 depends on this ordering).
+5. **A malformed or unreadable registry value is a silent no-op, never an exception.** `reg.exe`
+   missing, non-zero exit, unexpected output shape, non-Windows host → `PathRehydration::default()`.
+   Nothing is logged at error level; at most one debug line.
+6. **Segments that fail expansion (§5.3.1) or the absolute guard (§5.3.2) are dropped**, not
+   repaired, not warned about, not counted in `added`.
+7. **No IPC command, no event, no channel, no UI, no mock-layer change.** `PathRehydration` is
+   diagnostic-only and does not cross the IPC boundary.
+8. **Tests mutate no process state.** Every assertion goes through the injected `WinEnv`; the only
+   test that may touch the real environment is a single smoke test asserting `rehydrate_path_once()`
+   does not panic.
 
 Call site — `src-tauri/src/lib.rs`, first line of `run()`:
 
@@ -439,38 +545,31 @@ pub fn run() {
 }
 ```
 
-### 5.4 Hard constraints for the implementer
+### 5.5 Ordering: **append** — reversed from prepend, 2026-08-19
 
-1. **Prepend missing entries only; never replace, reorder, or deduplicate the existing PATH.** The
-   inherited PATH is copied through byte-for-byte after the prepended segment.
-2. **Never write to the parent, user, or machine environment. Never persist anything.** The only
-   mutation is `set_var("PATH", …)` on this process. No `SetEnvironmentVariable` on the registry, no
-   `WM_SETTINGCHANGE` broadcast, no file writes.
-3. **`set_var` runs before any thread is spawned** — before `relax_odb_hash_verification()`, before
-   the Tauri builder, before the async runtime. Rust 2024 marks `set_var` `unsafe` precisely for
-   this; document the single-threaded precondition at the call site.
-4. **Must run before `gitbin`'s process-lifetime cache is populated**, so the P70 ladder sees the
-   repaired PATH and reports `source: "path"` (§7 C-1 depends on this ordering).
-5. **A malformed or unreadable registry value is a silent no-op, never an exception.** `reg.exe`
-   missing, non-zero exit, unexpected output shape, non-Windows host → `PathRehydration::default()`.
-   Nothing is logged at error level; at most one debug line.
-6. **No IPC command, no event, no channel, no UI, no mock-layer change.** `PathRehydration` is
-   diagnostic-only and does not cross the IPC boundary.
-7. **Tests mutate no process state.** Every assertion goes through the injected `WinEnv`; the only
-   test that may touch the real environment is a single smoke test asserting
-   `rehydrate_path_once()` does not panic.
+**Do not re-flip this.** The contract originally specified prepend, on the orchestrator's
+instruction, justified as "restoring what a Start-menu launch would have resolved". **That
+justification was factually wrong**, and the `security-auditor` pass showed why:
 
-### 5.5 Known trade-off — prepend vs append (route to security-auditor)
+- Windows composes a normal environment as **system `Path` first, user `Path` appended after it**.
+- Prepend placed the *entire* recovered block ahead of the inherited PATH, so recovered **user**
+  entries preceded **system** entries — the inverse of a real launch.
+- Concretely, in the msiexec case it put the user-writable `%LOCALAPPDATA%\Microsoft\WindowsApps`
+  ahead of `C:\Windows\System32` for the app **and every child process it spawns**.
 
-Prepending is what the orchestrator specified and it is the behaviour that actually rescues the
-reported case: the user's per-user Git lives in a User-PATH directory that must win. The trade-off
-is that a directory recovered from the registry now takes precedence over the inherited PATH, so if
-the inherited PATH contained a *different* `git.exe`/`code.exe` earlier in the order, the winner
-changes. Two mitigations are already in the design: only **missing** entries are added (an entry
-already present keeps its original position), and the sources are the user's own HKLM/HKCU
-`Environment` — i.e. exactly what a Start-menu launch would have resolved. Called out explicitly in
-§8 item 6 so `security-auditor` evaluates it as a potential PATH-precedence concern rather than
-discovering it cold.
+The decisive argument for append:
+
+> **R2 only ever adds entries that are absent, so appending achieves the rescue just as well — a
+> directory missing entirely cannot lose a race it is not in.**
+
+Prepending bought nothing for the reported bug (the per-user Git directory was not in the PATH at
+all, so its position among the recovered entries is irrelevant) and was the **sole** source of the
+binary-shadowing question. Removing it removes that question entirely rather than asking
+`security-auditor` to adjudicate it.
+
+Retained from the original design: **system-sourced entries are appended before user-sourced
+entries**, mirroring the real composition order; and the inherited portion is emitted **verbatim**,
+never reordered or deduplicated.
 
 ---
 
@@ -483,10 +582,11 @@ discovering it cold.
 | Channels | none | none |
 | TS types (`src/ipc/types.ts`) | none | none |
 | Mock IPC (`src/ipc/mock*`) | none | none |
-| Rust source | none | `crates/bonsai-core/src/winenv.rs` + `winenv_tests.rs` (new), `mod winenv;` in `bonsai-core/src/lib.rs`, 1 line in `src-tauri/src/lib.rs` |
+| Rust source | none (build.rs doc comment only) | `crates/bonsai-core/src/winenv.rs` + `winenv_tests.rs` (new), `mod winenv;` in `bonsai-core/src/lib.rs`, 1 line in `src-tauri/src/lib.rs` |
 | Config | `src-tauri/tauri.conf.json` → `bundle.targets` | none |
 | Workflow | `.github/workflows/release.yml` → `updaterJsonPreferNsis: true` | none |
-| Docs/comments | release.yml header, README, `useUpdateController.ts` doc comment (§11) | module docs |
+| Docs/comments | `src-tauri/build.rs`, release.yml header, README, `useUpdateController.ts` doc comment (§11) | module docs |
+| Dependencies | none | **none** — `reg.exe` seam, no registry crate |
 | UI | none — **no `ui-designer` pass required** | none |
 
 ---
@@ -500,9 +600,11 @@ discovering it cold.
   `endpoints` are **byte-identical** to `71236f8`.
 - **M-2** `.github/workflows/release.yml` contains `updaterJsonPreferNsis: true` inside the
   `tauri-apps/tauri-action@v0` `with:` block, and the `TAURI_SIGNING_*` env block is unchanged.
-- **M-3** For increment 1, `git diff --stat` touches **only** `src-tauri/tauri.conf.json`,
-  `.github/workflows/release.yml`, `README.md`/docs, and the comment-only edit to
-  `src/hooks/useUpdateController.ts`. Zero behavioural changes under `src/` or `crates/`.
+- **M-3** For increment 1, `git diff --stat` touches **only**: `src-tauri/tauri.conf.json`,
+  `.github/workflows/release.yml`, **`src-tauri/build.rs`** (doc-comment only — §3.3; strict JSON
+  plus `deny_unknown_fields` leaves nowhere in `tauri.conf.json` to put the rationale),
+  `README.md`/docs, and the comment-only edit to `src/hooks/useUpdateController.ts`. Zero
+  behavioural changes under `src/` or `crates/`.
 - **M-4** Existing suites stay green and unchanged in count (`cargo test --workspace`, `vitest`,
   `pnpm exec tsc --noEmit`, e2e). Increment 1 changes no behaviour, so any delta is a regression.
 - **M-5** Browser harness unaffected: `pnpm dev` with `VITE_MOCK_IPC=1` and `?update=available`
@@ -511,18 +613,37 @@ discovering it cold.
   under `src-tauri/target/release/bundle/` (`nsis/Bonsai_<v>_x64-setup.exe`) plus its `.sig`, and
   **no** `msi/` directory. *(Long-running — background it and poll the log; never conclude failure
   from a tool timeout.)*
-- **M-7** After the next tagged release: `curl -sL <endpoint>/latest.json | jq -r
-  '.platforms["windows-x86_64"].url'` ends with `-setup.exe`, not `.msi`; and the release has no
-  `.msi` asset.
-- **M-8 (R2)** Unit tests for `expand_percent_vars` / `merge_path` / `rehydrate_path` over the
-  injected `WinEnv`, running on any host OS, mutating no process state. Must cover:
-  entry already present → no-op, `applied: false`;
-  missing user entry → **prepended**, listed in `added`;
-  ordering → system entries precede user entries, and both precede the untouched process PATH;
-  the existing process PATH is reproduced **verbatim** (no reorder, no dedupe, no drop);
-  trailing `\`/`/` and case differences compare equal;
-  `%SystemRoot%` / `%USERPROFILE%` expansion, and an unknown `%VAR%` → empty;
-  malformed / missing / non-zero-exit `reg.exe` output → `PathRehydration::default()`.
+- **M-7 — RELEASE CHECKLIST, assert after EVERY tag, not just this one.**
+  `curl -sL <endpoint>/latest.json | jq -r '.platforms["windows-x86_64"].url'` must exist and end
+  with `-setup.exe`, not `.msi`; and the release must have no `.msi` asset.
+  **Why every tag:** the workflow is `strategy.fail-fast: false` with `includeUpdaterJson: true`, so
+  a *failed Windows job* still publishes a release — with a `latest.json` that has **no
+  `windows-x86_64` key at all**. Every Windows client then reads that manifest as "no update
+  available" and stays silently pinned on its current version indefinitely, with no error surfaced
+  anywhere. There is no in-app signal for this; the manifest assertion is the only detector.
+  *(Design note: the updater fails **open** on availability and **closed** on trust — a missing
+  platform key is silent, a bad signature is a hard reject. That asymmetry is why M-7 is a standing
+  checklist item.)*
+- **M-8 (R2)** Unit tests for `expand_segment` / `is_absolute_windows_path` / `merge_path` /
+  `rehydrate_path` over the injected `WinEnv`, running on any host OS, mutating no process state.
+  Must cover:
+  - entry already present → no-op, `applied: false`;
+  - missing user entry → **appended**, listed in `added`;
+  - **ordering**: the inherited process PATH is reproduced **verbatim and first** (no reorder, no
+    dedupe, no drop), then system-sourced recovered entries, then user-sourced ones;
+  - **regression guard for §5.5**: a test named for the reversal asserting a recovered entry never
+    precedes an inherited one — this is the test that stops a future re-flip;
+  - trailing `\`/`/` and case differences compare equal;
+  - **profile-var resolution (§5.3.1)**: `%LOCALAPPDATA%` resolves from `HKCU\Volatile Environment`
+    even when the process env carries a *different* (systemprofile) value, and the fake asserts the
+    process env was **not** consulted for that name; registry-read failure → falls back to
+    `env.var()`;
+  - machine-scope `%SystemRoot%` / `%ProgramFiles%` resolve from the process env;
+  - **unresolvable `%VAR%` → segment dropped**, absent from `added` (explicitly *not* expanded to
+    empty);
+  - **absolute guard (§5.3.2)**: `\tools`, `C:tools`, `tools`, `.`, `..` and an unterminated-`%`
+    residue are all rejected; `C:\Tools` and `\\srv\share` are accepted;
+  - malformed / missing / non-zero-exit `reg.exe` output → `PathRehydration::default()`.
 - **M-9 (R2)** `crates/bonsai-core` dependency set is unchanged (no registry crate added) — assert
   against `Cargo.toml`.
 
@@ -531,7 +652,7 @@ discovering it cold.
 - **C-1 — the acceptance instrument: `GitAvailability.source` must read `path`.**
   This is the single check that distinguishes **fixed** from **merely masked**. P70's preflight
   reports which rung of the resolver ladder produced `git`; that rung is an exact PATH-health
-  oracle. After taking an auto-update, open the Git availability re-check:
+  oracle.
   - `source === "path"` → the process PATH is the user's. **P71 worked.**
   - `source === "registry"` or `"wellKnown"` → git was found, but only because P70's fallback
     ladder went looking for it. **The environment is still foreign and P70 is covering for it** —
@@ -551,11 +672,26 @@ discovering it cold.
   5. Settings written before the update are still present after it (blast radius #13).
   6. `Get-CimInstance Win32_Process -Filter "Name='bonsai.exe'" | Select ProcessId,ParentProcessId,Path`
      — record the parent for the record; correctness is judged by 1–5, not by the parent PID.
+  7. **Install-directory ACLs:** run `icacls "C:\Program Files\Bonsai"` and confirm the directory is
+     **not** writable by `Users` / `Authenticated Users` / `BUILTIN\Users` (only
+     `SYSTEM` / `Administrators` / `TrustedInstaller` should hold write or full control).
+     `security-auditor` could not verify NSIS `perMachine` ACL behaviour statically and flagged that
+     a user-writable install directory under Program Files is a genuine privilege-escalation
+     primitive — anything running as the user could replace `bonsai.exe`, which is then launched
+     elevated-adjacent by the installer on every update.
 - **C-2 — R2 repairs an MSI-installed client in place.** On a machine still running the
-  MSI-installed build (i.e. a foreign environment), launch a build containing R2 and confirm C-1
-  step 1 flips from `registry`/`wellKnown` to **`path`** without any reinstall. This is R2's whole
-  reason for existing (§5.1). Also confirm C-1 steps 2–3 now pass, and record that step 4 (identity
-  from `USERPROFILE`) may still fail — that is expected and is why R1 is still required.
+  MSI-installed build (i.e. a foreign environment), launch a build containing R2 and confirm:
+  1. C-1 step 1 flips from `registry`/`wellKnown` to **`path`** without any reinstall. This is R2's
+     whole reason for existing (§5.1).
+  2. **Expansion sanity (§5.3.1):** the *expanded* value of a known user-scope entry — e.g. the one
+     recovered for `%LOCALAPPDATA%\Programs\Git\cmd` — resolves under the **real** profile
+     (`C:\Users\<name>\AppData\Local\…`) and **not** under
+     `C:\Windows\system32\config\systemprofile\…`. Without this sub-check, R2 can report
+     `applied: true` while every recovered user entry points into the wrong profile and step 1 is
+     the only thing that catches it — and it would not.
+  3. C-1 steps 2–3 now pass.
+  4. Record that C-1 step 4 (identity from `USERPROFILE`) may **still fail** — that is expected
+     (§5.2) and is why R1 is still required.
 - **C-3 — UAC behaviour.** `perMachine` means the update prompts for elevation. Confirm: accepting
   completes the update; **declining leaves the running app alive with an error state** (the plugin
   returns `Err` from `ShellExecuteW` before `exit(0)`), not a half-updated install.
@@ -582,20 +718,26 @@ R1 changes the install/trust path, so an audit pass is required before the relea
    `CreateProcessWithTokenW`(shell token) relaunch. Specifically: does relaunching from an elevated
    installer via a duplicated explorer token ever yield an app running with **more** privilege than
    a Start-menu launch? (Expected: no — it drops to the shell's non-elevated token; confirm.)
-4. **Install-location integrity.** Both installers write to `C:\Program Files\Bonsai`. Confirm
-   dropping the MSI cannot leave a partially-uninstalled product, a stale service/scheduled task, or
-   a writable-by-user directory under Program Files.
+4. **Install-location integrity + ACLs.** Confirm dropping the MSI cannot leave a
+   partially-uninstalled product, a stale service/scheduled task, or a **user-writable directory
+   under Program Files**. Static verification was not possible; the empirical check is C-1 step 7.
 5. **Unsigned-binary posture.** v1.0.0 shipped unsigned (`certificateThumbprint: null`). Restate the
    residual risk of an unsigned NSIS installer being fetched over HTTPS and executed elevated, and
    whether the minisign updater signature is a sufficient mitigation for the auto-update path
    (it does not help a *manual* download).
-6. **(R2) PATH precedence — explicitly requested review, see §5.5.** R2 **prepends** recovered
-   registry entries ahead of the inherited PATH. Evaluate whether this introduces a PATH-precedence
-   or binary-shadowing concern: can a value in `HKCU\Environment\Path` (writable by the user, and by
-   anything running as the user) cause Bonsai to launch a different `git.exe` / `code.exe` /
-   `claude.cmd` than it otherwise would? Weigh against the fact that the same registry value already
-   governs every normally-launched process on the machine.
-7. **(R2) Registry read path.** `reg.exe` invoked by absolute `%SystemRoot%` path with
+6. **(R2) Confirm the append ordering, now that prepend is reversed (§5.5).** The
+   binary-shadowing question raised in the first pass is **closed by construction**: recovered
+   entries land *after* the inherited PATH, so no recovered directory can shadow an inherited one.
+   What remains to verify is only that the implementation matches — inherited portion verbatim and
+   first, system-sourced before user-sourced within the appended tail — and that the M-8 regression
+   guard for the reversal is present.
+7. **(R2) Expansion + absolute-path guard.** Verify `%VAR%` expansion for `PROFILE_VARS` comes from
+   `HKCU\Volatile Environment` and never from the untrusted inherited block (§5.3.1); that an
+   unresolvable reference **drops the segment** rather than expanding to empty; and that
+   `is_absolute_windows_path` rejects drive-relative (`\tools`), drive-current (`C:tools`),
+   bare-relative and `.`/`..` segments (§5.3.2). The concrete threat is `C:\` being writable by
+   `Authenticated Users` by default.
+8. **(R2) Registry read path.** `reg.exe` invoked by absolute `%SystemRoot%` path with
    `CREATE_NO_WINDOW`; output parsed defensively; `%VAR%` expansion cannot recurse or expand
    unbounded; no registry *writes*, no environment broadcast, no persistence (§5.4 constraints 2
    and 5).
@@ -610,6 +752,7 @@ R1 changes the install/trust path, so an audit pass is required before the relea
 | Q-2 | Ship the R2 PATH-rehydration backstop? | **Yes, as increment 2**, scoped per §5. Decisive argument: R1 does nothing for already-MSI-installed clients; R2 repairs them in place. |
 | Q-3 | `perMachine` vs `currentUser` NSIS install mode? | **Leave `perMachine`.** Not a correctness issue; out of scope. |
 | Q-4 | Migration for the reporting user's MSI install? | **Manual uninstall + reinstall from the NSIS `-setup.exe`** rather than relying on an untested passive-mode WiX→NSIS migration. Written up as a FOR-USER item — §10. |
+| Q-5 | R2 PATH merge: prepend or append? | **Append** — reversed from the initial prepend instruction after the audit pass. Reason and the decisive argument recorded in §5.5; regression-guarded by an M-8 test. |
 
 ---
 
@@ -655,3 +798,21 @@ A cleanup pass that greps only the Windows behaviour will conclude this is dead 
 live path on two platforms. §3.3 requires this note to be mirrored as a doc comment on
 `UpdateController.restart()` in `src/hooks/useUpdateController.ts`, which is where that grep lands.
 Covered by acceptance criterion **C-5**.
+
+---
+
+## 12. Deferred — recorded as decisions, not as gaps
+
+**LOW-4 — resolve the system directory via `GetSystemDirectoryW` instead of reading `%SystemRoot%`
+from the environment.** Both P70's `gitbin.rs:152` (`reg.exe` path construction) and R2's
+`%SystemRoot%` expansion currently trust an environment variable to locate `System32`. Reading it
+from the Win32 API instead would be strictly stronger. **Deferred**, for two reasons: it is
+*shared* hardening — fixing it only in `winenv.rs` while `gitbin.rs` keeps the env read would be
+half a fix — and it needs a dependency decision (`windows-sys` in `bonsai-core`, which today is
+deliberately `git2 / serde / serde_json / thiserror` only). Track as its own milestone covering both
+call sites together.
+
+**N5 — stale P42 documentation.** `docs/contracts/P42-packaging-autoupdate.md` and its user
+checklist still describe `"targets": "all"` and an MSI artifact, which P71 removes. **Deferred to
+`docs-curator`** — this is documentation currency, not a P71 implementation item, and P71 must not
+edit another milestone's contract in passing.

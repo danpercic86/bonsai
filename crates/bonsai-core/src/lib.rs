@@ -12,3 +12,7 @@ pub mod health;
 pub mod procutil;
 #[cfg(test)]
 pub mod testutil;
+/// Windows PATH rehydration backstop for an installer-inherited environment (P71 R2).
+pub mod winenv;
+/// Pure text half of [`winenv`]: reg.exe parsing, `%VAR%` expansion, the merge.
+pub mod winenv_merge;
