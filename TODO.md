@@ -28,6 +28,49 @@ items — moved 2026-08-19), `docs/history/todo-archive.md` (P27 → P2, M0–M6
 `docs/history/milestones-mvp.md` (the M0–M6 AI-gate vs USER CHECKPOINT split). Contract files are
 indexed in `docs/contracts/INDEX.md`.
 
+## 🐛 P73 — submodule init/update: reconnect an orphaned `.git/modules` gitdir — in-progress
+
+**Current step:** P73 — awaiting architect contract + ui-designer copy contract.
+
+Two user-reported defects on the P19 submodule surface (found 2026-08-19 on a real Azure DevOps
+superproject, `D:\Repos\ham-digi-backend`, submodule `src/Hamilton.Voyager.Protocol/protocol`).
+
+**Bug 1 — Init's success toast disagrees with the badge.** `init_submodule` (`sm.init(false)`) only
+writes `submodule.<name>.*` into `.git/config`; the worktree stays empty, so `list_submodules` still
+classifies the row `uninitialized` (`git submodule status` agrees: leading `-`). The toast says
+"Initialized <name>". Backend is git-faithful — the UI lies. Never caught because the mock handler
+(`src/ipc/mock/handlers/submodules.ts:27`) flips the row to `upToDate` on init.
+**Decision (user, 2026-08-19): make Init do init + checkout** — the menu action invokes
+`updateSubmodule` (which is `sm.update(init=true, …)`), so the toast and the badge always agree.
+
+**Bug 2 (blocking) — Update is wedged: `attempt to reinitialize '<...>/.git/modules/<path>'`.** The
+submodule workdir exists but is EMPTY (no `.git` gitlink) while `.git/modules/<path>` is a complete
+gitdir (right `core.worktree`, right `remote.origin.url`, pinned commit already local). Confirmed in
+vendored libgit2 1.9.6: `git_submodule_update` branches on `WD_UNINITIALIZED` alone
+(`submodule.c:1443`), and that bit is set purely from "does `<workdir>/<path>/.git` exist"
+(`submodule.c:2222`, `:2443`) → it takes the CLONE path → `submodule_repo_create` passes `NO_REINIT`
+(`submodule.c:1329`) → `git_repository_init_ext` errors (`repository.c:2886`). No
+`SubmoduleUpdateOptions` setting steers around it. Upstream `git submodule update` instead REUSES the
+module gitdir and rewrites the worktree gitlink — libgit2 has no such path, so Bonsai must add one.
+Bonsai can also CREATE this state: `update_submodule` has no rollback for a half-finished clone
+(unlike `add_submodule`'s `rollback_partial_add`).
+
+Two libgit2 subtleties that shape the fix (do not skip):
+- `Repository::set_workdir(abs, true)` is a NO-OP here (early-returns when the resolved workdir
+  already matches, `repository.c:3271`) and writes an ABSOLUTE gitlink when it does fire
+  (`repository.c:3284`) → write the gitlink ourselves, relative.
+- A plain SAFE checkout will NOT repopulate the empty workdir (missing files classify
+  `GIT_DELTA_UNMODIFIED`; `RECREATE_MISSING` is only auto-added under FORCE — `checkout.c:302`,
+  `:2447`) → update would report `upToDate` over an empty dir. Set
+  `CheckoutBuilder::recreate_missing(true)` on the SALVAGE PATH ONLY (not `force`, so the invariant
+  in `crates/bonsai-core/tests/submodule_cli_2.rs:113` holds).
+
+Increments: (1) core reconnect/salvage in `update_submodule` + `remove_cached_git_dir` commondir fix ·
+(2) rollback for a failed fresh clone · (3) UI Init = init + checkout · (4) tests (wedged-state
+fixture, offline reattach, non-empty/URL-mismatch refusals, rollback, traversal).
+
+Plan: `~/.claude/plans/i-opened-hamiltondigitalizationbackend-compiled-biscuit.md`
+
 ## 🐛 P72 — forge connect fixes: Azure DevOps 401 + dead external links — in-progress
 
 **Current step:** P72 — **AI GATE GREEN. Both increments implemented, reviewed, security-audited and
