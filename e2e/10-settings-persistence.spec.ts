@@ -41,6 +41,10 @@ test.describe('10 settings persistence @smoke', () => {
   test('GraphPrefs toggles + row height persist across reload', async ({ page }) => {
     await openRepo(page);
     let dialog = await openSettings(page);
+    // P69g: Settings is a two-pane shell; the graph controls live behind the
+    // "Commit graph" rail tab. Selecting a category is navigation, not a
+    // behaviour change — every assertion below is unchanged.
+    await dialog.getByRole('tab', { name: 'Commit graph' }).click();
     await dialog.getByRole('checkbox', { name: 'Short SHA' }).uncheck();
     await dialog.getByRole('checkbox', { name: 'Compact rows' }).check();
     await dialog.getByRole('checkbox', { name: 'Author name' }).check();
@@ -68,6 +72,9 @@ test.describe('10 settings persistence @smoke', () => {
     await page.reload();
     await expect(graphCanvas(page)).toBeVisible();
     dialog = await openSettings(page);
+    // P69g: the shell mounts fresh on every open, so the category must be
+    // re-selected after the reload before the graph rows exist.
+    await dialog.getByRole('tab', { name: 'Commit graph' }).click();
     await expect(dialog.getByRole('checkbox', { name: 'Short SHA' })).not.toBeChecked();
     await expect(dialog.getByRole('checkbox', { name: 'Compact rows' })).toBeChecked();
     await expect(dialog.getByRole('checkbox', { name: 'Author name' })).toBeChecked();

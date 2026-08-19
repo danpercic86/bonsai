@@ -65,6 +65,8 @@ test.describe('12 AI consent gating', () => {
     // Settings surfaces the unavailable state (role=note warn line).
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Settings' });
+    // P69g: the CLI availability line lives behind the "AI" rail tab now.
+    await dialog.getByRole('tab', { name: 'AI' }).click();
     await expect(
       dialog.getByRole('note').filter({ hasText: 'Claude Code CLI not found on PATH' }),
     ).toBeVisible();

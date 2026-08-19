@@ -982,11 +982,12 @@ draft-hint `:has()` deliberately has no fallback (degrades to two visible lines)
 WKWebView needs macOS 12.3+, webkit2gtk 2.38+ (Debian 11 ships 2.36). **Native checkpoint should
 confirm the ring on macOS/Linux.**
 
-**E2E fallout, deliberately deferred to its own step:** `e2e/10-settings-persistence.spec.ts:44-52,
-71-73` and `e2e/12-ai-consent.spec.ts:66-70` need a one-line
-`await dialog.getByRole('tab', { name: … }).click();` after `openSettings`, because those controls
-now sit behind a rail tab. **The full e2e suite has NOT been re-run since P69g landed** — the last
-green run (118 passed / 1 skipped) predates the shell.
+✅ **E2E fallout FIXED and the suite re-run against the shell: 118 passed / 1 skipped / 0 failed.**
+Exactly the two predicted specs broke and no others. `e2e/10-settings-persistence.spec.ts` (twice —
+the shell mounts fresh on every open, so the category must be re-selected after the reload too) and
+`e2e/12-ai-consent.spec.ts` each gained a one-line
+`await dialog.getByRole('tab', { name: … }).click();`. **No assertion was changed** — selecting a
+category is navigation, not behaviour, and every existing expectation still runs verbatim.
 
 **NOTHING THE USER SEES HAS CHANGED YET** beyond two accessible-name fixes and the identity pill.
 The two-pane shell, the rail, search, the header identity menu and the control re-skin are all
