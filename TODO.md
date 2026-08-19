@@ -744,6 +744,55 @@ one** (it would bury a review in a mechanical diff).
 
 ---
 
+---
+
+### P69 — Settings redesign (two-pane shell + extracted identity menu) — **in-progress**
+
+Plan: `~/.claude/plans/make-the-designer-subagent-compiled-robin.md` (user-approved 2026-08-19).
+Frontend-only, **+0 Tauri commands** (160 unchanged). Started from HEAD `e3c4ad1`.
+
+**Goal.** Settings has accreted into a 560px single-column modal with **11 flat sections** / ~45
+controls, no nav and no search. Replace it with a two-pane overlay (category rail + content pane +
+search), promote identity out of Settings into a header identity menu, unify the control vocabulary,
+make global-vs-repo scope explicit, and close the two OPEN defects that live in this surface.
+
+**Locked user decisions (2026-08-19 — do not re-litigate):**
+- Shell = **two-pane modal (~880px)** with a left category rail + settings search. NOT a full-window
+  page, NOT the current single column.
+- Extract **all four**: identity profiles -> header identity menu · Git config -> clearly repo-scoped
+  surface · getting-started tour + Updates -> About/Help category · the three AI sections -> one AI
+  category.
+- Scope = IA restructure **+** control-level polish (toggle switches, row anatomy, help text,
+  reset-to-default, keyboard/a11y, both themes) **+** fix both known OPEN defects.
+
+**Binding constraints (verified 2026-08-19, not guesses):**
+- `check-file-size.mjs` is a **ratchet**: `src/App.tsx` is baselined at **1114** and may not grow, so
+  the identity menu cannot be markup bolted into App. P69e's prop collapse buys the headroom.
+- Toggle switches must be **CSS over a native `<input type="checkbox">`**, not `role="switch"` divs —
+  otherwise ~30 existing `getByRole('checkbox', …)` assertions break for no real gain.
+- The header menu must read the **effective** identity (local overrides global). Today's badge reads
+  `local` only, and the mock seeds identity at **global** with `local` empty, so the default harness
+  state is exactly the case the current logic cannot express.
+- The `configMissing` deep link (`App.tsx:102-105` -> `SettingsGitConfigSection.tsx:139-144`) must
+  select the owning category BEFORE the focus effect runs, or it silently no-ops.
+- Contract surface that must not be renamed casually: `#settings-graph-row`, and the accessible names
+  `Row height`, `Switch to light theme` / `Switch to dark theme`.
+
+**Sub-increments:** P69a contracts (ui-designer, then architect) · P69b write-path hardening ·
+P69c primitives + NumberSlider commit semantics · P69d migrate sections onto primitives ·
+P69e props->context (refactorer, identical test counts) · P69f the two-pane shell + search + Ctrl/Cmd+, ·
+P69g identity extraction · P69h About + copy + reset · P69i docs.
+
+⚠️ **CONCURRENCY (2026-08-19):** a second session is building **P73 (submodule reconnect)** in the
+SAME working tree. Overlap was measured: only **`src/styles.css`** is contested (P73 has it dirty,
++46/-8). P69a (docs only) and P69b (`useUiSettings.ts`, `App.tsx`) touch nothing P73 touches.
+**P69c onward is BLOCKED until P73's tree is clean.** Protocol while both run: commit with explicit
+paths only (never `git add -A`), scope vitest runs to the files under change, and run no cargo
+commands (P69 is frontend-only; concurrent cargo races the shared target dir).
+
+**Current step:** P69a — awaiting `ui-designer` contract.
+
+
 ## Archive
 
 | File | Covers |
