@@ -27,7 +27,7 @@
     "crates/bonsai-core/src/git/merge.rs": 1348,
     "crates/bonsai-core/src/git/rebase.rs": 630,
     "crates/bonsai-core/src/git/rebase_interactive.rs": 926,
-    "crates/bonsai-core/src/git/remote.rs": 1963,
+    "crates/bonsai-core/src/git/remote.rs": 1123,
     "crates/bonsai-core/src/git/search.rs": 1265,
     "crates/bonsai-core/src/git/signing.rs": 585,
     "crates/bonsai-core/src/git/stage_partial.rs": 812,

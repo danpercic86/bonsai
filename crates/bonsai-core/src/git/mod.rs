@@ -29,6 +29,7 @@ pub mod commit;
 pub mod compose_apply;
 pub mod config;
 pub mod conflict;
+pub mod cred;
 pub mod cred_cache;
 pub mod diff;
 pub mod discard;

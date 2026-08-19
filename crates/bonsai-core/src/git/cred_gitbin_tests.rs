@@ -225,7 +225,7 @@ fn silent_git_stub() -> std::path::PathBuf {
 fn run_child(child_test: &str, git_bin: &Path) -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().expect("tempdir");
     let marker = dir.path().join("spawned.log");
-    // `module_path!()` is `bonsai_core::git::remote::gitbin_tests`; libtest
+    // `module_path!()` is `bonsai_core::git::cred::gitbin_tests`; libtest
     // names tests without the crate prefix. Derived rather than hard-coded so a
     // module rename cannot silently disable these tests.
     let module = module_path!()
