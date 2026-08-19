@@ -46,6 +46,10 @@ const RUNNING: McpStatus = {
   toolCount: 14,
 };
 
+// P69d: this suite needs no `resetEffectiveIdentityForTests` ONLY because `repoPath`
+// is null below — the Git-config and profiles sections then issue no IPC and write
+// nothing into the module-level identity cache. Set a repo path here and this suite
+// starts leaking store state between tests; reset it in a beforeEach at that point.
 function renderPanel(over: Partial<SettingsPanelProps> = {}) {
   const props: SettingsPanelProps = {
     open: true,
@@ -126,13 +130,17 @@ describe('SettingsPanel', () => {
     expect(props.onChange).toHaveBeenCalledWith({ panelDensity: 'cozy' });
   });
 
+  // P69d: the two rows are now "Fetch every" / "Refresh every" (UI §5.3.7). This is a
+  // RENAME, not a weakening — the id-based assertions below are untouched, and the
+  // accessible names are additionally pinned in the a11y test that follows.
   it('auto-fetch: checkbox + interval patch; interval clamps to the range max', () => {
     const { props } = renderPanel();
     fireEvent.click(screen.getByRole('checkbox', { name: /Enable auto-fetch/ }));
     expect(props.onChange).toHaveBeenCalledWith({
       autoFetch: { enabled: false, intervalMinutes: 10 },
     });
-    const interval = document.getElementById('settings-auto-fetch-interval')!;
+    const interval = screen.getByRole('spinbutton', { name: 'Fetch every' });
+    expect(interval).toBe(document.getElementById('settings-auto-fetch-interval'));
     fireEvent.change(interval, { target: { value: '99999' } });
     expect(props.onChange).toHaveBeenCalledWith({
       autoFetch: { enabled: true, intervalMinutes: AUTO_FETCH_INTERVAL_MAX },
@@ -141,8 +149,24 @@ describe('SettingsPanel', () => {
 
   it('health-refresh interval slider is disabled while the job is off', () => {
     renderPanel();
+    expect(screen.getByRole('spinbutton', { name: 'Refresh every' })).toBeDisabled();
     expect(document.getElementById('settings-health-refresh-interval')).toBeDisabled();
     expect(document.getElementById('settings-auto-fetch-interval')).toBeEnabled();
+  });
+
+  it('the two background-job intervals have DISTINCT accessible names', () => {
+    renderPanel();
+    // Both rows used to be labelled "Interval": two controls, one accessible name,
+    // indistinguishable to a screen reader and to a test (UI §5.3.7 MUST-FIX).
+    expect(screen.queryAllByRole('spinbutton', { name: 'Interval' })).toHaveLength(0);
+    expect(screen.getAllByRole('spinbutton', { name: 'Fetch every' })).toHaveLength(1);
+    expect(screen.getAllByRole('spinbutton', { name: 'Refresh every' })).toHaveLength(1);
+    // The range twins carry the same names (NumberSlider aria-labels them).
+    expect(screen.getAllByRole('slider', { name: 'Fetch every' })).toHaveLength(1);
+    expect(screen.getAllByRole('slider', { name: 'Refresh every' })).toHaveLength(1);
+    // Ids are unchanged — the deep-link/id-based assertions above still resolve.
+    expect(document.getElementById('settings-auto-fetch-interval')).not.toBeNull();
+    expect(document.getElementById('settings-health-refresh-interval')).not.toBeNull();
   });
 
   it('AI enable without consent defers to onRequestEnableAi (no direct patch)', () => {

@@ -273,7 +273,9 @@ export function SettingsPanel({
           </label>
           <NumberSlider
             id="settings-auto-fetch-interval"
-            label="Interval"
+            /* P69d / UI §5.3.7: two rows both labelled "Interval" gave two controls in
+               one dialog the SAME accessible name. Ids are unchanged. */
+            label="Fetch every"
             value={autoFetch.intervalMinutes}
             min={AUTO_FETCH_INTERVAL_MIN}
             max={AUTO_FETCH_INTERVAL_MAX}
@@ -293,7 +295,7 @@ export function SettingsPanel({
           </label>
           <NumberSlider
             id="settings-health-refresh-interval"
-            label="Interval"
+            label="Refresh every"
             value={healthRefresh.intervalMinutes}
             min={HEALTH_REFRESH_INTERVAL_MIN}
             max={HEALTH_REFRESH_INTERVAL_MAX}

@@ -13,7 +13,7 @@
  */
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 import { SettingsAiRunSection } from './SettingsAiRunSection';
 import type { AiRunPrefs } from '../settings/aiRunPrefs';
@@ -237,6 +237,25 @@ describe('SettingsAiRunSection — states and a11y', () => {
     ).toBeInTheDocument();
   });
 
+  // P69d (UI §5.4): the gate note is the fieldset's description, so the REASON the
+  // group is inert is announced on entry instead of being an orphaned paragraph. The
+  // copy is byte-identical to the assertion above — only the wiring is new.
+  it('AI off: the gate note leads the group and describes the fieldset', () => {
+    const { container } = mount({}, false);
+    const fieldset = container.querySelector('fieldset');
+    expect(fieldset).toHaveAttribute('aria-describedby', 'ai-run-gate-note');
+    const note = document.getElementById('ai-run-gate-note');
+    expect(note).toHaveTextContent('Turn on “Enable AI features” above to change these.');
+    // Note BEFORE the controls it explains (DOCUMENT_POSITION_FOLLOWING = 4).
+    expect(note!.compareDocumentPosition(fieldset!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(4);
+  });
+
+  it('AI on: the fieldset has no dangling describedby (the note is gone)', () => {
+    const { container } = mount();
+    expect(container.querySelector('fieldset')).not.toHaveAttribute('aria-describedby');
+    expect(document.getElementById('ai-run-gate-note')).toBeNull();
+  });
+
   it('AI on: the "turn it on" line is gone', () => {
     mount();
     expect(screen.queryByText(/Turn on “Enable AI features” above/)).toBeNull();
@@ -257,6 +276,18 @@ describe('SettingsAiRunSection — states and a11y', () => {
     expect(
       screen.getByRole('checkbox', { name: 'Stop a run after a fixed time' }),
     ).toHaveAttribute('aria-describedby', 'settings-ai-cap-hint settings-ai-nolimit-hint');
+
+    // Same guard in the GATED state, where the fieldset's own describedby appears.
+    cleanup();
+    const off = mount({}, false).container;
+    const offRefs = new Set<string>();
+    for (const el of off.querySelectorAll('[aria-describedby]')) {
+      for (const id of (el.getAttribute('aria-describedby') ?? '').split(/\s+/)) {
+        if (id !== '') offRefs.add(id);
+      }
+    }
+    expect(offRefs.has('ai-run-gate-note')).toBe(true);
+    for (const id of offRefs) expect(document.getElementById(id)).not.toBeNull();
   });
 
   it('the access button has a name that says what it controls, not just its value', () => {

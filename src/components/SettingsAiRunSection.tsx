@@ -55,12 +55,23 @@ export function SettingsAiRunSection({ aiRun, aiActive, onChange }: SettingsAiRu
       <p className="settings-section-desc">
         Applies to conflict resolution with Claude. Changes take effect on the next run.
       </p>
-      {/* Outside the fieldset, so it is NOT dimmed by the 0.5 opacity (§1.2). */}
+      {/* P69d (UI §5.4): the gate note leads the group and is wired to the fieldset via
+          aria-describedby, so the REASON the ten controls are inert is announced when
+          focus reaches the group instead of being orphaned. It stays outside the
+          fieldset so it is not dimmed by the 0.5 opacity (§1.2). The describedby is
+          only set while the note exists — a dangling idref would be worse than none.
+          Copy is unchanged pending the A3 sign-off. */}
       {!aiActive && (
-        <p className="settings-hint">{'Turn on “Enable AI features” above to change these.'}</p>
+        <p className="settings-hint" id="ai-run-gate-note">
+          {'Turn on “Enable AI features” above to change these.'}
+        </p>
       )}
 
-      <fieldset className="settings-section-fields" disabled={!aiActive}>
+      <fieldset
+        className="settings-section-fields"
+        disabled={!aiActive}
+        aria-describedby={aiActive ? undefined : 'ai-run-gate-note'}
+      >
         {/* 1 — repository access. It leads the section: it is the grant the user was
             never told about (audit M2), and its hint states the grant, not the flag. */}
         <div className="settings-row">
