@@ -947,8 +947,32 @@ SAME working tree. Overlap was measured: only **`src/styles.css`** is contested 
 paths only (never `git add -A`), scope vitest runs to the files under change, and run no cargo
 commands (P69 is frontend-only; concurrent cargo races the shared target dir).
 
-**Current step:** ✅ **P69g SHIPPED — the two-pane shell exists.** `styles.css` freed up when P73
-committed `b632347`, so the CSS gate opened and P69g landed (reviewer APPROVED after one round).
+**Current step:** ✅ **P69h SHIPPED — Git config is now scope-explicit.** Eight increments done
+(P69a–P69h), all reviewer-APPROVED. Full gate green: vitest **1900 / 6 skipped / 158 files** ·
+e2e **125 / 1 skipped** · tsc clean · ratchet exit 0 · lint 0 errors · **+0 IPC commands**.
+
+**Categories MIGRATED:** `general`, `appearance`, `about`, `git-config`. **PENDING:** `identities`
+(P69i) · `graph` + `ai` (P69j). Guard skips 8 → 6. `PENDING` must be `[]` before P69k ships search.
+
+**Remaining:** P69i identity extraction (the header menu — the user's headline ask) · P69j graph/AI
+re-skin · P69k search · P69l docs.
+
+**Both P69g carry-forwards are DISCHARGED:** `requestSeq` landed (a deep link arriving while
+Settings is already open now re-targets the pane), and `SettingsEmpty` landed with its
+`onOpenRepository` action.
+
+**`App.tsx` is no longer at its ceiling: 1167 → 1100** (extracted `useAppCommands.ts` +
+`useSettingsRequest.ts`). 68 lines of headroom for P69i's header mount.
+
+⚠️ **`useAppCommands.ts` identity is LOAD-BEARING — do not pass inline arrows into it.** P69h's
+first attempt did, which made `appCommands` a fresh array every App render and switched the known
+`CommandPalette` highlight bug from latent to LIVE (selection jumps to row 0 mid-typing on any
+unrelated re-render). Closures are built inside the memo; a test pins array identity across an
+unrelated re-render. The underlying palette bug is still OPEN — see the spun-out item.
+
+⚠️ **Still true for P69j:** delete the legacy `.settings-row` flex rule and unscope the new one.
+⚠️ **Still true before P69j:** split `src/styles.css` (8500+ lines; the ratchet does NOT scan CSS,
+so its green is silence, not a pass).
 
 **Done:** P69a contracts (+ amendment A + the P69c draft-feedback spec) · P69b write path · P69c
 slider minimum · P69d a11y labels + effective identity + splits · P69e defaults + catalog ·
