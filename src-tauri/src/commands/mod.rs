@@ -39,6 +39,7 @@ mod ai_assets;
 mod profiles;
 mod external;
 mod forge;
+mod git_env;
 
 #[cfg(test)]
 mod tests_support;
@@ -135,3 +136,4 @@ pub use ai_assets::*;
 pub use profiles::*;
 pub use external::*;
 pub use forge::*;
+pub use git_env::*;

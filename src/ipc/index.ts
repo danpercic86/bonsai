@@ -93,6 +93,8 @@ export type {
   FrontmatterField,
   GraphChunk,
   GraphEdge,
+  GitAvailability,
+  GitBinSource,
   GraphLayout,
   GraphNode,
   GraphPrefs,

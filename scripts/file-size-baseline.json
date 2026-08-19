@@ -19,7 +19,7 @@
     "crates/bonsai-core/src/git/compose_apply.rs": 837,
     "crates/bonsai-core/src/git/config.rs": 618,
     "crates/bonsai-core/src/git/conflict.rs": 681,
-    "crates/bonsai-core/src/git/cred_cache.rs": 865,
+    "crates/bonsai-core/src/git/cred_cache.rs": 933,
     "crates/bonsai-core/src/git/diff.rs": 1402,
     "crates/bonsai-core/src/git/discard_partial.rs": 593,
     "crates/bonsai-core/src/git/hooks.rs": 810,
@@ -27,8 +27,8 @@
     "crates/bonsai-core/src/git/merge.rs": 1348,
     "crates/bonsai-core/src/git/rebase.rs": 630,
     "crates/bonsai-core/src/git/rebase_interactive.rs": 926,
-    "crates/bonsai-core/src/git/remote.rs": 1821,
-    "crates/bonsai-core/src/git/search.rs": 1264,
+    "crates/bonsai-core/src/git/remote.rs": 1963,
+    "crates/bonsai-core/src/git/search.rs": 1265,
     "crates/bonsai-core/src/git/signing.rs": 585,
     "crates/bonsai-core/src/git/stage_partial.rs": 812,
     "crates/bonsai-core/src/git/stale.rs": 1207,
@@ -60,7 +60,7 @@
     "src-tauri/src/mcp.rs": 1588,
     "src-tauri/src/scheduler.rs": 1431,
     "src-tauri/src/settings.rs": 663,
-    "src/App.tsx": 1114,
+    "src/App.tsx": 1168,
     "src/components/AiAssetsPanel.tsx": 510,
     "src/components/ConflictEditor.tsx": 535,
     "src/components/RepoWorkspace.tsx": 2946,
@@ -68,7 +68,7 @@
     "src/components/workspaceMenus.ts": 803,
     "src/graph/GraphCanvas.tsx": 883,
     "src/ipc/fixtures/diffs.ts": 746,
-    "src/ipc/tauri.ts": 1074,
-    "src/ipc/types.ts": 2668
+    "src/ipc/tauri.ts": 1080,
+    "src/ipc/types.ts": 2697
   }
 }

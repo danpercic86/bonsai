@@ -89,3 +89,40 @@ export function shortcutKeys(spec: string, mac: boolean = isMac): string[] {
 export function shortcutLabel(spec: string, mac: boolean = isMac): string {
   return shortcutKeys(spec, mac).join(shortcutSeparator(mac));
 }
+
+// ---- OS family (P70) ---------------------------------------------------------
+//
+// `isMac` above answers "render ⌘ or Ctrl?"; the notice bar needs a three-way
+// answer ("Start menu" / "Applications" / "your application menu"), so the two
+// are kept separate rather than overloading `isMac`. This module stays FREE of
+// harness seams — the `?os=` override lives in `gitBanner/gitBannerCopy.ts`.
+
+/** The three copy variants any user-facing platform instruction needs. */
+export type OsFamily = 'windows' | 'mac' | 'linux';
+
+/**
+ * Best-effort OS family from the user agent. Same defensive style as
+ * {@link detectIsMac}: several hints, every throw swallowed, and a definite
+ * default (`linux`) when nothing is knowable — the most generic wording, so a
+ * wrong guess never tells a user to open a menu their OS does not have.
+ */
+export function detectOsFamily(probe?: PlatformProbe): OsFamily {
+  try {
+    const nav =
+      probe ?? (typeof navigator === 'undefined' ? undefined : (navigator as PlatformProbe));
+    if (!nav) return 'linux';
+    const hints = [nav.userAgentData?.platform, nav.platform, nav.userAgent];
+    for (const hint of hints) {
+      if (typeof hint !== 'string' || hint.length === 0) continue;
+      if (/win/i.test(hint)) return 'windows';
+      if (/mac|iphone|ipad|ipod/i.test(hint)) return 'mac';
+      if (/linux|x11|cros|android/i.test(hint)) return 'linux';
+    }
+    return 'linux';
+  } catch {
+    return 'linux';
+  }
+}
+
+/** Resolved once per session — the platform cannot change under a running app. */
+export const osFamily: OsFamily = detectOsFamily();

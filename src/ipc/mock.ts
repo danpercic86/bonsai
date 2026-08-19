@@ -26,6 +26,7 @@ import { sessionHandlers } from './mock/handlers/session';
 import { mcpHandlers } from './mock/handlers/mcp';
 import { assetsHandlers } from './mock/handlers/assets';
 import { updateHandlers } from './mock/handlers/update';
+import { gitEnvHandlers } from './mock/handlers/gitEnv';
 import { externalHandlers } from './mock/handlers/external';
 import { forgeHandlers } from './mock/handlers/forge';
 
@@ -58,6 +59,7 @@ export const mockIpc: IpcApi = {
   ...mcpHandlers,
   ...assetsHandlers,
   ...updateHandlers,
+  ...gitEnvHandlers,
   ...externalHandlers,
   ...forgeHandlers,
 };

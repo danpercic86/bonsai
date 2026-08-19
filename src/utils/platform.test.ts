@@ -4,6 +4,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   detectIsMac,
+  detectOsFamily,
+  osFamily,
   isMac,
   keyLabel,
   shortcutKeys,
@@ -101,5 +103,35 @@ describe('shortcutKeys / shortcutLabel', () => {
 
   it('defaults its platform argument to the detected one', () => {
     expect(shortcutLabel('Mod+K')).toBe(shortcutLabel('Mod+K', isMac));
+  });
+});
+
+/** P70: the three-way OS family behind the notice bar's per-OS remedies. */
+describe('detectOsFamily', () => {
+  it('classifies each family from any of the three hints', () => {
+    expect(detectOsFamily({ userAgentData: { platform: 'Windows' } })).toBe('windows');
+    expect(detectOsFamily({ platform: 'Win32' })).toBe('windows');
+    expect(detectOsFamily({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' })).toBe(
+      'windows',
+    );
+    expect(detectOsFamily({ userAgentData: { platform: 'macOS' } })).toBe('mac');
+    expect(detectOsFamily({ platform: 'MacIntel' })).toBe('mac');
+    expect(detectOsFamily({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)' })).toBe('mac');
+    expect(detectOsFamily({ userAgent: 'Mozilla/5.0 (X11; Linux x86_64)' })).toBe('linux');
+    expect(detectOsFamily({ platform: 'Linux x86_64' })).toBe('linux');
+  });
+
+  it('defaults to linux when nothing is knowable — the most generic wording', () => {
+    // A wrong guess must never tell a user to open a menu their OS lacks.
+    expect(detectOsFamily({})).toBe('linux');
+    expect(detectOsFamily({ platform: '', userAgent: '' })).toBe('linux');
+    expect(detectOsFamily({ userAgent: 'SomethingCompletelyUnknown/1.0' })).toBe('linux');
+  });
+
+  it('agrees with detectIsMac on the mac branch and resolves a module-level value', () => {
+    expect(detectOsFamily({ platform: 'MacIntel' } ) === 'mac').toBe(
+      detectIsMac({ platform: 'MacIntel' }),
+    );
+    expect(['windows', 'mac', 'linux']).toContain(osFamily);
   });
 });

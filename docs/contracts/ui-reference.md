@@ -10,6 +10,8 @@ the default. All values below are canonical — implement as CSS custom properti
 +--------------------------------------------------------------+
 | Header bar (40px): "Bonsai" · repo name + path · ⟳ refresh    |
 +--------------------------------------------------------------+
+| App notice bar (P70) — absent unless a global fault — §10     |
++--------------------------------------------------------------+
 | Workspace toolbar (40px): remote ops · refresh               |
 +-----------+---------------------------------+----------------+
 | Sidebar   | Commit graph (canvas)           | Right panel    |
@@ -25,6 +27,9 @@ the default. All values below are canonical — implement as CSS custom properti
 - Header: height 40px, `--bg-1` background, 1px bottom border `--border`. Left: app name (600
   weight). Center-left: repo folder name (text-1) + full path (text-3, 12px, truncated). Right:
   refresh icon button (32×32 hit area).
+- App notice bar (P70): second child of `.app`, between the header and the tab workspace hosts.
+  App-global, in-flow, `flex: none`; absent from the DOM's visible output unless a process-wide
+  fault is present. See §10.
 - Left sidebar: fixed 240px, `--bg-1`, 1px right border. Collapsible sections "Branches",
   "Remotes", "Tags" (section headers: 11px uppercase, letter-spacing 0.08em, text-3).
 - Center: `--bg-0`, hosts the `<canvas>` graph; fills remaining width, min 480px.
@@ -71,6 +76,10 @@ to them**:
   `--text-1` for the words beside them. For a filled warning chip, `color: var(--bg-0)` on
   `background: var(--warning)` is safe in both themes (**6.4:1** dark / **4.8:1** light).
 
+Additional measured pairs (2026-08-19, P70 pass), all on `--bg-1`: `--text-1` **13.5:1** dark /
+**15.4:1** light; `--warning` glyph **7.3:1** / **4.5:1**; `--success` glyph **5.7:1** / **4.7:1**;
+`--danger` glyph **4.4:1** / **4.6:1** — all clear the 3:1 graphics bar in both themes.
+
 ## 3. Typography & spacing
 
 - UI font: `"Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif`.
@@ -83,7 +92,8 @@ to them**:
   container which redefines a `--<scope>-*` custom-property block; every consumer reads
   `var(--x, <pre-density fallback>)`. Precedents: `--rp-*` on `.right-panel` (P67b),
   `--ai-dock-*` on `.ai-dock` (P68e). **Scope:** the right panel and the dock only — the Settings
-  overlay and dialogs have one geometry in both densities.
+  overlay, dialogs, and app chrome (header, workspace toolbar, the §10 notice bar) have one
+  geometry in both densities.
 - Interactive controls are **≥24px** tall in every density (AA hit target).
 
 ## 4. Commit graph metrics (canvas)
@@ -148,7 +158,8 @@ precedent. Every new status indicator pairs its hue with a letter, word, or glyp
   layout arrives (no spinners over the canvas). Any operation > 300ms shows an indeterminate 2px
   accent bar under the header.
 - Errors: inline banner at top of the affected pane — `--danger` at 12% alpha bg, `--danger` text,
-  6px radius, dismissible. No modal error dialogs.
+  6px radius, dismissible. No modal error dialogs. **Process-global** faults (not pane-scoped) use
+  the app notice bar instead — §10.
 - Buttons: primary (accent), secondary (bg-2 + border), icon (transparent, bg-2 on hover); all
   32px tall, 6px radius (dock-density controls may go to 28/24px — §3).
 - **Dialog body text (P68g).** Primary sentences: `.dialog-body`, 13px `--text-1`. Must-read
@@ -185,4 +196,50 @@ Full contract: `docs/contracts/P68e-ai-activity-dock.md`. Canonical geometry:
   `role="status" aria-live="polite"` element announces status transitions only.
 - Motion: the dock never animates its height (a height transition would force repeated
   20k-row canvas relayouts). Only opacity/colour, ≤150ms, ease-out; the app's first
-  `prefers-reduced-motion` block lives in this section.
+  `prefers-reduced-motion` block lives in this section. P70 adds `.file-chevron` (the app-wide
+  120ms disclosure-caret transform) to that same block.
+
+## 10. App notice bar (P70)
+
+Full contract: `docs/contracts/P70-ui.md`. The canonical pattern for a **process-global, persistent,
+non-dismissable** fault — as distinct from a pane-scoped error banner (§8) or a transient toast.
+First and currently only instance: `GitMissingBanner` ("Git is not available").
+
+- **Placement.** Direct child of `.app`, immediately after `</header>`, before the
+  `.workspace-host` tab hosts. App-level, not per-tab (tab hosts stay mounted at `display:none`, so
+  a per-tab banner would render N times) and visible on the no-repo empty state.
+- **In-flow, never overlay.** `flex: none`, full width, no scrim, no focus trap. The rest of the
+  app stays fully usable and keyboard-reachable — that is what keeps a non-dismissable surface from
+  being a trap. `UpdateNotification` (fixed, bottom-right, `z-index: 90`) is a different layer;
+  both may show at once.
+- **Zero-cost when healthy.** The component is always mounted but returns only a visually-hidden
+  live region until the fault is known, so the healthy path reserves no space and produces **no
+  layout shift** when the probe resolves.
+- **Geometry.** `padding: 8px 12px`, `gap: 8px 12px`, `flex-wrap: wrap`; text column
+  `flex: 1 1 320px; min-width: 240px; max-width: 72ch`; actions `flex: none; margin-left: auto`;
+  controls `padding: 4px 10px`, 12px, `min-height: 24px` (matching `.op-banner` / `.op-banner-btn`).
+  Density-invariant (§3).
+- **Severity.** Degraded-but-usable ⇒ **warning**, not danger: `background: var(--bg-1)`,
+  `border-bottom: 1px solid var(--border)`, `box-shadow: inset 3px 0 0 var(--warning)` as the left
+  severity rail, plus an `aria-hidden` `⚠` glyph in `--warning`. **All words are `--text-1` /
+  `--text-2`** (§2's `--warning`-as-text rule). One rule set serves both themes; **no new token**.
+- **Content shape.** Title (13px/600 `--text-1`) → one-line explanation (12px `--text-2`) → the
+  single best remedy (13px `--text-1` — it is the thing the user came for). Secondary remedies,
+  the degraded-capability list, and the paste-into-a-bug-report technical block live behind a
+  `Details` disclosure (`aria-expanded` + `aria-controls`, `.file-chevron`), default closed,
+  `max-height: 220px; overflow-y: auto`.
+- **Recovery action.** Exactly one primary button that re-runs the check. Pending state is
+  **text-only** (`Checking…` + `disabled` + `aria-busy`) — no spinner, so it is reduced-motion-safe
+  and costs the canvas nothing. A retry that fails again updates an in-bar 11px `--text-2` readout
+  (`Still not found — checked HH:MM.`); it never toasts and never re-animates.
+- **No dismiss control at all** while the fault holds — not a disabled `✕`.
+- **A11y.** `role="region"` + `aria-labelledby` on the title; **not** `role="alert"` (an assertive
+  region would re-announce the whole bar on every retry). Announcements go through a separate
+  always-mounted visually-hidden `role="status" aria-live="polite"` span — the same split the AI
+  dock uses (§9). Focus is **never** moved to the bar. Tab order is pure DOM order, no `tabindex`.
+- **Motion.** The bar never animates its appearance, its height, or the disclosure.
+- **Copy rules.** Name the real fault in the title; deny the wrong reading explicitly when a wrong
+  reading is likely ("This is not a sign-in problem — your saved credentials were never used.");
+  lead with the remedy that fixes the reported case; state honestly what still works and what does
+  not. Never surface raw backend error prose as the bar's own text — it belongs in the technical
+  block.

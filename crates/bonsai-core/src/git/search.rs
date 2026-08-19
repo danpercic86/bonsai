@@ -30,9 +30,10 @@
 //! optional path-only `snippet`.
 
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use crate::error::AppError;
+use crate::gitbin;
 
 /// Default result count and hard cap (compact rows; a single `invoke`, no channel).
 pub const MAX_SEARCH_RESULTS: u32 = 1000;
@@ -121,31 +122,31 @@ pub trait GitRunner {
 }
 
 /// Production runner: capture stdout, never prompt (`GIT_TERMINAL_PROMPT=0`),
-/// and suppress the transient console window on Windows (mirrors `remote.rs`).
+/// and suppress the transient console window on Windows (the latter now comes
+/// from [`gitbin::git_command`], which also resolves the git executable even
+/// when the inherited PATH is broken — P70).
 pub struct SpawnGitRunner;
 
 impl GitRunner for SpawnGitRunner {
     fn run(&self, args: &[String], cwd: &Path) -> Result<String, AppError> {
-        let mut cmd = Command::new("git");
+        // The subcommand ACTUALLY being run — this runner is shared by commit
+        // search, `commit-graph write` (P52) and every other `&dyn GitRunner`
+        // consumer, so hard-coding `log` in the messages was a lie (P70 §3.2).
+        // Empty argv falls back to "" — NOT "git", which would render as the
+        // nonsense ``failed to run `git git` ``.
+        let subcmd = args.first().map(String::as_str).unwrap_or("");
+        let mut cmd = gitbin::git_command();
         cmd.args(args)
             .current_dir(cwd)
             .env("GIT_TERMINAL_PROMPT", "0")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            cmd.creation_flags(CREATE_NO_WINDOW);
-        }
-        let output = cmd
-            .output()
-            .map_err(|e| AppError::Git(format!("failed to run `git log`: {e}")))?;
+        let output = cmd.output().map_err(|e| gitbin::spawn_error(subcmd, &e))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(AppError::Git(format!(
-                "`git log` failed: {}",
+                "`git {subcmd}` failed: {}",
                 tail_chars(stderr.trim(), 400)
             )));
         }

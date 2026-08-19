@@ -11,17 +11,22 @@ import { AiAssetsPanel } from './components/AiAssetsPanel';
 import { RepoHealthPanel } from './components/RepoHealthPanel';
 import { OnboardingOverlay } from './components/OnboardingOverlay';
 import { EmptyState } from './components/EmptyState';
+import { GitMissingBanner } from './components/GitMissingBanner';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
 import { TabStrip, type TabMeta } from './components/TabStrip';
 import { shortcutLabel } from './utils/platform';
 import { Toasts } from './components/Toasts';
+import { applyToastPush } from './components/toastQueue';
 import type { Toast, ToastTone } from './components/Toasts';
 import { UpdateNotification } from './components/UpdateNotification';
 import { UpdateDialog } from './components/UpdateDialog';
 import { useUpdateController } from './hooks/useUpdateController';
+import { useGitAvailability } from './hooks/useGitAvailability';
 import { useUiSettings } from './hooks/useUiSettings';
 import { ToastContext } from './ToastContext';
 import { ipc } from './ipc';
+import { isGitNotFound } from './ipc/errors';
+import { gitNotFoundToastText, noteGitNotFound } from './ipc/gitNotFound';
 import type {
   AiAvailability,
   CloneProgress,
@@ -138,6 +143,13 @@ export default function App() {
   // P42b: the update state machine (check/notify/download/restart) lives here so
   // App only wires the notification, dialog, and Settings section to it.
   const update = useUpdateController();
+  // P70: the git preflight behind the "Git is not available" notice bar. Probes
+  // once from an effect (after first paint) — nothing renders is gated on it.
+  const git = useGitAvailability();
+  // Destructured so the palette memo depends on the STABLE callback, not on the
+  // hook's per-render state object (which would rebuild every palette row on
+  // every App render).
+  const gitRecheck = git.recheck;
 
   // ----- Tab state (§5.2) -----
   const [tabs, setTabs] = useState<TabMeta[]>([]);
@@ -159,16 +171,23 @@ export default function App() {
     setToasts((cur) => cur.filter((t) => t.id !== id));
   }, []);
 
+  // `key` (P70, UI §10.1) coalesces a repeatable failure into ONE toast:
+  //   same key + same text -> no-op (no remount, no flicker, no re-announce)
+  //   same key + new  text -> replace IN PLACE, same slot, new id + timer
+  //   no key               -> the pre-P70 behaviour, byte for byte.
+  // Error toasts are sticky, so without this three failed presses would leave
+  // three permanent identical toasts — the exact symptom P70 exists to kill.
   const pushToast = useCallback(
-    (tone: ToastTone, text: string) => {
+    (tone: ToastTone, text: string, key?: string) => {
       const id = ++toastId.current;
       const sticky = tone === 'error';
-      setToasts((cur) => {
-        const next = [...cur, { id, tone, text, sticky }];
-        if (next.length <= 5) return next;
-        const dropIdx = next.findIndex((t) => !t.sticky && t.id !== id);
-        return next.filter((_, i) => i !== (dropIdx !== -1 ? dropIdx : 0));
-      });
+      // The updater stays PURE — nothing is read back out of it (React may run
+      // it at render time, and StrictMode runs it twice). The timer decision is
+      // therefore made from the arguments alone: a same-key/same-text push is a
+      // no-op inside `applyToastPush`, and arming a timer for its unrendered id
+      // is harmless — `dismissToast` finds nothing to remove, exactly as it
+      // already does for a keyed toast that was replaced in place.
+      setToasts((cur) => applyToastPush(cur, { id, tone, text, sticky, key }));
       if (!sticky) window.setTimeout(() => dismissToast(id), 5000);
     },
     [dismissToast],
@@ -557,7 +576,16 @@ export default function App() {
         setCloneOpen(false);
         await openTab(path);
       } catch (e) {
-        if (cloneSessionRef.current === session) setCloneError(errorMessage(e));
+        if (cloneSessionRef.current !== session) return;
+        // P70: latch so the notice bar appears, and replace the raw payload with
+        // the plain-language line. NOT toasted: the clone dialog is still open
+        // and owns its own error row — a toast on top would say it twice.
+        if (isGitNotFound(e)) {
+          noteGitNotFound();
+          setCloneError(gitNotFoundToastText('Clone'));
+        } else {
+          setCloneError(errorMessage(e));
+        }
       } finally {
         if (cloneSessionRef.current === session) setCloneBusy(false);
       }
@@ -646,6 +674,19 @@ export default function App() {
         run: toggleListView,
       },
       {
+        // P70 (UI §8): the only surface on which a HEALTHY git ever reports
+        // itself — the banner covers the unhealthy case, so a failed re-check
+        // pushes nothing here.
+        id: 'app.checkGit',
+        title: 'Check Git availability',
+        group: 'action',
+        keywords: 'git missing path version diagnose recheck',
+        run: () =>
+          void gitRecheck().then((next) => {
+            if (next?.found === true) pushToast('info', next.detail);
+          }),
+      },
+      {
         id: 'app.shortcuts',
         title: 'Keyboard shortcuts',
         hint: '?',
@@ -654,7 +695,15 @@ export default function App() {
         run: () => setOverlayOpen(true),
       },
     ],
-    [handleOpenRepository, handleCloneOpen, handleInitRepository, toggleTheme, toggleListView],
+    [
+      handleOpenRepository,
+      handleCloneOpen,
+      handleInitRepository,
+      toggleTheme,
+      toggleListView,
+      gitRecheck,
+      pushToast,
+    ],
   );
 
   // ----- Reopen-all-on-launch (§6.2) -----
@@ -921,6 +970,11 @@ export default function App() {
             </button>
           </div>
         </header>
+
+        {/* P70: app-level, in-flow, directly below the header — git availability
+            is a process-global fact, and a per-tab banner would both duplicate
+            and disappear on the no-repo empty state. */}
+        <GitMissingBanner git={git} onGitAvailable={(text) => pushToast('success', text)} />
 
         {tabs.length > 0 ? (
           tabs.map((t) => (

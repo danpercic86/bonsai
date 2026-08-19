@@ -7687,4 +7687,219 @@ button.asset-row-clickable:hover {
   .ai-dock-status {
     transition: none;
   }
+
+  /* P70 (UI §7, ratified decision 8): the notice bar's ONLY transition is the
+     shared disclosure chevron. Transform-only and app-wide — this milestone is
+     simply the first to need it switched off. */
+  .file-chevron {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   P70 — "Git is not available" notice bar (docs/contracts/P70-ui.md §4).
+   App chrome: a direct child of `.app` below the header, in-flow, never an
+   overlay. Geometry and the severity treatment are lifted from `.op-banner`
+   so the two read as one family. Density-invariant (like the header and the
+   workspace toolbar) and driven entirely by existing theme tokens, so light
+   and dark are both served by this one rule set.
+   ========================================================================== */
+
+.git-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  flex: none;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  /* Severity rail: WARNING, not danger — libgit2 (graph, status, staging,
+     commit, diff) and SSH-agent auth all keep working. */
+  box-shadow: inset 3px 0 0 var(--warning);
+  font-size: 13px;
+}
+
+/* The live region is always mounted (even when git is healthy) and starts
+   empty; same local recipe as `.ai-dock-announce` — the app still has no
+   `.sr-only` utility. */
+.git-banner-announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.git-banner-icon {
+  flex: none;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--warning);
+}
+
+.git-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Wraps the actions column onto its own row below ~560px instead of
+     squeezing the text to zero (the `.op-banner` bug at styles.css:5366). */
+  flex: 1 1 320px;
+  min-width: 240px;
+  /* Stops a 2560px window producing one unreadable line. */
+  max-width: 72ch;
+}
+
+.git-banner-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.git-banner-sub {
+  font-size: 12px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+/* The remedy is the thing the user came for — deliberately --text-1. */
+.git-banner-remedy {
+  font-size: 13px;
+  color: var(--text-1);
+}
+
+.git-banner-path {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.git-banner-actions {
+  flex: none;
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.git-banner-btn,
+.git-banner-toggle {
+  padding: 4px 10px;
+  font-size: 12px;
+  min-height: 24px;
+}
+
+.git-banner-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.git-banner-checked {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.git-banner-details {
+  /* Own row, full width. */
+  flex: 1 0 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.git-banner-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.git-banner-label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.git-banner-label-row .git-banner-copy {
+  margin-left: auto;
+}
+
+/* Decorative only: every label duplicates structure the following content
+   states in full words. */
+.git-banner-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+
+.git-banner-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.git-banner-bullet {
+  color: var(--text-3);
+  padding-inline-start: 8px;
+  padding-inline-end: 6px;
+}
+
+.git-banner-cap {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* Colour is never the sole carrier: the glyph always pairs with its leader. */
+.git-banner-cap-glyph {
+  padding-inline-end: 6px;
+}
+
+.git-banner-cap-works .git-banner-cap-glyph {
+  color: var(--success);
+}
+
+.git-banner-cap-broken .git-banner-cap-glyph {
+  color: var(--danger);
+}
+
+.git-banner-cap-leader {
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.git-banner-tech {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-2);
+  background: var(--bg-0);
+  border-radius: 6px;
+  padding: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.git-banner-copy {
+  font-size: 11px;
+  padding: 2px 8px;
+  min-height: 24px;
 }

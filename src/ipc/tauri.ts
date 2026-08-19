@@ -65,6 +65,7 @@ import type {
   FileDiff,
   FileHistoryEntry,
   GraphChunk,
+  GitAvailability,
   GraphLayout,
   ImageDiff,
   ImageDiffRequest,
@@ -383,6 +384,11 @@ export const tauriIpc: IpcApi = {
 
   resolveConflictText(repoId: string, path: string, content: string): Promise<void> {
     return invoke<void>('resolve_conflict_text', { repoId, path, content });
+  },
+
+  // P70: git executable preflight (never rejects for git state).
+  checkGitAvailability(): Promise<GitAvailability> {
+    return invoke<GitAvailability>('check_git_availability');
   },
 
   // P13: Claude Code CLI health probe + AI conflict resolution (proposal only).

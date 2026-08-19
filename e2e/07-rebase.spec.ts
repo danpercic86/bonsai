@@ -15,8 +15,10 @@ import type { Page } from '@playwright/test';
 
 const FLAT = { uiSettings: { onboardingSeen: true, listView: 'flat' } };
 
+/** Class + role: P70's always-mounted git-availability live region also carries
+ *  `role="status"`, so a bare role query is no longer unique. */
 function banner(page: Page) {
-  return page.getByRole('status');
+  return page.locator('.op-banner[role="status"]');
 }
 
 async function waitStatus(page: Page): Promise<void> {

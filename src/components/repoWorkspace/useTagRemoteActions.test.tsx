@@ -4,6 +4,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mockIpc } from '../../ipc/mock';
 import { useTagRemoteActions } from './useTagRemoteActions';
 import {
+  GIT_NOT_FOUND_TOAST_KEY,
+  gitNotFoundLatched,
+  gitNotFoundToastText,
+  resetGitNotFoundLatchForTests,
+} from '../../ipc/gitNotFound';
+import {
   appErr,
   asyncFn,
   base,
@@ -64,6 +70,37 @@ describe('tags', () => {
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Pushed tag v1.0 → origin');
     expect(deps.refetchGraph).toHaveBeenCalledTimes(1); // unchanged — push moves no local ref
     expect(deps.refetchRemotes).not.toHaveBeenCalled();
+  });
+
+  it('pushTag routes gitNotFound through the shared reporter (latch + ONE keyed toast)', async () => {
+    // P70 (UI §10.3): pushing a tag authenticates an HTTPS remote through the
+    // credential helper, so it can fail with `gitNotFound`. Without the reporter
+    // this surfaced the 692-char Rust paragraph as an unkeyed STICKY toast —
+    // three presses, three permanent walls of text.
+    resetGitNotFoundLatchForTests();
+    vi.spyOn(mockIpc, 'pushTag').mockRejectedValue(appErr('gitNotFound', 'the long rust paragraph'));
+    const deps = makeDeps();
+    const actions = useTagRemoteActions(deps);
+
+    await actions.handlePushTag('origin', 'v1.0');
+    await actions.handlePushTag('origin', 'v1.0');
+
+    expect(deps.pushToast).toHaveBeenCalledTimes(2);
+    expect(deps.pushToast).toHaveBeenLastCalledWith(
+      'error',
+      gitNotFoundToastText('Push tag'),
+      GIT_NOT_FOUND_TOAST_KEY,
+    );
+    // The key is what makes the second press coalesce in `applyToastPush`.
+    expect(gitNotFoundLatched()).toBe(true);
+    resetGitNotFoundLatchForTests();
+  });
+
+  it('pushTag keeps the plain error toast for everything else', async () => {
+    vi.spyOn(mockIpc, 'pushTag').mockRejectedValue(appErr('git', 'remote hung up'));
+    const deps = makeDeps();
+    await useTagRemoteActions(deps).handlePushTag('origin', 'v1.0');
+    expect(deps.pushToast).toHaveBeenCalledWith('error', 'remote hung up');
   });
 });
 

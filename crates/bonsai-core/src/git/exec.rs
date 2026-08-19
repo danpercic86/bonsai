@@ -69,7 +69,10 @@ fn read_capped<R: Read>(mut r: R, counter: &AtomicUsize, cap: usize) -> std::io:
 /// Extracted so the argv/env/stdin assembly stays unit-testable without
 /// launching git (the env-hygiene invariant is asserted via `get_envs`).
 fn build_command(args: &[&str], cwd: &Path, stdin_present: bool, env: &[(&str, &str)]) -> Command {
-    let mut cmd = Command::new("git");
+    // P70: the program + Windows console suppression come from the shared
+    // resolver, so a broken inherited PATH (MSI-relaunched app, per-user Git
+    // install) still finds git. The never-prompt hardening below is unchanged.
+    let mut cmd = crate::gitbin::git_command();
     // `-c core.askpass=` (before the subcommand) neutralizes a CONFIGURED
     // askpass helper — GIT_TERMINAL_PROMPT=0 + clearing the askpass ENV vars
     // do NOT cover a `core.askpass` set in git config (see
@@ -97,12 +100,6 @@ fn build_command(args: &[&str], cwd: &Path, stdin_present: bool, env: &[(&str, &
     // intent (e.g. GIT_AUTHOR_*) wins; signing never passes the askpass keys.
     for (k, v) in env {
         cmd.env(k, v);
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
     }
     cmd
 }
@@ -148,9 +145,11 @@ impl GitExec for SpawnGitExec {
         let mut cmd = build_command(args, cwd, stdin.is_some(), env);
 
         let subcmd = args.first().copied().unwrap_or("");
+        // P70: a launch failure is classified honestly (GitNotFound vs Git)
+        // instead of surfacing as an opaque git error.
         let mut child = cmd
             .spawn()
-            .map_err(|e| AppError::Git(format!("failed to run `git {subcmd}`: {e}")))?;
+            .map_err(|e| crate::gitbin::spawn_error(subcmd, &e))?;
 
         // Write stdin, then CLOSE it (drop the handle -> EOF) so the child sees
         // the full request. Done before reading output; git stdin is small

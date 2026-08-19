@@ -129,3 +129,84 @@ describe('?branch=cbhconflict (read per call)', () => {
     ).toBe(true);
   });
 });
+
+describe('?git= / ?gitDelay= (module-init P70 seams)', () => {
+  it('absent ⇒ a healthy PATH-resolved git and no remote-op rejections', async () => {
+    const { repoId } = await loadWith('');
+    const gitEnv = (await import('./handlers/gitEnv')).gitEnvHandlers;
+    expect(await run(gitEnv.checkGitAvailability())).toMatchObject({
+      found: true,
+      source: 'path',
+      version: '2.47.1',
+    });
+    const remotes = (await import('./handlers/remotesSync')).remotesSyncHandlers;
+    await expect(run(remotes.fetch(repoId))).resolves.toBeDefined();
+  });
+
+  it('?git=missing ⇒ not found, and fetch/pull/push reject with gitNotFound', async () => {
+    const { repoId } = await loadWith('git=missing');
+    const { gitEnvHandlers, MOCK_GIT_NOT_FOUND_MESSAGE } = await import('./handlers/gitEnv');
+    const status = await run(gitEnvHandlers.checkGitAvailability());
+    expect(status).toMatchObject({ found: false, path: null, source: 'fallback' });
+    // The honest copy — it must deny the auth reading AND exempt ssh-agent.
+    expect(status.detail).toBe(MOCK_GIT_NOT_FOUND_MESSAGE);
+    expect(status.detail).toContain('NOT an authentication failure');
+    expect(status.detail).toContain('SSH remotes using an ssh-agent are unaffected');
+
+    const remotes = (await import('./handlers/remotesSync')).remotesSyncHandlers;
+    // Thunks, not eager promises: three simultaneously-rejecting promises would
+    // surface as unhandled rejections before the loop got to await them.
+    const calls = [
+      () => remotes.fetch(repoId),
+      () => remotes.pull(repoId),
+      () => remotes.push(repoId, false),
+    ];
+    for (const call of calls) {
+      const err = await runErr(call());
+      expect(err.kind).toBe('gitNotFound');
+      expect(err.message).toBe(MOCK_GIT_NOT_FOUND_MESSAGE);
+    }
+  });
+
+  it('?git=badpath ⇒ Variant B: found-but-unrunnable, path populated, no rejections', async () => {
+    const { repoId } = await loadWith('git=badpath');
+    const gitEnv = (await import('./handlers/gitEnv')).gitEnvHandlers;
+    const status = await run(gitEnv.checkGitAvailability());
+    expect(status.found).toBe(false);
+    expect(status.source).toBe('override');
+    expect(status.path).toContain('git.exe');
+    const remotes = (await import('./handlers/remotesSync')).remotesSyncHandlers;
+    await expect(run(remotes.fetch(repoId))).resolves.toBeDefined();
+  });
+
+  it('?git=registry ⇒ found via a NON-PATH rung (the detail line proves it)', async () => {
+    await loadWith('git=registry');
+    const gitEnv = (await import('./handlers/gitEnv')).gitEnvHandlers;
+    const status = await run(gitEnv.checkGitAvailability());
+    expect(status).toMatchObject({ found: true, source: 'registry' });
+    expect(status.detail).toContain('(registry)');
+  });
+
+  it('?git=longpath ⇒ a ≥250-char path and a ≥900-char detail (truncation fixtures)', async () => {
+    await loadWith('git=longpath');
+    const gitEnv = (await import('./handlers/gitEnv')).gitEnvHandlers;
+    const status = await run(gitEnv.checkGitAvailability());
+    expect(status.path?.length ?? 0).toBeGreaterThanOrEqual(250);
+    expect(status.detail.length).toBeGreaterThanOrEqual(900);
+    expect(status.source).toBe('wellKnown');
+  });
+
+  it('?gitDelay is clamped and composes with ?git=', async () => {
+    await loadWith('git=missing&gitDelay=1200');
+    const gitEnv = (await import('./handlers/gitEnv')).gitEnvHandlers;
+    const pending = gitEnv.checkGitAvailability();
+    let settled = false;
+    void pending.then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(300);
+    expect((await pending).found).toBe(false);
+  });
+});

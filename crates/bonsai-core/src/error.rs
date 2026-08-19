@@ -7,7 +7,7 @@
 /// | "noRemote" | "noUpstream" | "authFailed" | "networkError"
 /// | "pushRejected" | "operationInProgress" | "noOperationInProgress"
 /// | "unresolvedConflicts" | "aiUnavailable" | "aiFailed"
-/// | "externalToolFailed" | "hookRejected"
+/// | "externalToolFailed" | "hookRejected" | "gitNotFound"
 /// | "forgeUnsupported" | "forgeAuthRequired" | "forgeRateLimited" | "forgeApi",
 /// "message": "..." }`.
 #[derive(Debug, thiserror::Error)]
@@ -75,6 +75,14 @@ pub enum AppError {
     /// blocking hook is NEVER a silent success — the operation aborts with this.
     #[error("{0}")]
     HookRejected(String),
+    /// P70: no runnable `git` executable could be resolved (PATH inherited from
+    /// an installer, Git not installed, override pointing nowhere). Distinct
+    /// from `Git` so the frontend can show ONE persistent banner instead of N
+    /// toasts, and distinct from `AuthFailed` so a launch failure is NEVER
+    /// reported as a credential problem. Carries
+    /// `gitbin::git_not_found_message()`.
+    #[error("{0}")]
+    GitNotFound(String),
     // Forge / PR integration (P62). Provider-abstracted; GitHub first.
     /// The `origin` host is not a known forge provider (non-`github.com` or an
     /// unparseable remote URL). A DATA command was invoked against it; the
@@ -126,6 +134,7 @@ impl AppError {
             AppError::AiCancelled(_) => "aiCancelled",
             AppError::ExternalToolFailed(_) => "externalToolFailed",
             AppError::HookRejected(_) => "hookRejected",
+            AppError::GitNotFound(_) => "gitNotFound",
             AppError::ForgeUnsupported(_) => "forgeUnsupported",
             AppError::ForgeAuthRequired(_) => "forgeAuthRequired",
             AppError::ForgeRateLimited(_) => "forgeRateLimited",
@@ -158,6 +167,7 @@ impl AppError {
             | AppError::AiCancelled(m)
             | AppError::ExternalToolFailed(m)
             | AppError::HookRejected(m)
+            | AppError::GitNotFound(m)
             | AppError::ForgeUnsupported(m)
             | AppError::ForgeAuthRequired(m)
             | AppError::ForgeRateLimited(m)

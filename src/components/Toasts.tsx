@@ -10,6 +10,12 @@ export interface Toast {
   text: string;
   /** true => stays until dismissed (all 'error' toasts); false => auto-dismiss 5 s. */
   sticky: boolean;
+  /** P70 (UI §10.1): optional dedupe key. Two toasts never share a key — a push
+   *  with an existing key REPLACES that toast in place (or is a no-op when the
+   *  text is identical), which is what keeps repeated failed presses from
+   *  stacking N identical sticky error toasts. Ignored by this presentational
+   *  component; the rule lives in App's `pushToast`. */
+  key?: string;
 }
 
 export interface ToastsProps {

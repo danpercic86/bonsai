@@ -1952,8 +1952,33 @@ export interface AppError {
     | 'forgeUnsupported'
     | 'forgeAuthRequired'
     | 'forgeRateLimited'
-    | 'forgeApi';
+    | 'forgeApi'
+    /** P70: no runnable `git` executable could be resolved. NOT an auth failure
+     *  and NOT an ordinary git error: the frontend routes it to the ONE
+     *  persistent `GitMissingBanner` (plus a single coalesced toast for a
+     *  user-pressed remote op) instead of N repeated toasts. Raised only by
+     *  paths that shell out — SSH-agent authentication never produces it. */
+    | 'gitNotFound';
   message: string;
+}
+
+/** P70: which rung of the resolver ladder produced the git path. Mirrors the
+ *  Rust `GitBinSource`. */
+export type GitBinSource = 'override' | 'path' | 'registry' | 'wellKnown' | 'fallback';
+
+/** P70: startup git preflight. `found: false` is a NORMAL result, never a
+ *  rejection. Mirrors the Rust `GitAvailability`. */
+export interface GitAvailability {
+  found: boolean;
+  /** The path actually tried — populated whenever a candidate resolved, even
+   *  when it turned out to be unrunnable; `null` only when the ladder fell back
+   *  to the bare name. The banner keys its "found but unrunnable" variant on it. */
+  path: string | null;
+  /** e.g. `'2.47.1.windows.1'`; `null` when not found or unparseable. */
+  version: string | null;
+  source: GitBinSource;
+  /** Human one-liner: the diagnostic when found, the full not-found copy otherwise. */
+  detail: string;
 }
 
 export interface IpcApi {
@@ -2431,6 +2456,10 @@ export interface IpcApi {
   /** P49: open `path` in the configured editor (empty ⇒ auto-detect VS Code).
    *  Rejects AppError('externalToolFailed' | 'io'). */
   openInEditor(path: string): Promise<void>;
+  /** P70: resolve the `git` executable and report availability. Cheap, one-shot
+   *  at startup, re-invocable from the banner's Re-check. Never rejects for git
+   *  state — a missing git is `{ found: false, ... }`. */
+  checkGitAvailability(): Promise<GitAvailability>;
   /** Cheap Claude Code CLI health probe (P13). Never rejects for CLI state. */
   checkAiAvailability(): Promise<AiAvailability>;
   /** Propose an AI merge resolution for one conflicted path (P13). Writes nothing.

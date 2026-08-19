@@ -23,13 +23,16 @@ const FLAT = { uiSettings: { onboardingSeen: true, listView: 'flat' } };
 
 async function openPausedMerge(page: Page): Promise<void> {
   await openRepo(page, { flags: { op: 'merge' } });
-  await expect(page.getByRole('status').getByText('Merging feature/login')).toBeVisible();
+  await expect(banner(page).getByText('Merging feature/login')).toBeVisible();
 }
 
-/** The op banner (role=status) — scopes its action buttons (the CommitBox also
- *  renders a "Commit merge" button in merge mode). */
+/** The op banner — scopes its action buttons (the CommitBox also renders a
+ *  "Commit merge" button in merge mode). Class + role, NOT `getByRole('status')`
+ *  alone: P70 added an always-mounted git-availability live region, so a bare
+ *  role query is no longer unique (and `toHaveCount(0)` below would never pass).
+ *  The role stays in the selector so the a11y contract is still asserted. */
 function banner(page: Page) {
-  return page.getByRole('status');
+  return page.locator('.op-banner[role="status"]');
 }
 
 test.describe('06 merge & conflicts @destructive', () => {

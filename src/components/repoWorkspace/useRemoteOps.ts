@@ -1,5 +1,7 @@
 import { ipc } from '../../ipc';
 import { errorMessage, isAppError } from '../../utils/errors';
+import { reportRemoteOpError } from '../../ipc/gitNotFound';
+import { isGitNotFound } from '../../ipc/errors';
 import { shortOid } from '../workspaceUtils';
 import { COMMIT_HOOK_CANCELED } from '../commitPushSignal';
 import type { BaseActionDeps, Setter } from './types';
@@ -69,7 +71,9 @@ export function useRemoteOps(
       );
       await Promise.all([refetchBranches(), refetchGraph()]);
     } catch (e) {
-      pushToast('error', errorMessage(e));
+      // P70 (UI §10.3): a user-PRESSED remote op still gets exactly one toast —
+      // coalesced by key, so three presses never stack three sticky errors.
+      reportRemoteOpError('Fetch', e, pushToast);
     } finally {
       endRemoteOp();
     }
@@ -99,7 +103,7 @@ export function useRemoteOps(
       }
       await refreshAll();
     } catch (e) {
-      pushToast('error', errorMessage(e));
+      reportRemoteOpError('Pull', e, pushToast);
     } finally {
       endRemoteOp();
     }
@@ -128,7 +132,7 @@ export function useRemoteOps(
       }, false);
     } catch (e) {
       // Dialog dismissed (pre-push not skipped): nothing pushed, no error banner.
-      if (e !== COMMIT_HOOK_CANCELED) pushToast('error', errorMessage(e));
+      if (e !== COMMIT_HOOK_CANCELED) reportRemoteOpError('Push', e, pushToast);
     } finally {
       endRemoteOp();
     }
@@ -162,6 +166,10 @@ export function useRemoteOps(
     } catch (e) {
       // Dialog dismissed (pre-push not skipped): nothing pushed, no error banner.
       if (e === COMMIT_HOOK_CANCELED) return;
+      if (isGitNotFound(e)) {
+        reportRemoteOpError('Push', e, pushToast);
+        return;
+      }
       // Any pushRejected from a force-push resolves the same way: fetch first.
       const hint = isAppError(e) && e.kind === 'pushRejected' ? ' — fetch and retry' : '';
       pushToast('error', errorMessage(e) + hint);

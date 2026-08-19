@@ -3,11 +3,15 @@ import type { IpcApi } from '../../types';
 import { randomOid } from '../../fixtures/oids';
 import { delay, requireRepo, throwAuthFailed, throwNetworkError } from '../repoState';
 import { prePushRejectionFor } from '../hooksGate';
+import { throwIfGitMocksMissing } from './gitEnv';
 import type { AppError, FetchResult, PullResult, PushResult } from '../../types';
 
 export const remotesSyncHandlers = {
   async fetch(repoId: string): Promise<FetchResult> {
     await delay(400);
+    // P70 `?git=missing`: an HTTPS remote whose credential helper cannot be
+    // launched (see throwIfGitMocksMissing for why SSH is NOT modelled).
+    throwIfGitMocksMissing();
     const state = requireRepo(repoId);
     if (state.remoteTrigger === 'authfail') throwAuthFailed();
     if (state.remoteTrigger === 'network') throwNetworkError();
@@ -25,6 +29,9 @@ export const remotesSyncHandlers = {
 
   async pull(repoId: string): Promise<PullResult> {
     await delay(400);
+    // P70 `?git=missing`: an HTTPS remote whose credential helper cannot be
+    // launched (see throwIfGitMocksMissing for why SSH is NOT modelled).
+    throwIfGitMocksMissing();
     const state = requireRepo(repoId);
     if (state.remoteTrigger === 'authfail') throwAuthFailed();
     if (state.remoteTrigger === 'network') throwNetworkError();
@@ -68,6 +75,9 @@ export const remotesSyncHandlers = {
 
   async push(repoId: string, skipHooks?: boolean): Promise<PushResult> {
     await delay(400);
+    // P70 `?git=missing`: an HTTPS remote whose credential helper cannot be
+    // launched (see throwIfGitMocksMissing for why SSH is NOT modelled).
+    throwIfGitMocksMissing();
     const state = requireRepo(repoId);
     // P59a-2: the pre-push hook runs BEFORE the push; a block aborts it.
     const prePush = prePushRejectionFor(state, skipHooks);

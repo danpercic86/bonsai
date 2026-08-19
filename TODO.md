@@ -28,6 +28,149 @@ items — moved 2026-08-19), `docs/history/todo-archive.md` (P27 → P2, M0–M6
 `docs/history/milestones-mvp.md` (the M0–M6 AI-gate vs USER CHECKPOINT split). Contract files are
 indexed in `docs/contracts/INDEX.md`.
 
+## 🐛 P70 — git-executable resolution + honest "git not found" diagnostics — in-progress
+
+**Current step:** P70 — **AI gate GREEN, awaiting native USER CHECKPOINT.** All increments implemented,
+two reviewer rounds closed, tester's acceptance gaps (#13/#14/#23) filled.
+
+**AI gate (tester, sequential, all first-pass):** clippy `-D warnings` clean · `cargo test --workspace
+--no-fail-fast` **1788 passed / 0 failed / 6 ignored** (4 pre-existing perf gates + 2 new out-of-process
+children) · tsc clean · build ok · vitest **1701 passed / 140 files** · lint 0 errors / 30 pre-existing
+warnings · `lint:size` OK · e2e **117 passed / 1 pre-existing skip**.
+
+**USER CHECKPOINT — item 1 is BLOCKING:**
+1. 🔴 **SSH-agent auth survives the banner.** Point `BONSAI_GIT_BIN` at a nonexistent path, relaunch,
+   confirm the banner shows, then fetch/push an **SSH remote with a loaded ssh-agent** → must SUCCEED,
+   no `gitNotFound` toast. A red or unrun result means the §3.3/§5.4 copy is wrong and must change
+   before release — do not ship on it. (#16 and #18 pin the internal halves; this is the only e2e proof.)
+2. HTTPS-with-helper fails honestly — exactly one surface (the banner), no toast, and nowhere the words
+   "no cached credentials" or "authentication failed".
+3. Re-check recovery `false → true` without restart (not harness-verifiable — `?git=` is fixed at module init).
+4. The original bug: MSI-installed build / Machine-only-PATH parent on a per-user Git install → resolves
+   via HKCU, no banner, commit search works, HTTPS auth works through GCM.
+5. First paint not delayed by the probe; no flash or jump of the notice bar on a healthy launch.
+6. Screen-reader pass (NVDA/VoiceOver) **specifically under the Variant B / bad-`BONSAI_GIT_BIN` repro**.
+7. Both themes on the real webview + visible focus ring on Re-check.
+8. macOS/Linux: normal launch resolves via PATH, no banner.
+
+**Two defects the browser harness caught that jsdom could not:** a hard-coded screen-reader announcement
+(Variant A copy spoken for Variant B — root cause was the *UI contract*, which only said "a live region
+exists"; now derived from the same `bannerCopy()` the banner renders, so drift is structurally
+impossible), and 7 pre-existing e2e failures in `06-merge-conflicts`/`07-rebase` whose `getByRole('status')`
+banner locator collided with P70's always-mounted announcer. **One orchestrator finding did NOT hold:**
+the 400 ms Re-check window reported as never rendering was an artifact of the hidden Browser pane
+(throttled timers); Playwright shows it at 20–380 ms. The underlying test gap was real though — the old
+test asserted the returned promise's elapsed time, never that `checking` reached the DOM — and is now
+closed by a rendered-label assertion + e2e spec 19, both mutation-verified.
+
+**Two design defects caught during contract review (both corrected before any code was written):**
+- **SSH regression (architect §3.1).** The original design short-circuited the *whole* credential
+  ladder when git was unresolvable. SSH remotes with a running ssh-agent authenticate entirely inside
+  libgit2 and never need `git.exe` — that version would have broken a working flow for every SSH user.
+  Narrowed to the credential-**helper** rung: the ladder still tries SshAgent/Default, and
+  `GitNotFound` is chosen only at exhaustion. Guards: test #16 (SSH-only exhaustion ⇒ `AuthFailed`,
+  not `GitNotFound`) + #18 (Helper rung performs zero spawns when git is missing) + a native
+  checkpoint (SSH fetch succeeds while the banner shows). No injectable ssh-agent seam — rejected as
+  indirection in the credential hot path for marginal coverage.
+- **Toolbar disabling (my decision 2, reversed by ui-designer, ratified).** Disabling Fetch/Pull/Push
+  while git is missing would have broken those same SSH users, and the transport isn't knowable at the
+  toolbar (it depends on the branch's resolved upstream). Buttons stay enabled; blanket toast
+  suppression narrows to background/scheduler failures; a user-pressed remote op gets one coalesced
+  toast. The reported 3-toast symptom still dies — those were auto-fetch retries, which stay silent.
+
+**Orchestrator decisions on contract §9 (all approved as recommended, 2026-08-19):** `RwLock` cache
+(not `OnceLock`) so the banner's Re-check works without a restart · HKCU probed before HKLM (matches
+the field case) · child-PATH augmentation in `git_command()` included (repairs hooks/helpers that
+shell out to `git` themselves) · `gitNotFound` suppresses the error toast entirely, banner is the
+single surface (this is what kills the 3-repeated-toasts symptom) · `fixture.rs::have_git()` migrated.
+
+**Trigger (field report, 2026-08-19):** user auto-updated to v1.0.0 via the MSI updater. `msiexec.exe`
+relaunched `C:\Program Files\Bonsai\bonsai.exe` as its child, so the app inherited the *installer's*
+environment. Their Git is a per-user install (`%LOCALAPPDATA%\Programs\Git\cmd\git.exe`) whose PATH
+entry lives only in the **User** PATH — the Machine PATH has no Git. Inside the app,
+`Command::new("git")` therefore could not resolve `git`.
+
+Two symptoms, one cause:
+- "failed to run `git log`: program not found" — `git/search.rs:129` (`SpawnGitRunner`).
+- 3× "authentication failed for 'origin': the configured credential helper has no cached
+  credentials…" — `git/remote.rs:180` `credential_fill` does `cmd.spawn().ok()?`, swallowing the
+  NotFound into `None`; `acquire_cred` reads that as "helper had nothing" → exhausts → the wrong
+  message at `git/remote.rs:326`. GCM had the credentials all along. Repeats via auto-fetch backoff.
+
+**Scope (3 deliverables):** D1 single cached git-binary resolver (PATH → Git-for-Windows registry key
+→ well-known install dirs → bare name; `BONSAI_GIT_BIN`-style override as the test seam; no new
+`bonsai-core` dependency) used by every production `Command::new("git")` site · D2 `credential_fill`
+distinguishes spawn-failure from empty-helper so the error names the real problem · D3 startup
+preflight command + UI banner (ui-designer pass required — user-visible).
+
+**Queued follow-up (user-requested 2026-08-19, starts once P70 commits):** `refactorer` split of the
+credential subsystem out of `git/remote.rs` into `git/cred.rs` (`FillOutcome`, `CRED_EXHAUSTED_MSG`/
+`GIT_MISSING_MSG`, `CredAttempts`, `next_cred_method`, `credential_fill`, `acquire_cred*`,
+`exhausted_error`, `map_remote_err` + tests). Strictly behavior-preserving; equivalence proven by
+identical before/after test counts, so the **baseline must be captured after P70 commits**, not now —
+the in-flight fix batch is still changing remote.rs's test layout. Guard tests #16 and #18 must still
+run and pass wherever they land.
+
+**Acceptance:** git resolves when the process PATH lacks it but Git is installed per-user; a genuinely
+missing git produces a "git not found" message, never an auth message; preflight banner appears in the
+mock harness via a query-param seam; cargo + clippy + vitest + e2e gates stay green.
+
+**USER CHECKPOINT (native):** install/auto-update, launch the app from a parent WITHOUT the user PATH,
+confirm fetch/pull/push + commit search work and no spurious auth toast appears.
+
+## 🔧 P71 — auto-update relaunch inherits the installer's environment — in-progress (research)
+
+**Current step:** P71 — contract CLOSED (`docs/contracts/P71-updater-relaunch-env.md`, all 4 decisions
+recorded). **Implementation starts after P70 commits.** Increment 1 = R1 (two config lines);
+increment 2 = R2 backstop. Needs `security-auditor` (6 items, incl. the new PATH-precedence one) and
+a native USER CHECKPOINT.
+
+**Root cause found — the MSI was never a deliberate choice.** `tauri-action`'s `updaterJsonPreferNsis`
+defaults to `false` "for legacy reasons" and release.yml never overrides it, so `latest.json` points at
+the `.msi` by accident. The WiX relaunch is broken *by construction*: a `LaunchApplication` custom
+action run by msiexec's own process inherits msiexec's env block (`Impersonate="yes"` fixes the token,
+not the environment). NSIS is correct by construction: `RunAsUser` duplicates **explorer's** token and
+calls `CreateProcessWithTokenW` with `lpEnvironment = NULL`, which per MSDN builds the environment from
+the user profile — Start-menu-equivalent, guaranteed by API not by luck.
+
+**R1 (chosen):** drop MSI from `bundle.targets`, set `updaterJsonPreferNsis: true`. Zero Rust/TS/IPC/UI.
+**R2 (increment 2):** startup PATH rehydration from HKCU/HKLM. Approved on the argument that **R1 does
+nothing for clients already on an MSI install** — including the reporting user — so R2 is in-place
+repair, not defence-in-depth. Prepend missing entries only, never reorder/dedupe/drop, no persistence,
+malformed registry → silent no-op. It does NOT restore `USERPROFILE`/`HOME`, `SSH_AUTH_SOCK`, proxy
+vars or `TEMP` — R2 never makes R1 optional.
+**Rejected:** stop-auto-relaunching is *impossible*, not just worse — the updater plugin calls
+`std::process::exit(0)` right after launching the installer, so the app is dead before install begins
+(an in-app "relaunch now" prompt has no process to live in). Also rejected: forked WiX template,
+launcher shim, R2-alone.
+
+**C-1 acceptance probe (elegant, reuse it):** after an update, P70's `GitAvailability.source` must read
+**`path`**. If it reads `registry`/`wellKnown`, the environment is still foreign and P70 is merely
+masking it — every non-git surface in the blast radius stays exposed. Fastest self-diagnosis with no
+debugger.
+
+**Do not delete:** `readyToRestart`/Restart UI is unreachable on Windows but is the *sole* relaunch path
+on macOS/Linux (mirrored as a doc comment on `UpdateController.restart()` so a future cleanup grep
+lands on it).
+
+**FOR USER (§10):** the reporting user's install came from the MSI, so R1 won't reach them until they
+reinstall. Recommended: one-time manual uninstall + reinstall from the NSIS `-setup.exe` once P71 ships,
+rather than betting a working install on an untested passive-mode WiX→NSIS migration.
+
+**Why:** this is the *upstream* cause of P70. The MSI updater relaunched `bonsai.exe` as a child of
+`msiexec.exe`, so the app inherited the installer's environment instead of the user's. P70's resolver
+ladder rescues **git only** — every other environment-dependent behaviour has the same exposure
+(proxy vars, `SSH_AUTH_SOCK`, credential-helper config, the P49 editor/terminal/file-manager
+integrations, the AI CLI resolution in `ai/mod.rs`). Bar: after an auto-update the running app must
+have the same environment it would have if launched from the Start menu.
+
+**Open questions the architect must answer with evidence:** which artifact the updater actually picks
+when both NSIS and MSI updater artifacts are published (and whether `.github/workflows/` makes that
+incidental) · whether the NSIS relaunch path shares the defect · whether the right answer is to stop
+auto-relaunching and prompt instead. Requires a `security-auditor` pass (updater trust/install path)
+and a native USER CHECKPOINT (real signed update round-trip). **Must not touch
+`.tauri/updater-prod.key`** — see P69 FOR-USER item 1.
+
 ## 🎯 P69 — 1.0.0 release readiness — ✅ **SHIPPED 2026-08-18** (tag `v1.0.0`)
 
 **Current step:** none — `v1.0.0` tagged and pushed at `bd52483`; the release workflow

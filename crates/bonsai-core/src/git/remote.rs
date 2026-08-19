@@ -12,10 +12,11 @@
 use std::cell::{Cell, RefCell};
 use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use crate::error::AppError;
-use crate::git::cred_cache::{self, Resolved};
+use crate::git::cred_cache::{self, CredResolve, Resolved};
+use crate::gitbin;
 use crate::git::exec::GitExec;
 use crate::git::hooks::{hooks_enabled, run_hook, HookName};
 use crate::git::repo::read_head_info;
@@ -93,6 +94,27 @@ pub struct RemoteInfo {
 /// exhausted — `map_remote_err` keys the `authFailed` mapping off it.
 pub(crate) const CRED_EXHAUSTED_MSG: &str = "bonsai: no usable credentials";
 
+/// Sentinel threaded through git2's callback error when the `git` executable
+/// itself cannot be launched (P70 §3.1) — exactly the [`CRED_EXHAUSTED_MSG`]
+/// mechanism, but `map_remote_err` maps it to `GitNotFound` rather than
+/// `AuthFailed`, so a launch failure is NEVER reported as an auth problem.
+pub(crate) const GIT_MISSING_MSG: &str = "bonsai: git executable not found";
+
+/// Outcome of one `git credential fill` attempt (P70 §3.1). Distinguishes "git
+/// could not be launched" from "the helper had nothing" — the pre-P70 `None`
+/// conflated them, which is the root of the misleading auth toast.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum FillOutcome {
+    Filled { username: String, password: String },
+    /// git ran and exited, but produced no usable username+password (cache
+    /// miss, non-zero exit, unparseable output). The pre-P70 `None` meaning.
+    NoCredentials,
+    /// The `git` child could NOT be launched at all. Carries the io error text
+    /// for the log; the user-facing string comes from
+    /// [`gitbin::git_not_found_message`].
+    GitUnavailable(String),
+}
+
 /// Which credential source to try next. Pure decision logic — no git2 Cred
 /// construction (unit-testable offline, contract §2.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,6 +150,12 @@ pub(crate) struct CredAttempts {
     /// hit). On an operation-level auth failure the caller evicts this key so
     /// the next op re-fills instead of re-serving the known-bad cred (F-A5-b).
     fresh_fill_url: Option<String>,
+    /// P70: set when the Helper rung failed because `git` itself could not be
+    /// launched (unresolvable, or a spawn error at fill time) rather than
+    /// because the helper had no credentials. Read ONLY once the ladder is
+    /// exhausted, to pick the honest verdict — it never short-circuits the
+    /// remaining rungs, so SSH-agent auth still works with git absent.
+    helper_git_unavailable: Option<String>,
 }
 
 /// Returns the next untried method compatible with `allowed`, marking
@@ -171,14 +199,16 @@ pub(crate) fn next_cred_method(
 /// `-c core.askpass=` + `env_remove` of GIT_ASKPASS/SSH_ASKPASS neutralize the
 /// askpass GUI path, so a cache miss fails fast instead of blocking on an
 /// interactive prompt — this preserves the locked never-prompt policy, §2.2). NEVER
-/// panics. Returns `None` on ANY failure path: binary not found / spawn
-/// error, non-zero exit status, I/O error writing stdin, stdout not valid
-/// UTF-8, or `username`/`password` missing or empty in the parsed output.
-/// The caller (`acquire_cred`, §A.2) treats `None` exactly like the old
-/// `Cred::credential_helper(..).is_err()` branch: fall through to the next
-/// credential method.
-pub(crate) fn credential_fill(repo_path: Option<&Path>, url: &str) -> Option<(String, String)> {
-    let mut cmd = Command::new("git");
+/// panics.
+///
+/// P70: the return distinguishes "the helper ran and had nothing"
+/// ([`FillOutcome::NoCredentials`] — non-zero exit, I/O error writing stdin,
+/// non-UTF-8 stdout, missing/empty fields) from "`git` could not be LAUNCHED at
+/// all" ([`FillOutcome::GitUnavailable`]). Collapsing the latter into the
+/// former is what produced the misleading "no cached credentials" toast when
+/// the app inherited a PATH without git.
+pub(crate) fn credential_fill(repo_path: Option<&Path>, url: &str) -> FillOutcome {
+    let mut cmd = gitbin::git_command();
     // Never block on an interactive prompt. GIT_TERMINAL_PROMPT=0 only gates the
     // *terminal* prompt; git also has an askpass path (a GUI dialog on Git for
     // Windows — "Username for '<url>'") reached via the GIT_ASKPASS / SSH_ASKPASS
@@ -187,7 +217,8 @@ pub(crate) fn credential_fill(repo_path: Option<&Path>, url: &str) -> Option<(St
     // configured askpass, and env_remove clears the env-level ones (Git for
     // Windows sets GIT_ASKPASS). env_remove affects ONLY this child, so parallel
     // tests stay hermetic. With no askpass and no terminal prompt, git returns an
-    // error and we fall through to None — the locked never-prompt policy (§2.2).
+    // error and we fall through to `NoCredentials` — the locked never-prompt
+    // policy (§2.2). ("git ran and had nothing", NOT "git could not run".)
     cmd.args(["-c", "core.askpass=", "credential", "fill"])
         .env("GIT_TERMINAL_PROMPT", "0") // REQUIRED — never block on a prompt
         .env_remove("GIT_ASKPASS")
@@ -198,32 +229,35 @@ pub(crate) fn credential_fill(repo_path: Option<&Path>, url: &str) -> Option<(St
     if let Some(p) = repo_path {
         cmd.current_dir(p);
     }
-    #[cfg(windows)]
-    {
-        // Suppress the console window git.exe would otherwise flash for every
-        // fetch/pull/push/clone credential resolution (mirrors ai/mod.rs).
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
+    // (The Windows console-window suppression that used to live here now comes
+    // from `gitbin::git_command()`, which applies it to EVERY git spawn.)
 
-    let mut child = cmd.spawn().ok()?;
+    // ANY spawn io error — NotFound, PermissionDenied, … — means "not
+    // launchable", which is emphatically NOT "the helper had no credentials".
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => return FillOutcome::GitUnavailable(e.to_string()),
+    };
     let write_ok = child
         .stdin
         .as_mut()
         .is_some_and(|stdin| stdin.write_all(format!("url={url}\n\n").as_bytes()).is_ok());
     if !write_ok {
         let _ = child.wait(); // reap the child instead of leaving it a zombie
-        return None;
+        return FillOutcome::NoCredentials;
     }
 
     // wait_with_output closes stdin (EOF) before waiting, so the child sees
     // the full request even though we haven't dropped our handle explicitly.
-    let output = child.wait_with_output().ok()?;
+    let Ok(output) = child.wait_with_output() else {
+        return FillOutcome::NoCredentials;
+    };
     if !output.status.success() {
-        return None;
+        return FillOutcome::NoCredentials;
     }
-    let stdout = String::from_utf8(output.stdout).ok()?;
+    let Ok(stdout) = String::from_utf8(output.stdout) else {
+        return FillOutcome::NoCredentials;
+    };
 
     let (mut username, mut password) = (None, None);
     for line in stdout.lines() {
@@ -235,8 +269,11 @@ pub(crate) fn credential_fill(repo_path: Option<&Path>, url: &str) -> Option<(St
         }
     }
     match (username, password) {
-        (Some(u), Some(p)) if !u.is_empty() && !p.is_empty() => Some((u, p)),
-        _ => None,
+        (Some(u), Some(p)) if !u.is_empty() && !p.is_empty() => FillOutcome::Filled {
+            username: u,
+            password: p,
+        },
+        _ => FillOutcome::NoCredentials,
     }
 }
 
@@ -251,6 +288,36 @@ pub(crate) fn acquire_cred(
     username_from_url: Option<&str>,
     allowed: git2::CredentialType,
 ) -> Result<git2::Cred, git2::Error> {
+    acquire_cred_with(
+        repo_path,
+        attempts,
+        url,
+        username_from_url,
+        allowed,
+        gitbin::git_missing(),
+    )
+}
+
+/// [`acquire_cred`] with the "is there a runnable git?" answer INJECTED, so the
+/// git-missing behaviour is unit-testable without touching `std::env` or the
+/// process-global resolver cache (P70).
+///
+/// Note what this deliberately does NOT do: it does not short-circuit the
+/// ladder when git is missing. An SSH remote with a running ssh-agent
+/// authenticates entirely inside libgit2 and never needs `git.exe` — failing
+/// it early would break a user whose setup works fine today. Only the Helper
+/// rung needs git; when git is unresolvable that rung fails IMMEDIATELY (no
+/// spawn) and records WHY, and the ladder carries on to SshAgent/Default. The
+/// recorded reason only matters once the ladder is exhausted: then the verdict
+/// is the honest `GitNotFound` instead of a misleading auth failure.
+pub(crate) fn acquire_cred_with(
+    repo_path: Option<&Path>,
+    attempts: &RefCell<CredAttempts>,
+    url: &str,
+    username_from_url: Option<&str>,
+    allowed: git2::CredentialType,
+    git_missing: bool,
+) -> Result<git2::Cred, git2::Error> {
     loop {
         let method = next_cred_method(&mut attempts.borrow_mut(), allowed);
         match method {
@@ -258,12 +325,30 @@ pub(crate) fn acquire_cred(
                 // A second Helper attempt is permitted ONLY after a first
                 // cache HIT (RetryAllowed); it evicts + forces a fresh re-fill
                 // (invalidation on rejection, §9).
+                if git_missing {
+                    // No runnable git => `git credential fill` cannot possibly
+                    // work. Fail this rung with NO spawn attempt, remember why,
+                    // and let the ladder continue (SSH agent may well succeed).
+                    //
+                    // Still honour the invalidation half of a RetryAllowed
+                    // re-entry: the remote just REJECTED the cached credential,
+                    // so evict it even though we cannot re-fill. Otherwise the
+                    // known-bad entry survives to its TTL and would be served
+                    // again the moment git becomes resolvable (Re-check).
+                    if attempts.borrow().helper == HelperState::RetryAllowed {
+                        cred_cache::evict(repo_path, url);
+                    }
+                    let mut a = attempts.borrow_mut();
+                    a.helper = HelperState::Done;
+                    a.helper_git_unavailable = Some("no runnable git executable was resolved".to_string());
+                    continue;
+                }
                 let bypass = attempts.borrow().helper == HelperState::RetryAllowed;
                 if bypass {
                     cred_cache::evict(repo_path, url);
                 }
                 match cred_cache::resolve(repo_path, url, bypass) {
-                    Some(Resolved {
+                    CredResolve::Resolved(Resolved {
                         creds: (user, pass),
                         from_cache,
                     }) => {
@@ -291,7 +376,19 @@ pub(crate) fn acquire_cred(
                         attempts.borrow_mut().helper = HelperState::Done;
                     }
                     // No cached creds / fill failed (§A.1) -> fall through.
-                    None => attempts.borrow_mut().helper = HelperState::Done,
+                    CredResolve::NoCredentials => {
+                        attempts.borrow_mut().helper = HelperState::Done
+                    }
+                    // P70: git could NOT be launched (e.g. the resolver's
+                    // cached path went stale mid-session). This rung is done,
+                    // and we remember that it failed for a launch reason — but
+                    // the ladder still continues, because SshAgent/Default may
+                    // succeed without git existing at all.
+                    CredResolve::GitUnavailable(detail) => {
+                        let mut a = attempts.borrow_mut();
+                        a.helper = HelperState::Done;
+                        a.helper_git_unavailable = Some(detail);
+                    }
                 }
             }
             Some(CredMethod::SshAgent) => {
@@ -307,19 +404,47 @@ pub(crate) fn acquire_cred(
                 }
             }
             None => {
-                return Err(git2::Error::new(
-                    git2::ErrorCode::Auth,
-                    git2::ErrorClass::Callback,
-                    CRED_EXHAUSTED_MSG,
+                return Err(exhausted_error(
+                    attempts.borrow().helper_git_unavailable.as_deref(),
                 ));
             }
         }
     }
 }
 
+/// The error raised when EVERY credential rung has been tried and none
+/// produced a usable credential. PURE (no git2 state, no spawn) so both
+/// verdicts are unit-testable.
+///
+/// `helper_git_unavailable` = `Some(detail)` iff the Helper rung failed because `git`
+/// itself could not be launched. Only then is the honest [`GIT_MISSING_MSG`]
+/// sentinel used (→ `AppError::GitNotFound`); a helper that RAN and simply had
+/// nothing keeps the pre-P70 [`CRED_EXHAUSTED_MSG`] → `AppError::AuthFailed`
+/// path untouched. The io/path detail rides along on the (internal) git2
+/// message — `map_remote_err` replaces the user-facing text with the honest
+/// copy, so the raw detail is never shown to the user.
+fn exhausted_error(helper_git_unavailable: Option<&str>) -> git2::Error {
+    let message = match helper_git_unavailable {
+        Some(detail) => format!("{GIT_MISSING_MSG}: {detail}"),
+        None => CRED_EXHAUSTED_MSG.to_string(),
+    };
+    git2::Error::new(
+        git2::ErrorCode::Auth,
+        git2::ErrorClass::Callback,
+        &message,
+    )
+}
+
 /// Maps a git2 error from a remote operation to an AppError. `context` is the
 /// remote name or URL for message interpolation (contract §2.3 table,
 /// evaluated top-down, first match wins).
+///
+/// **Every remote operation MUST route its `git2::Error` through here.** The
+/// blanket `impl From<git2::Error> for AppError` (`error.rs`) maps to
+/// `AppError::Git` with the RAW libgit2 text, which for a `GIT_MISSING_MSG`
+/// callback error would leak the internal sentinel plus the raw io detail into
+/// the UI *and* lose the `gitNotFound` kind the banner keys off. A `?` on a
+/// git2 call inside a remote op is therefore a bug, not a shortcut.
 pub(crate) fn map_remote_err(e: git2::Error, context: &str) -> AppError {
     let auth_msg = || {
         let helper_configured = git2::Config::open_default()
@@ -342,6 +467,12 @@ pub(crate) fn map_remote_err(e: git2::Error, context: &str) -> AppError {
             )
         }
     };
+    // P70: FIRST — a launch failure is never an auth failure. Checked before
+    // the CRED_EXHAUSTED_MSG / ErrorCode::Auth arms below, which are otherwise
+    // untouched (genuine auth failures keep their existing copy).
+    if e.message().contains(GIT_MISSING_MSG) {
+        return AppError::GitNotFound(gitbin::git_not_found_message());
+    }
     if e.class() == git2::ErrorClass::Callback && e.message().contains(CRED_EXHAUSTED_MSG) {
         return AppError::AuthFailed(auth_msg());
     }
@@ -1656,6 +1787,8 @@ mod tests {
     // which git runs via its bundled `sh` on every platform (including
     // Git-for-Windows) — no executable bit, shebang, or `.sh` file needed.
 
+    use std::process::Command;
+
     fn have_git() -> bool {
         let ok = Command::new("git").arg("--version").output().is_ok();
         if !ok && std::env::var("BONSAI_REQUIRE_GIT_STRICT").as_deref() == Ok("1") {
@@ -1737,15 +1870,20 @@ mod tests {
         let result = credential_fill(Some(dir.path()), "https://example.com/repo.git");
         assert_eq!(
             result,
-            Some(("bonsai-test-user".to_string(), "bonsai-test-pass".to_string()))
+            FillOutcome::Filled {
+                username: "bonsai-test-user".to_string(),
+                password: "bonsai-test-pass".to_string(),
+            }
         );
     }
 
-    /// (b) All three failure modes fall through to `None` without panicking
-    /// or hanging: non-zero exit, a nonexistent helper binary, and a
-    /// well-formed-but-incomplete response (missing `password=`).
+    /// (b) All three failure modes fall through to `NoCredentials` — the
+    /// helper RAN and had nothing, which is emphatically NOT "git could not be
+    /// launched" (P70) — without panicking or hanging: non-zero exit, a
+    /// nonexistent helper binary, and a well-formed-but-incomplete response
+    /// (missing `password=`).
     #[test]
-    fn credential_fill_failure_modes_return_none() {
+    fn credential_fill_failure_modes_return_no_credentials() {
         if !have_git() {
             return;
         }
@@ -1755,24 +1893,24 @@ mod tests {
         set_credential_helper(dir.path(), BAD_EXIT_HELPER);
         assert_eq!(
             credential_fill(Some(dir.path()), "https://example.com/repo.git"),
-            None,
-            "non-zero exit helper must yield None"
+            FillOutcome::NoCredentials,
+            "non-zero exit helper must yield NoCredentials (git DID run)"
         );
 
         let dir2 = credfill_init_repo();
         set_credential_helper(dir2.path(), "/path/does/not/exist");
         assert_eq!(
             credential_fill(Some(dir2.path()), "https://example.com/repo.git"),
-            None,
-            "nonexistent helper binary must yield None, not panic"
+            FillOutcome::NoCredentials,
+            "a nonexistent HELPER binary is still `git ran and had nothing`, not \n             GitUnavailable (which means GIT itself could not launch)"
         );
 
         let dir3 = credfill_init_repo();
         set_credential_helper(dir3.path(), PARTIAL_HELPER);
         assert_eq!(
             credential_fill(Some(dir3.path()), "https://example.com/repo.git"),
-            None,
-            "response missing password= must yield None"
+            FillOutcome::NoCredentials,
+            "response missing password= must yield NoCredentials"
         );
 
         // Generous ceiling: this case spawns ~9 `git` processes (3 repos ×
@@ -1816,6 +1954,10 @@ mod tests {
             "credential_fill took too long — possible interactive-prompt hang \
              (GIT_TERMINAL_PROMPT not honored?)"
         );
-        assert_eq!(result, None);
+        assert_eq!(result, FillOutcome::NoCredentials);
     }
 }
+
+#[cfg(test)]
+#[path = "remote_gitbin_tests.rs"]
+mod gitbin_tests;

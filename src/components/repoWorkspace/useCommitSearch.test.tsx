@@ -6,6 +6,7 @@ import { act, renderHook } from '@testing-library/react';
 import { mockIpc } from '../../ipc/mock';
 import { useCommitSearch } from './useCommitSearch';
 import { appErr } from '../../test/actionHookKit';
+import { gitNotFoundLatched, resetGitNotFoundLatchForTests } from '../../ipc/gitNotFound';
 import type { GraphLayout, GraphNode, SearchMatch, SearchResults } from '../../ipc';
 
 beforeEach(() => vi.useFakeTimers());
@@ -261,5 +262,27 @@ describe('last-wins + errors', () => {
     expect(result.current.loading).toBe(false);
     expect(result.current.currentMatch).toBe(-1);
     expect(deps.pushToast).toHaveBeenCalledWith('error', 'bad regex');
+  });
+
+  it('P70: a gitNotFound rejection points at the notice bar, latches, and coalesces', async () => {
+    vi.spyOn(mockIpc, 'searchCommits').mockRejectedValue(
+      appErr('gitNotFound', 'Git is not available. …'),
+    );
+    const deps = makeDeps();
+    const { result } = mount(deps);
+    act(() => result.current.openSearch('feat'));
+    await tick();
+    // Search genuinely cannot work without git — no SSH caveat, so the line is
+    // unambiguous and the raw payload never reaches the user.
+    expect(result.current.error).toBe(
+      'Search needs Git — see the notice at the top of the window.',
+    );
+    expect(deps.pushToast).toHaveBeenCalledWith(
+      'error',
+      'Search needs Git — see the notice at the top of the window.',
+      'git-not-found',
+    );
+    expect(gitNotFoundLatched()).toBe(true);
+    resetGitNotFoundLatchForTests();
   });
 });

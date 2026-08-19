@@ -226,6 +226,7 @@ pub fn run() {
             commands::open_in_terminal,
             commands::reveal_in_file_manager,
             commands::open_in_editor,
+            commands::check_git_availability,
             commands::forge_repo_context,
             commands::forge_list_prs,
             commands::forge_get_pr,

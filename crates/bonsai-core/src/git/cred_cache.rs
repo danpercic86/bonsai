@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::git::remote::credential_fill;
+use crate::git::remote::{credential_fill, FillOutcome};
 
 /// App-lifetime TTL backstop on a cached credential (staleness bound even
 /// though we also invalidate on rejection).
@@ -86,7 +86,27 @@ pub(crate) struct Resolved {
 /// Injectable filler seam (contract §11). Production = `credential_fill`; tests
 /// use a deterministic fake, so cache tests never spawn git and pass on every
 /// platform.
-type FillFn = Box<dyn Fn(Option<&Path>, &str) -> Option<(String, String)> + Send + Sync>;
+type FillFn = Box<dyn Fn(Option<&Path>, &str) -> FillOutcome + Send + Sync>;
+
+/// Result of a cache resolve (P70 §3.1). Replaces the old `Option<Resolved>`:
+/// ONLY `Resolved` is ever cached — `NoCredentials` / `GitUnavailable` are
+/// never stored, so a transient launch failure can never poison the cache.
+pub(crate) enum CredResolve {
+    Resolved(Resolved),
+    NoCredentials,
+    GitUnavailable(String),
+}
+
+impl CredResolve {
+    /// Test-only compatibility view: `Some` iff the fill actually resolved.
+    #[cfg(test)]
+    fn into_option(self) -> Option<Resolved> {
+        match self {
+            CredResolve::Resolved(r) => Some(r),
+            _ => None,
+        }
+    }
+}
 
 pub(crate) struct CredCache {
     state: Mutex<HashMap<String, Slot>>,
@@ -136,8 +156,8 @@ impl CredCache {
 
     /// Cached-or-fresh resolve. `bypass=true` forces a synchronous fresh fill
     /// (used right after `evict` on rejection). Blocking on a miss; single-flight
-    /// per key (contract §7). `None` == fill failed (same meaning as
-    /// `credential_fill` returning `None`).
+    /// per key (contract §7). A non-`Resolved` outcome mirrors the filler's own
+    /// verdict verbatim (P70) and is never cached.
     ///
     /// The `state` lock is NEVER held across `self.fill`: the fast-path/loop
     /// runs under one lock, we mark `in_flight` and drop the lock, THEN call the
@@ -147,7 +167,7 @@ impl CredCache {
         repo_path: Option<&Path>,
         url: &str,
         bypass: bool,
-    ) -> Option<Resolved> {
+    ) -> CredResolve {
         let key = key_for(repo_path, url);
         let req = FillRequest {
             repo_path: repo_path.map(Path::to_path_buf),
@@ -163,7 +183,7 @@ impl CredCache {
                 if let Some((freshness, user, pass)) = self.peek(&g, &key) {
                     match freshness {
                         Freshness::Fresh => {
-                            return Some(Resolved {
+                            return CredResolve::Resolved(Resolved {
                                 creds: (user, pass),
                                 from_cache: true,
                             });
@@ -172,7 +192,7 @@ impl CredCache {
                             // Return the still-valid creds NOW; refresh in the
                             // background so the NEXT read is warm.
                             self.trigger_fill_locked(&mut g, &key);
-                            return Some(Resolved {
+                            return CredResolve::Resolved(Resolved {
                                 creds: (user, pass),
                                 from_cache: true,
                             });
@@ -186,7 +206,7 @@ impl CredCache {
             loop {
                 // A concurrent fill may have landed a Fresh entry while we waited.
                 if let Some((Freshness::Fresh, user, pass)) = self.peek(&g, &key) {
-                    return Some(Resolved {
+                    return CredResolve::Resolved(Resolved {
                         creds: (user, pass),
                         from_cache: true,
                     });
@@ -216,12 +236,14 @@ impl CredCache {
                 key: &key,
             };
             let filled = (self.fill)(req.repo_path.as_deref(), &req.url); // BLOCKING, no lock held
-            if let Some((u, p)) = &filled {
+            // ONLY a real fill is stored: a NoCredentials / GitUnavailable
+            // outcome must never be cached (P70) — the next op re-asks.
+            if let FillOutcome::Filled { username, password } = &filled {
                 let mut g = self.lock();
                 if let Some(slot) = g.get_mut(&key) {
                     slot.entry = Some(CacheEntry {
-                        username: u.clone(),
-                        password: p.clone(),
+                        username: username.clone(),
+                        password: password.clone(),
                         stored_at: Instant::now(),
                     });
                 }
@@ -230,10 +252,14 @@ impl CredCache {
             // `_guard` drops here -> clears in_flight + notify_all.
         };
 
-        filled.map(|creds| Resolved {
-            creds,
-            from_cache: false,
-        })
+        match filled {
+            FillOutcome::Filled { username, password } => CredResolve::Resolved(Resolved {
+                creds: (username, password),
+                from_cache: false,
+            }),
+            FillOutcome::NoCredentials => CredResolve::NoCredentials,
+            FillOutcome::GitUnavailable(e) => CredResolve::GitUnavailable(e),
+        }
     }
 
     /// Drop the cached entry for `url`'s key (keeps `in_flight`/`request`).
@@ -287,12 +313,14 @@ impl CredCache {
                 key: &key,
             };
             let filled = (this.fill)(req.repo_path.as_deref(), &req.url); // BLOCKING, no lock held
-            if let Some((u, p)) = filled {
+            // Fire-and-forget: a non-`Filled` outcome (no creds, or git not
+            // launchable) is simply ignored — nothing is cached (P70).
+            if let FillOutcome::Filled { username, password } = filled {
                 let mut g2 = this.lock();
                 if let Some(slot) = g2.get_mut(&key) {
                     slot.entry = Some(CacheEntry {
-                        username: u,
-                        password: p,
+                        username,
+                        password,
                         stored_at: Instant::now(),
                     });
                 }
@@ -417,7 +445,7 @@ static GLOBAL: LazyLock<Arc<CredCache>> = LazyLock::new(|| {
     )
 });
 
-pub(crate) fn resolve(repo_path: Option<&Path>, url: &str, bypass: bool) -> Option<Resolved> {
+pub(crate) fn resolve(repo_path: Option<&Path>, url: &str, bypass: bool) -> CredResolve {
     GLOBAL.resolve(repo_path, url, bypass)
 }
 
@@ -442,7 +470,7 @@ mod tests {
     fn counting_fill(counter: Arc<AtomicUsize>) -> FillFn {
         Box::new(move |_repo, _url| {
             counter.fetch_add(1, Ordering::SeqCst);
-            Some(("u".to_string(), "p".to_string()))
+            FillOutcome::Filled { username: "u".to_string(), password: "p".to_string() }
         })
     }
 
@@ -451,7 +479,7 @@ mod tests {
     fn versioned_fill(counter: Arc<AtomicUsize>) -> FillFn {
         Box::new(move |_repo, _url| {
             let n = counter.fetch_add(1, Ordering::SeqCst) + 1;
-            Some(("u".to_string(), format!("p{n}")))
+            FillOutcome::Filled { username: "u".to_string(), password: format!("p{n}") }
         })
     }
 
@@ -469,7 +497,7 @@ mod tests {
     fn poll_until_value(cache: &Arc<CredCache>, url: &str, want: &str) -> bool {
         let deadline = Instant::now() + Duration::from_secs(2);
         while Instant::now() < deadline {
-            if let Some(r) = cache.resolve(None, url, false) {
+            if let Some(r) = cache.resolve(None, url, false).into_option() {
                 if r.creds.1 == want {
                     return true;
                 }
@@ -507,12 +535,12 @@ mod tests {
             Duration::from_secs(60),
             Duration::from_secs(48),
         );
-        let r1 = cache.resolve(None, "https://host.com/a", false).expect("some");
+        let r1 = cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
         assert_eq!(counter.load(Ordering::SeqCst), 1);
         assert!(!r1.from_cache);
         assert_eq!(r1.creds, ("u".to_string(), "p".to_string()));
 
-        let r2 = cache.resolve(None, "https://host.com/a", false).expect("some");
+        let r2 = cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
         assert_eq!(counter.load(Ordering::SeqCst), 1, "hit must not re-fill");
         assert!(r2.from_cache);
     }
@@ -526,11 +554,11 @@ mod tests {
             Duration::from_millis(80),
             Duration::from_millis(60),
         );
-        cache.resolve(None, "https://host.com/a", false).expect("some");
+        cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
         assert_eq!(counter.load(Ordering::SeqCst), 1);
 
         std::thread::sleep(Duration::from_millis(140)); // past ttl
-        let r = cache.resolve(None, "https://host.com/a", false).expect("some");
+        let r = cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
         assert_eq!(counter.load(Ordering::SeqCst), 2, "expired entry re-fills");
         assert!(!r.from_cache);
     }
@@ -544,12 +572,12 @@ mod tests {
             Duration::from_millis(600), // ttl
             Duration::from_millis(80),  // refresh_age
         );
-        let r1 = cache.resolve(None, "https://host.com/a", false).expect("some");
+        let r1 = cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
         assert_eq!(r1.creds.1, "p1");
         assert_eq!(counter.load(Ordering::SeqCst), 1);
 
         std::thread::sleep(Duration::from_millis(120)); // into stale-but-valid window
-        let r2 = cache.resolve(None, "https://host.com/a", false).expect("some");
+        let r2 = cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
         assert!(r2.from_cache);
         assert_eq!(r2.creds.1, "p1", "stale read returns the OLD value immediately");
 
@@ -561,7 +589,7 @@ mod tests {
             "background refresh did not store the new value in time"
         );
 
-        let r3 = cache.resolve(None, "https://host.com/a", false).expect("some");
+        let r3 = cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
         assert_eq!(r3.creds.1, "p2", "next read sees the refreshed value");
         assert!(r3.from_cache);
     }
@@ -575,7 +603,7 @@ mod tests {
             Box::new(move |_repo, _url| {
                 counter.fetch_add(1, Ordering::SeqCst);
                 std::thread::sleep(Duration::from_millis(150)); // widen the race window
-                Some(("u".to_string(), "p".to_string()))
+                FillOutcome::Filled { username: "u".to_string(), password: "p".to_string() }
             })
         };
         let cache = CredCache::new(fill, Duration::from_secs(60), Duration::from_secs(48));
@@ -584,7 +612,7 @@ mod tests {
         for _ in 0..8 {
             let c = Arc::clone(&cache);
             handles.push(std::thread::spawn(move || {
-                c.resolve(None, "https://host.com/a", false).map(|r| r.creds)
+                c.resolve(None, "https://host.com/a", false).into_option().map(|r| r.creds)
             }));
         }
         let results: Vec<_> = handles.into_iter().map(|h| h.join().expect("join")).collect();
@@ -604,8 +632,8 @@ mod tests {
             Duration::from_secs(60),
             Duration::from_secs(48),
         );
-        cache.resolve(None, "https://host-a.com/x", false).expect("some");
-        cache.resolve(None, "https://host-b.com/x", false).expect("some");
+        cache.resolve(None, "https://host-a.com/x", false).into_option().expect("some");
+        cache.resolve(None, "https://host-b.com/x", false).into_option().expect("some");
         assert_eq!(counter.load(Ordering::SeqCst), 2);
     }
 
@@ -618,12 +646,12 @@ mod tests {
             Duration::from_secs(60),
             Duration::from_secs(48),
         );
-        let r1 = cache.resolve(None, "https://host.com/a", false).expect("some");
+        let r1 = cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
         assert_eq!(r1.creds.1, "p1");
         assert_eq!(counter.load(Ordering::SeqCst), 1);
 
         cache.evict(None, "https://host.com/a");
-        let r2 = cache.resolve(None, "https://host.com/a", true).expect("some");
+        let r2 = cache.resolve(None, "https://host.com/a", true).into_option().expect("some");
         assert_eq!(counter.load(Ordering::SeqCst), 2, "bypass forces a fresh fill");
         assert!(!r2.from_cache);
         assert_eq!(r2.creds.1, "p2");
@@ -638,21 +666,60 @@ mod tests {
             Box::new(move |_repo, _url| {
                 let n = counter.fetch_add(1, Ordering::SeqCst);
                 if n == 0 {
-                    None // first call fails
+                    FillOutcome::NoCredentials // first call: helper had nothing
                 } else {
-                    Some(("u".to_string(), "p".to_string()))
+                    FillOutcome::Filled { username: "u".to_string(), password: "p".to_string() }
                 }
             })
         };
         let cache = CredCache::new(fill, Duration::from_secs(60), Duration::from_secs(48));
 
-        assert!(cache.resolve(None, "https://host.com/a", false).is_none());
+        assert!(cache.resolve(None, "https://host.com/a", false).into_option().is_none());
         assert_eq!(counter.load(Ordering::SeqCst), 1);
 
         // No entry stored + in_flight cleared -> a following resolve still works.
-        let r = cache.resolve(None, "https://host.com/a", false).expect("some");
+        let r = cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
         assert_eq!(counter.load(Ordering::SeqCst), 2);
         assert!(!r.from_cache);
+    }
+
+    // 7b. P70: a `GitUnavailable` fill is passed straight through as
+    // `CredResolve::GitUnavailable` (so `acquire_cred` can record WHY the
+    // Helper rung failed) and is NEVER cached — a transient launch failure must
+    // not poison the key for the whole TTL.
+    #[test]
+    fn git_unavailable_fill_is_passed_through_and_not_cached() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let fill: FillFn = {
+            let counter = counter.clone();
+            Box::new(move |_repo, _url| {
+                let n = counter.fetch_add(1, Ordering::SeqCst);
+                if n == 0 {
+                    FillOutcome::GitUnavailable("program not found".to_string())
+                } else {
+                    FillOutcome::Filled { username: "u".to_string(), password: "p".to_string() }
+                }
+            })
+        };
+        let cache = CredCache::new(fill, Duration::from_secs(60), Duration::from_secs(48));
+
+        // Matched exhaustively rather than with `{:?}`: `CredResolve` carries a
+        // password and deliberately has no `Debug`.
+        match cache.resolve(None, "https://host.com/gu", false) {
+            CredResolve::GitUnavailable(detail) => assert_eq!(detail, "program not found"),
+            CredResolve::NoCredentials => panic!("expected GitUnavailable, got NoCredentials"),
+            CredResolve::Resolved(_) => panic!("expected GitUnavailable, got Resolved"),
+        }
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
+
+        // Nothing was stored and in_flight was cleared: the next resolve re-asks
+        // and now succeeds (the "install git, press Re-check" recovery path).
+        let r = cache
+            .resolve(None, "https://host.com/gu", false)
+            .into_option()
+            .expect("re-fill after a launch failure");
+        assert_eq!(counter.load(Ordering::SeqCst), 2);
+        assert!(!r.from_cache, "a GitUnavailable outcome must not have been cached");
     }
 
     // 8. warm: pre-fill an empty key; a Fresh key does not re-fill.
@@ -668,7 +735,7 @@ mod tests {
         wait_until(&counter, 1);
         assert_eq!(counter.load(Ordering::SeqCst), 1, "warm scheduled a fill");
 
-        let r = cache.resolve(None, "https://host.com/a", false).expect("some");
+        let r = cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
         assert!(r.from_cache);
         assert_eq!(counter.load(Ordering::SeqCst), 1, "resolve finds it warm");
 
@@ -810,7 +877,7 @@ mod tests {
                 if n == 0 {
                     panic!("boom: simulated filler panic on first call");
                 }
-                Some(("u".to_string(), "p".to_string()))
+                FillOutcome::Filled { username: "u".to_string(), password: "p".to_string() }
             })
         };
         let cache = CredCache::new(fill, Duration::from_secs(60), Duration::from_secs(48));
@@ -819,14 +886,14 @@ mod tests {
         // on to prove the key was un-wedged.
         let c = Arc::clone(&cache);
         let first = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            c.resolve(None, "https://host.com/a", false)
+            c.resolve(None, "https://host.com/a", false).into_option()
         }));
         assert!(first.is_err(), "the filler panic must propagate out of resolve");
         assert_eq!(counter.load(Ordering::SeqCst), 1);
 
         // Must NOT hang: `in_flight` was cleared by the drop-guard, so this does
         // a fresh fill and returns creds.
-        let second = cache.resolve(None, "https://host.com/a", false);
+        let second = cache.resolve(None, "https://host.com/a", false).into_option();
         assert_eq!(
             second.map(|r| r.creds),
             Some(("u".to_string(), "p".to_string())),
@@ -859,6 +926,7 @@ mod tests {
         // The cache keeps working through the recovering lock helpers.
         let r = cache
             .resolve(None, "https://example.com/repo.git", false)
+            .into_option()
             .expect("resolve must survive a poisoned mutex");
         assert_eq!(r.creds, ("u".to_string(), "p".to_string()));
     }

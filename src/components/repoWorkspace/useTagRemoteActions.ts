@@ -1,5 +1,6 @@
 import { ipc } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
+import { reportRemoteOpError } from '../../ipc/gitNotFound';
 import type { BaseActionDeps } from './types';
 
 /** P22: tag + remote management. Tag create/delete refetch branches (tag list,
@@ -47,7 +48,11 @@ export function useTagRemoteActions(
       await ipc.pushTag(repoId, remote, name, /* force */ false);
       pushToast('success', `Pushed tag ${name} → ${remote}`);
     } catch (e) {
-      pushToast('error', errorMessage(e));
+      // P70 (UI §10.3): pushing a tag authenticates an HTTPS remote through the
+      // credential helper, so it can fail with `gitNotFound` — route it through
+      // the shared reporter (latch + ONE keyed toast) instead of dumping the
+      // 692-char Rust paragraph into a sticky, unkeyed toast.
+      reportRemoteOpError('Push tag', e, pushToast);
     } finally {
       setMutating(false);
     }

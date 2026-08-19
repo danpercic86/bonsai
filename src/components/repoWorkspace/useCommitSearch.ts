@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ipc } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
+import { isGitNotFound } from '../../ipc/errors';
+import { GIT_NOT_FOUND_TOAST_KEY, noteGitNotFound } from '../../ipc/gitNotFound';
+
 import type { GraphLayout, SearchQuery, SearchResults } from '../../ipc';
 import type { PushToast } from '../../ToastContext';
 import { deriveMatchRows, nextMatchIndex, queryKey } from './searchHelpers';
+
+/** UI §5.6: the commit-search surface's line when git is unavailable. */
+const SEARCH_NEEDS_GIT = 'Search needs Git — see the notice at the top of the window.';
 
 /** ~250 ms — matches the useReadOverlays / refetchStatus debounce feel. */
 const DEBOUNCE_MS = 250;
@@ -119,13 +125,22 @@ export function useCommitSearch(deps: {
         }
       } catch (e) {
         if (reqIdRef.current !== reqId) return;
-        const msg = errorMessage(e);
+        // P70 (UI §10.3): search genuinely CANNOT work without the git program
+        // (no SSH caveat here), so point at the notice bar instead of surfacing
+        // the raw payload — and latch + coalesce rather than toast per keystroke.
+        const gitMissing = isGitNotFound(e);
+        const msg = gitMissing ? SEARCH_NEEDS_GIT : errorMessage(e);
         setResults(null);
         setLoading(false);
         setError(msg);
         setCurrentMatch(-1);
         setRanKey(queryKey(q));
-        pushToast('error', msg);
+        if (gitMissing) {
+          noteGitNotFound();
+          pushToast('error', msg, GIT_NOT_FOUND_TOAST_KEY);
+        } else {
+          pushToast('error', msg);
+        }
       }
     },
     [repoId, revealCommitByOid, pushToast, clearDebounce],
