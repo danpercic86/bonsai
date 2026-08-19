@@ -40,6 +40,13 @@ export interface CuratedConfigControlProps {
   error?: string;
   /** Focus target for the `configMissing` deep link (user.name only). */
   inputRef?: Ref<HTMLInputElement>;
+  /** P69h: false when an enclosing `SettingsRow` already renders the `<label for>`
+   *  — a second label would be APPENDED to the control's accessible name
+   *  ("user.name user.name") and break the coverage guard's name check. */
+  labelled?: boolean;
+  /** Id of the enclosing row's help paragraph (UI §5.1), so the explanation is
+   *  announced with the field rather than only being visible. */
+  describedBy?: string;
   onDraftChange(key: string, value: string): void;
   /** Commit `value` for `key`; `hadTarget` decides unset-vs-set for an empty value. */
   onCommit(key: string, value: string, hadTarget: boolean): void;
@@ -51,19 +58,28 @@ export function CuratedConfigControl({
   busy,
   error,
   inputRef,
+  labelled = true,
+  describedBy,
   onDraftChange,
   onCommit,
 }: CuratedConfigControlProps) {
   const hadTarget = entry.targetValue !== null;
+  // AM-2's compensating control: the curated/custom keys inside a `'group'` row
+  // are repo-derived, so no static catalog can own them. Stamping the key makes
+  // the rendered set assertable in this component's own suite instead.
+  const label = labelled ? (
+    <label className="settings-control-label" htmlFor={`cfg-${entry.key}`}>
+      {entry.key}
+    </label>
+  ) : null;
 
   if (entry.kind === 'enum') {
     return (
-      <div className="settings-control">
-        <label className="settings-control-label" htmlFor={`cfg-${entry.key}`}>
-          {entry.key}
-        </label>
+      <div className="settings-control" data-config-key={entry.key}>
+        {label}
         <select
           id={`cfg-${entry.key}`}
+          aria-describedby={describedBy}
           className="settings-number settings-config-select"
           value={draft}
           disabled={busy}
@@ -91,13 +107,12 @@ export function CuratedConfigControl({
       : null;
 
   return (
-    <div className="settings-control">
-      <label className="settings-control-label" htmlFor={`cfg-${entry.key}`}>
-        {entry.key}
-      </label>
+    <div className="settings-control" data-config-key={entry.key}>
+      {label}
       <input
         id={`cfg-${entry.key}`}
         ref={inputRef}
+        aria-describedby={describedBy}
         className="settings-number settings-config-field"
         type="text"
         value={draft}

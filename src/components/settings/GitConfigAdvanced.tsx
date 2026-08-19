@@ -16,6 +16,29 @@ import { ipc } from '../../ipc';
 import type { ConfigEntry, ConfigLevelArg, CuratedConfigEntry } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
 import { CuratedConfigControl } from './CuratedConfigControl';
+import { findSettingsRow } from './settingsCatalog';
+
+/** Amendment A (AM-2): the two blocks are aggregate `'group'` rows — one catalog
+ *  entry standing for a whole dynamically-populated block, stamped on a
+ *  `role="group"` element whose heading IS its accessible name. The heading text
+ *  must equal the catalog label byte-for-byte (British `Behaviour` included); the
+ *  coverage guard enforces exactly that. */
+const BLOCKS = {
+  behaviour: { row: 'git-config.behaviour', title: 'Behaviour', titleId: 'git-config-behaviour-title' },
+  custom: { row: 'git-config.custom-keys', title: 'Custom keys', titleId: 'git-config-custom-keys-title' },
+} as const;
+
+if (import.meta.env.DEV) {
+  // AM-8 #4: these two rows are stamped OUTSIDE `SettingsRow`, so they need the
+  // same catalog tripwire it applies to every other row.
+  for (const block of Object.values(BLOCKS)) {
+    if (findSettingsRow(block.row) === undefined) {
+      console.error(
+        `GitConfigAdvanced block "${block.row}" has no catalog entry — the block is unsearchable and the coverage guard will fail.`,
+      );
+    }
+  }
+}
 
 /** Light client-side pre-check mirroring the Rust `validate_key` (P40 §4.5). Returns
  *  an error string, or null when the shape is acceptable. */
@@ -91,12 +114,23 @@ export function GitConfigAdvanced({
   }, [repoId, level, addName, addValue, onReload]);
 
   return (
-    <details className="settings-config-advanced-details">
-      <summary className="settings-config-advanced-summary">Advanced</summary>
+    /* The <details> IS the "Advanced" group (UI §1.3 files both blocks under it),
+       so it carries the group classes the pane's other groups carry — the summary
+       is its title. It is deliberately NOT stamped with a setting id: the two
+       blocks inside it are the catalogued rows. */
+    <details className="settings-group settings-config-advanced-details">
+      <summary className="settings-group-title settings-config-advanced-summary">Advanced</summary>
 
       {/* --- Behaviour --- */}
-      <div className="settings-config-group">
-        <h4 className="settings-config-subtitle">Behaviour</h4>
+      <section
+        className="settings-config-group"
+        role="group"
+        aria-labelledby={BLOCKS.behaviour.titleId}
+        data-setting-id={BLOCKS.behaviour.row}
+      >
+        <h4 className="settings-config-subtitle" id={BLOCKS.behaviour.titleId}>
+          {BLOCKS.behaviour.title}
+        </h4>
         {behaviourKeys.map((entry) => (
           <CuratedConfigControl
             key={entry.key}
@@ -108,11 +142,18 @@ export function GitConfigAdvanced({
             onCommit={onCommit}
           />
         ))}
-      </div>
+      </section>
 
       {/* --- Custom keys --- */}
-      <div className="settings-config-group">
-        <h4 className="settings-config-subtitle">Custom keys</h4>
+      <section
+        className="settings-config-group"
+        role="group"
+        aria-labelledby={BLOCKS.custom.titleId}
+        data-setting-id={BLOCKS.custom.row}
+      >
+        <h4 className="settings-config-subtitle" id={BLOCKS.custom.titleId}>
+          {BLOCKS.custom.title}
+        </h4>
         {advanced.length === 0 && (
           <p className="settings-config-hint">No other keys set at the {level} level.</p>
         )}
@@ -120,7 +161,11 @@ export function GitConfigAdvanced({
           const disabled = busyKey === entry.name;
           const err = fieldErrors[entry.name];
           return (
-            <div className="settings-config-advanced-row" key={entry.name}>
+            <div
+              className="settings-config-advanced-row"
+              key={entry.name}
+              data-config-key={entry.name}
+            >
               <span className="settings-config-advanced-name" title={entry.name}>
                 {entry.name}
               </span>
@@ -183,7 +228,7 @@ export function GitConfigAdvanced({
           </button>
           {addError !== null && <p className="settings-config-error">{addError}</p>}
         </div>
-      </div>
+      </section>
     </details>
   );
 }

@@ -98,6 +98,8 @@ export interface SettingsActions {
   /** Holds `mcpRegistering` in the adapter while the run is in flight. */
   registerMcp(scope: McpScope): void;
   showOnboarding(): void;
+  /** P69h / UI §1.2 — App's folder picker, offered by the Git-config empty block. */
+  openRepository(): void;
   checkUpdate(): void;
   openUpdateDialog(): void;
   /** P69g / UI §5.7 — per-row reset. Resolves the patch from the catalog's

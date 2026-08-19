@@ -1,101 +1,55 @@
-// P40b §7.1: self-contained "Git config" Settings section. Owns its own IPC (getConfig /
-// setConfig / unsetConfig) + form state so SettingsPanel stays a lean composer. Renders a Local |
-// Global level toggle and the Identity sub-section (user.name / user.email); P69d split the
-// collapsed Advanced sub-form out to `settings/GitConfigAdvanced.tsx` and the one curated-key
-// editor to `settings/CuratedConfigControl.tsx`. Reads present the EFFECTIVE value + which level
-// set it; writes target the chosen level, refetch, and surface validation errors inline.
+// P40b §7.1: the "Git config" pane body. P69h re-skins it onto the settings
+// primitives (`SettingsGroup` / `SettingsRow` / `SettingsSwitch`) and moves its
+// IPC + form state into `settings/useGitConfigEditor.ts`, so this file is a view:
+// Hooks, Identity, and the collapsed Advanced block (`settings/GitConfigAdvanced`).
+//
+// Two things deliberately stayed here:
+//   * the Identity sub-section — the `configMissing` deep link scrolls to it and
+//     focuses its `user.name` input, and that effect lives where the refs live
+//     (its `focusedOnce` guard is untouched);
+//   * nothing else. The scope (Local | Global) switch moved to the pane header
+//     (UI §1.1) and reaches this file through `GitConfigScopeContext`, which
+//     falls back to `local` when no provider is above — so a bare render behaves
+//     exactly as before.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
-import { ipc } from '../ipc';
-import type { ConfigLevelArg, ConfigView, CuratedConfigEntry } from '../ipc';
-import { errorMessage } from '../utils/errors';
-import { invalidateEffectiveIdentity } from '../hooks/useEffectiveIdentity';
+import type { CuratedConfigEntry } from '../ipc';
 import { SettingsHooksToggle } from './SettingsHooksToggle';
 import { CuratedConfigControl } from './settings/CuratedConfigControl';
 import { GitConfigAdvanced } from './settings/GitConfigAdvanced';
+import { useGitConfigScope } from './settings/GitConfigScopeContext';
+import { SettingsGroup } from './settings/SettingsGroup';
+import { SettingsRow } from './settings/SettingsRow';
+import { settingsRowHelpId } from './settings/settingsCatalog';
+import { useGitConfigEditor } from './settings/useGitConfigEditor';
 
 export interface SettingsGitConfigSectionProps {
-  /** Open repo id (== workdir path). Null → a disabled "open a repo" note. */
-  repoId: string | null;
+  /** Open repo id (== workdir path). Never null: `GitConfigCategory` renders
+   *  `SettingsEmpty` for the no-repo case (UI §1.2), so the type rules out the
+   *  branch rather than this file carrying a dead one. */
+  repoId: string;
   /** 'identity' → scroll/focus the Identity sub-section on mount (commit-error
    *  linkage). */
   initialFocus?: 'identity' | null;
 }
+
 const IDENTITY_KEYS = ['user.name', 'user.email'];
-/** Merge a fresh server-side draft map onto the current one, PRESERVING the local draft for
- *  any key the user is actively editing — i.e. whose input has focus, or whose draft diverges
- *  from the freshly-loaded server value (an unsaved edit). Prevents a post-write refetch from
- *  clobbering a sibling field mid-keystroke (name→email identity flow); keys absent from the
- *  server (just-removed advanced entries) are dropped. */
-function mergeDraftsPreservingEdits(
-  prev: Record<string, string>,
-  server: Record<string, string>,
-): Record<string, string> {
-  const activeId = (document.activeElement as HTMLElement | null)?.id ?? '';
-  const merged: Record<string, string> = { ...server };
-  for (const key of Object.keys(prev)) {
-    const serverVal = server[key];
-    if (serverVal === undefined) continue; // key gone on the server → drop draft
-    const focused = activeId === `cfg-${key}` || activeId === `cfg-adv-${key}`;
-    const dirty = prev[key] !== serverVal;
-    if (focused || dirty) merged[key] = prev[key];
-  }
-  return merged;
-}
-/** A `user.*` write changes the identity every surface shows, and setConfig/unsetConfig
- *  emit no `repo-changed` — so the shared store is told explicitly (§5.1's exhaustive
- *  trigger list). Both levels count: global is effective whenever local is unset. */
-function notifyIdentity(repoId: string, key: string): void {
-  if (/^user\./i.test(key)) invalidateEffectiveIdentity(repoId);
-}
+
+/** Catalog row id for a curated identity key. */
+const IDENTITY_ROW: Record<string, string> = {
+  'user.name': 'git-config.user-name',
+  'user.email': 'git-config.user-email',
+};
 
 export function SettingsGitConfigSection({ repoId, initialFocus }: SettingsGitConfigSectionProps) {
-  const [level, setLevel] = useState<ConfigLevelArg>('local');
-  const [view, setView] = useState<ConfigView | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  // Editable per-key drafts (curated + advanced), seeded from the fetched view.
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const { level } = useGitConfigScope();
+  const editor = useGitConfigEditor(repoId, level);
+  const { view, drafts, busyKey, fieldErrors, onDraftChange, onCommit } = editor;
 
-  const reqId = useRef(0);
-  const identityRef = useRef<HTMLDivElement>(null);
+  const identityRef = useRef<HTMLElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const focusedOnce = useRef(false);
-
-  const load = useCallback(
-    // `preserveEdits` (post-write refetch): keep the local draft for a focused/dirty field so
-    // an in-flight sibling edit is not clobbered. False on mount / level change → full reset.
-    async (lvl: ConfigLevelArg, preserveEdits = false) => {
-      if (repoId === null) return;
-      const id = ++reqId.current;
-      setLoading(true);
-      setLoadError(null);
-      try {
-        const v = await ipc.getConfig(repoId, lvl);
-        if (id !== reqId.current) return;
-        setView(v);
-        const d: Record<string, string> = {};
-        for (const c of v.curated) d[c.key] = c.targetValue ?? '';
-        for (const a of v.advanced) d[a.name] = a.value;
-        setDrafts((prev) => (preserveEdits ? mergeDraftsPreservingEdits(prev, d) : d));
-        setFieldErrors({});
-      } catch (e) {
-        if (id !== reqId.current) return;
-        setView(null);
-        setLoadError(errorMessage(e));
-      } finally {
-        if (id === reqId.current) setLoading(false);
-      }
-    },
-    [repoId],
-  );
-
-  useEffect(() => {
-    void load(level);
-  }, [load, level]);
 
   // Commit-error linkage: scroll/focus the Identity sub-section once when opened
   // with initialFocus === 'identity' and the view is ready.
@@ -106,119 +60,59 @@ export function SettingsGitConfigSection({ repoId, initialFocus }: SettingsGitCo
     nameInputRef.current?.focus();
   }, [initialFocus, view]);
 
-  // Write (or unset) a single key at the current level, then refetch.
-  const write = useCallback(
-    async (key: string, rawValue: string, hadTarget: boolean) => {
-      if (repoId === null) return;
-      const value = rawValue.trim();
-      setBusyKey(key);
-      setFieldErrors((m) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== key)));
-      try {
-        if (value === '') {
-          if (hadTarget) await ipc.unsetConfig(repoId, level, key);
-        } else {
-          await ipc.setConfig(repoId, level, key, value);
-        }
-        await load(level, true);
-        notifyIdentity(repoId, key);
-      } catch (e) {
-        setFieldErrors((m) => ({ ...m, [key]: errorMessage(e) }));
-      } finally {
-        setBusyKey(null);
-      }
-    },
-    [repoId, level, load],
-  );
-
-  const removeKey = useCallback(
-    async (key: string) => {
-      if (repoId === null) return;
-      setBusyKey(key);
-      try {
-        await ipc.unsetConfig(repoId, level, key);
-        await load(level, true);
-        notifyIdentity(repoId, key);
-      } catch (e) {
-        setFieldErrors((m) => ({ ...m, [key]: errorMessage(e) }));
-      } finally {
-        setBusyKey(null);
-      }
-    },
-    [repoId, level, load],
-  );
-
-  const onDraftChange = useCallback((k: string, v: string) => setDrafts((d) => ({ ...d, [k]: v })), []);
-  const onCommit = useCallback((k: string, v: string, had: boolean) => void write(k, v, had), [write]);
-  const reload = useCallback(() => load(level, true), [load, level]);
-
-  if (repoId === null) {
-    return (
-      <section className="settings-section">
-        <h3 className="settings-section-title">Git config</h3>
-        <p className="settings-section-desc">Open a repository to view and edit its Git config.</p>
-      </section>
-    );
-  }
-
   const curated = view?.curated ?? [];
   const behaviourKeys = curated.filter((c) => !IDENTITY_KEYS.includes(c.key));
 
-  const renderCurated = (entry: CuratedConfigEntry, inputRef?: React.Ref<HTMLInputElement>) => (
-    <CuratedConfigControl
+  const renderIdentity = (entry: CuratedConfigEntry, inputRef?: React.Ref<HTMLInputElement>) => (
+    <SettingsRow
       key={entry.key}
-      entry={entry}
-      draft={drafts[entry.key] ?? ''}
-      busy={busyKey === entry.key}
-      error={fieldErrors[entry.key]}
-      inputRef={inputRef}
-      onDraftChange={onDraftChange}
-      onCommit={onCommit}
-    />
+      id={IDENTITY_ROW[entry.key]}
+      controlId={`cfg-${entry.key}`}
+      stacked
+    >
+      {/* The row already owns the `<label for>`, which IS the control's
+          accessible name — a second label here would append to it. */}
+      <CuratedConfigControl
+        entry={entry}
+        draft={drafts[entry.key] ?? ''}
+        busy={busyKey === entry.key}
+        error={fieldErrors[entry.key]}
+        inputRef={inputRef}
+        labelled={false}
+        describedBy={settingsRowHelpId(IDENTITY_ROW[entry.key])}
+        onDraftChange={onDraftChange}
+        onCommit={onCommit}
+      />
+    </SettingsRow>
   );
   const nameEntry = curated.find((c) => c.key === 'user.name');
   const emailEntry = curated.find((c) => c.key === 'user.email');
 
   return (
-    <section className="settings-section">
-      <h3 className="settings-section-title">Git config</h3>
-      <p className="settings-section-desc">
-        Read and edit Git configuration at the repository (Local) or user-wide (Global) level.
-      </p>
+    <>
+      {/* P59a: repo-scoped "Run git hooks" toggle (always Local, whatever the
+          scope switch says — served from the same read as the form below). */}
+      <SettingsHooksToggle
+        enabled={editor.runHooks}
+        loading={editor.hooksLoading}
+        busy={editor.hooksBusy}
+        error={editor.hooksError}
+        onToggle={editor.setRunHooks}
+      />
 
-      {/* P59a: repo-scoped "Run git hooks" toggle (always Local). */}
-      <SettingsHooksToggle repoId={repoId} />
-
-      <div className="settings-row">
-        <span className="settings-control-label">Level</span>
-        <div className="settings-control-inputs">
-          {(['local', 'global'] as ConfigLevelArg[]).map((lvl) => (
-            <button
-              key={lvl}
-              type="button"
-              className={`btn-secondary settings-toggle-btn${level === lvl ? ' is-active' : ''}`}
-              aria-pressed={level === lvl}
-              onClick={() => setLevel(lvl)}
-            >
-              {lvl === 'local' ? 'Local' : 'Global'}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {loadError !== null ? (
+      {editor.loadError !== null ? (
         <p className="settings-ai-status settings-ai-status-warn" role="note">
-          {loadError}
+          {editor.loadError}
         </p>
-      ) : loading && view === null ? (
+      ) : editor.loading && view === null ? (
         <p className="settings-ai-status">Loading config…</p>
       ) : (
         <>
           {/* --- Identity (stays here: the deep-link focus effect owns these refs) --- */}
-          <div className="settings-config-group" ref={identityRef}>
-            <h4 className="settings-config-subtitle">Identity</h4>
-            {nameEntry !== undefined && renderCurated(nameEntry, nameInputRef)}
-            {emailEntry !== undefined && renderCurated(emailEntry)}
-          </div>
+          <SettingsGroup id="git-config-identity" title="Identity" innerRef={identityRef}>
+            {nameEntry !== undefined && renderIdentity(nameEntry, nameInputRef)}
+            {emailEntry !== undefined && renderIdentity(emailEntry)}
+          </SettingsGroup>
 
           <GitConfigAdvanced
             repoId={repoId}
@@ -230,11 +124,11 @@ export function SettingsGitConfigSection({ repoId, initialFocus }: SettingsGitCo
             fieldErrors={fieldErrors}
             onDraftChange={onDraftChange}
             onCommit={onCommit}
-            onRemove={(key) => void removeKey(key)}
-            onReload={reload}
+            onRemove={editor.removeKey}
+            onReload={editor.reload}
           />
         </>
       )}
-    </section>
+    </>
   );
 }

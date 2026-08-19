@@ -97,10 +97,13 @@ export const GIT_CONFIG_ENTRIES: readonly SettingsIndexEntry[] = [
     requires: 'repo',
   },
   {
+    // UI §8: "Level" is libgit2's word, not the user's. The row lives in the
+    // pane HEADER (UI §1.1), which is why it is the one catalogued row that is
+    // not inside a `.settings-group` — the coverage guard exempts exactly it.
     id: 'git-config.scope',
     category: 'git-config',
     group: 'Scope',
-    label: 'Level',
+    label: 'Scope',
     help: 'Whether you are editing this repository’s config or your global one.',
     keywords: 'local global scope repository gitconfig',
     control: 'segmented',

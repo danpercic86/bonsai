@@ -14,15 +14,17 @@
  * and the add row with its client-side key-shape pre-check.
  */
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import { SettingsGitConfigSection } from './SettingsGitConfigSection';
+import { GitConfigScopeContext } from './settings/GitConfigScopeContext';
 import { mockIpc } from '../ipc/mock';
 import {
   resetEffectiveIdentityForTests,
   useEffectiveIdentity,
 } from '../hooks/useEffectiveIdentity';
-import type { ConfigView } from '../ipc';
+import type { ConfigLevelArg, ConfigView } from '../ipc';
+import { useState, type ReactNode } from 'react';
 
 const REPO = '/repo/a';
 
@@ -65,6 +67,27 @@ afterEach(() => {
   resetEffectiveIdentityForTests();
 });
 
+/**
+ * P69h — the Local | Global switch moved OUT of this component and into the pane
+ * header (UI §1.1), reaching it through `GitConfigScopeContext`. This harness is
+ * the switch's stand-in: the assertions below are about how the SECTION reacts to
+ * a scope change, and `GitConfigScope.test.tsx` owns the control itself.
+ */
+function ScopeHarness({ children }: { children: ReactNode }) {
+  const [level, setLevel] = useState<ConfigLevelArg>('local');
+  return (
+    <GitConfigScopeContext.Provider value={{ level, setLevel }}>
+      <button type="button" onClick={() => setLevel('global')}>
+        Global
+      </button>
+      <button type="button" onClick={() => setLevel('local')}>
+        Repo scope
+      </button>
+      {children}
+    </GitConfigScopeContext.Provider>
+  );
+}
+
 /** A second consumer of the shared identity store, mounted alongside the pane. */
 function IdentityProbe({ repoId }: { repoId: string }) {
   const identity = useEffectiveIdentity(repoId);
@@ -87,7 +110,11 @@ describe('SettingsGitConfigSection — the configMissing deep link', () => {
     const getConfig = vi.spyOn(mockIpc, 'getConfig').mockImplementation(() =>
       Promise.resolve(makeView()),
     );
-    render(<SettingsGitConfigSection repoId={REPO} initialFocus="identity" />);
+    render(
+      <ScopeHarness>
+        <SettingsGitConfigSection repoId={REPO} initialFocus="identity" />
+      </ScopeHarness>,
+    );
     await waitFor(() =>
       expect(document.activeElement).toBe(document.getElementById('cfg-user.name')),
     );
@@ -268,5 +295,157 @@ describe('SettingsGitConfigSection — identity writes invalidate the shared sto
     await act(async () => {});
     await act(async () => {});
     expect(getConfig.mock.calls.length).toBe(before + 1);
+  });
+});
+
+describe('SettingsGitConfigSection — one read serves the whole pane (P69h)', () => {
+  /** The measurement this increment exists for: the pane used to cost THREE
+   *  `getConfig(repoId,'local')` round-trips for one answer — its own view,
+   *  `SettingsHooksToggle`'s private read of `bonsai.runHooks`, and
+   *  `useEffectiveIdentity`'s read of `user.*`. All three come out of the same
+   *  `ConfigView`, so the count is now ONE and this test is what holds it there. */
+  it('reads getConfig exactly ONCE for the form, the hooks row and the identity store', async () => {
+    const getConfig = vi.spyOn(mockIpc, 'getConfig').mockImplementation(() =>
+      Promise.resolve(
+        makeView({
+          advanced: [
+            { name: 'custom.thing', value: 'v1', level: 'local' },
+            { name: 'bonsai.runHooks', value: 'false', level: 'local' },
+          ],
+        }),
+      ),
+    );
+    render(
+      <>
+        <SettingsGitConfigSection repoId={REPO} />
+        <IdentityProbe repoId={REPO} />
+      </>,
+    );
+
+    // All three consumers are satisfied…
+    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('ada@global.dev'));
+    expect(await screen.findByLabelText('user.name')).toBeInTheDocument();
+    expect(
+      screen.getByRole('checkbox', { name: 'Run git hooks for this repository' }),
+    ).not.toBeChecked();
+    // …by one read.
+    await act(async () => {});
+    expect(getConfig).toHaveBeenCalledTimes(1);
+    expect(getConfig).toHaveBeenCalledWith(REPO, 'local');
+  });
+
+  it('the hooks switch writes bonsai.runHooks at the LOCAL level and refetches', async () => {
+    vi.spyOn(mockIpc, 'getConfig').mockImplementation(() => Promise.resolve(makeView()));
+    const setConfig = vi.spyOn(mockIpc, 'setConfig').mockResolvedValue();
+    render(<SettingsGitConfigSection repoId={REPO} />);
+
+    const box = await screen.findByRole('checkbox', {
+      name: 'Run git hooks for this repository',
+    });
+    expect(box).toBeChecked(); // unset ⇒ on (git's default)
+    fireEvent.click(box);
+
+    await waitFor(() =>
+      expect(setConfig).toHaveBeenCalledWith(REPO, 'local', 'bonsai.runHooks', 'false'),
+    );
+  });
+
+  it('an identity write at GLOBAL scope still invalidates the shared store', async () => {
+    // At local scope the pane's own refetch re-primes the store, so no extra read
+    // is needed. At global scope this view is NOT the identity's view, so the
+    // store has to be told explicitly — otherwise every identity surface keeps
+    // showing the pre-write value.
+    let email = 'old@x.dev';
+    const getConfig = vi.spyOn(mockIpc, 'getConfig').mockImplementation(() => {
+      const v = makeView();
+      v.curated[1].effectiveValue = email;
+      v.curated[1].targetValue = email;
+      return Promise.resolve(v);
+    });
+    vi.spyOn(mockIpc, 'setConfig').mockImplementation(() => {
+      email = 'new@x.dev';
+      return Promise.resolve();
+    });
+    render(
+      <ScopeHarness>
+        <SettingsGitConfigSection repoId={REPO} />
+        <IdentityProbe repoId={REPO} />
+      </ScopeHarness>,
+    );
+    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('old@x.dev'));
+    fireEvent.click(screen.getByRole('button', { name: 'Global' }));
+    await waitFor(() => expect(getConfig).toHaveBeenCalledWith(REPO, 'global'));
+
+    const field = (await screen.findByLabelText('user.email')) as HTMLInputElement;
+    fireEvent.change(field, { target: { value: 'new@x.dev' } });
+    fireEvent.blur(field);
+
+    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('new@x.dev'));
+  });
+});
+
+describe('SettingsGitConfigSection — the Hooks row tells the truth (P69h)', () => {
+  /** A deferred `getConfig` per call, so read ORDER is controllable. */
+  function deferredConfig() {
+    const pending: { level: string; resolve: (v: ConfigView) => void }[] = [];
+    vi.spyOn(mockIpc, 'getConfig').mockImplementation(
+      (_repo: string, level: string) =>
+        new Promise<ConfigView>((resolve) => {
+          pending.push({ level, resolve });
+        }),
+    );
+    return pending;
+  }
+
+  const hooksBox = () => screen.getByRole('checkbox', { name: 'Run git hooks for this repository' });
+  const runHooksView = (value: string) =>
+    makeView({ advanced: [{ name: 'bonsai.runHooks', value, level: 'local' }] });
+
+  it('is INERT until the local config has actually been read', async () => {
+    // The bug this pins: rendering a confident ON over an unread config, which a
+    // click would then write as a real `true` over the repo's real `false`.
+    const pending = deferredConfig();
+    render(<SettingsGitConfigSection repoId={REPO} />);
+
+    expect(hooksBox()).toBeDisabled();
+    await act(async () => {
+      pending[0].resolve(runHooksView('false'));
+    });
+    await waitFor(() => expect(hooksBox()).toBeEnabled());
+    expect(hooksBox()).not.toBeChecked();
+  });
+
+  it('stays inert and says why when the read FAILS', async () => {
+    vi.spyOn(mockIpc, 'getConfig').mockRejectedValue(new Error('config unreadable'));
+    render(<SettingsGitConfigSection repoId={REPO} />);
+
+    const hooks = await screen.findByRole('region', { name: 'Hooks' });
+    await waitFor(() => expect(within(hooks).getByText('config unreadable')).toBeInTheDocument());
+    expect(hooksBox()).toBeDisabled();
+  });
+
+  it('does not REVERT when an older local read resolves out of order', async () => {
+    // local#1 → global#2 → local#3. #3 is the freshest local answer; #1 landing
+    // late must not overwrite it (the Hooks row would silently flip back).
+    const pending = deferredConfig();
+    render(
+      <ScopeHarness>
+        <SettingsGitConfigSection repoId={REPO} />
+      </ScopeHarness>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Global' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Repo scope' }));
+    await waitFor(() => expect(pending.length).toBe(3));
+    expect(pending.map((p) => p.level)).toEqual(['local', 'global', 'local']);
+
+    await act(async () => {
+      pending[2].resolve(runHooksView('false'));
+    });
+    await waitFor(() => expect(hooksBox()).not.toBeChecked());
+
+    await act(async () => {
+      pending[0].resolve(runHooksView('true')); // the stale one
+    });
+    expect(hooksBox()).not.toBeChecked();
   });
 });

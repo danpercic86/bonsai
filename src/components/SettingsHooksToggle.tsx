@@ -1,87 +1,58 @@
-// P59a: repo-scoped "Run git hooks" toggle. Bound to `bonsai.runHooks` in the
-// repo's LOCAL git config via the EXISTING getConfig / setConfig commands (no
-// new command). Unset ⇒ ON (git's default); only an explicit `false` disables.
-// Independent of the Git-config section's Local|Global level selector — hooks
-// are always a per-repo (Local) concern.
+// P59a: repo-scoped "Run git hooks" row, bound to `bonsai.runHooks` in the
+// repo's LOCAL git config. Independent of the Git-config scope switch — hooks are
+// always a per-repo (Local) concern.
+//
+// P69h made it PRESENTATIONAL. It used to run its own `getConfig(repoId,'local')`
+// nested inside the Git-config section's own read of the same view — one of the
+// three duplicate mount reads the increment collapsed. `useGitConfigEditor` now
+// owns the read and the write; this file owns the row.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { SettingsGroup } from './settings/SettingsGroup';
+import { SettingsRow } from './settings/SettingsRow';
+import { SettingsSwitch } from './settings/SettingsSwitch';
+import { settingsRowHelpId } from './settings/settingsCatalog';
 
-import { ipc } from '../ipc';
-import { errorMessage } from '../utils/errors';
+const ROW = 'git-config.run-hooks';
+const CONTROL_ID = 'settings-run-hooks';
 
 export interface SettingsHooksToggleProps {
-  /** Open repo id (== workdir path). */
-  repoId: string;
+  /** Unset ⇒ ON (git's default); only an explicit `false` disables. */
+  enabled: boolean;
+  /** The local config has not been read yet (or could not be), so `enabled` is
+   *  git's default rather than this repo's answer. The switch shows it but must
+   *  not accept a click — flipping a value the user has not been shown yet is
+   *  how a repo silently loses its `bonsai.runHooks=false`. */
+  loading: boolean;
+  /** A write is in flight (the switch holds its optimistic value meanwhile). */
+  busy: boolean;
+  error: string | null;
+  onToggle(next: boolean): void;
 }
 
-const RUN_HOOKS_KEY = 'bonsai.runHooks';
-
-export function SettingsHooksToggle({ repoId }: SettingsHooksToggleProps) {
-  const [enabled, setEnabled] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const reqId = useRef(0);
-
-  const load = useCallback(async () => {
-    const id = ++reqId.current;
-    setLoading(true);
-    setError(null);
-    try {
-      const view = await ipc.getConfig(repoId, 'local');
-      if (id !== reqId.current) return;
-      const entry = view.advanced.find((a) => a.name.toLowerCase() === RUN_HOOKS_KEY.toLowerCase());
-      // Unset ⇒ ON (git default); only an explicit `false` disables.
-      setEnabled(entry === undefined || entry.value.trim().toLowerCase() !== 'false');
-    } catch (e) {
-      if (id !== reqId.current) return;
-      setError(errorMessage(e));
-    } finally {
-      if (id === reqId.current) setLoading(false);
-    }
-  }, [repoId]);
-
-  // Reads on repo-change (contract §A0 A-D3).
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const toggle = useCallback(
-    async (next: boolean) => {
-      setBusy(true);
-      setError(null);
-      setEnabled(next); // optimistic — reconciled by the reload below
-      try {
-        await ipc.setConfig(repoId, 'local', RUN_HOOKS_KEY, next ? 'true' : 'false');
-        await load();
-      } catch (e) {
-        setError(errorMessage(e));
-        await load();
-      } finally {
-        setBusy(false);
-      }
-    },
-    [repoId, load],
-  );
-
+export function SettingsHooksToggle({
+  enabled,
+  loading,
+  busy,
+  error,
+  onToggle,
+}: SettingsHooksToggleProps) {
   return (
-    <div className="settings-config-group">
-      <h4 className="settings-config-subtitle">Hooks</h4>
-      <label className="settings-checkbox">
-        <input
-          type="checkbox"
+    <SettingsGroup id="git-config-hooks" title="Hooks">
+      <SettingsRow id={ROW} controlId={CONTROL_ID} disabled={loading || busy}>
+        <SettingsSwitch
+          id={CONTROL_ID}
           checked={enabled}
           disabled={loading || busy}
-          onChange={(e) => void toggle(e.target.checked)}
+          describedBy={settingsRowHelpId(ROW)}
+          onChange={onToggle}
         />
-        <span>Run git hooks for this repository</span>
-      </label>
+      </SettingsRow>
       <p className="settings-config-hint">
         When off, commits run with <span className="mono">--no-verify</span> and{' '}
         <span className="mono">bonsai.runHooks=false</span> is written to this repo. Unset means
         hooks run (git’s default).
       </p>
       {error !== null && <p className="settings-config-error">{error}</p>}
-    </div>
+    </SettingsGroup>
   );
 }

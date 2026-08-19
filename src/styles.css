@@ -1101,6 +1101,85 @@ body {
   color: var(--text-2);
 }
 
+/* ---- P69h: Git-config scope + in-pane empty block (UI §1.1 / §1.2) ---- */
+
+/* The scope switch sits in the pane header's trailing slot, right-aligned so the
+   title/subtitle column keeps its own reading rhythm. */
+.settings-scope {
+  margin-left: auto;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.settings-scope-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-scope-label {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* Names the FILE, so the scope is a fact rather than an inference. */
+.settings-scope-line {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-2);
+  text-align: right;
+}
+
+/* ui-reference §8's centred-pane idiom, at pane scale (NOT the app-level hero). */
+.settings-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 40ch;
+  margin: 0 auto;
+  padding: 24px 16px;
+  text-align: center;
+}
+
+.settings-empty-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.settings-empty-body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--text-2);
+}
+
+.settings-empty-action {
+  margin-top: 4px;
+}
+
+/* A curated key inside a stacked row: the row owns the label and the width, so
+   the legacy `.settings-control` flex/gap would fight it. */
+.settings-row-control > .settings-control {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  margin-top: 0;
+  width: 100%;
+}
+
+.settings-row-control > .settings-control > .settings-config-field,
+.settings-row-control > .settings-control > .settings-config-select {
+  width: 100%;
+}
+
 .settings-group {
   margin-bottom: 24px;
 }

@@ -13,7 +13,7 @@
  * deleted then.
  */
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen, within } from '@testing-library/react';
 
 import { SettingsPanel } from '../SettingsPanel';
 import { CATEGORY_PAGES } from './categories';
@@ -34,14 +34,13 @@ import type { UiSettings } from '../../ipc/types';
 // ---------------------------------------------------------------- AM-5 partition
 
 /** Re-skinned and guarded. */
-const MIGRATED: readonly SettingsCategoryId[] = ['general', 'appearance', 'about'];
+const MIGRATED: readonly SettingsCategoryId[] = ['general', 'appearance', 'about', 'git-config'];
 
 /** Still on legacy interiors — reachable from the rail, not yet catalog-shaped. */
 const PENDING: readonly SettingsCategoryId[] = [
   'graph', // P69j
   'ai', // P69j
   'identities', // P69i
-  'git-config', // P69h
 ];
 
 // ------------------------------------------------------------- AM-4a predicates
@@ -98,12 +97,24 @@ function accName(el: HTMLElement): string | null {
   return text === '' ? null : text;
 }
 
+/** Flush the pane's mount IPC (Git config reads a `ConfigView` before it can
+ *  render a row). A macrotask turn drains the whole promise chain, so the guard
+ *  never asserts against a half-rendered pane. */
+async function settle(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+  });
+}
+
 function renderPane(category: SettingsCategoryId, fx: Fixture): HTMLElement {
   render(
     <SettingsPanel
       open
       initialCategory={category}
       onClose={vi.fn()}
+      requestSeq={0}
       onChange={vi.fn()}
       onToggleTheme={vi.fn()}
       onToggleListView={vi.fn()}
@@ -114,6 +125,7 @@ function renderPane(category: SettingsCategoryId, fx: Fixture): HTMLElement {
       onRequestEnableMcpWrite={vi.fn()}
       onRegisterMcp={vi.fn(async () => {})}
       onShowOnboarding={vi.fn()}
+      onOpenRepository={vi.fn()}
       onCheckUpdate={vi.fn()}
       onOpenUpdateDialog={vi.fn()}
       {...fx}
@@ -156,11 +168,12 @@ for (const [name, fx] of [
         continue;
       }
 
-      it(`${c}: every stamped row is catalogued, named, and gated correctly`, () => {
+      it(`${c}: every stamped row is catalogued, named, and gated correctly`, async () => {
         // The maximal fixture opens a repo; the Git-config surface it can reach
         // must never hit real IPC (and P69h needs the curated/custom keys here).
         vi.spyOn(mockIpc, 'getConfig').mockResolvedValue(FIXTURE_CONFIG_VIEW);
         const pane = renderPane(c, fx);
+        await settle();
 
         const entries = SETTINGS_INDEX.filter((e) => e.category === c);
         const expected = entries.filter(
@@ -236,6 +249,19 @@ for (const [name, fx] of [
             assertRowShape(c, entry, el, fx);
           }
         }
+
+        // (5) The wholly-gated pane: no rows at all means the pane owes the user
+        // an explanation, not a blank column (AM-4b FAIL-N / UI §1.2).
+        if (expected.length === 0) {
+          expect(
+            stamped.length,
+            `settings drift [${c}]: every row is gated off in this fixture, so the pane must render no rows; found ${stamped.length}.`,
+          ).toBe(0);
+          expect(
+            pane.querySelector('.settings-empty'),
+            `settings drift [${c}]: every row is gated off in this fixture, so the pane must render a SettingsEmpty block explaining why.`,
+          ).not.toBeNull();
+        }
       });
     }
   });
@@ -254,15 +280,29 @@ function assertRowShape(
   // shows. This is the one remaining hand-copied string, so it is the one that
   // needs checking.
   const groupEl = el.closest('.settings-group');
-  expect(
-    groupEl,
-    `settings drift [${c}]: "${entry.id}" is not inside a .settings-group, so it has no visible group header.`,
-  ).not.toBeNull();
-  const groupTitle = groupEl?.querySelector('.settings-group-title')?.textContent?.trim() ?? null;
-  expect(
-    groupTitle,
-    `settings drift [${c}]: "${entry.id}" renders under the group header "${groupTitle ?? '(none)'}" but the catalog files it under "${entry.group}". Search would group this row under a heading the pane never shows.`,
-  ).toBe(entry.group);
+  if (groupEl === null) {
+    // UI §1.1 puts exactly ONE row outside the groups: the Git-config scope
+    // switch, which lives in the pane header because it retargets the whole
+    // pane. Its catalog `group` still files it under "Scope" for search
+    // results. Anything else with no group header is drift, so the exemption is
+    // asserted rather than assumed.
+    expect(
+      el.closest('.settings-pane-header'),
+      `settings drift [${c}]: "${entry.id}" is neither inside a .settings-group nor in the pane header, so it has no visible group header.`,
+    ).not.toBeNull();
+    // Scoped by row IDENTITY, not merely by DOM position: the pane header is not
+    // a general escape hatch from the group rule, it is the home of this one row.
+    expect(
+      entry.id,
+      `settings drift [${c}]: "${entry.id}" renders in the pane header, but only "git-config.scope" may (UI §1.1). Put it in a group.`,
+    ).toBe('git-config.scope');
+  } else {
+    const groupTitle = groupEl.querySelector('.settings-group-title')?.textContent?.trim() ?? null;
+    expect(
+      groupTitle,
+      `settings drift [${c}]: "${entry.id}" renders under the group header "${groupTitle ?? '(none)'}" but the catalog files it under "${entry.group}". Search would group this row under a heading the pane never shows.`,
+    ).toBe(entry.group);
+  }
 
   if (entry.control === 'group') {
     expect(el.getAttribute('role'), `settings drift [${c}]: "${entry.id}" is not role="group".`).toBe(

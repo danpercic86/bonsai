@@ -130,6 +130,79 @@ function load(repoId: string): void {
     });
 }
 
+/**
+ * P69h — announce that a LOCAL `getConfig` for this repo is already in flight
+ * somewhere else (the Git-config pane's own load), so a `useEffectiveIdentity`
+ * consumer mounting meanwhile waits for that read instead of firing a second one.
+ *
+ * Returns the generation the claim was made against. Hand it back to
+ * `primeEffectiveIdentity` / `failEffectiveIdentity`: an `invalidateEffectiveIdentity`
+ * landing between the claim and its settlement bumps the generation, and without
+ * the token the settling call would happily cache its PRE-invalidation snapshot
+ * — permanently, since the store's own fresh read then fails ITS generation
+ * check and is dropped, leaving a stale identity with nothing in flight to
+ * correct it.
+ */
+export function claimEffectiveIdentity(repoId: string): number {
+  // Marking the read in flight is what actually removes the duplicate: a consumer
+  // that mounts while the claimed read is still pending sees the PENDING snapshot
+  // and issues nothing. Every claim MUST be settled by `primeEffectiveIdentity`
+  // or `failEffectiveIdentity`, or that consumer would wait forever.
+  inFlight.add(repoId);
+  return generation.get(repoId) ?? 0;
+}
+
+/** True when a claim has been superseded; also releases its in-flight marker.
+ *  Releasing costs at most one duplicate read (the newer owner still holds its
+ *  own claim, or `invalidateEffectiveIdentity` has already started a read), and
+ *  that is strictly better than the alternative failure — a subscriber stranded
+ *  on the loading snapshot forever. */
+function claimIsStale(repoId: string, claimSeq: number | undefined): boolean {
+  if (claimSeq === undefined || (generation.get(repoId) ?? 0) === claimSeq) return false;
+  inFlight.delete(repoId);
+  return true;
+}
+
+/** Settle a claim that failed. The identity is genuinely unknown, so publish that
+ *  (state 3, "couldn't read") rather than leaving subscribers spinning. */
+export function failEffectiveIdentity(repoId: string, message: string, claimSeq?: number): void {
+  if (claimIsStale(repoId, claimSeq)) return;
+  generation.set(repoId, (generation.get(repoId) ?? 0) + 1);
+  inFlight.delete(repoId);
+  cache.set(repoId, { ...UNSET, error: message });
+  emit();
+}
+
+/**
+ * P69h — publish an identity read from a `ConfigView` that has ALREADY been
+ * fetched, instead of fetching one.
+ *
+ * The Git-config pane loads `getConfig(repoId, 'local')` for its own form, and
+ * that response answers the identity question too (`CuratedConfigEntry` carries
+ * `effectiveValue` + `effectiveLevel`) — handing it over here is what collapses
+ * the pane's three mount reads into one. It is authoritative-now: the generation
+ * counter is bumped so an older in-flight `load` cannot resurrect a staler value.
+ *
+ * The caller MUST pass a LOCAL-level view — a global-level view's `targetValue`s
+ * belong to the other file, and `readSigningKey`'s advanced fallback would then
+ * report a global key as a local one.
+ *
+ * `claimSeq` (the token from `claimEffectiveIdentity`) makes the publish
+ * conditional: a view fetched before an invalidation is DROPPED rather than
+ * being cached over the newer truth.
+ */
+export function primeEffectiveIdentity(
+  repoId: string,
+  localView: ConfigView,
+  claimSeq?: number,
+): void {
+  if (claimIsStale(repoId, claimSeq)) return;
+  generation.set(repoId, (generation.get(repoId) ?? 0) + 1);
+  inFlight.delete(repoId);
+  cache.set(repoId, identityFromConfigView(localView));
+  emit();
+}
+
 /** Drop the cache entry, refetch, notify every subscriber. Subscribers see the
  *  loading snapshot in between, which is honest: the value on screen is no longer
  *  known to be true. */

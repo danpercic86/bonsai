@@ -21,30 +21,27 @@ import type { SettingsCategoryId } from './types';
 
 export function SettingsShell({
   initialCategory,
+  requestSeq,
   onClose,
 }: {
   initialCategory?: SettingsCategoryId;
+  /** Monotonic per OPEN request (§5.4). Every open path bumps it — including the
+   *  plain ⚙ click, which passes no category and therefore only clears state. */
+  requestSeq: number;
   onClose(): void;
 }) {
   const { configInitialFocus } = useSettingsValues();
 
-  // Seeded once per MOUNT. `SettingsPanel` returns null while closed, so the shell
-  // mounts fresh on every false → true transition of `open` — which covers a
-  // second deep link that arrives while Settings is CLOSED, and only that case.
-  //
-  // ⚠️ A deep link arriving while Settings is ALREADY OPEN will NOT move the
-  // category: there is no mount, so nothing re-seeds. Unreachable today (every
-  // entry point opens the panel), but P69h's acceptance explicitly requires the
-  // already-open case, so P69h must add the `requestSeq` counter its contract
-  // lists — do not conclude from this comment that it is unnecessary.
+  // Seeded on MOUNT (`SettingsPanel` returns null while closed, so the shell
+  // mounts fresh on every false → true transition of `open`) and RE-SEEDED on
+  // every later `requestSeq` change — that second half is what makes a deep link
+  // land while Settings is already open, which no mount would cover (§5.4.3).
   //
   // `configInitialFocus === 'identity'` IS the `configMissing` deep link (the
   // commit-error "Set identity…" linkage): it must select Git config, or the
-  // section's scroll+focus effect would never mount. Deriving it here keeps
-  // App.tsx — at its size ratchet — untouched.
-  const [selected, setSelected] = useState<SettingsCategoryId>(
-    () => initialCategory ?? (configInitialFocus === 'identity' ? 'git-config' : 'general'),
-  );
+  // section's scroll+focus effect would never mount.
+  const requested = initialCategory ?? (configInitialFocus === 'identity' ? 'git-config' : null);
+  const [selected, setSelected] = useState<SettingsCategoryId>(() => requested ?? 'general');
   const deepLinked = useRef(initialCategory !== undefined || configInitialFocus === 'identity');
   const paneRef = useRef<HTMLDivElement | null>(null);
 
@@ -65,6 +62,19 @@ export function SettingsShell({
     };
   }, []);
 
+  // §5.4.3: keyed on the monotonic seq, not on an `open` transition, so a second
+  // deep link in the same session still lands. A request that names no category
+  // (the plain ⚙ click) only clears state — it must never yank the user off the
+  // category they are reading.
+  const seenSeq = useRef(requestSeq);
+  useEffect(() => {
+    if (requestSeq === seenSeq.current) return;
+    seenSeq.current = requestSeq;
+    if (requested === null) return;
+    setSelected(requested);
+    if (paneRef.current !== null) paneRef.current.scrollTop = 0;
+  }, [requestSeq, requested]);
+
   const select = (id: SettingsCategoryId): void => {
     setSelected(id);
     // UI §2.2 scroll reset. Focus stays where the user put it: a mouse click
@@ -73,7 +83,15 @@ export function SettingsShell({
   };
 
   const category = SETTINGS_CATEGORIES.find((c) => c.id === selected) ?? SETTINGS_CATEGORIES[0];
-  const Page = CATEGORY_PAGES[category.id];
+  const { Page, HeaderTrailing } = CATEGORY_PAGES[category.id];
+  // A deep link that asks for a FOCUS target must re-run the target page's focus
+  // effect even when that page is already mounted (Settings open, already on Git
+  // config, second failed commit). Remounting the page is the honest way to say
+  // "this is a new request"; ordinary category switches keep a stable key.
+  const pageKey =
+    category.id === 'git-config' && configInitialFocus === 'identity'
+      ? `${category.id}:${requestSeq}`
+      : category.id;
 
   return (
     <div
@@ -117,8 +135,12 @@ export function SettingsShell({
           aria-labelledby={settingsTabId(category.id)}
           ref={paneRef}
         >
-          <SettingsPaneHeader title={category.label} subtitle={category.subtitle} />
-          <Page />
+          <SettingsPaneHeader
+            title={category.label}
+            subtitle={category.subtitle}
+            trailing={HeaderTrailing === undefined ? undefined : <HeaderTrailing />}
+          />
+          <Page key={pageKey} />
         </div>
       </div>
     </div>

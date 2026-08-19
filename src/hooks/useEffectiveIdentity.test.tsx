@@ -14,7 +14,10 @@ import { act, render, renderHook, screen, waitFor } from '@testing-library/react
 import { mockIpc } from '../ipc/mock';
 import type { ConfigLevelName, ConfigView, CuratedConfigEntry } from '../ipc';
 import {
+  claimEffectiveIdentity,
+  failEffectiveIdentity,
   invalidateEffectiveIdentity,
+  primeEffectiveIdentity,
   resetEffectiveIdentityForTests,
   useEffectiveIdentity,
 } from './useEffectiveIdentity';
@@ -248,5 +251,122 @@ describe('useEffectiveIdentity', () => {
     await waitFor(() => expect(screen.getByTestId('one')).toHaveTextContent('Global Ada'));
     expect(screen.getByTestId('two')).toHaveTextContent('Global Ada');
     expect(spy).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * P69h — the claim/prime pair that collapses the Git-config pane's duplicate
+ * reads. The pane fetches `getConfig(repo,'local')` for its own form; that view
+ * already answers the identity question, so it is handed over rather than
+ * re-fetched. The claim is the half that matters at mount: without it a consumer
+ * mounting in the same commit starts its own read before the prime can land.
+ */
+describe('claim / prime / fail (P69h)', () => {
+  it('a claimed repo issues no read of its own, and the prime satisfies the consumer', async () => {
+    const getConfig = vi.spyOn(mockIpc, 'getConfig');
+    claimEffectiveIdentity('/repo');
+
+    const { result } = renderHook(() => useEffectiveIdentity('/repo'));
+    expect(result.current.loading).toBe(true);
+    expect(getConfig).not.toHaveBeenCalled();
+
+    act(() => primeEffectiveIdentity('/repo', LOCAL_VIEW));
+    expect(result.current.name).toBe('Local Ada');
+    expect(result.current.source).toBe('local');
+    expect(getConfig).not.toHaveBeenCalled();
+  });
+
+  it('a failed claim publishes the error instead of stranding subscribers', () => {
+    const getConfig = vi.spyOn(mockIpc, 'getConfig');
+    claimEffectiveIdentity('/repo');
+    const { result } = renderHook(() => useEffectiveIdentity('/repo'));
+
+    act(() => failEffectiveIdentity('/repo', 'config unreadable'));
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBe('config unreadable');
+    expect(result.current.name).toBeNull();
+    expect(getConfig).not.toHaveBeenCalled();
+  });
+
+  it('a prime supersedes an in-flight read rather than being overwritten by it', async () => {
+    let settle: (v: ConfigView) => void = () => {};
+    vi.spyOn(mockIpc, 'getConfig').mockImplementation(
+      () =>
+        new Promise<ConfigView>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useEffectiveIdentity('/repo'));
+    await waitFor(() => expect(result.current.loading).toBe(true));
+
+    act(() => primeEffectiveIdentity('/repo', LOCAL_VIEW));
+    expect(result.current.email).toBe('ada@local.dev');
+
+    // The older read lands afterwards and must be DROPPED (generation bumped).
+    await act(async () => {
+      settle(GLOBAL_VIEW);
+      await Promise.resolve();
+    });
+    expect(result.current.email).toBe('ada@local.dev');
+  });
+});
+
+describe('claim tokens vs invalidation (P69h)', () => {
+  /** The interleaving the first cut got wrong: pane claims → an identity write
+   *  invalidates → the pane's OLDER read resolves and primes → the store's own
+   *  fresh read is then dropped by the generation check, so the pre-invalidation
+   *  identity sticks with nothing in flight to correct it. */
+  it('NEGATIVE CONTROL: a prime whose claim was invalidated mid-flight is dropped', async () => {
+    let settle: (v: ConfigView) => void = () => {};
+    vi.spyOn(mockIpc, 'getConfig').mockImplementation(
+      () =>
+        new Promise<ConfigView>((resolve) => {
+          settle = resolve;
+        }),
+    );
+
+    const claimSeq = claimEffectiveIdentity('/repo');
+    invalidateEffectiveIdentity('/repo'); // bumps the generation, starts its own read
+    const { result } = renderHook(() => useEffectiveIdentity('/repo'));
+
+    primeEffectiveIdentity('/repo', LOCAL_VIEW, claimSeq);
+    expect(result.current.name).toBeNull();
+    expect(result.current.loading).toBe(true);
+
+    // The read the invalidation started is the one that gets to answer.
+    await act(async () => {
+      settle(GLOBAL_VIEW);
+      await Promise.resolve();
+    });
+    expect(result.current.name).toBe('Global Ada');
+  });
+
+  it('a stale claim cannot publish an ERROR over a fresh invalidation either', async () => {
+    let settle: (v: ConfigView) => void = () => {};
+    vi.spyOn(mockIpc, 'getConfig').mockImplementation(
+      () =>
+        new Promise<ConfigView>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    const claimSeq = claimEffectiveIdentity('/repo');
+    invalidateEffectiveIdentity('/repo');
+    const { result } = renderHook(() => useEffectiveIdentity('/repo'));
+
+    failEffectiveIdentity('/repo', 'config unreadable', claimSeq);
+    expect(result.current.error).toBeNull();
+
+    await act(async () => {
+      settle(LOCAL_VIEW);
+      await Promise.resolve();
+    });
+    expect(result.current.email).toBe('ada@local.dev');
+  });
+
+  it('POSITIVE CONTROL: an unsuperseded claim still publishes', () => {
+    const claimSeq = claimEffectiveIdentity('/repo');
+    const { result } = renderHook(() => useEffectiveIdentity('/repo'));
+    act(() => primeEffectiveIdentity('/repo', LOCAL_VIEW, claimSeq));
+    expect(result.current.name).toBe('Local Ada');
   });
 });

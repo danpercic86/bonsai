@@ -91,6 +91,7 @@ type FixtureValues = Omit<
   | 'open'
   | 'onClose'
   | 'initialCategory'
+  | 'requestSeq'
   | 'onChange'
   | 'onToggleTheme'
   | 'onToggleListView'
@@ -101,6 +102,7 @@ type FixtureValues = Omit<
   | 'onRequestEnableMcpWrite'
   | 'onRegisterMcp'
   | 'onShowOnboarding'
+  | 'onOpenRepository'
   | 'onCheckUpdate'
   | 'onOpenUpdateDialog'
 >;

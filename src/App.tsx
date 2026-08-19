@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CloneDialog, deriveRepoName, joinRepoPath } from './components/CloneDialog';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { ContextMenu } from './components/ContextMenu';
 import { RepoWorkspace } from './components/RepoWorkspace';
 import { SettingsPanel } from './components/SettingsPanel';
 import { externalToolsItems } from './components/workspaceMenus';
-import type { PaletteAction } from './components/paletteActions';
 import { AiConsentDialog } from './components/dialogs/AiConsentDialog';
 import { AiAssetsPanel } from './components/AiAssetsPanel';
 import { RepoHealthPanel } from './components/RepoHealthPanel';
@@ -14,12 +13,13 @@ import { EmptyState } from './components/EmptyState';
 import { GitMissingBanner } from './components/GitMissingBanner';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
 import { TabStrip, type TabMeta } from './components/TabStrip';
-import { shortcutLabel } from './utils/platform';
 import { Toasts } from './components/Toasts';
 import { applyToastPush } from './components/toastQueue';
 import type { Toast, ToastTone } from './components/Toasts';
 import { UpdateNotification } from './components/UpdateNotification';
 import { UpdateDialog } from './components/UpdateDialog';
+import { useAppCommands } from './hooks/useAppCommands';
+import { useSettingsRequest } from './hooks/useSettingsRequest';
 import { useUpdateController } from './hooks/useUpdateController';
 import { useGitAvailability } from './hooks/useGitAvailability';
 import { useUiSettings } from './hooks/useUiSettings';
@@ -98,21 +98,15 @@ export default function App() {
   const [listView, setListView] = useState<ListView>('tree');
 
   // P11c §3.2: Settings page + the live-preview knob state it drives.
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  // P40b: when opened from a `configMissing` commit error, focus the Git-config
-  // Identity sub-section; cleared when the panel closes.
-  const [configFocus, setConfigFocus] = useState<'identity' | null>(null);
-  const openIdentitySettings = useCallback(() => {
-    setConfigFocus('identity');
-    setSettingsOpen(true);
-  }, []);
+  // P69h §5.3: open state + the deep-link request (category, focus, monotonic
+  // seq) that lands even while Settings is already open.
+  const settings = useSettingsRequest();
   // P43a: re-open the onboarding overlay (Settings "Show welcome tour"); does
   // NOT reset the seen flag.
   const showOnboarding = useCallback(() => {
-    setSettingsOpen(false);
-    setConfigFocus(null);
+    settings.close();
     setOnboardingOpen(true);
-  }, []);
+  }, [settings]);
   // P24d: AI-asset inventory / drift / context-profile overlay (active repo only).
   const [aiAssetsOpen, setAiAssetsOpen] = useState(false);
   // P29c: read-only repo-health overlay (active repo only).
@@ -396,8 +390,8 @@ export default function App() {
   // Probe on Settings open (fresh status for the AI section) and whenever a repo
   // becomes active (§8.3). Cheap enough to re-run; the req-id dedupes races.
   useEffect(() => {
-    if (settingsOpen) probeAiAvailability();
-  }, [settingsOpen, probeAiAvailability]);
+    if (settings.open) probeAiAvailability();
+  }, [settings.open, probeAiAvailability]);
   useEffect(() => {
     if (activeRepo !== null) probeAiAvailability();
   }, [activeRepo, probeAiAvailability]);
@@ -610,100 +604,29 @@ export default function App() {
     }
   }, [openTab, pushToast]);
 
-  // P50c: App-level command-palette entries — everything valid app-wide. Threaded
-  // down to every RepoWorkspace, which merges them with its repo-scoped actions.
-  // The setState-based openers are stable; only the useCallback handlers are deps.
-  const appCommands = useMemo<PaletteAction[]>(
-    () => [
-      {
-        id: 'app.openRepo',
-        title: 'Open repository…',
-        hint: shortcutLabel('Mod+O'),
-        group: 'action',
-        keywords: 'folder browse',
-        run: () => void handleOpenRepository(),
-      },
-      {
-        id: 'app.clone',
-        title: 'Clone repository…',
-        group: 'action',
-        keywords: 'git url download',
-        run: handleCloneOpen,
-      },
-      {
-        id: 'app.init',
-        title: 'New repository…',
-        group: 'action',
-        keywords: 'init create',
-        run: () => void handleInitRepository(),
-      },
-      {
-        id: 'app.settings',
-        title: 'Open Settings',
-        group: 'action',
-        keywords: 'preferences config options ai claude limits budget tools spend',
-        run: () => setSettingsOpen(true),
-      },
-      {
-        id: 'app.aiAssets',
-        title: 'AI Assets',
-        group: 'action',
-        keywords: 'agents claude context',
-        run: () => setAiAssetsOpen(true),
-      },
-      {
-        id: 'app.health',
-        title: 'Repository Health',
-        group: 'action',
-        keywords: 'stats status',
-        run: () => setHealthOpen(true),
-      },
-      {
-        id: 'app.toggleTheme',
-        title: 'Toggle theme (light / dark)',
-        group: 'action',
-        keywords: 'appearance dark light',
-        run: toggleTheme,
-      },
-      {
-        id: 'app.toggleListView',
-        title: 'Toggle tree / flat lists',
-        group: 'action',
-        keywords: 'sidebar view branches',
-        run: toggleListView,
-      },
-      {
-        // P70 (UI §8): the only surface on which a HEALTHY git ever reports
-        // itself — the banner covers the unhealthy case, so a failed re-check
-        // pushes nothing here.
-        id: 'app.checkGit',
-        title: 'Check Git availability',
-        group: 'action',
-        keywords: 'git missing path version diagnose recheck',
-        run: () =>
-          void gitRecheck().then((next) => {
-            if (next?.found === true) pushToast('info', next.detail);
-          }),
-      },
-      {
-        id: 'app.shortcuts',
-        title: 'Keyboard shortcuts',
-        hint: '?',
-        group: 'action',
-        keywords: 'help keys',
-        run: () => setOverlayOpen(true),
-      },
-    ],
-    [
-      handleOpenRepository,
-      handleCloneOpen,
-      handleInitRepository,
-      toggleTheme,
-      toggleListView,
-      gitRecheck,
-      pushToast,
-    ],
-  );
+  /** Stable wrapper so `SettingsPanel`'s action bag (and anything else that
+   *  memoises over it) does not churn on every App render. */
+  const openRepository = useCallback(() => void handleOpenRepository(), [handleOpenRepository]);
+
+  // EVERY value here must be render-stable (a `useCallback`, a `useState`
+  // setter, or a plain value). `useAppCommands` memoises over them and its result
+  // is `CommandPalette`'s `actions` array — a new array identity re-lands the
+  // palette highlight on row 0 mid-typing. Inline arrows are forbidden here; the
+  // closures are built inside the memo instead.
+  const appCommands = useAppCommands({
+    activeRepo,
+    openRepository: handleOpenRepository,
+    cloneOpen: handleCloneOpen,
+    initRepository: handleInitRepository,
+    openSettingsAt: settings.openAt,
+    setAiAssetsOpen,
+    setHealthOpen,
+    setOverlayOpen,
+    toggleTheme,
+    toggleListView,
+    gitRecheck,
+    pushToast,
+  });
 
   // ----- Reopen-all-on-launch (§6.2) -----
   const launchedRef = useRef(false);
@@ -814,9 +737,8 @@ export default function App() {
         setOverlayOpen(false);
         return;
       }
-      if (settingsOpen) {
-        setSettingsOpen(false);
-        setConfigFocus(null);
+      if (settings.open) {
+        settings.close();
         return;
       }
       if (aiAssetsOpen) {
@@ -831,7 +753,19 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [menuOpen, overlayOpen, settingsOpen, aiAssetsOpen, healthOpen, onboardingOpen, closeOnboarding]);
+  }, [menuOpen, overlayOpen, settings, aiAssetsOpen, healthOpen, onboardingOpen, closeOnboarding]);
+
+  const globalModalOpen =
+    overlayOpen ||
+    menuOpen ||
+    settings.open ||
+    aiAssetsOpen ||
+    healthOpen ||
+    onboardingOpen ||
+    consentOpen ||
+    mcpConsentOpen ||
+    mcpWriteConsentOpen ||
+    update.dialogOpen;
 
   // Global shortcuts (§5.1): Ctrl+O open, ? overlay, Ctrl+Tab / Ctrl+Shift+Tab
   // cycle tabs, Ctrl+W close active tab.
@@ -852,6 +786,17 @@ export default function App() {
       if (ctrl && e.key.toLowerCase() === 'o') {
         e.preventDefault();
         void handleOpenRepository();
+        return;
+      }
+
+      // UI §7.2: registered ABOVE the typing guard so it works from the commit
+      // box. A no-op while ANY global modal is open — toggling a modal from a
+      // shortcut is surprising, and opening Settings UNDERNEATH the AI-assets /
+      // health / onboarding overlays would be worse (it would appear only after
+      // the user dismissed something unrelated).
+      if (ctrl && e.key === ',') {
+        e.preventDefault();
+        if (!globalModalOpen) settings.openAt(null);
         return;
       }
 
@@ -884,19 +829,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [menuOpen, activeRepo, handleOpenRepository, closeTab]);
-
-  const globalModalOpen =
-    overlayOpen ||
-    menuOpen ||
-    settingsOpen ||
-    aiAssetsOpen ||
-    healthOpen ||
-    onboardingOpen ||
-    consentOpen ||
-    mcpConsentOpen ||
-    mcpWriteConsentOpen ||
-    update.dialogOpen;
+  }, [menuOpen, activeRepo, handleOpenRepository, closeTab, settings, globalModalOpen]);
 
   return (
     <ToastContext.Provider value={pushToast}>
@@ -961,7 +894,7 @@ export default function App() {
             <button
               type="button"
               className="btn-icon settings-toggle"
-              onClick={() => setSettingsOpen(true)}
+              onClick={() => settings.openAt(null)}
               title="Settings"
               aria-label="Settings"
             >
@@ -1004,7 +937,7 @@ export default function App() {
                 onRightPanelResize={handleRightPanelResize}
                 onPaneResizeEnd={handlePaneResizeEnd}
                 onOpenRepoPath={(path) => void openTab(path)}
-                onOpenIdentitySettings={openIdentitySettings}
+                onOpenIdentitySettings={settings.openIdentity}
                 appCommands={appCommands}
               />
             </div>
@@ -1014,7 +947,7 @@ export default function App() {
             loading={loading}
             error={error}
             recents={recents}
-            onOpenRepository={() => void handleOpenRepository()}
+            onOpenRepository={openRepository}
             onCloneOpen={handleCloneOpen}
             onInitRepository={() => void handleInitRepository()}
             onOpenRecent={(path) => void openTab(path)}
@@ -1028,17 +961,16 @@ export default function App() {
           activeRepo={activeRepo}
           recents={recents}
           loading={loading}
-          onOpenRepository={() => void handleOpenRepository()}
+          onOpenRepository={openRepository}
           onCloneOpen={handleCloneOpen}
           onInitRepository={() => void handleInitRepository()}
           onOpenRecent={(path) => void openTab(path)}
         />
         <SettingsPanel
-          open={settingsOpen}
-          onClose={() => {
-            setSettingsOpen(false);
-            setConfigFocus(null);
-          }}
+          open={settings.open}
+          initialCategory={settings.request.category ?? undefined}
+          requestSeq={settings.request.seq}
+          onClose={settings.close}
           theme={theme}
           listView={listView}
           panelDensity={panelDensity}
@@ -1062,12 +994,13 @@ export default function App() {
           onSetMcpAllowWrite={handleSetMcpAllowWrite}
           onRequestEnableMcpWrite={() => setMcpWriteConsentOpen(true)}
           repoPath={activeRepo}
-          configInitialFocus={configFocus}
+          configInitialFocus={settings.request.focus}
           profiles={profiles}
           terminalCommand={terminalCommand}
           editorCommand={editorCommand}
           onRegisterMcp={handleRegisterMcp}
           onShowOnboarding={showOnboarding}
+          onOpenRepository={openRepository}
           updateCurrentVersion={update.currentVersion}
           autoCheckUpdates={autoCheckUpdates}
           updateState={update.state}

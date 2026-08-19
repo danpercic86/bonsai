@@ -19,6 +19,7 @@ function renderPanel(over: Partial<SettingsPanelProps> = {}) {
   const props: SettingsPanelProps = {
     open: true,
     onClose: vi.fn(),
+    requestSeq: 0,
     onChange: vi.fn(),
     onToggleTheme: vi.fn(),
     onToggleListView: vi.fn(),
@@ -29,6 +30,7 @@ function renderPanel(over: Partial<SettingsPanelProps> = {}) {
     onRequestEnableMcpWrite: vi.fn(),
     onRegisterMcp: vi.fn(async () => {}),
     onShowOnboarding: vi.fn(),
+    onOpenRepository: vi.fn(),
     onCheckUpdate: vi.fn(),
     onOpenUpdateDialog: vi.fn(),
     ...MINIMAL,
@@ -153,6 +155,31 @@ describe('SettingsShell — seeding and close', () => {
     rerender(<SettingsPanel {...props} open={false} />);
     rerender(<SettingsPanel {...props} open configInitialFocus="identity" />);
     expect(tab('Git config, repository')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  /**
+   * P69h §5.4 — the case a fresh mount cannot cover. A commit fails while
+   * Settings is already open on another category: `requestSeq` changes, nothing
+   * unmounts, and the pane must still move to Git config.
+   */
+  it('a deep link that arrives while Settings is ALREADY open moves the category', () => {
+    const { rerender, props } = renderPanel();
+    fireEvent.click(tab('About'));
+    expect(tab('About')).toHaveAttribute('aria-selected', 'true');
+
+    rerender(
+      <SettingsPanel {...props} initialCategory="git-config" requestSeq={props.requestSeq + 1} />,
+    );
+    expect(tab('Git config, repository')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('an open request that names NO category leaves the user where they were', () => {
+    // The plain ⚙ click bumps the seq too (it must, or the next deep link would
+    // be indistinguishable from a repeat) — but it must not yank the pane.
+    const { rerender, props } = renderPanel();
+    fireEvent.click(tab('About'));
+    rerender(<SettingsPanel {...props} requestSeq={props.requestSeq + 1} />);
+    expect(tab('About')).toHaveAttribute('aria-selected', 'true');
   });
 
   it('✕ and backdrop close; a click inside the card does not', () => {

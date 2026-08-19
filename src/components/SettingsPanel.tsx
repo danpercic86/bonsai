@@ -9,10 +9,11 @@
 //
 // P69g: it is now the props façade + provider only. `SettingsShell` owns the
 // two-pane layout, the category rail and the selected-category state, and renders
-// exactly ONE category page at a time. The `if (!open) return null` above is
-// load-bearing: it makes the shell mount fresh on every open, which is what seeds
-// the deep link without a request counter.
+// exactly ONE category page at a time. The `if (!open) return null` seeds the
+// category on a close→open cycle; `requestSeq` (P69h §5.4) covers the case it
+// cannot — a deep link that arrives while Settings is already open.
 
+import { GitConfigScopeProvider } from './settings/GitConfigScope';
 import { SettingsProvider } from './settings/SettingsProvider';
 import { SettingsShell } from './settings/SettingsShell';
 import {
@@ -25,13 +26,21 @@ export type { SettingsPanelProps };
 export function SettingsPanel(props: SettingsPanelProps) {
   // Hooks run unconditionally (before the `open` early-return below).
   const { values, actions } = useSettingsPanelAdapter(props);
-  const { open, onClose, initialCategory } = props;
+  const { open, onClose, initialCategory, requestSeq } = props;
 
   if (!open) return null;
 
   return (
     <SettingsProvider values={values} actions={actions}>
-      <SettingsShell initialCategory={initialCategory} onClose={onClose} />
+      {/* The Git-config scope is shared by the pane HEADER (the switch) and the
+          pane BODY (the form), so its provider sits above both. */}
+      <GitConfigScopeProvider>
+        <SettingsShell
+          initialCategory={initialCategory}
+          requestSeq={requestSeq}
+          onClose={onClose}
+        />
+      </GitConfigScopeProvider>
     </SettingsProvider>
   );
 }

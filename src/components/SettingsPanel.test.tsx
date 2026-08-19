@@ -61,6 +61,7 @@ function renderPanel(over: Partial<SettingsPanelProps> = {}) {
   const props: SettingsPanelProps = {
     open: true,
     onClose: vi.fn(),
+    requestSeq: 0,
     theme: 'dark',
     listView: 'flat',
     panelDensity: 'cozy',
@@ -89,6 +90,7 @@ function renderPanel(over: Partial<SettingsPanelProps> = {}) {
     editorCommand: '',
     onRegisterMcp: vi.fn(async () => {}),
     onShowOnboarding: vi.fn(),
+    onOpenRepository: vi.fn(),
     updateCurrentVersion: '1.2.3',
     autoCheckUpdates: true,
     updateState: { status: 'idle' },

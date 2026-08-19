@@ -11,19 +11,11 @@
 // from `SettingsPanel`; only their declaration form changed (plain `const` →
 // `useCallback`, so the action bag can be memoised).
 //
-// IPC at mount, unchanged by P69f and recorded here for P69h: opening Settings
-// with a repo open costs THREE `getConfig(repoId, 'local')` round-trips for what
-// is one answer —
-//   1. `SettingsGitConfigSection.tsx:77`  — the pane's own `ConfigView`;
-//   2. `SettingsHooksToggle.tsx:31`       — nested inside that section
-//                                           (`SettingsGitConfigSection.tsx:189`),
-//                                           reading one key (`bonsai.runHooks`)
-//                                           out of `view.advanced`;
-//   3. `useEffectiveIdentity.ts:119`      — reached only from
-//                                           `SettingsProfilesSection.tsx:33`.
-// Calls 1 and 2 read the SAME view; the identity store's in-flight dedupe is not
-// what holds the count at three (it has a single consumer today). P69h owns this
-// pane and is the place to collapse them.
+// IPC at mount: P69h collapsed the three `getConfig(repoId, 'local')` round-trips
+// this pane used to cost (the section's own view, `SettingsHooksToggle`'s private
+// read, and `useEffectiveIdentity`'s) into ONE — `settings/useGitConfigEditor.ts`
+// owns the read, the hooks toggle is presentational, and every local-level load
+// primes the shared identity store. See that file's header for the rules.
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 
@@ -55,6 +47,10 @@ export interface SettingsPanelProps {
   /** P69g: rail category to select on open. Omitted ⇒ `general`, except that a
    *  `configInitialFocus` deep link selects `git-config` (SettingsShell). */
   initialCategory?: SettingsCategoryId;
+  /** P69h §5.4: monotonic counter bumped by EVERY open request, including the
+   *  plain ⚙ click. A change re-seeds the shell's category, which is the only
+   *  way a deep link lands while Settings is already open. */
+  requestSeq: number;
   theme: Theme;
   listView: ListView;
   /** P67 §4: right-panel density; patched via `onChange` (no toolbar toggle). */
@@ -121,6 +117,9 @@ export interface SettingsPanelProps {
   /** P43a: re-open the first-run onboarding overlay ("Show welcome tour").
    *  Does not reset the seen flag. */
   onShowOnboarding(): void;
+  /** P69h / UI §1.2: App's folder picker, for the Git-config no-repo empty
+   *  block. A pane that names a problem must offer its fix. */
+  onOpenRepository(): void;
   // Software updates (P42b). State + IPC owned by App/useUpdateController.
   /** App version from the last check; `null` until one resolves. */
   updateCurrentVersion: string | null;
@@ -158,6 +157,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     onRequestEnableMcpWrite,
     onRegisterMcp,
     onShowOnboarding,
+    onOpenRepository,
     onCheckUpdate,
     onOpenUpdateDialog,
   } = props;
@@ -371,6 +371,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       setMcpAllowWrite,
       registerMcp,
       showOnboarding: onShowOnboarding,
+      openRepository: onOpenRepository,
       checkUpdate: onCheckUpdate,
       openUpdateDialog: onOpenUpdateDialog,
       resetRow,
@@ -384,6 +385,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       setMcpAllowWrite,
       registerMcp,
       onShowOnboarding,
+      onOpenRepository,
       onCheckUpdate,
       onOpenUpdateDialog,
       resetRow,

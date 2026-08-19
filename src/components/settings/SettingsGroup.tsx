@@ -4,21 +4,26 @@
 // enters it. The uppercase treatment is CSS only — the catalog stores group names
 // in sentence case, and search result headers reuse the same string.
 
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 
 export function SettingsGroup({
   id,
   title,
+  innerRef,
   children,
 }: {
   /** Stable slug; the title element gets `{id}-title`. */
   id: string;
   /** MUST equal the catalog `group` value of every row inside. */
   title: string;
+  /** P69h: the Git-config deep link scrolls the Identity group into view, so its
+   *  section element has to be reachable. A wrapper `<div>` would break the
+   *  `.settings-group + .settings-group` separator rule. */
+  innerRef?: Ref<HTMLElement>;
   children: ReactNode;
 }) {
   return (
-    <section className="settings-group" aria-labelledby={`${id}-title`}>
+    <section className="settings-group" aria-labelledby={`${id}-title`} ref={innerRef}>
       <h4 className="settings-group-title" id={`${id}-title`}>
         {title}
       </h4>
