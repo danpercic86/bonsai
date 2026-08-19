@@ -402,6 +402,14 @@ React-free and unit-testable in isolation, `SETTINGS_CATEGORIES` lives in
 
 ### 4.3 The anti-drift test (the most valuable artefact in P69)
 
+> ⚠️ **AMENDED by `docs/contracts/P69-settings-shell-amendment-A.md` (rulings AM-1…AM-6).**
+> That file is binding where it conflicts with the text below. It rules on the per-profile
+> `identities` repeat and the dynamic `git-config` blocks, and it REPLACES this section's
+> minimal-fixture rule, which was unsound: `ai.mcp-start` carries `requires: 'mcpStopped'` and
+> renders *precisely* in the minimal fixture, so "missing == ids with a requires field" would have
+> failed as soon as the AI category migrated.
+
+
 Two files:
 
 **`src/components/settings/settingsCatalog.test.ts`** — pure data, no DOM:
