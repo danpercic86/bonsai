@@ -1,6 +1,7 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
 import { AUTO_FETCH_INTERVAL_MAX, AUTO_FETCH_INTERVAL_MIN, AVATAR_RADIUS_MAX, AVATAR_RADIUS_MIN, HEALTH_REFRESH_INTERVAL_MAX, HEALTH_REFRESH_INTERVAL_MIN, LANE_WIDTH_MAX, LANE_WIDTH_MIN, ROW_HEIGHT_MAX, ROW_HEIGHT_MIN } from '../../settings/ranges';
-import { DEFAULT_AI_RUN_SETTINGS, parseAiRunSettings } from './aiRunSettings';
+import { DEFAULT_UI_SETTINGS as PRODUCTION_DEFAULT_UI_SETTINGS } from '../../settings/defaults';
+import { parseAiRunSettings } from './aiRunSettings';
 import type { AiAutonomy, AutoFetchSettings, GraphDateBasis, GraphPrefs, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, PanelDensity, RecentRepo, SessionState, Theme, UiSettings } from '../types';
 
 // Recents persistence (P1 contract §3.4): localStorage-backed so the harness
@@ -74,45 +75,22 @@ const SIDEBAR_MAX = 480;
 const RIGHT_PANEL_MIN = 280;
 const RIGHT_PANEL_MAX = 640;
 
+/**
+ * The MOCK's default seed = the PRODUCTION defaults (`src/settings/defaults.ts`,
+ * pinned to the Rust oracle) + harness-only fixture data.
+ *
+ * P69 §3.3: this composes rather than re-exports because the two genuinely
+ * differ, and the divergence list must stay short, explicit and reviewed:
+ *
+ *   - `profiles` — production (and Rust) default to an EMPTY list; the harness
+ *     seeds two fixed-id profiles so the identity list is populated and
+ *     "Apply to current repo" is exercisable in the browser.
+ *
+ * That is the ONLY permitted divergence; `src/settings/defaults.test.ts` iterates
+ * every other key and asserts equality, so adding a second one fails there.
+ */
 export const DEFAULT_UI_SETTINGS: UiSettings = {
-  theme: 'dark',
-  paneWidths: { sidebar: 240, rightPanel: 380 },
-  listView: 'tree',
-  // P67 §4: right-panel density; 'cozy' is the tightened default.
-  panelDensity: 'cozy',
-  autoFetch: { enabled: false, intervalMinutes: 5 },
-  // P30: backend-scheduler healthRefresh signal; disabled by default.
-  healthRefresh: { enabled: false, intervalMinutes: 30 },
-  // P51: geometry knobs + per-row detail toggles (defaults mirror settings.rs
-  // GraphPrefs::default — compact off, SHA/date/ahead-behind on).
-  graph: {
-    avatarRadius: 10,
-    rowHeight: 32,
-    laneWidth: 16,
-    showSha: true,
-    showAuthor: false,
-    showDate: true,
-    dateBasis: 'author',
-    showAheadBehind: true,
-    compact: false,
-    // P58c: signature badge on by default (mirrors GraphPrefs::default).
-    showSignatureBadge: true,
-    // P63: forge signal badges off by default (mirrors GraphPrefs::default).
-    showPrBadge: false,
-    showCiStatus: false,
-  },
-  // AI assistance (P13): enabled by default, but consent gates the feature.
-  aiEnabled: true,
-  aiConflictAutonomy: 'proposeReview',
-  aiConsented: false,
-  // Embedded MCP server (P16): consent gates the enable toggle.
-  mcpConsented: false,
-  // MCP write consent (P16c): a separate, stronger gate for the write toggle.
-  mcpWriteConsented: false,
-  // P43: onboarding unseen by default so a fresh browser harness shows it.
-  onboardingSeen: false,
-  // P42: auto-check-updates-on-launch OFF by default (privacy / opt-in).
-  autoCheckUpdates: false,
+  ...structuredClone(PRODUCTION_DEFAULT_UI_SETTINGS),
   // P44: two seeded identity profiles so the harness shows a populated list
   // and Apply is exercisable (fixed string ids).
   profiles: [
@@ -131,11 +109,6 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
       signingKey: 'ABC123',
     },
   ],
-  // P49: external-tool templates default to "" ⇒ per-OS auto-detect.
-  terminalCommand: '',
-  editorCommand: '',
-  // P68 §8.3: the ten streaming AI-run knobs (defaults mirror settings.rs).
-  ...DEFAULT_AI_RUN_SETTINGS,
 };
 
 export function clampPaneWidths(w: PaneWidths): PaneWidths {

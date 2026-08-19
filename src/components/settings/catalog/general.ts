@@ -1,0 +1,66 @@
+/** P69 §4 — General category rows (UI §1.3 #5–#9, #32–#33). */
+import type { SettingsIndexEntry } from '../types';
+import { resetField, resetKey } from './reset';
+
+export const GENERAL_ENTRIES: readonly SettingsIndexEntry[] = [
+  {
+    id: 'general.auto-fetch',
+    category: 'general',
+    group: 'Background activity',
+    label: 'Auto-fetch from remotes',
+    help: 'Fetch from every remote in the background so ahead/behind counts stay honest.',
+    keywords: 'background poll origin sync automatic',
+    control: 'switch',
+    reset: resetField('autoFetch', 'enabled', 'Off'),
+  },
+  {
+    id: 'general.fetch-interval',
+    category: 'general',
+    group: 'Background activity',
+    label: 'Fetch every',
+    help: 'How often the background fetch runs.',
+    keywords: 'auto-fetch minutes interval schedule',
+    control: 'numberSlider',
+    reset: resetField('autoFetch', 'intervalMinutes', '5'),
+  },
+  {
+    id: 'general.auto-refresh',
+    category: 'general',
+    group: 'Background activity',
+    label: 'Refresh status automatically',
+    help: 'Re-read working-directory status and repository health on a timer.',
+    keywords: 'health rescan watcher poll periodic',
+    control: 'switch',
+    reset: resetField('healthRefresh', 'enabled', 'Off'),
+  },
+  {
+    id: 'general.refresh-interval',
+    category: 'general',
+    group: 'Background activity',
+    label: 'Refresh every',
+    help: 'How often the periodic status and health refresh runs.',
+    keywords: 'health minutes interval schedule',
+    control: 'numberSlider',
+    reset: resetField('healthRefresh', 'intervalMinutes', '30'),
+  },
+  {
+    id: 'general.terminal-command',
+    category: 'general',
+    group: 'External tools',
+    label: 'Terminal command',
+    help: 'Command template used by "Open in terminal". Empty auto-detects per OS.',
+    keywords: 'shell console external open in',
+    control: 'text',
+    reset: resetKey('terminalCommand', 'auto-detect'),
+  },
+  {
+    id: 'general.editor-command',
+    category: 'general',
+    group: 'External tools',
+    label: 'Editor command',
+    help: 'Command template used by "Open in editor". Empty auto-detects VS Code.',
+    keywords: 'ide vscode external open in',
+    control: 'text',
+    reset: resetKey('editorCommand', 'auto-detect'),
+  },
+];
