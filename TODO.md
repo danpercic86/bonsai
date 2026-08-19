@@ -118,6 +118,29 @@ mock harness via a query-param seam; cargo + clippy + vitest + e2e gates stay gr
 **USER CHECKPOINT (native):** install/auto-update, launch the app from a parent WITHOUT the user PATH,
 confirm fetch/pull/push + commit search work and no spurious auth toast appears.
 
+## 🐞 Spun out — `read_status` vs `git status --porcelain` discrepancy (found 2026-08-19)
+
+Found incidentally by `status_matches_porcelain` (`crates/bonsai-core/tests/prop_status.rs:133`) during
+the P70 credential-split verification run — **not** caused by that refactor (`status.rs` untouched).
+`read_status` reported `("unstaged", "e/pwn", None, "modified")` which the porcelain oracle did not.
+Random-seed failure; passed on re-run, so it is a **latent correctness bug, not a flake**.
+
+The refactorer deleted the `proptest-regressions` artifact rather than commit it (checking it in would
+have turned a random failure into a deterministic one *inside a behavior-preserving refactor* — not its
+call to make). Seed preserved here instead:
+
+```
+cc 7092b6a8ad052d40b3a382fbaf1450dde7bd1d77ac401b9e7af9a23db3965a5a
+initial = [("js", 830085073), ("y/hdq", 750409876), ("zsl/ozrm", 2913031937), ("io", 3268388894), ("e/pwn", 3853189158), ("ap", 2793669611)]
+ops = [(1, 4217376688305137722, 1942386613, "gnry"), (4, 3842487655791072095, 1278675183, "bp"), (1, 10402710393222198989, 1229272639, "mf/r"), (0, 13825244896185113770, 2802026316, "sgno"), (3, 5327597818003222344, 1785525724, "yeqjj/sd"), (5, 3279438120187805109, 3677744552, "gso/vvtix"), (1, 6214002843715606778, 2793541552, "lggl")]
+```
+
+Reproduce by writing the `cc` line into `crates/bonsai-core/tests/prop_status.proptest-regressions`.
+
+Also observed: `ai::session_tests::watchdog_does_not_fire_while_awaiting_input` failed once under load
+("the sentinel should have blocked the run (session already finished: true)") and passed on immediate
+re-run — timing-sensitive, add to the known load-flake list.
+
 ## 🔧 P71 — auto-update relaunch inherits the installer's environment — in-progress (research)
 
 **Current step:** P71 — contract CLOSED (`docs/contracts/P71-updater-relaunch-env.md`, all 4 decisions
