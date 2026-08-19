@@ -30,71 +30,57 @@ indexed in `docs/contracts/INDEX.md`.
 
 ## 🐛 P72 — forge connect fixes: Azure DevOps 401 + dead external links — in-progress
 
-**Current step:** P72 — **Increment A DONE and committed (`c1455c7`). Increment B is IN THE WORKING
-TREE, UNCOMMITTED and UNGATED — resume there.** Session stopped by the user 2026-08-19 mid-gate.
+**Current step:** P72 — **AI GATE GREEN. Both increments implemented, reviewed, security-audited and
+committed. Only the native USER CHECKPOINT remains.**
 
-### Resume checklist (Increment B — `openUrl`)
+Commits: `285828b` contracts - `c1455c7` Increment A (Azure 401) - `4888315` resume note -
+`3391286` Increment B (openUrl). Contracts: `docs/contracts/P72-forge-connect-fixes.md`,
+`docs/contracts/P72-ui.md`.
 
-Contracts: `docs/contracts/P72-forge-connect-fixes.md` §B1–§B5 + §3.1 Increment-B rows;
-`docs/contracts/P72-ui.md` §3/§4/§5 (§1 and §2 are deliberate NO-OPS — no forge-identity UI, no
-`CONNECT_HINTS` copy change).
+**Increment A — Azure validate-then-identify (DONE).** `viewer()` validates on
+`GET _apis/git/repositories/{repo}` (covered by `vso.code`, inherited by `vso.code_write`) instead of
+the profile endpoint (which needs `vso.profile`), so a PAT scoped only Code (Read & Write) connects.
+Identity is one best-effort profile call; every error is swallowed to an empty login and can never
+fail a connect. Adds the missing 203 arm (Azure's HTML sign-in page for an expired PAT, previously
+surfacing as `ForgeApi("malformed response")`), and a 404 that names org/project/repo — appended to
+the status message, not substituted, so a 5xx outage keeps its own text. Reviewer APPROVED, no
+MUST-FIX; both SHOULD-FIX applied. `azure/mod.rs` 513 -> 245 lines via `mod_tests.rs` +
+`viewer_tests.rs` + `testkit.rs`, proven behaviour-preserving at 157 tests before new cases.
 
-**State: senior-dev finished implementing and was interrupted at the START of its own gate.** The
-code is all on disk (432 insertions across 15 modified + 3 new files) but **nothing about it has been
-verified — not cargo, not clippy, not tsc, not vitest, not e2e.** Treat every claim below as
-"written, unproven".
+**Increment B — `openUrl` IPC (DONE).** `bonsai-core::external::{validate_web_url, url_ladder,
+open_url}` on the P49 machinery; `open_url` Tauri command skipping the `path.exists()` precheck;
+`openUrl` on the IPC surface + mock; both anchors routed through it keeping `href`/link semantics,
+with modified and middle clicks passing through. No opener plugin, no shell, no capability change
+(upholds P49 D1). Reviewer APPROVED, no MUST-FIX; its SHOULD-FIX applied (the rejection test pinned
+only the error variant, so collapsing the three category messages into one would have kept it green).
 
-Uncommitted files (all Increment B; Increment A is already committed and must not be re-touched):
-```
- M crates/bonsai-core/src/external.rs                 (+90)   validate_web_url, url_ladder, open_url
- M crates/bonsai-core/src/external_tests.rs           (+168)
- M src-tauri/src/commands/external.rs                 (+17)   open_url command
- M src-tauri/src/commands/tests_ai_consent_gate.rs    (+22)
- M src-tauri/src/lib.rs                               (+1)    invoke_handler registration
- M src/ipc/types.ts / tauri.ts / mock/handlers/external.ts / fixtures/forge.ts
- M src/components/ForgeConnect.tsx / PrDetailView.tsx / PrPanel.tsx
- M src/styles.css                                     (+3)    cursor: pointer on .forge-connect-link
- M e2e/11-forge.spec.ts                               (+41)
- M scripts/file-size-baseline.json
-?? src/components/ForgeConnect.test.tsx
-?? src/components/PrDetailView.test.tsx
-?? src/components/PrPanel.openUrl.test.tsx
-```
+**Security audit of the URL-launch surface: nothing at Critical/High/Medium.** All four Low findings
+were closed rather than accepted, because `PrDetailView`'s URL comes from a forge API response:
+reject userinfo (`https://github.com@evil.example/` previously validated while the browser would
+navigate to `evil.example`); reject whitespace/control characters anywhere (inert on Windows/macOS,
+but `xdg-open`'s `$BROWSER`-with-`%s` branch word-splits unquoted); cap length at 2048;
+stop exporting `url_ladder` (its `rundll32 url.dll,FileProtocolHandler` rung is a general
+ShellExecute dispatcher guarded only by a doc comment); flatten+truncate the destination tooltip.
+Auditor's verdict on the P49 D1 question: hand-rolling is *safer* here than
+`tauri-plugin-opener` would have been, because the input space is narrowed to http(s) in Rust before
+any spawn and the OS-dispatch surface is four fixed argv vectors.
 
-**Next actions, in order:**
-1. Run the gate that never ran: `cargo test -p bonsai-core external`, then (sequentially, never
-   concurrent) `cargo clippy -p bonsai-core --all-targets -- -D warnings`, the `src-tauri` command
-   tests, `pnpm tsc --noEmit`, `pnpm vitest run`, `pnpm lint`, `pnpm lint:size`, and
-   `pnpm exec playwright test e2e/11-forge.spec.ts`. Expect fixes — this code has never been run.
-2. `reviewer` on the Increment-B diff only (scope it: `crates/bonsai-core/src/external*`,
-   `src-tauri/src/{commands/external.rs,commands/tests_ai_consent_gate.rs,lib.rs}`, `src/ipc/*`,
-   `src/components/{ForgeConnect,PrDetailView,PrPanel}*`, `src/styles.css`, `e2e/11-forge.spec.ts`).
-3. `security-auditor` on the new URL-launch surface (external-process trigger): confirm
-   `validate_web_url` cannot be bypassed, that no shell is ever invoked, that a forge-supplied URL
-   never reaches an error message (spoofing surface), and that `src-tauri/capabilities/default.json`
-   was NOT modified.
-4. Browser-harness check (`pnpm dev:mock`, port 1420) for the two link-failure toasts.
-5. Full e2e before committing (has caught defects vitest/cargo passed clean).
-6. Commit as `fix(P72): ...` — the orchestrator commits, not senior-dev.
-7. Then the batched USER CHECKPOINT below.
+**AI gate (sequential):** `cargo test --workspace --no-fail-fast` **1845 passed / 0 failed / 6
+ignored** - `cargo clippy --workspace --all-targets -D warnings` clean - `pnpm tsc --noEmit` clean -
+`pnpm vitest run` **1711 passed / 143 files** - `pnpm lint` 0 errors / 30 pre-existing warnings -
+`pnpm lint:size` OK - `pnpm exec playwright test` **118 passed / 1 skipped**.
 
-**Things already decided — do NOT re-litigate on resume:**
-- NO `tauri-plugin-opener`, NO `tauri-plugin-shell`, NO `open` crate, NO edit to
-  `src-tauri/capabilities/default.json`. Hand-rolled per-OS spawn only (upholds P49 D1).
-- Windows ladder is two rungs: `explorer <url>` then `rundll32 url.dll,FileProtocolHandler <url>`.
-  `cmd /c start` is REJECTED (it is a `cmd.exe` builtin ⇒ a shell, and its `start` treats the first
-  quoted token as a window title). `powershell -NoProfile Start-Process` is the future candidate if
-  field reports ever demand a third rung.
-- `LaunchSpec.cwd` stays `PathBuf` with `PathBuf::from(".")` for URLs — making it `Option` would
-  churn every existing P49 equality test for no behavioural gain.
-- `validate_web_url` rejects with `AppError::ExternalToolFailed` (there is no `InvalidInput` variant
-  in `bonsai-core/src/error.rs`; reusing it keeps the TS `ErrorKind` union and the mock error shape
-  unchanged) and must NEVER echo the rejected URL into the message.
-- Both anchors stay `<a>` with a real `href` (navigations, not commands); the new frontend props are
-  REQUIRED, not optional, so a future call site cannot silently regress to a dead link.
-- Unverified: senior-dev had not yet reported which route it chose for the ForgeConnect failure
-  toast (UI contract §5 item 4 pre-approves either a `CONNECT_HINTS.unknown.url` sentinel or a
-  component-level vitest). Determine it from the code on disk.
+**Harness verification (browser pane, `pnpm dev:mock`):** open repo -> Pull requests -> Connect
+panel. `.forge-connect-link` has `rel="noreferrer noopener"` and `cursor: pointer`; a plain left
+click is intercepted (`defaultPrevented: true`) and resolves through the mock to
+`window.open('https://github.com/settings/tokens')` with no navigation away; ctrl-click and
+middle-click are NOT intercepted. Screenshot unavailable (the pane is not displayed, so the page
+does not composite) — the DOM assertions above are the evidence instead.
+
+**KNOWN CAVEAT (unresolved).** The FIRST `pnpm vitest run` after the security-hardening edits
+reported `1 failed | 1710 passed`, and the failing test name was not captured. Three subsequent full
+runs were clean (1711/1711), and the committed tree is what those clean runs exercised. So this is
+**unreproduced, not explained** — if a flaky frontend test surfaces later, start here.
 
 ### P72 USER CHECKPOINT (batched — neither half is AI-verifiable)
 Run `pnpm tauri dev`:
