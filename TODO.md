@@ -947,11 +947,46 @@ SAME working tree. Overlap was measured: only **`src/styles.css`** is contested 
 paths only (never `git add -A`), scope vitest runs to the files under change, and run no cargo
 commands (P69 is frontend-only; concurrent cargo races the shared target dir).
 
-**Current step:** ⏸️ **PAUSED AT THE CSS GATE — all six CSS-free increments are committed.**
-Done: **P69a** (both contracts) · **P69b** write path · **P69c** slider minimum · **P69d** a11y
-labels + effective identity + two splits · **P69e** defaults + catalog · **P69f** props->context.
-Every one reviewer-APPROVED; commits `5a10704` `24fc732` `36b08b5` `45bee34` `44bd029` `4f98d1e`
-`d015c7e` `605606d` `21ec9af` `be9975c` `4fe3341`.
+**Current step:** ✅ **P69g SHIPPED — the two-pane shell exists.** `styles.css` freed up when P73
+committed `b632347`, so the CSS gate opened and P69g landed (reviewer APPROVED after one round).
+
+**Done:** P69a contracts (+ amendment A + the P69c draft-feedback spec) · P69b write path · P69c
+slider minimum · P69d a11y labels + effective identity + splits · P69e defaults + catalog ·
+P69f props→context · **P69g the 880×660 two-pane shell, switch/segmented primitives, per-row reset,
+and the anti-drift DOM guard.**
+
+**Categories MIGRATED:** `general`, `appearance`, `about`. **PENDING** (reachable from the rail with
+legacy interiors): `git-config` (P69h) · `identities` (P69i) · `graph` + `ai` (P69j). `PENDING` must
+be `[]` before P69k ships search — asserted literally by the guard.
+
+**Remaining:** P69h git-config scope · P69i identity extraction (the header menu — the user's
+headline ask) · P69j graph/AI re-skin · P69k search · P69l docs.
+
+⚠️ **Two things P69h/P69j MUST do (found during P69g, do not lose):**
+- **P69h must add the `requestSeq` counter its contract lists.** P69g dropped it because
+  `SettingsPanel` unmounts the shell while closed, which covers close→reopen ONLY. A deep link
+  arriving while Settings is **already open** will NOT move the category, and P69h's acceptance
+  explicitly requires that case.
+- **P69j must delete the legacy `.settings-row` flex rule and unscope the new one.** P69g scoped
+  every new rule as `.settings-group > .settings-row` because the class collides with a legacy rule
+  still used by the PENDING sections.
+
+⚠️ **`src/styles.css` is now 8400+ lines and the ratchet does NOT protect it** —
+`check-file-size.mjs` scans `.rs`/`.ts`/`.tsx` only, so its green is silence, not a pass. P69h/i/j
+all add more. **Schedule a split (e.g. `src/styles/settings.css`) BEFORE P69j.**
+
+⚠️ **`:has()` is now load-bearing** for the switch/segment focus rings, with an
+`@supports not selector(:has(*))` fallback (verified present in the minified bundle) because
+`opacity: 0` inputs mean a dropped rule = NO focus indicator at all, not a degraded one. The
+draft-hint `:has()` deliberately has no fallback (degrades to two visible lines). WebView2 is fine;
+WKWebView needs macOS 12.3+, webkit2gtk 2.38+ (Debian 11 ships 2.36). **Native checkpoint should
+confirm the ring on macOS/Linux.**
+
+**E2E fallout, deliberately deferred to its own step:** `e2e/10-settings-persistence.spec.ts:44-52,
+71-73` and `e2e/12-ai-consent.spec.ts:66-70` need a one-line
+`await dialog.getByRole('tab', { name: … }).click();` after `openSettings`, because those controls
+now sit behind a rail tab. **The full e2e suite has NOT been re-run since P69g landed** — the last
+green run (118 passed / 1 skipped) predates the shell.
 
 **NOTHING THE USER SEES HAS CHANGED YET** beyond two accessible-name fixes and the identity pill.
 The two-pane shell, the rail, search, the header identity menu and the control re-skin are all
