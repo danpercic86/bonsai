@@ -884,9 +884,32 @@ SAME working tree. Overlap was measured: only **`src/styles.css`** is contested 
 paths only (never `git add -A`), scope vitest runs to the files under change, and run no cargo
 commands (P69 is frontend-only; concurrent cargo races the shared target dir).
 
-**Current step:** P69a/P69b/P69c/P69d/P69e code-complete and committed (P69d in review at the time
-of writing). P69f (props->context, refactorer) is next and needs no CSS. **P69g remains BLOCKED** on
-P73 holding `src/styles.css`.
+**Current step:** ⏸️ **PAUSED AT THE CSS GATE — all six CSS-free increments are committed.**
+Done: **P69a** (both contracts) · **P69b** write path · **P69c** slider minimum · **P69d** a11y
+labels + effective identity + two splits · **P69e** defaults + catalog · **P69f** props->context.
+Every one reviewer-APPROVED; commits `5a10704` `24fc732` `36b08b5` `45bee34` `44bd029` `4f98d1e`
+`d015c7e` `605606d` `21ec9af` `be9975c` `4fe3341`.
+
+**NOTHING THE USER SEES HAS CHANGED YET** beyond two accessible-name fixes and the identity pill.
+The two-pane shell, the rail, search, the header identity menu and the control re-skin are all
+still to build — they are specified in full but not implemented.
+
+**NEXT: P69g, the first CSS increment — BLOCKED** on the concurrent P73 session holding
+`src/styles.css` (held for this entire session; P73 is still active). Remaining after it: P69h
+git-config scope · P69i identity extraction · P69j graph/AI re-skin · P69k search · P69l docs.
+
+**Before P69g starts, two things must happen:**
+1. The architect must rule on the anti-drift DOM guard for `identities` / `git-config` (see the
+   follow-ups above) — P69g is where that guard gets written.
+2. `ui-designer` needs to spec the out-of-range draft affordance P69c introduced (typing `128` into
+   Row height leaves the field reading 128 while the setting sits at max; the old snap-back made
+   the divergence obvious).
+
+**P69h inherits a measured fact:** `getConfig(repoId,'local')` fires THREE times at mount — from
+`SettingsGitConfigSection` (own view), `SettingsHooksToggle` (nested inside it), and
+`useEffectiveIdentity` (via the profiles section). `CuratedConfigEntry` already carries
+`effectiveValue`/`effectiveLevel`, so all three collapse to one. Deliberately untouched by P69f
+because fixing it in a refactor pass would have invalidated the equivalence proof.
 
 Superseded detail: P69a DONE — both halves (`docs/contracts/P69-settings-ui.md` +
 `ui-reference.md` §12 + `docs/contracts/P69-settings-shell.md`). P69b code-complete, reviewer
