@@ -51,7 +51,6 @@
     "crates/bonsai-core/tests/remote_cli.rs": 545,
     "crates/bonsai-core/tests/stage_partial_cli.rs": 761,
     "crates/bonsai-core/tests/worktree_cli.rs": 554,
-    "crates/bonsai-forge/src/azure/mod.rs": 513,
     "crates/bonsai-forge/src/github/mod.rs": 525,
     "crates/bonsai-mcp/src/server.rs": 1269,
     "crates/bonsai-mcp/tests/mcp_stdio.rs": 621,

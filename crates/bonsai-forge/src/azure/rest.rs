@@ -90,9 +90,20 @@ fn repo_base(org: &str, project: &str, repo: &str) -> String {
 
 // ---- endpoint URL builders (each carries api-version, never a token) ----
 
-/// The cross-host identity endpoint (`viewer()`).
+/// The cross-host identity endpoint (`viewer()`'s BEST-EFFORT identify step).
+/// Gated on the PAT's `vso.profile` scope, which the Code (Read & Write) PAT the
+/// UI asks for does NOT carry — so this URL must never gate a connect (P72 §A4).
 pub fn profile_url() -> String {
     PROFILE_URL.to_string()
+}
+
+/// The repository object itself — the SCOPE-VALIDATION probe for `viewer()`.
+/// Reaching it requires exactly the Code scope every other Azure call already
+/// needs (`vso.code`, inherited by `vso.code_write`), so a Code-only PAT
+/// validates; a 404 additionally means the org/project/repo triple is wrong.
+/// Built from `repo_base` so it cannot drift from the other repo endpoints.
+pub fn repository_url(org: &str, project: &str, repo: &str) -> String {
+    format!("{}?{API_VERSION}", repo_base(org, project, repo))
 }
 
 pub fn pull_requests_url(
@@ -164,11 +175,24 @@ fn rate_limited_error(resp: &HttpResponse) -> AppError {
 /// ⇒ success (2xx). NEVER includes a token or the auth header.
 pub fn map_status(resp: &HttpResponse) -> Option<AppError> {
     let s = resp.status;
+    // FIRST — before the 2xx success check (P72 §A3). Azure answers `203
+    // Non-Authoritative Information` plus an HTML sign-in page for an
+    // invalid/expired PAT; landing that in the success branch made the HTML
+    // reach `dto::from_json` and surface as "malformed response".
+    if s == 203 {
+        return Some(AppError::AuthFailed(
+            "Azure DevOps did not accept the personal access token (HTTP 203 sign-in page) — it is invalid or expired; create a new PAT with Code (Read & Write)"
+                .to_string(),
+        ));
+    }
     if (200..300).contains(&s) {
         return None;
     }
     Some(match s {
-        401 => AppError::AuthFailed("Azure DevOps rejected the credentials (401)".to_string()),
+        401 => AppError::AuthFailed(
+            "Azure DevOps rejected the personal access token (401) — it is invalid or expired, or it lacks Code (Read & Write) for this repository"
+                .to_string(),
+        ),
         403 => AppError::AuthFailed(
             "Azure DevOps denied the request (403) — the PAT may be invalid or lack Code (Read & Write)"
                 .to_string(),
@@ -265,6 +289,12 @@ mod tests {
         assert!(auth
             .iter()
             .any(|(k, v)| k == "Authorization" && *v == expected));
+        // Hard-coded pin (P72 §3.1 n): `expected` above is computed with the very
+        // `base64_encode` under test, so a bug in the encoder would pass. These
+        // are the literal header bytes Azure must receive for the PAT "pat"
+        // (`":pat"` ⇒ `OnBhdA==`).
+        assert!(auth.iter().any(|(k, v)| k == "Authorization" && v == "Basic OnBhdA=="));
+
         // NOT Bearer (Bitbucket) and NOT PRIVATE-TOKEN (GitLab).
         assert!(!auth
             .iter()
@@ -300,6 +330,15 @@ mod tests {
             commit_statuses_url("org", "proj", "repo", "abc"),
             "https://dev.azure.com/org/proj/_apis/git/repositories/repo/commits/abc/statuses?api-version=7.1"
         );
+        // The scope-validation probe: the repository object itself (P72 §A2).
+        let probe = repository_url("org", "proj", "repo");
+        assert_eq!(
+            probe,
+            "https://dev.azure.com/org/proj/_apis/git/repositories/repo?api-version=7.1"
+        );
+        assert!(probe.contains("api-version=7.1"));
+        assert!(!probe.contains("SECRET"));
+
         // The identity endpoint is a DIFFERENT host, still api-versioned.
         assert!(profile_url().starts_with("https://app.vssps.visualstudio.com/"));
         assert!(profile_url().contains("api-version=7.1"));
@@ -311,10 +350,23 @@ mod tests {
     fn map_status_taxonomy() {
         assert!(map_status(&resp(200, vec![])).is_none());
         assert!(map_status(&resp(201, vec![])).is_none());
-        assert!(matches!(
-            map_status(&resp(401, vec![])),
-            Some(AppError::AuthFailed(_))
-        ));
+        // 203 is a 2xx but means "here is a sign-in page" ⇒ an AUTH failure, and
+        // it must be caught BEFORE the success early-return (P72 §A3).
+        match map_status(&resp(203, vec![])) {
+            Some(AppError::AuthFailed(m)) => {
+                assert!(m.contains("203"), "message: {m}");
+                assert!(m.contains("invalid or expired"), "message: {m}");
+                assert!(m.contains("Code (Read & Write)"), "message: {m}");
+            }
+            other => panic!("expected AuthFailed for 203, got {other:?}"),
+        }
+        match map_status(&resp(401, vec![])) {
+            Some(AppError::AuthFailed(m)) => {
+                assert!(m.contains("invalid or expired"), "message: {m}");
+                assert!(m.contains("Code (Read & Write)"), "message: {m}");
+            }
+            other => panic!("expected AuthFailed for 401, got {other:?}"),
+        }
         assert!(matches!(
             map_status(&resp(403, vec![])),
             Some(AppError::AuthFailed(_))

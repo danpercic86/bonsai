@@ -63,13 +63,17 @@ so the orchestrator cannot self-verify it (the harness proves wiring on canned m
      the friendly "unsupported forge" state (no crash). Flag if a user hits it.
 2. **Auth / keychain (SECURITY)** — paste an Azure **PAT with Code (Read & Write)**. Backend sends
    `Authorization: Basic base64(":"+PAT)`. Out-of-band: token in keychain, ABSENT from
-   settings/logs/URLs (redaction test proves plaintext AND base64 absent from Debug). Identity is
-   validated via the cross-host `app.vssps.visualstudio.com/.../profiles/me` call.
-   - **Known rough edge (reviewer NIT):** a bad/expired Azure PAT can return **HTTP 203** (an HTML
-     sign-in page) rather than 401/403; that currently surfaces as a "malformed response"
-     (`forgeApi`) rather than a clean "authentication failed". No leak/crash — but if you see a
-     confusing error on a bad Azure PAT, this is why. Candidate follow-up: treat 203 / non-JSON on an
-     authed call as `forgeAuthRequired`.
+   settings/logs/URLs (redaction test proves plaintext AND base64 absent from Debug). **Since P72**
+   the credentials are validated against the **repository** endpoint
+   (`.../_apis/git/repositories/{repo}`), which a Code (Read & Write) PAT can reach; the cross-host
+   `app.vssps.visualstudio.com/.../profiles/me` call is now a best-effort display-name lookup whose
+   failure never blocks the connect.
+   - **FIXED by P72:** a bad/expired Azure PAT returning **HTTP 203** (an HTML sign-in page) used to
+     surface as a "malformed response" (`forgeApi`). `map_status` now maps 203 → `AuthFailed`
+     *before* the 2xx success check: "Azure DevOps did not accept the personal access token
+     (HTTP 203 sign-in page) — it is invalid or expired; create a new PAT with Code
+     (Read & Write)". A 401 likewise now names both causes (invalid/expired **or** missing Code
+     scope). Verify with a deliberately bad PAT: expect a clear auth error, never "malformed".
 3. **List / detail / create** — real PRs (active→Open, completed→Merged, abandoned→Closed; isDraft;
    `sourceRefName`/`targetRefName` shown with `refs/heads/` stripped; `head→base`). Open/Closed/All
    re-queries (Azure supports `status=all`). Detail shows body, labels, mergeable (mergeStatus),

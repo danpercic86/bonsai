@@ -155,7 +155,7 @@ Auth header: `Authorization: Basic base64(":" + <PAT>)` (empty username). Every 
 | `create_pr` | `POST .../pullrequests` `{sourceRefName,targetRefName,title,description,isDraft}` (add back `refs/heads/`) |
 | `list_review_comments` | `GET .../pullrequests/{id}/threads` → each thread's `comments[]`; `threadContext.filePath`/`rightFileStart.line` ⇒ `Review` else `Conversation`; skip system/deleted |
 | `combined_status` | `GET .../pullrequests/{id}/statuses` (or commit statuses) → `succeeded→Success, pending→Pending, failed|error→Failure, notApplicable|notSet→Neutral` |
-| `viewer` | `GET https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1` → `{login:displayName, avatarUrl:None}` |
+| `viewer` | **Validate-then-identify (amended by P72 — supersedes the original profile-only probe).** (1) VALIDATE, must succeed: `GET .../_apis/git/repositories/{repo}?api-version=7.1` → `dto::parse_repo_probe` (non-empty `id`); 401/203 ⇒ `AuthFailed`, 404 ⇒ `ForgeApi` naming `{org}/{project}/{repo}`. (2) IDENTIFY, best effort, exactly one attempt: `GET https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1` → `{login:displayName, avatarUrl:None}`; **every** error (401 for a missing `vso.profile` scope, 429, transport) is swallowed ⇒ `{login:"", avatarUrl:None}`, and an empty login is never cached. A PAT with only **Code (Read & Write)** is sufficient to connect — the repo endpoint needs `vso.code`, which `vso.code_write` inherits, whereas the profile endpoint needs `vso.profile`. This resolves the contradiction with `P64-user-checklist.md` §D2. |
 Pagination: `$skip`/`$top`; `has_next` = returned count == `$top`.
 
 ## 3d. Trait / DTO additions (additive)

@@ -303,6 +303,15 @@ struct AzProfile {
     email_address: Option<String>,
 }
 
+// ---- repository probe (scope validation) wire struct ----
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AzRepoProbe {
+    #[serde(default)]
+    id: Option<String>,
+}
+
 // ---- create-PR request body (camelCase exactly as Azure expects) ----
 
 #[derive(Serialize)]
@@ -317,8 +326,22 @@ struct CreatePrWire<'a> {
 
 // ---- public boundary: raw body ⇒ neutral DTO ----
 
+/// `GET .../_apis/git/repositories/{repo}` ⇒ `Ok(())` iff the payload really is
+/// the repository object (non-empty `id`). Guards the case where Azure answers
+/// 200 with an HTML/redirect body: JSON parse failure OR a missing/empty `id`
+/// ⇒ [`AppError::ForgeApi`], never a silent success (P72 §A6).
+pub fn parse_repo_probe(body: &str) -> Result<(), AppError> {
+    let probe: AzRepoProbe = from_json(body)?;
+    if probe.id.as_deref().unwrap_or_default().is_empty() {
+        return Err(AppError::ForgeApi(
+            "Azure DevOps did not return a repository object".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// `GET …/profiles/me` ⇒ [`ForgeViewer`] (`displayName`→login; avatar absent,
-/// contract §3c).
+/// contract §3c). The ONLY identity parser; its call site is best-effort (P72).
 pub fn parse_viewer(body: &str) -> Result<ForgeViewer, AppError> {
     let p: AzProfile = from_json(body)?;
     Ok(ForgeViewer {

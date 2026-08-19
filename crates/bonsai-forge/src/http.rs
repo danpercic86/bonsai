@@ -45,8 +45,9 @@ pub enum HttpMethod {
     Post,
 }
 
-/// A request built by the provider layer and handed to a transport. Headers
-/// carry the `Authorization: Bearer <token>` value ONLY when authenticated.
+/// A request built by the provider layer and handed to a transport. Headers carry
+/// the provider's auth header (`Authorization: Bearer`, `Authorization: Basic`, or
+/// `PRIVATE-TOKEN`) ONLY when authenticated; the redaction seam elides its value.
 #[derive(Clone)]
 pub struct HttpRequest {
     pub method: HttpMethod,

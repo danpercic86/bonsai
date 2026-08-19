@@ -65,8 +65,12 @@ wiring + canvas badge rendering.
 - **PAT-only for v1** (recommended default; OQ-1). The user PASTES a Personal-Access-Token into the
   app. The app NEVER autofills, NEVER reads the user's tokens from anywhere, NEVER puts a token in a
   URL, and NEVER logs `token`, `Authorization`, or raw response bodies (copy cred_cache.rs's security
-  note verbatim in spirit). The token reaches the network ONLY as an `Authorization: Bearer <token>`
-  header constructed inside `HttpTransport`.
+  note verbatim in spirit). The token reaches the network ONLY as that provider's auth header,
+  constructed in the provider's `rest` module and carried by `HttpTransport`: GitHub and Bitbucket
+  `Authorization: Bearer <token>`, Azure DevOps `Authorization: Basic base64(":" + PAT)` (empty
+  username), GitLab `PRIVATE-TOKEN: <token>`. (Corrected by P72 — the earlier "Bearer only" wording
+  was never true for Azure or GitLab. Base64 is encoding, not secrecy: the `http.rs` redaction seam
+  is what keeps the value off logs and `{:?}`.)
 - **Store of record = OS keychain** via the `keyring` crate (OQ-2 — NEW dep, flagged). Key: service
   `com.bonsai.app` (the app identifier), account = **host** (e.g. `github.com`) so two repos on the
   same host share one token. NEVER settings.json (hard invariant).

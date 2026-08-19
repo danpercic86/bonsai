@@ -164,6 +164,29 @@ fn parse_threads_line_falls_back_to_left_side() {
 }
 
 #[test]
+fn parse_repo_probe_accepts_a_repository_object() {
+    assert!(parse_repo_probe(r#"{ "id": "r1", "name": "repo" }"#).is_ok());
+}
+
+#[test]
+fn parse_repo_probe_rejects_html_and_id_less_payloads() {
+    // A 200 carrying Azure's HTML sign-in page must never read as success.
+    match parse_repo_probe("<html>Sign In</html>") {
+        Err(AppError::ForgeApi(m)) => assert!(m.contains("malformed"), "message: {m}"),
+        other => panic!("expected ForgeApi, got {other:?}"),
+    }
+    // Well-formed JSON that is not the repository object.
+    for body in ["{}", r#"{ "id": "" }"#, r#"{ "name": "repo" }"#] {
+        match parse_repo_probe(body) {
+            Err(AppError::ForgeApi(m)) => {
+                assert!(m.contains("did not return a repository object"), "message: {m}")
+            }
+            other => panic!("expected ForgeApi for {body}, got {other:?}"),
+        }
+    }
+}
+
+#[test]
 fn parse_viewer_uses_display_name_no_avatar() {
     let body = r#"{ "displayName": "Ada Lovelace", "emailAddress": "ada@example.com",
                     "id": "guid" }"#;

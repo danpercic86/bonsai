@@ -8,8 +8,12 @@
 //! injectable [`HttpTransport`] seam so the provider is unit-tested offline.
 //!
 //! Security spine (overview §F3): the PAT is pasted by the user, stored ONLY in
-//! the OS keychain (never settings.json), reaches the wire ONLY as an
-//! `Authorization: Bearer` header, and is NEVER logged or placed in a URL.
+//! the OS keychain (never settings.json), reaches the wire ONLY as that
+//! provider's auth header — GitHub and Bitbucket `Authorization: Bearer <token>`,
+//! Azure DevOps `Authorization: Basic base64(":" + PAT)`, GitLab
+//! `PRIVATE-TOKEN: <token>` — and is NEVER logged or placed in a URL (the
+//! `http.rs` redaction seam elides the header value; base64 is encoding, not
+//! secrecy).
 
 pub mod auth;
 pub mod detect;
@@ -126,8 +130,11 @@ pub(crate) fn validate_token(
     token: &str,
     http: Box<dyn HttpTransport>,
 ) -> Result<ForgeViewer, AppError> {
-    // `viewer()` performs the single identity (`GET /user`) validation call and,
-    // on success, warms the process viewer cache for the host.
+    // `viewer()` performs that provider's validation call and, on success, warms
+    // the process viewer cache for the host: GitHub / GitLab / Bitbucket probe
+    // `GET /user`; Azure DevOps validates on the REPOSITORY endpoint and then
+    // makes ONE best-effort profile call for a display name (P72 — the profile
+    // endpoint needs a scope the Code-scoped PAT the UI asks for lacks).
     build_provider(target, Some(token.to_string()), http).viewer()
 }
 
@@ -136,7 +143,8 @@ pub(crate) fn validate_token(
 /// [`open`] cannot store).
 ///
 /// Flow: resolve the target from `origin` → build a provider with the CANDIDATE
-/// token over a real [`ReqwestTransport`] → `viewer()` (`GET /user`) to
+/// token over a real [`ReqwestTransport`] → `viewer()` (per-provider: `GET /user`,
+/// or for Azure DevOps the repository endpoint, see `validate_token`) to
 /// validate → on success `TokenStore::set(host, token)` and return the viewer
 /// (already cached by `viewer()`). A rejected token ⇒ [`AppError::AuthFailed`]
 /// and NOTHING is stored; a non-GitHub origin ⇒ [`AppError::ForgeUnsupported`].
