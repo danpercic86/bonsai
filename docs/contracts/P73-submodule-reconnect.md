@@ -490,11 +490,17 @@ fn snapshot_pre_update(repo, name, path) -> PreUpdateState:
     registered = repo.config().and_then(|c| c.open_level(ConfigLevel::Local)).ok()
                  .and_then(|c| c.get_string(&format!("submodule.{name}.url")).ok())
                  .is_some()
-    PreUpdateState { module_dir_existed, workdir_existed, registered }
+    // AMENDED (see §5): the two fields that gate the whole rollback.
+    uninitialized     = repo.submodule_status(name, SubmoduleIgnore::None)
+                            .map(|f| f.contains(WD_UNINITIALIZED)).unwrap_or(false)
+    workdir_was_empty = repo.workdir().map(|wd| workdir_is_empty(&wd.join(path))).unwrap_or(false)
+    PreUpdateState { module_dir_existed, workdir_existed, registered,
+                     uninitialized, workdir_was_empty }
 ```
 
-Never returns `Err`; unknowable ⇒ the conservative value (`true`, "already existed", so rollback
-leaves it alone).
+Never returns `Err`; unknowable ⇒ the value that makes rollback STAND DOWN (`workdir_existed:
+true`; `uninitialized: false`; `workdir_was_empty: false`). Called BEFORE anything is written — in
+`update_submodule` it precedes both `reattach_module_gitdir` and `sm.update`.
 
 ---
 
@@ -503,6 +509,35 @@ leaves it alone).
 Modelled on `rollback_partial_add` (`submodule.rs:275-296`): every step independent, every failure
 ignored, the ORIGINAL error is what the caller returns. **Clone path only** — never called when
 `salvage == Reattached`.
+
+### AMENDED 2026-08-19 — the step-0 stand-down (this design as first written DESTROYED USER DATA)
+
+The reviewer reproduced the loss, and the fix is now the most important safety property in this
+milestone. **Do not "restore" the unconditional rollback below.** The failing case: a submodule
+registered but never cloned (no `<modules>/<key>`), with uncommitted user files sitting in the
+submodule folder. libgit2 clones, its SAFE checkout correctly refuses — and step 2's "contents only"
+branch then deleted the user's files. Pre-P73 there was no rollback at all, so P73 *introduced* the
+loss.
+
+Gating step 2 alone is NOT enough: libgit2's clone has already written `<path>/.git`, so removing the
+module gitdir in step 1 leaves a **dangling gitlink** — `git submodule status` dies with
+`fatal: not a git repository: <path>/../../.git/modules/<key>/` and `list_submodules` reports a bogus
+`UpToDate`. The guard therefore sits at **step 0 and governs the entire function**:
+
+```
+    if !pre.uninitialized || !pre.workdir_was_empty { return; }   // stand down entirely
+```
+
+Standing down leaves the coherent "clone succeeded, checkout refused" state (the row reads
+`ModifiedWorkdir`), which self-heals on retry once the user moves their files. Orphan cleanup is
+unaffected: the guard reads the PRE-ATTEMPT snapshot, so a clone that dies *after* writing files
+still cleans up — only an already-non-empty folder is skipped, which is exactly the data-loss case.
+
+**Step order is load-bearing (amended after review round 2):** remove the worktree/gitlink FIRST,
+then `<commondir>/modules/<key>`. Best-effort code must degrade safely, and if the gitdir removal
+succeeded while the worktree removal then failed (Windows file lock, AV handle) the result would be
+the dangling gitlink above. In the amended order a partial failure degrades to "orphan gitdir, no
+gitlink" — precisely the recoverable wedge P73 repairs.
 
 ```
 fn rollback_partial_update(repo, name, path, pre):
@@ -535,6 +570,10 @@ appear to lose the submodule.
 
 `remove_dir_all_or_file(p)` = `remove_dir_all` when `symlink_metadata` says dir, else `remove_file`
 (never follows symlinks).
+
+> The pseudocode block above is the ORIGINAL design, kept for the rationale trail. As implemented it
+> is preceded by the step-0 stand-down and its two steps run in the amended order (worktree/gitlink
+> before module gitdir). Steps 1 and 3 are otherwise unchanged.
 
 ---
 
@@ -571,22 +610,38 @@ mapping and the existing toasts keep working with zero frontend change.
 | 2 | submodule path escapes the repo | reattach step 1 | (from `validate_rel_path`, today `Other`) | existing text | security refusal |
 | 3 | superproject has no workdir | reattach prologue | `Git` | `repository has no working directory` | internal |
 | 4 | submodule parent dir unresolvable | reattach step 5 | `Git` | `cannot resolve submodule parent directory '<p>': <io>` | internal |
-| 5 | submodule dir resolves outside the repo | reattach step 5 | `Git` | `refusing to reconnect submodule '<name>': '<p>' is outside the repository` | security refusal |
-| 6 | worktree has files but no `.git` | reattach step 6 | `Git` | `submodule '<name>' has files in '<p>' but no .git link; refusing to reconnect its existing git directory. Move or delete that directory, or run \`git submodule update --init -- <path>\` manually.` | refusal (actionable) |
-| 7 | no configured url anywhere | reattach step 7 | `Git` | `submodule '<name>' has no configured url; cannot verify the existing git directory belongs to it — run Sync, then Update` | refusal (actionable) |
-| 8 | orphaned gitdir has no `origin` remote | reattach step 7 | `Git` | `the existing git directory for submodule '<name>' has no 'origin' remote; refusing to reconnect it` | refusal (actionable) |
-| 9 | url mismatch | reattach step 7 | `Git` | `refusing to reconnect submodule '<name>': its configured url '<a>' does not match the existing git directory's origin '<b>'. Run Sync to update the url, or remove '<dir>' if it is stale.` | refusal (actionable) |
+| 5 | submodule dir resolves outside the repo | reattach step 5 | `Git` | `This submodule resolves to a path outside the repository. Bonsai will not touch it.` | security refusal |
+| 6 | worktree has files but no `.git` | reattach step 6 | `Git` | `The folder already has files in it. Move or delete everything inside '<path>', then try again.` | refusal (actionable) |
+| 7 | no configured url anywhere | reattach step 7 | `Git` | `No URL is configured for this submodule, so its cached data cannot be verified. Run Sync on this submodule, then try again.` | refusal (actionable) |
+| 8 | orphaned gitdir has no `origin` remote | reattach step 7 | `Git` | `Bonsai's cached data for this submodule has no remote URL recorded. Run Sync on this submodule, then try again.` | refusal (actionable) |
+| 9 | url mismatch | reattach step 7 | `Git` | `Bonsai has cached data for a different remote URL ('<origin>' instead of '<configured>'). Run Sync on this submodule, then try again.` | refusal (actionable) |
 | 10 | cannot create the submodule dir | reattach step 8 | `Git` | `cannot create submodule directory '<p>': <io>` | internal |
 | 11 | gitlink write / `core.worktree` write failed | `write_gitlink` | `Git` (or `Io` if `error.rs` has it) | `cannot write submodule gitlink '<p>': <io>` | internal |
-| 12 | reattach had no effect | reattach step 9 | `Git` | `reattach did not take effect for submodule '<name>': git still reports it as uninitialized after writing '<p>'` | internal (bug signal) |
+| 12 | reattach had no effect | reattach step 9 | `Git` | `Could not reconnect this submodule to its existing local data. Run "git submodule update --init" in a terminal to repair it.` | internal (bug signal) |
 | 13 | fetch auth exhausted (clone path) | `sm.update` | `AuthFailed` (via `map_remote_err`) | unchanged | existing |
 | 14 | transport failure (clone path) | `sm.update` | `NetworkError` (via `map_remote_err`) | unchanged | existing |
 | 15 | any other libgit2 | `sm.update` | `Git` (via `map_remote_err`) | unchanged | existing |
+| 16 | leftover `<modules>/<key>` that is NOT a valid repository (aborted clone) — **added after review round 2** | `update_submodule`, backstop on the `NotApplicable` path | `Git` | `Bonsai has leftover data for this submodule that it cannot reuse. Delete the folder ".git/modules/<name>" inside this repository, then try again.` | refusal (actionable) |
 
-Messages 6–9 name the concrete path/url so the user can act without opening a terminal. Keep them
-single-sentence-first so the toast reads well truncated.
+**AMENDED 2026-08-19 — rows 5-9, 12 and 16 carry the RECONCILED user-facing copy** (this table's
+original wording was lowercase, unterminated, and named `.git/modules`). Every refusal reaches the
+user as a complete, capitalised, period-terminated sentence with no libgit2 prose, and must NOT
+repeat the submodule name — the frontend prefixes `Couldn't <verb> <name>. ` (see
+`P73-submodule-reconnect-ui.md` §5.2). The mock seams in `src/ipc/mock/handlers/submodules.ts` mirror
+these byte-for-byte on purpose: a mock that diverges from the real error is the exact bug class that
+let the original defect ship.
 
 ---
+
+
+**Backstop rationale (row 16).** Without it, a garbage `<modules>/<key>` makes step 4 return
+`NotApplicable`, libgit2 takes the clone path, and the raw `attempt to reinitialize '<abs path>'`
+reaches the toast verbatim — the exact message P73 exists to eliminate — while the rollback stands
+down so it never self-heals. Row 10 is the ONLY refusal permitted to name an internal path, because
+deleting that folder is the only remedy; this is a deliberate exception to the "no `.git/modules`
+paths in user copy" rule in `P73-submodule-reconnect-ui.md` §5.2, and is flagged there for the
+designer's next pass. Bonsai must NOT auto-delete the directory: a valid-but-unopenable repository
+(permissions, file lock) must never be destroyed.
 
 ## 8. Test surface to extend (names + what each must PROVE; tester writes them)
 
@@ -739,6 +794,9 @@ Not implemented in P73.
 7. **Retry semantics after a salvage-path checkout failure.** → **DEFAULT: no rollback** — leave the
    freshly written gitlink in place (it is correct, and a retry then works) and never delete a
    pre-existing module gitdir. Only the `NotApplicable` (fresh-clone) path rolls back (§5).
+   **RESOLVED as implemented, and narrowed further:** even on the `NotApplicable` path, rollback
+   stands down unless the workdir was empty AND the row was `WD_UNINITIALIZED` before the attempt.
+   See the §5 amendment — the unnarrowed version destroyed user data.
 8. **Telemetry / user-visible signal that a gitdir was reused.** → **DEFAULT: `eprintln!` only**
    (step 10). No wire change, no extra toast — the existing "Updated `<name>`" toast is accurate.
 9. **Whether `list_submodules` should surface "wedged" as a distinct badge state.** → **DEFAULT:

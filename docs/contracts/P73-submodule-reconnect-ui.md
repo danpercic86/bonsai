@@ -224,6 +224,19 @@ Rules:
   `.git/modules`. If the architect's message wording differs, **the architect's file wins for the
   wire and this table is amended** — but the four properties (complete sentence, capitalised,
   period-terminated, no raw libgit2 text) are non-negotiable UI requirements.
+- **AMENDED 2026-08-19, after review round 2 — one sanctioned exception to "no internal paths."** A
+  sixth refusal was added as a backstop (`P73-submodule-reconnect.md` §7 row 16): when the cached
+  `.git/modules/<name>` folder exists but is NOT a valid repository (an aborted clone), libgit2 would
+  otherwise surface the raw `attempt to reinitialize '<abs path>'` — the exact message this milestone
+  exists to eliminate. Its copy is `Bonsai has leftover data for this submodule that it cannot reuse.
+  Delete the folder ".git/modules/<name>" inside this repository, then try again.` It names the
+  internal folder because deleting it is the only remedy, and Bonsai must not delete it automatically
+  (a valid-but-locked repository would be destroyed). **Flagged for the designer's next pass** — if a
+  better phrasing exists that still gets the user to the folder, take it.
+- The three further refusals not in the table above (`No URL is configured for this submodule…`,
+  `Bonsai's cached data for this submodule has no remote URL recorded.`, `This submodule resolves to
+  a path outside the repository. Bonsai will not touch it.`) were reviewed and passed by the designer
+  in `design-review-2026-08-19-p73-submodules.md`.
 - Neither refusal is destructive and neither is recoverable by pressing again, so **no confirm
   dialog and no undo affordance** is warranted — the toast's "then try again" is the whole recovery
   path. (Deinit and Remove keep their existing `ConfirmDialog`s untouched.)
