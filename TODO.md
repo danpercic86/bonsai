@@ -744,7 +744,7 @@ Says `session_drain_tests.rs` is `#[path]`-included "as a child of `session`". A
 split it is a child of `session::session_drain` — still a descendant, so the privacy claim holds, but the
 wording is out of date.
 
-### `NumberSlider` clamps mid-typing, so a field's own minimum is hard to type — **OPEN**
+### `NumberSlider` clamps mid-typing, so a field's own minimum is hard to type — ✅ **FIXED 2026-08-19 (P69c)**
 `src/components/NumberSlider.tsx` commits on every `change` while the input is controlled, so with
 `min = 60` a user typing `6` then `0` lands on **600**, not 60 (the field snaps to 60 after the first
 keystroke, then the next digit appends). Verified. Pre-existing and shared by **every** settings slider,
@@ -755,6 +755,30 @@ draft-string + commit-on-blur/Enter**, which changes commit semantics for every 
 needs its own increment with its own review — deliberately NOT bolted onto a security milestone.
 Related and already fixed in P68g-2: clearing the field used to snap the setting to `min`
 (`Number('') === 0`), contradicting the component's own doc comment.
+
+
+**Resolved by P69c** (reviewer APPROVED). Fixed with a draft DISPLAY + the unchanged clamped commit
+per keystroke — NOT the commit-on-blur/Enter shape originally planned, which would have killed live
+preview for the graph geometry sliders and rewritten three suites for no user-visible gain. The
+draft drops on blur, on Enter, and when the incoming `value` differs from the value this control
+last committed; that comparison uses the CLAMPED committed value, which is what stops the fix
+defeating itself on keystroke 1. Acceptance was that `SettingsSections.test.tsx`,
+`SettingsPanel.test.tsx` and `SettingsAiRunSection.test.tsx` pass completely UNEDITED — they do.
+
+⚠️ **Two test-design facts worth keeping (both found by trying to break the tests, not pass them):**
+- The bug is **invisible to a naive single `fireEvent.change('30')`** — it only reproduces with a
+  controlled parent where the second keystroke appends to what the field actually DISPLAYS. Hence
+  the suite's explicit `typeFirst` / `typeMore` helpers.
+- The obvious "range stays authoritative" assertion **cannot kill its mutant**: a range input
+  sanitizes an out-of-range draft to exactly the clamp the setting already holds, so `value="3"`
+  with `min=24` renders as 24 either way. The discriminating case is a **blank** draft, so that pin
+  lives in the cleared-field test.
+
+**Carried forward, not done here:** out-of-range drafts now persist with no visual affordance
+(typing `128` into Row height leaves the field reading 128 while the setting sits at max, where the
+old snap-back made the divergence obvious) — routed to `ui-designer` for the P69g styling pass. And
+`SettingsAiLimits.tsx`'s USD field still hand-rolls its own draft with blur-only resync and NO
+external-value rule; rule (c) must come with it when it folds onto the shared control.
 
 ### `STDERR_GRACE_TOTAL` is not the absolute cap its doc comment claims — **OPEN**
 `drain_stderr` checks `Instant::now() < deadline` *before* each `recv_timeout(STDERR_GRACE)`, so the
