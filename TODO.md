@@ -30,6 +30,50 @@ indexed in `docs/contracts/INDEX.md`.
 
 ## 🐛 P73 — submodule init/update: reconnect an orphaned `.git/modules` gitdir — in-progress
 
+**Open follow-ups created by P69c/P69e (tracked so they are not lost):**
+- **Rust half of defaults parity — DEFERRED, not done.** `src/settings/uiSettingsDefaults.json` is
+  currently pinned from the **TS side only**, so nothing machine-checks TS against Rust; the reviewer
+  re-derived all 30 keys + 12 nested `graph` keys by hand and they match, but that is a one-off. The
+  assert needs one `cargo test`, forbidden while P73 shares the tree. Two facts it will need:
+  **there is no `UiSettings::default()`** (the contract's snippet does not compile) — serialise
+  `ui_settings_of(&settings::Settings::default())`; and `ui_settings_of` is a private `fn` in
+  `commands/ui_settings.rs`, so it needs `pub(crate)`. Goes in `settings_ui_tests.rs`
+  (`settings.rs` is exactly at its 663 baseline and cannot take even a `mod` line).
+- **`ai::Limit` label collision — allowlisted with an expiry.** Rows #48 and #50 both render a
+  control labelled `Limit` in AI → Runs → Limits: two `spinbutton`s, one accessible name, one group.
+  This is the SAME a11y defect P69d fixed for the two `Interval` rows. `KNOWN_LABEL_COLLISIONS`
+  carries `TODO(P69j): relabel to 'Time limit' / 'Spend limit'`. The mechanism is proven — the
+  catalog already leads the UI on labels — so the fix is two string edits + deleting the entry.
+- **The anti-drift DOM guard needs an architect ruling BEFORE P69g writes it.** It cannot hold as
+  specified for two categories: `identities` renders one card PER PROFILE (duplicate
+  `data-setting-id`s), and `git-config`'s Behaviour/Custom-keys blocks are dynamic so no single
+  control carries the row's accessible name. Reviewer's recommendation: add `repeats: 'perProfile'`
+  to the entry type + a distinguishing `data-profile-id`, and dedupe ONLY for flagged entries
+  (asserting the duplicate count equals `profiles.length`) rather than exempting a whole category;
+  and add a distinct `'group'` control kind instead of overloading `'readonly'`, so the
+  accessible-name check applies to the block rather than being silently skipped.
+- **The P69d contract acceptance line is WRONG and needs amending.** It says "the profiles pill
+  lights up in the default harness state". It does not and should not: `fixtures/config.ts` seeds
+  global `Mock Fixture User` / `fixture@bonsai.dev` while the seeded profiles are
+  `work@bonsai.dev` and `me@personal.dev` — nothing matches. P69d pinned the honest no-match state
+  rather than fudging the fixture. **Decision needed** (fixture/UI, not code): to exercise the
+  "matches a profile" state in the harness, either align one seeded profile's email with the fixture
+  identity or add a dedicated `?fixture=` state. Recommend the latter — changing the default would
+  hide the more common real-world no-match case.
+- **`user.signingkey` is not in `CURATED_KEYS`**, so a single `getConfig(repo,'local')` sees only a
+  LOCAL signing key; a global-only one reads `null`. No consumer yet, so deferred — but the identity
+  menu in P69i must not claim to show a signing key it cannot see.
+- **Spun out of P69b:** the teardown flush is dispatch-only, so a hard OS kill can still drop a
+  pending settings write (needs a synchronous save on the Rust side); and the save-failure toast
+  auto-dismisses after 5 s, so a user who looked away never learns — making it sticky was declined
+  because `App.tsx` has one line of ratchet headroom.
+
+⚠️ **The milestone gate is NOT satisfiable while P73 shares the tree.** No `cargo`, no full
+`pnpm test`, and no `pnpm test:e2e` have been run for P69 — e2e in particular has historically
+caught defects in this repo that vitest passed clean on (including a StrictMode latch with 1440
+tests green, and P69b hit exactly that class again). Every increment is individually verified with
+scoped runs; **a full gate run is owed before P69 can be called green.**
+
 **Current step:** P73 — contracts written, all 3 increments implemented, reviewer + ui-designer
 reviews in; senior-dev fixing one reproduced data-loss path in the new rollback plus the missing
 contract-mandated unit tests. Then tester, then the full AI gate.
@@ -840,7 +884,11 @@ SAME working tree. Overlap was measured: only **`src/styles.css`** is contested 
 paths only (never `git add -A`), scope vitest runs to the files under change, and run no cargo
 commands (P69 is frontend-only; concurrent cargo races the shared target dir).
 
-**Current step:** P69a DONE — both halves (`docs/contracts/P69-settings-ui.md` +
+**Current step:** P69a/P69b/P69c/P69d/P69e code-complete and committed (P69d in review at the time
+of writing). P69f (props->context, refactorer) is next and needs no CSS. **P69g remains BLOCKED** on
+P73 holding `src/styles.css`.
+
+Superseded detail: P69a DONE — both halves (`docs/contracts/P69-settings-ui.md` +
 `ui-reference.md` §12 + `docs/contracts/P69-settings-shell.md`). P69b code-complete, reviewer
 returned CHANGES REQUESTED (2 MUST-FIX), round 2 in flight.
 
