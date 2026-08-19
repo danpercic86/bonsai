@@ -68,7 +68,22 @@ indexed in `docs/contracts/INDEX.md`.
   auto-dismisses after 5 s, so a user who looked away never learns — making it sticky was declined
   because `App.tsx` has one line of ratchet headroom.
 
-⚠️ **The milestone gate is NOT satisfiable while P73 shares the tree.** No `cargo`, no full
+✅ **FULL GATE RUN 2026-08-19, ALL GREEN** — taken the moment P73 committed (`b632347`) and released
+`src/styles.css`, with the tree otherwise clean, so these numbers cover every committed P69
+increment (b/c/d/e/f) plus P73's landed work:
+- `pnpm test` — **152 files / 1829 tests passed, 0 failed** (session baseline was 128 / 1580)
+- `pnpm test:e2e` — **118 passed / 1 skipped / 0 failed** (baseline 104 / 1 skipped)
+- `pnpm exec tsc --noEmit` — clean · `pnpm lint:ci` — **30 warnings, 0 errors** (budget 40)
+- `pnpm lint:size` — exit 0, no baselined file grew (`App.tsx` 1167 ≤ 1168)
+- `cargo clippy --workspace --all-targets -- -D warnings` — clean
+- IPC commands **162** = 160 + 2 from P73's submodule work; **P69 contributed +0**, as designed.
+
+This closes the gap flagged below. The e2e run matters most: it is where this repo has historically
+caught what vitest passed clean (a StrictMode latch with 1440 tests green), and P69b hit that exact
+class again this session.
+
+Superseded warning (kept for the record): ⚠️ **The milestone gate was NOT satisfiable while P73
+shared the tree.** No `cargo`, no full
 `pnpm test`, and no `pnpm test:e2e` have been run for P69 — e2e in particular has historically
 caught defects in this repo that vitest passed clean on (including a StrictMode latch with 1440
 tests green, and P69b hit exactly that class again). Every increment is individually verified with
