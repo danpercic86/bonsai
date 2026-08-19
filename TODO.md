@@ -28,7 +28,117 @@ items — moved 2026-08-19), `docs/history/todo-archive.md` (P27 → P2, M0–M6
 `docs/history/milestones-mvp.md` (the M0–M6 AI-gate vs USER CHECKPOINT split). Contract files are
 indexed in `docs/contracts/INDEX.md`.
 
-## 🐛 P73 — submodule init/update: reconnect an orphaned `.git/modules` gitdir — in-progress
+## 🐛 P73 — submodule init/update: reconnect an orphaned `.git/modules` gitdir — awaiting USER CHECKPOINT
+
+**Current step:** ✅ **P73 CODE-COMPLETE — AI gate GREEN, awaiting native USER CHECKPOINT**
+(`docs/contracts/P73-user-checklist.md`). Commits: `e3c4ad1` contracts · `df9274d` contract
+amendments · `b632347` implementation + tests.
+
+**AI gate (sequential):** `cargo test --workspace --no-fail-fast` **1866 passed / 0 failed / 6
+ignored** · `cargo clippy --workspace --all-targets -D warnings` clean · `pnpm tsc --noEmit` clean ·
+`pnpm vitest run` **1829 passed / 152 files** · `pnpm exec playwright test` **118 passed / 1
+skipped** · `pnpm lint` 0 errors / 30 pre-existing warnings · `pnpm lint:size` OK (baseline
+ratcheted: `submodule.rs` 677→453 dropped out entirely, `Sidebar.tsx` 918→892).
+
+**Proof on the REPORTER'S OWN DATA (the evidence that matters).** A faithful replica of the wedged
+state was built without touching the user's repo — `git clone --local` of `D:\Repos\ham-digi-backend`
+plus a copy of its real `.git/modules/src/Hamilton.Voyager.Protocol/protocol` gitdir, with a sentinel
+file planted inside it. BEFORE: `Uninitialized`, 0 workdir files, no gitlink, `git submodule status`
+`-e96ae50d…`. AFTER `update_submodule`: `UpToDate`, `wt_oid == index_oid == e96ae50d…`, 6 real files
+restored (`.gitignore`, `README.md`, `envelope.proto`, `robotics/`, `storage/`), gitlink =
+`gitdir: ../../../.git/modules/src/Hamilton.Voyager.Protocol/protocol` (relative, no `\?\`),
+`rev-parse --absolute-git-dir` resolving inside `.git/modules`, and the **sentinel intact** — proving
+the cached gitdir was REUSED, not re-cloned. **No credentials configured in that process and no
+network touched**, which is exactly why it fixes the Azure DevOps case.
+
+Contracts: `docs/contracts/P73-submodule-reconnect.md`, `docs/contracts/P73-submodule-reconnect-ui.md`,
+design review `docs/contracts/design-review-2026-08-19-p73-submodules.md`, user checklist
+`docs/contracts/P73-user-checklist.md`.
+
+**Review record.** Reviewer round 1 CHANGES REQUESTED on a **reproduced data-loss path the diff
+itself introduced** (see below); round 2 APPROVE. ui-designer: approve with one SHOULD-FIX (pill
+heights stepped because only verdict pills had a border) — taken. Tester added 8 wedged-state
+integration tests + the Tauri-wrapper leg and found **no implementation defect**; it did catch two
+stale acceptance criteria in the contract, both since corrected.
+
+**What shipped:** 10-step fail-closed reattach of an orphaned `.git/modules` gitdir (traversal +
+containment guards, empty-workdir requirement, origin-URL match, hand-written relative atomic
+gitlink, `recreate_missing` on the salvage path only — never `force`); rollback for a failed fresh
+clone so Bonsai can no longer create the wedge; a backstop that converts libgit2's raw
+`attempt to reinitialize` into an actionable sentence; Init = init + checkout, mutually exclusive
+with Update; badge `not checked out`; row-local `checking out…` pill; and the `remove_cached_git_dir`
+`repo.path()` → `repo.commondir()` fix (the cleanup silently no-oped inside a linked worktree).
+
+**Harness trap worth remembering:** the first full e2e run reported **118 failed**. Cause was a
+STALE `pnpm dev:mock` server left listening on port 1420 from an earlier harness session, whose Vite
+module graph still pointed at `src/components/settings/SettingsContext.tsx` after another session
+renamed it to `.ts` — a single 404 that the e2e fixture (rightly) treats as a console error, so every
+spec failed. `playwright.config.ts` has `reuseExistingServer: !CI`, so it adopted the broken server.
+Killing the stale vite process and re-running gave 118 passed. **Never diagnose an all-specs-failed
+e2e run without first checking what is actually listening on 1420.**
+
+Two user-reported defects on the P19 submodule surface (found 2026-08-19 on a real Azure DevOps
+superproject, `D:\Repos\ham-digi-backend`, submodule `src/Hamilton.Voyager.Protocol/protocol`).
+
+**Bug 1 — Init's success toast disagrees with the badge.** `init_submodule` (`sm.init(false)`) only
+writes `submodule.<name>.*` into `.git/config`; the worktree stays empty, so `list_submodules` still
+classifies the row `uninitialized` (`git submodule status` agrees: leading `-`). The toast says
+"Initialized <name>". Backend is git-faithful — the UI lies. Never caught because the mock handler
+(`src/ipc/mock/handlers/submodules.ts:27`) flips the row to `upToDate` on init.
+**Decision (user, 2026-08-19): make Init do init + checkout** — the menu action invokes
+`updateSubmodule` (which is `sm.update(init=true, …)`), so the toast and the badge always agree.
+
+**Bug 2 (blocking) — Update is wedged: `attempt to reinitialize '<...>/.git/modules/<path>'`.** The
+submodule workdir exists but is EMPTY (no `.git` gitlink) while `.git/modules/<path>` is a complete
+gitdir (right `core.worktree`, right `remote.origin.url`, pinned commit already local). Confirmed in
+vendored libgit2 1.9.6: `git_submodule_update` branches on `WD_UNINITIALIZED` alone
+(`submodule.c:1443`), and that bit is set purely from "does `<workdir>/<path>/.git` exist"
+(`submodule.c:2222`, `:2443`) → it takes the CLONE path → `submodule_repo_create` passes `NO_REINIT`
+(`submodule.c:1329`) → `git_repository_init_ext` errors (`repository.c:2886`). No
+`SubmoduleUpdateOptions` setting steers around it. Upstream `git submodule update` instead REUSES the
+module gitdir and rewrites the worktree gitlink — libgit2 has no such path, so Bonsai must add one.
+Bonsai can also CREATE this state: `update_submodule` has no rollback for a half-finished clone
+(unlike `add_submodule`'s `rollback_partial_add`).
+
+Two libgit2 subtleties that shape the fix (do not skip):
+- `Repository::set_workdir(abs, true)` is a NO-OP here (early-returns when the resolved workdir
+  already matches, `repository.c:3271`) and writes an ABSOLUTE gitlink when it does fire
+  (`repository.c:3284`) → write the gitlink ourselves, relative.
+- A plain SAFE checkout will NOT repopulate the empty workdir (missing files classify
+  `GIT_DELTA_UNMODIFIED`; `RECREATE_MISSING` is only auto-added under FORCE — `checkout.c:302`,
+  `:2447`) → update would report `upToDate` over an empty dir. Set
+  `CheckoutBuilder::recreate_missing(true)` on the SALVAGE PATH ONLY (not `force`, so the invariant
+  in `crates/bonsai-core/tests/submodule_cli_2.rs:113` holds).
+
+Increments: (1) core reconnect/salvage in `update_submodule` + `remove_cached_git_dir` commondir fix ·
+(2) rollback for a failed fresh clone · (3) UI Init = init + checkout · (4) tests (wedged-state
+fixture, offline reattach, non-empty/URL-mismatch refusals, rollback, traversal).
+
+Plan: `~/.claude/plans/i-opened-hamiltondigitalizationbackend-compiled-biscuit.md`
+
+**Reviewer's reproduced MUST-FIX (being fixed).** The new `rollback_partial_update` deleted user
+data in a case the `uninitialized` guard does not cover: a submodule registered but never cloned, no
+`.git/modules/<key>`, and the user has uncommitted files sitting in the submodule folder — libgit2's
+SAFE checkout correctly refuses, rollback then ran its contents-only branch and wiped the files. Pre-P73
+there was no rollback at all, so the diff INTRODUCED the loss. Fix: snapshot `workdir_was_empty` and
+require it alongside `uninitialized` before touching the workdir. Also missing: 5 of the contract's 8
+unit tests, including the only coverage of acceptance criteria 9 (traversal) and 11 (commondir).
+
+**SPUN OUT of P73 (pre-existing, not caused by this diff) — both from the ui-designer review:**
+- **Toast-tone contrast.** `.toast-error` / `.toast-success` / `.toast-info` measure 3.34–4.07:1 in both
+  themes — below AA. Deferred deliberately (it is a global toast change, not a submodule one), but it now
+  carries P73's entire prose payload: the two new refusals are long sentences rendered in a sticky error
+  toast. Worth its own small milestone.
+- **Sub-24px hit targets in the sidebar**: the Submodules `+` button is 20×20 and the section toggle
+  183×16 (`Sidebar.tsx:814-835`).
+
+
+## 📝 P69 follow-ups + full-gate record (inserted by a concurrent session 2026-08-19)
+
+> These notes were written into the middle of the P73 section by another session working in
+> this repo at the same time; moved here verbatim so both milestones stay readable. Two
+> attributions in them are wrong: P73 added **no** IPC commands, and it did not touch
+> `src/App.tsx` or its file-size baseline.
 
 **Open follow-ups created by P69c/P69e (tracked so they are not lost):**
 - **Rust half of defaults parity — DEFERRED, not done.** `src/settings/uiSettingsDefaults.json` is
@@ -88,68 +198,6 @@ shared the tree.** No `cargo`, no full
 caught defects in this repo that vitest passed clean on (including a StrictMode latch with 1440
 tests green, and P69b hit exactly that class again). Every increment is individually verified with
 scoped runs; **a full gate run is owed before P69 can be called green.**
-
-**Current step:** P73 — contracts written, all 3 increments implemented, reviewer + ui-designer
-reviews in; senior-dev fixing one reproduced data-loss path in the new rollback plus the missing
-contract-mandated unit tests. Then tester, then the full AI gate.
-
-Contracts: `docs/contracts/P73-submodule-reconnect.md`, `docs/contracts/P73-submodule-reconnect-ui.md`,
-design review `docs/contracts/design-review-2026-08-19-p73-submodules.md`.
-
-Two user-reported defects on the P19 submodule surface (found 2026-08-19 on a real Azure DevOps
-superproject, `D:\Repos\ham-digi-backend`, submodule `src/Hamilton.Voyager.Protocol/protocol`).
-
-**Bug 1 — Init's success toast disagrees with the badge.** `init_submodule` (`sm.init(false)`) only
-writes `submodule.<name>.*` into `.git/config`; the worktree stays empty, so `list_submodules` still
-classifies the row `uninitialized` (`git submodule status` agrees: leading `-`). The toast says
-"Initialized <name>". Backend is git-faithful — the UI lies. Never caught because the mock handler
-(`src/ipc/mock/handlers/submodules.ts:27`) flips the row to `upToDate` on init.
-**Decision (user, 2026-08-19): make Init do init + checkout** — the menu action invokes
-`updateSubmodule` (which is `sm.update(init=true, …)`), so the toast and the badge always agree.
-
-**Bug 2 (blocking) — Update is wedged: `attempt to reinitialize '<...>/.git/modules/<path>'`.** The
-submodule workdir exists but is EMPTY (no `.git` gitlink) while `.git/modules/<path>` is a complete
-gitdir (right `core.worktree`, right `remote.origin.url`, pinned commit already local). Confirmed in
-vendored libgit2 1.9.6: `git_submodule_update` branches on `WD_UNINITIALIZED` alone
-(`submodule.c:1443`), and that bit is set purely from "does `<workdir>/<path>/.git` exist"
-(`submodule.c:2222`, `:2443`) → it takes the CLONE path → `submodule_repo_create` passes `NO_REINIT`
-(`submodule.c:1329`) → `git_repository_init_ext` errors (`repository.c:2886`). No
-`SubmoduleUpdateOptions` setting steers around it. Upstream `git submodule update` instead REUSES the
-module gitdir and rewrites the worktree gitlink — libgit2 has no such path, so Bonsai must add one.
-Bonsai can also CREATE this state: `update_submodule` has no rollback for a half-finished clone
-(unlike `add_submodule`'s `rollback_partial_add`).
-
-Two libgit2 subtleties that shape the fix (do not skip):
-- `Repository::set_workdir(abs, true)` is a NO-OP here (early-returns when the resolved workdir
-  already matches, `repository.c:3271`) and writes an ABSOLUTE gitlink when it does fire
-  (`repository.c:3284`) → write the gitlink ourselves, relative.
-- A plain SAFE checkout will NOT repopulate the empty workdir (missing files classify
-  `GIT_DELTA_UNMODIFIED`; `RECREATE_MISSING` is only auto-added under FORCE — `checkout.c:302`,
-  `:2447`) → update would report `upToDate` over an empty dir. Set
-  `CheckoutBuilder::recreate_missing(true)` on the SALVAGE PATH ONLY (not `force`, so the invariant
-  in `crates/bonsai-core/tests/submodule_cli_2.rs:113` holds).
-
-Increments: (1) core reconnect/salvage in `update_submodule` + `remove_cached_git_dir` commondir fix ·
-(2) rollback for a failed fresh clone · (3) UI Init = init + checkout · (4) tests (wedged-state
-fixture, offline reattach, non-empty/URL-mismatch refusals, rollback, traversal).
-
-Plan: `~/.claude/plans/i-opened-hamiltondigitalizationbackend-compiled-biscuit.md`
-
-**Reviewer's reproduced MUST-FIX (being fixed).** The new `rollback_partial_update` deleted user
-data in a case the `uninitialized` guard does not cover: a submodule registered but never cloned, no
-`.git/modules/<key>`, and the user has uncommitted files sitting in the submodule folder — libgit2's
-SAFE checkout correctly refuses, rollback then ran its contents-only branch and wiped the files. Pre-P73
-there was no rollback at all, so the diff INTRODUCED the loss. Fix: snapshot `workdir_was_empty` and
-require it alongside `uninitialized` before touching the workdir. Also missing: 5 of the contract's 8
-unit tests, including the only coverage of acceptance criteria 9 (traversal) and 11 (commondir).
-
-**SPUN OUT of P73 (pre-existing, not caused by this diff) — both from the ui-designer review:**
-- **Toast-tone contrast.** `.toast-error` / `.toast-success` / `.toast-info` measure 3.34–4.07:1 in both
-  themes — below AA. Deferred deliberately (it is a global toast change, not a submodule one), but it now
-  carries P73's entire prose payload: the two new refusals are long sentences rendered in a sticky error
-  toast. Worth its own small milestone.
-- **Sub-24px hit targets in the sidebar**: the Submodules `+` button is 20×20 and the section toggle
-  183×16 (`Sidebar.tsx:814-835`).
 
 ## 🐛 P72 — forge connect fixes: Azure DevOps 401 + dead external links — in-progress
 
