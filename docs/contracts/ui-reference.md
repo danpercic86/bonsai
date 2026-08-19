@@ -69,16 +69,26 @@ to them**:
 - `--text-3` is **3.38:1** on `--bg-1` and **3.67:1** on `--bg-0` (dark), **2.96:1** on `--bg-1`
   (light). That is below the 4.5:1 AA bar for text. Treat `--text-3` as **decorative only**
   (uppercase section labels that duplicate visible structure, dividers, disabled glyphs). Any text
-  the user must actually read — metadata, timestamps, costs, log lines, hints — uses `--text-2`
-  (**7.9:1** dark / **4.9:1** light on `--bg-0`; **7.3:1** / **7.4:1** on `--bg-1`).
+  the user must actually read — metadata, timestamps, costs, log lines, hints, **status-pill
+  labels** — uses `--text-2` (**7.9:1** dark / **4.9:1** light on `--bg-0`; **7.3:1** / **7.4:1**
+  on `--bg-1`).
 - `--warning` as *text* over its own 14% tint is **3.47:1** in light theme (`.toast-warning`,
   `styles.css:623`). Use `--warning` for borders, glyphs and fills (≥3:1 graphics bar) and
   `--text-1` for the words beside them. For a filled warning chip, `color: var(--bg-0)` on
   `background: var(--warning)` is safe in both themes (**6.4:1** dark / **4.8:1** light).
+- **That rule generalises to every hue-as-text-over-its-own-tint pair** (measured 2026-08-19, P73
+  pass): `--danger` on its 14% tint over `--bg-2` (`.toast-error`) is **3.34:1** dark / **3.49:1**
+  light; `--success` on the same recipe (`.toast-success`) is **4.07:1** dark; `--success` on a 12%
+  tint over `--bg-1` (`.submodule-badge-ok`) is **4.76:1** dark / **4.06:1** light; `--warning` on
+  that recipe (`.submodule-badge-warn`) is ≈**5.4:1** / **3.94:1**. All pre-existing and app-wide.
+  **New surfaces use the §11 pill recipe instead.** Retro-fitting the three toast tones is a pending
+  pass of its own (`P73-submodule-reconnect-ui.md` §7.3 OPT-2).
 
 Additional measured pairs (2026-08-19, P70 pass), all on `--bg-1`: `--text-1` **13.5:1** dark /
 **15.4:1** light; `--warning` glyph **7.3:1** / **4.5:1**; `--success` glyph **5.7:1** / **4.7:1**;
-`--danger` glyph **4.4:1** / **4.6:1** — all clear the 3:1 graphics bar in both themes.
+`--danger` glyph **4.4:1** / **4.6:1** — all clear the 3:1 graphics bar in both themes. And
+(2026-08-19, P73 pass) `--text-2` over its **own** 12% tint on `--bg-1`: **5.79:1** dark /
+**6.22:1** light — the safe recipe for a hueless informational pill (§11).
 
 ## 3. Typography & spacing
 
@@ -91,9 +101,9 @@ Additional measured pairs (2026-08-19, P70 pass), all on `--bg-1`: `--text-1` **
 - Density: the `panelDensity` setting (`cozy` | `compact`) is applied as `data-density` on a
   container which redefines a `--<scope>-*` custom-property block; every consumer reads
   `var(--x, <pre-density fallback>)`. Precedents: `--rp-*` on `.right-panel` (P67b),
-  `--ai-dock-*` on `.ai-dock` (P68e). **Scope:** the right panel and the dock only — the Settings
-  overlay, dialogs, and app chrome (header, workspace toolbar, the §10 notice bar) have one
-  geometry in both densities.
+  `--ai-dock-*` on `.ai-dock` (P68e). **Scope:** the right panel and the dock only — the sidebar,
+  the Settings overlay, dialogs, and app chrome (header, workspace toolbar, the §10 notice bar) have
+  one geometry in both densities.
 - Interactive controls are **≥24px** tall in every density (AA hit target).
 
 ## 4. Commit graph metrics (canvas)
@@ -156,10 +166,26 @@ precedent. Every new status indicator pairs its hue with a letter, word, or glyp
 - Unborn repo: empty graph pane message "No commits yet"; status panel remains usable.
 - Loading: skeleton rows (bg-2 rounded bars, 1.2s pulse) for lists; graph shows nothing until
   layout arrives (no spinners over the canvas). Any operation > 300ms shows an indeterminate 2px
-  accent bar under the header.
+  accent bar under the header (`.header-progress`, `styles.css:1320`).
+- **In-flight, non-blocking operations are announced with words, never spinners.** The house pattern
+  is a present-participle label on the control that started the op — `Fetching…` / `Pulling…` /
+  `Pushing…` (`WorkspaceToolbar.tsx:142-166`), `Checking…` (`GitMissingBanner`,
+  `SettingsUpdatesSection`), `Committing & Pushing…` (`CommitBox`) — plus `.header-progress`.
+  Where the trigger is a context-menu item with no persistent control, the participle goes on the
+  affected **row's status pill** instead and the row carries `aria-busy="true"`
+  (P73 §6.1, submodule rows). Lowercase inside a pill, sentence-case on a button; always a trailing
+  `…` (U+2026).
 - Errors: inline banner at top of the affected pane — `--danger` at 12% alpha bg, `--danger` text,
   6px radius, dismissible. No modal error dialogs. **Process-global** faults (not pane-scoped) use
   the app notice bar instead — §10.
+- **Transient operation failures are toasts** (`Toasts.tsx`): `error` tone, sticky, `role="alert"`.
+  Copy shape is `Couldn't <verb> <target>. <what to do next>` — the frontend supplies the prefix
+  naming the action and the exact target, the backend's `AppError.message` supplies the remedy
+  sentence and is surfaced **verbatim** (so `authFailed` / `networkError` copy is not duplicated in
+  the UI). Backend messages reaching a toast must therefore be complete, capitalised,
+  period-terminated, user-ready sentences — **never raw libgit2 prose and never internal paths like
+  `.git/modules/…`**. Repeatable failures pass a dedupe `key` (`<domain>:<target>`) so pressing a
+  failing action N times never stacks N identical alerts (§10.1 mechanism).
 - Buttons: primary (accent), secondary (bg-2 + border), icon (transparent, bg-2 on hover); all
   32px tall, 6px radius (dock-density controls may go to 28/24px — §3).
 - **Dialog body text (P68g).** Primary sentences: `.dialog-body`, 13px `--text-1`. Must-read
@@ -184,7 +210,7 @@ Full contract: `docs/contracts/P68e-ai-activity-dock.md`. Canonical geometry:
   both themes and **no new `:root` / `[data-theme='light']` token is introduced**.
 - Status pills: word + glyph, never colour alone — `✨ Running`, `✨ Stopping…`, `? Needs you`,
   `✓ Ready`, `⚠ Failed`, `⊘ Cancelled`. Label is always `--text-1`; the hue lives in the 40%
-  border and the 100% glyph over a 14% tint.
+  border and the 100% glyph over a 14% tint. **This is the canonical pill recipe — §11.**
 - Log surface: `--bg-0`, mono 12px/18px cozy · 11px/16px compact, `white-space: pre-wrap`,
   stick-to-bottom with a 24/4px hysteresis band and a `↓ Jump to latest` escape button.
 - **The mid-run question is untrusted model output** (security audit M3). The ask block carries an
@@ -197,7 +223,9 @@ Full contract: `docs/contracts/P68e-ai-activity-dock.md`. Canonical geometry:
 - Motion: the dock never animates its height (a height transition would force repeated
   20k-row canvas relayouts). Only opacity/colour, ≤150ms, ease-out; the app's first
   `prefers-reduced-motion` block lives in this section. P70 adds `.file-chevron` (the app-wide
-  120ms disclosure-caret transform) to that same block.
+  120ms disclosure-caret transform) to that same block; P73 adds `.header-progress::after`
+  (`animation: none; width: 100%; opacity: 0.6` — the same treatment as `.ai-dock-progress`), which
+  closes P68e §12-F3 for the header sweep. `skeleton-pulse` remains outstanding.
 
 ## 10. App notice bar (P70)
 
@@ -243,3 +271,38 @@ First and currently only instance: `GitMissingBanner` ("Git is not available").
   lead with the remedy that fixes the reported case; state honestly what still works and what does
   not. Never surface raw backend error prose as the bar's own text — it belongs in the technical
   block.
+
+### 10.1 Toast dedupe key
+
+`Toast.key` (`Toasts.tsx:18`) — an optional stable id. A `pushToast` with an existing key
+**replaces** that toast in place (a no-op when the text is identical) rather than stacking. The
+rule lives in App's `pushToast`; the presentational component ignores it. Use it for any action a
+user will plausibly retry: convention `<domain>:<target>` (e.g. `submodule:vendor/libcore`).
+
+## 11. Status pills (rows and chrome)
+
+The canonical recipe, first shipped as the AI dock's status pills (§9) and applied to the sidebar
+row badges (`.submodule-badge-*`, shared by submodule and worktree rows — `Sidebar.tsx`).
+
+- **Shape.** 11px, `padding: 1px 6px`, `border-radius: 8px`, `flex: none`, inherited UI font
+  (not mono — mono is for hashes and paths). Never compresses; the row's *name* is what ellipsizes.
+- **Label.** A **word**, lowercase inside a row pill (`up to date`, `out of sync`, `modified`,
+  `not checked out`) and sentence-case in chrome (`Running`, `Failed`). Colour is never the sole
+  carrier (§7).
+- **Hueless / informational pills** — no verdict, just a fact or an in-flight state: label
+  `--text-2` over its own 12% tint (**5.79:1** dark / **6.22:1** light, §2). No glyph, no hue — but
+  keep `border: 1px solid transparent` so hueless and verdict pills are the same **19.94 px** height
+  in a shared list.
+- **Verdict pills** — good/warning/bad: label `--text-1`, hue in the 40% border and in a 100%
+  `aria-hidden` glyph over a 14% tint (`✓`, `⚠`, `⊘`). The glyph is the accessible hue carrier
+  (measured 2026-08-19: `✓` **4.61:1** dark / **3.94:1** light, `⚠` **5.64:1** / **3.80:1** — both
+  clear the 3:1 graphics bar). The 40% border is decorative delineation only and measures
+  **1.7–2.3:1** against the row background; never rely on it to carry meaning. Set the hue through
+  the local `--h` custom property, the AI-dock convention. **Do not use the hue as the label colour**
+  over its own tint — that recipe misses AA (§2).
+- **Title attribute.** A pill's `title` explains *why* the state holds and what fixes it; it must
+  never merely repeat the visible label. Keep the *why* out of the visible row text.
+- **Busy pill.** While an op runs on that row, the pill's label becomes the present participle
+  (`checking out…`, `updating…`) in the hueless style and the row gets `aria-busy="true"` (§8). The
+  pill drops its `title` entirely while busy — the participle is the whole message.
+- **Density-invariant** — pills live in the sidebar and chrome, which have one geometry (§3).

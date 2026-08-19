@@ -30,7 +30,12 @@ indexed in `docs/contracts/INDEX.md`.
 
 ## 🐛 P73 — submodule init/update: reconnect an orphaned `.git/modules` gitdir — in-progress
 
-**Current step:** P73 — awaiting architect contract + ui-designer copy contract.
+**Current step:** P73 — contracts written, all 3 increments implemented, reviewer + ui-designer
+reviews in; senior-dev fixing one reproduced data-loss path in the new rollback plus the missing
+contract-mandated unit tests. Then tester, then the full AI gate.
+
+Contracts: `docs/contracts/P73-submodule-reconnect.md`, `docs/contracts/P73-submodule-reconnect-ui.md`,
+design review `docs/contracts/design-review-2026-08-19-p73-submodules.md`.
 
 Two user-reported defects on the P19 submodule surface (found 2026-08-19 on a real Azure DevOps
 superproject, `D:\Repos\ham-digi-backend`, submodule `src/Hamilton.Voyager.Protocol/protocol`).
@@ -70,6 +75,22 @@ Increments: (1) core reconnect/salvage in `update_submodule` + `remove_cached_gi
 fixture, offline reattach, non-empty/URL-mismatch refusals, rollback, traversal).
 
 Plan: `~/.claude/plans/i-opened-hamiltondigitalizationbackend-compiled-biscuit.md`
+
+**Reviewer's reproduced MUST-FIX (being fixed).** The new `rollback_partial_update` deleted user
+data in a case the `uninitialized` guard does not cover: a submodule registered but never cloned, no
+`.git/modules/<key>`, and the user has uncommitted files sitting in the submodule folder — libgit2's
+SAFE checkout correctly refuses, rollback then ran its contents-only branch and wiped the files. Pre-P73
+there was no rollback at all, so the diff INTRODUCED the loss. Fix: snapshot `workdir_was_empty` and
+require it alongside `uninitialized` before touching the workdir. Also missing: 5 of the contract's 8
+unit tests, including the only coverage of acceptance criteria 9 (traversal) and 11 (commondir).
+
+**SPUN OUT of P73 (pre-existing, not caused by this diff) — both from the ui-designer review:**
+- **Toast-tone contrast.** `.toast-error` / `.toast-success` / `.toast-info` measure 3.34–4.07:1 in both
+  themes — below AA. Deferred deliberately (it is a global toast change, not a submodule one), but it now
+  carries P73's entire prose payload: the two new refusals are long sentences rendered in a sticky error
+  toast. Worth its own small milestone.
+- **Sub-24px hit targets in the sidebar**: the Submodules `+` button is 20×20 and the section toggle
+  183×16 (`Sidebar.tsx:814-835`).
 
 ## 🐛 P72 — forge connect fixes: Azure DevOps 401 + dead external links — in-progress
 
