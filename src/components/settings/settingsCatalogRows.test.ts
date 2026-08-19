@@ -133,3 +133,33 @@ describe('UI §1.3 coverage — all 59 rows, structurally', () => {
     }
   });
 });
+
+/**
+ * Amendment A (AM-1) — the repeated-row invariants, pure data.
+ *
+ * They live here rather than in `settingsCatalog.test.ts` because that file is
+ * near the size limit and this is row bookkeeping, not catalog shape.
+ */
+describe('repeated rows (AM-1)', () => {
+  it("repeats:'perProfile' ⟺ requires:'profile', over the whole index", () => {
+    for (const entry of SETTINGS_INDEX) {
+      expect(entry.repeats === 'perProfile', entry.id).toBe(entry.requires === 'profile');
+    }
+  });
+
+  it('only the identities pane may repeat a row', () => {
+    for (const entry of SETTINGS_INDEX) {
+      if (entry.repeats === undefined) continue;
+      expect(entry.category, entry.id).toBe('identities');
+    }
+  });
+
+  it('a repeated row never carries a reset descriptor', () => {
+    // Asserted against `repeats` directly (not via the identities-wide ban) so a
+    // future repeated row in another category inherits the rule.
+    for (const entry of SETTINGS_INDEX) {
+      if (entry.repeats === undefined) continue;
+      expect(entry.reset, entry.id).toBeUndefined();
+    }
+  });
+});

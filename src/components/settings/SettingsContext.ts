@@ -19,6 +19,7 @@ import type { AiAvailability, McpStatus, UiSettings, UiSettingsPatch } from '../
 import type { McpScope } from '../../lib/mcpAddCommand';
 import type { AiRunPrefs } from '../../settings/aiRunPrefs';
 import type { UpdateUiState } from '../../hooks/useUpdateController';
+import type { SettingsRowId } from './types';
 
 /**
  * Persisted settings the pages read.
@@ -73,6 +74,13 @@ export interface SettingsRuntimeValues {
   /** Passed through verbatim (`undefined` included) so the Git-config section's
    *  scroll+focus effect sees exactly the value it sees today. */
   configInitialFocus: 'identity' | null | undefined;
+  /**
+   * P69g — the whole-`UiSettings` view the catalog's reset descriptors compare
+   * against (`SettingsRowReset.isDefault`), so `SettingsRow` can decide whether
+   * to render `↺` without every page threading its own values. Built in the
+   * adapter; see the doc comment there for the four keys it fills from defaults.
+   */
+  snapshot: UiSettings;
 }
 
 export type SettingsValues = SettingsPersistedValues & SettingsRuntimeValues;
@@ -92,6 +100,10 @@ export interface SettingsActions {
   showOnboarding(): void;
   checkUpdate(): void;
   openUpdateDialog(): void;
+  /** P69g / UI §5.7 — per-row reset. Resolves the patch from the catalog's
+   *  `reset` descriptor + `DEFAULT_UI_SETTINGS`; a row with no descriptor is a
+   *  no-op, never a throw. */
+  resetRow(id: SettingsRowId): void;
 }
 
 /** `null` ⇒ no provider above. The hooks below throw on that. */

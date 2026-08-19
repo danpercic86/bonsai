@@ -45,12 +45,20 @@ export type SettingsControlKind =
   | 'radiogroup'
   | 'numberSlider'
   | 'text'
+  /** A row whose value is displayed but not editable (`about.version`, the MCP URL). */
+  | 'readonly'
   | 'button'
-  | 'readonly';
+  /**
+   * Amendment A (AM-2): an aggregate row standing for a dynamically-populated
+   * block. Stamped on a `role="group"` element named by its heading via
+   * `aria-labelledby`. It has NO `[data-setting-control]`; its children are
+   * runtime-generated and are not individually catalogued (AM-4b blindness #2).
+   */
+  | 'group';
 
 /**
- * A row that is not always rendered. Exactly these ids may be missing from the
- * minimal-fixture render — nothing else (§4.3).
+ * A row that is not always rendered. Exactly these ids may be missing from a
+ * fixture's render, and only when the matching predicate says so (AM-4a).
  */
 export type SettingsRowRequirement =
   | 'repo'
@@ -58,13 +66,20 @@ export type SettingsRowRequirement =
   | 'mcpRunning'
   | 'mcpStopped'
   /**
-   * EXTENSION to §4.3's list, flagged for the architect: the Identities pane
-   * renders profile cards, so with `profiles: []` (the minimal fixture) the four
-   * profile fields plus Apply and Delete are absent. None of the four contract
-   * values explains that absence, and mislabelling it `repo` would make the
-   * guard lie. `Add identity` is unconditional and correctly carries nothing.
+   * Amendment A (AM-3): folded into the union permanently. The Identities pane
+   * renders one card per profile, so with `profiles: []` the four profile fields
+   * plus Apply and Delete are absent. `Add identity` is unconditional and
+   * correctly carries nothing.
    */
   | 'profile';
+
+/**
+ * Amendment A (AM-1): this row is rendered once per item of a runtime
+ * collection; the guard dedupes it and checks the instance set against that
+ * collection. Instance identity is `(data-setting-id, data-profile-id)` —
+ * `SettingsRowId` still identifies the ROW, not the instance.
+ */
+export type SettingsRowRepeat = 'perProfile';
 
 /**
  * The live values a reset descriptor reads.
@@ -97,6 +112,8 @@ export interface SettingsIndexEntry {
   keywords?: string;
   control: SettingsControlKind;
   requires?: SettingsRowRequirement;
+  /** Amendment A (AM-1). Absent ⇒ exactly one instance in the DOM. */
+  repeats?: SettingsRowRepeat;
   /** Absent ⇒ no ↺ for this row. */
   reset?: SettingsRowReset;
 }

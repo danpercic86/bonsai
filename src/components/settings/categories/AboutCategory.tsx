@@ -1,8 +1,13 @@
-// P69f §1.1 — the "About" category page: the welcome tour row (P43a) and the
-// updates section (P42b). Both blocks were moved VERBATIM out of
-// SettingsPanel.tsx; only the value/callback sources changed.
+// P69g — the "About" category page: the version/updates group (P42b) and the
+// welcome-tour row (P43a).
+//
+// The tour row is the one place where the catalog `label` is the BUTTON text
+// (`Show tour`) while the row reads `Welcome tour`: `label` must equal the
+// control's accessible name, and a button row's control names itself.
 
 import { SettingsUpdatesSection } from '../../SettingsUpdatesSection';
+import { SettingsGroup } from '../SettingsGroup';
+import { SettingsRow } from '../SettingsRow';
 import { useSettingsActions, useSettingsValues } from '../SettingsContext';
 
 export function AboutCategory() {
@@ -11,22 +16,6 @@ export function AboutCategory() {
 
   return (
     <>
-      {/* --- Getting started (P43a) --- */}
-      <section className="settings-section">
-        <h3 className="settings-section-title">Getting started</h3>
-        <div className="settings-row">
-          <span className="settings-control-label">First-run tour</span>
-          <button
-            type="button"
-            className="btn-secondary settings-toggle-btn"
-            onClick={showOnboarding}
-          >
-            {'Show welcome tour'}
-          </button>
-        </div>
-      </section>
-
-      {/* --- Updates (P42b) --- */}
       <SettingsUpdatesSection
         currentVersion={updateCurrentVersion}
         autoCheckUpdates={autoCheckUpdates}
@@ -35,6 +24,14 @@ export function AboutCategory() {
         onCheck={checkUpdate}
         onOpenDialog={openUpdateDialog}
       />
+
+      <SettingsGroup id="about-help" title="Help">
+        <SettingsRow id="about.welcome-tour" rowLabel="Welcome tour">
+          <button type="button" className="btn-secondary" onClick={showOnboarding}>
+            {'Show tour'}
+          </button>
+        </SettingsRow>
+      </SettingsGroup>
     </>
   );
 }

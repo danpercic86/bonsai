@@ -17,6 +17,7 @@ export const IDENTITY_ENTRIES: readonly SettingsIndexEntry[] = [
     keywords: 'profile nickname title',
     control: 'text',
     requires: 'profile',
+    repeats: 'perProfile',
   },
   {
     id: 'identities.profile-name',
@@ -27,6 +28,7 @@ export const IDENTITY_ENTRIES: readonly SettingsIndexEntry[] = [
     keywords: 'identity author committer whoami',
     control: 'text',
     requires: 'profile',
+    repeats: 'perProfile',
   },
   {
     id: 'identities.profile-email',
@@ -37,6 +39,7 @@ export const IDENTITY_ENTRIES: readonly SettingsIndexEntry[] = [
     keywords: 'identity author committer whoami',
     control: 'text',
     requires: 'profile',
+    repeats: 'perProfile',
   },
   {
     id: 'identities.profile-signing-key',
@@ -47,6 +50,7 @@ export const IDENTITY_ENTRIES: readonly SettingsIndexEntry[] = [
     keywords: 'gpg ssh sign key',
     control: 'text',
     requires: 'profile',
+    repeats: 'perProfile',
   },
   {
     id: 'identities.apply',
@@ -57,6 +61,7 @@ export const IDENTITY_ENTRIES: readonly SettingsIndexEntry[] = [
     keywords: 'apply switch active repo',
     control: 'button',
     requires: 'profile',
+    repeats: 'perProfile',
   },
   {
     id: 'identities.delete',
@@ -67,6 +72,7 @@ export const IDENTITY_ENTRIES: readonly SettingsIndexEntry[] = [
     keywords: 'remove profile identity',
     control: 'button',
     requires: 'profile',
+    repeats: 'perProfile',
   },
   {
     id: 'identities.add',
@@ -122,15 +128,15 @@ export const GIT_CONFIG_ENTRIES: readonly SettingsIndexEntry[] = [
   },
   {
     // Aggregate row: the curated Behaviour keys are fetched per repository, so the
-    // catalog names the block, not each key. `readonly` keeps the DOM guard from
-    // demanding one control named "Behaviour" (§4.3's accessible-name rule).
+    // catalog names the block, not each key. Amendment A (AM-2): `group`, stamped
+    // on a `role="group"` element whose <h4> must equal `label` byte-for-byte.
     id: 'git-config.behaviour',
     category: 'git-config',
     group: 'Advanced',
     label: 'Behaviour',
     help: 'Curated Git keys such as pull.rebase and core.autocrlf.',
     keywords: 'pull rebase autocrlf curated preset',
-    control: 'readonly',
+    control: 'group',
     requires: 'repo',
   },
   {
@@ -141,7 +147,7 @@ export const GIT_CONFIG_ENTRIES: readonly SettingsIndexEntry[] = [
     label: 'Custom keys',
     help: 'Any other section.key = value entry, added or removed by hand.',
     keywords: 'custom entry add remove raw',
-    control: 'readonly',
+    control: 'group',
     requires: 'repo',
   },
 ];

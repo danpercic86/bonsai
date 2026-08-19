@@ -1,8 +1,12 @@
-// P69f §1.1 — the "General" category page: background activity + external tools.
+// P69g — the "General" category page: background activity + external tools.
 //
-// The Background-jobs markup was moved VERBATIM out of SettingsPanel.tsx; only
-// the value/callback sources changed (props → SettingsContext). The external
-// tools row keeps its existing leaf-section props (§2.3).
+// Re-skinned onto the canonical row (UI §5.1): the two checkboxes are switches,
+// the two intervals are `NumberSlider` in `bare` mode inside a row that owns the
+// label/help/reset cells, and the section-level paragraph is gone — its content
+// is now per-row help, which is what `aria-describedby` can actually point at.
+//
+// Every label, help string and `↺` descriptor comes from the CATALOG via the row
+// id; nothing here restates them.
 
 import { NumberSlider } from '../../NumberSlider';
 import { SettingsExternalToolsSection } from '../../SettingsExternalToolsSection';
@@ -12,7 +16,16 @@ import {
   HEALTH_REFRESH_INTERVAL_MAX,
   HEALTH_REFRESH_INTERVAL_MIN,
 } from '../../../settings/ranges';
+import { settingsRowHelpId } from '../settingsCatalog';
+import { SettingsGroup } from '../SettingsGroup';
+import { SettingsRow } from '../SettingsRow';
+import { SettingsSwitch } from '../SettingsSwitch';
 import { useSettingsActions, useSettingsValues } from '../SettingsContext';
+
+const AUTO_FETCH = 'general.auto-fetch';
+const FETCH_INTERVAL = 'general.fetch-interval';
+const AUTO_REFRESH = 'general.auto-refresh';
+const REFRESH_INTERVAL = 'general.refresh-interval';
 
 export function GeneralCategory() {
   const { autoFetch, healthRefresh, terminalCommand, editorCommand } = useSettingsValues();
@@ -20,56 +33,68 @@ export function GeneralCategory() {
 
   return (
     <>
-      {/* --- Background jobs (P30 §6) --- */}
-      <section className="settings-section">
-        <h3 className="settings-section-title">Background jobs</h3>
-        <p className="settings-section-desc">
-          Runs in the background for all open repositories. Auto-fetch never pulls, pushes, or
-          prompts for credentials.
-        </p>
-        <label className="settings-checkbox">
-          <input
-            type="checkbox"
+      <SettingsGroup id="general-background" title="Background activity">
+        <SettingsRow id={AUTO_FETCH} controlId={`${AUTO_FETCH}-input`}>
+          <SettingsSwitch
+            id={`${AUTO_FETCH}-input`}
             checked={autoFetch.enabled}
-            onChange={(e) => change({ autoFetch: { ...autoFetch, enabled: e.target.checked } })}
+            describedBy={settingsRowHelpId(AUTO_FETCH)}
+            onChange={(enabled) => change({ autoFetch: { ...autoFetch, enabled } })}
           />
-          <span>Enable auto-fetch</span>
-        </label>
-        <NumberSlider
-          id="settings-auto-fetch-interval"
-          /* P69d / UI §5.3.7: two rows both labelled "Interval" gave two controls in
-             one dialog the SAME accessible name. Ids are unchanged. */
-          label="Fetch every"
-          value={autoFetch.intervalMinutes}
-          min={AUTO_FETCH_INTERVAL_MIN}
-          max={AUTO_FETCH_INTERVAL_MAX}
-          unit="minutes"
+        </SettingsRow>
+
+        <SettingsRow
+          id={FETCH_INTERVAL}
+          controlId="settings-auto-fetch-interval"
           disabled={!autoFetch.enabled}
-          onChange={(v) => change({ autoFetch: { ...autoFetch, intervalMinutes: v } })}
-        />
-        <label className="settings-checkbox">
-          <input
-            type="checkbox"
+        >
+          <NumberSlider
+            bare
+            id="settings-auto-fetch-interval"
+            /* P69d / UI §5.3.7: two rows both labelled "Interval" gave two controls
+               in one dialog the SAME accessible name. Ids are unchanged. */
+            label="Fetch every"
+            value={autoFetch.intervalMinutes}
+            min={AUTO_FETCH_INTERVAL_MIN}
+            max={AUTO_FETCH_INTERVAL_MAX}
+            unit="minutes"
+            disabled={!autoFetch.enabled}
+            describedBy={settingsRowHelpId(FETCH_INTERVAL)}
+            onChange={(intervalMinutes) => change({ autoFetch: { ...autoFetch, intervalMinutes } })}
+          />
+        </SettingsRow>
+
+        <SettingsRow id={AUTO_REFRESH} controlId={`${AUTO_REFRESH}-input`}>
+          <SettingsSwitch
+            id={`${AUTO_REFRESH}-input`}
             checked={healthRefresh.enabled}
-            onChange={(e) =>
-              change({ healthRefresh: { ...healthRefresh, enabled: e.target.checked } })
+            describedBy={settingsRowHelpId(AUTO_REFRESH)}
+            onChange={(enabled) => change({ healthRefresh: { ...healthRefresh, enabled } })}
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          id={REFRESH_INTERVAL}
+          controlId="settings-health-refresh-interval"
+          disabled={!healthRefresh.enabled}
+        >
+          <NumberSlider
+            bare
+            id="settings-health-refresh-interval"
+            label="Refresh every"
+            value={healthRefresh.intervalMinutes}
+            min={HEALTH_REFRESH_INTERVAL_MIN}
+            max={HEALTH_REFRESH_INTERVAL_MAX}
+            unit="minutes"
+            disabled={!healthRefresh.enabled}
+            describedBy={settingsRowHelpId(REFRESH_INTERVAL)}
+            onChange={(intervalMinutes) =>
+              change({ healthRefresh: { ...healthRefresh, intervalMinutes } })
             }
           />
-          <span>Refresh status &amp; health periodically</span>
-        </label>
-        <NumberSlider
-          id="settings-health-refresh-interval"
-          label="Refresh every"
-          value={healthRefresh.intervalMinutes}
-          min={HEALTH_REFRESH_INTERVAL_MIN}
-          max={HEALTH_REFRESH_INTERVAL_MAX}
-          unit="minutes"
-          disabled={!healthRefresh.enabled}
-          onChange={(v) => change({ healthRefresh: { ...healthRefresh, intervalMinutes: v } })}
-        />
-      </section>
+        </SettingsRow>
+      </SettingsGroup>
 
-      {/* --- External tools (P49b) --- */}
       <SettingsExternalToolsSection
         terminalCommand={terminalCommand}
         editorCommand={editorCommand}

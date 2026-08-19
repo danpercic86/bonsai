@@ -24,7 +24,12 @@ import { APPEARANCE_ENTRIES } from './catalog/appearance';
 import { GENERAL_ENTRIES } from './catalog/general';
 import { GRAPH_ENTRIES } from './catalog/graph';
 import { GIT_CONFIG_ENTRIES, IDENTITY_ENTRIES } from './catalog/repo';
-import type { SettingsCategory, SettingsIndexEntry, SettingsRowId } from './types';
+import type {
+  SettingsCategory,
+  SettingsCategoryId,
+  SettingsIndexEntry,
+  SettingsRowId,
+} from './types';
 
 /** Rail order (UI §1.1). `git-config` is fenced by hairlines and carries the only pill. */
 export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
@@ -97,6 +102,22 @@ export function searchSettings(query: string): readonly SettingsIndexEntry[] {
     const hay = `${e.label} ${e.help ?? ''} ${e.keywords ?? ''}`.toLowerCase();
     return terms.every((t) => hay.includes(t));
   });
+}
+
+/** DOM id of a rail tab — the `aria-labelledby` target the pane points at. */
+export function settingsTabId(id: SettingsCategoryId): string {
+  return `settings-tab-${id}`;
+}
+
+/** Id of the row's visible label element — the `aria-labelledby` target for a
+ *  control that cannot be wired with `<label for>` (radiogroups, segmented). */
+export function settingsRowLabelId(id: SettingsRowId): string {
+  return `${id}-label`;
+}
+
+/** Id of the row's help paragraph — the `aria-describedby` target (UI §5.1). */
+export function settingsRowHelpId(id: SettingsRowId): string {
+  return `${id}-help`;
 }
 
 /** '28' | 'On' | 'Off' | 'auto-detect' | 'Author' — the value named in the ↺ title. */

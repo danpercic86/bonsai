@@ -25,8 +25,12 @@
 // what holds the count at three (it has a single consumer today). P69h owns this
 // pane and is the place to collapse them.
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
+import { DEFAULT_UI_SETTINGS } from '../../settings/defaults';
+import { findSettingsRow } from './settingsCatalog';
+import type { SettingsCategoryId, SettingsRowId } from './types';
+import type { UiSettings } from '../../ipc/types';
 import type {
   AiAutonomy,
   AiAvailability,
@@ -48,6 +52,9 @@ import type { SettingsActions, SettingsValues } from './SettingsContext';
 export interface SettingsPanelProps {
   open: boolean;
   onClose(): void;
+  /** P69g: rail category to select on open. Omitted ⇒ `general`, except that a
+   *  `configInitialFocus` deep link selects `git-config` (SettingsShell). */
+  initialCategory?: SettingsCategoryId;
   theme: Theme;
   listView: ListView;
   /** P67 §4: right-panel density; patched via `onChange` (no toolbar toggle). */
@@ -232,6 +239,70 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     updateState,
   } = props;
 
+  /**
+   * The whole-`UiSettings` view the catalog's reset descriptors read (P69 §4.1).
+   *
+   * `DEFAULT_UI_SETTINGS` supplies the four keys Settings does not own —
+   * `paneWidths`, `onboardingSeen`, `aiDockHeight`, `aiDockCollapsed`. None of
+   * them is a settings ROW, so no descriptor can read them; `resetKey` is typed
+   * to scalar `UiSettings` keys and `settingsCatalog.test.ts` pins which rows
+   * carry a `reset` at all. If a future row ever resets one of those four, it
+   * must be threaded as a real prop first.
+   */
+  const snapshot = useMemo<UiSettings>(
+    () => ({
+      ...DEFAULT_UI_SETTINGS,
+      theme,
+      listView,
+      panelDensity,
+      autoFetch,
+      healthRefresh,
+      graph,
+      aiEnabled,
+      aiConflictAutonomy,
+      aiConsented,
+      mcpConsented,
+      mcpWriteConsented,
+      autoCheckUpdates,
+      profiles,
+      terminalCommand,
+      editorCommand,
+      ...aiRun,
+    }),
+    [
+      theme,
+      listView,
+      panelDensity,
+      autoFetch,
+      healthRefresh,
+      graph,
+      aiEnabled,
+      aiConflictAutonomy,
+      aiConsented,
+      mcpConsented,
+      mcpWriteConsented,
+      autoCheckUpdates,
+      profiles,
+      terminalCommand,
+      editorCommand,
+      aiRun,
+    ],
+  );
+
+  // Read through a ref so the ACTION bag stays stable across value changes
+  // (§2.2 rule 1) — a row that only dispatches must not re-render on every patch.
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
+
+  const resetRow = useCallback(
+    (id: SettingsRowId): void => {
+      const reset = findSettingsRow(id)?.reset;
+      if (reset === undefined) return;
+      onChange(reset.patch(snapshotRef.current, DEFAULT_UI_SETTINGS));
+    },
+    [onChange],
+  );
+
   const values = useMemo<SettingsValues>(
     () => ({
       theme,
@@ -260,6 +331,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       updateCurrentVersion,
       updateState,
       configInitialFocus,
+      snapshot,
     }),
     [
       theme,
@@ -285,6 +357,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       updateCurrentVersion,
       updateState,
       configInitialFocus,
+      snapshot,
     ],
   );
 
@@ -300,6 +373,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       showOnboarding: onShowOnboarding,
       checkUpdate: onCheckUpdate,
       openUpdateDialog: onOpenUpdateDialog,
+      resetRow,
     }),
     [
       onChange,
@@ -312,6 +386,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       onShowOnboarding,
       onCheckUpdate,
       onOpenUpdateDialog,
+      resetRow,
     ],
   );
 

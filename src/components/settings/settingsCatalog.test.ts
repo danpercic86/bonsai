@@ -3,10 +3,10 @@
  *
  * What this protects: search can only find a row that is in the catalog, and the
  * catalog can only be trusted if it matches what is actually rendered. This file
- * pins everything checkable WITHOUT rendering; the DOM half (per-category
- * set-equality over `data-setting-id`) attaches category by category as each one
- * is re-skinned — see `MIGRATED_CATEGORIES` at the bottom, which is empty in P69e
- * and has a tripwire so it cannot be extended without wiring the render.
+ * pins everything checkable WITHOUT rendering. The DOM half (per-category
+ * set-equality over `data-setting-id`) lives in `settingsCatalog.coverage.test.tsx`
+ * and owns the `MIGRATED`/`PENDING` partition (Amendment A, AM-5) — one source of
+ * truth per check, and headroom kept in this file.
  */
 import { describe, expect, it } from 'vitest';
 import type { UiSettings } from '../../ipc/types';
@@ -335,7 +335,12 @@ describe('reset descriptors (§3.4)', () => {
     }
     // Buttons, read-only rows, identity fields and Git config keys.
     for (const entry of SETTINGS_INDEX) {
-      if (entry.control === 'button' || entry.control === 'readonly') {
+      if (
+        entry.control === 'button' ||
+        entry.control === 'readonly' ||
+        // AM-2: an aggregate block has no single value to restore.
+        entry.control === 'group'
+      ) {
         expect(entry.reset, entry.id).toBeUndefined();
       }
       if (entry.category === 'git-config' || entry.category === 'identities') {
@@ -346,16 +351,12 @@ describe('reset descriptors (§3.4)', () => {
 });
 
 /**
- * The DOM half's seam (§4.3). A category joins this list in the increment that
- * re-skins it (P69g onward); until then there is nothing rendering
- * `data-setting-id` to compare against.
+ * Amendment A (AM-5): the DOM half now lives in
+ * `settingsCatalog.coverage.test.tsx`, which owns the `MIGRATED`/`PENDING`
+ * partition and the tripwire. What stays here is the pure-data half — the
+ * per-category row set — so there is exactly one source of truth per check.
  */
-const MIGRATED_CATEGORIES: readonly SettingsCategoryId[] = [];
-
-/** Filled in by the increment that adds `settingsCatalog.coverage.test.tsx`. */
-const CATEGORY_RENDERERS: Partial<Record<SettingsCategoryId, () => HTMLElement>> = {};
-
-describe('DOM↔catalog guard, per category', () => {
+describe('expected row sets, per category', () => {
   for (const category of SETTINGS_CATEGORIES) {
     const entries = SETTINGS_INDEX.filter((e) => e.category === category.id);
 
@@ -375,24 +376,6 @@ describe('DOM↔catalog guard, per category', () => {
         expect(conditional.length).toBe(ids.length);
       }
     });
-
-    it(`${category.id}: DOM set-equality once migrated`, () => {
-      const render = CATEGORY_RENDERERS[category.id];
-      if (!MIGRATED_CATEGORIES.includes(category.id)) {
-        // Tripwire: listing a category as migrated without wiring its renderer
-        // must FAIL rather than silently skip the strongest check in P69.
-        expect(render, `${category.id} has a renderer but is not listed as migrated`).toBeUndefined();
-        return;
-      }
-      expect(render, `${category.id} is listed as migrated but has no renderer`).toBeDefined();
-      if (render === undefined) return;
-      const pane = render();
-      const domIds = [...pane.querySelectorAll('[data-setting-id]')].map(
-        (el) => (el as HTMLElement).dataset.settingId ?? '',
-      );
-      expect(new Set(domIds).size, 'a row rendered twice').toBe(domIds.length);
-      expect([...new Set(domIds)].sort()).toEqual(entries.map((e) => e.id).sort());
-    });
   }
 });
 
@@ -406,6 +389,7 @@ describe('entry control kinds', () => {
       'text',
       'button',
       'readonly',
+      'group',
     ]);
     for (const entry of SETTINGS_INDEX) expect(kinds.has(entry.control), entry.id).toBe(true);
   });

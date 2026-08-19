@@ -1,0 +1,28 @@
+// P69g — UI §2.2 / ui-reference §12.1: a titled group of settings rows.
+//
+// `<section aria-labelledby>` (UI §7.1) so the group name is announced when focus
+// enters it. The uppercase treatment is CSS only — the catalog stores group names
+// in sentence case, and search result headers reuse the same string.
+
+import type { ReactNode } from 'react';
+
+export function SettingsGroup({
+  id,
+  title,
+  children,
+}: {
+  /** Stable slug; the title element gets `{id}-title`. */
+  id: string;
+  /** MUST equal the catalog `group` value of every row inside. */
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="settings-group" aria-labelledby={`${id}-title`}>
+      <h4 className="settings-group-title" id={`${id}-title`}>
+        {title}
+      </h4>
+      {children}
+    </section>
+  );
+}

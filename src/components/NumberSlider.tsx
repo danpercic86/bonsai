@@ -25,6 +25,7 @@ export function NumberSlider({
   unit,
   disabled,
   describedBy,
+  bare,
   onChange,
 }: {
   id: string;
@@ -34,6 +35,11 @@ export function NumberSlider({
   max: number;
   unit?: string;
   disabled?: boolean;
+  /** P69g: render ONLY the inputs, for use inside a `SettingsRow` whose grid
+   *  already owns the label cell (`<label for={id}>` — so the number input keeps
+   *  the same accessible name) and the help/reset cells. The legacy
+   *  `.settings-control` wrapper is still the default for un-migrated sections. */
+  bare?: boolean;
   /** P68g §1.6: id(s) of the hint paragraph(s) describing this control, wired onto
    *  the number input so the explanation is announced rather than orphaned. */
   describedBy?: string;
@@ -83,44 +89,50 @@ export function NumberSlider({
     commit(raw);
   };
 
+  const inputs = (
+    <div className="settings-control-inputs">
+      <input
+        className="settings-range"
+        type="range"
+        min={min}
+        max={max}
+        step={1}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => commitExternal(e.target.value)}
+        aria-label={label}
+      />
+      <input
+        id={id}
+        className="settings-number"
+        type="number"
+        min={min}
+        max={max}
+        step={1}
+        value={draft ?? String(value)}
+        disabled={disabled}
+        aria-describedby={describedBy}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          commit(e.target.value);
+        }}
+        onBlur={() => setDraft(null)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') setDraft(null);
+        }}
+      />
+      {unit !== undefined && <span className="settings-unit">{unit}</span>}
+    </div>
+  );
+
+  if (bare === true) return inputs;
+
   return (
     <div className={`settings-control${disabled === true ? ' is-disabled' : ''}`}>
       <label className="settings-control-label" htmlFor={id}>
         {label}
       </label>
-      <div className="settings-control-inputs">
-        <input
-          className="settings-range"
-          type="range"
-          min={min}
-          max={max}
-          step={1}
-          value={value}
-          disabled={disabled}
-          onChange={(e) => commitExternal(e.target.value)}
-          aria-label={label}
-        />
-        <input
-          id={id}
-          className="settings-number"
-          type="number"
-          min={min}
-          max={max}
-          step={1}
-          value={draft ?? String(value)}
-          disabled={disabled}
-          aria-describedby={describedBy}
-          onChange={(e) => {
-            setDraft(e.target.value);
-            commit(e.target.value);
-          }}
-          onBlur={() => setDraft(null)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') setDraft(null);
-          }}
-        />
-        {unit !== undefined && <span className="settings-unit">{unit}</span>}
-      </div>
+      {inputs}
     </div>
   );
 }
