@@ -38,6 +38,10 @@ the default. All values below are canonical — implement as CSS custom properti
 - Pane resizing: sidebar and right panel are drag-resized and persisted (`PaneDivider`).
 - Bottom dock (P68e): full-width third child of `.workspace-host`, `flex: none`, absent from the
   DOM until an AI run exists. Never overlaps the panes — it takes height from them. See §9.
+- Header toolbar (P69): `.header-toolbar` lives in `HeaderToolbar.tsx`, not in `App.tsx`. Order,
+  left to right: theme · list view · AI assets · health · settings · **identity** (§12.4). The
+  identity control is the far-right "account slot"; repo-scoped controls in the toolbar render only
+  when a repo is open.
 
 ## 2. Theme tokens
 
@@ -70,8 +74,8 @@ to them**:
   (light). That is below the 4.5:1 AA bar for text. Treat `--text-3` as **decorative only**
   (uppercase section labels that duplicate visible structure, dividers, disabled glyphs). Any text
   the user must actually read — metadata, timestamps, costs, log lines, hints, **status-pill
-  labels** — uses `--text-2` (**7.9:1** dark / **4.9:1** light on `--bg-0`; **7.3:1** / **7.4:1**
-  on `--bg-1`).
+  labels**, **settings help text** — uses `--text-2` (**7.9:1** dark / **4.9:1** light on `--bg-0`;
+  **7.3:1** / **7.4:1** on `--bg-1`).
 - `--warning` as *text* over its own 14% tint is **3.47:1** in light theme (`.toast-warning`,
   `styles.css:623`). Use `--warning` for borders, glyphs and fills (≥3:1 graphics bar) and
   `--text-1` for the words beside them. For a filled warning chip, `color: var(--bg-0)` on
@@ -89,6 +93,11 @@ Additional measured pairs (2026-08-19, P70 pass), all on `--bg-1`: `--text-1` **
 `--danger` glyph **4.4:1** / **4.6:1** — all clear the 3:1 graphics bar in both themes. And
 (2026-08-19, P73 pass) `--text-2` over its **own** 12% tint on `--bg-1`: **5.79:1** dark /
 **6.22:1** light — the safe recipe for a hueless informational pill (§11).
+
+Measured pairs added 2026-08-19 (P69 Settings pass), on `--bg-0`: `--accent` fill **5.6:1** dark /
+**4.7:1** light; `--text-2` fill **7.9:1** / **4.9:1**; `--text-1` on `--selection` **9.4:1** /
+**13.3:1**; `--accent` 1px border on `--bg-2` **4.4:1** / **4.1:1**. `--accent` on `--selection` is
+**2.6:1** / **3.6:1** — decorative delineation only, never a meaning carrier.
 
 ## 3. Typography & spacing
 
@@ -192,6 +201,10 @@ precedent. Every new status indicator pairs its hue with a letter, word, or glyp
   secondary lines — consent facts, spend and destructive consequences, "written without review"
   caveats — use `.dialog-body-detail`, 12px `--text-2`. `.dialog-body-note` is `--text-3` and is
   for genuinely decorative lines only (`+N more`); never put a consequence on it.
+- **An empty state inside a pane names the fix.** A bare declarative sentence ("Open a repository
+  to view its Git config.") is incomplete: the block is title (13px/600 `--text-1`) + one-line
+  reason (12px `--text-2`) + exactly one action button. `EmptyState.tsx` is the *app-level* no-repo
+  screen (hero mark, tagline, recents, three CTAs) and must not be embedded in a panel or dialog.
 
 ## 9. Bottom AI activity dock (P68e)
 
@@ -225,7 +238,8 @@ Full contract: `docs/contracts/P68e-ai-activity-dock.md`. Canonical geometry:
   `prefers-reduced-motion` block lives in this section. P70 adds `.file-chevron` (the app-wide
   120ms disclosure-caret transform) to that same block; P73 adds `.header-progress::after`
   (`animation: none; width: 100%; opacity: 0.6` — the same treatment as `.ai-dock-progress`), which
-  closes P68e §12-F3 for the header sweep. `skeleton-pulse` remains outstanding.
+  closes P68e §12-F3 for the header sweep. P69 adds `.settings-switch-*` and `.settings-segment`.
+  `skeleton-pulse` remains outstanding.
 
 ## 10. App notice bar (P70)
 
@@ -287,8 +301,8 @@ row badges (`.submodule-badge-*`, shared by submodule and worktree rows — `Sid
 - **Shape.** 11px, `padding: 1px 6px`, `border-radius: 8px`, `flex: none`, inherited UI font
   (not mono — mono is for hashes and paths). Never compresses; the row's *name* is what ellipsizes.
 - **Label.** A **word**, lowercase inside a row pill (`up to date`, `out of sync`, `modified`,
-  `not checked out`) and sentence-case in chrome (`Running`, `Failed`). Colour is never the sole
-  carrier (§7).
+  `not checked out`, `repo`, `in use`) and sentence-case in chrome (`Running`, `Failed`). Colour is
+  never the sole carrier (§7).
 - **Hueless / informational pills** — no verdict, just a fact or an in-flight state: label
   `--text-2` over its own 12% tint (**5.79:1** dark / **6.22:1** light, §2). No glyph, no hue — but
   keep `border: 1px solid transparent` so hueless and verdict pills are the same **19.94 px** height
@@ -306,3 +320,176 @@ row badges (`.submodule-badge-*`, shared by submodule and worktree rows — `Sid
   (`checking out…`, `updating…`) in the hueless style and the row gets `aria-busy="true"` (§8). The
   pill drops its `title` entirely while busy — the participle is the whole message.
 - **Density-invariant** — pills live in the sidebar and chrome, which have one geometry (§3).
+- **A pill that carries meaning must also be in the accessible name.** When a pill qualifies an
+  interactive row (e.g. the Settings rail's `repo` scope pill, §12.1), fold its text into the
+  control's accessible name via a visually-hidden span — a purely visual pill leaves AT users
+  without the qualifier.
+
+## 12. Settings surface (P69)
+
+Full contract: `docs/contracts/P69-settings-ui.md`. The canonical pattern for a **categorised
+preference surface**, and the home of the app's switch / segmented / settings-row specs. Any future
+milestone adding a setting adds a row here, not a new section on a scrolling column.
+
+### 12.1 Two-pane shell
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ Settings                                                 ✕   │ 48px, spans both cols
+├──────────────────┬───────────────────────────────────────────┤
+│ rail 200px       │ 🔍 Search settings                        │ 56px
+│  role=tablist    ├───────────────────────────────────────────┤
+│  ▌selected       │ pane  role=tabpanel  --bg-0               │
+│ ──── divider ─── │  title / subtitle / groups of rows        │
+│  Git config[repo]│                                           │
+└──────────────────┴───────────────────────────────────────────┘
+                          880px
+```
+
+- Card: `.dialog-card.settings-card`, `width: 880px; max-width: calc(100vw - 48px);
+  height: min(660px, calc(100vh - 64px)); display: grid;
+  grid-template-columns: 200px 1fr; grid-template-rows: 48px 1fr; overflow: hidden;`
+  `--bg-1`, 1px `--border`, radius 6, over the existing `.dialog-overlay` scrim
+  (backdrop-mousedown closes).
+- **The card never scrolls as a whole.** The rail and the pane scroll independently; the header and
+  the search bar are fixed.
+- Header 48px, `padding: 0 8px 0 16px`, title 15px/600 `--text-1`, bottom 1px `--border`.
+- Rail `--bg-1`, `padding: 8px`, right 1px `--border`; items 32px tall, `padding: 0 8px`, radius 6,
+  13px `--text-2`, 2px gap. Selected: `--selection` bg + `--text-1` + 600 +
+  `box-shadow: inset 2px 0 0 var(--accent)` (the accent bar is the shape carrier — `--selection` vs
+  `--bg-1` is only ~1.3:1). Hover `--bg-2`; pressed `--bg-3`.
+- Rail grouping is done with `aria-hidden` 1px `--border` dividers and a hueless scope pill
+  (§11) — **never** with heading elements inside the `role="tablist"`.
+- Pane `--bg-0`, `padding: 16px 24px 24px`, own scrollbar; `scrollTop` resets to 0 on category
+  change. Pane header: title 15px/600 `--text-1` + subtitle 12px `--text-2`, block margin-bottom 16.
+- Group: `margin-bottom: 24px`; group title 11px uppercase, `letter-spacing: .08em`, `--text-3`
+  (decorative — it duplicates visible structure).
+- **Density-invariant** (§3): one geometry in both `cozy` and `compact`.
+- Below 720px wide the rail collapses to a 40px horizontally-scrolling strip above the search bar;
+  roles and tab order are unchanged.
+
+### 12.2 Settings row anatomy
+
+```
+grid-template-columns: 1fr auto 24px;  column-gap: 12px;  align-items: center;
+padding: 10px 0;  min-height: 44px;   sibling rows separated by 1px --border
+row 1: [ label 13px --text-1        ] [ control ] [ ↺ ]
+row 2: [ help 12px --text-2, 56ch   ]  control spans both rows
+```
+
+- Help text is **`--text-2`, never `--text-3`** (§2), carries `id="{rowId}-help"`, and is wired to
+  the control with `aria-describedby`. A setting whose effect is not obvious from its label gets
+  help text; a section-level paragraph explaining three different rows is a smell — split it.
+- Reset `↺`: 24×24 `.btn-icon`, `aria-label="Reset {label} to default"`,
+  `title="Reset to default ({value})"`. **Conditionally rendered** when value ≠ default; the 24px
+  grid column is always reserved so the row never shifts. Reset lives **per row only** — no
+  per-category and no global reset.
+- `.settings-row--stacked`: label / help / control each on its own grid row, control at
+  `width: 100%`. Use for text fields, paths, and read-only value + Copy pairs.
+- Two rows in one dialog must never share an accessible name (`Fetch every` / `Refresh every`, not
+  `Interval` / `Interval`).
+
+### 12.3 Control kinds
+
+| The setting is… | Control |
+|---|---|
+| An independent on/off | **Switch** (§12.3.1) |
+| One of 2–3 exclusive values, short self-explanatory labels | **Segmented** (§12.3.2) |
+| One of 2+ exclusive values where each needs a sentence | Radio group, stacked, hint under each |
+| A bounded number tuned by feel | `NumberSlider` (slider + number + unit) |
+| Free text, a path, an unbounded value | Text field, stacked row |
+| A one-shot action | Button |
+| More than 3 exclusive values | `Combobox` |
+
+**A button labelled with its own current value is not a control** — `[ Dark ]` reads as "make it
+dark". Never use one for state.
+
+#### 12.3.1 Switch
+
+CSS over a **native `<input type="checkbox">`** — the implicit `checkbox` role, native Space
+toggling, and every `getByRole('checkbox', {name})` query survive. `role="switch"` is deliberately
+**not** used.
+
+- Wrapper `<label>`: `position: relative; display: inline-flex; align-items: center;
+  min-height: 24px; width: 36px; flex: none;`
+- The input is `position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; margin: 0;` —
+  it **is** the 36×24 hit target.
+- Track 36×20, radius 999: off `background: var(--text-2)`; on `background: var(--accent)`.
+- Knob 14×14, radius 999, `background: var(--bg-0)`; `translateX(3px)` off → `translateX(19px)` on.
+- **The knob's position is the non-colour meaning carrier.** Never rely on the track hue.
+- Motion: `transform`/`background-color` 120ms ease-out, in the §9 reduced-motion block.
+  Hover: track `filter: brightness(1.08)`. Active: knob `width: 17px`.
+- Focus: `.settings-switch:has(> input:focus-visible) .settings-switch-track` → 2px `--accent`,
+  offset 2px. Disabled: wrapper `opacity: .55; cursor: not-allowed`.
+- Contrast, all four boundary pairs on `--bg-0`: **5.6–7.9:1** dark, **4.7–4.9:1** light (§2).
+
+#### 12.3.2 Segmented
+
+CSS over **native `<input type="radio">`** inside a `role="radiogroup"` labelled by the row label —
+arrow-key navigation and `getByRole('radio', {name})` come free. **Never** `role="tablist"`.
+
+- Container `display: inline-flex; background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 2px; gap: 2px;`
+- Segment `min-height: 24px; padding: 0 10px; border-radius: 4px; font-size: 12px;
+  color: var(--text-2); border: 1px solid transparent;` hover `background: var(--bg-3)`.
+- Selected `background: var(--selection); color: var(--text-1); font-weight: 600;
+  border-color: var(--accent);` — the 600 weight and the accent border are the non-colour carriers
+  (`--accent` on `--bg-2` = **4.4:1** dark / **4.1:1** light).
+- Focus: `.settings-segment:has(> input:focus-visible)` → 2px `--accent`, offset 1px.
+- Max 3 segments.
+
+### 12.4 Keyboard, roles, focus
+
+- `Ctrl/Cmd + ,` opens Settings, registered **above** App's `typing` guard so it fires from the
+  commit box. No-op when already open — a shortcut must not toggle a modal.
+- Card: `role="dialog" aria-modal="true" aria-labelledby="settings-title"`. Rail:
+  `role="tablist" aria-orientation="vertical"`, items `role="tab" aria-selected aria-controls`.
+  Pane: `role="tabpanel" tabindex="-1" aria-labelledby="{selected tab}"`.
+- Tab order is pure DOM order (close ✕ → search → rail → pane), trapped in the card. The rail is
+  **one** tab stop with a roving tabindex (the `AiRunStrip.tsx:54-75` precedent); `↑`/`↓` move and
+  activate, `Home`/`End` jump, `→` moves focus into the pane.
+- Initial focus: the search input — a text field, so no accidental activation. When opened via a
+  deep link (`initialCategory` set) initial focus goes to the **pane** so the deep-linked section's
+  own focus effect is not fighting the search box.
+- Focus restore: the element active before opening, falling back to the ⚙ trigger.
+- `Esc` is layered: it first clears a non-empty search (the `ListFilterInput` capture-phase idiom),
+  then closes the dialog. `Enter` never closes — settings apply live and there is no "OK".
+- Every hit target ≥24px: rail 32, switch 36×24, segment ≥24, reset 24, close 32.
+
+### 12.5 Settings search
+
+- One model: the query produces a **cross-category result list** of live, editable rows grouped by
+  category — not a rail filter and not a within-page filter. The failure mode being solved is "I
+  know the setting's name, not its category".
+- Matching: synchronous, case-insensitive substring, all whitespace-separated terms required, over
+  `label` + `help` + a never-displayed `keywords` string (the `PaletteAction.keywords` idiom). Not
+  fuzzy.
+- The searchable index is **pure data in its own module** (`settings/settingsIndex.ts`), never
+  inlined in a component — the same rule as any large static table.
+- Matched substrings in the label are wrapped in `<mark>`: `background: var(--selection);
+  color: var(--text-1);` (**9.4:1** dark / **13.3:1** light). Help text is not highlighted.
+- The rail shows per-category match counts while searching; zero-count items dim to `opacity: .5`
+  but stay clickable (clicking clears the query).
+- Result count changes are announced by a visually-hidden `role="status" aria-live="polite"`.
+
+### 12.6 Identity in the header
+
+- The identity control is the far-right item of `.header-toolbar` (§1) and reads the **effective**
+  Git identity — `local` if set, otherwise `global` — and **names its source** in the menu. A
+  local-only read is wrong: Git resolves local-over-global, so a repo with no local identity still
+  commits fine, and a control that showed nothing there would be lying.
+- Trigger: 32×32 button containing a 22px circle of **initials** (first letters of the first two
+  name words, max 2). No identity → glyph `?` with a 1px `--warning` ring (**7.3:1** / **4.5:1**);
+  the glyph and the accessible name, not the hue, carry the state. Loading → `·` + `aria-busy`.
+  `aria-haspopup="menu"` + `aria-expanded`.
+- Menu: a `ContextMenu` anchored with the house idiom (`rect.right`, `rect.bottom + 2`), a
+  non-interactive `header` block stating name / email / source, then one row per saved identity with
+  `checked` (⇒ `role="menuitemradio"`) and a `detail` second line, then `Manage identities…`.
+- The menu owns its open state and lifts it via `onMenuOpenChange` (the `TabStrip.tsx:35-37`
+  precedent) because App early-returns global shortcuts while a menu is open.
+- **Writing an identity into a repo confirms only when it would overwrite a differing *local*
+  value** — writing into an empty slot destroys nothing. The confirm names both identities and the
+  consequence, uses `confirmVariant='primary'` (recoverable), and says
+  `Commits you have already made are not changed.`
+- `ContextMenuItem` gained `checked` and `detail`, and `ContextMenuProps` gained `header`, in P69.
+  All three are additive: absent ⇒ byte-identical rendering to before.

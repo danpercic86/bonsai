@@ -766,7 +766,7 @@ make global-vs-repo scope explicit, and close the two OPEN defects that live in 
   reset-to-default, keyboard/a11y, both themes) **+** fix both known OPEN defects.
 
 **Binding constraints (verified 2026-08-19, not guesses):**
-- `check-file-size.mjs` is a **ratchet**: `src/App.tsx` is baselined at **1114** and may not grow, so
+- `check-file-size.mjs` is a **ratchet**: `src/App.tsx` is baselined at **1168** and may not grow (P73 raised it from 1114 mid-session), so
   the identity menu cannot be markup bolted into App. P69e's prop collapse buys the headroom.
 - Toggle switches must be **CSS over a native `<input type="checkbox">`**, not `role="switch"` divs —
   otherwise ~30 existing `getByRole('checkbox', …)` assertions break for no real gain.
@@ -790,7 +790,8 @@ SAME working tree. Overlap was measured: only **`src/styles.css`** is contested 
 paths only (never `git add -A`), scope vitest runs to the files under change, and run no cargo
 commands (P69 is frontend-only; concurrent cargo races the shared target dir).
 
-**Current step:** P69a — awaiting `ui-designer` contract.
+**Current step:** P69a done (`docs/contracts/P69-settings-ui.md` + `ui-reference.md` §12) · P69b
+code-complete, in review. P69c+ BLOCKED on P73 holding `src/styles.css`.
 
 
 ## Archive
