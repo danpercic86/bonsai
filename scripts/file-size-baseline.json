@@ -67,7 +67,7 @@
     "src/components/workspaceMenus.ts": 803,
     "src/graph/GraphCanvas.tsx": 883,
     "src/ipc/fixtures/diffs.ts": 746,
-    "src/ipc/tauri.ts": 1080,
-    "src/ipc/types.ts": 2697
+    "src/ipc/tauri.ts": 1084,
+    "src/ipc/types.ts": 2701
   }
 }

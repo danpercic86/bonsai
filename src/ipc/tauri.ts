@@ -857,6 +857,10 @@ export const tauriIpc: IpcApi = {
     return invoke<void>('open_in_editor', { path });
   },
 
+  openUrl(url: string): Promise<void> {
+    return invoke<void>('open_url', { url });
+  },
+
   getSession(): Promise<SessionState> {
     return invoke<SessionState>('get_session');
   },

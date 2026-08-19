@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type MouseEvent } from 'react';
 import type { ForgeKind } from '../ipc';
 
 // P62c: paste-a-PAT affordance shown when the host has no stored token. The
@@ -18,6 +18,18 @@ export interface ForgeConnectProps {
   submitting: boolean;
   error: string | null;
   onSubmit(token: string): void;
+  /** P72: route "Create a token" through the openUrl IPC — a bare
+   *  `target="_blank"` is a silent no-op in the native webview. REQUIRED (not
+   *  optional) so a future call site cannot regress to a dead link. This
+   *  component stays presentational: no ipc, no error handling. */
+  onOpenUrl(url: string): void;
+}
+
+/** A modified/auxiliary click (ctrl/cmd/shift/alt, middle button) must reach the
+ *  platform untouched, so open-in-new-tab keeps working in the browser harness;
+ *  in the Tauri webview it is a no-op. `true` ⇒ do NOT intercept. */
+function isPlatformClick(e: MouseEvent): boolean {
+  return e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0;
 }
 
 /** Per-provider connect guidance. A full `Record<ForgeKind, …>` so adding a new
@@ -70,6 +82,7 @@ export function ForgeConnect({
   submitting,
   error,
   onSubmit,
+  onOpenUrl,
 }: ForgeConnectProps) {
   const [token, setToken] = useState('');
   const canSubmit = !submitting && token.trim() !== '';
@@ -99,7 +112,12 @@ export function ForgeConnect({
               className="forge-connect-link"
               href={hint.url}
               target="_blank"
-              rel="noreferrer"
+              rel="noreferrer noopener"
+              onClick={(e) => {
+                if (isPlatformClick(e)) return; // let ctrl/middle-click through
+                e.preventDefault();
+                onOpenUrl(hint.url);
+              }}
             >
               Create a token
             </a>

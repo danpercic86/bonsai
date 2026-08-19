@@ -37,4 +37,14 @@ export const externalHandlers = {
   async openInEditor(path: string): Promise<void> {
     return simulate(path, 'editor');
   },
+
+  // P72: `simulate` FIRST, so the `#fail` path never opens a tab. On success the
+  // harness really does open one — that keeps the browser behaviour the plain
+  // `target="_blank"` anchor used to have. The mock deliberately does NOT
+  // replicate `validate_web_url` (Rust owns that rule; there is no launcher
+  // here); extend the sentinel triggers instead if a harness case needs it.
+  async openUrl(url: string): Promise<void> {
+    await simulate(url, 'browser');
+    window.open(url, '_blank', 'noopener,noreferrer');
+  },
 } satisfies Partial<IpcApi>;

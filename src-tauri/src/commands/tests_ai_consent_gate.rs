@@ -8,6 +8,28 @@
 use super::tests_support::*;
 use super::*;
 
+/// P72: the `open_url` command validates the URL BEFORE anything is spawned, so
+/// a non-http(s) scheme can never reach a launcher. Like `reveal_in_file_manager`
+/// it takes no `AppHandle`, so it is drivable runtime-free with `block_on` (the
+/// tauri "test" feature is avoided on this machine). Only the REJECT path is
+/// exercised here on purpose — a valid URL would open a real browser window.
+#[test]
+fn open_url_command_rejects_a_non_web_scheme_without_echoing_it() {
+    for url in ["javascript:alert(1)", "file:///C:/Windows/System32/calc.exe", "-https://x.com"] {
+        let err = tauri::async_runtime::block_on(open_url(url.to_string()))
+            .expect_err("a non-web URL must be refused");
+        assert!(
+            matches!(err, AppError::ExternalToolFailed(_)),
+            "expected externalToolFailed for {url}, got {err:?}"
+        );
+        // Never echo the untrusted URL back into a user-facing message.
+        assert!(
+            !err.to_string().contains(url),
+            "the rejection must not echo the URL ({url}): {err}"
+        );
+    }
+}
+
 /// P49 (reviewer gap): the shared `launch_inner` missing-path precheck
 /// returns `AppError::Io` — and launches **nothing** — when the target path
 /// no longer exists. `reveal_in_file_manager` is the runtime-free command (it

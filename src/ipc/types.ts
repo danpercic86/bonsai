@@ -2456,6 +2456,10 @@ export interface IpcApi {
   /** P49: open `path` in the configured editor (empty ⇒ auto-detect VS Code).
    *  Rejects AppError('externalToolFailed' | 'io'). */
   openInEditor(path: string): Promise<void>;
+  /** P72: open `url` in the user's default browser. Web URLs only — a non-http(s)
+   *  scheme, a hostless URL, or a leading `-` is refused before anything spawns.
+   *  Rejects AppError('externalToolFailed'). */
+  openUrl(url: string): Promise<void>;
   /** P70: resolve the `git` executable and report availability. Cheap, one-shot
    *  at startup, re-invocable from the banner's Re-check. Never rejects for git
    *  state — a missing git is `{ found: false, ... }`. */

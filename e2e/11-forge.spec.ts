@@ -90,6 +90,27 @@ test.describe('11 forge @forge', () => {
       await expect(page.getByRole('button', { name: 'Connect' })).toBeDisabled();
     });
 
+    // P72: the "Create a token" link is IPC-routed (a bare target="_blank" is a
+    // silent no-op in the native webview). The mock's openUrl logs
+    // `[mock] open browser: …` and then calls window.open, which we stub so the
+    // harness records the URL instead of spawning a tab.
+    await test.step('"Create a token" routes through openUrl without navigating away', async () => {
+      await page.evaluate(() => {
+        (window as unknown as { __opened: string[] }).__opened = [];
+        window.open = ((url?: string | URL) => {
+          (window as unknown as { __opened: string[] }).__opened.push(String(url));
+          return null;
+        }) as typeof window.open;
+      });
+      await page.getByRole('link', { name: 'Create a token' }).click();
+      await expect
+        .poll(() => page.evaluate(() => (window as unknown as { __opened: string[] }).__opened))
+        .toEqual(['https://github.com/settings/tokens']);
+      // No navigation, no toast: the connect form is still mounted.
+      await expect(page.getByLabel('Personal access token')).toBeVisible();
+      await expect(errorToast(page)).toHaveCount(0);
+    });
+
     const token = page.getByLabel('Personal access token');
 
     await test.step("token containing 'bad' → authFailed, still disconnected", async () => {
@@ -158,6 +179,26 @@ test.describe('11 forge @forge', () => {
       await page.getByRole('button', { name: '← Pull requests' }).click();
       await expect(page.getByRole('button', { name: 'New pull request' })).toBeVisible();
     });
+  });
+
+  // P72: the openUrl FAILURE path. The merged fixture PR #120's url carries the
+  // external-launch `#fail` sentinel, so the mock rejects with an
+  // externalToolFailed AppError and PrPanel's intent-prefixed toast appears.
+  test('open in browser: a launch failure raises the intent-prefixed error toast', async ({
+    page,
+  }) => {
+    await openRepo(page, { flags: { forge: 'auth' } });
+    await openPrTab(page);
+    await page.getByRole('button', { name: 'All', exact: true }).click();
+    await page
+      .getByRole('button', { name: /Right-pane working-directory status panel/ })
+      .click();
+    const link = page.getByRole('link', { name: 'Open in browser' });
+    await expect(link).toBeVisible();
+    await link.click();
+    await expect(errorToast(page, /Could not open the pull request page:/)).toBeVisible();
+    // The detail view is unchanged by the failed launch.
+    await expect(page.getByRole('button', { name: '← Pull requests' })).toBeVisible();
   });
 
   test('create PR: form gating → submit → new detail renders + success toast', async ({

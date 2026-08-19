@@ -123,7 +123,11 @@ export const FORGE_PR_LIST: PrSummary[] = [
     comments: 8,
     createdAt: '2026-07-20T12:15:00Z',
     updatedAt: '2026-07-26T10:02:00Z',
-    url: 'https://github.com/octo-org/bonsai/pull/120',
+    // P72: carries the external-launch `#fail` sentinel (see
+    // `mock/handlers/external.ts`) so the harness/e2e can drive the
+    // "Open in browser" FAILURE toast from a real PR detail view. The three
+    // open PRs above keep clean URLs for the success path.
+    url: 'https://github.com/octo-org/bonsai/pull/120#fail',
     headSha: 'ffeeddccbbaa99887766554433221100ffeeddcc',
   },
 ];

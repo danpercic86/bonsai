@@ -197,6 +197,26 @@ export function PrPanel({
     );
   }
 
+  /** P72: the ONE open-external-URL implementation, shared by the connect
+   *  panel's "Create a token" link and the detail view's "Open in browser".
+   *  Both children stay presentational; a launch failure names the intent first
+   *  (per-site prefix) and then the backend's tool/reason text. */
+  function openTokenPage(url: string) {
+    void ipc
+      .openUrl(url)
+      .catch((e: unknown) =>
+        pushToast('error', `Could not open the token page: ${errorMessage(e)}`),
+      );
+  }
+
+  function openPrPage(url: string) {
+    void ipc
+      .openUrl(url)
+      .catch((e: unknown) =>
+        pushToast('error', `Could not open the pull request page: ${errorMessage(e)}`),
+      );
+  }
+
   function handleCreate(input: CreatePrInput) {
     setCreating(true);
     setCreateError(null);
@@ -268,6 +288,7 @@ export function PrPanel({
             submitting={connecting}
             error={connectError}
             onSubmit={handleConnect}
+            onOpenUrl={openTokenPage}
           />
         );
       case 'create':
@@ -317,7 +338,7 @@ export function PrPanel({
   function renderDetail() {
     if (detail !== null) {
       return (
-        <PrDetailView detail={detail} onBack={() => setView('list')}>
+        <PrDetailView detail={detail} onBack={() => setView('list')} onOpenUrl={openPrPage}>
           <PrReviewComments comments={comments} loading={commentsLoading} error={commentsError} />
         </PrDetailView>
       );

@@ -6998,6 +6998,9 @@ button.asset-row-clickable:hover {
   color: var(--accent);
   text-decoration: none;
   white-space: nowrap;
+  /* P72: explicit, so the affordance can never silently depend on the `href`
+     surviving a future refactor (the click is IPC-routed). */
+  cursor: pointer;
 }
 
 .forge-connect-link:hover {
