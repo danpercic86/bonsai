@@ -28,6 +28,82 @@ items — moved 2026-08-19), `docs/history/todo-archive.md` (P27 → P2, M0–M6
 `docs/history/milestones-mvp.md` (the M0–M6 AI-gate vs USER CHECKPOINT split). Contract files are
 indexed in `docs/contracts/INDEX.md`.
 
+## 🐛 P72 — forge connect fixes: Azure DevOps 401 + dead external links — in-progress
+
+**Current step:** P72 — both contracts written and amended (`docs/contracts/P72-forge-connect-fixes.md`,
+`docs/contracts/P72-ui.md`). Increment A (Azure) with senior-dev; Increment B (openUrl) queued behind it.
+
+Two user-reported defects on the P62/P64 forge connect surface (found 2026-08-19 by the user, on a
+real Azure DevOps org — neither was catchable by the existing suites, see "why this shipped" below).
+
+**Bug 1 (blocking) — Azure connect rejects a valid Code-scoped PAT with 401.** The Basic auth header
+is CORRECT (`Basic base64(":"+PAT)`, empty username, `api-version=7.1` everywhere) and the remote
+parses fine. The fault is the *validation endpoint*: `set_token` → `validate_token` →
+`AzureDevOpsProvider::viewer()` probes `app.vssps.visualstudio.com/_apis/profile/profiles/me`
+(`azure/rest.rs:28`), which is gated on the **User Profile (Read)** (`vso.profile`) scope. The
+Connect panel tells the user to create a **Code (Read & Write)** PAT (`ForgeConnect.tsx:54`), which
+carries no profile scope → Azure 401 → surfaced as "rejected the credentials", implying a bad token.
+The contract encodes the same mismatch (`P64-forge-providers-ai-pr.md:158` vs
+`P64-user-checklist.md:64-67`).
+
+**Bug 2 — "Create a token" / "Open in browser ↗" do nothing in the native app.** Both are plain
+`<a href target="_blank">` with no handler (`ForgeConnect.tsx:98`, `PrDetailView.tsx:46`). There is
+no opener/shell plugin, no `opener:*` capability, and no new-window handler, so the webview drops
+the request. Already predicted and deferred at `P62-user-checklist.md:39-43`; this is that follow-up.
+
+**Why this shipped (process finding).** Both bugs live exactly where the test doubles are: the Azure
+`FakeTransport` returns 200 from the profile URL, so no test asks what a Code-scoped PAT can reach;
+and the browser harness is the one environment where `target="_blank"` works, so the AI gate could
+not see the dead link. Neither is a coverage-count problem.
+
+**Decisions (user-confirmed 2026-08-19).**
+- Azure: **both** — repo-endpoint validation (the scope the app actually uses) **and** a better
+  401/203 message. The "clearer scope copy" half turned out to be a no-op: the existing Azure
+  hint ("Code (Read & Write)") becomes TRUE once the backend stops probing a profile endpoint,
+  and advertising User Profile (Read) would promise an account name nothing renders.
+- Links: fix **both** sites; **hand-rolled per-OS spawn, no new plugin and no new capability grant**
+  (upholds P49 D1, which explicitly rejected `tauri-plugin-opener`).
+- Sequencing: one combined batch, committed as two increments (A = Azure, B = openUrl).
+
+**Increment A — Azure validate-then-identify.** `viewer()` validates with
+`GET .../_apis/git/repositories/{repo}?api-version=7.1` (must succeed; 404 ⇒ message naming
+org/project/repo), then identity is *best-effort*: `_apis/connectionData` →
+`authenticatedUser.providerDisplayName`, else the profile endpoint, else `ForgeViewer` with an empty
+login (UI shows a plain "Connected"). Also adds the missing **203** arm to `map_status` (Azure's HTML
+sign-in response for an expired PAT currently surfaces as `ForgeApi("malformed response")` — closes
+the known gap at `P64-user-checklist.md:69-74`).
+
+**Increment B — `openUrl` IPC.** New `bonsai-core::external::{validate_web_url, url_ladder, open_url}`
+on the existing `LaunchSpec`/`launch_first` machinery (Windows `explorer` → `rundll32
+url.dll,FileProtocolHandler`; macOS `open` with `wait_for_exit`; Linux `xdg-open`; never a shell),
+a `open_url` Tauri command that skips the P49 `path.exists()` precheck, `openUrl` on the IPC
+surface + mock, and both anchors routed through it with the standard error-toast pattern.
+`validate_web_url` is load-bearing: `PrDetailView`'s URL comes from the forge API response.
+
+**Out of scope (separate, still open):** the `dev.azure.com/{org}/_git/{repo}` shorthand (repo ==
+project) returns `None` from `detect_azure` (`detect.rs:123`) — surfaces as *unsupported*, not 401;
+documented at `P64-user-checklist.md:59-63`.
+
+**Acceptance criteria.**
+1. An Azure PAT with only Code (Read & Write) connects successfully; nothing is stored on failure.
+2. An invalid/expired Azure PAT yields a clear auth error (never "malformed response").
+3. Identity lookup is best-effort and can NEVER fail a connect: a PAT that cannot read the
+   profile endpoint still connects, yielding `ForgeViewer.login == ""`. Verified at the data
+   layer only — `login` has no render site anywhere in the frontend, and P72 deliberately adds
+   none (see `docs/contracts/P72-ui.md` §1). Originally worded as a UI criterion; corrected
+   2026-08-19 after ui-designer established there are zero `viewer` render sites.
+4. Clicking "Create a token" / "Open in browser ↗" opens the system browser in the native app;
+   a launch failure raises an error toast.
+5. `validate_web_url` rejects non-http(s) schemes, hostless URLs, and leading `-`.
+6. Full gate green: clippy `-D warnings`, `cargo test --workspace`, tsc, vitest, lint, e2e.
+7. Contracts/doc drift corrected (`P64-*`, `phase4-forge-overview.md:67-68`, `bonsai-forge/src/lib.rs:11-12`,
+   `http.rs:49` — all four still claim `Bearer` only, stale for Azure/GitLab).
+
+**USER CHECKPOINT (not AI-verifiable — no real Azure org, no native webview here):** connect the
+existing Code-scoped PAT in `pnpm tauri dev`; try a deliberately bad PAT; click both links.
+
+Plan file: `~/.claude/plans/in-the-connect-to-clever-lantern.md`
+
 ## 🐛 P70 — git-executable resolution + honest "git not found" diagnostics — in-progress
 
 **Current step:** P70 — **AI gate GREEN, awaiting native USER CHECKPOINT.** All increments implemented,
