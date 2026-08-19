@@ -8,14 +8,17 @@
 // debounced coalescing write (`pendingSettingsPatchRef` + `settingsSaveTimerRef`),
 // and launch-time hydration (`hydrateUiSettings`).
 //
-// NOT owned here: `theme`, `listView` and `paneWidths`. Those have their own
-// bespoke persist paths in App (toolbar toggles that write immediately, and the
-// drag-commit debounce) and are hydrated alongside this hook, not by it.
+// NOT owned here: the STATE for `theme`, `listView`, `paneWidths` and
+// `onboardingSeen`. Those live in App (toolbar toggles, the resize drag, the
+// first-run overlay) and are hydrated alongside this hook, not by it — but
+// P69b routed their PERSIST calls through `queueSettingsWrite` so every field
+// on disk goes out through this one coalescing window. Nothing else may call
+// `ipc.setUiSettings` directly.
 //
 // Adding a setting is therefore two edits — a `useState` and a patch arm — plus
 // whatever prop threads it to a child.
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { ToastTone } from '../components/Toasts';
 import { ipc } from '../ipc';
@@ -36,6 +39,13 @@ import { errorMessage } from '../utils/errors';
 /** App's toast pusher. Passed in (rather than re-derived from context here) so
  *  the save-failure copy and this hook's callback stability both stay App's. */
 type PushToast = (tone: ToastTone, text: string) => void;
+
+/** Coalescing window for the settings write (§3.2; mirrors the session write). */
+const SETTINGS_SAVE_DEBOUNCE_MS = 300;
+/** P69b: automatic attempts after a failed write, then the patch waits for the
+ *  next user change or teardown. Backoff 300 / 600 / 1200 ms — long enough to
+ *  ride out a transient lock, bounded so a dead disk cannot spin or toast-storm. */
+const SETTINGS_SAVE_MAX_RETRIES = 3;
 
 export interface UiSettingsController {
   panelDensity: PanelDensity;
@@ -64,6 +74,13 @@ export interface UiSettingsController {
    *  Referentially stable for as long as `pushToast` is — it is handed to
    *  children as a prop, so it must not churn every render. */
   handleSettingsChange(patch: UiSettingsPatch): void;
+  /** P69b: persist-only half of `handleSettingsChange` — merge `patch` into the
+   *  same pending write and re-arm the same 300 ms window, touching no state
+   *  here. For the settings App owns the state of (`theme`, `listView`,
+   *  `paneWidths`, `onboardingSeen`): App updates its own state for the live
+   *  preview and calls this so the write still coalesces with everything else.
+   *  Stable for as long as `pushToast` is. */
+  queueSettingsWrite(patch: UiSettingsPatch): void;
   /** Seed every field from the launch-time `getUiSettings()` read (§6.2). */
   hydrateUiSettings(settings: UiSettings): void;
 }
@@ -141,9 +158,134 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
   const settingsSaveTimerRef = useRef<number | null>(null);
   const pendingSettingsPatchRef = useRef<UiSettingsPatch>({});
 
+  // P69b: at most ONE write may be outstanding. A second concurrent write makes
+  // the failure merge-back below unsound: the newer values would already have
+  // left `pendingSettingsPatchRef` inside that other write, so restoring the
+  // failed patch could resurrect a value the UI has moved past. With a single
+  // writer, everything newer is provably still pending.
+  const settingsWriteInFlightRef = useRef(false);
+  // Consecutive failed writes — bounds the automatic retry and keeps a dead disk
+  // to ONE toast. Reset by a success and by any new user change.
+  const settingsFailureStreakRef = useRef(0);
+  // Set by the effect cleanup: after teardown nothing may arm a new timer. A
+  // forced (teardown) flush that then REJECTS would otherwise leave a retry
+  // timer outliving the component — harmless in production, but in tests it can
+  // fire into a later test's spy.
+  const disposedRef = useRef(false);
+  // Late-bound so `armSettingsSave` can schedule the flush that is defined after
+  // it (the timer only ever fires once the ref holds the real function).
+  const flushRef = useRef<(force?: boolean) => void>(() => {});
+
+  const armSettingsSave = useCallback((delayMs: number) => {
+    if (disposedRef.current) return;
+    if (settingsSaveTimerRef.current !== null) {
+      window.clearTimeout(settingsSaveTimerRef.current);
+    }
+    settingsSaveTimerRef.current = window.setTimeout(() => {
+      settingsSaveTimerRef.current = null;
+      flushRef.current();
+    }, delayMs);
+  }, []);
+
+  // P69b: send the accumulated patch now. Called by the debounce timer, by the
+  // bounded retry, and by teardown (`force`) — unmount, `pagehide`,
+  // `beforeunload` — where a patch still inside the window would otherwise die
+  // with the JS context.
+  const flushSettingsWrite = useCallback(
+    (force = false) => {
+      if (settingsSaveTimerRef.current !== null) {
+        window.clearTimeout(settingsSaveTimerRef.current);
+        settingsSaveTimerRef.current = null;
+      }
+      // A write is already out: leave the patch pending and let that write's
+      // settle handler pump it, so only one write is ever in flight. Teardown
+      // forces the send anyway — a possible reorder beats losing the patch.
+      if (settingsWriteInFlightRef.current && !force) return;
+      const merged = pendingSettingsPatchRef.current;
+      // Nothing pending — also the StrictMode double-mount case, where the first
+      // cleanup must not fire a write.
+      if (Object.keys(merged).length === 0) return;
+      pendingSettingsPatchRef.current = {};
+      settingsWriteInFlightRef.current = true;
+      void ipc.setUiSettings(merged).then(
+        () => {
+          settingsWriteInFlightRef.current = false;
+          settingsFailureStreakRef.current = 0;
+          // A change made while this write was out is still unsent. Re-arm the
+          // FULL window rather than writing immediately: the burst it belongs to
+          // may still be in progress, and coalescing it is the whole point.
+          if (Object.keys(pendingSettingsPatchRef.current).length > 0) {
+            armSettingsSave(SETTINGS_SAVE_DEBOUNCE_MS);
+          }
+        },
+        (e: unknown) => {
+          settingsWriteInFlightRef.current = false;
+          // P69b defect 2: the write failed, so put the patch back rather than
+          // drop it. Spread `merged` FIRST so anything changed since (which,
+          // single-writer, is still pending) wins — a retry must never resurrect
+          // a value the UI has moved past.
+          pendingSettingsPatchRef.current = { ...merged, ...pendingSettingsPatchRef.current };
+          const streak = settingsFailureStreakRef.current;
+          // One toast per failure streak, not one per retry.
+          if (streak === 0) pushToast('error', `Could not save settings: ${errorMessage(e)}`);
+          settingsFailureStreakRef.current = streak + 1;
+          // Bounded backoff (300 / 600 / 1200 ms), then wait for the next change
+          // or teardown: a permanently failing disk must not spin forever.
+          if (streak < SETTINGS_SAVE_MAX_RETRIES) {
+            armSettingsSave(SETTINGS_SAVE_DEBOUNCE_MS * 2 ** streak);
+          }
+        },
+      );
+    },
+    [armSettingsSave, pushToast],
+  );
+  // Render-time ref mutation, deliberately — NOT the bug deleted from App.tsx's
+  // `paneWidthsRef`. Both deps (`armSettingsSave`, `pushToast`) are stable, so
+  // every candidate closure here is behaviourally identical and a re-assignment
+  // from a discarded render cannot install a stale one. Do not "fix" by symmetry.
+  flushRef.current = flushSettingsWrite;
+
+  // P11c §3.2 / P69b: merge into the pending patch and re-arm the single 300 ms
+  // window. Every persisted setting rides this — the ones this hook owns state
+  // for (via `handleSettingsChange`) and App's four (theme, listView,
+  // paneWidths, onboardingSeen) — so one burst is one write, whatever moved.
+  const queueSettingsWrite = useCallback(
+    (patch: UiSettingsPatch) => {
+      pendingSettingsPatchRef.current = { ...pendingSettingsPatchRef.current, ...patch };
+      // A fresh user action earns a fresh retry budget (and, if it fails again, a
+      // fresh toast); the streak only silences the automatic retries.
+      settingsFailureStreakRef.current = 0;
+      armSettingsSave(SETTINGS_SAVE_DEBOUNCE_MS);
+    },
+    [armSettingsSave],
+  );
+
+  // P69b defect 3: flush a patch that is still inside the debounce window when
+  // the page goes away. React cleanup does NOT run on window close, app quit or
+  // reload, and `App` is the root (`src/main.tsx`) so it never unmounts in
+  // production — `pagehide`/`beforeunload` are what actually cover quit and
+  // reload; the cleanup covers HMR and tests. Synchronous fire-and-forget: the
+  // IPC call is dispatched, never awaited (nothing may await during teardown).
+  useEffect(() => {
+    // Cleared on every (re)mount: StrictMode's dev double-mount runs the cleanup
+    // once on the SAME instance, and a permanently-disposed hook would then
+    // never persist another setting.
+    disposedRef.current = false;
+    const flushNow = () => flushRef.current(true);
+    window.addEventListener('pagehide', flushNow);
+    window.addEventListener('beforeunload', flushNow);
+    return () => {
+      window.removeEventListener('pagehide', flushNow);
+      window.removeEventListener('beforeunload', flushNow);
+      flushNow();
+      // After this point a rejection may still land, but it must not schedule.
+      disposedRef.current = true;
+    };
+  }, []);
+
   // P11c §3.2: apply a Settings patch — update local state immediately (live
   // preview; graph changes bump metricsVersion so the canvas re-measures), then
-  // debounce a single merged persist (~300 ms, mirrors commitPaneWidths).
+  // debounce a single merged persist (~300 ms, shared with App's four writers).
   const handleSettingsChange = useCallback(
     (patch: UiSettingsPatch) => {
       if (patch.panelDensity !== undefined) setPanelDensity(patch.panelDensity);
@@ -174,19 +316,9 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
       if (patch.aiMaxTurns !== undefined) setAiMaxTurns(patch.aiMaxTurns);
       if (patch.aiMaxBudgetUsd !== undefined) setAiMaxBudgetUsd(patch.aiMaxBudgetUsd);
       if (patch.aiBulkMaxBytes !== undefined) setAiBulkMaxBytes(patch.aiBulkMaxBytes);
-      pendingSettingsPatchRef.current = { ...pendingSettingsPatchRef.current, ...patch };
-      if (settingsSaveTimerRef.current !== null) {
-        window.clearTimeout(settingsSaveTimerRef.current);
-      }
-      settingsSaveTimerRef.current = window.setTimeout(() => {
-        const merged = pendingSettingsPatchRef.current;
-        pendingSettingsPatchRef.current = {};
-        void ipc
-          .setUiSettings(merged)
-          .catch((e) => pushToast('error', `Could not save settings: ${errorMessage(e)}`));
-      }, 300);
+      queueSettingsWrite(patch);
     },
-    [pushToast],
+    [queueSettingsWrite],
   );
 
   // Launch-time hydration (§6.2). Same setter order as the single read it
@@ -247,6 +379,7 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
       aiBulkMaxBytes,
     },
     handleSettingsChange,
+    queueSettingsWrite,
     hydrateUiSettings,
   };
 }

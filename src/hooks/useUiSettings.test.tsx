@@ -5,89 +5,22 @@
  *  `metricsVersion` bump, the save-failure toast copy, launch-time hydration,
  *  and the referential stability `handleSettingsChange` owes its children.
  *
- *  House pattern (see useUpdateController.test.tsx): the `dom` vitest project
- *  runs with VITE_MOCK_IPC=1, so `ipc` IS `mockIpc` — spy on it directly. */
+ *  The P69b persist-path fixes (shared window for App-owned writers, retry of a
+ *  failed write, unmount flush) live in `useUiSettings.writePath.test.tsx`;
+ *  fixtures + mount helper are shared via `src/test/uiSettingsKit.ts`. */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, renderHook } from '@testing-library/react';
+import { act } from '@testing-library/react';
 
 import { mockIpc } from '../ipc/mock';
-import { useUiSettings } from './useUiSettings';
 import { appErr } from '../test/actionHookKit';
+import { deferred, GRAPH_PATCH, HYDRATED, mountUiSettings as mount } from '../test/uiSettingsKit';
 import type { ToastTone } from '../components/Toasts';
-import type { GraphPrefs, UiSettings } from '../ipc';
+import type { UiSettings } from '../ipc';
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
-
-function deferred<T>() {
-  let resolve!: (v: T) => void;
-  let reject!: (e: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
-
-/** A complete non-default `UiSettings`, used both as the resolved value of the
- *  mocked write and as the hydration payload. Every field differs from the
- *  hook's own defaults so hydration assertions cannot pass vacuously. A new
- *  UiSettings field breaks this literal at compile time — on purpose. */
-const HYDRATED: UiSettings = {
-  theme: 'light',
-  paneWidths: { sidebar: 300, rightPanel: 420 },
-  listView: 'flat',
-  panelDensity: 'compact',
-  autoFetch: { enabled: true, intervalMinutes: 11 },
-  healthRefresh: { enabled: true, intervalMinutes: 45 },
-  graph: {
-    avatarRadius: 14,
-    rowHeight: 40,
-    laneWidth: 22,
-    showSha: false,
-    showAuthor: true,
-    showDate: false,
-    dateBasis: 'committer',
-    showAheadBehind: false,
-    compact: true,
-    showSignatureBadge: false,
-    showPrBadge: true,
-    showCiStatus: true,
-  },
-  aiEnabled: false,
-  aiConflictAutonomy: 'autoResolve',
-  aiConsented: true,
-  mcpConsented: true,
-  mcpWriteConsented: true,
-  onboardingSeen: true,
-  autoCheckUpdates: true,
-  profiles: [
-    { id: 'p1', label: 'Work', userName: 'A Dev', userEmail: 'dev@example.com', signingKey: null },
-  ],
-  terminalCommand: 'wt.exe -d {path}',
-  editorCommand: 'code {path}',
-  // P68g: every one of these is now UI-reachable, so hydration must seed them all.
-  aiIdleTimeoutSecs: 120,
-  aiHardCapSecs: 900,
-  aiMaxTurns: 9,
-  aiStreamLog: false,
-  aiIncludePartialMessages: true,
-  aiConflictTools: 'none',
-  aiBulkMaxBytes: 200_000,
-  aiMaxBudgetUsd: 3,
-  aiDockHeight: 320,
-  aiDockCollapsed: true,
-};
-
-/** A graph patch that differs from the hook's defaults in a few knobs. */
-const GRAPH_PATCH: GraphPrefs = { ...HYDRATED.graph, rowHeight: 36 };
-
-/** Stable toast pusher — identity must not churn, or behaviour 6 is untestable. */
-function mount(push: (tone: ToastTone, text: string) => void = vi.fn()) {
-  return { push, ...renderHook(() => useUiSettings(push)) };
-}
 
 describe('debounced coalescing write', () => {
   it('a burst of three patches produces ONE merged write after 300 ms', () => {
@@ -138,7 +71,9 @@ describe('debounced coalescing write', () => {
     expect(spy).toHaveBeenCalledTimes(1);
 
     // Mid-flight patch: the pending ref was emptied before the call, so this
-    // must be retained on its own rather than dropped or re-sent.
+    // must be retained on its own rather than dropped or re-sent. (That empty
+    // only sticks when the write SUCCEEDS — P69b merges a failed patch back;
+    // see `useUiSettings.writePath.test.tsx`.)
     act(() => result.current.handleSettingsChange({ aiDockCollapsed: true }));
     await act(async () => {
       inFlight.resolve(HYDRATED);
@@ -150,22 +85,6 @@ describe('debounced coalescing write', () => {
     expect(spy.mock.calls[1][0]).toEqual({ aiDockCollapsed: true }); // no stale re-send
     expect(result.current.aiDockHeight).toBe(200);
     expect(result.current.aiDockCollapsed).toBe(true);
-  });
-
-  it('unmount does NOT cancel a pending write (no cleanup — pre-existing)', () => {
-    vi.useFakeTimers();
-    const spy = vi.spyOn(mockIpc, 'setUiSettings').mockResolvedValue(HYDRATED);
-    const { result, unmount } = mount();
-
-    act(() => result.current.handleSettingsChange({ panelDensity: 'compact' }));
-    unmount();
-    act(() => vi.advanceTimersByTime(300));
-
-    // Documents the shipped behaviour: the timer survives unmount, so the patch
-    // still reaches disk. Only tearing down the JS context (app quit) inside the
-    // 300 ms window loses it.
-    expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy.mock.calls[0][0]).toEqual({ panelDensity: 'compact' });
   });
 });
 
@@ -336,10 +255,15 @@ describe('referential stability', () => {
     const { result, rerender } = mount();
     const change = result.current.handleSettingsChange;
     const hydrate = result.current.hydrateUiSettings;
+    // P69b: four App callbacks (toggleTheme, toggleListView, commitPaneWidths,
+    // closeOnboarding) now list `queueSettingsWrite` in their deps, so its
+    // identity churning would churn theirs — and their children's props.
+    const queue = result.current.queueSettingsWrite;
 
     rerender();
     expect(result.current.handleSettingsChange).toBe(change);
     expect(result.current.hydrateUiSettings).toBe(hydrate);
+    expect(result.current.queueSettingsWrite).toBe(queue);
 
     // ...and across a re-render caused by the hook's OWN state changing, since
     // children hold it as a prop for the whole session.
@@ -349,5 +273,6 @@ describe('referential stability', () => {
     expect(result.current.metricsVersion).toBeGreaterThan(0); // did re-render
     expect(result.current.handleSettingsChange).toBe(change);
     expect(result.current.hydrateUiSettings).toBe(hydrate);
+    expect(result.current.queueSettingsWrite).toBe(queue);
   });
 });

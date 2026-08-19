@@ -59,10 +59,10 @@ export async function gotoHarness(page: Page, opts?: HarnessOptions): Promise<vo
  *  have actually LANDED in the mock's persisted UiSettings blob.
  *
  *  Why the extra wait: App.tsx's `closeOnboarding` hides the dialog
- *  synchronously but persists the flag fire-and-forget (`void
- *  ipc.setUiSettings(...)`, not awaited), and the mock handler sleeps ~150 ms
- *  before `writeUiSettings`. So the dialog being hidden proves nothing about
- *  storage — a `page.reload()` right after can beat the write and boot with
+ *  synchronously but only QUEUES the flag (P69b: `queueSettingsWrite` — the
+ *  shared ~300 ms coalescing window in useUiSettings, then the mock handler
+ *  sleeps ~150 ms before `writeUiSettings`). So the dialog being hidden proves
+ *  nothing about storage — a `page.reload()` right after can beat the write and boot with
  *  onboarding unseen again (flaky only under full-suite worker contention).
  *  Polling storage is the deterministic signal; never a fixed sleep.
  *

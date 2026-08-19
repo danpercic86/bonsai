@@ -92,8 +92,6 @@ export default function App() {
 
   const [paneWidths, setPaneWidths] = useState<PaneWidths>(DEFAULT_PANE_WIDTHS);
   const paneWidthsRef = useRef(paneWidths);
-  paneWidthsRef.current = paneWidths;
-  const saveTimerRef = useRef<number | null>(null);
 
   const [theme, setTheme] = useState<Theme>('dark');
   const [themeVersion, setThemeVersion] = useState(0);
@@ -218,6 +216,7 @@ export default function App() {
     aiStreamLog,
     aiRun,
     handleSettingsChange,
+    queueSettingsWrite,
     hydrateUiSettings,
   } = useUiSettings(pushToast);
 
@@ -260,10 +259,8 @@ export default function App() {
   // it does not reappear on the next launch.
   const closeOnboarding = useCallback(() => {
     setOnboardingOpen(false);
-    void ipc
-      .setUiSettings({ onboardingSeen: true })
-      .catch((e) => pushToast('error', `Could not save onboarding state: ${errorMessage(e)}`));
-  }, [pushToast]);
+    queueSettingsWrite({ onboardingSeen: true });
+  }, [queueSettingsWrite]);
 
   /** Open (or focus) a repo as a tab (§5.2). Non-usable opens surface an error
    *  (empty-state error when no tabs, else a toast) and add no tab. */
@@ -337,32 +334,27 @@ export default function App() {
     });
   }, []);
 
+  // P69b: these three (plus `closeOnboarding`) each used to fire their own
+  // `ipc.setUiSettings`, racing the hook's debounced merge — disjoint key sets
+  // today, silent field loss the day they overlap. They now update App's state
+  // for the live preview and hand the persist to the ONE coalescing window.
   const commitPaneWidths = useCallback(() => {
-    if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = window.setTimeout(() => {
-      void ipc
-        .setUiSettings({ paneWidths: paneWidthsRef.current })
-        .catch((e) => pushToast('error', `Could not save pane widths: ${errorMessage(e)}`));
-    }, 300);
-  }, [pushToast]);
+    queueSettingsWrite({ paneWidths: paneWidthsRef.current });
+  }, [queueSettingsWrite]);
 
   const toggleTheme = useCallback(() => {
     const next: Theme = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
     applyTheme(next);
     setThemeVersion((v) => v + 1);
-    void ipc
-      .setUiSettings({ theme: next })
-      .catch((e) => pushToast('error', `Could not save theme: ${errorMessage(e)}`));
-  }, [theme, pushToast]);
+    queueSettingsWrite({ theme: next });
+  }, [theme, queueSettingsWrite]);
 
   const toggleListView = useCallback(() => {
     const next: ListView = listView === 'tree' ? 'flat' : 'tree';
     setListView(next);
-    void ipc
-      .setUiSettings({ listView: next })
-      .catch((e) => pushToast('error', `Could not save list view: ${errorMessage(e)}`));
-  }, [listView, pushToast]);
+    queueSettingsWrite({ listView: next });
+  }, [listView, queueSettingsWrite]);
 
   // P49b: external-tool launchers for the per-tab context menu (the strip is
   // App-owned, spanning all tabs). Same shape as RepoWorkspace's — never gated
@@ -498,16 +490,23 @@ export default function App() {
     handleSetMcpAllowWrite(true);
   }, [handleSettingsChange, handleSetMcpAllowWrite]);
 
-  const handleSidebarResize = useCallback((delta: number) => {
-    setPaneWidths((w) => ({ ...w, sidebar: clampLive(w.sidebar + delta, 'sidebar', w.rightPanel) }));
+  // P69b: `paneWidthsRef` is authoritative AT CALL TIME, not from the next
+  // render — PaneDivider's Arrow-key path calls onResize + onResizeEnd in one
+  // handler, so `commitPaneWidths` would otherwise persist the pre-nudge width.
+  const applyPaneWidths = useCallback((next: PaneWidths) => {
+    paneWidthsRef.current = next;
+    setPaneWidths(next);
   }, []);
 
+  const handleSidebarResize = useCallback((delta: number) => {
+    const w = paneWidthsRef.current;
+    applyPaneWidths({ ...w, sidebar: clampLive(w.sidebar + delta, 'sidebar', w.rightPanel) });
+  }, [applyPaneWidths]);
+
   const handleRightPanelResize = useCallback((delta: number) => {
-    setPaneWidths((w) => ({
-      ...w,
-      rightPanel: clampLive(w.rightPanel + delta, 'rightPanel', w.sidebar),
-    }));
-  }, []);
+    const w = paneWidthsRef.current;
+    applyPaneWidths({ ...w, rightPanel: clampLive(w.rightPanel + delta, 'rightPanel', w.sidebar) });
+  }, [applyPaneWidths]);
 
   const handlePaneResizeEnd = useCallback(() => {
     commitPaneWidths();
@@ -720,7 +719,7 @@ export default function App() {
       // UI settings first (theme/panes/listView).
       try {
         const s = await ipc.getUiSettings();
-        setPaneWidths(s.paneWidths);
+        applyPaneWidths(s.paneWidths);
         setTheme(s.theme);
         applyTheme(s.theme);
         setThemeVersion((v) => v + 1);

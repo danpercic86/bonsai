@@ -692,7 +692,7 @@ forge landed. Moved onto this board 2026-08-19 (audit #2 §5.4).
 Same parking condition, now lifted; details in `docs/testing-campaign-2026-08/FINDINGS.md` F-A7-7.
 Moved onto this board 2026-08-19 (audit #2 §5.4).
 
-### Persisted-settings write path has three latent defects — **OPEN** (all pre-existing, found 2026-08-18)
+### Persisted-settings write path has three latent defects — ✅ **FIXED 2026-08-19 (P69b)**
 Found while extracting `useUiSettings`; none introduced by it (each verified against `git show HEAD`).
 1. **Four writers bypass the debounced merge.** `handleSettingsChange` coalesces into one 300 ms
    `setUiSettings`, but `closeOnboarding` (`{onboardingSeen}`), `toggleTheme`, `toggleListView` and
@@ -704,6 +704,32 @@ Found while extracting `useUiSettings`; none introduced by it (each verified aga
 3. **No unmount flush** for `settingsSaveTimerRef`. A pending patch still fires after unmount (so it is
    not lost in-session), but it is lost if the JS context dies inside the 300 ms window — app quit or
    window close right after a knob change — and a late write can outlive the unmount and race a read.
+
+
+**Resolved by P69b** (reviewer APPROVED after two fix rounds). 1 = all four writers now route through
+one coalescing window via a new persist-only `queueSettingsWrite`. 2 = a rejected patch is merged
+back newest-wins AND retried with bounded backoff (300/600/1200 ms, one toast per user action);
+correctness required serialising flushes behind an in-flight guard, because `{...merged, ...pending}`
+alone could resurrect a stale value when two writes overlapped. 3 = flush on unmount **plus**
+`pagehide`/`beforeunload`, since `App` is the root and never unmounts in production — the unmount
+hook alone was inert there.
+
+⚠️ **Two traps found during P69b — do NOT "fix" these back:**
+- `disposedRef` must be **cleared at the start of the effect body**, not only set in cleanup.
+  `main.tsx` wraps the app in `React.StrictMode`, whose dev double-mount runs cleanup once on the
+  same hook instance; a write-once flag would permanently dispose the hook at boot and **no setting
+  would ever persist in dev**.
+- `commitPaneWidths` reading `paneWidthsRef.current` synchronously broke keyboard pane resize:
+  `PaneDivider` calls `onResize` + `onResizeEnd` in ONE keydown handler, and the ref only refreshed
+  during render, so every Arrow nudge persisted the PRE-keypress width. Fixed by making the ref
+  authoritative at call time (`applyPaneWidths`); the render-time assignment is deliberately gone.
+  Its test forces `window.innerWidth = 1600` — at jsdom's 1024 the clamp collapses to `SIDEBAR_MIN`
+  and the buggy value is indistinguishable, so the test would be vacuous.
+
+**Spun out, not done here:** the teardown flush is dispatch-only, so a hard OS kill can still drop a
+pending write (needs a synchronous save on the Rust side); and the save-failure toast auto-dismisses
+after 5 s, so a user who looked away never learns — making it sticky was declined because `App.tsx`
+has one line of ratchet headroom.
 
 ### `docs/contracts/P68e-ai-activity-dock.md` is 1064 lines and now under-describes shipped code — **OPEN**
 Twice the ~500-line house limit. Also stale: P68g-1 (audit M3) added two elements to the ask block — an
