@@ -135,13 +135,17 @@ test.describe('14 destructive confirms @destructive', () => {
     // The Tags section is collapsed by default — expand it first.
     await page.getByRole('button', { name: 'Tags' }).click();
     let menu = await openBranchContextMenu(page, 'v1.1.0');
-    await menu.getByRole('menuitem', { name: 'Delete tag' }).click();
+    // Exact match: P77 adds a sibling "Delete tag on origin…" remote item that a
+    // substring 'Delete tag' would also match (strict-mode violation).
+    await menu.getByRole('menuitem', { name: 'Delete tag', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Delete tag' });
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(page.getByTitle('v1.1.0', { exact: true })).toBeVisible();
     menu = await openBranchContextMenu(page, 'v1.1.0');
-    await menu.getByRole('menuitem', { name: 'Delete tag' }).click();
+    // Exact match: P77 adds a sibling "Delete tag on origin…" remote item that a
+    // substring 'Delete tag' would also match (strict-mode violation).
+    await menu.getByRole('menuitem', { name: 'Delete tag', exact: true }).click();
     await confirm(page, 'Delete tag', 'Delete tag');
     await expect(page.getByTitle('v1.1.0', { exact: true })).toHaveCount(0);
   });

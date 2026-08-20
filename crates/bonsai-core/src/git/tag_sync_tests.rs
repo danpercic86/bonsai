@@ -83,6 +83,79 @@ fn parse_remote_prefers_peeled_committish() {
     assert!(!lann.contains("lw"));
 }
 
+/// Lightweight-vs-annotated on BOTH sides that peel to the SAME committish must
+/// be `in-sync` with `annotated=true` when either side is annotated (per §4:
+/// "annotated somewhere" is the display flag). A naive same-name compare that
+/// ignored the peel/annotated split could mis-flag these.
+#[test]
+fn classify_lightweight_vs_annotated_both_directions() {
+    let a = oid(1);
+
+    // Direction 1: lightweight LOCAL, annotated REMOTE, same committish.
+    let mut local = HashMap::new();
+    local.insert("mix".to_string(), (a, false)); // local is lightweight
+    let mut remote = HashMap::new();
+    remote.insert("mix".to_string(), a); // remote peeled committish
+    let mut remote_annotated = HashSet::new();
+    remote_annotated.insert("mix".to_string()); // remote advertised X^{}
+
+    let e = &classify(&local, &remote, &remote_annotated)[0];
+    assert_eq!(e.status, TagSyncStatus::InSync);
+    assert!(e.annotated, "annotated-on-remote must surface annotated=true");
+
+    // Direction 2: annotated LOCAL, lightweight REMOTE, same committish.
+    let mut local2 = HashMap::new();
+    local2.insert("mix".to_string(), (a, true)); // local annotated (peels to a)
+    let mut remote2 = HashMap::new();
+    remote2.insert("mix".to_string(), a); // remote lightweight commit oid
+    let empty = HashSet::new();
+
+    let e2 = &classify(&local2, &remote2, &empty)[0];
+    assert_eq!(e2.status, TagSyncStatus::InSync);
+    assert!(e2.annotated, "annotated-on-local must surface annotated=true");
+}
+
+/// `resolve_default_remote`: caller override wins; else `origin` is preferred
+/// over any other; else the first configured remote; else `NoRemote`.
+#[test]
+fn resolve_default_remote_selection() {
+    let dir = crate::testutil::scratch_dir();
+    let repo = git2::Repository::init(dir.path()).expect("init");
+
+    // No remotes yet → NoRemote.
+    match resolve_default_remote(&repo, None) {
+        Err(AppError::NoRemote(_)) => {}
+        other => panic!("expected NoRemote, got {other:?}"),
+    }
+
+    // A single non-origin remote → that remote is the default.
+    repo.remote("upstream", "https://example.invalid/u.git")
+        .expect("add upstream");
+    assert_eq!(
+        resolve_default_remote(&repo, None).expect("first-remote default"),
+        "upstream"
+    );
+
+    // Add `origin` → origin is preferred over the pre-existing remote.
+    repo.remote("origin", "https://example.invalid/o.git")
+        .expect("add origin");
+    assert_eq!(
+        resolve_default_remote(&repo, None).expect("origin default"),
+        "origin"
+    );
+
+    // A caller-supplied remote short-circuits the default resolution.
+    assert_eq!(
+        resolve_default_remote(&repo, Some("upstream")).expect("override"),
+        "upstream"
+    );
+    // Blank/whitespace override falls through to the default.
+    assert_eq!(
+        resolve_default_remote(&repo, Some("   ")).expect("blank override → default"),
+        "origin"
+    );
+}
+
 // ------------------------------------------------- end-to-end (bare remote)
 
 /// A signature usable without any git config (tests must not depend on the
@@ -164,6 +237,124 @@ fn list_tag_sync_against_bare_remote() {
     assert_eq!(by["localonly"].status, TagSyncStatus::LocalOnly);
     assert_eq!(by["remoteonly"].status, TagSyncStatus::RemoteOnly);
     assert_eq!(by["remoteonly"].local_oid, None);
+}
+
+/// The flagship v1.1.0 regression, end-to-end with an ANNOTATED tag: push an
+/// annotated tag, then force-move it on the remote to a new committish while the
+/// local annotated tag keeps the OLD target. It MUST classify `stale` (comparing
+/// the PEELED committish, never the tag-object oid), then `force_refresh_tag`
+/// MUST correct it to `in-sync`. This is the moved-tag bug P77 exists to kill.
+#[test]
+fn annotated_moved_tag_is_stale_then_refresh_fixes() {
+    let work_dir = crate::testutil::scratch_dir();
+    let bare_dir = crate::testutil::scratch_dir();
+    let repo = git2::Repository::init(work_dir.path()).expect("init work");
+    git2::Repository::init_bare(bare_dir.path()).expect("init bare");
+
+    let c0 = commit_file(&repo, "a.txt", "0", "c0");
+    let c1 = commit_file(&repo, "a.txt", "1", "c1");
+    let obj0 = repo.find_object(c0, None).expect("obj0");
+    let obj1 = repo.find_object(c1, None).expect("obj1");
+
+    let url = bare_dir.path().to_str().expect("utf8");
+    let mut remote = repo.remote("origin", url).expect("remote");
+
+    // Local ANNOTATED v1.1.0 at c0; push it (remote gets the tag object + peel).
+    repo.tag("v1.1.0", &obj0, &sig(), "release 1.1.0", false)
+        .expect("annot tag");
+    remote
+        .push(&["refs/tags/v1.1.0:refs/tags/v1.1.0"], None)
+        .expect("push v1.1.0");
+
+    // Simulate a "second machine" force-moving the tag on the remote to c1:
+    // retag annotated at c1 locally and force-push over the remote ref.
+    repo.tag("v1.1.0", &obj1, &sig(), "release 1.1.0 (moved)", true)
+        .expect("retag");
+    remote
+        .push(&["+refs/tags/v1.1.0:refs/tags/v1.1.0"], None)
+        .expect("force-push moved");
+    // Restore THIS machine's stale local view: annotated at the OLD target c0.
+    repo.tag("v1.1.0", &obj0, &sig(), "release 1.1.0", true)
+        .expect("stale local");
+
+    // Reproduce the bug: local peels to c0, remote peels to c1 → STALE, not a
+    // false in-sync and not a false-stale-from-comparing-tag-objects.
+    let before = list_tag_sync(work_dir.path(), None).expect("before");
+    let v = &before.entries[0];
+    assert_eq!(v.name, "v1.1.0");
+    assert_eq!(v.status, TagSyncStatus::Stale);
+    assert!(v.annotated);
+    assert_eq!(v.local_oid.as_deref(), Some(c0.to_string().as_str()));
+    assert_eq!(v.remote_oid.as_deref(), Some(c1.to_string().as_str()));
+
+    // Force-refresh corrects the local ref to the remote's target → in-sync.
+    force_refresh_tag(work_dir.path(), "origin", "v1.1.0").expect("refresh");
+    let after = list_tag_sync(work_dir.path(), None).expect("after");
+    assert_eq!(after.entries[0].status, TagSyncStatus::InSync);
+    assert_eq!(after.entries[0].local_oid, after.entries[0].remote_oid);
+}
+
+/// Lightweight LOCAL vs annotated REMOTE that peel to the SAME commit ⇒ in-sync,
+/// annotated=true — end-to-end through a real ls-remote (the peeled `^{}` entry
+/// is what makes the compare correct). Guards the crux across the wire, not just
+/// in the pure `classify`.
+#[test]
+fn lightweight_local_vs_annotated_remote_same_commit_in_sync() {
+    let work_dir = crate::testutil::scratch_dir();
+    let bare_dir = crate::testutil::scratch_dir();
+    let repo = git2::Repository::init(work_dir.path()).expect("init work");
+    git2::Repository::init_bare(bare_dir.path()).expect("init bare");
+
+    let c0 = commit_file(&repo, "a.txt", "0", "c0");
+    let obj0 = repo.find_object(c0, None).expect("obj0");
+    let url = bare_dir.path().to_str().expect("utf8");
+    let mut remote = repo.remote("origin", url).expect("remote");
+
+    // Push an ANNOTATED tag, then locally replace it with a LIGHTWEIGHT tag at
+    // the same commit — remote stays annotated, local is lightweight.
+    repo.tag("mix", &obj0, &sig(), "annotated", false)
+        .expect("annot");
+    remote
+        .push(&["refs/tags/mix:refs/tags/mix"], None)
+        .expect("push");
+    repo.tag_delete("mix").expect("del local annot");
+    repo.tag_lightweight("mix", &obj0, false).expect("light local");
+
+    let report = list_tag_sync(work_dir.path(), None).expect("reconcile");
+    let e = &report.entries[0];
+    assert_eq!(e.name, "mix");
+    assert_eq!(e.status, TagSyncStatus::InSync);
+    assert!(e.annotated, "remote is annotated → annotated=true");
+}
+
+/// A tag that peels to a NON-commit (a tree) classifies by the peeled object oid
+/// with no special-casing (§4 note). Same tree object on both sides ⇒ in-sync.
+#[test]
+fn remote_tag_peeling_to_non_commit() {
+    let work_dir = crate::testutil::scratch_dir();
+    let bare_dir = crate::testutil::scratch_dir();
+    let repo = git2::Repository::init(work_dir.path()).expect("init work");
+    git2::Repository::init_bare(bare_dir.path()).expect("init bare");
+
+    let c0 = commit_file(&repo, "a.txt", "0", "c0");
+    let tree_oid = repo.find_commit(c0).expect("commit").tree_id();
+    let tree_obj = repo.find_object(tree_oid, None).expect("tree obj");
+
+    let url = bare_dir.path().to_str().expect("utf8");
+    let mut remote = repo.remote("origin", url).expect("remote");
+
+    // Lightweight tag pointing directly at a TREE (not a commit) on both sides.
+    repo.tag_lightweight("treetag", &tree_obj, false)
+        .expect("tag tree");
+    remote
+        .push(&["refs/tags/treetag:refs/tags/treetag"], None)
+        .expect("push tree tag");
+
+    let report = list_tag_sync(work_dir.path(), None).expect("reconcile");
+    let e = &report.entries[0];
+    assert_eq!(e.name, "treetag");
+    assert_eq!(e.status, TagSyncStatus::InSync);
+    assert_eq!(e.local_oid.as_deref(), Some(tree_oid.to_string().as_str()));
 }
 
 /// No remote configured => `NoRemote`, never a panic.
