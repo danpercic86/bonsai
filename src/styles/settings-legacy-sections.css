@@ -1,8 +1,14 @@
-/* Bonsai — Settings page (P11c §3) — legacy sections, still un-migrated.
+/* Bonsai — Settings page (P11c §3) — the section-level furniture the canonical
+   row does not own: section/subsection headings, the Git-config and identity
+   blocks, the surviving radio group, and the AI/MCP status lines.
    Extracted verbatim from src/styles.css. Cascade order is fixed by the
-   import list in src/styles.css — do not reorder these rules or files. */
+   import list in src/styles.css — do not reorder these rules or files.
 
-/* ---------- Settings page (P11c §3) — legacy sections, still un-migrated ------ */
+   P69j retired the LEGACY `.settings-row` flex rule that used to live here: all
+   seven categories now render the canonical grid row from
+   settings-primitives.css, so that selector is unscoped and this file must not
+   reintroduce a `.settings-row` rule — it is imported AFTER the primitives, so
+   at equal specificity anything here would win. */
 
 .settings-section {
   margin-top: 20px;
@@ -25,24 +31,6 @@
   margin: 4px 0 10px;
   font-size: 12px;
   color: var(--text-3);
-}
-
-/* P63: a labelled sub-group inside a settings section (e.g. "Forge signals"). */
-.settings-subsection-title {
-  margin: 14px 0 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-2);
-}
-
-.settings-checkbox {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--text-1);
-  cursor: pointer;
-  margin-bottom: 10px;
 }
 
 .settings-control {
@@ -102,14 +90,6 @@
   color: var(--text-3);
 }
 
-.settings-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 8px;
-}
-
 .settings-toggle-btn {
   min-width: 72px;
 }
@@ -119,43 +99,14 @@
   color: var(--accent);
 }
 
-/* ---------- Settings: AI runs (P68g §4) ---------- */
-
-/* One inert switch for a whole settings section (the .settings-radio-group
-   :disabled idiom, applied at section scope). */
-.settings-section-fields {
-  margin: 0;
-  padding: 0;
-  border: none;
-}
-
-.settings-section-fields:disabled {
-  opacity: 0.5;
-}
-
-/* Per-control explanation. Same geometry as .settings-config-hint, --text-2
-   instead of --text-3 because these sentences must be read, not glanced at. */
-.settings-hint {
-  margin: 2px 0 10px;
-  font-size: 11px;
-  color: var(--text-2);
-}
-
-/* Hint under a radio, aligned with the radio's label text. */
+/* Hint under a radio, aligned with the radio's label text. A radio group exists
+   BECAUSE each option needs a sentence (ui-reference §12.3.2), so that sentence is
+   the row's primary help and matches row help at 12px — 11px next to 12px in the
+   same dialog is an inconsistency, not a hierarchy. */
 .settings-radio-hint {
   margin: 2px 0 0 24px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-2);
-}
-
-/* Indent a numeric row under the checkbox that enables it. */
-.settings-indent {
-  margin-left: 24px;
-}
-
-/* Two decimals plus a unit do not fit .settings-number's 56px. */
-.settings-number-wide {
-  width: 72px;
 }
 
 /* ---------- Settings: Git config (P40b) ---------- */
@@ -308,21 +259,10 @@
 
 /* ---------- Settings: AI assistance (P13 §8.1) ---------- */
 
-.settings-radio-group {
-  margin: 10px 0 0;
-  padding: 0;
-  border: none;
-}
-
-.settings-radio-group:disabled {
-  opacity: 0.5;
-}
-
-.settings-radio-legend {
-  padding: 0;
-  font-size: 12px;
-  color: var(--text-3);
-}
+/* The autonomy choice is the ONE surviving radio group (UI §5.2: each option
+   needs a sentence). P69j moved it into a canonical row, so the group is a
+   `role="radiogroup"` div named by the row label — the `<fieldset>`/`<legend>`
+   and their rules are gone, and the disabled dim now comes from the row. */
 
 .settings-radio {
   display: flex;
@@ -338,14 +278,13 @@
   accent-color: var(--accent);
 }
 
-.settings-radio-group:disabled .settings-radio {
-  cursor: default;
-}
-
+/* Readable prose ("Checking for the Claude Code CLI…"), so --text-2: --text-3 is
+   reserved for decorative text (§2) and measures 3.5:1 on --bg-0 dark. The -ok /
+   -warn variants below override this colour. */
 .settings-ai-status {
   margin: 12px 0 0;
   font-size: 12px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .settings-ai-status-ok {

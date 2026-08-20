@@ -6,6 +6,18 @@ function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
 }
 
+/** Snap to the control's grain. `step: 1` (the default) is plain `Math.round`; the
+ *  two-decimal re-round kills the float dust `Math.round(v / step) * step` leaves
+ *  behind for a non-binary step such as `0.01` (`29 * 0.01` is not `0.29`).
+ *
+ *  There is no `Number.EPSILON` fudge: after the snap the product is within ~1e-13
+ *  of a two-decimal grid point, so `x * 100` is never near a `.5` boundary and an
+ *  addend of 2.2e-16 cannot change any outcome at any step we use. */
+function quantise(v: number, step: number): number {
+  if (step === 1) return Math.round(v);
+  return Math.round(Math.round(v / step) * step * 100) / 100;
+}
+
 /** A labeled number input + range slider bound to the same value. Clamps and
  *  ignores non-numeric input (empty field) before calling `onChange`.
  *
@@ -22,6 +34,8 @@ export function NumberSlider({
   value,
   min,
   max,
+  step = 1,
+  typedStep = step,
   unit,
   disabled,
   describedBy,
@@ -33,6 +47,17 @@ export function NumberSlider({
   value: number;
   min: number;
   max: number;
+  /** P69j: the SLIDER's grain — how far one notch of the range input travels.
+   *  Defaults to 1, i.e. the whole-number behaviour every other caller has always
+   *  had. For the AI spend limit this is 0.50, so dragging the full range is ~200
+   *  notches rather than ~20 000. */
+  step?: number;
+  /** P69j: the TYPED grain — what a value entered in the number input is snapped
+   *  to, and the number input's own `step`. Defaults to `step`. It exists because
+   *  the two grains are not the same question: a coarse slider must not round a
+   *  money cap the user typed (`2.75` at a 0.5 grain becomes `3.00` — silently
+   *  raising a spend limit), so the budget row passes `typedStep={0.01}`. */
+  typedStep?: number;
   unit?: string;
   disabled?: boolean;
   /** P69g: render ONLY the inputs, for use inside a `SettingsRow` whose grid
@@ -60,7 +85,10 @@ export function NumberSlider({
     if (raw.trim() === '') return;
     const n = Number(raw);
     if (Number.isNaN(n)) return;
-    const next = clamp(Math.round(n), min, max);
+    // `typedStep`, not `step`: the range twin only ever hands us a multiple of
+    // `step`, which is also a multiple of the finer typed grain, so quantising at
+    // `typedStep` is a no-op for it — while a typed `2.75` survives intact.
+    const next = clamp(quantise(n, typedStep), min, max);
     lastCommitted.current = next;
     onChange(next);
   };
@@ -96,7 +124,7 @@ export function NumberSlider({
         type="range"
         min={min}
         max={max}
-        step={1}
+        step={step}
         value={value}
         disabled={disabled}
         onChange={(e) => commitExternal(e.target.value)}
@@ -108,7 +136,7 @@ export function NumberSlider({
         type="number"
         min={min}
         max={max}
-        step={1}
+        step={typedStep}
         value={draft ?? String(value)}
         disabled={disabled}
         aria-describedby={describedBy}

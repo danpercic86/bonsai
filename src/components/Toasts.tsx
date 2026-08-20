@@ -23,6 +23,19 @@ export interface ToastsProps {
   onDismiss(id: number): void;
 }
 
+/** P74 §1.2: tone glyphs — shape, not colour, carries severity (WCAG 1.4.1).
+ *  Four distinct silhouettes from the existing house vocabulary. Module-local
+ *  on purpose: exporting a non-component would trip
+ *  `react-refresh/only-export-components`. Deliberately not `⚠` for error
+ *  (that means "failed" in the AI dock), not `ℹ` for info (emoji
+ *  presentation ignores `--h`), and not `✕` (the dismiss glyph). */
+const TONE_GLYPH: Record<ToastTone, string> = {
+  error: '⊘',
+  warning: '⚠',
+  success: '✓',
+  info: '●',
+};
+
 /** Fixed top-right overlay, newest on top; rendered unconditionally in App
  *  (also over the empty state). */
 export function Toasts({ toasts, onDismiss }: ToastsProps) {
@@ -38,6 +51,9 @@ export function Toasts({ toasts, onDismiss }: ToastsProps) {
             className={`toast toast-${toast.tone}`}
             role={toast.tone === 'error' ? 'alert' : undefined}
           >
+            <span className="toast-glyph" aria-hidden="true">
+              {TONE_GLYPH[toast.tone]}
+            </span>
             <span className="toast-text">{toast.text}</span>
             <button
               type="button"

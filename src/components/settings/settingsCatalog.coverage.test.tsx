@@ -40,13 +40,14 @@ const MIGRATED: readonly SettingsCategoryId[] = [
   'about',
   'git-config',
   'identities',
+  'graph',
+  'ai',
 ];
 
-/** Still on legacy interiors — reachable from the rail, not yet catalog-shaped. */
-const PENDING: readonly SettingsCategoryId[] = [
-  'graph', // P69j
-  'ai', // P69j
-];
+/** Still on legacy interiors — reachable from the rail, not yet catalog-shaped.
+ *  P69j emptied it: all seven categories are now guarded. Both lists and the
+ *  partition tests stay until P69k deletes them together. */
+const PENDING: readonly SettingsCategoryId[] = [];
 
 // ------------------------------------------------------------- AM-4a predicates
 

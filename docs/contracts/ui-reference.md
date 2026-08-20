@@ -66,9 +66,9 @@ CSS custom properties on `:root` (dark, default) and `[data-theme="light"]`.
 
 Focus: 2px `--accent` outline, offset 1px, keyboard only (`:focus-visible`).
 
-**Contrast notes (measured 2026-08-17, P68e design pass).** Two known AA shortfalls; both are
-pre-existing and app-wide, so fixing them is its own milestone — but **new surfaces must not add
-to them**:
+**Contrast notes (measured 2026-08-17, P68e design pass; toast rows updated 2026-08-20, P74).**
+One known AA shortfall remains (`--text-3`); the hue-as-text family was retro-fitted by P74.
+**New surfaces must not add to either**:
 
 - `--text-3` is **3.38:1** on `--bg-1` and **3.67:1** on `--bg-0` (dark), **2.96:1** on `--bg-1`
   (light). That is below the 4.5:1 AA bar for text. Treat `--text-3` as **decorative only**
@@ -76,17 +76,18 @@ to them**:
   the user must actually read — metadata, timestamps, costs, log lines, hints, **status-pill
   labels**, **settings help text** — uses `--text-2` (**7.9:1** dark / **4.9:1** light on `--bg-0`;
   **7.3:1** / **7.4:1** on `--bg-1`).
-- `--warning` as *text* over its own 14% tint is **3.47:1** in light theme (`.toast-warning`,
-  `styles.css:623`). Use `--warning` for borders, glyphs and fills (≥3:1 graphics bar) and
-  `--text-1` for the words beside them. For a filled warning chip, `color: var(--bg-0)` on
-  `background: var(--warning)` is safe in both themes (**6.4:1** dark / **4.8:1** light).
-- **That rule generalises to every hue-as-text-over-its-own-tint pair** (measured 2026-08-19, P73
-  pass): `--danger` on its 14% tint over `--bg-2` (`.toast-error`) is **3.34:1** dark / **3.49:1**
-  light; `--success` on the same recipe (`.toast-success`) is **4.07:1** dark; `--success` on a 12%
-  tint over `--bg-1` (`.submodule-badge-ok`) is **4.76:1** dark / **4.06:1** light; `--warning` on
-  that recipe (`.submodule-badge-warn`) is ≈**5.4:1** / **3.94:1**. All pre-existing and app-wide.
-  **New surfaces use the §11 pill recipe instead.** Retro-fitting the three toast tones is a pending
-  pass of its own (`P73-submodule-reconnect-ui.md` §7.3 OPT-2).
+- **A hue is never a label colour over its own tint.** Use the hue for borders, glyphs, bars and
+  fills (≥3:1 graphics bar) and `--text-1` for the words beside them. For a filled warning chip,
+  `color: var(--bg-0)` on `background: var(--warning)` is safe in both themes (**6.4:1** dark /
+  **4.8:1** light). Measured failures of the forbidden recipe, kept as the evidence trail — hue on
+  its own 14% tint over `--bg-2`: `--danger` **3.35:1** dark / **3.48:1** light; `--accent`
+  **3.68** / **3.38**; `--success` **4.07** / **3.66**; `--warning` **4.96** / **3.53**. All four
+  were the four toast tones; **P74 fixed them** (§10.2 — label `--text-1` at **9.24–10.30:1** dark /
+  **11.68–12.00:1** light, hue demoted to a 3px leading bar + glyph at **3.35–4.96** / **3.38–3.69**,
+  clearing the 3:1 graphics bar). The same recipe on a 12% tint over `--bg-1`
+  (`.submodule-badge-ok` **4.76** / **4.06**, `.submodule-badge-warn` ≈**5.4** / **3.94**) was
+  already fixed in P73 by §11's pill recipe. **There is no remaining sanctioned use of
+  hue-as-text-over-its-own-tint anywhere in the app; a new one is a defect.**
 
 Additional measured pairs (2026-08-19, P70 pass), all on `--bg-1`: `--text-1` **13.5:1** dark /
 **15.4:1** light; `--warning` glyph **7.3:1** / **4.5:1**; `--success` glyph **5.7:1** / **4.7:1**;
@@ -98,6 +99,17 @@ Measured pairs added 2026-08-19 (P69 Settings pass), on `--bg-0`: `--accent` fil
 **4.7:1** light; `--text-2` fill **7.9:1** / **4.9:1**; `--text-1` on `--selection` **9.4:1** /
 **13.3:1**; `--accent` 1px border on `--bg-2` **4.4:1** / **4.1:1**. `--accent` on `--selection` is
 **2.6:1** / **3.6:1** — decorative delineation only, never a meaning carrier.
+
+Measured pairs added 2026-08-20 (P74 pass), `--text-1` over a hue's own 14% tint on `--bg-2` — the
+canonical "hue surface, readable words" pair: **9.24–10.30:1** dark, **11.68–12.00:1** light,
+across all four of `--danger` / `--success` / `--warning` / `--accent`. Use these numbers for any
+new tinted surface that must carry prose.
+
+**Dimming budget (added 2026-08-20, P69j pass).** `opacity: .55` on `--text-1` over `--bg-0` lands
+at ≈**4.2:1** dark / **3.6:1** light — acceptable *only* on genuinely inert controls (WCAG 1.4.3
+exempts inactive components). It is a budget, not a free knob: **it may be spent once per subtree**.
+Two nested `.55` layers compound to **.30**, which is ≈2.5:1 dark / ≈1.8:1 light and unreadable in
+both themes. See §12.3.3.
 
 ## 3. Typography & spacing
 
@@ -113,7 +125,33 @@ Measured pairs added 2026-08-19 (P69 Settings pass), on `--bg-0`: `--accent` fil
   `--ai-dock-*` on `.ai-dock` (P68e). **Scope:** the right panel and the dock only — the sidebar,
   the Settings overlay, dialogs, and app chrome (header, workspace toolbar, the §10 notice bar) have
   one geometry in both densities.
-- Interactive controls are **≥24px** tall in every density (AA hit target).
+
+### 3.1 Hit-target floor (WCAG 2.2 · 2.5.8)
+
+- Every interactive control is **≥24 × 24 CSS px**, in every density and both themes. There is no
+  compact-mode escape hatch outside the two density scopes named above.
+- **The box grows, the glyph does not.** Enlarge the transparent/hover box around an icon and leave
+  the painted glyph at its designed size. Canonical sizes: `.btn-icon` **32×32** around a 14–16px
+  glyph (header toolbar); `.sidebar-add` **24×24** around a 14px `+` and a 14×14 SVG;
+  `.settings-switch` **36×24** where the invisible `<input>` *is* the target. Never inflate the
+  glyph to reach the floor — that changes visual weight and density.
+- **Prefer `align-self: stretch` over a hardcoded height** when the control sits in a row that
+  already owns a height (`.sidebar-section-toggle` in a 24px `.sidebar-section-header`,
+  `.tree-dir-toggle` in a `.tree-dir-row`). The control then tracks the row and stays correct when
+  a density block changes the row height.
+- **Sidebar geometry (P74).** One 24px module for everything: `.sidebar-section-header` 24,
+  `.sidebar-section-toggle` 24 (stretched), `.sidebar-add` 24×24, `.list-filter-clear` 24×24,
+  `.list-filter-input` 24, `.branch-row` 24, `.sidebar .tree-dir-toggle` 24, `.error-dismiss`
+  24×24, `.toast-dismiss` 24×24. `.sidebar-section` keeps `margin-bottom: 16px` and `.branch-list`
+  `margin-top: 4px`. Before P74 the toggles were 16px, the action buttons 20×20, and the Tags
+  header 16px against the others' 20px — the fix also removed that rhythm inconsistency.
+- **Known exemption:** `.right-panel[data-density='compact']` sets `--rp-row-h: 20px`, so
+  `.tree-dir-row`/`.tree-dir-toggle` are 20px there. That is a deliberate user opt-in inside a
+  density scope; raising it would delete the point of `compact`. Do not "fix" it silently, and do
+  not copy it to any surface outside that scope.
+- Row hover-action buttons (`.row-action`, §7.1) are 20×20 and are the one other standing
+  exception: they live inside a 24px row, are revealed on hover, and sit in a 2px-gap cluster where
+  24px boxes would collide. Treat the **row** as the target for pointer purposes.
 
 ## 4. Commit graph metrics (canvas)
 
@@ -165,6 +203,11 @@ renamed `--accent`. Letter badge (A/M/D/U/R) in mono 11px before the path.
 
 **Never let color be the only carrier of meaning** — the A/M/D/U/R letter badge is the house
 precedent. Every new status indicator pairs its hue with a letter, word, or glyph.
+
+**House glyph vocabulary** (use these, do not invent synonyms): `✓` good/ready/checked ·
+`⚠` warning/failed · `⊘` blocked/refused/cancelled · `●` neutral/informational ·
+`✕` dismiss/close · `?` unknown/needs-you. A single glyph never means two different things on two
+surfaces — that is why toast `error` is `⊘` and not `⚠` (§10.2).
 
 ### 7.1 Row hover actions (Changes / Staged rows and folder rows)
 
@@ -222,7 +265,7 @@ listed by name in the dialog body (first 10, then "+N more").
   the UI). Backend messages reaching a toast must therefore be complete, capitalised,
   period-terminated, user-ready sentences — **never raw libgit2 prose and never internal paths like
   `.git/modules/…`**. Repeatable failures pass a dedupe `key` (`<domain>:<target>`) so pressing a
-  failing action N times never stacks N identical alerts (§10.1 mechanism).
+  failing action N times never stacks N identical alerts (§10.1 mechanism). Visual recipe: §10.2.
 - Buttons: primary (accent), secondary (bg-2 + border), icon (transparent, bg-2 on hover); all
   32px tall, 6px radius (dock-density controls may go to 28/24px — §3).
 - **Dialog body text (P68g).** Primary sentences: `.dialog-body`, 13px `--text-1`. Must-read
@@ -292,7 +335,9 @@ First and currently only instance: `GitMissingBanner` ("Git is not available").
 - **Severity.** Degraded-but-usable ⇒ **warning**, not danger: `background: var(--bg-1)`,
   `border-bottom: 1px solid var(--border)`, `box-shadow: inset 3px 0 0 var(--warning)` as the left
   severity rail, plus an `aria-hidden` `⚠` glyph in `--warning`. **All words are `--text-1` /
-  `--text-2`** (§2's `--warning`-as-text rule). One rule set serves both themes; **no new token**.
+  `--text-2`** (§2's hue-as-text rule). One rule set serves both themes; **no new token**. The 3px
+  left severity rail is the same device toasts use (§10.2) — it is the house severity idiom for a
+  wide surface.
 - **Content shape.** Title (13px/600 `--text-1`) → one-line explanation (12px `--text-2`) → the
   single best remedy (13px `--text-1` — it is the thing the user came for). Secondary remedies,
   the degraded-capability list, and the paste-into-a-bug-report technical block live behind a
@@ -321,6 +366,47 @@ First and currently only instance: `GitMissingBanner` ("Git is not available").
 rule lives in App's `pushToast`; the presentational component ignores it. Use it for any action a
 user will plausibly retry: convention `<domain>:<target>` (e.g. `submodule:vendor/libcore`).
 
+### 10.2 Toast tone recipe (P74 — canonical)
+
+Full contract: `docs/contracts/P74-a11y-toasts-hit-targets.md`. Toasts are the one hue surface
+large enough that §11's all-round 40% border cannot carry the tone, so the hue moves to a
+**leading edge bar**. This is the recipe for any wide tinted surface that carries prose.
+
+- **Geometry.** `.toast-stack`: `position: fixed; top: 52px; right: 12px; width: 360px; gap: 8px;
+  z-index: 90` (above panes, below `.dialog-overlay` at 100), newest on top, `aria-live="polite"`.
+  `.toast`: `display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px 8px 10px;
+  border-radius: 6px; font-size: 13px; overflow-wrap: anywhere; box-sizing: border-box`. Text
+  column **284px**. Density-invariant — a fixed overlay is outside the §3 density scopes.
+- **Colour.** One local `--h` per tone (the §11 convention): `--danger` / `--success` /
+  `--warning` / `--accent`. `background: color-mix(in srgb, var(--h) 14%, var(--bg-2))`;
+  `border: 1px solid color-mix(in srgb, var(--h) 35%, var(--bg-2))`;
+  `border-left: 3px solid var(--h)`; `color: var(--text-1)`. **No new theme token, no hex.**
+- **Contrast.** Label **9.24–10.30:1** dark / **11.68–12.00:1** light (AA text ✓ in all four tones,
+  both themes). Bar + glyph **3.35–4.96** / **3.38–3.69** (1.4.11 graphics ✓). The 1px 35% border is
+  **1.69–2.25:1** and is decorative delineation only, exactly as in §11 — never a meaning carrier.
+- **The glyph is mandatory, not decoration.** With the label at `--text-1`, the tint and the bar are
+  pure colour in a fixed position, so they cannot satisfy WCAG 1.4.1 on their own. `.toast-glyph` is
+  `flex: none; width: 14px; font-size: 13px; line-height: 1.45; text-align: center;
+  color: var(--h)`, carries `aria-hidden="true"` (the `role="alert"` announcement must stay the
+  prose only), and uses the §7 vocabulary: **error `⊘`** (every error toast is a refusal),
+  **warning `⚠`**, **success `✓`**, **info `●`**. Error is deliberately not `⚠` — `⚠` already means
+  "failed" in the AI dock, and error-vs-warning is precisely the pair that must separate without
+  colour. Info is deliberately not `ℹ` — it has an emoji presentation on Windows and macOS and would
+  ignore `--h`.
+- **Dismiss.** `.toast-dismiss` is **24×24** (§3.1), `margin: -3px -4px -3px 0` so the box is
+  optically centred on line 1 and reclaims 4px of text column, `color: inherit` (now `--text-1`,
+  **10.30:1** dark), `aria-label="Dismiss"`, hover
+  `background: color-mix(in srgb, currentcolor 12%, transparent)`.
+- **Behaviour, unchanged and load-bearing.** `error` ⇒ `role="alert"` + `sticky: true`; every other
+  tone auto-dismisses at 5 s; the stack caps at 5; §10.1 dedupe applies. Toasts never take focus,
+  Esc does not dismiss them, they are not in the command palette, and the component returns `null`
+  at zero toasts.
+- **Long content.** No `max-height`, no clamp, no ellipsis — a toast wraps to whatever height it
+  needs (`overflow-wrap: anywhere`). The worst observed real case (a submodule URL-mismatch refusal
+  with a 91-char path and two URLs) is ≈360×244px and stays readable and dismissible.
+- **Motion.** None. Toasts appear and disappear without transition, so there is nothing for
+  `prefers-reduced-motion` to honour and nothing contending with the canvas render budget.
+
 ## 11. Status pills (rows and chrome)
 
 The canonical recipe, first shipped as the AI dock's status pills (§9) and applied to the sidebar
@@ -342,6 +428,12 @@ row badges (`.submodule-badge-*`, shared by submodule and worktree rows — `Sid
   **1.7–2.3:1** against the row background; never rely on it to carry meaning. Set the hue through
   the local `--h` custom property, the AI-dock convention. **Do not use the hue as the label colour**
   over its own tint — that recipe misses AA (§2).
+- **This recipe is size-bounded (added 2026-08-20, P74).** The 40% perimeter border reads as tone
+  only at pill scale (≈20px tall, ≈60–110px wide). On a wide surface — a toast, a notice bar, a
+  banner — the same hairline measures 1.7–2.3:1 across a 360px edge and disappears; there, move the
+  hue into a **3px leading edge bar** and keep the `--text-1` label + 100% `aria-hidden` glyph
+  unchanged (§10.2 toasts, §10 notice bar). The label rule and the glyph rule never change with
+  size; only the hue's *shape* does.
 - **Title attribute.** A pill's `title` explains *why* the state holds and what fixes it; it must
   never merely repeat the visible label. Keep the *why* out of the visible row text.
 - **Busy pill.** While an op runs on that row, the pill's label becomes the present participle
@@ -408,6 +500,22 @@ row 2: [ help 12px --text-2, 56ch   ]  control spans both rows
 - Help text is **`--text-2`, never `--text-3`** (§2), carries `id="{rowId}-help"`, and is wired to
   the control with `aria-describedby`. A setting whose effect is not obvious from its label gets
   help text; a section-level paragraph explaining three different rows is a smell — split it.
+- **Exactly one help line per row.** `.settings-row-help` is the static sentence, owned by the
+  catalog. A row whose explanation must track the live value uses `.settings-row-note` instead —
+  identical typography (12px `--text-2`, `margin-top: 2px`, `max-width: 56ch`), same help cell,
+  emitted by the call site because the catalog is static data — and then carries **no** catalog
+  `help` at all. **Never both.** A static line sitting above a stateful line that restates it is the
+  section-paragraph smell moved down one level, and it inflates the row by ~45px.
+- **Everything visible in the help cell is in the control's `aria-describedby`.** Where a row
+  legitimately shows two paragraphs (a note plus a conditional caveat), the control names both ids,
+  space-separated. A visible sentence the screen reader never hears is the same defect as a hidden
+  one, and it is the failure mode of a note that lives on a *neighbouring* row.
+- `.settings-group-lead` — 12px `--text-2`, `margin: 0 0 8px`, 56ch — is the **group-level**
+  paragraph: a frozen section description, or the §12.3.3 gate note. It sits directly under the
+  group title and outside every row. `.settings-group-note` is the same type at the **foot** of a
+  group, for a caveat qualifying several rows at once ("PR and CI badges need a connected forge…").
+  Neither is a substitute for per-row help; use them only when the sentence genuinely has no single
+  owning row.
 - Reset `↺`: 24×24 `.btn-icon`, `aria-label="Reset {label} to default"`,
   `title="Reset to default ({value})"`. **Conditionally rendered** when value ≠ default; the 24px
   grid column is always reserved so the row never shifts. Reset lives **per row only** — no
@@ -415,7 +523,10 @@ row 2: [ help 12px --text-2, 56ch   ]  control spans both rows
 - `.settings-row--stacked`: label / help / control each on its own grid row, control at
   `width: 100%`. Use for text fields, paths, and read-only value + Copy pairs.
 - Two rows in one dialog must never share an accessible name (`Fetch every` / `Refresh every`, not
-  `Interval` / `Interval`).
+  `Interval` / `Interval`; `Time limit` / `Spend limit`, not `Limit` / `Limit`). A `NumberSlider`
+  produces **two** named controls — the range twin is `aria-label`led from the same string — so one
+  duplicated label is four ambiguous nodes. Proximity to a distinguishing switch above does not
+  count: the accessible name must stand alone.
 
 ### 12.3 Control kinds
 
@@ -465,6 +576,29 @@ arrow-key navigation and `getByRole('radio', {name})` come free. **Never** `role
   (`--accent` on `--bg-2` = **4.4:1** dark / **4.1:1** light).
 - Focus: `.settings-segment:has(> input:focus-visible)` → 2px `--accent`, offset 1px.
 - Max 3 segments.
+- A radio group that stays a **radio group** (each option needs a sentence) is a
+  `role="radiogroup"` **div** named by the row label via `aria-labelledby` — not a
+  `<fieldset>`/`<legend>`, which reports `group` and hides the row label from the control's
+  accessible name. Each option's sentence is `--text-2` at the **same 12px as row help**; an 11px
+  hint next to 12px help in the same dialog is an inconsistency, not a hierarchy.
+
+#### 12.3.3 Disabling a whole group
+
+- One `<fieldset disabled>` around the dependent rows. It is the only mechanism that removes every
+  descendant from the tab order in one place, and it maps exactly to the real dependency.
+- The reason **leads** the group as a `.settings-group-lead` carrying an id, and the `<fieldset>`
+  carries `aria-describedby` pointing at it (only while the note exists — a dangling idref is worse
+  than none), so the reason is announced on entry rather than discovered afterwards.
+- The `.55` dim lives on `.settings-row.is-disabled`, **never on the `<fieldset>`**: `opacity` is a
+  group property, so dimming the fieldset would dim the very sentence that explains the dim.
+- **`opacity` never nests** (§2, dimming budget). A dimmed row's descendants must not dim
+  themselves — `.55 × .55 = .30`. Any control with its own `disabled` opacity rule is reset to `1`
+  inside `.settings-row.is-disabled`, and the override must win on **specificity**, not source
+  order: `:has()` takes the specificity of its most specific argument, so the obvious override ties
+  and the *later* rule silently wins. Qualify the override so it cannot tie, and keep it after the
+  rule it defeats.
+- Hue never carries disablement, and the switch knob's **position** still reads on-vs-off through
+  the dim.
 
 ### 12.4 Keyboard, roles, focus
 
@@ -482,7 +616,7 @@ arrow-key navigation and `getByRole('radio', {name})` come free. **Never** `role
 - Focus restore: the element active before opening, falling back to the ⚙ trigger.
 - `Esc` is layered: it first clears a non-empty search (the `ListFilterInput` capture-phase idiom),
   then closes the dialog. `Enter` never closes — settings apply live and there is no "OK".
-- Every hit target ≥24px: rail 32, switch 36×24, segment ≥24, reset 24, close 32.
+- Every hit target ≥24px: rail 32, switch 36×24, segment ≥24, reset 24, close 32 (§3.1).
 
 ### 12.5 Settings search
 
@@ -491,7 +625,8 @@ arrow-key navigation and `getByRole('radio', {name})` come free. **Never** `role
   know the setting's name, not its category".
 - Matching: synchronous, case-insensitive substring, all whitespace-separated terms required, over
   `label` + `help` + a never-displayed `keywords` string (the `PaletteAction.keywords` idiom). Not
-  fuzzy.
+  fuzzy. A row that carries a stateful `.settings-row-note` instead of catalog `help` (§12.2) must
+  compensate in `keywords` — that is the only place its vocabulary can live.
 - The searchable index is **pure data in its own module** (`settings/settingsIndex.ts`), never
   inlined in a component — the same rule as any large static table.
 - Matched substrings in the label are wrapped in `<mark>`: `background: var(--selection);

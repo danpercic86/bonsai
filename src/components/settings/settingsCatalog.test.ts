@@ -30,14 +30,6 @@ const CATEGORY_IDS: readonly SettingsCategoryId[] = [
   'about',
 ];
 
-/** Known, FLAGGED same-category label collision: UI §1.3 #48 and #50 both render
- *  a control called "Limit" inside AI → Runs → Limits — two spinbuttons sharing one
- *  accessible name in a single group, which is an a11y defect as well as a search
- *  defect. Everything else must be unique per category; listed so a NEW collision
- *  still fails, and so this one has an end date.
- *  TODO(P69j): relabel to 'Time limit' / 'Spend limit'; then delete this allowlist entry. */
-const KNOWN_LABEL_COLLISIONS: readonly string[] = ['ai::Limit'];
-
 /** Values that differ from the defaults in every field any `reset` touches. */
 const MUTATED: UiSettings = {
   ...cloneDefaultUiSettings(),
@@ -92,7 +84,6 @@ const RESET_LEAVES: Readonly<Record<string, string>> = {
   'graph.signature-badge': 'graph.showSignatureBadge',
   'graph.pr-badges': 'graph.showPrBadge',
   'graph.ci-status': 'graph.showCiStatus',
-  'ai.enabled': 'aiEnabled',
   'ai.conflict-resolution': 'aiConflictAutonomy',
   'ai.repository-access': 'aiConflictTools',
   'ai.stream-output': 'aiStreamLog',
@@ -189,15 +180,8 @@ describe('catalog identity and shape', () => {
       expect(entry.group.trim()).not.toBe('');
       expect(entry.help?.trim() ?? 'x').not.toBe('');
       const key = `${entry.category}::${entry.label}`;
-      if (KNOWN_LABEL_COLLISIONS.includes(key)) continue;
       expect(seen.has(key), `duplicate label in ${entry.category}: ${entry.label}`).toBe(false);
       seen.add(key);
-    }
-    // The allowlist must stay a description of reality, not a growing excuse.
-    for (const key of KNOWN_LABEL_COLLISIONS) {
-      const [category, label] = key.split('::');
-      const hits = SETTINGS_INDEX.filter((e) => e.category === category && e.label === label);
-      expect(hits.length).toBe(2);
     }
   });
 
@@ -322,8 +306,12 @@ describe('reset descriptors (§3.4)', () => {
 
   it('omits the ↺ everywhere §3.4 says it must be absent', () => {
     const noReset = SETTINGS_INDEX.filter((e) => e.reset === undefined).map((e) => e.id);
-    // The three P68 mode sentinels and their switches.
+    // The three P68 mode sentinels and their switches, plus the AI master switch:
+    // `resetRow` patches `{aiEnabled}` straight through `onChange`, bypassing the
+    // consent-aware `setAiEnabled`, so a ↺ would turn AI on without the consent
+    // dialog. Pinned here so it cannot be re-added with the suite green (P69j-1).
     for (const id of [
+      'ai.enabled',
       'ai.idle-timeout-enabled',
       'ai.idle-timeout-secs',
       'ai.hard-cap-enabled',

@@ -12,29 +12,44 @@
   margin-bottom: 16px;
 }
 
+/* P74 §2.2: the header row sets the 24px hit-target floor (WCAG 2.2 2.5.8) and
+   normalises all six section headers onto one 24px module (Tags was 16px). */
 .sidebar-section-header {
   display: flex;
   align-items: center;
   gap: 4px;
+  min-height: 24px;
 }
 
 .sidebar-section-toggle {
   flex: 1;
   min-width: 0;
+  /* Fills the 24px header instead of hardcoding a height. */
+  align-self: stretch;
   display: flex;
   align-items: center;
   gap: 4px;
   border: none;
   background: transparent;
-  padding: 2px 0;
+  /* P74 OPEN-1: the negative margin keeps the label's optical left edge where
+     it is today while the hover wash covers the full target. */
+  padding: 0 4px;
+  margin-left: -4px;
   cursor: pointer;
   text-align: left;
 }
 
+.sidebar-section-toggle:hover {
+  background: var(--bg-2);
+  border-radius: 4px;
+}
+
+/* P74 §2.2: the transparent box grows to 24px; the painted glyph stays 14px
+   (see `.sidebar-add-icon svg`) — same relationship as `.btn-icon`. */
 .sidebar-add {
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   border: none;
   border-radius: 4px;
   background: transparent;
@@ -265,8 +280,8 @@
 
 .list-filter-clear {
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   border: none;
   border-radius: 4px;
   background: transparent;

@@ -13,7 +13,7 @@
  */
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 
 import { SettingsAiRunSection } from './SettingsAiRunSection';
 import type { AiRunPrefs } from '../settings/aiRunPrefs';
@@ -67,15 +67,22 @@ function num(id: string): HTMLInputElement {
   return document.getElementById(id) as HTMLInputElement;
 }
 
-function access(): HTMLElement {
-  return screen.getByRole('button', { name: /Repository access/ });
+/** The repository-access segmented control (UI §5.3 item 4 — it was a
+ *  self-labelling button, the riskiest place for that defect: it names a
+ *  permission level). Native radios inside a `role="radiogroup"`. */
+function accessGroup(): HTMLElement {
+  return screen.getByRole('radiogroup', { name: 'Repository access' });
+}
+
+function accessOption(name: 'Read-only' | 'No file access'): HTMLElement {
+  return within(accessGroup()).getByRole('radio', { name });
 }
 
 describe('SettingsAiRunSection — one field per patch', () => {
   it('each of the eight controls patches exactly its own key', () => {
     const { onPatch } = mount({ aiHardCapSecs: 1800, aiMaxBudgetUsd: 5 });
 
-    fireEvent.click(access());
+    fireEvent.click(accessOption('No file access'));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Stream AI output' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Stream partial replies' }));
     fireEvent.change(num('settings-ai-idle'), { target: { value: '600' } });
@@ -100,16 +107,18 @@ describe('SettingsAiRunSection — one field per patch', () => {
   // pick, and none may appear as one.
   it('repository access offers exactly two values, and never a write grant', () => {
     mount();
-    const seen: string[] = [];
-    for (let i = 0; i < 4; i += 1) {
-      seen.push(access().textContent ?? '');
-      fireEvent.click(access());
-    }
-    expect(seen).toEqual(['Read-only', 'No file access', 'Read-only', 'No file access']);
-    // No third value is reachable, and none of the offered ones grants writing.
-    for (const label of new Set(seen)) {
+    const options = within(accessGroup()).getAllByRole('radio');
+    const seen = options.map((o) => o.parentElement?.textContent ?? '');
+    // No third value is reachable, the CURRENT one is shown as selected rather
+    // than as the button's label, and none of the offered ones grants writing.
+    expect(seen).toEqual(['Read-only', 'No file access']);
+    expect(accessOption('Read-only')).toBeChecked();
+    for (const label of seen) {
       expect(label.toLowerCase()).not.toMatch(/write|edit|bash/);
     }
+    fireEvent.click(accessOption('No file access'));
+    expect(accessOption('No file access')).toBeChecked();
+    expect(within(accessGroup()).getAllByRole('radio')).toHaveLength(2);
   });
 });
 
@@ -246,8 +255,12 @@ describe('SettingsAiRunSection — states and a11y', () => {
     expect(fieldset).toHaveAttribute('aria-describedby', 'ai-run-gate-note');
     const note = document.getElementById('ai-run-gate-note');
     expect(note).toHaveTextContent('Turn on “Enable AI features” above to change these.');
-    // Note BEFORE the controls it explains (DOCUMENT_POSITION_FOLLOWING = 4).
-    expect(note!.compareDocumentPosition(fieldset!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(4);
+    // P69j / UI §5.4: the note now LEADS the group — inside the fieldset (so the
+    // fieldset can point at it, and so the .55 row dim never touches it), but
+    // before every row it explains (DOCUMENT_POSITION_FOLLOWING = 4).
+    expect(fieldset!.contains(note!)).toBe(true);
+    const firstRow = container.querySelector('[data-setting-id]');
+    expect(note!.compareDocumentPosition(firstRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(4);
   });
 
   it('AI on: the fieldset has no dangling describedby (the note is gone)', () => {
@@ -290,13 +303,14 @@ describe('SettingsAiRunSection — states and a11y', () => {
     for (const id of offRefs) expect(document.getElementById(id)).not.toBeNull();
   });
 
-  it('the access button has a name that says what it controls, not just its value', () => {
+  it('the access group is named by its row, and each option names its own value', () => {
     mount();
-    expect(access()).toHaveAttribute(
-      'aria-label',
-      'Repository access — currently Read-only. Activate to switch to No file access.',
-    );
-    expect(access()).toHaveAttribute('aria-describedby', 'settings-ai-tools-hint');
+    // The group carries the SETTING's name and the options carry the VALUES —
+    // which is what the old self-labelling button could not express.
+    expect(accessGroup()).toHaveAttribute('aria-labelledby', 'ai.repository-access-label');
+    for (const option of within(accessGroup()).getAllByRole('radio')) {
+      expect(option).toHaveAttribute('aria-describedby', 'settings-ai-tools-hint');
+    }
   });
 
   it('the read grant is disclosed in words, and switched with the value', () => {
@@ -304,7 +318,7 @@ describe('SettingsAiRunSection — states and a11y', () => {
     expect(
       screen.getByText(/Anything it reads is sent to Anthropic\./),
     ).toBeInTheDocument();
-    fireEvent.click(access());
+    fireEvent.click(accessOption('No file access'));
     expect(
       screen.getByText(/Claude sees only the conflicting versions of each file/),
     ).toBeInTheDocument();

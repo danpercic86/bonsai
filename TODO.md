@@ -972,14 +972,50 @@ SAME working tree. Overlap was measured: only **`src/styles.css`** is contested 
 paths only (never `git add -A`), scope vitest runs to the files under change, and run no cargo
 commands (P69 is frontend-only; concurrent cargo races the shared target dir).
 
-**Current step:** 🚧 **P69j in progress — finishing the milestone (P69j · P69k · P69l).**
-Ordered: **P69j-0** split `src/styles.css` (refactorer, behavior-preserving, in flight) → **P69j-1**
-re-skin the `graph` + `ai` categories onto the primitives (UI §1.3 rows #10–21 and #41–59), move both
-into `MIGRATED` so `PENDING` is `[]`, and delete the legacy `.settings-row` flex rule → **P69k** settings
-search (UI §3 — the index already exists in `catalog/*`, with keywords) → **P69l** docs. Contracts are
-already written (`P69-settings-ui.md` §1.3/§3/§5, `P69-settings-shell.md`, amendment A) — no new
-architect or ui-designer pass needed. Velocity mode: targeted gates on intermediate rounds, full
-gate before the milestone commit.
+**Current step:** 🚧 **P69j DONE — P69k (search) next, then P69l (docs).**
+**P69j-0** (`7f20510`) split `src/styles.css` 8669 → 43 modules; `src/styles.css` is now an @import
+index whose order IS the cascade order. Proven by a byte-identical emitted stylesheet (md5
+`c3526f83…`, 111784 bytes) from a build with HEAD's single file swapped back in.
+
+**P69j-1** re-skinned `graph` + `ai` onto the primitives. **`PENDING` is now `[]` — every category is
+catalog-shaped**, which is AM-5's precondition for search. Reviewer + ui-designer both CHANGES
+REQUESTED; all 11 items applied in one round.
+
+⚠️ **Two traps found in P69j-1 — do NOT "fix" these back:**
+- **The unscoped `.settings-row` only works because the legacy flex rule is GONE.**
+  `settings-legacy-sections.css` is imported *after* `settings-primitives.css`, so once
+  `.settings-group > .settings-row` dropped to `.settings-row` (0,1,0) the legacy rule tied it and
+  would have won on order. Deleting it was load-bearing, not cleanup.
+- **`opacity` compounds through nesting.** A disabled row (.55) inside a disabled segmented (.55)
+  renders at **.30** — measured 0.303 live, ≈2.3:1 contrast. The override must beat the `:has()`
+  rule on SPECIFICITY, not source order: `:has()` takes its argument's specificity, so the naive
+  `.settings-row.is-disabled .settings-segmented` ties at (0,3,0). Recorded in ui-reference §12.3.3
+  plus a "dimming budget" paragraph in §2 (spend `.55` once per subtree).
+
+**Money-field defect caught in review:** the new `NumberSlider` quantiser rounded a spend cap **UP** —
+typing `$2.75` stored `$3.00`. Fixed by splitting grains (`typedStep`): the range keeps `step=0.5`,
+the number input keeps 0.01 typed precision, restoring HEAD's behaviour. Side benefit: `2.75` is no
+longer step-mismatched `:invalid` HTML.
+
+**Also in P69j-1:** four controls named `Limit` → `Time limit` / `Spend limit` (the catalog test's own
+`TODO(P69j)` allowlist, now deleted) · four rows had doubled help (catalog line deleted, stateful
+`.settings-row-note` kept, keywords widened to compensate) · three value rows had `aria-describedby`
+*replacing* rather than appending their help id · `ai.enabled` reset removed **and pinned** in the
+`noReset` list, because `resetRow` bypasses the consent-aware `setAiEnabled` (a ↺ would have enabled
+AI without the consent dialog).
+
+**FOR USER — unsigned copy.** §5.4's replacement for `Turn on “Enable AI features” above to change
+these.` is still **not signed off**; ui-designer restates its preference for
+`These take effect once AI features are on.` (states the dependency without re-naming the consent
+switch P68g froze). Current string ships until the user rules.
+
+**Next: P69k** settings search (UI §3). The index already exists in `catalog/*` with keywords; AM-5
+says the `MIGRATED`/`PENDING` lists and the tripwire get deleted in this increment. Known items to
+fold in: `identities.apply` / `identities.delete` carry `help` strings never rendered
+(`ProfileActionCell` has no help slot) so search would match invisible text; `NumberSlider`'s
+non-`bare` branch and `.settings-control*` are now reachable only from tests; `GeneralCategory`
+still spells the switch row longhand instead of using `SettingsSwitchRow`; four MCP buttons are
+still named bare `Copy`.
 
 **Previously:** ✅ **P69i SHIPPED — the header identity menu exists (the user's headline ask).**
 Nine increments done (P69a–P69i), all reviewer-APPROVED. Full gate green: vitest **1934 / 4 skipped

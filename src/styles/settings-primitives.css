@@ -4,11 +4,17 @@
 
 /* ---- The canonical row (UI §5.1, ui-reference §12.2) ----
 
-   Scoped under .settings-group on purpose: three not-yet-migrated sections
-   (AI runs, Git config, MCP) still use the LEGACY flex `.settings-row` further
-   down this file, and they never render inside a group. P69j re-skins them and
-   deletes the legacy rule. */
-.settings-group > .settings-row {
+   Unscoped since P69j: every category now renders this row, the legacy flex
+   `.settings-row` in settings-legacy-sections.css is deleted, and `SettingsRow`
+   is the ONLY thing in the tree that emits the class. Dropping the
+   `.settings-group >` prefix takes the specificity from (0,2,0) to (0,1,0) —
+   nothing else in src/styles/*.css selects `.settings-row`, so there is no rule
+   left for it to lose to.
+
+   DENSITY: one geometry in both `cozy` and `compact` (UI §5.1, D10) — 44px min
+   row, 24px controls, in BOTH. That is deliberate, not an oversight: a later
+   density pass must not "fix" it by adding a compact variant here. */
+.settings-row {
   display: grid;
   grid-template-columns: 1fr auto 24px;
   column-gap: 12px;
@@ -18,12 +24,19 @@
   min-height: 44px;
 }
 
-.settings-group > .settings-row + .settings-row {
+.settings-row + .settings-row {
   border-top: 1px solid var(--border);
 }
 
-.settings-group > .settings-row.is-disabled {
+/* UI §5.4: the disabled presentation is opacity + cursor, NEVER a hue change —
+   and the switch knob's position still reads on-vs-off through the dim. */
+.settings-row.is-disabled {
   opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.settings-row.is-disabled .settings-radio {
+  cursor: not-allowed;
 }
 
 .settings-row-label {
@@ -83,7 +96,7 @@
 }
 
 /* Stacked variant (UI §5.1): label / help / control each on their own row. */
-.settings-group > .settings-row--stacked {
+.settings-row--stacked {
   grid-template-columns: 1fr 24px;
   grid-template-rows: auto auto auto;
 }
@@ -147,6 +160,58 @@
 .settings-reset:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* A group-level lead paragraph: the frozen AI/MCP section descriptions, and the
+   AI-runs gate note (UI §5.4). It sits directly under the group title, and — for
+   the gate note — INSIDE the disabled `<fieldset>` but outside every row, which
+   is what keeps the sentence explaining the dim from being dimmed itself. */
+.settings-group-lead {
+  margin: 0 0 8px;
+  max-width: 56ch;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* A second sentence in the row's help cell, under the catalog help line: the
+   stateful AI-run hints and the repository-access disclosure, whose wording
+   tracks the live value and so cannot live in the (static) catalog. Same
+   typography as `.settings-row-help` by design — it is help, not a footnote. */
+.settings-row-note {
+  margin: 2px 0 0;
+  max-width: 56ch;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* UI §5.4: one `<fieldset disabled>` spanning the three AI-run groups. It has no
+   opacity of its own — the .55 lives on each row (see `.settings-row.is-disabled`)
+   so the gate note inside it stays at full contrast. */
+.settings-fieldset {
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+/* A read-only value (or an action pair) plus its buttons, filling a stacked row. */
+.settings-value-copy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.settings-value-copy > .settings-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The one surviving radio group (UI §5.2): stacked, a sentence under each
+   option. `role="radiogroup"` on a div, named by the row label. */
+.settings-radio-choices {
+  display: block;
+  width: 100%;
 }
 
 /* ---- Switch (UI §5.5, ui-reference §12.3.1) ---- */
@@ -290,6 +355,14 @@
 
 .settings-segmented:has(.settings-segment-input:disabled) {
   opacity: 0.55;
+}
+
+/* The row already carries the .55 (ui-reference §12.3.3); the segmented must not
+   add a second one — .55 × .55 = .30. This must beat the rule above on
+   SPECIFICITY, not source order: `:has()` takes its argument's specificity, so
+   the naive `.settings-row.is-disabled .settings-segmented` ties at (0,3,0). */
+.settings-row.is-disabled .settings-segmented:has(.settings-segment-input:disabled) {
+  opacity: 1;
 }
 
 /* ---- :has() fallback — a11y, not cosmetics --------------------------------

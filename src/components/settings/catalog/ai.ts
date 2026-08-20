@@ -10,6 +10,20 @@
  * their number rows. Their `0` is a documented mode sentinel (§3.4), so a ↺ would
  * either disable the feature or re-enable it behind the user's back; the switch is
  * already the off-switch.
+ *
+ * P69j — `Enable AI features` lost its `reset` for the same family of reasons, and
+ * one more. Its default is ON (`defaults.ts`), so the ↺ appears precisely when the
+ * user has deliberately turned AI OFF, offering a one-click "turn it back on";
+ * and `resetRow` patches `{aiEnabled}` straight through `onChange`, bypassing the
+ * consent-aware `setAiEnabled` that every other path to that flag goes through.
+ * The two MCP switches already carry no reset for exactly that reason.
+ *
+ * P69j-1 — four rows deliberately carry no `help`: `ai.repository-access`,
+ * `ai.idle-timeout-enabled`, `ai.hard-cap-enabled` and `ai.budget-enabled`. Each
+ * renders a STATEFUL `.settings-row-note` from its section component that says the
+ * same thing about the CURRENT state, and a row gets one help line, not two. Their
+ * vocabulary was folded into `keywords` so Settings search still finds them, and
+ * each passes an explicit `describedBy`, so no `{rowId}-help` idref dangles.
  */
 import type { SettingsIndexEntry } from '../types';
 import { resetKey } from './reset';
@@ -23,7 +37,6 @@ export const AI_ENTRIES: readonly SettingsIndexEntry[] = [
     help: 'Master switch for every Claude-powered feature. Nothing leaves your machine until you consent.',
     keywords: 'claude assistant consent',
     control: 'switch',
-    reset: resetKey('aiEnabled', 'On'),
   },
   {
     id: 'ai.conflict-resolution',
@@ -40,8 +53,7 @@ export const AI_ENTRIES: readonly SettingsIndexEntry[] = [
     category: 'ai',
     group: 'Runs',
     label: 'Repository access',
-    help: 'What a conflict run may read. Bonsai never lets a run write.',
-    keywords: 'sandbox files read-only permissions',
+    keywords: 'sandbox files read-only permissions grant reads anthropic',
     control: 'segmented',
     reset: resetKey('aiConflictTools', 'Read-only'),
   },
@@ -70,8 +82,7 @@ export const AI_ENTRIES: readonly SettingsIndexEntry[] = [
     category: 'ai',
     group: 'Limits',
     label: 'Stop a run that goes quiet',
-    help: 'End a run that produces no output. The clock pauses while Claude waits for your answer.',
-    keywords: 'idle timeout stall hang',
+    keywords: 'idle timeout stall hang quiet silent',
     control: 'switch',
   },
   {
@@ -88,15 +99,14 @@ export const AI_ENTRIES: readonly SettingsIndexEntry[] = [
     category: 'ai',
     group: 'Limits',
     label: 'Stop a run after a fixed time',
-    help: 'Give a run a deadline whatever it is doing.',
-    keywords: 'wall clock timeout duration',
+    keywords: 'wall clock timeout duration deadline',
     control: 'switch',
   },
   {
     id: 'ai.hard-cap-secs',
     category: 'ai',
     group: 'Limits',
-    label: 'Limit',
+    label: 'Time limit',
     help: 'The wall-clock deadline for one run.',
     keywords: 'seconds duration hard cap',
     control: 'numberSlider',
@@ -116,15 +126,14 @@ export const AI_ENTRIES: readonly SettingsIndexEntry[] = [
     category: 'ai',
     group: 'Limits',
     label: 'Set a spend limit per run',
-    help: 'Cap what a single run may cost.',
-    keywords: 'budget cost usd dollars money',
+    keywords: 'budget cost usd dollars money spend cap',
     control: 'switch',
   },
   {
     id: 'ai.budget-usd',
     category: 'ai',
     group: 'Limits',
-    label: 'Limit',
+    label: 'Spend limit',
     help: 'The most one run may spend, in US dollars.',
     keywords: 'budget usd dollars cost spend',
     control: 'numberSlider',

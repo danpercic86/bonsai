@@ -109,14 +109,20 @@
   min-width: 0;
 }
 
+/* P74 §2.4: 24 x 24 hit target around the unchanged 14px glyph. */
 .error-dismiss {
   flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: transparent;
   color: var(--danger);
   font-size: 14px;
   line-height: 1;
-  padding: 2px 4px;
+  padding: 0;
   border-radius: 4px;
   cursor: pointer;
 }

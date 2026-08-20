@@ -242,8 +242,12 @@ describe('SettingsPanel', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: /Enable AI features/ }));
     expect(props.onChange).toHaveBeenCalledWith({ aiEnabled: true });
     expect(props.onRequestEnableAi).not.toHaveBeenCalled();
+    // P69j: the switch is a `<label for>` over a native checkbox, so two panels
+    // alive in ONE document would share the input id and the second panel's label
+    // would resolve to the first panel's input. Unmount before re-rendering.
+    cleanup();
     const off = renderPanel({ initialCategory: 'ai', aiEnabled: true, aiConsented: true });
-    fireEvent.click(off.getAllByRole('checkbox', { name: /Enable AI features/ })[1]);
+    fireEvent.click(screen.getByRole('checkbox', { name: /Enable AI features/ }));
     expect(off.props.onChange).toHaveBeenCalledWith({ aiEnabled: false });
   });
 
@@ -282,19 +286,23 @@ describe('SettingsPanel', () => {
 
   // P68g §1: the AI-runs section is wired through the container, inert until AI is
   // active, and patches one field at a time.
+  // P69j / UI §5.3 item 4: the self-labelling `Repository access` button became a
+  // segmented control over native radios — the permission level is now SHOWN and
+  // the other level is the affordance.
   it('AI runs: the section is inert until AI is active, then patches through', () => {
     renderPanel({ initialCategory: 'ai' });
-    expect(screen.getByRole('button', { name: /Repository access/ })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: 'Read-only' })).toBeDisabled();
     expect(
       screen.getByText('Turn on “Enable AI features” above to change these.'),
     ).toBeInTheDocument();
 
+    cleanup();
     const active = renderPanel({ initialCategory: 'ai', aiEnabled: true, aiConsented: true });
-    const access = active.getAllByRole('button', { name: /Repository access/ })[1];
-    expect(access).toBeEnabled();
-    fireEvent.click(access);
+    const noAccess = screen.getByRole('radio', { name: 'No file access' });
+    expect(noAccess).toBeEnabled();
+    fireEvent.click(noAccess);
     expect(active.props.onChange).toHaveBeenCalledWith({ aiConflictTools: 'none' });
-    fireEvent.click(active.getAllByRole('checkbox', { name: 'Stream AI output' })[1]);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Stream AI output' }));
     expect(active.props.onChange).toHaveBeenCalledWith({ aiStreamLog: false });
   });
 
@@ -318,15 +326,17 @@ describe('SettingsPanel', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: /Enable MCP server/ }));
     expect(props.onRequestEnableMcp).toHaveBeenCalledTimes(1);
     expect(props.onSetMcpEnabled).not.toHaveBeenCalled();
+    cleanup();
     const consented = renderPanel({ initialCategory: 'ai', mcpConsented: true });
-    fireEvent.click(consented.getAllByRole('checkbox', { name: /Enable MCP server/ })[1]);
+    fireEvent.click(screen.getByRole('checkbox', { name: /Enable MCP server/ }));
     expect(consented.props.onSetMcpEnabled).toHaveBeenCalledWith(true);
+    cleanup();
     const running = renderPanel({
       initialCategory: 'ai',
       mcpStatus: RUNNING,
       mcpConsented: true,
     });
-    fireEvent.click(running.getAllByRole('checkbox', { name: /Enable MCP server/ })[2]);
+    fireEvent.click(screen.getByRole('checkbox', { name: /Enable MCP server/ }));
     expect(running.props.onSetMcpEnabled).toHaveBeenCalledWith(false);
   });
 
@@ -335,12 +345,13 @@ describe('SettingsPanel', () => {
     expect(
       screen.getByRole('checkbox', { name: /Allow AI to modify repositories/ }),
     ).toBeDisabled();
+    cleanup();
     const running = renderPanel({
       initialCategory: 'ai',
       mcpStatus: RUNNING,
       mcpConsented: true,
     });
-    const writeBox = running.getAllByRole('checkbox', { name: /Allow AI to modify/ })[1];
+    const writeBox = screen.getByRole('checkbox', { name: /Allow AI to modify/ });
     fireEvent.click(writeBox);
     expect(running.props.onRequestEnableMcpWrite).toHaveBeenCalledTimes(1);
     expect(running.props.onSetMcpAllowWrite).not.toHaveBeenCalled();
@@ -361,16 +372,18 @@ describe('SettingsPanel', () => {
       () => new Promise<void>((resolve) => { settle = resolve; }),
     );
     renderPanel({ initialCategory: 'ai', mcpStatus: RUNNING, repoPath: null, onRegisterMcp });
-    const adds = screen.getAllByRole('button', { name: 'Add' });
+    // P69j: the Add button is named by its ROW ("Register with Claude Code · …"),
+    // because "Add" alone said neither what nor where — and two rows would have
+    // offered two identically-named buttons.
+    const adds = screen.getAllByRole('button', { name: /^Register with Claude Code/ });
     expect(adds).toHaveLength(2);
     expect(adds[1]).toBeDisabled(); // 'This repository' without an open repo
     fireEvent.click(adds[0]);
     expect(onRegisterMcp).toHaveBeenCalledWith('user');
-    expect(screen.getByRole('button', { name: 'Adding…' })).toBeDisabled();
+    expect(adds[0]).toHaveTextContent('Adding…');
+    expect(adds[0]).toBeDisabled();
     settle();
-    await vi.waitFor(() =>
-      expect(screen.queryByRole('button', { name: 'Adding…' })).not.toBeInTheDocument(),
-    );
+    await vi.waitFor(() => expect(adds[0]).toHaveTextContent('Add'));
   });
 
   // UI §8: the ROW is "Welcome tour" and the BUTTON is "Show tour" — "first-run"
