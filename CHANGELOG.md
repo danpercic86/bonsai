@@ -6,7 +6,11 @@ All notable changes to Bonsai are documented here. The format is based on
 
 ## [Unreleased]
 
-A rebuilt Settings surface (2026-08-20), and fixes from the second full-project audit (2026-08-18).
+## [1.1.0] — 2026-08-20
+
+A rebuilt Settings surface, fixes from the second full-project audit (2026-08-18), and a batch of
+fixes for problems found in real use after 1.0.0 — Git discovery after an auto-update, forge
+connect, submodules, and accessibility.
 
 ### Added
 
@@ -32,6 +36,12 @@ A rebuilt Settings surface (2026-08-20), and fixes from the second full-project 
   editing and has an explicit Local / Global switch, so you can no longer change a global setting
   while believing you changed a local one. With no repository open it says so plainly instead of
   showing an empty form.
+- **Fifteen small sidebar controls are now easier to hit.** Section toggles, the per-section add
+  buttons, and a handful of other tiny controls were enlarged to a comfortable 24px target — the
+  box grows, the icon inside it does not, so the sidebar's spacing and rhythm are unchanged.
+- **Windows now ships as a single NSIS installer.** The MSI is gone. The auto-updater points at the
+  NSIS build, which relaunches Bonsai with your own environment (see below), so the MSI's
+  environment problem cannot recur.
 
 ### Fixed
 - **A slider's own minimum value can be typed again.** In a field whose minimum was 24, typing `24`
@@ -60,6 +70,29 @@ A rebuilt Settings surface (2026-08-20), and fixes from the second full-project 
 - A graph stream that delivers a malformed batch now surfaces as an error instead of silently
   freezing the graph, and the bulk-AI confirmation dialog now blocks the workspace shortcuts
   behind it like every other modal.
+- **Git is now found even when it is installed just for you.** If Git is on your user PATH but not
+  the machine PATH — and Bonsai was launched from somewhere without Git on PATH — Bonsai now finds
+  it anyway, so history search and credential helpers work. And when Git genuinely cannot be found,
+  Bonsai says "git not found" in one place instead of misreporting it as an authentication failure
+  and repeating the wrong message.
+- **After an auto-update, your environment comes back.** The updated app used to relaunch with the
+  installer's stripped-down environment, which could break Git, your SSH agent, proxies, and the
+  editor / terminal / file-manager integrations until you restarted it by hand. It now launches
+  with your normal environment, the same as opening it from the Start menu.
+- **An Azure DevOps token scoped only "Code (Read & Write)" now connects.** Bonsai used to check
+  the token against an endpoint that needs an extra profile scope, so the exact token the connect
+  screen tells you to create was rejected with a misleading error. It now validates against the
+  code endpoint it actually uses. An invalid or expired token now gives a clear authentication
+  error instead of "malformed response", and the "Create a token" and "Open in browser" links
+  actually open your browser.
+- **A submodule with orphaned Git data reconnects instead of failing.** A submodule whose working
+  folder was empty but whose Git data still lived under `.git/modules` used to fail to update with
+  "attempt to reinitialize"; Bonsai now reuses that data and restores the files. Initializing a
+  submodule now also checks out its files, so the badge and the success message agree.
+- **Toast messages are readable in both themes, and colour is no longer the only signal.** Toast
+  text was below the WCAG contrast bar; it now meets it in light and dark. Each tone also carries a
+  small shape glyph (error, info, success, warning), so the kind of message is clear without relying
+  on colour alone.
 
 ## [1.0.0] — 2026-08-18
 
@@ -346,7 +379,8 @@ The MVP and first productization phase. Highlights:
 - Tauri v2 auto-update scaffolding (behind Bonsai IPC) and a first-run onboarding overlay.
 - An embedded MCP server exposing structured Git data (graph, diffs, conflicts) to AI tools.
 
-[Unreleased]: https://github.com/danpercic86/bonsai/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/danpercic86/bonsai/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/danpercic86/bonsai/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/danpercic86/bonsai/compare/v0.3.1...v1.0.0
 [0.3.0]: https://github.com/danpercic86/bonsai/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/danpercic86/bonsai/releases/tag/v0.2.0

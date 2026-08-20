@@ -2750,3 +2750,496 @@ reclaimed floor cannot silently regrow; `session.rs`, `stream.rs` and `useAiRuns
 over-500 list entirely.
 
 ---
+
+# Part 10 — P62–P74 native checkpoints WAIVED (added 2026-08-20 for the 1.1.0 release)
+
+On 2026-08-20 the orchestrator, on the user's authority, waived the outstanding native USER
+CHECKPOINTs for the 1.1.0 release and marked the following milestones **done**: P62, P63, P64, P65,
+P67, P68, the P69 Settings redesign (P69a–P69l), P71, P72, P73, P74. (P70 was NOT waived — it stays
+`awaiting USER CHECKPOINT` on the board, native verification in progress before the tag.)
+
+The verbose board text for P62–P65/P67/P68 is already in Parts 2, 4, 5, 7, 8 above. The verbose
+board text for P71, P72, P73, P74 and the P69 Settings redesign is condensed below (Parts 11–15),
+moved off the board 2026-08-20.
+
+## Part 11 — P71 auto-update relaunch inherits the installer's environment, condensed
+
+**Status: DONE** (native checkpoint waived 2026-08-20). Both increments implemented; security audit
+found no critical/high; reviewer APPROVED with zero MUST-FIX. Native USER CHECKPOINT (C-1…C-5) was a
+real signed update round-trip, waived for 1.1.0.
+
+**Why:** upstream cause of P70. The MSI updater relaunched `bonsai.exe` as a child of `msiexec.exe`,
+so the app inherited the installer's environment instead of the user's. P70's resolver ladder
+rescues **git only** — every other environment-dependent behaviour had the same exposure (proxy
+vars, `SSH_AUTH_SOCK`, credential-helper config, the P49 editor/terminal/file-manager integrations,
+the AI CLI resolution in `ai/mod.rs`). Bar: after an auto-update the running app must have the same
+environment it would have if launched from the Start menu.
+
+**Root cause — the MSI was never a deliberate choice.** `tauri-action`'s `updaterJsonPreferNsis`
+defaults to `false` "for legacy reasons" and release.yml never overrides it, so `latest.json` pointed
+at the `.msi` by accident. The WiX relaunch is broken by construction: a `LaunchApplication` custom
+action run by msiexec's own process inherits msiexec's env block (`Impersonate="yes"` fixes the
+token, not the environment). NSIS is correct by construction: `RunAsUser` duplicates explorer's token
+and calls `CreateProcessWithTokenW` with `lpEnvironment = NULL`, which per MSDN builds the
+environment from the user profile — Start-menu-equivalent, guaranteed by API not by luck.
+
+**R1 (chosen):** drop MSI from `bundle.targets`, set `updaterJsonPreferNsis: true`. Zero
+Rust/TS/IPC/UI. **R2 (increment 2):** startup PATH rehydration from HKCU/HKLM. Approved because R1
+does nothing for clients already on an MSI install — so R2 is in-place repair. Prepend/append missing
+entries only, never reorder/dedupe/drop, no persistence, malformed registry → silent no-op. It does
+NOT restore `USERPROFILE`/`HOME`, `SSH_AUTH_SOCK`, proxy vars or `TEMP` — R2 never makes R1 optional.
+**Rejected:** stop-auto-relaunching is impossible (the updater plugin calls `std::process::exit(0)`
+right after launching the installer); forked WiX template; launcher shim; R2-alone.
+
+**Append reversal (orchestrator, 2026-08-19) — do not re-flip.** Originally chose *prepend*; that was
+wrong: Windows composes system Path first, user Path appended after, so prepending put recovered user
+entries ahead of system ones — user-writable `%LOCALAPPDATA%\Microsoft\WindowsApps` ahead of
+`C:\Windows\System32` for every child. Decisive: R2 only adds absent entries, so a missing directory
+cannot lose a race it is not in — append rescues just as well with no shadowing. Guarded by
+`recovered_entries_never_precede_inherited_ones_append_reversal_p71` + three exact-equality ordering
+tests. Audit found no privilege-boundary crossing either way (`RunAsUser` duplicates explorer's token,
+strictly less privilege than the installer).
+
+**Efficacy bug the audit caught the reviewer did not:** R2 expanded `%VAR%` against the very
+environment block it distrusts. Under msiexec that block is SYSTEM-context, so
+`%LOCALAPPDATA%`/`%APPDATA%` resolved under `C:\Windows\system32\config\systemprofile\…` — the entries
+R2 exists to rescue would be rehydrated pointing at the wrong directory, and C-2 could report
+`applied: true` while the rescue silently failed. Now resolved from `HKCU\Volatile Environment` via
+one un-filtered `reg query` behind a `OnceCell`; the test fake records which process vars were read.
+
+**Measured cost — FOR USER (still open decision):** rehydration adds ~197 ms pre-first-paint on this
+machine (3 `reg.exe` spawns, ~100 ms each on an AV-heavy corporate box; pessimistic), hard-bounded at
+1.5 s shared. Paid on every launch including the common no-op case. Mitigation not taken: issue the
+three reads concurrently (→ one spawn's latency). **Needs a user call on whether ~200 ms pre-paint is
+an acceptable price for in-place repair of MSI-installed clients.** (Follow-up 8 below.)
+
+**C-1 acceptance probe (reuse it):** after an update, P70's `GitAvailability.source` must read
+`path`. If it reads `registry`/`wellKnown`, the environment is still foreign and P70 is merely
+masking it — every non-git surface stays exposed.
+
+**Do not delete:** `readyToRestart`/Restart UI is unreachable on Windows but is the sole relaunch
+path on macOS/Linux (mirrored as a doc comment on `UpdateController.restart()`).
+
+**FOR USER:** the reporting user's install came from the MSI, so R1 won't reach them until they
+reinstall. Recommended: one-time manual uninstall + reinstall from the NSIS `-setup.exe` once P71
+ships, rather than betting a working install on an untested passive-mode WiX→NSIS migration.
+**Must not touch `.tauri/updater-prod.key`** — see P69 FOR-USER item 1.
+
+**P71 follow-ups (filed, non-blocking — reviewer APPROVED without them):**
+1. `lookup_var` passes registry-sourced text to `std::env::var` as a key (`winenv_merge.rs:94`).
+   `%%` yields an empty name and `%A=B%` a name with `=`; `std::env::var`'s Panics clause permits a
+   panic for both. One-line fix: return `None` when `name.is_empty() || name.contains(['=', '\0'])`.
+2. `WinEnv::set_path` documents no precondition (`winenv.rs:176`). Fold the NUL/length check into
+   `HostWinEnv::set_path` so it is unbypassable.
+3. Contract §5.3 stale — shows a two-method `WinEnv` trait (implementation has three; `set_path` is
+   the seam making the `applied: true` branch assertable) and still says "`winenv.rs` (~110 lines +
+   ~110 tests)" though the module became five files.
+4. `parse_reg_values` mis-slices when the data contains a type token (`winenv_merge.rs:45`).
+   Contrived, no escalation. Add an "index must be preceded by whitespace" check.
+5. `OnceCell` one-shot semantics untested — `FakeWinEnv` models no spawn counts. A counting fake.
+6. Pre-first-paint `eprintln!` (`src-tauri/src/lib.rs:30`) panics on write error; a release
+   `windows_subsystem="windows"` build from Explorer has no stderr handle. `let _ = writeln!(...)`.
+7. `merge_path` with a whitespace-only `process_path` emits a whitespace component. Unreachable.
+8. Startup latency — issue the three `reg.exe` reads concurrently (~197 ms → one spawn). Needs the
+   user's call on whether 200 ms pre-paint is acceptable at all.
+Also open: **LOW-4** (`GetSystemDirectoryW` instead of reading `%SystemRoot%` — shared owner with
+P70's `gitbin.rs`, needs a dependency decision) · **N5** (stale P42 docs describing `"targets":"all"`
+and an MSI artifact — docs-curator scope).
+
+## Part 12 — P72 forge connect fixes (Azure 401 + dead external links), condensed
+
+**Status: DONE** (native checkpoint waived 2026-08-20). AI gate green; both increments implemented,
+reviewed, security-audited, committed. Commits: `285828b` contracts · `c1455c7` Increment A (Azure
+401) · `4888315` resume note · `3391286` Increment B (openUrl). Contracts:
+`docs/contracts/P72-forge-connect-fixes.md`, `docs/contracts/P72-ui.md`. Plan:
+`~/.claude/plans/in-the-connect-to-clever-lantern.md`.
+
+Two user-reported defects on the P62/P64 forge connect surface (found 2026-08-19, real Azure DevOps
+org). Neither was catchable by the existing suites.
+
+**Bug 1 (blocking) — Azure connect rejected a valid Code-scoped PAT with 401.** `viewer()` probed
+`app.vssps.visualstudio.com/_apis/profile/profiles/me` (`azure/rest.rs:28`), gated on **User Profile
+(Read)** (`vso.profile`); the Connect panel tells the user to create a **Code (Read & Write)** PAT
+(`ForgeConnect.tsx:54`), which carries no profile scope → Azure 401 → surfaced as "rejected the
+credentials". Contract encoded the same mismatch (`P64-forge-providers-ai-pr.md:158` vs
+`P64-user-checklist.md:64-67`).
+
+**Bug 2 — "Create a token" / "Open in browser ↗" did nothing in the native app.** Both plain
+`<a href target="_blank">` with no handler (`ForgeConnect.tsx:98`, `PrDetailView.tsx:46`). No
+opener/shell plugin, no `opener:*` capability, no new-window handler → webview drops the request.
+
+**Decisions (user-confirmed 2026-08-19).** Azure: both — repo-endpoint validation AND a better
+401/203 message ("clearer scope copy" was a no-op: the existing "Code (Read & Write)" hint becomes
+true once the backend stops probing a profile endpoint). Links: fix both sites; hand-rolled per-OS
+spawn, no new plugin and no new capability grant (upholds P49 D1). Sequencing: one combined batch,
+two increments (A = Azure, B = openUrl).
+
+**Increment A — Azure validate-then-identify.** `viewer()` validates on
+`GET _apis/git/repositories/{repo}?api-version=7.1` (covered by `vso.code`, inherited by
+`vso.code_write`) instead of the profile endpoint, so a Code-only PAT connects. Identity is one
+best-effort profile call; every error swallowed to an empty login, can never fail a connect. Adds the
+missing 203 arm (Azure's HTML sign-in page for an expired PAT, previously `ForgeApi("malformed
+response")`), and a 404 naming org/project/repo (appended, not substituted). Reviewer APPROVED, no
+MUST-FIX; both SHOULD-FIX applied. `azure/mod.rs` 513 → 245 lines via `mod_tests.rs` +
+`viewer_tests.rs` + `testkit.rs`, proven behaviour-preserving at 157 tests before new cases.
+
+**Increment B — `openUrl` IPC.** `bonsai-core::external::{validate_web_url, url_ladder, open_url}` on
+the P49 machinery; `open_url` Tauri command skipping the `path.exists()` precheck; `openUrl` on the
+IPC surface + mock; both anchors routed through it keeping `href`/link semantics, modified and middle
+clicks passing through. No opener plugin, no shell, no capability change (upholds P49 D1). Reviewer
+APPROVED, no MUST-FIX; its SHOULD-FIX applied.
+
+**Security audit of the URL-launch surface: nothing at Critical/High/Medium.** All four Low findings
+closed (PrDetailView's URL comes from a forge API response): reject userinfo
+(`https://github.com@evil.example/` previously validated while the browser navigates to
+`evil.example`); reject whitespace/control chars anywhere (`xdg-open`'s `$BROWSER`-with-`%s` branch
+word-splits unquoted); cap length at 2048; stop exporting `url_ladder` (its `rundll32
+url.dll,FileProtocolHandler` rung is a general ShellExecute dispatcher); flatten+truncate the tooltip.
+Auditor's verdict on P49 D1: hand-rolling is safer than `tauri-plugin-opener` — the input space is
+narrowed to http(s) in Rust before any spawn and the OS-dispatch surface is four fixed argv vectors.
+
+**AI gate (sequential):** cargo `--workspace --no-fail-fast` 1845 passed / 0 failed / 6 ignored ·
+clippy `-D warnings` clean · tsc clean · vitest 1711 / 143 files · lint 0 errors / 30 warnings ·
+`lint:size` OK · playwright 118 passed / 1 skipped.
+
+**Acceptance criteria.** (1) A Code-only Azure PAT connects; nothing stored on failure. (2) An
+invalid/expired PAT → clear auth error, never "malformed response". (3) Identity lookup best-effort,
+can never fail a connect (`ForgeViewer.login == ""`; no render site — verified at the data layer;
+originally worded as a UI criterion, corrected 2026-08-19). (4) Both links open the system browser; a
+launch failure raises an error toast. (5) `validate_web_url` rejects non-http(s), hostless URLs,
+leading `-`. (6) Full gate green. (7) Contract/doc drift corrected (`P64-*`,
+`phase4-forge-overview.md:67-68`, `bonsai-forge/src/lib.rs:11-12`, `http.rs:49` — all four claimed
+`Bearer` only, stale for Azure/GitLab).
+
+**Out of scope (still open):** the `dev.azure.com/{org}/_git/{repo}` shorthand (repo == project)
+returns `None` from `detect_azure` (`detect.rs:123`) — surfaces as *unsupported*, not 401; documented
+at `P64-user-checklist.md:59-63`.
+
+**KNOWN CAVEAT (unresolved).** The first `pnpm vitest run` after the security-hardening edits reported
+`1 failed | 1710 passed`; the failing test name was not captured. Three subsequent full runs clean
+(1711/1711), and the committed tree is what those clean runs exercised. Unreproduced, not explained —
+if a flaky frontend test surfaces later, start here.
+
+**Process finding.** Both bugs lived exactly where the test doubles were. The Azure `FakeTransport`
+returned 200 from the profile URL, so no test asked what a Code-scoped PAT could reach; and the
+browser harness is the one environment where `target="_blank"` works, so the AI gate structurally
+could not see the dead link. Neither was a coverage-count problem — both suites were green throughout.
+
+## Part 13 — P73 submodule init/update reconnect an orphaned .git/modules gitdir, condensed
+
+**Status: DONE** (native checkpoint waived 2026-08-20). Commits: `e3c4ad1` contracts · `df9274d`
+contract amendments · `b632347` implementation + tests. Contracts:
+`docs/contracts/P73-submodule-reconnect.md`, `P73-submodule-reconnect-ui.md`,
+`design-review-2026-08-19-p73-submodules.md`, `P73-user-checklist.md`. Plan:
+`~/.claude/plans/i-opened-hamiltondigitalizationbackend-compiled-biscuit.md`.
+
+**AI gate (sequential):** cargo `--workspace --no-fail-fast` 1866 passed / 0 failed / 6 ignored ·
+clippy `-D warnings` clean · tsc clean · vitest 1829 / 152 files · playwright 118 passed / 1 skipped ·
+lint 0 errors / 30 warnings · `lint:size` OK (baseline ratcheted: `submodule.rs` 677→453 dropped out;
+`Sidebar.tsx` 918→892).
+
+Two user-reported defects on the P19 submodule surface (found 2026-08-19, real Azure DevOps
+superproject `D:\Repos\ham-digi-backend`, submodule `src/Hamilton.Voyager.Protocol/protocol`).
+
+**Bug 1 — Init's success toast disagreed with the badge.** `init_submodule` (`sm.init(false)`) only
+writes `submodule.<name>.*` into `.git/config`; workdir stays empty, so `list_submodules` still
+classifies the row `uninitialized`, but the toast said "Initialized <name>". Backend is git-faithful;
+the UI lied. Missed because the mock handler (`submodules.ts:27`) flips the row to `upToDate` on init.
+**Decision (user, 2026-08-19): make Init do init + checkout** (invoke `updateSubmodule` =
+`sm.update(init=true,…)`), so toast and badge always agree.
+
+**Bug 2 (blocking) — Update wedged: `attempt to reinitialize '<...>/.git/modules/<path>'`.** The
+workdir exists but is EMPTY (no `.git` gitlink) while `.git/modules/<path>` is a complete gitdir.
+Confirmed in vendored libgit2 1.9.6: `git_submodule_update` branches on `WD_UNINITIALIZED` alone
+(`submodule.c:1443`), set purely from "does `<workdir>/<path>/.git` exist" (`:2222`, `:2443`) → CLONE
+path → `submodule_repo_create` passes `NO_REINIT` (`:1329`) → `git_repository_init_ext` errors
+(`repository.c:2886`). Upstream `git submodule update` REUSES the module gitdir and rewrites the
+worktree gitlink; libgit2 has no such path, so Bonsai added one. Bonsai could also CREATE this state:
+`update_submodule` had no rollback for a half-finished clone.
+
+Two libgit2 subtleties that shaped the fix (do not skip): `Repository::set_workdir(abs, true)` is a
+NO-OP here (early-returns when the resolved workdir already matches, `repository.c:3271`) and writes
+an ABSOLUTE gitlink when it does fire (`:3284`) → write the gitlink ourselves, relative. A plain SAFE
+checkout will NOT repopulate the empty workdir (missing files classify `GIT_DELTA_UNMODIFIED`;
+`RECREATE_MISSING` is only auto-added under FORCE — `checkout.c:302`, `:2447`) → set
+`CheckoutBuilder::recreate_missing(true)` on the SALVAGE PATH ONLY (not `force`, so the invariant in
+`crates/bonsai-core/tests/submodule_cli_2.rs:113` holds).
+
+**What shipped:** 10-step fail-closed reattach of an orphaned `.git/modules` gitdir (traversal +
+containment guards, empty-workdir requirement, origin-URL match, hand-written relative atomic
+gitlink, `recreate_missing` on the salvage path only — never `force`); rollback for a failed fresh
+clone so Bonsai can no longer create the wedge; a backstop converting libgit2's raw `attempt to
+reinitialize` into an actionable sentence; Init = init + checkout, mutually exclusive with Update;
+badge `not checked out`; row-local `checking out…` pill; and the `remove_cached_git_dir`
+`repo.path()` → `repo.commondir()` fix (cleanup silently no-oped inside a linked worktree).
+
+**Proof on the reporter's own data.** A faithful replica of the wedged state was built without
+touching the user's repo — `git clone --local` of `D:\Repos\ham-digi-backend` plus a copy of its real
+`.git/modules/src/Hamilton.Voyager.Protocol/protocol` gitdir, with a sentinel file planted inside.
+BEFORE: `Uninitialized`, 0 workdir files, no gitlink, `git submodule status` `-e96ae50d…`. AFTER
+`update_submodule`: `UpToDate`, `wt_oid == index_oid == e96ae50d…`, 6 real files restored, gitlink =
+`gitdir: ../../../.git/modules/src/Hamilton.Voyager.Protocol/protocol` (relative, no `\?\`),
+`rev-parse --absolute-git-dir` resolving inside `.git/modules`, sentinel intact — proving the cached
+gitdir was REUSED, not re-cloned. No credentials configured, no network touched — exactly why it fixes
+the Azure DevOps case.
+
+**Review record.** Reviewer round 1 CHANGES REQUESTED on a reproduced data-loss path the diff
+INTRODUCED (see below); round 2 APPROVE. ui-designer approve with one SHOULD-FIX (pill heights stepped
+because only verdict pills had a border) — taken. Tester added 8 wedged-state integration tests + the
+Tauri-wrapper leg, found no implementation defect; caught two stale acceptance criteria in the
+contract, both since corrected.
+
+**Reviewer's reproduced MUST-FIX (fixed).** The new `rollback_partial_update` deleted user data in a
+case the `uninitialized` guard did not cover: a submodule registered but never cloned, no
+`.git/modules/<key>`, uncommitted files sitting in the submodule folder — libgit2's SAFE checkout
+refuses, rollback then ran its contents-only branch and wiped the files. Pre-P73 there was no rollback
+at all, so the diff INTRODUCED the loss. Fix: snapshot `workdir_was_empty` and require it alongside
+`uninitialized` before touching the workdir.
+
+**Harness trap worth remembering:** the first full e2e run reported 118 failed. Cause was a STALE
+`pnpm dev:mock` server left listening on port 1420, whose Vite module graph still pointed at
+`src/components/settings/SettingsContext.tsx` after another session renamed it to `.ts` — a single 404
+that the e2e fixture treats as a console error, so every spec failed. `playwright.config.ts` has
+`reuseExistingServer: !CI`, so it adopted the broken server. Killing the stale vite process and
+re-running gave 118 passed. **Never diagnose an all-specs-failed e2e run without first checking what
+is actually listening on 1420.**
+
+## Part 14 — P74 accessibility: toast-tone contrast + sidebar hit targets, condensed
+
+**Status: DONE** (native checkpoint waived 2026-08-20). Commits: `0a6d492` board · `82d45b9`
+implementation · `cd232a7` review follow-ups + e2e. Contracts:
+`docs/contracts/P74-a11y-toasts-hit-targets.md` (+ `ui-reference.md` §2, new §3.1, §7, new §10.2,
+§11). Both items are the ui-designer's own P73 SHOULD-FIXes (S-2, S-3 in
+`design-review-2026-08-19-p73-submodules.md`), deferred out of P73; user asked for both explicitly
+2026-08-19.
+
+**AI gate:** `pnpm tsc --noEmit` clean · `pnpm lint` 0 errors / 30 pre-existing warnings · `pnpm
+vitest run` 1962 passed / 162 files · `pnpm exec playwright test` 156 passed / 1 skipped · `pnpm
+lint:size` OK, baseline untouched. No Rust changed → cargo stands at P73's 1866 passed / 0 failed / 6
+ignored.
+
+**Item 1 — toast tones missed AA in both themes.** Measured pre-fix: `.toast-error` 3.34:1 dark /
+3.49:1 light, `.toast-success` 4.07:1 dark, `.toast-warning` 3.47:1 light (`styles.css:623`). Same
+anti-pattern `ui-reference.md` §2 forbids — a hue used as the LABEL colour over its own tint. Urgent
+because P73 pushes long remediation prose through the sticky `role="alert"` error toast.
+
+**Landed.** Toast label → `--text-1` (measured 10.30 / 9.81 / 9.61 / 9.24 dark, 11.68 / 12.00 / 11.90
+/ 11.99 light for error/info/success/warning), hue demoted to a 3px leading bar + a 100% hue
+`aria-hidden` glyph (`⊘ ⚠ ✓ ●`, all ≥3:1 both themes). The §11 pill recipe's 40% PERIMETER border was
+deliberately NOT reused: measured 1.69–2.25:1 stretched across a 360px edge, i.e. invisible — §11 now
+carries a size-bounded clause. The glyph is mandatory, not decorative: with a neutral label, tint +
+bar are pure colour in an identical position per tone, so colour would be the sole carrier (WCAG
+1.4.1). Error is `⊘`, not `⚠`, which already means "failed" in the AI dock.
+
+**Item 2 — sub-24px hit targets in the sidebar** (WCAG 2.5.8). The audit found **15** sub-24px
+controls, not the 2 originally spotted: six section toggles at 16, six `.sidebar-add` at 20×20,
+`.tree-dir-toggle` 18.84, `.list-filter-clear`, `.error-dismiss`, `.toast-dismiss`. All grown by
+**padding only — the box grows, the painted glyph does not** (`.sidebar-add-icon svg` stays 14×14),
+matching the 32×32 `.btn-icon` precedent. Toggles use `align-self: stretch` in a 24px header rather
+than a hardcoded height, so the right panel's compact density still tracks. Also normalised the
+**Tags** header, which was 16px while the other five were 20.
+
+**New e2e coverage** (`e2e/26-a11y-toasts.spec.ts` 276, `e2e/27-a11y-hit-targets.spec.ts` 253,
+`e2e/helpers/a11y.ts` 155): 14 tests. Contrast tests assert the WCAG bars (4.5 / 3.0), NOT the
+measured numbers (pinning 10.30:1 would break on a legitimate token retune). The sidebar sweep is
+generic (`.sidebar button, [role=button], input` all ≥24px) and was mutation-checked (forcing
+`.sidebar-add` to 20×20 makes it report the pre-P74 state) so it cannot pass vacuously.
+
+**Review record.** Both reviewers APPROVED with no MUST-FIX. Notable outcomes:
+- **ui-designer reversed its own OPEN-1 detail after measuring** (SF-1): the recommended
+  `margin-left: -4px` put the new hover wash at x=8 while `.branch-row` and the pane gutter are at 12,
+  making it the only element bleeding into the gutter; its stated rationale was factually wrong (the
+  chevron sits at 12 and `.branch-glyph` at 16). Withdrawn; the wash is now flush at 12.
+  `ui-reference.md` §3 gained the general rule.
+- **The mock seam was the real risk.** `Toasts.tsx` was the only non-test file in `src/` statically
+  importing `src/ipc/mock/**`. Now a dynamic import behind the build-time flag, so no mock chunk is
+  emitted at all. Proof: `pnpm build` + `dist/assets` grep for five fixture strings ⇒ 0 hits.
+- Two harness claims were overclaimed and are now true: `?toasts=cap` pushed non-sticky `info` toasts
+  that all expired within 5s (now sticky errors, exactly 5 persist), and the P70 dedupe key was never
+  actually passed (now a `?toasts=dedupe` seam).
+- `LONG_TEXT` was invented prose (violating the rule that mock refusals mirror the backend verbatim);
+  both refusal bodies are now exported helpers from `submodules.ts` with one source of truth.
+
+**OPEN-1 hover: RULED IN** by the orchestrator and recorded in `ui-reference.md` §3.1 — enlarging a
+hit target without a matching hover state is half a fix.
+
+**Known exemption (OPEN-2, deliberately not fixed):** `.right-panel[data-density='compact']` sets
+`--rp-row-h: 20px`, so `.tree-dir-toggle` is 20px there — under the floor. A genuine collision between
+two `ui-reference.md` §3 clauses; needs a density decision, not a hit-target one. Pinned by an e2e
+assertion carrying a "READ THIS BEFORE FIXING IT" comment.
+
+**Follow-up deferred out of P74 (still worth a ui-designer glance):** `.error-dismiss` is shared by
+eight banners and its 24px box now sets the single-line height in all of them. Contract-sanctioned
+(§2.4 gives the unscoped rule) but only the sidebar instance was audited.
+
+**⚠ Split-commit note (not recoverable).** A concurrent session's `git commit -a` swept P74's entire
+CSS half plus a partial `Toasts.tsx` into `547ecff` ("wip(P69j): re-skin the graph + AI categories"),
+and also took a `RepoWorkspace.tsx` import of a then-untracked file — HEAD did not compile. `82d45b9`
+restored a building tree. P74 therefore has no clean single-commit diff, and `98f42b1` ("docs: file
+ui-designer's unrequested P74 a11y contract as PROPOSED") mislabels the milestone: it WAS commissioned
+and the user asked for it explicitly. The contract's banner is corrected in-file.
+
+## Part 15 — P69 Settings redesign (P69a–P69l), condensed
+
+**Status: DONE** (native checkpoint waived 2026-08-20). Frontend-only, **+0 Tauri commands / +0
+events / +0 channels** across the whole milestone (160 unchanged). Contracts:
+`docs/contracts/P69-settings-ui.md`, `P69-settings-shell.md`, `P69-user-checklist.md`. Plan:
+`~/.claude/plans/make-the-designer-subagent-compiled-robin.md`. Started from HEAD `e3c4ad1`.
+
+> ⚠️ **Label collision:** "P69" also names the 1.0.0 release-readiness milestone (shipped 2026-08-18,
+> tag `v1.0.0`), whose increments are also lettered P69a–P69e. This is the Settings redesign, P69a–l.
+
+**Goal.** Settings had accreted into a 560px single-column modal with 11 flat sections / ~45 controls,
+no nav and no search. Replaced with a two-pane overlay (category rail + content pane + search),
+identity promoted out of Settings into a header identity menu, unified control vocabulary, explicit
+global-vs-repo scope, and the two OPEN defects in this surface closed.
+
+**Locked user decisions (2026-08-19 — do not re-litigate):** shell = two-pane modal (~880px) with a
+left category rail + settings search (NOT a full-window page, NOT the single column). Extract all
+four: identity profiles → header identity menu · Git config → clearly repo-scoped surface ·
+getting-started tour + Updates → About/Help category · the three AI sections → one AI category. Scope
+= IA restructure + control-level polish (toggle switches, row anatomy, help text, reset-to-default,
+keyboard/a11y, both themes) + fix both known OPEN defects.
+
+**Binding constraints (verified 2026-08-19):** `check-file-size.mjs` is a ratchet — `src/App.tsx`
+baselined at 1168 and may not grow, so the identity menu could not be markup bolted into App (P69e's
+prop collapse bought headroom). `src/ipc/types.ts` 2701 = exactly at baseline; `settings.rs` 663 =
+exactly at baseline (cannot take even a `mod` line) → new TS types in NEW modules, the Rust
+defaults-parity test in its own module. Toggle switches must be CSS over a native
+`<input type="checkbox">`, not `role="switch"` divs (else ~30 `getByRole('checkbox')` assertions
+break). The header menu reads the EFFECTIVE identity (local overrides global); the mock seeds identity
+at global with local empty. The `configMissing` deep link must select the owning category BEFORE the
+focus effect runs. Do not rename: `#settings-graph-row`, `Row height`, `Switch to light theme` /
+`Switch to dark theme`.
+
+**Sub-increments AS SHIPPED (12 letters a–l):** P69a contracts (+ amendment A + P69c draft-feedback
+spec) · P69b persisted-settings write-path hardening · P69c `NumberSlider` commit semantics · P69d
+a11y labels + effective identity + two required file splits · P69e defaults parity (TS half) + the
+settings catalog · P69f props→context (refactorer, identical test counts) · P69g the 880×660 two-pane
+shell + switch/segmented primitives + per-row reset + anti-drift DOM guard (migrated general,
+appearance, about) · P69h git-config repo scope + `requestSeq` + `SettingsEmpty` · P69i header
+identity menu (the headline ask) · P69j `styles.css` split (j-0) then the graph + ai re-skin (j-1) ·
+P69k cross-category settings search · P69l docs.
+
+**FINAL AI GATE (2026-08-20, at P69l tree, code head `a13b729`):** tsc 0 errors · vitest 1977 / 162
+files · e2e 156 passed / 1 skipped · lint:ci 0 errors / 30 warnings (budget 40) · `cargo nextest run
+--workspace` 1868 passed / 0 failed / 6 skipped · clippy `-D warnings` clean · `lint:size` exit 0 ·
++0 IPC.
+
+**OQ-2 (defaults parity) — RESOLVED in P69l.** Rust half landed as
+`src-tauri/src/settings_defaults_parity_tests.rs` (141 lines, declared from `lib.rs` with `#[path]`;
+`ui_settings_of` now `pub(crate)`). The two sides agreed on the first run — all 30 keys incl. the four
+nested objects — so no default moved. The chain is machine-checked end to end (Rust ⇄
+`src/settings/uiSettingsDefaults.json` ⇄ TS). Negative control verified twice (a flipped bool default,
+a renamed serde field exercising MISSING / UNEXPECTED). Notes: there is no `UiSettings::default()`
+(serialise `ui_settings_of(&settings::Settings::default())`).
+
+**Orchestrator-settled OQs:** OQ-1 `NumberSlider` = draft-DISPLAY + clamped commit per keystroke (NOT
+commit-on-blur/Enter, which would kill live preview for graph geometry sliders and rewrite three
+suites). OQ-3 prop count 41→44; collapsing further needs `useUiSettings` ownership to move (separate
+milestone). Focus trap DEFERRED (no shared trap hook exists; a Settings-only trap risks ~30 role
+queries) — shipped focus RESTORE only. Search deferred to the LAST increment (a box that finds 3 of 7
+categories lies).
+
+⚠️ **Durable "do NOT fix back" traps found across P69 (keep):**
+- **P69b:** `disposedRef` must be cleared at the START of the effect body, not only set in cleanup —
+  `React.StrictMode`'s dev double-mount runs cleanup once on the same hook instance; a write-once flag
+  would permanently dispose the hook at boot and no setting would ever persist in dev.
+  `commitPaneWidths` reading `paneWidthsRef.current` synchronously broke keyboard pane resize
+  (`PaneDivider` calls `onResize`+`onResizeEnd` in one keydown handler; the ref only refreshed during
+  render, so every Arrow nudge persisted the PRE-keypress width) — fixed by making the ref
+  authoritative at call time (`applyPaneWidths`); the render-time assignment is deliberately gone. Its
+  test forces `window.innerWidth = 1600` (at jsdom's 1024 the clamp collapses to `SIDEBAR_MIN` and the
+  test would be vacuous).
+- **P69h:** `useAppCommands.ts` identity is LOAD-BEARING — do not pass inline arrows into it. The first
+  attempt did, making `appCommands` a fresh array every render and switching the CommandPalette
+  highlight bug from latent to LIVE. Closures are built inside the memo; a test pins array identity.
+- **P69i:** clicking an already-ticked identity row is a no-op regardless of source (UI §4.3 vs §4.5
+  disagreed; `checked` is computed from the EFFECTIVE identity, so a repo inheriting a matching global
+  identity showed ✓ and clicking it wrote a fresh `user.*` block — the mental model wins).
+- **P69j-1:** the unscoped `.settings-row` only works because the legacy flex rule is GONE
+  (`settings-legacy-sections.css` imported after `settings-primitives.css`; deleting the legacy rule
+  was load-bearing, not cleanup). `opacity` compounds through nesting — a disabled row (.55) inside a
+  disabled segmented (.55) renders at .30 (≈2.3:1); the override must beat the `:has()` rule on
+  SPECIFICITY, not source order (`:has()` takes its argument's specificity, so
+  `.settings-row.is-disabled .settings-segmented` ties at (0,3,0)). Recorded in ui-reference §12.3.3 +
+  a "dimming budget" paragraph in §2 (spend .55 once per subtree). `ai.enabled` reset removed and
+  pinned in the `noReset` list, because `resetRow` bypasses the consent-aware `setAiEnabled`.
+- **P69k:** `GitConfigAdvanced` was a fourth `data-setting-id` stamper outside `SettingsRow`, so it
+  never self-filtered; the disclosure is now forced open while searching (any future hand-stamped row
+  must consume `SettingsSearchContext`). A deep-linked search could write the query into the repo's
+  `user.name` (`SettingsResults` remounts the git-config page per keystroke, re-arming
+  `configInitialFocus`, and `CuratedConfigControl` commits on blur) — `GitConfigCategory` now passes
+  `initialFocus` only when not searching; a search result is never a focus target. `searchSettings`
+  ignored `requires`, so count and pane disagreed — `settingsAvailability.ts` is now the ONE
+  definition of the five predicates and the coverage guard imports them.
+
+**Money-field defect caught in review (P69j-1):** the new `NumberSlider` quantiser rounded a spend cap
+UP — `$2.75` stored `$3.00`. Fixed by splitting grains (`typedStep`): the range keeps `step=0.5`, the
+number input keeps 0.01 typed precision.
+
+**`:has()` is load-bearing** for the switch/segment focus rings, with an `@supports not
+selector(:has(*))` fallback (verified in the minified bundle) because `opacity: 0` inputs mean a
+dropped rule = NO focus indicator. WebView2 is fine; WKWebView needs macOS 12.3+, webkit2gtk 2.38+
+(Debian 11 ships 2.36) — the native checkpoint should confirm the ring on macOS/Linux.
+
+**P69j-0** (`7f20510`) split `src/styles.css` 8669 → 43 modules; it is now an @import index whose
+order IS the cascade order. Proven byte-identical (md5 `c3526f83…`, 111784 bytes).
+
+**Discharged carry-forwards:** `ui-reference.md` `ContextMenu` gained FOUR fields (`checked`, `detail`,
+`header`, `busy`) — corrected; the two sibling contract files
+(`P69-settings-shell-amendment-A.md`, `P69c-draft-feedback-ui.md`) folded into their parents as
+superseded pointer stubs; the stale "Apply to current repo" comment in `src/ipc/mock/persistence.ts`
+now reads "Use in this repository". `requestSeq` + `SettingsEmpty` landed. The P69 contract set is
+indexed in `docs/contracts/INDEX.md` §"Settings redesign — P69".
+
+**Deferred out of P69k (recorded; several folded into the A8/A9/A3 board follow-ups):** the flagship
+query `graph` returns 5 hits and 0 `<mark>`s (all matched via keywords/help; fix = highlight help text
+for rows whose label produced no ranges — A8); the `role="status"` line fires on every keystroke; the
+pane keeps `role="tabpanel" aria-labelledby={selected tab}` while showing cross-category results;
+Escape-to-clear blurs to `<body>`; the in-box clear button is named "Clear filter" in a field labelled
+"Search settings"; `settingsHighlight.tsx` applies `toLowerCase()` offsets (ASCII-only); typing an
+uncommitted git-config value then searching drops the draft; rail counts are per catalog ENTRY not per
+rendered instance; three hand-rolled `.sr-only` copies want a shared promotion; `SettingsSearch.test.tsx`
+is 421 lines (next search test starts a sibling file).
+
+**P69 follow-ups + full-gate record (2026-08-19, inserted by a concurrent session):** several resolved
+(Rust defaults parity DONE in P69l; `ai::Limit` label collision FIXED in P69j-1). Still-open minor
+decisions moved to the A8/A9/A3 board block or noted here: the P69d contract acceptance line "the
+profiles pill lights up in the default harness state" is WRONG (the fixture seeds global `Mock Fixture
+User`/`fixture@bonsai.dev` while the seeded profiles are `work@bonsai.dev`/`me@personal.dev` — nothing
+matches; P69d pinned the honest no-match state — decision needed on whether to add a `?fixture=` state
+exercising the match case); `user.signingkey` is not in `CURATED_KEYS`, so a single
+`getConfig(repo,'local')` sees only a LOCAL signing key (no consumer yet, deferred); the P69b teardown
+flush is dispatch-only, so a hard OS kill can still drop a pending settings write (needs a synchronous
+save on the Rust side), and the save-failure toast auto-dismisses after 5 s (making it sticky was
+declined because `App.tsx` had one line of ratchet headroom).
+
+**FULL GATE RUN 2026-08-19 (all green, taken when P73 committed `b632347`):** vitest 152 files / 1829
+passed · e2e 118 passed / 1 skipped · tsc clean · lint:ci 30 warnings / 0 errors · lint:size exit 0
+(`App.tsx` 1167 ≤ 1168) · clippy clean · IPC commands 162 (= 160 + 2 from P73; P69 contributed +0).
+
+## Part 16 — Audit #2 fix batch (resolved detail, moved off the board 2026-08-20)
+
+Full audit: `docs/audit-2026-08-18.md`. Baseline at `3a0a153`: cargo 1727/1/4-ignored (the 1 = the
+§2.1 watcher flake) · vitest 1580 · e2e 104/1-skip · harness clean. Every finding above NIT is closed:
+- **§2.2** CommitPanel mid-stream crash (MUST-FIX) — `ffa80d0` (P69c) · **§3.1** worktree-copy
+  symlink write-through — `55acb98` (P69c). Both shipped in 1.0.0.
+- **§3.8** streamAssembler throw containment · **§3.9** BulkAiConfirmDialog in `dialogOpen` ·
+  **§3.10** AI runs cancelled on workspace unmount — `84cedb7`.
+- **§3.2** F-T5-4 corrupt-object hang — `7edd23e`: `run_with_git_timeout` (`git/timeout.rs`, 30 s
+  inactivity deadline, `BONSAI_GIT_TIMEOUT_MS` override) wraps `get_status`/`get_graph`/`stream_graph`/
+  history-index build; C1 now pins Err-not-Hung for read surfaces; `create_commit` deliberately
+  UNWRAPPED (a false timeout on a mutation could race a late commit — rationale in
+  `corrupt_repo_cli.rs` C1). · **§3.3** hook spawn failures → `HookRunInfo::warning`/`hookWarning`;
+  indexer skips → `skippedCommits` + toast — same commit.
+- **§3.4** dedupe canonicalize moved off the repos lock · **§3.5** registration filter now skips
+  `tests_*` · **§3.6** forge HTTP `redirect(Policy::none())` + bounded body read · **§3.7** AI pid
+  zeroed in `reap()`/`complete()` — `67539fd`.
+- **§2.1** watcher-test sentinel-file positive sync (5× green solo AND in full workspace) + CI
+  `cargo test --no-fail-fast` — `29e72a7`.
+- **§4.1** `e2e/11-forge.spec.ts` (9 tests, +`?forge=unsupported` seam) · **§4.2**
+  `usePartialStaging.test.tsx` (24 tests) — `83a9b2f`.
+
+**Gate at fix-batch HEAD `83a9b2f`:** cargo workspace 1754/0/4-ignored · clippy `-D` clean · vitest
+1629 / 134 files · e2e 114 passed / 1 skipped · lint:ci 0 errors · lint:size OK.
