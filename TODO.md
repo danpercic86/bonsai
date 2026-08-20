@@ -28,6 +28,31 @@ items — moved 2026-08-19), `docs/history/todo-archive.md` (P27 → P2, M0–M6
 `docs/history/milestones-mvp.md` (the M0–M6 AI-gate vs USER CHECKPOINT split). Contract files are
 indexed in `docs/contracts/INDEX.md`.
 
+## ♿ P74 — accessibility: toast-tone contrast + sidebar hit targets — in-progress
+
+**Current step:** P74 — awaiting ui-designer contract (`docs/contracts/P74-a11y-toasts-hit-targets.md`).
+
+Both items are the ui-designer's own P73 SHOULD-FIXes (S-2, S-3 in
+`docs/contracts/design-review-2026-08-19-p73-submodules.md`), deferred out of P73 so a submodule
+bug-fix would not become an app-wide restyle. **User asked for both explicitly 2026-08-19.**
+
+**Item 1 — toast tones miss AA in both themes.** Measured: `.toast-error` **3.34:1** dark /
+**3.49:1** light, `.toast-success` **4.07:1** dark, `.toast-warning` **3.47:1** light
+(`styles.css:623`). All are the same anti-pattern `ui-reference.md` §2 already forbids for new
+surfaces — a hue used as the LABEL colour over its own tint. Newly urgent because P73 pushes long
+remediation prose through the ERROR toast specifically (sticky, `role="alert"`): the least readable
+tone now carries the most text. Fix follows the §11 pill recipe adapted to a toast, and must keep
+the tone distinguishable WITHOUT colour (WCAG 1.4.1) since toasts are transient.
+
+**Item 2 — sub-24px hit targets in the sidebar**, against `ui-reference.md` §3's own "≥ 24px in
+every density" rule (and the sidebar has ONE geometry, so there is no compact-mode excuse). Measured:
+Submodules `+` button **20×20**, section toggle **183×16** (`Sidebar.tsx:814-835`). Scope is the
+WHOLE sidebar, not just those two — every section header toggle and per-section action button.
+
+Constraint carried into implementation: growing a control must not change the sidebar's row rhythm or
+density; a transparent hit area larger than the painted glyph is the likely answer (the header
+toolbar's 32×32 icon buttons are the precedent to check).
+
 ## 🐛 P73 — submodule init/update: reconnect an orphaned `.git/modules` gitdir — awaiting USER CHECKPOINT
 
 **Current step:** ✅ **P73 CODE-COMPLETE — AI gate GREEN, awaiting native USER CHECKPOINT**
