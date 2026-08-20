@@ -17,6 +17,11 @@ import type { ConfigEntry, ConfigLevelArg, CuratedConfigEntry } from '../../ipc'
 import { errorMessage } from '../../utils/errors';
 import { CuratedConfigControl } from './CuratedConfigControl';
 import { findSettingsRow } from './settingsCatalog';
+import {
+  useSettingsGroupVisible,
+  useSettingsRowVisible,
+  useSettingsSearch,
+} from './SettingsSearchContext';
 
 /** Amendment A (AM-2): the two blocks are aggregate `'group'` rows — one catalog
  *  entry standing for a whole dynamically-populated block, stamped on a
@@ -93,6 +98,17 @@ export function GitConfigAdvanced({
   const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
+  /* P69k: the two blocks are catalogued rows stamped OUTSIDE `SettingsRow`, so
+     they need its self-filter too — without it a search that hit git-config
+     anywhere rendered the whole Advanced form (both blocks and the add row) as
+     a "result". The <details> is the "Advanced" GROUP, so it disappears when
+     neither block survived, and it must be forced OPEN while a search is
+     running: a hit inside a collapsed disclosure is an invisible result. */
+  const searching = useSettingsSearch() !== null;
+  const groupVisible = useSettingsGroupVisible('Advanced');
+  const behaviourVisible = useSettingsRowVisible(BLOCKS.behaviour.row);
+  const customVisible = useSettingsRowVisible(BLOCKS.custom.row);
+
   const addEntry = useCallback(async () => {
     const shapeErr = validateKeyShape(addName);
     if (shapeErr !== null) {
@@ -113,122 +129,133 @@ export function GitConfigAdvanced({
     }
   }, [repoId, level, addName, addValue, onReload]);
 
+  if (!groupVisible) return null;
+
   return (
     /* The <details> IS the "Advanced" group (UI §1.3 files both blocks under it),
        so it carries the group classes the pane's other groups carry — the summary
        is its title. It is deliberately NOT stamped with a setting id: the two
        blocks inside it are the catalogued rows. */
-    <details className="settings-group settings-config-advanced-details">
+    <details
+      className="settings-group settings-config-advanced-details"
+      /* Uncontrolled while not searching, so the user's own open/closed state is
+         theirs; forced open while searching so a hit is never hidden. */
+      open={searching ? true : undefined}
+    >
       <summary className="settings-group-title settings-config-advanced-summary">Advanced</summary>
 
       {/* --- Behaviour --- */}
-      <section
-        className="settings-config-group"
-        role="group"
-        aria-labelledby={BLOCKS.behaviour.titleId}
-        data-setting-id={BLOCKS.behaviour.row}
-      >
-        <h4 className="settings-config-subtitle" id={BLOCKS.behaviour.titleId}>
-          {BLOCKS.behaviour.title}
-        </h4>
-        {behaviourKeys.map((entry) => (
-          <CuratedConfigControl
-            key={entry.key}
-            entry={entry}
-            draft={drafts[entry.key] ?? ''}
-            busy={busyKey === entry.key}
-            error={fieldErrors[entry.key]}
-            onDraftChange={onDraftChange}
-            onCommit={onCommit}
-          />
-        ))}
-      </section>
+      {behaviourVisible && (
+        <section
+          className="settings-config-group"
+          role="group"
+          aria-labelledby={BLOCKS.behaviour.titleId}
+          data-setting-id={BLOCKS.behaviour.row}
+        >
+          <h4 className="settings-config-subtitle" id={BLOCKS.behaviour.titleId}>
+            {BLOCKS.behaviour.title}
+          </h4>
+          {behaviourKeys.map((entry) => (
+            <CuratedConfigControl
+              key={entry.key}
+              entry={entry}
+              draft={drafts[entry.key] ?? ''}
+              busy={busyKey === entry.key}
+              error={fieldErrors[entry.key]}
+              onDraftChange={onDraftChange}
+              onCommit={onCommit}
+            />
+          ))}
+        </section>
+      )}
 
       {/* --- Custom keys --- */}
-      <section
-        className="settings-config-group"
-        role="group"
-        aria-labelledby={BLOCKS.custom.titleId}
-        data-setting-id={BLOCKS.custom.row}
-      >
-        <h4 className="settings-config-subtitle" id={BLOCKS.custom.titleId}>
-          {BLOCKS.custom.title}
-        </h4>
-        {advanced.length === 0 && (
-          <p className="settings-config-hint">No other keys set at the {level} level.</p>
-        )}
-        {advanced.map((entry) => {
-          const disabled = busyKey === entry.name;
-          const err = fieldErrors[entry.name];
-          return (
-            <div
-              className="settings-config-advanced-row"
-              key={entry.name}
-              data-config-key={entry.name}
-            >
-              <span className="settings-config-advanced-name" title={entry.name}>
-                {entry.name}
-              </span>
-              <input
-                id={`cfg-adv-${entry.name}`}
-                className="settings-number settings-config-field"
-                type="text"
-                value={drafts[entry.name] ?? ''}
-                disabled={disabled}
-                onChange={(e) => onDraftChange(entry.name, e.target.value)}
-                onBlur={() => {
-                  if ((drafts[entry.name] ?? '') !== entry.value) {
-                    onCommit(entry.name, drafts[entry.name] ?? '', true);
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    e.currentTarget.blur();
-                  }
-                }}
-              />
-              <button
-                type="button"
-                className="btn-secondary settings-toggle-btn"
-                disabled={disabled}
-                onClick={() => onRemove(entry.name)}
+      {customVisible && (
+        <section
+          className="settings-config-group"
+          role="group"
+          aria-labelledby={BLOCKS.custom.titleId}
+          data-setting-id={BLOCKS.custom.row}
+        >
+          <h4 className="settings-config-subtitle" id={BLOCKS.custom.titleId}>
+            {BLOCKS.custom.title}
+          </h4>
+          {advanced.length === 0 && (
+            <p className="settings-config-hint">No other keys set at the {level} level.</p>
+          )}
+          {advanced.map((entry) => {
+            const disabled = busyKey === entry.name;
+            const err = fieldErrors[entry.name];
+            return (
+              <div
+                className="settings-config-advanced-row"
+                key={entry.name}
+                data-config-key={entry.name}
               >
-                Remove
-              </button>
-              {err !== undefined && <p className="settings-config-error">{err}</p>}
-            </div>
-          );
-        })}
+                <span className="settings-config-advanced-name" title={entry.name}>
+                  {entry.name}
+                </span>
+                <input
+                  id={`cfg-adv-${entry.name}`}
+                  className="settings-number settings-config-field"
+                  type="text"
+                  value={drafts[entry.name] ?? ''}
+                  disabled={disabled}
+                  onChange={(e) => onDraftChange(entry.name, e.target.value)}
+                  onBlur={() => {
+                    if ((drafts[entry.name] ?? '') !== entry.value) {
+                      onCommit(entry.name, drafts[entry.name] ?? '', true);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      e.currentTarget.blur();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn-secondary settings-toggle-btn"
+                  disabled={disabled}
+                  onClick={() => onRemove(entry.name)}
+                >
+                  Remove
+                </button>
+                {err !== undefined && <p className="settings-config-error">{err}</p>}
+              </div>
+            );
+          })}
 
-        <div className="settings-config-advanced-row settings-config-add-row">
-          <input
-            className="settings-number settings-config-field"
-            type="text"
-            placeholder="section.key"
-            value={addName}
-            disabled={adding}
-            onChange={(e) => setAddName(e.target.value)}
-          />
-          <input
-            className="settings-number settings-config-field"
-            type="text"
-            placeholder="value"
-            value={addValue}
-            disabled={adding}
-            onChange={(e) => setAddValue(e.target.value)}
-          />
-          <button
-            type="button"
-            className="btn-secondary settings-toggle-btn"
-            disabled={adding || addName.trim() === ''}
-            onClick={() => void addEntry()}
-          >
-            Add entry
-          </button>
-          {addError !== null && <p className="settings-config-error">{addError}</p>}
-        </div>
-      </section>
+          <div className="settings-config-advanced-row settings-config-add-row">
+            <input
+              className="settings-number settings-config-field"
+              type="text"
+              placeholder="section.key"
+              value={addName}
+              disabled={adding}
+              onChange={(e) => setAddName(e.target.value)}
+            />
+            <input
+              className="settings-number settings-config-field"
+              type="text"
+              placeholder="value"
+              value={addValue}
+              disabled={adding}
+              onChange={(e) => setAddValue(e.target.value)}
+            />
+            <button
+              type="button"
+              className="btn-secondary settings-toggle-btn"
+              disabled={adding || addName.trim() === ''}
+              onClick={() => void addEntry()}
+            >
+              Add entry
+            </button>
+            {addError !== null && <p className="settings-config-error">{addError}</p>}
+          </div>
+        </section>
+      )}
     </details>
   );
 }

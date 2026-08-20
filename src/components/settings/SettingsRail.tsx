@@ -22,10 +22,17 @@ const IDS: readonly SettingsCategoryId[] = SETTINGS_CATEGORIES.map((c) => c.id);
 
 export function SettingsRail({
   selected,
+  counts,
   onSelect,
   onFocusPane,
 }: {
   selected: SettingsCategoryId;
+  /** P69k / UI §3.2: per-category match counts while a search is running; `null`
+   *  otherwise. Items with matches are EMPHASISED rather than the empty ones
+   *  dimmed, and every item stays clickable — clicking any item clears the query
+   *  (the shell's `onSelect` does that), so a zero-count tab is still the way
+   *  back out of a search. */
+  counts: ReadonlyMap<SettingsCategoryId, number> | null;
   onSelect(id: SettingsCategoryId): void;
   /** `→` from the rail moves focus into the pane (the tablist convention). */
   onFocusPane(): void;
@@ -72,7 +79,17 @@ export function SettingsRail({
       aria-orientation="vertical"
       aria-label="Settings categories"
     >
-      {SETTINGS_CATEGORIES.map((category) => (
+      {SETTINGS_CATEGORIES.map((category) => {
+        const count = counts?.get(category.id) ?? 0;
+        // The base name is the one UI §7.1 froze; the count is appended only
+        // while searching, so an AT user gets the same per-category signal the
+        // emphasis gives a sighted one instead of a bare "12 settings match".
+        const baseName = category.pill === 'repo' ? `${category.label}, repository` : undefined;
+        const name =
+          counts === null
+            ? baseName
+            : `${baseName ?? category.label}, ${String(count)} ${count === 1 ? 'match' : 'matches'}`;
+        return (
         <Fragment key={category.id}>
           {category.dividerBefore === true && (
             <div className="settings-rail-divider" aria-hidden="true" />
@@ -81,7 +98,16 @@ export function SettingsRail({
             type="button"
             role="tab"
             id={settingsTabId(category.id)}
-            className={`settings-rail-item${category.id === selected ? ' is-selected' : ''}`}
+            className={[
+              'settings-rail-item',
+              category.id === selected ? 'is-selected' : '',
+              /* Emphasis is inverted, not dimmed: the item WITH matches is
+                 lifted, a zero-count one keeps the resting colour. A dimmed
+                 clickable item fell under 4.5:1 in both themes. */
+              counts !== null && count > 0 ? 'is-hit' : '',
+            ]
+              .filter((c) => c !== '')
+              .join(' ')}
             aria-selected={category.id === selected}
             aria-controls="settings-pane"
             /* Exactly one rail stop; arrows focus siblings programmatically (a
@@ -94,7 +120,7 @@ export function SettingsRail({
                repository`. An explicit label, not a visually-hidden span —
                name computation joins sibling nodes with a space, which would
                give `Git config , repository`. */
-            aria-label={category.pill === 'repo' ? `${category.label}, repository` : undefined}
+            aria-label={name}
             onClick={() => onSelect(category.id)}
             onKeyDown={(e) => onKeyDown(e, category.id)}
           >
@@ -104,9 +130,15 @@ export function SettingsRail({
                 repo
               </span>
             )}
+            {counts !== null && (
+              <span className="settings-rail-count" aria-hidden="true">
+                {count}
+              </span>
+            )}
           </button>
         </Fragment>
-      ))}
+        );
+      })}
     </div>
   );
 }

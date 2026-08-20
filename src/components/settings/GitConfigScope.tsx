@@ -16,6 +16,7 @@ import type { ConfigLevelArg } from '../../ipc';
 import { GitConfigScopeContext, useGitConfigScope } from './GitConfigScopeContext';
 import { useSettingsValues } from './SettingsContext';
 import { settingsRowLabelId } from './settingsCatalog';
+import { useSettingsRowVisible } from './SettingsSearchContext';
 import { SettingsSegmented } from './SettingsSegmented';
 
 const SCOPE_ROW = 'git-config.scope';
@@ -49,7 +50,11 @@ export function GitConfigScopeProvider({ children }: { children: ReactNode }) {
 export function GitConfigScopeSwitch() {
   const { repoPath } = useSettingsValues();
   const { level, setLevel } = useGitConfigScope();
-  if (repoPath === null) return null;
+  // P69k: the results list renders this alongside the page, so the ONE catalogued
+  // row that lives outside the groups is reachable from search too. It filters
+  // itself for the same reason `SettingsRow` does.
+  const visible = useSettingsRowVisible(SCOPE_ROW);
+  if (repoPath === null || !visible) return null;
 
   const labelId = settingsRowLabelId(SCOPE_ROW);
   return (

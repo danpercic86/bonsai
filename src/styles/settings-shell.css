@@ -16,8 +16,12 @@
   height: min(660px, calc(100vh - 64px));
   padding: 0;
   display: grid;
+  /* P69k: three rows — header / search bar / pane — with the rail spanning the
+     last two. Every cell is placed EXPLICITLY, which is what lets the search bar
+     precede the rail in the DOM (tab order ✕ → search → rail → pane, UI §7.2)
+     while still sitting beside it on screen. */
   grid-template-columns: 200px 1fr;
-  grid-template-rows: 48px 1fr;
+  grid-template-rows: 48px 56px 1fr;
   overflow: hidden;
   border-radius: 6px;
   background: var(--bg-1);
@@ -25,6 +29,7 @@
 
 .settings-header {
   grid-column: 1 / -1;
+  grid-row: 1;
   display: flex;
   align-items: center;
   height: 48px;
@@ -49,6 +54,8 @@
 /* ---- Rail (UI §1.1, §6.1) ---- */
 
 .settings-rail {
+  grid-column: 1;
+  grid-row: 2 / span 2;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -128,9 +135,156 @@
   line-height: 16px;
 }
 
+/* While searching the emphasis is INVERTED rather than dimmed: a category WITH
+   matches is lifted, a zero-count one just keeps the default --text-2 and shows
+   `0`. Dimming was the earlier treatment and it put a clickable item under
+   4.5:1 (2.36:1 in light) — and it is deliberately NOT disabled, since clicking
+   it is how the user leaves the search (UI §3.2), so the WCAG inactive-component
+   exemption does not apply. Two carriers — the colour lift and the digit itself
+   (`0` vs `N`) — and every state is AA in both themes. */
+.settings-rail-item.is-hit {
+  color: var(--text-1);
+}
+
+.settings-rail-count {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* DEVIATION from the design ruling, which asked for the count in `--accent`, and
+   the reason is the very criterion the ruling states ("both themes AA"):
+   `--accent` as 11px text measures 4.34:1 light / 5.07:1 dark on `--bg-1`, and
+   only 3.74:1 / 3.51:1 on the `--selection` fill of a SELECTED rail item — i.e.
+   worse, on that case, than the `opacity: .5` this replaced. `--text-1` is
+   15.4:1 / 12.6:1 on `--bg-1` and AA on the selection fill, and the two carriers
+   survive: the whole item lifts, and the digit itself is 0-vs-N. Flip this one
+   declaration back to `var(--accent)` if the designer overrules the measurement. */
+.settings-rail-item.is-hit .settings-rail-count {
+  color: var(--text-1);
+}
+
+/* ---- Search bar (UI §2.2 / §3) ---- */
+
+.settings-search {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-0);
+  min-width: 0;
+}
+
+/* The shared sidebar filter box is 24px and margin-topped under a section
+   header; in the settings card it is a full-width 32px field. Compound
+   selectors, so the override wins on specificity whatever the import order. */
+.settings-search .list-filter {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.settings-search .list-filter-input {
+  height: 32px;
+  font-size: 13px;
+  padding: 0 8px;
+}
+
+/* No `.sr-only` utility exists yet (ui-reference §12-F4), so the recipe is
+   local — same one as `.ai-dock-announce`. */
+.settings-search-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- Search results (UI §3.1) ---- */
+
+.settings-results-group + .settings-results-group {
+  margin-top: 8px;
+}
+
+/* `center`, not `baseline`: the Go-to button is a 24px hit target (§7.4) and a
+   baseline alignment would hang it off the heading's text baseline. */
+.settings-results-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+/* --text-2, not --text-3: in a result list this heading is the primary
+   wayfinder, not decoration (it was 2.86:1 in light). The uppercase + 600
+   weight keeps it distinct from the 400-weight button beside it. */
+.settings-results-title {
+  margin: 0;
+  margin-right: auto;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+}
+
+/* 24px minimum target (§7.4). The negative margin keeps the TEXT flush with the
+   pane's right edge while the padding grows the hit area. */
+.settings-results-goto {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border: none;
+  padding: 0 6px;
+  margin-right: -6px;
+  background: transparent;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings-results-goto:hover {
+  color: var(--text-1);
+}
+
+.settings-results-goto:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+/* The scope switch is a pane-HEADER row; in a result block it has no header to
+   right-align inside, so it lays out as an ordinary block. */
+.settings-results-trailing .settings-scope {
+  margin-left: 0;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.settings-results-trailing .settings-scope-line {
+  text-align: left;
+}
+
+/* --text-1 on --selection: 9.4:1 dark / 13.3:1 light (UI §6.3). */
+.settings-match {
+  background: var(--selection);
+  color: var(--text-1);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
 /* ---- Pane (UI §2.2) ---- */
 
 .settings-pane {
+  grid-column: 2;
+  grid-row: 3;
   padding: 16px 24px 24px;
   overflow-y: auto;
   scroll-behavior: auto;
@@ -265,3 +419,50 @@
   color: var(--text-2);
 }
 
+
+/* ---- Overflow / narrow window (UI §2.2) ----
+   A Tauri desktop app, so these are an insurance policy, not a target. Below
+   720px the rail becomes a horizontally scrolling strip ABOVE the search bar;
+   roles and tab order are unchanged (the strip is still one tab stop). */
+
+@media (max-height: 560px) {
+  .dialog-card.settings-card {
+    height: calc(100vh - 32px);
+  }
+}
+
+@media (max-width: 720px) {
+  .dialog-card.settings-card {
+    grid-template-columns: 1fr;
+    grid-template-rows: 48px 40px 56px 1fr;
+  }
+
+  .settings-rail {
+    grid-column: 1;
+    grid-row: 2;
+    flex-direction: row;
+    align-items: center;
+    height: 40px;
+    padding: 4px 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .settings-rail-divider {
+    width: 1px;
+    height: 16px;
+    margin: 0 4px;
+  }
+
+  .settings-search {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .settings-pane {
+    grid-column: 1;
+    grid-row: 4;
+  }
+}

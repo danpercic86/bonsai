@@ -24,6 +24,7 @@ import { APPEARANCE_ENTRIES } from './catalog/appearance';
 import { GENERAL_ENTRIES } from './catalog/general';
 import { GRAPH_ENTRIES } from './catalog/graph';
 import { GIT_CONFIG_ENTRIES, IDENTITY_ENTRIES } from './catalog/repo';
+import { isRowAvailable, type SettingsAvailability } from './settingsAvailability';
 import type {
   SettingsCategory,
   SettingsCategoryId,
@@ -91,14 +92,27 @@ export function findSettingsRow(id: SettingsRowId): SettingsIndexEntry | undefin
   return BY_ID.get(id);
 }
 
-/** AND over whitespace-split terms, case-insensitive substring over label+help+keywords. */
-export function searchSettings(query: string): readonly SettingsIndexEntry[] {
+/**
+ * AND over whitespace-split terms, case-insensitive substring over
+ * label+help+keywords, restricted to the rows that are RENDERABLE right now.
+ *
+ * The availability filter is not a nicety: a `requires` row that fails its
+ * precondition is not in the DOM, so matching it would report a count nobody can
+ * see and hand `SettingsResults` a category whose block renders empty (P69k
+ * review A3). Every consumer — the status line, the rail counts, the result list
+ * — reads this one list, so they cannot disagree.
+ */
+export function searchSettings(
+  query: string,
+  availability: SettingsAvailability,
+): readonly SettingsIndexEntry[] {
   const terms = query
     .toLowerCase()
     .split(/\s+/)
     .filter((t) => t !== '');
   if (terms.length === 0) return [];
   return SETTINGS_INDEX.filter((e) => {
+    if (!isRowAvailable(e, availability)) return false;
     const hay = `${e.label} ${e.help ?? ''} ${e.keywords ?? ''}`.toLowerCase();
     return terms.every((t) => hay.includes(t));
   });

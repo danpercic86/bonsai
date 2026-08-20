@@ -4,18 +4,23 @@
 // spanning both columns, a 200px category rail, and the pane. The card never
 // scrolls as a whole — the rail and the pane scroll independently.
 //
-// No search bar yet: shell contract D-3 ships search in P69k, because a box that
-// can only find three of seven categories' rows is a control that lies.
+// P69k adds search (UI §3): every category is catalog-shaped now, so the box can
+// find every row rather than three categories' worth. The pane switches between
+// the selected category and a cross-category result list; DOM order is
+// close ✕ → search → rail → pane, and the grid places each cell explicitly so
+// that tab order needs no `tabindex` juggling (UI §7.2).
 //
 // No focus TRAP (D-4): this codebase has no shared trap and no dialog has one, so
 // adding one here would create an inconsistency. Focus RESTORE ships.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { CATEGORY_PAGES } from './categories';
-import { SETTINGS_CATEGORIES, settingsTabId } from './settingsCatalog';
+import { SETTINGS_CATEGORIES, searchSettings, settingsTabId } from './settingsCatalog';
 import { SettingsRail } from './SettingsRail';
 import { SettingsPaneHeader } from './SettingsPaneHeader';
+import { SettingsResults } from './SettingsResults';
+import { SettingsSearchBar } from './SettingsSearchBar';
 import { useSettingsValues } from './SettingsContext';
 import type { SettingsCategoryId } from './types';
 
@@ -30,7 +35,8 @@ export function SettingsShell({
   requestSeq: number;
   onClose(): void;
 }) {
-  const { configInitialFocus } = useSettingsValues();
+  const { configInitialFocus, repoPath, aiEnabled, aiConsented, mcpStatus, profiles } =
+    useSettingsValues();
 
   // Seeded on MOUNT (`SettingsPanel` returns null while closed, so the shell
   // mounts fresh on every false → true transition of `open`) and RE-SEEDED on
@@ -45,15 +51,58 @@ export function SettingsShell({
   const deepLinked = useRef(initialCategory !== undefined || configInitialFocus === 'identity');
   const paneRef = useRef<HTMLDivElement | null>(null);
 
+  // UI §3.2: no debounce — matching is a synchronous pass over ~60 static entries,
+  // and a delay on a list this size only makes the box feel broken.
+  const [query, setQuery] = useState('');
+  const searching = query.trim() !== '';
+  // A row whose `requires` fails is not in the DOM, so it must not be matched:
+  // otherwise the status line and the rail count a row whose result block would
+  // render empty (P69k review A3). One object, one source, every consumer.
+  const availability = useMemo(
+    () => ({ repoPath, aiEnabled, aiConsented, mcpStatus, profiles }),
+    [repoPath, aiEnabled, aiConsented, mcpStatus, profiles],
+  );
+  const matches = useMemo(() => searchSettings(query, availability), [query, availability]);
+  const terms = useMemo(
+    () =>
+      query
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((t) => t !== ''),
+    [query],
+  );
+  const counts = useMemo(() => {
+    const byCategory = new Map<SettingsCategoryId, number>();
+    for (const entry of matches) {
+      byCategory.set(entry.category, (byCategory.get(entry.category) ?? 0) + 1);
+    }
+    return byCategory;
+  }, [matches]);
+
+  const scrollPaneToTop = (): void => {
+    if (paneRef.current !== null) paneRef.current.scrollTop = 0;
+  };
+
+  const changeQuery = (next: string): void => {
+    setQuery(next);
+    // The result list is rebuilt on every keystroke, so a retained scroll offset
+    // would land the user in the middle of a list they have not seen.
+    scrollPaneToTop();
+  };
+
   // Focus restore (D-4): remember what was focused when the shell mounted and put
   // it back on close, falling back to the ⚙ trigger and then to <body>.
   useEffect(() => {
     const previous = document.activeElement;
-    // Deep-linked opens leave initial focus to the pane's own section effect
-    // (`configInitialFocus`), which focuses `user.name`. Otherwise land on the
-    // rail so the dialog is immediately keyboard-navigable.
+    // UI §7.2: initial focus is the SEARCH input — a text field, so no keystroke
+    // can activate anything, and it is the fastest route for a user who knows the
+    // setting's name but not its category.
+    //
+    // Deep-linked opens are the exception and must stay one: `configInitialFocus`
+    // makes the Git-config section focus `user.name`, and a search box that
+    // grabbed focus here would silently defeat the commit-error linkage.
     if (!deepLinked.current) {
-      document.getElementById(settingsTabId('general'))?.focus();
+      document.querySelector<HTMLElement>('.settings-search .list-filter-input')?.focus();
     }
     return () => {
       const fallback = document.querySelector<HTMLElement>('.settings-toggle');
@@ -72,14 +121,20 @@ export function SettingsShell({
     seenSeq.current = requestSeq;
     if (requested === null) return;
     setSelected(requested);
-    if (paneRef.current !== null) paneRef.current.scrollTop = 0;
+    // A deep link names a category, so a live search must not keep the result
+    // list on screen in front of it.
+    setQuery('');
+    scrollPaneToTop();
   }, [requestSeq, requested]);
 
   const select = (id: SettingsCategoryId): void => {
     setSelected(id);
+    // UI §3.2: clicking ANY rail item clears the query, including a zero-count
+    // one — the rail is the way out of a search, not a second filtered view.
+    setQuery('');
     // UI §2.2 scroll reset. Focus stays where the user put it: a mouse click
     // leaves it on the rail item, a keyboard activation on the same item.
-    if (paneRef.current !== null) paneRef.current.scrollTop = 0;
+    scrollPaneToTop();
   };
 
   const category = SETTINGS_CATEGORIES.find((c) => c.id === selected) ?? SETTINGS_CATEGORIES[0];
@@ -121,8 +176,14 @@ export function SettingsShell({
           </button>
         </div>
 
+        {/* DOM order: the search bar precedes the rail so Tab runs
+            ✕ → search → rail → pane (UI §7.2). The grid puts it back in column 2
+            beside the rail, so nothing moves visually. */}
+        <SettingsSearchBar query={query} matchCount={matches.length} onChange={changeQuery} />
+
         <SettingsRail
           selected={selected}
+          counts={searching ? counts : null}
           onSelect={select}
           onFocusPane={() => paneRef.current?.focus()}
         />
@@ -135,12 +196,24 @@ export function SettingsShell({
           aria-labelledby={settingsTabId(category.id)}
           ref={paneRef}
         >
-          <SettingsPaneHeader
-            title={category.label}
-            subtitle={category.subtitle}
-            trailing={HeaderTrailing === undefined ? undefined : <HeaderTrailing />}
-          />
-          <Page key={pageKey} />
+          {searching ? (
+            <SettingsResults
+              query={query}
+              terms={terms}
+              matches={matches}
+              onGoToCategory={select}
+              onClear={() => changeQuery('')}
+            />
+          ) : (
+            <>
+              <SettingsPaneHeader
+                title={category.label}
+                subtitle={category.subtitle}
+                trailing={HeaderTrailing === undefined ? undefined : <HeaderTrailing />}
+              />
+              <Page key={pageKey} />
+            </>
+          )}
         </div>
       </div>
     </div>

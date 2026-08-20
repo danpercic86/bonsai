@@ -36,11 +36,15 @@ import { SettingsRow } from './settings/SettingsRow';
 import { SettingsSegmented } from './settings/SettingsSegmented';
 import { SettingsSwitchRow } from './settings/SettingsSwitchRow';
 import { settingsRowHelpId, settingsRowLabelId } from './settings/settingsCatalog';
+import { useSettingsGroupVisible } from './settings/SettingsSearchContext';
 import { AI_BULK_MAX_BYTES_MAX, AI_BULK_MAX_BYTES_MIN } from '../settings/ranges';
 
 /** 1 KB = 1000 B exactly, so the byte clamps map to whole KB with no drift. */
 const BULK_KB_MIN = AI_BULK_MAX_BYTES_MIN / 1000;
 const BULK_KB_MAX = AI_BULK_MAX_BYTES_MAX / 1000;
+
+/** §5.4 copy, FROZEN — the recommended rewording is still pending A3 sign-off. */
+const GATE_NOTE = 'Turn on “Enable AI features” above to change these.';
 
 const ACCESS = 'ai.repository-access';
 const STREAM_LOG = 'ai.stream-output';
@@ -70,6 +74,20 @@ export function SettingsAiRunSection({ aiRun, aiActive, onChange }: SettingsAiRu
   } = aiRun;
 
   const off = !aiActive;
+  /* P69k: a search result may show a Limits row while the Runs group has no hit
+     of its own. The fieldset still renders inert around it, so the note that
+     explains WHY has to follow it out of the group rather than disappear —
+     otherwise the user gets ten dimmed controls and no reason, and the
+     fieldset's `aria-describedby` dangles (ui-reference §12.3.3). */
+  const runsGroupShown = useSettingsGroupVisible('Runs');
+  /* P69k review A8: the fieldset is not a `SettingsGroup`, so a search that hit
+     AI somewhere ELSE (e.g. `mcp`) used to render it empty — a bordered box with
+     no controls, still carrying `aria-describedby` and an orphan gate note that
+     described nothing. It spans exactly these three groups, so when none of them
+     has a hit this component contributes nothing at all. */
+  const limitsGroupShown = useSettingsGroupVisible('Limits');
+  const bulkGroupShown = useSettingsGroupVisible('Bulk resolve');
+  if (!runsGroupShown && !limitsGroupShown && !bulkGroupShown) return null;
 
   return (
     <fieldset
@@ -78,10 +96,17 @@ export function SettingsAiRunSection({ aiRun, aiActive, onChange }: SettingsAiRu
       /* Only while the note EXISTS — a dangling idref is worse than none. */
       aria-describedby={off ? 'ai-run-gate-note' : undefined}
     >
+      {/* Exactly ONE copy of the note ever renders, and it carries the id. */}
+      {off && !runsGroupShown && (
+        <p className="settings-group-lead" id="ai-run-gate-note">
+          {GATE_NOTE}
+        </p>
+      )}
+
       <SettingsGroup id="ai-runs" title="Runs">
-        {off && (
+        {off && runsGroupShown && (
           <p className="settings-group-lead" id="ai-run-gate-note">
-            {'Turn on “Enable AI features” above to change these.'}
+            {GATE_NOTE}
           </p>
         )}
 
@@ -145,7 +170,6 @@ export function SettingsAiRunSection({ aiRun, aiActive, onChange }: SettingsAiRu
         {/* 8 — bytes shown as KB (1 KB = 1000 B), so the clamps land on whole KB. */}
         <SettingsRow id={BULK} controlId="settings-ai-bulk" disabled={off}>
           <NumberSlider
-            bare
             id="settings-ai-bulk"
             label="Batch size"
             value={Math.round(aiBulkMaxBytes / 1000)}

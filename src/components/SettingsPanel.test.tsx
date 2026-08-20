@@ -168,7 +168,15 @@ describe('SettingsPanel', () => {
     const { props } = renderPanel();
     // UI §1.3 #6: "Enable auto-fetch" → "Auto-fetch from remotes" ("Enable X" is
     // redundant beside a switch). A rename, not a weakening.
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Auto-fetch from remotes' }));
+    const box = screen.getByRole('checkbox', { name: 'Auto-fetch from remotes' });
+    // P69k B1: the row is `SettingsSwitchRow` now rather than a hand-spelled
+    // row+switch pair. The DOM it emits must be identical — the `{rowId}-input`
+    // id is what makes the label association above resolve, and the default
+    // `{rowId}-help` description is what carries the row's help line.
+    expect(box).toHaveAttribute('id', 'general.auto-fetch-input');
+    expect(box).toHaveAttribute('aria-describedby', 'general.auto-fetch-help');
+    expect(document.getElementById('general.auto-fetch-help')).not.toBeNull();
+    fireEvent.click(box);
     expect(props.onChange).toHaveBeenCalledWith({
       autoFetch: { enabled: false, intervalMinutes: 10 },
     });

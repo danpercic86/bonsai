@@ -34,6 +34,7 @@ import { SettingsGroup } from './settings/SettingsGroup';
 import { SettingsRow } from './settings/SettingsRow';
 import { SettingsSwitchRow } from './settings/SettingsSwitchRow';
 import { settingsRowHelpId } from './settings/settingsCatalog';
+import { useSettingsRowVisible } from './settings/SettingsSearchContext';
 import {
   AI_HARD_CAP_MAX,
   AI_HARD_CAP_MIN,
@@ -120,6 +121,15 @@ export function SettingsAiLimits({
     ? 'settings-ai-cap-hint settings-ai-nolimit-hint'
     : 'settings-ai-cap-hint';
 
+  /* P69k: each numeric row borrows the stateful note that lives in its SWITCH
+     row. A search result can show one without the other, so the borrowed idref
+     is dropped when the row that owns the note is filtered out — a dangling
+     idref is worse than none (ui-reference §12.3.3). Outside search these are
+     all `true` and the wiring is exactly what it was. */
+  const idleNote = useSettingsRowVisible(IDLE_ON);
+  const capNote = useSettingsRowVisible(CAP_ON);
+  const budgetNote = useSettingsRowVisible(BUDGET_ON);
+
   const setIdle = (v: number): void => {
     setIdleResume(v);
     onChange({ aiIdleTimeoutSecs: v });
@@ -159,7 +169,6 @@ export function SettingsAiLimits({
       />
       <SettingsRow id={IDLE_SECS} controlId="settings-ai-idle" disabled={disabled || !idleOn}>
         <NumberSlider
-          bare
           id="settings-ai-idle"
           label="After"
           value={idleOn ? aiIdleTimeoutSecs : idleResume}
@@ -170,7 +179,11 @@ export function SettingsAiLimits({
           // The row's own help line FIRST, then the switch's stateful note: the
           // note explains the sentinel, it does not describe this field, so it is
           // appended rather than substituted (P69j-1 review item 5).
-          describedBy={`${settingsRowHelpId(IDLE_SECS)} settings-ai-idle-hint`}
+          describedBy={
+            idleNote
+              ? `${settingsRowHelpId(IDLE_SECS)} settings-ai-idle-hint`
+              : settingsRowHelpId(IDLE_SECS)
+          }
           onChange={setIdle}
         />
       </SettingsRow>
@@ -201,7 +214,6 @@ export function SettingsAiLimits({
       />
       <SettingsRow id={CAP_SECS} controlId="settings-ai-cap" disabled={disabled || !capOn}>
         <NumberSlider
-          bare
           id="settings-ai-cap"
           label="Time limit"
           value={capOn ? aiHardCapSecs : capResume}
@@ -209,7 +221,11 @@ export function SettingsAiLimits({
           max={AI_HARD_CAP_MAX}
           unit="seconds"
           disabled={disabled || !capOn}
-          describedBy={`${settingsRowHelpId(CAP_SECS)} ${capDescribedBy}`}
+          describedBy={
+            capNote
+              ? `${settingsRowHelpId(CAP_SECS)} ${capDescribedBy}`
+              : settingsRowHelpId(CAP_SECS)
+          }
           onChange={setCap}
         />
       </SettingsRow>
@@ -217,7 +233,6 @@ export function SettingsAiLimits({
       {/* 6 — turns. Gated by neither sentinel. */}
       <SettingsRow id={TURNS} controlId="settings-ai-turns" disabled={disabled}>
         <NumberSlider
-          bare
           id="settings-ai-turns"
           label="Replies per run"
           value={aiMaxTurns}
@@ -247,7 +262,6 @@ export function SettingsAiLimits({
       />
       <SettingsRow id={BUDGET_USD} controlId="settings-ai-budget" disabled={disabled || !budgetOn}>
         <NumberSlider
-          bare
           id="settings-ai-budget"
           label="Spend limit"
           value={budgetOn ? aiMaxBudgetUsd : budgetResume}
@@ -257,7 +271,11 @@ export function SettingsAiLimits({
           typedStep={BUDGET_TYPED_STEP}
           unit="USD"
           disabled={disabled || !budgetOn}
-          describedBy={`${settingsRowHelpId(BUDGET_USD)} settings-ai-budget-hint`}
+          describedBy={
+            budgetNote
+              ? `${settingsRowHelpId(BUDGET_USD)} settings-ai-budget-hint`
+              : settingsRowHelpId(BUDGET_USD)
+          }
           onChange={setBudget}
         />
       </SettingsRow>

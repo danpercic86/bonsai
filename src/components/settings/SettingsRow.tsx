@@ -17,6 +17,8 @@ import { useContext, type ReactNode } from 'react';
 import { DEFAULT_UI_SETTINGS } from '../../settings/defaults';
 import { SettingsActionsContext, SettingsValuesContext } from './SettingsContext';
 import { findSettingsRow, settingsRowHelpId, settingsRowLabelId } from './settingsCatalog';
+import { highlightTerms } from './settingsHighlight';
+import { useSettingsSearch } from './SettingsSearchContext';
 import type { SettingsRowId } from './types';
 
 export interface SettingsRowResetOverride {
@@ -62,6 +64,10 @@ export function SettingsRow({
   const entry = findSettingsRow(id);
   const values = useContext(SettingsValuesContext);
   const actions = useContext(SettingsActionsContext);
+  // P69k: inside a search result block this row renders only if it is one of the
+  // hits. The page above it is the REAL page, so this is what turns it into a
+  // result list without a second renderer (UI §3.1).
+  const search = useSettingsSearch();
 
   if (import.meta.env.DEV && entry === undefined) {
     console.error(
@@ -101,16 +107,20 @@ export function SettingsRow({
   // (and every card's `aria-describedby` would resolve to the first one).
   const labelId = settingsRowLabelId(id, profileId);
   const labelText = rowLabel ?? label;
+  // UI §3.2: only the LABEL is highlighted — help text at 12px turns into noise.
+  const labelNode = search === null ? labelText : highlightTerms(labelText, search.terms);
+
+  if (search !== null && !search.visible.has(id)) return null;
 
   return (
     <div className={className} data-setting-id={id} data-profile-id={profileId}>
       {controlId === undefined ? (
         <span className="settings-row-label" id={labelId}>
-          {labelText}
+          {labelNode}
         </span>
       ) : (
         <label className="settings-row-label" id={labelId} htmlFor={controlId}>
-          {labelText}
+          {labelNode}
         </label>
       )}
       <div className="settings-row-control" data-setting-control="">

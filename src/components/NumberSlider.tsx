@@ -39,7 +39,6 @@ export function NumberSlider({
   unit,
   disabled,
   describedBy,
-  bare,
   onChange,
 }: {
   id: string;
@@ -60,11 +59,6 @@ export function NumberSlider({
   typedStep?: number;
   unit?: string;
   disabled?: boolean;
-  /** P69g: render ONLY the inputs, for use inside a `SettingsRow` whose grid
-   *  already owns the label cell (`<label for={id}>` — so the number input keeps
-   *  the same accessible name) and the help/reset cells. The legacy
-   *  `.settings-control` wrapper is still the default for un-migrated sections. */
-  bare?: boolean;
   /** P68g §1.6: id(s) of the hint paragraph(s) describing this control, wired onto
    *  the number input so the explanation is announced rather than orphaned. */
   describedBy?: string;
@@ -117,7 +111,13 @@ export function NumberSlider({
     commit(raw);
   };
 
-  const inputs = (
+  /* P69k: the control is ALWAYS just the two inputs. Every call site sits inside
+     a `SettingsRow` whose grid owns the label cell (`<label for={id}>`, which is
+     the number input's accessible name) and the help/reset cells, so the old
+     `.settings-control` + inner `<label>` wrapper had no production caller left
+     — only its own test. `label` is still the RANGE input's `aria-label`: a
+     slider and a spinbutton in one row both need a name of their own. */
+  return (
     <div className="settings-control-inputs">
       <input
         className="settings-range"
@@ -150,17 +150,6 @@ export function NumberSlider({
         }}
       />
       {unit !== undefined && <span className="settings-unit">{unit}</span>}
-    </div>
-  );
-
-  if (bare === true) return inputs;
-
-  return (
-    <div className={`settings-control${disabled === true ? ' is-disabled' : ''}`}>
-      <label className="settings-control-label" htmlFor={id}>
-        {label}
-      </label>
-      {inputs}
     </div>
   );
 }

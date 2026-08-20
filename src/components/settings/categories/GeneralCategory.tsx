@@ -1,9 +1,11 @@
 // P69g — the "General" category page: background activity + external tools.
 //
-// Re-skinned onto the canonical row (UI §5.1): the two checkboxes are switches,
-// the two intervals are `NumberSlider` in `bare` mode inside a row that owns the
-// label/help/reset cells, and the section-level paragraph is gone — its content
-// is now per-row help, which is what `aria-describedby` can actually point at.
+// Re-skinned onto the canonical row (UI §5.1): the two checkboxes are
+// `SettingsSwitchRow` (the row+switch pairing, including the `{rowId}-input` id
+// and the `{rowId}-help` description — spelling it out here was verbatim what
+// that component does), the two intervals are `NumberSlider` inside a row that
+// owns the label/help/reset cells, and the section-level paragraph is gone — its
+// content is now per-row help, which is what `aria-describedby` can point at.
 //
 // Every label, help string and `↺` descriptor comes from the CATALOG via the row
 // id; nothing here restates them.
@@ -19,7 +21,7 @@ import {
 import { settingsRowHelpId } from '../settingsCatalog';
 import { SettingsGroup } from '../SettingsGroup';
 import { SettingsRow } from '../SettingsRow';
-import { SettingsSwitch } from '../SettingsSwitch';
+import { SettingsSwitchRow } from '../SettingsSwitchRow';
 import { useSettingsActions, useSettingsValues } from '../SettingsContext';
 
 const AUTO_FETCH = 'general.auto-fetch';
@@ -34,14 +36,11 @@ export function GeneralCategory() {
   return (
     <>
       <SettingsGroup id="general-background" title="Background activity">
-        <SettingsRow id={AUTO_FETCH} controlId={`${AUTO_FETCH}-input`}>
-          <SettingsSwitch
-            id={`${AUTO_FETCH}-input`}
-            checked={autoFetch.enabled}
-            describedBy={settingsRowHelpId(AUTO_FETCH)}
-            onChange={(enabled) => change({ autoFetch: { ...autoFetch, enabled } })}
-          />
-        </SettingsRow>
+        <SettingsSwitchRow
+          id={AUTO_FETCH}
+          checked={autoFetch.enabled}
+          onChange={(enabled) => change({ autoFetch: { ...autoFetch, enabled } })}
+        />
 
         <SettingsRow
           id={FETCH_INTERVAL}
@@ -49,7 +48,6 @@ export function GeneralCategory() {
           disabled={!autoFetch.enabled}
         >
           <NumberSlider
-            bare
             id="settings-auto-fetch-interval"
             /* P69d / UI §5.3.7: two rows both labelled "Interval" gave two controls
                in one dialog the SAME accessible name. Ids are unchanged. */
@@ -64,14 +62,11 @@ export function GeneralCategory() {
           />
         </SettingsRow>
 
-        <SettingsRow id={AUTO_REFRESH} controlId={`${AUTO_REFRESH}-input`}>
-          <SettingsSwitch
-            id={`${AUTO_REFRESH}-input`}
-            checked={healthRefresh.enabled}
-            describedBy={settingsRowHelpId(AUTO_REFRESH)}
-            onChange={(enabled) => change({ healthRefresh: { ...healthRefresh, enabled } })}
-          />
-        </SettingsRow>
+        <SettingsSwitchRow
+          id={AUTO_REFRESH}
+          checked={healthRefresh.enabled}
+          onChange={(enabled) => change({ healthRefresh: { ...healthRefresh, enabled } })}
+        />
 
         <SettingsRow
           id={REFRESH_INTERVAL}
@@ -79,7 +74,6 @@ export function GeneralCategory() {
           disabled={!healthRefresh.enabled}
         >
           <NumberSlider
-            bare
             id="settings-health-refresh-interval"
             label="Refresh every"
             value={healthRefresh.intervalMinutes}

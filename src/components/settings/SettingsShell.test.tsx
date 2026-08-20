@@ -198,7 +198,8 @@ describe('SettingsShell — seeding and close', () => {
     trigger.focus();
 
     const { rerender, props } = renderPanel();
-    expect(document.activeElement).toBe(tab('General'));
+    // P69k / UI §7.2: initial focus is the search box, not the rail.
+    expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Search settings' }));
     rerender(<SettingsPanel {...props} open={false} />);
     expect(document.activeElement).toBe(trigger);
     trigger.remove();

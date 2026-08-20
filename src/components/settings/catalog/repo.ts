@@ -57,8 +57,11 @@ export const IDENTITY_ENTRIES: readonly SettingsIndexEntry[] = [
     category: 'identities',
     group: 'Identities',
     label: 'Use in this repository',
-    help: 'Write this identity into the open repository’s local Git config.',
-    keywords: 'apply switch active repo',
+    /* P69k: no `help` — the two action buttons share one cell with no help slot
+       (UI §4.6), so a help string here would be text search could match and the
+       user could never see. Its vocabulary moved into `keywords`, the same trade
+       P69j made for the four AI rows whose note is stateful. */
+    keywords: 'apply switch active repo write local git config identity use',
     control: 'button',
     requires: 'profile',
     repeats: 'perProfile',
@@ -68,8 +71,8 @@ export const IDENTITY_ENTRIES: readonly SettingsIndexEntry[] = [
     category: 'identities',
     group: 'Identities',
     label: 'Delete',
-    help: 'Remove this identity. Asks for confirmation inline.',
-    keywords: 'remove profile identity',
+    /* P69k: no `help`, same reason as `identities.apply` above. */
+    keywords: 'remove profile identity delete saved confirm',
     control: 'button',
     requires: 'profile',
     repeats: 'perProfile',

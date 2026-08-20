@@ -67,7 +67,6 @@ export function SettingsGraphSection({ graph, onChange }: SettingsGraphSectionPr
             field was removed entirely in P51 (D7). */}
         <SettingsRow id={NODE_SIZE} controlId="settings-graph-avatar">
           <NumberSlider
-            bare
             id="settings-graph-avatar"
             label="Commit node size"
             value={graph.avatarRadius}
@@ -82,7 +81,6 @@ export function SettingsGraphSection({ graph, onChange }: SettingsGraphSectionPr
         {/* §11: the id AND the label are frozen — e2e and vitest query both. */}
         <SettingsRow id={ROW_HEIGHT} controlId="settings-graph-row">
           <NumberSlider
-            bare
             id="settings-graph-row"
             label="Row height"
             value={graph.rowHeight}
@@ -96,7 +94,6 @@ export function SettingsGraphSection({ graph, onChange }: SettingsGraphSectionPr
 
         <SettingsRow id={LANE_WIDTH} controlId="settings-graph-lane">
           <NumberSlider
-            bare
             id="settings-graph-lane"
             label="Lane width"
             value={graph.laneWidth}

@@ -18,7 +18,8 @@ import {
   formatDefaultLabel,
   searchSettings,
 } from './settingsCatalog';
-import type { SettingsCategoryId, SettingsIndexEntry } from './types';
+import { REQUIREMENT_PREDICATES, type SettingsAvailability } from './settingsAvailability';
+import type { SettingsCategoryId, SettingsIndexEntry, SettingsRowRequirement } from './types';
 
 const CATEGORY_IDS: readonly SettingsCategoryId[] = [
   'general',
@@ -206,30 +207,89 @@ describe('catalog identity and shape', () => {
   });
 });
 
+/** Everything renderable: a repo is open, AI is on, MCP is running, profiles exist. */
+const ALL: SettingsAvailability = {
+  repoPath: '/repo',
+  aiEnabled: true,
+  aiConsented: true,
+  mcpStatus: { enabled: true },
+  profiles: ['p1'],
+};
+
+/** Nothing conditional renders: no repo, AI off, MCP stopped, no profiles. */
+const NONE: SettingsAvailability = {
+  repoPath: null,
+  aiEnabled: false,
+  aiConsented: false,
+  mcpStatus: { enabled: false },
+  profiles: [],
+};
+
 describe('search', () => {
   it('returns nothing for an empty or whitespace query', () => {
-    expect(searchSettings('')).toEqual([]);
-    expect(searchSettings('   ')).toEqual([]);
+    expect(searchSettings('', ALL)).toEqual([]);
+    expect(searchSettings('   ', ALL)).toEqual([]);
   });
 
   it('ANDs the terms and is case-insensitive', () => {
-    const ids = searchSettings('graph row').map((e) => e.id);
+    const ids = searchSettings('graph row', ALL).map((e) => e.id);
     expect(ids).toContain('graph.row-height');
     expect(ids).not.toContain('general.fetch-interval');
-    expect(searchSettings('GRAPH Row').map((e) => e.id)).toEqual(ids);
+    expect(searchSettings('GRAPH Row', ALL).map((e) => e.id)).toEqual(ids);
     // A term that matches nothing kills the whole result set.
-    expect(searchSettings('graph row zzzz')).toEqual([]);
+    expect(searchSettings('graph row zzzz', ALL)).toEqual([]);
   });
 
   it('matches on keywords and help, not just the label', () => {
-    expect(searchSettings('husky').map((e) => e.id)).toEqual(['git-config.run-hooks']);
-    expect(searchSettings('colour').map((e) => e.id)).toEqual(['appearance.theme']);
-    expect(searchSettings('upstream').map((e) => e.id)).toContain('graph.ahead-behind');
+    expect(searchSettings('husky', ALL).map((e) => e.id)).toEqual(['git-config.run-hooks']);
+    expect(searchSettings('colour', ALL).map((e) => e.id)).toEqual(['appearance.theme']);
+    expect(searchSettings('upstream', ALL).map((e) => e.id)).toContain('graph.ahead-behind');
   });
 
   it('finds every row by its own label', () => {
     for (const entry of SETTINGS_INDEX) {
-      expect(searchSettings(entry.label).map((e) => e.id)).toContain(entry.id);
+      expect(searchSettings(entry.label, ALL).map((e) => e.id)).toContain(entry.id);
+    }
+  });
+});
+
+describe('search — availability (P69k review A3)', () => {
+  it('drops a row whose `requires` fails, so no result block can render empty', () => {
+    // `husky` is only in `git-config.run-hooks`, which requires a repo.
+    expect(searchSettings('husky', NONE)).toEqual([]);
+    // `bearer` is only in the MCP token row, which requires a running server.
+    expect(searchSettings('bearer', ALL).map((e) => e.id)).toEqual(['ai.mcp-token']);
+    expect(searchSettings('bearer', NONE)).toEqual([]);
+    // `nickname` is only in the per-profile label row.
+    expect(searchSettings('nickname', ALL).map((e) => e.id)).toEqual(['identities.profile-label']);
+    expect(searchSettings('nickname', NONE)).toEqual([]);
+  });
+
+  it('never drops an unconditional row', () => {
+    const unconditional = SETTINGS_INDEX.filter((e) => e.requires === undefined);
+    expect(unconditional.length).toBeGreaterThan(0);
+    for (const entry of unconditional) {
+      expect(searchSettings(entry.label, NONE).map((e) => e.id), entry.id).toContain(entry.id);
+    }
+  });
+
+  it('implements every member of the requirement union', () => {
+    const requirements: readonly SettingsRowRequirement[] = [
+      'repo',
+      'aiActive',
+      'mcpRunning',
+      'mcpStopped',
+      'profile',
+    ];
+    for (const requirement of requirements) {
+      expect(typeof REQUIREMENT_PREDICATES[requirement], requirement).toBe('function');
+    }
+    expect(Object.keys(REQUIREMENT_PREDICATES).sort()).toEqual([...requirements].sort());
+    // The two MCP predicates are exhaustive and mutually exclusive by construction.
+    for (const availability of [ALL, NONE, { ...ALL, mcpStatus: null }]) {
+      expect(REQUIREMENT_PREDICATES.mcpRunning(availability)).toBe(
+        !REQUIREMENT_PREDICATES.mcpStopped(availability),
+      );
     }
   });
 });

@@ -6,6 +6,8 @@
 
 import type { ReactNode, Ref } from 'react';
 
+import { useSettingsGroupVisible } from './SettingsSearchContext';
+
 export function SettingsGroup({
   id,
   title,
@@ -22,6 +24,11 @@ export function SettingsGroup({
   innerRef?: Ref<HTMLElement>;
   children: ReactNode;
 }) {
+  /* P69k: in a search result block a group whose rows all filtered out would
+     render as a bare heading over nothing. */
+  const visible = useSettingsGroupVisible(title);
+  if (!visible) return null;
+
   return (
     <section className="settings-group" aria-labelledby={`${id}-title`} ref={innerRef}>
       <h4 className="settings-group-title" id={`${id}-title`}>

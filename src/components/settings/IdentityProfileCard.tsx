@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { IdentityProfile } from '../../ipc';
 import { settingsRowHelpId } from './settingsCatalog';
 import { SettingsRow } from './SettingsRow';
+import { useSettingsRowVisible } from './SettingsSearchContext';
 
 const LABEL = 'identities.profile-label';
 const NAME = 'identities.profile-name';
@@ -49,10 +50,15 @@ export interface IdentityProfileCardProps {
  * be a stamped row with a `[data-setting-control]` descendant, so the stamp is
  * applied here instead of borrowing a row layout that does not fit.
  *
- * FLAGGED FOR P69k: there is no help slot here, so the catalog `help` of
- * `identities.apply` / `identities.delete` is never rendered — search would match
- * text that is not on screen. Either render it, or drop `help` from those two
- * entries, when search ships.
+ * RESOLVED IN P69k: there is no help slot here, so the catalog `help` of
+ * `identities.apply` / `identities.delete` was never rendered — search would have
+ * matched text that is not on screen. Both `help` values were DROPPED and their
+ * vocabulary folded into `keywords` instead (the `catalog/ai.ts` precedent),
+ * rather than growing a help line under two side-by-side buttons that already
+ * say what they do.
+ *
+ * It is also a stamped row, so it self-filters inside a search result block for
+ * the same reason `SettingsRow` does.
  */
 function ProfileActionCell({
   id,
@@ -63,6 +69,8 @@ function ProfileActionCell({
   profileId: string;
   children: React.ReactNode;
 }) {
+  const visible = useSettingsRowVisible(id);
+  if (!visible) return null;
   return (
     <div className="settings-profile-action" data-setting-id={id} data-profile-id={profileId}>
       <span data-setting-control="">{children}</span>

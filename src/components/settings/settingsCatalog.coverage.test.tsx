@@ -2,23 +2,25 @@
  * P69 §4.3 as amended by `docs/contracts/P69-settings-shell-amendment-A.md` —
  * the DOM↔catalog anti-drift guard.
  *
- * It renders each MIGRATED category's pane against two fixtures and asserts
- * set-equality between what the catalog says the pane contains and what the DOM
- * actually stamps with `data-setting-id`, in BOTH directions. That is what stops
- * search from offering a dead result, a row from being renamed in one place only,
- * or a control from being born unsearchable.
+ * It renders EVERY category's pane against two fixtures and asserts set-equality
+ * between what the catalog says the pane contains and what the DOM actually
+ * stamps with `data-setting-id`, in BOTH directions. That is what stops search
+ * from offering a dead result, a row from being renamed in one place only, or a
+ * control from being born unsearchable.
  *
- * A category joins `MIGRATED` in the same increment that re-skins it. `PENDING`
- * must be `[]` before search ships (AM-5); the two lists and the tripwire are
- * deleted then.
+ * P69k closed AM-5: the `MIGRATED`/`PENDING` partition and its two tests existed
+ * only to gate search on every category being catalog-shaped. `PENDING` reached
+ * `[]` in P69j and search shipped here, so the lists are gone and the guard runs
+ * over `SETTINGS_CATEGORIES` unconditionally — there is no longer a way to opt a
+ * category out of it.
  */
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { act, cleanup, render, screen, within } from '@testing-library/react';
 
 import { SettingsPanel } from '../SettingsPanel';
-import { CATEGORY_PAGES } from './categories';
 import { MAXIMAL, MINIMAL, FIXTURE_CONFIG_VIEW, FIXTURE_PROFILES } from './coverageFixtures';
 import { SETTINGS_CATEGORIES, SETTINGS_INDEX, findSettingsRow } from './settingsCatalog';
+import { REQUIREMENT_PREDICATES } from './settingsAvailability';
 import { DEFAULT_UI_SETTINGS } from '../../settings/defaults';
 import { mockIpc } from '../../ipc/mock';
 import { resetEffectiveIdentityForTests } from '../../hooks/useEffectiveIdentity';
@@ -31,35 +33,18 @@ import type {
 } from './types';
 import type { UiSettings } from '../../ipc/types';
 
-// ---------------------------------------------------------------- AM-5 partition
-
-/** Re-skinned and guarded. */
-const MIGRATED: readonly SettingsCategoryId[] = [
-  'general',
-  'appearance',
-  'about',
-  'git-config',
-  'identities',
-  'graph',
-  'ai',
-];
-
-/** Still on legacy interiors — reachable from the rail, not yet catalog-shaped.
- *  P69j emptied it: all seven categories are now guarded. Both lists and the
- *  partition tests stay until P69k deletes them together. */
-const PENDING: readonly SettingsCategoryId[] = [];
-
 // ------------------------------------------------------------- AM-4a predicates
 
 type Fixture = typeof MAXIMAL;
 
-const REQUIREMENT_HOLDS: Record<SettingsRowRequirement, (fx: Fixture) => boolean> = {
-  repo: (fx) => fx.repoPath !== null,
-  aiActive: (fx) => fx.aiEnabled && fx.aiConsented,
-  mcpRunning: (fx) => fx.mcpStatus?.enabled === true,
-  mcpStopped: (fx) => fx.mcpStatus?.enabled !== true,
-  profile: (fx) => fx.profiles.length > 0,
-};
+/**
+ * P69k review A3: these are the PRODUCTION predicates, imported rather than
+ * restated. `searchSettings` filters on the same table, so "the guard says this
+ * row is absent" and "search says this row is a hit" can no longer disagree —
+ * a hand-copied table here was free to drift from the one search uses.
+ */
+const REQUIREMENT_HOLDS: Record<SettingsRowRequirement, (fx: Fixture) => boolean> =
+  REQUIREMENT_PREDICATES;
 
 const REPEAT_INSTANCES: Record<SettingsRowRepeat, (fx: Fixture) => readonly string[]> = {
   perProfile: (fx) => fx.profiles.map((p) => p.id),
@@ -146,22 +131,6 @@ afterEach(() => {
   resetEffectiveIdentityForTests();
 });
 
-describe('MIGRATED / PENDING partition (AM-5)', () => {
-  it('covers all seven categories exactly once', () => {
-    const all = SETTINGS_CATEGORIES.map((c) => c.id).sort();
-    expect([...MIGRATED, ...PENDING].sort()).toEqual(all);
-    expect(MIGRATED.filter((id) => PENDING.includes(id))).toEqual([]);
-  });
-
-  it('every category still has a page component (tripwire)', () => {
-    // A migrated id with no renderer, or a renderer quietly deleted, must FAIL
-    // rather than silently skip the strongest check in P69.
-    for (const id of [...MIGRATED, ...PENDING]) {
-      expect(CATEGORY_PAGES[id], `${id} has no page component`).toBeDefined();
-    }
-  });
-});
-
 for (const [name, fx] of [
   ['maximal', MAXIMAL],
   ['minimal', MINIMAL],
@@ -169,10 +138,6 @@ for (const [name, fx] of [
   describe(`DOM↔catalog guard — ${name} fixture`, () => {
     for (const category of SETTINGS_CATEGORIES) {
       const c = category.id;
-      if (!MIGRATED.includes(c)) {
-        it.skip(`${c}: pending migration`, () => {});
-        continue;
-      }
 
       it(`${c}: every stamped row is catalogued, named, and gated correctly`, async () => {
         // The maximal fixture opens a repo; the Git-config surface it can reach
@@ -382,12 +347,12 @@ describe('the fixtures themselves stay honest', () => {
     expect(FIXTURE_CONFIG_VIEW.advanced.length).toBeGreaterThan(0);
   });
 
-  it('every resettable MIGRATED row is off-default in maximal and at-default in minimal', () => {
+  it('every resettable row is off-default in maximal and at-default in minimal', () => {
     // Without this the ↺ half of the guard could pass by never firing.
     const max = valuesOf(MAXIMAL);
     const min = valuesOf(MINIMAL);
     for (const entry of SETTINGS_INDEX) {
-      if (entry.reset === undefined || !MIGRATED.includes(entry.category)) continue;
+      if (entry.reset === undefined) continue;
       expect(entry.reset.isDefault(max, DEFAULT_UI_SETTINGS), `${entry.id} in maximal`).toBe(false);
       expect(entry.reset.isDefault(min, DEFAULT_UI_SETTINGS), `${entry.id} in minimal`).toBe(true);
     }

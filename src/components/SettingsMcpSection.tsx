@@ -53,8 +53,27 @@ export interface SettingsMcpSectionProps {
   onRegister(scope: McpScope): void;
 }
 
-/** A read-only value + its Copy button, in one stacked row (UI §5.1). */
-function ValueRow({ id, controlId, value }: { id: SettingsRowId; controlId: string; value: string }) {
+/**
+ * A read-only value + its Copy button, in one stacked row (UI §5.1).
+ *
+ * `copyLabel` is passed IN rather than derived from the catalog: the label there
+ * is title-cased for a row heading (`Bearer token` → `Copy Bearer token`), and
+ * four buttons whose whole accessible name is `Copy` are indistinguishable to a
+ * screen-reader user who lands on one out of context — a search result can show
+ * this row entirely alone. The VISIBLE word stays `Copy` (every string in this
+ * file is frozen, UI §8) and each name starts with it, so WCAG 2.5.3 holds.
+ */
+function ValueRow({
+  id,
+  controlId,
+  value,
+  copyLabel,
+}: {
+  id: SettingsRowId;
+  controlId: string;
+  value: string;
+  copyLabel: string;
+}) {
   return (
     <SettingsRow id={id} controlId={controlId} stacked>
       <div className="settings-value-copy">
@@ -66,7 +85,12 @@ function ValueRow({ id, controlId, value }: { id: SettingsRowId; controlId: stri
           value={value}
           onFocus={(e) => e.target.select()}
         />
-        <button type="button" className="btn-secondary" onClick={() => copyText(value)}>
+        <button
+          type="button"
+          className="btn-secondary"
+          aria-label={copyLabel}
+          onClick={() => copyText(value)}
+        >
           Copy
         </button>
       </div>
@@ -126,8 +150,18 @@ export function SettingsMcpSection({
 
       {running && (
         <>
-          <ValueRow id={URL_ROW} controlId="settings-mcp-url" value={url} />
-          <ValueRow id={TOKEN_ROW} controlId="settings-mcp-token" value={token} />
+          <ValueRow
+            id={URL_ROW}
+            controlId="settings-mcp-url"
+            value={url}
+            copyLabel="Copy server URL"
+          />
+          <ValueRow
+            id={TOKEN_ROW}
+            controlId="settings-mcp-token"
+            value={token}
+            copyLabel="Copy bearer token"
+          />
 
           {(['user', 'local'] as const).map((scope) => {
             const rowId = REGISTER[scope];
@@ -150,6 +184,14 @@ export function SettingsMcpSection({
                   <button
                     type="button"
                     className="btn-secondary settings-toggle-btn"
+                    /* Same reason as `ValueRow`'s Copy: `Copy` alone does not
+                       say WHICH command, and both scopes offer one. Visible
+                       text unchanged (UI §8), name starts with it (2.5.3). */
+                    aria-label={
+                      scope === 'user'
+                        ? 'Copy command to register globally'
+                        : 'Copy command to register for this repository'
+                    }
                     disabled={disabled}
                     onClick={() =>
                       copyText(buildClaudeAddCommand({ url, token, scope, repoPath }))

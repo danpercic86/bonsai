@@ -219,7 +219,7 @@ describe('NumberSlider — the draft never outlives editing', () => {
 });
 
 describe('NumberSlider — plumbing that e2e depends on', () => {
-  it('keeps the id on the number input, the label association, unit and describedby', () => {
+  it('keeps the id on the number input, the range aria-label, unit and describedby', () => {
     render(
       <NumberSlider
         id="settings-graph-row"
@@ -236,13 +236,17 @@ describe('NumberSlider — plumbing that e2e depends on', () => {
     expect(field).toBeInstanceOf(HTMLInputElement);
     expect(field).toHaveAttribute('type', 'number');
     expect(field).toHaveAttribute('aria-describedby', 'ns-hint');
-    expect(screen.getByLabelText('Row height', { selector: 'input[type="number"]' })).toBe(field);
+    // P69k: the control renders ONLY the two inputs — the number input's name is
+    // the owning `SettingsRow`'s `<label for={id}>`, and `label` survives as the
+    // RANGE input's own name (a slider and a spinbutton in one row both need one).
+    expect(screen.getByRole('slider')).toHaveAttribute('aria-label', 'Row height');
+    expect(document.querySelector('.settings-control')).toBeNull();
     expect(screen.getByText('px')).toBeInTheDocument();
   });
 
-  it('disabled: both inputs are inert and the row is marked', () => {
+  it('disabled: both inputs are inert', () => {
     const onChange = vi.fn();
-    const { container } = render(
+    render(
       <NumberSlider
         id="ns-field"
         label="Row height"
@@ -255,7 +259,8 @@ describe('NumberSlider — plumbing that e2e depends on', () => {
     );
     expect(screen.getByRole('spinbutton')).toBeDisabled();
     expect(screen.getByRole('slider')).toBeDisabled();
-    expect(container.querySelector('.settings-control')).toHaveClass('is-disabled');
+    // The row-level dim is the owning `SettingsRow`'s `is-disabled` (UI §5.4),
+    // not a wrapper of this control's own — it has none.
     expect(onChange).not.toHaveBeenCalled();
   });
 });
