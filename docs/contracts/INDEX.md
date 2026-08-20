@@ -271,6 +271,8 @@ None of these is `done`. Board sections are all live in `TODO.md`.
 | `P74-a11y-toasts-hit-targets.md` | P74 | Toast-tone contrast + sidebar hit targets (S-2 / S-3 from the P73 design review). | awaiting USER CHECKPOINT |
 | `P75-ipc-codegen.md` | P75 | Generate the IPC boundary from Rust with tauri-specta v2 — wire-identical, all 173 commands, no call-site churn. | pending — starts only after P74's tree is committed (user decision 2026-08-20) |
 | `P76-native-checkpoint-automation.md` | P76 | tauri-driver + WebdriverIO harness to automate ~60–70% of the native USER CHECKPOINT backlog. | deferred — HELD as contract-only per user (2026-08-20) |
+| `P77-tag-sync.md` | P77 | Local↔remote tag reconciliation: live ls-remote classification (in-sync/local-only/stale/remote-only), force-refresh + delete-remote ops, 3 IPC commands. | AI-gate GREEN, awaiting USER CHECKPOINT (2026-08-20) |
+| `P77-ui.md` | P77 | UI: inline sidebar tag status badges, collapsed-section ⚠ rollup, status-gated context menu, two destructive-op confirm dialogs. Reuses existing tokens. | AI-gate GREEN, awaiting USER CHECKPOINT (2026-08-20) |
 
 > **No contract file** for the DX dev-loop acceleration initiative (`pnpm gate`, nextest, rust-lld,
 > velocity-mode workflow, 2026-08-20); it is recorded on the board only (`TODO.md` §"DX").

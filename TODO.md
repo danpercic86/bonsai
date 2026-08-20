@@ -107,37 +107,71 @@ captured after P70's tree is finalized. Guard tests #16 and #18 must still run a
 
 ---
 
-## 🏷️ P77 — tag sync management (local↔remote tag reconciliation) — in-progress
+## 🏷️ P77 — tag sync management (local↔remote tag reconciliation) — AI-gate GREEN, awaiting USER CHECKPOINT
 
 **Origin (2026-08-20):** user hit a real stale-tag divergence — `v1.1.0` was moved from `8095eb1`
 to `e3cd2ea` and pushed; a second machine that fetched before the move kept the old target silently
-(git never force-updates existing local tags on fetch). Bonsai couldn't show or fix this.
+(git never force-updates existing local tags on fetch). Bonsai couldn't show or fix this. P77 makes
+such divergence visible and fixable inline in the sidebar.
 
-**Goal:** surface per-tag local↔remote sync status inline in the sidebar Tags list, with
-context-menu resolve actions.
+**Current step:** DONE (AI gate) — implemented autonomously 2026-08-20 while user away. All 3 layer
+passes + review-fixes + a harness-caught render-phase fix committed; full gate GREEN. Only the native
+USER CHECKPOINT remains (needs real `ls-remote` + credentials on the Tauri window — see checklist).
 
-**Locked product decisions (user, 2026-08-20):**
-- **Surface:** inline sidebar badges only (extend existing Tags section + context menu; no new panel).
-- **Actions:** full set incl. destructive — force-refresh stale local tag, push unpushed local tag,
-  delete local-only leftover, **delete remote tag** (net-new backend), **force-move remote tag**
-  (reuse push force). Destructive ops behind explicit confirm dialogs.
-- **Remote truth:** live `ls-remote` (git2 `remote.connect`/`list`) when tags are viewed — always
-  current, one network round-trip per open.
+**Commits:** `721349d` backend (ls-remote classification + resolve ops + IPC) · `67c42b4` TS/IPC
+boundary + mock · `d2695bd` sidebar UI (badges/rollup/menu/confirms) · `97ae417` render-phase fix ·
+`e76b20b` tests + smoke + size baseline.
 
-**Statuses to classify:** in-sync · local-only (unpushed) · stale/moved (local≠remote target) ·
-remote-only (upstream, not local) · deleted-on-remote.
+**Shipped scope (locked decisions, user 2026-08-20):**
+- Surface: inline sidebar Tags list + context menu (no new panel).
+- Statuses shipped: `in-sync` · `local-only` (unpushed) · `stale`/moved · `remote-only` (ghost rows).
+  `deleted-on-remote` variant reserved but **never emitted in v1** — folded into local-only (D1:
+  a single ls-remote can't distinguish "pushed then deleted upstream" from "never pushed"; git
+  stores no per-tag upstream). Upgrade path is additive (persist a pushed-tags set).
+- Actions (status-gated context menu): Update to remote target (force-refresh), Push tag, Copy,
+  Release notes, Delete tag (local), **Delete tag on origin…** + **Force-move tag on origin…**
+  (destructive → danger confirm dialogs showing old→new SHAs). Remote-only ghost rows get a
+  "fetch this tag" action.
+- Remote truth: live `ls-remote` vs `origin`/first remote, fired on Tags-section expand, 10s cache
+  + refresh on manual-refresh/focus; collapsed-never-opened section never hits the network.
+- Annotated tags compare the PEELED committish on both sides (remote `refs/tags/X^{}` wins) — no
+  false "stale" for annotated tags (the crux; unit + scratch-repo smoke tested).
 
-**Current step:** contracts LOCKED (`docs/contracts/P77-tag-sync.md`, `P77-ui.md`); implementing pass A (backend Rust: classification + ls-remote + resolve ops + IPC).
-(`docs/contracts/P77-tag-sync.md`, `docs/contracts/P77-ui.md`). No code touched yet.
+**New code:** `crates/bonsai-core/src/git/tag_sync.rs` (+3 IPC commands in `src-tauri/src/commands/
+tags.rs`, registered in `generate_handler!`); `src/ipc/{types,tauri,index}.ts` + `mock/handlers/
+tagSync.ts` + `fixtures/tagSync.ts`; `src/components/sidebar/{TagSyncBadge,SectionRollupBadge,
+SectionHeader,TagsSection}.tsx`, `dialogs/TagSyncDialogs.tsx`, `repoWorkspace/useTagSync.ts`.
+Contracts: `docs/contracts/P77-tag-sync.md`, `P77-ui.md`.
 
-**Inventory (pre-design, 2026-08-20):** tags ride in `BranchesSnapshot.tags: Vec<String>` (bare
-names) via `branches/list.rs:97`; core tag ops in `crates/bonsai-core/src/git/tags.rs`
-(create/delete-local/push); IPC in `src-tauri/src/commands/tags.rs`; sidebar in
-`src/components/Sidebar.tsx` (TagRow ~L214), actions in
-`src/components/repoWorkspace/useTagRemoteActions.ts`, menu in `src/components/workspaceMenus.ts`
-(`tagMenuItems` ~L503). Fetch uses `AutotagOption::Auto`, no prune/force (`git/remote.rs:137`).
-**Absent:** remote tag enumeration, local↔remote diff, tag metadata (sha/annotated) on the wire,
-delete-remote-tag.
+**AI gate (2026-08-20, all first-pass):** cargo `--workspace` 1880/0/6-ignored · clippy `-D` clean ·
+tsc/build ok · vitest 2002 / 165 files · e2e 156 passed / 1 skip · lint 0 err / 30 pre-existing warn ·
+lint:size OK. Browser-harness verified end-to-end: badges/tooltips/rollup/ghost rows render; context
+menu correct; "Update to remote target" flips the seeded stale `v1.1.0` → in-sync and clears the
+rollup; zero console errors. Reviewer + ui-designer both APPROVE (0 must-fix).
+
+**USER CHECKPOINT (native `pnpm tauri dev`, real remote — NOT harness-verifiable):**
+1. Real repo w/ `origin`: expand Tags → live ls-remote runs; badges reflect true state; collapsed
+   header `⚠ N` counts only genuine divergences.
+2. Reproduce the origin bug: force-move a tag on the remote from another machine, `fetch` here →
+   shows `out of sync`; "Update to remote target" → in-sync + success toast.
+3. Destructive remote ops (delete-remote, force-move) prompt confirmation (origin named, old→new
+   SHAs) and the credential chain works.
+4. Offline/auth-fail: Tags still render, no error banner, "Couldn't reach {remote}" line appears.
+5. Multi-remote: labels name the queried remote. 6. Both themes + reduced-motion (badge fade).
+
+**Deferred follow-ups (SHOULD-FIX/NIT filed per velocity mode — none blocking):**
+- **Collapsed-rollup needs first expand (contract tension, FOR-USER decision):** §1.2 wants "see a
+  problem without expanding", but the ls-remote check only fires on the first Tags expand per
+  session (to avoid an eager network call on every repo open). So the `⚠ N` rollup can't appear
+  until the user expands Tags once. Decide whether a cheap unprompted first check on repo-open is
+  worth the network cost.
+- NIT: rollup aria-label lacks singular/plural ("1 tags"); `useTagSync` re-hits network on rapid
+  collapse→expand while `unavailable` (no cache stamp on the error path); confirm dialogs close
+  optimistically so `busy` never paints (matches existing house pattern); tag-filter box gate counts
+  local tags only (a repo with only remote-only tags shows no filter); item-7 "Delete tag on origin…"
+  also shows on remote-only ghost rows (coherent — only place the tag exists).
+- Backend NIT: `delete_remote_tag` doesn't `evict_fresh_on_auth_fail` (matches existing `push_tag`);
+  `validate_tag_name` duplicated from `tags.rs` (module-private) — promote to shared if a 3rd caller.
 
 ---
 
