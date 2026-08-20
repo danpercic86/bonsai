@@ -28,6 +28,49 @@ items — moved 2026-08-19), `docs/history/todo-archive.md` (P27 → P2, M0–M6
 `docs/history/milestones-mvp.md` (the M0–M6 AI-gate vs USER CHECKPOINT split). Contract files are
 indexed in `docs/contracts/INDEX.md`.
 
+## 🛠️ DX — dev-loop acceleration — in-progress
+
+**Goal:** act on a full-workflow velocity analysis (2026-08-20) that identified the per-gate and
+per-feature fixed costs — 68 GB `target/`, no build acceleration, serial clippy/test, the 4-file
+IPC lockstep, and a ~12-milestone deferred native-checkpoint backlog. Ten improvements.
+
+**Current step:** 8 of 10 landed & verified (`3ada322`, `2019e71`, `8e55be8`). P75 (IPC codegen)
+queued to start **after P74's tree is committed**; P76 (native-checkpoint automation) **held as
+contract-only** per user.
+
+**Landed & verified**
+- Build loop (`3ada322`): `[profile.dev] debug = "line-tables-only"` + `.cargo/config.toml`
+  rust-lld linker (windows-msvc; Linux/macOS left opt-in so the ubuntu/macos CI legs don't need
+  lld). Verified — workspace recompiled, bonsai-mcp linked with `linker=rust-lld.exe`.
+- `cargo-nextest` for parallel test binaries: `.config/nextest.toml`, `pnpm test:rust`, `cargo nt`
+  (bonsai-core 1417 passed / 6 skipped confirmed under it, ~184 s).
+- One-command gate `scripts/gate.mjs` → `pnpm gate [--quick|--full|--rust|--frontend]`; runs clippy
+  in its OWN target dir (`target/clippy`), so the documented test⟂clippy shared-target race is
+  structurally impossible.
+- Process (CLAUDE.md workflow loop): step 4 runs code + design reviews concurrently; step 5 makes
+  velocity mode (MUST-FIX-only, SHOULD-FIX/NIT filed as follow-ups, targeted intermediate gates)
+  the default. senior-dev agent gains a pre-handoff self-review checklist.
+- God-file splits (`2019e71`, `8e55be8`): branches.rs 2284→114 and stash.rs 2197→121 into focused
+  submodules (public paths preserved, 1417 tests identical, clippy clean); RepoWorkspace.tsx overlay
+  cluster → WorkspaceOverlays.tsx (382 tests identical). **Finding:** RepoWorkspace.tsx is a
+  *legitimate* container (bulk already in ~30 hooks) — not a problematic god-file, so only a modest
+  85-line trim was safe.
+
+**Designed — contracts on disk, implementation gated on a decision**
+- P75 — generate the IPC boundary with tauri-specta v2 (kills the types.ts / tauri.ts / mock-layer
+  lockstep; keeps the `IpcApi` facade; typecheck-enforced anti-drift). 9–11 increments.
+  `docs/contracts/P75-ipc-codegen.md`. **DECISION: implement AFTER P74's tree is committed** — the
+  rewrite touches the IPC layer and would collide with P74's uncommitted changes. tauri-specta is a
+  release candidate → pin it, commit the generated bindings, add a `git diff --exit-code` staleness
+  gate. (types.ts is deliberately NOT hand-split; P75 regenerates it.)
+- P76 — automate the native USER CHECKPOINT backlog with tauri-driver + WebdriverIO (~60–70% of the
+  ~12-milestone backlog automatable; macOS has no WebDriver so its checkpoints stay human).
+  `docs/contracts/P76-native-checkpoint-automation.md`. **DECISION: HELD (contract-only)** per user.
+
+**Deferred cleanups (noted, not done):** lock the file-size baseline reclaim for App.tsx (P74) and
+RepoWorkspace.tsx once those land; the duplicated private `open_repo_at` helper across many `git/`
+modules (a real refactor with call-graph impact, not a leaf move).
+
 ## ♿ P74 — accessibility: toast-tone contrast + sidebar hit targets — awaiting USER CHECKPOINT
 
 **Current step:** ✅ **P74 CODE-COMPLETE — AI gate GREEN, awaiting native USER CHECKPOINT.**
