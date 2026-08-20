@@ -30,7 +30,12 @@ contract files are indexed in `docs/contracts/INDEX.md`.
 
 Version files bumped to 1.1.0. `CHANGELOG.md` `[1.1.0]` finalized 2026-08-20 (Settings redesign,
 audit-2 fixes, P70–P74). **P70 item 1 CONFIRMED by the user on the native window 2026-08-20 — the
-one gating checkpoint passed; tag `v1.1.0` cut.**
+one gating checkpoint passed; tag `v1.1.0` cut and pushed.**
+
+⚠️ **Release build hotfix:** the first `v1.1.0` tag failed the macOS+Linux CI legs —
+`gitbin::parse_reg_query` was dead code off Windows (`-D dead_code`); the local windows-msvc gate
+never saw it. Fixed in `e3cd2ea` (gate the fn + its test `#[cfg(windows)]`) and the `v1.1.0` tag was
+moved onto `e3cd2ea`. Final tag → `e3cd2ea`.
 
 **P62–P74 native USER CHECKPOINTs were WAIVED and the milestones marked `done` 2026-08-20** for the
 1.1.0 release (user decision): P62, P63, P64, P65, P67, P68, the P69 Settings redesign (P69a–P69l),
