@@ -1,0 +1,113 @@
+/* Bonsai — Side-by-side (split) view (P46 WS1).
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- P46 WS1: side-by-side (split) view ---------- */
+
+/* Container reuses .diff-view (position:relative for the float); the two panes own
+   the horizontal scroll, so the container itself must NOT scroll (overflow visible). */
+.diff-view-split {
+  display: block;
+  overflow-x: visible;
+}
+
+/* Two equal columns (old | new). Each column is a single pane spanning the whole
+   diff so it has exactly one horizontal scrollbar (kept in lock-step in JS). */
+.diff-split-panes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+/* One pane per column: the horizontal scroller. overflow-y:hidden keeps vertical
+   scrolling on the outer diff overlay so left/right stay row-aligned. */
+.diff-split-pane {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Center divider between the two columns (moved here from the per-cell rule). */
+.diff-split-pane-left {
+  border-right: 1px solid var(--border);
+}
+
+/* Each cell is its own lineno | marker | content grid (matches the unified row).
+   width:max-content grows the cell with its content so the PANE scrolls; min-width:100%
+   fills the pane so tint/selection span fully; min-height keeps fillers one line tall
+   so they align with the paired content cell in the other (independent) pane. */
+.diff-split-cell {
+  display: grid;
+  grid-template-columns: 40px 16px auto;
+  white-space: pre;
+  width: max-content;
+  min-width: 100%;
+  min-height: 1.5em;
+}
+
+/* Empty cell where one side has no corresponding line. */
+.diff-split-filler {
+  background: var(--bg-2);
+}
+
+/* Trailing "\ No newline at end of file" note (mirrors .diff-nonewline .diff-content). */
+.diff-split-nonewline {
+  color: var(--text-3);
+  font-style: italic;
+}
+
+/* Unstaged tracked diffs carry the extra × control -> widen the marker column
+   (mirror the unified .diff-view--discardable .diff-line rule). The marker flexing
+   and .diff-gutter-btn sizing are already covered by the shared
+   .diff-view--discardable .diff-marker / .diff-gutter-btn rules. */
+.diff-view-split.diff-view--discardable .diff-split-cell {
+  grid-template-columns: 40px 34px auto;
+}
+
+/* Segmented File | Diff control in the diff-overlay header. */
+.diff-view-toggle {
+  flex: none;
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.diff-view-toggle button {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.diff-view-toggle button + button {
+  border-left: 1px solid var(--border);
+}
+
+.diff-view-toggle button.active {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+/* P61a: standalone "Highlight changes" pill beside the Diff/File/Split group. */
+.diff-intra-toggle {
+  flex: none;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.diff-intra-toggle.active {
+  background: var(--bg-2);
+  color: var(--text-1);
+  border-color: var(--accent);
+}
+

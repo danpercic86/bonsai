@@ -1,0 +1,198 @@
+/* Bonsai — Status panel (M1).
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- Status panel (M1) ---------- */
+
+.status-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rp-gap, 16px);
+  min-height: 100%;
+}
+
+.status-panel-empty {
+  justify-content: center;
+}
+
+.status-section {
+  min-width: 0;
+  padding: var(--rp-section-pad, 6px 8px 8px);
+  border-radius: 8px;
+}
+
+/* Subtle Staged vs Changes differentiation: faint tint panel + accented header.
+   color-mix over the theme vars keeps both dark and light themes correct. */
+
+.status-section--staged {
+  background: color-mix(in srgb, var(--success) 6%, transparent);
+}
+
+.status-section--staged > .section-label {
+  color: color-mix(in srgb, var(--success) 75%, var(--text-1));
+}
+
+.status-section--changes {
+  background: color-mix(in srgb, var(--text-3) 5%, transparent);
+}
+
+.status-section--changes > .section-label {
+  color: color-mix(in srgb, var(--warning) 45%, var(--text-3));
+}
+
+.file-list {
+  list-style: none;
+  margin: var(--rp-list-margin, 4px) 0 0;
+  padding: 0;
+}
+
+.file-row {
+  height: var(--rp-row-h, 24px);
+  font-size: var(--rp-row-font, inherit);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.file-row:hover {
+  background: var(--bg-2);
+}
+
+.file-badge {
+  flex: none;
+  width: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.file-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-dir {
+  color: var(--text-3);
+}
+
+/* P3b: tree-grouped lists (contract §4.3). */
+.tree {
+  list-style: none;
+  margin: var(--rp-list-margin, 4px) 0 0;
+  padding: 0;
+}
+
+.tree-group {
+  margin: 0;
+  padding: 0 0 0 14px;
+  list-style: none;
+}
+
+.tree-dir-row {
+  height: var(--rp-row-h, 24px);
+  font-size: var(--rp-row-font, inherit);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border-radius: 4px;
+}
+
+.tree-dir-row:hover {
+  background: var(--bg-2);
+}
+
+.tree-dir-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: none;
+  padding: 0 4px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tree-dir-name {
+  color: var(--text-3);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Folder-level bulk action buttons (stage/unstage/discard-all): revealed only
+   while the dir row is hovered, kept visible when any button is keyboard-focused
+   (focus-within) for accessibility. Mirrors the per-row .row-action pattern. */
+.tree-dir-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 4px;
+}
+
+.tree-dir-actions .row-action {
+  opacity: 0;
+}
+
+.tree-dir-row:hover .tree-dir-actions .row-action,
+.tree-dir-row:focus-within .tree-dir-actions .row-action {
+  opacity: 1;
+}
+
+.file-name {
+  color: var(--text-1);
+}
+
+.file-rename {
+  color: var(--text-1);
+}
+
+/* Status colors per ui-reference §7. */
+.file-status-added .file-badge {
+  color: var(--success);
+}
+
+.file-status-modified .file-badge,
+.file-status-typechange .file-badge {
+  color: var(--warning);
+}
+
+.file-status-deleted .file-badge,
+.file-status-conflicted .file-badge {
+  color: var(--danger);
+}
+
+.file-status-renamed .file-badge {
+  color: var(--accent);
+}
+
+/* P4c: untracked rows live in the merged "Changes" list and read as normal
+   adds — green "A" badge, no muted/italic path treatment. */
+.file-status-untracked .file-badge {
+  color: var(--success);
+  font-style: normal;
+}
+
+.file-status-untracked .file-path,
+.file-status-untracked .file-name {
+  color: var(--text-1);
+  font-style: normal;
+}
+
+.section-label-danger {
+  color: var(--danger);
+}
+

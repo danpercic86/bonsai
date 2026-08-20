@@ -1,0 +1,127 @@
+/* Bonsai — Empty state and errors.
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- Empty state ---------- */
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+}
+
+/* P43b: no-repo landing hero — mark + title + tagline + sub-headline. */
+.empty-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.empty-mark {
+  font-size: 40px;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+.empty-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.empty-tagline {
+  margin: 0;
+  color: var(--text-3);
+}
+
+.empty-subhead {
+  margin: 4px 0 0;
+  max-width: 360px;
+  color: var(--text-3);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* P21: the empty-state open/clone/new action row. */
+.empty-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* ---------- Errors ---------- */
+
+/* T0.4: recoverable render-error boundary fallback. */
+.error-boundary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 16px;
+  padding: 16px;
+  max-width: 520px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--bg-1));
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border));
+  border-radius: 8px;
+}
+
+.error-boundary-title {
+  margin: 0;
+  color: var(--danger);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.error-boundary-message {
+  margin: 0;
+  max-width: 100%;
+  color: var(--text-2);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.error-banner {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  border-radius: 6px;
+  padding: 8px 12px;
+  max-width: 480px;
+  overflow-wrap: anywhere;
+}
+
+.error-banner-dismissible {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: none;
+  margin-bottom: 12px;
+}
+
+.error-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.error-dismiss {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: var(--danger);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.error-dismiss:hover {
+  background: color-mix(in srgb, var(--danger) 20%, transparent);
+}
+

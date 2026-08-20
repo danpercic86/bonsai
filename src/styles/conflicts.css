@@ -1,0 +1,306 @@
+/* Bonsai — Operation banner, conflict rows, the resolution editor and its overview ruler.
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ----- P3c: operation banner (merge / external ops) ----- */
+
+.op-banner {
+  flex: none;
+  display: flex;
+  /* The actions row (flex: none, below) never shrinks — with enough action
+     buttons (e.g. the AI bulk-resolve button) it can need more width than a
+     narrow right panel has, which used to force op-banner-text's `flex: 1;
+     min-width: 0` all the way to 0 (text visually gone, not just wrapped —
+     observed in CI where the button labels render wider than locally).
+     `flex-wrap` lets the actions drop to their own row instead. */
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: var(--rp-banner-pad, 8px 12px);
+  background: var(--bg-1);
+  border-top: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  font-size: 13px;
+}
+
+.op-banner-text {
+  /* A real min-width (not 0) — the text must never be squeezed out; once the
+     actions row can't fit beside it at this width, `.op-banner`'s wrap takes
+     the actions to their own line instead. */
+  flex: 1 1 160px;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.op-banner-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.op-banner-sub {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.op-banner-actions {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.op-banner-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* ----- P3c: conflict rows (StatusPanel) ----- */
+
+.conflict-kind {
+  flex: none;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  white-space: nowrap;
+}
+
+.row-action.conflict-action {
+  width: auto;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+/* P13 §8.2: the ✨ AI conflict-row action — accent-tinted, distinct from the
+   plain ours/theirs/resolved text buttons. */
+.row-action.conflict-action-ai {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.row-action.conflict-action-ai:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
+/* ----- P3c: read-only conflict marker view (DiffOverlay) ----- */
+
+.conflict-view {
+  margin: 0;
+  padding: 8px 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--bg-0);
+  overflow-x: auto;
+}
+
+.conflict-line {
+  padding: 0 12px;
+  white-space: pre;
+  min-width: max-content;
+}
+
+.conflict-marker-line {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  font-weight: 600;
+}
+
+/* ----- P12b: rich conflict-resolution editor (DiffOverlay conflict body) ----- */
+
+.conflict-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.conflict-editor-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-0);
+  background: var(--bg-1);
+  flex: 0 0 auto;
+}
+
+/* Align the header controls to a common height so the toggle, Cancel and
+   Stage-resolved sit on one line without looking cramped. */
+.conflict-editor-header .btn-secondary,
+.conflict-editor-header .btn-primary {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Give the action buttons a little breathing room from the mode toggle. */
+.conflict-editor-mode-toggle + .btn-secondary,
+.conflict-editor-mode-toggle + .btn-primary {
+  margin-left: 4px;
+}
+
+.conflict-editor-path {
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conflict-editor-spacer {
+  flex: 1 1 auto;
+}
+
+/* P12d: two-segment Unified | Side-by-side toggle. */
+.conflict-editor-mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-0);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.conflict-editor-mode-btn {
+  appearance: none;
+  border: none;
+  background: var(--bg-0);
+  color: var(--text-2);
+  font-size: 11px;
+  height: 24px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.conflict-editor-mode-btn + .conflict-editor-mode-btn {
+  border-left: 1px solid var(--border-0);
+}
+
+.conflict-editor-mode-btn:hover {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.conflict-editor-mode-btn.is-active {
+  background: var(--accent);
+  color: var(--accent-fg, #fff);
+}
+
+/* P12d: side-by-side pane labels (Ours | Theirs/Result). */
+.conflict-editor-split-labels {
+  display: flex;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--border-0);
+  background: var(--bg-1);
+}
+
+.conflict-editor-split-label {
+  flex: 1 1 0;
+  padding: 3px 12px;
+  font-size: 11px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.conflict-editor-split-label + .conflict-editor-split-label {
+  border-left: 1px solid var(--border-0);
+}
+
+.conflict-editor-error {
+  margin: 8px 12px 0;
+  flex: 0 0 auto;
+}
+
+.conflict-editor-cm {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.conflict-editor-cm .cm-editor {
+  height: 100%;
+}
+
+/* P12d: MergeView fills the host and splits its two editors evenly. */
+.conflict-editor-cm .cm-mergeView,
+.conflict-editor-cm .cm-mergeViewEditors {
+  height: 100%;
+}
+
+.conflict-editor-cm .cm-mergeView .cm-editor {
+  height: 100%;
+}
+
+/* ----- P12c: per-region accept widgets (block-widget toolbars) ----- */
+
+.conflict-region-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-1));
+  border-top: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  user-select: none;
+}
+
+.conflict-region-caption {
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.conflict-region-caption-theirs {
+  margin-left: auto;
+}
+
+.conflict-region-btn {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11px;
+  border-radius: 4px;
+}
+
+/* Tinted conflict body lines (cheap Decoration.line ranges). */
+.cm-conflict-ours {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+.cm-conflict-theirs {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* ----- P12c: scrollbar overview ruler ----- */
+
+.conflict-overview-ruler {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 12px;
+  height: 100%;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.conflict-overview-tick {
+  position: absolute;
+  right: 2px;
+  width: 6px;
+  height: 3px;
+  transform: translateY(-50%);
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.conflict-overview-tick:hover {
+  background: color-mix(in srgb, var(--accent) 70%, var(--text-1));
+  width: 9px;
+}
+

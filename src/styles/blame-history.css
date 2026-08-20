@@ -1,0 +1,250 @@
+/* Bonsai — Blame view, file history (P23d) and the reflog viewer (P38).
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- P23d: Blame view ---------- */
+
+.blame-view .diff-overlay-body,
+.file-history-view .diff-overlay-body {
+  padding: 0;
+}
+
+.blame-grid {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.blame-block {
+  display: flex;
+  align-items: stretch;
+}
+
+.blame-gutter-wrap {
+  flex: 0 0 232px;
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-1);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.blame-gutter {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 2px 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.blame-gutter:hover {
+  background: var(--bg-2);
+}
+
+/* P53a: per-block blame-why affordance — hidden until the gutter row is hovered
+   (or the button is focused for keyboard users). */
+.blame-why {
+  flex: none;
+  align-self: stretch;
+  border: none;
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: var(--accent);
+  font-size: 11px;
+  padding: 0 8px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+
+.blame-gutter-wrap:hover .blame-why,
+.blame-why:focus-visible {
+  opacity: 1;
+}
+
+.blame-why:hover {
+  background: var(--bg-2);
+  text-decoration: underline;
+}
+
+.blame-oid {
+  flex: none;
+  color: var(--accent);
+}
+
+.blame-author {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blame-date {
+  flex: none;
+  color: var(--text-3);
+}
+
+.blame-code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.blame-line {
+  display: flex;
+  gap: 12px;
+  padding: 0 10px;
+}
+
+.blame-lineno {
+  flex: none;
+  min-width: 3ch;
+  text-align: right;
+  color: var(--text-3);
+  user-select: none;
+}
+
+.blame-text {
+  white-space: pre;
+  color: var(--text-1);
+}
+
+/* ---------- P23d: File history view ---------- */
+
+.file-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.file-history-main {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  width: 100%;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-1);
+}
+
+.file-history-main:hover {
+  background: var(--bg-1);
+}
+
+.file-history-oid {
+  flex: none;
+  color: var(--accent);
+}
+
+.file-history-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-history-author {
+  flex: none;
+  color: var(--text-2);
+}
+
+.file-history-date {
+  flex: none;
+  color: var(--text-3);
+}
+
+/* P38: reflog viewer overlay — a sibling read overlay to blame/file-history.
+   Each row shows the ref@{N} index, the old→new oid transition, the reflog
+   message, committer, and relative time, plus a kebab of restore actions. */
+.reflog-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.reflog-row {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.reflog-row:hover {
+  background: var(--bg-1);
+}
+
+.reflog-main {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-1);
+}
+
+.reflog-index {
+  flex: none;
+  color: var(--text-2);
+}
+
+.reflog-oids {
+  flex: none;
+}
+
+.reflog-oid-old,
+.reflog-oid-arrow {
+  color: var(--text-3);
+}
+
+.reflog-oid-root {
+  color: var(--text-3);
+  font-style: italic;
+}
+
+.reflog-oid-new {
+  color: var(--accent);
+}
+
+.reflog-message {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reflog-author {
+  flex: none;
+  color: var(--text-2);
+}
+
+.reflog-date {
+  flex: none;
+  color: var(--text-3);
+}
+
+.reflog-actions {
+  flex: none;
+  margin-right: 6px;
+  font-size: 16px;
+  line-height: 1;
+}
+

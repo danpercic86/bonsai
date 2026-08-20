@@ -947,7 +947,16 @@ SAME working tree. Overlap was measured: only **`src/styles.css`** is contested 
 paths only (never `git add -A`), scope vitest runs to the files under change, and run no cargo
 commands (P69 is frontend-only; concurrent cargo races the shared target dir).
 
-**Current step:** ✅ **P69i SHIPPED — the header identity menu exists (the user's headline ask).**
+**Current step:** 🚧 **P69j in progress — finishing the milestone (P69j · P69k · P69l).**
+Ordered: **P69j-0** split `src/styles.css` (refactorer, behavior-preserving, in flight) → **P69j-1**
+re-skin the `graph` + `ai` categories onto the primitives (UI §1.3 rows #10–21 and #41–59), move both
+into `MIGRATED` so `PENDING` is `[]`, and delete the legacy `.settings-row` flex rule → **P69k** settings
+search (UI §3 — the index already exists in `catalog/*`, with keywords) → **P69l** docs. Contracts are
+already written (`P69-settings-ui.md` §1.3/§3/§5, `P69-settings-shell.md`, amendment A) — no new
+architect or ui-designer pass needed. Velocity mode: targeted gates on intermediate rounds, full
+gate before the milestone commit.
+
+**Previously:** ✅ **P69i SHIPPED — the header identity menu exists (the user's headline ask).**
 Nine increments done (P69a–P69i), all reviewer-APPROVED. Full gate green: vitest **1934 / 4 skipped
 / 161 files** · e2e **136 / 1 skipped** · tsc clean · ratchet exit 0 (`App.tsx` **1065**/1168) ·
 lint 0 errors · **+0 IPC commands across the whole milestone**.

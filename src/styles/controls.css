@@ -1,0 +1,207 @@
+/* Bonsai — Shared controls: recents list, pills, buttons, toggles, header toolbar.
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- Empty-state recents list (P1 §10.2) ---------- */
+
+.recents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 360px;
+}
+
+.recents-label {
+  margin: 0 0 4px;
+  padding: 0;
+}
+
+.recents-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.recents-item:hover:not(:disabled) {
+  background: var(--bg-2);
+}
+
+.recents-item:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.recents-item-name {
+  font-size: 13px;
+  color: var(--text-1);
+}
+
+.recents-item-path {
+  font-size: 12px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Pills ---------- */
+
+.pill {
+  display: inline-block;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pill-detached {
+  background: var(--danger);
+  color: #ffffff;
+}
+
+.pill-unborn {
+  background: var(--bg-2);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+}
+
+/* ---------- Buttons ---------- */
+
+.btn-primary {
+  height: 32px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.btn-icon:hover:not(:disabled) {
+  background: var(--bg-2);
+}
+
+.btn-icon:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+/* ---------- Theme toggle (P2b) ---------- */
+
+.theme-toggle {
+  font-size: 16px;
+}
+
+/* ---------- List-view toggle (P3b) ---------- */
+
+.list-view-toggle {
+  font-size: 16px;
+}
+
+/* ---------- Header toolbar (M6: Fetch / Pull / Push + Refresh) ---------- */
+
+.header-toolbar {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.header-toolbar .btn-icon {
+  margin-left: 0; /* the toolbar owns the auto margin */
+}
+
+.toolbar-btn {
+  height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.toolbar-btn:hover:not(:disabled) {
+  background: var(--bg-2);
+}
+
+.toolbar-btn:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+/* P37b: Push split-button — primary Push + a caret opening more push actions. */
+.toolbar-split {
+  display: inline-flex;
+  align-items: center;
+}
+
+.toolbar-split-main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.toolbar-caret {
+  padding: 0 6px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: 1px solid var(--border);
+  font-size: 10px;
+}
+
+/* P30 D11: small muted background-job readout next to the Fetch control. */
+.toolbar-job-status {
+  color: var(--text-3);
+  font-size: 11px;
+  white-space: nowrap;
+}
+

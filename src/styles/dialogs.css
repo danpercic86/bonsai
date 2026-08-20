@@ -1,0 +1,272 @@
+/* Bonsai — Confirm dialog (M5), hook rejection (P59a) and the safe-git-op preview (P55c).
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- Confirm dialog (M5) ---------- */
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.dialog-card {
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.dialog-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.dialog-body {
+  font-size: 13px;
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+
+.dialog-body-note {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 4px;
+}
+
+/* P68g: must-read secondary text in a dialog body. .dialog-body-note is --text-3
+   (3.38:1 dark / 2.96:1 light — below AA), and stays for decorative lines like
+   "+N more"; consent facts and the autoResolve caveat use this instead. */
+.dialog-body-detail {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* Wider consent body so four short facts do not become twenty lines at 360px. */
+.dialog-card.ai-consent-card {
+  width: 420px;
+}
+
+.dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* PromptDialog (P11) — single labeled text input + validation error. */
+.dialog-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.dialog-input {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.dialog-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.dialog-error {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- P59a: git-hook rejection (HookOutputDialog) ---------- */
+.hook-output {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hook-output-heading {
+  margin: 0;
+  font-weight: 600;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+/* The hook's own stdout+stderr, verbatim: monospace, newlines preserved, and
+   scrollable in both axes so long lint output never blows out the dialog. */
+.hook-output-body {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
+  tab-size: 4;
+}
+.hook-output-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* ---------- P55c: NL → safe-git-op preview (ProposedOpDialog) ---------- */
+.proposed-op-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.danger-badge {
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.danger-badge.safe {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, var(--bg-2));
+  border-color: color-mix(in srgb, var(--success) 35%, var(--bg-2));
+}
+
+.danger-badge.caution {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, var(--bg-2));
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--bg-2));
+}
+
+.danger-badge.destructive {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, var(--bg-2));
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--bg-2));
+}
+
+.proposed-op-summary {
+  margin: 0;
+  color: var(--text-1);
+}
+
+.op-ref-change-list,
+.op-dropped-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.op-ref-change {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.op-ref-name {
+  color: var(--text-2);
+  margin-right: 2px;
+}
+
+.op-ref-arrow {
+  color: var(--text-3);
+}
+
+.op-section-label {
+  font-size: 11px;
+  color: var(--text-2);
+  margin-bottom: 4px;
+}
+
+.op-dropped-list li {
+  font-size: 12px;
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+
+.op-added {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.op-worktree-warning {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.op-rationale {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+
+/* P53c: AI "Suggest name ✨" row under the branch-create input. */
+.branch-name-suggest {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.branch-name-suggest-btn {
+  /* Do not stretch across the column-flex container. */
+  align-self: flex-start;
+}
+
+.branch-name-suggest-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.branch-name-suggest-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.branch-name-chip {
+  padding: 3px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.branch-name-chip:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+

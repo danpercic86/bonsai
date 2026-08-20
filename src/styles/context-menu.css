@@ -1,0 +1,105 @@
+/* Bonsai — Context menu (P5 §5.1).
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- Context menu (P5 §5.1) ---------- */
+
+.context-menu {
+  position: fixed;
+  z-index: 200; /* above panes, graph, diff overlay (90) and dialogs (100) */
+  min-width: 200px;
+  max-width: 360px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.context-menu-item {
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* P10 T2: leading-icon row. */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.context-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: currentColor;
+}
+
+.context-menu-icon svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.context-menu-item:hover:not(:disabled),
+.context-menu-item:focus-visible {
+  background: var(--selection);
+  outline: none;
+}
+
+.context-menu-item:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+/* Destructive actions (Delete, hard reset): red icon + label. The icon inherits
+   currentColor, so the glyph reddens with the label; hover keeps the --selection
+   background (--danger text stays legible on it in both themes). */
+.context-menu-item[data-tone='danger'] {
+  color: var(--danger);
+}
+
+/* Row wrapper: the position anchor for a flyout submenu. Column flex so the
+   button stretches to full width (it is no longer a direct child of .context-menu). */
+.context-menu-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Label takes the middle space; ellipsizes long branch names. */
+.context-menu-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Trailing "has submenu" chevron, pushed to the right edge. */
+.context-menu-chevron {
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--text-3);
+  font-size: 10px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+/* Flyout submenu: absolutely positioned relative to its .context-menu-row anchor;
+   left/right/top offsets are set inline by the component (with viewport clamping). */
+.context-menu--sub {
+  position: absolute;
+}
+

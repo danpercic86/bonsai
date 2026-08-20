@@ -1,0 +1,157 @@
+/* Bonsai — App frame, the 40px header and the repo switcher.
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- App frame ---------- */
+
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Header (40px) ---------- */
+
+.header {
+  height: 40px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.header-repo {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.repo-name {
+  font-weight: 600;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+
+.repo-path {
+  font-size: 12px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.head-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.head-branch {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+/* ---------- Repo switcher (P1 §10.3) ---------- */
+
+.repo-switcher {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+}
+
+.header-repo-btn {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.header-repo-btn:hover:not(:disabled) {
+  background: var(--bg-2);
+}
+
+.header-repo-btn:disabled {
+  cursor: default;
+}
+
+.repo-switcher-caret {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 10px;
+  flex: none;
+}
+
+.repo-switcher-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 80;
+  min-width: 280px;
+  max-width: 420px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.repo-switcher-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.repo-switcher-item:hover {
+  background: var(--bg-2);
+}
+
+.repo-switcher-item-name {
+  font-size: 13px;
+  color: var(--text-1);
+}
+
+.repo-switcher-item-path {
+  font-size: 12px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repo-switcher-browse {
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.repo-switcher-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+

@@ -1,0 +1,361 @@
+/* Bonsai — Settings page (P11c §3) — legacy sections, still un-migrated.
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- Settings page (P11c §3) — legacy sections, still un-migrated ------ */
+
+.settings-section {
+  margin-top: 20px;
+}
+
+.settings-section:first-of-type {
+  margin-top: 12px;
+}
+
+.settings-section-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+
+.settings-section-desc {
+  margin: 4px 0 10px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* P63: a labelled sub-group inside a settings section (e.g. "Forge signals"). */
+.settings-subsection-title {
+  margin: 14px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.settings-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-1);
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+
+.settings-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.settings-control.is-disabled {
+  opacity: 0.5;
+}
+
+.settings-control-label {
+  flex: none;
+  font-size: 13px;
+  color: var(--text-1);
+}
+
+.settings-control-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-range {
+  width: 140px;
+  accent-color: var(--accent);
+}
+
+.settings-number {
+  width: 56px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+/* P69c §13.7 N1: this used to recolour the BORDER, which put it in a fight with
+   the draft-divergence warning ring for the same 1px — and since the field is
+   always focused while a draft exists, source order became load-bearing. A real
+   outline removes the conflict structurally. */
+.settings-number:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.settings-unit {
+  flex: none;
+  width: 48px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.settings-toggle-btn {
+  min-width: 72px;
+}
+
+.settings-toggle-btn.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---------- Settings: AI runs (P68g §4) ---------- */
+
+/* One inert switch for a whole settings section (the .settings-radio-group
+   :disabled idiom, applied at section scope). */
+.settings-section-fields {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.settings-section-fields:disabled {
+  opacity: 0.5;
+}
+
+/* Per-control explanation. Same geometry as .settings-config-hint, --text-2
+   instead of --text-3 because these sentences must be read, not glanced at. */
+.settings-hint {
+  margin: 2px 0 10px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+/* Hint under a radio, aligned with the radio's label text. */
+.settings-radio-hint {
+  margin: 2px 0 0 24px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+/* Indent a numeric row under the checkbox that enables it. */
+.settings-indent {
+  margin-left: 24px;
+}
+
+/* Two decimals plus a unit do not fit .settings-number's 56px. */
+.settings-number-wide {
+  width: 72px;
+}
+
+/* ---------- Settings: Git config (P40b) ---------- */
+
+.settings-config-group {
+  margin-top: 12px;
+}
+
+.settings-config-subtitle {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+
+.settings-config-field,
+.settings-config-select {
+  width: 200px;
+}
+
+.settings-config-hint {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.settings-config-warn {
+  color: var(--warn, #b8860b);
+}
+
+.settings-config-error {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--danger, #d9534f);
+}
+
+.settings-config-advanced-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.settings-config-advanced-name {
+  flex: 1 1 120px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-1);
+}
+
+.settings-config-add-row {
+  margin-top: 12px;
+}
+
+/* P44: identity-profile rows. */
+.settings-profile {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.settings-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* P69i / UI §8: the hueless `in use` pill (ui-reference §11 recipe) — --text-2
+   over its OWN 12% tint, transparent 1px border so it matches a verdict pill's
+   height. The old accent-on-accent badge was a hue-only carrier. */
+.settings-profile-badge {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-2) 12%, transparent);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
+}
+
+.settings-profile-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.settings-profile-applied {
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.settings-config-advanced-details {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-config-advanced-summary {
+  margin-top: 12px;
+  padding: 4px 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.settings-config-advanced-summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-config-advanced-summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+
+.settings-config-advanced-details[open] > .settings-config-advanced-summary::before {
+  transform: rotate(90deg);
+}
+
+.settings-config-advanced-summary:hover {
+  color: var(--text-2);
+}
+
+.settings-config-advanced-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.commit-error-action {
+  flex: none;
+  margin-left: 8px;
+}
+
+/* ---------- Settings: AI assistance (P13 §8.1) ---------- */
+
+.settings-radio-group {
+  margin: 10px 0 0;
+  padding: 0;
+  border: none;
+}
+
+.settings-radio-group:disabled {
+  opacity: 0.5;
+}
+
+.settings-radio-legend {
+  padding: 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.settings-radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-1);
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+.settings-radio input {
+  accent-color: var(--accent);
+}
+
+.settings-radio-group:disabled .settings-radio {
+  cursor: default;
+}
+
+.settings-ai-status {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.settings-ai-status-ok {
+  color: var(--success);
+}
+
+.settings-ai-status-warn {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+}
+

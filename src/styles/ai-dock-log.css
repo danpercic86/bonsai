@@ -1,0 +1,328 @@
+/* Bonsai — AI dock log (§3), partial output (U7), the per-file queue (§5) and awaiting input (§4).
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---- the log (§3): WRAPPING, not two-axis scrolling. An assistant paragraph can be
+   2000 chars; `.hook-output-body`'s `white-space: pre` is right for a lint dump and
+   wrong for prose. */
+
+.ai-log {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: var(--ai-dock-log-pad, 6px 12px);
+  list-style: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--ai-dock-log-bg, var(--bg-0));
+  font-family: var(--font-mono);
+  font-size: var(--ai-dock-log-font, 12px);
+  line-height: var(--ai-dock-log-line-h, 18px);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+  color: var(--text-1);
+}
+
+.ai-log:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.ai-log-line[data-kind='tool'],
+.ai-log-line[data-kind='meta'],
+.ai-log-empty {
+  color: var(--ai-dock-meta, var(--text-2));
+}
+
+.ai-log-line[data-kind='meta'],
+.ai-log-empty {
+  font-size: 11px;
+}
+
+.ai-log-line[data-kind='stderr'] {
+  color: var(--danger);
+}
+
+/* §3: sticky so the trim note stays visible while scrolling. */
+.ai-log-dropped {
+  position: sticky;
+  top: 0;
+  background: var(--ai-dock-log-bg, var(--bg-0));
+  font-size: 11px;
+  color: var(--ai-dock-meta, var(--text-2));
+}
+
+.ai-log-trunc {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--ai-dock-meta, var(--text-2));
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ai-log-jump {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  animation: ai-dock-fade-in 100ms ease-out;
+}
+
+@keyframes ai-dock-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---- partial output (U7): quarantined. No Copy, no Apply, no editable field. */
+
+.ai-dock-partial {
+  flex: none;
+  padding: 4px var(--ai-dock-pad-x, 12px) 6px;
+  border-top: 1px solid var(--border);
+}
+
+.ai-dock-partial-toggle {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--ai-dock-meta, var(--text-2));
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ai-dock-partial-note {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--ai-dock-meta, var(--text-2));
+}
+
+.ai-dock-partial-body {
+  margin: 4px 0 0;
+  max-height: 120px;
+  overflow: auto;
+  padding: 6px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--ai-dock-meta, var(--text-2));
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---- the per-file queue (§5) */
+
+.ai-run-queue {
+  flex: none;
+  max-height: 40%;
+  min-height: 52px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.ai-run-queue-row {
+  height: var(--ai-dock-queue-row-h, 26px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 var(--ai-dock-pad-x, 12px);
+}
+
+.ai-run-queue-row:hover {
+  background: var(--bg-2);
+}
+
+.ai-run-queue-glyph {
+  flex: none;
+  font-size: 14px;
+  color: var(--ai-dock-meta, var(--text-2));
+}
+
+.ai-run-queue-row[data-status='ready'] .ai-run-queue-glyph {
+  color: var(--success);
+}
+
+.ai-run-queue-row[data-status='failed'] .ai-run-queue-glyph {
+  color: var(--danger);
+}
+
+.ai-run-queue-path {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.ai-run-queue-word {
+  flex: none;
+  font-size: 11px;
+  color: var(--ai-dock-meta, var(--text-2));
+}
+
+.ai-run-queue-reason {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--danger);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-run-queue-action {
+  margin-left: auto;
+}
+
+/* ---- awaiting input (§4) */
+
+.ai-dock-ask {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: var(--ai-dock-ask-pad, 8px 12px);
+  border-top: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border));
+  background: color-mix(in srgb, var(--warning) 14%, var(--bg-1));
+  animation: ai-dock-fade-in 120ms ease-out;
+}
+
+.ai-dock-ask-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-dock-ask-glyph {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--warning);
+  color: var(--bg-0);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* --text-1, NOT --warning: --warning as small text is only 3.5:1 in light theme. */
+.ai-dock-ask-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-1);
+}
+
+/* M3 (security audit): the question is untrusted model text, so it is attributed.
+   P68g §3.1: 11px/600 --text-1 — a label for the block below it, separated from the
+   13px question by weight rather than by hue (9.1:1 dark / 12.1:1 light over the
+   14% warning tint). */
+.ai-dock-ask-attrib {
+  margin: 0 0 -4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+/* Fixed chrome the model cannot influence. P68g §3.1: 12px/600 --text-1 words plus
+   ONE --warning glyph — --warning as small text is only 3.47:1 in light theme, so
+   the hue is used as a graphic (5.4:1 dark / 3.6:1 light) and never as the carrier
+   of the meaning. */
+.ai-dock-ask-guard {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  margin: 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--warning);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.ai-dock-ask-guard-glyph {
+  flex: none;
+  color: var(--warning);
+}
+
+.ai-dock-ask-question {
+  margin: 0;
+  max-height: 96px;
+  overflow: auto;
+  font-size: 13px;
+  color: var(--text-1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ai-dock-ask-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.ai-dock-ask-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--ai-dock-ask-min, 48px);
+  max-height: var(--ai-dock-ask-max, 120px);
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 13px;
+  resize: none;
+}
+
+.ai-dock-ask-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ai-dock-meta, var(--text-2));
+}
+
+/* §11: the app has no `.sr-only` utility yet (§12-F4), so the recipe is local. */
+.ai-dock-announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.ai-dock :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+

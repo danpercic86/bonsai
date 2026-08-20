@@ -1,0 +1,57 @@
+/* Bonsai — Graph canvas scroll model (M2c) and the hover tooltip (P7 §6.3).
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* M2c scroll model: fixed viewport-sized canvas + transparent overlay scroller
+   whose spacer provides the native scrollbar (contract M2-graph.md §4.1). */
+.graph-canvas-host {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.graph-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+.graph-scroll {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  cursor: default;
+}
+
+/* P7 §6.3: hover tooltip (avatar full name / "+n" hidden refs). Absolutely
+   positioned inside .graph-canvas-host; pointer-events:none so it never eats
+   the overlay scroller's input. */
+.graph-tooltip {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  max-width: 260px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--bg-3);
+  color: var(--text-1);
+  border: 1px solid var(--border);
+  font: 400 12px/1.4 var(--font-ui);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+}
+
+.graph-tooltip > div {
+  white-space: nowrap;
+}
+
+.right-panel {
+  background: var(--bg-1);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+

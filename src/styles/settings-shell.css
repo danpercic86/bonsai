@@ -1,0 +1,267 @@
+/* Bonsai — Settings shell (P69g): rail, pane and the Git-config scope block.
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- Settings shell (P69g — UI §2, ui-reference §12.1) ---------- */
+
+/* P18a: the settings card carries both .dialog-card and .settings-card; the
+   later-appearing .dialog-card { width: 360px } wins at equal specificity, so
+   raise specificity here (max-width cap inherited).
+   P69g: the card is a GRID — 48px header spanning both columns, a 200px rail and
+   the pane — and it never scrolls as a whole. The rail and the pane scroll
+   independently, so a long category cannot push the header off screen. */
+.dialog-card.settings-card {
+  width: 880px;
+  max-width: calc(100vw - 48px);
+  height: min(660px, calc(100vh - 64px));
+  padding: 0;
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  grid-template-rows: 48px 1fr;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--bg-1);
+}
+
+.settings-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  height: 48px;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Specificity: the element carries .dialog-title too, and that rule (with its own
+   margin) appears later in this file. */
+.settings-header .settings-title {
+  margin: 0 auto 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.settings-close {
+  flex: none;
+  margin-left: 0;
+}
+
+/* ---- Rail (UI §1.1, §6.1) ---- */
+
+.settings-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--bg-1);
+}
+
+.settings-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  height: 32px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-rail-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.settings-rail-item:hover {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.settings-rail-item:active {
+  background: var(--bg-3);
+}
+
+/* The inset accent bar is the SHAPE carrier: --selection vs --bg-1 is only ~1.3:1,
+   so selection may not rest on the fill alone (UI §6.1). Meaning also rides on
+   aria-selected and the 600 weight. */
+.settings-rail-item.is-selected,
+.settings-rail-item.is-selected:hover {
+  background: var(--selection);
+  color: var(--text-1);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.settings-rail-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.settings-rail-divider {
+  flex: none;
+  height: 1px;
+  margin: 8px;
+  background: var(--border);
+}
+
+/* Hueless scope pill (§11 recipe): --text-2 over its own 12% tint. */
+.settings-rail-pill {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-2) 12%, transparent);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
+}
+
+/* ---- Pane (UI §2.2) ---- */
+
+.settings-pane {
+  padding: 16px 24px 24px;
+  overflow-y: auto;
+  scroll-behavior: auto;
+  background: var(--bg-0);
+  min-width: 0;
+}
+
+.settings-pane:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.settings-pane-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.settings-pane-heading {
+  min-width: 0;
+}
+
+.settings-pane-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.settings-pane-subtitle {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* ---- P69h: Git-config scope + in-pane empty block (UI §1.1 / §1.2) ---- */
+
+/* The scope switch sits in the pane header's trailing slot, right-aligned so the
+   title/subtitle column keeps its own reading rhythm. */
+.settings-scope {
+  margin-left: auto;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.settings-scope-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-scope-label {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* Names the FILE, so the scope is a fact rather than an inference. */
+.settings-scope-line {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-2);
+  text-align: right;
+}
+
+/* ui-reference §8's centred-pane idiom, at pane scale (NOT the app-level hero). */
+.settings-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 40ch;
+  margin: 0 auto;
+  padding: 24px 16px;
+  text-align: center;
+}
+
+.settings-empty-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.settings-empty-body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--text-2);
+}
+
+.settings-empty-action {
+  margin-top: 4px;
+}
+
+/* A curated key inside a stacked row: the row owns the label and the width, so
+   the legacy `.settings-control` flex/gap would fight it. */
+.settings-row-control > .settings-control {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  margin-top: 0;
+  width: 100%;
+}
+
+.settings-row-control > .settings-control > .settings-config-field,
+.settings-row-control > .settings-control > .settings-config-select {
+  width: 100%;
+}
+
+.settings-group {
+  margin-bottom: 24px;
+}
+
+.settings-group-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+
+.settings-group-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+

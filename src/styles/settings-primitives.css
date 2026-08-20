@@ -1,0 +1,323 @@
+/* Bonsai — Settings primitives: the canonical row, switch, segmented, :has() fallback.
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---- The canonical row (UI §5.1, ui-reference §12.2) ----
+
+   Scoped under .settings-group on purpose: three not-yet-migrated sections
+   (AI runs, Git config, MCP) still use the LEGACY flex `.settings-row` further
+   down this file, and they never render inside a group. P69j re-skins them and
+   deletes the legacy rule. */
+.settings-group > .settings-row {
+  display: grid;
+  grid-template-columns: 1fr auto 24px;
+  column-gap: 12px;
+  align-items: center;
+  margin: 0;
+  padding: 10px 0;
+  min-height: 44px;
+}
+
+.settings-group > .settings-row + .settings-row {
+  border-top: 1px solid var(--border);
+}
+
+.settings-group > .settings-row.is-disabled {
+  opacity: 0.55;
+}
+
+.settings-row-label {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 13px;
+  color: var(--text-1);
+}
+
+.settings-row-control {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.settings-row-reset {
+  grid-column: 3;
+  grid-row: 1 / -1;
+  width: 24px;
+}
+
+.settings-row-help-slot {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+/* P69c §13.2.1: reserve the help line on slider rows so the draft hint can
+   replace the help text without moving anything below it. */
+.settings-row--slider > .settings-row-help-slot {
+  min-height: 18px;
+}
+
+.settings-row-help {
+  margin: 2px 0 0;
+  max-width: 56ch;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* P69c §13.2.1: the help slot has two tenants. While a draft hint is showing it
+   OWNS the line, so nothing reflows and only one sentence is read out. */
+.settings-draft-hint {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-2);
+}
+
+/* No `@supports` fallback on purpose — see the `:has()` note in the segmented
+   block. Without `:has()` this degrades to showing help AND hint on two lines,
+   which is cosmetic; the focus-ring rules degrade to nothing, which is not. */
+.settings-row-help-slot:has(.settings-draft-hint:not(:empty)) > .settings-row-help {
+  display: none;
+}
+
+/* Stacked variant (UI §5.1): label / help / control each on their own row. */
+.settings-group > .settings-row--stacked {
+  grid-template-columns: 1fr 24px;
+  grid-template-rows: auto auto auto;
+}
+
+.settings-row--stacked > .settings-row-help-slot {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.settings-row--stacked > .settings-row-control {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  justify-self: stretch;
+  margin-top: 6px;
+}
+
+.settings-row--stacked > .settings-row-reset {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.settings-text {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.settings-text:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Reset ↺ (UI §5.7). Conditionally RENDERED, but its column is always reserved,
+   so showing or hiding it never shifts the row. */
+.settings-reset {
+  width: 24px;
+  height: 24px;
+  margin-left: 0;
+  font-size: 12px;
+  color: var(--text-3);
+  transition: color 120ms ease-out;
+}
+
+.settings-reset:hover:not(:disabled) {
+  color: var(--text-1);
+}
+
+/* A dimmed row's ↺ is dimmed too, so it may not stay clickable: at .55 opacity the
+   glyph is under 3:1 and the button would be a live control the user cannot read.
+   `SettingsRow` passes `disabled` through; this is the matching affordance. */
+.settings-reset:disabled {
+  cursor: not-allowed;
+}
+
+.settings-reset:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---- Switch (UI §5.5, ui-reference §12.3.1) ---- */
+
+/* `isolation` CONTAINS the input's z-index below: without a stacking context here
+   the promoted input joins the DIALOG's context, so any later overlay that merely
+   overlaps a switch would paint under it and lose its clicks — the pointer bug
+   below, inverted. */
+.settings-switch {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  width: 36px;
+  min-height: 24px;
+}
+
+/* The input IS the 36×24 hit target — invisible, but native in every other way.
+   `z-index` is load-bearing, not decoration: the track is a FLEX ITEM and flex
+   items paint atomically like inline-blocks, so without it the (later, visible)
+   track sits above the (earlier, positioned) input and swallows every pointer
+   click on the switch. Caught in the browser harness; jsdom cannot see it. */
+.settings-switch-input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.settings-switch-track {
+  display: block;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--text-2);
+  transition: background-color 120ms ease-out;
+}
+
+.settings-switch-knob {
+  display: block;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  border-radius: 999px;
+  background: var(--bg-0);
+  transform: translateX(3px);
+  transition: transform 120ms ease-out, width 120ms ease-out;
+}
+
+.settings-switch-input:checked ~ .settings-switch-track {
+  background: var(--accent);
+}
+
+.settings-switch-input:checked ~ .settings-switch-track > .settings-switch-knob {
+  transform: translateX(19px);
+}
+
+.settings-switch:hover .settings-switch-track {
+  filter: brightness(1.08);
+}
+
+.settings-switch-input:active ~ .settings-switch-track > .settings-switch-knob {
+  width: 17px;
+}
+
+.settings-switch:has(> .settings-switch-input:focus-visible) .settings-switch-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.settings-switch-input:disabled {
+  cursor: not-allowed;
+}
+
+/* ---- Segmented (UI §5.6, ui-reference §12.3.2) ---- */
+
+.settings-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+}
+
+.settings-segment {
+  position: relative;
+  /* Contains the input's z-index — see `.settings-switch`. */
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out;
+}
+
+/* DEVIATION from UI §5.6, which clips the radio to 1×1 ("visually-hidden"): the
+   input is instead stretched transparently over its whole segment, exactly like
+   the switch. Same pixels, same native semantics — but the CONTROL is the hit
+   target rather than only the label text, which is what a pointer-automation
+   click (and any AT that targets the element rather than the label) actually
+   lands on. Caught in the browser harness. */
+.settings-segment-input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.settings-segment:hover:not(.is-selected) {
+  background: var(--bg-3);
+}
+
+/* The 600 weight and the accent border are the non-colour carriers; the fill
+   alone would not clear 3:1 (UI §5.6). */
+.settings-segment.is-selected {
+  background: var(--selection);
+  border-color: var(--accent);
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.settings-segment:has(> .settings-segment-input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.settings-segmented:has(.settings-segment-input:disabled) {
+  opacity: 0.55;
+}
+
+/* ---- :has() fallback — a11y, not cosmetics --------------------------------
+
+   The two `:has(… :focus-visible)` rules above are the ONLY focus indicators for
+   the switch and the segments: both inputs are `opacity: 0`, so the UA's own ring
+   is invisible too. An engine that cannot parse `:has()` drops those rules and a
+   keyboard user gets NO focus indication at all — WCAG 2.4.7 fail, not a degraded
+   look. WebView2 is Chromium ≥105 and fine; WKWebView needs macOS 12.3+ and
+   webkit2gtk needs 2.38+ (Debian 11 ships 2.36).
+
+   `@supports selector()` predates `:has()` in every engine, so this block is
+   inert wherever `:has()` works. The fallback is `:focus-within`, which cannot
+   distinguish keyboard from pointer focus — a ring after a mouse click is the
+   correct trade against no ring at all.
+
+   The OTHER `:has()` in this file (the draft-hint help swap, `.settings-row-help-slot`)
+   deliberately has NO fallback: it degrades to showing both lines, which is
+   cosmetic. Do not "fix" it. */
+@supports not selector(:has(*)) {
+  .settings-switch:focus-within .settings-switch-track {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .settings-segment:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+}
+

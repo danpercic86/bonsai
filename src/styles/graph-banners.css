@@ -1,0 +1,44 @@
+/* Bonsai — Graph truncated banner and the header progress bar.
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- Graph truncated banner (P1 §7 item 14) ---------- */
+
+.graph-truncated-banner {
+  flex: none;
+  margin: 8px 12px 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+}
+
+/* ---------- Header progress bar (P1 §7: remote op / refresh feedback) ---------- */
+
+.header-progress {
+  position: relative;
+  height: 2px;
+  flex: none;
+  background: transparent;
+  overflow: hidden;
+}
+
+.header-progress::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: var(--accent);
+  animation: header-progress-sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes header-progress-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
+

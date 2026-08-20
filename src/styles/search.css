@@ -1,0 +1,433 @@
+/* Bonsai — Commit search bar, command palette and the "Ask history" overlay.
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- P50b: commit search bar + results dropdown + open affordance ---------- */
+
+.commit-search {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+  /* Own stacking context above the positioned canvas host so the scope-picker
+     popover + results dropdown paint over the graph, not behind it. */
+  position: relative;
+  z-index: 6;
+}
+
+.commit-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+}
+
+.commit-search-icon {
+  flex: none;
+  color: var(--text-3);
+  font-size: 15px;
+}
+
+.commit-search-input {
+  flex: 1;
+  min-width: 80px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-0);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.commit-search-input:focus {
+  border-color: var(--accent);
+}
+
+.commit-search-field {
+  flex: none;
+  height: 26px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-0);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12px;
+}
+
+.commit-search-scope {
+  flex: none;
+  width: 150px;
+}
+.commit-search-scope .dialog-input {
+  height: 26px;
+}
+
+.search-toggle,
+.search-nav,
+.search-close,
+.search-run {
+  flex: none;
+  height: 26px;
+  min-width: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-0);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.search-toggle:hover:not(:disabled),
+.search-nav:hover:not(:disabled),
+.search-close:hover,
+.search-run:hover {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+.search-toggle.is-active {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: var(--accent);
+  color: var(--text-1);
+}
+.search-toggle:disabled,
+.search-nav:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.commit-search-count {
+  flex: none;
+  min-width: 40px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.commit-search-truncated {
+  flex: none;
+  font-size: 11px;
+  color: var(--warning);
+  white-space: nowrap;
+}
+
+.commit-search-error {
+  padding: 0 10px 8px;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+/* P50c: Ctrl/Cmd-K command palette — a centered modal near the top of the
+   viewport (reuses .dialog-overlay for the backdrop). */
+.command-palette-overlay {
+  align-items: flex-start;
+  padding-top: 12vh;
+}
+
+.command-palette {
+  width: 560px;
+  max-width: calc(100vw - 32px);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.command-palette-input {
+  flex: none;
+  height: 42px;
+  padding: 0 14px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 15px;
+}
+.command-palette-input:focus {
+  outline: none;
+}
+
+.command-palette-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+}
+
+.command-palette-empty {
+  padding: 10px 8px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+.command-palette-group {
+  padding: 8px 8px 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.command-palette-option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  font-size: 13px;
+  color: var(--text-1);
+  cursor: pointer;
+}
+.command-palette-option.is-active {
+  background: var(--accent);
+  color: #fff;
+}
+.command-palette-option.is-disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+.command-palette-option.is-disabled.is-active {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text-3);
+}
+
+.command-palette-option-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-palette-option-hint {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.command-palette-option.is-active .command-palette-option-hint {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.graph-search-fab {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  z-index: 5;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-1) 88%, transparent);
+  color: var(--text-2);
+  font-size: 17px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.graph-search-fab:hover {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.search-results {
+  max-height: 240px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  background: var(--bg-0);
+}
+.search-results-empty {
+  padding: 10px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.search-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 10px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.search-result:hover {
+  background: var(--bg-1);
+}
+.search-result.is-current {
+  background: var(--selection);
+}
+.search-result-oid {
+  flex: none;
+  font-family: var(--font-mono);
+  color: var(--text-3);
+}
+.search-result-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-result-snippet {
+  flex: none;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  color: var(--text-2);
+}
+.search-result-author {
+  flex: none;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.search-result-date {
+  flex: none;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.search-result-badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  text-transform: capitalize;
+  background: var(--bg-2);
+  color: var(--text-2);
+}
+
+/* P57c: "Ask history" overlay — a floating panel near the top of the graph
+   pane (own stacking context above the search bar + FAB). */
+.history-search {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(640px, calc(100% - 28px));
+  /* Above the canvas + search FAB (5); BELOW the AiOutputPanel (7) so an open
+     answer overlays the panel (Esc peels answer, then this panel). */
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-1);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
+  overflow: hidden;
+}
+.history-search-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 0;
+  min-height: 20px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.history-search-indexed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.history-prepare {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.history-rebuild {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-0);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.history-rebuild:hover {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+.history-ask {
+  gap: 4px;
+  white-space: nowrap;
+}
+.history-ask:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text-1);
+}
+.search-run:disabled,
+.history-ask:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.history-results {
+  max-height: 260px;
+}
+.history-score-bar {
+  flex: none;
+  width: 56px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-2);
+  overflow: hidden;
+}
+.history-score-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+/* P57c: index-build progress bar (inside the status line while building). */
+.index-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+.index-progress-label {
+  font-size: 12px;
+  color: var(--text-2);
+}
+.index-progress-track {
+  display: block;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-2);
+  overflow: hidden;
+}
+.index-progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms ease-out;
+}
+

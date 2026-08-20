@@ -1,0 +1,237 @@
+/* Bonsai — Commit composer review overlay (P54c).
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* --- P54c: commit composer (review overlay) ------------------------------- */
+.composer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100; /* sits with .dialog-overlay; graph nav is gated while open */
+  padding: 24px;
+}
+
+.composer-dialog {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 720px;
+  max-width: 100%;
+  max-height: 100%;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.composer-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.composer-icon {
+  font-size: 14px;
+}
+
+.composer-heading {
+  font-size: 14px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.composer-close {
+  flex: none;
+}
+
+.composer-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 14px;
+  font-size: 12px;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-0);
+}
+
+.composer-note-normalizer {
+  color: var(--text-2);
+}
+
+.composer-note-uncommitted {
+  color: var(--warning);
+}
+
+.composer-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  overflow-y: auto;
+}
+
+.composer-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  padding: 10px;
+}
+
+.composer-card--unassigned {
+  background: var(--bg-0);
+  border-style: dashed;
+}
+
+.composer-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.composer-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.composer-card-count {
+  color: var(--text-3);
+  font-weight: 400;
+}
+
+.composer-card-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.composer-card-action {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+.composer-message {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 52px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-1);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 6px;
+}
+
+.composer-message-hint {
+  font-size: 11px;
+  color: var(--warning);
+  margin-bottom: 6px;
+}
+
+.composer-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.composer-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.composer-file-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+.composer-file-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-move-select {
+  flex: none;
+  max-width: 130px;
+  height: 24px;
+  font-size: 11px;
+  padding: 0 4px;
+  color: var(--text-1);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.composer-file-preview {
+  flex: none;
+  font-size: 11px;
+}
+
+.composer-file-remove {
+  flex: none;
+}
+
+.composer-add-group {
+  align-self: flex-start;
+  font-size: 12px;
+}
+
+.composer-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+
+/* The embedded file preview covers the body — reuses DiffView; closing it
+   returns to the plan editor (Esc peels the preview before the whole dialog). */
+.composer-preview {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  z-index: 1;
+}
+
+.composer-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.composer-preview-path {
+  flex: 1;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-preview-body {
+  flex: 1;
+  overflow: auto;
+  padding: 8px 0;
+}
+

@@ -1,0 +1,164 @@
+/* Bonsai — Agent assets (P26c) and the two-pane text compare.
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* --- P26c: agent assets (skills / subagents / slash commands) --- */
+.agent-group {
+  margin-top: 12px;
+}
+
+.agent-group-empty {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+  font-style: italic;
+}
+
+/* The create/edit editor is a wide card, like the AI-assets panel itself. */
+.dialog-card.agent-editor-card {
+  width: 640px;
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+}
+
+.asset-readonly-banner {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.asset-issue-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.asset-issue {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+}
+
+.asset-issue-error {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.asset-issue-warning {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+}
+
+.asset-field-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+.asset-editor-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.asset-editor-unknown {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.asset-unknown-row {
+  display: flex;
+  gap: 8px;
+}
+
+.asset-unknown-key {
+  flex: 0 0 200px;
+  font-family: var(--font-mono);
+}
+
+.asset-unknown-value {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.asset-editor-body {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* Delete sits on the left; Cancel/Save stay right-aligned. */
+.agent-editor-buttons {
+  align-items: center;
+}
+
+.agent-editor-delete {
+  margin-right: auto;
+}
+
+/* --- Two-pane text compare (drift row + activation preview) --- */
+.asset-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.asset-preview-target {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.asset-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.asset-compare-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.asset-compare-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+
+.asset-compare-body {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 40vh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.asset-compare-empty {
+  padding: 8px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+

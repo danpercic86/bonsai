@@ -1,0 +1,140 @@
+/* Bonsai — Identity in the header (P69i, UI §4) — incl. its ContextMenu additions.
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ================= P69i — identity in the header (UI §4) ================= */
+
+/* Trigger: a .btn-icon-sized 32x32 button holding a 22px circle. The circle is
+   initials, not a glyph — the control's whole point is WHICH identity. */
+.identity-trigger[aria-expanded='true'] {
+  background: var(--bg-3);
+}
+
+.identity-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: var(--bg-3);
+  color: var(--text-1);
+  border: 1px solid var(--border);
+}
+
+/* State 2 — an identity that matches no saved profile: same chrome, a dimmer
+   ring. Colour alone carries nothing here; the menu names the source. */
+.identity-avatar[data-identity-state='unmatched'],
+.identity-avatar[data-identity-state='loading'] {
+  border-color: var(--text-3);
+}
+
+/* State 3 — nothing set (or unreadable). The `?` GLYPH and the accessible name
+   are the carriers; the --warning ring (7.3:1 / 4.5:1 on --bg-1) is redundant. */
+.identity-avatar[data-identity-state='unset'],
+.identity-avatar[data-identity-state='unreadable'] {
+  background: var(--bg-2);
+  border-color: var(--warning);
+}
+
+/* ---- ContextMenu additions (UI §4.4): header block, check column, detail ---- */
+
+/* UI §4.3 widths, scoped to THIS menu — .context-menu is shared with the branch
+   / push / external-tools menus, whose 200–360px range is correct for them. */
+.context-menu:has(.identity-menu-header) {
+  min-width: 240px;
+  max-width: 320px;
+}
+
+.context-menu-header {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  min-width: 0;
+  max-width: 320px;
+}
+
+.context-menu-header p {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.identity-menu-eyebrow {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+
+.identity-menu-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.identity-menu-line {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.context-menu-header .identity-menu-source {
+  font-size: 12px;
+  color: var(--text-2);
+  margin-top: 4px;
+}
+
+/* Reserved 16px leading column; the tick is a glyph, never a background tint, so
+   a checked row stays legible in both themes and in forced colours. */
+.context-menu-check {
+  flex: 0 0 16px;
+  width: 16px;
+  text-align: center;
+  color: var(--text-1);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.context-menu-lines {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.context-menu-detail {
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Settings -> Identities card actions (UI §4.6) ---- */
+
+.settings-profile-action {
+  display: inline-flex;
+}
+
+.settings-profile-danger {
+  color: var(--danger);
+}
+
+.settings-profile-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settings-profile-confirm-q {
+  font-size: 13px;
+  color: var(--text-1);
+}
+
+/* ================= end P69i ================= */
+
