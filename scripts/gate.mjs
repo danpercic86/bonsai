@@ -17,7 +17,17 @@
 //   pnpm gate --full     # gate + supply-chain audit + coverage  (~ CI)
 //   pnpm gate --rust     # rust steps only
 //   pnpm gate --frontend # frontend steps only
-// Flags: --bail (stop at first failure), --list (print steps and exit).
+// Flags: --bail (stop at first failure), --list (print steps and exit),
+//        --ci-parity (add the cross-target compile checks to any tier).
+//
+// CI-parity notes (both classes bit the 1.1.0 release — see TODO.md / the
+// release memory):
+//   * Doctests run under RUSTDOCFLAGS=-D warnings, so a rustdoc lint (e.g. a
+//     prose ``` that rustdoc reads as a code fence) fails here, not only in CI.
+//   * --full / --ci-parity cross-compile the pure crates for the other OS
+//     targets when their rustup targets are installed, catching cfg-gated dead
+//     code that -D dead_code rejects off-Windows. If a target is not installed
+//     the gate says so and defers to CI's rust matrix (.github/workflows/ci.yml).
 //
 // Zero dependencies, plain Node ESM — same behaviour on Windows/macOS/Linux.
 
@@ -32,6 +42,7 @@ const quick = has('--quick');
 const full = has('--full') || has('--ci');
 const rustOnly = has('--rust');
 const frontOnly = has('--frontend');
+const ciParity = has('--ci-parity');
 // e2e runs in the default and full tiers, never in --quick.
 const wantE2e = !quick && !rustOnly && !frontOnly;
 const wantAudit = full && !rustOnly && !frontOnly;
@@ -43,16 +54,51 @@ function have(cmd, args) {
 }
 const hasNextest = have('cargo', ['nextest', '--version']);
 
+// --- cross-platform compile parity ------------------------------------------
+// Both CI failures during the 1.1.0 release slipped past this gate because it
+// only exercised the host (Windows) target: (1) cfg(windows)-only dead code
+// that -D dead_code rejects on macOS/Linux, and (2) a rustdoc lint CI escalates
+// to an error. `.github/workflows/ci.yml` builds the `rust` job on
+// ubuntu-22.04 + windows-latest + macos-latest under clippy/rustdoc `-D
+// warnings` — that matrix stays authoritative; this is a best-effort local
+// mirror, enabled by --full or --ci-parity.
+const CROSS_TARGETS = ['aarch64-apple-darwin', 'x86_64-unknown-linux-gnu'];
+const crossWanted = (full || ciParity) && !frontOnly;
+function installedTargets() {
+  const r = spawnSync('rustup', ['target', 'list', '--installed'], { encoding: 'utf8', shell: isWin });
+  return r.status === 0 && r.stdout ? r.stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : [];
+}
+const installed = crossWanted ? installedTargets() : [];
+const crossPresent = CROSS_TARGETS.filter((t) => installed.includes(t));
+const crossMissing = crossWanted ? CROSS_TARGETS.filter((t) => !installed.includes(t)) : [];
+// Only the pure crates cross-compile cleanly from any host (the tauri app pulls
+// the platform webview) — and bonsai-core is where the release dead code hid.
+// clippy (not `cargo check` + RUSTFLAGS) so `-D warnings` scopes to OUR crates,
+// exactly like CI's clippy step; RUSTFLAGS would also deny warnings in deps and
+// fail on unrelated third-party lints. dead_code is a rustc lint clippy still
+// reports, so the cfg-gated-dead-code class is caught. Own target dir (per
+// triple) keeps it off the host test build.
+const crossSteps = crossPresent.map((t) => ({
+  name: `cargo clippy --target ${t}`,
+  cmd: 'cargo',
+  args: ['clippy', '-p', 'bonsai-core', '-p', 'bonsai-forge', '-p', 'bonsai-mcp', '--all-targets', '--target', t, '--', '-D', 'warnings'],
+  env: { CARGO_TARGET_DIR: 'target/clippy' },
+  group: 'rust',
+}));
+
 // --- step catalogue ---------------------------------------------------------
 // group: 'rust' | 'frontend' | 'e2e' | 'audit'
+// RUSTDOCFLAGS=-D warnings mirrors CI so a doctest/rustdoc lint fails locally.
+const RUSTDOC_DENY = { RUSTDOCFLAGS: '-D warnings' };
 const rustTest = hasNextest
   ? { name: 'cargo nextest', cmd: 'cargo', args: ['nextest', 'run', '--workspace'], group: 'rust' }
-  : { name: 'cargo test', cmd: 'cargo', args: ['test', '--workspace'], group: 'rust' };
+  // nextest never runs doctests; the fallback cargo test does, so deny there too.
+  : { name: 'cargo test', cmd: 'cargo', args: ['test', '--workspace'], group: 'rust', env: RUSTDOC_DENY };
 
 const steps = [
   rustTest,
   // nextest does not run doctests; cargo test already did. Only add when nextest ran.
-  hasNextest && { name: 'cargo test --doc', cmd: 'cargo', args: ['test', '--workspace', '--doc'], group: 'rust' },
+  hasNextest && { name: 'cargo test --doc', cmd: 'cargo', args: ['test', '--workspace', '--doc'], group: 'rust', env: RUSTDOC_DENY },
   {
     name: 'cargo clippy',
     cmd: 'cargo',
@@ -61,6 +107,7 @@ const steps = [
     env: { CARGO_TARGET_DIR: 'target/clippy' },
     group: 'rust',
   },
+  ...crossSteps,
   { name: 'eslint', cmd: 'pnpm', args: ['lint:ci'], group: 'frontend' },
   { name: 'file-size ratchet', cmd: 'pnpm', args: ['lint:size'], group: 'frontend' },
   {
@@ -87,9 +134,18 @@ const selected = steps.filter((s) => wantGroup(s.group));
 
 const tierLabel = full ? 'full (≈ CI)' : quick ? 'quick' : rustOnly ? 'rust-only' : frontOnly ? 'frontend-only' : 'pre-commit';
 
+// Best-effort warning when a cross-target build cannot be proven locally.
+function printCrossCaveat() {
+  if (!crossWanted || !crossMissing.length) return;
+  if (crossPresent.length) console.log(`  cross-target parity: checking ${crossPresent.join(', ')}.`);
+  console.log(`  ⚠ cross-target NOT installed: ${crossMissing.join(', ')} — this gate cannot prove those builds.`);
+  console.log(`    CI's rust matrix (.github/workflows/ci.yml) is authoritative. To check locally: rustup target add ${crossMissing[0]}`);
+}
+
 if (has('--list')) {
   console.log(`gate tier: ${tierLabel}  ·  nextest: ${hasNextest ? 'yes' : 'no (cargo test fallback)'}`);
   for (const s of selected) console.log(`  [${s.group}] ${s.name}: ${s.cmd} ${s.args.join(' ')}`);
+  printCrossCaveat();
   process.exit(0);
 }
 
@@ -100,6 +156,7 @@ const results = [];
 const t0 = Number(process.hrtime.bigint() / 1000000n);
 
 console.log(`\n▶ Bonsai gate — ${tierLabel} tier — ${selected.length} steps${hasNextest ? '' : '  (nextest not installed: `cargo install cargo-nextest --locked` for parallel tests)'}\n`);
+printCrossCaveat();
 
 for (const step of selected) {
   const label = `[${step.group}] ${step.name}`;
