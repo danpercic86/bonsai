@@ -29,6 +29,7 @@ function makeDeps(over: Partial<Deps> = {}): Deps {
     refetchBranches: asyncFn(),
     refetchGraph: asyncFn(),
     refetchRemotes: asyncFn(),
+    refetchTagSync: asyncFn(),
     ...over,
   };
 }

@@ -81,6 +81,12 @@ import { useStashActions } from './repoWorkspace/useStashActions';
 import { useSubmoduleActions, type SubmoduleBusy } from './repoWorkspace/useSubmoduleActions';
 import { useWorktreeActions } from './repoWorkspace/useWorktreeActions';
 import { useTagRemoteActions } from './repoWorkspace/useTagRemoteActions';
+import {
+  TagSyncDialogs,
+  type PendingDeleteRemoteTag,
+  type PendingForceMoveTag,
+} from './dialogs/TagSyncDialogs';
+import { useTagSync } from './repoWorkspace/useTagSync';
 import { useRebaseActions } from './repoWorkspace/useRebaseActions';
 import { useCherrypickRevertActions } from './repoWorkspace/useCherrypickRevertActions';
 import { useBisectActions } from './repoWorkspace/useBisectActions';
@@ -346,6 +352,21 @@ export function RepoWorkspace({
   // P22 §7.1: tag + remote management dialog state.
   const [pendingCreateTag, setPendingCreateTag] = useState<{ oid: string } | null>(null);
   const [pendingDeleteTag, setPendingDeleteTag] = useState<string | null>(null);
+  // P77: remote-tag destructive confirms (delete-on-remote, force-move-on-remote).
+  const [pendingDeleteRemoteTag, setPendingDeleteRemoteTag] =
+    useState<PendingDeleteRemoteTag | null>(null);
+  const [pendingForceMoveTag, setPendingForceMoveTag] = useState<PendingForceMoveTag | null>(null);
+  // P77: live tag-sync report + its ls-remote lifecycle (owned by useTagSync).
+  // Best-effort — the tags list never blocks on it; a rejection degrades to
+  // `unavailable` (no badges).
+  const {
+    report: tagSyncReport,
+    state: tagSyncState,
+    remote: tagSyncRemote,
+    checkedAt: tagSyncCheckedAt,
+    refetch: refetchTagSync,
+    clear: clearTagSync,
+  } = useTagSync(repoId, remotes);
   const [pendingAddRemote, setPendingAddRemote] = useState<boolean>(false);
   const [pendingRenameRemote, setPendingRenameRemote] = useState<{ name: string } | null>(null);
   const [pendingEditUrl, setPendingEditUrl] = useState<{ name: string; url: string } | null>(null);
@@ -444,6 +465,8 @@ export function RepoWorkspace({
     pendingCherrypick !== null ||
     pendingCreateTag !== null ||
     pendingDeleteTag !== null ||
+    pendingDeleteRemoteTag !== null ||
+    pendingForceMoveTag !== null ||
     pendingAddRemote ||
     pendingRenameRemote !== null ||
     pendingEditUrl !== null ||
@@ -1122,6 +1145,9 @@ export function RepoWorkspace({
           refetchRemotes(),
           refetchOpState(),
           refetchCompare(),
+          // P77: re-check tag drift on manual refresh / focus rescan (no-op until
+          // the Tags section has been opened once this session).
+          refetchTagSync({ force: true }),
         ]);
       } else {
         clearStatus();
@@ -1131,6 +1157,7 @@ export function RepoWorkspace({
         clearSubmodules();
         clearWorktrees();
         clearRemotes();
+        clearTagSync();
         clearOpState();
         clearCompare();
         // P23d: drop any blame/history overlay + invalidate in-flight fetches so
@@ -1154,6 +1181,7 @@ export function RepoWorkspace({
     refetchRemotes,
     refetchOpState,
     refetchCompare,
+    refetchTagSync,
     clearStatus,
     clearGraph,
     clearBranches,
@@ -1161,6 +1189,7 @@ export function RepoWorkspace({
     clearSubmodules,
     clearWorktrees,
     clearRemotes,
+    clearTagSync,
     clearOpState,
     clearCompare,
     pushToast,
@@ -1611,6 +1640,10 @@ export function RepoWorkspace({
     handleCreateTag,
     handleDeleteTag,
     handlePushTag,
+    handleForceRefreshTag,
+    handleFetchRemoteTag,
+    handleDeleteRemoteTag,
+    handleForceMoveRemoteTag,
     handleAddRemote,
     handleRemoveRemote,
     handleRenameRemote,
@@ -1622,6 +1655,7 @@ export function RepoWorkspace({
     refetchBranches,
     refetchGraph,
     refetchRemotes,
+    refetchTagSync,
   });
 
   const {
@@ -2399,6 +2433,11 @@ export function RepoWorkspace({
     setPendingWorktreeRemove,
     setPendingDeleteTag,
     handlePushTag,
+    tagSync: tagSyncReport,
+    handleForceRefreshTag,
+    handleFetchRemoteTag,
+    setPendingDeleteRemoteTag,
+    setPendingForceMoveTag,
     setPendingRenameRemote,
     setPendingEditUrl,
     setPendingRemoveRemote,
@@ -2543,6 +2582,11 @@ export function RepoWorkspace({
           onWorktreeContextMenu={handleWorktreeContextMenu}
           onNewWorktree={() => setNewWorktreeOpen(true)}
           onTagContextMenu={handleTagContextMenu}
+          tagSyncReport={tagSyncReport}
+          tagSyncState={tagSyncState}
+          tagSyncRemote={tagSyncRemote}
+          tagSyncCheckedAt={tagSyncCheckedAt}
+          onTagsExpand={() => void refetchTagSync()}
           remotes={remotes}
           onRemoteContextMenu={handleRemoteContextMenu}
           onAddRemote={() => setPendingAddRemote(true)}
@@ -2855,6 +2899,18 @@ export function RepoWorkspace({
         pendingRemoveSubmodule={pendingRemoveSubmodule}
         setPendingRemoveSubmodule={setPendingRemoveSubmodule}
         handleRemoveSubmodule={handleRemoveSubmodule}
+      />
+      {/* P77 §4: destructive remote-tag confirms (delete-on-remote, force-move). */}
+      <TagSyncDialogs
+        busy={mutating}
+        pendingDeleteRemoteTag={pendingDeleteRemoteTag}
+        setPendingDeleteRemoteTag={setPendingDeleteRemoteTag}
+        handleDeleteRemoteTag={(remote, name) => void handleDeleteRemoteTag(remote, name)}
+        pendingForceMoveTag={pendingForceMoveTag}
+        setPendingForceMoveTag={setPendingForceMoveTag}
+        handleForceMoveRemoteTag={(remote, name, newShort) =>
+          void handleForceMoveRemoteTag(remote, name, newShort)
+        }
       />
     </>
   );

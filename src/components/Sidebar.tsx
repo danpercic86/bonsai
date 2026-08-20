@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
 import type {
   BranchInfo,
   BranchesSnapshot,
@@ -7,6 +6,7 @@ import type {
   RemoteInfo,
   StashEntry,
   SubmoduleInfo,
+  TagSyncReport,
   WorktreeInfo,
 } from '../ipc';
 import { relativeDate } from '../graph/draw';
@@ -16,8 +16,10 @@ import { buildPathTree } from '../utils/pathTree';
 import { Tree } from './Tree';
 import { ListFilterInput } from './ListFilterInput';
 import { SubmoduleRow } from './sidebar/SubmoduleRow';
+import { SectionHeader } from './sidebar/SectionHeader';
+import { TagsSection, type TagSyncState } from './sidebar/TagsSection';
 import type { SubmoduleBusy } from './repoWorkspace/types';
-import { filterByName, filterItems, filterTree } from './repoWorkspace/listFilter';
+import { filterItems, filterTree } from './repoWorkspace/listFilter';
 
 /** P50d: show a section's inline type-to-filter box only once the list is long
  *  enough to warrant it — keeps short lists uncluttered (contract §7). */
@@ -87,6 +89,19 @@ export interface SidebarProps {
   onNewWorktree(): void;
   /** P22 §6.1: right-click a tag row → open the shared context menu. */
   onTagContextMenu(name: string, clientX: number, clientY: number): void;
+  /** P77: best-effort tag-sync report (null until first check). The tags list
+   *  NEVER blocks on it — it only augments rows with a status badge. */
+  tagSyncReport: TagSyncReport | null;
+  /** P77: the ls-remote lifecycle driving badge visibility (§2.2/§2.3). */
+  tagSyncState: TagSyncState;
+  /** P77 §2.3: the remote the check targets, available even without a successful
+   *  report so the offline line can name it on cold-start-offline. */
+  tagSyncRemote: string | null;
+  /** P77: unix secs of the last successful check (for the "last checked" tip). */
+  tagSyncCheckedAt: number | null;
+  /** P77 §6: fired when the Tags section expands → the container runs listTagSync
+   *  (cached ~10s). */
+  onTagsExpand(): void;
   /** P22 §6.2: configured remotes (name + fetch URL), rendered above the
    *  remote-tracking-branch tree. */
   remotes: RemoteInfo[];
@@ -97,33 +112,6 @@ export interface SidebarProps {
   /** P25d §6: "Clean up branches…" header action → opens the StaleBranchesDialog.
    *  Rendered only when there is a branch list (data present, not unborn). */
   onCleanupBranches?(): void;
-}
-
-function SectionHeader({
-  label,
-  collapsed,
-  onToggle,
-  extra,
-}: {
-  label: string;
-  collapsed: boolean;
-  onToggle(): void;
-  extra?: ReactNode;
-}) {
-  return (
-    <div className="sidebar-section-header">
-      <button
-        type="button"
-        className="sidebar-section-toggle section-label"
-        aria-expanded={!collapsed}
-        onClick={onToggle}
-      >
-        <span className={`file-chevron${collapsed ? '' : ' file-chevron-open'}`}>{'›'}</span>
-        {label}
-      </button>
-      {extra}
-    </div>
-  );
 }
 
 function AheadBehindBadge({ branch }: { branch: BranchInfo }) {
@@ -204,31 +192,6 @@ function RemoteRow({
       }}
     >
       <span className="branch-glyph">{'☁'}</span>
-      <span className="branch-name branch-name-muted" title={name}>
-        {displayName ?? name}
-      </span>
-    </li>
-  );
-}
-
-function TagRow({
-  name,
-  displayName,
-  onContextMenu,
-}: {
-  name: string;
-  displayName?: string;
-  onContextMenu(name: string, clientX: number, clientY: number): void;
-}) {
-  return (
-    <li
-      className="branch-row branch-row-readonly"
-      onContextMenu={(e) => {
-        e.preventDefault();
-        onContextMenu(name, e.clientX, e.clientY);
-      }}
-    >
-      <span className="branch-glyph">{'#'}</span>
       <span className="branch-name branch-name-muted" title={name}>
         {displayName ?? name}
       </span>
@@ -386,6 +349,11 @@ export function Sidebar({
   onWorktreeContextMenu,
   onNewWorktree,
   onTagContextMenu,
+  tagSyncReport,
+  tagSyncState,
+  tagSyncRemote,
+  tagSyncCheckedAt,
+  onTagsExpand,
   remotes,
   onRemoteContextMenu,
   onAddRemote,
@@ -393,9 +361,6 @@ export function Sidebar({
 }: SidebarProps) {
   const [branchesCollapsed, setBranchesCollapsed] = useState(false);
   const [remotesCollapsed, setRemotesCollapsed] = useState(false);
-  // P11a: Tags start collapsed by default (they are the least-used section and
-  // can be long); the other sections stay expanded. Local/ephemeral state.
-  const [tagsCollapsed, setTagsCollapsed] = useState(true);
   const [stashesCollapsed, setStashesCollapsed] = useState(false);
   const [submodulesCollapsed, setSubmodulesCollapsed] = useState(false);
   const [worktreesCollapsed, setWorktreesCollapsed] = useState(false);
@@ -404,7 +369,6 @@ export function Sidebar({
   // listFilter helpers below). Each is ignored while its box is hidden.
   const [branchFilter, setBranchFilter] = useState('');
   const [remoteFilter, setRemoteFilter] = useState('');
-  const [tagFilter, setTagFilter] = useState('');
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createValue, setCreateValue] = useState('');
@@ -434,10 +398,6 @@ export function Sidebar({
     () => (treeMode && data !== null ? buildPathTree(data.remote, (r) => r.name) : []),
     [treeMode, data],
   );
-  const tagTree = useMemo(
-    () => (treeMode && data !== null ? buildPathTree(data.tags, (t) => t) : []),
-    [treeMode, data],
-  );
 
   // P50d — apply the per-section filters. The box shows only when the section
   // is expanded AND has ≥ FILTER_MIN_ROWS rows; while hidden, any stale query is
@@ -460,13 +420,6 @@ export function Sidebar({
   const remoteTreeFiltered = filterTree(remoteTree, remoteQuery, (r) => r.name);
   const remoteNoMatch =
     remoteFiltering && remotesFiltered.length === 0 && remoteFlatFiltered.length === 0;
-
-  const showTagFilter = !tagsCollapsed && (data?.tags.length ?? 0) >= FILTER_MIN_ROWS;
-  const tagQuery = showTagFilter ? tagFilter : '';
-  const tagFiltering = tagQuery.trim() !== '';
-  const tagsFiltered = filterByName(data?.tags ?? [], tagQuery);
-  const tagTreeFiltered = filterTree(tagTree, tagQuery, (t) => t);
-  const tagNoMatch = tagFiltering && tagsFiltered.length === 0;
 
   function closeCreate() {
     setCreateOpen(false);
@@ -728,47 +681,16 @@ export function Sidebar({
             )}
           </section>
 
-          <section className="sidebar-section">
-            <SectionHeader
-              label="Tags"
-              collapsed={tagsCollapsed}
-              onToggle={() => setTagsCollapsed((c) => !c)}
-            />
-            {!tagsCollapsed && (
-              <>
-                {showTagFilter && (
-                  <ListFilterInput
-                    value={tagFilter}
-                    onChange={setTagFilter}
-                    ariaLabel="Filter tags"
-                    count={tagFiltering ? tagsFiltered.length : undefined}
-                  />
-                )}
-                {data.tags.length === 0 ? (
-                  <p className="branch-muted">No tags</p>
-                ) : tagNoMatch ? (
-                  <p className="branch-muted">{`No tags match '${tagFilter.trim()}'`}</p>
-                ) : treeMode ? (
-                  <Tree
-                    key={tagFiltering ? 'tags-filter' : 'tags'}
-                    nodes={tagTreeFiltered}
-                    leafKey={(l) => l.item}
-                    defaultCollapsed={!tagFiltering}
-                    initiallyExpanded={[]}
-                    renderLeaf={(l) => (
-                      <TagRow name={l.item} displayName={l.name} onContextMenu={onTagContextMenu} />
-                    )}
-                  />
-                ) : (
-                  <ul className="branch-list">
-                    {tagsFiltered.map((tag) => (
-                      <TagRow key={tag} name={tag} onContextMenu={onTagContextMenu} />
-                    ))}
-                  </ul>
-                )}
-              </>
-            )}
-          </section>
+          <TagsSection
+            tags={data.tags}
+            treeMode={treeMode}
+            onTagContextMenu={onTagContextMenu}
+            tagSyncReport={tagSyncReport}
+            tagSyncState={tagSyncState}
+            tagSyncRemote={tagSyncRemote}
+            tagSyncCheckedAt={tagSyncCheckedAt}
+            onExpand={onTagsExpand}
+          />
 
           <section className="sidebar-section">
             <SectionHeader

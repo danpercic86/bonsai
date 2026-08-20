@@ -35,9 +35,14 @@ import type {
   RemoteInfo,
   ResetMode,
   SubmoduleInfo,
+  TagSyncReport,
   WorktreeInfo,
 } from '../ipc';
 import type { GraphContextTarget } from '../graph/GraphCanvas';
+import type {
+  PendingDeleteRemoteTag,
+  PendingForceMoveTag,
+} from './dialogs/TagSyncDialogs';
 
 /** P49: the three external-launch handlers a filesystem path is opened with.
  *  Each takes the target path so one handler set drives every entry point
@@ -123,6 +128,14 @@ export interface WorkspaceMenuDeps {
   setPendingWorktreeRemove(v: { name: string; absPath: string }): void;
   setPendingDeleteTag(name: string): void;
   handlePushTag(remote: string, name: string): void;
+  // P77: live tag-sync report (null until the first check / when unavailable) +
+  // the resolve handlers. Status-gated tag menu items read the per-name verdict
+  // from this report.
+  tagSync: TagSyncReport | null;
+  handleForceRefreshTag(remote: string, name: string): void;
+  handleFetchRemoteTag(remote: string, name: string): void;
+  setPendingDeleteRemoteTag(v: PendingDeleteRemoteTag): void;
+  setPendingForceMoveTag(v: PendingForceMoveTag): void;
   setPendingRenameRemote(v: { name: string }): void;
   setPendingEditUrl(v: { name: string; url: string }): void;
   setPendingRemoveRemote(name: string): void;
@@ -202,6 +215,11 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     setPendingWorktreeRemove,
     setPendingDeleteTag,
     handlePushTag,
+    tagSync,
+    handleForceRefreshTag,
+    handleFetchRemoteTag,
+    setPendingDeleteRemoteTag,
+    setPendingForceMoveTag,
     setPendingRenameRemote,
     setPendingEditUrl,
     setPendingRemoveRemote,
@@ -502,50 +520,111 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
   // configured remote (§OPEN-7: 0 → no push item; 1 → single; >1 → one each).
   function tagMenuItems(name: string, oid: string | null): ContextMenuItem[] {
     const gate = mutating || opActive;
-    const items: ContextMenuItem[] = [
-      {
+    // P77 §3: the per-name sync verdict gates the resolve items. Undefined when no
+    // check has run / the remote is unavailable → the menu degrades to the
+    // pre-P77 set (copy / release notes / push / delete-local).
+    const entry = tagSync?.entries.find((e) => e.name === name);
+    const status = entry?.status;
+    const syncRemote = tagSync?.remote ?? null;
+    const isRemoteOnly = status === 'remote-only';
+    const oldShort = entry?.remoteOid?.slice(0, 7) ?? '';
+    const newShort = entry?.localOid?.slice(0, 7) ?? '';
+    // Item 7 shows only when the tag exists on the remote (in-sync/stale/remote-
+    // only) — never for unpushed (nothing there) or the reserved deleted-on-remote.
+    const existsOnRemote =
+      status === 'in-sync' || status === 'stale' || status === 'remote-only';
+
+    const items: ContextMenuItem[] = [];
+
+    // 1. Update to remote target (stale) — resolve-in-place, no confirm (§3).
+    if (status === 'stale' && syncRemote !== null) {
+      items.push({
+        label: 'Update to remote target',
+        icon: createElement(TagIcon),
+        disabled: gate,
+        onSelect: () => void handleForceRefreshTag(syncRemote, name),
+      });
+    }
+    // 2. Create local tag (remote-only ghost row).
+    if (isRemoteOnly && syncRemote !== null) {
+      items.push({
+        label: 'Create local tag',
+        icon: createElement(TagIcon),
+        disabled: gate,
+        onSelect: () => void handleFetchRemoteTag(syncRemote, name),
+      });
+    }
+    // 3. Push tag to {remote} (existing) — one per configured remote. Skipped for
+    // a remote-only row (no local tag to push).
+    if (!isRemoteOnly) {
+      for (const r of remotes) {
+        items.push({
+          label: `Push tag to ${r.name}`,
+          icon: createElement(TagIcon),
+          disabled: gate,
+          onSelect: () => void handlePushTag(r.name, name),
+        });
+      }
+    }
+    // 4. Copy tag name (existing) — always.
+    items.push({
+      label: 'Copy tag name',
+      icon: createElement(CopyIcon),
+      disabled: false,
+      onSelect: () => {
+        const p =
+          navigator.clipboard?.writeText(name) ??
+          Promise.reject(new Error('Clipboard unavailable'));
+        void p
+          .then(() => pushToast('success', 'Copied tag name'))
+          .catch((e) => pushToast('error', `Copy failed: ${errorMessage(e)}`));
+      },
+    });
+    // 5. Release notes since previous tag (existing) — AI-gated. Not for a ghost
+    // row (no local history to summarise).
+    if (!isRemoteOnly) {
+      items.push({
+        label: 'Release notes since previous tag',
+        icon: createElement(SummarizeIcon),
+        disabled: !aiEligible,
+        onSelect: () =>
+          runChangelog({ kind: 'sinceLastTag', target: name }, `Release notes for ${name}`),
+      });
+    }
+    // 6. Delete tag (existing, local) — skipped for a remote-only ghost (no local
+    // tag exists). Routes through the existing local confirm.
+    if (!isRemoteOnly) {
+      items.push({
         label: 'Delete tag',
         icon: createElement(DeleteIcon),
         disabled: gate,
         onSelect: () => setPendingDeleteTag(name),
-      },
-      {
-        label: 'Copy tag name',
-        icon: createElement(CopyIcon),
-        disabled: false,
-        onSelect: () => {
-          const p =
-            navigator.clipboard?.writeText(name) ??
-            Promise.reject(new Error('Clipboard unavailable'));
-          void p
-            .then(() => pushToast('success', 'Copied tag name'))
-            .catch((e) => pushToast('error', `Copy failed: ${errorMessage(e)}`));
-        },
-      },
-    ];
-    // P56b §6: one-click grounded release notes — "what shipped in <tag>" (notes
-    // for the range previous-tag..this-tag, OQ7). Read-only; results render in the
-    // AiOutputPanel. Disabled (not hidden) unless AI is eligible, mirroring the
-    // "Explain this commit" gate; runChangelog's req-id guards staleness.
-    items.push({
-      label: 'Release notes since previous tag',
-      icon: createElement(SummarizeIcon),
-      disabled: !aiEligible,
-      onSelect: () =>
-        runChangelog({ kind: 'sinceLastTag', target: name }, `Release notes for ${name}`),
-    });
-    for (const r of remotes) {
+      });
+    }
+    // 7. Delete tag on {remote}… (danger → confirm §4.1).
+    if (existsOnRemote && syncRemote !== null) {
       items.push({
-        label: `Push tag to ${r.name}`,
+        label: `Delete tag on ${syncRemote}…`,
+        icon: createElement(DeleteIcon),
+        disabled: gate,
+        tone: 'danger',
+        onSelect: () => setPendingDeleteRemoteTag({ name, remote: syncRemote }),
+      });
+    }
+    // 8. Force-move tag on {remote}… (stale, danger → confirm §4.2).
+    if (status === 'stale' && syncRemote !== null) {
+      items.push({
+        label: `Force-move tag on ${syncRemote}…`,
         icon: createElement(TagIcon),
         disabled: gate,
-        onSelect: () => void handlePushTag(r.name, name),
+        tone: 'danger',
+        onSelect: () =>
+          setPendingForceMoveTag({ name, remote: syncRemote, oldShort, newShort }),
       });
     }
     // P47 (Part A, Fork-1): a GRAPH tag pill carries its target oid (the node id),
     // so it gets the shared commit actions after the tag-specific items. Sidebar
-    // tag rows pass `oid === null` (no cheap oid in BranchesSnapshot.tags → scoped
-    // out per F3) and keep delete/copy/push only.
+    // tag rows pass `oid === null` and keep only the tag/sync actions above.
     if (oid !== null) items.push(...commitActionItems(oid));
     return items;
   }

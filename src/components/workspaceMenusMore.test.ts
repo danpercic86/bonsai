@@ -182,23 +182,25 @@ describe('worktreeMenuItems', () => {
 });
 
 describe('tagMenuItems', () => {
-  it('sidebar row (oid null): delete/copy/release-notes/push only — no commit actions', () => {
+  it('sidebar row (oid null): push/copy/release-notes/delete only — no commit actions', () => {
+    // P77 §3: resolve-in-place first, then publish, utility items, then the
+    // destructive local delete. No sync report → the resolve/remote items are absent.
     const items = createWorkspaceMenus(makeDeps()).tagMenuItems('v1.0', null);
     expect(labelsOf(items)).toEqual([
-      'Delete tag',
+      'Push tag to origin',
       'Copy tag name',
       'Release notes since previous tag',
-      'Push tag to origin',
+      'Delete tag',
     ]);
   });
 
   it('graph pill (oid set): commit actions appended after the tag items', () => {
     const items = createWorkspaceMenus(makeDeps()).tagMenuItems('v1.0', OID_OTHER);
     expect(labelsOf(items)).toEqual([
-      'Delete tag',
+      'Push tag to origin',
       'Copy tag name',
       'Release notes since previous tag',
-      'Push tag to origin',
+      'Delete tag',
       'Create branch here',
       'Create tag here',
       'Compare with HEAD',

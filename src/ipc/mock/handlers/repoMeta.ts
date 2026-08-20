@@ -3,6 +3,7 @@ import type { IpcApi } from '../../types';
 import { mockRepoHealth } from '../../fixtures/repoHealth';
 import { delay, requireRepo, throwAuthFailed, throwNetworkError } from '../repoState';
 import type { AppError, RemoteInfo, RepoHealth } from '../../types';
+import { applyTagDeleteLocalToSync, applyTagPushToSync } from './tagSync';
 
 export const repoMetaHandlers = {
   async getRepoHealth(repoId: string): Promise<RepoHealth> {
@@ -41,9 +42,11 @@ export const repoMetaHandlers = {
     await delay(150);
     const state = requireRepo(repoId);
     state.branches.tags = state.branches.tags.filter((t) => t !== name);
+    // Keep any live tag-sync report consistent: the local side is gone.
+    applyTagDeleteLocalToSync(repoId, name);
   },
 
-  async pushTag(repoId: string, _remote: string, _tagName: string, _force: boolean): Promise<void> {
+  async pushTag(repoId: string, remote: string, tagName: string, _force: boolean): Promise<void> {
     await delay(400);
     const state = requireRepo(repoId);
     if (state.remoteTrigger === 'authfail') throwAuthFailed();
@@ -56,7 +59,10 @@ export const repoMetaHandlers = {
       };
       throw err;
     }
-    // Local-only mock: no server, so the push simply succeeds.
+    // Local-only mock: no server, so the push simply succeeds. Reflect it into
+    // the live tag-sync report so push-unpushed and force-move both flip the row
+    // to `in-sync` on the next listTagSync — mirroring real IPC.
+    applyTagPushToSync(repoId, remote, tagName);
   },
 
   // Stateful remotes mock (P22 §5.3). list/add/remove/rename/set-url mutate a

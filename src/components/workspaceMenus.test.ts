@@ -377,7 +377,8 @@ describe('buildContextItems', () => {
   it('graph tag pill passes the node oid → commit actions appended', () => {
     const items = menus().buildContextItems(target(ref('v1.0', 'tag'), OID_OTHER));
     expect(labelsOf(items)).toContain('Create branch here'); // only with a non-null oid
-    expect(labelsOf(items)[0]).toBe('Delete tag');
+    // P77 §3: with no sync report the first tag item is the publish action.
+    expect(labelsOf(items)[0]).toBe('Push tag to origin');
   });
 
   it('local branch pill delegates to branchMenuItems', () => {

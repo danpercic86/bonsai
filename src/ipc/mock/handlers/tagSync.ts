@@ -93,6 +93,50 @@ export const tagSyncHandlers = {
   },
 } satisfies Partial<IpcApi>;
 
+/** Mock-only: reflect a successful tag push into the live sync report so the
+ *  harness's next `listTagSync` flips the row to `in-sync` — mirroring real IPC.
+ *  Both push-unpushed (local-only) and force-move (stale) make the remote match
+ *  local, so both resolve to `in-sync`. Seeds the report (and the entry, when
+ *  absent — e.g. a freshly-created local tag) so the flip is always visible. */
+export function applyTagPushToSync(repoId: string, remote: string, tagName: string): void {
+  const report = reportFor(repoId, remote);
+  const entry = report.entries.find((e) => e.name === tagName);
+  if (entry !== undefined) {
+    if (entry.localOid !== null) {
+      entry.remoteOid = entry.localOid;
+      entry.status = 'in-sync';
+    }
+    return;
+  }
+  // No prior verdict (a brand-new local tag): synthesize a matched, in-sync row.
+  const oid = tagName.padEnd(40, '0').slice(0, 40);
+  report.entries.push({
+    name: tagName,
+    status: 'in-sync',
+    localOid: oid,
+    remoteOid: oid,
+    annotated: false,
+  });
+  report.entries.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+}
+
+/** Mock-only: reflect a LOCAL tag delete into an existing live sync report so it
+ *  stays consistent — the local side drops (→ `remote-only` if still on the
+ *  remote, else the row vanishes). No-op when no live check has run yet (a local
+ *  delete must not fabricate a remote verdict). */
+export function applyTagDeleteLocalToSync(repoId: string, tagName: string): void {
+  const report = reports.get(repoId);
+  if (report === undefined) return;
+  const entry = report.entries.find((e) => e.name === tagName);
+  if (entry === undefined) return;
+  entry.localOid = null;
+  if (entry.remoteOid !== null) {
+    entry.status = 'remote-only';
+  } else {
+    report.entries = report.entries.filter((e) => e.name !== tagName);
+  }
+}
+
 // Test/harness aid: forget the cached reports so a fresh open re-seeds from the
 // fixture. Not part of IpcApi; safe to leave unused in production builds.
 export function __resetTagSyncMock(): void {
