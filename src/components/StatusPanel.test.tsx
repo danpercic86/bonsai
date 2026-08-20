@@ -115,11 +115,53 @@ describe('StatusPanel', () => {
     expect(props.onDiscardForce).toHaveBeenCalledWith(['src/b.ts', 'notes.md']);
   });
 
+  it('delete: offered on new (untracked) rows only, wired to force-discard', () => {
+    const { props } = renderPanel();
+    // untracked row deletes just itself (nothing to revert to)
+    fireEvent.click(screen.getByRole('button', { name: 'Delete notes.md' }));
+    expect(props.onDiscardForce).toHaveBeenCalledWith(['notes.md']);
+    // tracked unstaged + staged rows get discard/nothing, never delete
+    expect(screen.queryByRole('button', { name: 'Delete src/b.ts' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete src/a.ts' })).not.toBeInTheDocument();
+  });
+
+  it('row actions put the destructive control before stage/unstage', () => {
+    renderPanel();
+    const names = (path: string) => {
+      const row = screen.getByRole('button', { name: `Stage ${path}` }).closest('li');
+      return [...(row as HTMLElement).querySelectorAll('.row-action')].map((b) =>
+        b.getAttribute('aria-label'),
+      );
+    };
+    // tracked: … discard, then stage
+    expect(names('src/b.ts')).toEqual([
+      'Show history of src/b.ts',
+      'Blame src/b.ts',
+      'Discard changes to src/b.ts',
+      'Stage src/b.ts',
+    ]);
+    // untracked: delete, then stage
+    expect(names('notes.md')).toEqual(['Delete notes.md', 'Stage notes.md']);
+  });
+
+  it('tree view: folder actions use the same order as the file rows', () => {
+    renderPanel({ listView: 'tree' });
+    const changes = document.querySelector('.status-section--changes') as HTMLElement;
+    const dirActions = [...changes.querySelectorAll('.tree-dir-actions .row-action')].map((b) =>
+      b.getAttribute('aria-label'),
+    );
+    expect(dirActions).toEqual([
+      'Discard all changes in this folder',
+      'Stage all files in this folder',
+    ]);
+  });
+
   it('busy disables the action buttons', () => {
     renderPanel({ busy: true });
     expect(screen.getByRole('button', { name: 'Stage src/b.ts' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Stage all' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Discard all' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Delete notes.md' })).toBeDisabled();
   });
 
   it('blame/history controls appear on tracked rows only', () => {

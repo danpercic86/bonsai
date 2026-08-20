@@ -166,6 +166,34 @@ renamed `--accent`. Letter badge (A/M/D/U/R) in mono 11px before the path.
 **Never let color be the only carrier of meaning** — the A/M/D/U/R letter badge is the house
 precedent. Every new status indicator pairs its hue with a letter, word, or glyph.
 
+### 7.1 Row hover actions (Changes / Staged rows and folder rows)
+
+`.row-action` is 20×20, `opacity: 0` until the row is hovered or the button takes focus. **Order is
+fixed: secondary and destructive controls first, the primary stage/unstage toggle last (rightmost).**
+
+| Slot | Glyph | Where | `aria-label` |
+|---|---|---|---|
+| history | `🕑` | tracked rows | `Show history of {path}` |
+| blame | `👁` | tracked rows | `Blame {path}` |
+| destructive | `↺` / `🗑` | see below | `Discard changes to {path}` / `Delete {path}` |
+| primary | `+` / `−` | any actionable row | `Stage {path}` / `Unstage {path}` |
+
+The destructive slot holds **exactly one** control, chosen by whether the file exists in git:
+
+- **`↺` "Discard changes"** — tracked rows with unstaged edits. Reverts to the staged/committed
+  version. Never shown on new or staged rows.
+- **`🗑` "Delete"** — new (untracked) rows only. There is no version to revert to, so the outcome
+  is permanent removal from disk; a different glyph keeps that from reading as a revert.
+
+Folder rows (`.tree-dir-actions`, same 2px gap) use the same order — a folder and its children
+share the column, so `↺` sits above `↺`/`🗑` and `+` above `+`.
+
+Both destructive controls are confirm-gated and tint `var(--danger)` on hover via
+`.row-action-discard`. Confirm chrome follows the set's composition, never the entry point: a
+new-files-only set is titled "Delete new file(s)" and confirms with "Delete"; any set containing a
+modified file is "Discard all changes" / "Discard all". Permanently deleted paths are always
+listed by name in the dialog body (first 10, then "+N more").
+
 ## 8. Empty / loading / error states
 
 - Empty (no repo): centered column — "Bonsai" 20px/600, tagline "A tidy Git client" (text-3),

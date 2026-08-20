@@ -61,8 +61,9 @@ export function StatusSection({
    *  resolved origin is `unstaged` get a discard control; untracked rows do not. */
   onDiscard?: (paths: string[]) => void;
   /** Bulk force-discard: reverts modified tracked files AND deletes new/untracked
-   *  files. Changes section only — drives the "Discard all" header button and the
-   *  folder-level discard hover button. App confirms before the IPC call. */
+   *  files. Changes section only — drives the "Discard all" header button, the
+   *  folder-level discard hover button, and the per-row delete button on new
+   *  (untracked) rows. App confirms before the IPC call. */
   onDiscardForce?: (paths: string[]) => void;
   /** P23d: open blame for a row's file (tracked rows only). */
   onBlame?: (path: string) => void;
@@ -81,6 +82,10 @@ export function StatusSection({
     // P20 §4.3: offer discard only on tracked (unstaged-origin) rows.
     const rowDiscard =
       onDiscard !== undefined && rowSection === 'unstaged' ? onDiscard : undefined;
+    // New (untracked) rows have no staged/committed version to revert to — offer
+    // permanent deletion instead (the force variant deletes untracked paths).
+    const rowDelete =
+      onDiscardForce !== undefined && rowSection === 'untracked' ? onDiscardForce : undefined;
     // P23d: blame/history need a committed version — offer them on tracked rows
     // only (untracked files are not in HEAD).
     const tracked = rowSection !== 'untracked';
@@ -94,6 +99,7 @@ export function StatusSection({
         expanded={expanded}
         onAction={onAction}
         onDiscard={rowDiscard}
+        onDelete={rowDelete}
         onBlame={tracked ? onBlame : undefined}
         onFileHistory={tracked ? onFileHistory : undefined}
         onToggle={() => {

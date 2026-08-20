@@ -36,6 +36,7 @@ export function StatusFileRow({
   onAction,
   onToggle,
   onDiscard,
+  onDelete,
   onBlame,
   onFileHistory,
   treeMode = false,
@@ -52,6 +53,10 @@ export function StatusFileRow({
   /** P20 §4.3: discard this row's unstaged edits (tracked rows only). Absent
    *  (undefined) → no discard control (untracked rows, staged section). */
   onDiscard?: (paths: string[]) => void;
+  /** Permanently delete this row's file from disk — new (untracked) rows only,
+   *  which have no staged/committed version to revert to. Mutually exclusive
+   *  with `onDiscard`; shares its slot. Absent → no delete control. */
+  onDelete?: (paths: string[]) => void;
   /** P23d: open per-line blame for this row's file. Absent → no blame control
    *  (untracked rows — not in HEAD, nothing to blame). */
   onBlame?: (path: string) => void;
@@ -140,6 +145,18 @@ export function StatusFileRow({
           onClick={() => onDiscard(entryPaths(entry))}
         >
           {'↺'}
+        </button>
+      )}
+      {onDelete !== undefined && (
+        <button
+          type="button"
+          className="row-action row-action-discard"
+          title="Delete this new file (permanently removes it from disk)"
+          aria-label={`Delete ${entry.path}`}
+          disabled={disabled}
+          onClick={() => onDelete(entryPaths(entry))}
+        >
+          {'🗑'}
         </button>
       )}
       {action !== null && (

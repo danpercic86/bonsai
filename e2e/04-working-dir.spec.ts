@@ -51,6 +51,31 @@ test.describe('04 working-dir @smoke @destructive', () => {
     ).toHaveCount(0);
   });
 
+  test('a new file is deleted from its own row (confirm-gated)', async ({ page }) => {
+    await openWithStatus(page);
+    // New files have nothing to revert to: the row offers Delete, not Discard.
+    const del = page.getByRole('button', { name: 'Delete notes/todo.txt' });
+    await expect(del).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Discard changes to notes/todo.txt' }),
+    ).toHaveCount(0);
+
+    // Cancel path: the row stays.
+    await del.click();
+    const dialog = page.getByRole('dialog', { name: 'Delete new file' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('Permanently delete 1 file?')).toBeVisible();
+    await expect(dialog.getByText('notes/todo.txt')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('button', { name: 'Stage notes/todo.txt' })).toBeVisible();
+
+    // Confirm path: only this file goes (discardPathsForce with one path).
+    await del.click();
+    await confirm(page, 'Delete new file', 'Delete');
+    await expect(page.getByRole('button', { name: 'Stage notes/todo.txt' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Stage README.md' })).toBeVisible();
+  });
+
   test('commit is blocked while the message is empty', async ({ page }) => {
     // §5.04.4: staged entries exist by default, so the only gate left is the
     // empty message → the Commit button stays disabled (blocked, no toast).

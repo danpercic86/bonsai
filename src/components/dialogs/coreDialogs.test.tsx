@@ -113,8 +113,34 @@ describe('DestructiveDialogs', () => {
     render(<DestructiveDialogs {...p} />);
     expect(screen.getByText('Revert 1 file and permanently delete 2 files?')).toBeInTheDocument();
     expect(screen.getByText('n1.txt')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Discard all changes' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Discard all' }));
     expect(p.handleDiscardForce).toHaveBeenCalledWith(['m.txt', 'n1.txt', 'n2.txt']);
+  });
+
+  it('a new-files-only set reads as a deletion, not a discard', () => {
+    const p = destructiveProps({
+      pendingDiscardForce: { paths: ['n1.txt'], modified: 0, created: 1, untracked: ['n1.txt'] },
+    });
+    render(<DestructiveDialogs {...p} />);
+    expect(screen.getByRole('dialog', { name: 'Delete new file' })).toBeInTheDocument();
+    expect(screen.getByText('Permanently delete 1 file?')).toBeInTheDocument();
+    expect(screen.getByText('n1.txt')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(p.handleDiscardForce).toHaveBeenCalledWith(['n1.txt']);
+  });
+
+  it('several new files pluralize the delete title', () => {
+    const p = destructiveProps({
+      pendingDiscardForce: {
+        paths: ['n1.txt', 'n2.txt'],
+        modified: 0,
+        created: 2,
+        untracked: ['n1.txt', 'n2.txt'],
+      },
+    });
+    render(<DestructiveDialogs {...p} />);
+    expect(screen.getByRole('dialog', { name: 'Delete new files' })).toBeInTheDocument();
   });
 
   it('abort dialog picks title/handler from opState (rebase)', () => {
