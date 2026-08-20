@@ -1104,7 +1104,73 @@ SAME working tree. Overlap was measured: only **`src/styles.css`** is contested 
 paths only (never `git add -A`), scope vitest runs to the files under change, and run no cargo
 commands (P69 is frontend-only; concurrent cargo races the shared target dir).
 
-**Current step:** 🚧 **P69j DONE — P69k (search) next, then P69l (docs).**
+**Current step:** 🚧 **P69k SHIPPED (`a13b729`) — only P69l (docs) left.**
+
+**P69k** was written 2026-08-20 10:15–10:41 by a session that never committed it; a concurrent
+P74/dev-loop thread then committed on top and it sat stranded in the working tree until
+2026-08-20. Reviewed (reviewer + ui-designer, both CHANGES REQUESTED) and landed with all
+MUST-FIX applied in one round. Full gate at the commit: tsc 0 · vitest **1977 / 162 files** ·
+e2e **156 passed / 1 skipped** · eslint 0 errors / 30 warnings · ratchet exit 0 · **+0 IPC**.
+
+⚠️ **Three defects the green suite could not see — do NOT reintroduce:**
+- **`GitConfigAdvanced` was a FOURTH `data-setting-id` stamper** outside `SettingsRow`, so it
+  never self-filtered: a search hitting git-config rendered the whole Advanced form as a
+  "result", and a hit on `behaviour`/`custom-keys` landed inside a **collapsed** `<details>`.
+  The disclosure is now forced `open` while searching — an invisible result is not a result.
+  Any future hand-stamped row must consume `SettingsSearchContext`; the count in that file's
+  header comment is the tripwire.
+- **A deep-linked search could write the query into the repo's `user.name`.** `SettingsResults`
+  remounts the git-config page on every keystroke that hits it, re-arming the *per-mount*
+  `configInitialFocus` effect, which pulled focus out of the search box mid-typing — and
+  `CuratedConfigControl` commits on blur. `GitConfigCategory` now passes `initialFocus`
+  only when not searching. **A search result is never a focus target.**
+- **`searchSettings` ignored `requires`**, so the count and the pane disagreed: `bearer` with the
+  MCP server stopped reported "1 settings match" over an empty AI block, and a query whose only
+  hits were unavailable never reached the zero-match state. `settingsAvailability.ts` is now the
+  ONE definition of the five predicates and the coverage guard **imports** them, so the
+  production filter and the AM-4a table cannot drift.
+
+**FOR USER — unsigned deviation.** The rail hit-count ships `--text-1`, not the `--accent`
+ui-designer ruled for: accent as 11px text measures **3.74:1 / 3.51:1 on a selected item's
+`--selection` fill**, failing the ruling's own AA bar (and worse than the `opacity: .5` it
+replaced). The exact declaration to flip is marked in `settings-shell.css`. Worth a token-level
+look: `color: var(--accent)` on text is a house-wide pattern (~30 sites).
+
+**Deferred out of P69k (recorded, not lost):**
+- **The flagship query highlights nothing.** `graph` returns 5 hits and **0** `<mark>`s — every
+  one matched via `keywords`/`help` while the labels read "Row height", "Lane width", "Compact
+  rows". Fix is a fallback to highlighting *help* text only for rows whose label produced no
+  ranges; it amends UI §3.2, so it belongs with P69l.
+- The `role="status"` line fires on every keystroke (typing `graph` queues five announcements);
+  §3.2 says "on each settled query". Debounce the announced string only — keep matching sync.
+- The pane keeps `role="tabpanel" aria-labelledby={selected tab}` while showing cross-category
+  results, so it announces as e.g. "AI, 0 matches" while listing every category.
+- Escape-to-clear blurs to `<body>` (`ListFilterInput.tsx:48`), so the next Tab restarts at the
+  document top — and with no focus trap (D-4) that leaves the dialog.
+- The in-box clear button is named "Clear filter" inside a field labelled "Search settings";
+  §3.3 uses "Clear search".
+- `settingsHighlight.tsx` applies `toLowerCase()` offsets to the original string — correct for
+  today's ASCII labels only.
+- Typing an uncommitted git-config value and then searching unmounts the section and silently
+  drops the draft.
+- Rail counts are per catalog ENTRY, not per rendered instance (`user.name` says 2 while 3 rows
+  render, one per profile). Defensible, but §3.2 must *state* it.
+- `.settings-control-label` and `.settings-search-status`'s absolute positioning; promoting a
+  shared `.sr-only` (three hand-rolled copies now). `SettingsSearch.test.tsx` is 421 lines — the
+  next search test starts a sibling file.
+
+**Contract amendments P69l MUST fold in** (no `docs/` file was touched by P69k):
+`searchSettings(query, availability)` + the new `settingsAvailability.ts` module
+(`P69-settings-shell.md:375`) · results header `--text-3`→`--text-2`, zero-count dimming →
+inverted emphasis, singular `1 setting matches`, and the `Go to {Category}` 24px target
+(`P69-settings-ui.md:251`, `:258-259`, `:262`) · §7.1 rail-name template
+`{label}[, repository][, {n} match|matches]`, suffix only while a query is active, **with the
+warning that `getByRole('tab', {name})` must use the suffixed name mid-search** · §7.1 gains the
+`Copy` naming rule (`aria-label` naming the object copied, prefixed with the visible word,
+never sibling-dependent) · §3 records that the two git-config blocks self-filter and that the
+Advanced disclosure is forced open while searching.
+
+**Previously:**
 **P69j-0** (`7f20510`) split `src/styles.css` 8669 → 43 modules; `src/styles.css` is now an @import
 index whose order IS the cascade order. Proven by a byte-identical emitted stylesheet (md5
 `c3526f83…`, 111784 bytes) from a build with HEAD's single file swapped back in.
@@ -1141,13 +1207,17 @@ these.` is still **not signed off**; ui-designer restates its preference for
 `These take effect once AI features are on.` (states the dependency without re-naming the consent
 switch P68g froze). Current string ships until the user rules.
 
-**Next: P69k** settings search (UI §3). The index already exists in `catalog/*` with keywords; AM-5
-says the `MIGRATED`/`PENDING` lists and the tripwire get deleted in this increment. Known items to
-fold in: `identities.apply` / `identities.delete` carry `help` strings never rendered
-(`ProfileActionCell` has no help slot) so search would match invisible text; `NumberSlider`'s
-non-`bare` branch and `.settings-control*` are now reachable only from tests; `GeneralCategory`
-still spells the switch row longhand instead of using `SettingsSwitchRow`; four MCP buttons are
-still named bare `Copy`.
+**P69k DELIVERED** (see the current-step block above). All four folded-in items are done:
+`identities.apply` / `identities.delete` dropped their never-rendered `help` (vocabulary moved to
+`keywords`) · `NumberSlider`'s `bare` prop and dead wrapper branch deleted (all ten call sites
+passed `bare`) · `GeneralCategory` now uses `SettingsSwitchRow` · the four bare `Copy` buttons got
+distinct `aria-label`s with the visible text unchanged (UI §8 freezes it).
+
+⚠️ **Correction to the note that follows:** `.settings-control*` was **NOT** test-only. It has
+three live producers — `CuratedConfigControl.tsx:71`/`:78`/`:110`, `AgentAssetEditor.tsx:406`,
+`ProfileManager.tsx:331` — plus a live rule at `settings-shell.css:362`. Only `NumberSlider`'s own
+wrapper branch was dead; deleting the CSS as originally written would have broken three unrelated
+surfaces.
 
 **Previously:** ✅ **P69i SHIPPED — the header identity menu exists (the user's headline ask).**
 Nine increments done (P69a–P69i), all reviewer-APPROVED. Full gate green: vitest **1934 / 4 skipped
@@ -1167,9 +1237,10 @@ it wrote a fresh `user.*` block. The mental model wins. Noted in the code too.
 
 ⚠️ **Still true for P69j:** delete the legacy `.settings-row` flex rule and unscope the new one.
 ⚠️ **Still true before P69j:** split `src/styles.css` (the ratchet does NOT scan CSS).
-⚠️ **Flagged for P69k:** `identities.apply` / `identities.delete` carry catalog `help` strings that
-are never rendered (`ProfileActionCell` has no help slot), so search would match text that never
-appears on screen. Either render it or drop `help` from those entries.
+✅ **Was flagged for P69k, RESOLVED there:** `identities.apply` / `identities.delete` carried catalog
+`help` strings that were never rendered (`ProfileActionCell` has no help slot), so search would have
+matched text that never appears on screen. Both `help` values were dropped and their vocabulary
+folded into `keywords`.
 ⚠️ **For P69l:** `ui-reference.md:494` says `ContextMenu` gained three fields; it has **four**
 (`checked`, `detail`, `header`, `busy`). Also fold in the two sibling contract files
 (`P69-settings-shell-amendment-A.md`, `P69c-draft-feedback-ui.md`) and fix the stale
