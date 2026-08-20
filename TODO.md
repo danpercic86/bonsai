@@ -29,23 +29,25 @@ contract files are indexed in `docs/contracts/INDEX.md`.
 ## 🚢 Release 1.1.0 — cut 2026-08-20
 
 Version files bumped to 1.1.0. `CHANGELOG.md` `[1.1.0]` finalized 2026-08-20 (Settings redesign,
-audit-2 fixes, P70–P74). **Tag is gated on P70's native checkpoint (item 1) below.**
+audit-2 fixes, P70–P74). **P70 item 1 CONFIRMED by the user on the native window 2026-08-20 — the
+one gating checkpoint passed; tag `v1.1.0` cut.**
 
 **P62–P74 native USER CHECKPOINTs were WAIVED and the milestones marked `done` 2026-08-20** for the
 1.1.0 release (user decision): P62, P63, P64, P65, P67, P68, the P69 Settings redesign (P69a–P69l),
-P71, P72, P73, P74. Full build detail: `docs/history/todo-archive-2026-08.md` Parts 2, 4, 5, 7, 8
+P71, P72, P73, P74. **P70 was NOT waived — its item-1 checkpoint was actually run and confirmed
+(2026-08-20).** Full build detail: `docs/history/todo-archive-2026-08.md` Parts 2, 4, 5, 7, 8
 (P62–P68) and Parts 11–15 (P71, P72, P73, P74, P69 Settings). Open follow-ups spun out of those
 milestones are on this board below (they were NOT closed by the waiver).
 
 ---
 
-## ⏳ P70 — git-executable resolution + honest "git not found" diagnostics — awaiting USER CHECKPOINT
+## ✅ P70 — git-executable resolution + honest "git not found" diagnostics — done
 
-⏳ **Native verification in progress for 1.1.0 (2026-08-20) — item 1 (SSH-agent auth survives the
-banner) must pass before release.**
+✅ **Item 1 (SSH-agent auth survives the "git not found" banner) CONFIRMED by the user on the native
+window 2026-08-20 — the BLOCKING checkpoint passed. Shipped in 1.1.0 (`f0e9aee`).**
 
-**Current step:** AI gate GREEN, code committed (`f0e9aee`). All increments implemented, two reviewer
-rounds closed, tester's acceptance gaps (#13/#14/#23) filled. Awaiting the native checkpoint.
+**Current step:** none — AI gate GREEN, code committed (`f0e9aee`), native checkpoint item 1 confirmed.
+All increments implemented, two reviewer rounds closed, tester's acceptance gaps (#13/#14/#23) filled.
 
 **AI gate (tester, sequential, all first-pass):** clippy `-D warnings` clean · `cargo test --workspace
 --no-fail-fast` 1788 passed / 0 failed / 6 ignored · tsc clean · build ok · vitest 1701 / 140 files ·
