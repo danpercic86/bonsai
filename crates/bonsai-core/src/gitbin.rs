@@ -196,6 +196,10 @@ fn is_executable(p: &Path) -> bool {
 /// rather than a panic. A value NAME that is a prefix of another (`Install` vs
 /// `InstallPath`) never cross-matches — the first whitespace token must be
 /// exactly `value`.
+///
+/// Windows-only: the sole caller is the `#[cfg(windows)]` `registry_string`, so
+/// on other targets this would be dead code and trip `-D warnings`.
+#[cfg(windows)]
 fn parse_reg_query(stdout: &str, value: &str) -> Option<String> {
     for line in stdout.lines() {
         let trimmed = line.trim();

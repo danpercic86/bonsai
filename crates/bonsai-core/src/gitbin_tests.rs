@@ -319,6 +319,7 @@ fn ladder_never_executes_a_candidate() {
 
 // 10. reg.exe output parser: real-format blocks, both string types, prefix
 //     value names, empty/garbage input — correct Some/None, never a panic.
+#[cfg(windows)]
 #[test]
 fn parse_reg_query_table() {
     let real = "\r\nHKEY_CURRENT_USER\\SOFTWARE\\GitForWindows\r\n    \
