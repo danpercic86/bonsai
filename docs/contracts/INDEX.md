@@ -7,7 +7,9 @@ was specced. **Curated by `docs-curator`; the contracts themselves belong to `ar
 - **Status is a pointer, not an independent verification.** It reflects the board (`TODO.md`) and the
   archives (`docs/history/todo-archive-2026-08.md`, `docs/history/todo-archive.md`). Vocabulary:
   `done` (AI gate + native USER CHECKPOINT both passed) · `awaiting USER CHECKPOINT` (code-complete,
-  AI gate passed, native half outstanding) · `deferred` · `living`.
+  AI gate passed, native half outstanding) · `pending` · `in-progress` · `deferred` · `living` ·
+  `superseded` (content folded into another contract; the file is a pointer stub, kept so old
+  `TODO.md` lines and commit messages still resolve).
 - Contract *files* are frequently written before the code and amended during it. A `done` status
   means the milestone shipped, **not** that the file is free of drift. Known drift is tracked under
   `🐞 SPUN-OUT ITEMS` in `TODO.md`.
@@ -23,6 +25,11 @@ was specced. **Curated by `docs-curator`; the contracts themselves belong to `ar
 | `ui-reference.md` | Canonical design system: tokens, geometry, graph metrics, ref pills, states, both themes. | living |
 | `phase2-ai-native-overview.md` | Phase 2 shared conventions, anchor for P53–P57. | done |
 | `phase4-forge-overview.md` | Phase 4 shared conventions, anchor for P62–P64. | awaiting USER CHECKPOINT (P62–P65) |
+
+> `ui-reference.md` was last amended in **P69l (2026-08-20)**: §12 "Settings surface" trued up to the
+> shipped two-pane shell, new §7.2 and §12.3.4, and §2 now prohibits `color: var(--accent)` on text
+> that can land on a `--selection` fill (see `TODO.md` follow-up **A9**).
+> The `ui-reference.md` §10 "Git is not available" notice bar was added by P70 (`P70-ui.md`).
 
 ## MVP — M0–M6
 
@@ -219,6 +226,54 @@ Code-complete, **native halves outstanding**. Neither milestone is done.
 | `P68g-ui.md` | P68g-2 | The eight AI-run settings, honest consent copy, ask-block hardening; §5 documents harness seeds 1–9. | awaiting USER CHECKPOINT |
 | `P68-security-audit.md` | P68g | Security audit of the AI conflict surface (1 HIGH, 5 MEDIUM, 7 LOW/INFO); items 7–11 are open follow-ups (the pid-zeroing half of item 10 landed in `67539fd`). | audit delivered 2026-08-18; follow-ups open |
 | `P68-user-checklist.md` | P68 | Native checklist (real CLI past 90 s, cancel, mid-run question, read-only tools, bulk, settings, consent copy, refused read). | awaiting USER CHECKPOINT |
+
+## Settings redesign — P69 (2026-08-19 → 2026-08-20)
+
+Code-complete, AI gate GREEN at `a13b729`; **native half outstanding** — the milestone is not done.
+Eleven build increments P69a–P69k, plus P69l (this docs pass). Board section: `TODO.md` §"P69 —
+Settings redesign".
+
+> ⚠️ **The label "P69" names two different milestones on the board.** This settings redesign, and the
+> earlier **P69 — 1.0.0 release readiness** (shipped 2026-08-18, tag `v1.0.0`, commit `bd52483`),
+> which has no contract file of its own. Both sections are live in `TODO.md`.
+
+| File | Milestone | Scope | Status |
+|---|---|---|---|
+| `P69-settings-ui.md` | P69 | UI contract: two-pane settings shell, control vocabulary (switches / segmented / per-row reset), row anatomy + help text, header identity menu, search. | awaiting USER CHECKPOINT |
+| `P69-settings-shell.md` | P69 | Structural contract: settings catalog, rail/pane shell, props→context, `searchSettings` + `settingsAvailability.ts`, the anti-drift DOM guard. | awaiting USER CHECKPOINT |
+| `P69c-draft-feedback-ui.md` | P69c | **Superseded pointer stub** → `P69-settings-ui.md` §13 (the `NumberSlider` out-of-range/blank draft affordance). | superseded (P69l) |
+| `P69-settings-shell-amendment-A.md` | P69 | **Superseded pointer stub** → `P69-settings-shell.md`; maps AM-1…AM-8 onto §4.1 / §4.3 / §4.4 / §7.3 / §8. | superseded (P69l) |
+| `P69-user-checklist.md` | P69 | Batched native checklist for all eleven increments (identity menu, shell, search, git-config scope, the two fixed defects, a11y, both themes). | awaiting USER CHECKPOINT |
+
+> **What P69l changed in the two live contracts.** Both were amended in place so they describe what
+> shipped rather than what was proposed.
+> - `P69-settings-ui.md` gained a **§0.1 post-ship amendment log**, and its **§13** absorbed the
+>   whole of `P69c-draft-feedback-ui.md`.
+> - `P69-settings-shell.md` folded in **Amendment A** and records **OQ-2 as resolved**.
+> - Both stubs are deliberately retained: past `TODO.md` lines and commit messages cite them by path
+>   and by AM-number, and a dangling reference is worse than a pointer.
+
+## Post-1.0.0 batch — P70–P76 (2026-08-19 → )
+
+None of these is `done`. Board sections are all live in `TODO.md`.
+
+| File | Milestone | Scope | Status |
+|---|---|---|---|
+| `P70-git-resolution.md` | P70 | One shared resolver for the `git` binary, an honest error taxonomy, and a startup preflight instead of N misleading auth toasts. | in-progress |
+| `P70-ui.md` | P70 | UI: the "Git is not available" notice bar; adds `ui-reference.md` §10. | in-progress |
+| `P71-updater-relaunch-env.md` | P71 | Post-auto-update relaunch must inherit the Start-menu environment, not `msiexec`'s. | in-progress (research) |
+| `P72-forge-connect-fixes.md` | P72 | Azure DevOps 401 on connect + dead external forge links. | in-progress |
+| `P72-ui.md` | P72 | UI: copy, states, and link wiring only — no new components, files, or tokens. | in-progress |
+| `P73-submodule-reconnect.md` | P73 | Reconnect an orphaned `.git/modules` gitdir; the two user-reported submodule defects. | awaiting USER CHECKPOINT |
+| `P73-submodule-reconnect-ui.md` | P73 | UI: submodule row + badge, row context menu, toast copy, pending state. | awaiting USER CHECKPOINT |
+| `P73-user-checklist.md` | P73 | Native checklist against the real superproject that produced the report. | awaiting USER CHECKPOINT |
+| `design-review-2026-08-19-p73-submodules.md` | P73 | `ui-designer` design review of the P73 frontend; findings S-2 / S-3 were deferred out and became P74. | delivered 2026-08-19 |
+| `P74-a11y-toasts-hit-targets.md` | P74 | Toast-tone contrast + sidebar hit targets (S-2 / S-3 from the P73 design review). | awaiting USER CHECKPOINT |
+| `P75-ipc-codegen.md` | P75 | Generate the IPC boundary from Rust with tauri-specta v2 — wire-identical, all 173 commands, no call-site churn. | pending — starts only after P74's tree is committed (user decision 2026-08-20) |
+| `P76-native-checkpoint-automation.md` | P76 | tauri-driver + WebdriverIO harness to automate ~60–70% of the native USER CHECKPOINT backlog. | deferred — HELD as contract-only per user (2026-08-20) |
+
+> **No contract file** for the DX dev-loop acceleration initiative (`pnpm gate`, nextest, rust-lld,
+> velocity-mode workflow, 2026-08-20); it is recorded on the board only (`TODO.md` §"DX").
 
 ## Testing campaign — T1–T5
 

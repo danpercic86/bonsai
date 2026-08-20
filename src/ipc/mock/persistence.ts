@@ -83,8 +83,9 @@ const RIGHT_PANEL_MAX = 640;
  * differ, and the divergence list must stay short, explicit and reviewed:
  *
  *   - `profiles` — production (and Rust) default to an EMPTY list; the harness
- *     seeds two fixed-id profiles so the identity list is populated and
- *     "Apply to current repo" is exercisable in the browser.
+ *     seeds two fixed-id profiles so the identity list is populated and both
+ *     the header identity menu (P69i) and the pane's "Use in this repository"
+ *     action are exercisable in the browser.
  *
  * That is the ONLY permitted divergence; `src/settings/defaults.test.ts` iterates
  * every other key and asserts equality, so adding a second one fails there.

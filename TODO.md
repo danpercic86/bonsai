@@ -298,6 +298,10 @@ unit tests, including the only coverage of acceptance criteria 9 (traversal) and
 > `src/App.tsx` or its file-size baseline.
 
 **Open follow-ups created by P69c/P69e (tracked so they are not lost):**
+- ✅ **Rust half of defaults parity — DONE in P69l** (`src-tauri/src/settings_defaults_parity_tests.rs`,
+  141 lines, declared from `lib.rs` with a `#[path]` attribute; `ui_settings_of` is now `pub(crate)`).
+  It landed in a NEW module, **not** in `settings_ui_tests.rs` as this note predicted. All 30 keys
+  agreed on the first run. Detail: the OQ-2 block in the P69 section below. Historical text follows.
 - **Rust half of defaults parity — DEFERRED, not done.** `src/settings/uiSettingsDefaults.json` is
   currently pinned from the **TS side only**, so nothing machine-checks TS against Rust; the reviewer
   re-derived all 30 keys + 12 nested `graph` keys by hand and they match, but that is a one-off. The
@@ -306,6 +310,9 @@ unit tests, including the only coverage of acceptance criteria 9 (traversal) and
   `ui_settings_of(&settings::Settings::default())`; and `ui_settings_of` is a private `fn` in
   `commands/ui_settings.rs`, so it needs `pub(crate)`. Goes in `settings_ui_tests.rs`
   (`settings.rs` is exactly at its 663 baseline and cannot take even a `mod` line).
+- ✅ **`ai::Limit` label collision — FIXED in P69j-1.** Four controls were relabelled `Time limit` /
+  `Spend limit` and the `KNOWN_LABEL_COLLISIONS` allowlist was deleted (no occurrence left in `src/`).
+  Historical text follows.
 - **`ai::Limit` label collision — allowlisted with an expiry.** Rows #48 and #50 both render a
   control labelled `Limit` in AI → Runs → Limits: two `spinbutton`s, one accessible name, one group.
   This is the SAME a11y defect P69d fixed for the two `Interval` rows. `KNOWN_LABEL_COLLISIONS`
@@ -728,6 +735,11 @@ and a native USER CHECKPOINT (real signed update round-trip). **Must not touch
 
 ## 🎯 P69 — 1.0.0 release readiness — ✅ **SHIPPED 2026-08-18** (tag `v1.0.0`)
 
+> ⚠️ **Label collision:** the number "P69" was reused. This section is the **1.0.0 release-readiness**
+> milestone (increments P69a–P69e, shipped 2026-08-18). The unrelated **Settings redesign** further
+> down (increments P69a–P69l, awaiting USER CHECKPOINT) also calls itself P69. When a note cites
+> "P69c" or similar, check which milestone it belongs to.
+
 **Current step:** none — `v1.0.0` tagged and pushed at `bd52483`; the release workflow
 builds/publishes from the tag. Reviewer verdict was APPROVE WITH NITS (no MUST-FIX); its two
 SHOULD-FIXes were landed (changelog `v0.3.1` compare link + note; CONTRIBUTING apt-list claim)
@@ -1060,7 +1072,12 @@ one** (it would bury a review in a mechanical diff).
 
 ---
 
-### P69 — Settings redesign (two-pane shell + extracted identity menu) — **in-progress**
+### P69 — Settings redesign (two-pane shell + extracted identity menu) — **awaiting USER CHECKPOINT**
+
+> ⚠️ **Label collision:** "P69" also names the **1.0.0 release-readiness** milestone higher up on this
+> board (shipped 2026-08-18, tag `v1.0.0`). That one's increments are also lettered P69a–P69e. This
+> section is the Settings redesign, P69a–P69l. Contracts: `docs/contracts/P69-settings-ui.md`,
+> `docs/contracts/P69-settings-shell.md`, `docs/contracts/P69-user-checklist.md`.
 
 Plan: `~/.claude/plans/make-the-designer-subagent-compiled-robin.md` (user-approved 2026-08-19).
 Frontend-only, **+0 Tauri commands** (160 unchanged). Started from HEAD `e3c4ad1`.
@@ -1092,10 +1109,22 @@ make global-vs-repo scope explicit, and close the two OPEN defects that live in 
 - Contract surface that must not be renamed casually: `#settings-graph-row`, and the accessible names
   `Row height`, `Switch to light theme` / `Switch to dark theme`.
 
-**Sub-increments:** P69a contracts (ui-designer, then architect) · P69b write-path hardening ·
-P69c primitives + NumberSlider commit semantics · P69d migrate sections onto primitives ·
-P69e props->context (refactorer, identical test counts) · P69f the two-pane shell + search + Ctrl/Cmd+, ·
-P69g identity extraction · P69h About + copy + reset · P69i docs.
+**Sub-increments AS SHIPPED** (12 letters a–l; supersedes the plan's nine-letter a–i lettering,
+which still appears in the plan file and in early session prose — when reading an old note, trust
+the letter's *description*, not its position):
+- **P69a** contracts (ui-designer, then architect) + amendment A + the P69c draft-feedback spec
+- **P69b** persisted-settings write-path hardening
+- **P69c** `NumberSlider` commit semantics (the slider-minimum defect)
+- **P69d** a11y labels + effective identity + the two required file splits
+- **P69e** defaults parity (TS half) + the settings catalog
+- **P69f** props→context (refactorer, identical test counts)
+- **P69g** the 880×660 two-pane shell + switch/segmented primitives + per-row reset + the anti-drift
+  DOM guard (migrates `general`, `appearance`, `about`)
+- **P69h** git-config repo scope + `requestSeq` + `SettingsEmpty`
+- **P69i** the header identity menu (the user's headline ask)
+- **P69j** `styles.css` split (j-0) then the `graph` + `ai` re-skin (j-1)
+- **P69k** cross-category settings search
+- **P69l** docs (this increment)
 
 ⚠️ **CONCURRENCY (2026-08-19):** a second session is building **P73 (submodule reconnect)** in the
 SAME working tree. Overlap was measured: only **`src/styles.css`** is contested (P73 has it dirty,
@@ -1104,7 +1133,63 @@ SAME working tree. Overlap was measured: only **`src/styles.css`** is contested 
 paths only (never `git add -A`), scope vitest runs to the files under change, and run no cargo
 commands (P69 is frontend-only; concurrent cargo races the shared target dir).
 
-**Current step:** 🚧 **P69k SHIPPED (`a13b729`) — only P69l (docs) left.**
+**Current step:** ✅ **P69l done — P69 is CODE-COMPLETE, the AI gate is GREEN, and the milestone is
+now `awaiting USER CHECKPOINT`.** Nothing is left to build. The native half is batched into one
+script: **`docs/contracts/P69-user-checklist.md`** (all eleven build increments in one pass; run
+`pnpm tauri dev` against a real repo you do not mind editing — several items write `.git/config`).
+**Do not archive this section until that checklist is confirmed by the user.**
+
+**FINAL AI GATE (2026-08-20, verified at the P69l tree, code head `a13b729`):**
+- `pnpm exec tsc --noEmit` — **0 errors**
+- `pnpm test` (vitest) — **1977 passed / 162 files**
+- `pnpm test:e2e` — **156 passed / 1 skipped**
+- `pnpm lint:ci` — **0 errors / 30 warnings** (budget 40)
+- `cargo nextest run --workspace` — **1868 passed / 0 failed / 6 skipped**
+- `cargo clippy --workspace --all-targets -- -D warnings` — **clean**
+- `pnpm lint:size` (file-size ratchet) — **exit 0**
+- **+0 IPC commands, +0 events, +0 channels across the entire milestone**, as designed.
+
+**OQ-2 (defaults parity) — RESOLVED in P69l.** The Rust half of the chain landed as
+`src-tauri/src/settings_defaults_parity_tests.rs` (141 lines).
+- **The two sides agreed on the first run** — all 30 keys, including the four nested objects — so no
+  default on either side had to move. The parity chain is now machine-checked end to end
+  (Rust ⇄ `src/settings/uiSettingsDefaults.json` ⇄ TS), not re-derived by hand.
+- Negative control verified **twice**: a flipped `bool` default, and a renamed serde field exercising
+  the MISSING / UNEXPECTED branches. The assert can fail.
+- It lives in its own module declared from `lib.rs` because the ratchet forbids `settings.rs` growing
+  even by a 3-line `mod` declaration (`settings.rs` is exactly at its 663 baseline).
+
+**FOLLOW-UPS OUT OF P69 — decisions awaiting the user (nothing is blocked on them):**
+- **A8 — bundle the two specced-but-unimplemented items into one increment.** Both `ui-designer` and
+  the orchestrator recommend bundling: (a) the help-text highlight fallback,
+  `docs/contracts/P69-settings-ui.md` §3.2.1, marked `[NOT IMPLEMENTED]` — today the flagship query
+  `graph` returns 5 hits and highlights **nothing**, because every hit matched via `keywords`/`help`
+  while the labels read "Row height" / "Lane width" / "Compact rows"; and (b) the half-landed
+  draft-hint feature, §13.
+  ⚠️ **Correction to the earlier framing of (b):** the draft-hint CSS is genuinely **dead** — nothing
+  in the app produces `.settings-draft-hint`, `aria-invalid` or `draftHint`, so the `:has()` rule can
+  never match — but it costs **no visible layout** today. All ten `numberSlider` catalog rows have
+  help text, which already fills the reserved 18px. The earlier "paying a layout cost" framing was
+  **wrong**; the case for A8 is the missing feature, not a rendering bug.
+- **A9 — a scoped a11y sweep of `color: var(--accent)` on text.** Fine on `--bg-0/1/2`; a latent AA
+  failure anywhere accent text can land on a `--selection` fill (measured **3.51–3.74:1**).
+  ~**30 call sites**, unaudited. Now **prohibited** in `docs/contracts/ui-reference.md` §2, so new
+  code cannot add to the backlog. The one site P69k had to deviate on is the rail hit-count (see the
+  unsigned-deviation block below).
+- **A3 — the frozen AI gate-note copy is still unsigned.** See the "FOR USER — unsigned copy" block
+  below (§5.4's replacement for `Turn on "Enable AI features" above to change these.`); the current
+  string ships until the user rules.
+
+**Data point, not a defect:** one **unidentified, intermittent** vitest failure was observed once
+during P69l (`1 failed / 1976 passed`) and never reproduced across **four** subsequent full green
+runs. The failing test was **not** identified — recorded only so a future flake has a precedent to
+match against.
+
+✅ **All three P69l carry-forwards are DISCHARGED:** `ui-reference.md:798` now says `ContextMenu`
+gained **four** additive fields (was "three") · both sibling contract files are folded into their
+parents and reduced to superseded pointer stubs · the stale "Apply to current repo" comment in
+`src/ipc/mock/persistence.ts` now reads "Use in this repository". The P69 contract set is indexed in
+`docs/contracts/INDEX.md` §"Settings redesign — P69".
 
 **P69k** was written 2026-08-20 10:15–10:41 by a session that never committed it; a concurrent
 P74/dev-loop thread then committed on top and it sat stranded in the working tree until
@@ -1241,10 +1326,11 @@ it wrote a fresh `user.*` block. The mental model wins. Noted in the code too.
 `help` strings that were never rendered (`ProfileActionCell` has no help slot), so search would have
 matched text that never appears on screen. Both `help` values were dropped and their vocabulary
 folded into `keywords`.
-⚠️ **For P69l:** `ui-reference.md:494` says `ContextMenu` gained three fields; it has **four**
-(`checked`, `detail`, `header`, `busy`). Also fold in the two sibling contract files
-(`P69-settings-shell-amendment-A.md`, `P69c-draft-feedback-ui.md`) and fix the stale
-"Apply to current repo" comment at `src/ipc/mock/persistence.ts:87`.
+✅ **Was flagged for P69l, ALL THREE DONE THERE:** `ui-reference.md` said `ContextMenu` gained three
+fields when it has **four** (`checked`, `detail`, `header`, `busy`) — corrected; the two sibling
+contract files (`P69-settings-shell-amendment-A.md`, `P69c-draft-feedback-ui.md`) are folded into
+their parents and left as superseded pointer stubs; the stale "Apply to current repo" comment in
+`src/ipc/mock/persistence.ts` is fixed.
 
 **Categories MIGRATED:** `general`, `appearance`, `about`, `git-config`. **PENDING:** `identities`
 (P69i) · `graph` + `ai` (P69j). Guard skips 8 → 6. `PENDING` must be `[]` before P69k ships search.
@@ -1355,7 +1441,8 @@ line, so the Rust half of the defaults-parity test goes in `settings_ui_tests.rs
   rewritten `SettingsSections.test.tsx:56-64`, `SettingsPanel.test.tsx:129-140`,
   `SettingsAiRunSection.test.tsx:195-226` for no user-visible gain.
 - **OQ-2** defaults-parity: land the TS half now; the Rust `assert_eq!` half is a short follow-up
-  because it needs `cargo test`, which the P73 no-cargo protocol forbids.
+  because it needs `cargo test`, which the P73 no-cargo protocol forbids. ✅ **CLOSED in P69l** —
+  `src-tauri/src/settings_defaults_parity_tests.rs`; see the OQ-2 block at the top of this section.
 - **OQ-3** prop count goes 41->44; collapsing further needs `useUiSettings` ownership to move — a
   separate milestone, not P69.
 - **Focus trap DEFERRED** (architect §8): no shared trap hook exists and no dialog has one; a

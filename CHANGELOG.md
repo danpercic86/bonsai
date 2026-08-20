@@ -6,9 +6,44 @@ All notable changes to Bonsai are documented here. The format is based on
 
 ## [Unreleased]
 
-Fixes from the second full-project audit (2026-08-18).
+A rebuilt Settings surface (2026-08-20), and fixes from the second full-project audit (2026-08-18).
+
+### Added
+
+**Settings**
+- **Settings is a two-pane window now.** Categories on the left, the settings you asked for on the
+  right — instead of one narrow column with eleven sections stacked in it that you had to scroll
+  through to find anything. `Ctrl`/`Cmd`-`,` opens it.
+- **Search across every setting.** Type in the search box at the top and Settings shows the matching
+  rows from every category at once, with the matched words highlighted and the category each row
+  came from named next to it. You can find a setting by what it does, not only by its exact label.
+
+### Changed
+- **Who you commit as now lives in the header, not in Settings.** The header carries an identity
+  control showing your initials: open it to see the name and email your commits will carry, and
+  click a saved identity to switch to it. It reads what Git actually resolves — a repository's own `user.*`
+  overrides your global config — which the old badge buried in Settings got wrong, showing nothing
+  at all for the ordinary case of a global-only identity.
+- **Every setting looks like what it is.** Real toggle switches instead of bare checkboxes, and
+  segmented controls instead of buttons labelled with the state they were already in. Rows carry
+  help text under the label, and any row you have moved away from its default grows a small reset
+  arrow — so you can see at a glance what you have changed, and put back just that one thing.
+- **Git config is visibly per-repository.** The Git config category now says which repository it is
+  editing and has an explicit Local / Global switch, so you can no longer change a global setting
+  while believing you changed a local one. With no repository open it says so plainly instead of
+  showing an empty form.
 
 ### Fixed
+- **A slider's own minimum value can be typed again.** In a field whose minimum was 24, typing `24`
+  produced `240`: the first keystroke was snapped up to the minimum before the second one arrived.
+  Typed values are now left alone while you type and only checked when you finish.
+- **Settings changed just before you quit now survive the restart.** A setting toggled in the last
+  moments before closing Bonsai could be lost; pending changes are flushed on the way out.
+- **Accessibility across Settings** — visible focus rings on switches and segmented controls,
+  keyboard navigation through the category rail, small controls enlarged to a 24px target, and
+  contrast fixes in both themes. Several controls that shared one name with a neighbour (two rows
+  both reading "Limit", two both reading "Interval") now say which is which, so a screen reader
+  can tell them apart.
 - **A corrupt repository no longer hangs the app.** Operations that hit a truncated or corrupt
   loose object — status, the commit graph, streaming graph loading, and the background history
   index — now time out and return a clear error instead of freezing forever. This closes the
