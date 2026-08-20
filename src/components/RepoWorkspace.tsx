@@ -3,9 +3,7 @@ import type { CommitBoxHandle } from './CommitBox';
 import type { ContextMenuItem } from './ContextMenu';
 import { WorkspaceToolbar } from './WorkspaceToolbar';
 import { WorkspaceDialogs } from './WorkspaceDialogs';
-import { CherrypickMessageDialog } from './CherrypickMessageDialog';
-import { NonFfPullDialog } from './dialogs/NonFfPullDialog';
-import { UndoDialog } from './dialogs/UndoDialog';
+import { WorkspaceOverlays } from './WorkspaceOverlays';
 import { WorkspaceGraphPane } from './WorkspaceGraphPane';
 import { WorkspaceRightPanel } from './WorkspaceRightPanel';
 import { isUsableRepo, shortOid } from './workspaceUtils';
@@ -93,14 +91,8 @@ import { useCommitVerification } from './repoWorkspace/useCommitVerification';
 import { useForgeSignals } from './repoWorkspace/useForgeSignals';
 import { useHistorySearch } from './repoWorkspace/useHistorySearch';
 import { useCommitComposer } from './repoWorkspace/useCommitComposer';
-import { ComposerDialog } from './ComposerDialog';
 import { usePalette } from './repoWorkspace/usePalette';
-import { CommandPalette } from './CommandPalette';
 import { buildPaletteActions, type PaletteAction } from './paletteActions';
-import { ProposedOpDialog } from './ProposedOpDialog';
-import { PromptDialog } from './PromptDialog';
-import { SubmoduleDialogs } from './dialogs/SubmoduleDialogs';
-import { ChangelogDialog } from './ChangelogDialog';
 import { safeOpDispatch } from './safeOpDispatch';
 import type { ComboboxOption } from './Combobox';
 
@@ -2822,124 +2814,47 @@ export function RepoWorkspace({
         closeMenu={closeMenu}
         bulkAiConfirm={aiBulk.confirm}
       />
-      <CherrypickMessageDialog
-        open={pendingCherrypick !== null}
-        oid={pendingCherrypick?.oid ?? ''}
-        initialMessage={pendingCherrypick?.initialMessage ?? ''}
-        loading={pendingCherrypick?.loading ?? false}
-        busy={mutating}
-        onConfirm={(message) => {
-          const p = pendingCherrypick;
-          if (p !== null) void confirmCherrypick(p.oid, message);
-        }}
-        onCancel={() => setPendingCherrypick(null)}
-      />
-      {/* P60b: non-FF pull → Merge / Rebase, each routed through the EXISTING
-          merge_branch / rebase_branch handlers (conflict overlay, op-state,
-          toasts). Cancel is a no-op. This dialog is the confirm gate. */}
-      <NonFfPullDialog
-        open={pendingNonFfPull !== null}
-        branch={pendingNonFfPull?.branch ?? ''}
-        upstream={pendingNonFfPull?.upstream ?? ''}
-        ahead={pendingNonFfPull?.ahead ?? 0}
-        behind={pendingNonFfPull?.behind ?? 0}
-        busy={mutating}
-        onMerge={() => {
-          const p = pendingNonFfPull;
-          setPendingNonFfPull(null);
-          if (p !== null) void handleMergeBranch(p.upstream);
-        }}
-        onRebase={() => {
-          const p = pendingNonFfPull;
-          setPendingNonFfPull(null);
-          if (p !== null) void handleRebaseBranch(p.upstream);
-        }}
-        onCancel={() => setPendingNonFfPull(null)}
-      />
-      {/* P60c: one-click undo. The plan is computed READ-ONLY by describeLastUndo;
-          confirming reuses the shipped resetBranch (mixed/hard per the plan). The
-          dialog blocks itself when !undoable or a hard undo hits a dirty tree. */}
-      <UndoDialog
-        plan={pendingUndo}
-        busy={mutating}
-        onConfirm={() => {
-          const p = pendingUndo;
-          setPendingUndo(null);
-          if (
-            p !== null &&
-            p.undoable &&
-            p.resetMode !== null &&
-            !(p.requiresCleanWorktree && p.worktreeDirty)
-          ) {
-            void handleResetBranch(p.targetOid, p.resetMode);
-          }
-        }}
-        onCancel={() => setPendingUndo(null)}
-      />
-      <CommandPalette
-        open={palette.open}
-        actions={paletteActions}
-        onClose={palette.close}
-        onRunSearch={paletteRunSearch}
-        onJumpToCommit={paletteJumpToCommit}
-      />
-      {/* P55c: the shared "Ask Bonsai to…" NL input — opened from the palette
-          action or the toolbar ✨ Ask button. Submitting runs the READ-ONLY
-          planner; the proposal (if any) then opens ProposedOpDialog below. */}
-      <PromptDialog
-        open={askOpen}
-        title="Ask Bonsai to…"
-        label="Describe what you want to do in plain language"
-        placeholder="e.g. undo my last merge · switch to main · stash my changes"
-        confirmLabel="Ask"
-        busy={askBusy}
-        validate={(v) => (v.trim() === '' ? 'Type a request' : null)}
-        onSubmit={(v) => runPlanOperation(v.trim())}
-        onCancel={cancelAskBonsai}
-      />
-      {/* P55c: preview + confirm gate. NOTHING mutates until its Confirm, which
-          dispatches the resolved op via safeOpDispatch (existing typed command). */}
-      <ProposedOpDialog
-        open={pendingProposedOp !== null}
-        operation={pendingProposedOp}
-        busy={opDispatching}
-        onConfirm={() => void confirmProposedOp()}
-        onCancel={cancelProposedOp}
-      />
-      {/* P56b §6: the "Release notes…" range picker — opened from the palette
-          "Release notes…" action (the tag-pill menu calls runChangelog directly).
-          Submitting kicks off the READ-ONLY changelog; output renders in the
-          AiOutputPanel over the graph. */}
-      <ChangelogDialog
-        open={changelogOpen}
-        refNames={[
-          ...(branches?.tags ?? []),
-          ...(branches?.local.map((b) => b.name) ?? []),
-          ...(branches?.remote.map((b) => b.name) ?? []),
-        ]}
-        currentBranch={headBranch?.name ?? null}
-        onSubmit={(range, title) => {
-          setChangelogOpen(false);
-          runChangelog(range, title);
-        }}
-        onCancel={() => setChangelogOpen(false)}
-      />
-      {composer.open && (
-        <ComposerDialog composer={composer} statusByPath={composerStatusByPath} />
-      )}
-      {/* P60d: submodule add (url + path) / deinit / remove. add + deinit + remove
-          refetch submodules + status + graph on success (see useSubmoduleActions). */}
-      <SubmoduleDialogs
+      <WorkspaceOverlays
         mutating={mutating}
-        addOpen={pendingAddSubmodule}
-        setAddOpen={setPendingAddSubmodule}
-        handleAddSubmodule={(url, path) => void handleAddSubmodule(url, path)}
-        pendingDeinit={pendingDeinitSubmodule}
-        setPendingDeinit={setPendingDeinitSubmodule}
-        handleDeinitSubmodule={(name) => void handleDeinitSubmodule(name)}
-        pendingRemove={pendingRemoveSubmodule}
-        setPendingRemove={setPendingRemoveSubmodule}
-        handleRemoveSubmodule={(name) => void handleRemoveSubmodule(name)}
+        pendingCherrypick={pendingCherrypick}
+        setPendingCherrypick={setPendingCherrypick}
+        confirmCherrypick={confirmCherrypick}
+        pendingNonFfPull={pendingNonFfPull}
+        setPendingNonFfPull={setPendingNonFfPull}
+        handleMergeBranch={handleMergeBranch}
+        handleRebaseBranch={handleRebaseBranch}
+        pendingUndo={pendingUndo}
+        setPendingUndo={setPendingUndo}
+        handleResetBranch={handleResetBranch}
+        paletteOpen={palette.open}
+        paletteActions={paletteActions}
+        onClosePalette={palette.close}
+        paletteRunSearch={paletteRunSearch}
+        paletteJumpToCommit={paletteJumpToCommit}
+        askOpen={askOpen}
+        askBusy={askBusy}
+        runPlanOperation={runPlanOperation}
+        cancelAskBonsai={cancelAskBonsai}
+        pendingProposedOp={pendingProposedOp}
+        opDispatching={opDispatching}
+        confirmProposedOp={confirmProposedOp}
+        cancelProposedOp={cancelProposedOp}
+        changelogOpen={changelogOpen}
+        branches={branches}
+        headBranch={headBranch}
+        setChangelogOpen={setChangelogOpen}
+        runChangelog={runChangelog}
+        composer={composer}
+        composerStatusByPath={composerStatusByPath}
+        pendingAddSubmodule={pendingAddSubmodule}
+        setPendingAddSubmodule={setPendingAddSubmodule}
+        handleAddSubmodule={handleAddSubmodule}
+        pendingDeinitSubmodule={pendingDeinitSubmodule}
+        setPendingDeinitSubmodule={setPendingDeinitSubmodule}
+        handleDeinitSubmodule={handleDeinitSubmodule}
+        pendingRemoveSubmodule={pendingRemoveSubmodule}
+        setPendingRemoveSubmodule={setPendingRemoveSubmodule}
+        handleRemoveSubmodule={handleRemoveSubmodule}
       />
     </>
   );
