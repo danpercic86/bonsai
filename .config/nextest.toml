@@ -1,0 +1,24 @@
+# Bonsai — cargo-nextest config (dev-loop speedup, 2026-08-20).
+#
+# nextest runs the workspace's 77+ test binaries in PARALLEL instead of
+# `cargo test`'s serial default — the biggest single win for a suite this
+# large. Install once:
+#
+#   cargo install cargo-nextest --locked      # or a prebuilt binary
+#
+# Then `cargo nextest run --workspace` (or `cargo nt`, or `pnpm test:rust`).
+# NOTE: nextest does NOT run doctests — the gate runner (scripts/gate.mjs) runs
+# `cargo test --workspace --doc` as a separate step so doctests stay covered.
+
+[profile.default]
+# Warn on tests slower than this (helps spot the known slow paths) but do not
+# kill them locally — the #[ignore]d perf gates are excluded from a normal run.
+slow-timeout = { period = "120s" }
+
+[profile.ci]
+# Mirror CI's fail-fast:false — one failing test must not hide the others — and
+# retry once to absorb the occasional flake. `terminate-after` caps a genuine
+# hang (e.g. a truncated-object read) at 6 minutes instead of blocking the job.
+fail-fast = false
+retries = 1
+slow-timeout = { period = "120s", terminate-after = 3 }

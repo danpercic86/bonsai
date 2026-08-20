@@ -139,11 +139,18 @@ The workflow loop below applies to every milestone, past and present.
    senior-dev pass (M2 is pre-split above; split the others yourself as needed). For each
    sub-increment, delegate to `senior-dev`: implement to the contract (pass the contract **file
    path** — plus the UI contract path when one exists — and the exact source file paths).
-4. Delegate to `reviewer`: review the working-tree diff since the last commit against the contract
-   file + acceptance criteria. For UI increments, also send the diff back to `ui-designer` for a
-   design review against its own contract (tokens used, all states covered, a11y, both themes).
-5. Route must-fix items back to `senior-dev`; repeat 3–4 until the reviewer approves. **Commit each
-   approved sub-increment** (`wip(M<N>): ...`) so review diffs stay small and resume points exist.
+4. **Review — run the code and design reviews concurrently.** In a *single* message, delegate the
+   working-tree diff since the last commit to `reviewer` (correctness, the Rust/React boundary,
+   performance, safety, against the contract + acceptance criteria) and — for UI increments — the
+   same diff to `ui-designer` (design review against its own contract: tokens used, all states
+   covered, a11y, both themes). They are independent read-only passes; serialising them only adds a
+   round-trip.
+5. **Velocity mode (this is the default — from P71).** Route only **MUST-FIX** items back to
+   `senior-dev`; file SHOULD-FIX / NIT as follow-ups (a TODO.md line or a spun-out task) instead of
+   blocking the increment. On intermediate rounds re-review only the changed surface and run
+   **targeted** checks (the specific tests + `cargo check` / `tsc`), saving the full gate for step 7.
+   Repeat 3–4 until `reviewer` (and `ui-designer`, for UI) approve. **Commit each approved
+   sub-increment** (`wip(M<N>): ...`) so review diffs stay small and resume points exist.
 6. Delegate to `tester`: write/run tests + smoke checklist against the scratch repo (pass the
    contract file path).
 7. Integrate, verify the AI gate yourself (tests, benchmarks, browser harness), present the
