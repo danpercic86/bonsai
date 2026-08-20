@@ -178,7 +178,7 @@ fn compose_prompt(guidance: Option<&str>) -> String {
 }
 
 /// Extracts a candidate JSON substring from raw model text (§3.3 step 1): drops
-/// ``` code-fence lines, trims, then takes the bracket span that OPENS first — an
+/// triple-backtick code-fence lines, trims, then takes the bracket span that OPENS first — an
 /// object `{...}` (the normal `{"groups":[...]}` shape) or a bare array `[...]`
 /// (the `{`-inside-a-bare-array case is handled by comparing opening positions).
 /// Surrounding prose is stripped because it lies outside the outermost brackets.
