@@ -139,12 +139,24 @@ both themes. See §12.3.3.
   already owns a height (`.sidebar-section-toggle` in a 24px `.sidebar-section-header`,
   `.tree-dir-toggle` in a `.tree-dir-row`). The control then tracks the row and stays correct when
   a density block changes the row height.
+- **A stretched toggle's hover wash must share its list rows' left edge.** When a full-width control
+  gains a hover background, that rectangle becomes a visible alignment edge: keep it flush with the
+  sibling rows below it (`.branch-row` at the pane's 12px gutter) and never let it bleed into the pane
+  gutter. Pad the control for breathing room; do not claw the padding back with a negative margin
+  (P74 SF-1).
 - **Sidebar geometry (P74).** One 24px module for everything: `.sidebar-section-header` 24,
   `.sidebar-section-toggle` 24 (stretched), `.sidebar-add` 24×24, `.list-filter-clear` 24×24,
   `.list-filter-input` 24, `.branch-row` 24, `.sidebar .tree-dir-toggle` 24, `.error-dismiss`
   24×24, `.toast-dismiss` 24×24. `.sidebar-section` keeps `margin-bottom: 16px` and `.branch-list`
   `margin-top: 4px`. Before P74 the toggles were 16px, the action buttons 20×20, and the Tags
   header 16px against the others' 20px — the fix also removed that rhythm inconsistency.
+- **A newly enlarged target must announce itself.** `.sidebar-section-toggle:hover` paints
+  `background: var(--bg-2)` with `border-radius: 4px` — the same wash `.branch-row:hover` and
+  `.sidebar-add:hover` already use, so no new idiom. *Decided by the orchestrator (P74 OPEN-1,
+  2026-08-20) and recorded here because it is a visible change the user did not ask for:* a
+  full-width 24px control with no hover feedback is a worse affordance than the 16px one it
+  replaced, since nothing tells the user the whole header row is clickable. Enlarging a hit target
+  without a matching hover state is half a fix.
 - **Known exemption:** `.right-panel[data-density='compact']` sets `--rp-row-h: 20px`, so
   `.tree-dir-row`/`.tree-dir-toggle` are 20px there. That is a deliberate user opt-in inside a
   density scope; raising it would delete the point of `compact`. Do not "fix" it silently, and do

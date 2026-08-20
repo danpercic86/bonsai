@@ -31,10 +31,11 @@
   gap: 4px;
   border: none;
   background: transparent;
-  /* P74 OPEN-1: the negative margin keeps the label's optical left edge where
-     it is today while the hover wash covers the full target. */
+  /* P74 OPEN-1: the 4px inline padding gives the hover wash the same left edge
+     as `.branch-row` (12px = the sidebar gutter) and puts the chevron on the
+     shared 16px content column. Deliberately NO negative margin — bleeding into
+     the gutter would make this the only element in the pane doing so. */
   padding: 0 4px;
-  margin-left: -4px;
   cursor: pointer;
   text-align: left;
 }

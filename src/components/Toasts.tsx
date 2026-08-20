@@ -1,7 +1,7 @@
 // Toast stack (P1 contract §5). Presentational — App owns the state, the
 // monotonic id counter, the 5-toast cap, and the 5 s auto-dismiss timers.
 
-import { useMockToastSeam } from '../ipc/mock/handlers/toasts';
+import { useEffect } from 'react';
 import { usePushToast } from '../ToastContext';
 
 export type ToastTone = 'error' | 'success' | 'warning' | 'info';
@@ -42,12 +42,21 @@ const TONE_GLYPH: Record<ToastTone, string> = {
 /** Fixed top-right overlay, newest on top; rendered unconditionally in App
  *  (also over the empty state). */
 export function Toasts({ toasts, onDismiss }: ToastsProps) {
-  // P74: browser-harness seam (?toasts=demo|long|cap) — a no-op outside
-  // VITE_MOCK_IPC. Hosted here because this is the only always-mounted node
-  // inside App's ToastContext.Provider that isn't over the file-size ratchet;
-  // pushes go through App's real pushToast, so the cap/sticky/dedupe rules of
-  // §10.1 are exercised rather than bypassed.
-  useMockToastSeam(usePushToast());
+  // P74: browser-harness seam (?toasts=demo|long|cap|dedupe). Hosted here
+  // because this is the only always-mounted node inside App's
+  // ToastContext.Provider that isn't over the file-size ratchet; pushes go
+  // through App's real pushToast, so the cap/sticky/dedupe rules of §10.1 are
+  // exercised rather than bypassed. The import is DYNAMIC and gated on the
+  // build-time flag so no mock module is reachable from the production import
+  // graph (the seam module is the only mock code this component knows about,
+  // and Vite drops the branch entirely when VITE_MOCK_IPC != '1'). The replay
+  // is latched module-side, so StrictMode's double mount pushes once.
+  // Declared above the early return to keep hook order unconditional.
+  const pushToast = usePushToast();
+  useEffect(() => {
+    if (import.meta.env.VITE_MOCK_IPC !== '1') return;
+    void import('../ipc/mock/handlers/toasts').then((m) => m.replayToastSeam(pushToast));
+  }, [pushToast]);
   if (toasts.length === 0) return null;
   return (
     <div className="toast-stack" aria-live="polite">

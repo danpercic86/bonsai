@@ -491,8 +491,11 @@ Contrast ratios are computed with the WCAG relative-luminance formula on the res
     toast's border box (no overflow from the negative margin).
 11. `.toast-text` width = **284 ± 1px** on a wrapping toast.
 12. `?toasts=long`: the toast's `scrollWidth === clientWidth` (no horizontal overflow),
-    `text-overflow` is not `ellipsis`, `-webkit-line-clamp` is `none`, height ≈ **244px** (±24px,
-    i.e. ±1 line).
+    `text-overflow` is not `ellipsis`, `-webkit-line-clamp` is `none`, `overflow-wrap` is `anywhere`,
+    no `max-height`, and the height grows freely with the line count. **No pixel height is
+    asserted** (REVISED 2026-08-20): the seam's `LONG_TEXT` is a re-creation of P73's pathological
+    string rather than the byte-identical one, so a pinned height would assert something about a
+    fixture rather than about the layout.
 
 **Item 1 — behaviour unchanged**
 
@@ -546,6 +549,16 @@ The negative margin keeps the label's optical left edge exactly where it is toda
 `.sidebar-add:hover` already use, so no new visual idiom. **Cost:** a visible change to a surface
 the user did not ask about. If the orchestrator wants a zero-visual-delta increment, drop OPT-1 and
 keep `padding: 0` — the hit-target fix stands on its own. **My recommendation: include it.**
+
+> **REVISED 2026-08-20, post-implementation design review — `margin-left: -4px` is withdrawn.**
+> Measured live: `.sidebar-section-toggle` rect starts at x = 8, while `.branch-row` and its hover
+> wash start at x = 12 and `.sidebar`'s own gutter is 12px — the new wash is the only element in the
+> pane that intrudes into the gutter. The rationale above was factually wrong: the header chevron
+> sits at x = 12 and `.branch-glyph` at x = 16, so the two were never aligned and the negative margin
+> preserves a pre-existing misalignment while buying a new one. Keep `padding: 0 4px`, drop
+> `margin-left: -4px`: the wash then aligns with `.branch-row:hover` and the chevron column joins the
+> 16px content column shared by `.branch-glyph` and `.sidebar .tree-dir-toggle`. Cost: six section
+> labels shift right 4px. (P74 SF-1.)
 
 **OPEN-2 — `.tree-dir-row` is 20px in right-panel `compact`, and it is interactive.**
 Found while specifying 2.3: `--rp-row-h: 20px` in compact makes the *right panel's* folder toggle a

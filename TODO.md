@@ -30,7 +30,67 @@ indexed in `docs/contracts/INDEX.md`.
 
 ## ♿ P74 — accessibility: toast-tone contrast + sidebar hit targets — in-progress
 
-**Current step:** P74 — awaiting ui-designer contract (`docs/contracts/P74-a11y-toasts-hit-targets.md`).
+**Current step:** P74 — implemented, reviewer **APPROVE** + ui-designer **PASS**, all follow-ups
+applied; tester's e2e spec being split to satisfy the size ratchet, then the final gate.
+
+Contracts: `docs/contracts/P74-a11y-toasts-hit-targets.md` (+ `ui-reference.md` §2, new §3.1, §7,
+new §10.2, §11). Commits so far: `0a6d492` board · `82d45b9` implementation (see the split-commit
+note below).
+
+**Landed.** Toast label → `--text-1` (measured **10.30 / 9.81 / 9.61 / 9.24** dark, **11.68 / 12.00 /
+11.90 / 11.99** light for error/info/success/warning), hue demoted to a 3px leading bar + a 100% hue
+`aria-hidden` glyph (`⊘ ⚠ ✓ ●`, all ≥3:1 in both themes). The §11 pill recipe's 40% PERIMETER border
+was deliberately NOT reused: measured **1.69–2.25:1** stretched across a 360px edge, i.e. invisible —
+§11 now carries a size-bounded clause saying so. The glyph is mandatory, not decorative: with a
+neutral label, tint + bar are pure colour in an identical position per tone, so colour would be the
+sole carrier (WCAG 1.4.1). Error is `⊘`, not `⚠`, which already means "failed" in the AI dock.
+
+**The sidebar audit found 15 sub-24px controls, not the 2 originally spotted** (WCAG 2.5.8): six
+section toggles at 16, six `.sidebar-add` at 20×20, `.tree-dir-toggle` 18.84, `.list-filter-clear`,
+`.error-dismiss`, `.toast-dismiss`. All grown by **padding only — the box grows, the painted glyph
+does not** (`.sidebar-add-icon svg` stays 14×14), matching the existing 32×32 `.btn-icon` precedent.
+Toggles use `align-self: stretch` in a 24px header rather than a hardcoded height, so the right
+panel's compact density still tracks. Also normalised the **Tags** header, which was 16px while the
+other five were 20.
+
+**Review record.** Both reviewers APPROVED with no MUST-FIX. Notable outcomes:
+- **ui-designer reversed its own OPEN-1 detail after measuring** (SF-1): the recommended
+  `margin-left: -4px` put the new hover wash at x=8 while `.branch-row` and the pane gutter are at
+  12, making it the only element bleeding into the gutter — and its stated rationale ("keeps the
+  label aligned with the `.branch-row` glyph column") was factually wrong, since the chevron sits at
+  12 and `.branch-glyph` at 16. Withdrawn; the wash is now flush at 12. `ui-reference.md` §3 gained
+  the general rule.
+- **The mock seam was the real risk.** `Toasts.tsx` was the only non-test file in `src/` statically
+  importing `src/ipc/mock/**`, against the house convention. Now a dynamic import behind the
+  build-time flag, so **no mock chunk is emitted at all** — elimination no longer depends on Rollup's
+  purity analysis of a chain containing a side-effectful top-level statement
+  (`repoState.ts:160`). Proof: `pnpm build` + `dist/assets` grep for five fixture strings ⇒ 0 hits.
+- Two harness claims were **overclaimed and are now true**: `?toasts=cap` pushed non-sticky `info`
+  toasts that all expired within 5s (so the cap was unobservable — now sticky errors, exactly 5
+  persist), and the P70 dedupe key was never actually passed (now a `?toasts=dedupe` seam).
+- `LONG_TEXT` was invented prose, violating the standing rule that mock refusals mirror the backend
+  verbatim; both refusal bodies are now exported helpers from `submodules.ts` with one source of
+  truth.
+
+**OPEN-1 hover: RULED IN** by the orchestrator and recorded in `ui-reference.md` §3.1 — enlarging a
+hit target without a matching hover state is half a fix; nothing would tell the user the whole 24px
+header row is clickable.
+
+**Known exemption (OPEN-2, deliberately not fixed):** `.right-panel[data-density='compact']` sets
+`--rp-row-h: 20px`, so `.tree-dir-toggle` is 20px there — under the floor. It is a genuine collision
+between two `ui-reference.md` §3 clauses and needs a density decision, not a hit-target one. Pinned
+by an e2e assertion carrying a "READ THIS BEFORE FIXING IT" comment.
+
+**⚠ Split-commit note (not recoverable).** A concurrent session's `git commit -a` swept P74's entire
+CSS half plus a partial `Toasts.tsx` into `547ecff` ("wip(P69j): re-skin the graph + AI categories"),
+and also took a `RepoWorkspace.tsx` import of a then-untracked file — **HEAD did not compile**.
+`82d45b9` restored a building tree. P74 therefore has no clean single-commit diff, and `98f42b1`
+("docs: file ui-designer's unrequested P74 a11y contract as PROPOSED") mislabels this milestone: it
+WAS commissioned and the user asked for it explicitly. The contract's banner is corrected in-file.
+
+**Deferred out of P74:** `.error-dismiss` is shared by eight banners, and the 24px box now sets the
+single-line height in all of them. Contract-sanctioned (§2.4 gives the unscoped rule) but only the
+sidebar instance was audited — worth a ui-designer glance at the gate.
 
 Both items are the ui-designer's own P73 SHOULD-FIXes (S-2, S-3 in
 `docs/contracts/design-review-2026-08-19-p73-submodules.md`), deferred out of P73 so a submodule

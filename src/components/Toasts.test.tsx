@@ -70,17 +70,33 @@ describe('Toasts', () => {
   });
 
   // P74 §1.2: shape, not colour, carries the tone (WCAG 1.4.1).
-  it('gives every tone a distinct aria-hidden glyph', () => {
+  it('gives every tone its exact aria-hidden glyph from AC-4', () => {
+    // Pinned vocabulary: a regression to a different glyph set must fail here,
+    // not merely a collision between two tones.
+    const expected = {
+      error: '⊘',
+      warning: '⚠',
+      success: '✓',
+      info: '●',
+    } as const;
     const tones = ['error', 'warning', 'success', 'info'] as const;
     const { container } = render(
-      <Toasts toasts={tones.map((t, i) => toast(i + 1, t, t))} onDismiss={vi.fn()} />,
+      <Toasts
+        toasts={tones.map((t, i) => toast(i + 1, t, `${t} body copy`))}
+        onDismiss={vi.fn()}
+      />,
     );
     const glyphs = [...container.querySelectorAll('.toast-glyph')];
     expect(glyphs).toHaveLength(4);
     for (const g of glyphs) expect(g).toHaveAttribute('aria-hidden', 'true');
-    const texts = glyphs.map((g) => g.textContent);
-    expect(new Set(texts).size).toBe(4);
-    // The glyph must never leak into the announced text.
-    expect(container.querySelector('.toast-error .toast-text')?.textContent).toBe('error');
+    for (const tone of tones) {
+      expect(container.querySelector(`.toast-${tone} .toast-glyph`)?.textContent).toBe(
+        expected[tone],
+      );
+      // The glyph must never leak into the announced text.
+      expect(container.querySelector(`.toast-${tone} .toast-text`)?.textContent).toBe(
+        `${tone} body copy`,
+      );
+    }
   });
 });

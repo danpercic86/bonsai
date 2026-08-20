@@ -3,9 +3,15 @@ import { fixtureOid, randomOid } from './oids';
 import type { GraphFixture, RepoKind } from '../mock/repoState';
 import type { SubmoduleInfo } from '../types';
 
-/** P73 §8.2: pathological submodule path (deep, 91 chars) — the overflow fixture. */
-const LONG_SUBMODULE_PATH =
+/** P73 §8.2: pathological submodule path (deep, 91 chars) — the overflow fixture.
+ *  Exported for the P74 toast harness seam (`?toasts=long`), which composes the
+ *  real refusal copy for this row instead of inventing a long string. */
+export const LONG_SUBMODULE_PATH =
   'src/Hamilton.Voyager.Protocol/protocol/vendor/third-party/generated-openapi-client-bindings';
+
+/** The same row's remote URL — the second half of the pathological toast. */
+export const LONG_SUBMODULE_URL =
+  'https://dev.azure.com/example/_git/Hamilton.Voyager.Protocol.Generated.Client.Bindings';
 
 /** Seed the DEFAULT repo's submodules so the sidebar section shows every badge
  *  state (P19 §5). Non-default repos get []. */
@@ -58,7 +64,7 @@ export function seedSubmodules(kind: RepoKind, graphFixture: GraphFixture): Subm
       name: LONG_SUBMODULE_PATH,
       path: LONG_SUBMODULE_PATH,
       absPath: `/mock/repo/${LONG_SUBMODULE_PATH}`,
-      url: 'https://dev.azure.com/example/_git/Hamilton.Voyager.Protocol.Generated.Client.Bindings',
+      url: LONG_SUBMODULE_URL,
       headOid: fixtureOid(6),
       indexOid: fixtureOid(6),
       wtOid: null,

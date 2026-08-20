@@ -22,6 +22,21 @@ function failSeam(name: string): void {
   }
 }
 
+/** The `urlMismatch` refusal body, mirrored verbatim from the backend (see
+ *  submodule_reconnect.rs msg_url_mismatch). Exported so the P74 toast harness
+ *  seam composes the REAL sentence instead of inventing prose — keep the two in
+ *  step by editing only here. */
+export function msgUrlMismatch(name: string, url: string): string {
+  return `Bonsai has cached data for a different remote URL ('https://example.com/old-${name}.git' instead of '${url}'). Run Sync on this submodule, then try again.`;
+}
+
+/** The `notEmpty` refusal body — the real backend interpolates the submodule
+ *  PATH here (submodule_reconnect.rs msg_dirty_workdir), which differs from the
+ *  name for a renamed submodule; the mock must not diverge. */
+export function msgDirtyWorkdir(path: string): string {
+  return `The folder already has files in it. Move or delete everything inside '${path}', then try again.`;
+}
+
 /** init/update/sync additionally honour the P73 refusal + slow seams. */
 async function submoduleSeam(name: string, sub?: SubmoduleInfo): Promise<void> {
   const seam = query('submodule');
@@ -29,17 +44,14 @@ async function submoduleSeam(name: string, sub?: SubmoduleInfo): Promise<void> {
   if (seam === 'notEmpty') {
     const err: AppError = {
       kind: 'git',
-      // The real backend interpolates the submodule PATH here (see
-      // submodule_reconnect.rs msg_dirty_workdir), which differs from the name
-      // for a renamed submodule — the mock must not diverge.
-      message: `The folder already has files in it. Move or delete everything inside '${sub?.path ?? name}', then try again.`,
+      message: msgDirtyWorkdir(sub?.path ?? name),
     };
     throw err;
   }
   if (seam === 'urlMismatch') {
     const err: AppError = {
       kind: 'git',
-      message: `Bonsai has cached data for a different remote URL ('https://example.com/old-${name}.git' instead of '${sub?.url ?? name}'). Run Sync on this submodule, then try again.`,
+      message: msgUrlMismatch(name, sub?.url ?? name),
     };
     throw err;
   }
