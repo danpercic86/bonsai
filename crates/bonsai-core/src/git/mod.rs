@@ -62,6 +62,7 @@ mod submodule_reconnect;
 /// P73 clone-path rollback for `submodule` (private to `git`).
 mod submodule_rollback;
 pub mod tags;
+pub mod tag_sync;
 pub mod timefmt;
 pub mod timeout;
 pub mod undo;

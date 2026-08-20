@@ -107,6 +107,40 @@ captured after P70's tree is finalized. Guard tests #16 and #18 must still run a
 
 ---
 
+## 🏷️ P77 — tag sync management (local↔remote tag reconciliation) — in-progress
+
+**Origin (2026-08-20):** user hit a real stale-tag divergence — `v1.1.0` was moved from `8095eb1`
+to `e3cd2ea` and pushed; a second machine that fetched before the move kept the old target silently
+(git never force-updates existing local tags on fetch). Bonsai couldn't show or fix this.
+
+**Goal:** surface per-tag local↔remote sync status inline in the sidebar Tags list, with
+context-menu resolve actions.
+
+**Locked product decisions (user, 2026-08-20):**
+- **Surface:** inline sidebar badges only (extend existing Tags section + context menu; no new panel).
+- **Actions:** full set incl. destructive — force-refresh stale local tag, push unpushed local tag,
+  delete local-only leftover, **delete remote tag** (net-new backend), **force-move remote tag**
+  (reuse push force). Destructive ops behind explicit confirm dialogs.
+- **Remote truth:** live `ls-remote` (git2 `remote.connect`/`list`) when tags are viewed — always
+  current, one network round-trip per open.
+
+**Statuses to classify:** in-sync · local-only (unpushed) · stale/moved (local≠remote target) ·
+remote-only (upstream, not local) · deleted-on-remote.
+
+**Current step:** contracts LOCKED (`docs/contracts/P77-tag-sync.md`, `P77-ui.md`); implementing pass A (backend Rust: classification + ls-remote + resolve ops + IPC).
+(`docs/contracts/P77-tag-sync.md`, `docs/contracts/P77-ui.md`). No code touched yet.
+
+**Inventory (pre-design, 2026-08-20):** tags ride in `BranchesSnapshot.tags: Vec<String>` (bare
+names) via `branches/list.rs:97`; core tag ops in `crates/bonsai-core/src/git/tags.rs`
+(create/delete-local/push); IPC in `src-tauri/src/commands/tags.rs`; sidebar in
+`src/components/Sidebar.tsx` (TagRow ~L214), actions in
+`src/components/repoWorkspace/useTagRemoteActions.ts`, menu in `src/components/workspaceMenus.ts`
+(`tagMenuItems` ~L503). Fetch uses `AutotagOption::Auto`, no prune/force (`git/remote.rs:137`).
+**Absent:** remote tag enumeration, local↔remote diff, tag metadata (sha/annotated) on the wire,
+delete-remote-tag.
+
+---
+
 ## 🛠️ DX — dev-loop acceleration — in-progress
 
 **Goal:** act on the full-workflow velocity analysis (2026-08-20) — 68 GB `target/`, no build
