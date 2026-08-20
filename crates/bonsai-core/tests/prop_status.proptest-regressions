@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 13f95da30185206c9d086bee5369e1e12286c085b12d2c3fa37acaa99b812f25 # shrinks to initial = [("ruqwx", 1911788117), ("alm", 700086318), ("ximls", 2396754153), ("u", 2988843570)], ops = [(0, 18203140971037284238, 926914791, "cp/rnhn"), (0, 10775616892291283855, 3111048552, "ugd/e"), (0, 11083742540702776680, 2661298741, "odbxw/dh"), (1, 1606327690994615240, 391441276, "nsanm"), (2, 13998801983347458184, 4155359291, "ah"), (5, 2184314842576123877, 3727600457, "v/u"), (1, 1449100855286681087, 2740716679, "jtdz"), (1, 17864374445535088156, 1201773604, "tvx/h"), (1, 4006106442088580475, 2807008583, "ecc/jlj"), (3, 3940698385498079931, 291430655, "ak")]
