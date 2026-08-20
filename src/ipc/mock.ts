@@ -22,6 +22,7 @@ import { resetRevertHandlers } from './mock/handlers/resetRevert';
 import { submoduleHandlers } from './mock/handlers/submodules';
 import { worktreeHandlers } from './mock/handlers/worktrees';
 import { repoMetaHandlers } from './mock/handlers/repoMeta';
+import { tagSyncHandlers } from './mock/handlers/tagSync';
 import { sessionHandlers } from './mock/handlers/session';
 import { mcpHandlers } from './mock/handlers/mcp';
 import { assetsHandlers } from './mock/handlers/assets';
@@ -55,6 +56,7 @@ export const mockIpc: IpcApi = {
   ...submoduleHandlers,
   ...worktreeHandlers,
   ...repoMetaHandlers,
+  ...tagSyncHandlers,
   ...sessionHandlers,
   ...mcpHandlers,
   ...assetsHandlers,

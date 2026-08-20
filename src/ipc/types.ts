@@ -312,6 +312,41 @@ export interface RemoteInfo {
   url: string | null;
 }
 
+// --- P77: tag sync (mirrors bonsai-core `git/tag_sync.rs`; serde camelCase). ---
+
+/**
+ * One tag's reconciliation state against a chosen remote.
+ * `deleted-on-remote` is RESERVED for a future pushed-set upgrade and is never
+ * emitted by the v1 backend (folded into `local-only`); kept for forward-compat.
+ */
+export type TagSyncStatus =
+  | 'in-sync'
+  | 'local-only'
+  | 'stale'
+  | 'remote-only'
+  | 'deleted-on-remote';
+
+/** One tag row in a {@link TagSyncReport}; rendered verbatim (fully precomputed). */
+export interface TagSyncEntry {
+  /** Short tag name (no `refs/tags/` prefix). */
+  name: string;
+  status: TagSyncStatus;
+  /** Peeled committish the LOCAL tag resolves to (40-hex); null => remote-only. */
+  localOid: string | null;
+  /** Peeled committish the REMOTE tag resolves to (40-hex); null => local-only. */
+  remoteOid: string | null;
+  /** True if the tag is an annotated tag object on EITHER side (display flag). */
+  annotated: boolean;
+}
+
+/** Result of one live ls-remote reconciliation pass. */
+export interface TagSyncReport {
+  /** The remote actually queried (resolved default when the caller passed null). */
+  remote: string;
+  /** One row per tag in the local∪remote union, sorted case-insensitively. */
+  entries: TagSyncEntry[];
+}
+
 export interface BranchesSnapshot {
   /** Sorted case-insensitively by name. */
   local: BranchInfo[];
@@ -2414,6 +2449,17 @@ export interface IpcApi {
   /** Push refs/tags/<tagName> to `remote`. `force` false in v1. Rejects
    *  noRepo | noRemote | authFailed | networkError | pushRejected | git. */
   pushTag(repoId: string, remote: string, tagName: string, force: boolean): Promise<void>;
+  // --- P77: tag sync ---
+  /** Live tag reconciliation vs `remote` (null => default remote). One ls-remote
+   *  round-trip; best-effort — callers must render the plain tags list even when
+   *  this rejects. Rejects noRepo | noRemote | authFailed | networkError | git. */
+  listTagSync(repoId: string, remote: string | null): Promise<TagSyncReport>;
+  /** Force-update one local tag from `remote`. Rejects noRepo | invalidName |
+   *  noRemote | authFailed | networkError | git. */
+  forceRefreshTag(repoId: string, remote: string, tagName: string): Promise<void>;
+  /** Delete a tag on `remote` (destructive — confirm first). Rejects noRepo |
+   *  invalidName | noRemote | authFailed | networkError | pushRejected | git. */
+  deleteRemoteTag(repoId: string, remote: string, tagName: string): Promise<void>;
   // --- P22: remotes ---
   /** Configured remotes (name + fetch URL). Rejects noRepo | git. */
   listRemotes(repoId: string): Promise<RemoteInfo[]>;
