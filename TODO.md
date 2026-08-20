@@ -28,10 +28,39 @@ items — moved 2026-08-19), `docs/history/todo-archive.md` (P27 → P2, M0–M6
 `docs/history/milestones-mvp.md` (the M0–M6 AI-gate vs USER CHECKPOINT split). Contract files are
 indexed in `docs/contracts/INDEX.md`.
 
-## ♿ P74 — accessibility: toast-tone contrast + sidebar hit targets — in-progress
+## ♿ P74 — accessibility: toast-tone contrast + sidebar hit targets — awaiting USER CHECKPOINT
 
-**Current step:** P74 — implemented, reviewer **APPROVE** + ui-designer **PASS**, all follow-ups
-applied; tester's e2e spec being split to satisfy the size ratchet, then the final gate.
+**Current step:** ✅ **P74 CODE-COMPLETE — AI gate GREEN, awaiting native USER CHECKPOINT.**
+Commits: `0a6d492` board · `82d45b9` implementation · `cd232a7` review follow-ups + e2e.
+
+**AI gate:** `pnpm tsc --noEmit` clean · `pnpm lint` **0 errors / 30 pre-existing warnings** ·
+`pnpm vitest run` **1962 passed / 162 files** · `pnpm exec playwright test` **156 passed / 1
+skipped** · `pnpm lint:size` OK, baseline untouched. No Rust changed, so cargo stands at P73's
+**1866 passed / 0 failed / 6 ignored**.
+
+**New e2e coverage** (`e2e/26-a11y-toasts.spec.ts` 276, `e2e/27-a11y-hit-targets.spec.ts` 253,
+`e2e/helpers/a11y.ts` 155): 14 tests. Contrast tests assert the WCAG bars (4.5 / 3.0), NOT the
+measured numbers — pinning 10.30:1 would break on a legitimate token retune and be worse than no
+test. The sidebar sweep is generic (`.sidebar button, [role=button], input` all ≥24px) rather than an
+enumeration of today's selectors, and was **mutation-checked** (forcing `.sidebar-add` to 20×20 makes
+it report the pre-P74 state) so it cannot pass vacuously.
+
+**USER CHECKPOINT (needs the native window / a human eye):**
+- The four toast tones read correctly in both themes — `?toasts=demo` equivalents arise naturally
+  from any failed op. Specifically judge the **info `●`**: it is in-vocabulary and zero font-risk,
+  but it is shape-neutral (a filled disc says "neutral", not "information") and shares a silhouette
+  with the HEAD dot in `.branch-glyph`. The considered upgrade is `ⓘ` (U+24D8) — monochrome, no emoji
+  presentation — rejected only because its Linux coverage could not be verified from here.
+- Toast text now starts 22px further right to make room for the glyph column. The designer measured
+  the glyph as optically aligned with line 1 (both at a 9px top offset, so it does not centre on a
+  multi-line toast) and judged it intentional structure matching `.branch-row`'s glyph-then-label
+  rhythm — but it is a look-at-it call, not a measurement.
+- The six sidebar section labels shifted right 4px (negative margin withdrawn); confirm the sidebar
+  rhythm still reads well with +28px of header height across six sections.
+
+**Follow-up deferred out of P74:** `.error-dismiss` is shared by eight banners and its 24px box now
+sets the single-line height in all of them. Contract-sanctioned (§2.4 gives the unscoped rule) but
+only the sidebar instance was audited — worth a ui-designer glance.
 
 Contracts: `docs/contracts/P74-a11y-toasts-hit-targets.md` (+ `ui-reference.md` §2, new §3.1, §7,
 new §10.2, §11). Commits so far: `0a6d492` board · `82d45b9` implementation (see the split-commit
