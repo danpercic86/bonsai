@@ -207,7 +207,11 @@ pub(crate) fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
 /// `set_ui_settings`: with 27 fields, adding one to a single copy compiles fine and
 /// then returns a stale value from exactly one of the two commands. One builder
 /// makes that class of bug impossible.
-fn ui_settings_of(s: &settings::Settings) -> UiSettings {
+///
+/// `pub(crate)` (P69 §3.2) so the defaults-parity test in
+/// `settings_defaults_parity_tests.rs` can serialise the default projection: there
+/// is no `UiSettings::default()`, and this is the ONE place that builds one.
+pub(crate) fn ui_settings_of(s: &settings::Settings) -> UiSettings {
     UiSettings {
         theme: s.theme,
         pane_widths: s.pane_widths,

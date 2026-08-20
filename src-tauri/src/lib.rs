@@ -4,6 +4,13 @@ pub mod mcp;
 #[cfg(test)]
 #[path = "bundle_config_tests.rs"]
 mod bundle_config_tests;
+/// P69 §3.2 (OQ-2) guard: Rust `Settings::default()` ⟷ the TS-owned
+/// `src/settings/uiSettingsDefaults.json` oracle. Declared here rather than as a
+/// child of `settings` only because `settings.rs` is over the file-size ratchet's
+/// limit and may not grow; it reaches into `settings` + `commands` by path.
+#[cfg(test)]
+#[path = "settings_defaults_parity_tests.rs"]
+mod settings_defaults_parity_tests;
 pub mod scheduler;
 pub mod settings;
 pub mod state;

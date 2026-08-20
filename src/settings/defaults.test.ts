@@ -4,22 +4,25 @@
  * The chain this pins:
  *   `UiSettings` (interface)  →  DEFAULT_UI_SETTINGS (literal, annotated, so a
  *   missing or misspelt key is a COMPILE error)  →  uiSettingsDefaults.json (the
- *   oracle, deep-equal below)  →  Rust `Settings::default()` (the `assert_eq!` in
- *   `src-tauri/src/settings_ui_tests.rs`).
+ *   oracle, deep-equal below)  →  Rust `Settings::default()` (pinned by
+ *   `src-tauri/src/settings_defaults_parity_tests.rs`).
  *
- * DEFERRED (P69e): the Rust link of that chain is NOT yet in place — landing it
- * needs a `cargo test` run, which the P73 concurrency protocol forbids while the
- * shared target dir is busy. Until it lands, the oracle is pinned from the TS side
- * ONLY, and a Rust-side default change would go unnoticed here. Two details for
- * whoever writes it:
- *   - Rust has no `UiSettings::default()`; the value to serialise is
- *     `ui_settings_of(&settings::Settings::default())`, and `ui_settings_of` is
- *     currently private (`fn`) in `commands/ui_settings.rs` — it needs
- *     `pub(crate)`.
+ * All four links are LIVE (the Rust one landed in P69, closing OQ-2): this file
+ * pins the oracle from the TS side, and the Rust test serialises
+ * `ui_settings_of(&Settings::default())` and deep-equals the same JSON, naming any
+ * missing / unexpected / changed key. The oracle is owned by THIS side — if the two
+ * disagree, the Rust default is the thing to fix.
+ *
+ * Two details that make the Rust half comprehensible (still true, don't undo them):
+ *   - Rust has no `UiSettings::default()`; `UiSettings` is a projection, so the
+ *     value serialised there is `ui_settings_of(&settings::Settings::default())`.
+ *     That builder is `pub(crate)` in `commands/ui_settings.rs` for exactly that
+ *     test.
  *   - `aiMaxBudgetUsd` is an `f64`, so the oracle writes `0.0`. `serde_json`
  *     compares `Number::Float(0.0) != Number::PosInt(0)`; writing plain `0` in the
  *     JSON would fail the Rust assert while passing this file (JS has one number
- *     type). Do not "tidy" that `0.0`.
+ *     type). Do not "tidy" that `0.0` — a dedicated Rust test asserts it stays a
+ *     float.
  */
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_UI_SETTINGS as MOCK_DEFAULT_UI_SETTINGS } from '../ipc/mock/persistence';
