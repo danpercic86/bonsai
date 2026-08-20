@@ -134,10 +134,12 @@ export function TagsSection({
     filtering && tagsFiltered.length === 0 && remoteOnlyFiltered.length === 0;
 
   const toggle = () => {
-    setCollapsed((c) => {
-      if (c) onExpand(); // collapsed → expanded fires the sync trigger (§6)
-      return !c;
-    });
+    // §6: collapsed → expanded fires the sync trigger. Fire it from the event
+    // handler (not inside the setCollapsed updater, which runs during render and
+    // must stay pure — calling a parent setState there warns "Cannot update a
+    // component while rendering a different component").
+    if (collapsed) onExpand();
+    setCollapsed((c) => !c);
   };
 
   const rollup = (
