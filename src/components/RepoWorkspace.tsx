@@ -66,7 +66,6 @@ import type {
   WorktreeInfo,
 } from '../ipc';
 import { usePushToast } from '../ToastContext';
-import { useMockToastSeam } from '../ipc/mock/handlers/toasts';
 import { errorMessage, isAppError } from '../utils/errors';
 import { isImagePath } from '../utils/imagePaths';
 
@@ -181,8 +180,6 @@ export function RepoWorkspace({
   appCommands,
 }: RepoWorkspaceProps) {
   const pushToast = usePushToast();
-  // P74: browser-harness seam (?toasts=demo|long|cap) — no-op outside VITE_MOCK_IPC.
-  useMockToastSeam(pushToast);
   const repoPath = repoId; // repoId == canonical workdir path (§2)
 
   // P13 §8.2: AI conflict-resolution is offered only when enabled, consented,

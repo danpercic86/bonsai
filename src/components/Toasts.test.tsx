@@ -68,4 +68,19 @@ describe('Toasts', () => {
     expect(onDismiss).toHaveBeenCalledTimes(1);
     expect(onDismiss).toHaveBeenCalledWith(7);
   });
+
+  // P74 §1.2: shape, not colour, carries the tone (WCAG 1.4.1).
+  it('gives every tone a distinct aria-hidden glyph', () => {
+    const tones = ['error', 'warning', 'success', 'info'] as const;
+    const { container } = render(
+      <Toasts toasts={tones.map((t, i) => toast(i + 1, t, t))} onDismiss={vi.fn()} />,
+    );
+    const glyphs = [...container.querySelectorAll('.toast-glyph')];
+    expect(glyphs).toHaveLength(4);
+    for (const g of glyphs) expect(g).toHaveAttribute('aria-hidden', 'true');
+    const texts = glyphs.map((g) => g.textContent);
+    expect(new Set(texts).size).toBe(4);
+    // The glyph must never leak into the announced text.
+    expect(container.querySelector('.toast-error .toast-text')?.textContent).toBe('error');
+  });
 });

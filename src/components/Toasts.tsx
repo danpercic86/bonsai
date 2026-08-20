@@ -1,6 +1,9 @@
 // Toast stack (P1 contract §5). Presentational — App owns the state, the
 // monotonic id counter, the 5-toast cap, and the 5 s auto-dismiss timers.
 
+import { useMockToastSeam } from '../ipc/mock/handlers/toasts';
+import { usePushToast } from '../ToastContext';
+
 export type ToastTone = 'error' | 'success' | 'warning' | 'info';
 
 export interface Toast {
@@ -39,6 +42,12 @@ const TONE_GLYPH: Record<ToastTone, string> = {
 /** Fixed top-right overlay, newest on top; rendered unconditionally in App
  *  (also over the empty state). */
 export function Toasts({ toasts, onDismiss }: ToastsProps) {
+  // P74: browser-harness seam (?toasts=demo|long|cap) — a no-op outside
+  // VITE_MOCK_IPC. Hosted here because this is the only always-mounted node
+  // inside App's ToastContext.Provider that isn't over the file-size ratchet;
+  // pushes go through App's real pushToast, so the cap/sticky/dedupe rules of
+  // §10.1 are exercised rather than bypassed.
+  useMockToastSeam(usePushToast());
   if (toasts.length === 0) return null;
   return (
     <div className="toast-stack" aria-live="polite">
