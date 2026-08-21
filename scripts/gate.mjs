@@ -90,10 +90,20 @@ const crossSteps = crossPresent.map((t) => ({
 // group: 'rust' | 'frontend' | 'e2e' | 'audit'
 // RUSTDOCFLAGS=-D warnings mirrors CI so a doctest/rustdoc lint fails locally.
 const RUSTDOC_DENY = { RUSTDOCFLAGS: '-D warnings' };
+// --quick shrinks the property-test case counts for the fast inner loop. The
+// prop_* suites (crates/bonsai-core/tests/prop_*.rs) hardcode a per-suite
+// `cases: N` literal, but proptest's PROPTEST_CASES env var OVERRIDES that
+// literal at runtime — verified empirically: prop_graph_layout runs its baked
+// 64 cases in ~89s when unset vs ~7s at PROPTEST_CASES=4. So --quick just sets
+// it to 16 for the test-running step; the default / --full / CI tiers leave it
+// UNSET, so the suites run their full baked-in counts (64/64/64/48/32) and CI
+// thoroughness is unchanged. Only the test step needs it (doctests/clippy run
+// no proptests). Determinism is preserved — a smaller run is still a subset.
+const proptestEnv = quick ? { PROPTEST_CASES: '16' } : {};
 const rustTest = hasNextest
-  ? { name: 'cargo nextest', cmd: 'cargo', args: ['nextest', 'run', '--workspace'], group: 'rust' }
+  ? { name: 'cargo nextest', cmd: 'cargo', args: ['nextest', 'run', '--workspace'], group: 'rust', env: proptestEnv }
   // nextest never runs doctests; the fallback cargo test does, so deny there too.
-  : { name: 'cargo test', cmd: 'cargo', args: ['test', '--workspace'], group: 'rust', env: RUSTDOC_DENY };
+  : { name: 'cargo test', cmd: 'cargo', args: ['test', '--workspace'], group: 'rust', env: { ...RUSTDOC_DENY, ...proptestEnv } };
 
 const steps = [
   rustTest,
