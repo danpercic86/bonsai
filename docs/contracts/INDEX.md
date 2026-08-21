@@ -257,7 +257,8 @@ Settings redesign".
 
 P70, P73, P74, P77, P78, P79, P80 are `done` (checkpoints verified 2026-08-20/2026-08-21;
 P70/P77/P78/P79/P80 archived to `todo-archive-2026-08.md` Parts 17–18, 20). P71/P72 remain live board
-sections in `TODO.md`. P75 is `in-progress`, P76 `deferred`. P80b (commit-panel UX), P81, P82 are
+sections in `TODO.md`. P75 is `halted` (Win10 tauri-specta link blocker — see its contract), P76
+`deferred`. P80b (commit-panel UX), P81, P82 are
 AI-gate GREEN with native USER CHECKPOINTs pending — live board sections in `TODO.md`.
 
 | File | Milestone | Scope | Status |
@@ -272,7 +273,7 @@ AI-gate GREEN with native USER CHECKPOINTs pending — live board sections in `T
 | `P73-user-checklist.md` | P73 | Native checklist against the real superproject that produced the report. | done |
 | `design-review-2026-08-19-p73-submodules.md` | P73 | `ui-designer` design review of the P73 frontend; findings S-2 / S-3 were deferred out and became P74. | delivered 2026-08-19 |
 | `P74-a11y-toasts-hit-targets.md` | P74 | Toast-tone contrast + sidebar hit targets (S-2 / S-3 from the P73 design review). | done |
-| `P75-ipc-codegen.md` | P75 | Generate the IPC boundary from Rust with tauri-specta v2 — wire-identical, all 173 commands, no call-site churn. | in-progress — Phase 6.1 (deps + AppError specta::Type + empty-builder export spike) |
+| `P75-ipc-codegen.md` | P75 | Generate the IPC boundary from Rust with tauri-specta v2 — wire-identical, all 173 commands, no call-site churn. | HALTED 2026-08-21 — Phase 6.1 spike found tauri-specta breaks Win10 app launch (kernel32!WaitOnAddress); reverted, findings kept |
 | `P76-native-checkpoint-automation.md` | P76 | tauri-driver + WebdriverIO harness to automate ~60–70% of the native USER CHECKPOINT backlog. | deferred — HELD as contract-only per user (2026-08-20) |
 | `P77-tag-sync.md` | P77 | Local↔remote tag reconciliation: live ls-remote classification (in-sync/local-only/stale/remote-only), force-refresh + delete-remote ops, 3 IPC commands. | done |
 | `P77-ui.md` | P77 | UI: inline sidebar tag status badges, collapsed-section ⚠ rollup, status-gated context menu, two destructive-op confirm dialogs. Reuses existing tokens. | done |

@@ -120,9 +120,12 @@ acceleration, serial clippy/test, the 4-file IPC lockstep, a ~12-milestone defer
 backlog. Ten improvements.
 
 **Current step:** 8 of 10 landed & verified (`3ada322`, `2019e71`, `8e55be8`). **P75 (IPC codegen)
-is now in-progress** — Current step: Phase 6.1 (deps + `AppError` `specta::Type` + empty-builder
-export spike) — de-risking the RC crates. P76 (native-checkpoint automation) **held as
-contract-only** per user.
+HALTED 2026-08-21 (user decision)** — a Phase 6.1 spike found that linking `tauri-specta` breaks app
+launch on Windows 10 (`kernel32!WaitOnAddress` not exported → `STATUS_ENTRYPOINT_NOT_FOUND`); it's a
+dev-velocity refactor with no user value, on RC crates, and the Win10 regression is unavoidable
+because completing it requires linking tauri-specta into the app. 6.1 changes reverted; findings kept
+in `docs/contracts/P75-ipc-codegen.md`. P76 (native-checkpoint automation) **held as contract-only**
+per user.
 
 **Landed & verified:**
 - Build loop (`3ada322`): `[profile.dev] debug = "line-tables-only"` + `.cargo/config.toml` rust-lld
@@ -141,13 +144,18 @@ contract-only** per user.
   container — only a modest 85-line trim was safe.
 
 **In-progress / designed:**
-- **P75 — in-progress.** Generate the IPC boundary with tauri-specta v2 (kills the types.ts /
-  tauri.ts / mock-layer lockstep; keeps the `IpcApi` facade; typecheck-enforced anti-drift). 9–11
-  increments. `docs/contracts/P75-ipc-codegen.md`. **Current step: Phase 6.1** (deps + `AppError`
-  `specta::Type` + empty-builder export spike) — de-risking the RC crates. P74's tree is committed
-  (the gating condition cleared). tauri-specta is a release candidate → pin it, commit the generated
-  bindings, add a `git diff --exit-code` staleness gate. (types.ts is deliberately NOT hand-split;
-  P75 regenerates it.)
+- **P75 — HALTED 2026-08-21 (user decision).** Would generate the IPC boundary with tauri-specta v2
+  (kill the types.ts / tauri.ts / mock-layer lockstep). Phase 6.1 spike outcome: RC crates build &
+  pin (`specta rc.22`/`tauri-specta rc.21`/`specta-typescript 0.0.9`), `AppError` manual `specta::Type`
+  works, `bonsai-core` 881 green — BUT linking `tauri-specta` forces `tauri/specta`, whose binary
+  statically imports `kernel32!WaitOnAddress`/`WakeByAddress*`; Windows 10 (this dev box, 19045) does
+  not export those from `kernel32.dll` (KernelBase/api-set only) → `STATUS_ENTRYPOINT_NOT_FOUND` on
+  load, so the app itself won't launch on Win10. Since P75 is dev-velocity only (no user value), on
+  RC crates, and can't be completed without linking tauri-specta into the app (Phase 6.5), the Win10
+  regression is unavoidable — halted. 6.1 code/deps reverted; the pinned trio, the bigint tradeoff
+  (0.0.12 drops `BigIntExportBehavior::Number`), and the full blocker note are preserved in
+  `docs/contracts/P75-ipc-codegen.md`. **Revisit only if** validated on Windows 11 or with a
+  link-order fix forcing the `api-ms-win-core-synch` import lib ahead of `kernel32.lib`.
 - **P76 — designed (HELD as contract-only per user).** Automate the native USER CHECKPOINT backlog
   with tauri-driver + WebdriverIO (~60–70% automatable; macOS has no WebDriver so its checkpoints
   stay human). `docs/contracts/P76-native-checkpoint-automation.md`.

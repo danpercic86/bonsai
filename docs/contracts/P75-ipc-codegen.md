@@ -1,5 +1,36 @@
 # P75 — Generate the IPC boundary from Rust: Implementation Contract
 
+> **STATUS: HALTED 2026-08-21 (user decision).** The Phase 6.1 spike proved the RC crates
+> build and pin, but linking `tauri-specta` breaks app launch on Windows 10 (the blocker
+> below). P75 is a developer-velocity refactor (it kills the 4-file IPC lockstep) with no
+> user-facing value, built on release-candidate crates, and it cannot be completed without
+> linking tauri-specta into the app (Phase 6.5) — so the Win10 regression is unavoidable by
+> sequencing. Decision: keep the hand-written IPC lockstep; do NOT adopt tauri-specta. The
+> 6.1 code/dep changes were reverted; this contract + the findings below are retained so a
+> future revisit (e.g. once validated on Windows 11, or with a link-order fix for the
+> kernel32 api-set import) starts from the known state rather than re-discovering it.
+
+> **Pinned trio (P75, resolved empirically in Phase 6.1):**
+> `specta =2.0.0-rc.22` / `tauri-specta =2.0.0-rc.21` / `specta-typescript =0.0.9`
+> (the contract's documented-coherent set). The newest set (`tauri-specta =2.0.0-rc.25`
+> + `specta =2.0.0-rc.25` + `specta-typescript =0.0.12`) was **rejected**: it *builds* but
+> (a) `specta-typescript 0.0.12` removed `BigIntExportBehavior::Number` (the §1.3-mandated
+> global `u64/usize → number` mapping; 0.0.12 only offers forbid/`enable_lossless_bigints`
+> (→`bigint`) or per-field `#[specta(type = Number)]`), and (b) the export test fails to
+> RUN on this toolchain (same blocker as below). rc.22/rc.21/0.0.9 retains
+> `BigIntExportBehavior::Number` and matches the contract's API snippets.
+>
+> **⚠ BLOCKER (Phase 6.1, Windows 10):** linking `tauri-specta` forces the `tauri/specta`
+> feature, and the resulting binary statically imports `WaitOnAddress`/`WakeByAddress*`
+> from **`kernel32.dll`**. Windows 10 (this dev box: 19045) does NOT export those from
+> `kernel32.dll` (they live in KernelBase/the `api-ms-win-core-synch` api-set), so the
+> `bonsai_lib` test binary — and, by extension, the real app — fails to load with
+> `STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139)`. `bonsai-core` (specta only, no tauri) loads
+> fine; the trigger is specifically `tauri-specta`+`tauri`. This very likely works on
+> Windows 11 (kernel32 forwards those symbols). Must be resolved before Phase 6.5 wires
+> the builder into the app: verify on Win11 and/or pursue a linker fix (force the api-set
+> import lib ahead of `kernel32.lib`). See senior-dev's Phase 6.1 report.
+
 Status: authoritative for P75. Implementer: senior-dev, ~9 fresh-context sub-increments (§6). This
 is a **structural / behavior-preserving** milestone: the shipped IPC surface (command names, arg
 order, return shapes, error semantics, events, channels) must be **byte-for-byte identical** on the
