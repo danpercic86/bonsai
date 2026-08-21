@@ -108,7 +108,9 @@ import type {
   StaleReport,
   StashEntry,
   StatusSnapshot,
+  SubmoduleDeinitOutcome,
   SubmoduleInfo,
+  SubmoduleRemoveOutcome,
   UiSettings,
   UiSettingsPatch,
   Unsubscribe,
@@ -637,16 +639,26 @@ export const tauriIpc: IpcApi = {
     return invoke<CreateStashResult>('create_stash', { repoId, message, scope });
   },
 
-  applyStash(repoId: string, index: number, skipReserved: boolean): Promise<ApplyStashOutcome> {
-    return invoke<ApplyStashOutcome>('apply_stash', { repoId, index, skipReserved });
+  applyStash(
+    repoId: string,
+    index: number,
+    skipReserved: boolean,
+    expectedOid?: string,
+  ): Promise<ApplyStashOutcome> {
+    return invoke<ApplyStashOutcome>('apply_stash', { repoId, index, skipReserved, expectedOid });
   },
 
-  popStash(repoId: string, index: number, skipReserved: boolean): Promise<ApplyStashOutcome> {
-    return invoke<ApplyStashOutcome>('pop_stash', { repoId, index, skipReserved });
+  popStash(
+    repoId: string,
+    index: number,
+    skipReserved: boolean,
+    expectedOid?: string,
+  ): Promise<ApplyStashOutcome> {
+    return invoke<ApplyStashOutcome>('pop_stash', { repoId, index, skipReserved, expectedOid });
   },
 
-  dropStash(repoId: string, index: number): Promise<void> {
-    return invoke<void>('drop_stash', { repoId, index });
+  dropStash(repoId: string, index: number, expectedOid?: string): Promise<void> {
+    return invoke<void>('drop_stash', { repoId, index, expectedOid });
   },
 
   commitAmend(
@@ -718,12 +730,12 @@ export const tauriIpc: IpcApi = {
     return invoke<SubmoduleInfo>('add_submodule', { repoId, url, path });
   },
 
-  deinitSubmodule(repoId: string, name: string): Promise<void> {
-    return invoke<void>('deinit_submodule', { repoId, name });
+  deinitSubmodule(repoId: string, name: string, force: boolean): Promise<SubmoduleDeinitOutcome> {
+    return invoke<SubmoduleDeinitOutcome>('deinit_submodule', { repoId, name, force });
   },
 
-  removeSubmodule(repoId: string, name: string): Promise<void> {
-    return invoke<void>('remove_submodule', { repoId, name });
+  removeSubmodule(repoId: string, name: string, force: boolean): Promise<SubmoduleRemoveOutcome> {
+    return invoke<SubmoduleRemoveOutcome>('remove_submodule', { repoId, name, force });
   },
 
   // P27: worktrees.

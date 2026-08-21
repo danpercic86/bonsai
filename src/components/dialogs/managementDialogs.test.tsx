@@ -177,6 +177,8 @@ function submoduleProps(over: Partial<SubmoduleDialogsProps> = {}): SubmoduleDia
     pendingRemove: null,
     setPendingRemove: vi.fn(),
     handleRemoveSubmodule: vi.fn(),
+    pendingForce: null,
+    setPendingForce: vi.fn(),
     ...over,
   };
 }
@@ -217,6 +219,31 @@ describe('SubmoduleDialogs', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove submodule' }));
     expect(p.handleRemoveSubmodule).toHaveBeenCalledTimes(1);
     expect(p.handleRemoveSubmodule).toHaveBeenCalledWith('libB');
+  });
+
+  // P82 (F-A7-7): the force-escalation dialog is danger-styled, Cancel-focused,
+  // and re-invokes the op with force=true. Deinit vs remove copy stays distinct.
+  it('force (deinit): danger confirm re-invokes handleDeinitSubmodule with force=true', () => {
+    const p = submoduleProps({ pendingForce: { name: 'libA', op: 'deinit' } });
+    render(<SubmoduleDialogs {...p} />);
+    expect(screen.getByText('Deinitialize and discard changes?')).toBeInTheDocument();
+    const confirm = screen.getByRole('button', { name: 'Discard changes and deinitialize' });
+    expect(confirm).toHaveClass('btn-danger');
+    // Cancel is the focused default so a stray Enter cannot discard.
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus();
+    fireEvent.click(confirm);
+    expect(p.setPendingForce).toHaveBeenCalledWith(null);
+    expect(p.handleDeinitSubmodule).toHaveBeenCalledWith('libA', true);
+    expect(p.handleRemoveSubmodule).not.toHaveBeenCalled();
+  });
+
+  it('force (remove): danger confirm re-invokes handleRemoveSubmodule with force=true', () => {
+    const p = submoduleProps({ pendingForce: { name: 'libB', op: 'remove' } });
+    render(<SubmoduleDialogs {...p} />);
+    expect(screen.getByText('Remove and discard changes?')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard changes and remove' }));
+    expect(p.handleRemoveSubmodule).toHaveBeenCalledWith('libB', true);
+    expect(p.handleDeinitSubmodule).not.toHaveBeenCalled();
   });
 });
 

@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { ConfirmDialog } from '../ConfirmDialog';
 
+/** P82: which op the dirty force-escalation dialog is confirming. */
+export type PendingForceSubmodule = { name: string; op: 'deinit' | 'remove' };
+
 export interface SubmoduleDialogsProps {
   mutating: boolean;
 
@@ -10,12 +13,42 @@ export interface SubmoduleDialogsProps {
 
   pendingDeinit: string | null;
   setPendingDeinit: (v: string | null) => void;
-  handleDeinitSubmodule(name: string): void;
+  handleDeinitSubmodule(name: string, force?: boolean): void;
 
   pendingRemove: string | null;
   setPendingRemove: (v: string | null) => void;
-  handleRemoveSubmodule(name: string): void;
+  handleRemoveSubmodule(name: string, force?: boolean): void;
+
+  // P82 (F-A7-7): the plain op refused because the worktree is dirty. This danger
+  // dialog is the ONLY way to opt into `force` (never a menu peer).
+  pendingForce: PendingForceSubmodule | null;
+  setPendingForce: (v: PendingForceSubmodule | null) => void;
 }
+
+/** P82 §3.2 force-escalation copy, selected by op. Deinit vs remove copy is kept
+ *  distinct — deinit keeps `.gitmodules`, remove is a full teardown. */
+const FORCE_COPY = {
+  deinit: {
+    title: 'Deinitialize and discard changes?',
+    lead: (name: string) => (
+      <>
+        "<span className="mono">{name}</span>" has uncommitted changes, so it wasn't deinitialized.
+      </>
+    ),
+    note: 'Deinitializing now permanently discards the uncommitted work inside the submodule. The .gitmodules entry is still kept, so you can re-initialize it later — but that work cannot be recovered.',
+    confirmLabel: 'Discard changes and deinitialize',
+  },
+  remove: {
+    title: 'Remove and discard changes?',
+    lead: (name: string) => (
+      <>
+        "<span className="mono">{name}</span>" has uncommitted changes, so it wasn't removed.
+      </>
+    ),
+    note: "Removing now permanently discards the uncommitted work inside the submodule and deletes its working tree from disk. This cannot be undone from Bonsai.",
+    confirmLabel: 'Discard changes and remove',
+  },
+} as const;
 
 /** P60d submodule dialogs: Add (url + path prompt), Deinit (confirm), and
  *  Remove (destructive confirm). Purely presentational — RepoWorkspace owns the
@@ -31,7 +64,10 @@ export function SubmoduleDialogs({
   pendingRemove,
   setPendingRemove,
   handleRemoveSubmodule,
+  pendingForce,
+  setPendingForce,
 }: SubmoduleDialogsProps) {
+  const forceCopy = pendingForce === null ? null : FORCE_COPY[pendingForce.op];
   return (
     <>
       <AddSubmoduleDialog
@@ -90,6 +126,28 @@ export function SubmoduleDialogs({
           next commit) and deletes the submodule's working tree from disk. This cannot be undone
           from Bonsai.
         </div>
+      </ConfirmDialog>
+
+      {/* P82: force escalation — reached ONLY when the plain op refused because
+          the submodule worktree is dirty. Danger-styled, Cancel-focused (Enter
+          never fires the destructive action). Confirm re-invokes with force. */}
+      <ConfirmDialog
+        open={pendingForce !== null}
+        title={forceCopy?.title ?? ''}
+        confirmLabel={forceCopy?.confirmLabel ?? ''}
+        confirmVariant="danger"
+        busy={mutating}
+        onConfirm={() => {
+          const pending = pendingForce;
+          setPendingForce(null);
+          if (pending === null) return;
+          if (pending.op === 'deinit') handleDeinitSubmodule(pending.name, true);
+          else handleRemoveSubmodule(pending.name, true);
+        }}
+        onCancel={() => setPendingForce(null)}
+      >
+        <div>{forceCopy?.lead(pendingForce?.name ?? '')}</div>
+        <div className="dialog-body-note">{forceCopy?.note}</div>
       </ConfirmDialog>
     </>
   );

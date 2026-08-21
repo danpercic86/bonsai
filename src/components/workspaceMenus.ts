@@ -113,9 +113,9 @@ export interface WorkspaceMenuDeps {
   setPendingDeleteBranch(name: string): void;
   /** P60a: arm the rename PromptDialog for a local branch (prefilled name). */
   setPendingRenameBranch(v: { name: string }): void;
-  handleApplyStash(index: number): void;
-  handlePopStash(index: number): void;
-  setPendingDropStash(index: number): void;
+  handleApplyStash(index: number, oid?: string): void;
+  handlePopStash(index: number, oid?: string): void;
+  setPendingDropStash(v: { index: number; oid?: string }): void;
   handleInitSubmodule(name: string): void;
   handleUpdateSubmodule(name: string): void;
   handleSyncSubmodule(name: string): void;
@@ -159,7 +159,7 @@ export interface WorkspaceMenuDeps {
 
 export interface WorkspaceMenus {
   branchMenuItems(name: string, kind: 'localBranch' | 'remoteBranch'): ContextMenuItem[];
-  stashMenuItems(index: number): ContextMenuItem[];
+  stashMenuItems(index: number, oid?: string): ContextMenuItem[];
   submoduleMenuItems(sub: SubmoduleInfo): ContextMenuItem[];
   worktreeMenuItems(wt: WorktreeInfo): ContextMenuItem[];
   tagMenuItems(name: string, oid: string | null): ContextMenuItem[];
@@ -398,26 +398,30 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
   // P9 §6.4: build the right-click menu for a stash row. Apply/Pop need a clean,
   // idle repo (gated on mutating || opActive); Drop is allowed mid-op (it only
   // edits the stash reflog) → routes through the ConfirmDialog.
-  function stashMenuItems(index: number): ContextMenuItem[] {
+  // F-A6-B: `oid` is the value the stash row rendered; thread it into every
+  // action so a stack shift between render and confirm can't hit the wrong entry.
+  // Optional because the graph stash pill only knows the base commit oid, not the
+  // stash entry oid — it omits it (guard is best-effort; sidebar rows always pass).
+  function stashMenuItems(index: number, oid?: string): ContextMenuItem[] {
     const gate = mutating || opActive;
     return [
       {
         label: 'Apply',
         icon: createElement(StashApplyIcon),
         disabled: gate,
-        onSelect: () => void handleApplyStash(index),
+        onSelect: () => void handleApplyStash(index, oid),
       },
       {
         label: 'Pop',
         icon: createElement(StashPopIcon),
         disabled: gate,
-        onSelect: () => void handlePopStash(index),
+        onSelect: () => void handlePopStash(index, oid),
       },
       {
         label: 'Drop',
         icon: createElement(DeleteIcon),
         disabled: mutating,
-        onSelect: () => setPendingDropStash(index),
+        onSelect: () => setPendingDropStash({ index, oid }),
       },
     ];
   }

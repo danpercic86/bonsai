@@ -386,7 +386,7 @@ fn reconnect_after_deinit_reinitializes() {
     let sentinel = p.join(".git").join("modules").join(SUB_PATH).join(SENTINEL);
     std::fs::write(&sentinel, SENTINEL_BODY).expect("plant sentinel");
 
-    deinit_submodule(p, &SpawnGitRunner, SUB_PATH).expect("deinit");
+    deinit_submodule(p, &SpawnGitRunner, SUB_PATH, true).expect("deinit");
     assert_eq!(cli_status_char(p, SUB_PATH), '-', "deinit leaves the '-' (wedged) row");
     assert_eq!(only(p).status, SubmoduleStatus::Uninitialized, "row after deinit");
     assert!(sentinel.exists(), "deinit keeps the cached gitdir (that is the wedge)");

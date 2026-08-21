@@ -43,14 +43,15 @@ describe('externalToolsItems (standalone)', () => {
 describe('stashMenuItems', () => {
   it('Apply/Pop/Drop wired to the index', () => {
     const deps = makeDeps();
-    const items = createWorkspaceMenus(deps).stashMenuItems(3);
+    const items = createWorkspaceMenus(deps).stashMenuItems(3, 'oid3');
     expect(labelsOf(items)).toEqual(['Apply', 'Pop', 'Drop']);
     itemByLabel(items, 'Apply').onSelect?.();
     itemByLabel(items, 'Pop').onSelect?.();
     itemByLabel(items, 'Drop').onSelect?.();
-    expect(deps.handleApplyStash).toHaveBeenCalledWith(3);
-    expect(deps.handlePopStash).toHaveBeenCalledWith(3);
-    expect(deps.setPendingDropStash).toHaveBeenCalledWith(3);
+    // F-A6-B: the rendered oid is threaded into all three actions.
+    expect(deps.handleApplyStash).toHaveBeenCalledWith(3, 'oid3');
+    expect(deps.handlePopStash).toHaveBeenCalledWith(3, 'oid3');
+    expect(deps.setPendingDropStash).toHaveBeenCalledWith({ index: 3, oid: 'oid3' });
   });
 
   it('opActive gates Apply/Pop but NOT Drop; mutating gates all three', () => {
@@ -62,8 +63,8 @@ describe('stashMenuItems', () => {
 
   it('index 0 (the newest stash) is passed through unmangled', () => {
     const deps = makeDeps();
-    itemByLabel(createWorkspaceMenus(deps).stashMenuItems(0), 'Apply').onSelect?.();
-    expect(deps.handleApplyStash).toHaveBeenCalledWith(0);
+    itemByLabel(createWorkspaceMenus(deps).stashMenuItems(0, 'oid0'), 'Apply').onSelect?.();
+    expect(deps.handleApplyStash).toHaveBeenCalledWith(0, 'oid0');
   });
 });
 

@@ -113,11 +113,20 @@ export function CommandPalette({
     return ordered;
   }, [dynamicRows, filtered]);
 
-  // Land the highlight on the first enabled row whenever the visible set changes
-  // (mirrors Combobox's reset-on-filter-change behavior).
+  // Stable key over the rows currently in `flat` (their ids, in order). This is
+  // what actually determines the visible set — unlike `flat`'s array identity,
+  // which churns whenever the `actions` prop is rebuilt (streamed search batches,
+  // once-a-second AI runs) even though the rows are unchanged.
+  const flatKey = useMemo(() => flat.map((a) => a.id).join(' '), [flat]);
+
+  // Land the highlight on the first enabled row whenever the visible set actually
+  // changes (mirrors Combobox's reset-on-filter-change behavior). Keyed on the row
+  // ids rather than `flat`'s identity so a churning `actions` prop no longer steals
+  // the user's keyboard selection mid-typing.
   useEffect(() => {
     setHighlight(firstEnabledIndex(flat));
-  }, [flat]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only on the id set, not `flat`'s churning identity
+  }, [flatKey]);
 
   // Keep the highlighted row visible when navigating with the keyboard.
   useEffect(() => {

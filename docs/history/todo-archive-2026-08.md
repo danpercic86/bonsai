@@ -3375,3 +3375,187 @@ NOT closed by the milestone archival):**
   also shows on remote-only ghost rows (coherent — only place the tag exists).
 - Backend NIT: `delete_remote_tag` doesn't `evict_fresh_on_auth_fail` (matches existing `push_tag`);
   `validate_tag_name` duplicated from `tags.rs` (module-private) — promote to shared if a 3rd caller.
+
+## Part 19 — OPEN follow-ups resolved in the 2026-08-21 fix batch, verbatim (moved off the board 2026-08-21)
+
+All five items below were resolved this session (AI-gate verified); the two that became milestones
+(refetch storm → P81, submodule dirty-deinit → P82) are tracked as live milestone sections on the
+board because their native USER CHECKPOINTs are still pending. The board carries a one-line RESOLVED
+note for each; the original text is preserved here in full.
+
+**`read_status` vs `git status --porcelain` discrepancy — RESOLVED `f0eea9e`.** Fix: suppress the
+Windows racy-git `WT_MODIFIED` phantom ONLY on Windows (`#[cfg(windows)]`, replicating git's
+`ie_match_stat` racy-clean rule for the Git-for-Windows whole-second mtime vs libgit2 sub-second
+case); non-Windows behavior unchanged (nsec git agrees with libgit2). Regression seed appended to
+`crates/bonsai-core/tests/prop_status.proptest-regressions`. Original board text:
+
+> Found incidentally by `status_matches_porcelain` (`crates/bonsai-core/tests/prop_status.rs:133`)
+> during the P70 credential-split verification run — **not** caused by that refactor (`status.rs`
+> untouched). `read_status` reported `("unstaged", "e/pwn", None, "modified")` which the porcelain
+> oracle did not. Random-seed failure; passed on re-run → a **latent correctness bug, not a flake**. The
+> regression seed (reproduce by writing the `cc` line into
+> `crates/bonsai-core/tests/prop_status.proptest-regressions`):
+>
+> ```
+> cc 7092b6a8ad052d40b3a382fbaf1450dde7bd1d77ac401b9e7af9a23db3965a5a
+> initial = [("js", 830085073), ("y/hdq", 750409876), ("zsl/ozrm", 2913031937), ("io", 3268388894), ("e/pwn", 3853189158), ("ap", 2793669611)]
+> ops = [(1, 4217376688305137722, 1942386613, "gnry"), (4, 3842487655791072095, 1278675183, "bp"), (1, 10402710393222198989, 1229272639, "mf/r"), (0, 13825244896185113770, 2802026316, "sgno"), (3, 5327597818003222344, 1785525724, "yeqjj/sd"), (5, 3279438120187805109, 3677744552, "gso/vvtix"), (1, 6214002843715606778, 2793541552, "lggl")]
+> ```
+
+(The `ai::session_tests::watchdog_does_not_fire_while_awaiting_input` load-flake noted alongside this
+item was NOT resolved by the fix and remains on the board's known-flake list.)
+
+**CommandPalette highlight resets on `actions` array identity — RESOLVED `0798c55`.** The reset
+effect now keys on the ordered visible row-id set, not `flat`'s array identity, so no `actions`
+producer whose memo deps churn can steal the keyboard selection mid-typing. vitest 14/14 for the
+spec. Original board text:
+
+> `src/components/CommandPalette.tsx:103→107→118` re-lands the highlight on the first enabled row
+> whenever the `actions` **array identity** changes, and `filterActions` always returns a fresh array.
+> Any producer whose memo deps churn steals the user's keyboard selection mid-typing (P65 per streamed
+> batch — the real root cause of the `e2e/09-search-palette` flake; P68e ~once a second during a live AI
+> run, since fixed producer-side). **Correct fix (reviewer's): reset on the filtered ids, not array
+> identity** — immunises every future `actions` producer. Do NOT keep patching producers.
+
+**Refetch storm: every mutation double-fetches per open tab — RESOLVED `be01422` (now milestone
+P81).** Fix: a refresh coalescer + per-repoId watcher-echo suppression (`ECHO_TTL_MS=600`). Contract
+`docs/contracts/P81-refetch-coalescing.md`. Original board text:
+
+> Every mutation runs `refreshAll` (~9 parallel fetches) and the watcher-debounced `repo-changed` for
+> the same writes re-runs the identical 9 ~300 ms later, per open tab (`RepoWorkspace.tsx`). Fix =
+> self-event suppression/coalescing; structural. Moved onto this board 2026-08-19 (audit #2 §5.3).
+
+**Stash `expectedOid` UI wiring — RESOLVED `f36683e`.** The frontend now threads the rendered
+`StashEntry.oid` through the F-A6-B wrong-target guard (Rust already had it). vitest 2079. Original
+board text:
+
+> The Rust side is oid-verified (F-A6-B/F-A7-6) but the UI does not yet pass `expectedOid`. Was parked
+> on the `ipc/types.ts` freeze; the freeze lifted when forge landed. Moved onto this board 2026-08-19
+> (audit #2 §5.4).
+
+**Submodule dirty-deinit force flag (F-A7-7) — RESOLVED `ede7674` (now milestone P82).** deinit/remove
+now require an explicit force opt-in for a dirty submodule (outcome enum `DirtyNeedsForce`, zero
+mutation on refuse; Flow-A danger dialog). Contracts `docs/contracts/P82-submodule-force.md` +
+`P82-submodule-force-ui.md`. Original board text:
+
+> Same parking condition, now lifted; details in `docs/testing-campaign-2026-08/FINDINGS.md` F-A7-7.
+> Moved onto this board 2026-08-19 (audit #2 §5.4).
+
+**`STDERR_GRACE_TOTAL` is not the absolute cap its doc comment claims — RESOLVED `95b7632`.**
+`drain_stderr` now clamps each per-recv wait to the remaining time, so total ≤ `STDERR_GRACE_TOTAL`.
+Original board text:
+
+> `drain_stderr` checks `Instant::now() < deadline` *before* each `recv_timeout(STDERR_GRACE)`, so the
+> drain can run up to `STDERR_GRACE_TOTAL + STDERR_GRACE` (~1150 ms vs the documented 1000 ms). Visible
+> only as ≤150 ms extra shutdown latency; the existing test's 500 ms slack passes either way.
+
+**P70 credential-subsystem split (refactorer) — RESOLVED (already split; no action needed).** The
+"OPEN, now UNBLOCKED" item was stale: `crates/bonsai-core/src/git/cred.rs` (462 lines) already holds
+the full subsystem (`next_cred_method`, `credential_fill`, `acquire_cred*`, `map_remote_err`,
+`exhausted_error`, `evict_fresh_on_auth_fail`, `FillOutcome`, `CredAttempts`) and `remote.rs` imports
+it — it landed with P70's finalized tree. Original board text:
+
+> User-requested 2026-08-19; was gated "starts once the checkpoint clears" — the P70 checkpoint cleared
+> 2026-08-21, so this is now actionable. `refactorer` split of the credential subsystem out of
+> `git/remote.rs` into `git/cred.rs` (`FillOutcome`, `CRED_EXHAUSTED_MSG`/`GIT_MISSING_MSG`,
+> `CredAttempts`, `next_cred_method`, `credential_fill`, `acquire_cred*`, `exhausted_error`,
+> `map_remote_err` + tests). Strictly behavior-preserving; capture the baseline off P70's finalized
+> tree. Guard tests #16 (SSH-only exhaustion ⇒ `AuthFailed`) and #18 (Helper rung performs zero spawns
+> when git is missing) must still run and pass.
+
+## Part 20 — P78/P79/P80 forge milestones (done + USER CHECKPOINT confirmed 2026-08-21), condensed (moved off the board 2026-08-21)
+
+All three are fully `done` (AI gate GREEN + native USER CHECKPOINT CONFIRMED by the user 2026-08-21).
+Genuinely-open SHOULD-FIX/NIT follow-ups spun out of P80 were carried to the OPEN follow-ups section
+of `TODO.md` (NOT closed by this archival).
+
+**P78 — fine-grained token guidance + Open-PR branch dropdowns.** Commit `d50cd42`. Contract
+`docs/contracts/P78-forge-pr-ui.md`. GitHub connect copy now names fine-grained permissions (Pull
+requests r/w, Contents r, Metadata auto) + classic `repo` fallback, links the fine-grained token
+page, `github_pat_…` placeholder; Base/Compare fields are branch comboboxes (allowFreeInput) +
+`defaultBase` wired. NIT (non-blocking): `prDefaultBase` typed `string|null` but never returns null.
+
+**P79 — forge account management.** Increment A backend `74cdfe0`, increment B UI `813d305`.
+Contracts `P79-forge-account-management.md` + `P79-ui.md`. Reviewer + ui-designer approved both;
+tester +12 unit / 167 regression / cargo 171/0 + 3/0 / e2e 10/10; browser-harness verified account
+header, reauth banner (`?forge=expired`), Accounts settings (Azure disabled), no console errors.
+Persistence: `forge_hosts` index in settings.json (host+kind+login, never a token). Accepted
+decisions: OD-1 lazy backfill only · OD-2 Azure add-without-repo unsupported · OD-3 commit-status
+authFailed doesn't trip reauth (silent decoration) · expiry KEEPS the token. settings.rs god-file
+split DONE (`3386c3d`, 750→399 into prefs/clamp/forge_hosts, behavior-preserving). Scope: (1)
+change/disconnect in the PR panel, (2) token-expiry → reconnect prompt (KEEP token, don't
+auto-delete), (3) global Accounts settings section. `forgeClearToken` existed but no UI called it;
+added a connected-hosts index + list command (keychain isn't portably enumerable).
+
+**P80 — multi-account forge (host default + per-repo override).** Increment A backend `01bb97e`,
+increment B UI `323f8c5`. Contracts `P80-multi-account.md` + `P80-ui.md`. Reviewer + ui-designer
+approved both. Full `gate.mjs` all 8 steps green (nextest, doc, clippy, eslint, file-size, vitest
+2042, tsc+build, e2e 156). Increment A: reviewer approve/no-MUST-FIX, tester forge 16/16 cargo +
+47/47 vitest + workspace 1900 green. types.rs 547→239 (test module split to `types/tests.rs`, 16
+tests unchanged). **Resolution order:** repo override → owner-match (login==owner, lowercased,
+exactly one) → host default → single → first+nudge. Owner-match = login-based only (org repos fall
+through; full org coverage deferred). OD-1..6 resolved: settings.json override · clear-override-only
+· auto-pin on connect · first+nudge · keep legacy 1 release · Azure disabled. Bundled: refreshed
+GitLab (`api` still valid but tighten) + Bitbucket (lead on access tokens; app-password deprecation
+through 2026) token guidance. **USER CHECKPOINT (all confirmed 2026-08-21, native + real tokens):**
+(1) existing single github.com token works after upgrade w/ zero re-auth (migration); (2) add a 2nd
+account same host, switch a repo via the PR-panel switcher; (3) owner-match auto-selects login==owner;
+(4) host default in Settings > Accounts inherited by other repos; (5) "Reset to host default" unpins
+without deleting the token; (6) Remove account deletes its keychain token, pinned repos fall back.
+Increment B FIXED (were SHOULD-FIX): caption `max-width` 11ch→20ch (was clipping "Pinned to this
+repo"); OD-4 nudge dropped from warning-tint to plain muted note. Increment B follow-up (d) DONE:
+PrPanel "Disconnect" replaced by nondestructive "Reset to host default"; full sign-out via
+`forge_remove_account` in Settings only.
+
+## Part 21 — P80b / P81 / P82 (done + USER CHECKPOINT confirmed 2026-08-21), condensed (moved off the board 2026-08-21)
+
+All three are fully `done`: AI gate GREEN + native USER CHECKPOINT CONFIRMED by the user 2026-08-21.
+
+**P80b — commit-panel UX overhaul + next-file bug.** Merged to main via `56413b6` (Merge PR #1 from
+`worktree-commit-panel-ux`) and `77c815f` (merge reconciling divergence). Numbering note: shipped from
+a concurrent worktree session that also used the label "P80" (contracts `P80-commit-panel-ux-ui.md`,
+commits `7ebe7fd`…`03a6453`); tracked as **P80b** to disambiguate from the main-session "P80 —
+multi-account forge" (a different milestone); on-disk contract/commit labels left untouched.
+- Origin: user asked for a designer pass over the right-panel Working tab (make staging/committing
+  easier, maximize list space) + a bug where staging opened a "random" next file. Contract
+  `docs/contracts/P80-commit-panel-ux-ui.md`.
+- **Bug fix** (`7ebe7fd`): auto-advance after staging now uses the *rendered* order (tree order via
+  `buildPathTree`/`flattenTreeLeaves` in tree view, flat otherwise) instead of flat backend order.
+  `listView` threaded into `useCommitActions` via a ref. +3 tests.
+- **2a staging affordances** (`5707f9a`): persistent stage `+`/`−` toggle (was hover-only); resting
+  danger treatment on "Discard all"; empty-Staged/Changes placeholder hints; section labels + bulk
+  buttons off sub-AA hues onto `--text-2`.
+- **2b space-saving footer** (`7edff3d`): footer chrome ~150→~87px (~63px reclaimed to the lists,
+  live-measured commit box 137px). All modifiers folded into one `⋯` `CommitOptionsMenu`
+  (Amend/Sign/Skip/Stash/Compose/Review; arrow-key roving, focus-first, Escape/outside close). Amend
+  moved into CommitBox with an internal reseed effect (dropped the amend remount key; no longer
+  destroys an in-progress draft). Deleted `RightPanelActionsRow` + `CommitOptionsRow`. E1 consolidated
+  the four AI entry points to one context-scoped Review + toolbar Generate. **D1: new "Primary commit
+  action" setting** (General → Committing, default **Commit** — user chose "make it a setting"),
+  full-stack Rust+TS+mock; CommitBox swaps which button is `.btn-primary`.
+- **2c a11y + microcopy** (`03a6453`): single `.commit-note` line with `⚠`/`✓` glyphs (hue no longer
+  sole carrier); plain-language signing copy (dropped the `user.signingkey` leak into a title);
+  section `aria-labelledby`; empty-state `--text-3`→`--text-2`; 24px targets verified.
+- **AI gate:** vitest 1981 ✓ · e2e 156 ✓ · settings Rust lib 52/0 ✓ · clippy/check/doctests ✓ ·
+  tsc+build ✓ · eslint ✓ · file-size ratchet ✓. Live DOM harness confirmed the new footer, toolbar,
+  consolidated `⋯` menu, and Commit-primary default. (Note: the earlier board caveat that the
+  `prop_status` porcelain proptest was an "unrelated pre-existing red" is obsolete — that proptest was
+  FIXED this session by `f0eea9e`; the full-workspace nextest gap on the worktree was only the D: drive
+  at 100% full, os error 112, not a code failure.)
+- **USER CHECKPOINT (confirmed 2026-08-21):** amend-toggle keyboard-focus retention in the real
+  webview + visual pass on the compact footer, reclaimed list space, and the `⋯` menu in both themes.
+
+**P81 — refetch coalescing + watcher self-echo suppression.** Commit `be01422`. Contract
+`docs/contracts/P81-refetch-coalescing.md`. Resolves the audit-#1 §3.10 refetch storm: every mutation
+ran `refreshAll` (~9 parallel fetches) and the watcher-debounced `repo-changed` for the same writes
+re-ran the identical 9 ~300 ms later, per open tab. Fix: a refresh coalescer + per-repoId
+watcher-echo suppression (`ECHO_TTL_MS=600`). **AI gate:** GREEN (vitest 2070). **USER CHECKPOINT
+(confirmed 2026-08-21):** user-visible only as fewer redundant fetches; native smoke pass confirmed no
+missed refresh.
+
+**P82 — submodule dirty-deinit requires explicit force (F-A7-7).** Commit `ede7674`. Contracts
+`docs/contracts/P82-submodule-force.md` + `P82-submodule-force-ui.md`. deinit/remove now require an
+explicit force opt-in for a dirty submodule (outcome enum `DirtyNeedsForce`, zero mutation on refuse;
+Flow-A danger dialog). Frontend threads the choice through the confirm flow. **AI gate:** GREEN
+(bonsai-core 876, vitest 2086). **USER CHECKPOINT (confirmed 2026-08-21):** destructive force-deinit
+danger dialog visual + confirm pass in both themes.

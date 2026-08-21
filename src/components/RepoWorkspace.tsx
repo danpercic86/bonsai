@@ -4,6 +4,7 @@ import type { ContextMenuItem } from './ContextMenu';
 import { WorkspaceToolbar } from './WorkspaceToolbar';
 import { WorkspaceDialogs } from './WorkspaceDialogs';
 import { WorkspaceOverlays } from './WorkspaceOverlays';
+import type { PendingForceSubmodule } from './dialogs/SubmoduleDialogs';
 import { WorkspaceGraphPane } from './WorkspaceGraphPane';
 import { WorkspaceRightPanel } from './WorkspaceRightPanel';
 import { isUsableRepo, shortOid } from './workspaceUtils';
@@ -18,6 +19,7 @@ import { effectiveMetrics } from '../graph/metrics';
 import type { GraphDisplayOptions } from '../graph/rightColumns';
 import { createGraphStream } from '../graph/streamAssembler';
 import { createGraphStreamApplier } from './repoWorkspace/graphStreamApply';
+import { useCoalescedRefresh, type RefreshOrigin } from './repoWorkspace/useCoalescedRefresh';
 import type { IncrementalEdgeIndex } from '../graph/incrementalEdgeIndex';
 import { ipc } from '../ipc';
 import type {
@@ -275,13 +277,20 @@ export function RepoWorkspace({
   // onto; `cur` = the current branch whose commits get rewritten (for the copy).
   const [pendingRebase, setPendingRebase] = useState<{ name: string; cur: string } | null>(null);
   const [pendingDeleteRemote, setPendingDeleteRemote] = useState<string | null>(null);
-  const [pendingDropStash, setPendingDropStash] = useState<number | null>(null);
+  // F-A6-B: carry the rendered oid alongside the index so the Drop confirm hits
+  // exactly the entry the user saw, even if the stack shifts before confirming.
+  const [pendingDropStash, setPendingDropStash] = useState<{
+    index: number;
+    oid?: string;
+  } | null>(null);
   // Reserved-path recovery: a stash apply/pop hit Windows-reserved paths (e.g.
   // `NUL`). Arms a ConfirmDialog offering to apply the rest, skipping those.
+  // `oid` (F-A6-B) is forwarded on the skip-reserved retry.
   const [pendingReservedStash, setPendingReservedStash] = useState<{
     index: number;
     op: 'apply' | 'pop';
     paths: string[];
+    oid?: string;
   } | null>(null);
   // P20: destructive reset (all three modes confirm; hard warns extra) + discard.
   const [pendingReset, setPendingReset] = useState<{ oid: string; mode: ResetMode } | null>(null);
@@ -340,6 +349,10 @@ export function RepoWorkspace({
   const [pendingAddSubmodule, setPendingAddSubmodule] = useState(false);
   const [pendingDeinitSubmodule, setPendingDeinitSubmodule] = useState<string | null>(null);
   const [pendingRemoveSubmodule, setPendingRemoveSubmodule] = useState<string | null>(null);
+  // P82 (F-A7-7): a plain deinit/remove refused because the submodule worktree is
+  // dirty → the danger force-escalation dialog (attempt-then-offer-force).
+  const [pendingForceSubmodule, setPendingForceSubmodule] =
+    useState<PendingForceSubmodule | null>(null);
   // P60b: a non-fast-forward pull → drives NonFfPullDialog (Merge / Rebase).
   const [pendingNonFfPull, setPendingNonFfPull] = useState<NonFfPullInfo | null>(null);
   // P60c: one-click undo. The toolbar Undo button describes the last op
@@ -467,6 +480,7 @@ export function RepoWorkspace({
     pendingAddSubmodule ||
     pendingDeinitSubmodule !== null ||
     pendingRemoveSubmodule !== null ||
+    pendingForceSubmodule !== null ||
     pendingNonFfPull !== null ||
     pendingUndo !== null ||
     pendingCherrypick !== null ||
@@ -1139,10 +1153,21 @@ export function RepoWorkspace({
     setSelectedIndex(null);
   }, []);
 
+  // P81: origin-forced tag-sync flag for the NEXT round. Set synchronously by
+  // `refresh(origin)` before the coalescer starts a round; read+cleared at the
+  // start of `runRefreshRound`. `manual`/`activation`/`focus`/`mutation` origins
+  // force an ls-remote tag-drift re-check; the `watcher` (external repo-changed)
+  // origin leaves it false → NON-forced tagSync (P77: no-op until Tags opened),
+  // so an external FS event never forces a network ls-remote (Flag 2).
+  const pendingTagForceRef = useRef(false);
+
   /** Composite post-op refresh (P1 §4.6): re-openRepo (refreshes header HEAD +
    *  self-heals the watcher) + refetch status/graph/branches/opstate. Never
-   *  throws — failures surface as a sticky error toast. */
-  const refreshAll = useCallback(async (): Promise<void> => {
+   *  throws — failures surface as a sticky error toast. This is the canonical
+   *  refresh round (P81 §2); all origins funnel through the coalescer to it. */
+  const runRefreshRound = useCallback(async (): Promise<void> => {
+    const forceTagSync = pendingTagForceRef.current;
+    pendingTagForceRef.current = false;
     try {
       const { info } = await ipc.openRepo(repoPath);
       setRepo(info);
@@ -1158,8 +1183,9 @@ export function RepoWorkspace({
           refetchOpState(),
           refetchCompare(),
           // P77: re-check tag drift on manual refresh / focus rescan (no-op until
-          // the Tags section has been opened once this session).
-          refetchTagSync({ force: true }),
+          // the Tags section has been opened once this session). P81 Flag 2: only
+          // forced origins pay the ls-remote; watcher events run non-forced.
+          refetchTagSync(forceTagSync ? { force: true } : undefined),
         ]);
       } else {
         clearStatus();
@@ -1207,6 +1233,24 @@ export function RepoWorkspace({
     pushToast,
   ]);
 
+  // P81 §2/§3: coalesce every refresh entry point onto the one canonical round.
+  // The coalescer collapses overlapping requests (leading + at-most-one-trailing)
+  // and the shared echo registry drops the self-caused watcher echo within TTL.
+  const { refresh: coalescedRefresh } = useCoalescedRefresh(repoId, runRefreshRound);
+  const refresh = useCallback(
+    (origin: RefreshOrigin): Promise<void> => {
+      // Forced tag-drift re-check for every non-watcher origin (mutation writes,
+      // manual refresh, activation self-heal, focus rescan). Set BEFORE enqueuing
+      // so the round about to start reads it (P81 Flag 2).
+      if (origin !== 'watcher') pendingTagForceRef.current = true;
+      return coalescedRefresh(origin);
+    },
+    [coalescedRefresh],
+  );
+  // Name preserved: the ~11 mutation call sites + hook deps stay untouched.
+  // A mutation is a local write → arms echo suppression + forces tagSync.
+  const refreshAll = useCallback((): Promise<void> => refresh('mutation'), [refresh]);
+
   // Initial load on mount: fetch state for repoId (the repo is already opened by
   // App — do NOT openRepo again here, §5.1). Runs for active AND background tabs.
   const mountedRef = useRef(false);
@@ -1227,15 +1271,17 @@ export function RepoWorkspace({
   // Activation self-heal (§7): on every flip TO active AFTER mount, refreshAll —
   // catches events missed while the tab was display:none. Skips the mount run
   // (the initial load above already covers first paint).
-  const refreshAllRef = useRef(refreshAll);
-  refreshAllRef.current = refreshAll;
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
   const activeFlipRef = useRef(false);
   useEffect(() => {
     if (!activeFlipRef.current) {
       activeFlipRef.current = true;
       return;
     }
-    if (active) void refreshAllRef.current();
+    // P81: activation ALWAYS refreshes (never echo-gated) — catches events
+    // missed while the tab was display:none.
+    if (active) void refreshRef.current('activation');
   }, [active]);
 
   // Selection -> commit diff (M4 §4.4). Every selection change resets the shared
@@ -1301,15 +1347,10 @@ export function RepoWorkspace({
     const subscribe = async () => {
       const off = await ipc.onRepoChanged((p) => {
         if (p.repoId !== repoId) return;
-        void refetchStatus();
-        void refetchGraph();
-        void refetchBranches();
-        void refetchStashes();
-        void refetchSubmodules();
-        void refetchWorktrees();
-        void refetchRemotes();
-        void refetchOpState();
-        void refetchCompare();
+        // P81 §7: funnel the watcher echo through the coalesced round. Gated by
+        // echo suppression — the self-caused event within TTL is a no-op; a
+        // genuine external change (or one past the window) runs a full round.
+        void refresh('watcher');
       });
       if (cancelled) {
         off();
@@ -1326,18 +1367,7 @@ export function RepoWorkspace({
       cancelled = true;
       for (const unsub of unsubs) unsub();
     };
-  }, [
-    repoId,
-    refetchStatus,
-    refetchGraph,
-    refetchBranches,
-    refetchStashes,
-    refetchSubmodules,
-    refetchWorktrees,
-    refetchRemotes,
-    refetchOpState,
-    refetchCompare,
-  ]);
+  }, [repoId, refresh]);
 
   // Window-focus rescan: ACTIVE tab only (the visible tab is the one the user
   // just returned to; background tabs self-heal on activation, §7).
@@ -1347,15 +1377,8 @@ export function RepoWorkspace({
     const unsubs: Unsubscribe[] = [];
     const subscribe = async () => {
       const off = await ipc.onWindowFocus(() => {
-        void refetchStatus();
-        void refetchGraph();
-        void refetchBranches();
-        void refetchStashes();
-        void refetchSubmodules();
-        void refetchWorktrees();
-        void refetchRemotes();
-        void refetchOpState();
-        void refetchCompare();
+        // P81 §7: focus rescan ALWAYS refreshes (never echo-gated).
+        void refresh('focus');
         forgeSignals.refresh('focus'); // P63: TTL-guarded (not forced)
       });
       if (cancelled) {
@@ -1372,19 +1395,7 @@ export function RepoWorkspace({
       cancelled = true;
       for (const unsub of unsubs) unsub();
     };
-  }, [
-    active,
-    refetchStatus,
-    refetchGraph,
-    refetchBranches,
-    refetchStashes,
-    refetchSubmodules,
-    refetchWorktrees,
-    refetchRemotes,
-    refetchOpState,
-    refetchCompare,
-    forgeSignals.refresh,
-  ]);
+  }, [active, refresh, forgeSignals.refresh]);
 
   // P63: a new graph layout identity (post fetch/pull/branch-op) may carry new
   // branch tips → TTL-guarded forge-signal refresh so their badges appear. Fires
@@ -1474,14 +1485,14 @@ export function RepoWorkspace({
     if (refreshing) return;
     setRefreshing(true);
     try {
-      await refreshAll();
+      await refresh('manual'); // P81: always runs (never echo-gated)
       verification.refresh();
       forgeSignals.refresh('manual', true); // P63: forced (bypass TTL)
       void refetchSigningStatus();
     } finally {
       setRefreshing(false);
     }
-  }, [refreshing, refreshAll, verification.refresh, forgeSignals.refresh, refetchSigningStatus]);
+  }, [refreshing, refresh, verification.refresh, forgeSignals.refresh, refetchSigningStatus]);
   const headBranch = branches?.local.find((b) => b.isHead) ?? null;
 
   // P78: branch suggestions + base hint for the PR create form. Compare = local
@@ -1658,6 +1669,7 @@ export function RepoWorkspace({
     refetchSubmodules,
     refetchStatus,
     refetchGraph,
+    onSubmoduleDirtyRefused: (name, op) => setPendingForceSubmodule({ name, op }),
   });
 
   const { handleAddWorktree, handleLockWorktree, handleUnlockWorktree, handleRemoveWorktree } =
@@ -2293,8 +2305,8 @@ export function RepoWorkspace({
   }
 
   // P9 §6.4: right-click a sidebar stash row → open the shared context menu.
-  function handleStashContextMenu(index: number, clientX: number, clientY: number) {
-    setMenu({ x: clientX, y: clientY, items: menus.stashMenuItems(index) });
+  function handleStashContextMenu(index: number, oid: string, clientX: number, clientY: number) {
+    setMenu({ x: clientX, y: clientY, items: menus.stashMenuItems(index, oid) });
   }
 
   // P19 §6.4: right-click a sidebar submodule row → open the shared context
@@ -2451,8 +2463,10 @@ export function RepoWorkspace({
     setPendingDeleteRemote,
     setPendingDeleteBranch,
     setPendingRenameBranch,
-    handleApplyStash,
-    handlePopStash,
+    // F-A6-B: the menu passes the rendered oid as arg 2; forward it as the
+    // wrong-target guard (skipReserved stays false for the first attempt).
+    handleApplyStash: (index, oid) => void handleApplyStash(index, false, oid),
+    handlePopStash: (index, oid) => void handlePopStash(index, false, oid),
     setPendingDropStash,
     handleInitSubmodule,
     handleUpdateSubmodule,
@@ -2809,11 +2823,11 @@ export function RepoWorkspace({
         handleDeleteRemoteTracking={(name) => void handleDeleteRemoteTracking(name)}
         pendingDropStash={pendingDropStash}
         setPendingDropStash={setPendingDropStash}
-        handleDropStash={(index) => void handleDropStash(index)}
+        handleDropStash={(index, oid) => void handleDropStash(index, oid)}
         pendingReservedStash={pendingReservedStash}
         setPendingReservedStash={setPendingReservedStash}
-        handleApplyStashSkipping={(index) => void handleApplyStash(index, true)}
-        handlePopStashSkipping={(index) => void handlePopStash(index, true)}
+        handleApplyStashSkipping={(index, oid) => void handleApplyStash(index, true, oid)}
+        handlePopStashSkipping={(index, oid) => void handlePopStash(index, true, oid)}
         pendingReset={pendingReset}
         setPendingReset={setPendingReset}
         handleResetBranch={(oid, mode) => void handleResetBranch(oid, mode)}
@@ -2937,6 +2951,8 @@ export function RepoWorkspace({
         pendingRemoveSubmodule={pendingRemoveSubmodule}
         setPendingRemoveSubmodule={setPendingRemoveSubmodule}
         handleRemoveSubmodule={handleRemoveSubmodule}
+        pendingForceSubmodule={pendingForceSubmodule}
+        setPendingForceSubmodule={setPendingForceSubmodule}
       />
       {/* P77 §4: destructive remote-tag confirms (delete-on-remote, force-move). */}
       <TagSyncDialogs

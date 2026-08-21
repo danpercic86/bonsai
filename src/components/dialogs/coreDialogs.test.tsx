@@ -192,23 +192,25 @@ function stashProps(over: Partial<StashDialogsProps> = {}): StashDialogsProps {
 
 describe('StashDialogs', () => {
   it('drop stash: confirm calls the handler once with the index; cancel does not', () => {
-    const p = stashProps({ pendingDropStash: 2 });
+    const p = stashProps({ pendingDropStash: { index: 2, oid: 'stashoid2' } });
     render(<StashDialogs {...p} />);
     expect(screen.getByRole('dialog', { name: 'Drop stash' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Drop stash' }));
     expect(p.handleDropStash).toHaveBeenCalledTimes(1);
-    expect(p.handleDropStash).toHaveBeenCalledWith(2);
+    // F-A6-B: the rendered oid is forwarded alongside the index.
+    expect(p.handleDropStash).toHaveBeenCalledWith(2, 'stashoid2');
   });
 
   it('reserved-files gate routes pop vs apply and is primary-styled', () => {
     const p = stashProps({
-      pendingReservedStash: { index: 1, op: 'pop', paths: ['nul.txt'] },
+      pendingReservedStash: { index: 1, op: 'pop', paths: ['nul.txt'], oid: 'stashoid1' },
     });
     render(<StashDialogs {...p} />);
     const btn = screen.getByRole('button', { name: 'Apply the rest' });
     expect(btn).toHaveClass('btn-primary');
     fireEvent.click(btn);
-    expect(p.handlePopStashSkipping).toHaveBeenCalledWith(1);
+    // F-A6-B: the same rendered oid is forwarded on the skip-reserved retry.
+    expect(p.handlePopStashSkipping).toHaveBeenCalledWith(1, 'stashoid1');
     expect(p.handleApplyStashSkipping).not.toHaveBeenCalled();
   });
 });

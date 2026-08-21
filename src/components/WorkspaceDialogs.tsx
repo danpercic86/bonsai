@@ -52,16 +52,16 @@ export interface WorkspaceDialogsProps {
   setPendingDeleteRemote: (v: string | null) => void;
   handleDeleteRemoteTracking(name: string): void;
 
-  pendingDropStash: number | null;
-  setPendingDropStash: (v: number | null) => void;
-  handleDropStash(index: number): void;
+  pendingDropStash: { index: number; oid?: string } | null;
+  setPendingDropStash: (v: { index: number; oid?: string } | null) => void;
+  handleDropStash(index: number, oid?: string): void;
 
-  pendingReservedStash: { index: number; op: 'apply' | 'pop'; paths: string[] } | null;
+  pendingReservedStash: { index: number; op: 'apply' | 'pop'; paths: string[]; oid?: string } | null;
   setPendingReservedStash: (
-    v: { index: number; op: 'apply' | 'pop'; paths: string[] } | null,
+    v: { index: number; op: 'apply' | 'pop'; paths: string[]; oid?: string } | null,
   ) => void;
-  handleApplyStashSkipping(index: number): void;
-  handlePopStashSkipping(index: number): void;
+  handleApplyStashSkipping(index: number, oid?: string): void;
+  handlePopStashSkipping(index: number, oid?: string): void;
 
   pendingReset: { oid: string; mode: ResetMode } | null;
   setPendingReset: (v: { oid: string; mode: ResetMode } | null) => void;

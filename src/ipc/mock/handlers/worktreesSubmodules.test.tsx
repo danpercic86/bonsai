@@ -158,13 +158,13 @@ describe('submodules', () => {
   it('deinit keeps the row (uninitialized, wtOid null); remove drops it', async () => {
     const repoId = await openDefault();
     await run(submoduleHandlers.addSubmodule(repoId, 'https://example.com/y.git', 'libs/y'));
-    await run(submoduleHandlers.deinitSubmodule(repoId, 'libs/y'));
+    await run(submoduleHandlers.deinitSubmodule(repoId, 'libs/y', false));
     let subs = await run(submoduleHandlers.listSubmodules(repoId));
     expect(subs.find((s) => s.name === 'libs/y')).toMatchObject({
       status: 'uninitialized',
       wtOid: null,
     });
-    await run(submoduleHandlers.removeSubmodule(repoId, 'libs/y'));
+    await run(submoduleHandlers.removeSubmodule(repoId, 'libs/y', false));
     subs = await run(submoduleHandlers.listSubmodules(repoId));
     expect(subs.some((s) => s.name === 'libs/y')).toBe(false);
   });
@@ -208,6 +208,42 @@ describe('submodule seams (?submodule=…)', () => {
     // No seam mutates state — the row is exactly as seeded.
     const subs = await run(submoduleHandlers.listSubmodules(repoId));
     expect(subs.find((s) => s.name === 'vendor/libcore')?.status).toBe('uninitialized');
+  });
+
+  // P82 (F-A7-7): the dirty-refusal seam — force=false refuses (dirtyNeedsForce,
+  // zero mutation), force=true discards. Two triggers: a modifiedWorkdir fixture
+  // row, and the ?submodule=dirty seam (covers non-modifiedWorkdir dirtiness).
+  it('deinit/remove: force=false on a modifiedWorkdir row refuses; force=true succeeds', async () => {
+    const repoId = await openDefault();
+    // tools/ci is seeded modifiedWorkdir.
+    const refused = await run(submoduleHandlers.deinitSubmodule(repoId, 'tools/ci', false));
+    expect(refused).toEqual({ kind: 'dirtyNeedsForce' });
+    // Zero mutation: the row is still modifiedWorkdir.
+    let subs = await run(submoduleHandlers.listSubmodules(repoId));
+    expect(subs.find((s) => s.name === 'tools/ci')?.status).toBe('modifiedWorkdir');
+
+    const forced = await run(submoduleHandlers.deinitSubmodule(repoId, 'tools/ci', true));
+    expect(forced).toEqual({ kind: 'deinitialized' });
+    subs = await run(submoduleHandlers.listSubmodules(repoId));
+    expect(subs.find((s) => s.name === 'tools/ci')?.status).toBe('uninitialized');
+  });
+
+  it('?submodule=dirty seam forces the refusal on an otherwise-clean row', async () => {
+    const repoId = await openDefault();
+    const refused = await withSeam('dirty', () =>
+      run(submoduleHandlers.removeSubmodule(repoId, 'vendor/libcore', false)),
+    );
+    expect(refused).toEqual({ kind: 'dirtyNeedsForce' });
+    // Zero mutation: the row still exists.
+    let subs = await run(submoduleHandlers.listSubmodules(repoId));
+    expect(subs.some((s) => s.name === 'vendor/libcore')).toBe(true);
+    // force=true (still under the seam) removes it.
+    const removed = await withSeam('dirty', () =>
+      run(submoduleHandlers.removeSubmodule(repoId, 'vendor/libcore', true)),
+    );
+    expect(removed).toEqual({ kind: 'removed' });
+    subs = await run(submoduleHandlers.listSubmodules(repoId));
+    expect(subs.some((s) => s.name === 'vendor/libcore')).toBe(false);
   });
 
   it('fail also covers sync; slow eventually succeeds', async () => {

@@ -8,6 +8,19 @@ import { delay, requireRepo } from '../repoState';
 import { hookRejectionFor } from '../hooksGate';
 import type { AppError, ApplyStashOutcome, CommitResult, CreateStashResult, StashEntry, StashScope } from '../../types';
 
+/** F-A6-B wrong-target guard (mirrors the Rust core + Tauri command). When the
+ *  caller passes the oid it rendered for `index` and it no longer matches the
+ *  entry now at that index, reject with the SAME message the backend returns —
+ *  BEFORE touching anything — so a stack shift between render and confirm can't
+ *  silently hit the wrong, unrecoverable entry. Undefined `expectedOid` skips
+ *  the check (legacy callers). */
+function guardExpectedOid(entry: StashEntry | undefined, expectedOid: string | undefined): void {
+  if (expectedOid === undefined) return;
+  if (entry === undefined || entry.oid !== expectedOid) {
+    throw new Error('stash list changed; refresh and retry');
+  }
+}
+
 export const stashHandlers = {
   async listStashes(repoId: string): Promise<StashEntry[]> {
     await delay(150);
@@ -62,10 +75,12 @@ export const stashHandlers = {
     repoId: string,
     index: number,
     skipReserved: boolean,
+    expectedOid?: string,
   ): Promise<ApplyStashOutcome> {
     await delay(150);
     const state = requireRepo(repoId);
     const entry = state.stashes.find((e) => e.index === index);
+    guardExpectedOid(entry, expectedOid);
     // Demo conflict trigger — mirrors the P8 mergeBranch "conflict" convention.
     if (entry !== undefined && entry.message.includes('conflict')) {
       return { kind: 'conflicts', paths: ['src/app.ts'] };
@@ -86,10 +101,12 @@ export const stashHandlers = {
     repoId: string,
     index: number,
     skipReserved: boolean,
+    expectedOid?: string,
   ): Promise<ApplyStashOutcome> {
     await delay(150);
     const state = requireRepo(repoId);
     const entry = state.stashes.find((e) => e.index === index);
+    guardExpectedOid(entry, expectedOid);
     // Conflict trigger: the entry is RETAINED (libgit2 only drops on clean pop).
     if (entry !== undefined && entry.message.includes('conflict')) {
       return { kind: 'conflicts', paths: ['src/app.ts'] };
@@ -107,9 +124,11 @@ export const stashHandlers = {
     return { kind: 'applied' };
   },
 
-  async dropStash(repoId: string, index: number): Promise<void> {
+  async dropStash(repoId: string, index: number, expectedOid?: string): Promise<void> {
     await delay(150);
     const state = requireRepo(repoId);
+    const entry = state.stashes.find((e) => e.index === index);
+    guardExpectedOid(entry, expectedOid);
     state.stashes = state.stashes.filter((e) => e.index !== index);
     state.stashes.forEach((e, i) => (e.index = i));
   },

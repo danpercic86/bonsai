@@ -130,6 +130,42 @@ describe('CommandPalette', () => {
     expect(onRunSearch).toHaveBeenCalledWith('fix the thing');
   });
 
+  it('preserves the highlight when the actions prop is replaced with a new array of identical-id rows', () => {
+    const props = {
+      onClose: vi.fn(),
+      onRunSearch: vi.fn(),
+      onJumpToCommit: vi.fn(),
+    };
+    const { rerender } = render(<CommandPalette open actions={makeActions()} {...props} />);
+    // Move the highlight off row 0 ("Fetch") onto "Pull".
+    fireEvent.keyDown(input(), { key: 'ArrowDown' });
+    expect(screen.getByRole('option', { name: 'Pull' })).toHaveAttribute('aria-selected', 'true');
+    // A churning producer hands us a brand-new array with the SAME ids/order
+    // (e.g. a streamed search batch or once-a-second AI run). The highlight must
+    // NOT snap back to the first enabled row.
+    rerender(<CommandPalette open actions={makeActions()} {...props} />);
+    expect(screen.getByRole('option', { name: 'Pull' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('option', { name: 'Fetch' })).toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('resets the highlight to the first enabled row when the filtered id set actually changes', () => {
+    const props = {
+      onClose: vi.fn(),
+      onRunSearch: vi.fn(),
+      onJumpToCommit: vi.fn(),
+    };
+    const { rerender } = render(<CommandPalette open actions={makeActions()} {...props} />);
+    fireEvent.keyDown(input(), { key: 'ArrowDown' });
+    expect(screen.getByRole('option', { name: 'Pull' })).toHaveAttribute('aria-selected', 'true');
+    // Different rows entirely (new ids) → visible set changed → reset to first enabled.
+    const nextActions: PaletteAction[] = [
+      { id: 'x1', title: 'Rebase', group: 'action', run: vi.fn() },
+      { id: 'x2', title: 'Stash', group: 'action', run: vi.fn() },
+    ];
+    rerender(<CommandPalette open actions={nextActions} {...props} />);
+    expect(screen.getByRole('option', { name: 'Rebase' })).toHaveAttribute('aria-selected', 'true');
+  });
+
   it('reopening resets the query text', () => {
     const props = {
       actions: makeActions(),

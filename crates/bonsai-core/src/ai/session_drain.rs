@@ -66,8 +66,17 @@ impl<'a> ClaudeSession<'a> {
     /// run is already decided, and dropping them silently would break D2.
     fn drain_stderr(&mut self, rx: &Receiver<Msg>) -> Option<String> {
         let deadline = Instant::now() + STDERR_GRACE_TOTAL;
-        while Instant::now() < deadline {
-            match rx.recv_timeout(STDERR_GRACE) {
+        loop {
+            // Clamp each per-recv grace to what is LEFT of the absolute cap, so the
+            // total drain never exceeds STDERR_GRACE_TOTAL (a bare `recv_timeout(
+            // STDERR_GRACE)` past a `now < deadline` check could overshoot by up to
+            // one full STDERR_GRACE). A clamped wait that times out is treated as the
+            // same empty-gap stop as before — we are at the cap and stopping anyway.
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return None;
+            }
+            match rx.recv_timeout(remaining.min(STDERR_GRACE)) {
                 Ok(Msg::Err(line)) => {
                     self.stderr_tail.push_str(&line);
                     self.stderr_tail.push('\n');
@@ -85,7 +94,6 @@ impl<'a> ClaudeSession<'a> {
                 Err(_) => return None, // empty gap, or every sender gone
             }
         }
-        None
     }
 }
 

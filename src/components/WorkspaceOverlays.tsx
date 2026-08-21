@@ -8,6 +8,7 @@ import { ProposedOpDialog } from './ProposedOpDialog';
 import { ChangelogDialog } from './ChangelogDialog';
 import { ComposerDialog } from './ComposerDialog';
 import { SubmoduleDialogs } from './dialogs/SubmoduleDialogs';
+import type { PendingForceSubmodule } from './dialogs/SubmoduleDialogs';
 import type { PaletteAction } from './paletteActions';
 import type { NonFfPullInfo } from './repoWorkspace/useRemoteOps';
 import type { UseCommitComposer } from './repoWorkspace/useCommitComposer';
@@ -85,10 +86,13 @@ export interface WorkspaceOverlaysProps {
   handleAddSubmodule: (url: string, path: string) => void;
   pendingDeinitSubmodule: string | null;
   setPendingDeinitSubmodule: Dispatch<SetStateAction<string | null>>;
-  handleDeinitSubmodule: (name: string) => void;
+  handleDeinitSubmodule: (name: string, force?: boolean) => void;
   pendingRemoveSubmodule: string | null;
   setPendingRemoveSubmodule: Dispatch<SetStateAction<string | null>>;
-  handleRemoveSubmodule: (name: string) => void;
+  handleRemoveSubmodule: (name: string, force?: boolean) => void;
+  // P82: dirty force-escalation dialog state.
+  pendingForceSubmodule: PendingForceSubmodule | null;
+  setPendingForceSubmodule: Dispatch<SetStateAction<PendingForceSubmodule | null>>;
 }
 
 export function WorkspaceOverlays({
@@ -132,6 +136,8 @@ export function WorkspaceOverlays({
   pendingRemoveSubmodule,
   setPendingRemoveSubmodule,
   handleRemoveSubmodule,
+  pendingForceSubmodule,
+  setPendingForceSubmodule,
 }: WorkspaceOverlaysProps) {
   return (
     <>
@@ -249,10 +255,12 @@ export function WorkspaceOverlays({
         handleAddSubmodule={(url, path) => void handleAddSubmodule(url, path)}
         pendingDeinit={pendingDeinitSubmodule}
         setPendingDeinit={setPendingDeinitSubmodule}
-        handleDeinitSubmodule={(name) => void handleDeinitSubmodule(name)}
+        handleDeinitSubmodule={(name, force) => void handleDeinitSubmodule(name, force)}
         pendingRemove={pendingRemoveSubmodule}
         setPendingRemove={setPendingRemoveSubmodule}
-        handleRemoveSubmodule={(name) => void handleRemoveSubmodule(name)}
+        handleRemoveSubmodule={(name, force) => void handleRemoveSubmodule(name, force)}
+        pendingForce={pendingForceSubmodule}
+        setPendingForce={setPendingForceSubmodule}
       />
     </>
   );

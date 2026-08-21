@@ -531,6 +531,18 @@ export interface SubmoduleInfo {
   status: SubmoduleStatus;
 }
 
+/** Result of `deinitSubmodule` (P82). Mirrors Rust `SubmoduleDeinitOutcome`
+ *  (serde tagged "kind", camelCase). `dirtyNeedsForce` = the plain op refused
+ *  because the submodule worktree is dirty; re-invoke with `force=true`. */
+export type SubmoduleDeinitOutcome =
+  | { kind: 'deinitialized' }
+  | { kind: 'dirtyNeedsForce' };
+
+/** Result of `removeSubmodule` (P82). Mirrors Rust `SubmoduleRemoveOutcome`. */
+export type SubmoduleRemoveOutcome =
+  | { kind: 'removed' }
+  | { kind: 'dirtyNeedsForce' };
+
 /** One worktree row (main or linked) — P27. Wire mirror of the Rust
  *  `WorktreeInfo`. `headOid` is full 40-hex; the UI shortens to 7. */
 export interface WorktreeInfo {
@@ -2387,14 +2399,30 @@ export interface IpcApi {
   /** Apply stash `index` WITHOUT dropping. Rejects operationInProgress | git | noRepo.
    *  `skipReserved`: on first attempt (false) a stash containing Windows-reserved
    *  paths returns `reservedPaths` and applies nothing; retry with true to apply
-   *  everything except those (`appliedSkippingReserved`). */
-  applyStash(repoId: string, index: number, skipReserved: boolean): Promise<ApplyStashOutcome>;
+   *  everything except those (`appliedSkippingReserved`).
+   *  `expectedOid` (F-A6-B): the oid the UI rendered for this stack index. When
+   *  provided and it no longer matches the entry at `index`, the backend rejects
+   *  with git "stash list changed; refresh and retry" BEFORE touching anything,
+   *  guarding against a stack shift between render and confirm. */
+  applyStash(
+    repoId: string,
+    index: number,
+    skipReserved: boolean,
+    expectedOid?: string,
+  ): Promise<ApplyStashOutcome>;
   /** Apply + drop on clean success (retained on conflict). Rejects operationInProgress | git | noRepo.
    *  `skipReserved`: as for `applyStash`; when any reserved path is skipped the
-   *  stash is KEPT (not dropped) so the reserved blobs are not lost. */
-  popStash(repoId: string, index: number, skipReserved: boolean): Promise<ApplyStashOutcome>;
-  /** Permanently discard stash `index` (UI confirms). Rejects git | noRepo. */
-  dropStash(repoId: string, index: number): Promise<void>;
+   *  stash is KEPT (not dropped) so the reserved blobs are not lost.
+   *  `expectedOid`: as for {@link applyStash} — wrong-target guard (F-A6-B). */
+  popStash(
+    repoId: string,
+    index: number,
+    skipReserved: boolean,
+    expectedOid?: string,
+  ): Promise<ApplyStashOutcome>;
+  /** Permanently discard stash `index` (UI confirms). Rejects git | noRepo.
+   *  `expectedOid`: as for {@link applyStash} — wrong-target guard (F-A6-B). */
+  dropStash(repoId: string, index: number, expectedOid?: string): Promise<void>;
   /** Amend HEAD with a new message + the current index (P20). Preserves HEAD's
    *  parents + original author. `sign` (P58) + `skipHooks` (P59a): as
    *  {@link commit}. Rejects operationInProgress | emptyMessage | configMissing
@@ -2454,12 +2482,14 @@ export interface IpcApi {
   /** P60d: add a submodule from `url` at repo-relative `path` (clones it).
    *  Rejects noRepo | invalidName | git. */
   addSubmodule(repoId: string, url: string, path: string): Promise<SubmoduleInfo>;
-  /** P60d: deinit — clear its config + empty the worktree; keep .gitmodules.
+  /** P60d/P82: deinit — clear config + empty worktree; keep .gitmodules.
+   *  `force=false` refuses (`dirtyNeedsForce`) when the submodule worktree is
+   *  dirty, mutating nothing; re-invoke with `force=true` to discard.
    *  Rejects noRepo | invalidName | git. */
-  deinitSubmodule(repoId: string, name: string): Promise<void>;
-  /** P60d: remove entirely (deinit + git rm + drop .git/modules). DESTRUCTIVE.
-   *  Rejects noRepo | invalidName | git. */
-  removeSubmodule(repoId: string, name: string): Promise<void>;
+  deinitSubmodule(repoId: string, name: string, force: boolean): Promise<SubmoduleDeinitOutcome>;
+  /** P60d/P82: remove entirely (deinit + git rm + drop .git/modules). DESTRUCTIVE.
+   *  `force` semantics as `deinitSubmodule`. Rejects noRepo | invalidName | git. */
+  removeSubmodule(repoId: string, name: string, force: boolean): Promise<SubmoduleRemoveOutcome>;
   // --- P27: worktrees ---
   /** All worktrees (main first) with resolved branch/oid/badges. Rejects noRepo | git. */
   listWorktrees(repoId: string): Promise<WorktreeInfo[]>;

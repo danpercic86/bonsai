@@ -72,7 +72,7 @@ export interface SidebarProps {
   /** "Stash changes" action — stash the dirty worktree. */
   onCreateStash(): void;
   /** Right-click a stash row → open the shared context menu at the cursor. */
-  onStashContextMenu(index: number, clientX: number, clientY: number): void;
+  onStashContextMenu(index: number, oid: string, clientX: number, clientY: number): void;
   /** P19 §6.1: submodules with classified status. */
   submodules: SubmoduleInfo[];
   /** Right-click a submodule row → open the shared context menu at the cursor. */
@@ -232,14 +232,16 @@ function ConfiguredRemoteRow({
 
 function StashRow({
   index,
+  oid,
   message,
   ts,
   onContextMenu,
 }: {
   index: number;
+  oid: string;
   message: string;
   ts: number;
-  onContextMenu(index: number, clientX: number, clientY: number): void;
+  onContextMenu(index: number, oid: string, clientX: number, clientY: number): void;
 }) {
   const label = `stash@{${index}}`;
   const now = Math.floor(Date.now() / 1000);
@@ -248,7 +250,9 @@ function StashRow({
       className="branch-row"
       onContextMenu={(e) => {
         e.preventDefault();
-        onContextMenu(index, e.clientX, e.clientY);
+        // F-A6-B: pass the oid THIS row rendered so a later apply/pop/drop hits
+        // exactly the entry the user saw, even if the stack shifts meanwhile.
+        onContextMenu(index, oid, e.clientX, e.clientY);
       }}
     >
       <span className="branch-glyph">{'⊟'}</span>
@@ -724,6 +728,7 @@ export function Sidebar({
                     <StashRow
                       key={s.index}
                       index={s.index}
+                      oid={s.oid}
                       message={s.message}
                       ts={s.ts}
                       onContextMenu={onStashContextMenu}

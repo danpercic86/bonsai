@@ -33,10 +33,19 @@ export function useStashActions(
     }
   }
 
-  async function handleApplyStash(index: number, skipReserved = false) {
+  // F-A6-B: on the wrong-target guard rejection, refresh the stale list to the
+  // current stack (in addition to the error toast) so the next attempt renders
+  // fresh oids. Other errors keep today's toast-only behavior.
+  function reportStashError(e: unknown) {
+    const msg = errorMessage(e);
+    pushToast('error', msg);
+    if (msg.includes('stash list changed')) void refetchStashes();
+  }
+
+  async function handleApplyStash(index: number, skipReserved = false, expectedOid?: string) {
     setMutating(true);
     try {
-      const res = await ipc.applyStash(repoId, index, skipReserved);
+      const res = await ipc.applyStash(repoId, index, skipReserved, expectedOid);
       switch (res.kind) {
         case 'applied':
           pushToast('success', `Applied stash@{${index}}`);
@@ -49,7 +58,8 @@ export function useStashActions(
           break;
         case 'reservedPaths':
           // Not an error: offer to apply everything except the un-writable paths.
-          setPendingReservedStash({ index, op: 'apply', paths: res.paths });
+          // Carry `oid` so the retry re-invokes with the SAME wrong-target guard.
+          setPendingReservedStash({ index, op: 'apply', paths: res.paths, oid: expectedOid });
           return; // skip refreshAll; nothing changed and the dialog is now up
         case 'appliedSkippingReserved':
           pushToast(
@@ -60,16 +70,16 @@ export function useStashActions(
       }
       await refreshAll();
     } catch (e) {
-      pushToast('error', errorMessage(e));
+      reportStashError(e);
     } finally {
       setMutating(false);
     }
   }
 
-  async function handlePopStash(index: number, skipReserved = false) {
+  async function handlePopStash(index: number, skipReserved = false, expectedOid?: string) {
     setMutating(true);
     try {
-      const res = await ipc.popStash(repoId, index, skipReserved);
+      const res = await ipc.popStash(repoId, index, skipReserved, expectedOid);
       switch (res.kind) {
         case 'applied':
           pushToast('success', `Popped stash@{${index}}`);
@@ -82,7 +92,7 @@ export function useStashActions(
           );
           break;
         case 'reservedPaths':
-          setPendingReservedStash({ index, op: 'pop', paths: res.paths });
+          setPendingReservedStash({ index, op: 'pop', paths: res.paths, oid: expectedOid });
           return; // skip refreshAll; nothing changed and the dialog is now up
         case 'appliedSkippingReserved':
           pushToast(
@@ -94,21 +104,21 @@ export function useStashActions(
       }
       await refreshAll();
     } catch (e) {
-      pushToast('error', errorMessage(e));
+      reportStashError(e);
     } finally {
       setMutating(false);
     }
   }
 
-  async function handleDropStash(index: number) {
+  async function handleDropStash(index: number, expectedOid?: string) {
     // called after ConfirmDialog
     setMutating(true);
     try {
-      await ipc.dropStash(repoId, index);
+      await ipc.dropStash(repoId, index, expectedOid);
       pushToast('success', `Dropped stash@{${index}}`);
       await Promise.all([refetchStashes(), refetchGraph()]); // pills change; worktree does not
     } catch (e) {
-      pushToast('error', errorMessage(e));
+      reportStashError(e);
     } finally {
       setMutating(false);
     }

@@ -223,7 +223,8 @@ describe('Sidebar sections', () => {
     expect(screen.getByText('stash@{0}')).toBeInTheDocument();
     expect(screen.getByText('WIP on main')).toBeInTheDocument();
     fireEvent.contextMenu(screen.getByText('stash@{0}').closest('li')!, { clientX: 7, clientY: 8 });
-    expect(props.onStashContextMenu).toHaveBeenCalledWith(0, 7, 8);
+    // F-A6-B: the row forwards the oid it rendered alongside index + coords.
+    expect(props.onStashContextMenu).toHaveBeenCalledWith(0, 'a'.repeat(40), 7, 8);
   });
 
   it('submodule rows render the status badge; worktree rows render their badge pills', () => {
