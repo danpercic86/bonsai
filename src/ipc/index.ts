@@ -7,6 +7,7 @@ export const ipc: IpcApi =
     : (await import('./tauri')).tauriIpc;
 
 export type {
+  AccountSource,
   AgentAsset,
   AgentAssetInput,
   AgentAssetInventory,

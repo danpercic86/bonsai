@@ -27,6 +27,12 @@ export interface SettingsAccountAddFormProps {
   /** A token was validated + stored for `host` (login for the success toast). */
   onSuccess(host: string, login: string): void;
   onOpenUrl(url: string): void;
+  /** P80 §3.5: adding-another to a known host — the host field renders as
+   *  disabled text pre-filled with this value. */
+  lockedHost?: string;
+  /** P80 §3.5: the group's provider kind — the kind radiogroup renders as a
+   *  static badge instead of selectable radios. */
+  lockedKind?: ForgeKind;
 }
 
 function isPlatformClick(e: MouseEvent): boolean {
@@ -56,13 +62,17 @@ export function SettingsAccountAddForm({
   onCancel,
   onSuccess,
   onOpenUrl,
+  lockedHost,
+  lockedKind,
 }: SettingsAccountAddFormProps) {
-  const [kind, setKind] = useState<ForgeKind>('gitHub');
-  const [host, setHost] = useState('');
+  const [kind, setKind] = useState<ForgeKind>(lockedKind ?? 'gitHub');
+  const [host, setHost] = useState(lockedHost ?? '');
   const [token, setToken] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const hostLocked = lockedHost !== undefined;
+  const kindLocked = lockedKind !== undefined;
   const hint = CONNECT_HINTS[kind] ?? CONNECT_HINTS.unknown;
   const isAzure = kind === 'azureDevOps';
   const canSubmit = !submitting && !isAzure && host.trim() !== '' && token.trim() !== '';
@@ -73,7 +83,7 @@ export function SettingsAccountAddForm({
     const normalizedHost = host.trim().toLowerCase();
     setSubmitting(true);
     setError(null);
-    void ipc.forgeSetTokenForHost(normalizedHost, kind, token).then(
+    void ipc.forgeAddAccount(normalizedHost, kind, token).then(
       (viewer) => {
         setSubmitting(false);
         onSuccess(normalizedHost, viewer.login);
@@ -94,30 +104,39 @@ export function SettingsAccountAddForm({
         submit();
       }}
     >
-      <fieldset className="settings-account-kinds" role="radiogroup" aria-label="Provider">
-        {KIND_OPTIONS.map((k) => {
-          const disabled = k === 'azureDevOps';
-          return (
-            <label key={k} className="settings-account-kind">
-              <input
-                type="radio"
-                name="account-add-kind"
-                value={k}
-                checked={kind === k}
-                disabled={disabled}
-                aria-disabled={disabled}
-                aria-describedby={disabled ? hintId : undefined}
-                onChange={() => setKind(k)}
-              />
-              <span>{kindLabel(k)}</span>
-            </label>
-          );
-        })}
-      </fieldset>
-      {KIND_OPTIONS.includes('azureDevOps') && (
-        <p className="settings-row-help" id={hintId}>
-          {AZURE_HINT}
-        </p>
+      {kindLocked ? (
+        <div className="settings-account-kind-locked">
+          <span className="settings-config-field-label">Provider</span>
+          <span className="forge-provider-badge">{kindLabel(kind)}</span>
+        </div>
+      ) : (
+        <>
+          <fieldset className="settings-account-kinds" role="radiogroup" aria-label="Provider">
+            {KIND_OPTIONS.map((k) => {
+              const disabled = k === 'azureDevOps';
+              return (
+                <label key={k} className="settings-account-kind">
+                  <input
+                    type="radio"
+                    name="account-add-kind"
+                    value={k}
+                    checked={kind === k}
+                    disabled={disabled}
+                    aria-disabled={disabled}
+                    aria-describedby={disabled ? hintId : undefined}
+                    onChange={() => setKind(k)}
+                  />
+                  <span>{kindLabel(k)}</span>
+                </label>
+              );
+            })}
+          </fieldset>
+          {KIND_OPTIONS.includes('azureDevOps') && (
+            <p className="settings-row-help" id={hintId}>
+              {AZURE_HINT}
+            </p>
+          )}
+        </>
       )}
 
       <label className="settings-config-field-label" htmlFor="account-add-host">
@@ -130,7 +149,8 @@ export function SettingsAccountAddForm({
         autoComplete="off"
         placeholder={HOST_PLACEHOLDER[kind] ?? 'host'}
         value={host}
-        disabled={submitting}
+        disabled={submitting || hostLocked}
+        readOnly={hostLocked}
         onChange={(e) => setHost(e.target.value)}
       />
 

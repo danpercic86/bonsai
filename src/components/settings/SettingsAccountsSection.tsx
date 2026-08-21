@@ -1,8 +1,9 @@
-// P79 §3.2 — the "Accounts" pane body: the global list of forge sign-ins Bonsai
-// knows a token for (repo-independent). Owns the `forgeListAccounts` fetch, the
-// add-form open state and the Remove confirm; composes SettingsAccountCard +
-// SettingsAccountAddForm. Precedent: SettingsProfilesSection.
-import { useCallback, useEffect, useRef, useState } from 'react';
+// P80 §3 — the "Accounts" pane body: forge sign-ins grouped by host, each host
+// group owning its accounts, per-account Default control, and an add-another
+// affordance. Owns the `forgeListAccounts` fetch, the global (new-host) add form,
+// and the per-account Remove confirm (with a fallback warning). Composes
+// SettingsAccountHostGroup. Precedent: SettingsProfilesSection.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ipc } from '../../ipc';
 import type { ForgeAccount } from '../../ipc';
@@ -11,15 +12,10 @@ import { errorMessage } from '../../utils/errors';
 import { SkeletonRows } from '../CommitPanel';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { SettingsAccountAddForm } from './SettingsAccountAddForm';
-import { SettingsAccountCard } from './SettingsAccountCard';
+import { SettingsAccountHostGroup } from './SettingsAccountHostGroup';
 import { SettingsEmpty } from './SettingsEmpty';
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsRow } from './SettingsRow';
-
-interface RemoveTarget {
-  host: string;
-  login: string | null;
-}
 
 export function SettingsAccountsSection() {
   const pushToast = usePushToast();
@@ -27,7 +23,7 @@ export function SettingsAccountsSection() {
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [removeTarget, setRemoveTarget] = useState<RemoveTarget | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<ForgeAccount | null>(null);
   const [removing, setRemoving] = useState(false);
   const reqRef = useRef(0);
 
@@ -64,11 +60,33 @@ export function SettingsAccountsSection() {
     [pushToast],
   );
 
+  // Group accounts by host; alphabetical host order (stable, deterministic).
+  const groups = useMemo(() => {
+    const byHost = new Map<string, ForgeAccount[]>();
+    for (const a of accounts) {
+      const bucket = byHost.get(a.host);
+      if (bucket === undefined) byHost.set(a.host, [a]);
+      else bucket.push(a);
+    }
+    return [...byHost.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([host, list]) => ({ host, kind: list[0].kind, accounts: list }));
+  }, [accounts]);
+
+  const setDefault = useCallback(
+    (host: string, accountId: string) => {
+      void ipc.forgeSetHostDefault(host, accountId).then(refetch, (e: unknown) =>
+        pushToast('error', `Could not set the default account: ${errorMessage(e)}`),
+      );
+    },
+    [pushToast, refetch],
+  );
+
   const confirmRemove = () => {
     if (removeTarget === null) return;
-    const { host } = removeTarget;
+    const { accountId, host } = removeTarget;
     setRemoving(true);
-    void ipc.forgeClearTokenForHost(host).then(
+    void ipc.forgeRemoveAccount(accountId).then(
       () => {
         setRemoving(false);
         setRemoveTarget(null);
@@ -80,6 +98,8 @@ export function SettingsAccountsSection() {
       },
     );
   };
+
+  const removeLabel = removeTarget?.login ?? removeTarget?.host ?? 'this account';
 
   return (
     <SettingsGroup id="accounts" title="Connected accounts">
@@ -103,13 +123,20 @@ export function SettingsAccountsSection() {
 
       {!loading &&
         listError === null &&
-        accounts.map((a) => (
-          <SettingsAccountCard
-            key={a.host}
-            account={a}
+        groups.map((g) => (
+          <SettingsAccountHostGroup
+            key={g.host}
+            host={g.host}
+            kind={g.kind}
+            accounts={g.accounts}
+            onSetDefault={(accountId) => setDefault(g.host, accountId)}
+            onRequestRemove={setRemoveTarget}
             onChanged={refetch}
-            onRequestRemove={() => setRemoveTarget({ host: a.host, login: a.login })}
             onOpenUrl={onOpenUrl}
+            onAdded={(host, login) => {
+              refetch();
+              pushToast('success', `Added ${login} to ${host}.`);
+            }}
           />
         ))}
 
@@ -138,18 +165,28 @@ export function SettingsAccountsSection() {
 
       <ConfirmDialog
         open={removeTarget !== null}
-        title={`Remove ${removeTarget?.host ?? 'this host'}?`}
+        title={`Remove ${removeLabel}?`}
         confirmLabel="Remove"
         busy={removing}
         onConfirm={confirmRemove}
         onCancel={() => setRemoveTarget(null)}
       >
         {'This deletes the saved token for '}
+        <span className="mono">{removeTarget?.login ?? removeTarget?.host ?? ''}</span>
+        {' on '}
         <span className="mono">{removeTarget?.host ?? ''}</span>
-        {removeTarget?.login != null ? ` (${removeTarget.login})` : ''}
-        {' from your OS keychain. Any repository on '}
-        <span className="mono">{removeTarget?.host ?? ''}</span>
-        {' will need a new token to view pull requests.'}
+        {' from your OS keychain.'}
+        {removeTarget?.isHostDefault === true && (
+          <>
+            {" It's the default for "}
+            <span className="mono">{removeTarget.host}</span>
+            {'; another account will become the default, or '}
+            <span className="mono">{removeTarget.host}</span>
+            {' will have none.'}
+          </>
+        )}
+        {' Any repository pinned to this account will fall back to the host default.'}
+        {" This can't be undone — you'll need a new token to sign in again."}
       </ConfirmDialog>
     </SettingsGroup>
   );

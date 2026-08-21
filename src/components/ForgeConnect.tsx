@@ -5,7 +5,7 @@ import type { ForgeKind } from '../ipc';
 // optional banner and the submit label differ — the token field, the
 // per-provider scopes hint, the keychain note, the error banner and the submit
 // handler are identical across all three.
-export type ConnectMode = 'connect' | 'change' | 'reauth';
+export type ConnectMode = 'connect' | 'change' | 'reauth' | 'add';
 
 // P62c: paste-a-PAT affordance shown when the host has no stored token. The
 // token is submitted to the container (forgeSetToken → OS keychain); it is
@@ -67,13 +67,14 @@ export const CONNECT_HINTS: Record<ForgeKind, ConnectHint> = {
     placeholder: 'github_pat_…',
   },
   gitLab: {
-    scopes: 'Use a personal access token with the "api" scope.',
+    scopes:
+      'Use a personal access token with the "api" scope. Read-only scopes such as "read_api" or "read_repository" are not enough to create merge requests.',
     url: 'https://gitlab.com/-/user_settings/personal_access_tokens',
     placeholder: 'glpat-…',
   },
   bitbucket: {
     scopes:
-      'Use a repository or workspace access token (or an app password) with pull-request read and write.',
+      'Use a repository or workspace access token with Pull requests (read and write). App passwords still work but Atlassian is retiring them during 2026, so prefer an access token.',
     url: 'https://support.atlassian.com/bitbucket-cloud/docs/create-a-repository-access-token/',
     placeholder: 'access token',
   },
@@ -112,9 +113,25 @@ export function ForgeConnect({
       ? `Replace token for ${who}`
       : mode === 'reauth'
         ? `Reconnect to ${host}`
-        : `Connect to ${host}`;
-  const submitIdle = mode === 'change' ? 'Replace token' : mode === 'reauth' ? 'Reconnect' : 'Connect';
-  const submitBusy = mode === 'change' ? 'Replacing…' : mode === 'reauth' ? 'Reconnecting…' : 'Connecting…';
+        : mode === 'add'
+          ? `Add another account for ${host}`
+          : `Connect to ${host}`;
+  const submitIdle =
+    mode === 'change'
+      ? 'Replace token'
+      : mode === 'reauth'
+        ? 'Reconnect'
+        : mode === 'add'
+          ? 'Add account'
+          : 'Connect';
+  const submitBusy =
+    mode === 'change'
+      ? 'Replacing…'
+      : mode === 'reauth'
+        ? 'Reconnecting…'
+        : mode === 'add'
+          ? 'Adding…'
+          : 'Connecting…';
 
   return (
     <form
@@ -153,6 +170,8 @@ export function ForgeConnect({
             <span className="mono">{`${owner}/${repo}`}</span>
             {' is paused until then.'}
           </>
+        ) : mode === 'add' ? (
+          <>{'Paste a token for a different account. This repository will use the new account.'}</>
         ) : (
           <>
             {`Paste a personal access token to view and open pull requests for `}

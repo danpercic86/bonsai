@@ -902,6 +902,7 @@ export default function App() {
                 onPaneResizeEnd={handlePaneResizeEnd}
                 onOpenRepoPath={(path) => void openTab(path)}
                 onOpenIdentitySettings={settings.openIdentity}
+                onOpenAccountSettings={() => settings.openAt('accounts')}
                 appCommands={appCommands}
               />
             </div>

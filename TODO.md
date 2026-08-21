@@ -125,7 +125,29 @@ modules (a real refactor with call-graph impact, not a leaf move).
   account=host); `forgeClearToken` exists but no UI calls it. Needs a new connected-hosts index +
   list command (keychain isn't portably enumerable).
 - **P80 — multi-account forge (host default + per-repo override).** `in-progress`. **Current step:
-  architect writing contract.** User-reported gaps (2026-08-21): (1) can't use different accounts in
+  increment A backend COMMITTED (`01bb97e`); increment B UI = ui-designer writing `P80-ui.md`.**
+  Resolution order: repo override → owner-match (login==owner, lowercased, exactly one) → host
+  default → single → first+nudge. OD-1..6 resolved (settings.json override · clear-override-only ·
+  auto-pin on connect · first+nudge · keep legacy 1 release · Azure disabled). Owner-match =
+  login-based only (org repos fall through; full org coverage deferred). Increment A: reviewer
+  approve/no-MUST-FIX, tester forge 16/16 cargo + 47/47 vitest + workspace 1900 green.
+  **P80 follow-ups (SHOULD-FIX/NIT, non-blocking):** (a) `forge_set_token_inner` validates before the
+  `host.is_empty()` guard — resolve/guard host first to skip a wasted round-trip on unparseable
+  origin; (b) keychain-write-then-settings ordering: a failed `settings::update` leaves an orphaned
+  keychain token (currently `let _ =`) — surface the error; (c) re-connecting a migrated legacy
+  `login:None` host creates a 2nd three-part account + orphans the bare-host keychain entry (contract
+  §1.2 rekey, optional) — cleanup ticket. (d) DONE in increment B: PrPanel "Disconnect" replaced by
+  nondestructive "Reset to host default"; full sign-out via `forge_remove_account` in Settings only.
+  **Increment B follow-ups (NIT, non-blocking):** (e) `ContextMenu` has no separator concept, so the
+  switcher's account rows / command rows run contiguous (contract §1.3/§1.4 wanted dividers) — same
+  gap as the P69i identity menu; add a separator item to ContextMenu. (f) Settings Accounts group
+  ordering is alphabetical only (no repoId in scope for "current host first"). (g) disabled Default
+  radio's `aria-describedby` points at a `hidden` span — switch to a visually-hidden class. (h)
+  switcher trigger has no busy affordance during a pin/reset write (menu shows aria-busy; trigger
+  doesn't) — consider `opacity:0.6`. (i) §1.1 wireframe middot between host and caption omitted
+  (cosmetic). FIXED in increment B (were SHOULD-FIX): caption `max-width` 11ch→20ch (was clipping
+  "Pinned to this repo"); OD-4 nudge dropped from warning-tint to plain muted note. types.rs 547→239
+  (test module split to `types/tests.rs`, 16 tests unchanged). User-reported gaps (2026-08-21): (1) can't use different accounts in
   different repos — tokens are keyed by host only, so one github.com token app-wide; (2) want
   profiles: a host has a default account all repos inherit, overridable per repo. Applies to ALL
   forges, not just GitHub. Scope (user-approved 2026-08-21): keychain key changes `host` →

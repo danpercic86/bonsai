@@ -13,13 +13,13 @@ import { usePushToast } from '../ToastContext';
 import { errorMessage, isAppError } from '../utils/errors';
 import type { ComboboxOption } from './Combobox';
 import { SkeletonRows } from './CommitPanel';
-import { ConfirmDialog } from './ConfirmDialog';
 import { ForgeAccountHeader } from './ForgeAccountHeader';
 import { ForgeConnect, type ConnectMode } from './ForgeConnect';
 import { PrCreateForm } from './PrCreateForm';
 import { PrDetailView } from './PrDetailView';
 import { PrList } from './PrList';
 import { PrReviewComments } from './PrReviewComments';
+import { useForgeAccountCache } from './prPanel/useForgeAccountCache';
 
 // P62c: right-pane PR panel CONTAINER (contract §8). Owns view state, the
 // forge* IPC calls, and last-wins req-id guards (mirrors DiffImageCard). It is
@@ -47,6 +47,9 @@ export interface PrPanelProps {
   baseOptions?: ComboboxOption[];
   /** P78: branch suggestions for the create form's Compare combobox (local). */
   compareOptions?: ComboboxOption[];
+  /** P80: open Settings → Accounts (the kebab's "Manage accounts…"). Optional —
+   *  a no-op when the host app does not wire it. */
+  onManageAccounts?(): void;
 }
 
 export function PrPanel({
@@ -57,6 +60,7 @@ export function PrPanel({
   aiEligible = false,
   baseOptions = [],
   compareOptions = [],
+  onManageAccounts,
 }: PrPanelProps) {
   const pushToast = usePushToast();
 
@@ -81,13 +85,24 @@ export function PrPanel({
   // P79: which connect flow ForgeConnect renders — first connect vs replace
   // (change) vs expiry (reauth). Distinct from the View union (§4/§5).
   const [connectMode, setConnectMode] = useState<ConnectMode>('connect');
-  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
-  const [disconnecting, setDisconnecting] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
   const [bootstrapTick, setBootstrapTick] = useState(0);
   const [listTick, setListTick] = useState(0);
+
+  // P80: the switcher's account cache + per-repo override writes (extracted to a
+  // hook to keep this container focused). The header still renders from `ctx`.
+  const {
+    accounts,
+    accountsError,
+    accountsBusy,
+    handleOpenAccountMenu,
+    refetchAccounts,
+    handleSelectAccount,
+    handleUseHostDefault,
+    handleResetToDefault,
+  } = useForgeAccountCache(repoId, () => setBootstrapTick((t) => t + 1));
 
   // Per-concern last-wins guards: only the newest in-flight request may write.
   const ctxReqRef = useRef(0);
@@ -210,6 +225,8 @@ export function PrPanel({
       () => {
         setConnecting(false);
         setConnectMode('connect');
+        // P80: an `add`-mode connect changed the account set + this repo's pin.
+        if (accounts !== null) refetchAccounts();
         setBootstrapTick((t) => t + 1); // re-run context → authenticated → list
       },
       (e: unknown) => {
@@ -238,22 +255,16 @@ export function PrPanel({
   }
   handleAuthFailedRef.current = handleAuthFailed;
 
-  function handleDisconnect() {
-    setDisconnecting(true);
-    void ipc.forgeClearToken(repoId).then(
-      () => {
-        setDisconnecting(false);
-        setConfirmDisconnect(false);
-        setConnectError(null);
-        setConnectMode('connect');
-        setView('connect');
-        setBootstrapTick((t) => t + 1); // header disappears, ForgeConnect returns
-      },
-      (e: unknown) => {
-        setDisconnecting(false);
-        pushToast('error', `Could not disconnect: ${errorMessage(e)}`);
-      },
-    );
+  /** Switcher "Add another account…" — route into the connect view's `add`
+   *  mode; on success forgeSetToken auto-pins the new account (OD-3). */
+  function handleAddAnother() {
+    setConnectError(null);
+    setConnectMode('add');
+    setView('connect');
+  }
+
+  function handleManageAccounts() {
+    onManageAccounts?.();
   }
 
   /** P72: the ONE open-external-URL implementation, shared by the connect
@@ -313,29 +324,27 @@ export function PrPanel({
           viewer={ctx.viewer}
           host={ctx.host}
           kind={ctx.provider}
+          accountSource={ctx.accountSource}
+          resolvedAccountId={ctx.resolvedAccountId}
+          accounts={
+            accounts === null ? null : accounts.filter((a) => a.host === ctx.host)
+          }
+          accountsError={accountsError}
+          busy={accountsBusy}
+          onOpenMenu={handleOpenAccountMenu}
+          onSelectAccount={handleSelectAccount}
+          onUseHostDefault={handleUseHostDefault}
+          onAddAnother={handleAddAnother}
           onChangeToken={() => {
             setConnectError(null);
             setConnectMode('change');
             setView('connect');
           }}
-          onDisconnect={() => setConfirmDisconnect(true)}
+          onResetToDefault={handleResetToDefault}
+          onManageAccounts={handleManageAccounts}
         />
       )}
       {renderBody()}
-      <ConfirmDialog
-        open={confirmDisconnect}
-        title={`Disconnect from ${ctx?.host ?? 'this forge'}?`}
-        confirmLabel="Disconnect"
-        busy={disconnecting}
-        onConfirm={handleDisconnect}
-        onCancel={() => setConfirmDisconnect(false)}
-      >
-        {"You're signed in as "}
-        <span className="mono">{ctx?.viewer?.login ?? 'this account'}</span>
-        {'. Disconnecting removes the saved token for '}
-        <span className="mono">{ctx?.host ?? 'this forge'}</span>
-        {' from your OS keychain. Pull requests and CI status will be unavailable until you reconnect.'}
-      </ConfirmDialog>
     </div>
   );
 
@@ -384,10 +393,10 @@ export function PrPanel({
             mode={connectMode}
             login={ctx?.viewer?.login ?? null}
             onSubmit={handleConnect}
-            // §2.4: Cancel only in `change` mode (there is a list to return to);
-            // first-connect / reauth have no back path.
+            // §2.4 / P80 §1.6a: Cancel in `change` + `add` modes (there is a list
+            // to return to); first-connect / reauth have no back path.
             onCancel={
-              connectMode === 'change'
+              connectMode === 'change' || connectMode === 'add'
                 ? () => {
                     setConnectMode('connect');
                     setConnectError(null);

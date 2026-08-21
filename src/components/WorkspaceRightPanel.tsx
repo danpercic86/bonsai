@@ -132,6 +132,8 @@ export interface WorkspaceRightPanelProps {
   /** P40b: open Settings → Git config → Identity from a `configMissing` commit
    *  error banner. */
   onOpenIdentitySettings: CommitBoxProps['onOpenIdentitySettings'];
+  /** P80: open Settings → Accounts (the PR panel's "Manage accounts…"). */
+  onOpenAccountSettings?: () => void;
   /** P58c: effective signing config (drives the CommitBox sign toggle + hint). */
   signingStatus: SigningStatus | null;
   /** P58c: the selected commit's signature verdict (CommitPanel line); null when
@@ -211,6 +213,7 @@ export function WorkspaceRightPanel({
   workingDirty,
   onCompose,
   onOpenIdentitySettings,
+  onOpenAccountSettings,
   signingStatus,
   commitSignature,
   repoId,
@@ -417,6 +420,7 @@ export function WorkspaceRightPanel({
           compareOptions={prCompareOptions}
           openToPr={prNav}
           aiEligible={aiEligible}
+          onManageAccounts={onOpenAccountSettings}
         />
       )}
     </aside>

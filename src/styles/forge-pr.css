@@ -556,7 +556,9 @@
 }
 
 .forge-account-login {
-  flex: 1;
+  /* P80: a spacer now pushes the badge/kebab right, so the login no longer
+     grows — it sizes to content and ellipsises when the header is narrow. */
+  flex: 0 1 auto;
   min-width: 0;
   font-size: 13px;
   font-weight: 600;
@@ -578,6 +580,83 @@
 
 .forge-account-kebab {
   flex: none;
+}
+
+/* P80: the switcher trigger — the left group (login · host · caret) becomes a
+   button when the host has ≥2 accounts. Reset to look like the static row. */
+.forge-account-trigger {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.forge-account-trigger:hover {
+  background: var(--bg-2);
+}
+
+.forge-account-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.forge-account-trigger[aria-disabled='true'] {
+  cursor: default;
+}
+
+/* The trigger owns the login flex-grow; the host stays intrinsic beside it. */
+.forge-account-trigger .forge-account-login {
+  flex: 0 1 auto;
+}
+
+/* P80: small openable caret after the host on the switcher trigger. */
+.forge-account-caret {
+  flex: none;
+  font-size: 10px;
+  color: var(--text-3);
+}
+
+/* P80: muted "why this account is active" caption between host and the badge. */
+.forge-account-source {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 20ch;
+}
+
+/* Pushes the provider badge + kebab to the right when the trigger doesn't grow. */
+.forge-account-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+/* P80: switcher-menu header lines (reuse .context-menu-header container). */
+.context-menu-note {
+  display: block;
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-menu-subnote {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-3);
 }
 
 /* Avatar: mirrors .identity-avatar (22px cozy / 20px compact), object-fit for

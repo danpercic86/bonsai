@@ -1,68 +1,66 @@
-// P79 (UI §1): the connected-account header pinned atop the PR panel, shown only
-// when `ctx.viewer !== null`. Presentational: it REQUESTS actions (change token /
-// disconnect); PrPanel owns the ConfirmDialog and connectMode. No IPC here.
-import { useRef, useState } from 'react';
-
-import type { ForgeKind, ForgeViewer } from '../ipc';
-import { ContextMenu, type ContextMenuItem } from './ContextMenu';
-import { ForgeAvatar } from './ForgeAvatar';
-import { ForgeProviderBadge } from './ForgeProviderBadge';
+// P80 (UI §1.6): the connected-account header pinned atop the PR panel, shown
+// only when `ctx.viewer !== null`. A thin wrapper that composes
+// ForgeAccountSwitcher (the trigger + source caption + switcher/kebab menus).
+// Presentational: it REQUESTS actions; PrPanel owns state, the account cache,
+// and every IPC write. No IPC, no confirm here.
+import type { AccountSource, ForgeAccount, ForgeKind, ForgeViewer } from '../ipc';
+import { ForgeAccountSwitcher } from './ForgeAccountSwitcher';
 
 export interface ForgeAccountHeaderProps {
   /** Non-null: the parent gates on `ctx.viewer`. */
   viewer: ForgeViewer;
   host: string;
   kind: ForgeKind;
+  accountSource: AccountSource;
+  resolvedAccountId: string | null;
+  /** null ⇒ not yet loaded (lazy on first switcher open); filtered to `host`. */
+  accounts: ForgeAccount[] | null;
+  accountsError: string | null;
+  busy: boolean;
+  onOpenMenu(): void;
+  onSelectAccount(accountId: string): void;
+  onUseHostDefault(): void;
+  onAddAnother(): void;
   onChangeToken(): void;
-  /** The header only REQUESTS disconnect; the parent opens the confirm. */
-  onDisconnect(): void;
+  onResetToDefault(): void;
+  onManageAccounts(): void;
 }
 
 export function ForgeAccountHeader({
   viewer,
   host,
   kind,
+  accountSource,
+  resolvedAccountId,
+  accounts,
+  accountsError,
+  busy,
+  onOpenMenu,
+  onSelectAccount,
+  onUseHostDefault,
+  onAddAnother,
   onChangeToken,
-  onDisconnect,
+  onResetToDefault,
+  onManageAccounts,
 }: ForgeAccountHeaderProps) {
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const kebabRef = useRef<HTMLButtonElement>(null);
-
-  const openMenu = () => {
-    const r = kebabRef.current?.getBoundingClientRect();
-    // Anchor the menu at the kebab's bottom-right; ContextMenu clamps into view.
-    setMenu(r === undefined ? { x: 0, y: 0 } : { x: r.right, y: r.bottom });
-  };
-
-  const items: ContextMenuItem[] = [
-    { label: 'Change token', onSelect: onChangeToken },
-    { label: 'Disconnect', tone: 'danger', onSelect: onDisconnect },
-  ];
-
   return (
-    <div className="forge-account-header">
-      <ForgeAvatar avatarUrl={viewer.avatarUrl} login={viewer.login} />
-      <span className="forge-account-login" title={viewer.login}>
-        {viewer.login}
-      </span>
-      <span className="forge-account-host" title={host}>
-        {host}
-      </span>
-      <ForgeProviderBadge kind={kind} />
-      <button
-        ref={kebabRef}
-        type="button"
-        className="btn-icon forge-account-kebab"
-        aria-label="Account actions"
-        aria-haspopup="menu"
-        aria-expanded={menu !== null}
-        onClick={openMenu}
-      >
-        {'⋯'}
-      </button>
-      {menu !== null && (
-        <ContextMenu x={menu.x} y={menu.y} items={items} onClose={() => setMenu(null)} />
-      )}
-    </div>
+    <ForgeAccountSwitcher
+      host={host}
+      activeLogin={viewer.login}
+      activeAvatarUrl={viewer.avatarUrl}
+      kind={kind}
+      accountSource={accountSource}
+      resolvedAccountId={resolvedAccountId}
+      accounts={accounts}
+      accountsError={accountsError}
+      busy={busy}
+      onOpenMenu={onOpenMenu}
+      onSelectAccount={onSelectAccount}
+      onUseHostDefault={onUseHostDefault}
+      onAddAnother={onAddAnother}
+      onChangeToken={onChangeToken}
+      onResetToDefault={onResetToDefault}
+      onManageAccounts={onManageAccounts}
+    />
   );
 }

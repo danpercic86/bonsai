@@ -15,9 +15,10 @@ fn acct(id: &str, host: &str, login: Option<&str>) -> settings::ForgeAccountReco
 }
 
 fn settings_with(accts: Vec<settings::ForgeAccountRecord>) -> settings::Settings {
-    let mut s = settings::Settings::default();
-    s.forge_accounts = accts;
-    s
+    settings::Settings {
+        forge_accounts: accts,
+        ..settings::Settings::default()
+    }
 }
 
 #[test]

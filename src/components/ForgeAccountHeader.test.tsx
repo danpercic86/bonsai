@@ -1,66 +1,70 @@
-/** P79 §1 — the connected-account header pinned atop the PR panel. Presentational:
- *  it renders the login/host/badge and REQUESTS actions via callbacks; it owns no
- *  IPC and no confirm (PrPanel owns those — covered in PrPanel.reauth.test.tsx). */
+/** P80 §1.6 — ForgeAccountHeader is a thin wrapper composing ForgeAccountSwitcher
+ *  from the viewer + resolved-account props. Detailed switcher behaviour lives in
+ *  ForgeAccountSwitcher.test.tsx; here we assert the wiring (viewer → switcher). */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 
-import { ForgeAccountHeader } from './ForgeAccountHeader';
-import type { ForgeViewer } from '../ipc';
+import { ForgeAccountHeader, type ForgeAccountHeaderProps } from './ForgeAccountHeader';
+import type { ForgeAccount, ForgeViewer } from '../ipc';
 
 const VIEWER: ForgeViewer = {
   login: 'octocat',
   avatarUrl: 'https://avatars.githubusercontent.com/u/583231?v=4',
 };
+const ACCT: ForgeAccount = {
+  accountId: 'gitHub:github.com:octocat',
+  host: 'github.com',
+  kind: 'gitHub',
+  login: 'octocat',
+  avatarUrl: null,
+  connected: true,
+  isHostDefault: true,
+};
 
-function renderHeader() {
-  const onChangeToken = vi.fn();
-  const onDisconnect = vi.fn();
-  render(
-    <ForgeAccountHeader
-      viewer={VIEWER}
-      host="github.com"
-      kind="gitHub"
-      onChangeToken={onChangeToken}
-      onDisconnect={onDisconnect}
-    />,
-  );
-  return { onChangeToken, onDisconnect };
+function renderHeader(overrides: Partial<ForgeAccountHeaderProps> = {}) {
+  const props: ForgeAccountHeaderProps = {
+    viewer: VIEWER,
+    host: 'github.com',
+    kind: 'gitHub',
+    accountSource: 'single',
+    resolvedAccountId: ACCT.accountId,
+    accounts: [ACCT],
+    accountsError: null,
+    busy: false,
+    onOpenMenu: vi.fn(),
+    onSelectAccount: vi.fn(),
+    onUseHostDefault: vi.fn(),
+    onAddAnother: vi.fn(),
+    onChangeToken: vi.fn(),
+    onResetToDefault: vi.fn(),
+    onManageAccounts: vi.fn(),
+    ...overrides,
+  };
+  render(<ForgeAccountHeader {...props} />);
+  return props;
 }
 
-describe('ForgeAccountHeader', () => {
-  it('renders the login and host', () => {
+describe('ForgeAccountHeader — P80', () => {
+  it('renders the login, host and provider badge from the viewer', () => {
     renderHeader();
     expect(screen.getByText('octocat')).toBeInTheDocument();
     expect(screen.getByText('github.com')).toBeInTheDocument();
-    // provider badge is present as an accessible label
     expect(screen.getByLabelText('GitHub')).toBeInTheDocument();
   });
 
-  it('opens the kebab menu with Change token + Disconnect', () => {
-    renderHeader();
-    const kebab = screen.getByRole('button', { name: 'Account actions' });
-    expect(kebab).toHaveAttribute('aria-expanded', 'false');
-    fireEvent.click(kebab);
-    expect(kebab).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByRole('menuitem', { name: 'Change token' })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: 'Disconnect' })).toBeInTheDocument();
-  });
-
-  it('requests change-token when the menu item is chosen', () => {
-    const { onChangeToken, onDisconnect } = renderHeader();
+  it('single account ⇒ static header (no switcher); the kebab requests change-token', () => {
+    const props = renderHeader({ accountSource: 'single' });
+    expect(screen.queryByRole('button', { name: /Switch account/ })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Account actions' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Change token' }));
-    expect(onChangeToken).toHaveBeenCalledTimes(1);
-    expect(onDisconnect).not.toHaveBeenCalled();
+    expect(props.onChangeToken).toHaveBeenCalledTimes(1);
   });
 
-  it('requests disconnect when the menu item is chosen (header opens no confirm itself)', () => {
-    const { onChangeToken, onDisconnect } = renderHeader();
-    fireEvent.click(screen.getByRole('button', { name: 'Account actions' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Disconnect' }));
-    expect(onDisconnect).toHaveBeenCalledTimes(1);
-    expect(onChangeToken).not.toHaveBeenCalled();
-    // No ConfirmDialog lives inside the header.
-    expect(screen.queryByRole('dialog')).toBeNull();
+  it('multi account ⇒ switcher trigger present', () => {
+    renderHeader({
+      accountSource: 'ownerMatch',
+      accounts: [ACCT, { ...ACCT, accountId: 'gitHub:github.com:alt', login: 'alt', isHostDefault: false }],
+    });
+    expect(screen.getByRole('button', { name: /Switch account/ })).toBeInTheDocument();
   });
 });

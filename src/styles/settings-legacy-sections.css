@@ -282,6 +282,67 @@
   margin-top: 4px;
 }
 
+/* ===== P80 — per-host account groups + default control ===== */
+
+.settings-account-group {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.settings-account-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-account-group-host {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* OD-4 no-default nudge (self-resolving, not dismissible). Plain muted note,
+   consistent with .settings-group-note — a nudge, not a warning. */
+.settings-account-group-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* Per-account Default radio + its (only account) static variant. */
+.settings-account-default {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-1);
+}
+
+.settings-account-default input:disabled + span {
+  color: var(--text-3);
+}
+
+.settings-account-default--static {
+  color: var(--text-3);
+}
+
+/* Locked provider row in the add-another form (static badge, not radios). */
+.settings-account-kind-locked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* P44: identity-profile rows. */
 .settings-profile {
   padding: 10px 0;

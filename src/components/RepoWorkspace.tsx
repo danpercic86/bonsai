@@ -143,6 +143,8 @@ export interface RepoWorkspaceProps {
   onOpenRepoPath(path: string): void;
   /** P40b: open Settings → Git config → Identity (commit-error linkage). */
   onOpenIdentitySettings(): void;
+  /** P80: open Settings → Accounts (the PR panel's "Manage accounts…"). */
+  onOpenAccountSettings(): void;
   /** P50c: App-level command-palette entries (toggle theme/lists, open Settings
    *  / AI Assets / Health, open repo / clone / new) — merged with the repo-scoped
    *  entries this workspace assembles. Built once in App. */
@@ -175,6 +177,7 @@ export function RepoWorkspace({
   onPaneResizeEnd,
   onOpenRepoPath,
   onOpenIdentitySettings,
+  onOpenAccountSettings,
   appCommands,
 }: RepoWorkspaceProps) {
   const pushToast = usePushToast();
@@ -2759,6 +2762,7 @@ export function RepoWorkspace({
           workingDirty={workingDirty}
           onCompose={() => composer.openComposer()}
           onOpenIdentitySettings={onOpenIdentitySettings}
+          onOpenAccountSettings={onOpenAccountSettings}
           signingStatus={signingStatus}
           commitSignature={commitSignature}
         />

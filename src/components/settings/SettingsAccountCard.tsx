@@ -14,9 +14,14 @@ import { ForgeProviderBadge } from '../ForgeProviderBadge';
 
 export interface SettingsAccountCardProps {
   account: ForgeAccount;
+  /** P80: this is the only account on its host ⇒ show `(only account)` static
+   *  text instead of an interactive Default radio (§3.2). */
+  isOnlyOnHost: boolean;
   /** Refetch the list after a successful token replace. */
   onChanged(): void;
-  /** Ask the parent to open the Remove confirm for this host. */
+  /** P80: make this account the host default (radio select). */
+  onSetDefault(): void;
+  /** Ask the parent to open the Remove confirm for this account. */
   onRequestRemove(): void;
   /** IPC-routed "Create a token" link (a bare target=_blank is a no-op natively). */
   onOpenUrl(url: string): void;
@@ -30,11 +35,13 @@ function isPlatformClick(e: MouseEvent): boolean {
 
 export function SettingsAccountCard({
   account,
+  isOnlyOnHost,
   onChanged,
+  onSetDefault,
   onRequestRemove,
   onOpenUrl,
 }: SettingsAccountCardProps) {
-  const { host, kind, login, avatarUrl, connected } = account;
+  const { host, kind, login, avatarUrl, connected, isHostDefault } = account;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [editing, setEditing] = useState(false);
   const [token, setToken] = useState('');
@@ -47,7 +54,8 @@ export function SettingsAccountCard({
     if (editing) tokenRef.current?.focus();
   }, [editing]);
 
-  const titleId = `account-card-${host}-title`;
+  const titleId = `account-card-${account.accountId}-title`;
+  const tokenFieldId = `account-token-${account.accountId}`;
   const title = login ?? host;
   const hint = CONNECT_HINTS[kind] ?? CONNECT_HINTS.unknown;
 
@@ -73,7 +81,9 @@ export function SettingsAccountCard({
     if (submitting || token.trim() === '') return;
     setSubmitting(true);
     setError(null);
-    void ipc.forgeSetTokenForHost(host, kind, token).then(
+    // P80 §3.4: canonical forgeAddAccount — a token for a DIFFERENT login adds a
+    // second account rather than mutating this one (the list refetch shows both).
+    void ipc.forgeAddAccount(host, kind, token).then(
       () => {
         setSubmitting(false);
         setEditing(false);
@@ -101,6 +111,31 @@ export function SettingsAccountCard({
           {title}
         </span>
         <ForgeProviderBadge kind={kind} />
+        {isOnlyOnHost ? (
+          <span className="settings-account-default settings-account-default--static">
+            (only account)
+          </span>
+        ) : (
+          <label
+            className="settings-account-default"
+            title={connected ? undefined : 'Add a token before making this the default.'}
+          >
+            <input
+              type="radio"
+              name={`host-default-${host}`}
+              checked={isHostDefault}
+              disabled={!connected}
+              aria-describedby={connected ? undefined : `${titleId}-default-reason`}
+              onChange={onSetDefault}
+            />
+            <span>Default</span>
+          </label>
+        )}
+        {!isOnlyOnHost && !connected && (
+          <span id={`${titleId}-default-reason`} hidden>
+            Add a token before making this the default.
+          </span>
+        )}
         <span
           className={`settings-account-state ${connected ? 'is-connected' : 'is-disconnected'}`}
         >
@@ -138,12 +173,12 @@ export function SettingsAccountCard({
 
       {editing && (
         <div className="settings-account-form">
-          <label className="settings-config-field-label" htmlFor={`account-token-${host}`}>
+          <label className="settings-config-field-label" htmlFor={tokenFieldId}>
             Personal access token
           </label>
           <input
             ref={tokenRef}
-            id={`account-token-${host}`}
+            id={tokenFieldId}
             className="settings-config-field"
             type="password"
             autoComplete="off"
@@ -179,6 +214,9 @@ export function SettingsAccountCard({
             {
               'Stored in your OS keychain, never in a settings file. It is sent only as an authorization header and is never logged.'
             }
+          </p>
+          <p className="settings-row-help">
+            {'Uses whichever account the token belongs to. A token for a different user adds a new account.'}
           </p>
           {error !== null && (
             <div className="error-banner error-banner-dismissible" role="alert">

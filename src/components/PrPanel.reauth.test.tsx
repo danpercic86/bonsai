@@ -1,4 +1,5 @@
-/** P79 §1.3 + §2/§4 — PrPanel owns (a) the Disconnect confirm → forgeClearToken and
+/** P79/P80 §1.3 + §2/§4 — PrPanel owns (a) the per-repo override reset (P80:
+ *  "Reset to host default" → forgeSetRepoAccount(repoId, null), no confirm) and
  *  (b) the expiry → reauth flow: an authFailed from a forge read invalidates the
  *  cache-warm viewer WITHOUT clearing the token, then routes to ForgeConnect in
  *  reauth mode with the warning banner. Runs against the mock IPC layer (jsdom
@@ -64,24 +65,21 @@ describe('PrPanel — P79 reauth + disconnect', () => {
     expect(pushToast).not.toHaveBeenCalled();
   });
 
-  it('Disconnect → confirm calls forgeClearToken(repoId)', async () => {
-    vi.spyOn(ipc, 'forgeRepoContext').mockResolvedValue(CTX);
+  it('P80: kebab "Reset to host default" clears the override (no confirm) under an override', async () => {
+    vi.spyOn(ipc, 'forgeRepoContext').mockResolvedValue({ ...CTX, accountSource: 'override' });
     vi.spyOn(ipc, 'forgeListPrs').mockResolvedValue({ items: [], page: 1, hasNext: false });
-    const clear = vi.spyOn(ipc, 'forgeClearToken').mockResolvedValue(undefined);
+    vi.spyOn(ipc, 'forgeListAccounts').mockResolvedValue([]);
+    const setRepo = vi.spyOn(ipc, 'forgeSetRepoAccount').mockResolvedValue(undefined);
 
     renderPanel();
 
     // Header appears once the viewer is warm + list resolves.
     const kebab = await screen.findByRole('button', { name: 'Account actions' });
     fireEvent.click(kebab);
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Disconnect' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Reset to host default' }));
 
-    // The confirm dialog opens; confirming clears the token for the repo.
-    const dialog = await screen.findByRole('dialog');
-    expect(dialog).toHaveTextContent(/Disconnect from github\.com\?/);
-    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
-
-    await waitFor(() => expect(clear).toHaveBeenCalledTimes(1));
-    expect(clear).toHaveBeenCalledWith('r1');
+    // Nondestructive, no confirm dialog — the override is cleared immediately.
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(setRepo).toHaveBeenCalledWith('r1', null));
   });
 });
