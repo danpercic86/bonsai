@@ -107,12 +107,17 @@ modules (a real refactor with call-graph impact, not a leaf move).
   token page, `github_pat_…` placeholder; Base/Compare fields are branch comboboxes (allowFreeInput)
   + `defaultBase` wired. NIT (non-blocking): `prDefaultBase` typed `string|null` but never returns
   null. **USER CHECKPOINT pending** (native GitHub auth + real PR open).
-- **P79 — forge account management.** `in-progress`. **Current step:** increment A (backend + IPC +
-  mock) DONE & committed `74cdfe0` (reviewer-approved; cargo 171/0 + 2/0, clippy/tsc clean; contracts
-  `P79-forge-account-management.md` + `P79-ui.md`). Increment B (UI — ForgeAccountHeader, PrPanel
-  reauth/ConnectMode, SettingsAccountsSection) in progress via senior-dev. Follow-up: split oversized
-  settings.rs (~760 lines) — to be done inline on main after B (a worktree attempt branched from a
-  stale base and was discarded). Scope (user-approved 2026-08-21): (1) change/
+- **P79 — forge account management.** AI gate GREEN — **awaiting USER CHECKPOINT** (native keychain +
+  real token expiry/reconnect). Increment A backend `74cdfe0`, increment B UI `813d305`. Contracts
+  `P79-forge-account-management.md` + `P79-ui.md`. Reviewer + ui-designer approved both increments;
+  tester +12 unit / 167 regression / cargo 171/0 + 3/0 / e2e 10/10; browser-harness verified all
+  three surfaces (account header, reauth banner via `?forge=expired`, Accounts settings w/ Azure
+  disabled), no console errors. Persistence: `forge_hosts` index in settings.json (host+kind+login,
+  never a token). Accepted decisions: OD-1 lazy backfill only · OD-2 Azure add-without-repo
+  unsupported · OD-3 commit-status authFailed doesn't trip reauth (silent decoration) · expiry KEEPS
+  the token. settings.rs god-file split DONE (`3386c3d`, 750→399 into prefs/clamp/forge_hosts,
+  behavior-preserving). Scope
+  (user-approved 2026-08-21): (1) change/
   disconnect in the PR panel, (2) token-expiry → reconnect prompt (policy: KEEP token, don't
   auto-delete), (3) global Accounts settings section (list connected hosts, add/change/disconnect a
   host token without a repo open). Tokens are already shared per-host across repos (keychain
