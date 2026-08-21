@@ -246,6 +246,122 @@ the menu and drop focus.
   toolbar; the toolbar height is unchanged (checkbox fits in `--rp-ctl-h`). Net reclaim ≈ 40px.
 - My recommendation: **A** (cleanest, meets the space goal fully). Ship B only if A is scoped out.
 
+### Amend ownership — resolution (architect, P80/commit-panel-ux)
+
+**Decision: adopt A, implemented as an internal reseed *effect* inside `CommitBox` (NOT via an
+imperative handle).** Amend moves into the `⋯` menu (`CommitOptionsMenu`) as a
+`role="menuitemcheckbox"`. Rationale: `amend` is already a `CommitBox` prop, so an internal effect
+is the smallest change, keeps the parent free of message state (the invariant that `CommitBox` owns
+the draft is preserved), and — because nothing remounts — the menu item keeps focus and
+`aria-checked` simply flips in place. Option 1's `CommitBoxHandle.setMessage` route is explicitly
+**rejected**: it would push draft-lifecycle logic into the parent and re-introduce the ownership
+split we are trying to remove. **No new `CommitBoxHandle` method is added** (the handle stays
+`{ submit(): void }`).
+
+Option B is the documented fallback only if the reseed effect cannot land in this increment.
+
+#### Key strategy change (`WorkspaceRightPanel.tsx`, ~line 362)
+
+Drop the `amend` arm of the remount `key`. Amend and merge never coexist (amend is gated on
+`opState.kind === 'none'`; merge mode is `opState.kind === 'merge' && !amend`), so the key becomes:
+
+```tsx
+key={opState.kind === 'merge' ? `merge:${opState.incoming}` : 'commit'}
+```
+
+Merge still remounts (unchanged); amend no longer does. Everything else the parent already flips on
+amend stays prop-driven and needs no remount: `mode`, `onCommit` (amend→`onCommitAmend`),
+`onCommitAndPush` (amend→`undefined`), `blocked`, and the new `amend`/menu props below.
+
+#### New / changed `CommitBox` props
+
+```ts
+// added to CommitBoxProps
+/** P80: the last commit's full message, for amend reseed. Was previously funnelled
+ *  through `initialMessage`; now passed explicitly so the reseed effect can read it
+ *  independently of merge's initialMessage. null/undefined ⇒ seed empty. */
+amendMessage?: string | null;
+/** P80: amend is offered (opState.kind==='none' && head && !head.unborn). Gates the
+ *  Amend menuitemcheckbox; when false the item is not rendered. */
+canAmend?: boolean;
+/** P80: toggle amend (owned upstream by RepoWorkspace; CommitBox only forwards the
+ *  menu checkbox change — it does NOT own amend state). */
+onToggleAmend?: (next: boolean) => void;
+/** P80: amend would rewrite already-pushed history → drives the F1 `.commit-note`. */
+showAmendPushWarning?: boolean;
+// stash props absorbed from RightPanelActionsRow (verbatim semantics):
+onStash?: (scope: StashScope) => void;
+hasTrackedChanges?: boolean;
+hasUntracked?: boolean;
+// (stagedCount, busy, aiEligible, onCompose, workingDirty already exist)
+```
+
+`WorkspaceRightPanel` stops rendering `RightPanelActionsRow` (delete the block at lines 336–360 and
+its import) and instead threads `amend`, `amendMessage`, `canAmend` (= `opState.kind==='none' &&
+head!==null && !head.unborn`), `onToggleAmend`, `showAmendPushWarning`, `onStash={onCreateStash}`,
+`hasTrackedChanges`, `hasUntracked` into `CommitBox`. `initialMessage` keeps carrying ONLY the merge
+message (drop its `amend ? amendMessage : …` arm). `RightPanelActionsRow.tsx` is deleted after
+`CommitOptionsMenu` absorbs it.
+
+#### Reseed effect (inside `CommitBox`) — exact behavior
+
+Preserves today's behavior (amend ON ⇒ box shows the last commit message; amend OFF ⇒ back to the
+commit draft) and *improves* it: a user-typed commit draft is now preserved across an amend
+excursion instead of being destroyed by the remount.
+
+```ts
+const commitDraftRef = useRef('');        // the normal-commit draft, stashed during an amend excursion
+const prevAmendRef = useRef(amend);
+const messageRef = useRef(message);
+messageRef.current = message;             // mirror latest draft every render (no stale closure)
+const amendSeededRef = useRef(false);     // whether the amend seed has been applied this excursion
+
+useEffect(() => {
+  const wasAmend = prevAmendRef.current;
+  if (wasAmend === amend) return;         // ignore renders where amend didn't toggle
+  prevAmendRef.current = amend;
+  if (amend) {
+    // entering amend: stash the current commit draft, seed the last commit message
+    commitDraftRef.current = messageRef.current;
+    setMessage(amendMessage ?? '');
+    amendSeededRef.current = amendMessage != null;   // false if message not loaded yet
+  } else {
+    // leaving amend: discard amend edits (never committed), restore the commit draft
+    setMessage(commitDraftRef.current);
+    amendSeededRef.current = false;
+  }
+}, [amend, amendMessage]);
+
+// Async-race guard: amendMessage may resolve AFTER amend already flipped true. If we
+// entered amend before it loaded and the user hasn't typed, apply it when it arrives.
+useEffect(() => {
+  if (amend && !amendSeededRef.current && amendMessage != null && messageRef.current === '') {
+    setMessage(amendMessage);
+    amendSeededRef.current = true;
+  }
+}, [amend, amendMessage]);
+```
+
+Draft-preservation rules (summary):
+- **commit → amend:** stash the commit draft; load `amendMessage` (empty if not yet loaded, filled
+  by the race guard when it arrives — but only while the box is still untouched, so a fast typist is
+  never overwritten).
+- **amend → commit:** restore the stashed commit draft; amend-mode edits are dropped (nothing was
+  committed, so there is nothing to lose).
+- **successful commit** (`runSubmit` → `setMessage('')`): unchanged; also reset
+  `commitDraftRef.current = ''` so a later amend excursion doesn't resurrect a committed draft.
+
+#### Focus management
+
+Toggling the Amend `menuitemcheckbox` mutates only `message` state — no subtree unmounts — so DOM
+focus stays on the menu item and the menu stays open; `aria-checked` flips in place. This is the
+core win over the remount and directly resolves the old comment at `WorkspaceRightPanel.tsx:331-335`.
+The `⋯` menu's outside-mousedown/Escape close and focus-return-to-trigger (moved into
+`CommitOptionsMenu`) are the only focus handlers; no extra handling is needed for the amend item.
+
+**USER CHECKPOINT (unchanged from the 2b note):** real-webview focus retention on amend toggle must
+be confirmed under `pnpm tauri dev` — jsdom/headless cannot prove native focus behavior.
+
 ## D1 — primary-commit-action setting
 
 Make the Commit vs Commit & Push emphasis a setting instead of hard-coding Commit & Push as
@@ -435,9 +551,10 @@ replacement) — focus retention on toggle is a real-webview interaction; verify
 
 ## Flags to orchestrator
 
-1. **Amend ownership (2b):** recommend decision A (drop the `key`-remount, reseed via effect) so
-   Amend lives in `⋯`; fallback B keeps Amend as a toolbar checkbox. Needs an architect/senior-dev
-   call on the message-reseed logic.
+1. **Amend ownership (2b):** RESOLVED — decision A adopted via an internal reseed effect in
+   `CommitBox` (no `CommitBoxHandle` change; the `amend` arm of the remount `key` is dropped). See
+   "Amend ownership — resolution" above for the exact prop + effect spec. The only residual is the
+   USER CHECKPOINT on native focus retention.
 2. **Compact hit-target (C2):** 24px minor-axis on the toolbar icon buttons in compact density —
    accept the 4px overflow or accept the density-scope exemption; recommend the former.
 3. **A4 row shortcut:** optional; recommend deferring the extra `onKeyDown`, since A1's persistent

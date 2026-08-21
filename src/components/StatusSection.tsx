@@ -26,6 +26,7 @@ export function StatusSection({
   diffSlot,
   listView,
   extraAction,
+  emptyText,
   variant,
   onAction,
   onToggleDiff,
@@ -55,6 +56,9 @@ export function StatusSection({
   listView: ListView;
   /** P15b: optional extra header control (e.g. the staged-section "✨ Review"). */
   extraAction?: ReactNode;
+  /** A3: one-line placeholder shown in place of the list when there are no rows
+   *  (expandable Staged/Changes sections only). */
+  emptyText?: string;
   onAction: (paths: string[]) => void;
   onToggleDiff: (section: WorkdirSection, entry: StatusEntry) => void;
   /** P20 §4.3: discard a tracked row's unstaged edits. When provided, rows whose
@@ -137,12 +141,17 @@ export function StatusSection({
             title="Discard all changes (reverts modified files and deletes new files)"
             onClick={() => onDiscardForce(entries.flatMap(entryPaths))}
           >
+            <span className="section-action-glyph" aria-hidden="true">
+              {'↺'}
+            </span>{' '}
             Discard all
           </button>
         )}
         {extraAction}
       </div>
-      {nodes !== null ? (
+      {entries.length === 0 && expandable && emptyText !== undefined ? (
+        <p className="section-empty">{emptyText}</p>
+      ) : nodes !== null ? (
         <Tree
           nodes={nodes}
           leafKey={(l) => `${l.item.status}:${l.item.path}`}

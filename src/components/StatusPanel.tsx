@@ -189,6 +189,7 @@ export function StatusPanel({
             entries={snapshot.staged}
             rowAction="unstage"
             actionLabel="Unstage all"
+            emptyText="Stage files to include them in your commit."
             disabled={disabled}
             expandable
             diffSlot={diffSlot}
@@ -219,6 +220,7 @@ export function StatusPanel({
             entries={changes}
             rowAction="stage"
             actionLabel="Stage all"
+            emptyText="Nothing to commit — your working tree is clean."
             disabled={disabled}
             expandable
             diffSlot={diffSlot}

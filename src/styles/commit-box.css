@@ -18,7 +18,7 @@
   border-radius: 4px;
   font-family: inherit;
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
   cursor: pointer;
   text-transform: none;
   letter-spacing: normal;
@@ -34,7 +34,17 @@
   opacity: 0.6;
 }
 
-/* Bulk "Discard all" header button: danger tint on hover to match row discard. */
+/* Bulk "Discard all" header button: resting destructive treatment (A2). Label
+   stays --text-2 (AA-safe); the leading ↺ glyph carries the danger hue, and an
+   extra 8px margin detaches it from the safe "Stage all" (16px total gap). */
+.section-action-discard {
+  margin-left: 8px;
+}
+
+.section-action-discard .section-action-glyph {
+  color: var(--danger, #e5534b);
+}
+
 .section-action-discard:hover:not(:disabled) {
   color: var(--danger, #e5534b);
 }
@@ -87,6 +97,26 @@
 .row-action:disabled {
   cursor: default;
   color: var(--text-3);
+}
+
+/* A1: the primary stage/unstage toggle is persistently visible (not hover-only),
+   so the panel's main action is legible at rest. Secondary + destructive actions
+   (history/blame/discard) keep the hover-reveal base above. */
+.row-action-primary {
+  opacity: 0.6;
+  color: var(--text-2);
+}
+
+.file-row:hover .row-action-primary,
+.row-action-primary:hover,
+.row-action-primary:focus-visible {
+  opacity: 1;
+  color: var(--text-1);
+}
+
+/* Disabled floor: no .6 lift while disabled (existing .row-action:disabled). */
+.row-action-primary:disabled {
+  opacity: 1;
 }
 
 /* P20 §4.3: discard control sits beside the stage (+) button on tracked rows. */

@@ -28,8 +28,10 @@
   background: color-mix(in srgb, var(--success) 6%, transparent);
 }
 
+/* B1: labels use a neutral readable token (the tint panel carries the
+   Staged/Changes distinction non-verbally; the label is the wayfinder). */
 .status-section--staged > .section-label {
-  color: color-mix(in srgb, var(--success) 75%, var(--text-1));
+  color: var(--text-2);
 }
 
 .status-section--changes {
@@ -37,7 +39,16 @@
 }
 
 .status-section--changes > .section-label {
-  color: color-mix(in srgb, var(--warning) 45%, var(--text-3));
+  color: var(--text-2);
+}
+
+/* A3: one-line placeholder when a section (Staged/Changes) has no rows. */
+.section-empty {
+  margin: var(--rp-list-margin, 4px) 0 0;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.45;
 }
 
 .file-list {
@@ -150,9 +161,23 @@
   opacity: 0;
 }
 
+/* A1: the folder-level primary stage/unstage toggle stays persistently visible,
+   mirroring the per-row primary toggle; only secondary/destructive dir actions
+   remain hover-revealed. */
+.tree-dir-actions .row-action-primary {
+  opacity: 0.6;
+}
+
 .tree-dir-row:hover .tree-dir-actions .row-action,
 .tree-dir-row:focus-within .tree-dir-actions .row-action {
   opacity: 1;
+}
+
+/* Parity with the per-file toggle: a hovered folder row also lifts the primary
+   toggle's color to --text-1 (opacity is lifted by the rule above). */
+.tree-dir-row:hover .tree-dir-actions .row-action-primary,
+.tree-dir-row:focus-within .tree-dir-actions .row-action-primary {
+  color: var(--text-1);
 }
 
 .file-name {
