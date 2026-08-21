@@ -14,6 +14,7 @@ export type SettingsCategoryId =
   | 'graph'
   | 'ai'
   | 'identities'
+  | 'accounts'
   | 'git-config'
   | 'about';
 

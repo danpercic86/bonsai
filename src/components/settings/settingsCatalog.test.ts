@@ -27,6 +27,7 @@ const CATEGORY_IDS: readonly SettingsCategoryId[] = [
   'graph',
   'ai',
   'identities',
+  'accounts',
   'git-config',
   'about',
 ];
@@ -449,6 +450,7 @@ describe('entry control kinds', () => {
       graph: [],
       ai: ['aiActive', 'mcpRunning', 'mcpStopped'],
       identities: ['profile'],
+      accounts: [],
       'git-config': ['repo'],
       about: [],
     };

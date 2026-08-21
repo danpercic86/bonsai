@@ -18,6 +18,7 @@ import { AppearanceCategory } from './AppearanceCategory';
 import { GraphCategory } from './GraphCategory';
 import { AiCategory } from './AiCategory';
 import { IdentitiesCategory } from './IdentitiesCategory';
+import { AccountsCategory } from './AccountsCategory';
 import { GitConfigCategory } from './GitConfigCategory';
 import { AboutCategory } from './AboutCategory';
 
@@ -34,6 +35,7 @@ export const CATEGORY_PAGES: Record<SettingsCategoryId, SettingsCategoryPage> = 
   graph: { Page: GraphCategory },
   ai: { Page: AiCategory },
   identities: { Page: IdentitiesCategory },
+  accounts: { Page: AccountsCategory },
   'git-config': { Page: GitConfigCategory, HeaderTrailing: GitConfigScopeSwitch },
   about: { Page: AboutCategory },
 };

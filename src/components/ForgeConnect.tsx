@@ -1,6 +1,12 @@
 import { useState, type MouseEvent } from 'react';
 import type { ForgeKind } from '../ipc';
 
+// P79 (§2): the connect form serves three flows. Only the heading, sub-line, an
+// optional banner and the submit label differ — the token field, the
+// per-provider scopes hint, the keychain note, the error banner and the submit
+// handler are identical across all three.
+export type ConnectMode = 'connect' | 'change' | 'reauth';
+
 // P62c: paste-a-PAT affordance shown when the host has no stored token. The
 // token is submitted to the container (forgeSetToken → OS keychain); it is
 // NEVER prefilled, autofilled, echoed, or persisted in the DOM beyond this
@@ -18,6 +24,14 @@ export interface ForgeConnectProps {
   submitting: boolean;
   error: string | null;
   onSubmit(token: string): void;
+  /** P79: which flow this is — selects the heading/sub/submit copy + the reauth
+   *  banner. Defaults to 'connect' so existing call sites are unchanged. */
+  mode?: ConnectMode;
+  /** P79: last-known login, for the change/reauth copy; falls back to `host`. */
+  login?: string | null;
+  /** P79: when provided, a Cancel button is shown beside submit (change mode).
+   *  Omitted ⇒ no Cancel (first connect / reauth have no back path). */
+  onCancel?(): void;
   /** P72: route "Create a token" through the openUrl IPC — a bare
    *  `target="_blank"` is a silent no-op in the native webview. REQUIRED (not
    *  optional) so a future call site cannot regress to a dead link. This
@@ -45,7 +59,7 @@ interface ConnectHint {
   placeholder: string;
 }
 
-const CONNECT_HINTS: Record<ForgeKind, ConnectHint> = {
+export const CONNECT_HINTS: Record<ForgeKind, ConnectHint> = {
   gitHub: {
     scopes:
       'Use a fine-grained token with Pull requests (read/write) and Contents (read) permissions — Metadata is added automatically — or a classic token with the "repo" scope.',
@@ -83,11 +97,24 @@ export function ForgeConnect({
   submitting,
   error,
   onSubmit,
+  mode = 'connect',
+  login,
+  onCancel,
   onOpenUrl,
 }: ForgeConnectProps) {
   const [token, setToken] = useState('');
   const canSubmit = !submitting && token.trim() !== '';
   const hint = CONNECT_HINTS[provider] ?? CONNECT_HINTS.unknown;
+  const who = login ?? host;
+
+  const heading =
+    mode === 'change'
+      ? `Replace token for ${who}`
+      : mode === 'reauth'
+        ? `Reconnect to ${host}`
+        : `Connect to ${host}`;
+  const submitIdle = mode === 'change' ? 'Replace token' : mode === 'reauth' ? 'Reconnect' : 'Connect';
+  const submitBusy = mode === 'change' ? 'Replacing…' : mode === 'reauth' ? 'Reconnecting…' : 'Connecting…';
 
   return (
     <form
@@ -98,11 +125,41 @@ export function ForgeConnect({
         if (canSubmit) onSubmit(token);
       }}
     >
-      <h3 className="forge-connect-heading">{`Connect to ${host}`}</h3>
+      {mode === 'reauth' && (
+        <div className="forge-reauth-banner" role="status" aria-live="polite">
+          <span className="forge-reauth-icon" aria-hidden="true">
+            {'⚠'}
+          </span>
+          <span>
+            {'Your saved token for '}
+            <span className="mono">{host}</span>
+            {
+              ' expired or was revoked. Reconnect to keep viewing pull requests — your token stays saved until you replace it.'
+            }
+          </span>
+        </div>
+      )}
+      <h3 className="forge-connect-heading">{heading}</h3>
       <p className="forge-connect-sub">
-        {`Paste a personal access token to view and open pull requests for `}
-        <span className="mono">{`${owner}/${repo}`}</span>
-        {'.'}
+        {mode === 'change' ? (
+          <>
+            {'Paste a new token to replace the one saved for '}
+            <span className="mono">{host}</span>
+            {'. The current token keeps working until the new one is validated.'}
+          </>
+        ) : mode === 'reauth' ? (
+          <>
+            {'Paste a new token to reconnect. Your access to '}
+            <span className="mono">{`${owner}/${repo}`}</span>
+            {' is paused until then.'}
+          </>
+        ) : (
+          <>
+            {`Paste a personal access token to view and open pull requests for `}
+            <span className="mono">{`${owner}/${repo}`}</span>
+            {'.'}
+          </>
+        )}
       </p>
       <p className="forge-connect-hint">
         {hint.scopes}
@@ -150,9 +207,21 @@ export function ForgeConnect({
         </div>
       )}
 
-      <button type="submit" className="btn-primary forge-connect-submit" disabled={!canSubmit}>
-        {submitting ? 'Connecting…' : 'Connect'}
-      </button>
+      <div className="forge-connect-actions">
+        <button type="submit" className="btn-primary forge-connect-submit" disabled={!canSubmit}>
+          {submitting ? submitBusy : submitIdle}
+        </button>
+        {onCancel !== undefined && (
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={submitting}
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+        )}
+      </div>
     </form>
   );
 }

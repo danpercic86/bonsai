@@ -534,3 +534,106 @@
   align-self: flex-start;
 }
 
+.forge-connect-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ================= P79 — connected-account header + avatar/badge ================= */
+
+.forge-account-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+[data-density='compact'] .forge-account-header {
+  padding: 6px 12px;
+}
+
+.forge-account-login {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.forge-account-host {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+
+.forge-account-kebab {
+  flex: none;
+}
+
+/* Avatar: mirrors .identity-avatar (22px cozy / 20px compact), object-fit for
+   the <img> variant. Decorative; the login text carries the accessible name. */
+.forge-avatar {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: var(--bg-3);
+  color: var(--text-1);
+  border: 1px solid var(--border);
+  object-fit: cover;
+}
+
+[data-density='compact'] .forge-avatar {
+  width: 20px;
+  height: 20px;
+}
+
+/* Hueless 2-letter provider monogram (reuses .pr-draft-tag geometry). */
+.forge-provider-badge {
+  flex: none;
+  display: inline-block;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  padding: 1px 7px;
+  color: var(--text-2);
+  background: var(--bg-2);
+}
+
+/* Re-auth warning banner (§2.2): non-alarming, words carry the meaning. */
+.forge-reauth-banner {
+  border: 1px solid var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--text-1);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.forge-reauth-icon {
+  flex: none;
+  color: var(--warning);
+}
+

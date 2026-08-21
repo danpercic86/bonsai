@@ -87,6 +87,7 @@ export type {
   FileHistoryEntry,
   FileStat,
   FileStatus,
+  ForgeAccount,
   ForgeKind,
   ForgeRepoContext,
   ForgeViewer,

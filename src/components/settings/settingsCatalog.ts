@@ -19,6 +19,7 @@
  * reading the other six.
  */
 import { ABOUT_ENTRIES } from './catalog/about';
+import { ACCOUNTS_ENTRIES } from './catalog/accounts';
 import { AI_ENTRIES } from './catalog/ai';
 import { APPEARANCE_ENTRIES } from './catalog/appearance';
 import { GENERAL_ENTRIES } from './catalog/general';
@@ -61,6 +62,11 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
     subtitle: 'Saved name/email pairs. Switching happens in the header; edit the list here.',
   },
   {
+    id: 'accounts',
+    label: 'Accounts',
+    subtitle: 'Forge sign-ins used for pull requests and CI status.',
+  },
+  {
     id: 'git-config',
     label: 'Git config',
     subtitle: 'Raw Git configuration for the open repository, or your global file.',
@@ -82,6 +88,7 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
   ...GRAPH_ENTRIES,
   ...AI_ENTRIES,
   ...IDENTITY_ENTRIES,
+  ...ACCOUNTS_ENTRIES,
   ...GIT_CONFIG_ENTRIES,
   ...ABOUT_ENTRIES,
 ];

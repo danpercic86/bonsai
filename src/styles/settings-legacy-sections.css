@@ -167,6 +167,121 @@
   margin-top: 12px;
 }
 
+/* ================= P79 — Accounts settings section ================= */
+
+/* One connected/known forge account. Reuses .settings-profile chrome. */
+.settings-account {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.settings-account-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settings-account-login {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-account-host {
+  margin: 2px 0 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Connected-state chip: dot + word (colour is never the sole carrier). */
+.settings-account-state {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.settings-account-state .settings-account-dot {
+  font-size: 9px;
+  line-height: 1;
+}
+
+.settings-account-state.is-connected .settings-account-dot {
+  color: var(--success);
+}
+
+.settings-account-state.is-disconnected .settings-account-dot {
+  color: var(--text-3);
+}
+
+.settings-account-kebab {
+  margin-left: auto;
+}
+
+.settings-account-form,
+.settings-account-add {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-account-add {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.settings-account-form .settings-config-field,
+.settings-account-add .settings-config-field {
+  width: 100%;
+}
+
+.settings-config-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.settings-account-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.settings-account-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-1);
+}
+
+.settings-account-kind input:disabled + span {
+  color: var(--text-3);
+}
+
+.settings-account-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 /* P44: identity-profile rows. */
 .settings-profile {
   padding: 10px 0;

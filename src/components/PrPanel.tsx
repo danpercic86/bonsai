@@ -10,10 +10,12 @@ import type {
   ReviewComment,
 } from '../ipc';
 import { usePushToast } from '../ToastContext';
-import { errorMessage } from '../utils/errors';
+import { errorMessage, isAppError } from '../utils/errors';
 import type { ComboboxOption } from './Combobox';
 import { SkeletonRows } from './CommitPanel';
-import { ForgeConnect } from './ForgeConnect';
+import { ConfirmDialog } from './ConfirmDialog';
+import { ForgeAccountHeader } from './ForgeAccountHeader';
+import { ForgeConnect, type ConnectMode } from './ForgeConnect';
 import { PrCreateForm } from './PrCreateForm';
 import { PrDetailView } from './PrDetailView';
 import { PrList } from './PrList';
@@ -76,6 +78,11 @@ export function PrPanel({
 
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
+  // P79: which connect flow ForgeConnect renders — first connect vs replace
+  // (change) vs expiry (reauth). Distinct from the View union (§4/§5).
+  const [connectMode, setConnectMode] = useState<ConnectMode>('connect');
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -86,6 +93,10 @@ export function PrPanel({
   const ctxReqRef = useRef(0);
   const listReqRef = useRef(0);
   const detailReqRef = useRef(0);
+  // P79: the list effect's error branch calls the LATEST authFailed handler
+  // without listing it as a dep (it closes over `ctx` + setters that change on
+  // every render). Assigned in the body below, after the handler is defined.
+  const handleAuthFailedRef = useRef<(e: unknown) => boolean>(() => false);
 
   // Any KNOWN provider (gitHub | gitLab | …) is supported; only 'unknown' falls
   // through to the unsupported empty state (set in the bootstrap effect below).
@@ -132,9 +143,10 @@ export function PrPanel({
       },
       (e: unknown) => {
         if (id !== listReqRef.current) return;
+        setListLoading(false);
+        if (handleAuthFailedRef.current(e)) return; // → reauth (no toast, OD-3)
         setPrs([]);
         setListError(errorMessage(e));
-        setListLoading(false);
         pushToast('error', `Could not load pull requests: ${errorMessage(e)}`);
       },
     );
@@ -170,6 +182,7 @@ export function PrPanel({
       },
       (e: unknown) => {
         if (id !== detailReqRef.current) return;
+        if (handleAuthFailed(e)) return; // → reauth (no toast, OD-3)
         setDetailError(errorMessage(e));
         pushToast('error', `Could not load PR #${number}: ${errorMessage(e)}`);
       },
@@ -191,15 +204,54 @@ export function PrPanel({
   function handleConnect(token: string) {
     setConnecting(true);
     setConnectError(null);
+    // Same overwrite for connect / change / reauth (the backend replaces the
+    // keychain entry only AFTER the new token validates — §2.4 / §5).
     void ipc.forgeSetToken(repoId, token).then(
       () => {
         setConnecting(false);
+        setConnectMode('connect');
         setBootstrapTick((t) => t + 1); // re-run context → authenticated → list
       },
       (e: unknown) => {
         setConnecting(false);
         setConnectError(errorMessage(e));
         pushToast('error', `Could not connect: ${errorMessage(e)}`);
+      },
+    );
+  }
+
+  /** P79 (§4): expiry → reconnect. A forge call rejecting `authFailed` means the
+   *  saved token was expired/revoked. Evict the cache-warm viewer WITHOUT
+   *  deleting the token, then route to ForgeConnect in `reauth` mode. Returns
+   *  true when it handled the error, so the caller suppresses the extra toast
+   *  (the reauth banner IS the notification — OD-3). */
+  function handleAuthFailed(e: unknown): boolean {
+    if (!(isAppError(e) && e.kind === 'authFailed')) return false;
+    // Intentional divergence from contract §2.4: route straight to the reauth
+    // connect view and DO NOT follow the invalidate with a context refetch —
+    // a refetch would re-route to 'list' and re-trip authFailed (reauth loop).
+    void ipc.forgeInvalidateViewer(ctx?.host ?? ''); // keeps the token
+    setConnectError(null);
+    setConnectMode('reauth');
+    setView('connect');
+    return true;
+  }
+  handleAuthFailedRef.current = handleAuthFailed;
+
+  function handleDisconnect() {
+    setDisconnecting(true);
+    void ipc.forgeClearToken(repoId).then(
+      () => {
+        setDisconnecting(false);
+        setConfirmDisconnect(false);
+        setConnectError(null);
+        setConnectMode('connect');
+        setView('connect');
+        setBootstrapTick((t) => t + 1); // header disappears, ForgeConnect returns
+      },
+      (e: unknown) => {
+        setDisconnecting(false);
+        pushToast('error', `Could not disconnect: ${errorMessage(e)}`);
       },
     );
   }
@@ -244,13 +296,48 @@ export function PrPanel({
       },
       (e: unknown) => {
         setCreating(false);
+        if (handleAuthFailed(e)) return; // → reauth (no toast, OD-3)
         setCreateError(errorMessage(e));
         pushToast('error', `Could not open the pull request: ${errorMessage(e)}`);
       },
     );
   }
 
-  return <div className="pr-panel">{renderBody()}</div>;
+  const showHeader =
+    ctx?.viewer != null && (view === 'list' || view === 'detail' || view === 'create');
+
+  return (
+    <div className="pr-panel">
+      {showHeader && ctx?.viewer != null && (
+        <ForgeAccountHeader
+          viewer={ctx.viewer}
+          host={ctx.host}
+          kind={ctx.provider}
+          onChangeToken={() => {
+            setConnectError(null);
+            setConnectMode('change');
+            setView('connect');
+          }}
+          onDisconnect={() => setConfirmDisconnect(true)}
+        />
+      )}
+      {renderBody()}
+      <ConfirmDialog
+        open={confirmDisconnect}
+        title={`Disconnect from ${ctx?.host ?? 'this forge'}?`}
+        confirmLabel="Disconnect"
+        busy={disconnecting}
+        onConfirm={handleDisconnect}
+        onCancel={() => setConfirmDisconnect(false)}
+      >
+        {"You're signed in as "}
+        <span className="mono">{ctx?.viewer?.login ?? 'this account'}</span>
+        {'. Disconnecting removes the saved token for '}
+        <span className="mono">{ctx?.host ?? 'this forge'}</span>
+        {' from your OS keychain. Pull requests and CI status will be unavailable until you reconnect.'}
+      </ConfirmDialog>
+    </div>
+  );
 
   function renderBody() {
     switch (view) {
@@ -294,7 +381,20 @@ export function PrPanel({
             repo={ctx?.repo ?? ''}
             submitting={connecting}
             error={connectError}
+            mode={connectMode}
+            login={ctx?.viewer?.login ?? null}
             onSubmit={handleConnect}
+            // §2.4: Cancel only in `change` mode (there is a list to return to);
+            // first-connect / reauth have no back path.
+            onCancel={
+              connectMode === 'change'
+                ? () => {
+                    setConnectMode('connect');
+                    setConnectError(null);
+                    setView('list');
+                  }
+                : undefined
+            }
             onOpenUrl={openTokenPage}
           />
         );

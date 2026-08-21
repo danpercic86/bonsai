@@ -38,7 +38,7 @@ describe('PrPanel — P72 openUrl wiring', () => {
     await waitFor(() => expect(tokenLink()).toBeInTheDocument());
     fireEvent.click(tokenLink());
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
-    expect(spy).toHaveBeenCalledWith('https://github.com/settings/tokens');
+    expect(spy).toHaveBeenCalledWith('https://github.com/settings/personal-access-tokens/new');
     expect(pushToast).not.toHaveBeenCalled();
   });
 

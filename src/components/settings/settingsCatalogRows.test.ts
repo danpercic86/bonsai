@@ -1,5 +1,5 @@
 /**
- * P69 §4.3 rule 7 — UI §1.3's 59-row coverage table, pinned literally.
+ * P69 §4.3 rule 7 — UI §1.3's 60-row coverage table, pinned literally.
  *
  * Split out of `settingsCatalog.test.ts` purely for size: this file is the row
  * bookkeeping, that one is the catalog's own invariants. The DOM half of the
@@ -83,6 +83,7 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
   57: ['ai.mcp-token'],
   58: ['ai.mcp-register-global'],
   59: ['ai.mcp-register-repo'],
+  60: ['accounts.add'],
 };
 
 /**
@@ -90,17 +91,17 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
  * cross-reference note, a status line, a badge, an empty state, an inline
  * warning. UI §1.3 folds each into another row's help or chrome, so they map onto
  * an id another row already owns. Everything NOT listed here must own its ids
- * exclusively; that is what makes the "59 rows are covered" check structural
+ * exclusively; that is what makes the "60 rows are covered" check structural
  * rather than a count that two duplicates could satisfy.
  */
 const DISSOLVED_ROWS: ReadonlySet<number> = new Set([5, 25, 38, 39, 40, 43, 52, 55]);
 
-describe('UI §1.3 coverage — all 59 rows, structurally', () => {
-  it('maps exactly rows 1..59', () => {
+describe('UI §1.3 coverage — all 60 rows, structurally', () => {
+  it('maps exactly rows 1..60', () => {
     const rows = Object.keys(COVERAGE)
       .map(Number)
       .sort((a, b) => a - b);
-    expect(rows).toEqual(Array.from({ length: 59 }, (_, i) => i + 1));
+    expect(rows).toEqual(Array.from({ length: 60 }, (_, i) => i + 1));
   });
 
   it('names only real entries, and every entry is claimed by some row', () => {
@@ -125,7 +126,7 @@ describe('UI §1.3 coverage — all 59 rows, structurally', () => {
         owner.set(id, Number(row));
       }
     }
-    // 59 rows − 8 dissolved, expanded by the pair/card rows.
+    // 60 rows − 8 dissolved, expanded by the pair/card rows.
     expect(owner.size).toBe(SETTINGS_INDEX.length);
     // A dissolved row must fold INTO a row that really exists.
     for (const row of DISSOLVED_ROWS) {

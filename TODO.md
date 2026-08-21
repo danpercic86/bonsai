@@ -107,8 +107,12 @@ modules (a real refactor with call-graph impact, not a leaf move).
   token page, `github_pat_…` placeholder; Base/Compare fields are branch comboboxes (allowFreeInput)
   + `defaultBase` wired. NIT (non-blocking): `prDefaultBase` typed `string|null` but never returns
   null. **USER CHECKPOINT pending** (native GitHub auth + real PR open).
-- **P79 — forge account management.** `in-progress`. **Current step:** architect writing
-  `docs/contracts/P79-forge-account-management.md`. Scope (user-approved 2026-08-21): (1) change/
+- **P79 — forge account management.** `in-progress`. **Current step:** increment A (backend + IPC +
+  mock) DONE & committed `74cdfe0` (reviewer-approved; cargo 171/0 + 2/0, clippy/tsc clean; contracts
+  `P79-forge-account-management.md` + `P79-ui.md`). Increment B (UI — ForgeAccountHeader, PrPanel
+  reauth/ConnectMode, SettingsAccountsSection) in progress via senior-dev. Follow-up: split oversized
+  settings.rs (~760 lines) — to be done inline on main after B (a worktree attempt branched from a
+  stale base and was discarded). Scope (user-approved 2026-08-21): (1) change/
   disconnect in the PR panel, (2) token-expiry → reconnect prompt (policy: KEEP token, don't
   auto-delete), (3) global Accounts settings section (list connected hosts, add/change/disconnect a
   host token without a repo open). Tokens are already shared per-host across repos (keychain

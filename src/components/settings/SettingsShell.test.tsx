@@ -49,12 +49,12 @@ describe('SettingsShell — roles and structure', () => {
     expect(dialog).toHaveAttribute('aria-labelledby', 'settings-title');
   });
 
-  it('is a vertical tablist of seven tabs wired to one tabpanel', () => {
+  it('is a vertical tablist of eight tabs wired to one tabpanel', () => {
     renderPanel();
     const list = screen.getByRole('tablist', { name: 'Settings categories' });
     expect(list).toHaveAttribute('aria-orientation', 'vertical');
     const tabs = screen.getAllByRole('tab');
-    expect(tabs).toHaveLength(7);
+    expect(tabs).toHaveLength(8);
     for (const t of tabs) expect(t).toHaveAttribute('aria-controls', 'settings-pane');
     const pane = screen.getByRole('tabpanel');
     expect(pane).toHaveAttribute('id', 'settings-pane');
