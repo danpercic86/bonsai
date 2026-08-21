@@ -1,4 +1,5 @@
 import type { ComponentProps, RefObject } from 'react';
+import type { ComboboxOption } from './Combobox';
 import { CommitBox } from './CommitBox';
 import type { CommitBoxHandle } from './CommitBox';
 import { CommitPanel } from './CommitPanel';
@@ -39,6 +40,12 @@ export interface WorkspaceRightPanelProps {
   onSelectRightPaneTab(tab: 'work' | 'prs'): void;
   /** P62c: current branch name — seeds the PR create form's compare field. */
   prDefaultHead: string | null;
+  /** P78: base-branch hint for the PR create form (upstream target/main). */
+  prDefaultBase: string | null;
+  /** P78: branch suggestions for the PR create form's Base combobox. */
+  prBaseOptions: ComboboxOption[];
+  /** P78: branch suggestions for the PR create form's Compare combobox. */
+  prCompareOptions: ComboboxOption[];
   /** P63: external "open PR N" request from a graph PR-badge click (bumped
    *  `seq` re-opens the same PR). Threaded into PrPanel's `openToPr`. */
   prNav: PrNavRequest | null;
@@ -210,6 +217,9 @@ export function WorkspaceRightPanel({
   rightPaneTab,
   onSelectRightPaneTab,
   prDefaultHead,
+  prDefaultBase,
+  prBaseOptions,
+  prCompareOptions,
   prNav,
 }: WorkspaceRightPanelProps) {
   // Audit §2.2: `selectedIndex` can point PAST the end of `graph.nodes` — a
@@ -402,6 +412,9 @@ export function WorkspaceRightPanel({
         <PrPanel
           repoId={repoId}
           defaultHead={prDefaultHead}
+          defaultBase={prDefaultBase}
+          baseOptions={prBaseOptions}
+          compareOptions={prCompareOptions}
           openToPr={prNav}
           aiEligible={aiEligible}
         />

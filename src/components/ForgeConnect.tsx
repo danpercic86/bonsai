@@ -47,9 +47,10 @@ interface ConnectHint {
 
 const CONNECT_HINTS: Record<ForgeKind, ConnectHint> = {
   gitHub: {
-    scopes: 'Use a personal access token with the "repo" scope.',
-    url: 'https://github.com/settings/tokens',
-    placeholder: 'ghp_…',
+    scopes:
+      'Use a fine-grained token with Pull requests (read/write) and Contents (read) permissions — Metadata is added automatically — or a classic token with the "repo" scope.',
+    url: 'https://github.com/settings/personal-access-tokens/new',
+    placeholder: 'github_pat_…',
   },
   gitLab: {
     scopes: 'Use a personal access token with the "api" scope.',

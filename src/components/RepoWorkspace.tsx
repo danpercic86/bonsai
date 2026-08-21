@@ -1472,6 +1472,26 @@ export function RepoWorkspace({
   }, [refreshing, refreshAll, verification.refresh, forgeSignals.refresh, refetchSigningStatus]);
   const headBranch = branches?.local.find((b) => b.isHead) ?? null;
 
+  // P78: branch suggestions + base hint for the PR create form. Compare = local
+  // branches; Base = local + remote-tracking branches. Base hint prefers the head
+  // branch's upstream, then a local main/master, else empty.
+  const prCompareOptions = useMemo<ComboboxOption[]>(
+    () => (branches?.local ?? []).map((b) => ({ value: b.name, label: b.name })),
+    [branches],
+  );
+  const prBaseOptions = useMemo<ComboboxOption[]>(() => {
+    const locals = (branches?.local ?? []).map((b) => ({ value: b.name, label: b.name }));
+    const remotes = (branches?.remote ?? []).map((b) => ({ value: b.name, label: b.name }));
+    return [...locals, ...remotes];
+  }, [branches]);
+  const prDefaultBase = useMemo<string | null>(() => {
+    if (headBranch?.upstream != null && headBranch.upstream !== '') return headBranch.upstream;
+    const localNames = (branches?.local ?? []).map((b) => b.name);
+    if (localNames.includes('main')) return 'main';
+    if (localNames.includes('master')) return 'master';
+    return '';
+  }, [headBranch, branches]);
+
   // P58c: the selected commit's signature verdict for the CommitPanel line —
   // reuses the shared verify cache (single source; no extra IPC). null when
   // nothing is selected, not yet verified, or the badge is disabled.
@@ -2667,6 +2687,9 @@ export function RepoWorkspace({
           rightPaneTab={rightPaneTab}
           onSelectRightPaneTab={setRightPaneTab}
           prDefaultHead={headBranch?.name ?? null}
+          prDefaultBase={prDefaultBase}
+          prBaseOptions={prBaseOptions}
+          prCompareOptions={prCompareOptions}
           prNav={prNav}
           opState={opState}
           conflicts={conflicts}

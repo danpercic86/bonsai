@@ -105,7 +105,7 @@ test.describe('11 forge @forge', () => {
       await page.getByRole('link', { name: 'Create a token' }).click();
       await expect
         .poll(() => page.evaluate(() => (window as unknown as { __opened: string[] }).__opened))
-        .toEqual(['https://github.com/settings/tokens']);
+        .toEqual(['https://github.com/settings/personal-access-tokens/new']);
       // No navigation, no toast: the connect form is still mounted.
       await expect(page.getByLabel('Personal access token')).toBeVisible();
       await expect(errorToast(page)).toHaveCount(0);
@@ -260,6 +260,9 @@ test.describe('11 forge @forge', () => {
     });
 
     await test.step('generate fills title + body from base..head, form not submitted', async () => {
+      // P78: Compare is now a Combobox — filling it leaves the suggestion popover
+      // open, which would overlap the Generate button. Blur it to close first.
+      await compare.blur();
       await generate.click();
       await expect(title).toHaveValue('Add feat onto main');
       await expect(body).toHaveValue(/Bring the work on `feat` into `main`/);
@@ -270,6 +273,7 @@ test.describe('11 forge @forge', () => {
 
     await test.step("head containing '#fail' → aiFailed toast, form stays usable", async () => {
       await compare.fill('feat#fail');
+      await compare.blur(); // P78: close the combobox popover before clicking Generate
       await generate.click();
       await expect(errorToast(page, /Could not generate a description/)).toBeVisible();
       await title.fill('still editable after the failure');

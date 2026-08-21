@@ -36,7 +36,7 @@ describe('ForgeConnect — P72 token-page link', () => {
     const clickEvent = new window.MouseEvent('click', { bubbles: true, cancelable: true });
     fireEvent(link(), clickEvent);
     expect(onOpenUrl).toHaveBeenCalledTimes(1);
-    expect(onOpenUrl).toHaveBeenCalledWith('https://github.com/settings/tokens');
+    expect(onOpenUrl).toHaveBeenCalledWith('https://github.com/settings/personal-access-tokens/new');
     expect(clickEvent.defaultPrevented).toBe(true);
   });
 
@@ -49,13 +49,22 @@ describe('ForgeConnect — P72 token-page link', () => {
   it('keeps link semantics: real href plus noreferrer AND noopener', () => {
     renderConnect();
     const a = link();
-    expect(a).toHaveAttribute('href', 'https://github.com/settings/tokens');
+    expect(a).toHaveAttribute('href', 'https://github.com/settings/personal-access-tokens/new');
     const rel = a.getAttribute('rel') ?? '';
     expect(rel).toContain('noreferrer');
     expect(rel).toContain('noopener');
     // Links must NOT be turned into buttons (no role/tabIndex/keydown override).
     expect(a).not.toHaveAttribute('role');
     expect(a).not.toHaveAttribute('tabindex');
+  });
+
+  it('names fine-grained permissions in the hint and uses the github_pat_ placeholder', () => {
+    renderConnect('gitHub');
+    const hint = document.querySelector('.forge-connect-hint');
+    expect(hint).toHaveTextContent(/fine-grained token/i);
+    expect(hint).toHaveTextContent(/Pull requests/);
+    expect(hint).toHaveTextContent(/Contents/);
+    expect(screen.getByPlaceholderText('github_pat_…')).toBeInTheDocument();
   });
 
   it("renders no link for 'unknown' (empty hint URL) and never calls back", () => {

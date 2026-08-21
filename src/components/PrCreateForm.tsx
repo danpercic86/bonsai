@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { CreatePrInput, PrDescription } from '../ipc';
+import { Combobox, type ComboboxOption } from './Combobox';
 import { usePushToast } from '../ToastContext';
 import { errorMessage } from '../utils/errors';
 
@@ -25,6 +26,10 @@ export interface PrCreateFormProps {
   /** P64: mirrors CommitBox — gates the generate button + tooltip. When false,
    *  the button is disabled with an explanatory tooltip. */
   aiEligible?: boolean;
+  /** P78: suggestions for the Base branch combobox (local + remote branches). */
+  baseOptions?: ComboboxOption[];
+  /** P78: suggestions for the Compare branch combobox (local branches). */
+  compareOptions?: ComboboxOption[];
 }
 
 export function PrCreateForm({
@@ -36,6 +41,8 @@ export function PrCreateForm({
   onCancel,
   onGenerateDescription,
   aiEligible = false,
+  baseOptions = [],
+  compareOptions = [],
 }: PrCreateFormProps) {
   const pushToast = usePushToast();
   const [title, setTitle] = useState('');
@@ -104,13 +111,14 @@ export function PrCreateForm({
       <div className="pr-create-branches">
         <label className="pr-field">
           <span className="pr-field-label">Base</span>
-          <input
-            className="pr-input mono"
-            type="text"
-            placeholder="target branch (e.g. main)"
+          <Combobox
             value={base}
+            onChange={setBase}
+            options={baseOptions}
+            allowFreeInput
+            placeholder="target branch (e.g. main)"
+            ariaLabel="Base branch"
             disabled={submitting}
-            onChange={(e) => setBase(e.target.value)}
           />
         </label>
         <span className="pr-create-arrow" aria-hidden="true">
@@ -118,13 +126,14 @@ export function PrCreateForm({
         </span>
         <label className="pr-field">
           <span className="pr-field-label">Compare</span>
-          <input
-            className="pr-input mono"
-            type="text"
-            placeholder="source branch"
+          <Combobox
             value={head}
+            onChange={setHead}
+            options={compareOptions}
+            allowFreeInput
+            placeholder="source branch"
+            ariaLabel="Compare branch"
             disabled={submitting}
-            onChange={(e) => setHead(e.target.value)}
           />
         </label>
       </div>

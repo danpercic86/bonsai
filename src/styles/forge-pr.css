@@ -420,6 +420,17 @@
   gap: 8px;
 }
 
+/* P78: base/compare comboboxes match the mono field styling. */
+.pr-create-branches .combobox {
+  flex: 1;
+  min-width: 0;
+}
+.pr-create-branches .combobox .dialog-input {
+  width: 100%;
+  font-family: var(--font-mono);
+  background: var(--bg-1);
+}
+
 .pr-create-arrow {
   padding-bottom: 8px;
   color: var(--text-3);

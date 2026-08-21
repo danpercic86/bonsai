@@ -11,6 +11,7 @@ import type {
 } from '../ipc';
 import { usePushToast } from '../ToastContext';
 import { errorMessage } from '../utils/errors';
+import type { ComboboxOption } from './Combobox';
 import { SkeletonRows } from './CommitPanel';
 import { ForgeConnect } from './ForgeConnect';
 import { PrCreateForm } from './PrCreateForm';
@@ -40,6 +41,10 @@ export interface PrPanelProps {
    *  button: always shown, but disabled with an explanatory tooltip when false
    *  (mirrors CommitBox). */
   aiEligible?: boolean;
+  /** P78: branch suggestions for the create form's Base combobox (local + remote). */
+  baseOptions?: ComboboxOption[];
+  /** P78: branch suggestions for the create form's Compare combobox (local). */
+  compareOptions?: ComboboxOption[];
 }
 
 export function PrPanel({
@@ -48,6 +53,8 @@ export function PrPanel({
   defaultBase,
   openToPr,
   aiEligible = false,
+  baseOptions = [],
+  compareOptions = [],
 }: PrPanelProps) {
   const pushToast = usePushToast();
 
@@ -296,6 +303,8 @@ export function PrPanel({
           <PrCreateForm
             defaultHead={defaultHead}
             defaultBase={defaultBase}
+            baseOptions={baseOptions}
+            compareOptions={compareOptions}
             submitting={creating}
             error={createError}
             onSubmit={handleCreate}
