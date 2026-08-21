@@ -31,6 +31,7 @@ import type {
   HealthRefreshSettings,
   IdentityProfile,
   PanelDensity,
+  PrimaryCommitAction,
   UiSettings,
   UiSettingsPatch,
 } from '../ipc';
@@ -49,6 +50,8 @@ const SETTINGS_SAVE_MAX_RETRIES = 3;
 
 export interface UiSettingsController {
   panelDensity: PanelDensity;
+  /** P80 D1: which commit button is emphasized in the Working tab footer. */
+  primaryCommitAction: PrimaryCommitAction;
   autoFetch: AutoFetchSettings;
   healthRefresh: HealthRefreshSettings;
   graph: GraphPrefs;
@@ -89,6 +92,9 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
   // P67 §4: right-panel density. No toolbar button (unlike theme/listView), so
   // it rides the debounced `handleSettingsChange` patch path only.
   const [panelDensity, setPanelDensity] = useState<PanelDensity>('cozy');
+  // P80 D1: primary commit action. Default 'commit' (always-safe, non-network).
+  const [primaryCommitAction, setPrimaryCommitAction] =
+    useState<PrimaryCommitAction>('commit');
   const [autoFetch, setAutoFetch] = useState<AutoFetchSettings>({
     enabled: false,
     intervalMinutes: 5,
@@ -289,6 +295,9 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
   const handleSettingsChange = useCallback(
     (patch: UiSettingsPatch) => {
       if (patch.panelDensity !== undefined) setPanelDensity(patch.panelDensity);
+      if (patch.primaryCommitAction !== undefined) {
+        setPrimaryCommitAction(patch.primaryCommitAction);
+      }
       if (patch.autoFetch !== undefined) setAutoFetch(patch.autoFetch);
       if (patch.healthRefresh !== undefined) setHealthRefresh(patch.healthRefresh);
       if (patch.graph !== undefined) {
@@ -325,6 +334,7 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
   // replaces, including the metricsVersion bump that follows setGraph.
   const hydrateUiSettings = useCallback((s: UiSettings) => {
     setPanelDensity(s.panelDensity);
+    setPrimaryCommitAction(s.primaryCommitAction);
     setAutoFetch(s.autoFetch);
     setHealthRefresh(s.healthRefresh);
     setGraph(s.graph);
@@ -352,6 +362,7 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
 
   return {
     panelDensity,
+    primaryCommitAction,
     autoFetch,
     healthRefresh,
     graph,

@@ -1081,6 +1081,9 @@ export type ListView = 'tree' | 'flat';
  *  (graph row geometry). 'cozy' is the P67b tightened default. */
 export type PanelDensity = 'cozy' | 'compact';
 
+/** P80 D1: which commit button is emphasized in the Working tab footer. */
+export type PrimaryCommitAction = 'commit' | 'commitPush';
+
 export interface PaneWidths {
   sidebar: number;
   rightPanel: number;
@@ -1496,6 +1499,8 @@ export interface UiSettings {
   listView: ListView;
   /** P67 §4: right-panel density; display-only, patches independently. */
   panelDensity: PanelDensity;
+  /** P80 D1: which commit button is emphasized in the Working tab footer. */
+  primaryCommitAction: PrimaryCommitAction;
   autoFetch: AutoFetchSettings;
   /** P30: periodic read-only refresh signal (backend scheduler). */
   healthRefresh: HealthRefreshSettings;
@@ -1555,6 +1560,8 @@ export interface UiSettingsPatch {
   listView?: ListView;
   /** P67 §4: right-panel density (P67c). */
   panelDensity?: PanelDensity;
+  /** P80 D1: primary commit action; patches independently. */
+  primaryCommitAction?: PrimaryCommitAction;
   autoFetch?: AutoFetchSettings;
   /** Whole-struct patch, like autoFetch (P30 D7). */
   healthRefresh?: HealthRefreshSettings;

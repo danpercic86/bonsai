@@ -14,6 +14,8 @@ pub struct UiSettings {
     pub list_view: ListView,
     /// P67: right-panel vertical density; display-only, patches independently.
     pub panel_density: PanelDensity,
+    /// P80 D1: which commit button is emphasized in the Working tab.
+    pub primary_commit_action: PrimaryCommitAction,
     pub auto_fetch: AutoFetch,
     /// Health-refresh background job (P30 D7).
     pub health_refresh: HealthRefresh,
@@ -69,6 +71,8 @@ pub struct UiSettingsPatch {
     /// P67: right-panel density (P67c). Patches independently of `list_view`
     /// and `graph`; NOT clamped (no numeric range).
     pub panel_density: Option<PanelDensity>,
+    /// P80 D1: primary commit action; patches independently.
+    pub primary_commit_action: Option<PrimaryCommitAction>,
     /// Whole-struct patch (like `pane_widths`): the frontend sends the entire
     /// nested object when any sub-field changes.
     pub auto_fetch: Option<AutoFetch>,
@@ -125,6 +129,9 @@ pub(crate) fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     }
     if let Some(panel_density) = patch.panel_density {
         s.panel_density = panel_density;
+    }
+    if let Some(primary_commit_action) = patch.primary_commit_action {
+        s.primary_commit_action = primary_commit_action;
     }
     if let Some(auto_fetch) = patch.auto_fetch {
         s.auto_fetch = clamp_auto_fetch(auto_fetch);
@@ -217,6 +224,7 @@ pub(crate) fn ui_settings_of(s: &settings::Settings) -> UiSettings {
         pane_widths: s.pane_widths,
         list_view: s.list_view,
         panel_density: s.panel_density,
+        primary_commit_action: s.primary_commit_action,
         auto_fetch: s.auto_fetch,
         health_refresh: s.health_refresh,
         graph: s.graph,

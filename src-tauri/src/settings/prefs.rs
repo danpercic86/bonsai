@@ -38,6 +38,16 @@ pub enum PanelDensity {
     Compact,
 }
 
+/// Which commit button is emphasized in the Working tab (P80 D1). Pure UI
+/// preference; display-only, no Git effect.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PrimaryCommitAction {
+    #[default]
+    Commit,
+    CommitPush,
+}
+
 /// AI conflict-resolution autonomy (P13). ProposeReview = user accepts before
 /// anything is written/staged (default); AutoResolve = write+stage immediately,
 /// user reviews the staged diff before commit_merge.

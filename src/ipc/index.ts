@@ -138,6 +138,7 @@ export type {
   ReflogEntry,
   PaneWidths,
   PanelDensity,
+  PrimaryCommitAction,
   PrDescription,
   PrDetail,
   PrListQuery,

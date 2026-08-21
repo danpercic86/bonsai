@@ -93,6 +93,11 @@ pub struct Settings {
     /// `PanelDensity::default()` (Cozy). No version bump — meets the documented
     /// bar above. NOT clamped (no numeric range; `clamp_graph_prefs` untouched).
     pub panel_density: PanelDensity,
+    /// P80 D1: which commit button is emphasized in the Working tab. Additive
+    /// `#[serde(default)]` (via the container-level `default`); a pre-P80
+    /// settings.json without this key loads `PrimaryCommitAction::default()`
+    /// (Commit). Pure UI preference; NOT clamped.
+    pub primary_commit_action: PrimaryCommitAction,
     /// Open tabs, in display order (repoIds == canonical workdir paths).
     /// Additive (P3e §6.1); a legacy file without this key loads as empty.
     pub open_repos: Vec<String>,
@@ -223,6 +228,7 @@ impl Default for Settings {
             pane_widths: PaneWidths::default(),
             list_view: ListView::default(),
             panel_density: PanelDensity::default(),
+            primary_commit_action: PrimaryCommitAction::default(),
             open_repos: Vec::new(),
             active_repo: None,
             auto_fetch: AutoFetch::default(),

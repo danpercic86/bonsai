@@ -44,6 +44,16 @@ export const GENERAL_ENTRIES: readonly SettingsIndexEntry[] = [
     reset: resetField('healthRefresh', 'intervalMinutes', '30'),
   },
   {
+    id: 'general.primary-commit-action',
+    category: 'general',
+    group: 'Committing',
+    label: 'Primary commit action',
+    help: 'Which button is emphasized at the bottom of the Working tab. The other stays available beside it.',
+    keywords: 'commit push button default primary emphasize',
+    control: 'segmented',
+    reset: resetKey('primaryCommitAction', 'Commit'),
+  },
+  {
     id: 'general.terminal-command',
     category: 'general',
     group: 'External tools',

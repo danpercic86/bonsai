@@ -113,6 +113,7 @@ export const MINIMAL: FixtureValues = {
   theme: D.theme,
   listView: D.listView,
   panelDensity: D.panelDensity,
+  primaryCommitAction: D.primaryCommitAction,
   autoFetch: D.autoFetch,
   healthRefresh: D.healthRefresh,
   graph: D.graph,
@@ -148,6 +149,8 @@ export const MAXIMAL: FixtureValues = {
   theme: 'light',
   listView: 'flat',
   panelDensity: 'compact',
+  // P80 D1: OFF the default ('commit'), so `↺` must be PRESENT on the row.
+  primaryCommitAction: 'commitPush',
   // Every resettable knob OFF its default, so `↺` must be PRESENT on each.
   autoFetch: { enabled: true, intervalMinutes: 11 },
   healthRefresh: { enabled: true, intervalMinutes: 17 },

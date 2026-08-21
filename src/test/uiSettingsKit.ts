@@ -33,6 +33,7 @@ export const HYDRATED: UiSettings = {
   paneWidths: { sidebar: 300, rightPanel: 420 },
   listView: 'flat',
   panelDensity: 'compact',
+  primaryCommitAction: 'commitPush',
   autoFetch: { enabled: true, intervalMinutes: 11 },
   healthRefresh: { enabled: true, intervalMinutes: 45 },
   graph: {

@@ -39,7 +39,7 @@ export function DirRowActions({
       {onStage !== undefined && (
         <button
           type="button"
-          className="row-action"
+          className="row-action row-action-primary"
           title="Stage all files in this folder"
           aria-label="Stage all files in this folder"
           disabled={disabled}
@@ -51,7 +51,7 @@ export function DirRowActions({
       {onUnstage !== undefined && (
         <button
           type="button"
-          className="row-action"
+          className="row-action row-action-primary"
           title="Unstage all files in this folder"
           aria-label="Unstage all files in this folder"
           disabled={disabled}

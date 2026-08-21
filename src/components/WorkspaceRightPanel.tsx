@@ -7,7 +7,6 @@ import { ComparePanel } from './ComparePanel';
 import { OpBanner } from './OpBanner';
 import { PrPanel } from './PrPanel';
 import { StatusPanel } from './StatusPanel';
-import { RightPanelActionsRow } from './RightPanelActionsRow';
 import { shortOid } from './workspaceUtils';
 import type {
   AiAnalysisMode,
@@ -18,6 +17,7 @@ import type {
   HeadInfo,
   ListView,
   PanelDensity,
+  PrimaryCommitAction,
   PrNavRequest,
   RepoOpState,
   SigningStatus,
@@ -74,6 +74,8 @@ export interface WorkspaceRightPanelProps {
    *  (D7: a prop, not `documentElement.dataset`, so the cascade stays scoped to
    *  this panel and the value is unit-testable by `render()`). */
   panelDensity: PanelDensity;
+  /** P80 D1: which commit button is emphasized in the CommitBox footer. */
+  primaryCommitAction: PrimaryCommitAction;
   scope: ComparePanelProps['scope'];
   setScope: ComparePanelProps['onSelectScope'];
   clearCompare(): void;
@@ -166,6 +168,7 @@ export function WorkspaceRightPanel({
   headBranch,
   listView,
   panelDensity,
+  primaryCommitAction,
   scope,
   setScope,
   clearCompare,
@@ -321,17 +324,10 @@ export function WorkspaceRightPanel({
             aiRows={aiRows}
             aiAtCapacity={aiAtCapacity}
             aiBulk={aiBulk}
-            aiAnalyzing={aiPanelLoading}
             onStage={onStage}
             onUnstage={onUnstage}
             onDiscard={onDiscard}
             onDiscardForce={onDiscardForce}
-            onReviewStaged={() =>
-              runAnalyze({ kind: 'staged' }, 'review', 'Review staged changes')
-            }
-            onReviewWorktree={() =>
-              runAnalyze({ kind: 'worktree' }, 'review', 'Review working tree')
-            }
             onToggleDiff={onToggleDiff}
             onResolveConflict={onResolveConflict}
             onToggleConflictView={onToggleConflictView}
@@ -341,58 +337,31 @@ export function WorkspaceRightPanel({
             onBlame={onBlame}
             onFileHistory={onFileHistory}
           />
-          {/* P67 §5.1: ONE slim row replaces the former stash split button +
-              amend affordance (two `flex: none` rows, each with its own
-              border-top and padding). Amend stays owned here (D4) — CommitBox is
-              keyed on it below, so a checkbox inside that subtree would lose
-              keyboard focus on every toggle. */}
-          {opState.kind === 'none' && head !== null && !head.unborn && (
-            <RightPanelActionsRow
-              amend={amend}
-              onToggleAmend={onToggleAmend}
-              busy={mutating}
-              showAmendPushWarning={
-                amend &&
-                headBranch !== null &&
-                headBranch.upstream !== null &&
-                headBranch.ahead === 0
-              }
-              stashDisabled={
-                mutating ||
-                ((status?.staged.length ?? 0) === 0 &&
-                  (status?.unstaged.length ?? 0) === 0 &&
-                  (status?.untracked.length ?? 0) === 0)
-              }
-              stagedCount={status?.staged.length ?? 0}
-              hasTrackedChanges={
-                (status?.staged.length ?? 0) > 0 || (status?.unstaged.length ?? 0) > 0
-              }
-              hasUntracked={(status?.untracked.length ?? 0) > 0}
-              onStash={onCreateStash}
-            />
-          )}
+          {/* P80 §2b: the former `.rp-actions` row is gone — amend, stash, sign,
+              skip-hooks, compose and the context-scoped review all fold into
+              CommitBox's `⋯` menu. Amend stays owned upstream (RepoWorkspace),
+              threaded in as a prop; CommitBox reseeds its message via an internal
+              effect (no remount), so the menu item keeps focus on toggle. */}
           <CommitBox
-            key={
-              amend
-                ? 'amend'
-                : opState.kind === 'merge'
-                  ? `merge:${opState.incoming}`
-                  : 'commit'
-            }
+            key={opState.kind === 'merge' ? `merge:${opState.incoming}` : 'commit'}
             ref={commitBoxRef}
             stagedCount={status?.staged.length ?? 0}
             busy={mutating}
             mode={opState.kind === 'merge' && !amend ? 'merge' : 'commit'}
-            initialMessage={
-              amend
-                ? (amendMessage ?? undefined)
-                : opState.kind === 'merge'
-                  ? opState.message
-                  : undefined
-            }
+            initialMessage={opState.kind === 'merge' ? opState.message : undefined}
             conflictCount={conflicts.length}
             blocked={!amend && opState.kind !== 'none' && opState.kind !== 'merge'}
             amend={amend}
+            amendMessage={amendMessage}
+            canAmend={opState.kind === 'none' && head !== null && !head.unborn}
+            onToggleAmend={onToggleAmend}
+            showAmendPushWarning={
+              amend &&
+              headBranch !== null &&
+              headBranch.upstream !== null &&
+              headBranch.ahead === 0
+            }
+            primaryCommitAction={primaryCommitAction}
             onCommit={
               amend
                 ? onCommitAmend
@@ -405,6 +374,17 @@ export function WorkspaceRightPanel({
             onGenerate={onGenerate}
             workingDirty={workingDirty}
             onCompose={onCompose}
+            onReviewStaged={() => runAnalyze({ kind: 'staged' }, 'review', 'Review staged changes')}
+            onReviewWorktree={() =>
+              runAnalyze({ kind: 'worktree' }, 'review', 'Review working tree')
+            }
+            aiAnalyzing={aiPanelLoading}
+            onStash={onCreateStash}
+            canStash={opState.kind === 'none' && head !== null && !head.unborn}
+            hasTrackedChanges={
+              (status?.staged.length ?? 0) > 0 || (status?.unstaged.length ?? 0) > 0
+            }
+            hasUntracked={(status?.untracked.length ?? 0) > 0}
             onOpenIdentitySettings={onOpenIdentitySettings}
             signingStatus={signingStatus}
           />

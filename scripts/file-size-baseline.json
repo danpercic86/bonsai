@@ -57,15 +57,15 @@
     "src-tauri/src/commands/tests_ai_stream.rs": 545,
     "src-tauri/src/mcp.rs": 1588,
     "src-tauri/src/scheduler.rs": 1431,
-    "src/App.tsx": 1066,
+    "src/App.tsx": 1069,
     "src/components/AiAssetsPanel.tsx": 510,
     "src/components/ConflictEditor.tsx": 535,
-    "src/components/RepoWorkspace.tsx": 2944,
+    "src/components/RepoWorkspace.tsx": 2955,
     "src/components/Sidebar.tsx": 814,
     "src/components/workspaceMenus.ts": 882,
     "src/graph/GraphCanvas.tsx": 883,
     "src/ipc/fixtures/diffs.ts": 746,
     "src/ipc/tauri.ts": 1134,
-    "src/ipc/types.ts": 2795
+    "src/ipc/types.ts": 2802
   }
 }

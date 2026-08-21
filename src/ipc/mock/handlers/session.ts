@@ -77,6 +77,8 @@ export const sessionHandlers = {
       listView: patch.listView ?? current.listView,
       // P67 §4: patches independently of listView/graph.
       panelDensity: patch.panelDensity ?? current.panelDensity,
+      // P80 D1: patches independently of listView/graph/panelDensity.
+      primaryCommitAction: patch.primaryCommitAction ?? current.primaryCommitAction,
       autoFetch:
         patch.autoFetch !== undefined ? clampAutoFetch(patch.autoFetch) : current.autoFetch,
       healthRefresh:
