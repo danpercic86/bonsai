@@ -131,6 +131,7 @@ fn forge_commands_require_an_open_repo() {
 
     let err = tauri::async_runtime::block_on(forge_list_prs_inner(
         &state,
+        settings_file,
         MISSING_ID,
         PrListQuery {
             state: bonsai_forge::PrStateFilter::Open,
@@ -141,12 +142,14 @@ fn forge_commands_require_an_open_repo() {
     .expect_err("forge_list_prs with no repo");
     assert!(matches!(err, AppError::NoRepo));
 
-    let err = tauri::async_runtime::block_on(forge_get_pr_inner(&state, MISSING_ID, 1))
-        .expect_err("forge_get_pr with no repo");
+    let err =
+        tauri::async_runtime::block_on(forge_get_pr_inner(&state, settings_file, MISSING_ID, 1))
+            .expect_err("forge_get_pr with no repo");
     assert!(matches!(err, AppError::NoRepo));
 
     let err = tauri::async_runtime::block_on(forge_create_pr_inner(
         &state,
+        settings_file,
         MISSING_ID,
         CreatePrInput {
             title: "t".to_string(),
@@ -161,7 +164,10 @@ fn forge_commands_require_an_open_repo() {
     assert!(matches!(err, AppError::NoRepo));
 
     let err = tauri::async_runtime::block_on(forge_list_review_comments_inner(
-        &state, MISSING_ID, 1,
+        &state,
+        settings_file,
+        MISSING_ID,
+        1,
     ))
     .expect_err("forge_list_review_comments with no repo");
     assert!(matches!(err, AppError::NoRepo));
@@ -182,6 +188,7 @@ fn forge_commands_require_an_open_repo() {
 
     let err = tauri::async_runtime::block_on(forge_commit_statuses_inner(
         &state,
+        settings_file,
         MISSING_ID,
         vec!["deadbeef".to_string()],
     ))

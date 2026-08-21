@@ -116,6 +116,98 @@ pub fn open(workdir: &Path) -> Result<Box<dyn ForgeProvider>, AppError> {
     Ok(build_provider(target, token, Box::new(transport)))
 }
 
+/// P80: open a forge provider for the repo at `workdir` using an EXPLICIT
+/// keychain key (resolved by the command layer's `resolve_account`), rather than
+/// the bare host. `keychain_key = None` (or empty) ⇒ an unauthenticated
+/// provider. A keychain read error degrades to unauthenticated rather than
+/// failing. No `origin` remote ⇒ [`AppError::NoRemote`].
+pub fn open_with_key(
+    workdir: &Path,
+    keychain_key: Option<&str>,
+) -> Result<Box<dyn ForgeProvider>, AppError> {
+    let target = resolve_target(workdir)?;
+    let token = match keychain_key {
+        Some(k) if !k.is_empty() => auth::global().get(k).unwrap_or(None),
+        _ => None,
+    };
+    let transport = ReqwestTransport::new()?;
+    Ok(build_provider(target, token, Box::new(transport)))
+}
+
+/// P80: validate a pasted PAT for the repo at `workdir` WITHOUT storing it.
+/// Returns the authenticated viewer plus the resolved `(host, kind)` so the
+/// command layer can compute the three-part `accountId` / keychain key and store
+/// the token itself (via [`store_token`]). A rejected token ⇒
+/// [`AppError::AuthFailed`]; a non-forge origin ⇒ [`AppError::ForgeUnsupported`].
+pub fn validate_repo_token(
+    workdir: &Path,
+    token: &str,
+) -> Result<(ForgeViewer, String, ForgeKind), AppError> {
+    let target = resolve_target(workdir)?;
+    let host = target.host.clone();
+    let kind = target.kind;
+    let transport = ReqwestTransport::new()?;
+    let viewer = validate_token(target, token, Box::new(transport))?;
+    Ok((viewer, host, kind))
+}
+
+/// P80: validate a PAT against `host`/`kind` DIRECTLY (no repo) WITHOUT storing
+/// it. Azure DevOps has no repo-less identity endpoint ⇒
+/// [`AppError::ForgeUnsupported`] (OD-6). A rejected token ⇒
+/// [`AppError::AuthFailed`]. The command layer persists under a resolved key.
+pub fn validate_host_token(
+    host: &str,
+    kind: ForgeKind,
+    token: &str,
+) -> Result<ForgeViewer, AppError> {
+    validate_host_token_with(host, kind, token, Box::new(ReqwestTransport::new()?))
+}
+
+/// Transport-injected core of [`validate_host_token`] (unit-tested offline).
+fn validate_host_token_with(
+    host: &str,
+    kind: ForgeKind,
+    token: &str,
+    http: Box<dyn HttpTransport>,
+) -> Result<ForgeViewer, AppError> {
+    if kind == ForgeKind::AzureDevOps {
+        return Err(AppError::ForgeUnsupported(
+            "Azure DevOps accounts must be added from an open Azure DevOps repository".to_string(),
+        ));
+    }
+    let host_l = host.to_ascii_lowercase();
+    let target = ForgeTarget {
+        kind,
+        host: host_l,
+        owner: String::new(),
+        repo: String::new(),
+        project: None,
+        web_url: String::new(),
+    };
+    validate_token(target, token, http)
+}
+
+/// P80: store `token` in the OS keychain under an EXPLICIT `keychain_key`
+/// (== a three-part `accountId` for a P80 account, or the bare host for a
+/// migrated legacy one). No-op for an empty key. The token never lands in
+/// settings.json, a URL, or a log.
+pub fn store_token(keychain_key: &str, token: &str) -> Result<(), AppError> {
+    if !keychain_key.is_empty() {
+        auth::global().set(keychain_key, token)?;
+    }
+    Ok(())
+}
+
+/// P80: delete the token stored under `keychain_key` from the keychain.
+/// Idempotent — deleting an absent entry is `Ok(())`. Does NOT touch the viewer
+/// cache (that is keyed by host; the command layer evicts it when appropriate).
+pub fn delete_token(keychain_key: &str) -> Result<(), AppError> {
+    if !keychain_key.is_empty() {
+        auth::global().delete(keychain_key)?;
+    }
+    Ok(())
+}
+
 /// Validate a candidate `token` against `target` using `http`, returning the
 /// authenticated viewer on success. Stores NOTHING — the caller persists only
 /// after this returns `Ok`. Split out from [`set_token`] so the validate path
@@ -183,6 +275,16 @@ pub fn clear_token(workdir: &Path) -> Result<(), AppError> {
 pub fn resolve_forge_host(workdir: &Path) -> Result<(String, ForgeKind), AppError> {
     let target = resolve_target(workdir)?;
     Ok((target.host, target.kind))
+}
+
+/// P80: network-free `(lowercased host, owner/namespace, kind)` for the repo at
+/// `workdir` from `origin`, so the command layer can run `resolve_account` (which
+/// needs the owner for the owner-match step) without a second remote read. No
+/// `origin` remote ⇒ [`AppError::NoRemote`]; an unparseable origin ⇒ empty
+/// host/owner with [`ForgeKind::Unknown`] (same degradation as [`resolve_target`]).
+pub fn resolve_forge_identity(workdir: &Path) -> Result<(String, String, ForgeKind), AppError> {
+    let target = resolve_target(workdir)?;
+    Ok((target.host, target.owner, target.kind))
 }
 
 /// Validate `token` against `host`/`kind` DIRECTLY (no repo), and on success

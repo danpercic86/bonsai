@@ -21,8 +21,8 @@ pub(crate) use bonsai_core::error::AppError;
 // `CheckRollup`) travel inside these and are never named here. `CommitStatus`
 // is named directly by P63's `forge_commit_statuses`.
 pub(crate) use bonsai_forge::{
-    CommitStatus, CreatePrInput, ForgeAccount, ForgeKind, ForgeRepoContext, ForgeViewer, PrDetail,
-    PrListQuery, PrPage, ReviewComment,
+    AccountSource, CommitStatus, CreatePrInput, ForgeAccount, ForgeKind, ForgeRepoContext,
+    ForgeViewer, PrDetail, PrListQuery, PrPage, ReviewComment,
 };
 pub(crate) use bonsai_core::git::ai_branch_name::{self, BranchNameProposal, BranchNameSource};
 pub(crate) use bonsai_core::git::ai_changelog::{self, AiChangelog, ChangelogRange};

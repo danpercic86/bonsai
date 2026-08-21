@@ -13,11 +13,13 @@ import { ToastContext } from '../../ToastContext';
 const VIEWER = { login: 'octocat', avatarUrl: null };
 
 const GH_ACCOUNT: ForgeAccount = {
+  accountId: 'gitHub:github.com:octocat',
   host: 'github.com',
   kind: 'gitHub',
   login: 'octocat',
   avatarUrl: null,
   connected: true,
+  isHostDefault: true,
 };
 
 function renderSection() {

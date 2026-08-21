@@ -42,26 +42,49 @@ export const FORGE_VIEWER: ForgeViewer = {
   avatarUrl: 'https://avatars.githubusercontent.com/u/583231?v=4',
 };
 
-/** P79: the seed forge account served to the Accounts settings section when the
- *  harness starts authenticated (`?forge=auth`). A warm github.com sign-in with
- *  login + avatar; `connected` true. Never carries a token. */
+/** P79/P80: the seed forge account served to the Accounts settings section when
+ *  the harness starts authenticated (`?forge=auth`). A warm github.com sign-in
+ *  with login + avatar; `connected` true, host default. Never carries a token. */
 export const FORGE_ACCOUNT_GITHUB: ForgeAccount = {
+  accountId: 'gitHub:github.com:octocat',
   host: 'github.com',
   kind: 'gitHub',
   login: FORGE_VIEWER.login,
   avatarUrl: FORGE_VIEWER.avatarUrl,
   connected: true,
+  isHostDefault: true,
 };
 
 /** P79: a second account with an intentionally long host + login, so the
  *  harness can verify ellipsis + tooltip truncation in the account cards. */
 export const FORGE_ACCOUNT_LONG: ForgeAccount = {
+  accountId: 'gitLab:gitlab.self-hosted.very-long-enterprise-subdomain.example.com:a-rather-long-enterprise-account-login-name',
   host: 'gitlab.self-hosted.very-long-enterprise-subdomain.example.com',
   kind: 'gitLab',
   login: 'a-rather-long-enterprise-account-login-name',
   avatarUrl: null,
   connected: true,
+  isHostDefault: true,
 };
+
+/** P80 `?forge=multi`: a SECOND github.com account (distinct login) coexisting
+ *  with {@link FORGE_ACCOUNT_GITHUB} on the same host, so the harness exercises
+ *  account switching, owner match, and per-repo override without a native window.
+ *  This account's login matches the multi-repo owner (`danpercic86`), so it wins
+ *  an owner match; {@link FORGE_ACCOUNT_GITHUB} is the host default. */
+export const FORGE_ACCOUNT_GITHUB_2: ForgeAccount = {
+  accountId: 'gitHub:github.com:danpercic86',
+  host: 'github.com',
+  kind: 'gitHub',
+  login: 'danpercic86',
+  avatarUrl: null,
+  connected: true,
+  isHostDefault: false,
+};
+
+/** P80 `?forge=multi`: the repo owner used for the owner-match step (matches
+ *  {@link FORGE_ACCOUNT_GITHUB_2}'s login, case-insensitively). */
+export const FORGE_MULTI_OWNER = 'danpercic86';
 
 /** Baseline identity for the fixture repo. The mock overrides `authenticated`
  *  + `viewer` from its live connect state before returning this. */
@@ -75,6 +98,8 @@ export const FORGE_REPO_CONTEXT: ForgeRepoContext = {
   webUrl: 'https://github.com/octo-org/bonsai',
   authenticated: false,
   viewer: null,
+  resolvedAccountId: null,
+  accountSource: 'none',
 };
 
 /** PR list: two open (one draft), one open with comments, one merged — so an

@@ -30,9 +30,10 @@ pub async fn forge_repo_context(
 
 /// Runtime-free core of `forge_repo_context` (unit-testable without a Tauri app).
 ///
-/// P79 lazy backfill (OD-1): when the resolved host has a token in the keychain
-/// but no record in the known-hosts index, add one (best-effort — a backfill
-/// write failure never fails the context read).
+/// P80: resolves the repo's account (per-repo override → owner match → host
+/// default → single → first) and opens the provider with THAT account's keychain
+/// key, so `authenticated`/`viewer` reflect the resolved account. Surfaces the
+/// resolved `accountId` + `accountSource`.
 pub(crate) async fn forge_repo_context_inner(
     state: &AppState,
     settings_file: &std::path::Path,
@@ -41,17 +42,11 @@ pub(crate) async fn forge_repo_context_inner(
     let workdir = repo_path(state, repo_id)?;
     let file = settings_file.to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
-        let ctx = bonsai_forge::open(&workdir)?.repo_context();
-        if ctx.authenticated && !ctx.host.is_empty() {
-            let host = ctx.host.clone();
-            let kind = ctx.provider;
-            let login = ctx.viewer.as_ref().map(|v| v.login.clone());
-            // `update_if` skips the disk write unless a record was actually
-            // inserted — this read path runs on every PR-panel open.
-            let _ = settings::update_if(&file, |s| {
-                settings::backfill_forge_host(s, &host, kind, login)
-            });
-        }
+        let resolved = crate::commands::resolve_forge_blocking(&workdir, &file)?;
+        let mut ctx =
+            bonsai_forge::open_with_key(&workdir, resolved.keychain_key.as_deref())?.repo_context();
+        ctx.resolved_account_id = resolved.account_id;
+        ctx.account_source = resolved.source;
         Ok(ctx)
     })
     .await
@@ -63,23 +58,30 @@ pub(crate) async fn forge_repo_context_inner(
 /// `forgeRateLimited` | `forgeApi` | `networkError` | `git`.
 #[tauri::command]
 pub async fn forge_list_prs(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     repo_id: String,
     query: PrListQuery,
 ) -> Result<PrPage, AppError> {
-    forge_list_prs_inner(state.inner(), &repo_id, query).await
+    let file = settings::settings_file(&app)?;
+    forge_list_prs_inner(state.inner(), &file, &repo_id, query).await
 }
 
 /// Runtime-free core of `forge_list_prs`.
 pub(crate) async fn forge_list_prs_inner(
     state: &AppState,
+    settings_file: &std::path::Path,
     repo_id: &str,
     query: PrListQuery,
 ) -> Result<PrPage, AppError> {
     let workdir = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || bonsai_forge::open(&workdir)?.list_prs(&query))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let file = settings_file.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        let key = crate::commands::resolved_key(&workdir, &file)?;
+        bonsai_forge::open_with_key(&workdir, key.as_deref())?.list_prs(&query)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// A single PR with body, diff stats, mergeability, and labels. Errors:
@@ -87,23 +89,30 @@ pub(crate) async fn forge_list_prs_inner(
 /// | `networkError` | `git`.
 #[tauri::command]
 pub async fn forge_get_pr(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     repo_id: String,
     number: u64,
 ) -> Result<PrDetail, AppError> {
-    forge_get_pr_inner(state.inner(), &repo_id, number).await
+    let file = settings::settings_file(&app)?;
+    forge_get_pr_inner(state.inner(), &file, &repo_id, number).await
 }
 
 /// Runtime-free core of `forge_get_pr`.
 pub(crate) async fn forge_get_pr_inner(
     state: &AppState,
+    settings_file: &std::path::Path,
     repo_id: &str,
     number: u64,
 ) -> Result<PrDetail, AppError> {
     let workdir = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || bonsai_forge::open(&workdir)?.get_pr(number))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let file = settings_file.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        let key = crate::commands::resolved_key(&workdir, &file)?;
+        bonsai_forge::open_with_key(&workdir, key.as_deref())?.get_pr(number)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Open a new PR from the given input; REQUIRES a stored token. Errors:
@@ -111,23 +120,30 @@ pub(crate) async fn forge_get_pr_inner(
 /// `forgeApi` | `forgeRateLimited` | `networkError` | `git`.
 #[tauri::command]
 pub async fn forge_create_pr(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     repo_id: String,
     input: CreatePrInput,
 ) -> Result<PrDetail, AppError> {
-    forge_create_pr_inner(state.inner(), &repo_id, input).await
+    let file = settings::settings_file(&app)?;
+    forge_create_pr_inner(state.inner(), &file, &repo_id, input).await
 }
 
 /// Runtime-free core of `forge_create_pr`.
 pub(crate) async fn forge_create_pr_inner(
     state: &AppState,
+    settings_file: &std::path::Path,
     repo_id: &str,
     input: CreatePrInput,
 ) -> Result<PrDetail, AppError> {
     let workdir = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || bonsai_forge::open(&workdir)?.create_pr(&input))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let file = settings_file.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        let key = crate::commands::resolved_key(&workdir, &file)?;
+        bonsai_forge::open_with_key(&workdir, key.as_deref())?.create_pr(&input)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Merged review (diff-line) + conversation comments for a PR, sorted by
@@ -135,22 +151,27 @@ pub(crate) async fn forge_create_pr_inner(
 /// `forgeApi` | `forgeRateLimited` | `networkError` | `git`.
 #[tauri::command]
 pub async fn forge_list_review_comments(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     repo_id: String,
     number: u64,
 ) -> Result<Vec<ReviewComment>, AppError> {
-    forge_list_review_comments_inner(state.inner(), &repo_id, number).await
+    let file = settings::settings_file(&app)?;
+    forge_list_review_comments_inner(state.inner(), &file, &repo_id, number).await
 }
 
 /// Runtime-free core of `forge_list_review_comments`.
 pub(crate) async fn forge_list_review_comments_inner(
     state: &AppState,
+    settings_file: &std::path::Path,
     repo_id: &str,
     number: u64,
 ) -> Result<Vec<ReviewComment>, AppError> {
     let workdir = repo_path(state, repo_id)?;
+    let file = settings_file.to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
-        bonsai_forge::open(&workdir)?.list_review_comments(number)
+        let key = crate::commands::resolved_key(&workdir, &file)?;
+        bonsai_forge::open_with_key(&workdir, key.as_deref())?.list_review_comments(number)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -175,9 +196,11 @@ pub async fn forge_set_token(
 
 /// Runtime-free core of `forge_set_token`.
 ///
-/// P79: after the crate validates+stores the token, upsert the known-hosts index
-/// record for the resolved host (host + kind + the validated login) so the
-/// global Accounts list stays in sync. Done inside the SAME `spawn_blocking`.
+/// P80 (OD-3): validate the pasted PAT for the origin host, learn the login,
+/// store the token under a three-part keychain key, upsert the account (setting
+/// it as the host default if none exists), AND pin it as this repo's override so
+/// the newly-connected account is what the repo uses. The legacy known-hosts
+/// index is kept mirrored (OD-5). Done inside the SAME `spawn_blocking`.
 pub(crate) async fn forge_set_token_inner(
     state: &AppState,
     settings_file: &std::path::Path,
@@ -187,24 +210,43 @@ pub(crate) async fn forge_set_token_inner(
     let workdir = repo_path(state, repo_id)?;
     let file = settings_file.to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
-        let viewer = bonsai_forge::set_token(&workdir, &token)?;
-        // Best-effort index upsert (never fails the successful set-token).
-        if let Ok((host, kind)) = bonsai_forge::resolve_forge_host(&workdir) {
-            if !host.is_empty() {
-                let login = Some(viewer.login.clone());
-                let _ = settings::update(&file, |s| {
-                    settings::upsert_forge_host(s, &host, kind, login);
-                });
-            }
+        let (viewer, host, kind) = bonsai_forge::validate_repo_token(&workdir, &token)?;
+        if host.is_empty() {
+            // Unparseable origin: no host to key an account by; token can't be
+            // stored under an account. Return the validated viewer unchanged.
+            return Ok(viewer);
         }
+        let login = viewer.login.clone();
+        let aid = settings::account_id(kind, &host, Some(&login));
+        // Store ONLY after successful validation (never persist a rejected token).
+        bonsai_forge::store_token(&aid, &token)?;
+        let workdir_str = workdir.to_string_lossy().to_string();
+        let rec = settings::ForgeAccountRecord {
+            account_id: aid.clone(),
+            keychain_key: aid.clone(),
+            host: host.clone(),
+            kind,
+            login: Some(login.clone()),
+            avatar_url: viewer.avatar_url.clone(),
+        };
+        let _ = settings::update(&file, |s| {
+            settings::upsert_forge_account(s, rec.clone());
+            if !s.forge_host_defaults.iter().any(|d| d.host == host) {
+                settings::set_host_default(s, &host, &aid);
+            }
+            settings::set_repo_override(s, &workdir_str, &aid);
+            // OD-5: keep the legacy known-hosts index mirrored for one release.
+            settings::upsert_forge_host(s, &host, kind, Some(login.clone()));
+        });
         Ok(viewer)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
-/// Sign out: delete the origin host's PAT from the keychain and evict the
-/// cached viewer. Idempotent. Errors: `noRepo` | `noRemote` | `git` | `other`.
+/// P80 (OD-2): clear this repo's account OVERRIDE only — the repo falls back to
+/// inheriting (owner match → host default). The account itself stays connected
+/// (deletion is `forge_remove_account`). Idempotent. Errors: `noRepo` | `other`.
 #[tauri::command]
 pub async fn forge_clear_token(
     app: tauri::AppHandle,
@@ -216,9 +258,6 @@ pub async fn forge_clear_token(
 }
 
 /// Runtime-free core of `forge_clear_token`.
-///
-/// P79: after the crate deletes the token, remove the resolved host from the
-/// known-hosts index so the global Accounts list stays in sync.
 pub(crate) async fn forge_clear_token_inner(
     state: &AppState,
     settings_file: &std::path::Path,
@@ -227,17 +266,8 @@ pub(crate) async fn forge_clear_token_inner(
     let workdir = repo_path(state, repo_id)?;
     let file = settings_file.to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
-        // Resolve the host BEFORE clearing so an unparseable origin is handled
-        // the same way `clear_token` already tolerates it.
-        let host = bonsai_forge::resolve_forge_host(&workdir)
-            .ok()
-            .map(|(h, _)| h);
-        bonsai_forge::clear_token(&workdir)?;
-        if let Some(host) = host {
-            if !host.is_empty() {
-                let _ = settings::update(&file, |s| settings::remove_forge_host(s, &host));
-            }
-        }
+        let workdir_str = workdir.to_string_lossy().to_string();
+        let _ = settings::update(&file, |s| settings::clear_repo_override(s, &workdir_str));
         Ok(())
     })
     .await
@@ -251,143 +281,28 @@ pub(crate) async fn forge_clear_token_inner(
 /// | `authFailed` | `networkError` | `git`.
 #[tauri::command]
 pub async fn forge_commit_statuses(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     repo_id: String,
     shas: Vec<String>,
 ) -> Result<Vec<CommitStatus>, AppError> {
-    forge_commit_statuses_inner(state.inner(), &repo_id, shas).await
+    let file = settings::settings_file(&app)?;
+    forge_commit_statuses_inner(state.inner(), &file, &repo_id, shas).await
 }
 
 /// Runtime-free core of `forge_commit_statuses`.
 pub(crate) async fn forge_commit_statuses_inner(
     state: &AppState,
+    settings_file: &std::path::Path,
     repo_id: &str,
     shas: Vec<String>,
 ) -> Result<Vec<CommitStatus>, AppError> {
     let workdir = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || bonsai_forge::open(&workdir)?.commit_statuses(&shas))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
-}
-
-// ---------------------------------------------------------------------------
-// P79: global forge account management (repo-independent).
-// ---------------------------------------------------------------------------
-
-/// P79: all forge hosts Bonsai knows a token for (the settings index), each with
-/// live `connected` (keychain presence) + cache-warm viewer identity. NO
-/// network. Errors: `other`.
-#[tauri::command]
-pub async fn forge_list_accounts(
-    app: tauri::AppHandle,
-) -> Result<Vec<ForgeAccount>, AppError> {
-    let file = settings::settings_file(&app)?;
-    forge_list_accounts_inner(&file).await
-}
-
-/// Runtime-free core of `forge_list_accounts`.
-pub(crate) async fn forge_list_accounts_inner(
-    settings_file: &std::path::Path,
-) -> Result<Vec<ForgeAccount>, AppError> {
     let file = settings_file.to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
-        let s = settings::load_from(&file);
-        let accounts = s
-            .forge_hosts
-            .iter()
-            .map(|r| {
-                let cached = bonsai_forge::auth::cached_viewer(&r.host);
-                let login = r
-                    .login
-                    .clone()
-                    .or_else(|| cached.as_ref().map(|v| v.login.clone()));
-                let avatar_url = cached.as_ref().and_then(|v| v.avatar_url.clone());
-                ForgeAccount {
-                    host: r.host.clone(),
-                    kind: r.kind,
-                    login,
-                    avatar_url,
-                    connected: bonsai_forge::auth::global().has(&r.host),
-                }
-            })
-            .collect();
-        Ok(accounts)
+        let key = crate::commands::resolved_key(&workdir, &file)?;
+        bonsai_forge::open_with_key(&workdir, key.as_deref())?.commit_statuses(&shas)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
-}
-
-/// P79: validate a pasted PAT against `host`/`kind` directly (no repo needed)
-/// and, on success, store it + upsert the known-hosts index. Returns the viewer.
-/// Errors: `authFailed` | `forgeUnsupported` | `forgeRateLimited` |
-/// `networkError` | `other`.
-#[tauri::command]
-pub async fn forge_set_token_for_host(
-    app: tauri::AppHandle,
-    host: String,
-    kind: ForgeKind,
-    token: String,
-) -> Result<ForgeViewer, AppError> {
-    let file = settings::settings_file(&app)?;
-    forge_set_token_for_host_inner(&file, host, kind, token).await
-}
-
-/// Runtime-free core of `forge_set_token_for_host`.
-pub(crate) async fn forge_set_token_for_host_inner(
-    settings_file: &std::path::Path,
-    host: String,
-    kind: ForgeKind,
-    token: String,
-) -> Result<ForgeViewer, AppError> {
-    let file = settings_file.to_path_buf();
-    tauri::async_runtime::spawn_blocking(move || {
-        let viewer = bonsai_forge::set_token_for_host(&host, kind, &token)?;
-        // Best-effort index upsert (never fails a successful set-token).
-        let login = Some(viewer.login.clone());
-        let _ = settings::update(&file, |s| {
-            settings::upsert_forge_host(s, &host, kind, login);
-        });
-        Ok(viewer)
-    })
-    .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
-}
-
-/// P79: sign out a host globally — delete its PAT, evict its viewer, remove it
-/// from the known-hosts index. Idempotent. Errors: `other`.
-#[tauri::command]
-pub async fn forge_clear_token_for_host(
-    app: tauri::AppHandle,
-    host: String,
-) -> Result<(), AppError> {
-    let file = settings::settings_file(&app)?;
-    forge_clear_token_for_host_inner(&file, host).await
-}
-
-/// Runtime-free core of `forge_clear_token_for_host`.
-pub(crate) async fn forge_clear_token_for_host_inner(
-    settings_file: &std::path::Path,
-    host: String,
-) -> Result<(), AppError> {
-    let file = settings_file.to_path_buf();
-    tauri::async_runtime::spawn_blocking(move || {
-        bonsai_forge::clear_token_for_host(&host)?;
-        let _ = settings::update(&file, |s| settings::remove_forge_host(s, &host));
-        Ok(())
-    })
-    .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
-}
-
-/// P79: evict the cached viewer for `host` WITHOUT deleting the token (expiry
-/// flow). Keeps the keychain entry + the index record; only stops surfacing a
-/// warm "connected" identity so the panel routes to re-auth. Infallible.
-#[tauri::command]
-pub async fn forge_invalidate_viewer(
-    _state: tauri::State<'_, AppState>,
-    host: String,
-) -> Result<(), AppError> {
-    tauri::async_runtime::spawn_blocking(move || bonsai_forge::invalidate_viewer(&host))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))
 }

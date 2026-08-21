@@ -98,6 +98,8 @@ impl ForgeProvider for GitLabProvider {
             web_url: self.target.web_url.clone(),
             authenticated: self.token.is_some(),
             viewer,
+            resolved_account_id: None,
+            account_source: crate::types::AccountSource::None,
         }
     }
 

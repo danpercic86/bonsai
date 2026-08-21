@@ -124,6 +124,16 @@ modules (a real refactor with call-graph impact, not a leaf move).
   host token without a repo open). Tokens are already shared per-host across repos (keychain
   account=host); `forgeClearToken` exists but no UI calls it. Needs a new connected-hosts index +
   list command (keychain isn't portably enumerable).
+- **P80 — multi-account forge (host default + per-repo override).** `in-progress`. **Current step:
+  architect writing contract.** User-reported gaps (2026-08-21): (1) can't use different accounts in
+  different repos — tokens are keyed by host only, so one github.com token app-wide; (2) want
+  profiles: a host has a default account all repos inherit, overridable per repo. Applies to ALL
+  forges, not just GitHub. Scope (user-approved 2026-08-21): keychain key changes `host` →
+  `host+account-identity` (multiple accounts per host); `forge_hosts` index becomes per-account +
+  `defaultAccountId` per host; repo settings gain an optional `accountId` override (falls through to
+  host default). Bundled in: refresh GitLab + Bitbucket token guidance (GitLab `api` still valid but
+  tighten; Bitbucket lead on access tokens, note app-password deprecation through 2026); Azure stays
+  disabled. Contract → `docs/contracts/P80-multi-account.md`.
 - **All native USER CHECKPOINTs for P2 → P61 are CONFIRMED.** Batches: 2026-07-30 (P4, P3a–P3f, P7,
   P7e, P7f, P8, P9), 2026-08-03 (P18–P27), **2026-08-08** ("mark everything as checked" — P28 through
   P61 inclusive: P32, P37–P46, the credential-cache and UX-fix batches, Phase 1 P49–P52, Phase 2

@@ -272,6 +272,10 @@ pub fn run() {
             commands::forge_commit_statuses,
             commands::forge_list_accounts,
             commands::forge_set_token_for_host,
+            commands::forge_add_account,
+            commands::forge_remove_account,
+            commands::forge_set_host_default,
+            commands::forge_set_repo_account,
             commands::forge_clear_token_for_host,
             commands::forge_invalidate_viewer
         ])

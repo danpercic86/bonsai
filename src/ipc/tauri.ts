@@ -1104,8 +1104,24 @@ export const tauriIpc: IpcApi = {
     return invoke<ForgeAccount[]>('forge_list_accounts');
   },
 
+  forgeAddAccount(host: string, kind: ForgeKind, token: string): Promise<ForgeViewer> {
+    return invoke<ForgeViewer>('forge_add_account', { host, kind, token });
+  },
+
   forgeSetTokenForHost(host: string, kind: ForgeKind, token: string): Promise<ForgeViewer> {
     return invoke<ForgeViewer>('forge_set_token_for_host', { host, kind, token });
+  },
+
+  forgeRemoveAccount(accountId: string): Promise<void> {
+    return invoke<void>('forge_remove_account', { accountId });
+  },
+
+  forgeSetHostDefault(host: string, accountId: string): Promise<void> {
+    return invoke<void>('forge_set_host_default', { host, accountId });
+  },
+
+  forgeSetRepoAccount(repoId: string, accountId: string | null): Promise<void> {
+    return invoke<void>('forge_set_repo_account', { repoId, accountId });
   },
 
   forgeClearTokenForHost(host: string): Promise<void> {

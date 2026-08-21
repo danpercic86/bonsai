@@ -12,10 +12,12 @@ use std::sync::Mutex;
 use bonsai_core::error::AppError;
 
 mod clamp;
+mod forge_accounts;
 mod forge_hosts;
 mod prefs;
 
 pub use clamp::*;
+pub use forge_accounts::*;
 pub use forge_hosts::*;
 pub use prefs::*;
 
@@ -156,6 +158,14 @@ pub struct Settings {
     /// file loads `[]`. Stores only host + kind + optional last-known login,
     /// NEVER a token.
     pub forge_hosts: Vec<ForgeHostRecord>,
+    /// P80: multi-account forge model. All additive `#[serde(default)]` ⇒ a
+    /// pre-P80 file loads `[]` and is populated by `migrate_forge_hosts_to_accounts`
+    /// on the next load. NEVER holds a token.
+    pub forge_accounts: Vec<ForgeAccountRecord>,
+    /// P80: per-host default account (repos inherit it).
+    pub forge_host_defaults: Vec<ForgeHostDefault>,
+    /// P80: per-repo pinned account overrides (keyed by canonical workdir path).
+    pub repo_forge_overrides: Vec<RepoForgeOverride>,
     /// P49: terminal launch command template (`{path}` placeholder). Empty ⇒
     /// per-OS auto-detect (see `bonsai_core::external`). Additive
     /// `#[serde(default)]` ⇒ a pre-P49 file loads `""`.
@@ -231,6 +241,9 @@ impl Default for Settings {
             auto_check_updates: false,
             profiles: Vec::new(),
             forge_hosts: Vec::new(),
+            forge_accounts: Vec::new(),
+            forge_host_defaults: Vec::new(),
+            repo_forge_overrides: Vec::new(),
             terminal_command: String::new(),
             editor_command: String::new(),
             ai_idle_timeout_secs: AI_IDLE_TIMEOUT_DEFAULT,
@@ -264,6 +277,10 @@ pub fn load_from(file: &Path) -> Settings {
     s.health_refresh = clamp_health_refresh(s.health_refresh);
     s.graph = clamp_graph_prefs(s.graph);
     clamp_ai_settings(&mut s);
+    // P80: lazy P79→P80 migration — pure/in-memory so every read sees the P80
+    // shape; the write is deferred to the next `update`/`update_if` (never
+    // write-amplify a pure read).
+    let _ = migrate_forge_hosts_to_accounts(&mut s);
     s
 }
 

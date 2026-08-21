@@ -46,6 +46,25 @@ pub struct ForgeRepoContext {
     pub authenticated: bool,
     /// `Some` only when a validated viewer is cache-warm (after set-token).
     pub viewer: Option<ForgeViewer>,
+    /// P80: the account resolved for this repo (`accountId`), or `None` when no
+    /// account exists on the host. Filled by the command layer's
+    /// `resolve_account`; the crate leaves it `None`.
+    pub resolved_account_id: Option<String>,
+    /// P80: HOW the resolved account was chosen (override / owner match / host
+    /// default / single / none). Filled by the command layer.
+    pub account_source: AccountSource,
+}
+
+/// P80: how the account backing a repo was resolved (see `resolve_account`).
+/// The crate always emits `None`; the command layer overwrites it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AccountSource {
+    Override,
+    OwnerMatch,
+    HostDefault,
+    Single,
+    None,
 }
 
 /// P79: one connected (or previously-connected) forge account for the global
@@ -55,6 +74,9 @@ pub struct ForgeRepoContext {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ForgeAccount {
+    /// P80: stable identity "kind:host:login" (or "kind:host" for a legacy
+    /// login-unknown account).
+    pub account_id: String,
     pub host: String,
     pub kind: ForgeKind,
     /// Cache-warm or last-known login; `None` if never validated this install.
@@ -63,6 +85,8 @@ pub struct ForgeAccount {
     pub avatar_url: Option<String>,
     /// A token is currently present in the keychain for `host` (no network).
     pub connected: bool,
+    /// P80: whether this account is the host's default (repos inherit it).
+    pub is_host_default: bool,
 }
 
 /// PR lifecycle state. `Merged` is derived from GitHub's `merged`/`merged_at`.
@@ -288,13 +312,37 @@ mod tests {
     #[test]
     fn forge_account_wire_shape_is_camel_case() {
         let v = value_of(&ForgeAccount {
+            account_id: "gitHub:github.com:octocat".into(),
             host: "github.com".into(),
             kind: ForgeKind::GitHub,
             login: Some("octocat".into()),
             avatar_url: Some("https://a/o.png".into()),
             connected: true,
+            is_host_default: true,
         });
-        assert_keys(&v, &["host", "kind", "login", "avatarUrl", "connected"]);
+        assert_keys(
+            &v,
+            &[
+                "accountId",
+                "host",
+                "kind",
+                "login",
+                "avatarUrl",
+                "connected",
+                "isHostDefault",
+            ],
+        );
+    }
+
+    #[test]
+    fn account_source_wire_shape_is_camel_case() {
+        assert_eq!(value_of(&AccountSource::Override), json!("override"));
+        assert_eq!(value_of(&AccountSource::OwnerMatch), json!("ownerMatch"));
+        assert_eq!(value_of(&AccountSource::HostDefault), json!("hostDefault"));
+        assert_eq!(value_of(&AccountSource::Single), json!("single"));
+        assert_eq!(value_of(&AccountSource::None), json!("none"));
+        let got: AccountSource = serde_json::from_value(json!("ownerMatch")).unwrap();
+        assert_eq!(got, AccountSource::OwnerMatch);
     }
 
     #[test]
@@ -309,6 +357,8 @@ mod tests {
             web_url: "https://github.com/o/r".into(),
             authenticated: true,
             viewer: None,
+            resolved_account_id: Some("gitHub:github.com:o".into()),
+            account_source: AccountSource::OwnerMatch,
         });
         assert_keys(
             &v,
@@ -322,6 +372,8 @@ mod tests {
                 "webUrl",
                 "authenticated",
                 "viewer",
+                "resolvedAccountId",
+                "accountSource",
             ],
         );
     }

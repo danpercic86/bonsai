@@ -1845,15 +1845,26 @@ export interface ForgeRepoContext {
   authenticated: boolean;
   /** Non-null only when a validated viewer is cache-warm (after set-token). */
   viewer: ForgeViewer | null;
+  /** P80: the account resolved for this repo (`accountId`), or null when no
+   *  account exists on the host. */
+  resolvedAccountId: string | null;
+  /** P80: how the resolved account was chosen. */
+  accountSource: AccountSource;
 }
-/** P79: one connected/known forge account for the Accounts settings section.
+/** P80: how the account backing a repo was resolved (see `resolve_account`). */
+export type AccountSource = 'override' | 'ownerMatch' | 'hostDefault' | 'single' | 'none';
+/** P79/P80: one connected/known forge account for the Accounts settings section.
  *  `login`/`avatarUrl` are best-effort display hints; never a token. */
 export interface ForgeAccount {
+  /** P80: stable identity "kind:host:login" (or "kind:host" if login unknown). */
+  accountId: string;
   host: string;
   kind: ForgeKind;
   login: string | null;
   avatarUrl: string | null;
   connected: boolean;
+  /** P80: whether this account is the host's default (repos inherit it). */
+  isHostDefault: boolean;
 }
 /** One row in a PR list. */
 export interface PrSummary {
@@ -2753,17 +2764,30 @@ export interface IpcApi {
    *  Rejects AppError (`noRepo` | `forgeUnsupported` | `noRemote` | `forgeApi`
    *  | `forgeRateLimited` | `authFailed` | `networkError` | `git`). */
   forgeCommitStatuses(repoId: string, shas: string[]): Promise<CommitStatus[]>;
-  // --- P79: global forge account management (repo-independent) ---
-  /** P79: all forge hosts with a stored/known token (the settings index), each
-   *  with live `connected` + best-effort login/avatar. No network. Rejects
-   *  AppError (`other`). */
+  // --- P79/P80: global forge account management (repo-independent) ---
+  /** P80: all forge accounts across all hosts (the settings index), each with
+   *  live `connected` + `isHostDefault` + best-effort login/avatar. No network.
+   *  Rejects AppError (`other`). */
   forgeListAccounts(): Promise<ForgeAccount[]>;
-  /** P79: validate + store a PAT for `host`/`kind` directly (no repo) and upsert
-   *  the known-hosts index. Rejects AppError (`authFailed` | `forgeUnsupported`
-   *  | `forgeRateLimited` | `networkError` | `other`). */
+  /** P80: validate + store a PAT for `host`/`kind` directly (no repo), learn the
+   *  login, store under a three-part keychain key, upsert the account, and set it
+   *  as the host default if none exists. Rejects AppError (`authFailed` |
+   *  `forgeUnsupported` | `forgeRateLimited` | `networkError` | `other`). */
+  forgeAddAccount(host: string, kind: ForgeKind, token: string): Promise<ForgeViewer>;
+  /** P79 back-compat alias for {@link forgeAddAccount} (same behavior). */
   forgeSetTokenForHost(host: string, kind: ForgeKind, token: string): Promise<ForgeViewer>;
-  /** P79: delete a host's token + remove it from the index. Idempotent. Rejects
+  /** P80: delete an account's token (by its keychain key), remove the record, and
+   *  clean references (host default, repo overrides). Idempotent. Rejects
    *  AppError (`other`). */
+  forgeRemoveAccount(accountId: string): Promise<void>;
+  /** P80: set/replace the default account for `host`. Rejects AppError (`other`)
+   *  if `accountId` isn't on the host. */
+  forgeSetHostDefault(host: string, accountId: string): Promise<void>;
+  /** P80: pin (`accountId`) or clear (`null` ⇒ inherit) a repo's account
+   *  override. Rejects AppError (`noRepo` | `other`). */
+  forgeSetRepoAccount(repoId: string, accountId: string | null): Promise<void>;
+  /** P79: sign out ALL accounts on a host — delete their tokens + records +
+   *  defaults + overrides. Idempotent. Rejects AppError (`other`). */
   forgeClearTokenForHost(host: string): Promise<void>;
   /** P79: evict a host's cached viewer WITHOUT deleting the token (expiry flow).
    *  Infallible. */

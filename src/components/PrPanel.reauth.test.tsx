@@ -22,6 +22,8 @@ const CTX: ForgeRepoContext = {
   webUrl: 'https://github.com/octo-org/bonsai',
   authenticated: true,
   viewer: { login: 'octocat', avatarUrl: null },
+  resolvedAccountId: 'gitHub:github.com:octocat',
+  accountSource: 'ownerMatch',
 };
 
 const AUTH_FAILED: AppError = { kind: 'authFailed', message: 'mock: token expired' };
