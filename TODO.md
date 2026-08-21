@@ -100,15 +100,16 @@ modules (a real refactor with call-graph impact, not a leaf move).
 - **P77 — tag sync management.** USER CHECKPOINT (items 1–6) verified by user 2026-08-21; AI gate
   GREEN. Commits `721349d`/`67c42b4`/`d2695bd`/`97ae417`/`e76b20b`. Archived →
   `todo-archive-2026-08.md` Part 18. (Deferred follow-ups carried to OPEN follow-ups below.)
-- **P78 — fine-grained token guidance + Open-PR branch dropdowns.** AI gate GREEN (vitest 35/35,
-  e2e 10/10; reviewer + ui-designer approved). Commit `d50cd42`. Contract
+- **P78 — fine-grained token guidance + Open-PR branch dropdowns.** `done` — AI gate GREEN + USER
+  CHECKPOINT CONFIRMED (user 2026-08-21). Commit `d50cd42`. Contract
   `docs/contracts/P78-forge-pr-ui.md`. GitHub connect copy now names fine-grained permissions
   (Pull requests r/w, Contents r, Metadata auto) + classic `repo` fallback, links the fine-grained
   token page, `github_pat_…` placeholder; Base/Compare fields are branch comboboxes (allowFreeInput)
   + `defaultBase` wired. NIT (non-blocking): `prDefaultBase` typed `string|null` but never returns
-  null. **USER CHECKPOINT pending** (native GitHub auth + real PR open).
-- **P79 — forge account management.** AI gate GREEN — **awaiting USER CHECKPOINT** (native keychain +
-  real token expiry/reconnect). Increment A backend `74cdfe0`, increment B UI `813d305`. Contracts
+  null.
+- **P79 — forge account management.** `done` — AI gate GREEN + USER CHECKPOINT CONFIRMED (user
+  2026-08-21; native keychain + token expiry/reconnect verified). Increment A backend `74cdfe0`,
+  increment B UI `813d305`. Contracts
   `P79-forge-account-management.md` + `P79-ui.md`. Reviewer + ui-designer approved both increments;
   tester +12 unit / 167 regression / cargo 171/0 + 3/0 / e2e 10/10; browser-harness verified all
   three surfaces (account header, reauth banner via `?forge=expired`, Accounts settings w/ Azure
