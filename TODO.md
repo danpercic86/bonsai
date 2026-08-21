@@ -124,9 +124,11 @@ modules (a real refactor with call-graph impact, not a leaf move).
   host token without a repo open). Tokens are already shared per-host across repos (keychain
   account=host); `forgeClearToken` exists but no UI calls it. Needs a new connected-hosts index +
   list command (keychain isn't portably enumerable).
-- **P80 — multi-account forge (host default + per-repo override).** `awaiting USER CHECKPOINT` — AI
-  gate GREEN (full `gate.mjs` all 8 steps: nextest, doc, clippy, eslint, file-size, vitest 2042,
-  tsc+build, e2e 156). Increment A backend `01bb97e`, increment B UI `323f8c5`. Contracts
+- **P80 — multi-account forge (host default + per-repo override).** `done` — AI gate GREEN + USER
+  CHECKPOINT CONFIRMED (user 2026-08-21; migration/second-account/owner-match/host-default/reset/
+  remove all verified natively). Full `gate.mjs` all 8 steps green (nextest, doc, clippy, eslint,
+  file-size, vitest 2042, tsc+build, e2e 156). Increment A backend `01bb97e`, increment B UI
+  `323f8c5`. Contracts
   `P80-multi-account.md` + `P80-ui.md`. Reviewer + ui-designer approved both increments.
   **USER CHECKPOINT (needs `pnpm tauri dev` + real tokens — can't be exercised headlessly):** (1)
   existing single github.com token still works after upgrade with zero re-auth (migration); (2) add a
