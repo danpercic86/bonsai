@@ -102,12 +102,12 @@ spun out of those milestones are on this board below (NOT closed by the waiver).
 
 - **P80b — commit-panel UX overhaul + next-file bug** — `done`. Merged to main via `56413b6` (Merge
   PR #1 from `worktree-commit-panel-ux`) + `77c815f`; commits `7ebe7fd`…`03a6453`. Contract
-  `docs/contracts/P80-commit-panel-ux-ui.md`. Archived → `docs/history/todo-archive-2026-08.md`
+  `docs/contracts/archive/P80-commit-panel-ux-ui.md`. Archived → `docs/history/todo-archive-2026-08.md`
   Part 21.
 - **P81 — refetch coalescing + watcher self-echo suppression** — `done`. Commit `be01422`. Contract
-  `docs/contracts/P81-refetch-coalescing.md`. Archived → Part 21.
+  `docs/contracts/archive/P81-refetch-coalescing.md`. Archived → Part 21.
 - **P82 — submodule dirty-deinit requires explicit force (F-A7-7)** — `done`. Commit `ede7674`.
-  Contracts `docs/contracts/P82-submodule-force.md` + `P82-submodule-force-ui.md`. Archived → Part 21.
+  Contracts `docs/contracts/archive/P82-submodule-force.md` + `P82-submodule-force-ui.md`. Archived → Part 21.
 
 ---
 
@@ -283,7 +283,7 @@ harness cannot observe rAF/compositing).
 ### P69 Settings follow-ups awaiting a user decision — **OPEN** (nothing is blocked on them)
 - **A8 — bundle the two specced-but-unimplemented items into one increment** (both `ui-designer` and
   the orchestrator recommend bundling): (a) the help-text highlight fallback,
-  `docs/contracts/P69-settings-ui.md` §3.2.1, `[NOT IMPLEMENTED]` — the flagship query `graph` returns
+  `docs/contracts/archive/P69-settings-ui.md` §3.2.1, `[NOT IMPLEMENTED]` — the flagship query `graph` returns
   5 hits and highlights **nothing** (every hit matched via `keywords`/`help` while the labels read
   "Row height" / "Lane width" / "Compact rows"); and (b) the half-landed draft-hint feature, §13. Note:
   the draft-hint CSS is genuinely **dead** but costs no visible layout today — the case for A8 is the
