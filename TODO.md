@@ -124,8 +124,16 @@ modules (a real refactor with call-graph impact, not a leaf move).
   host token without a repo open). Tokens are already shared per-host across repos (keychain
   account=host); `forgeClearToken` exists but no UI calls it. Needs a new connected-hosts index +
   list command (keychain isn't portably enumerable).
-- **P80 — multi-account forge (host default + per-repo override).** `in-progress`. **Current step:
-  increment A backend COMMITTED (`01bb97e`); increment B UI = ui-designer writing `P80-ui.md`.**
+- **P80 — multi-account forge (host default + per-repo override).** `awaiting USER CHECKPOINT` — AI
+  gate GREEN (full `gate.mjs` all 8 steps: nextest, doc, clippy, eslint, file-size, vitest 2042,
+  tsc+build, e2e 156). Increment A backend `01bb97e`, increment B UI `323f8c5`. Contracts
+  `P80-multi-account.md` + `P80-ui.md`. Reviewer + ui-designer approved both increments.
+  **USER CHECKPOINT (needs `pnpm tauri dev` + real tokens — can't be exercised headlessly):** (1)
+  existing single github.com token still works after upgrade with zero re-auth (migration); (2) add a
+  second account on the same host, switch a repo to it via the PR-panel switcher; (3) owner-match
+  auto-selects the account whose login == repo owner; (4) set a host default in Settings > Accounts
+  and confirm other repos inherit it; (5) "Reset to host default" unpins a repo without deleting the
+  token; (6) Remove an account in Settings deletes its keychain token and pinned repos fall back.
   Resolution order: repo override → owner-match (login==owner, lowercased, exactly one) → host
   default → single → first+nudge. OD-1..6 resolved (settings.json override · clear-override-only ·
   auto-pin on connect · first+nudge · keep legacy 1 release · Azure disabled). Owner-match =
