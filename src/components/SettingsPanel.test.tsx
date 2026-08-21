@@ -153,9 +153,9 @@ describe('SettingsPanel', () => {
   });
 
   // Every rail category is reachable, and exactly one pane renders at a time.
-  it('renders seven tabs and only the selected pane', () => {
+  it('renders eight tabs and only the selected pane', () => {
     renderPanel();
-    expect(screen.getAllByRole('tab')).toHaveLength(7);
+    expect(screen.getAllByRole('tab')).toHaveLength(8);
     expect(screen.getByRole('tab', { name: 'General' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: 'Git config, repository' })).toBeInTheDocument();
     expect(screen.queryByRole('radio', { name: 'Dark' })).toBeNull();
