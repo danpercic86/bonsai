@@ -18,6 +18,7 @@ import { effectiveMetrics } from '../graph/metrics';
 import type { GraphDisplayOptions } from '../graph/rightColumns';
 import { createGraphStream } from '../graph/streamAssembler';
 import { createGraphStreamApplier } from './repoWorkspace/graphStreamApply';
+import { useCoalescedRefresh, type RefreshOrigin } from './repoWorkspace/useCoalescedRefresh';
 import type { IncrementalEdgeIndex } from '../graph/incrementalEdgeIndex';
 import { ipc } from '../ipc';
 import type {
@@ -1139,10 +1140,21 @@ export function RepoWorkspace({
     setSelectedIndex(null);
   }, []);
 
+  // P81: origin-forced tag-sync flag for the NEXT round. Set synchronously by
+  // `refresh(origin)` before the coalescer starts a round; read+cleared at the
+  // start of `runRefreshRound`. `manual`/`activation`/`focus`/`mutation` origins
+  // force an ls-remote tag-drift re-check; the `watcher` (external repo-changed)
+  // origin leaves it false → NON-forced tagSync (P77: no-op until Tags opened),
+  // so an external FS event never forces a network ls-remote (Flag 2).
+  const pendingTagForceRef = useRef(false);
+
   /** Composite post-op refresh (P1 §4.6): re-openRepo (refreshes header HEAD +
    *  self-heals the watcher) + refetch status/graph/branches/opstate. Never
-   *  throws — failures surface as a sticky error toast. */
-  const refreshAll = useCallback(async (): Promise<void> => {
+   *  throws — failures surface as a sticky error toast. This is the canonical
+   *  refresh round (P81 §2); all origins funnel through the coalescer to it. */
+  const runRefreshRound = useCallback(async (): Promise<void> => {
+    const forceTagSync = pendingTagForceRef.current;
+    pendingTagForceRef.current = false;
     try {
       const { info } = await ipc.openRepo(repoPath);
       setRepo(info);
@@ -1158,8 +1170,9 @@ export function RepoWorkspace({
           refetchOpState(),
           refetchCompare(),
           // P77: re-check tag drift on manual refresh / focus rescan (no-op until
-          // the Tags section has been opened once this session).
-          refetchTagSync({ force: true }),
+          // the Tags section has been opened once this session). P81 Flag 2: only
+          // forced origins pay the ls-remote; watcher events run non-forced.
+          refetchTagSync(forceTagSync ? { force: true } : undefined),
         ]);
       } else {
         clearStatus();
@@ -1207,6 +1220,24 @@ export function RepoWorkspace({
     pushToast,
   ]);
 
+  // P81 §2/§3: coalesce every refresh entry point onto the one canonical round.
+  // The coalescer collapses overlapping requests (leading + at-most-one-trailing)
+  // and the shared echo registry drops the self-caused watcher echo within TTL.
+  const { refresh: coalescedRefresh } = useCoalescedRefresh(repoId, runRefreshRound);
+  const refresh = useCallback(
+    (origin: RefreshOrigin): Promise<void> => {
+      // Forced tag-drift re-check for every non-watcher origin (mutation writes,
+      // manual refresh, activation self-heal, focus rescan). Set BEFORE enqueuing
+      // so the round about to start reads it (P81 Flag 2).
+      if (origin !== 'watcher') pendingTagForceRef.current = true;
+      return coalescedRefresh(origin);
+    },
+    [coalescedRefresh],
+  );
+  // Name preserved: the ~11 mutation call sites + hook deps stay untouched.
+  // A mutation is a local write → arms echo suppression + forces tagSync.
+  const refreshAll = useCallback((): Promise<void> => refresh('mutation'), [refresh]);
+
   // Initial load on mount: fetch state for repoId (the repo is already opened by
   // App — do NOT openRepo again here, §5.1). Runs for active AND background tabs.
   const mountedRef = useRef(false);
@@ -1227,15 +1258,17 @@ export function RepoWorkspace({
   // Activation self-heal (§7): on every flip TO active AFTER mount, refreshAll —
   // catches events missed while the tab was display:none. Skips the mount run
   // (the initial load above already covers first paint).
-  const refreshAllRef = useRef(refreshAll);
-  refreshAllRef.current = refreshAll;
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
   const activeFlipRef = useRef(false);
   useEffect(() => {
     if (!activeFlipRef.current) {
       activeFlipRef.current = true;
       return;
     }
-    if (active) void refreshAllRef.current();
+    // P81: activation ALWAYS refreshes (never echo-gated) — catches events
+    // missed while the tab was display:none.
+    if (active) void refreshRef.current('activation');
   }, [active]);
 
   // Selection -> commit diff (M4 §4.4). Every selection change resets the shared
@@ -1301,15 +1334,10 @@ export function RepoWorkspace({
     const subscribe = async () => {
       const off = await ipc.onRepoChanged((p) => {
         if (p.repoId !== repoId) return;
-        void refetchStatus();
-        void refetchGraph();
-        void refetchBranches();
-        void refetchStashes();
-        void refetchSubmodules();
-        void refetchWorktrees();
-        void refetchRemotes();
-        void refetchOpState();
-        void refetchCompare();
+        // P81 §7: funnel the watcher echo through the coalesced round. Gated by
+        // echo suppression — the self-caused event within TTL is a no-op; a
+        // genuine external change (or one past the window) runs a full round.
+        void refresh('watcher');
       });
       if (cancelled) {
         off();
@@ -1326,18 +1354,7 @@ export function RepoWorkspace({
       cancelled = true;
       for (const unsub of unsubs) unsub();
     };
-  }, [
-    repoId,
-    refetchStatus,
-    refetchGraph,
-    refetchBranches,
-    refetchStashes,
-    refetchSubmodules,
-    refetchWorktrees,
-    refetchRemotes,
-    refetchOpState,
-    refetchCompare,
-  ]);
+  }, [repoId, refresh]);
 
   // Window-focus rescan: ACTIVE tab only (the visible tab is the one the user
   // just returned to; background tabs self-heal on activation, §7).
@@ -1347,15 +1364,8 @@ export function RepoWorkspace({
     const unsubs: Unsubscribe[] = [];
     const subscribe = async () => {
       const off = await ipc.onWindowFocus(() => {
-        void refetchStatus();
-        void refetchGraph();
-        void refetchBranches();
-        void refetchStashes();
-        void refetchSubmodules();
-        void refetchWorktrees();
-        void refetchRemotes();
-        void refetchOpState();
-        void refetchCompare();
+        // P81 §7: focus rescan ALWAYS refreshes (never echo-gated).
+        void refresh('focus');
         forgeSignals.refresh('focus'); // P63: TTL-guarded (not forced)
       });
       if (cancelled) {
@@ -1372,19 +1382,7 @@ export function RepoWorkspace({
       cancelled = true;
       for (const unsub of unsubs) unsub();
     };
-  }, [
-    active,
-    refetchStatus,
-    refetchGraph,
-    refetchBranches,
-    refetchStashes,
-    refetchSubmodules,
-    refetchWorktrees,
-    refetchRemotes,
-    refetchOpState,
-    refetchCompare,
-    forgeSignals.refresh,
-  ]);
+  }, [active, refresh, forgeSignals.refresh]);
 
   // P63: a new graph layout identity (post fetch/pull/branch-op) may carry new
   // branch tips → TTL-guarded forge-signal refresh so their badges appear. Fires
@@ -1474,14 +1472,14 @@ export function RepoWorkspace({
     if (refreshing) return;
     setRefreshing(true);
     try {
-      await refreshAll();
+      await refresh('manual'); // P81: always runs (never echo-gated)
       verification.refresh();
       forgeSignals.refresh('manual', true); // P63: forced (bypass TTL)
       void refetchSigningStatus();
     } finally {
       setRefreshing(false);
     }
-  }, [refreshing, refreshAll, verification.refresh, forgeSignals.refresh, refetchSigningStatus]);
+  }, [refreshing, refresh, verification.refresh, forgeSignals.refresh, refetchSigningStatus]);
   const headBranch = branches?.local.find((b) => b.isHead) ?? null;
 
   // P78: branch suggestions + base hint for the PR create form. Compare = local

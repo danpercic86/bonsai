@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ipc } from '../ipc';
+import { isEchoSuppressed } from './repoWorkspace/echoSuppression';
 import type {
   BranchesSection,
   RepoHealth,
@@ -360,7 +361,9 @@ export function RepoHealthPanel({ open, onClose, repoId }: RepoHealthPanelProps)
     const unsubs: Unsubscribe[] = [];
     void (async () => {
       const off = await ipc.onRepoChanged((p) => {
-        if (p.repoId === repoId) void refresh();
+        // P81 (Option B): drop the self-caused watcher echo within the shared
+        // suppression window; a genuine external change still refreshes.
+        if (p.repoId === repoId && !isEchoSuppressed(repoId)) void refresh();
       });
       if (cancelled) {
         off();
