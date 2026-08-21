@@ -487,6 +487,11 @@ export function RepoWorkspace({
   const [intraline, setIntraline] = useState(false);
   const intralineRef = useRef(intraline);
   intralineRef.current = intraline;
+  // Bug fix: the "Changes" list view mode (tree vs flat), read through a ref by
+  // handleStage so the auto-advance target is computed in the SAME order the UI
+  // renders. Threaded via ref so toggling never re-creates the stage handler.
+  const listViewRef = useRef(listView);
+  listViewRef.current = listView;
   // P61b: image-diff data for the open overlay slot when its path is an image
   // (D4). Fetched in parallel with the text slot (getWorkdirFileDiff still runs
   // and returns a cheap binary FileDiff); DiffOverlay renders DiffImageView from
@@ -1502,6 +1507,7 @@ export function RepoWorkspace({
     diffSlotRef,
     diffViewModeRef,
     intralineRef,
+    listViewRef,
     head,
     headBranch,
     setAmend,

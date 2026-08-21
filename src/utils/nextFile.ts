@@ -3,7 +3,10 @@
 // tested in isolation from RepoWorkspace.
 
 /** One entry in the visible "Changes" list, tagged with its origin section.
- *  Ordering must match StatusPanel: [...unstaged, ...untracked]. */
+ *  Ordering must match the RENDERED order of the list: in flat view that is
+ *  [...unstaged, ...untracked]; in tree view it is the pre-order, dirs-first
+ *  traversal produced by buildPathTree/flattenTreeLeaves. Callers pass the list
+ *  already in the currently-rendered order. */
 export interface WorkdirChange {
   section: 'unstaged' | 'untracked';
   path: string;

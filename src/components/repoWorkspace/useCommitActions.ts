@@ -3,6 +3,8 @@ import { errorMessage } from '../../utils/errors';
 import { shortOid } from '../workspaceUtils';
 import { COMMIT_PUSH_CANCELED } from '../commitPushSignal';
 import { nextFileAfter, type WorkdirChange } from '../../utils/nextFile';
+import { buildPathTree, flattenTreeLeaves } from '../../utils/pathTree';
+import type { ListView } from '../../ipc';
 import type { BranchesSnapshot, FileDiff, HeadInfo, ResetMode, StatusSnapshot } from '../../ipc';
 import type { DiffSlot } from '../StatusPanel';
 import type { BaseActionDeps, PendingDiscardForce, Setter } from './types';
@@ -32,6 +34,9 @@ export function useCommitActions(
     /** P61a: current "Highlight changes" flag, read when refetching the
      *  auto-advance target slot after a stage. */
     intralineRef: { current: boolean };
+    /** Current "Changes" list view mode. In tree view the auto-advance target
+     *  must be computed in the rendered tree order, not the flat backend order. */
+    listViewRef: { current: ListView };
     head: HeadInfo | null;
     headBranch: BranchesSnapshot['local'][number] | null;
     setAmend: Setter<boolean>;
@@ -65,6 +70,7 @@ export function useCommitActions(
     diffSlotRef,
     diffViewModeRef,
     intralineRef,
+    listViewRef,
     head,
     headBranch,
     setAmend,
@@ -80,9 +86,9 @@ export function useCommitActions(
   async function handleStage(paths: string[]) {
     setMutating(true);
     // P46 WS3: when the file open in the diff overlay is the one being staged,
-    // auto-advance to the NEXT changed file (visible [unstaged, untracked]
-    // order). Compute the target from the PRE-stage snapshot; refetchStatus
-    // collapses the staged slot, then we open the target below.
+    // auto-advance to the NEXT changed file in the SAME order the UI renders the
+    // "Changes" list (tree or flat). Compute the target from the PRE-stage
+    // snapshot; refetchStatus collapses the staged slot, then we open it below.
     let nextTarget: WorkdirChange | null = null;
     const slot = diffSlotRef.current;
     if (
@@ -92,7 +98,7 @@ export function useCommitActions(
     ) {
       const openPath = slot.key.slice(slot.key.indexOf(':') + 1);
       if (paths.includes(openPath)) {
-        const changes: WorkdirChange[] = [
+        const flat: WorkdirChange[] = [
           ...status.unstaged.map((e) => ({
             section: 'unstaged' as const,
             path: e.path,
@@ -104,6 +110,13 @@ export function useCommitActions(
             origPath: e.origPath,
           })),
         ];
+        // Tree view renders leaves in buildPathTree/flattenTreeLeaves order
+        // (dirs-first, sorted) — the flat backend order diverges, so match the
+        // rendered order to advance to the visually-next file.
+        const changes =
+          listViewRef.current === 'tree'
+            ? flattenTreeLeaves(buildPathTree(flat, (c) => c.path))
+            : flat;
         nextTarget = nextFileAfter(changes, openPath, paths);
       }
     }
