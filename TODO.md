@@ -41,75 +41,16 @@ spun out of those milestones are on this board below (NOT closed by the waiver).
 
 ---
 
-## 🌿 P80b — commit-panel UX overhaul + next-file bug — AI-gate GREEN, native checkpoint pending
+## ✅ P80b / P81 / P82 — `done` (AI gate GREEN + native USER CHECKPOINT confirmed 2026-08-21)
 
-> Numbering note: this shipped from a **concurrent worktree session** that also used the label
-> "P80" (contracts `P80-commit-panel-ux-ui.md`, commits `7ebe7fd`…`03a6453`). The main-session
-> "P80 — multi-account forge" (below, `done`) is a different milestone. Tracked here as **P80b** to
-> disambiguate; the on-disk contract/commit labels are left untouched.
-
-**Branch:** `worktree-commit-panel-ux` (worktree `.claude/worktrees/commit-panel-ux`; forked from
-origin/main to avoid the concurrent main session). Not yet merged to main.
-
-**Current step:** all four commits landed & reviewed; AI gate green (the only nextest red is the
-pre-existing `prop_status` porcelain proptest, unrelated). **Native USER CHECKPOINT CONFIRMED by the
-user 2026-08-21** (amend-focus + visual pass). Ready to merge to main.
-
-Origin: user asked for a designer pass over the right-panel Working tab (make staging/committing
-easier, maximize list space) + a bug where staging opened a "random" next file. Contract:
-`docs/contracts/P80-commit-panel-ux-ui.md`.
-
-- **Bug fix** (`7ebe7fd`): auto-advance after staging now uses the *rendered* order (tree order via
-  `buildPathTree`/`flattenTreeLeaves` in tree view, flat otherwise) instead of flat backend order.
-  `listView` threaded into `useCommitActions` via a ref. +3 tests.
-- **2a staging affordances** (`5707f9a`): persistent stage `+`/`−` toggle (was hover-only); resting
-  danger treatment on "Discard all"; empty-Staged/Changes placeholder hints; section labels + bulk
-  buttons off sub-AA hues onto `--text-2`.
-- **2b space-saving footer** (`7edff3d`): footer chrome ~150→~87px (**~63px reclaimed to the
-  lists**, live-measured commit box 137px). All modifiers folded into one `⋯` `CommitOptionsMenu`
-  (Amend/Sign/Skip/Stash/Compose/Review; arrow-key roving, focus-first, Escape/outside close).
-  Amend moved into CommitBox with an internal reseed effect (dropped the amend remount key; no
-  longer destroys an in-progress draft). Deleted `RightPanelActionsRow` + `CommitOptionsRow`.
-  E1 consolidated the four AI entry points to one context-scoped Review + toolbar Generate.
-  **D1: new "Primary commit action" setting** (General → Committing, default **Commit** — user chose
-  "make it a setting"), full-stack Rust+TS+mock; CommitBox swaps which button is `.btn-primary`.
-- **2c a11y + microcopy** (`03a6453`): single `.commit-note` line with `⚠`/`✓` glyphs (hue no longer
-  sole carrier); plain-language signing copy (dropped the `user.signingkey` leak into a title);
-  section `aria-labelledby`; empty-state `--text-3`→`--text-2`; 24px targets verified.
-
-**AI gate:** vitest 1981 ✓ · e2e 156 ✓ · settings Rust lib 52/0 ✓ · clippy/check/doctests ✓ ·
-tsc+build ✓ · eslint ✓ · file-size ratchet ✓. Live DOM harness confirmed the new footer, toolbar,
-consolidated `⋯` menu, and Commit-primary default. Full-workspace `cargo nextest` could not complete
-— **environmental: D: drive 100% full (os error 112 writing the target cache)**, not a code failure.
-
-**USER CHECKPOINT (native `pnpm tauri dev`):** (1) amend-toggle keyboard-focus retention in the real
-webview (the reseed refactor dropped the remount; jsdom can't prove focus); (2) visual pass on the
-compact footer + reclaimed list space + the `⋯` menu in both themes (this harness is headless — no
-screenshots). Then re-run the full gate on a machine with disk headroom and merge to main.
-
----
-
-## 🔁 P81 — refetch coalescing + watcher self-echo suppression — AI-gate GREEN, native checkpoint pending
-
-Resolves the audit-#1 §3.10 refetch storm: every mutation ran `refreshAll` (~9 parallel fetches) and
-the watcher-debounced `repo-changed` for the same writes re-ran the identical 9 ~300 ms later, per
-open tab. Fix (`be01422`): a refresh coalescer + per-repoId watcher-echo suppression
-(`ECHO_TTL_MS=600`). Contract `docs/contracts/P81-refetch-coalescing.md`.
-
-**AI gate:** GREEN (vitest 2070). **USER CHECKPOINT (pending):** user-visible only as fewer redundant
-fetches; a native smoke pass (`pnpm tauri dev`) is still advisable to confirm no missed refresh.
-
----
-
-## 📦 P82 — submodule dirty-deinit requires explicit force (F-A7-7) — AI-gate GREEN, native checkpoint pending
-
-deinit/remove now require an explicit force opt-in for a dirty submodule (outcome enum
-`DirtyNeedsForce`, zero mutation on refuse; Flow-A danger dialog). Frontend threads the choice through
-the confirm flow. Fix (`ede7674`). Contracts `docs/contracts/P82-submodule-force.md` +
-`P82-submodule-force-ui.md`.
-
-**AI gate:** GREEN (bonsai-core 876, vitest 2086). **USER CHECKPOINT (pending):** destructive
-force-deinit danger dialog needs a native visual + confirm pass in both themes.
+- **P80b — commit-panel UX overhaul + next-file bug** — `done`. Merged to main via `56413b6` (Merge
+  PR #1 from `worktree-commit-panel-ux`) + `77c815f`; commits `7ebe7fd`…`03a6453`. Contract
+  `docs/contracts/P80-commit-panel-ux-ui.md`. Archived → `docs/history/todo-archive-2026-08.md`
+  Part 21.
+- **P81 — refetch coalescing + watcher self-echo suppression** — `done`. Commit `be01422`. Contract
+  `docs/contracts/P81-refetch-coalescing.md`. Archived → Part 21.
+- **P82 — submodule dirty-deinit requires explicit force (F-A7-7)** — `done`. Commit `ede7674`.
+  Contracts `docs/contracts/P82-submodule-force.md` + `P82-submodule-force-ui.md`. Archived → Part 21.
 
 ---
 
@@ -320,7 +261,7 @@ harness cannot observe rAF/compositing).
 
 | File | Covers |
 |---|---|
-| `docs/history/todo-archive-2026-08.md` | Parts 1–9: P65 → P28 build detail, the Phase 1–4 banners, resolved FOR-USER decisions, P69(1.0.0)/P67/P68 detail, the 2026-08-17 batch mapping, resolved spun-out items. **Parts 10–16 (moved 2026-08-20): the P62–P74 checkpoint waiver + P71, P72, P73, P74, the P69 Settings redesign, and the Audit #2 fix batch, condensed. Parts 17–18 (moved 2026-08-21): P70 and P77, both checkpoints verified. Part 19 (moved 2026-08-21): the OPEN follow-ups resolved in the 2026-08-21 fix batch (read_status/palette/refetch/stash/submodule/STDERR/cred-split), verbatim. Part 20 (moved 2026-08-21): P78/P79/P80 forge milestones, condensed.** |
+| `docs/history/todo-archive-2026-08.md` | Parts 1–9: P65 → P28 build detail, the Phase 1–4 banners, resolved FOR-USER decisions, P69(1.0.0)/P67/P68 detail, the 2026-08-17 batch mapping, resolved spun-out items. **Parts 10–16 (moved 2026-08-20): the P62–P74 checkpoint waiver + P71, P72, P73, P74, the P69 Settings redesign, and the Audit #2 fix batch, condensed. Parts 17–18 (moved 2026-08-21): P70 and P77, both checkpoints verified. Part 19 (moved 2026-08-21): the OPEN follow-ups resolved in the 2026-08-21 fix batch (read_status/palette/refetch/stash/submodule/STDERR/cred-split), verbatim. Part 20 (moved 2026-08-21): P78/P79/P80 forge milestones, condensed. Part 21 (moved 2026-08-21): P80b/P81/P82, done + checkpoints confirmed, condensed.** |
 | `docs/history/todo-archive.md` | P27 → P2, M0–M6 |
 | `docs/history/milestones-mvp.md` | the M0–M6 AI-gate vs USER CHECKPOINT split |
 | `docs/history/context-pollution-audit.md` | the context/token-cost audit |

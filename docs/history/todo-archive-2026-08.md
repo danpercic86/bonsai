@@ -3506,3 +3506,56 @@ Increment B FIXED (were SHOULD-FIX): caption `max-width` 11ch→20ch (was clippi
 repo"); OD-4 nudge dropped from warning-tint to plain muted note. Increment B follow-up (d) DONE:
 PrPanel "Disconnect" replaced by nondestructive "Reset to host default"; full sign-out via
 `forge_remove_account` in Settings only.
+
+## Part 21 — P80b / P81 / P82 (done + USER CHECKPOINT confirmed 2026-08-21), condensed (moved off the board 2026-08-21)
+
+All three are fully `done`: AI gate GREEN + native USER CHECKPOINT CONFIRMED by the user 2026-08-21.
+
+**P80b — commit-panel UX overhaul + next-file bug.** Merged to main via `56413b6` (Merge PR #1 from
+`worktree-commit-panel-ux`) and `77c815f` (merge reconciling divergence). Numbering note: shipped from
+a concurrent worktree session that also used the label "P80" (contracts `P80-commit-panel-ux-ui.md`,
+commits `7ebe7fd`…`03a6453`); tracked as **P80b** to disambiguate from the main-session "P80 —
+multi-account forge" (a different milestone); on-disk contract/commit labels left untouched.
+- Origin: user asked for a designer pass over the right-panel Working tab (make staging/committing
+  easier, maximize list space) + a bug where staging opened a "random" next file. Contract
+  `docs/contracts/P80-commit-panel-ux-ui.md`.
+- **Bug fix** (`7ebe7fd`): auto-advance after staging now uses the *rendered* order (tree order via
+  `buildPathTree`/`flattenTreeLeaves` in tree view, flat otherwise) instead of flat backend order.
+  `listView` threaded into `useCommitActions` via a ref. +3 tests.
+- **2a staging affordances** (`5707f9a`): persistent stage `+`/`−` toggle (was hover-only); resting
+  danger treatment on "Discard all"; empty-Staged/Changes placeholder hints; section labels + bulk
+  buttons off sub-AA hues onto `--text-2`.
+- **2b space-saving footer** (`7edff3d`): footer chrome ~150→~87px (~63px reclaimed to the lists,
+  live-measured commit box 137px). All modifiers folded into one `⋯` `CommitOptionsMenu`
+  (Amend/Sign/Skip/Stash/Compose/Review; arrow-key roving, focus-first, Escape/outside close). Amend
+  moved into CommitBox with an internal reseed effect (dropped the amend remount key; no longer
+  destroys an in-progress draft). Deleted `RightPanelActionsRow` + `CommitOptionsRow`. E1 consolidated
+  the four AI entry points to one context-scoped Review + toolbar Generate. **D1: new "Primary commit
+  action" setting** (General → Committing, default **Commit** — user chose "make it a setting"),
+  full-stack Rust+TS+mock; CommitBox swaps which button is `.btn-primary`.
+- **2c a11y + microcopy** (`03a6453`): single `.commit-note` line with `⚠`/`✓` glyphs (hue no longer
+  sole carrier); plain-language signing copy (dropped the `user.signingkey` leak into a title);
+  section `aria-labelledby`; empty-state `--text-3`→`--text-2`; 24px targets verified.
+- **AI gate:** vitest 1981 ✓ · e2e 156 ✓ · settings Rust lib 52/0 ✓ · clippy/check/doctests ✓ ·
+  tsc+build ✓ · eslint ✓ · file-size ratchet ✓. Live DOM harness confirmed the new footer, toolbar,
+  consolidated `⋯` menu, and Commit-primary default. (Note: the earlier board caveat that the
+  `prop_status` porcelain proptest was an "unrelated pre-existing red" is obsolete — that proptest was
+  FIXED this session by `f0eea9e`; the full-workspace nextest gap on the worktree was only the D: drive
+  at 100% full, os error 112, not a code failure.)
+- **USER CHECKPOINT (confirmed 2026-08-21):** amend-toggle keyboard-focus retention in the real
+  webview + visual pass on the compact footer, reclaimed list space, and the `⋯` menu in both themes.
+
+**P81 — refetch coalescing + watcher self-echo suppression.** Commit `be01422`. Contract
+`docs/contracts/P81-refetch-coalescing.md`. Resolves the audit-#1 §3.10 refetch storm: every mutation
+ran `refreshAll` (~9 parallel fetches) and the watcher-debounced `repo-changed` for the same writes
+re-ran the identical 9 ~300 ms later, per open tab. Fix: a refresh coalescer + per-repoId
+watcher-echo suppression (`ECHO_TTL_MS=600`). **AI gate:** GREEN (vitest 2070). **USER CHECKPOINT
+(confirmed 2026-08-21):** user-visible only as fewer redundant fetches; native smoke pass confirmed no
+missed refresh.
+
+**P82 — submodule dirty-deinit requires explicit force (F-A7-7).** Commit `ede7674`. Contracts
+`docs/contracts/P82-submodule-force.md` + `P82-submodule-force-ui.md`. deinit/remove now require an
+explicit force opt-in for a dirty submodule (outcome enum `DirtyNeedsForce`, zero mutation on refuse;
+Flow-A danger dialog). Frontend threads the choice through the confirm flow. **AI gate:** GREEN
+(bonsai-core 876, vitest 2086). **USER CHECKPOINT (confirmed 2026-08-21):** destructive force-deinit
+danger dialog visual + confirm pass in both themes.

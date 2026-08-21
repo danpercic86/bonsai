@@ -255,11 +255,10 @@ Settings redesign".
 
 ## Post-1.0.0 batch — P70–P82 (2026-08-19 → )
 
-P70, P73, P74, P77, P78, P79, P80 are `done` (checkpoints verified 2026-08-20/2026-08-21;
-P70/P77/P78/P79/P80 archived to `todo-archive-2026-08.md` Parts 17–18, 20). P71/P72 remain live board
-sections in `TODO.md`. P75 is `halted` (Win10 tauri-specta link blocker — see its contract), P76
-`deferred`. P80b (commit-panel UX), P81, P82 are
-AI-gate GREEN with native USER CHECKPOINTs pending — live board sections in `TODO.md`.
+P70, P73, P74, P77, P78, P79, P80, P80b, P81, P82 are `done` (checkpoints verified
+2026-08-20/2026-08-21; P70/P77/P78/P79/P80 archived to `todo-archive-2026-08.md` Parts 17–18, 20;
+P80b/P81/P82 archived to Part 21). P71/P72 remain live board sections in `TODO.md`. P75 is `halted`
+(Win10 tauri-specta link blocker — see its contract), P76 `deferred`.
 
 | File | Milestone | Scope | Status |
 |---|---|---|---|
@@ -282,10 +281,10 @@ AI-gate GREEN with native USER CHECKPOINTs pending — live board sections in `T
 | `P79-ui.md` | P79 | UI: account header, reauth banner, Accounts settings section (Azure disabled). | done |
 | `P80-multi-account.md` | P80 | Multi-account forge: keychain key host→host+account-identity, per-account forge_hosts index + defaultAccountId, per-repo accountId override; resolution order repo→owner-match→host-default→single→first+nudge. | done |
 | `P80-ui.md` | P80 | UI: PR-panel account switcher, Settings Accounts multi-account list, host-default + reset-to-default controls. | done |
-| `P80-commit-panel-ux-ui.md` | P80b | Right-panel Working tab UX overhaul: staging affordances, space-saving footer, ⋯ options menu, a11y/microcopy. | AI-gate GREEN, native checkpoint pending |
-| `P81-refetch-coalescing.md` | P81 | Refresh coalescer + per-repoId watcher self-echo suppression (ECHO_TTL_MS=600) — kills the audit-#1 §3.10 double-fetch storm. | AI-gate GREEN, native checkpoint pending |
-| `P82-submodule-force.md` | P82 | deinit/remove require explicit force for a dirty submodule (DirtyNeedsForce enum, zero mutation on refuse). | AI-gate GREEN, native checkpoint pending |
-| `P82-submodule-force-ui.md` | P82 | UI: Flow-A danger dialog for dirty-submodule force-deinit/remove. | AI-gate GREEN, native checkpoint pending |
+| `P80-commit-panel-ux-ui.md` | P80b | Right-panel Working tab UX overhaul: staging affordances, space-saving footer, ⋯ options menu, a11y/microcopy. | done |
+| `P81-refetch-coalescing.md` | P81 | Refresh coalescer + per-repoId watcher self-echo suppression (ECHO_TTL_MS=600) — kills the audit-#1 §3.10 double-fetch storm. | done |
+| `P82-submodule-force.md` | P82 | deinit/remove require explicit force for a dirty submodule (DirtyNeedsForce enum, zero mutation on refuse). | done |
+| `P82-submodule-force-ui.md` | P82 | UI: Flow-A danger dialog for dirty-submodule force-deinit/remove. | done |
 
 > **No contract file** for the DX dev-loop acceleration initiative (`pnpm gate`, nextest, rust-lld,
 > velocity-mode workflow, 2026-08-20); it is recorded on the board only (`TODO.md` §"DX").
