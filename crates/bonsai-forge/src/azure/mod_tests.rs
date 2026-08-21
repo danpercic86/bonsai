@@ -234,3 +234,124 @@ fn unsupported_host_rejects_data_calls_but_gives_context() {
     assert!(matches!(p.viewer(), Err(AppError::ForgeUnsupported(_))));
     assert!(seen.lock().unwrap().is_empty(), "no request for an unsupported host");
 }
+
+fn merge_input(method: crate::types::MergeMethod) -> crate::types::MergePrInput {
+    crate::types::MergePrInput {
+        method,
+        commit_title: None,
+        commit_message: None,
+        delete_source_branch: false,
+        head_sha: Some("headsha".to_string()),
+    }
+}
+
+const PR_COMPLETED: &str = r#"{
+    "pullRequestId": 7, "title": "Done", "status": "completed", "isDraft": false,
+    "createdBy": { "displayName": "Ada L" },
+    "sourceRefName": "refs/heads/f", "targetRefName": "refs/heads/main",
+    "creationDate": "2026-01-01T00:00:00Z",
+    "lastMergeSourceCommit": { "commitId": "s" }, "description": "" }"#;
+
+const PR_ABANDONED: &str = r#"{
+    "pullRequestId": 7, "title": "Done", "status": "abandoned", "isDraft": false,
+    "createdBy": { "displayName": "Ada L" },
+    "sourceRefName": "refs/heads/f", "targetRefName": "refs/heads/main",
+    "creationDate": "2026-01-01T00:00:00Z",
+    "lastMergeSourceCommit": { "commitId": "s" }, "description": "" }"#;
+
+#[test]
+fn merge_pr_patches_completed_with_strategy_and_head_sha() {
+    use crate::types::MergeMethod;
+    let (p, seen) = provider_spy(Some("az-tok"), vec![("/pullrequests/7", 200, PR_COMPLETED)]);
+    let mut input = merge_input(MergeMethod::Squash);
+    input.delete_source_branch = true;
+    let d = p.merge_pr(7, &input).unwrap();
+    assert_eq!(d.summary.state, PrState::Merged);
+    let reqs = seen.lock().unwrap();
+    assert_eq!(reqs[0].method, HttpMethod::Patch);
+    assert!(reqs[0].url.contains("/pullrequests/7"), "url: {}", reqs[0].url);
+    let sent: serde_json::Value = serde_json::from_str(reqs[0].body.as_ref().unwrap()).unwrap();
+    assert_eq!(sent["status"], "completed");
+    assert_eq!(sent["lastMergeSourceCommit"]["commitId"], "headsha");
+    assert_eq!(sent["completionOptions"]["mergeStrategy"], "squash");
+    assert_eq!(sent["completionOptions"]["deleteSourceBranch"], true);
+}
+
+#[test]
+fn merge_pr_maps_methods_to_strategies() {
+    use crate::types::MergeMethod;
+    for (m, strat) in [
+        (MergeMethod::Merge, "noFastForward"),
+        (MergeMethod::Rebase, "rebase"),
+    ] {
+        let (p, seen) = provider_spy(Some("az-tok"), vec![("/pullrequests/7", 200, PR_COMPLETED)]);
+        p.merge_pr(7, &merge_input(m)).unwrap();
+        let reqs = seen.lock().unwrap();
+        let sent: serde_json::Value = serde_json::from_str(reqs[0].body.as_ref().unwrap()).unwrap();
+        assert_eq!(sent["completionOptions"]["mergeStrategy"], strat, "{m:?}");
+    }
+}
+
+#[test]
+fn merge_pr_rejects_fast_forward_without_sending() {
+    use crate::types::MergeMethod;
+    let (p, seen) = provider_spy(Some("az-tok"), vec![("/pullrequests/7", 200, PR_COMPLETED)]);
+    assert!(matches!(
+        p.merge_pr(7, &merge_input(MergeMethod::FastForward)),
+        Err(AppError::ForgeApi(_))
+    ));
+    assert!(seen.lock().unwrap().is_empty(), "nothing sent for unsupported method");
+}
+
+#[test]
+fn merge_pr_missing_head_sha_errors_without_sending() {
+    use crate::types::MergeMethod;
+    let (p, seen) = provider_spy(Some("az-tok"), vec![("/pullrequests/7", 200, PR_COMPLETED)]);
+    let mut input = merge_input(MergeMethod::Merge);
+    input.head_sha = None;
+    assert!(matches!(p.merge_pr(7, &input), Err(AppError::ForgeApi(_))));
+    assert!(seen.lock().unwrap().is_empty(), "no request without a head sha");
+}
+
+#[test]
+fn merge_pr_requires_token() {
+    use crate::types::MergeMethod;
+    let (p, seen) = provider_spy(None, vec![("/pullrequests/7", 200, PR_COMPLETED)]);
+    assert!(matches!(
+        p.merge_pr(7, &merge_input(MergeMethod::Merge)),
+        Err(AppError::ForgeAuthRequired(_))
+    ));
+    assert!(seen.lock().unwrap().is_empty());
+}
+
+#[test]
+fn merge_pr_not_completable_maps_to_forge_api() {
+    use crate::types::MergeMethod;
+    for status in [400, 409] {
+        let p = provider(Some("az-tok"), vec![("/pullrequests/7", status, "{}")]);
+        match p.merge_pr(7, &merge_input(MergeMethod::Merge)) {
+            Err(AppError::ForgeApi(m)) => {
+                assert!(m.contains("could not complete"), "status {status}: {m}")
+            }
+            other => panic!("expected ForgeApi for {status}, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn close_pr_patches_status_abandoned() {
+    let (p, seen) = provider_spy(Some("az-tok"), vec![("/pullrequests/7", 200, PR_ABANDONED)]);
+    let d = p.close_pr(7).unwrap();
+    assert_eq!(d.summary.state, PrState::Closed);
+    let reqs = seen.lock().unwrap();
+    assert_eq!(reqs[0].method, HttpMethod::Patch);
+    let sent: serde_json::Value = serde_json::from_str(reqs[0].body.as_ref().unwrap()).unwrap();
+    assert_eq!(sent["status"], "abandoned");
+}
+
+#[test]
+fn close_pr_requires_token() {
+    let (p, seen) = provider_spy(None, vec![("/pullrequests/7", 200, PR_ABANDONED)]);
+    assert!(matches!(p.close_pr(7), Err(AppError::ForgeAuthRequired(_))));
+    assert!(seen.lock().unwrap().is_empty());
+}

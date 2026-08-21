@@ -17,8 +17,8 @@ use serde::{Deserialize, Serialize};
 use bonsai_core::error::AppError;
 
 use crate::types::{
-    CheckRollup, CommentKind, CommitStatus, CreatePrInput, ForgeViewer, PrDetail, PrState,
-    PrSummary, ReviewComment, StatusContext,
+    CheckRollup, CommentKind, CommitStatus, CreatePrInput, ForgeViewer, MergeMethod, MergePrInput,
+    PrDetail, PrState, PrSummary, ReviewComment, StatusContext,
 };
 
 /// Parse a Bitbucket body into `T`; a malformed body ⇒ `ForgeApi` (never a token).
@@ -371,6 +371,53 @@ pub fn create_pr_body(input: &CreatePrInput) -> Result<String, AppError> {
     };
     serde_json::to_string(&wire)
         .map_err(|e| AppError::Other(format!("failed to encode create-PR body: {e}")))
+}
+
+// ---- merge request body (exactly as Bitbucket expects) ----
+
+#[derive(Serialize)]
+struct MergeWire {
+    /// The merge produces a merge commit (Bitbucket's `type` discriminator).
+    #[serde(rename = "type")]
+    kind: &'static str,
+    merge_strategy: &'static str,
+    close_source_branch: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+}
+
+/// Bitbucket `merge_strategy` wire value for a neutral [`MergeMethod`]. Rebase is
+/// not offered on the merge endpoint ⇒ `ForgeApi` (nothing sent).
+fn bitbucket_merge_strategy(method: MergeMethod) -> Result<&'static str, AppError> {
+    match method {
+        MergeMethod::Merge => Ok("merge_commit"),
+        MergeMethod::Squash => Ok("squash"),
+        MergeMethod::FastForward => Ok("fast_forward"),
+        MergeMethod::Rebase => Err(AppError::ForgeApi(
+            "rebase merge is not available on Bitbucket".to_string(),
+        )),
+    }
+}
+
+/// Serialize a [`MergePrInput`] into the Bitbucket merge JSON body. Returns an
+/// error for an unsupported method (nothing should be sent). `close_source_branch`
+/// mirrors `delete_source_branch`; the optional commit message maps to `message`.
+pub fn merge_body(input: &MergePrInput) -> Result<String, AppError> {
+    let merge_strategy = bitbucket_merge_strategy(input.method)?;
+    let wire = MergeWire {
+        kind: "commit",
+        merge_strategy,
+        close_source_branch: input.delete_source_branch,
+        message: input.commit_message.clone(),
+    };
+    serde_json::to_string(&wire)
+        .map_err(|e| AppError::Other(format!("failed to encode merge body: {e}")))
+}
+
+/// The Bitbucket decline body: empty object (a decline reason cannot be set via
+/// the API, so none is sent).
+pub fn decline_body() -> String {
+    "{}".to_string()
 }
 
 /// Parse the build-status collection, map each into a neutral [`StatusContext`],

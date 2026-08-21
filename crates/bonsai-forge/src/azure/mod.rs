@@ -13,6 +13,7 @@
 //! endpoint, whose failure never fails the connect.
 
 mod dto;
+mod req;
 mod rest;
 
 use bonsai_core::error::AppError;
@@ -228,18 +229,23 @@ impl ForgeProvider for AzureDevOpsProvider {
         Ok(out)
     }
 
-    fn merge_pr(&self, _number: u64, _input: &MergePrInput) -> Result<PrDetail, AppError> {
-        // P83d implements Azure completion; stubbed to keep the trait complete.
-        Err(AppError::ForgeApi(
-            "completing Azure DevOps pull requests is not yet implemented".to_string(),
-        ))
+    fn merge_pr(&self, number: u64, input: &MergePrInput) -> Result<PrDetail, AppError> {
+        let (org, project, repo) = self.coords()?;
+        let token = self.require_token()?; // merge REQUIRES auth
+        // Unsupported method / missing head_sha ⇒ error BEFORE any request.
+        let body = req::complete_body(input)?;
+        let url = rest::pull_request_url(org, project, repo, number);
+        // 200 returns the updated PR; not-completable statuses map in `patch_complete`.
+        let resp = rest::patch_complete(self.transport(), &url, Some(token), body)?;
+        dto::parse_pr_detail(&resp.body, &self.target.web_url)
     }
 
-    fn close_pr(&self, _number: u64) -> Result<PrDetail, AppError> {
-        // P83d implements Azure abandon; stubbed to keep the trait complete.
-        Err(AppError::ForgeApi(
-            "abandoning Azure DevOps pull requests is not yet implemented".to_string(),
-        ))
+    fn close_pr(&self, number: u64) -> Result<PrDetail, AppError> {
+        let (org, project, repo) = self.coords()?;
+        let token = self.require_token()?; // abandon REQUIRES auth
+        let url = rest::pull_request_url(org, project, repo, number);
+        let resp = rest::patch(self.transport(), &url, Some(token), req::abandon_body())?;
+        dto::parse_pr_detail(&resp.body, &self.target.web_url)
     }
 
     fn combined_status(&self, sha: &str) -> Result<CommitStatus, AppError> {

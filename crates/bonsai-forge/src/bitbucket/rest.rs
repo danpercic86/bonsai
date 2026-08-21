@@ -81,6 +81,14 @@ pub fn create_pull_request_url(workspace: &str, slug: &str) -> String {
     format!("{API_BASE}/repositories/{workspace}/{slug}/pullrequests")
 }
 
+pub fn merge_pull_request_url(workspace: &str, slug: &str, id: u64) -> String {
+    format!("{API_BASE}/repositories/{workspace}/{slug}/pullrequests/{id}/merge")
+}
+
+pub fn decline_pull_request_url(workspace: &str, slug: &str, id: u64) -> String {
+    format!("{API_BASE}/repositories/{workspace}/{slug}/pullrequests/{id}/decline")
+}
+
 pub fn comments_url(workspace: &str, slug: &str, id: u64) -> String {
     format!("{API_BASE}/repositories/{workspace}/{slug}/pullrequests/{id}/comments?pagelen=100")
 }
@@ -171,6 +179,43 @@ pub fn post(
         body: Some(body),
     };
     let resp = http.send(&req)?;
+    match map_status(&resp) {
+        Some(err) => Err(err),
+        None => Ok(resp),
+    }
+}
+
+/// Clear not-mergeable message for a Bitbucket merge Bitbucket refused because
+/// the PR is not in a mergeable state (400 Bad Request / 409 Conflict).
+pub fn not_mergeable_error() -> AppError {
+    AppError::ForgeApi(
+        "Bitbucket could not merge this PR — it is not mergeable (conflicts or unmet merge \
+         checks)"
+            .to_string(),
+    )
+}
+
+/// POST `url` with a JSON `body` for a merge; 400/409 map to
+/// [`not_mergeable_error`], otherwise standard status mapping. Callers requiring
+/// auth check the token BEFORE calling this.
+pub fn post_merge(
+    http: &dyn HttpTransport,
+    url: &str,
+    token: Option<&str>,
+    body: String,
+) -> Result<HttpResponse, AppError> {
+    let mut headers = base_headers(token);
+    headers.push(("Content-Type".to_string(), "application/json".to_string()));
+    let req = HttpRequest {
+        method: HttpMethod::Post,
+        url: url.to_string(),
+        headers,
+        body: Some(body),
+    };
+    let resp = http.send(&req)?;
+    if matches!(resp.status, 400 | 409) {
+        return Err(not_mergeable_error());
+    }
     match map_status(&resp) {
         Some(err) => Err(err),
         None => Ok(resp),

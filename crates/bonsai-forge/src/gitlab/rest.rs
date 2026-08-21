@@ -95,6 +95,11 @@ pub fn create_merge_request_url(host: &str, id: &str) -> String {
     format!("{}/projects/{id}/merge_requests", api_base(host))
 }
 
+/// `PUT …/merge_requests/{iid}/merge` — the accept/merge endpoint.
+pub fn merge_mr_url(host: &str, id: &str, iid: u64) -> String {
+    format!("{}/projects/{id}/merge_requests/{iid}/merge", api_base(host))
+}
+
 pub fn notes_url(host: &str, id: &str, iid: u64) -> String {
     format!(
         "{}/projects/{id}/merge_requests/{iid}/notes?per_page=100",
@@ -225,6 +230,64 @@ pub fn post(
         Some(err) => Err(err),
         None => Ok(resp),
     }
+}
+
+/// Clear not-mergeable message for a GitLab merge GitLab refused because the MR
+/// is not in a mergeable state (405 Method Not Allowed / 406 Not Acceptable /
+/// 409 Conflict).
+pub fn not_mergeable_error() -> AppError {
+    AppError::ForgeApi(
+        "GitLab could not merge this MR — it is not mergeable (conflicts, unresolved \
+         discussions, or pending approvals)"
+            .to_string(),
+    )
+}
+
+/// PUT `url` with a JSON `body`; standard status mapping. Used for the MR-close
+/// (`state_event`) call. Callers requiring auth check the token BEFORE calling.
+fn send_put(
+    http: &dyn HttpTransport,
+    url: &str,
+    token: Option<&str>,
+    body: String,
+    merge_call: bool,
+) -> Result<HttpResponse, AppError> {
+    let mut headers = base_headers(token);
+    headers.push(("Content-Type".to_string(), "application/json".to_string()));
+    let req = HttpRequest {
+        method: HttpMethod::Put,
+        url: url.to_string(),
+        headers,
+        body: Some(body),
+    };
+    let resp = http.send(&req)?;
+    if merge_call && matches!(resp.status, 405 | 406 | 409) {
+        return Err(not_mergeable_error());
+    }
+    match map_status(&resp) {
+        Some(err) => Err(err),
+        None => Ok(resp),
+    }
+}
+
+/// PUT `url` (close/update MR); standard status mapping.
+pub fn put(
+    http: &dyn HttpTransport,
+    url: &str,
+    token: Option<&str>,
+    body: String,
+) -> Result<HttpResponse, AppError> {
+    send_put(http, url, token, body, false)
+}
+
+/// PUT `url` (merge MR); 405/406/409 map to [`not_mergeable_error`].
+pub fn put_merge(
+    http: &dyn HttpTransport,
+    url: &str,
+    token: Option<&str>,
+    body: String,
+) -> Result<HttpResponse, AppError> {
+    send_put(http, url, token, body, true)
 }
 
 #[cfg(test)]

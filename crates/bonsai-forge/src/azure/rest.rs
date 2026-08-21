@@ -251,6 +251,64 @@ pub fn post(
     }
 }
 
+/// Clear not-mergeable message for an Azure completion Azure refused because the
+/// PR is not completable (400 Bad Request / 409 Conflict — merge conflicts or
+/// unmet branch policies).
+pub fn not_completable_error() -> AppError {
+    AppError::ForgeApi(
+        "Azure DevOps could not complete this PR — merge conflicts or unmet branch policies"
+            .to_string(),
+    )
+}
+
+/// PATCH `url` with a JSON `body`. When `merge_call`, 400/409 map to
+/// [`not_completable_error`], otherwise standard status mapping. Callers
+/// requiring auth check the token BEFORE calling this.
+fn send_patch(
+    http: &dyn HttpTransport,
+    url: &str,
+    token: Option<&str>,
+    body: String,
+    merge_call: bool,
+) -> Result<HttpResponse, AppError> {
+    let mut headers = base_headers(token);
+    headers.push(("Content-Type".to_string(), "application/json".to_string()));
+    let req = HttpRequest {
+        method: HttpMethod::Patch,
+        url: url.to_string(),
+        headers,
+        body: Some(body),
+    };
+    let resp = http.send(&req)?;
+    if merge_call && matches!(resp.status, 400 | 409) {
+        return Err(not_completable_error());
+    }
+    match map_status(&resp) {
+        Some(err) => Err(err),
+        None => Ok(resp),
+    }
+}
+
+/// PATCH `url` (abandon PR); standard status mapping.
+pub fn patch(
+    http: &dyn HttpTransport,
+    url: &str,
+    token: Option<&str>,
+    body: String,
+) -> Result<HttpResponse, AppError> {
+    send_patch(http, url, token, body, false)
+}
+
+/// PATCH `url` (complete/merge PR); 400/409 map to [`not_completable_error`].
+pub fn patch_complete(
+    http: &dyn HttpTransport,
+    url: &str,
+    token: Option<&str>,
+    body: String,
+) -> Result<HttpResponse, AppError> {
+    send_patch(http, url, token, body, true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
