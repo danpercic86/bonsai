@@ -321,8 +321,8 @@ fn submodule_add_lifecycle_over_file_url() {
         "the checked-out commit matches the pinned one: {repaired:?}");
     assert!(sub_wd.join(".git").is_file(), "a gitlink FILE was written back");
 
-    block_on(deinit_submodule_inner(&state, &id, name.clone())).expect("deinit");
-    block_on(remove_submodule_inner(&state, &id, name.clone())).expect("remove");
+    block_on(deinit_submodule_inner(&state, &id, name.clone(), true)).expect("deinit");
+    block_on(remove_submodule_inner(&state, &id, name.clone(), true)).expect("remove");
     assert!(
         !block_on(list_submodules_inner(&state, &id)).unwrap().iter().any(|s| s.path == "vendor/sub"),
         "gone after remove"

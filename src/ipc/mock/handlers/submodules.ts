@@ -4,7 +4,12 @@
 // row, deinit flips it to uninitialized, and remove drops it — the sidebar
 // section reflects every op after the container's refetch.
 import type { IpcApi } from '../../types';
-import type { AppError, SubmoduleInfo } from '../../types';
+import type {
+  AppError,
+  SubmoduleDeinitOutcome,
+  SubmoduleInfo,
+  SubmoduleRemoveOutcome,
+} from '../../types';
 import { randomOid } from '../../fixtures/oids';
 import { delay, query, requireRepo } from '../repoState';
 
@@ -35,6 +40,15 @@ export function msgUrlMismatch(name: string, url: string): string {
  *  name for a renamed submodule; the mock must not diverge. */
 export function msgDirtyWorkdir(path: string): string {
   return `The folder already has files in it. Move or delete everything inside '${path}', then try again.`;
+}
+
+/** P82: dirty := a `modifiedWorkdir` fixture row OR the `?submodule=dirty` seam.
+ *  Drives the deinit/remove `dirtyNeedsForce` refusal so the force-escalation
+ *  dialog + retry are verifiable in a plain browser. `SubmoduleInfo.status` only
+ *  carries the classified enum, so the seam also covers the "outOfSync AND dirty"
+ *  case the backend still treats as dirty but the mock row cannot represent. */
+function submoduleDirty(sub: SubmoduleInfo | undefined): boolean {
+  return sub?.status === 'modifiedWorkdir' || query('submodule') === 'dirty';
 }
 
 /** init/update/sync additionally honour the P73 refusal + slow seams. */
@@ -135,24 +149,40 @@ export const submoduleHandlers = {
     return structuredClone(row);
   },
 
-  // P60d: deinit — flip to uninitialized + null the worktree oid; keep the row.
-  async deinitSubmodule(repoId: string, name: string): Promise<void> {
+  // P60d/P82: deinit — flip to uninitialized + null the worktree oid; keep the
+  // row. `force=false` on a dirty submodule refuses (`dirtyNeedsForce`, zero
+  // mutation) so the UI escalation dialog + force retry are browser-verifiable.
+  async deinitSubmodule(
+    repoId: string,
+    name: string,
+    force: boolean,
+  ): Promise<SubmoduleDeinitOutcome> {
     await delay(200);
     const state = requireRepo(repoId);
     failSeam(name);
     const sub = state.submodules.find((s) => s.name === name);
+    if (!force && submoduleDirty(sub)) return { kind: 'dirtyNeedsForce' }; // zero mutation
     if (sub !== undefined) {
       sub.status = 'uninitialized';
       sub.wtOid = null;
     }
+    return { kind: 'deinitialized' };
   },
 
-  // P60d: remove — drop the row entirely (destructive).
-  async removeSubmodule(repoId: string, name: string): Promise<void> {
+  // P60d/P82: remove — drop the row entirely (destructive). Force semantics as
+  // deinit: refuse a dirty submodule unless force=true.
+  async removeSubmodule(
+    repoId: string,
+    name: string,
+    force: boolean,
+  ): Promise<SubmoduleRemoveOutcome> {
     await delay(200);
     const state = requireRepo(repoId);
     failSeam(name);
+    const sub = state.submodules.find((s) => s.name === name);
+    if (!force && submoduleDirty(sub)) return { kind: 'dirtyNeedsForce' }; // zero mutation
     const idx = state.submodules.findIndex((s) => s.name === name);
     if (idx !== -1) state.submodules.splice(idx, 1);
+    return { kind: 'removed' };
   },
 } satisfies Partial<IpcApi>;

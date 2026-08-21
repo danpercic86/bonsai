@@ -24,6 +24,11 @@ export function useSubmoduleActions(
     refetchGraph: () => Promise<void>;
     /** P73 §6.1: row-local busy pill; set per op, cleared in `finally`. */
     setSubmoduleBusy: Setter<SubmoduleBusy | null>;
+    /** P82 (F-A7-7): the plain deinit/remove refused because the submodule
+     *  worktree is dirty. Opens the danger force-escalation dialog instead of a
+     *  success toast; on confirm the container re-invokes the same op with
+     *  `force=true`. */
+    onSubmoduleDirtyRefused: (name: string, op: 'deinit' | 'remove') => void;
   },
 ) {
   const {
@@ -34,6 +39,7 @@ export function useSubmoduleActions(
     refetchSubmodules,
     refetchStatus,
     refetchGraph,
+    onSubmoduleDirtyRefused,
   } = deps;
 
   // add/deinit/remove edit the superproject index + worktree → refetch status +
@@ -44,21 +50,28 @@ export function useSubmoduleActions(
 
   /** P73 §5-§6: the shared shape of every row-scoped submodule op — busy pill,
    *  success/failure copy naming the target, and a refetch on both paths. */
-  async function runRowOp(op: {
+  async function runRowOp<T>(op: {
     name: string;
     /** Present participle shown in the row badge while in flight. */
     busyLabel: string;
     /** Imperative verb for the failure prefix ("check out", "update", …). */
     verb: string;
     successText: string;
-    call: () => Promise<void>;
+    call: () => Promise<T>;
     refresh: () => Promise<void>;
+    /** P82: inspect the RESOLVED outcome (deinit/remove now return a typed
+     *  outcome, not void). Return true to SUPPRESS the success toast — the op
+     *  did not actually complete (e.g. a dirty refusal opened the force dialog
+     *  instead of mutating). */
+    onResolved?: (result: T) => boolean;
   }) {
     setMutating(true);
     setSubmoduleBusy({ name: op.name, label: op.busyLabel });
     try {
-      await op.call();
-      pushToast('success', op.successText);
+      const result = await op.call();
+      if (op.onResolved?.(result) !== true) {
+        pushToast('success', op.successText);
+      }
     } catch (e) {
       // The backend sentence is appended verbatim (it carries the remedy); the
       // prefix only names the action + target. Keyed per row so retries replace.
@@ -115,25 +128,42 @@ export function useSubmoduleActions(
     });
   }
 
-  async function handleDeinitSubmodule(name: string) {
+  // P82: `force` defaults false (the safe confirm). On a `dirtyNeedsForce`
+  // refusal we open the danger escalation dialog (no success toast, no mutation);
+  // the container re-invokes with force=true after the user confirms.
+  async function handleDeinitSubmodule(name: string, force = false) {
     await runRowOp({
       name,
       busyLabel: 'deinitializing…',
       verb: 'deinitialize',
       successText: `Deinitialized ${name}`,
-      call: () => ipc.deinitSubmodule(repoId, name),
+      call: () => ipc.deinitSubmodule(repoId, name, force),
       refresh: refreshAfterChange,
+      onResolved: (outcome) => {
+        if (!force && outcome.kind === 'dirtyNeedsForce') {
+          onSubmoduleDirtyRefused(name, 'deinit');
+          return true;
+        }
+        return false;
+      },
     });
   }
 
-  async function handleRemoveSubmodule(name: string) {
+  async function handleRemoveSubmodule(name: string, force = false) {
     await runRowOp({
       name,
       busyLabel: 'removing…',
       verb: 'remove',
       successText: `Removed ${name}`,
-      call: () => ipc.removeSubmodule(repoId, name),
+      call: () => ipc.removeSubmodule(repoId, name, force),
       refresh: refreshAfterChange,
+      onResolved: (outcome) => {
+        if (!force && outcome.kind === 'dirtyNeedsForce') {
+          onSubmoduleDirtyRefused(name, 'remove');
+          return true;
+        }
+        return false;
+      },
     });
   }
 

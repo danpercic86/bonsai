@@ -4,6 +4,7 @@ import type { ContextMenuItem } from './ContextMenu';
 import { WorkspaceToolbar } from './WorkspaceToolbar';
 import { WorkspaceDialogs } from './WorkspaceDialogs';
 import { WorkspaceOverlays } from './WorkspaceOverlays';
+import type { PendingForceSubmodule } from './dialogs/SubmoduleDialogs';
 import { WorkspaceGraphPane } from './WorkspaceGraphPane';
 import { WorkspaceRightPanel } from './WorkspaceRightPanel';
 import { isUsableRepo, shortOid } from './workspaceUtils';
@@ -348,6 +349,10 @@ export function RepoWorkspace({
   const [pendingAddSubmodule, setPendingAddSubmodule] = useState(false);
   const [pendingDeinitSubmodule, setPendingDeinitSubmodule] = useState<string | null>(null);
   const [pendingRemoveSubmodule, setPendingRemoveSubmodule] = useState<string | null>(null);
+  // P82 (F-A7-7): a plain deinit/remove refused because the submodule worktree is
+  // dirty → the danger force-escalation dialog (attempt-then-offer-force).
+  const [pendingForceSubmodule, setPendingForceSubmodule] =
+    useState<PendingForceSubmodule | null>(null);
   // P60b: a non-fast-forward pull → drives NonFfPullDialog (Merge / Rebase).
   const [pendingNonFfPull, setPendingNonFfPull] = useState<NonFfPullInfo | null>(null);
   // P60c: one-click undo. The toolbar Undo button describes the last op
@@ -475,6 +480,7 @@ export function RepoWorkspace({
     pendingAddSubmodule ||
     pendingDeinitSubmodule !== null ||
     pendingRemoveSubmodule !== null ||
+    pendingForceSubmodule !== null ||
     pendingNonFfPull !== null ||
     pendingUndo !== null ||
     pendingCherrypick !== null ||
@@ -1663,6 +1669,7 @@ export function RepoWorkspace({
     refetchSubmodules,
     refetchStatus,
     refetchGraph,
+    onSubmoduleDirtyRefused: (name, op) => setPendingForceSubmodule({ name, op }),
   });
 
   const { handleAddWorktree, handleLockWorktree, handleUnlockWorktree, handleRemoveWorktree } =
@@ -2944,6 +2951,8 @@ export function RepoWorkspace({
         pendingRemoveSubmodule={pendingRemoveSubmodule}
         setPendingRemoveSubmodule={setPendingRemoveSubmodule}
         handleRemoveSubmodule={handleRemoveSubmodule}
+        pendingForceSubmodule={pendingForceSubmodule}
+        setPendingForceSubmodule={setPendingForceSubmodule}
       />
       {/* P77 §4: destructive remote-tag confirms (delete-on-remote, force-move). */}
       <TagSyncDialogs

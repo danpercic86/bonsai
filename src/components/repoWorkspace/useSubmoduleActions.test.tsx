@@ -34,6 +34,7 @@ function makeDeps(over: Partial<Deps> = {}): Deps {
     refetchStatus: asyncFn(),
     refetchGraph: asyncFn(),
     setSubmoduleBusy: vi.fn(),
+    onSubmoduleDirtyRefused: vi.fn(),
     ...over,
   };
 }
@@ -139,19 +140,21 @@ describe('add / deinit / remove (superproject index changes)', () => {
   });
 
   it('deinit + remove refetch all three; errors get the prefixed toast + a refetch', async () => {
-    const deinit = vi.spyOn(mockIpc, 'deinitSubmodule').mockResolvedValue(undefined);
+    const deinit = vi
+      .spyOn(mockIpc, 'deinitSubmodule')
+      .mockResolvedValue({ kind: 'deinitialized' });
     const remove = vi
       .spyOn(mockIpc, 'removeSubmodule')
       .mockRejectedValue(appErr('git', 'has local changes'));
     const deps = makeDeps();
     const actions = useSubmoduleActions(deps);
     await actions.handleDeinitSubmodule('libs/core');
-    expect(deinit).toHaveBeenCalledWith(REPO, 'libs/core');
+    expect(deinit).toHaveBeenCalledWith(REPO, 'libs/core', false);
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Deinitialized libs/core');
     expect(deps.refetchStatus).toHaveBeenCalledTimes(1);
 
     await actions.handleRemoveSubmodule('libs/core');
-    expect(remove).toHaveBeenCalledWith(REPO, 'libs/core');
+    expect(remove).toHaveBeenCalledWith(REPO, 'libs/core', false);
     expect(deps.pushToast).toHaveBeenCalledWith(
       'error',
       "Couldn't remove libs/core. has local changes",
@@ -160,5 +163,37 @@ describe('add / deinit / remove (superproject index changes)', () => {
     // P73: the failure path refetches too (the row may not be what we thought).
     expect(deps.refetchStatus).toHaveBeenCalledTimes(2);
     expect(deps.setMutating).toHaveBeenLastCalledWith(false);
+  });
+
+  // P82 (F-A7-7): the dirty refusal is a RESOLVED outcome, not a throw.
+  it('deinit refused-dirty: opens the force dialog, no success toast, no mutation-complete', async () => {
+    const deinit = vi
+      .spyOn(mockIpc, 'deinitSubmodule')
+      .mockResolvedValue({ kind: 'dirtyNeedsForce' });
+    const deps = makeDeps();
+    await useSubmoduleActions(deps).handleDeinitSubmodule('libs/core');
+    expect(deinit).toHaveBeenCalledWith(REPO, 'libs/core', false);
+    expect(deps.onSubmoduleDirtyRefused).toHaveBeenCalledWith('libs/core', 'deinit');
+    // No success toast (the op did not complete) and no error toast (not a throw).
+    expect(deps.pushToast).not.toHaveBeenCalled();
+  });
+
+  it('remove refused-dirty: opens the force dialog keyed remove', async () => {
+    vi.spyOn(mockIpc, 'removeSubmodule').mockResolvedValue({ kind: 'dirtyNeedsForce' });
+    const deps = makeDeps();
+    await useSubmoduleActions(deps).handleRemoveSubmodule('libs/core');
+    expect(deps.onSubmoduleDirtyRefused).toHaveBeenCalledWith('libs/core', 'remove');
+    expect(deps.pushToast).not.toHaveBeenCalled();
+  });
+
+  it('force retry: force=true re-invokes and toasts success (no re-escalation)', async () => {
+    const deinit = vi
+      .spyOn(mockIpc, 'deinitSubmodule')
+      .mockResolvedValue({ kind: 'deinitialized' });
+    const deps = makeDeps();
+    await useSubmoduleActions(deps).handleDeinitSubmodule('libs/core', true);
+    expect(deinit).toHaveBeenCalledWith(REPO, 'libs/core', true);
+    expect(deps.onSubmoduleDirtyRefused).not.toHaveBeenCalled();
+    expect(deps.pushToast).toHaveBeenCalledWith('success', 'Deinitialized libs/core');
   });
 });

@@ -107,7 +107,9 @@ import type {
   StaleReport,
   StashEntry,
   StatusSnapshot,
+  SubmoduleDeinitOutcome,
   SubmoduleInfo,
+  SubmoduleRemoveOutcome,
   UiSettings,
   UiSettingsPatch,
   Unsubscribe,
@@ -727,12 +729,12 @@ export const tauriIpc: IpcApi = {
     return invoke<SubmoduleInfo>('add_submodule', { repoId, url, path });
   },
 
-  deinitSubmodule(repoId: string, name: string): Promise<void> {
-    return invoke<void>('deinit_submodule', { repoId, name });
+  deinitSubmodule(repoId: string, name: string, force: boolean): Promise<SubmoduleDeinitOutcome> {
+    return invoke<SubmoduleDeinitOutcome>('deinit_submodule', { repoId, name, force });
   },
 
-  removeSubmodule(repoId: string, name: string): Promise<void> {
-    return invoke<void>('remove_submodule', { repoId, name });
+  removeSubmodule(repoId: string, name: string, force: boolean): Promise<SubmoduleRemoveOutcome> {
+    return invoke<SubmoduleRemoveOutcome>('remove_submodule', { repoId, name, force });
   },
 
   // P27: worktrees.

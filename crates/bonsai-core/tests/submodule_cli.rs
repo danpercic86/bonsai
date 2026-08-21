@@ -122,7 +122,7 @@ fn oracle_add_deinit_remove_roundtrip() {
     assert_eq!(ours_link, sub_head, "gitlink points at the sub-repo HEAD");
 
     // --- deinit: config cleared, worktree emptied, .gitmodules RETAINED ------
-    deinit_submodule(ours.path(), &SpawnGitRunner, path).expect("deinit_submodule");
+    deinit_submodule(ours.path(), &SpawnGitRunner, path, true).expect("deinit_submodule");
     assert!(
         config_get(ours.path(), &url_key).is_none(),
         "submodule config entry cleared by deinit",
@@ -139,7 +139,7 @@ fn oracle_add_deinit_remove_roundtrip() {
     assert!(staged_gitlink_opt(ours.path(), path).is_some(), "gitlink kept by deinit");
 
     // --- remove: gitlink + .gitmodules entry gone, worktree deleted ---------
-    remove_submodule(ours.path(), &SpawnGitRunner, path).expect("remove_submodule");
+    remove_submodule(ours.path(), &SpawnGitRunner, path, true).expect("remove_submodule");
     assert!(
         staged_gitlink_opt(ours.path(), path).is_none(),
         "gitlink dropped from the index by remove",

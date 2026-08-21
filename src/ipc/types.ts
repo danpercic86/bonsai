@@ -531,6 +531,18 @@ export interface SubmoduleInfo {
   status: SubmoduleStatus;
 }
 
+/** Result of `deinitSubmodule` (P82). Mirrors Rust `SubmoduleDeinitOutcome`
+ *  (serde tagged "kind", camelCase). `dirtyNeedsForce` = the plain op refused
+ *  because the submodule worktree is dirty; re-invoke with `force=true`. */
+export type SubmoduleDeinitOutcome =
+  | { kind: 'deinitialized' }
+  | { kind: 'dirtyNeedsForce' };
+
+/** Result of `removeSubmodule` (P82). Mirrors Rust `SubmoduleRemoveOutcome`. */
+export type SubmoduleRemoveOutcome =
+  | { kind: 'removed' }
+  | { kind: 'dirtyNeedsForce' };
+
 /** One worktree row (main or linked) — P27. Wire mirror of the Rust
  *  `WorktreeInfo`. `headOid` is full 40-hex; the UI shortens to 7. */
 export interface WorktreeInfo {
@@ -2433,12 +2445,14 @@ export interface IpcApi {
   /** P60d: add a submodule from `url` at repo-relative `path` (clones it).
    *  Rejects noRepo | invalidName | git. */
   addSubmodule(repoId: string, url: string, path: string): Promise<SubmoduleInfo>;
-  /** P60d: deinit — clear its config + empty the worktree; keep .gitmodules.
+  /** P60d/P82: deinit — clear config + empty worktree; keep .gitmodules.
+   *  `force=false` refuses (`dirtyNeedsForce`) when the submodule worktree is
+   *  dirty, mutating nothing; re-invoke with `force=true` to discard.
    *  Rejects noRepo | invalidName | git. */
-  deinitSubmodule(repoId: string, name: string): Promise<void>;
-  /** P60d: remove entirely (deinit + git rm + drop .git/modules). DESTRUCTIVE.
-   *  Rejects noRepo | invalidName | git. */
-  removeSubmodule(repoId: string, name: string): Promise<void>;
+  deinitSubmodule(repoId: string, name: string, force: boolean): Promise<SubmoduleDeinitOutcome>;
+  /** P60d/P82: remove entirely (deinit + git rm + drop .git/modules). DESTRUCTIVE.
+   *  `force` semantics as `deinitSubmodule`. Rejects noRepo | invalidName | git. */
+  removeSubmodule(repoId: string, name: string, force: boolean): Promise<SubmoduleRemoveOutcome>;
   // --- P27: worktrees ---
   /** All worktrees (main first) with resolved branch/oid/badges. Rejects noRepo | git. */
   listWorktrees(repoId: string): Promise<WorktreeInfo[]>;

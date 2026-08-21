@@ -93,7 +93,9 @@ pub(crate) use bonsai_core::git::stage_partial::{
 };
 pub(crate) use bonsai_core::git::stash::{self, ApplyStashOutcome, CreateStashResult, StashEntry, StashScope};
 pub(crate) use bonsai_core::git::status::{read_status, StatusSnapshot};
-pub(crate) use bonsai_core::git::submodule::{self, SubmoduleInfo};
+pub(crate) use bonsai_core::git::submodule::{
+    self, SubmoduleDeinitOutcome, SubmoduleInfo, SubmoduleRemoveOutcome,
+};
 pub(crate) use bonsai_core::git::worktree::{self, WorktreeInfo};
 pub(crate) use bonsai_core::git::worktree_copy::{self, CopyCandidate, CopyPlanEntry, CopySelection};
 pub(crate) use bonsai_core::git::tags;

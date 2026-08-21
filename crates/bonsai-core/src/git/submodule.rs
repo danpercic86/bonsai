@@ -65,6 +65,14 @@ pub struct SubmoduleInfo {
     pub status: SubmoduleStatus,
 }
 
+// P82 (F-A7-7): the deinit/remove FORCE machinery (outcome enums, the dirty
+// check, and the conditional-`-f` argv builders) lives in `submodule_teardown`
+// to keep this file under the ~500-line limit. Re-exported here so the wire
+// types keep their contracted path (`bonsai_core::git::submodule::*`) and the
+// argv builders / dirty check stay reachable from the ops + the test module.
+pub use super::submodule_teardown::{SubmoduleDeinitOutcome, SubmoduleRemoveOutcome};
+pub(crate) use super::submodule_teardown::{deinit_args, is_submodule_dirty, rm_args};
+
 /// Maps git2's `SubmoduleStatus` bitflags to our single enum in PRIORITY order
 /// (first match wins). A submodule that is simultaneously out-of-sync AND dirty
 /// classifies as `OutOfSync` (higher priority) — so the UI badge is
@@ -362,65 +370,58 @@ fn submodule_path(repo: &git2::Repository, name: &str) -> Result<String, AppErro
     Ok(sm.path().to_string_lossy().replace('\\', "/"))
 }
 
-/// Pure argv for `git submodule deinit -f -- <path>`. `path` is ALWAYS the
-/// final token, after `--` — never interpolated into a flag — so a space/`;`
-/// in it stays one token and can never become a second command.
-fn deinit_args(path: &str) -> Vec<String> {
-    vec![
-        "submodule".to_string(),
-        "deinit".to_string(),
-        "-f".to_string(),
-        "--".to_string(),
-        path.to_string(),
-    ]
-}
-
-/// Pure argv for `git rm -f -- <path>` (drops the gitlink + .gitmodules entry
-/// and stages the removal). `path` is the final token, after `--`.
-fn rm_args(path: &str) -> Vec<String> {
-    vec![
-        "rm".to_string(),
-        "-f".to_string(),
-        "--".to_string(),
-        path.to_string(),
-    ]
-}
-
-/// Blocking. `git submodule deinit -f -- <path>` via `runner` (no libgit2
+/// Blocking. `git submodule deinit [-f] -- <path>` via `runner` (no libgit2
 /// primitive; D4). Clears `submodule.<name>` from .git/config and empties the
 /// submodule worktree; KEEPS the .gitmodules entry (re-init-able). `name` is
-/// resolved to its path via `find_submodule`. Errors: `invalidName` | `git`
-/// (stderr tail) | `noRepo`.
+/// resolved to its path via `find_submodule`.
+///
+/// P82 (F-A7-7): with `force == false`, if the submodule worktree is dirty this
+/// returns [`SubmoduleDeinitOutcome::DirtyNeedsForce`] mutating NOTHING (no
+/// `-f`); clean → proceeds without `-f`. `force == true` runs with `-f` and
+/// discards. Errors: `invalidName` | `git` (stderr tail) | `noRepo`.
 pub fn deinit_submodule(
     workdir: &Path,
     runner: &dyn GitRunner,
     name: &str,
-) -> Result<(), AppError> {
+    force: bool,
+) -> Result<SubmoduleDeinitOutcome, AppError> {
     let repo = open_workdir_repo(workdir)?;
-    let path = submodule_path(&repo, name)?;
-    runner.run(&deinit_args(&path), workdir)?;
-    Ok(())
+    let path = submodule_path(&repo, name)?; // validates name
+    if !force && is_submodule_dirty(&repo, name)? {
+        return Ok(SubmoduleDeinitOutcome::DirtyNeedsForce); // zero mutation
+    }
+    runner.run(&deinit_args(&path, force), workdir)?;
+    Ok(SubmoduleDeinitOutcome::Deinitialized)
 }
 
-/// Blocking. Full removal (git's documented sequence): `git submodule deinit -f
-/// -- <path>` → `git rm -f -- <path>` → best-effort `remove_dir_all(.git/
+/// Blocking. Full removal (git's documented sequence): `git submodule deinit
+/// [-f] -- <path>` → `git rm [-f] -- <path>` → best-effort `remove_dir_all(.git/
 /// modules/<name>)`. DESTRUCTIVE (deletes the worktree, edits the index, drops
-/// the .gitmodules entry + gitlink). Errors: `invalidName` | `git` | `noRepo`.
+/// the .gitmodules entry + gitlink).
+///
+/// P82 (F-A7-7): with `force == false`, a dirty submodule worktree returns
+/// [`SubmoduleRemoveOutcome::DirtyNeedsForce`] mutating NOTHING; clean → proceeds
+/// without `-f`. `force == true` runs both shell-outs with `-f` and discards.
+/// Errors: `invalidName` | `git` | `noRepo`.
 pub fn remove_submodule(
     workdir: &Path,
     runner: &dyn GitRunner,
     name: &str,
-) -> Result<(), AppError> {
+    force: bool,
+) -> Result<SubmoduleRemoveOutcome, AppError> {
     let repo = open_workdir_repo(workdir)?;
     // F-A7-2: `name` comes from .gitmodules (attacker-controllable) and is
     // joined under .git/modules — refuse traversal BEFORE any destructive step.
     validate_modules_name(name)?;
     let path = submodule_path(&repo, name)?;
-    runner.run(&deinit_args(&path), workdir)?;
-    runner.run(&rm_args(&path), workdir)?;
+    if !force && is_submodule_dirty(&repo, name)? {
+        return Ok(SubmoduleRemoveOutcome::DirtyNeedsForce); // zero mutation
+    }
+    runner.run(&deinit_args(&path, force), workdir)?;
+    runner.run(&rm_args(&path, force), workdir)?;
     // Best-effort: drop the cached git dir (`git rm` leaves it; may be absent).
     remove_cached_git_dir(&repo, name);
-    Ok(())
+    Ok(SubmoduleRemoveOutcome::Removed)
 }
 
 /// F-A7-2: reject submodule names that could escape `.git/modules` when joined

@@ -61,6 +61,8 @@ pub mod submodule;
 mod submodule_reconnect;
 /// P73 clone-path rollback for `submodule` (private to `git`).
 mod submodule_rollback;
+/// P82 deinit/remove force machinery for `submodule` (private to `git`).
+mod submodule_teardown;
 pub mod tags;
 pub mod tag_sync;
 pub mod timefmt;

@@ -129,13 +129,19 @@ fn unknown_name_maps_to_git_error() {
     }
 }
 
-/// P60d: the deinit/remove argv builders are byte-exact — `path` is the
-/// FINAL token, immediately after `--`.
+/// P60d/P82: the deinit/remove argv builders are byte-exact — `-f` appears only
+/// when `force`, and `path` is the FINAL token, immediately after `--`.
 #[test]
 fn deinit_args_exact() {
     assert_eq!(
-        deinit_args("vendor/sub"),
+        deinit_args("vendor/sub", true),
         ["submodule", "deinit", "-f", "--", "vendor/sub"]
+            .map(String::from)
+            .to_vec()
+    );
+    assert_eq!(
+        deinit_args("vendor/sub", false),
+        ["submodule", "deinit", "--", "vendor/sub"]
             .map(String::from)
             .to_vec()
     );
@@ -144,8 +150,34 @@ fn deinit_args_exact() {
 #[test]
 fn rm_args_exact() {
     assert_eq!(
-        rm_args("vendor/sub"),
+        rm_args("vendor/sub", true),
         ["rm", "-f", "--", "vendor/sub"].map(String::from).to_vec()
+    );
+    assert_eq!(
+        rm_args("vendor/sub", false),
+        ["rm", "--", "vendor/sub"].map(String::from).to_vec()
+    );
+}
+
+/// P82: the two outcome enums serialize to the tagged, camelCase wire shapes the
+/// TS mirrors expect.
+#[test]
+fn outcome_enums_serialize_camel_case_kind() {
+    assert_eq!(
+        serde_json::to_value(SubmoduleDeinitOutcome::Deinitialized).expect("json"),
+        serde_json::json!({ "kind": "deinitialized" })
+    );
+    assert_eq!(
+        serde_json::to_value(SubmoduleDeinitOutcome::DirtyNeedsForce).expect("json"),
+        serde_json::json!({ "kind": "dirtyNeedsForce" })
+    );
+    assert_eq!(
+        serde_json::to_value(SubmoduleRemoveOutcome::Removed).expect("json"),
+        serde_json::json!({ "kind": "removed" })
+    );
+    assert_eq!(
+        serde_json::to_value(SubmoduleRemoveOutcome::DirtyNeedsForce).expect("json"),
+        serde_json::json!({ "kind": "dirtyNeedsForce" })
     );
 }
 
@@ -154,10 +186,10 @@ fn rm_args_exact() {
 #[test]
 fn args_keep_metachar_path_as_single_token_after_dashdash() {
     let evil = "a b; rm -rf /";
-    let d = deinit_args(evil);
+    let d = deinit_args(evil, true);
     assert_eq!(d.last().unwrap(), evil);
     assert_eq!(d[d.len() - 2], "--");
-    let r = rm_args(evil);
+    let r = rm_args(evil, true);
     assert_eq!(r.last().unwrap(), evil);
     assert_eq!(r[r.len() - 2], "--");
 }
@@ -199,10 +231,95 @@ fn remove_submodule_rejects_hostile_name_before_running_git() {
     }
     let dir = crate::testutil::scratch_dir();
     git2::Repository::init(dir.path()).expect("init");
-    match remove_submodule(dir.path(), &PanicRunner, "../../escape") {
+    match remove_submodule(dir.path(), &PanicRunner, "../../escape", false) {
         Err(AppError::Git(m)) => assert!(m.contains("unsafe name"), "{m}"),
         other => panic!("hostile name must be Git error, got {other:?}"),
     }
+}
+
+/// A recording runner: captures every argv it is handed and returns Ok("").
+#[derive(Default)]
+struct RecordRunner {
+    calls: RefCell<Vec<Vec<String>>>,
+}
+impl GitRunner for RecordRunner {
+    fn run(&self, args: &[String], _cwd: &Path) -> Result<String, AppError> {
+        self.calls.borrow_mut().push(args.to_vec());
+        Ok(String::new())
+    }
+}
+
+/// Seed a superproject with one submodule checked out from a local source, and
+/// return (superproject dir, submodule name). The submodule worktree is clean.
+fn seed_superproject_with_submodule() -> (tempfile::TempDir, tempfile::TempDir, String) {
+    let src_dir = crate::testutil::scratch_dir();
+    let src = git2::Repository::init(src_dir.path()).expect("init source");
+    seed_commit(&src);
+    let src_url = src_dir.path().to_string_lossy().replace('\\', "/");
+
+    let sup_dir = crate::testutil::scratch_dir();
+    let sup = git2::Repository::init(sup_dir.path()).expect("init superproject");
+    seed_commit(&sup);
+    let info = add_submodule(sup_dir.path(), &src_url, "vendor/sub").expect("add submodule");
+    (sup_dir, src_dir, info.name)
+}
+
+/// P82 AC#3: `force=false` on a CLEAN submodule proceeds WITHOUT `-f` and
+/// reports `Deinitialized`.
+#[test]
+fn deinit_clean_no_force_omits_dash_f() {
+    let (sup, _src, name) = seed_superproject_with_submodule();
+    let runner = RecordRunner::default();
+    let outcome = deinit_submodule(sup.path(), &runner, &name, false).expect("deinit");
+    assert_eq!(outcome, SubmoduleDeinitOutcome::Deinitialized);
+    let calls = runner.calls.borrow();
+    assert_eq!(calls.len(), 1);
+    assert!(!calls[0].contains(&"-f".to_string()), "clean deinit must omit -f");
+}
+
+/// P82 AC#2: `force=false` on a DIRTY submodule returns `DirtyNeedsForce` and
+/// invokes the runner ZERO times (no mutation).
+#[test]
+fn deinit_dirty_no_force_refuses_without_running() {
+    let (sup, _src, name) = seed_superproject_with_submodule();
+    // Dirty the submodule worktree with an untracked file.
+    std::fs::write(sup.path().join("vendor/sub/dirty.txt"), "wip\n").expect("write");
+    let runner = RecordRunner::default();
+    let outcome = deinit_submodule(sup.path(), &runner, &name, false).expect("deinit");
+    assert_eq!(outcome, SubmoduleDeinitOutcome::DirtyNeedsForce);
+    assert_eq!(runner.calls.borrow().len(), 0, "must not run git when refusing");
+}
+
+/// P82 AC#4: `force=true` on a DIRTY submodule discards and runs WITH `-f`.
+#[test]
+fn deinit_dirty_force_runs_with_dash_f() {
+    let (sup, _src, name) = seed_superproject_with_submodule();
+    std::fs::write(sup.path().join("vendor/sub/dirty.txt"), "wip\n").expect("write");
+    let runner = RecordRunner::default();
+    let outcome = deinit_submodule(sup.path(), &runner, &name, true).expect("deinit");
+    assert_eq!(outcome, SubmoduleDeinitOutcome::Deinitialized);
+    let calls = runner.calls.borrow();
+    assert!(calls[0].contains(&"-f".to_string()), "forced deinit must pass -f");
+}
+
+/// P82 AC#2/#4: `remove_submodule` mirrors the deinit dirty/force semantics
+/// across BOTH shell-outs.
+#[test]
+fn remove_dirty_no_force_refuses_then_force_runs_with_dash_f() {
+    let (sup, _src, name) = seed_superproject_with_submodule();
+    std::fs::write(sup.path().join("vendor/sub/dirty.txt"), "wip\n").expect("write");
+
+    let refuse_runner = RecordRunner::default();
+    let refused = remove_submodule(sup.path(), &refuse_runner, &name, false).expect("remove");
+    assert_eq!(refused, SubmoduleRemoveOutcome::DirtyNeedsForce);
+    assert_eq!(refuse_runner.calls.borrow().len(), 0);
+
+    let force_runner = RecordRunner::default();
+    let removed = remove_submodule(sup.path(), &force_runner, &name, true).expect("remove");
+    assert_eq!(removed, SubmoduleRemoveOutcome::Removed);
+    let calls = force_runner.calls.borrow();
+    assert_eq!(calls.len(), 2, "deinit + rm");
+    assert!(calls.iter().all(|c| c.contains(&"-f".to_string())), "both forced");
 }
 
 /// F-A7-10: a failed clone rolls back the add-setup residue (.gitmodules
