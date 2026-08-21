@@ -103,7 +103,7 @@ describe('CommitBox', () => {
     const signingStatus: SigningStatus = { enabled: true, hasKey: true, format: 'ssh' } as SigningStatus;
     const { onCommit } = renderBox({ signingStatus });
     // The will-sign note shows below the toolbar regardless of menu open state.
-    expect(screen.getByText('Commits will be signed (SSH)')).toBeInTheDocument();
+    expect(screen.getByText('Commits will be signed (SSH).')).toBeInTheDocument();
     openMenu();
     const toggle = screen.getByRole('menuitemcheckbox', { name: /Sign commit/ });
     expect(toggle).toHaveAttribute('aria-checked', 'true');

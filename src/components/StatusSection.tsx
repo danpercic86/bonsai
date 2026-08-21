@@ -114,8 +114,12 @@ export function StatusSection({
     );
   };
   return (
-    <section className={`status-section status-section--${variant}`}>
+    <section
+      className={`status-section status-section--${variant}`}
+      aria-labelledby={`section-${variant}-label`}
+    >
       <div
+        id={`section-${variant}-label`}
         className={
           danger ? 'section-header section-label section-label-danger' : 'section-header section-label'
         }

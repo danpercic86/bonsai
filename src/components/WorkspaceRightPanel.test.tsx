@@ -247,19 +247,19 @@ describe('WorkspaceRightPanel commit-options menu (P80 §2b)', () => {
   it('the amend push warning shows only when amend + upstream set + ahead 0', () => {
     const pushed = branch({ upstream: 'origin/main', ahead: 0, behind: 0 });
     const on = renderPanel({ amend: true, headBranch: pushed });
-    expect(on.container.querySelector('.amend-push-warning')).not.toBeNull();
+    expect(on.container.querySelector('.commit-note')).not.toBeNull();
 
     const off = renderPanel({ amend: false, headBranch: pushed });
-    expect(off.container.querySelector('.amend-push-warning')).toBeNull();
+    expect(off.container.querySelector('.commit-note')).toBeNull();
 
     const ahead = renderPanel({
       amend: true,
       headBranch: branch({ upstream: 'origin/main', ahead: 2, behind: 0 }),
     });
-    expect(ahead.container.querySelector('.amend-push-warning')).toBeNull();
+    expect(ahead.container.querySelector('.commit-note')).toBeNull();
 
     const noUpstream = renderPanel({ amend: true, headBranch: branch() });
-    expect(noUpstream.container.querySelector('.amend-push-warning')).toBeNull();
+    expect(noUpstream.container.querySelector('.commit-note')).toBeNull();
   });
 
   it('keeps both right-pane tabs and the always-mounted work wrapper', () => {

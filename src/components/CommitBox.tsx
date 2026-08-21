@@ -389,28 +389,45 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
           glyph/copy; behavior preserved here). Priority: amend-pushed >
           sign no-key > sign will-sign > skip hooks. */}
       {showAmendPushWarning ? (
-        <div className="amend-push-warning" role="note">
-          This commit is already pushed — amending rewrites published history.
+        <div className="commit-note" role="note">
+          <span className="commit-note-glyph" aria-hidden="true">
+            ⚠
+          </span>
+          <span>This commit is already pushed — amending rewrites published history.</span>
         </div>
       ) : showSign && signChecked && !(signingStatus?.hasKey ?? false) ? (
-        <span className="commit-sign-warn" role="note">
-          No signing key set — set user.signingkey
-          {onOpenIdentitySettings !== undefined && (
-            <button
-              type="button"
-              className="commit-sign-fix"
-              onClick={() => onOpenIdentitySettings()}
-            >
-              Set key…
-            </button>
-          )}
-        </span>
+        <div className="commit-note" role="note">
+          <span className="commit-note-glyph" aria-hidden="true">
+            ⚠
+          </span>
+          <span>
+            No signing key set — commits won’t be signed.
+            {onOpenIdentitySettings !== undefined && (
+              <button
+                type="button"
+                className="commit-sign-fix"
+                title="Set user.signingkey in Git config"
+                onClick={() => onOpenIdentitySettings()}
+              >
+                Set key…
+              </button>
+            )}
+          </span>
+        </div>
       ) : showSign && signChecked && (signingStatus?.hasKey ?? false) ? (
-        <span className="commit-sign-hint">Commits will be signed ({signFormatLabel})</span>
+        <div className="commit-note" role="note">
+          <span className="commit-note-glyph commit-note-glyph-ok" aria-hidden="true">
+            ✓
+          </span>
+          <span>Commits will be signed ({signFormatLabel}).</span>
+        </div>
       ) : skipHooks ? (
-        <span className="commit-skip-hint" role="note">
-          Git hooks (pre-commit, commit-msg) won’t run for this commit
-        </span>
+        <div className="commit-note" role="note">
+          <span className="commit-note-glyph" aria-hidden="true">
+            ⚠
+          </span>
+          <span>Git hooks won’t run for this commit.</span>
+        </div>
       ) : null}
       {error !== null && (
         <div className="error-banner error-banner-dismissible commit-error" role="alert">

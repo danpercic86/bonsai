@@ -221,10 +221,22 @@
   margin: 4px 6px;
 }
 
-.amend-push-warning {
+/* P80 2c F1/F2: single shared note line below the toolbar. Glyph carries the
+   warning/positive meaning so hue is not the sole signal. */
+.commit-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
   font-size: 11px;
-  color: var(--warning, #d29922);
   line-height: 1.4;
+  color: var(--text-2);
+}
+.commit-note-glyph {
+  color: var(--warning);
+  flex: none;
+}
+.commit-note-glyph-ok {
+  color: var(--success);
 }
 
 .commit-box {
@@ -323,29 +335,15 @@
   color: var(--warning);
 }
 
-.commit-sign-hint {
-  color: var(--success);
-}
-.commit-sign-warn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--warning);
-}
 .commit-sign-fix {
   border: none;
   background: none;
   padding: 0;
+  margin-left: 6px;
   color: var(--accent);
   font: inherit;
   cursor: pointer;
   text-decoration: underline;
-}
-
-.commit-skip-hint {
-  color: var(--warning);
-  font-size: 11px;
-  line-height: 1.4;
 }
 
 .commit-error {
