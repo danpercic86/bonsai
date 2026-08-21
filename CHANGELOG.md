@@ -6,6 +6,56 @@ All notable changes to Bonsai are documented here. The format is based on
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-08-22
+
+Pull request review and management from inside Bonsai — merge and close/decline PRs across all four
+supported forges — plus multi-account forge sign-in, tag synchronisation, and color-coded commit
+identities.
+
+### Added
+
+**Pull requests**
+- **Merge and close/decline a pull request from the PR panel.** The PR detail view now has a Merge
+  action with a method picker (merge / squash / rebase, filtered to what the forge actually
+  supports) and a Close/Decline/Abandon action that uses the right verb for each forge. Works for
+  **GitHub, GitLab, Bitbucket, and Azure DevOps.** A PR that the forge reports as not mergeable
+  fails with a clear message — nothing is forced and no conflict is auto-resolved.
+
+**Forge accounts**
+- **Sign in to more than one forge account.** Connect several accounts per host, switch the active
+  one from the header, and re-authenticate an expired token in place. A new Accounts category in
+  Settings lists every connected account.
+- **Fine-grained-token guidance and branch pickers in the Open-PR form.** The form spells out
+  exactly which token scopes it needs and offers source/target branch dropdowns instead of
+  free-text.
+
+**Sidebar**
+- **Tag synchronisation.** The sidebar marks tags that are local-only, remote-only, or diverged from
+  the remote, with per-tag resolve actions and a rollup summary — the same push/pull clarity
+  branches already had.
+
+**Identity**
+- **Color-coded commit identities.** Assign a color to each Git identity so the header control shows
+  at a glance which one your commits will carry.
+
+### Changed
+- **Commit panel overhaul.** A visible per-file stage toggle, a safer discard flow, empty-state
+  hints when there is nothing to commit, and a more compact footer that collapses the commit
+  modifiers into a menu — with accessibility and wording passes throughout.
+
+### Fixed
+- After you stage a file in the tree view, selection now advances to the visually next file instead
+  of jumping elsewhere.
+- Redundant refreshes are coalesced and the file watcher no longer reacts to its own writes, so
+  Git operations no longer trigger a storm of rescans.
+- Stash operations now verify they are acting on the stash you targeted, guarding against a
+  wrong-target overwrite if the stash list changed underfoot.
+- Removing or de-initialising a submodule with uncommitted changes now requires an explicit force,
+  matching the rest of Bonsai's destructive-action guards.
+- On Windows, a racy-Git phantom "modified" status no longer flickers in the working-directory list.
+- The command palette's highlighted row resets correctly when the visible results change.
+- An AI helper's stderr drain no longer overruns its intended time budget.
+
 ## [1.1.0] — 2026-08-20
 
 A rebuilt Settings surface, fixes from the second full-project audit (2026-08-18), and a batch of
@@ -379,7 +429,8 @@ The MVP and first productization phase. Highlights:
 - Tauri v2 auto-update scaffolding (behind Bonsai IPC) and a first-run onboarding overlay.
 - An embedded MCP server exposing structured Git data (graph, diffs, conflicts) to AI tools.
 
-[Unreleased]: https://github.com/danpercic86/bonsai/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/danpercic86/bonsai/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/danpercic86/bonsai/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/danpercic86/bonsai/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/danpercic86/bonsai/compare/v0.3.1...v1.0.0
 [0.3.0]: https://github.com/danpercic86/bonsai/compare/v0.2.0...v0.3.0
