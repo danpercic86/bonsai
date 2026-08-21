@@ -48,6 +48,7 @@ import type {
   RebaseTodoOp,
   PaneWidths,
   PanelDensity,
+  PrimaryCommitAction,
   ReflogEntry,
   UndoPlan,
   RemoteInfo,
@@ -108,6 +109,8 @@ export interface RepoWorkspaceProps {
   /** P67 §4: right-panel vertical density (applied as a `data-density`
    *  attribute on the right panel's `<aside>`). */
   panelDensity: PanelDensity;
+  /** P80 D1: which commit button is emphasized in the Working tab footer. */
+  primaryCommitAction: PrimaryCommitAction;
   themeVersion: number;
   paneWidths: PaneWidths;
   /** True when a global modal (shortcut overlay / tab menu) is open — the
@@ -151,6 +154,7 @@ export function RepoWorkspace({
   active,
   listView,
   panelDensity,
+  primaryCommitAction,
   themeVersion,
   paneWidths,
   globalModalOpen,
@@ -487,6 +491,11 @@ export function RepoWorkspace({
   const [intraline, setIntraline] = useState(false);
   const intralineRef = useRef(intraline);
   intralineRef.current = intraline;
+  // Bug fix: the "Changes" list view mode (tree vs flat), read through a ref by
+  // handleStage so the auto-advance target is computed in the SAME order the UI
+  // renders. Threaded via ref so toggling never re-creates the stage handler.
+  const listViewRef = useRef(listView);
+  listViewRef.current = listView;
   // P61b: image-diff data for the open overlay slot when its path is an image
   // (D4). Fetched in parallel with the text slot (getWorkdirFileDiff still runs
   // and returns a cheap binary FileDiff); DiffOverlay renders DiffImageView from
@@ -1502,6 +1511,7 @@ export function RepoWorkspace({
     diffSlotRef,
     diffViewModeRef,
     intralineRef,
+    listViewRef,
     head,
     headBranch,
     setAmend,
@@ -2643,6 +2653,7 @@ export function RepoWorkspace({
           headBranch={headBranch}
           listView={listView}
           panelDensity={panelDensity}
+          primaryCommitAction={primaryCommitAction}
           scope={scope}
           setScope={setScope}
           clearCompare={clearCompare}

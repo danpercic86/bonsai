@@ -42,6 +42,7 @@ export type SettingsPersistedValues = Pick<
   | 'theme'
   | 'listView'
   | 'panelDensity'
+  | 'primaryCommitAction'
   | 'autoFetch'
   | 'healthRefresh'
   | 'graph'

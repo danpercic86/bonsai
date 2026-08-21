@@ -3,6 +3,7 @@
   "paneWidths": { "sidebar": 240, "rightPanel": 380 },
   "listView": "tree",
   "panelDensity": "cozy",
+  "primaryCommitAction": "commit",
   "autoFetch": { "enabled": false, "intervalMinutes": 5 },
   "healthRefresh": { "enabled": false, "intervalMinutes": 30 },
   "graph": {

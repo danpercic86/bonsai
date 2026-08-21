@@ -59,6 +59,7 @@ function renderPanel(over: Partial<WorkspaceRightPanelProps> = {}) {
     headBranch: branch(),
     listView: 'flat',
     panelDensity: 'cozy',
+    primaryCommitAction: 'commit',
     scope: { kind: 'root' },
     setScope: vi.fn(),
     clearCompare: vi.fn(),
@@ -111,17 +112,20 @@ function renderPanel(over: Partial<WorkspaceRightPanelProps> = {}) {
   return { ...render(<WorkspaceRightPanel {...props} />), props };
 }
 
-const overflowBtn = () => screen.getByRole('button', { name: 'More actions' });
+// P80 §2b: the actions row is gone — the trigger is CommitBox's `⋯` toolbar
+// button ("Commit options"), and amend/sign/skip/stash fold into its menu.
+const overflowBtn = () => screen.getByRole('button', { name: 'Commit options' });
 
-describe('WorkspaceRightPanel actions row', () => {
-  it('renders exactly ONE merged row: the amend checkbox plus the ⋯ button', () => {
+describe('WorkspaceRightPanel commit-options menu (P80 §2b)', () => {
+  it('the `⋯` trigger lives in the commit toolbar; amend is a menuitemcheckbox', () => {
     const { container } = renderPanel();
-    expect(container.querySelectorAll('.rp-actions-row')).toHaveLength(1);
-    const row = container.querySelector('.rp-actions-row');
-    expect(row).not.toBeNull();
-    const amend = screen.getByRole('checkbox', { name: /Amend last commit/ });
-    expect(row?.contains(amend)).toBe(true);
-    expect(row?.contains(overflowBtn())).toBe(true);
+    // The old dedicated actions row is gone.
+    expect(container.querySelectorAll('.rp-actions-row')).toHaveLength(0);
+    expect(container.querySelector('.commit-msg-toolbar')?.contains(overflowBtn())).toBe(true);
+    fireEvent.click(overflowBtn());
+    expect(
+      screen.getByRole('menuitemcheckbox', { name: /Amend last commit/ }),
+    ).toBeInTheDocument();
   });
 
   it('no .stash-split element survives (deletion regression guard)', () => {
@@ -129,15 +133,22 @@ describe('WorkspaceRightPanel actions row', () => {
     expect(container.querySelectorAll('[class*="stash-split"]')).toHaveLength(0);
   });
 
-  it('the amend checkbox reports its new value and respects `mutating`', () => {
+  it('the amend menuitemcheckbox reports its new value and respects `mutating`', () => {
     const { props } = renderPanel();
-    fireEvent.click(screen.getByRole('checkbox', { name: /Amend last commit/ }));
+    fireEvent.click(overflowBtn());
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: /Amend last commit/ }));
     expect(props.onToggleAmend).toHaveBeenCalledWith(true);
     renderPanel({ mutating: true });
-    expect(screen.getAllByRole('checkbox', { name: /Amend last commit/ })[1]).toBeDisabled();
+    // The second panel's own trigger.
+    const triggers = screen.getAllByRole('button', { name: 'Commit options' });
+    fireEvent.click(triggers[1]);
+    // The first panel's menu may still be open (checkbox clicks keep it open);
+    // the second panel's amend item is the newest one and must be disabled.
+    const amendItems = screen.getAllByRole('menuitemcheckbox', { name: /Amend last commit/ });
+    expect(amendItems[amendItems.length - 1]).toBeDisabled();
   });
 
-  it('⋯ opens a menu with exactly the three stash scopes, each firing onCreateStash', () => {
+  it('⋯ opens a menu with the three stash scopes, each firing onCreateStash', () => {
     const { props } = renderPanel({
       status: snapshot({ staged: [entry('a.ts')], untracked: [entry('c.ts')] }),
     });
@@ -154,7 +165,7 @@ describe('WorkspaceRightPanel actions row', () => {
 
     fireEvent.click(items[0]);
     expect(props.onCreateStash).toHaveBeenCalledWith('all');
-    // Choosing closes the menu (same as the deleted split button).
+    // Choosing a stash scope closes the menu.
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
 
     fireEvent.click(overflowBtn());
@@ -178,18 +189,18 @@ describe('WorkspaceRightPanel actions row', () => {
 
     // Unstaged tracked edit only → `all` + `allWithUntracked` enabled, `staged` not.
     const second = renderPanel({ status: snapshot({ unstaged: [entry('b.ts')] }) });
-    fireEvent.click(second.container.querySelector('.rp-overflow-btn') as HTMLButtonElement);
-    items = Array.from(second.container.querySelectorAll('.rp-overflow-item'));
+    fireEvent.click(second.getAllByRole('button', { name: 'Commit options' }).slice(-1)[0]);
+    items = Array.from(second.container.querySelectorAll('.rp-overflow-item[role="menuitem"]'));
     expect(items[0]).toBeEnabled();
     expect(items[1]).toBeEnabled();
     expect(items[2]).toBeDisabled();
   });
 
-  it('the ⋯ button is disabled while mutating, and with nothing to stash at all', () => {
-    renderPanel({ mutating: true });
-    expect(overflowBtn()).toBeDisabled();
-    const clean = renderPanel({ status: snapshot() });
-    expect(clean.container.querySelector('.rp-overflow-btn')).toBeDisabled();
+  it('the `⋯` trigger is enabled while mutating; its stash items are disabled', () => {
+    renderPanel({ mutating: true, status: snapshot({ staged: [entry('a.ts')] }) });
+    expect(overflowBtn()).toBeEnabled();
+    fireEvent.click(overflowBtn());
+    for (const it of screen.getAllByRole('menuitem')) expect(it).toBeDisabled();
   });
 
   it('outside mousedown and Escape close the menu', () => {
@@ -212,35 +223,43 @@ describe('WorkspaceRightPanel actions row', () => {
     expect(screen.getByRole('menu')).toBeInTheDocument();
   });
 
-  it('the whole row is absent during an operation and on an unborn HEAD', () => {
-    const rebasing = renderPanel({
-      opState: { kind: 'rebase', headName: 'main', onto: 'dev', currentStep: 1, totalSteps: 3 },
-    });
-    expect(rebasing.container.querySelector('.rp-actions')).toBeNull();
-
+  it('the amend item is absent on an unborn HEAD / no HEAD (canAmend gate)', () => {
     const unborn = renderPanel({ head: { ...HEAD, unborn: true } });
-    expect(unborn.container.querySelector('.rp-actions')).toBeNull();
+    fireEvent.click(unborn.getByRole('button', { name: 'Commit options' }));
+    expect(screen.queryByRole('menuitemcheckbox', { name: /Amend last commit/ })).toBeNull();
 
     const noHead = renderPanel({ head: null });
-    expect(noHead.container.querySelector('.rp-actions')).toBeNull();
+    fireEvent.click(noHead.getAllByRole('button', { name: 'Commit options' }).slice(-1)[0]);
+    expect(screen.queryByRole('menuitemcheckbox', { name: /Amend last commit/ })).toBeNull();
+  });
+
+  it('hides the stash items during a merge (git stash refuses on unmerged paths)', () => {
+    // canStash mirrors canAmend: opState 'none' + born HEAD. In merge mode the
+    // `⋯` trigger stays enabled (blocked is false), but stash must NOT appear.
+    renderPanel({
+      opState: { kind: 'merge', incoming: 'dev', message: 'Merge dev' },
+      status: snapshot({ staged: [entry('a.ts')] }),
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Commit options' }).slice(-1)[0]);
+    expect(screen.queryByRole('menuitem', { name: /^Stash/ })).toBeNull();
   });
 
   it('the amend push warning shows only when amend + upstream set + ahead 0', () => {
     const pushed = branch({ upstream: 'origin/main', ahead: 0, behind: 0 });
     const on = renderPanel({ amend: true, headBranch: pushed });
-    expect(on.container.querySelector('.amend-push-warning')).not.toBeNull();
+    expect(on.container.querySelector('.commit-note')).not.toBeNull();
 
     const off = renderPanel({ amend: false, headBranch: pushed });
-    expect(off.container.querySelector('.amend-push-warning')).toBeNull();
+    expect(off.container.querySelector('.commit-note')).toBeNull();
 
     const ahead = renderPanel({
       amend: true,
       headBranch: branch({ upstream: 'origin/main', ahead: 2, behind: 0 }),
     });
-    expect(ahead.container.querySelector('.amend-push-warning')).toBeNull();
+    expect(ahead.container.querySelector('.commit-note')).toBeNull();
 
     const noUpstream = renderPanel({ amend: true, headBranch: branch() });
-    expect(noUpstream.container.querySelector('.amend-push-warning')).toBeNull();
+    expect(noUpstream.container.querySelector('.commit-note')).toBeNull();
   });
 
   it('keeps both right-pane tabs and the always-mounted work wrapper', () => {

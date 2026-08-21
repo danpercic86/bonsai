@@ -83,6 +83,8 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
   57: ['ai.mcp-token'],
   58: ['ai.mcp-register-global'],
   59: ['ai.mcp-register-repo'],
+  // P80 §2b D1 — General → Committing: primary commit action segmented control.
+  60: ['general.primary-commit-action'],
 };
 
 /**
@@ -96,11 +98,11 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
 const DISSOLVED_ROWS: ReadonlySet<number> = new Set([5, 25, 38, 39, 40, 43, 52, 55]);
 
 describe('UI §1.3 coverage — all 59 rows, structurally', () => {
-  it('maps exactly rows 1..59', () => {
+  it('maps exactly rows 1..60', () => {
     const rows = Object.keys(COVERAGE)
       .map(Number)
       .sort((a, b) => a - b);
-    expect(rows).toEqual(Array.from({ length: 59 }, (_, i) => i + 1));
+    expect(rows).toEqual(Array.from({ length: 60 }, (_, i) => i + 1));
   });
 
   it('names only real entries, and every entry is claimed by some row', () => {

@@ -33,6 +33,7 @@ import type {
   ListView,
   McpStatus,
   PanelDensity,
+  PrimaryCommitAction,
   Theme,
   UiSettingsPatch,
 } from '../../ipc';
@@ -55,6 +56,8 @@ export interface SettingsPanelProps {
   listView: ListView;
   /** P67 §4: right-panel density; patched via `onChange` (no toolbar toggle). */
   panelDensity: PanelDensity;
+  /** P80 D1: primary commit action; patched via `onChange`. */
+  primaryCommitAction: PrimaryCommitAction;
   autoFetch: AutoFetchSettings;
   /** P30: periodic read-only refresh signal (backend scheduler). */
   healthRefresh: HealthRefreshSettings;
@@ -226,6 +229,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     theme,
     listView,
     panelDensity,
+    primaryCommitAction,
     autoFetch,
     healthRefresh,
     graph,
@@ -259,6 +263,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       theme,
       listView,
       panelDensity,
+      primaryCommitAction,
       autoFetch,
       healthRefresh,
       graph,
@@ -277,6 +282,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       theme,
       listView,
       panelDensity,
+      primaryCommitAction,
       autoFetch,
       healthRefresh,
       graph,
@@ -312,6 +318,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       theme,
       listView,
       panelDensity,
+      primaryCommitAction,
       autoFetch,
       healthRefresh,
       graph,
@@ -342,6 +349,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       theme,
       listView,
       panelDensity,
+      primaryCommitAction,
       autoFetch,
       healthRefresh,
       graph,

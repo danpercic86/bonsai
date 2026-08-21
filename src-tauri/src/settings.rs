@@ -83,6 +83,17 @@ pub enum PanelDensity {
     Compact,
 }
 
+/// Which button is emphasized at the bottom of the Working tab (P80 D1). Pure
+/// UI preference; `Commit` is the always-safe, non-network default. The other
+/// action stays available beside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PrimaryCommitAction {
+    #[default]
+    Commit,
+    CommitPush,
+}
+
 /// AI conflict-resolution autonomy (P13). ProposeReview = user accepts before
 /// anything is written/staged (default); AutoResolve = write+stage immediately,
 /// user reviews the staged diff before commit_merge.
@@ -380,6 +391,11 @@ pub struct Settings {
     /// `PanelDensity::default()` (Cozy). No version bump — meets the documented
     /// bar above. NOT clamped (no numeric range; `clamp_graph_prefs` untouched).
     pub panel_density: PanelDensity,
+    /// P80 D1: which commit button is emphasized in the Working tab. Additive
+    /// `#[serde(default)]` (via the container-level `default`); a pre-P80
+    /// settings.json without this key loads `PrimaryCommitAction::default()`
+    /// (Commit). Pure UI preference; NOT clamped.
+    pub primary_commit_action: PrimaryCommitAction,
     /// Open tabs, in display order (repoIds == canonical workdir paths).
     /// Additive (P3e §6.1); a legacy file without this key loads as empty.
     pub open_repos: Vec<String>,
@@ -497,6 +513,7 @@ impl Default for Settings {
             pane_widths: PaneWidths::default(),
             list_view: ListView::default(),
             panel_density: PanelDensity::default(),
+            primary_commit_action: PrimaryCommitAction::default(),
             open_repos: Vec::new(),
             active_repo: None,
             auto_fetch: AutoFetch::default(),

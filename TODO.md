@@ -46,6 +46,49 @@ milestones are on this board below (they were NOT closed by the waiver).
 
 ---
 
+## 🌿 P80 — commit-panel UX overhaul + next-file bug — AI-gate GREEN, native checkpoint pending
+
+**Branch:** `worktree-commit-panel-ux` (worktree `.claude/worktrees/commit-panel-ux`; forked from
+origin/main to avoid the concurrent main session). Not yet merged to main.
+
+**Current step:** all four commits landed & reviewed; AI gate green (the only nextest red is the
+pre-existing `prop_status` porcelain proptest, unrelated). **Native USER CHECKPOINT CONFIRMED by the
+user 2026-08-21** (amend-focus + visual pass). Ready to merge to main.
+
+Origin: user asked for a designer pass over the right-panel Working tab (make staging/committing
+easier, maximize list space) + a bug where staging opened a "random" next file. Contract:
+`docs/contracts/P80-commit-panel-ux-ui.md`.
+
+- **Bug fix** (`7ebe7fd`): auto-advance after staging now uses the *rendered* order (tree order via
+  `buildPathTree`/`flattenTreeLeaves` in tree view, flat otherwise) instead of flat backend order.
+  `listView` threaded into `useCommitActions` via a ref. +3 tests.
+- **2a staging affordances** (`5707f9a`): persistent stage `+`/`−` toggle (was hover-only); resting
+  danger treatment on "Discard all"; empty-Staged/Changes placeholder hints; section labels + bulk
+  buttons off sub-AA hues onto `--text-2`.
+- **2b space-saving footer** (`7edff3d`): footer chrome ~150→~87px (**~63px reclaimed to the
+  lists**, live-measured commit box 137px). All modifiers folded into one `⋯` `CommitOptionsMenu`
+  (Amend/Sign/Skip/Stash/Compose/Review; arrow-key roving, focus-first, Escape/outside close).
+  Amend moved into CommitBox with an internal reseed effect (dropped the amend remount key; no
+  longer destroys an in-progress draft). Deleted `RightPanelActionsRow` + `CommitOptionsRow`.
+  E1 consolidated the four AI entry points to one context-scoped Review + toolbar Generate.
+  **D1: new "Primary commit action" setting** (General → Committing, default **Commit** — user chose
+  "make it a setting"), full-stack Rust+TS+mock; CommitBox swaps which button is `.btn-primary`.
+- **2c a11y + microcopy** (`03a6453`): single `.commit-note` line with `⚠`/`✓` glyphs (hue no longer
+  sole carrier); plain-language signing copy (dropped the `user.signingkey` leak into a title);
+  section `aria-labelledby`; empty-state `--text-3`→`--text-2`; 24px targets verified.
+
+**AI gate:** vitest 1981 ✓ · e2e 156 ✓ · settings Rust lib 52/0 ✓ · clippy/check/doctests ✓ ·
+tsc+build ✓ · eslint ✓ · file-size ratchet ✓. Live DOM harness confirmed the new footer, toolbar,
+consolidated `⋯` menu, and Commit-primary default. Full-workspace `cargo nextest` could not complete
+— **environmental: D: drive 100% full (os error 112 writing the target cache)**, not a code failure.
+
+**USER CHECKPOINT (native `pnpm tauri dev`):** (1) amend-toggle keyboard-focus retention in the real
+webview (the reseed refactor dropped the remount; jsdom can't prove focus); (2) visual pass on the
+compact footer + reclaimed list space + the `⋯` menu in both themes (this harness is headless — no
+screenshots). Then re-run the full gate on a machine with disk headroom and merge to main.
+
+---
+
 ## ✅ P70 — git-executable resolution + honest "git not found" diagnostics — done
 
 ✅ **Item 1 (SSH-agent auth survives the "git not found" banner) CONFIRMED by the user on the native

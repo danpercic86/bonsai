@@ -65,6 +65,7 @@ function renderPanel(over: Partial<SettingsPanelProps> = {}) {
     theme: 'dark',
     listView: 'flat',
     panelDensity: 'cozy',
+    primaryCommitAction: 'commit',
     autoFetch: { enabled: true, intervalMinutes: 10 },
     healthRefresh: { enabled: false, intervalMinutes: 30 },
     graph: GRAPH,

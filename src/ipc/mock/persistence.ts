@@ -2,7 +2,7 @@
 import { AUTO_FETCH_INTERVAL_MAX, AUTO_FETCH_INTERVAL_MIN, AVATAR_RADIUS_MAX, AVATAR_RADIUS_MIN, HEALTH_REFRESH_INTERVAL_MAX, HEALTH_REFRESH_INTERVAL_MIN, LANE_WIDTH_MAX, LANE_WIDTH_MIN, ROW_HEIGHT_MAX, ROW_HEIGHT_MIN } from '../../settings/ranges';
 import { DEFAULT_UI_SETTINGS as PRODUCTION_DEFAULT_UI_SETTINGS } from '../../settings/defaults';
 import { parseAiRunSettings } from './aiRunSettings';
-import type { AiAutonomy, AutoFetchSettings, GraphDateBasis, GraphPrefs, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, PanelDensity, RecentRepo, SessionState, Theme, UiSettings } from '../types';
+import type { AiAutonomy, AutoFetchSettings, GraphDateBasis, GraphPrefs, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, PanelDensity, PrimaryCommitAction, RecentRepo, SessionState, Theme, UiSettings } from '../types';
 
 // Recents persistence (P1 contract §3.4): localStorage-backed so the harness
 // reopen-on-launch story is verifiable — open once, reload, auto-reopen.
@@ -194,6 +194,9 @@ export function readUiSettings(): UiSettings {
     });
     const listView: ListView = parsed.listView === 'flat' ? 'flat' : 'tree';
     const panelDensity: PanelDensity = parsed.panelDensity === 'compact' ? 'compact' : 'cozy';
+    // P80 D1: primary commit action (additive); fall back to default ('commit').
+    const primaryCommitAction: PrimaryCommitAction =
+      parsed.primaryCommitAction === 'commitPush' ? 'commitPush' : 'commit';
     const autoFetch = clampAutoFetch({
       enabled:
         typeof parsed.autoFetch?.enabled === 'boolean'
@@ -302,6 +305,7 @@ export function readUiSettings(): UiSettings {
       paneWidths,
       listView,
       panelDensity,
+      primaryCommitAction,
       autoFetch,
       healthRefresh,
       graph,

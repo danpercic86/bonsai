@@ -162,7 +162,7 @@ export function StatusFileRow({
       {action !== null && (
         <button
           type="button"
-          className="row-action"
+          className="row-action row-action-primary"
           aria-label={`${action === 'stage' ? 'Stage' : 'Unstage'} ${entry.path}`}
           disabled={disabled}
           onClick={() => onAction(entryPaths(entry))}
