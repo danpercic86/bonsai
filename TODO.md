@@ -39,139 +39,11 @@ moved onto `e3cd2ea`. Final tag → `e3cd2ea`.
 
 **P62–P74 native USER CHECKPOINTs were WAIVED and the milestones marked `done` 2026-08-20** for the
 1.1.0 release (user decision): P62, P63, P64, P65, P67, P68, the P69 Settings redesign (P69a–P69l),
-P71, P72, P73, P74. **P70 was NOT waived — its item-1 checkpoint was actually run and confirmed
-(2026-08-20).** Full build detail: `docs/history/todo-archive-2026-08.md` Parts 2, 4, 5, 7, 8
-(P62–P68) and Parts 11–15 (P71, P72, P73, P74, P69 Settings). Open follow-ups spun out of those
-milestones are on this board below (they were NOT closed by the waiver).
-
----
-
-## ✅ P70 — git-executable resolution + honest "git not found" diagnostics — done
-
-✅ **Item 1 (SSH-agent auth survives the "git not found" banner) CONFIRMED by the user on the native
-window 2026-08-20 — the BLOCKING checkpoint passed. Shipped in 1.1.0 (`f0e9aee`).**
-
-**Current step:** none — AI gate GREEN, code committed (`f0e9aee`), native checkpoint item 1 confirmed.
-All increments implemented, two reviewer rounds closed, tester's acceptance gaps (#13/#14/#23) filled.
-
-**AI gate (tester, sequential, all first-pass):** clippy `-D warnings` clean · `cargo test --workspace
---no-fail-fast` 1788 passed / 0 failed / 6 ignored · tsc clean · build ok · vitest 1701 / 140 files ·
-lint 0 errors / 30 pre-existing warnings · `lint:size` OK · e2e 117 passed / 1 pre-existing skip.
-
-**Trigger (field report, 2026-08-19):** user auto-updated to v1.0.0 via the MSI updater.
-`msiexec.exe` relaunched `bonsai.exe` as its child, so the app inherited the installer's environment.
-Their Git is a per-user install (`%LOCALAPPDATA%\Programs\Git\cmd\git.exe`) whose PATH entry lives
-only in the **User** PATH — so `Command::new("git")` could not resolve `git`. Two symptoms, one cause:
-"program not found" from `git/search.rs:129`; and 3× "authentication failed … no cached credentials"
-because `git/remote.rs:180` `credential_fill` did `cmd.spawn().ok()?`, swallowing NotFound into `None`,
-read as "helper had nothing" → wrong message at `git/remote.rs:326`. (P71 fixes the upstream cause.)
-
-**Scope shipped:** D1 single cached git-binary resolver (PATH → Git-for-Windows registry key →
-well-known dirs → bare name; `BONSAI_GIT_BIN` override as the test seam) used by every production
-`Command::new("git")` site · D2 `credential_fill` distinguishes spawn-failure from empty-helper · D3
-startup preflight + UI banner. `RwLock` cache (Re-check works without restart) · HKCU probed before
-HKLM · child-PATH augmentation in `git_command()` · `gitNotFound` suppresses the error toast, banner
-is the single surface.
-
-**Two design defects caught during contract review (do NOT reintroduce):**
-- **SSH regression.** The original design short-circuited the whole credential ladder when git was
-  unresolvable. SSH remotes with a running ssh-agent authenticate inside libgit2 and never need
-  `git.exe`. Narrowed to the credential-**helper** rung: the ladder still tries SshAgent/Default,
-  `GitNotFound` only at exhaustion. Guards: #16 (SSH-only exhaustion ⇒ `AuthFailed`) + #18 (Helper
-  rung performs zero spawns when git is missing).
-- **Toolbar disabling.** Disabling Fetch/Pull/Push while git is missing would break those same SSH
-  users, and the transport isn't knowable at the toolbar. Buttons stay enabled; blanket toast
-  suppression narrows to background/scheduler failures; a user-pressed remote op gets one coalesced
-  toast.
-
-**USER CHECKPOINT (needs the native window / a human eye):**
-1. 🔴 **SSH-agent auth survives the banner (BLOCKING).** Point `BONSAI_GIT_BIN` at a nonexistent
-   path, relaunch, confirm the banner shows, then fetch/push an **SSH remote with a loaded ssh-agent**
-   → must SUCCEED, no `gitNotFound` toast. A red or unrun result means the §3.3/§5.4 copy is wrong and
-   must change before release — do not ship on it.
-2. HTTPS-with-helper fails honestly — exactly one surface (the banner), no toast, and nowhere the
-   words "no cached credentials" or "authentication failed".
-3. Re-check recovery `false → true` without restart (not harness-verifiable — `?git=` fixed at init).
-4. The original bug: MSI-installed / Machine-only-PATH parent on a per-user Git install → resolves via
-   HKCU, no banner, commit search + HTTPS auth work through GCM.
-5. First paint not delayed by the probe; no flash/jump of the notice bar on a healthy launch.
-6. Screen-reader pass (NVDA/VoiceOver) under the bad-`BONSAI_GIT_BIN` repro.
-7. Both themes on the real webview + visible focus ring on Re-check.
-8. macOS/Linux: normal launch resolves via PATH, no banner.
-
-**Queued follow-up (user-requested 2026-08-19, starts once the checkpoint clears):** `refactorer`
-split of the credential subsystem out of `git/remote.rs` into `git/cred.rs` (`FillOutcome`,
-`CRED_EXHAUSTED_MSG`/`GIT_MISSING_MSG`, `CredAttempts`, `next_cred_method`, `credential_fill`,
-`acquire_cred*`, `exhausted_error`, `map_remote_err` + tests). Strictly behavior-preserving; baseline
-captured after P70's tree is finalized. Guard tests #16 and #18 must still run and pass.
-
----
-
-## 🏷️ P77 — tag sync management (local↔remote tag reconciliation) — AI-gate GREEN, awaiting USER CHECKPOINT
-
-**Origin (2026-08-20):** user hit a real stale-tag divergence — `v1.1.0` was moved from `8095eb1`
-to `e3cd2ea` and pushed; a second machine that fetched before the move kept the old target silently
-(git never force-updates existing local tags on fetch). Bonsai couldn't show or fix this. P77 makes
-such divergence visible and fixable inline in the sidebar.
-
-**Current step:** DONE (AI gate) — implemented autonomously 2026-08-20 while user away. All 3 layer
-passes + review-fixes + a harness-caught render-phase fix committed; full gate GREEN. Only the native
-USER CHECKPOINT remains (needs real `ls-remote` + credentials on the Tauri window — see checklist).
-
-**Commits:** `721349d` backend (ls-remote classification + resolve ops + IPC) · `67c42b4` TS/IPC
-boundary + mock · `d2695bd` sidebar UI (badges/rollup/menu/confirms) · `97ae417` render-phase fix ·
-`e76b20b` tests + smoke + size baseline.
-
-**Shipped scope (locked decisions, user 2026-08-20):**
-- Surface: inline sidebar Tags list + context menu (no new panel).
-- Statuses shipped: `in-sync` · `local-only` (unpushed) · `stale`/moved · `remote-only` (ghost rows).
-  `deleted-on-remote` variant reserved but **never emitted in v1** — folded into local-only (D1:
-  a single ls-remote can't distinguish "pushed then deleted upstream" from "never pushed"; git
-  stores no per-tag upstream). Upgrade path is additive (persist a pushed-tags set).
-- Actions (status-gated context menu): Update to remote target (force-refresh), Push tag, Copy,
-  Release notes, Delete tag (local), **Delete tag on origin…** + **Force-move tag on origin…**
-  (destructive → danger confirm dialogs showing old→new SHAs). Remote-only ghost rows get a
-  "fetch this tag" action.
-- Remote truth: live `ls-remote` vs `origin`/first remote, fired on Tags-section expand, 10s cache
-  + refresh on manual-refresh/focus; collapsed-never-opened section never hits the network.
-- Annotated tags compare the PEELED committish on both sides (remote `refs/tags/X^{}` wins) — no
-  false "stale" for annotated tags (the crux; unit + scratch-repo smoke tested).
-
-**New code:** `crates/bonsai-core/src/git/tag_sync.rs` (+3 IPC commands in `src-tauri/src/commands/
-tags.rs`, registered in `generate_handler!`); `src/ipc/{types,tauri,index}.ts` + `mock/handlers/
-tagSync.ts` + `fixtures/tagSync.ts`; `src/components/sidebar/{TagSyncBadge,SectionRollupBadge,
-SectionHeader,TagsSection}.tsx`, `dialogs/TagSyncDialogs.tsx`, `repoWorkspace/useTagSync.ts`.
-Contracts: `docs/contracts/P77-tag-sync.md`, `P77-ui.md`.
-
-**AI gate (2026-08-20, all first-pass):** cargo `--workspace` 1880/0/6-ignored · clippy `-D` clean ·
-tsc/build ok · vitest 2002 / 165 files · e2e 156 passed / 1 skip · lint 0 err / 30 pre-existing warn ·
-lint:size OK. Browser-harness verified end-to-end: badges/tooltips/rollup/ghost rows render; context
-menu correct; "Update to remote target" flips the seeded stale `v1.1.0` → in-sync and clears the
-rollup; zero console errors. Reviewer + ui-designer both APPROVE (0 must-fix).
-
-**USER CHECKPOINT (native `pnpm tauri dev`, real remote — NOT harness-verifiable):**
-1. Real repo w/ `origin`: expand Tags → live ls-remote runs; badges reflect true state; collapsed
-   header `⚠ N` counts only genuine divergences.
-2. Reproduce the origin bug: force-move a tag on the remote from another machine, `fetch` here →
-   shows `out of sync`; "Update to remote target" → in-sync + success toast.
-3. Destructive remote ops (delete-remote, force-move) prompt confirmation (origin named, old→new
-   SHAs) and the credential chain works.
-4. Offline/auth-fail: Tags still render, no error banner, "Couldn't reach {remote}" line appears.
-5. Multi-remote: labels name the queried remote. 6. Both themes + reduced-motion (badge fade).
-
-**Deferred follow-ups (SHOULD-FIX/NIT filed per velocity mode — none blocking):**
-- **Collapsed-rollup needs first expand (contract tension, FOR-USER decision):** §1.2 wants "see a
-  problem without expanding", but the ls-remote check only fires on the first Tags expand per
-  session (to avoid an eager network call on every repo open). So the `⚠ N` rollup can't appear
-  until the user expands Tags once. Decide whether a cheap unprompted first check on repo-open is
-  worth the network cost.
-- NIT: rollup aria-label lacks singular/plural ("1 tags"); `useTagSync` re-hits network on rapid
-  collapse→expand while `unavailable` (no cache stamp on the error path); confirm dialogs close
-  optimistically so `busy` never paints (matches existing house pattern); tag-filter box gate counts
-  local tags only (a repo with only remote-only tags shows no filter); item-7 "Delete tag on origin…"
-  also shows on remote-only ghost rows (coherent — only place the tag exists).
-- Backend NIT: `delete_remote_tag` doesn't `evict_fresh_on_auth_fail` (matches existing `push_tag`);
-  `validate_tag_name` duplicated from `tags.rs` (module-private) — promote to shared if a 3rd caller.
+P71, P72, P73, P74. **P70 was NOT waived — its item-1 checkpoint was run and confirmed 2026-08-20;
+its remaining items 2–8 were verified by the user 2026-08-21 (P70 now fully `done`, archived → Part
+17).** Full build detail: `docs/history/todo-archive-2026-08.md` Parts 2, 4, 5, 7, 8 (P62–P68) and
+Parts 11–15 (P71, P72, P73, P74, P69 Settings). Open follow-ups spun out of those milestones are on
+this board below (they were NOT closed by the waiver).
 
 ---
 
@@ -221,7 +93,13 @@ modules (a real refactor with call-graph impact, not a leaf move).
 ## ✅ Confirmed checkpoints and accepted decisions (condensed — full text in the archive)
 
 - **P62–P74 native USER CHECKPOINTs waived and marked done 2026-08-20 for the 1.1.0 release (user
-  decision).** (P70 excepted — still awaiting its native checkpoint above.)
+  decision).**
+- **P70 — git-executable resolution.** USER CHECKPOINT verified by user (item 1 confirmed 2026-08-20;
+  items 2–8 verified 2026-08-21); shipped in 1.1.0 (`f0e9aee`). Archived → `todo-archive-2026-08.md`
+  Part 17. (Refactorer follow-up now unblocked — see OPEN follow-ups below.)
+- **P77 — tag sync management.** USER CHECKPOINT (items 1–6) verified by user 2026-08-21; AI gate
+  GREEN. Commits `721349d`/`67c42b4`/`d2695bd`/`97ae417`/`e76b20b`. Archived →
+  `todo-archive-2026-08.md` Part 18. (Deferred follow-ups carried to OPEN follow-ups below.)
 - **All native USER CHECKPOINTs for P2 → P61 are CONFIRMED.** Batches: 2026-07-30 (P4, P3a–P3f, P7,
   P7e, P7f, P8, P9), 2026-08-03 (P18–P27), **2026-08-08** ("mark everything as checked" — P28 through
   P61 inclusive: P32, P37–P46, the credential-cache and UX-fix batches, Phase 1 P49–P52, Phase 2
@@ -344,13 +222,37 @@ harness cannot observe rAF/compositing).
   `Turn on "Enable AI features" above to change these.`; ui-designer prefers
   `These take effect once AI features are on.` The current string ships until the user rules.
 
+### P70 credential-subsystem split (refactorer) — **OPEN, now UNBLOCKED** (2026-08-21)
+User-requested 2026-08-19; was gated "starts once the checkpoint clears" — the P70 checkpoint cleared
+2026-08-21, so this is now actionable. `refactorer` split of the credential subsystem out of
+`git/remote.rs` into `git/cred.rs` (`FillOutcome`, `CRED_EXHAUSTED_MSG`/`GIT_MISSING_MSG`,
+`CredAttempts`, `next_cred_method`, `credential_fill`, `acquire_cred*`, `exhausted_error`,
+`map_remote_err` + tests). Strictly behavior-preserving; capture the baseline off P70's finalized
+tree. Guard tests #16 (SSH-only exhaustion ⇒ `AuthFailed`) and #18 (Helper rung performs zero spawns
+when git is missing) must still run and pass. Full P70 detail: `docs/history/todo-archive-2026-08.md`
+Part 17.
+
+### P77 tag-sync deferred follow-ups — **OPEN** (carried off the archived P77 milestone, 2026-08-21)
+- **Collapsed-rollup needs first expand (FOR-USER decision):** §1.2 wants "see a problem without
+  expanding", but the ls-remote check only fires on the first Tags expand per session (to avoid an
+  eager network call on every repo open). So the `⚠ N` rollup can't appear until the user expands Tags
+  once. Decide whether a cheap unprompted first check on repo-open is worth the network cost.
+- NIT: rollup aria-label lacks singular/plural ("1 tags"); `useTagSync` re-hits network on rapid
+  collapse→expand while `unavailable` (no cache stamp on the error path); confirm dialogs close
+  optimistically so `busy` never paints (matches existing house pattern); tag-filter box gate counts
+  local tags only (a repo with only remote-only tags shows no filter); item-7 "Delete tag on origin…"
+  also shows on remote-only ghost rows (coherent — only place the tag exists).
+- Backend NIT: `delete_remote_tag` doesn't `evict_fresh_on_auth_fail` (matches existing `push_tag`);
+  `validate_tag_name` duplicated from `tags.rs` (module-private) — promote to shared if a 3rd caller.
+  Full P77 detail: `docs/history/todo-archive-2026-08.md` Part 18.
+
 ---
 
 ## Archive
 
 | File | Covers |
 |---|---|
-| `docs/history/todo-archive-2026-08.md` | Parts 1–9: P65 → P28 build detail, the Phase 1–4 banners, resolved FOR-USER decisions, P69(1.0.0)/P67/P68 detail, the 2026-08-17 batch mapping, resolved spun-out items. **Parts 10–15 (moved 2026-08-20): the P62–P74 checkpoint waiver + P71, P72, P73, P74 and the P69 Settings redesign, condensed.** |
+| `docs/history/todo-archive-2026-08.md` | Parts 1–9: P65 → P28 build detail, the Phase 1–4 banners, resolved FOR-USER decisions, P69(1.0.0)/P67/P68 detail, the 2026-08-17 batch mapping, resolved spun-out items. **Parts 10–16 (moved 2026-08-20): the P62–P74 checkpoint waiver + P71, P72, P73, P74, the P69 Settings redesign, and the Audit #2 fix batch, condensed. Parts 17–18 (moved 2026-08-21): P70 and P77, both checkpoints verified.** |
 | `docs/history/todo-archive.md` | P27 → P2, M0–M6 |
 | `docs/history/milestones-mvp.md` | the M0–M6 AI-gate vs USER CHECKPOINT split |
 | `docs/history/context-pollution-audit.md` | the context/token-cost audit |
