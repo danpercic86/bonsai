@@ -63,6 +63,10 @@ pub fn create_pull_url(owner: &str, repo: &str) -> String {
     format!("{API_BASE}/repos/{owner}/{repo}/pulls")
 }
 
+pub fn merge_pull_url(owner: &str, repo: &str, number: u64) -> String {
+    format!("{API_BASE}/repos/{owner}/{repo}/pulls/{number}/merge")
+}
+
 pub fn review_comments_url(owner: &str, repo: &str, number: u64) -> String {
     format!("{API_BASE}/repos/{owner}/{repo}/pulls/{number}/comments")
 }
@@ -184,6 +188,65 @@ pub fn post(
         Some(err) => Err(err),
         None => Ok(resp),
     }
+}
+
+/// Clear not-mergeable message for a GitHub merge that GitHub refused because
+/// the PR is not in a mergeable state (405 Method Not Allowed / 409 Conflict).
+pub fn not_mergeable_error() -> AppError {
+    AppError::ForgeApi(
+        "GitHub could not merge this PR — it is not mergeable (conflicts, failing required \
+         checks, or already merged)"
+            .to_string(),
+    )
+}
+
+/// Send a JSON request with an arbitrary method (PUT/PATCH). `merge_call` maps
+/// GitHub's not-mergeable statuses (405/409) to [`not_mergeable_error`] before
+/// falling through to the shared `map_status`.
+fn send_json(
+    http: &dyn HttpTransport,
+    method: HttpMethod,
+    url: &str,
+    token: Option<&str>,
+    body: String,
+    merge_call: bool,
+) -> Result<HttpResponse, AppError> {
+    let mut headers = base_headers(token);
+    headers.push(("Content-Type".to_string(), "application/json".to_string()));
+    let req = HttpRequest {
+        method,
+        url: url.to_string(),
+        headers,
+        body: Some(body),
+    };
+    let resp = http.send(&req)?;
+    if merge_call && matches!(resp.status, 405 | 409) {
+        return Err(not_mergeable_error());
+    }
+    match map_status(&resp) {
+        Some(err) => Err(err),
+        None => Ok(resp),
+    }
+}
+
+/// PUT `url` with a JSON `body`; 405/409 map to [`not_mergeable_error`].
+pub fn put_merge(
+    http: &dyn HttpTransport,
+    url: &str,
+    token: Option<&str>,
+    body: String,
+) -> Result<HttpResponse, AppError> {
+    send_json(http, HttpMethod::Put, url, token, body, true)
+}
+
+/// PATCH `url` with a JSON `body`; standard status mapping.
+pub fn patch(
+    http: &dyn HttpTransport,
+    url: &str,
+    token: Option<&str>,
+    body: String,
+) -> Result<HttpResponse, AppError> {
+    send_json(http, HttpMethod::Patch, url, token, body, false)
 }
 
 #[cfg(test)]

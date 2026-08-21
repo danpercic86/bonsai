@@ -175,6 +175,58 @@ pub struct CreatePrInput {
     pub maintainer_can_modify: bool,
 }
 
+/// Neutral merge strategy. Not every variant is valid on every forge — the UI
+/// filters via [`MergeMethod::supported_for`]; the provider maps the chosen
+/// variant to its wire value and rejects an unsupported one with `ForgeApi`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MergeMethod {
+    /// Standard merge commit.
+    Merge,
+    /// Squash then merge.
+    Squash,
+    /// Rebase then merge (fast-forward-ish).
+    Rebase,
+    /// Bitbucket-only fast-forward.
+    FastForward,
+}
+
+impl MergeMethod {
+    /// The merge methods a given forge supports, in UI display order. The first
+    /// entry is the forge default. `Unknown` returns an empty slice (merge
+    /// unsupported ⇒ the UI hides the Merge affordance).
+    pub fn supported_for(kind: ForgeKind) -> &'static [MergeMethod] {
+        use MergeMethod::*;
+        match kind {
+            ForgeKind::GitHub => &[Merge, Squash, Rebase],
+            ForgeKind::GitLab => &[Merge, Squash],
+            ForgeKind::Bitbucket => &[Merge, Squash, FastForward],
+            ForgeKind::AzureDevOps => &[Merge, Squash, Rebase],
+            ForgeKind::Unknown => &[],
+        }
+    }
+}
+
+/// Inputs for merging a PR. Fields map per forge (see the P83 contract §3);
+/// unsupported combinations are rejected by the provider with `ForgeApi`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergePrInput {
+    /// Chosen strategy. UI defaults to the forge's default.
+    pub method: MergeMethod,
+    /// Optional override commit title. `None` ⇒ forge default.
+    pub commit_title: Option<String>,
+    /// Optional override commit message. `None` ⇒ forge default.
+    pub commit_message: Option<String>,
+    /// Delete the source branch after a successful merge (GitHub ignores it on
+    /// merge; other forges map it to their own flag). Default false.
+    pub delete_source_branch: bool,
+    /// Azure ONLY: the head commit id required by its completion call. The
+    /// command layer fills this from the PR's `head_sha`; other forges ignore
+    /// it. `None` for non-Azure.
+    pub head_sha: Option<String>,
+}
+
 /// Whether a comment is a diff-line review comment or a PR conversation comment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

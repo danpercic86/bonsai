@@ -10,7 +10,18 @@ import { FORGE_PR_DETAIL } from '../ipc/fixtures/forge';
 function renderDetail() {
   const onOpenUrl = vi.fn();
   const onBack = vi.fn();
-  render(<PrDetailView detail={FORGE_PR_DETAIL} onBack={onBack} onOpenUrl={onOpenUrl} />);
+  render(
+    <PrDetailView
+      detail={FORGE_PR_DETAIL}
+      onBack={onBack}
+      onOpenUrl={onOpenUrl}
+      kind="gitHub"
+      supportedMethods={['merge', 'squash', 'rebase']}
+      busy={false}
+      onMerge={vi.fn()}
+      onClose={vi.fn()}
+    />,
+  );
   return { onOpenUrl, onBack };
 }
 

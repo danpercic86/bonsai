@@ -50,7 +50,6 @@
     "crates/bonsai-core/tests/remote_cli.rs": 545,
     "crates/bonsai-core/tests/stage_partial_cli.rs": 761,
     "crates/bonsai-core/tests/worktree_cli.rs": 554,
-    "crates/bonsai-forge/src/github/mod.rs": 527,
     "crates/bonsai-mcp/src/server.rs": 1269,
     "crates/bonsai-mcp/tests/mcp_stdio.rs": 621,
     "src-tauri/src/commands/ai.rs": 543,
@@ -65,7 +64,7 @@
     "src/components/workspaceMenus.ts": 882,
     "src/graph/GraphCanvas.tsx": 883,
     "src/ipc/fixtures/diffs.ts": 746,
-    "src/ipc/tauri.ts": 1134,
-    "src/ipc/types.ts": 2802
+    "src/ipc/tauri.ts": 1143,
+    "src/ipc/types.ts": 2848
   }
 }

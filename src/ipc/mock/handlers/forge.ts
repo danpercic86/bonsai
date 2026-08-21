@@ -14,18 +14,23 @@
 import { AI_OFF, delay, query as urlParam, requireRepo } from '../repoState';
 import {
   commitStatusFor,
-  FORGE_ACCOUNT_GITHUB,
-  FORGE_ACCOUNT_GITHUB_2,
-  FORGE_ACCOUNT_LONG,
-  FORGE_MULTI_OWNER,
   FORGE_PR_DETAIL,
   FORGE_PR_LIST,
+  FORGE_PR_MERGEABLE,
   FORGE_REPO_CONTEXT,
   FORGE_REVIEW_COMMENTS,
   FORGE_VIEWER,
 } from '../../fixtures/forge';
+import { SUPPORTED_MERGE_METHODS } from '../../types';
+import {
+  accountStore,
+  FORGE_EXPIRED,
+  FORGE_HOST,
+  FORGE_KIND,
+  FORGE_MULTI,
+  FORGE_PROJECT,
+} from './forgeAccountStore';
 import type {
-  AccountSource,
   AppError,
   CommitStatus,
   CreatePrInput,
@@ -34,54 +39,20 @@ import type {
   ForgeRepoContext,
   ForgeViewer,
   IpcApi,
+  MergePrInput,
   PrDescription,
   PrDetail,
   PrListQuery,
   PrPage,
+  PrState,
   PrSummary,
   ReviewComment,
 } from '../../types';
 
 const FORGE_OFF = urlParam('forge') === 'off';
-// P64b/P64c/P64d: a `?forge=gitlab|bitbucket|azure` sentinel makes
-// forgeRepoContext report that provider so the panel exercises connect → list →
-// detail → create for a non-GitHub forge. The neutral PR/status fixtures render
-// UNCHANGED (the mock sits at the neutral-DTO boundary) — only the repo-context
-// provider/host (+ Azure's project) swap.
-// `?forge=unsupported` ⇒ provider 'unknown' (an origin that is no known SaaS
-// forge) so the harness/e2e can exercise the PrPanel unsupported empty state.
-const FORGE_KIND: ForgeKind =
-  urlParam('forge') === 'gitlab'
-    ? 'gitLab'
-    : urlParam('forge') === 'bitbucket'
-      ? 'bitbucket'
-      : urlParam('forge') === 'azure'
-        ? 'azureDevOps'
-        : urlParam('forge') === 'unsupported'
-          ? 'unknown'
-          : 'gitHub';
-// Host + web URL matching the detected provider, so the connect hint + "open in
-// browser" links look right in the harness.
-const FORGE_HOST: Record<ForgeKind, string> = {
-  gitHub: FORGE_REPO_CONTEXT.host,
-  gitLab: 'gitlab.com',
-  bitbucket: 'bitbucket.org',
-  azureDevOps: 'dev.azure.com',
-  // A self-hosted-looking origin so the unsupported state names a non-forge host.
-  unknown: 'git.example.com',
-};
-// Azure DevOps needs a 3-part org/project/repo identity; the mock supplies a
-// sample project so the harness renders the Azure context faithfully. `null`
-// for every other provider (matches the real backend).
-const FORGE_PROJECT: string | null = FORGE_KIND === 'azureDevOps' ? 'sample-project' : null;
-// P79: `?forge=expired` seeds a host whose token is still present (authenticated)
-// but whose viewer is COLD, and arms a one-shot authFailed on the first
-// forgeListPrs so the harness exercises the expiry → reconnect (§4) flow.
-const FORGE_EXPIRED = urlParam('forge') === 'expired';
-// P80: `?forge=multi` seeds TWO github.com accounts (distinct logins) with one
-// host default, so the harness exercises account switching, owner match, and
-// per-repo override without a native window.
-const FORGE_MULTI = urlParam('forge') === 'multi';
+// Provider/host selection + the P80 multi-account index live in the account
+// store module (extracted to keep this file focused). `accountStore` is the
+// mutable index; the sentinel consts drive the provider/host/project.
 // Mutable across the browser session: forgeSetToken / forgeClearToken toggle it
 // and forgeRepoContext reflects it. Seeded true by ?forge=auth and ?forge=expired
 // (the token is present in both; expiry only cools the viewer, below).
@@ -92,109 +63,26 @@ let viewerWarm = urlParam('forge') === 'auth' || FORGE_MULTI;
 // One-shot: the first forgeListPrs under ?forge=expired rejects authFailed.
 let expiredArmed = FORGE_EXPIRED;
 
-// P80: the module-level multi-account state (mirrors the backend settings index).
-// Seeded from ?forge=auth (one warm github.com account + a long-content account),
-// ?forge=expired (github.com present but viewer cold), and ?forge=multi (TWO
-// github.com accounts, one host default). forgeSetToken*/add/remove/clear keep it
-// in sync so the PR-panel and settings views agree in the harness.
-let accounts: ForgeAccount[] = FORGE_MULTI
-  ? [{ ...FORGE_ACCOUNT_GITHUB }, { ...FORGE_ACCOUNT_GITHUB_2 }]
-  : urlParam('forge') === 'auth'
-    ? [{ ...FORGE_ACCOUNT_GITHUB }, { ...FORGE_ACCOUNT_LONG }]
-    : FORGE_EXPIRED
-      ? [{ ...FORGE_ACCOUNT_GITHUB, login: null, avatarUrl: null }]
-      : [];
-// host → default accountId (repos inherit it).
-const hostDefaults: Record<string, string> =
-  FORGE_MULTI || urlParam('forge') === 'auth' || FORGE_EXPIRED
-    ? { 'github.com': FORGE_ACCOUNT_GITHUB.accountId }
-    : {};
-// repoId → pinned accountId (per-repo override).
-const repoOverrides: Record<string, string> = {};
+// P83: session-persistent PR-state overlay so merge/close transitions survive
+// within the browser session and forgeGetPr/forgeListPrs reflect them.
+const prStateOverlay = new Map<number, PrState>();
 
-/** The `accountId` for a host/login (mirrors the backend `account_id`). */
-function accountId(kind: ForgeKind, host: string, login: string | null): string {
-  const base = `${kind}:${host.toLowerCase()}`;
-  return login ? `${base}:${login.toLowerCase()}` : base;
+/** The effective PR state for a number: the overlay wins over the fixture. */
+function effectiveState(number: number, fixtureState: PrState): PrState {
+  return prStateOverlay.get(number) ?? fixtureState;
 }
 
-/** The owner/namespace used for the owner-match resolution step. */
-function repoOwner(): string {
-  return FORGE_MULTI ? FORGE_MULTI_OWNER : FORGE_REPO_CONTEXT.owner;
+/** The effective mergeability for an open PR (overlay-agnostic). */
+function effectiveMergeable(number: number, state: PrState): boolean | null {
+  if (state !== 'open') return null;
+  return number in FORGE_PR_MERGEABLE ? FORGE_PR_MERGEABLE[number] : true;
 }
 
-/** P80 §4 resolution mirror: per-repo override → owner match (single
- *  login==owner) → host default → single → first. Pure. */
-function resolveAccount(repoId: string): { account: ForgeAccount | null; source: AccountSource } {
-  const host = FORGE_HOST[FORGE_KIND];
-  const onHost = accounts.filter((a) => a.host === host);
-  if (onHost.length === 0) return { account: null, source: 'none' };
-  // 1. per-repo override (a manual pin always wins).
-  const pinned = repoOverrides[repoId];
-  if (pinned) {
-    const a = onHost.find((x) => x.accountId === pinned);
-    if (a) return { account: a, source: 'override' };
-    // deleted pin → fall through (never error).
-  }
-  // 2. owner match (login==owner, case-insensitive, exactly one).
-  const owner = repoOwner().toLowerCase();
-  if (owner) {
-    const matches = onHost.filter((a) => (a.login ?? '').toLowerCase() === owner);
-    if (matches.length === 1) return { account: matches[0], source: 'ownerMatch' };
-  }
-  // 3. host default.
-  const def = hostDefaults[host];
-  if (def) {
-    const a = onHost.find((x) => x.accountId === def);
-    if (a) return { account: a, source: 'hostDefault' };
-  }
-  // 4. single.
-  if (onHost.length === 1) return { account: onHost[0], source: 'single' };
-  // 5. multiple, no default → first (most-recent); UI nudges.
-  return { account: onHost[0], source: 'hostDefault' };
-}
-
-/** Insert-or-replace an account keyed by accountId (mirrors the backend upsert).
- *  Sets the host default when none exists. Never stores a token. */
-function upsertAccount(host: string, kind: ForgeKind, login: string | null, avatarUrl: string | null): void {
-  const id = accountId(kind, host, login);
-  accounts = accounts.filter((a) => a.accountId !== id);
-  const isHostDefault = !hostDefaults[host] || hostDefaults[host] === id;
-  accounts.unshift({ accountId: id, host, kind, login, avatarUrl, connected: true, isHostDefault });
-  if (!hostDefaults[host]) hostDefaults[host] = id;
-  syncHostDefaultFlags();
-}
-
-/** Remove an account by accountId, cleaning references (promote/clear the host
- *  default, drop repo overrides). Idempotent. */
-function removeAccountById(id: string): void {
-  const rec = accounts.find((a) => a.accountId === id);
-  accounts = accounts.filter((a) => a.accountId !== id);
-  for (const k of Object.keys(repoOverrides)) {
-    if (repoOverrides[k] === id) delete repoOverrides[k];
-  }
-  if (rec && hostDefaults[rec.host] === id) {
-    delete hostDefaults[rec.host];
-    const next = accounts.find((a) => a.host === rec.host);
-    if (next) hostDefaults[rec.host] = next.accountId;
-  }
-  syncHostDefaultFlags();
-}
-
-/** Sign out every account on a host (P79 clear-token-for-host). */
-function removeAccountsForHost(host: string): void {
-  const ids = new Set(accounts.filter((a) => a.host === host).map((a) => a.accountId));
-  accounts = accounts.filter((a) => a.host !== host);
-  delete hostDefaults[host];
-  for (const k of Object.keys(repoOverrides)) {
-    if (ids.has(repoOverrides[k])) delete repoOverrides[k];
-  }
-  syncHostDefaultFlags();
-}
-
-/** Recompute each account's `isHostDefault` from `hostDefaults`. */
-function syncHostDefaultFlags(): void {
-  accounts = accounts.map((a) => ({ ...a, isHostDefault: hostDefaults[a.host] === a.accountId }));
+/** Fetch the fixture summary for a number, applying the overlay state. */
+function overlaidSummary(number: number): PrSummary | undefined {
+  const summary = FORGE_PR_LIST.find((pr) => pr.number === number);
+  if (!summary) return undefined;
+  return { ...summary, state: effectiveState(number, summary.state) };
 }
 
 /** `?forge=off` ⇒ simulate an offline/unreachable forge on every command. */
@@ -212,14 +100,14 @@ export const forgeHandlers = {
     offGuard();
     const host = FORGE_HOST[FORGE_KIND];
     const { repo } = FORGE_REPO_CONTEXT;
-    const owner = repoOwner();
+    const owner = accountStore.repoOwner();
     // Azure uses the org/project/_git/repo browser form; the others use host/owner/repo.
     const webUrl =
       FORGE_KIND === 'azureDevOps'
         ? `https://${host}/${owner}/${FORGE_PROJECT}/_git/${repo}`
         : `https://${host}/${owner}/${repo}`;
     // P80: resolve the account for this repo; authenticated/viewer reflect it.
-    const { account, source } = resolveAccount(repoId);
+    const { account, source } = accountStore.resolveAccount(repoId);
     const resolvedConnected = account?.connected ?? false;
     return {
       ...FORGE_REPO_CONTEXT,
@@ -230,7 +118,7 @@ export const forgeHandlers = {
       // `authenticated` follows the live connect toggle AND a resolved account
       // (both must hold: the token toggle drives ?forge=auth/off flows, the
       // resolved account drives ?forge=multi).
-      authenticated: authenticated && (accounts.length === 0 || resolvedConnected),
+      authenticated: authenticated && (accountStore.accounts.length === 0 || resolvedConnected),
       viewer: authenticated && viewerWarm ? FORGE_VIEWER : null,
       resolvedAccountId: account?.accountId ?? null,
       accountSource: source,
@@ -248,7 +136,10 @@ export const forgeHandlers = {
       const err: AppError = { kind: 'authFailed', message: 'mock: saved token expired or was revoked' };
       throw err;
     }
-    const items = FORGE_PR_LIST.filter((pr) => query.state === 'all' || pr.state === query.state);
+    const items = FORGE_PR_LIST.map((pr) => ({
+      ...pr,
+      state: effectiveState(pr.number, pr.state),
+    })).filter((pr) => query.state === 'all' || pr.state === query.state);
     return { items, page: query.page, hasNext: false };
   },
 
@@ -256,10 +147,15 @@ export const forgeHandlers = {
     await delay(150);
     requireRepo(repoId);
     offGuard();
-    const summary = FORGE_PR_LIST.find((pr) => pr.number === number);
+    const summary = overlaidSummary(number);
     // #128 has a fully-authored fixture detail; unknown numbers fall back to it.
-    if (summary === undefined || summary.number === FORGE_PR_DETAIL.summary.number) {
-      return { ...FORGE_PR_DETAIL, summary: summary ?? FORGE_PR_DETAIL.summary };
+    if (summary === undefined || number === FORGE_PR_DETAIL.summary.number) {
+      const base = summary ?? FORGE_PR_DETAIL.summary;
+      return {
+        ...FORGE_PR_DETAIL,
+        summary: base,
+        mergeable: effectiveMergeable(base.number, base.state),
+      };
     }
     // Synthesize a COHERENT detail for the other known rows so opening e.g.
     // merged PR #120 shows its own body / mergeable / labels, not #128's.
@@ -268,7 +164,7 @@ export const forgeHandlers = {
       body:
         `## ${summary.title}\n\n` +
         `Merges \`${summary.sourceBranch}\` into \`${summary.targetBranch}\`.\n`,
-      mergeable: summary.state === 'open' ? true : null,
+      mergeable: effectiveMergeable(summary.number, summary.state),
       additions: 40 + (summary.number % 50),
       deletions: 10 + (summary.number % 20),
       changedFiles: 1 + (summary.number % 6),
@@ -303,6 +199,58 @@ export const forgeHandlers = {
     return { ...FORGE_PR_DETAIL, summary, body: input.body, mergeable: null, labels: [] };
   },
 
+  // P83: merge a PR. Requires auth; rejects an unsupported method, a
+  // non-open PR, or a not-mergeable row (#124) with a clear forgeApi message —
+  // mirroring the backend. On success flips the overlay state to merged.
+  async forgeMergePr(repoId: string, number: number, input: MergePrInput): Promise<PrDetail> {
+    await delay(250);
+    requireRepo(repoId);
+    offGuard();
+    if (!authenticated) {
+      const err: AppError = {
+        kind: 'forgeAuthRequired',
+        message: 'mock: connect an account before merging a PR',
+      };
+      throw err;
+    }
+    const summary = overlaidSummary(number);
+    const state = summary ? summary.state : effectiveState(number, 'open');
+    if (state !== 'open') {
+      const err: AppError = { kind: 'forgeApi', message: 'mock: PR is not open' };
+      throw err;
+    }
+    if (!SUPPORTED_MERGE_METHODS[FORGE_KIND].includes(input.method)) {
+      const err: AppError = {
+        kind: 'forgeApi',
+        message: `mock: ${input.method} not supported on ${FORGE_KIND}`,
+      };
+      throw err;
+    }
+    if (effectiveMergeable(number, state) === false) {
+      const err: AppError = { kind: 'forgeApi', message: 'mock: not mergeable — conflicts' };
+      throw err;
+    }
+    prStateOverlay.set(number, 'merged');
+    return forgeHandlers.forgeGetPr(repoId, number);
+  },
+
+  // P83: close/decline/abandon a PR without merging. Requires auth; flips the
+  // overlay to closed.
+  async forgeClosePr(repoId: string, number: number): Promise<PrDetail> {
+    await delay(200);
+    requireRepo(repoId);
+    offGuard();
+    if (!authenticated) {
+      const err: AppError = {
+        kind: 'forgeAuthRequired',
+        message: 'mock: connect an account before closing a PR',
+      };
+      throw err;
+    }
+    prStateOverlay.set(number, 'closed');
+    return forgeHandlers.forgeGetPr(repoId, number);
+  },
+
   async forgeListReviewComments(repoId: string, _number: number): Promise<ReviewComment[]> {
     await delay(150);
     requireRepo(repoId);
@@ -323,8 +271,17 @@ export const forgeHandlers = {
     authenticated = true;
     viewerWarm = true;
     // P80 (OD-3): add/update the account AND pin it as this repo's override.
-    upsertAccount(FORGE_HOST[FORGE_KIND], FORGE_KIND, FORGE_VIEWER.login, FORGE_VIEWER.avatarUrl);
-    repoOverrides[repoId] = accountId(FORGE_KIND, FORGE_HOST[FORGE_KIND], FORGE_VIEWER.login);
+    accountStore.upsertAccount(
+      FORGE_HOST[FORGE_KIND],
+      FORGE_KIND,
+      FORGE_VIEWER.login,
+      FORGE_VIEWER.avatarUrl,
+    );
+    accountStore.repoOverrides[repoId] = accountStore.accountId(
+      FORGE_KIND,
+      FORGE_HOST[FORGE_KIND],
+      FORGE_VIEWER.login,
+    );
     return FORGE_VIEWER;
   },
 
@@ -333,10 +290,10 @@ export const forgeHandlers = {
     requireRepo(repoId);
     offGuard();
     // P80 (OD-2): clear the repo's override ONLY; the account stays connected.
-    delete repoOverrides[repoId];
+    delete accountStore.repoOverrides[repoId];
     // Reflect the default (no-account) flow where clearing removes the only
     // account and drops back to unauthenticated in the harness.
-    if (accounts.length === 0) {
+    if (accountStore.accounts.length === 0) {
       authenticated = false;
       viewerWarm = false;
     }
@@ -405,7 +362,7 @@ export const forgeHandlers = {
   async forgeListAccounts(): Promise<ForgeAccount[]> {
     await delay(120);
     offGuard();
-    return accounts.map((a) => ({ ...a }));
+    return accountStore.accounts.map((a) => ({ ...a }));
   },
 
   async forgeAddAccount(host: string, kind: ForgeKind, token: string): Promise<ForgeViewer> {
@@ -425,10 +382,10 @@ export const forgeHandlers = {
       throw err;
     }
     // A distinct login per host lets the harness add a SECOND github.com account.
-    const login = accounts.some((a) => a.host === host && a.login === FORGE_VIEWER.login)
+    const login = accountStore.accounts.some((a) => a.host === host && a.login === FORGE_VIEWER.login)
       ? `${FORGE_VIEWER.login}-2`
       : FORGE_VIEWER.login;
-    upsertAccount(host, kind, login, FORGE_VIEWER.avatarUrl);
+    accountStore.upsertAccount(host, kind, login, FORGE_VIEWER.avatarUrl);
     return { ...FORGE_VIEWER, login };
   },
 
@@ -440,31 +397,30 @@ export const forgeHandlers = {
   async forgeRemoveAccount(accountId: string): Promise<void> {
     await delay(120);
     offGuard();
-    removeAccountById(accountId);
+    accountStore.removeAccountById(accountId);
   },
 
   async forgeSetHostDefault(host: string, accountId: string): Promise<void> {
     await delay(80);
     offGuard();
-    if (!accounts.some((a) => a.host === host && a.accountId === accountId)) {
+    if (!accountStore.accounts.some((a) => a.host === host && a.accountId === accountId)) {
       const err: AppError = { kind: 'other', message: 'account is not on the given host' };
       throw err;
     }
-    hostDefaults[host] = accountId;
-    syncHostDefaultFlags();
+    accountStore.setHostDefault(host, accountId);
   },
 
   async forgeSetRepoAccount(repoId: string, accountId: string | null): Promise<void> {
     await delay(80);
     offGuard();
-    if (accountId === null) delete repoOverrides[repoId];
-    else repoOverrides[repoId] = accountId;
+    if (accountId === null) delete accountStore.repoOverrides[repoId];
+    else accountStore.repoOverrides[repoId] = accountId;
   },
 
   async forgeClearTokenForHost(host: string): Promise<void> {
     await delay(120);
     offGuard();
-    removeAccountsForHost(host);
+    accountStore.removeAccountsForHost(host);
   },
 
   async forgeInvalidateViewer(host: string): Promise<void> {

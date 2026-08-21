@@ -29,6 +29,58 @@ fn forge_kind_wire_shape_is_camel_case() {
 }
 
 #[test]
+fn merge_method_wire_shape_is_camel_case() {
+    assert_eq!(value_of(&MergeMethod::Merge), json!("merge"));
+    assert_eq!(value_of(&MergeMethod::Squash), json!("squash"));
+    assert_eq!(value_of(&MergeMethod::Rebase), json!("rebase"));
+    assert_eq!(value_of(&MergeMethod::FastForward), json!("fastForward"));
+    let got: MergeMethod = serde_json::from_value(json!("fastForward")).unwrap();
+    assert_eq!(got, MergeMethod::FastForward);
+}
+
+#[test]
+fn merge_pr_input_wire_shape_is_camel_case() {
+    let input = MergePrInput {
+        method: MergeMethod::Squash,
+        commit_title: Some("t".into()),
+        commit_message: None,
+        delete_source_branch: true,
+        head_sha: None,
+    };
+    let v = value_of(&input);
+    assert_keys(
+        &v,
+        &[
+            "method",
+            "commitTitle",
+            "commitMessage",
+            "deleteSourceBranch",
+            "headSha",
+        ],
+    );
+    assert_eq!(v["method"], json!("squash"));
+    assert_eq!(v["deleteSourceBranch"], json!(true));
+}
+
+#[test]
+fn supported_methods_match_contract_table() {
+    use MergeMethod::*;
+    assert_eq!(MergeMethod::supported_for(ForgeKind::GitHub), &[Merge, Squash, Rebase]);
+    assert_eq!(MergeMethod::supported_for(ForgeKind::GitLab), &[Merge, Squash]);
+    assert_eq!(
+        MergeMethod::supported_for(ForgeKind::Bitbucket),
+        &[Merge, Squash, FastForward]
+    );
+    assert_eq!(
+        MergeMethod::supported_for(ForgeKind::AzureDevOps),
+        &[Merge, Squash, Rebase]
+    );
+    assert!(MergeMethod::supported_for(ForgeKind::Unknown).is_empty());
+    // Default is always the first entry = Merge.
+    assert_eq!(MergeMethod::supported_for(ForgeKind::GitHub)[0], Merge);
+}
+
+#[test]
 fn pr_state_wire_shape_is_camel_case() {
     assert_eq!(value_of(&PrState::Open), json!("open"));
     assert_eq!(value_of(&PrState::Closed), json!("closed"));

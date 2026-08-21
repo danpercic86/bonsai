@@ -146,6 +146,83 @@ pub(crate) async fn forge_create_pr_inner(
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Merge PR `number` with the given method; REQUIRES a stored token. Never
+/// force-merges or resolves conflicts — a not-mergeable PR surfaces a clear
+/// `forgeApi` message and changes nothing. Errors: `noRepo` |
+/// `forgeAuthRequired` | `forgeUnsupported` | `noRemote` | `forgeApi` |
+/// `forgeRateLimited` | `authFailed` | `networkError` | `git`.
+#[tauri::command]
+pub async fn forge_merge_pr(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    number: u64,
+    input: MergePrInput,
+) -> Result<PrDetail, AppError> {
+    let file = settings::settings_file(&app)?;
+    forge_merge_pr_inner(state.inner(), &file, &repo_id, number, input).await
+}
+
+/// Runtime-free core of `forge_merge_pr`. When `input.head_sha` is `None`, the
+/// head sha is filled from the PR summary (Azure requires it; other forges
+/// ignore it) inside the same `spawn_blocking`, so the UI need not know the sha.
+pub(crate) async fn forge_merge_pr_inner(
+    state: &AppState,
+    settings_file: &std::path::Path,
+    repo_id: &str,
+    number: u64,
+    input: MergePrInput,
+) -> Result<PrDetail, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    let file = settings_file.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        let key = crate::commands::resolved_key(&workdir, &file)?;
+        let provider = bonsai_forge::open_with_key(&workdir, key.as_deref())?;
+        let mut input = input;
+        // Only Azure DevOps needs the head sha in its completion call; other
+        // forges ignore it, so skip the extra `get_pr` round-trip for them.
+        if input.head_sha.is_none()
+            && provider.repo_context().provider == bonsai_forge::ForgeKind::AzureDevOps
+        {
+            input.head_sha = Some(provider.get_pr(number)?.summary.head_sha);
+        }
+        provider.merge_pr(number, &input)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Close/decline/abandon PR `number` WITHOUT merging; REQUIRES a stored token.
+/// Errors: `noRepo` | `forgeAuthRequired` | `forgeUnsupported` | `noRemote` |
+/// `forgeApi` | `forgeRateLimited` | `authFailed` | `networkError` | `git`.
+#[tauri::command]
+pub async fn forge_close_pr(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    number: u64,
+) -> Result<PrDetail, AppError> {
+    let file = settings::settings_file(&app)?;
+    forge_close_pr_inner(state.inner(), &file, &repo_id, number).await
+}
+
+/// Runtime-free core of `forge_close_pr`.
+pub(crate) async fn forge_close_pr_inner(
+    state: &AppState,
+    settings_file: &std::path::Path,
+    repo_id: &str,
+    number: u64,
+) -> Result<PrDetail, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    let file = settings_file.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        let key = crate::commands::resolved_key(&workdir, &file)?;
+        bonsai_forge::open_with_key(&workdir, key.as_deref())?.close_pr(number)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Merged review (diff-line) + conversation comments for a PR, sorted by
 /// creation time. Errors: `noRepo` | `forgeUnsupported` | `noRemote` |
 /// `forgeApi` | `forgeRateLimited` | `networkError` | `git`.

@@ -16,9 +16,8 @@ import { SkeletonRows } from './CommitPanel';
 import { ForgeAccountHeader } from './ForgeAccountHeader';
 import { ForgeConnect, type ConnectMode } from './ForgeConnect';
 import { PrCreateForm } from './PrCreateForm';
-import { PrDetailView } from './PrDetailView';
+import { PrDetailContainer } from './prPanel/PrDetailContainer';
 import { PrList } from './PrList';
-import { PrReviewComments } from './PrReviewComments';
 import { useForgeAccountCache } from './prPanel/useForgeAccountCache';
 
 // P62c: right-pane PR panel CONTAINER (contract §8). Owns view state, the
@@ -456,9 +455,24 @@ export function PrPanel({
   function renderDetail() {
     if (detail !== null) {
       return (
-        <PrDetailView detail={detail} onBack={() => setView('list')} onOpenUrl={openPrPage}>
-          <PrReviewComments comments={comments} loading={commentsLoading} error={commentsError} />
-        </PrDetailView>
+        <PrDetailContainer
+          repoId={repoId}
+          detail={detail}
+          kind={ctx?.provider ?? 'unknown'}
+          host={ctx?.host ?? 'the forge'}
+          comments={comments}
+          commentsLoading={commentsLoading}
+          commentsError={commentsError}
+          onBack={() => setView('list')}
+          onOpenUrl={openPrPage}
+          onDetailReplaced={(d) => {
+            setDetail(d);
+            setDetailError(null);
+          }}
+          onListChanged={() => setListTick((t) => t + 1)}
+          onReload={loadDetail}
+          onAuthFailed={handleAuthFailed}
+        />
       );
     }
     return (

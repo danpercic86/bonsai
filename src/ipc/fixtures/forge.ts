@@ -177,7 +177,67 @@ export const FORGE_PR_LIST: PrSummary[] = [
     url: 'https://github.com/octo-org/bonsai/pull/120#fail',
     headSha: 'ffeeddccbbaa99887766554433221100ffeeddcc',
   },
+  {
+    // P83: an OPEN but NOT-mergeable PR (conflicts) so the harness shows the
+    // disabled Merge button + not-mergeable reason, and the mock rejects a merge
+    // attempt with a clear forgeApi message.
+    number: 124,
+    title: 'Refactor lane assignment (has conflicts with main)',
+    state: 'open',
+    isDraft: false,
+    author: 'linus-t',
+    authorAvatarUrl: null,
+    sourceBranch: 'refactor/lanes',
+    targetBranch: 'main',
+    comments: 2,
+    createdAt: '2026-07-27T10:00:00Z',
+    updatedAt: '2026-08-03T09:00:00Z',
+    url: 'https://github.com/octo-org/bonsai/pull/124',
+    headSha: '1122334455667788990011223344556677889900',
+  },
+  {
+    // P83: an OPEN PR whose mergeability is still being computed (mergeable=null)
+    // → Merge disabled with the "still checking" reason.
+    number: 123,
+    title: 'Add keyboard shortcuts for the graph pane',
+    state: 'open',
+    isDraft: false,
+    author: 'grace-h',
+    authorAvatarUrl: null,
+    sourceBranch: 'feat/shortcuts',
+    targetBranch: 'main',
+    comments: 0,
+    createdAt: '2026-07-25T14:20:00Z',
+    updatedAt: '2026-08-02T12:00:00Z',
+    url: 'https://github.com/octo-org/bonsai/pull/123',
+    headSha: '99aabbccddeeff00112233445566778899aabbcc',
+  },
+  {
+    // P83: a CLOSED (not merged) PR so the action bar is absent.
+    number: 119,
+    title: 'Experiment: WebGL graph renderer (closed)',
+    state: 'closed',
+    isDraft: false,
+    author: 'ada-lovelace',
+    authorAvatarUrl: null,
+    sourceBranch: 'exp/webgl',
+    targetBranch: 'main',
+    comments: 4,
+    createdAt: '2026-07-18T08:00:00Z',
+    updatedAt: '2026-07-22T17:00:00Z',
+    url: 'https://github.com/octo-org/bonsai/pull/119',
+    headSha: 'aabbccddeeff00112233445566778899aabbccdd',
+  },
 ];
+
+/** P83: per-number mergeability overrides for the open fixture rows so
+ *  `forgeGetPr` reports a coherent `mergeable` (false ⇒ conflicts disable Merge,
+ *  null ⇒ pending). Numbers absent here fall back to the default (open ⇒ true).
+ *  #124 is the not-mergeable row the mock rejects a merge attempt against. */
+export const FORGE_PR_MERGEABLE: Record<number, boolean | null> = {
+  124: false,
+  123: null,
+};
 
 /** Detail for PR #128 — the row with comments. Carries labels + a resolved
  *  `mergeable` so the presentational detail view (P62c) has everything. */

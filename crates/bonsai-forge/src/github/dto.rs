@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use bonsai_core::error::AppError;
 
 use crate::types::{
-    CommentKind, CommitStatus, CreatePrInput, ForgeViewer, PrDetail, PrState, PrSummary,
-    ReviewComment, StatusContext,
+    CommentKind, CommitStatus, CreatePrInput, ForgeViewer, MergeMethod, MergePrInput, PrDetail,
+    PrState, PrSummary, ReviewComment, StatusContext,
 };
 
 use super::rollup;
@@ -204,6 +204,15 @@ struct CreatePullWire<'a> {
     maintainer_can_modify: bool,
 }
 
+#[derive(Serialize)]
+struct MergeWire<'a> {
+    merge_method: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    commit_title: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    commit_message: Option<&'a str>,
+}
+
 // ---- public boundary: raw body ⇒ neutral DTO ----
 
 /// `GET /user` ⇒ [`ForgeViewer`].
@@ -283,6 +292,38 @@ pub fn create_pull_body(input: &CreatePrInput) -> Result<String, AppError> {
     };
     serde_json::to_string(&wire)
         .map_err(|e| AppError::Other(format!("failed to encode create-PR body: {e}")))
+}
+
+/// GitHub `merge_method` wire value for a neutral [`MergeMethod`].
+/// `FastForward` is unsupported on GitHub ⇒ `ForgeApi`.
+fn github_merge_method(method: MergeMethod) -> Result<&'static str, AppError> {
+    match method {
+        MergeMethod::Merge => Ok("merge"),
+        MergeMethod::Squash => Ok("squash"),
+        MergeMethod::Rebase => Ok("rebase"),
+        MergeMethod::FastForward => Err(AppError::ForgeApi(
+            "fast-forward merge is not available on GitHub".to_string(),
+        )),
+    }
+}
+
+/// Serialize a [`MergePrInput`] into the GitHub merge JSON body. Returns an
+/// error for an unsupported method (nothing should be sent). GitHub ignores
+/// `delete_source_branch` on merge, so it is omitted from the body.
+pub fn merge_body(input: &MergePrInput) -> Result<String, AppError> {
+    let merge_method = github_merge_method(input.method)?;
+    let wire = MergeWire {
+        merge_method,
+        commit_title: input.commit_title.as_deref(),
+        commit_message: input.commit_message.as_deref(),
+    };
+    serde_json::to_string(&wire)
+        .map_err(|e| AppError::Other(format!("failed to encode merge body: {e}")))
+}
+
+/// The GitHub close body: `{ "state": "closed" }`.
+pub fn close_body() -> String {
+    "{\"state\":\"closed\"}".to_string()
 }
 
 /// Parse the legacy combined-status body and the check-runs body, map each into

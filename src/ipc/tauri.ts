@@ -45,6 +45,7 @@ import type {
   ComposeApplyResult,
   ComposePlan,
   CreatePrInput,
+  MergePrInput,
   ForgeAccount,
   ForgeKind,
   ForgeRepoContext,
@@ -1080,6 +1081,14 @@ export const tauriIpc: IpcApi = {
 
   forgeCreatePr(repoId: string, input: CreatePrInput): Promise<PrDetail> {
     return invoke<PrDetail>('forge_create_pr', { repoId, input });
+  },
+
+  forgeMergePr(repoId: string, number: number, input: MergePrInput): Promise<PrDetail> {
+    return invoke<PrDetail>('forge_merge_pr', { repoId, number, input });
+  },
+
+  forgeClosePr(repoId: string, number: number): Promise<PrDetail> {
+    return invoke<PrDetail>('forge_close_pr', { repoId, number });
   },
 
   forgeListReviewComments(repoId: string, number: number): Promise<ReviewComment[]> {

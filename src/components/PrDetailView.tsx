@@ -1,5 +1,6 @@
 import type { MouseEvent, ReactNode } from 'react';
-import type { PrDetail, PrState } from '../ipc';
+import type { ForgeKind, MergeMethod, PrDetail, PrState } from '../ipc';
+import { PrActionsBar } from './PrActionsBar';
 
 // P62c: presentational PR detail — header, meta, labels, mergeable, +/- stat,
 // and the (markdown-ish) body, plus a slot for the comments component. No IPC.
@@ -56,13 +57,33 @@ export interface PrDetailViewProps {
   onOpenUrl(url: string): void;
   /** Comments component (or its loading/error state) rendered under the body. */
   children?: ReactNode;
+  /** P83: forge kind (drives the per-forge close label + method filter). */
+  kind: ForgeKind;
+  /** P83: merge methods this forge supports (already filtered). */
+  supportedMethods: MergeMethod[];
+  /** P83: an action is in flight (both buttons disabled; panel locked). */
+  busy: boolean;
+  /** P83: open the merge dialog. */
+  onMerge(): void;
+  /** P83: open the close/decline/abandon confirm. */
+  onClose(): void;
 }
 
-export function PrDetailView({ detail, onBack, onOpenUrl, children }: PrDetailViewProps) {
+export function PrDetailView({
+  detail,
+  onBack,
+  onOpenUrl,
+  children,
+  kind,
+  supportedMethods,
+  busy,
+  onMerge,
+  onClose,
+}: PrDetailViewProps) {
   const { summary } = detail;
   const merge = mergeableLabel(detail.mergeable);
   return (
-    <div className="pr-detail">
+    <div className="pr-detail" aria-busy={busy || undefined}>
       <div className="pr-detail-header">
         <div className="pr-detail-title-row">
           <button
@@ -132,6 +153,16 @@ export function PrDetailView({ detail, onBack, onOpenUrl, children }: PrDetailVi
       )}
 
       {children}
+
+      <PrActionsBar
+        state={summary.state}
+        kind={kind}
+        mergeable={detail.mergeable}
+        supportedMethods={supportedMethods}
+        busy={busy}
+        onMerge={onMerge}
+        onClose={onClose}
+      />
     </div>
   );
 }

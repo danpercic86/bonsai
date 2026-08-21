@@ -498,6 +498,46 @@
   color: var(--accent);
 }
 
+/* P83: PR actions footer bar (UI contract §1, §8). Pinned under the body/
+   comments; destructive-left, affirmative-right (mirrors dialog button order). */
+.pr-actions-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+[data-density='compact'] .pr-actions-bar {
+  padding: 8px 12px;
+}
+
+/* P83: secondary-but-dangerous close/decline/abandon button. Base is quiet
+   (--text-2); hover/focus tints text + border to --danger so color is never the
+   sole signal (the verb carries the meaning). */
+.btn-secondary-danger {
+  color: var(--text-2);
+}
+
+.btn-secondary-danger:hover:not(:disabled),
+.btn-secondary-danger:focus-visible:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* P83: merge dialog form card (mirrors .ai-consent-card width for a form). */
+.pr-merge-card {
+  width: 420px;
+}
+
+/* P83: one-line method description under the picker. */
+.pr-merge-method-desc {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
 .forge-connect-sub {
   margin: 0;
   font-size: 12px;

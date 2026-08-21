@@ -103,3 +103,49 @@
   patch the moment the user touches the picker.
 - **Motion:** only the ≤120ms selected-swatch grow/ring on the picker; collapses under
   `prefers-reduced-motion`.
+
+### 12.9 PR actions — merge & close/decline (P83)
+
+- **Footer action bar** `.pr-actions-bar`: the canonical pattern for a panel's terminal, commit-point
+  actions. Pinned under the scrollable content region (e.g. `PrDetailView`), not in the header
+  (header = navigation + metadata; actions read as a distinct commit-point). Full panel width, top
+  `1px solid var(--border)`, `display:flex; justify-content:space-between; gap:8px`; padding
+  `12px 16px` cozy / `8px 12px` compact. Buttons at the standard height (32px cozy / 28px compact;
+  hit target ≥24px met on both densities). Rendered only while the item is actionable (PRs:
+  `summary.state === 'open'`; a merged/closed PR shows its state pill and no bar).
+- **Hierarchy:** exactly one primary + one quieter danger-secondary — no third button. Affirmative
+  action on the right (`btn-primary`, label ends in `…` when a dialog follows, e.g. `Merge…`);
+  the destructive/abandoning action on the far left (`.btn-secondary-danger`). This mirrors dialog
+  button order (destructive-left, affirmative-right) so muscle memory transfers. The left label is
+  per-context/per-forge (`Close` / `Decline` / `Abandon`); meaning is carried by the verb, never hue.
+- **`.btn-secondary-danger`** recipe: a `btn-secondary` modifier whose base state is quiet
+  (`--text-2` text, `--border`) so it does not compete with the primary, tinting text/border to
+  `--danger` on `:hover`/`:focus-visible`. Built from `--danger` on `--bg-1` — the same pair as
+  `btn-danger` text, which already clears ≥4.5:1 in both themes. Color is never the sole signal: the
+  verb and the follow-up confirm dialog restate the consequence.
+- **Form dialog pattern** `.pr-merge-card`: when a confirmation needs form fields (a picker + optional
+  text + a checkbox) that the shared `ConfirmDialog` cannot host, build a dedicated dialog on the
+  existing `.dialog-card` chrome — and that dialog *is* the confirmation (no second modal). Width
+  420px (matches `.ai-consent-card`, the form-bearing-dialog precedent; the 360px default is too
+  tight for a picker + fields). Same overlay, Esc, and overlay-click-cancels behaviour as
+  `ConfirmDialog`. Structure top→bottom: `dialog-title` → lead summary paragraph (names consequence +
+  irreversibility) → a method **radiogroup** (`SettingsSegmented`, `role="radiogroup"`, options
+  filtered to `SUPPORTED_MERGE_METHODS[kind]`, with a one-line `.pr-merge-method-desc` in `--text-3`
+  updated per selection) → optional commit title/message fields (`.pr-input` / `.pr-textarea`, shown
+  only for methods that consume them) → a delete-source-branch checkbox (`.pr-draft-toggle` idiom,
+  default OFF, **hidden when `kind === 'gitHub'`** since GitHub ignores it on merge) → `.dialog-buttons`
+  Cancel + confirm. The merge confirm is `btn-primary` (constructive happy path; irreversibility is
+  carried by the copy per house destructive-copy rules), busy label `Merging…` with `disabled` in
+  flight.
+- **Confirm-dialog reuse for close/decline:** the form-less destructive path reuses `ConfirmDialog`
+  verbatim (`confirmVariant='danger'`) with per-forge title/label/body (Close / Decline / Abandon).
+  No new dialog for it.
+- **A11y (hard rules, consistent with the §12.x dialogs):** initial focus lands on **Cancel** in both
+  the merge and close dialogs (a stray Enter never fires an irreversible action); Esc and
+  overlay-click cancel; focus returns to the invoking bar button on close (focus restore). The merge
+  dialog is `role="dialog" aria-modal="true"` labelled by its `dialog-title`; the method group is
+  `role="radiogroup"` with an id-wired label; the checkbox is a real `<input type="checkbox">` +
+  `<label>`. `aria-busy="true"` on the panel (`.pr-detail`) while an action is in flight, with the
+  confirm button's busy label as the visible cue (no spinner-only state). Focus ring 2px `--accent`,
+  1px offset, `:focus-visible` only. No new tokens; the only motion is the dialog's existing ≤150ms
+  fade/scale-in, which already honours `prefers-reduced-motion`.

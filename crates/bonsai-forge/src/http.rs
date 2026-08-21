@@ -43,6 +43,8 @@ fn read_body_bounded<R: Read>(reader: R, cap: u64) -> Result<String, AppError> {
 pub enum HttpMethod {
     Get,
     Post,
+    Put,
+    Patch,
 }
 
 /// A request built by the provider layer and handed to a transport. Headers carry
@@ -146,6 +148,8 @@ impl HttpTransport for ReqwestTransport {
         let mut builder = match req.method {
             HttpMethod::Get => self.client.get(&req.url),
             HttpMethod::Post => self.client.post(&req.url),
+            HttpMethod::Put => self.client.put(&req.url),
+            HttpMethod::Patch => self.client.patch(&req.url),
         };
         for (k, v) in &req.headers {
             builder = builder.header(k.as_str(), v.as_str());

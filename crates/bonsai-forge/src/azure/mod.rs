@@ -22,8 +22,8 @@ use crate::detect::ForgeTarget;
 use crate::http::HttpTransport;
 use crate::provider::ForgeProvider;
 use crate::types::{
-    CommitStatus, CreatePrInput, ForgeKind, ForgeRepoContext, ForgeViewer, PrDetail, PrListQuery,
-    PrPage, ReviewComment,
+    CommitStatus, CreatePrInput, ForgeKind, ForgeRepoContext, ForgeViewer, MergePrInput, PrDetail,
+    PrListQuery, PrPage, ReviewComment,
 };
 
 /// `origin` always resolves to a single remote; the provider reports it.
@@ -226,6 +226,20 @@ impl ForgeProvider for AzureDevOpsProvider {
         let mut out = dto::parse_threads(&resp.body, &self.pr_web_url(number))?;
         out.sort_by(|a, b| a.created_at.cmp(&b.created_at));
         Ok(out)
+    }
+
+    fn merge_pr(&self, _number: u64, _input: &MergePrInput) -> Result<PrDetail, AppError> {
+        // P83d implements Azure completion; stubbed to keep the trait complete.
+        Err(AppError::ForgeApi(
+            "completing Azure DevOps pull requests is not yet implemented".to_string(),
+        ))
+    }
+
+    fn close_pr(&self, _number: u64) -> Result<PrDetail, AppError> {
+        // P83d implements Azure abandon; stubbed to keep the trait complete.
+        Err(AppError::ForgeApi(
+            "abandoning Azure DevOps pull requests is not yet implemented".to_string(),
+        ))
     }
 
     fn combined_status(&self, sha: &str) -> Result<CommitStatus, AppError> {

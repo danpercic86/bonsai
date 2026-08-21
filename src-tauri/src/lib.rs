@@ -266,6 +266,8 @@ pub fn run() {
             commands::forge_list_prs,
             commands::forge_get_pr,
             commands::forge_create_pr,
+            commands::forge_merge_pr,
+            commands::forge_close_pr,
             commands::forge_list_review_comments,
             commands::forge_set_token,
             commands::forge_clear_token,
