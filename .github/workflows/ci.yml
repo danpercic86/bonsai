@@ -32,7 +32,7 @@ concurrency:
 
 jobs:
   rust:
-    name: Rust — cargo test + clippy (${{ matrix.platform }})
+    name: Rust — nextest + clippy (${{ matrix.platform }})
     strategy:
       # One OS failing must not hide the result on the other two.
       fail-fast: false
@@ -88,23 +88,41 @@ jobs:
       # `shell: bash` + a workspace-relative log path so the same script runs on
       # the Windows runner (default shell there is PowerShell, which has no
       # `pipefail`/`tee -a` semantics; /tmp does not exist either).
-      - name: cargo test
+      # Prebuilt binary — installing from source would cost minutes per job.
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      # nextest runs the 77+ test binaries in PARALLEL (vs `cargo test`'s serial
+      # default) — the biggest CI-time win for a suite this large. The `ci`
+      # profile (.config/nextest.toml) sets fail-fast=false (one failure must not
+      # hide the rest) + retries=1 (absorb a flake) + a per-test hang cap. Runs
+      # BEFORE clippy, never concurrently: the two sharing a target dir at once
+      # causes spurious failures (known race).
+      - name: cargo nextest (parallel test binaries)
         shell: bash
         env:
           BONSAI_REQUIRE_GIT_STRICT: '1'
         run: |
           set -o pipefail
-          cargo test --workspace --no-fail-fast 2>&1 | tee cargo-test.log
+          cargo nextest run --workspace --profile ci 2>&1 | tee nextest.log
+
+      # nextest does NOT run doctests — run them separately so they stay covered.
+      - name: cargo test --doc (doctests)
+        env:
+          BONSAI_REQUIRE_GIT_STRICT: '1'
+        run: cargo test --workspace --doc
 
       # Known baseline: 3 #[ignore]d perf gates (large-fixture benchmarks) —
       # visible in the summary, not failed on. No other ignores.
-      - name: Surface ignored/skipped test counts
+      - name: Surface test summary
         if: always()
         shell: bash
         run: |
-          echo "## cargo test summary — ${{ matrix.platform }}" >> "$GITHUB_STEP_SUMMARY"
-          grep -E '^test result:' cargo-test.log >> "$GITHUB_STEP_SUMMARY" || true
-          grep -c 'skipping:' cargo-test.log | xargs -I{} echo 'runtime skips: {}' >> "$GITHUB_STEP_SUMMARY" || true
+          echo "## nextest summary — ${{ matrix.platform }}" >> "$GITHUB_STEP_SUMMARY"
+          grep -E 'Summary|tests run' nextest.log >> "$GITHUB_STEP_SUMMARY" || true
+          grep -c 'skipping:' nextest.log | xargs -I{} echo 'runtime skips: {}' >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings

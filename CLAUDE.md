@@ -191,6 +191,15 @@ review.
   open files themselves. Require concise subagent reports (changed-files summary, MUST-FIX list,
   pass/fail + numbers), never full file bodies or diffs echoed back. Keep single UI/fixture files
   small enough to read in a targeted range rather than in full.
+  - **Locate before you read.** When you don't already know where code lives, use the
+    `context-explorer` agent (it returns `file:line` + snippets, so you never re-read whole files)
+    or `code_search` / `Grep` — do NOT open a large file just to find something in it.
+  - **Never whole-read a file >800 lines.** `Grep` for the symbol, then `Read` a bounded
+    `offset+limit` window around it. When you delegate work in such a file, pass the target **line
+    range** in the prompt so the subagent reads the slice, not the whole file.
+  - **Batch related increments into one spawn.** Every fresh subagent re-pays the fixed cost
+    (this CLAUDE.md + its agent def ≈ 6–8k tokens) before doing anything. Prefer one well-scoped
+    spawn covering a coherent unit of work over several small serial ones.
 - If a decision is ambiguous or you're blocked, **ask the user — do not guess.**
 
 ## Environment (prerequisites — verify first)
