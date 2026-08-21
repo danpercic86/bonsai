@@ -365,7 +365,9 @@ describe('buildContextItems', () => {
     );
     expect(labelsOf(items)).toEqual(['Apply', 'Pop', 'Drop']);
     itemByLabel(items, 'Apply').onSelect?.();
-    expect(deps.handleApplyStash).toHaveBeenCalledWith(2);
+    // F-A6-B: the graph stash pill only knows the base commit oid, not the stash
+    // entry oid, so it omits the wrong-target guard (oid === undefined).
+    expect(deps.handleApplyStash).toHaveBeenCalledWith(2, undefined);
     expect(menus().buildContextItems(target(ref('stash@{x}', 'stash')))).toEqual([]);
     expect(menus().buildContextItems(target(ref('stash', 'stash')))).toEqual([]);
   });

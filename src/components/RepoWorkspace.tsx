@@ -276,13 +276,20 @@ export function RepoWorkspace({
   // onto; `cur` = the current branch whose commits get rewritten (for the copy).
   const [pendingRebase, setPendingRebase] = useState<{ name: string; cur: string } | null>(null);
   const [pendingDeleteRemote, setPendingDeleteRemote] = useState<string | null>(null);
-  const [pendingDropStash, setPendingDropStash] = useState<number | null>(null);
+  // F-A6-B: carry the rendered oid alongside the index so the Drop confirm hits
+  // exactly the entry the user saw, even if the stack shifts before confirming.
+  const [pendingDropStash, setPendingDropStash] = useState<{
+    index: number;
+    oid?: string;
+  } | null>(null);
   // Reserved-path recovery: a stash apply/pop hit Windows-reserved paths (e.g.
   // `NUL`). Arms a ConfirmDialog offering to apply the rest, skipping those.
+  // `oid` (F-A6-B) is forwarded on the skip-reserved retry.
   const [pendingReservedStash, setPendingReservedStash] = useState<{
     index: number;
     op: 'apply' | 'pop';
     paths: string[];
+    oid?: string;
   } | null>(null);
   // P20: destructive reset (all three modes confirm; hard warns extra) + discard.
   const [pendingReset, setPendingReset] = useState<{ oid: string; mode: ResetMode } | null>(null);
@@ -2291,8 +2298,8 @@ export function RepoWorkspace({
   }
 
   // P9 §6.4: right-click a sidebar stash row → open the shared context menu.
-  function handleStashContextMenu(index: number, clientX: number, clientY: number) {
-    setMenu({ x: clientX, y: clientY, items: menus.stashMenuItems(index) });
+  function handleStashContextMenu(index: number, oid: string, clientX: number, clientY: number) {
+    setMenu({ x: clientX, y: clientY, items: menus.stashMenuItems(index, oid) });
   }
 
   // P19 §6.4: right-click a sidebar submodule row → open the shared context
@@ -2449,8 +2456,10 @@ export function RepoWorkspace({
     setPendingDeleteRemote,
     setPendingDeleteBranch,
     setPendingRenameBranch,
-    handleApplyStash,
-    handlePopStash,
+    // F-A6-B: the menu passes the rendered oid as arg 2; forward it as the
+    // wrong-target guard (skipReserved stays false for the first attempt).
+    handleApplyStash: (index, oid) => void handleApplyStash(index, false, oid),
+    handlePopStash: (index, oid) => void handlePopStash(index, false, oid),
     setPendingDropStash,
     handleInitSubmodule,
     handleUpdateSubmodule,
@@ -2807,11 +2816,11 @@ export function RepoWorkspace({
         handleDeleteRemoteTracking={(name) => void handleDeleteRemoteTracking(name)}
         pendingDropStash={pendingDropStash}
         setPendingDropStash={setPendingDropStash}
-        handleDropStash={(index) => void handleDropStash(index)}
+        handleDropStash={(index, oid) => void handleDropStash(index, oid)}
         pendingReservedStash={pendingReservedStash}
         setPendingReservedStash={setPendingReservedStash}
-        handleApplyStashSkipping={(index) => void handleApplyStash(index, true)}
-        handlePopStashSkipping={(index) => void handlePopStash(index, true)}
+        handleApplyStashSkipping={(index, oid) => void handleApplyStash(index, true, oid)}
+        handlePopStashSkipping={(index, oid) => void handlePopStash(index, true, oid)}
         pendingReset={pendingReset}
         setPendingReset={setPendingReset}
         handleResetBranch={(oid, mode) => void handleResetBranch(oid, mode)}

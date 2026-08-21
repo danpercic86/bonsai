@@ -45,6 +45,10 @@ export interface PendingReservedStash {
   index: number;
   op: 'apply' | 'pop';
   paths: string[];
+  /** F-A6-B: the oid the UI rendered for this stack index, forwarded verbatim on
+   *  the skip-reserved retry so it hits the same entry the user saw. Undefined
+   *  only for legacy callers that never captured an oid. */
+  oid?: string;
 }
 
 export interface PendingReset {

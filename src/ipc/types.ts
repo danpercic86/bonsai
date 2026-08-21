@@ -2350,14 +2350,30 @@ export interface IpcApi {
   /** Apply stash `index` WITHOUT dropping. Rejects operationInProgress | git | noRepo.
    *  `skipReserved`: on first attempt (false) a stash containing Windows-reserved
    *  paths returns `reservedPaths` and applies nothing; retry with true to apply
-   *  everything except those (`appliedSkippingReserved`). */
-  applyStash(repoId: string, index: number, skipReserved: boolean): Promise<ApplyStashOutcome>;
+   *  everything except those (`appliedSkippingReserved`).
+   *  `expectedOid` (F-A6-B): the oid the UI rendered for this stack index. When
+   *  provided and it no longer matches the entry at `index`, the backend rejects
+   *  with git "stash list changed; refresh and retry" BEFORE touching anything,
+   *  guarding against a stack shift between render and confirm. */
+  applyStash(
+    repoId: string,
+    index: number,
+    skipReserved: boolean,
+    expectedOid?: string,
+  ): Promise<ApplyStashOutcome>;
   /** Apply + drop on clean success (retained on conflict). Rejects operationInProgress | git | noRepo.
    *  `skipReserved`: as for `applyStash`; when any reserved path is skipped the
-   *  stash is KEPT (not dropped) so the reserved blobs are not lost. */
-  popStash(repoId: string, index: number, skipReserved: boolean): Promise<ApplyStashOutcome>;
-  /** Permanently discard stash `index` (UI confirms). Rejects git | noRepo. */
-  dropStash(repoId: string, index: number): Promise<void>;
+   *  stash is KEPT (not dropped) so the reserved blobs are not lost.
+   *  `expectedOid`: as for {@link applyStash} — wrong-target guard (F-A6-B). */
+  popStash(
+    repoId: string,
+    index: number,
+    skipReserved: boolean,
+    expectedOid?: string,
+  ): Promise<ApplyStashOutcome>;
+  /** Permanently discard stash `index` (UI confirms). Rejects git | noRepo.
+   *  `expectedOid`: as for {@link applyStash} — wrong-target guard (F-A6-B). */
+  dropStash(repoId: string, index: number, expectedOid?: string): Promise<void>;
   /** Amend HEAD with a new message + the current index (P20). Preserves HEAD's
    *  parents + original author. `sign` (P58) + `skipHooks` (P59a): as
    *  {@link commit}. Rejects operationInProgress | emptyMessage | configMissing
