@@ -57,6 +57,7 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
     'identities.profile-name',
     'identities.profile-email',
     'identities.profile-signing-key',
+    'identities.profile-color',
   ],
   35: ['identities.apply'],
   36: ['identities.delete'],

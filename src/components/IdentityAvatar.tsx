@@ -12,6 +12,7 @@
 import type { IdentityProfile } from '../ipc';
 import type { EffectiveIdentity } from '../hooks/useEffectiveIdentity';
 import { identityInitials, identityState } from './identityCopy';
+import { resolveProfileColor } from './identityProfileColor';
 
 export function IdentityAvatar({
   identity,
@@ -28,8 +29,19 @@ export function IdentityAvatar({
       : state === 'unset' || state === 'unreadable'
         ? '?'
         : identityInitials(identity.name);
+  // P82 (UI §3.1): a 2px hue ring when a non-neutral profile is matched. The
+  // unset `?`+--warning ring keeps priority — an unset identity has no profile,
+  // so `matchedProfile` is null there and no hue ring is emitted.
+  const hue =
+    matchedProfile !== null ? resolveProfileColor(matchedProfile) : 'neutral';
+  const profileColor = hue !== 'neutral' ? hue : undefined;
   return (
-    <span className="identity-avatar" data-identity-state={state} aria-hidden="true">
+    <span
+      className="identity-avatar"
+      data-identity-state={state}
+      data-profile-color={profileColor}
+      aria-hidden="true"
+    >
       {content}
     </span>
   );

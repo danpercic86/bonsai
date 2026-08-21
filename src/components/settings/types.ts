@@ -44,6 +44,9 @@ export type SettingsControlKind =
   | 'switch'
   | 'segmented'
   | 'radiogroup'
+  /** P82: a swatch grid of native radios (a radiogroup, but rendered as color
+   *  cells; `IdentityColorPicker`). Distinct from `segmented` (text-only, ≤3). */
+  | 'color'
   | 'numberSlider'
   | 'text'
   /** A row whose value is displayed but not editable (`about.version`, the MCP URL). */

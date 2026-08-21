@@ -1027,6 +1027,19 @@ export interface ConfigView {
   advanced: ConfigEntry[];
 }
 
+/** P82: curated identity-profile color palette. Mirrors Rust `ProfileColor`
+ *  (serde camelCase). Maps to a theme-aware CSS token (see P82-ui.md). */
+export type ProfileColor =
+  | 'neutral'
+  | 'slate'
+  | 'blue'
+  | 'teal'
+  | 'green'
+  | 'amber'
+  | 'orange'
+  | 'purple'
+  | 'pink';
+
 /** One named identity profile (P44). `id` is a stable crypto.randomUUID(). */
 export interface IdentityProfile {
   id: string;
@@ -1035,6 +1048,9 @@ export interface IdentityProfile {
   userEmail: string;
   /** Optional user.signingkey; null/empty ⇒ not written on apply. */
   signingKey: string | null;
+  /** P82: display color. Optional on the wire (absent ⇒ 'neutral' for pre-P82
+   *  persisted profiles); readers treat undefined as neutral. */
+  color?: ProfileColor;
 }
 
 /** Cherry-pick outcome (P20, extended P47). Mirrors the Rust `CherrypickOutcome`
@@ -1926,6 +1942,27 @@ export interface CreatePrInput {
   draft: boolean;
   maintainerCanModify: boolean;
 }
+/** Neutral merge strategy. Not every variant is valid on every forge — the UI
+ *  filters via {@link SUPPORTED_MERGE_METHODS}. */
+export type MergeMethod = 'merge' | 'squash' | 'rebase' | 'fastForward';
+/** Inputs for merging a PR (mirrors `bonsai_forge::MergePrInput`). */
+export interface MergePrInput {
+  method: MergeMethod;
+  commitTitle: string | null;
+  commitMessage: string | null;
+  deleteSourceBranch: boolean;
+  /** Azure only; filled backend-side when null. */
+  headSha: string | null;
+}
+/** Merge methods each forge supports, in display order; the first entry is the
+ *  forge default. Mirrors `MergeMethod::supported_for` — keep in sync. */
+export const SUPPORTED_MERGE_METHODS: Record<ForgeKind, MergeMethod[]> = {
+  gitHub: ['merge', 'squash', 'rebase'],
+  gitLab: ['merge', 'squash'],
+  bitbucket: ['merge', 'squash', 'fastForward'],
+  azureDevOps: ['merge', 'squash', 'rebase'],
+  unknown: [],
+};
 /** A merged review/conversation comment. */
 export interface ReviewComment {
   id: number;
@@ -2753,6 +2790,15 @@ export interface IpcApi {
    *  `forgeAuthRequired` | `forgeUnsupported` | `forgeApi` | `forgeRateLimited`
    *  | `networkError` | `git`). */
   forgeCreatePr(repoId: string, input: CreatePrInput): Promise<PrDetail>;
+  /** Merge a PR; REQUIRES a stored token. Never force-merges — a not-mergeable
+   *  PR rejects with a clear `forgeApi` message and changes nothing. Rejects
+   *  AppError (`noRepo` | `forgeAuthRequired` | `forgeUnsupported` | `forgeApi`
+   *  | `forgeRateLimited` | `authFailed` | `networkError` | `git`). */
+  forgeMergePr(repoId: string, number: number, input: MergePrInput): Promise<PrDetail>;
+  /** Close/decline/abandon a PR WITHOUT merging; REQUIRES a stored token.
+   *  Rejects AppError (`noRepo` | `forgeAuthRequired` | `forgeUnsupported` |
+   *  `forgeApi` | `forgeRateLimited` | `authFailed` | `networkError` | `git`). */
+  forgeClosePr(repoId: string, number: number): Promise<PrDetail>;
   /** Merged review + conversation comments, sorted by creation time. Rejects
    *  AppError (`noRepo` | `forgeUnsupported` | `forgeApi` | `forgeRateLimited`
    *  | `networkError` | `git`). */

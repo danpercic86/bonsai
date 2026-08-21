@@ -2,7 +2,21 @@
 import { AUTO_FETCH_INTERVAL_MAX, AUTO_FETCH_INTERVAL_MIN, AVATAR_RADIUS_MAX, AVATAR_RADIUS_MIN, HEALTH_REFRESH_INTERVAL_MAX, HEALTH_REFRESH_INTERVAL_MIN, LANE_WIDTH_MAX, LANE_WIDTH_MIN, ROW_HEIGHT_MAX, ROW_HEIGHT_MIN } from '../../settings/ranges';
 import { DEFAULT_UI_SETTINGS as PRODUCTION_DEFAULT_UI_SETTINGS } from '../../settings/defaults';
 import { parseAiRunSettings } from './aiRunSettings';
-import type { AiAutonomy, AutoFetchSettings, GraphDateBasis, GraphPrefs, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, PanelDensity, PrimaryCommitAction, RecentRepo, SessionState, Theme, UiSettings } from '../types';
+import type { AiAutonomy, AutoFetchSettings, GraphDateBasis, GraphPrefs, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, PanelDensity, PrimaryCommitAction, ProfileColor, RecentRepo, SessionState, Theme, UiSettings } from '../types';
+
+/** P82: the closed palette (mirrors Rust `ProfileColor`). Used to validate a
+ *  persisted profile's `color` field — an invalid value normalizes to neutral. */
+const PROFILE_COLOR_SET: ReadonlySet<string> = new Set<ProfileColor>([
+  'neutral',
+  'slate',
+  'blue',
+  'teal',
+  'green',
+  'amber',
+  'orange',
+  'purple',
+  'pink',
+]);
 
 // Recents persistence (P1 contract §3.4): localStorage-backed so the harness
 // reopen-on-launch story is verifiable — open once, reload, auto-reopen.
@@ -101,6 +115,8 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
       userName: 'Mock Fixture User',
       userEmail: 'work@bonsai.dev',
       signingKey: null,
+      // P82: distinct seeded colors so the harness demonstrates the feature.
+      color: 'blue',
     },
     {
       id: 'mock-personal',
@@ -108,6 +124,7 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
       userName: 'Mock Personal',
       userEmail: 'me@personal.dev',
       signingKey: 'ABC123',
+      color: 'green',
     },
   ],
 };
@@ -172,7 +189,15 @@ export function sanitizeProfiles(raw: unknown): IdentityProfile[] | null {
       ((p as IdentityProfile).signingKey === null ||
         typeof (p as IdentityProfile).signingKey === 'string'),
   );
-  return valid.length > 0 ? valid : null;
+  if (valid.length === 0) return null;
+  // P82: `color` is non-essential — normalize (never reject) a per-element value.
+  // Missing color stays undefined (read as neutral); an invalid color coerces to
+  // 'neutral' rather than dropping the whole profile.
+  return valid.map((p) => {
+    const raw = p.color;
+    if (raw === undefined) return p;
+    return PROFILE_COLOR_SET.has(raw) ? p : { ...p, color: 'neutral' as ProfileColor };
+  });
 }
 
 /** Corrupt/missing storage degrades to the default — mirrors load_from. */

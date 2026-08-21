@@ -29,6 +29,9 @@ import {
 import { ConfirmDialog } from './ConfirmDialog';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 import { IdentityAvatar } from './IdentityAvatar';
+import { IdentityColorSwatch } from './IdentityColorSwatch';
+import { autoDistinctColors, nextFreeHue } from './identityProfileColor';
+import type { ProfileColor } from '../ipc';
 import {
   hasUsableIdentity,
   identitySourceLine,
@@ -55,7 +58,15 @@ export interface IdentityMenuProps {
 }
 
 /** UI §4.3's non-interactive header block. */
-function IdentityMenuHeader({ identity }: { identity: EffectiveIdentity }) {
+function IdentityMenuHeader({
+  identity,
+  matchedColor,
+}: {
+  identity: EffectiveIdentity;
+  /** P82 (UI §3.2): the matched profile's display color, or null when the
+   *  effective identity matches no saved profile (then no swatch). */
+  matchedColor: ProfileColor | null;
+}) {
   const unset = identity.error !== null || !hasUsableIdentity(identity);
   return (
     <div className="identity-menu-header">
@@ -74,6 +85,7 @@ function IdentityMenuHeader({ identity }: { identity: EffectiveIdentity }) {
       ) : (
         <>
           <p className="identity-menu-name" title={identity.name ?? ''}>
+            {matchedColor !== null && <IdentityColorSwatch color={matchedColor} />}
             {identity.name}
           </p>
           <p className="identity-menu-line" title={identity.email ?? ''}>
@@ -107,6 +119,11 @@ export function IdentityMenu({
   const identity = useEffectiveIdentity(repoId);
   const matched = matchProfile(identity, profiles);
   const copy = identityTriggerCopy(identity, matched);
+  // P82 (UI §6): the render-time display colors (auto-distinct fallback for
+  // pre-P82 color-less profiles), aligned by index with `profiles`.
+  const displayColors = autoDistinctColors(profiles);
+  const matchedIndex = matched === null ? -1 : profiles.findIndex((p) => p.id === matched.id);
+  const matchedColor = matchedIndex >= 0 ? displayColors[matchedIndex] : null;
 
   const menuOpen = anchor !== null;
   const open = menuOpen || confirm !== null;
@@ -214,6 +231,8 @@ export function IdentityMenu({
       userName: identity.name ?? '',
       userEmail: identity.email ?? '',
       signingKey: null,
+      // P82 (UI §6): a new profile gets the next free hue, not neutral.
+      color: nextFreeHue(profiles),
     };
     onProfilesChange([...profiles, draft]);
     onOpenSettingsAt('identities', null, draft.id);
@@ -223,9 +242,11 @@ export function IdentityMenu({
     onOpenSettingsAt(category, focus);
   };
 
-  const items: ContextMenuItem[] = profiles.map((p) => ({
+  const items: ContextMenuItem[] = profiles.map((p, i) => ({
     label: applyingId === p.id ? `${profileDisplayName(p)} — Applying…` : profileDisplayName(p),
     detail: `${p.userName} · ${p.userEmail}`,
+    // P82 (UI §3.2): reuse the existing icon slot for the leading swatch.
+    icon: <IdentityColorSwatch color={displayColors[i]} size="sm" />,
     // The FIRST match only. Two profiles holding the same name+email would
     // otherwise both report aria-checked="true" (invalid for menuitemradio) and
     // disagree with Settings' `in use` pill, which lights exactly one.
@@ -275,7 +296,7 @@ export function IdentityMenu({
           y={anchor.y}
           items={items}
           busy={applyingId !== null}
-          header={<IdentityMenuHeader identity={identity} />}
+          header={<IdentityMenuHeader identity={identity} matchedColor={matchedColor} />}
           onClose={closeMenu}
         />
       )}

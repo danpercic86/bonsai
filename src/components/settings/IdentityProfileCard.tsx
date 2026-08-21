@@ -12,8 +12,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import type { IdentityProfile } from '../../ipc';
-import { settingsRowHelpId } from './settingsCatalog';
+import type { IdentityProfile, ProfileColor } from '../../ipc';
+import { IdentityColorSwatch } from '../IdentityColorSwatch';
+import { settingsRowHelpId, settingsRowLabelId } from './settingsCatalog';
+import { IdentityColorPicker } from './IdentityColorPicker';
 import { SettingsRow } from './SettingsRow';
 import { useSettingsRowVisible } from './SettingsSearchContext';
 
@@ -21,9 +23,14 @@ const LABEL = 'identities.profile-label';
 const NAME = 'identities.profile-name';
 const EMAIL = 'identities.profile-email';
 const KEY = 'identities.profile-signing-key';
+const COLOR = 'identities.profile-color';
 
 export interface IdentityProfileCardProps {
   profile: IdentityProfile;
+  /** P82 (UI §6): the render-time display color — the profile's own `color`, or
+   *  the index-based auto-distinct fallback when it is color-less (pre-P82). The
+   *  picker shows this as selected; touching it writes a concrete color. */
+  displayColor: ProfileColor;
   /** This profile matches the repo's EFFECTIVE identity (P69 §5.1 / UI D6). */
   isActive: boolean;
   /** An Apply for THIS profile is in flight. */
@@ -80,6 +87,7 @@ function ProfileActionCell({
 
 export function IdentityProfileCard({
   profile: p,
+  displayColor,
   isActive,
   applying,
   applied,
@@ -127,6 +135,7 @@ export function IdentityProfileCard({
       }}
     >
       <div className="settings-profile-head">
+        <IdentityColorSwatch color={displayColor} />
         <span className="settings-config-subtitle" id={titleId} title={cardTitle}>
           {cardTitle}
         </span>
@@ -189,6 +198,16 @@ export function IdentityProfileCard({
           placeholder="(optional)"
           aria-describedby={settingsRowHelpId(KEY, p.id)}
           onChange={(e) => onChange({ signingKey: e.target.value === '' ? null : e.target.value })}
+        />
+      </SettingsRow>
+
+      <SettingsRow id={COLOR} profileId={p.id} stacked>
+        <IdentityColorPicker
+          name={`profile-color-${p.id}`}
+          value={displayColor}
+          labelledBy={settingsRowLabelId(COLOR, p.id)}
+          describedBy={settingsRowHelpId(COLOR, p.id)}
+          onChange={(color) => onChange({ color })}
         />
       </SettingsRow>
 

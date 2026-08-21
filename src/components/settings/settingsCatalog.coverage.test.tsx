@@ -61,6 +61,7 @@ const ROLE_FOR: Record<Exclude<SettingsControlKind, 'readonly' | 'group'>, strin
   switch: 'checkbox',
   segmented: 'radiogroup',
   radiogroup: 'radiogroup',
+  color: 'radiogroup',
   numberSlider: 'spinbutton',
   text: 'textbox',
   button: 'button',

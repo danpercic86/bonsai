@@ -20,6 +20,7 @@ import type { IdentityProfile } from '../ipc';
 import { errorMessage } from '../utils/errors';
 import { invalidateEffectiveIdentity, useEffectiveIdentity } from '../hooks/useEffectiveIdentity';
 import { matchProfile } from './identityCopy';
+import { autoDistinctColors, nextFreeHue } from './identityProfileColor';
 import { IdentityProfileCard } from './settings/IdentityProfileCard';
 import { SettingsEmpty } from './settings/SettingsEmpty';
 import { SettingsGroup } from './settings/SettingsGroup';
@@ -63,6 +64,10 @@ export function SettingsProfilesSection({
     [identity, profiles],
   );
 
+  // P82 (UI §6): render-time display colors (auto-distinct fallback for pre-P82
+  // color-less profiles), aligned by index with `profiles`.
+  const displayColors = useMemo(() => autoDistinctColors(profiles), [profiles]);
+
   const updateProfile = useCallback(
     (id: string, patch: Partial<IdentityProfile>) => {
       onProfilesChange(profiles.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -77,6 +82,8 @@ export function SettingsProfilesSection({
       userName: '',
       userEmail: '',
       signingKey: null,
+      // P82 (UI §6): a new profile gets the next free hue, not neutral.
+      color: nextFreeHue(profiles),
     };
     onProfilesChange([...profiles, next]);
   }, [profiles, onProfilesChange]);
@@ -143,10 +150,11 @@ export function SettingsProfilesSection({
         />
       )}
 
-      {profiles.map((p) => (
+      {profiles.map((p, i) => (
         <IdentityProfileCard
           key={p.id}
           profile={p}
+          displayColor={displayColors[i]}
           isActive={p.id === activeId}
           applying={applyingId === p.id}
           applied={appliedId === p.id}

@@ -78,6 +78,8 @@ export type {
   ConflictResolution,
   ContextProfile,
   CreatePrInput,
+  MergeMethod,
+  MergePrInput,
   CreateStashResult,
   StashScope,
   DiffLine,
@@ -148,6 +150,7 @@ export type {
   PrStateFilter,
   PrSummary,
   ProfileActivation,
+  ProfileColor,
   ProfilePreviewEntry,
   ProfileStore,
   ProfileTarget,
@@ -212,3 +215,6 @@ export type {
   CopyPlanEntry,
   CopySelection,
 } from './types';
+
+// Runtime value re-exports (not types).
+export { SUPPORTED_MERGE_METHODS } from './types';

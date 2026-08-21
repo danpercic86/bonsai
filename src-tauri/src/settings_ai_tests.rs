@@ -168,6 +168,7 @@ fn profiles_roundtrip_and_backcompat() {
                 user_name: "Ada Lovelace".to_string(),
                 user_email: "work@example.com".to_string(),
                 signing_key: None,
+                color: ProfileColor::Blue,
             },
             IdentityProfile {
                 id: "id-personal".to_string(),
@@ -175,6 +176,7 @@ fn profiles_roundtrip_and_backcompat() {
                 user_name: "Ada".to_string(),
                 user_email: "me@personal.dev".to_string(),
                 signing_key: Some("KEY123".to_string()),
+                color: ProfileColor::Green,
             },
         ],
         ..Default::default()

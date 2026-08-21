@@ -136,5 +136,73 @@
   color: var(--text-1);
 }
 
+/* ================= P82 — identity color swatch (UI §2/§3) ================= */
+
+/* The dot primitive. Fill is chosen by the data-profile-color selectors below —
+   never inline, never hex in TSX. A 1px --border outline keeps the edge crisp
+   when a hue sits close to the row background (ui-reference §12.8). */
+.identity-swatch {
+  flex: none;
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.identity-swatch[data-swatch-size='sm'] {
+  width: 8px;
+  height: 8px;
+}
+
+/* Swatch fills (shared by the primitive and the picker dots). */
+.identity-swatch[data-profile-color='neutral'],
+.identity-swatch-dot[data-profile-color='neutral'] { background: var(--profile-neutral); }
+.identity-swatch[data-profile-color='slate'],
+.identity-swatch-dot[data-profile-color='slate'] { background: var(--profile-slate); }
+.identity-swatch[data-profile-color='blue'],
+.identity-swatch-dot[data-profile-color='blue'] { background: var(--profile-blue); }
+.identity-swatch[data-profile-color='teal'],
+.identity-swatch-dot[data-profile-color='teal'] { background: var(--profile-teal); }
+.identity-swatch[data-profile-color='green'],
+.identity-swatch-dot[data-profile-color='green'] { background: var(--profile-green); }
+.identity-swatch[data-profile-color='amber'],
+.identity-swatch-dot[data-profile-color='amber'] { background: var(--profile-amber); }
+.identity-swatch[data-profile-color='orange'],
+.identity-swatch-dot[data-profile-color='orange'] { background: var(--profile-orange); }
+.identity-swatch[data-profile-color='purple'],
+.identity-swatch-dot[data-profile-color='purple'] { background: var(--profile-purple); }
+.identity-swatch[data-profile-color='pink'],
+.identity-swatch-dot[data-profile-color='pink'] { background: var(--profile-pink); }
+
+/* Menu row swatch (in the ContextMenuItem.icon slot) and menu-header swatch. */
+.identity-menu-name .identity-swatch {
+  margin-right: 6px;
+}
+
+/* Settings card head swatch sits before the title. */
+.settings-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Avatar hue ring (UI §3.1): 2px ring OUTSIDE the 22px circle for a matched
+   non-neutral profile. The unset --warning ring keeps priority: it is a
+   border-color rule and this is a box-shadow, and an unset avatar carries no
+   data-profile-color, so the two never collide. */
+.identity-avatar[data-profile-color='neutral'] { box-shadow: 0 0 0 2px var(--profile-neutral); }
+.identity-avatar[data-profile-color='slate'] { box-shadow: 0 0 0 2px var(--profile-slate); }
+.identity-avatar[data-profile-color='blue'] { box-shadow: 0 0 0 2px var(--profile-blue); }
+.identity-avatar[data-profile-color='teal'] { box-shadow: 0 0 0 2px var(--profile-teal); }
+.identity-avatar[data-profile-color='green'] { box-shadow: 0 0 0 2px var(--profile-green); }
+.identity-avatar[data-profile-color='amber'] { box-shadow: 0 0 0 2px var(--profile-amber); }
+.identity-avatar[data-profile-color='orange'] { box-shadow: 0 0 0 2px var(--profile-orange); }
+.identity-avatar[data-profile-color='purple'] { box-shadow: 0 0 0 2px var(--profile-purple); }
+.identity-avatar[data-profile-color='pink'] { box-shadow: 0 0 0 2px var(--profile-pink); }
+
+/* ================= end P82 ================= */
+
 /* ================= end P69i ================= */
 

@@ -246,7 +246,10 @@ describe('search', () => {
 
   it('matches on keywords and help, not just the label', () => {
     expect(searchSettings('husky', ALL).map((e) => e.id)).toEqual(['git-config.run-hooks']);
-    expect(searchSettings('colour', ALL).map((e) => e.id)).toEqual(['appearance.theme']);
+    expect(searchSettings('colour', ALL).map((e) => e.id)).toEqual([
+      'appearance.theme',
+      'identities.profile-color',
+    ]);
     expect(searchSettings('upstream', ALL).map((e) => e.id)).toContain('graph.ahead-behind');
   });
 
@@ -442,6 +445,7 @@ describe('entry control kinds', () => {
       'button',
       'readonly',
       'group',
+      'color',
     ]);
     for (const entry of SETTINGS_INDEX) expect(kinds.has(entry.control), entry.id).toBe(true);
   });

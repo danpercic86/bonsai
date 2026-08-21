@@ -57,6 +57,19 @@
   --lane-8: #7a86ff;
   --lane-9: #8fbf4d;
 
+  /* Identity profile colors (P82, ui-reference §12.8) — dark. Swatch/ring fills
+     only; deliberately separate from the semantic and --lane-* sets. All ≥3:1
+     vs --bg-1. The light values live in the [data-theme='light'] block. */
+  --profile-neutral: #6b7280;
+  --profile-slate: #7d8aa3;
+  --profile-blue: #4f8cff;
+  --profile-teal: #3ec6c0;
+  --profile-green: #57ab5a;
+  --profile-amber: #e8c341;
+  --profile-orange: #f2994a;
+  --profile-purple: #9b6dff;
+  --profile-pink: #f26d9c;
+
   /* Language-accent palette (P4e chip) — theme-shared, following the --lane-*
      precedent: these brand hues read acceptably on the neutral chip background
      in both dark and light, so they are defined once here and NOT duplicated in
@@ -101,6 +114,18 @@
   --badge-good: #1a7f37;
   --badge-warn: #d13438;
   --badge-unknown: #8a919e;
+
+  /* Identity profile colors (P82, ui-reference §12.8) — light. All ≥3:1 vs
+     #ffffff / --bg-1. */
+  --profile-neutral: #8a919e;
+  --profile-slate: #5d6b85;
+  --profile-blue: #2f6fe4;
+  --profile-teal: #0f8f89;
+  --profile-green: #1a7f37;
+  --profile-amber: #9a6700;
+  --profile-orange: #c2410c;
+  --profile-purple: #7c3aed;
+  --profile-pink: #c2266f;
 
   /* Syntax-token palette (P4e Step 2) — light. */
   --syn-keyword: #cf222e;  --syn-string: #0a7d33;  --syn-comment: #6e7781;

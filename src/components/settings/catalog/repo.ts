@@ -53,6 +53,17 @@ export const IDENTITY_ENTRIES: readonly SettingsIndexEntry[] = [
     repeats: 'perProfile',
   },
   {
+    id: 'identities.profile-color',
+    category: 'identities',
+    group: 'Identities',
+    label: 'Color',
+    help: 'Shown as a dot on this identity everywhere it appears, so profiles with the same name stay easy to tell apart.',
+    keywords: 'colour hue swatch dot distinguish',
+    control: 'color',
+    requires: 'profile',
+    repeats: 'perProfile',
+  },
+  {
     id: 'identities.apply',
     category: 'identities',
     group: 'Identities',

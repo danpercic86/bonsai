@@ -392,5 +392,77 @@
     outline: 2px solid var(--accent);
     outline-offset: 1px;
   }
+
+  .identity-swatch-option:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+    border-radius: 6px;
+  }
+}
+
+/* ---- P82 identity color picker (UI §5) ---- */
+
+.identity-swatch-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* A ≥24px hit target wrapping a visually-hidden native radio + the painted dot.
+   The dot is the only visible element; the color name is an sr-only span. */
+.identity-swatch-option {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.identity-swatch-input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.identity-swatch-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  transition: transform 120ms ease-out;
+}
+
+.identity-swatch-option:hover:not(.is-selected) {
+  border-color: var(--text-3);
+}
+
+.identity-swatch-option.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.identity-swatch-option.is-selected .identity-swatch-dot {
+  transform: scale(1.14); /* 14px → 16px */
+}
+
+.identity-swatch-option:has(> .identity-swatch-input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .identity-swatch-dot {
+    transition: none;
+  }
 }
 
