@@ -229,3 +229,114 @@ fn clamp_pane_widths_clamps_both_axes() {
     };
     assert_eq!(clamp_pane_widths(in_range), in_range);
 }
+
+// --- P82: color-coded identity profiles -------------------------------------
+
+/// A profile with the required pre-P82 fields but no `color` key (a
+/// settings.json written before P82).
+fn legacy_profile_json() -> serde_json::Value {
+    serde_json::json!({
+        "id": "p-legacy",
+        "label": "Work",
+        "userName": "Alice",
+        "userEmail": "alice@example.com",
+        "signingKey": null,
+    })
+}
+
+/// AC(a): a legacy profile without `color` deserializes to `Neutral` — the
+/// field-level `#[serde(default)]` is what makes an old `settings.json` load.
+#[test]
+fn legacy_profile_without_color_deserializes_to_neutral() {
+    let p: IdentityProfile =
+        serde_json::from_value(legacy_profile_json()).expect("legacy profile must deserialize");
+    assert_eq!(p.color, ProfileColor::Neutral);
+    assert_eq!(p.id, "p-legacy");
+    assert_eq!(p.signing_key, None);
+}
+
+/// AC(a): a whole `Settings` blob whose `profiles[*]` omit `color` still loads
+/// (container-level default does NOT cover a missing field on a Vec element).
+#[test]
+fn legacy_settings_blob_with_colorless_profile_loads() {
+    let blob = serde_json::json!({
+        "version": SETTINGS_VERSION,
+        "profiles": [ legacy_profile_json() ],
+    });
+    let s: Settings = serde_json::from_value(blob).expect("settings with legacy profile");
+    assert_eq!(s.profiles.len(), 1);
+    assert_eq!(s.profiles[0].color, ProfileColor::Neutral);
+}
+
+/// AC(b): every ProfileColor variant round-trips as its camelCase tag.
+#[test]
+fn profile_color_wire_shape_is_camel_case_all_variants() {
+    let cases = [
+        (ProfileColor::Neutral, "neutral"),
+        (ProfileColor::Slate, "slate"),
+        (ProfileColor::Blue, "blue"),
+        (ProfileColor::Teal, "teal"),
+        (ProfileColor::Green, "green"),
+        (ProfileColor::Amber, "amber"),
+        (ProfileColor::Orange, "orange"),
+        (ProfileColor::Purple, "purple"),
+        (ProfileColor::Pink, "pink"),
+    ];
+    for (variant, wire) in cases {
+        let json = serde_json::to_value(variant).expect("serialize color");
+        assert_eq!(json, serde_json::json!(wire), "{variant:?} serializes to {wire}");
+        let back: ProfileColor =
+            serde_json::from_value(serde_json::json!(wire)).expect("deserialize color");
+        assert_eq!(back, variant, "{wire} round-trips to {variant:?}");
+    }
+}
+
+/// AC(b): a full `IdentityProfile { color: Blue }` round-trips, and the JSON
+/// carries `"color":"blue"`.
+#[test]
+fn identity_profile_with_color_roundtrips() {
+    let original = IdentityProfile {
+        id: "p1".to_string(),
+        label: "Work".to_string(),
+        user_name: "Alice".to_string(),
+        user_email: "alice@example.com".to_string(),
+        signing_key: Some("ABCDEF".to_string()),
+        color: ProfileColor::Blue,
+    };
+    let json = serde_json::to_value(&original).expect("serialize profile");
+    assert_eq!(json["color"], serde_json::json!("blue"));
+    let back: IdentityProfile = serde_json::from_value(json).expect("deserialize profile");
+    assert_eq!(back, original);
+}
+
+/// AC(a): a full `Settings` carrying colored profiles survives save_to/load_from
+/// on disk unchanged (the color rides the whole-array persist path).
+#[test]
+fn colored_profiles_survive_save_load_roundtrip() {
+    let dir = tempfile::TempDir::new().expect("create temp dir");
+    let file = settings_path(&dir);
+    let s = Settings {
+        profiles: vec![
+            IdentityProfile {
+                id: "w".to_string(),
+                label: "Work".to_string(),
+                user_name: "Alice".to_string(),
+                user_email: "alice@work.com".to_string(),
+                signing_key: None,
+                color: ProfileColor::Blue,
+            },
+            IdentityProfile {
+                id: "p".to_string(),
+                label: "Personal".to_string(),
+                user_name: "Alice".to_string(),
+                user_email: "alice@home.com".to_string(),
+                signing_key: None,
+                color: ProfileColor::Green,
+            },
+        ],
+        ..Settings::default()
+    };
+    save_to(&file, &s).expect("save settings");
+    let loaded = load_from(&file);
+    assert_eq!(loaded.profiles, s.profiles);
+}

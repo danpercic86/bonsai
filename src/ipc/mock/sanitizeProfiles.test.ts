@@ -43,4 +43,38 @@ describe('sanitizeProfiles (audit fix: per-element validation)', () => {
   it('returns null when a NON-empty array yields no survivors (all corrupt)', () => {
     expect(sanitizeProfiles([null, 1, { id: 3 }])).toBeNull();
   });
+
+  // --- P82 color normalization (AC d) ---------------------------------------
+
+  it('keeps a profile with a valid color unchanged', () => {
+    const colored = { ...valid, color: 'blue' as const };
+    expect(sanitizeProfiles([colored])).toEqual([colored]);
+  });
+
+  it('preserves a missing color as undefined (legacy ⇒ neutral on read)', () => {
+    const [out] = sanitizeProfiles([valid])!;
+    expect('color' in out ? out.color : undefined).toBeUndefined();
+  });
+
+  it('coerces an invalid color to neutral rather than dropping the profile', () => {
+    const bad = { ...valid, color: 'chartreuse' } as unknown as IdentityProfile;
+    const out = sanitizeProfiles([bad]);
+    expect(out).toEqual([{ ...valid, color: 'neutral' }]);
+  });
+
+  it('accepts every palette color (all 9 variants) unchanged', () => {
+    const palette = [
+      'neutral',
+      'slate',
+      'blue',
+      'teal',
+      'green',
+      'amber',
+      'orange',
+      'purple',
+      'pink',
+    ] as const;
+    const input = palette.map((color, i) => ({ ...valid, id: `p${i}`, color }));
+    expect(sanitizeProfiles(input)).toEqual(input);
+  });
 });
