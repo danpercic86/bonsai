@@ -26,6 +26,63 @@ contract files are indexed in `docs/contracts/INDEX.md`.
 
 ---
 
+## 🌿 P82 — color-coded git identity profiles — AI-gate GREEN, native checkpoint pending
+
+**Current step:** shipped + tester coverage; AI gate green; awaiting native USER CHECKPOINT.
+
+Each P44 identity profile carries a color so same-named profiles are distinguishable at a glance.
+Closed 9-value named palette (`ProfileColor` = Neutral + 8 vetted hues), additive field-level
+`#[serde(default)]` (legacy → Neutral, no `SETTINGS_VERSION` bump, git-config apply untouched).
+Auto-distinct-on-upgrade is a **UI display fallback** (index hue for color-less profiles) + next-free
+hue on create — no persistence rewrite; concrete color written only when the user touches the picker.
+Surfaces: header avatar hue ring, identity-menu rows, Settings profile cards + a `role=radiogroup`
+swatch picker. Tokens `--profile-*` both themes (ui-reference §12.8); no hardcoded hex; color never the
+sole a11y carrier. Commit `c51db0f`. Contracts `P82-color-profiles.md` + `P82-ui.md`. Reviewer +
+ui-designer approved (no MUST-FIX). Decision (user 2026-08-21): auto-distinct existing profiles on upgrade.
+
+**USER CHECKPOINT (`pnpm tauri dev`):** two same-named profiles show distinct swatches; both themes
+legible; active-profile color unmistakable in header/menu; picker keyboard nav + focus ring; pre-P82
+settings.json migrates to distinct fallback hues; colors persist across restart.
+
+**NIT follow-ups (non-blocking):** dead `[data-profile-color='neutral']` avatar-ring rule; `sanitizeProfiles`
+shadows outer `raw` param; nextFreeHue-vs-autoDistinct first-slot overlap for legacy lists (per contract §6).
+
+---
+
+## 🌿 P83 — merge & close/decline PRs from the panel (all 4 forges) — AI-gate GREEN, native checkpoint pending
+
+**Current step:** all four increments shipped + reviewed + tester coverage; AI gate green; awaiting native USER CHECKPOINT.
+
+Adds Merge and Close/Decline/Abandon to the PR detail panel across GitHub, GitLab, Bitbucket, Azure.
+`ForgeProvider::merge_pr`/`close_pr`; `MergeMethod` (Merge/Squash/Rebase/FastForward) filtered per forge
+via `supported_for` ⟺ `SUPPORTED_MERGE_METHODS`; `HttpMethod::{Put,Patch}`. Unsupported methods rejected
+before any request; not-mergeable/conflict → clear per-forge `ForgeApi`, nothing forced/retried/auto-resolved.
+IPC `forge_merge_pr`/`forge_close_pr` via `open_with_key`; Azure head_sha backfilled backend-side, gated to
+Azure kind. UI: `PrActionsBar` (primary Merge…, danger-secondary per-forge close verb), `PrMergeDialog`
+(method picker, optional commit fields, delete-source-branch hidden for GitHub, Cancel-first focus + restore),
+close reuses `ConfirmDialog`. Commits `4ea8a31` (P83a core+GitHub+IPC+UI), `8f5a82b` (P83b/c/d providers),
+`651e2cc` (tests). Contracts `P83-pr-actions.md` + `P83-ui.md`, ui-reference §12.9. Reviewer + ui-designer
+approved (no MUST-FIX); 3 SHOULD-FIX landed. cargo nextest 203 forge, +30 P82/P83 acceptance tests.
+
+**USER CHECKPOINT (`pnpm tauri dev`, per forge, real PRs):** method dropdown lists only that forge's methods;
+Merge disabled + reason on a conflicted PR; real merge reflects merged; real close/decline/abandon reflects
+closed; Azure merge completes without the UI supplying a head sha.
+
+**SHOULD-FIX/NIT follow-ups (non-blocking):** verify `.btn-secondary-danger` text contrast ≥4.5:1; app-wide
+`ConfirmDialog` focus-restore gap; "using a squash/rebase" toast grammar; Bitbucket `post_merge` helper
+factoring; per-provider `not_*_error` doc-comment grammar; true IPC-level Azure-backfill test needs a
+transport DI seam.
+
+---
+
+## 🔀 Divergence reconcile — origin/main ⋈ local main (2026-08-21)
+
+Local main (P77 tag-sync, P78 token guidance, P79/P80 multi-account forge) had diverged from origin/main
+(merged PR #1 + the concurrent commit-panel UX overhaul, tracked here as **P80b**). Merged (not rebased),
+4 conflicts resolved, full gate green — commit `77c815f`. **Not yet pushed** (awaiting user go-ahead).
+
+---
+
 ## 🚢 Release 1.1.0 — cut 2026-08-20
 
 Version files bumped to 1.1.0. `CHANGELOG.md` `[1.1.0]` finalized 2026-08-20 (Settings redesign,
