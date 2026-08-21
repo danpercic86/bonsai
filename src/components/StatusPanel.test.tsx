@@ -32,13 +32,10 @@ function renderPanel(over: Partial<StatusPanelProps> = {}) {
     aiEligible: false,
     aiRows: {},
     aiAtCapacity: false,
-    aiAnalyzing: false,
     onStage: vi.fn(),
     onUnstage: vi.fn(),
     onDiscard: vi.fn(),
     onDiscardForce: vi.fn(),
-    onReviewStaged: vi.fn(),
-    onReviewWorktree: vi.fn(),
     onToggleDiff: vi.fn(),
     onResolveConflict: vi.fn(),
     onToggleConflictView: vi.fn(),
@@ -376,18 +373,10 @@ describe('StatusPanel', () => {
     expect(screen.queryByRole('button', { name: 'Resolve gone.md with AI' })).toBeNull();
   });
 
-  it('✨ Review buttons render only when aiEligible and disable while analyzing', () => {
-    const { props } = renderPanel({ aiEligible: true });
-    const reviews = screen.getAllByRole('button', { name: '✨ Review' });
-    expect(reviews).toHaveLength(2); // staged + changes
-    fireEvent.click(reviews[0]);
-    expect(props.onReviewStaged).toHaveBeenCalled();
-    fireEvent.click(reviews[1]);
-    expect(props.onReviewWorktree).toHaveBeenCalled();
-    renderPanel({ aiEligible: true, aiAnalyzing: true });
-    for (const b of screen.getAllByRole('button', { name: '✨ Reviewing…' })) {
-      expect(b).toBeDisabled();
-    }
+  it('P80 E1: no ✨ Review buttons in the section headers (moved to the commit ⋯ menu)', () => {
+    renderPanel({ aiEligible: true });
+    expect(screen.queryByRole('button', { name: '✨ Review' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '✨ Reviewing…' })).toBeNull();
   });
 
   it('error banner: dismiss hides it; a NEW error id re-surfaces the banner', () => {
@@ -421,13 +410,10 @@ function StatusPanelHarness({ error }: { error: { id: number; message: string } 
       aiEligible={false}
       aiRows={{}}
       aiAtCapacity={false}
-      aiAnalyzing={false}
       onStage={noop}
       onUnstage={noop}
       onDiscard={noop}
       onDiscardForce={noop}
-      onReviewStaged={noop}
-      onReviewWorktree={noop}
       onToggleDiff={noop}
       onResolveConflict={noop}
       onToggleConflictView={noop}

@@ -34,6 +34,7 @@ const CATEGORY_IDS: readonly SettingsCategoryId[] = [
 /** Values that differ from the defaults in every field any `reset` touches. */
 const MUTATED: UiSettings = {
   ...cloneDefaultUiSettings(),
+  primaryCommitAction: 'commitPush',
   autoFetch: { enabled: true, intervalMinutes: 42 },
   healthRefresh: { enabled: true, intervalMinutes: 7 },
   graph: {
@@ -73,6 +74,7 @@ const RESET_LEAVES: Readonly<Record<string, string>> = {
   'general.refresh-interval': 'healthRefresh.intervalMinutes',
   'general.terminal-command': 'terminalCommand',
   'general.editor-command': 'editorCommand',
+  'general.primary-commit-action': 'primaryCommitAction',
   'graph.node-size': 'graph.avatarRadius',
   'graph.row-height': 'graph.rowHeight',
   'graph.lane-width': 'graph.laneWidth',
@@ -102,6 +104,7 @@ const RESET_LEAVES: Readonly<Record<string, string>> = {
 const FORMATTED_DEFAULT_LABELS: Readonly<Record<string, readonly [string, unknown]>> = {
   'general.terminal-command': ['auto-detect', ''],
   'general.editor-command': ['auto-detect', ''],
+  'general.primary-commit-action': ['Commit', 'commit'],
   'graph.date-basis': ['Author', 'author'],
   'ai.conflict-resolution': ['Propose & review', 'proposeReview'],
   'ai.repository-access': ['Read-only', 'readOnly'],

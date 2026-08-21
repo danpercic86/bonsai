@@ -103,7 +103,8 @@ pub(crate) use crate::scheduler::{self, JobKind, JobOutcome, SchedulerState};
 pub(crate) use crate::settings::{
     self, clamp_ai_settings, clamp_auto_fetch, clamp_graph_prefs, clamp_health_refresh,
     clamp_pane_widths, AiAutonomy, AiConflictTools, AutoFetch, GraphPrefs, HealthRefresh,
-    IdentityProfile, ListView, PaneWidths, PanelDensity, RecentRepo, ThemeChoice,
+    IdentityProfile, ListView, PaneWidths, PanelDensity, PrimaryCommitAction, RecentRepo,
+    ThemeChoice,
 };
 pub(crate) use crate::state::{AppState, RepoEntry};
 pub(crate) use crate::watcher::spawn_watcher;

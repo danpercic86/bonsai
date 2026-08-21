@@ -52,8 +52,6 @@ export interface StatusPanelProps {
   aiAtCapacity: boolean;
   /** P68f: the conflicts-header "Resolve all with AI" control (§6.4). */
   aiBulk?: BulkAiControl;
-  /** P15b: true while an AI explain/review call is in flight — disables Review. */
-  aiAnalyzing: boolean;
   onStage(paths: string[]): void;
   onUnstage(paths: string[]): void;
   /** P20 §4.3: discard unstaged edits to tracked Changes rows (App confirms). */
@@ -62,10 +60,6 @@ export interface StatusPanelProps {
    *  AND deletes new/untracked files. Drives the "Discard all" header button and
    *  folder-level discard hover buttons (App confirms before the IPC call). */
   onDiscardForce(paths: string[]): void;
-  /** P15b: request an AI review of the whole staged set. */
-  onReviewStaged(): void;
-  /** P25b: request an AI review of the WHOLE working tree (staged+unstaged+untracked). */
-  onReviewWorktree(): void;
   /** Toggle a row's diff in the center-pane overlay (App owns the fetch). */
   onToggleDiff(section: WorkdirSection, entry: StatusEntry): void;
   /** P3c §8.2: resolve one conflicted path (no confirm — re-doable). */
@@ -97,13 +91,10 @@ export function StatusPanel({
   aiRows,
   aiAtCapacity,
   aiBulk,
-  aiAnalyzing,
   onStage,
   onUnstage,
   onDiscard,
   onDiscardForce,
-  onReviewStaged,
-  onReviewWorktree,
   onToggleDiff,
   onResolveConflict,
   onToggleConflictView,
@@ -194,19 +185,6 @@ export function StatusPanel({
             expandable
             diffSlot={diffSlot}
             listView={listView}
-            extraAction={
-              aiEligible && snapshot.staged.length > 0 ? (
-                <button
-                  type="button"
-                  className="section-action section-action-ai"
-                  disabled={aiAnalyzing}
-                  title="Review the staged changes with AI"
-                  onClick={onReviewStaged}
-                >
-                  {aiAnalyzing ? '✨ Reviewing…' : '✨ Review'}
-                </button>
-              ) : undefined
-            }
             onAction={onUnstage}
             onToggleDiff={onToggleDiff}
             onBlame={onBlame}
@@ -225,19 +203,6 @@ export function StatusPanel({
             expandable
             diffSlot={diffSlot}
             listView={listView}
-            extraAction={
-              aiEligible ? (
-                <button
-                  type="button"
-                  className="section-action section-action-ai"
-                  disabled={aiAnalyzing}
-                  title="Review all changes with AI"
-                  onClick={onReviewWorktree}
-                >
-                  {aiAnalyzing ? '✨ Reviewing…' : '✨ Review'}
-                </button>
-              ) : undefined
-            }
             onAction={onStage}
             onToggleDiff={onToggleDiff}
             onDiscard={onDiscard}

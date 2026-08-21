@@ -40,6 +40,8 @@ const DEFAULTS: UiSettings = {
   listView: 'tree',
   /** P67 §4: `cozy` is the tightened right-panel default. */
   panelDensity: 'cozy',
+  /** P80 D1: the always-safe, non-network action is the default primary. */
+  primaryCommitAction: 'commit',
   /** P11: auto-fetch OFF, 5-minute interval. */
   autoFetch: { enabled: false, intervalMinutes: 5 },
   /** P30: periodic status/health refresh OFF, 30-minute interval. */

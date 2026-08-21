@@ -18,19 +18,23 @@ import {
   HEALTH_REFRESH_INTERVAL_MAX,
   HEALTH_REFRESH_INTERVAL_MIN,
 } from '../../../settings/ranges';
-import { settingsRowHelpId } from '../settingsCatalog';
+import { settingsRowHelpId, settingsRowLabelId } from '../settingsCatalog';
 import { SettingsGroup } from '../SettingsGroup';
 import { SettingsRow } from '../SettingsRow';
+import { SettingsSegmented } from '../SettingsSegmented';
 import { SettingsSwitchRow } from '../SettingsSwitchRow';
 import { useSettingsActions, useSettingsValues } from '../SettingsContext';
+import type { PrimaryCommitAction } from '../../../ipc';
 
 const AUTO_FETCH = 'general.auto-fetch';
 const FETCH_INTERVAL = 'general.fetch-interval';
 const AUTO_REFRESH = 'general.auto-refresh';
 const REFRESH_INTERVAL = 'general.refresh-interval';
+const PRIMARY_COMMIT_ACTION = 'general.primary-commit-action';
 
 export function GeneralCategory() {
-  const { autoFetch, healthRefresh, terminalCommand, editorCommand } = useSettingsValues();
+  const { autoFetch, healthRefresh, terminalCommand, editorCommand, primaryCommitAction } =
+    useSettingsValues();
   const { change } = useSettingsActions();
 
   return (
@@ -85,6 +89,22 @@ export function GeneralCategory() {
             onChange={(intervalMinutes) =>
               change({ healthRefresh: { ...healthRefresh, intervalMinutes } })
             }
+          />
+        </SettingsRow>
+      </SettingsGroup>
+
+      <SettingsGroup id="general-committing" title="Committing">
+        <SettingsRow id={PRIMARY_COMMIT_ACTION}>
+          <SettingsSegmented<PrimaryCommitAction>
+            name={PRIMARY_COMMIT_ACTION}
+            value={primaryCommitAction}
+            labelledBy={settingsRowLabelId(PRIMARY_COMMIT_ACTION)}
+            describedBy={settingsRowHelpId(PRIMARY_COMMIT_ACTION)}
+            options={[
+              { value: 'commit', label: 'Commit' },
+              { value: 'commitPush', label: 'Commit & Push' },
+            ]}
+            onChange={(next) => change({ primaryCommitAction: next })}
           />
         </SettingsRow>
       </SettingsGroup>

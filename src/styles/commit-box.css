@@ -124,29 +124,9 @@
   color: var(--danger, #e5534b);
 }
 
-/* P67 §5.1: the single actions row above the commit box (supersedes P20 §2.3's
-   `.amend-affordance` and P34's `.stash-split`, which stacked two `flex: none`
-   rows with a border-top and 8 px top pad each). Amend checkbox left, `⋯`
-   overflow menu right; the push warning wraps below only while amend is on. */
-.rp-actions {
-  flex: none;
-  border-top: 1px solid var(--border);
-  background: var(--bg-1);
-  padding: 6px 12px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.rp-actions-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--rp-ctl-gap, 8px);
-  min-height: var(--rp-ctl-h, 22px);
-  font-size: var(--rp-ctl-font, 12px);
-}
-
+/* P80 §2b: the `⋯` overflow trigger + menu. Reused verbatim inside the commit
+   message toolbar (`.commit-msg-toolbar`); the deleted `.rp-actions` row is
+   gone. */
 .rp-overflow {
   position: relative;
   flex: none;
@@ -158,6 +138,7 @@
   justify-content: center;
   width: 24px;
   height: var(--rp-ctl-h, 22px);
+  min-height: 24px;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -186,7 +167,7 @@
   z-index: 20;
   right: 0;
   bottom: calc(100% - 4px);
-  min-width: 200px;
+  min-width: 220px;
   display: flex;
   flex-direction: column;
   background: var(--bg-2);
@@ -198,6 +179,9 @@
 }
 
 .rp-overflow-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   text-align: left;
   padding: 6px 10px;
   border: none;
@@ -218,30 +202,29 @@
   cursor: default;
 }
 
-.amend-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  /* P67b review FIX 3: inherit the row's control font like its
-     `.commit-sign-toggle` / `.commit-skip-toggle` siblings do, so a compact
-     `--rp-ctl-font` (P67c) shrinks all three labels together. */
-  font-size: var(--rp-ctl-font, 12px);
-  color: var(--text-2);
-  cursor: pointer;
+/* P80 §2b: reserved 16px check column for every menu item (ContextMenu §12.6
+   precedent — the checked column belongs to the whole list). */
+.rp-overflow-check {
+  flex: none;
+  width: 16px;
+  text-align: center;
+  color: var(--accent);
 }
 
-.amend-toggle input:disabled {
-  cursor: default;
+.rp-overflow-item-label {
+  flex: 1 1 auto;
+}
+
+.rp-overflow-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 6px;
 }
 
 .amend-push-warning {
   font-size: 11px;
   color: var(--warning, #d29922);
   line-height: 1.4;
-}
-
-.rp-actions + .commit-box {
-  border-top: none;
 }
 
 .commit-box {
@@ -305,9 +288,32 @@
   opacity: 0.6;
 }
 
+/* P80 §2b D2: the single compact message toolbar under the textarea — generate
+   icon (left), char/line counter + `⋯` menu (right). Replaces the deleted
+   `.commit-box-header` and `.commit-options-row`. */
+.commit-msg-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--rp-ctl-gap, 8px);
+  min-height: var(--rp-ctl-h, 22px);
+  font-size: var(--rp-ctl-font, 12px);
+}
+
+/* The counter (when present) takes the free space, pushing itself + `⋯` right;
+   when the counter is absent, the `⋯` wrapper claims the auto margin instead. */
+.commit-msg-toolbar .commit-counter {
+  margin-left: auto;
+  align-self: center;
+}
+.commit-msg-toolbar .commit-options-overflow {
+  margin-left: auto;
+}
+.commit-msg-toolbar .commit-counter + .commit-options-overflow {
+  margin-left: 0;
+}
+
 /* P1 §8 item 7: neutral until the first line exceeds the limit, then --warning. */
 .commit-counter {
-  align-self: flex-end;
   font-size: 11px;
   color: var(--text-3);
   font-family: var(--font-mono);
@@ -317,28 +323,6 @@
   color: var(--warning);
 }
 
-/* P67 §5.2: the P58c "Sign commit" and P59a "Skip hooks" toggles share ONE
-   wrapping row (was `.commit-sign-row` + `.commit-skip-row`, two stacked rows
-   each with a 2px/4px margin). Hints wrap onto a second line only when checked;
-   `.commit-box`'s gap owns the spacing, so no margin here. */
-.commit-options-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--rp-ctl-gap, 8px);
-  min-height: var(--rp-ctl-h, 22px);
-  font-size: var(--rp-ctl-font, 12px);
-}
-.commit-sign-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-2);
-  cursor: pointer;
-}
-.commit-sign-toggle input {
-  accent-color: var(--accent);
-}
 .commit-sign-hint {
   color: var(--success);
 }
@@ -358,19 +342,10 @@
   text-decoration: underline;
 }
 
-/* P59a: pre-emptive "Skip hooks" (--no-verify) toggle — mirrors the sign one. */
-.commit-skip-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-2);
-  cursor: pointer;
-}
-.commit-skip-toggle input {
-  accent-color: var(--accent);
-}
 .commit-skip-hint {
   color: var(--warning);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .commit-error {
@@ -396,14 +371,34 @@
   white-space: nowrap;
 }
 
-/* P15a: commit-box header holding the "✨ Generate" affordance. */
-.commit-box-header {
+/* P80 §2b D2: the `✨` generate icon button in the message toolbar (was the
+   text `.commit-generate-button` in the deleted header). Icon-only, 24px hit
+   box, transparent until hover. */
+.commit-msg-tool {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: var(--rp-ctl-h, 22px);
+  min-height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
 }
 
-.commit-generate-button {
-  font-size: 12px;
-  padding: 4px 10px;
+.commit-msg-tool:hover:not(:disabled) {
+  color: var(--text-1);
+  background: var(--bg-2);
+}
+
+.commit-msg-tool:disabled {
+  color: var(--text-3);
+  cursor: default;
 }
 

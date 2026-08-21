@@ -48,6 +48,7 @@ import type {
   RebaseTodoOp,
   PaneWidths,
   PanelDensity,
+  PrimaryCommitAction,
   ReflogEntry,
   UndoPlan,
   RemoteInfo,
@@ -108,6 +109,8 @@ export interface RepoWorkspaceProps {
   /** P67 §4: right-panel vertical density (applied as a `data-density`
    *  attribute on the right panel's `<aside>`). */
   panelDensity: PanelDensity;
+  /** P80 D1: which commit button is emphasized in the Working tab footer. */
+  primaryCommitAction: PrimaryCommitAction;
   themeVersion: number;
   paneWidths: PaneWidths;
   /** True when a global modal (shortcut overlay / tab menu) is open — the
@@ -151,6 +154,7 @@ export function RepoWorkspace({
   active,
   listView,
   panelDensity,
+  primaryCommitAction,
   themeVersion,
   paneWidths,
   globalModalOpen,
@@ -2649,6 +2653,7 @@ export function RepoWorkspace({
           headBranch={headBranch}
           listView={listView}
           panelDensity={panelDensity}
+          primaryCommitAction={primaryCommitAction}
           scope={scope}
           setScope={setScope}
           clearCompare={clearCompare}

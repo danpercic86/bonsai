@@ -193,6 +193,7 @@ export default function App() {
   // it as a prop do not re-render on its account.
   const {
     panelDensity,
+    primaryCommitAction,
     autoFetch,
     healthRefresh,
     graph,
@@ -884,6 +885,7 @@ export default function App() {
                 active={t.repoId === activeRepo}
                 listView={listView}
                 panelDensity={panelDensity}
+                primaryCommitAction={primaryCommitAction}
                 themeVersion={themeVersion}
                 paneWidths={paneWidths}
                 globalModalOpen={globalModalOpen}
@@ -938,6 +940,7 @@ export default function App() {
           theme={theme}
           listView={listView}
           panelDensity={panelDensity}
+          primaryCommitAction={primaryCommitAction}
           autoFetch={autoFetch}
           healthRefresh={healthRefresh}
           graph={graph}

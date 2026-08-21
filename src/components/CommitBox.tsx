@@ -1,8 +1,8 @@
-import { forwardRef, useImperativeHandle, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { isAppError } from '../utils/errors';
-import type { SigningStatus } from '../ipc';
+import type { SigningStatus, StashScope } from '../ipc';
 import { ConfirmDialog } from './ConfirmDialog';
-import { CommitOptionsRow } from './CommitOptionsRow';
+import { CommitOptionsMenu } from './CommitOptionsMenu';
 import { COMMIT_HOOK_CANCELED, COMMIT_PUSH_CANCELED } from './commitPushSignal';
 
 export interface CommitBoxProps {
@@ -15,15 +15,16 @@ export interface CommitBoxProps {
    * `skipHooks` is the "Skip hooks" checkbox (≡ `--no-verify`). */
   onCommit(message: string, sign: boolean | null, skipHooks: boolean): Promise<void>;
   /** Normal-commit-mode only: commit then push the current branch. When provided
-   * (and not merge/amend), the box renders a split control — primary
-   * "Commit & Push" (this) + secondary "Commit" (onCommit). Same resolve/reject
-   * contract as onCommit (incl. the P59a `skipHooks` arg). */
+   * (and not merge/amend), the box renders a split control — Commit + Commit &
+   * Push, with the emphasized one chosen by `primaryCommitAction`. Same
+   * resolve/reject contract as onCommit (incl. the P59a `skipHooks` arg). */
   onCommitAndPush?: (message: string, sign: boolean | null, skipHooks: boolean) => Promise<void>;
   /** P3c §8.4: 'merge' repurposes the box as the merge-message editor —
    * prefilled once (App remounts via key on the merge transition), button
    * label "Commit merge", submit routed to commitMerge by the parent. */
   mode?: 'commit' | 'merge';
-  /** Initial textarea contents (merge: opState.message). */
+  /** Initial textarea contents. P80: merge message ONLY (amend now reseeds via
+   * an internal effect from `amendMessage`, not through `initialMessage`). */
   initialMessage?: string;
   /** Merge mode: remaining conflicts gate submission. */
   conflictCount?: number;
@@ -32,17 +33,44 @@ export interface CommitBoxProps {
   /** P20: amend mode. Button label "Amend"; a message-only amend is valid, so
    * `stagedCount === 0` does NOT disable submit. Merge mode is unaffected. */
   amend?: boolean;
+  /** P80: the last commit's full message, for the amend reseed effect. */
+  amendMessage?: string | null;
+  /** P80: amend is offered (opState.kind==='none' && head && !head.unborn).
+   * Gates the Amend menuitemcheckbox; when false the item is not rendered. */
+  canAmend?: boolean;
+  /** P80: toggle amend (owned upstream by RepoWorkspace; CommitBox only forwards
+   * the menu checkbox change — it does NOT own amend state). */
+  onToggleAmend?: (next: boolean) => void;
+  /** P80: amend would rewrite already-pushed history → drives the note line. */
+  showAmendPushWarning?: boolean;
+  /** P80 D1: which commit button is emphasized in the split control. */
+  primaryCommitAction?: 'commit' | 'commitPush';
   /** P15a: gates the "✨ Generate" button (aiEnabled && aiConsented && installed). */
   aiEligible?: boolean;
   /** P15a: asks the backend for a proposed message; resolves the text to insert,
    * rejects with AppError. Never commits. */
   onGenerate?(): Promise<string>;
   /** P54c: any working-tree change exists (staged/unstaged/untracked) — gates the
-   * "Compose commits ✨" affordance (clean tree ⇒ nothing to compose). */
+   * "✨ Compose commits" affordance (clean tree ⇒ nothing to compose). */
   workingDirty?: boolean;
   /** P54c: open the commit composer (proposes grouping the working tree into N
    * logical commits). WRITES NOTHING — the composer confirms before applying. */
   onCompose?: () => void;
+  /** P80: request an AI review of the whole staged set (menu, staged scope). */
+  onReviewStaged?: () => void;
+  /** P80: request an AI review of the WHOLE working tree (menu, worktree scope). */
+  onReviewWorktree?: () => void;
+  /** P15b: true while an AI explain/review call is in flight — disables Review. */
+  aiAnalyzing?: boolean;
+  /** P34: stash the worktree per scope (absorbed from RightPanelActionsRow). */
+  onStash?: (scope: StashScope) => void;
+  /** P80: stash is only reachable in the normal working state (opState 'none',
+   *  born HEAD) — never during a merge/rebase/etc, where `git stash` refuses on
+   *  unmerged paths. When false the stash items are hidden from the menu. */
+  canStash?: boolean;
+  /** Per-scope stash enablement (P80, verbatim semantics). */
+  hasTrackedChanges?: boolean;
+  hasUntracked?: boolean;
   /** P40b: open Settings → Git config focused on Identity. When provided, a
    * "Set identity…" button appears beside a `configMissing` commit error. */
   onOpenIdentitySettings?: () => void;
@@ -61,7 +89,8 @@ export interface CommitBoxHandle {
 
 const SUMMARY_LIMIT = 72;
 
-/** Pinned at the right-panel bottom: message textarea + Commit button (M3 §4.3). */
+/** Pinned at the right-panel bottom: message textarea + compact toolbar + Commit
+ * button(s) (M3 §4.3 / P80 §2b). */
 export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function CommitBox(
   {
     stagedCount,
@@ -73,11 +102,23 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
     conflictCount = 0,
     blocked = false,
     amend = false,
+    amendMessage,
+    canAmend = false,
+    onToggleAmend,
+    showAmendPushWarning = false,
+    primaryCommitAction = 'commit',
     aiEligible = false,
     onGenerate,
-    onOpenIdentitySettings,
     workingDirty = false,
     onCompose,
+    onReviewStaged,
+    onReviewWorktree,
+    aiAnalyzing = false,
+    onStash,
+    canStash = false,
+    hasTrackedChanges = false,
+    hasUntracked = false,
+    onOpenIdentitySettings,
     signingStatus,
   },
   ref,
@@ -97,6 +138,41 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
   const [generating, setGenerating] = useState(false);
   const [replaceConfirmOpen, setReplaceConfirmOpen] = useState(false);
 
+  // P80: amend reseed effect. `amend` remains a prop (owned by RepoWorkspace);
+  // the box no longer remounts on toggle, so we reseed `message` in place —
+  // stashing a user-typed commit draft across an amend excursion.
+  const commitDraftRef = useRef('');
+  const prevAmendRef = useRef(amend);
+  const messageRef = useRef(message);
+  messageRef.current = message;
+  const amendSeededRef = useRef(false);
+
+  useEffect(() => {
+    const wasAmend = prevAmendRef.current;
+    if (wasAmend === amend) return;
+    prevAmendRef.current = amend;
+    if (amend) {
+      commitDraftRef.current = messageRef.current;
+      setMessage(amendMessage ?? '');
+      amendSeededRef.current = amendMessage != null;
+    } else {
+      setMessage(commitDraftRef.current);
+      amendSeededRef.current = false;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [amend, amendMessage]);
+
+  // Async-race guard: amendMessage may resolve AFTER amend already flipped true.
+  // Apply it only while the box is still untouched, so a fast typist is never
+  // overwritten.
+  useEffect(() => {
+    if (amend && !amendSeededRef.current && amendMessage != null && messageRef.current === '') {
+      setMessage(amendMessage);
+      amendSeededRef.current = true;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [amend, amendMessage]);
+
   const merge = mode === 'merge';
   const firstLineLen = (message.split('\n', 1)[0] ?? '').length;
   const disabled =
@@ -107,7 +183,7 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
     generating ||
     (merge ? conflictCount > 0 : amend ? false : stagedCount === 0);
 
-  // Normal commit mode only: the split Commit & Push / Commit control. Narrowed
+  // Normal commit mode only: the split Commit / Commit & Push control. Narrowed
   // to a defined action here so the render needs no redundant undefined guard.
   const splitAction = !merge && !amend ? onCommitAndPush : undefined;
 
@@ -125,12 +201,22 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
   const showGenerate = !merge && onGenerate !== undefined;
   const generateDisabled =
     blocked || !aiEligible || stagedCount === 0 || busy || generating || submitting !== null;
+  const generateTitle = !aiEligible
+    ? 'Enable AI features in settings to generate a commit message'
+    : stagedCount === 0
+      ? 'Stage changes to generate a commit message'
+      : 'Generate a commit message from the staged changes';
 
-  // P54c: the "Compose commits ✨" affordance (commit mode only). Disabled when
+  // P54c: the "✨ Compose commits" affordance (commit mode only). Disabled when
   // AI is ineligible, the tree is clean, or a mutation/generation is in flight.
   const showCompose = !merge && !amend && onCompose !== undefined;
   const composeDisabled =
     blocked || !aiEligible || !workingDirty || busy || generating || submitting !== null;
+  const composeTitle = !aiEligible
+    ? 'Enable AI features in settings to compose commits'
+    : !workingDirty
+      ? 'No working-tree changes to compose'
+      : 'Group the working tree into logical commits with AI';
 
   async function runGenerate() {
     if (onGenerate === undefined) return;
@@ -171,6 +257,9 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
     try {
       await action(message, signArg, skipHooks);
       setMessage('');
+      // P80: clear the stashed commit draft so a later amend excursion cannot
+      // resurrect a message that was already committed.
+      commitDraftRef.current = '';
       setError(null);
     } catch (e) {
       // Set-upstream / hook dialog dismissed: nothing was committed. Leave the
@@ -192,55 +281,36 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
 
   useImperativeHandle(ref, () => ({ submit: () => submit() }));
 
+  // P80 D1: which action carries `.btn-primary`. Only meaningful for the split
+  // control (non-merge, non-amend, onCommitAndPush provided).
+  const pushIsPrimary = primaryCommitAction === 'commitPush';
+
+  const commitBtn = (primary: boolean) => (
+    <button
+      type="button"
+      className={primary ? 'btn-primary commit-button' : 'btn-secondary commit-button-secondary'}
+      disabled={disabled}
+      onClick={() => submit()}
+    >
+      {submitting === 'commit' ? 'Committing…' : 'Commit'}
+    </button>
+  );
+  const pushBtn = (primary: boolean, action: NonNullable<typeof splitAction>) => (
+    <button
+      type="button"
+      className={primary ? 'btn-primary commit-button' : 'btn-secondary commit-button-secondary'}
+      disabled={disabled}
+      onClick={() => void runSubmit('commitPush', action)}
+    >
+      {submitting === 'commitPush' ? 'Committing & Pushing…' : 'Commit & Push'}
+    </button>
+  );
+
   return (
     <div className="commit-box">
-      {(showGenerate || showCompose) && (
-        <div className="commit-box-header">
-          {showGenerate && (
-            <button
-              type="button"
-              className="btn-secondary commit-generate-button"
-              disabled={generateDisabled}
-              onClick={onGenerateClick}
-              title={
-                !aiEligible
-                  ? 'Enable AI features in settings to generate a commit message'
-                  : stagedCount === 0
-                    ? 'Stage changes to generate a commit message'
-                    : 'Generate a commit message from the staged changes'
-              }
-            >
-              {generating ? 'Generating…' : '✨ Generate'}
-            </button>
-          )}
-          {showCompose && (
-            <button
-              type="button"
-              className="btn-secondary commit-compose-button"
-              disabled={composeDisabled}
-              onClick={onCompose}
-              title={
-                !aiEligible
-                  ? 'Enable AI features in settings to compose commits'
-                  : !workingDirty
-                    ? 'No working-tree changes to compose'
-                    : 'Group the working tree into logical commits with AI'
-              }
-            >
-              {'Compose commits ✨'}
-            </button>
-          )}
-        </div>
-      )}
       {/* P67 §2 item 4 / D9: `rows` is only the no-`field-sizing` FALLBACK size
-          (macOS WKWebView / Linux webkit2gtk, floored by the `@supports not`
-          rule in styles.css). On a supporting engine (WebView2 = evergreen
-          Chromium) `rows` is IGNORED for sizing: the box auto-grows with its
-          content between --rp-msg-min and --rp-msg-max. So `rows={5}` makes a
-          merge message open tall only on the fallback engines; on Chromium a
-          short `Merge branch 'x'` opens at the 48 px floor and grows as you
-          type. Giving merge mode its own taller floor is OQ4 — a native
-          checkpoint tuning call, deliberately not guessed here. */}
+          (macOS WKWebView / Linux webkit2gtk). On WebView2 the box auto-grows
+          with content between --rp-msg-min and --rp-msg-max. */}
       <textarea
         className="commit-message"
         rows={merge ? 5 : 1}
@@ -262,28 +332,86 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
           }
         }}
       />
-      {message.length > 0 && (
-        <div
-          className={
-            firstLineLen > SUMMARY_LIMIT ? 'commit-counter commit-counter-over' : 'commit-counter'
-          }
-        >
-          {firstLineLen}/{SUMMARY_LIMIT}
+      {/* P80 §2b D2: one compact toolbar — generate icon, counter, options menu. */}
+      <div className="commit-msg-toolbar">
+        {showGenerate && (
+          <button
+            type="button"
+            className="commit-msg-tool commit-generate-button"
+            disabled={generateDisabled}
+            aria-label="Generate commit message"
+            aria-busy={generating}
+            title={generateTitle}
+            onClick={onGenerateClick}
+          >
+            {'✨'}
+          </button>
+        )}
+        {message.length > 0 && (
+          <span
+            className={
+              firstLineLen > SUMMARY_LIMIT ? 'commit-counter commit-counter-over' : 'commit-counter'
+            }
+          >
+            {firstLineLen}/{SUMMARY_LIMIT}
+          </span>
+        )}
+        <CommitOptionsMenu
+          disabled={blocked}
+          busy={busy || submitting !== null}
+          aiEligible={aiEligible && (onReviewStaged !== undefined || onReviewWorktree !== undefined)}
+          stagedCount={stagedCount}
+          workingDirty={workingDirty}
+          aiAnalyzing={aiAnalyzing}
+          onReviewStaged={() => onReviewStaged?.()}
+          onReviewWorktree={() => onReviewWorktree?.()}
+          canAmend={canAmend && onToggleAmend !== undefined}
+          amend={amend}
+          onToggleAmend={(next) => onToggleAmend?.(next)}
+          showSign={showSign}
+          signChecked={signChecked}
+          onChangeSign={setSignOverride}
+          signFormatLabel={signFormatLabel}
+          signingStatus={signingStatus}
+          skipHooks={skipHooks}
+          onChangeSkipHooks={setSkipHooks}
+          showCompose={showCompose}
+          composeDisabled={composeDisabled}
+          composeTitle={composeTitle}
+          onCompose={() => onCompose?.()}
+          canStash={canStash}
+          hasTrackedChanges={hasTrackedChanges}
+          hasUntracked={hasUntracked}
+          onStash={(scope) => onStash?.(scope)}
+        />
+      </div>
+      {/* P80: single conditional note line below the toolbar (2c refines the
+          glyph/copy; behavior preserved here). Priority: amend-pushed >
+          sign no-key > sign will-sign > skip hooks. */}
+      {showAmendPushWarning ? (
+        <div className="amend-push-warning" role="note">
+          This commit is already pushed — amending rewrites published history.
         </div>
-      )}
-      {/* P67 §5.2: P58c sign + P59a skip-hooks (≡ --no-verify, offered in every
-          commit-like mode) share ONE wrapping row. State stays here. */}
-      <CommitOptionsRow
-        showSign={showSign}
-        signChecked={signChecked}
-        onChangeSign={setSignOverride}
-        signingStatus={signingStatus}
-        signFormatLabel={signFormatLabel}
-        onOpenIdentitySettings={onOpenIdentitySettings}
-        skipHooks={skipHooks}
-        onChangeSkipHooks={setSkipHooks}
-        disabled={submitting !== null || blocked}
-      />
+      ) : showSign && signChecked && !(signingStatus?.hasKey ?? false) ? (
+        <span className="commit-sign-warn" role="note">
+          No signing key set — set user.signingkey
+          {onOpenIdentitySettings !== undefined && (
+            <button
+              type="button"
+              className="commit-sign-fix"
+              onClick={() => onOpenIdentitySettings()}
+            >
+              Set key…
+            </button>
+          )}
+        </span>
+      ) : showSign && signChecked && (signingStatus?.hasKey ?? false) ? (
+        <span className="commit-sign-hint">Commits will be signed ({signFormatLabel})</span>
+      ) : skipHooks ? (
+        <span className="commit-skip-hint" role="note">
+          Git hooks (pre-commit, commit-msg) won’t run for this commit
+        </span>
+      ) : null}
       {error !== null && (
         <div className="error-banner error-banner-dismissible commit-error" role="alert">
           <span className="error-banner-text">
@@ -310,22 +438,17 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
       )}
       {splitAction ? (
         <div className="commit-button-row">
-          <button
-            type="button"
-            className="btn-primary commit-button"
-            disabled={disabled}
-            onClick={() => void runSubmit('commitPush', splitAction)}
-          >
-            {submitting === 'commitPush' ? 'Committing & Pushing…' : 'Commit & Push'}
-          </button>
-          <button
-            type="button"
-            className="btn-secondary commit-button-secondary"
-            disabled={disabled}
-            onClick={() => submit()}
-          >
-            {submitting === 'commit' ? 'Committing…' : 'Commit'}
-          </button>
+          {pushIsPrimary ? (
+            <>
+              {pushBtn(true, splitAction)}
+              {commitBtn(false)}
+            </>
+          ) : (
+            <>
+              {commitBtn(true)}
+              {pushBtn(false, splitAction)}
+            </>
+          )}
         </div>
       ) : (
         <button

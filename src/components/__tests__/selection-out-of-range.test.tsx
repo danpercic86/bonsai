@@ -80,6 +80,7 @@ function renderPanel(over: Partial<WorkspaceRightPanelProps>) {
     headBranch: null,
     listView: 'flat',
     panelDensity: 'cozy',
+    primaryCommitAction: 'commit',
     scope: { kind: 'root' },
     setScope: vi.fn(),
     clearCompare: vi.fn(),
