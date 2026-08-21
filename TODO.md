@@ -26,9 +26,9 @@ contract files are indexed in `docs/contracts/INDEX.md`.
 
 ---
 
-## 🌿 P82 — color-coded git identity profiles — AI-gate GREEN, native checkpoint pending
+## ✅ P82 — color-coded git identity profiles — done
 
-**Current step:** shipped + tester coverage; AI gate green; awaiting native USER CHECKPOINT.
+**Current step:** none — AI gate GREEN + USER CHECKPOINT CONFIRMED (user 2026-08-21).
 
 Each P44 identity profile carries a color so same-named profiles are distinguishable at a glance.
 Closed 9-value named palette (`ProfileColor` = Neutral + 8 vetted hues), additive field-level
@@ -49,9 +49,9 @@ shadows outer `raw` param; nextFreeHue-vs-autoDistinct first-slot overlap for le
 
 ---
 
-## 🌿 P83 — merge & close/decline PRs from the panel (all 4 forges) — AI-gate GREEN, native checkpoint pending
+## ✅ P83 — merge & close/decline PRs from the panel (all 4 forges) — done
 
-**Current step:** all four increments shipped + reviewed + tester coverage; AI gate green; awaiting native USER CHECKPOINT.
+**Current step:** none — AI gate GREEN + USER CHECKPOINT CONFIRMED (user 2026-08-21; merge + close/decline verified per forge).
 
 Adds Merge and Close/Decline/Abandon to the PR detail panel across GitHub, GitLab, Bitbucket, Azure.
 `ForgeProvider::merge_pr`/`close_pr`; `MergeMethod` (Merge/Squash/Rebase/FastForward) filtered per forge
