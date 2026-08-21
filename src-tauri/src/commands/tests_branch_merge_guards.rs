@@ -119,8 +119,14 @@ fn remote_commands_require_an_open_repo() {
 fn forge_commands_require_an_open_repo() {
     let state = AppState::default();
 
-    let err = tauri::async_runtime::block_on(forge_repo_context_inner(&state, MISSING_ID))
-        .expect_err("forge_repo_context with no repo");
+    // P79: the inner fns take a settings-file path for the known-hosts index
+    // sync. `repo_path` rejects MISSING_ID before the file is ever touched, so a
+    // non-existent temp path is fine here.
+    let settings_file = std::path::Path::new("D:/Temp/bonsai-nonexistent-settings.json");
+
+    let err =
+        tauri::async_runtime::block_on(forge_repo_context_inner(&state, settings_file, MISSING_ID))
+            .expect_err("forge_repo_context with no repo");
     assert!(matches!(err, AppError::NoRepo));
 
     let err = tauri::async_runtime::block_on(forge_list_prs_inner(
@@ -162,14 +168,16 @@ fn forge_commands_require_an_open_repo() {
 
     let err = tauri::async_runtime::block_on(forge_set_token_inner(
         &state,
+        settings_file,
         MISSING_ID,
         "tok".to_string(),
     ))
     .expect_err("forge_set_token with no repo");
     assert!(matches!(err, AppError::NoRepo));
 
-    let err = tauri::async_runtime::block_on(forge_clear_token_inner(&state, MISSING_ID))
-        .expect_err("forge_clear_token with no repo");
+    let err =
+        tauri::async_runtime::block_on(forge_clear_token_inner(&state, settings_file, MISSING_ID))
+            .expect_err("forge_clear_token with no repo");
     assert!(matches!(err, AppError::NoRepo));
 
     let err = tauri::async_runtime::block_on(forge_commit_statuses_inner(

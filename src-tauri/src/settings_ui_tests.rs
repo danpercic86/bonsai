@@ -351,6 +351,88 @@ fn old_settings_file_without_panel_density_loads_default() {
     assert_eq!(loaded.pane_widths.sidebar, 300);
 }
 
+/// P79: a pre-P79 settings.json (no `forgeHosts` key) loads with an empty index
+/// and does NOT bump the version or rewrite anything on load.
+#[test]
+fn old_settings_file_without_forge_hosts_loads_empty() {
+    let dir = tempfile::TempDir::new().expect("create temp dir");
+    let file = settings_path(&dir);
+    let json = r#"{
+            "version": 1,
+            "recentRepos": [],
+            "theme": "dark"
+        }"#;
+    std::fs::write(&file, json).expect("write pre-P79 settings.json");
+
+    let loaded = load_from(&file);
+    assert!(loaded.forge_hosts.is_empty());
+    assert_eq!(loaded.version, SETTINGS_VERSION);
+}
+
+/// P79: `forgeHosts` survives a load→save→load round-trip with its camelCase
+/// wire shape (host + kind + login), and the upsert/remove/backfill helpers
+/// behave as the sync rules require.
+#[test]
+fn forge_hosts_round_trip_and_index_helpers() {
+    use bonsai_forge::ForgeKind;
+
+    let dir = tempfile::TempDir::new().expect("create temp dir");
+    let file = settings_path(&dir);
+
+    // upsert twice on the same host replaces (no duplicate), latest login wins.
+    let saved = update(&file, |s| {
+        upsert_forge_host(s, "GitHub.com", ForgeKind::GitHub, Some("octocat".into()));
+        upsert_forge_host(s, "github.com", ForgeKind::GitHub, Some("octocat2".into()));
+        upsert_forge_host(s, "gitlab.com", ForgeKind::GitLab, None);
+    })
+    .expect("update forge_hosts");
+    assert_eq!(saved.forge_hosts.len(), 2);
+    let gh = saved
+        .forge_hosts
+        .iter()
+        .find(|r| r.host == "github.com")
+        .expect("github record");
+    assert_eq!(gh.kind, ForgeKind::GitHub);
+    assert_eq!(gh.login.as_deref(), Some("octocat2"));
+
+    // Round-trips through JSON.
+    let reloaded = load_from(&file);
+    assert_eq!(reloaded.forge_hosts, saved.forge_hosts);
+
+    // backfill only inserts when the host is absent (does not clobber login).
+    let after_backfill = update(&file, |s| {
+        assert!(!backfill_forge_host(
+            s,
+            "github.com",
+            ForgeKind::GitHub,
+            None
+        ));
+        assert!(backfill_forge_host(
+            s,
+            "bitbucket.org",
+            ForgeKind::Bitbucket,
+            Some("bb".into())
+        ));
+    })
+    .expect("backfill");
+    assert_eq!(after_backfill.forge_hosts.len(), 3);
+    assert_eq!(
+        after_backfill
+            .forge_hosts
+            .iter()
+            .find(|r| r.host == "github.com")
+            .and_then(|r| r.login.as_deref()),
+        Some("octocat2"),
+        "backfill must not clobber an existing login"
+    );
+
+    // remove drops exactly one host.
+    let after_remove = update(&file, |s| remove_forge_host(s, "GITHUB.COM"))
+        .expect("remove forge host");
+    assert_eq!(after_remove.forge_hosts.len(), 2);
+    assert!(!after_remove.forge_hosts.iter().any(|r| r.host == "github.com"));
+}
+
 /// A `settings.json` with in-range `recentRepos` but out-of-range/corrupt
 /// `paneWidths` values (e.g. hand-edited, or written by a future version
 /// with looser bounds) is clamped on load rather than left out-of-range or

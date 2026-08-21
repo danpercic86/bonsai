@@ -269,7 +269,11 @@ pub fn run() {
             commands::forge_list_review_comments,
             commands::forge_set_token,
             commands::forge_clear_token,
-            commands::forge_commit_statuses
+            commands::forge_commit_statuses,
+            commands::forge_list_accounts,
+            commands::forge_set_token_for_host,
+            commands::forge_clear_token_for_host,
+            commands::forge_invalidate_viewer
         ])
         .build(tauri::generate_context!())
         .expect("error while running Bonsai")

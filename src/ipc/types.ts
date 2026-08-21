@@ -1846,6 +1846,15 @@ export interface ForgeRepoContext {
   /** Non-null only when a validated viewer is cache-warm (after set-token). */
   viewer: ForgeViewer | null;
 }
+/** P79: one connected/known forge account for the Accounts settings section.
+ *  `login`/`avatarUrl` are best-effort display hints; never a token. */
+export interface ForgeAccount {
+  host: string;
+  kind: ForgeKind;
+  login: string | null;
+  avatarUrl: string | null;
+  connected: boolean;
+}
 /** One row in a PR list. */
 export interface PrSummary {
   number: number;
@@ -2744,4 +2753,19 @@ export interface IpcApi {
    *  Rejects AppError (`noRepo` | `forgeUnsupported` | `noRemote` | `forgeApi`
    *  | `forgeRateLimited` | `authFailed` | `networkError` | `git`). */
   forgeCommitStatuses(repoId: string, shas: string[]): Promise<CommitStatus[]>;
+  // --- P79: global forge account management (repo-independent) ---
+  /** P79: all forge hosts with a stored/known token (the settings index), each
+   *  with live `connected` + best-effort login/avatar. No network. Rejects
+   *  AppError (`other`). */
+  forgeListAccounts(): Promise<ForgeAccount[]>;
+  /** P79: validate + store a PAT for `host`/`kind` directly (no repo) and upsert
+   *  the known-hosts index. Rejects AppError (`authFailed` | `forgeUnsupported`
+   *  | `forgeRateLimited` | `networkError` | `other`). */
+  forgeSetTokenForHost(host: string, kind: ForgeKind, token: string): Promise<ForgeViewer>;
+  /** P79: delete a host's token + remove it from the index. Idempotent. Rejects
+   *  AppError (`other`). */
+  forgeClearTokenForHost(host: string): Promise<void>;
+  /** P79: evict a host's cached viewer WITHOUT deleting the token (expiry flow).
+   *  Infallible. */
+  forgeInvalidateViewer(host: string): Promise<void>;
 }

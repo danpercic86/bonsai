@@ -4,12 +4,18 @@
 //                   so the panel shows <ForgeConnect>; forgeSetToken then flips it.
 //   ?forge=auth   → starts authenticated (viewer warm) → the PR list renders at once.
 //   ?forge=off    → every command throws {kind:'networkError'} (offline path).
-//   token incl. 'bad' in forgeSetToken → throws {kind:'authFailed'} (mirrors
-//                   compose's '#fail'), storing/flipping nothing.
+//   ?forge=expired→ token present but viewer cold; the first forgeListPrs throws
+//                   {kind:'authFailed'} once, driving the P79 reauth flow (§4).
+//   token incl. 'bad' in forgeSetToken(ForHost) → throws {kind:'authFailed'}
+//                   (mirrors compose's '#fail'), storing/flipping nothing.
+// P79: a module-level `accounts` index backs the global Accounts settings
+// section; forgeSetToken*/clear* keep it in sync so both views agree.
 // Spread into mockIpc via forgeHandlers.
 import { AI_OFF, delay, query as urlParam, requireRepo } from '../repoState';
 import {
   commitStatusFor,
+  FORGE_ACCOUNT_GITHUB,
+  FORGE_ACCOUNT_LONG,
   FORGE_PR_DETAIL,
   FORGE_PR_LIST,
   FORGE_REPO_CONTEXT,
@@ -20,6 +26,7 @@ import type {
   AppError,
   CommitStatus,
   CreatePrInput,
+  ForgeAccount,
   ForgeKind,
   ForgeRepoContext,
   ForgeViewer,
@@ -64,9 +71,42 @@ const FORGE_HOST: Record<ForgeKind, string> = {
 // sample project so the harness renders the Azure context faithfully. `null`
 // for every other provider (matches the real backend).
 const FORGE_PROJECT: string | null = FORGE_KIND === 'azureDevOps' ? 'sample-project' : null;
+// P79: `?forge=expired` seeds a host whose token is still present (authenticated)
+// but whose viewer is COLD, and arms a one-shot authFailed on the first
+// forgeListPrs so the harness exercises the expiry → reconnect (§4) flow.
+const FORGE_EXPIRED = urlParam('forge') === 'expired';
 // Mutable across the browser session: forgeSetToken / forgeClearToken toggle it
-// and forgeRepoContext reflects it. Seeded true only by ?forge=auth.
-let authenticated = urlParam('forge') === 'auth';
+// and forgeRepoContext reflects it. Seeded true by ?forge=auth and ?forge=expired
+// (the token is present in both; expiry only cools the viewer, below).
+let authenticated = urlParam('forge') === 'auth' || FORGE_EXPIRED;
+// Whether the viewer cache is warm. `?forge=expired` starts token-present but
+// viewer-cold; forgeInvalidateViewer cools it without clearing the token.
+let viewerWarm = urlParam('forge') === 'auth';
+// One-shot: the first forgeListPrs under ?forge=expired rejects authFailed.
+let expiredArmed = FORGE_EXPIRED;
+
+// P79: the module-level Accounts index for the Accounts settings section.
+// Seeded from ?forge=auth (one warm github.com account + a long-content account)
+// and ?forge=expired (github.com present but viewer cold). forgeSetToken*/clear*
+// keep it in sync so the PR-panel and settings views agree in the harness.
+let accounts: ForgeAccount[] =
+  urlParam('forge') === 'auth'
+    ? [{ ...FORGE_ACCOUNT_GITHUB }, { ...FORGE_ACCOUNT_LONG }]
+    : FORGE_EXPIRED
+      ? [{ ...FORGE_ACCOUNT_GITHUB, login: null, avatarUrl: null }]
+      : [];
+
+/** Insert-or-replace an account keyed by host (mirrors the backend's index
+ *  upsert). Never stores a token. */
+function upsertAccount(host: string, kind: ForgeKind, login: string | null, avatarUrl: string | null): void {
+  accounts = accounts.filter((a) => a.host !== host);
+  accounts.unshift({ host, kind, login, avatarUrl, connected: true });
+}
+
+/** Remove an account keyed by host (mirrors the backend's index removal). */
+function removeAccount(host: string): void {
+  accounts = accounts.filter((a) => a.host !== host);
+}
 
 /** `?forge=off` ⇒ simulate an offline/unreachable forge on every command. */
 function offGuard(): void {
@@ -94,7 +134,7 @@ export const forgeHandlers = {
       project: FORGE_PROJECT,
       ...(FORGE_KIND === 'gitHub' ? {} : { host, webUrl }),
       authenticated,
-      viewer: authenticated ? FORGE_VIEWER : null,
+      viewer: authenticated && viewerWarm ? FORGE_VIEWER : null,
     };
   },
 
@@ -102,6 +142,13 @@ export const forgeHandlers = {
     await delay(150);
     requireRepo(repoId);
     offGuard();
+    // P79 (§4): under ?forge=expired the first list call rejects authFailed once,
+    // driving the PR panel into the reauth flow (invalidate viewer + reconnect).
+    if (expiredArmed) {
+      expiredArmed = false;
+      const err: AppError = { kind: 'authFailed', message: 'mock: saved token expired or was revoked' };
+      throw err;
+    }
     const items = FORGE_PR_LIST.filter((pr) => query.state === 'all' || pr.state === query.state);
     return { items, page: query.page, hasNext: false };
   },
@@ -175,6 +222,9 @@ export const forgeHandlers = {
       throw err;
     }
     authenticated = true;
+    viewerWarm = true;
+    // P79: keep the Accounts index in sync for the current repo's host.
+    upsertAccount(FORGE_HOST[FORGE_KIND], FORGE_KIND, FORGE_VIEWER.login, FORGE_VIEWER.avatarUrl);
     return FORGE_VIEWER;
   },
 
@@ -183,6 +233,9 @@ export const forgeHandlers = {
     requireRepo(repoId);
     offGuard();
     authenticated = false;
+    viewerWarm = false;
+    // P79: remove the current repo's host from the Accounts index.
+    removeAccount(FORGE_HOST[FORGE_KIND]);
   },
 
   // P64: AI PR-description generation (provider-agnostic; pure local git + the
@@ -241,5 +294,48 @@ export const forgeHandlers = {
     return shas
       .map((sha) => commitStatusFor(sha))
       .filter((s): s is CommitStatus => s !== null);
+  },
+
+  // P79: global forge account management (repo-independent). Offline, mirrors the
+  // backend's index sync + error text. Never carries a token.
+  async forgeListAccounts(): Promise<ForgeAccount[]> {
+    await delay(120);
+    offGuard();
+    return accounts.map((a) => ({ ...a }));
+  },
+
+  async forgeSetTokenForHost(host: string, kind: ForgeKind, token: string): Promise<ForgeViewer> {
+    await delay(200);
+    offGuard();
+    // OD-2: Azure DevOps has no repo-less identity endpoint (mirror the backend).
+    if (kind === 'azureDevOps') {
+      const err: AppError = {
+        kind: 'forgeUnsupported',
+        message: 'Azure DevOps accounts must be added from an open Azure DevOps repository',
+      };
+      throw err;
+    }
+    // Mirrors forgeSetToken's 'bad' sentinel: a rejected token stores nothing.
+    if (token.includes('bad')) {
+      const err: AppError = { kind: 'authFailed', message: 'mock: token rejected by GET /user' };
+      throw err;
+    }
+    upsertAccount(host, kind, FORGE_VIEWER.login, FORGE_VIEWER.avatarUrl);
+    return FORGE_VIEWER;
+  },
+
+  async forgeClearTokenForHost(host: string): Promise<void> {
+    await delay(120);
+    offGuard();
+    removeAccount(host);
+  },
+
+  async forgeInvalidateViewer(host: string): Promise<void> {
+    await delay(60);
+    // Expiry flow: cool the viewer WITHOUT clearing the token (the account stays
+    // in the index; forgeRepoContext now reports viewer:null, authenticated:true).
+    if (host === FORGE_HOST[FORGE_KIND]) {
+      viewerWarm = false;
+    }
   },
 } satisfies Partial<IpcApi>;

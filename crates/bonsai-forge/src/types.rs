@@ -48,6 +48,23 @@ pub struct ForgeRepoContext {
     pub viewer: Option<ForgeViewer>,
 }
 
+/// P79: one connected (or previously-connected) forge account for the global
+/// Accounts settings section. `login`/`avatar_url` are best-effort display hints
+/// from the process viewer cache + the persisted known-hosts index; this type
+/// NEVER carries a token.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForgeAccount {
+    pub host: String,
+    pub kind: ForgeKind,
+    /// Cache-warm or last-known login; `None` if never validated this install.
+    pub login: Option<String>,
+    /// Cache-warm avatar; `None` when the viewer isn't warm.
+    pub avatar_url: Option<String>,
+    /// A token is currently present in the keychain for `host` (no network).
+    pub connected: bool,
+}
+
 /// PR lifecycle state. `Merged` is derived from GitHub's `merged`/`merged_at`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -266,6 +283,18 @@ mod tests {
             avatar_url: Some("https://x/y.png".into()),
         });
         assert_keys(&v, &["login", "avatarUrl"]);
+    }
+
+    #[test]
+    fn forge_account_wire_shape_is_camel_case() {
+        let v = value_of(&ForgeAccount {
+            host: "github.com".into(),
+            kind: ForgeKind::GitHub,
+            login: Some("octocat".into()),
+            avatar_url: Some("https://a/o.png".into()),
+            connected: true,
+        });
+        assert_keys(&v, &["host", "kind", "login", "avatarUrl", "connected"]);
     }
 
     #[test]

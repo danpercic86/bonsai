@@ -50,6 +50,23 @@ pub struct IdentityProfile {
     pub signing_key: Option<String>,
 }
 
+/// P79: one forge host Bonsai has stored a PAT for. The keychain is the store of
+/// record for the token; this index only remembers WHICH hosts exist (the
+/// keychain can't be enumerated portably) plus a display hint. NEVER holds the
+/// token.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForgeHostRecord {
+    /// Lowercased host, e.g. "github.com". Keychain account key.
+    pub host: String,
+    /// Provider kind, so add-for-host / list can pick the right API without a
+    /// repo. Serialized as `bonsai_forge::ForgeKind` camelCase ("gitHub" | ...).
+    pub kind: bonsai_forge::ForgeKind,
+    /// Last-known login for offline display (avatar is fetched fresh / from the
+    /// viewer cache; not persisted). `None` until first successful validation.
+    pub login: Option<String>,
+}
+
 /// Dark or light chrome (P2 contract §2.1). Lane colors are theme-invariant —
 /// only chrome (`--bg-*`/`--text-*`/etc.) differs; this enum is purely a UI
 /// preference with no effect on Git logic.
@@ -440,6 +457,11 @@ pub struct Settings {
     /// P44: named identity profiles (global). Additive `#[serde(default)]`; a
     /// legacy file without this key loads as an empty Vec.
     pub profiles: Vec<IdentityProfile>,
+    /// P79: forge hosts with a stored PAT (known-hosts index; the keychain is the
+    /// source of record for the token). Additive `#[serde(default)]` ⇒ a pre-P79
+    /// file loads `[]`. Stores only host + kind + optional last-known login,
+    /// NEVER a token.
+    pub forge_hosts: Vec<ForgeHostRecord>,
     /// P49: terminal launch command template (`{path}` placeholder). Empty ⇒
     /// per-OS auto-detect (see `bonsai_core::external`). Additive
     /// `#[serde(default)]` ⇒ a pre-P49 file loads `""`.
@@ -514,6 +536,7 @@ impl Default for Settings {
             onboarding_seen: false,
             auto_check_updates: false,
             profiles: Vec::new(),
+            forge_hosts: Vec::new(),
             terminal_command: String::new(),
             editor_command: String::new(),
             ai_idle_timeout_secs: AI_IDLE_TIMEOUT_DEFAULT,
@@ -565,6 +588,25 @@ pub fn update(file: &Path, mutate: impl FnOnce(&mut Settings)) -> Result<Setting
     let mut s = load_from(file);
     mutate(&mut s);
     save_to(file, &s)?;
+    Ok(s)
+}
+
+/// Like [`update`], but skips the (temp-write + atomic-rename) save when the
+/// mutator reports no change by returning `false`. For hot read paths that only
+/// *occasionally* mutate — e.g. the P79 lazy backfill on `forge_repo_context`,
+/// which would otherwise rewrite `settings.json` on every panel open. Holds the
+/// same [`SETTINGS_IO`] lock across the whole cycle.
+pub fn update_if(
+    file: &Path,
+    mutate: impl FnOnce(&mut Settings) -> bool,
+) -> Result<Settings, AppError> {
+    let _io = SETTINGS_IO
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut s = load_from(file);
+    if mutate(&mut s) {
+        save_to(file, &s)?;
+    }
     Ok(s)
 }
 
@@ -644,6 +686,50 @@ pub fn record_recent(s: &mut Settings, path: &str, now: i64) {
         },
     );
     s.recent_repos.truncate(MAX_RECENT_REPOS);
+}
+
+/// P79: insert-or-replace the known-hosts index record for `host` (keyed by the
+/// lowercased host). Called after every successful set-token (per-repo and
+/// host-based). NEVER stores a token — only host + kind + optional login.
+pub fn upsert_forge_host(
+    s: &mut Settings,
+    host: &str,
+    kind: bonsai_forge::ForgeKind,
+    login: Option<String>,
+) {
+    let host = host.to_ascii_lowercase();
+    if host.is_empty() {
+        return;
+    }
+    s.forge_hosts.retain(|r| r.host != host);
+    s.forge_hosts
+        .insert(0, ForgeHostRecord { host, kind, login });
+}
+
+/// P79: remove the known-hosts index record for `host`. Called after every
+/// clear-token (per-repo and host-based). No-op when absent.
+pub fn remove_forge_host(s: &mut Settings, host: &str) {
+    let host = host.to_ascii_lowercase();
+    s.forge_hosts.retain(|r| r.host != host);
+}
+
+/// P79 lazy backfill (OD-1): add a record for `host` ONLY when it is absent from
+/// the index (a token exists in the keychain but was stored pre-P79 / by another
+/// path). Does not clobber an existing record's login. Returns `true` if it
+/// inserted, so the caller can skip the write when nothing changed.
+pub fn backfill_forge_host(
+    s: &mut Settings,
+    host: &str,
+    kind: bonsai_forge::ForgeKind,
+    login: Option<String>,
+) -> bool {
+    let host = host.to_ascii_lowercase();
+    if host.is_empty() || s.forge_hosts.iter().any(|r| r.host == host) {
+        return false;
+    }
+    s.forge_hosts
+        .insert(0, ForgeHostRecord { host, kind, login });
+    true
 }
 
 #[cfg(test)]

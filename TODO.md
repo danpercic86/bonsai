@@ -100,6 +100,20 @@ modules (a real refactor with call-graph impact, not a leaf move).
 - **P77 — tag sync management.** USER CHECKPOINT (items 1–6) verified by user 2026-08-21; AI gate
   GREEN. Commits `721349d`/`67c42b4`/`d2695bd`/`97ae417`/`e76b20b`. Archived →
   `todo-archive-2026-08.md` Part 18. (Deferred follow-ups carried to OPEN follow-ups below.)
+- **P78 — fine-grained token guidance + Open-PR branch dropdowns.** AI gate GREEN (vitest 35/35,
+  e2e 10/10; reviewer + ui-designer approved). Commit `d50cd42`. Contract
+  `docs/contracts/P78-forge-pr-ui.md`. GitHub connect copy now names fine-grained permissions
+  (Pull requests r/w, Contents r, Metadata auto) + classic `repo` fallback, links the fine-grained
+  token page, `github_pat_…` placeholder; Base/Compare fields are branch comboboxes (allowFreeInput)
+  + `defaultBase` wired. NIT (non-blocking): `prDefaultBase` typed `string|null` but never returns
+  null. **USER CHECKPOINT pending** (native GitHub auth + real PR open).
+- **P79 — forge account management.** `in-progress`. **Current step:** architect writing
+  `docs/contracts/P79-forge-account-management.md`. Scope (user-approved 2026-08-21): (1) change/
+  disconnect in the PR panel, (2) token-expiry → reconnect prompt (policy: KEEP token, don't
+  auto-delete), (3) global Accounts settings section (list connected hosts, add/change/disconnect a
+  host token without a repo open). Tokens are already shared per-host across repos (keychain
+  account=host); `forgeClearToken` exists but no UI calls it. Needs a new connected-hosts index +
+  list command (keychain isn't portably enumerable).
 - **All native USER CHECKPOINTs for P2 → P61 are CONFIRMED.** Batches: 2026-07-30 (P4, P3a–P3f, P7,
   P7e, P7f, P8, P9), 2026-08-03 (P18–P27), **2026-08-08** ("mark everything as checked" — P28 through
   P61 inclusive: P32, P37–P46, the credential-cache and UX-fix batches, Phase 1 P49–P52, Phase 2

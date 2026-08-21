@@ -45,6 +45,8 @@ import type {
   ComposeApplyResult,
   ComposePlan,
   CreatePrInput,
+  ForgeAccount,
+  ForgeKind,
   ForgeRepoContext,
   ForgeViewer,
   PrDescription,
@@ -1094,5 +1096,23 @@ export const tauriIpc: IpcApi = {
 
   forgeCommitStatuses(repoId: string, shas: string[]): Promise<CommitStatus[]> {
     return invoke<CommitStatus[]>('forge_commit_statuses', { repoId, shas });
+  },
+
+  // P79: global forge account management (repo-independent). Arg keys match the
+  // Rust command param names (camelCase host/kind/token).
+  forgeListAccounts(): Promise<ForgeAccount[]> {
+    return invoke<ForgeAccount[]>('forge_list_accounts');
+  },
+
+  forgeSetTokenForHost(host: string, kind: ForgeKind, token: string): Promise<ForgeViewer> {
+    return invoke<ForgeViewer>('forge_set_token_for_host', { host, kind, token });
+  },
+
+  forgeClearTokenForHost(host: string): Promise<void> {
+    return invoke<void>('forge_clear_token_for_host', { host });
+  },
+
+  forgeInvalidateViewer(host: string): Promise<void> {
+    return invoke<void>('forge_invalidate_viewer', { host });
   },
 };

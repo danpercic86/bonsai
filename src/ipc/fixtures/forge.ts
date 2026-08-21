@@ -13,6 +13,7 @@
 import type {
   CheckRollup,
   CommitStatus,
+  ForgeAccount,
   ForgeRepoContext,
   ForgeViewer,
   PrDetail,
@@ -39,6 +40,27 @@ const GH_PAGES_TIP = tipOid(28); // local `gh-pages`
 export const FORGE_VIEWER: ForgeViewer = {
   login: 'octocat',
   avatarUrl: 'https://avatars.githubusercontent.com/u/583231?v=4',
+};
+
+/** P79: the seed forge account served to the Accounts settings section when the
+ *  harness starts authenticated (`?forge=auth`). A warm github.com sign-in with
+ *  login + avatar; `connected` true. Never carries a token. */
+export const FORGE_ACCOUNT_GITHUB: ForgeAccount = {
+  host: 'github.com',
+  kind: 'gitHub',
+  login: FORGE_VIEWER.login,
+  avatarUrl: FORGE_VIEWER.avatarUrl,
+  connected: true,
+};
+
+/** P79: a second account with an intentionally long host + login, so the
+ *  harness can verify ellipsis + tooltip truncation in the account cards. */
+export const FORGE_ACCOUNT_LONG: ForgeAccount = {
+  host: 'gitlab.self-hosted.very-long-enterprise-subdomain.example.com',
+  kind: 'gitLab',
+  login: 'a-rather-long-enterprise-account-login-name',
+  avatarUrl: null,
+  connected: true,
 };
 
 /** Baseline identity for the fixture repo. The mock overrides `authenticated`
