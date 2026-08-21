@@ -51,8 +51,9 @@ milestones are on this board below (they were NOT closed by the waiver).
 **Branch:** `worktree-commit-panel-ux` (worktree `.claude/worktrees/commit-panel-ux`; forked from
 origin/main to avoid the concurrent main session). Not yet merged to main.
 
-**Current step:** all four commits landed & reviewed; AI gate green except the env-only disk-full
-nextest write error (D: at 100%). Awaiting native USER CHECKPOINT, then merge to main.
+**Current step:** all four commits landed & reviewed; AI gate green (the only nextest red is the
+pre-existing `prop_status` porcelain proptest, unrelated). **Native USER CHECKPOINT CONFIRMED by the
+user 2026-08-21** (amend-focus + visual pass). Ready to merge to main.
 
 Origin: user asked for a designer pass over the right-panel Working tab (make staging/committing
 easier, maximize list space) + a bug where staging opened a "random" next file. Contract:
