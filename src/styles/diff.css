@@ -84,6 +84,20 @@ span.file-row-main {
   flex: none;
 }
 
+/* Icon-system §2.7: the Explain button — 14px leading SummarizeIcon + label. */
+.diff-explain-button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.diff-explain-button svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
 /* P4e Step 1: file-type accent chip in the diff overlay header. */
 .lang-chip {
   flex: none;

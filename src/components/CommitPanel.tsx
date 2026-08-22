@@ -4,6 +4,7 @@ import { verifyBadgeKind, verifyStatusLabel } from '../graph/verifyBadge';
 import type { CommitDiff, CommitVerification, GraphNode, ListView } from '../ipc';
 import { DiffFileTree } from './DiffFileTree';
 import type { DiffScope } from './DiffFileTree';
+import { SummarizeIcon } from './menuIcons';
 
 // Mode B (M4 contract §4.3): shown INSTEAD of StatusPanel + CommitBox when a
 // graph commit is selected. Presentational — App owns all fetching.
@@ -139,7 +140,8 @@ export function CommitPanel({
               title="Explain this commit with AI"
               onClick={onExplain}
             >
-              {'✨ Explain'}
+              <SummarizeIcon />
+              <span>Explain</span>
             </button>
           )}
           <button

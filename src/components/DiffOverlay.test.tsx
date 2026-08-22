@@ -79,13 +79,13 @@ describe('DiffOverlay header', () => {
 describe('DiffOverlay Explain gating', () => {
   it('hides Explain when onExplain is undefined', () => {
     render(<DiffOverlay {...props()} />);
-    expect(screen.queryByText('✨ Explain')).not.toBeInTheDocument();
+    expect(screen.queryByText('Explain')).not.toBeInTheDocument();
   });
 
   it('shows Explain and forwards the click when onExplain is provided', () => {
     const onExplain = vi.fn();
     render(<DiffOverlay {...props({ onExplain })} />);
-    fireEvent.click(screen.getByText('✨ Explain'));
+    fireEvent.click(screen.getByText('Explain'));
     expect(onExplain).toHaveBeenCalledTimes(1);
   });
 });

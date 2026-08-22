@@ -6,6 +6,7 @@
 import { useRef, useState } from 'react';
 
 import type { AccountSource, ForgeAccount, ForgeKind } from '../ipc';
+import { MoreIcon } from './appIcons';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 import { accountSourceCaption, accountSourceTooltip } from './forgeAccountSource';
 import { ForgeAvatar } from './ForgeAvatar';
@@ -182,7 +183,7 @@ export function ForgeAccountSwitcher({
         aria-expanded={menu?.which === 'kebab'}
         onClick={openKebab}
       >
-        {'⋯'}
+        <MoreIcon />
       </button>
       {menu?.which === 'switcher' && (
         <ContextMenu

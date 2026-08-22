@@ -8,9 +8,17 @@
   z-index: 7;
 }
 
+/* Icon-system §2.7: the AI-output header marker — a 14px SummarizeIcon centered
+   in the (already aria-hidden) icon slot. */
 .ai-output-icon {
   flex: none;
-  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.ai-output-icon svg {
+  width: 14px;
+  height: 14px;
 }
 
 .ai-output-cost {

@@ -12,6 +12,8 @@
 
 import { useEffect, useState } from 'react';
 
+import { SummarizeIcon } from './menuIcons';
+
 export interface AiOutputPanelProps {
   /** Header title, e.g. "Explain commit a1b2c3d" / "Review staged changes". */
   title: string;
@@ -72,7 +74,7 @@ export function AiOutputPanel({
     <div className="diff-overlay ai-output-panel" role="region" aria-label={title}>
       <div className="diff-overlay-header">
         <span className="ai-output-icon" aria-hidden="true">
-          {'✨'}
+          <SummarizeIcon />
         </span>
         <span className="diff-overlay-path" title={title}>
           {title}

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SigningStatus, StashScope } from '../ipc';
+import { MoreIcon } from './appIcons';
+import { SummarizeIcon } from './menuIcons';
 
 export interface CommitOptionsMenuProps {
   /** `blocked` — disables the whole `⋯` trigger (P80 D2). */
@@ -180,10 +182,10 @@ export function CommitOptionsMenu({
 
   const reviewStaged = stagedCount > 0;
   const reviewLabel = aiAnalyzing
-    ? '✨ Reviewing…'
+    ? 'Reviewing…'
     : reviewStaged
-      ? '✨ Review staged'
-      : '✨ Review changes';
+      ? 'Review staged'
+      : 'Review changes';
 
   const stashItems: StashItem[] = [
     { scope: 'all', label: 'Stash all', enabled: hasTrackedChanges },
@@ -217,7 +219,7 @@ export function CommitOptionsMenu({
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
       >
-        {'⋯'}
+        <MoreIcon />
       </button>
       {open && (
         <div className="rp-overflow-menu rp-overflow-menu-up" role="menu" ref={menuRef}>
@@ -232,7 +234,7 @@ export function CommitOptionsMenu({
                 onClick={() => choose(reviewStaged ? onReviewStaged : onReviewWorktree)}
                 onKeyDown={onItemKeyDown}
               >
-                <span className="rp-overflow-check" aria-hidden="true" />
+                <SummarizeIcon />
                 <span className="rp-overflow-item-label">{reviewLabel}</span>
               </button>
               <div className="rp-overflow-sep" role="separator" />
@@ -300,8 +302,8 @@ export function CommitOptionsMenu({
                 onClick={() => choose(onCompose)}
                 onKeyDown={onItemKeyDown}
               >
-                <span className="rp-overflow-check" aria-hidden="true" />
-                <span className="rp-overflow-item-label">✨ Compose commits</span>
+                <SummarizeIcon />
+                <span className="rp-overflow-item-label">Compose commits</span>
               </button>
             </>
           )}

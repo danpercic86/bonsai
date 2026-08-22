@@ -240,6 +240,16 @@
 .branch-name-suggest-btn {
   /* Do not stretch across the column-flex container. */
   align-self: flex-start;
+  /* Icon-system §2.7: trailing 14px SummarizeIcon after the label. */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.branch-name-suggest-btn svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
 }
 
 .branch-name-suggest-error {

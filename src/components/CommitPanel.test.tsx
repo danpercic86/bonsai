@@ -134,11 +134,11 @@ describe('CommitPanel', () => {
     expect(el.textContent!.length).toBe(26); // 25 chars + ellipsis
   });
 
-  it('✨ Explain renders only when aiEligible and fires onExplain', () => {
+  it('Explain renders only when aiEligible and fires onExplain', () => {
     renderPanel();
-    expect(screen.queryByRole('button', { name: '✨ Explain' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Explain' })).not.toBeInTheDocument();
     const { props } = renderPanel({ aiEligible: true });
-    fireEvent.click(screen.getByRole('button', { name: '✨ Explain' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Explain' }));
     expect(props.onExplain).toHaveBeenCalledTimes(1);
   });
 

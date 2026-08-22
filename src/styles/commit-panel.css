@@ -33,6 +33,21 @@
   overflow-wrap: anywhere;
 }
 
+/* Icon-system §2.7: the Explain button pairs a 14px leading SummarizeIcon with
+   its label; colour flows via currentColor from .btn-secondary. */
+.commit-explain-button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.commit-explain-button svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
 .commit-close {
   margin-left: 0;
   flex: none;

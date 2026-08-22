@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { ipc } from '../../ipc';
 import type { ForgeAccount } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
+import { MoreIcon } from '../appIcons';
 import { ContextMenu, type ContextMenuItem } from '../ContextMenu';
 import { ForgeAvatar } from '../ForgeAvatar';
 import { CONNECT_HINTS } from '../ForgeConnect';
@@ -153,7 +154,7 @@ export function SettingsAccountCard({
           aria-expanded={menu !== null}
           onClick={openMenu}
         >
-          {'⋯'}
+          <MoreIcon />
         </button>
       </div>
 

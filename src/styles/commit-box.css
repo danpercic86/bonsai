@@ -228,6 +228,15 @@
   flex: 1 1 auto;
 }
 
+/* Icon-system §2.7: AI menu items (Review/Compose) lead with a 16px SummarizeIcon
+   in place of the check column, so their labels align with the checkable items
+   below. Colour inherits from .rp-overflow-item (--text-1). */
+.rp-overflow-item-ai svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
 .rp-overflow-sep {
   height: 1px;
   background: var(--border);
