@@ -65,6 +65,9 @@ export function useWorkspaceKeyboard(deps: {
    *  Claude's question can arrive while the user is mid-commit-message, and this is
    *  the DELIBERATE way in that never steals the caret by itself. */
   onAiActivity: () => void;
+  /** P87b §5: `Ctrl/Cmd+Shift+L` — toggle the git activity dock. Bound BEFORE the
+   *  typing guard (the `+Shift+A` precedent) so it works from the commit box. */
+  onGitActivity: () => void;
   handleRefresh: () => Promise<void> | void;
   handleFetch: () => Promise<void> | void;
   handlePull: () => Promise<void> | void;
@@ -113,6 +116,7 @@ export function useWorkspaceKeyboard(deps: {
     graph,
     graphRef,
     onAiActivity,
+    onGitActivity,
     handleRefresh,
     handleFetch,
     handlePull,
@@ -263,6 +267,15 @@ export function useWorkspaceKeyboard(deps: {
         return;
       }
 
+      // P87b §5: Ctrl/Cmd+Shift+L toggles the git activity dock. Free in the map
+      // (F/P/U remote ops, R refresh, K palette, F find, A AI dock); before the
+      // typing guard so it toggles from the commit box too.
+      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'l') {
+        e.preventDefault();
+        if (!dialogOpen && !abortConfirmOpen) onGitActivity();
+        return;
+      }
+
       const target = e.target as HTMLElement | null;
       const typing =
         target !== null &&
@@ -374,6 +387,7 @@ export function useWorkspaceKeyboard(deps: {
     togglePalette,
     composerOpen,
     onAiActivity,
+    onGitActivity,
     selectedIndex,
     graph,
   ]);

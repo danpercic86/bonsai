@@ -137,8 +137,27 @@ deadlock, cap, sanitization all verified), **committed**. NITs: hub mutex held a
 P87b integration check. (+ security-auditor on full P87 before batch integrates — git hook output → UI is
 an untrusted surface); **P87b** (frontend:
 `useGitActivity` store + git-activity dock + toolbar phase readout + determinate progress bar + mock)
-— senior-dev IN PROGRESS (P87a event types locked @ 3bc616a; UI contract `P87-ui.md` + ui-reference §12.10).
-Include a mock-driven integration check for the active-path started/finished sequence (P87a review NIT #3).
+— senior-dev DONE (full View C + View D + store + a11y + mock seams; gate-clean on touched surface: tsc,
+build, eslint, lint:size, 34/34 new + 332/332 flow tests; CommitNote.tsx extracted to keep CommitBox <500;
+Ctrl+Shift+L confirmed free). **Code review APPROVED (no MUST-FIX; dangerouslySetInnerHTML security concern
+CONFIRMED CLEAN — all untrusted strings render as React text nodes; store/View C/HookDialog/mock all correct).
+Design review APPROVED w/ 1 MUST-FIX — `.toolbar-phase` contrast (`--text-3`→`--text-2`), APPLIED INLINE by
+orchestrator (exact ui-designer directive, 1-line CSS). COMMITTING.**
+
+**P87b follow-ups (non-blocking):**
+- **FU-1 (row target):** rows show bare "Push"/"Pull" — `GitActivityRun` has no `target`/ref field; add
+  `target?: string|null` to the event+store (architect), render per §3.4. (design SF#2 + P87b flag.)
+- **FU-2:** `commitAmend` (stash.ts) not activity-wrapped → no dock row for amend.
+- **FU-3 (a11y):** row focus target is a role-less `<div>` — move `role="button"`+`aria-expanded` onto the
+  roving `.git-run-summary` (chevron `aria-hidden`). (design SF#4 + code NIT.)
+- **FU-4:** collapsed dock bar toggles only via the glyph, not the whole bar (design SF#3) — reconcile with
+  the AI-dock twin (change both or the §5-1 wording).
+- NITs: `everShown.current` written during render (GitActivityDock.tsx:75); duplicate consecutive announcer
+  sentences won't re-announce; contract-wording reconciliations (chevron glyph, EmptyState reuse, dangling
+  `aria-controls`); pre-existing autoFetchReadout shares the old `--text-3` contrast defect.
+- **RepoWorkspace baseline +12** (3036→3048) — recommend refactorer split.
+- **useWorkspaceKeyboard.test.tsx nav case** fails identically on HEAD (peer's 590f2ef, pre-existing) — fix to
+  green the branch (see ⚠ FLAG FOR USER in P86 block).
 
 **P87 security audit (P87a backend, commit 3bc616a): no CRITICAL/HIGH.** Sanitization funnel, 64 MiB byte
 cap, integer/panic safety, progress throttle, command-exec all verified sound; hook code-exec is git's

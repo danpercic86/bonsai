@@ -141,6 +141,11 @@ export interface WorkspaceRightPanelProps {
   /** P58c: the selected commit's signature verdict (CommitPanel line); null when
    *  unverified / disabled / unsigned. */
   commitSignature: CommitVerification | null;
+  /** P87b View C §2.2: the active commit-family run's phase readout, forwarded to
+   *  CommitBox so the granular phase is visible beside the commit button. */
+  commitPhase?: CommitBoxProps['commitPhase'];
+  /** P87b §5-3: expand the git activity dock + reveal the active run. */
+  onShowGitActivity?: CommitBoxProps['onShowGitActivity'];
 }
 
 /** P3e: the right panel — op banner + the compare / commit-details / status
@@ -219,6 +224,8 @@ export function WorkspaceRightPanel({
   onOpenAccountSettings,
   signingStatus,
   commitSignature,
+  commitPhase,
+  onShowGitActivity,
   repoId,
   rightPaneTab,
   onSelectRightPaneTab,
@@ -387,6 +394,8 @@ export function WorkspaceRightPanel({
             hasUntracked={(status?.untracked.length ?? 0) > 0}
             onOpenIdentitySettings={onOpenIdentitySettings}
             signingStatus={signingStatus}
+            commitPhase={commitPhase}
+            onShowGitActivity={onShowGitActivity}
           />
         </>
       )}

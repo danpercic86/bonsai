@@ -73,6 +73,7 @@ function makeDeps(over: Partial<Deps> = {}): Deps {
     graph: null,
     graphRef: { current: null },
     onAiActivity: vi.fn(),
+    onGitActivity: vi.fn(),
     handleRefresh: vi.fn(),
     handleFetch: vi.fn(),
     handlePull: vi.fn(),
@@ -471,5 +472,10 @@ describe('ShortcutOverlay sync', () => {
   // P68e §4.4: the AI activity dock's shortcut is documented too.
   it('documents Ctrl/Cmd+Shift+A (AI activity dock)', () => {
     expect(overlayText()).toContain(cap('Mod+Shift+A'));
+  });
+
+  // P87b §5: the git activity dock's shortcut is documented too.
+  it('documents Ctrl/Cmd+Shift+L (git activity dock)', () => {
+    expect(overlayText()).toContain(cap('Mod+Shift+L'));
   });
 });

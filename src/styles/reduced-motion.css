@@ -19,6 +19,18 @@
     opacity: 0.6;
   }
 
+  /* P87b §7: the git dock's sweep + the determinate fill snap under reduced
+     motion (the determinate fill keeps its scaleX but drops the transition). */
+  .git-dock-progress::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.6;
+  }
+
+  .header-progress[data-determinate]::after {
+    transition: none;
+  }
+
   .ai-dock-ask,
   .ai-log-jump {
     animation: none;

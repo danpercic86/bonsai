@@ -325,3 +325,26 @@ export function aiPaletteEntries(deps: AiPaletteDeps): {
   }
   return { lead, trail };
 }
+
+/** P87b §5 — the "Git activity" palette row. One entry, gated on there being a
+ *  git op this session (mirrors the AI dock's `hasAiRuns` gate — an empty log is
+ *  never advertised). Selecting it expands the git dock and focuses the list. */
+export interface GitPaletteDeps {
+  /** `runs.length > 0`. */
+  hasGitRuns: boolean;
+  onGitActivity(): void;
+}
+
+export function gitPaletteEntries(deps: GitPaletteDeps): PaletteAction[] {
+  if (!deps.hasGitRuns) return [];
+  return [
+    {
+      id: 'git.activity',
+      title: 'Git activity',
+      hint: shortcutLabel('Mod+Shift+L'),
+      group: 'action',
+      keywords: 'log output hooks push pull fetch history commit',
+      run: deps.onGitActivity,
+    },
+  ];
+}

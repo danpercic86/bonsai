@@ -26,6 +26,7 @@ const SHORTCUTS: { keys: string[]; action: string }[] = [
   { keys: ['Mod', 'Shift', 'P'], action: 'Pull (fast-forward only)' },
   { keys: ['Mod', 'Shift', 'U'], action: 'Push current branch' },
   { keys: ['Mod', 'Shift', 'A'], action: 'AI activity dock' },
+  { keys: ['Mod', 'Shift', 'L'], action: 'Git activity dock' },
   { keys: ['↑', '↓'], action: 'Move commit selection' },
   { keys: ['Page Up', 'Page Down'], action: 'Move commit selection by one screenful' },
   { keys: ['Home'], action: 'Select the topmost commit' },

@@ -3,6 +3,8 @@ import { isAppError } from '../utils/errors';
 import type { SigningStatus, StashScope } from '../ipc';
 import { ConfirmDialog } from './ConfirmDialog';
 import { CommitOptionsMenu } from './CommitOptionsMenu';
+import { CommitNote } from './CommitNote';
+import { ToolbarPhaseReadout } from './ToolbarPhaseReadout';
 import { SummarizeIcon } from './menuIcons';
 import { COMMIT_HOOK_CANCELED, COMMIT_PUSH_CANCELED } from './commitPushSignal';
 
@@ -80,6 +82,12 @@ export interface CommitBoxProps {
    * null/undefined (unread or read failed) ⇒ the toggle is hidden and commits
    * follow `commit.gpgsign` (sign = null). Hidden in merge mode. */
   signingStatus?: SigningStatus | null;
+  /** P87b View C §2.2: the active commit/amend/mergeCommit run's phase readout
+   *  (`Running pre-commit hook…`), shown beside the commit button while a commit
+   *  is in flight so the granular phase is visible where the commit was launched. */
+  commitPhase?: string | null;
+  /** P87b §5-3: expand the git activity dock + reveal the active run. */
+  onShowGitActivity?: () => void;
 }
 
 /** Imperative submit hook so OpBanner's [Commit merge] triggers the same
@@ -121,6 +129,8 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
     hasUntracked = false,
     onOpenIdentitySettings,
     signingStatus,
+    commitPhase,
+    onShowGitActivity,
   },
   ref,
 ) {
@@ -389,50 +399,16 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
           onStash={(scope) => onStash?.(scope)}
         />
       </div>
-      {/* P80: single conditional note line below the toolbar (2c refines the
-          glyph/copy; behavior preserved here). Priority: amend-pushed >
-          sign no-key > sign will-sign > skip hooks. */}
-      {showAmendPushWarning ? (
-        <div className="commit-note" role="note">
-          <span className="commit-note-glyph" aria-hidden="true">
-            ⚠
-          </span>
-          <span>This commit is already pushed — amending rewrites published history.</span>
-        </div>
-      ) : showSign && signChecked && !(signingStatus?.hasKey ?? false) ? (
-        <div className="commit-note" role="note">
-          <span className="commit-note-glyph" aria-hidden="true">
-            ⚠
-          </span>
-          <span>
-            No signing key set — commits won’t be signed.
-            {onOpenIdentitySettings !== undefined && (
-              <button
-                type="button"
-                className="commit-sign-fix"
-                title="Set user.signingkey in Git config"
-                onClick={() => onOpenIdentitySettings()}
-              >
-                Set key…
-              </button>
-            )}
-          </span>
-        </div>
-      ) : showSign && signChecked && (signingStatus?.hasKey ?? false) ? (
-        <div className="commit-note" role="note">
-          <span className="commit-note-glyph commit-note-glyph-ok" aria-hidden="true">
-            ✓
-          </span>
-          <span>Commits will be signed ({signFormatLabel}).</span>
-        </div>
-      ) : skipHooks ? (
-        <div className="commit-note" role="note">
-          <span className="commit-note-glyph" aria-hidden="true">
-            ⚠
-          </span>
-          <span>Git hooks won’t run for this commit.</span>
-        </div>
-      ) : null}
+      {/* P80 §2c: the single conditional note line below the toolbar. */}
+      <CommitNote
+        showAmendPushWarning={showAmendPushWarning}
+        showSign={showSign}
+        signChecked={signChecked}
+        signingStatus={signingStatus}
+        signFormatLabel={signFormatLabel}
+        skipHooks={skipHooks}
+        onOpenIdentitySettings={onOpenIdentitySettings}
+      />
       {error !== null && (
         <div className="error-banner error-banner-dismissible commit-error" role="alert">
           <span className="error-banner-text">
@@ -470,16 +446,30 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
               {pushBtn(false, splitAction)}
             </>
           )}
+          {submitting !== null && (
+            <ToolbarPhaseReadout phase={commitPhase ?? null} onShow={onShowGitActivity} />
+          )}
         </div>
       ) : (
-        <button
-          type="button"
-          className="btn-primary commit-button"
-          disabled={disabled}
-          onClick={() => submit()}
-        >
-          {submitting !== null ? 'Committing…' : merge ? 'Commit merge' : amend ? 'Amend' : 'Commit'}
-        </button>
+        <div className="commit-button-row">
+          <button
+            type="button"
+            className="btn-primary commit-button"
+            disabled={disabled}
+            onClick={() => submit()}
+          >
+            {submitting !== null
+              ? 'Committing…'
+              : merge
+                ? 'Commit merge'
+                : amend
+                  ? 'Amend'
+                  : 'Commit'}
+          </button>
+          {submitting !== null && (
+            <ToolbarPhaseReadout phase={commitPhase ?? null} onShow={onShowGitActivity} />
+          )}
+        </div>
       )}
 
       <ConfirmDialog

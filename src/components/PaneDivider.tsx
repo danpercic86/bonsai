@@ -4,8 +4,8 @@ export interface PaneDividerProps {
   /** Which pane this divider resizes ('sidebar' grows right-to-left drag = left edge of
    *  sidebar's right border; 'right-panel' grows left-to-right drag = left edge of the
    *  panel's left border). P68e adds 'ai-dock': a HORIZONTAL separator on the dock's top
-   *  edge, where dragging UP grows the dock. */
-  side: 'sidebar' | 'right-panel' | 'ai-dock';
+   *  edge, where dragging UP grows the dock. P87b adds 'git-dock' (same behaviour). */
+  side: 'sidebar' | 'right-panel' | 'ai-dock' | 'git-dock';
   /** Called continuously during drag (pointermove) with a delta already normalized to
    *  "this pane's own growth direction" — the component negates internally for
    *  'right-panel' / 'ai-dock' so the caller never has to think about drag direction. */
@@ -34,7 +34,7 @@ const KEYBOARD_NUDGE_PX = 8;
  * `useState` setter, not a re-render of this component (P2a contract §3.1). */
 export function PaneDivider(props: PaneDividerProps) {
   const { side, onResize, onResizeEnd, onResizeStart, onReset, onExtreme } = props;
-  const horizontal = side === 'ai-dock';
+  const horizontal = side === 'ai-dock' || side === 'git-dock';
   const nudge = props.nudgePx ?? KEYBOARD_NUDGE_PX;
   const lastRef = useRef(0);
   const draggingRef = useRef(false);

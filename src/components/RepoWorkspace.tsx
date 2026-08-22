@@ -84,6 +84,8 @@ import { useBranchActions } from './repoWorkspace/useBranchActions';
 import { useAiRuns } from './repoWorkspace/useAiRuns';
 import { AiActivityPanel } from './AiActivityPanel';
 import { useAiDock } from './repoWorkspace/useAiDock';
+import { useGitDock } from './repoWorkspace/useGitDock';
+import { GitActivityDock } from './GitActivityDock';
 import { useBulkAiResolve } from './repoWorkspace/useBulkAiResolve';
 import { useMergeActions } from './repoWorkspace/useMergeActions';
 import { useStashActions } from './repoWorkspace/useStashActions';
@@ -2047,6 +2049,9 @@ export function RepoWorkspace({
     onChangelog: openChangelog,
   });
 
+  // P87b: the git-activity session store (View C + View D) + its dock container.
+  const gitDock = useGitDock({ density: panelDensity });
+
   // P60c: describe the last HEAD-moving op (READ-ONLY) and open the UndoDialog.
   // Confirming there reuses the shipped resetBranch (handleResetBranch) with the
   // plan's target + mode; the dialog gates on undoable / requiresCleanWorktree.
@@ -2263,6 +2268,7 @@ export function RepoWorkspace({
     // live in `paletteActions.ts` (§E) so this container stays a composition site.
     actions.unshift(...aiDock.paletteEntries.lead);
     actions.push(...aiDock.paletteEntries.trail);
+    actions.push(...gitDock.paletteEntries); // P87b §5: the "Git activity" row.
     return actions;
   }, [
     palette.open,
@@ -2286,6 +2292,7 @@ export function RepoWorkspace({
     revealCommitByOid,
     appCommands,
     aiDock.paletteEntries,
+    gitDock.paletteEntries,
   ]);
 
   function handleToggleConflictView(path: string) {
@@ -2459,6 +2466,7 @@ export function RepoWorkspace({
     graph,
     graphRef,
     onAiActivity: aiDock.focusDock,
+    onGitActivity: gitDock.toggleDock,
     handleRefresh,
     handleFetch: onFetch, // P63: refresh forge signals after fetch
     handlePull: onPull, // P63: refresh forge signals after pull
@@ -2655,6 +2663,7 @@ export function RepoWorkspace({
         headBorn={head !== null && !head.unborn}
         onRefresh={() => void handleRefresh()}
         externalItems={menus.externalToolsItems(repoPath)}
+        {...gitDock.toolbarProps}
       />
 
       <div className="panes">
@@ -2846,12 +2855,15 @@ export function RepoWorkspace({
           onOpenAccountSettings={onOpenAccountSettings}
           signingStatus={signingStatus}
           commitSignature={commitSignature}
+          commitPhase={gitDock.commitPhase}
+          onShowGitActivity={gitDock.focusDock}
         />
       </div>
 
-      {/* P68e: `.workspace-host`'s THIRD child (toolbar → .panes → dock), full width on
-          purpose; renders null until the first run exists. */}
+      {/* P68e / P87b: `.workspace-host`'s bottom children — git dock (outermost) →
+          AI dock → .panes. Each renders null until its first run of the session. */}
       <AiActivityPanel {...aiDock.panelProps} />
+      <GitActivityDock {...gitDock.panelProps} />
 
       {/* P84: always-mounted a11y live region for reveal announcements. Rendered
           AFTER the dock so `.workspace-host`'s counted toolbar → .panes → dock
