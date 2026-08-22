@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use crate::error::AppError;
-use crate::git::stage::{open_workdir_repo, validate_rel_path};
+use crate::git::stage::{ensure_within_workdir, open_workdir_repo, validate_rel_path};
 
 /// Byte cap for the marker view. Above it: too_large=true, text="".
 /// Same all-or-nothing spirit as diff.rs MAX_FILE_DIFF_LINES.
@@ -145,7 +145,13 @@ pub fn get_conflict(workdir: &Path, path: &str) -> Result<ConflictFile, AppError
     let wd = repo
         .workdir()
         .ok_or_else(|| AppError::Git("repository has no workdir".to_string()))?;
-    let file = wd.join(path);
+    // Symlink-escape guard (see `ensure_within_workdir`): refuse a conflict path
+    // escaping via a symlinked ancestor before the fs read below (external content
+    // would otherwise leak into this view). Escape -> invalidName; IO surfaced as-is.
+    let file = ensure_within_workdir(wd, path).map_err(|e| match e {
+        io @ AppError::Io(_) => io,
+        _ => AppError::InvalidName(format!("invalid path: {path}")),
+    })?;
 
     // When text is suppressed (binary/too_large/missing) all three strings stay ""
     // (§1.1): keep the payload bounded and the frontend mode-selection simple.
@@ -259,7 +265,13 @@ pub fn resolve_conflict(
     let wd = repo
         .workdir()
         .ok_or_else(|| AppError::Git("repository has no workdir".to_string()))?;
-    let file = wd.join(path);
+    // Symlink-escape guard (see `ensure_within_workdir`): refuse a conflict path
+    // escaping via a symlinked ancestor before the raw fs mutation below. Escape
+    // -> invalidName (as the lexical guard above); IO surfaced as-is.
+    let file = ensure_within_workdir(wd, path).map_err(|e| match e {
+        io @ AppError::Io(_) => io,
+        _ => AppError::InvalidName(format!("invalid path: {path}")),
+    })?;
     let rel = Path::new(path);
 
     let side_entry = |side: Side| -> Result<git2::IndexEntry, AppError> {
@@ -330,7 +342,13 @@ pub fn resolve_conflict_text(workdir: &Path, path: &str, content: &str) -> Resul
     let wd = repo
         .workdir()
         .ok_or_else(|| AppError::Git("repository has no workdir".to_string()))?;
-    let file = wd.join(path);
+    // Symlink-escape guard (see `ensure_within_workdir`): refuse a conflict path
+    // escaping via a symlinked ancestor before the raw fs mutation below. Escape
+    // -> invalidName (as the lexical guard above); IO surfaced as-is.
+    let file = ensure_within_workdir(wd, path).map_err(|e| match e {
+        io @ AppError::Io(_) => io,
+        _ => AppError::InvalidName(format!("invalid path: {path}")),
+    })?;
     let rel = Path::new(path);
 
     if let Some(parent) = file.parent() {

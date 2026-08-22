@@ -21,7 +21,7 @@ use crate::error::AppError;
 use crate::git::diff::{
     apply_find_similar, build_diff_options, collect_file_diff, head_tree, pathspecs, Hunk, LineKind,
 };
-use crate::git::stage::{open_workdir_repo, validate_rel_path};
+use crate::git::stage::{ensure_within_workdir, open_workdir_repo, validate_rel_path};
 use crate::git::status::FileStatus;
 
 /// One selected changed line from the UI (P17 §2.1). `Context` elements are
@@ -98,6 +98,10 @@ fn apply_partial(
         .workdir()
         .ok_or_else(|| AppError::Git("repository has no workdir".to_string()))?
         .to_path_buf();
+
+    // Symlink-escape guard (see `ensure_within_workdir`): the workdir-side reads
+    // below join `path` onto `wd`; refuse a `path` escaping via a symlinked ancestor.
+    ensure_within_workdir(&wd, path)?;
 
     // Recompute the exact diff for this direction. DEFAULT 3-context is fine:
     // the reconstruction fills inter-hunk gaps from the blobs by line number,

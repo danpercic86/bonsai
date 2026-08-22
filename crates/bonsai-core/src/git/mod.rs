@@ -42,6 +42,9 @@ pub mod intraline;
 pub mod maintenance;
 pub mod merge;
 pub mod opstate;
+/// Cross-module symlink-escape (path-traversal) guard tests for `ensure_within_workdir`.
+#[cfg(test)]
+mod path_traversal_tests;
 pub mod rebase;
 pub mod rebase_interactive;
 pub mod reflog;
