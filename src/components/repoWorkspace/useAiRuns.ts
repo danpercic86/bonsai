@@ -29,7 +29,9 @@
  * status-changing events flush immediately.
  *
  * D4 — this store WRITES NOTHING itself. Staging goes through the single
- * `applyResolution` dep (= `handleResolveConflictText`).
+ * `applyResolution` dep. P68 #7 / H1: that dep is the GATED `handleAiApplyResolution`
+ * (→ `ai_apply_resolution`, which re-reads the sides and refuses a novel body); the
+ * manual ConflictEditor Save keeps the ungated `handleResolveConflictText`.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -94,11 +96,13 @@ export interface AiRunsDeps {
   pushToast: (level: 'info' | 'success' | 'error', msg: string) => void;
   aiConflictAutonomy: AiAutonomy;
   aiEligible: boolean;
-  /** = `handleResolveConflictText` — the ONLY writer (D4). The third argument
-   *  overrides its success toast so the AI path keeps its own P13 copy instead of
-   *  double-toasting (`null` = stay silent, used for a bulk stage that summarises
-   *  once); the fourth defers the `refreshAll` to the caller (P68f — one refresh for
-   *  the whole batch, not one per file). */
+  /** = `handleAiApplyResolution` — the GATED AI writer (P68 #7 / H1): it calls
+   *  `ai_apply_resolution`, which re-reads the sides and refuses a novel body
+   *  (`aiNeedsReview`) before writing. Same single core writer underneath (D4). The
+   *  third argument overrides its success toast so the AI path keeps its own P13 copy
+   *  instead of double-toasting (`null` = stay silent, used for a bulk stage that
+   *  summarises once); the fourth defers the `refreshAll` to the caller (P68f — one
+   *  refresh for the whole batch, not one per file). */
   applyResolution: (
     path: string,
     text: string,

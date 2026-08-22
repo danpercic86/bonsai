@@ -6,6 +6,14 @@
 // the original inline components — the keyboard path is additive.
 import type { BranchInfo, RemoteInfo, WorktreeInfo } from '../../ipc';
 import { relativeDate } from '../../graph/draw';
+import {
+  CloudIcon,
+  DetachedIcon,
+  RefBranchIcon,
+  RefDotIcon,
+  StashIcon,
+  WorktreeIcon,
+} from '../appIcons';
 import { useSidebarTreeItem } from './useSidebarTreeItem';
 
 type BranchContextMenu = (
@@ -73,7 +81,7 @@ export function BranchRow({
         onContextMenu(branch.name, 'localBranch', e.clientX, e.clientY);
       }}
     >
-      <span className="branch-glyph">{isHead ? '●' : '⎇'}</span>
+      <span className="branch-glyph">{isHead ? <RefDotIcon /> : <RefBranchIcon />}</span>
       <span className="branch-name" title={branch.name}>
         {displayName ?? branch.name}
       </span>
@@ -112,7 +120,7 @@ export function RemoteRow({
         onContextMenu(name, 'remoteBranch', e.clientX, e.clientY);
       }}
     >
-      <span className="branch-glyph">{'☁'}</span>
+      <span className="branch-glyph"><CloudIcon /></span>
       <span className="branch-name branch-name-muted" title={name}>
         {displayName ?? name}
       </span>
@@ -151,7 +159,7 @@ export function ConfiguredRemoteRow({
         onContextMenu(remote.name, e.clientX, e.clientY);
       }}
     >
-      <span className="branch-glyph">{'☁'}</span>
+      <span className="branch-glyph"><CloudIcon /></span>
       <span className="branch-name" title={remote.name}>
         {remote.name}
       </span>
@@ -202,7 +210,7 @@ export function StashRow({
         onContextMenu(index, oid, e.clientX, e.clientY);
       }}
     >
-      <span className="branch-glyph">{'⊟'}</span>
+      <span className="branch-glyph"><StashIcon /></span>
       <span className="mono" title={label}>
         {label}
       </span>
@@ -256,7 +264,7 @@ export function WorktreeRow({
         onContextMenu(wt.name, e.clientX, e.clientY);
       }}
     >
-      <span className="branch-glyph">{'⌥'}</span>
+      <span className="branch-glyph"><WorktreeIcon /></span>
       <span className="branch-name" title={wt.absPath}>
         {wt.name}
       </span>
@@ -288,7 +296,7 @@ export function DetachedHeadRow({
   const item = useSidebarTreeItem({ treeKey, level, kind: 'leaf', ariaDisabled: true });
   return (
     <li {...item} role="treeitem" className="branch-row branch-row-detached" title={oid}>
-      <span className="branch-glyph">{'◎'}</span>
+      <span className="branch-glyph"><DetachedIcon /></span>
       <span className="branch-name">
         HEAD detached @ <span className="mono">{oid.slice(0, 7)}</span>
       </span>

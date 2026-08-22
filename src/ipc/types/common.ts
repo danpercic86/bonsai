@@ -114,6 +114,10 @@ export interface AppError {
     | 'unresolvedConflicts'
     | 'aiUnavailable'
     | 'aiFailed'
+    /** P68 #7 / H1: the novel-content gate refused to auto-stage an AI body (it has
+     *  a line present in no version of base/ours/theirs). Distinct from `aiFailed`
+     *  so the frontend routes it to review instead of a raw "failed" toast. */
+    | 'aiNeedsReview'
     /** P68 §B: the user cancelled a streaming AI run. NOT a failure — show a
      *  `cancelled` run state, no error toast. */
     | 'aiCancelled'

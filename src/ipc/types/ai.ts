@@ -18,6 +18,11 @@ export interface AiResolveProposal {
   path: string;
   proposedText: string;
   costUsd: number | null;
+  /** P68 #7 / H1: true ⇒ the body has lines present in no version of
+   *  base/ours/theirs; never auto-staged (demoted to needs-review under autoResolve).
+   *  A property of body-vs-sides, so it is autonomy-independent. Mirrors the Rust
+   *  `AiResolveProposal.needs_review`. */
+  needsReview: boolean;
 }
 
 /** P68 §F: one push event on the `ai_resolve_conflict_stream` channel. Mirrors the

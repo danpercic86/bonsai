@@ -57,7 +57,10 @@ export async function settleRun(
   // tab is gone. The terminal state was recorded in the ref above; stop here.
   if (!ctx.mounted.current) return;
 
-  for (const f of out.markerful) {
+  // Surface both demotions on their rows: markerful bodies and (P68 #7 / H1)
+  // novel bodies. Each was demoted to `failed` in `settleBatch`, so it is excluded
+  // from `stageable` below and can never be auto-staged.
+  for (const f of [...out.markerful, ...out.needsReview]) {
     if (f.error !== null) d.pushToast('error', f.error);
   }
 
@@ -90,10 +93,11 @@ export async function settleRun(
     }
   }
 
-  // ONE center pane opens: the marker fallback under autoResolve, otherwise the
-  // first ready proposal. A bulk run with several ready files opens nothing and
-  // points at the activity dock instead.
-  const toOpen = autonomy === 'autoResolve' ? out.markerful[0] : out.stageable[0];
+  // ONE center pane opens: the demotion fallback under autoResolve (markerful OR
+  // novel — H1), otherwise the first ready proposal. A bulk run with several ready
+  // files opens nothing and points at the activity dock instead.
+  const toOpen =
+    autonomy === 'autoResolve' ? [...out.markerful, ...out.needsReview][0] : out.stageable[0];
   const text = toOpen?.proposal ?? null;
   if (toOpen === undefined || text === null) return;
   if (autonomy === 'proposeReview') {

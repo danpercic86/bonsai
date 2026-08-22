@@ -123,10 +123,14 @@ export function newRun(key: string, label: string, paths: string[], now: number)
 /** The outcome of turning a resolved batch into per-file state. */
 export interface SettledBatch {
   files: AiRunFileState[];
-  /** Files that are ready AND marker-free — the only ones that may be staged. */
+  /** Files that are ready AND marker-free AND not novel — the only ones that may be
+   *  staged. Computed LAST, strictly after both demotions (hoisting it re-opens H1). */
   stageable: AiRunFileState[];
   /** Files whose body still carries conflict markers (autoResolve only). */
   markerful: AiRunFileState[];
+  /** P68 #7 / H1: files whose body has lines present in no version of the sides —
+   *  demoted to needs-review, never auto-staged (autoResolve only). */
+  needsReview: AiRunFileState[];
   status: AiRunStatus;
   error: string | null;
   /** Single-path proposal, or null for a bulk run. */
@@ -167,6 +171,10 @@ export function settleBatch(
     };
   });
 
+  // ORDERING IS BINDING (P68 #7 / H1): marker demotion, THEN novel demotion, THEN
+  // `stageable` LAST. Each step reads `status === 'ready'`, so a file demoted by an
+  // earlier step is excluded from the next; hoisting `stageable` above either
+  // demotion re-opens H1 (a novel/markerful body would auto-stage).
   const ready = files.filter((f) => f.status === 'ready' && f.proposal !== null);
   const markerful =
     autonomy === 'autoResolve' ? ready.filter((f) => hasUnresolvedMarkers(f.proposal ?? '')) : [];
@@ -176,12 +184,27 @@ export function settleBatch(
     f.error = `AI left unresolved markers in ${f.path} — opened for review`;
   }
 
+  // NEW novel demotion (autoResolve only): of the still-ready files, those whose
+  // matching proposal is flagged `needsReview` (a line present in no version).
+  const needsReview =
+    autonomy === 'autoResolve'
+      ? files.filter(
+          (f) =>
+            f.status === 'ready' && f.proposal !== null && byPath.get(f.path)?.needsReview === true,
+        )
+      : [];
+  for (const f of needsReview) {
+    f.status = 'failed';
+    f.error = `AI introduced content not in any version of ${f.path} — opened for review`;
+  }
+
   const stageable = files.filter((f) => f.status === 'ready' && f.proposal !== null);
   const anyReady = stageable.length > 0;
   return {
     files,
     stageable,
     markerful,
+    needsReview,
     status: anyReady ? 'ready' : 'failed',
     error: anyReady ? null : (files.find((f) => f.error !== null)?.error ?? 'AI resolve failed'),
     proposal: files.length === 1 ? (files[0]?.proposal ?? null) : null,

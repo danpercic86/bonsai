@@ -20,6 +20,7 @@ fn batch_wire_shape_is_camel_case() {
             path: "a.txt".to_string(),
             proposed_text: "merged\n".to_string(),
             cost_usd: None,
+            needs_review: false,
         }],
         failed: vec![AiResolveFailure {
             path: "b.txt".to_string(),
@@ -33,7 +34,7 @@ fn batch_wire_shape_is_camel_case() {
         v,
         serde_json::json!({
             "runId": "ai-abc-0",
-            "proposals": [{ "path": "a.txt", "proposedText": "merged\n", "costUsd": null }],
+            "proposals": [{ "path": "a.txt", "proposedText": "merged\n", "costUsd": null, "needsReview": false }],
             "failed": [{ "path": "b.txt", "reason": "no result block returned" }],
             "costUsd": 0.0263,
             "turns": 2

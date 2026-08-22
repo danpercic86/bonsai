@@ -86,11 +86,11 @@ export function useMergeActions(
     }
   }
 
-  // P12 §4.3: stage user-authored resolved text from the ConflictEditor.
+  // The shared body of both resolved-text writers below. `write` is the IPC call —
+  // the ONLY difference between the ungated manual save and the gated AI stage — so
+  // the toast/refresh/mutating semantics stay identical between them.
   //
-  // The single WRITER for a resolved body (D4), which is why the AI store routes
-  // `autoResolve` through it rather than calling `resolveConflictText` itself.
-  // `successMessage` lets that caller keep the P13 copy ("Resolved <path> with AI —
+  // `successMessage` lets a caller keep the P13 copy ("Resolved <path> with AI —
   // review the staged result") instead of adding a second toast; `null` suppresses the
   // success toast entirely, which is how a bulk AI stage replaces N per-file toasts
   // with one summary (errors still toast — a failure is always per-file news).
@@ -99,7 +99,8 @@ export function useMergeActions(
   // can do ONE refresh after the loop. Before that flag, an N-file bulk `autoResolve`
   // ran N full refreshes (status + graph + branches …) back to back — a P68d nit that
   // only became visible once bulk existed.
-  async function handleResolveConflictText(
+  async function stageResolvedText(
+    write: (repoId: string, path: string, content: string) => Promise<void>,
     path: string,
     content: string,
     successMessage?: string | null,
@@ -107,7 +108,7 @@ export function useMergeActions(
   ): Promise<void> {
     setMutating(true);
     try {
-      await ipc.resolveConflictText(repoId, path, content);
+      await write(repoId, path, content);
       if (!deferRefresh) await refreshAll();
       if (successMessage !== null) {
         pushToast('success', successMessage ?? `Staged resolution for ${path}`);
@@ -118,6 +119,44 @@ export function useMergeActions(
     } finally {
       setMutating(false);
     }
+  }
+
+  // P12 §4.3: stage user-authored resolved text from the manual ConflictEditor.
+  // UNGATED (`resolveConflictText`) on purpose — a hand-written merge legitimately
+  // introduces novel lines, so the novel-content gate must NOT apply here.
+  function handleResolveConflictText(
+    path: string,
+    content: string,
+    successMessage?: string | null,
+    deferRefresh = false,
+  ): Promise<void> {
+    return stageResolvedText(
+      (r, p, c) => ipc.resolveConflictText(r, p, c),
+      path,
+      content,
+      successMessage,
+      deferRefresh,
+    );
+  }
+
+  // P68 #7 / H1: the AI auto-stage writer, routed to the GATED `aiApplyResolution`
+  // command (the authoritative layer-1 enforcement). The backend re-reads the sides
+  // and rejects a novel body with `aiNeedsReview` BEFORE writing, so a flag/skew can
+  // never stage content present in no version. Same single-core-writer underneath
+  // (D4): `aiApplyResolution` funnels a clean body through `resolve_conflict_text`.
+  function handleAiApplyResolution(
+    path: string,
+    content: string,
+    successMessage?: string | null,
+    deferRefresh = false,
+  ): Promise<void> {
+    return stageResolvedText(
+      (r, p, c) => ipc.aiApplyResolution(r, p, c),
+      path,
+      content,
+      successMessage,
+      deferRefresh,
+    );
   }
 
   /**
@@ -199,6 +238,7 @@ export function useMergeActions(
     handleMergeBranch,
     handleResolveConflict,
     handleResolveConflictText,
+    handleAiApplyResolution,
     openAiProposal,
     handleCommitMerge,
     handleAbortMerge,

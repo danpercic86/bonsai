@@ -9,6 +9,7 @@ import type {
   WorktreeInfo,
 } from '../ipc';
 import { DeleteIcon } from './menuIcons';
+import { StashIcon } from './appIcons';
 import { errorMessage } from '../utils/errors';
 import { buildPathTree } from '../utils/pathTree';
 import { Tree } from './Tree';
@@ -514,7 +515,7 @@ export function Sidebar({
                   !data.head.unborn && (
                     <button
                       type="button"
-                      className="sidebar-add"
+                      className="sidebar-add sidebar-add-icon"
                       aria-label="Stash changes"
                       title="Stash changes"
                       disabled={actionsDisabled}
@@ -523,7 +524,7 @@ export function Sidebar({
                         onCreateStash();
                       }}
                     >
-                      {'⊟'}
+                      <StashIcon />
                     </button>
                   )
                 }

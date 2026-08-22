@@ -201,3 +201,47 @@ pub(crate) async fn resolve_conflict_text_inner(
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
+
+/// Stages an AI-proposed resolution, GATED server-side by the novel-content check
+/// (P68 #7 / H1). This is the AUTHORITATIVE layer: it re-reads the conflict sides
+/// from the still-conflicted index and refuses a body carrying a line present in no
+/// version — it never trusts a frontend-passed flag. A clean body funnels through
+/// the SAME `conflict::resolve_conflict_text` writer as the manual editor (D4:
+/// exactly one write body, so the marker gate + symlink guard are unchanged). The
+/// manual ConflictEditor Save deliberately stays on the ungated `resolve_conflict_text`,
+/// where novel lines are legitimate. Errors: `noRepo` | `git` | `invalidName`
+/// | `aiFailed` (ineligible/binary/too-large, from `read_conflict_sides`)
+/// | `aiNeedsReview`. Does NOT emit `repo-changed` — the frontend refetches.
+#[tauri::command]
+pub async fn ai_apply_resolution(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    path: String,
+    content: String,
+) -> Result<(), AppError> {
+    ai_apply_resolution_inner(state.inner(), &repo_id, path, content).await
+}
+
+/// Runtime-free core of `ai_apply_resolution` (unit-testable without a Tauri app).
+pub(crate) async fn ai_apply_resolution_inner(
+    state: &AppState,
+    repo_id: &str,
+    path: String,
+    content: String,
+) -> Result<(), AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        // Re-read the sides server-side — `read_conflict_sides` requires the path to
+        // still be conflicted, so the gate always classifies against the real trio.
+        let sides = ai_resolve::read_conflict_sides(&workdir, &path)?;
+        if ai_resolve::resolution_is_novel(&sides, &content) {
+            return Err(AppError::AiNeedsReview(format!(
+                "AI introduced content not present in any version of '{path}' — opened for review"
+            )));
+        }
+        // The SAME single core writer as the manual editor (D4).
+        conflict::resolve_conflict_text(&workdir, &path, &content)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}

