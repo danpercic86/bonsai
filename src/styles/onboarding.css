@@ -167,6 +167,12 @@
   flex: none;
 }
 
+/* Icon-system §3: tour-card illustrations render at display size (28px). */
+.onboarding-tour-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
 .onboarding-tour-title {
   margin: 0 0 2px;
   font-size: 13px;

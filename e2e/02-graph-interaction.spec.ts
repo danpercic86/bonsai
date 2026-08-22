@@ -61,7 +61,7 @@ test.describe('02 graph interaction @smoke', () => {
       .locator('li')
       .filter({ has: page.getByTitle('main', { exact: true }) })
       .first();
-    await expect(mainRow.getByText('●')).toBeVisible();
+    await expect(mainRow).toHaveAttribute('aria-current', 'true');
     // The HEAD display row shows the HEAD commit's details.
     await clickGraphRow(page, 4);
     await expect(

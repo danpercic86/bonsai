@@ -53,7 +53,7 @@ test.describe('05 branches @destructive', () => {
     await expect(page.getByTitle('vs origin/feature/merged-a')).toHaveText('↓3');
     let menu = await openBranchContextMenu(page, 'feature/merged-a');
     await menu.getByRole('menuitem', { name: 'Checkout' }).click();
-    await expect(row(page, 'feature/merged-a').getByText('●')).toBeVisible();
+    await expect(row(page, 'feature/merged-a')).toHaveAttribute('aria-current', 'true');
     await expect(page.getByTitle('vs origin/feature/merged-a')).toHaveCount(0);
 
     // fix/watcher-debounce: dirty tree carried across with a conflicted
@@ -63,7 +63,7 @@ test.describe('05 branches @destructive', () => {
     await expect(
       page.locator('.toast-stack').getByText(/carried over with conflicts/),
     ).toBeVisible();
-    await expect(row(page, 'fix/watcher-debounce').getByText('●')).toBeVisible();
+    await expect(row(page, 'fix/watcher-debounce')).toHaveAttribute('aria-current', 'true');
     await expect(page.getByTestId('status-panel').getByText(/Conflicts \(/)).toBeVisible();
   });
 
@@ -105,6 +105,6 @@ test.describe('05 branches @destructive', () => {
     await openRepo(page, FLAT);
     const menu = await openBranchContextMenu(page, 'origin/release');
     await menu.getByRole('menuitem', { name: 'Checkout' }).click();
-    await expect(row(page, 'release').getByText('●')).toBeVisible();
+    await expect(row(page, 'release')).toHaveAttribute('aria-current', 'true');
   });
 });

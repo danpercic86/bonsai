@@ -9,8 +9,10 @@ import { appErr } from '../../test/actionHookKit';
 
 afterEach(() => vi.restoreAllMocks());
 
-function mount() {
-  return renderHook(() => useHookGate());
+function mount(
+  ensureHooksDisclosed: (skipHooks: boolean) => Promise<boolean> = async () => true,
+) {
+  return renderHook(() => useHookGate(ensureHooksDisclosed));
 }
 
 describe('runWithHookGate', () => {
@@ -23,6 +25,29 @@ describe('runWithHookGate', () => {
 
     await act(async () => result.current.runWithHookGate(attempt, true));
     expect(attempt).toHaveBeenLastCalledWith(true);
+  });
+
+  it('discloses BEFORE the attempt: a decline throws the cancel sentinel and never runs it', async () => {
+    const ensure = vi.fn(async () => false); // user declined the disclosure
+    const { result } = mount(ensure);
+    const attempt = vi.fn(async () => {});
+    await act(async () => {
+      await expect(result.current.runWithHookGate(attempt, false)).rejects.toBe(
+        COMMIT_HOOK_CANCELED,
+      );
+    });
+    expect(ensure).toHaveBeenCalledExactlyOnceWith(false);
+    expect(attempt).not.toHaveBeenCalled(); // nothing committed
+    expect(result.current.pendingHook).toBeNull();
+  });
+
+  it('runs the attempt once the disclosure is confirmed', async () => {
+    const ensure = vi.fn(async () => true); // user confirmed (or already acked)
+    const { result } = mount(ensure);
+    const attempt = vi.fn(async () => {});
+    await act(async () => result.current.runWithHookGate(attempt, false));
+    expect(ensure).toHaveBeenCalledExactlyOnceWith(false);
+    expect(attempt).toHaveBeenCalledExactlyOnceWith(false);
   });
 
   it('a non-hook error is rethrown unchanged and never opens the dialog', async () => {

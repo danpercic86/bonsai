@@ -10,6 +10,15 @@
 
 import type { ListView, Theme, IdentityProfile } from '../ipc';
 import { IdentityMenu } from './IdentityMenu';
+import {
+  SunIcon,
+  MoonIcon,
+  ListIcon,
+  TreeToggleIcon,
+  RobotIcon,
+  ChartIcon,
+  GearIcon,
+} from './appIcons';
 import type { SettingsCategoryId } from './settings/types';
 
 export interface HeaderToolbarProps {
@@ -17,7 +26,7 @@ export interface HeaderToolbarProps {
   onToggleTheme(): void;
   listView: ListView;
   onToggleListView(): void;
-  /** Gates 🤖 / 📊 / the identity trigger, exactly as App did inline. */
+  /** Gates AI-assets / health / the identity trigger, exactly as App did inline. */
   activeRepo: string | null;
   onOpenAiAssets(): void;
   onOpenHealth(): void;
@@ -59,7 +68,7 @@ export function HeaderToolbar({
         title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
         aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
       >
-        {theme === 'dark' ? '☀' : '☾'}
+        {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
       </button>
       <button
         type="button"
@@ -68,7 +77,7 @@ export function HeaderToolbar({
         title={listView === 'tree' ? 'Switch to flat lists' : 'Switch to tree lists'}
         aria-label={listView === 'tree' ? 'Switch to flat lists' : 'Switch to tree lists'}
       >
-        {listView === 'tree' ? '☰' : '⋔'}
+        {listView === 'tree' ? <ListIcon /> : <TreeToggleIcon />}
       </button>
       {activeRepo !== null && (
         <button
@@ -78,7 +87,7 @@ export function HeaderToolbar({
           title="AI Assets"
           aria-label="AI Assets"
         >
-          {'🤖'}
+          <RobotIcon />
         </button>
       )}
       {activeRepo !== null && (
@@ -89,7 +98,7 @@ export function HeaderToolbar({
           title="Health"
           aria-label="Health"
         >
-          {'📊'}
+          <ChartIcon />
         </button>
       )}
       <button
@@ -99,7 +108,7 @@ export function HeaderToolbar({
         title="Settings"
         aria-label="Settings"
       >
-        {'⚙'}
+        <GearIcon />
       </button>
       {activeRepo !== null && (
         <IdentityMenu

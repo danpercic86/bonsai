@@ -22,7 +22,7 @@
     "crates/bonsai-core/src/git/cred_cache.rs": 933,
     "crates/bonsai-core/src/git/diff.rs": 1402,
     "crates/bonsai-core/src/git/discard_partial.rs": 593,
-    "crates/bonsai-core/src/git/hooks.rs": 810,
+    "crates/bonsai-core/src/git/hooks.rs": 909,
     "crates/bonsai-core/src/git/image_diff.rs": 699,
     "crates/bonsai-core/src/git/merge.rs": 1348,
     "crates/bonsai-core/src/git/rebase.rs": 630,
@@ -60,11 +60,11 @@
     "src/App.tsx": 1069,
     "src/components/AiAssetsPanel.tsx": 516,
     "src/components/ConflictEditor.tsx": 535,
-    "src/components/RepoWorkspace.tsx": 3034,
+    "src/components/RepoWorkspace.tsx": 3046,
     "src/components/Sidebar.tsx": 649,
     "src/components/workspaceMenus.ts": 886,
-    "src/graph/GraphCanvas.tsx": 964,
+    "src/graph/GraphCanvas.tsx": 945,
     "src/ipc/fixtures/diffs.ts": 746,
-    "src/ipc/types/ipc-api.ts": 816
+    "src/ipc/types/ipc-api.ts": 824
   }
 }

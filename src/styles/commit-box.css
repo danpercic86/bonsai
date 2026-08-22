@@ -82,6 +82,19 @@
   cursor: pointer;
   opacity: 0;
   padding: 0;
+  /* Icon-system §3: centre the single SVG in icon rows (history/blame/discard/
+     delete) and space icon+label on the conflict AI button. Text-only row
+     actions (+/−, ours/theirs) render identically under flex-centering. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+/* Icon-system §3: file-row action icons — 16px inside the 20px hover box. */
+.row-action svg {
+  width: 16px;
+  height: 16px;
 }
 
 .file-row:hover .row-action,
@@ -398,5 +411,12 @@
 .commit-msg-tool:disabled {
   color: var(--text-3);
   cursor: default;
+}
+
+/* Icon-system §2.7: the "Generate commit message" icon button — 14px SVG in the
+   24px commit-toolbar tool box. */
+.commit-msg-tool svg {
+  width: 14px;
+  height: 14px;
 }
 

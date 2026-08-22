@@ -75,6 +75,13 @@
   font-size: 11px;
 }
 
+/* Icon-system §2.7: the AI sparkle sits beside 11px text, so a 14px glyph reads
+   better than the 16px file-row default (.row-action svg). */
+.row-action.conflict-action svg {
+  width: 14px;
+  height: 14px;
+}
+
 /* P13 §8.2: the ✨ AI conflict-row action — accent-tinted, distinct from the
    plain ours/theirs/resolved text buttons. */
 .row-action.conflict-action-ai {

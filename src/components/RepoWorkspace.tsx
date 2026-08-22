@@ -77,6 +77,7 @@ import { useRemoteOps, type NonFfPullInfo } from './repoWorkspace/useRemoteOps';
 import { useCommitActions } from './repoWorkspace/useCommitActions';
 import { usePartialStaging } from './repoWorkspace/usePartialStaging';
 import { useHookGate } from './repoWorkspace/useHookGate';
+import { useHookDisclosure } from './repoWorkspace/useHookDisclosure';
 import { useBranchActions } from './repoWorkspace/useBranchActions';
 import { useAiRuns } from './repoWorkspace/useAiRuns';
 import { AiActivityPanel } from './AiActivityPanel';
@@ -322,9 +323,13 @@ export function RepoWorkspace({
     // P59a: the "Skip hooks" choice parked alongside the message.
     skipHooks: boolean;
   } | null>(null);
+  // First-time per-repo git-hook execution disclosure — sits at the TOP of the
+  // shared hook gate (before any hook could run), so all four hook-bearing ops
+  // (commit/amend/merge-commit/push) disclose once with zero per-call-site change.
+  const hookDisclosure = useHookDisclosure(repoId);
   // P59a: the shared hook gate — parks a commit/amend/merge behind the
   // HookOutputDialog when a git hook blocks it, with a "Commit anyway" retry.
-  const hookGate = useHookGate();
+  const hookGate = useHookGate(hookDisclosure.ensureHooksDisclosed);
   // P37b: force-push-with-lease confirm gate (targets the current branch).
   const [pendingForcePush, setPendingForcePush] = useState(false);
   // P28: pending "Discard hunk" confirmation (unstaged diffs only).
@@ -505,6 +510,7 @@ export function RepoWorkspace({
     pendingWorktreeLock !== null ||
     worktreeContextOpen ||
     hookGate.pendingHook !== null ||
+    hookDisclosure.pendingHookDisclosure ||
     rebasePlan !== null;
 
   const [graph, setGraph] = useState<GraphLayout | null>(null);
@@ -2914,6 +2920,9 @@ export function RepoWorkspace({
         hookRetrying={hookGate.hookRetrying}
         onHookSkipRetry={hookGate.onHookSkipRetry}
         onHookCancel={hookGate.onHookCancel}
+        pendingHookDisclosure={hookDisclosure.pendingHookDisclosure}
+        onHookDiscloseConfirm={hookDisclosure.onHookDiscloseConfirm}
+        onHookDiscloseCancel={hookDisclosure.onHookDiscloseCancel}
         pendingHunkDiscard={pendingHunkDiscard}
         setPendingHunkDiscard={setPendingHunkDiscard}
         handleConfirmHunkDiscard={(pending) => void handleConfirmHunkDiscard(pending)}

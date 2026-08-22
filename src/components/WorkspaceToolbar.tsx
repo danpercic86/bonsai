@@ -2,7 +2,15 @@ import { useRef, useState } from 'react';
 import { minutesLabel } from './workspaceUtils';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
-import { FolderOpenIcon } from './menuIcons';
+import { FolderOpenIcon, HistoryIcon, SummarizeIcon } from './menuIcons';
+import {
+  UndoIcon,
+  FetchIcon,
+  PullIcon,
+  PushIcon,
+  CaretDownIcon,
+  RefreshIcon,
+} from './appIcons';
 import type { BranchInfo, JobStatus } from '../ipc';
 import { shortcutLabel } from '../utils/platform';
 
@@ -134,7 +142,8 @@ export function WorkspaceToolbar({
             onClick={() => onUndo()}
             title="Undo the last operation (commit, merge, rebase, reset…)"
           >
-            ↶ Undo
+            <UndoIcon />
+            <span>Undo</span>
           </button>
           <button
             type="button"
@@ -143,7 +152,8 @@ export function WorkspaceToolbar({
             onClick={() => onFetch()}
             title={`Fetch all remotes (${shortcutLabel('Mod+Shift+F')})`}
           >
-            {remoteOp === 'fetch' ? 'Fetching…' : '↓ Fetch'}
+            <FetchIcon />
+            <span>{remoteOp === 'fetch' ? 'Fetching…' : 'Fetch'}</span>
           </button>
           {autoFetchReadout !== null && (
             <span className="toolbar-job-status" title={autoFetchReadout.title}>
@@ -157,7 +167,8 @@ export function WorkspaceToolbar({
             onClick={() => onPull()}
             title={`Pull (fast-forward only) (${shortcutLabel('Mod+Shift+P')})`}
           >
-            {remoteOp === 'pull' ? 'Pulling…' : '⇣ Pull'}
+            <PullIcon />
+            <span>{remoteOp === 'pull' ? 'Pulling…' : 'Pull'}</span>
           </button>
           <span className="toolbar-split">
             <button
@@ -167,7 +178,8 @@ export function WorkspaceToolbar({
               onClick={() => onPush()}
               title={`${pushTitle} (${shortcutLabel('Mod+Shift+U')})`}
             >
-              {remoteOp === 'push' ? 'Pushing…' : '↑ Push'}
+              <PushIcon />
+              <span>{remoteOp === 'push' ? 'Pushing…' : 'Push'}</span>
             </button>
             <button
               ref={caretRef}
@@ -183,7 +195,7 @@ export function WorkspaceToolbar({
                   : "Force-push needs a branch with an upstream."
               }
             >
-              ▾
+              <CaretDownIcon />
             </button>
           </span>
           {aiEligible && (
@@ -194,7 +206,8 @@ export function WorkspaceToolbar({
               onClick={() => onWhatChanged()}
               title="AI digest of what changed over a range (read-only)"
             >
-              ✨ What changed…
+              <SummarizeIcon />
+              <span>What changed…</span>
             </button>
           )}
           {aiEligible && (
@@ -204,7 +217,8 @@ export function WorkspaceToolbar({
               onClick={() => onAskBonsai()}
               title="Ask Bonsai to perform a safe git operation from a natural-language request (previewed + confirmed)"
             >
-              ✨ Ask…
+              <SummarizeIcon />
+              <span>Ask…</span>
             </button>
           )}
           <button
@@ -214,7 +228,8 @@ export function WorkspaceToolbar({
             onClick={() => onViewHeadReflog()}
             title="View the HEAD reflog (recover prior positions after reset/rebase/amend)"
           >
-            ↺ Reflog
+            <HistoryIcon />
+            <span>Reflog</span>
           </button>
         </div>
         <div className="toolbar-right">
@@ -239,7 +254,7 @@ export function WorkspaceToolbar({
             title={`Refresh (${shortcutLabel('Mod+R')})`}
             aria-label="Refresh"
           >
-            {'⟳'}
+            <RefreshIcon />
           </button>
         </div>
       </div>

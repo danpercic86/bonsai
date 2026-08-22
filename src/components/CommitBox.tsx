@@ -3,6 +3,7 @@ import { isAppError } from '../utils/errors';
 import type { SigningStatus, StashScope } from '../ipc';
 import { ConfirmDialog } from './ConfirmDialog';
 import { CommitOptionsMenu } from './CommitOptionsMenu';
+import { SummarizeIcon } from './menuIcons';
 import { COMMIT_HOOK_CANCELED, COMMIT_PUSH_CANCELED } from './commitPushSignal';
 
 export interface CommitBoxProps {
@@ -347,7 +348,7 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
             title={generateTitle}
             onClick={onGenerateClick}
           >
-            {'✨'}
+            <SummarizeIcon />
           </button>
         )}
         {message.length > 0 && (

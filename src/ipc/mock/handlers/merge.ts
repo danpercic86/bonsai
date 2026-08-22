@@ -6,9 +6,24 @@ import { seedOpState } from '../opStateSeed';
 import { hookRejectionFor } from '../hooksGate';
 import { sortByPath, upsert } from '../statusHelpers';
 import { resolutionIsNovel } from '../aiNovel';
-import type { AppError, CommitResult, ConflictEntry, ConflictFile, ConflictResolution, MergeOutcome, RepoOpState } from '../../types';
+import type { AppError, CommitResult, ConflictEntry, ConflictFile, ConflictResolution, MergeOutcome, RepoHooksDisclosure, RepoOpState } from '../../types';
 
 export const mergeHandlers = {
+  // Hook disclosure: `?hooks=present` seeds `hasHooks:true`; ack persists for the
+  // session (`state.hooksAcked`), so the disclosure fires once then stays quiet —
+  // exactly the backend's once-per-repo behavior.
+  async getRepoHooksDisclosure(repoId: string): Promise<RepoHooksDisclosure> {
+    await delay(80);
+    const state = requireRepo(repoId);
+    return { hasHooks: state.hasHooks, acknowledged: state.hooksAcked };
+  },
+
+  async ackRepoHooks(repoId: string): Promise<void> {
+    await delay(80);
+    const state = requireRepo(repoId);
+    state.hooksAcked = true;
+  },
+
   async getOpState(repoId: string): Promise<RepoOpState> {
     await delay(150);
     const state = requireRepo(repoId);

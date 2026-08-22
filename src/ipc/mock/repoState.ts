@@ -109,6 +109,12 @@ export interface MockRepoState {
    *  (unless skipHooks or `bonsai.runHooks` is false). Drives the push-side
    *  HookOutputDialog + "Push anyway (skip hooks)" retry in the harness. */
   hooksFailPush: boolean;
+  /** Hook-disclosure: the repo has runnable git hooks (`?hooks=present`). Drives
+   *  `getRepoHooksDisclosure.hasHooks`. Default false ⇒ fixtures never disclose. */
+  hasHooks: boolean;
+  /** Hook-disclosure: the user acknowledged the one-time disclosure this session
+   *  (set by `ackRepoHooks`). Backs `getRepoHooksDisclosure.acknowledged`. */
+  hooksAcked: boolean;
 
   status: StatusSnapshot;
   headOid: string;
@@ -251,6 +257,8 @@ export function createRepoState(path: string): MockRepoState {
     remoteTrigger: query('remote'),
     hooksFail: query('hooks') === 'fail',
     hooksFailPush: query('hooks') === 'failpush',
+    hasHooks: query('hooks') === 'present',
+    hooksAcked: false,
     status: structuredClone(INITIAL_STATUS),
     headOid: MOCK_OID,
     branches: structuredClone(INITIAL_BRANCHES),

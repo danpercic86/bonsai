@@ -9,6 +9,7 @@
 import { useMemo } from 'react';
 import type { ConflictEntry, ConflictKind, ConflictResolution, StatusEntry } from '../ipc';
 import { BulkAiResolveButton } from './BulkAiResolveButton';
+import { SummarizeIcon } from './menuIcons';
 import type { DiffSlot } from './DiffView';
 import type { AiRowState } from './repoWorkspace/useAiRuns';
 import { isAiResolvableKind, type BulkAiControl } from './repoWorkspace/useBulkAiResolve';
@@ -32,7 +33,7 @@ function aiButtonView(
   aiEligible: boolean,
 ): { label: string; title: string; state: string } {
   if (!aiEligible) {
-    return { label: '✨ AI', title: 'Enable AI features in Settings to use this', state: 'idle' };
+    return { label: 'AI', title: 'Enable AI features in Settings to use this', state: 'idle' };
   }
   switch (row?.status) {
     case 'running':
@@ -54,7 +55,7 @@ function aiButtonView(
     // A cancelled run leaves nothing to review: offer a plain retry.
     case 'cancelled':
     default:
-      return { label: '✨ AI', title: 'Resolve with AI', state: 'idle' };
+      return { label: 'AI', title: 'Resolve with AI', state: 'idle' };
   }
 }
 
@@ -167,6 +168,7 @@ function ConflictRow({
           disabled={aiDisabled}
           onClick={onAiClick}
         >
+          {view.state === 'idle' && <SummarizeIcon />}
           {view.label}
         </button>
       )}
