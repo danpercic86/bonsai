@@ -113,6 +113,13 @@
   color: var(--text-3);
 }
 
+/* Icon-system §3: sidebar node type glyphs. 14px fills the existing 14px-wide
+   .branch-glyph slot; colour still flows from .branch-glyph via currentColor. */
+.branch-glyph svg {
+  width: 14px;
+  height: 14px;
+}
+
 .branch-name {
   flex: 1;
   min-width: 0;
