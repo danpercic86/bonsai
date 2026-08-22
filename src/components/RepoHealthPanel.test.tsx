@@ -7,9 +7,9 @@ import { RepoHealthPanel } from './RepoHealthPanel';
 import { mockIpc } from '../ipc/mock';
 import type { RepoChangedPayload, RepoHealth, Section } from '../ipc';
 import {
-  ECHO_TTL_MS,
   __resetEchoSuppression,
   armEcho,
+  clearEchoSuppression,
 } from './repoWorkspace/echoSuppression';
 
 function sec<T>(data: T, elapsedMs = 5): Section<T> {
@@ -170,8 +170,9 @@ describe('RepoHealthPanel', () => {
     });
     expect(spy).toHaveBeenCalledTimes(1);
 
-    // Past the window → a genuine external change refetches.
-    armEcho('/mock/repo', Date.now() - ECHO_TTL_MS - 100);
+    // Span closed (P85 A2: the round settled + tail elapsed) → a genuine
+    // external change refetches. clearEchoSuppression models "no longer suppressed".
+    clearEchoSuppression('/mock/repo');
     await act(async () => {
       handler?.({ repoId: '/mock/repo', reason: 'test' });
     });

@@ -5,7 +5,32 @@ import { delay, requireRepo, throwAuthFailed, throwNetworkError } from '../repoS
 import { prePushRejectionFor } from '../hooksGate';
 import { throwIfGitMocksMissing } from './gitEnv';
 import { tagSyncHandlers } from './tagSync';
-import type { AppError, FetchResult, PullResult, PushResult } from '../../types';
+import { repoChangedListeners, tagAutoSyncListeners } from '../events';
+import type { AppError, FetchResult, PullResult, PushResult, RepoChangedPayload, TagAutoSyncEvent } from '../../types';
+
+/** P85 A3: mirror the backend's FIRE-AND-FORGET fetch tag auto-sync. Runs the
+ *  mock auto-sync OFF the fetch response, then — only when it actually changed
+ *  local tags (adopted or moved) — dispatches `repo-changed{reason:'tags'}`
+ *  (refresh the tag list) + `tag-auto-sync` (count toast) through the mock event
+ *  registries. The delay lands the emit well after the fetch's own
+ *  echo-suppression window so the harness stays self-consistent (the tags
+ *  refresh is not swallowed as a self-echo). Repo closed before it runs ⇒ noop. */
+function scheduleMockTagAutoSync(repoId: string): void {
+  window.setTimeout(() => {
+    void tagSyncHandlers
+      .autoSyncTags(repoId, null)
+      .then((report) => {
+        if (report.adopted.length === 0 && report.moved.length === 0) return;
+        const rc: RepoChangedPayload = { repoId, reason: 'tags' };
+        for (const cb of repoChangedListeners) cb(rc);
+        const ev: TagAutoSyncEvent = { repoId, report };
+        for (const cb of tagAutoSyncListeners) cb(ev);
+      })
+      .catch(() => {
+        /* repo closed before the deferred sync ran — nothing to surface */
+      });
+  }, 1500);
+}
 
 export const remotesSyncHandlers = {
   async fetch(repoId: string): Promise<FetchResult> {
@@ -16,9 +41,10 @@ export const remotesSyncHandlers = {
     const state = requireRepo(repoId);
     if (state.remoteTrigger === 'authfail') throwAuthFailed();
     if (state.remoteTrigger === 'network') throwNetworkError();
-    // P84: auto tag-sync runs after EVERY fetch (not just when refs advance), so
-    // missing/moved tags are pulled down even when branches are already current.
-    const tagAutoSync = await tagSyncHandlers.autoSyncTags(repoId, null);
+    // P85 A3: auto tag-sync runs after EVERY fetch, but OFF the response path —
+    // fire-and-forget, surfaced via the deferred repo-changed{tags} +
+    // tag-auto-sync events (mirrors the backend). FetchResult.tagAutoSync is gone.
+    scheduleMockTagAutoSync(repoId);
     if (!state.fetched) {
       state.fetched = true;
       // The fetch "discovers" one new upstream commit on main.
@@ -26,15 +52,9 @@ export const remotesSyncHandlers = {
       if (main !== undefined && main.upstream !== null) {
         main.behind = 1;
       }
-      return {
-        remotes: [{ remote: 'origin', receivedObjects: 12, updatedRefs: 1 }],
-        tagAutoSync,
-      };
+      return { remotes: [{ remote: 'origin', receivedObjects: 12, updatedRefs: 1 }] };
     }
-    return {
-      remotes: [{ remote: 'origin', receivedObjects: 0, updatedRefs: 0 }],
-      tagAutoSync,
-    };
+    return { remotes: [{ remote: 'origin', receivedObjects: 0, updatedRefs: 0 }] };
   },
 
   async pull(repoId: string): Promise<PullResult> {

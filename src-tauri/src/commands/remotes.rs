@@ -3,28 +3,64 @@
 use super::shared::*;
 use bonsai_core::git::exec::SpawnGitExec;
 
+/// P85 A3: completion event for the fire-and-forget fetch tag auto-sync. Emitted
+/// (alongside a `repo-changed{reason:"tags"}`) ONLY when the pass actually
+/// changed local tags (adopted or moved), so the frontend can surface the P84
+/// count toast without the fetch response having to wait on the 2nd network
+/// round-trip. camelCase on the wire, mirroring `RepoChangedPayload`.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TagAutoSyncEvent {
+    repo_id: String,
+    report: bonsai_core::git::tag_sync::TagAutoSyncReport,
+}
+
 /// Fetches every configured remote, sequentially, fail-fast (M6 contract
 /// §2.4/§9). Errors: `noRemote` | `authFailed` | `networkError` | `git`
-/// | `noRepo`. Does NOT emit `repo-changed` — the frontend refetches
-/// imperatively (the watcher also fires and is absorbed by request-id guards).
+/// | `noRepo`. Does NOT emit `repo-changed` on the response path — the frontend
+/// refetches imperatively. P85 A3: the P84 tag auto-sync runs FIRE-AND-FORGET
+/// off the response (its own 2nd network round-trip no longer serializes the
+/// fetch); on a real tag change it emits `repo-changed{reason:"tags"}` (refresh)
+/// + `tag-auto-sync` (count toast). Its temp-ref churn under
+/// `refs/bonsai-tagsync/**` is ignored by the watcher (`watcher.rs::is_relevant`).
 #[tauri::command]
 pub async fn fetch(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     repo_id: String,
 ) -> Result<FetchResult, AppError> {
-    let mut result = fetch_inner(state.inner(), &repo_id).await?;
-    // P84: best-effort automatic tag reconciliation, folded into the response so
-    // the sidebar can refresh tags + toast the counts in the same round-trip.
-    // NEVER fails the fetch — `auto_sync_tags` returns an empty Ok on
-    // no-remote/auth/network, and we swallow any residual Err here.
+    let result = fetch_inner(state.inner(), &repo_id).await?;
+    // P85 A3: best-effort automatic tag reconciliation, OFF the response path.
+    // Mirrors the fire-and-forget commit-graph write below — `spawn_blocking`,
+    // never awaited, so `fetch` returns after the single `fetch_all` round-trip.
+    // NEVER fails the fetch — `auto_sync_tags` swallows no-remote/auth/network.
+    // Only a genuine change (adopted or moved a local tag) emits — a no-op or
+    // skipped-only pass is silent (AC-A3c).
     if let Ok(path) = repo_path(state.inner(), &repo_id) {
-        let report = tauri::async_runtime::spawn_blocking(move || {
-            bonsai_core::git::tag_sync::auto_sync_tags(&path, None)
-        })
-        .await
-        .ok()
-        .and_then(Result::ok);
-        result.tag_auto_sync = report;
+        let emit_app = app.clone();
+        let evt_repo = repo_id.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let Ok(report) = bonsai_core::git::tag_sync::auto_sync_tags(&path, None) else {
+                return;
+            };
+            if report.adopted.is_empty() && report.moved.is_empty() {
+                return;
+            }
+            let _ = emit_app.emit(
+                "repo-changed",
+                super::repo::RepoChangedPayload {
+                    repo_id: evt_repo.clone(),
+                    reason: "tags".to_string(),
+                },
+            );
+            let _ = emit_app.emit(
+                "tag-auto-sync",
+                TagAutoSyncEvent {
+                    repo_id: evt_repo,
+                    report,
+                },
+            );
+        });
     }
     // P52: when refs actually advanced, (re)write the commit-graph off the
     // response path (fire-and-forget, best-effort, never awaited — the fetch

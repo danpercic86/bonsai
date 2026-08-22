@@ -5,7 +5,7 @@ import { act, renderHook } from '@testing-library/react';
 
 import { useCoalescedRefresh } from './useCoalescedRefresh';
 import {
-  ECHO_TTL_MS,
+  ECHO_TAIL_MS,
   __resetEchoSuppression,
   isEchoSuppressed,
 } from './echoSuppression';
@@ -78,17 +78,17 @@ describe('useCoalescedRefresh', () => {
     expect(run).toHaveBeenCalledTimes(1);
   });
 
-  it('AC4: watcher after TTL ⇒ second round fires', async () => {
+  it('AC4: watcher after the settle tail ⇒ second round fires', async () => {
     const run = makeRun();
     const { result } = renderHook(() => useCoalescedRefresh('r1', run));
 
     vi.setSystemTime(0);
     await act(async () => {
-      await result.current.refresh('mutation');
+      await result.current.refresh('mutation'); // round settles at t=0 → tail to 600
     });
     expect(run).toHaveBeenCalledTimes(1);
 
-    vi.setSystemTime(ECHO_TTL_MS); // window expired (boundary is exclusive)
+    vi.setSystemTime(ECHO_TAIL_MS); // tail expired (boundary is exclusive)
     await act(async () => {
       await result.current.refresh('watcher');
     });
@@ -191,5 +191,80 @@ describe('useCoalescedRefresh', () => {
     });
     expect(run).toHaveBeenCalledTimes(1);
     await flush();
+  });
+
+  it('AC-A2a: a slow round suppresses the echo for ANY duration (span open while running)', async () => {
+    // Deferred run so the round stays in flight (a slow re-open + full walk on a
+    // large repo). The self-echo landing mid-round — far past P81's 600 ms
+    // wall-clock window — must still be dropped because the span is OPEN.
+    const box: { resolve: (() => void) | null } = { resolve: null };
+    const run = vi.fn<() => Promise<void>>(
+      () =>
+        new Promise<void>((r) => {
+          box.resolve = r;
+        }),
+    );
+    const { result } = renderHook(() => useCoalescedRefresh('r1', run));
+
+    vi.setSystemTime(0);
+    let mutation!: Promise<void>;
+    act(() => {
+      mutation = result.current.refresh('mutation'); // round in flight
+    });
+    expect(run).toHaveBeenCalledTimes(1);
+
+    // Echo arrives 5 s later — P81's fixed 600 ms-from-arm window is long gone,
+    // but the span is still OPEN (round not settled) so it is suppressed.
+    vi.setSystemTime(5_000);
+    expect(isEchoSuppressed('r1')).toBe(true);
+    let echo!: Promise<void>;
+    act(() => {
+      echo = result.current.refresh('watcher');
+    });
+    await act(async () => {
+      await echo;
+    });
+    expect(run).toHaveBeenCalledTimes(1); // suppressed regardless of elapsed time
+
+    // Settle the leading round; the tail begins now (t = 5_000), anchored to
+    // settle, not to arm.
+    const settle = box.resolve;
+    box.resolve = null;
+    await act(async () => {
+      settle?.();
+      await mutation;
+    });
+
+    expect(isEchoSuppressed('r1', 5_000 + ECHO_TAIL_MS - 1)).toBe(true); // inside tail
+    expect(isEchoSuppressed('r1', 5_000 + ECHO_TAIL_MS)).toBe(false); // tail expired
+
+    // After the tail a genuine external change runs a fresh round.
+    vi.setSystemTime(5_000 + ECHO_TAIL_MS);
+    act(() => {
+      void result.current.refresh('watcher');
+    });
+    expect(run).toHaveBeenCalledTimes(2);
+    // Resolve the fresh round so nothing dangles into the next test.
+    await act(async () => {
+      box.resolve?.();
+      await Promise.resolve();
+    });
+  });
+
+  it('P85 measurement: bumps window.__bonsaiRefreshRounds once per executed round', async () => {
+    const g = globalThis as { __bonsaiRefreshRounds?: number };
+    g.__bonsaiRefreshRounds = 0;
+    const run = makeRun();
+    const { result } = renderHook(() => useCoalescedRefresh('r1', run));
+
+    await act(async () => {
+      await result.current.refresh('mutation');
+    });
+    // A mutation + its (suppressed) watcher echo ⇒ exactly one round counted.
+    vi.setSystemTime(100);
+    await act(async () => {
+      await result.current.refresh('watcher');
+    });
+    expect(g.__bonsaiRefreshRounds).toBe(1);
   });
 });

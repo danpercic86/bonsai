@@ -64,6 +64,14 @@ fn is_relevant(path: &Path, git_dir: &Path) -> bool {
     {
         return false; // index.lock etc. — churn
     }
+    // P85 A3: Bonsai's private tag-sync scratch namespace. The fire-and-forget
+    // fetch tag auto-sync (`tag_auto_sync.rs`) force-fetches into
+    // `refs/bonsai-tagsync/*` for ancestry checks and cleans it up; that churn
+    // must NOT trip a refresh. Real `refs/tags/*` adoptions ARE relevant and
+    // fall through to the `starts_with("refs")` clause below. Must precede it.
+    if rel.starts_with("refs/bonsai-tagsync") {
+        return false;
+    }
     rel == Path::new("HEAD")
         || rel == Path::new("index")
         || rel.starts_with("refs")
@@ -323,6 +331,13 @@ mod tests {
         // M6 §6.4: remote-tracking ref updates after a fetch must refresh.
         assert!(is_relevant(
             &git_dir.join("refs").join("remotes").join("origin").join("main"),
+            git_dir
+        ));
+        // P85 A3: a real tag adoption under refs/tags/* IS relevant…
+        assert!(is_relevant(&git_dir.join("refs").join("tags").join("v1.0.0"), git_dir));
+        // …but Bonsai's private tag-sync scratch namespace is NOT (fetch churn).
+        assert!(!is_relevant(
+            &git_dir.join("refs").join("bonsai-tagsync").join("v1.0.0"),
             git_dir
         ));
         // Noise.

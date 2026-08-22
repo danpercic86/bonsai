@@ -7,6 +7,10 @@ import type { BaseActionDeps, Setter } from './types';
 export function useBranchActions(
   deps: BaseActionDeps & {
     refreshAll: () => Promise<void>;
+    // P85 A1: no longer USED here (every handler routes through refreshAll), but
+    // kept in the deps shape because RepoWorkspace.tsx still passes them in its
+    // object literal (an excess-property error otherwise). P86 removes both the
+    // call-site args and these two props together.
     refetchBranches: () => Promise<void>;
     refetchGraph: () => Promise<void>;
     branches: BranchesSnapshot | null;
@@ -20,21 +24,24 @@ export function useBranchActions(
     pushToast,
     setMutating,
     refreshAll,
-    refetchBranches,
-    refetchGraph,
     branches,
     setBranchesError,
     setPendingCreateBranch,
     setPendingRenameBranch,
   } = deps;
 
+  // P85 A1: every branch/ref mutation routes its post-op refresh through the
+  // ECHO-ARMED `refreshAll` (the canonical coalesced round), NOT raw
+  // refetchGraph/refetchBranches. Arming suppresses the handler's own
+  // `.git/refs/**` watcher echo → exactly ONE refresh round per mutation, not
+  // two. `refreshAll()` never throws (P81) and keeps each handler's own
+  // try/catch/finally + toasts intact.
   async function handleCreateBranch(name: string) {
     setBranchesError(null);
     setMutating(true);
     try {
       await ipc.createBranch(repoId, name);
-      await refetchBranches();
-      void refetchGraph();
+      await refreshAll();
     } finally {
       setMutating(false);
     }
@@ -102,7 +109,9 @@ export function useBranchActions(
     setMutating(true);
     try {
       await ipc.deleteBranch(repoId, name);
-      await Promise.all([refetchBranches(), refetchGraph()]);
+      // A branch delete can drop commits from the reachable set (real topology
+      // change), so a full round is warranted.
+      await refreshAll();
     } catch (e) {
       setBranchesError(errorMessage(e));
     } finally {
@@ -110,10 +119,10 @@ export function useBranchActions(
     }
   }
 
-  // P60a: rename a local branch (git branch -m). Preserves upstream + reflog. On
-  // wasHead the HEAD symref moved, so refreshAll (HEAD/status); otherwise refetch
-  // branches + graph (the graph ref pills carry branch names). Errors toast (this
-  // is a PromptDialog action, mirroring handleCreateBranchHere).
+  // P60a: rename a local branch (git branch -m). Preserves upstream + reflog.
+  // P85 A1: routes through the echo-armed refreshAll (whether or not HEAD moved)
+  // so the ref-write watcher echo is dropped → one round. Errors toast (this is a
+  // PromptDialog action, mirroring handleCreateBranchHere).
   async function handleRenameBranch(oldName: string, newName: string) {
     // P60a: renaming to the unchanged name is a no-op. The dialog intentionally
     // permits submitting the prefilled name, but the backend would reject the
@@ -126,11 +135,8 @@ export function useBranchActions(
     setMutating(true);
     try {
       const res = await ipc.renameBranch(repoId, oldName, newName);
-      if (res.wasHead) {
-        await refreshAll();
-      } else {
-        await Promise.all([refetchBranches(), refetchGraph()]);
-      }
+      // A1: route through refreshAll whether or not HEAD moved (`res.wasHead`).
+      await refreshAll();
       pushToast(
         'success',
         `Renamed ${oldName} → ${newName}` +
@@ -160,13 +166,13 @@ export function useBranchActions(
   }
 
   // P6 §4.4: delete the LOCAL remote-tracking ref only (does not touch the
-  // server); refetch branches + graph like handleDeleteBranch.
+  // server); A1 routes through refreshAll like handleDeleteBranch.
   async function handleDeleteRemoteTracking(name: string) {
     setBranchesError(null);
     setMutating(true);
     try {
       await ipc.deleteRemoteBranch(repoId, name);
-      await Promise.all([refetchBranches(), refetchGraph()]);
+      await refreshAll();
     } catch (e) {
       setBranchesError(errorMessage(e));
     } finally {

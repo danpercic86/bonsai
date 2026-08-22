@@ -1,6 +1,6 @@
 import type { AiAnalysis, AiAnalysisMode, AiAvailability, AiChangelog, AiDiffTarget, AiDigestRange, AiResolveBatch, AiResolveProposal, AiRunEvent, AiSummary, BranchNameProposal, BranchNameSource, ChangelogRange, CommitMessageProposal, ComposeApplyResult, ComposePlan, ComposeProposal } from './ai';
 import type { AgentAsset, AgentAssetInput, AgentAssetInventory, AgentAssetKind, AiAssetInventory, AiGeneratedAsset, AssetContent, ContextProfile, ProfileActivation, ProfilePreviewEntry, ProfileStore, WorktreeContextStatus } from './ai-assets';
-import type { BranchDeleteResult, BranchesSnapshot, CheckoutResult, CreateBranchHereResult, MergeOutcome, RebaseOutcome, RebaseTodoOp, RemoteInfo, RenameBranchResult, StaleReport, TagAutoSyncReport, TagSyncReport } from './branches';
+import type { BranchDeleteResult, BranchesSnapshot, CheckoutResult, CreateBranchHereResult, MergeOutcome, RebaseOutcome, RebaseTodoOp, RemoteInfo, RenameBranchResult, StaleReport, TagAutoSyncEvent, TagAutoSyncReport, TagSyncReport } from './branches';
 import type { CherrypickOutcome, CommitResult, RevertOutcome } from './commit';
 import type { BisectOutcome, CloneProgress, GitAvailability, OpenRepoResult, RecentRepo, RepoChangedPayload, RepoOpState, ResetMode, Unsubscribe } from './common';
 import type { ConfigLevelArg, ConfigView } from './config';
@@ -490,9 +490,7 @@ export interface IpcApi {
    *  round-trip; best-effort — callers must render the plain tags list even when
    *  this rejects. Rejects noRepo | noRemote | authFailed | networkError | git. */
   listTagSync(repoId: string, remote: string | null): Promise<TagSyncReport>;
-  /** P84: best-effort automatic tag reconciliation (adopt remote-only, FF stale,
-   *  skip diverged). Never rejects on no-remote/auth/network — resolves an empty
-   *  report instead. Rejects noRepo only. */
+  /** P84: best-effort auto tag reconciliation (adopt/FF/skip); never rejects except noRepo. */
   autoSyncTags(repoId: string, remote: string | null): Promise<TagAutoSyncReport>;
   /** Force-update one local tag from `remote`. Rejects noRepo | invalidName |
    *  noRemote | authFailed | networkError | git. */
@@ -516,8 +514,10 @@ export interface IpcApi {
   getRecentRepos(): Promise<RecentRepo[]>;
   /** Removes one entry; returns the updated list. */
   removeRecentRepo(path: string): Promise<RecentRepo[]>;
-  /** Fires after debounced filesystem changes; payload carries the `repoId`. */
+  /** Fires after debounced FS changes; payload carries the `repoId` + `reason`. */
   onRepoChanged(cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe>;
+  /** P85 A3: fires when the fetch tag auto-sync changed local tags (adopted/moved). */
+  onTagAutoSync(cb: (e: TagAutoSyncEvent) => void): Promise<Unsubscribe>;
   /** Fires when the app window regains focus. */
   onWindowFocus(cb: () => void): Promise<Unsubscribe>;
   /** P30. Background-job status for one open repo — exactly 2 entries

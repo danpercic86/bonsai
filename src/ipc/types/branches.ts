@@ -81,6 +81,17 @@ export interface TagAutoSyncReport {
   skippedDiverged: string[];
 }
 
+/**
+ * P85 A3: completion payload of the fire-and-forget fetch tag auto-sync
+ * (`tag-auto-sync` event). Emitted only when the pass actually changed local
+ * tags (adopted or moved) — its arrival is what lets the UI surface the P84
+ * count toast without gating the fetch response on the 2nd network round-trip.
+ */
+export interface TagAutoSyncEvent {
+  repoId: string;
+  report: TagAutoSyncReport;
+}
+
 export interface BranchesSnapshot {
   /** Sorted case-insensitively by name. */
   local: BranchInfo[];

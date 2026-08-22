@@ -84,6 +84,9 @@ export interface RecentRepo {
 export interface RepoChangedPayload {
   /** Which open repo the debounced filesystem change belongs to. */
   repoId: string;
+  /** Why the refresh fired: `"fs"` (watcher), `"fetch"`, or `"tags"` (P85 A3:
+   *  the fire-and-forget fetch tag auto-sync adopted/moved a local tag). Any
+   *  unknown reason is treated as a full refresh — always safe. */
   reason: string;
 }
 

@@ -1,11 +1,11 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
 import type { IpcApi } from '../../types';
 import { clampAiRunSettings } from '../aiRunSettings';
-import { jobStatusListeners, mockMcp, repoChangedListeners } from '../events';
+import { jobStatusListeners, mockMcp, repoChangedListeners, tagAutoSyncListeners } from '../events';
 import { clampAutoFetch, clampGraphPrefs, clampHealthRefresh, clampPaneWidths, readRecents, readSession, readUiSettings, writeRecents, writeSession, writeUiSettings } from '../persistence';
 import { delay, requireRepo } from '../repoState';
 import { applyMockJobTimers, completeMockJobRun, seedJobStatuses } from '../scheduler';
-import type { JobKind, JobStatus, JobStatusChangedPayload, RecentRepo, RepoChangedPayload, SessionState, UiSettings, UiSettingsPatch, Unsubscribe } from '../../types';
+import type { JobKind, JobStatus, JobStatusChangedPayload, RecentRepo, RepoChangedPayload, SessionState, TagAutoSyncEvent, UiSettings, UiSettingsPatch, Unsubscribe } from '../../types';
 
 export const sessionHandlers = {
   async getRecentRepos(): Promise<RecentRepo[]> {
@@ -26,6 +26,15 @@ export const sessionHandlers = {
     repoChangedListeners.add(cb);
     return () => {
       repoChangedListeners.delete(cb);
+    };
+  },
+
+  // P85 A3: the fire-and-forget fetch tag auto-sync completion event. The mock's
+  // `fetch` handler dispatches through this registry (see remotesSync.ts).
+  async onTagAutoSync(cb: (e: TagAutoSyncEvent) => void): Promise<Unsubscribe> {
+    tagAutoSyncListeners.add(cb);
+    return () => {
+      tagAutoSyncListeners.delete(cb);
     };
   },
 

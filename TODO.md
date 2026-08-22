@@ -26,8 +26,12 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ## ⚡ P85 — Refresh perf: route ref-mutations through echo-suppressed refresh — pending
 
-**Current step:** architect contract DONE (`docs/contracts/P85-refresh-perf.md`); senior-dev implementing
-A1+A2+A3. Decisions: A1 routes the 7 bypass handlers through the EXISTING `refreshAll()` (scope param
+**Current step:** DONE (committed) — reviewer APPROVED (no MUST-FIX; A2 arm/disarm + A3 emit both
+scrutinized sound). Targeted checks green (cargo check, clippy, tsc, eslint, 20/20 refresh vitest +
+watcher test). Two SHOULD-FIX + 3 deviations carried into P86 (see P86 block). Full `pnpm gate` deferred
+to the batch integration (after P86, since P86 re-touches these files). Contract
+`docs/contracts/P85-refresh-perf.md`. **AI gate for the branch-create fix itself: GREEN; native
+wall-time confirmation is a USER CHECKPOINT after the batch integrates.** Decisions: A1 routes the 7 bypass handlers through the EXISTING `refreshAll()` (scope param
 deferred to P86 → P85 does NOT touch RepoWorkspace.tsx); A2 round-anchored echo suppression; A3 fetch
 fire-and-forget `auto_sync_tags` + watcher ignores `refs/bonsai-tagsync/**` + keep `tag-auto-sync` event
 (OD-P85-1=keep). Measurement: `window.__bonsaiRefreshRounds`. Shared working tree with peer session
@@ -71,6 +75,22 @@ full round on a timer → periodic jank.
 **Acceptance:** ref-only mutations reuse the cached layout (no full re-walk); repo handle reused across
 a refresh round; refresh rounds fetch only what the change reason implies; measurable drop in
 branch-create / fetch wall time on a large fixture.
+
+**MUST-DO carry-ins from the P85 review (do these in P86):**
+- **CI-1 (P85 SHOULD-FIX #1 — regression fix):** a genuine backend `repo-changed{reason:"tags"|"fetch"}`
+  emitted by the async tag-sync is currently DROPPED by echo suppression (it lands inside the fetch's own
+  armed window), so adopted/moved tags don't appear until the next refresh — a P84 regression. The
+  reason-aware refresh must route backend-CONFIRMED genuine changes through a NON-suppressed origin (they
+  are not the mutation's own fs echo). This is the crux of B3's reason taxonomy.
+- **CI-2 (P85 SHOULD-FIX #2 — faithful mock):** `src/ipc/mock/handlers/remotesSync.ts` currently defers
+  the tag emit ~1500 ms specifically to clear the echo window, which MASKS CI-1 in the harness. Emit at a
+  realistic offset so the mock can actually expose this class of bug.
+- **CI-3 (P85 deviation a):** wire the `onTagAutoSync` subscriber (+ tag-count toast if wanted) in
+  `RepoWorkspace.tsx` (the per-repo subscription point P85 couldn't touch).
+- **CI-4 (P85 deviation b):** remove the now-unused `refetchBranches`/`refetchGraph` args from the two
+  hooks + their `RepoWorkspace.tsx` call-site literals (P85 left them as accepted-but-unused).
+- NIT (P85): `disarmEcho` late `.finally` after `clearEchoSuppression` on unmount can re-insert one stale
+  `disarmUntil` entry per repoId — bounded, self-heals; fix opportunistically.
 
 ## ⚡ P87 — Git & hook output observability: live progress + session log — pending
 

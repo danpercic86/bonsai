@@ -1,38 +1,70 @@
-// P81 §4 — Self-event (watcher echo) suppression registry. Module-level, shared
-// singleton keyed by repoId (OD-P81-1 → Option B). A mutation-origin refresh
-// ARMS a time window; watcher-origin refreshes for the same repoId inside that
-// window are dropped. Arm-and-check (NOT consume-on-read), so multiple
-// subscribers of the same repoId (RepoWorkspace + the two sibling panels) all
-// honor a single arm. Safe because there is at most one tab per repoId
-// (App.tsx dedupes by repoId), so a repoId-keyed window can never swallow
-// another tab's genuine refresh.
+// P85 A2 §A2 — Round-anchored self-event (watcher echo) suppression registry.
+// Module-level, shared singleton keyed by repoId (OD-P81-1 → Option B). A
+// mutation-origin refresh opens a suppression SPAN for the entire time it is
+// writing/refreshing (nesting-counted), then a fixed tail after the round
+// settles. Watcher-origin refreshes for the same repoId while a span is open OR
+// inside the tail are dropped. Arm-and-check (NOT consume-on-read), so all
+// subscribers of the repoId (RepoWorkspace + the two sibling panels) honor a
+// single span. Safe because there is at most one tab per repoId (App.tsx dedupes
+// by repoId), so a repoId-keyed span can never swallow another tab's genuine
+// refresh.
+//
+// Why round-anchored (supersedes P81's wall-clock arm→now+600): the P81 window
+// was `now + 600` from ARM time, so on a large repo a round (re-open + full
+// walk) plus the 300 ms debounce could exceed 600 ms and the self-echo landed
+// AFTER the window → a double refresh. Anchoring the tail to round completion
+// (span open while count>0, tail begins only at settle) makes suppression
+// duration-INDEPENDENT: the echo (≤ write+300+dispatch) always lands inside the
+// open span or its tail, whatever the round took.
 
-/** Suppression window after a self-initiated (mutation) refresh, in ms.
- *  600 ms = 2× the 300 ms backend watcher debounce (watcher.rs) — budgets the
- *  debounce plus event-dispatch + render-contention slack. Named tunable. */
-export const ECHO_TTL_MS = 600;
+/** Tail after the last self-caused write + round settle: 300 ms watcher debounce
+ *  (watcher.rs) + 300 ms dispatch/render slack. Named tunable. (Renames P81's
+ *  ECHO_TTL_MS; semantics changed from arm-relative to settle-relative.) */
+export const ECHO_TAIL_MS = 600;
 
-/** Module-level singleton: repoId → epoch-ms at which suppression expires. */
-const suppressUntil = new Map<string, number>();
+/** Open spans per repoId (mutation count currently writing/refreshing). */
+const armedCount = new Map<string, number>();
+/** epoch-ms at which the post-settle tail expires per repoId (set on the
+ *  transition to count 0). */
+const disarmUntil = new Map<string, number>();
 
-/** Arm the window for `repoId`. `now` defaults to Date.now() (injectable for tests). */
-export function armEcho(repoId: string, now: number = Date.now()): void {
-  suppressUntil.set(repoId, now + ECHO_TTL_MS);
+/** Begin a self-caused-write span for `repoId` (call BEFORE enqueuing the round).
+ *  Nesting-counted: overlapping mutations each arm once. While the count is > 0
+ *  every watcher event for the repo is suppressed with NO expiry, so a slow
+ *  round can never outlive its own window. Clears any pending tail. */
+export function armEcho(repoId: string): void {
+  armedCount.set(repoId, (armedCount.get(repoId) ?? 0) + 1);
+  disarmUntil.delete(repoId);
 }
 
-/** True iff a watcher event for `repoId` at `now` falls inside the armed window. */
+/** End a span (call in the serving round's `finally`). Decrements the nesting
+ *  count (floored at 0); when it reaches 0, start the tail: suppress until
+ *  `now + ECHO_TAIL_MS`. `now` is injectable for tests. */
+export function disarmEcho(repoId: string, now: number = Date.now()): void {
+  const next = (armedCount.get(repoId) ?? 0) - 1;
+  if (next > 0) {
+    armedCount.set(repoId, next);
+    return;
+  }
+  armedCount.delete(repoId);
+  disarmUntil.set(repoId, now + ECHO_TAIL_MS);
+}
+
+/** True iff a span is open (count > 0) OR `now` is inside the post-settle tail. */
 export function isEchoSuppressed(repoId: string, now: number = Date.now()): boolean {
-  const until = suppressUntil.get(repoId) ?? 0;
-  return now < until;
+  if ((armedCount.get(repoId) ?? 0) > 0) return true;
+  return now < (disarmUntil.get(repoId) ?? 0);
 }
 
-/** Drop `repoId`'s entry (call on tab close / RepoWorkspace unmount) to keep the
- *  map from growing unbounded across the app's lifetime. */
+/** Drop `repoId`'s entries (call on tab close / RepoWorkspace unmount) so the
+ *  maps cannot grow unbounded across the app's lifetime. */
 export function clearEchoSuppression(repoId: string): void {
-  suppressUntil.delete(repoId);
+  armedCount.delete(repoId);
+  disarmUntil.delete(repoId);
 }
 
 /** Test-only: wipe the registry between vitest cases. */
 export function __resetEchoSuppression(): void {
-  suppressUntil.clear();
+  armedCount.clear();
+  disarmUntil.clear();
 }

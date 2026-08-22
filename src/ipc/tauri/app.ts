@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import type { JobKind, JobStatus, JobStatusChangedPayload, RecentRepo, RepoChangedPayload, SessionState, UiSettings, UiSettingsPatch, Unsubscribe } from '../types';
+import type { JobKind, JobStatus, JobStatusChangedPayload, RecentRepo, RepoChangedPayload, SessionState, TagAutoSyncEvent, UiSettings, UiSettingsPatch, Unsubscribe } from '../types';
 
 export const appCommands = {
 
@@ -15,6 +15,11 @@ export const appCommands = {
 
   onRepoChanged(cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe> {
     return listen<RepoChangedPayload>('repo-changed', (e) => cb(e.payload));
+  },
+
+  // P85 A3: the fire-and-forget fetch tag auto-sync's completion event.
+  onTagAutoSync(cb: (e: TagAutoSyncEvent) => void): Promise<Unsubscribe> {
+    return listen<TagAutoSyncEvent>('tag-auto-sync', (e) => cb(e.payload));
   },
 
   onWindowFocus(cb: () => void): Promise<Unsubscribe> {

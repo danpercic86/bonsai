@@ -17,9 +17,9 @@ import type {
   RepoChangedPayload,
 } from '../ipc';
 import {
-  ECHO_TTL_MS,
   __resetEchoSuppression,
   armEcho,
+  clearEchoSuppression,
 } from './repoWorkspace/echoSuppression';
 
 function aiAsset(over: Partial<AiAsset> = {}): AiAsset {
@@ -140,8 +140,9 @@ describe('AiAssetsPanel', () => {
     });
     expect(inv).toHaveBeenCalledTimes(1);
 
-    // Past the window → a genuine external change refetches.
-    armEcho('/mock/repo', Date.now() - ECHO_TTL_MS - 100);
+    // Span closed (P85 A2: the round settled + tail elapsed) → a genuine
+    // external change refetches. clearEchoSuppression models "no longer suppressed".
+    clearEchoSuppression('/mock/repo');
     await act(async () => {
       handler?.({ repoId: '/mock/repo', reason: 'test' });
     });

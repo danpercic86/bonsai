@@ -20,6 +20,10 @@ export interface NonFfPullInfo {
 export function useRemoteOps(
   deps: BaseActionDeps & {
     refreshAll: () => Promise<void>;
+    // P85 A1: no longer USED here (fetch/push/force-push route through refreshAll),
+    // but kept in the deps shape because RepoWorkspace.tsx still passes them in its
+    // object literal (an excess-property error otherwise). P86 removes both the
+    // call-site args and these two props together.
     refetchBranches: () => Promise<void>;
     refetchGraph: () => Promise<void>;
     setRemoteOp: Setter<'fetch' | 'pull' | 'push' | null>;
@@ -40,13 +44,19 @@ export function useRemoteOps(
     pushToast,
     setMutating,
     refreshAll,
-    refetchBranches,
-    refetchGraph,
     setRemoteOp,
     setPendingForcePush,
     setPendingNonFfPull,
     runWithHookGate,
   } = deps;
+
+  // P85 A1: fetch/push/force-push route their post-op refresh through the
+  // ECHO-ARMED refreshAll (like handlePull already does), NOT raw
+  // refetchGraph/refetchBranches — so the op's own `.git/refs/**` watcher echo is
+  // dropped and only ONE refresh round runs. `refreshAll` never throws (P81), so
+  // the push/force-push hook-gate `attempt` bodies keep the same success
+  // semantics. A3: fetch's tag counts now arrive via the async `tag-auto-sync`
+  // event (fired off the response) rather than in the fetch result.
 
   function beginRemoteOp(op: 'fetch' | 'pull' | 'push') {
     setMutating(true);
@@ -69,7 +79,7 @@ export function useRemoteOps(
         `Fetched ${n} remote${n === 1 ? '' : 's'}` +
           (k > 0 ? ` — ${k} ref${k === 1 ? '' : 's'} updated` : ''),
       );
-      await Promise.all([refetchBranches(), refetchGraph()]);
+      await refreshAll();
     } catch (e) {
       // P70 (UI §10.3): a user-PRESSED remote op still gets exactly one toast —
       // coalesced by key, so three presses never stack three sticky errors.
@@ -128,7 +138,7 @@ export function useRemoteOps(
               (res.setUpstream ? ' (upstream set)' : ''),
           );
         }
-        await Promise.all([refetchBranches(), refetchGraph()]);
+        await refreshAll();
       }, false);
     } catch (e) {
       // Dialog dismissed (pre-push not skipped): nothing pushed, no error banner.
@@ -161,7 +171,7 @@ export function useRemoteOps(
         } else {
           pushToast('success', `Force-pushed ${res.branch} → ${res.remote}/${res.branch}`);
         }
-        await Promise.all([refetchBranches(), refetchGraph()]);
+        await refreshAll();
       }, false);
     } catch (e) {
       // Dialog dismissed (pre-push not skipped): nothing pushed, no error banner.

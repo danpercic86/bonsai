@@ -192,6 +192,8 @@ export type {
   SubmoduleInfo,
   SubmoduleRemoveOutcome,
   SubmoduleStatus,
+  TagAutoSyncEvent,
+  TagAutoSyncReport,
   TagSyncEntry,
   TagSyncReport,
   TagSyncStatus,
