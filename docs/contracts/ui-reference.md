@@ -187,46 +187,103 @@ had to be replaced by inverted emphasis (§12.5).
 
 ## 4. Commit graph metrics (canvas)
 
-- Row height: **28px**. Lane width (x-spacing between lane centers): **16px**. Left graph gutter:
-  12px before lane 0.
-- Commit dot: radius **4px**, filled with the lane color, 2px ring of `--bg-0` behind it (so edges
-  passing under read cleanly). Selected commit: radius 5px + 1.5px `--accent` outer ring. HEAD
-  commit dot: 1.5px `--text-1` outer ring.
-- Edge stroke: **2px**, round caps, color = lane color of the edge's lane.
-- Fork/merge curve: cubic bézier between (x1, y1) and (x2, y2) of adjacent rows with control
+Canonical numbers live in `src/graph/metrics.ts` (`METRICS` = cozy baseline, `COMPACT` = compact
+preset); the three user knobs `avatarRadius` / `rowHeight` / `laneWidth` vary at runtime. This
+section mirrors them — update both together.
+
+- **Row height:** **32px** (cozy) / **22px** (compact). Lane width (x-spacing between lane centers):
+  **16px**. Left graph gutter: 12px before lane 0. A fixed **180px** left ref-column band
+  (`refColWidth`) precedes the graph and carries the ref pills (§6).
+- **Commit node = author avatar, not a bare dot.** A filled disc of radius **10px** (cozy) / **8px**
+  (compact) at the commit's lane x, hue-hashed from the author (HSL sat 52 / light 42 —
+  theme-invariant, legible on both backgrounds) with the author's 1–2 initials in 600 11px. Behind
+  it a **2px** (`avatarBgRingExtra`; 1px compact) `--bg-0` halo so edges passing under read cleanly;
+  over it a **1.5px** lane-color ring tying the node to its lane.
+- **Selected commit:** an extra outer ring at radius `avatarRadius + 3.5` (→ 13.5px cozy) in
+  **`--accent`**. **HEAD commit:** an outer ring at radius `avatarRadius + 2.5` (→ 12.5px cozy) in
+  `--text-1`. Both radii derive from `avatarRadius`, so they stay outside the disc at any node-size
+  knob value.
+- **Search-match:** an outer ring in `--match-ring` at a radius distinct from the selection/HEAD
+  rings, so a match stays spottable while scrolling.
+- **Edge stroke:** **2px**, round caps, color = the edge lane's color from the **per-theme** palette
+  (§5).
+- **Fork/merge curve:** cubic bézier between (x1, y1) and (x2, y2) of adjacent rows with control
   points `(x1, y1 + rowHeight/2)` and `(x2, y2 − rowHeight/2)` — vertical tangents at both ends,
   GitKraken-style S-curve. Straight vertical segments elsewhere.
-- Commit text column starts after `gutter + laneCount*laneWidth + 12px`: message (text-1,
-  truncated), then author + relative date (text-3, 12px) as space allows.
-- HiDPI: canvas backing store scaled by `devicePixelRatio`; all metrics above are CSS px.
+- **Right of the graph:** ref pills (§6), then the commit summary (`--text-1`, `summaryFont` 13px
+  cozy / 12px compact, truncated), then the optional author / relative-date / short-SHA columns
+  (`--text-2`, `metaFont` 12px cozy / 11px compact) as space and the per-row display toggles allow.
+- **HiDPI:** canvas backing store scaled by `devicePixelRatio`; all metrics above are CSS px.
 
-## 5. Lane color palette (deterministic, both themes)
+### 4.1 Keyboard & screen-reader access (added 2026-08-22, graph review)
+
+The `<canvas>` is opaque to assistive tech, so the graph MUST be a focusable composite widget:
+
+- The scroller (`.graph-scroll`) is the single tab stop: `tabIndex={0}`, `role="grid"`,
+  `aria-label="Commit graph"`, `aria-rowcount={total}`, and
+  `aria-activedescendant="graph-row-{selectedIndex}"` while a row is selected. It shows a
+  `:focus-visible` ring (2px `--accent`, 1px offset, inset so the canvas does not clip it), distinct
+  from the per-row `--accent` selection ring above.
+- **Keyboard nav must be able to START with no prior selection.** When the graph has focus and
+  nothing is selected, the first ArrowDown/ArrowUp/Home/End/PageUp/PageDown selects an anchor —
+  `headIndex` if it is in loaded history, else `0` (Down/Home) or the last row (Up/End). Thereafter
+  Arrow = ±1 row, PageUp/Down = ±visible-row-count (`getVisibleRowCount`), Home/End = first/last.
+  Selection scroll-into-view already exists (`viewport.ts:scrollRowIntoView`).
+- A permanently-mounted polite live region (the RevealAnnouncer / §9–§10 split) announces the
+  settled selection: `"{summary} — {author}, {relative date}. Row {n+1} of {N}. {ref summary}"`,
+  debounced ~150 ms so a held arrow key does not flood the reader.
+
+## 5. Lane color palette (deterministic, per theme)
 
 Assigned by `lane % 10`, computed in Rust with the layout; stable while scrolling by construction.
+**Revised 2026-08-22 (graph review):** the palette is now **theme-specific**. The previous
+single-palette rule left six of ten lanes below the 3:1 graphics bar against the light `#ffffff`
+background (measured: orange 2.23, green 2.48, teal 2.09, yellow 1.71, pink 2.83, lime 2.16). The
+dark palette is unchanged; the light palette darkens each hue to clear 3:1 vs white while preserving
+hue order and identity. The draw layer selects the palette by resolved theme.
 
-| # | Hex | | # | Hex |
-|---|---|---|---|---|
-| 0 | `#4f8cff` blue | | 5 | `#3ec6c0` teal |
-| 1 | `#f2994a` orange | | 6 | `#e8c341` yellow |
-| 2 | `#9b6dff` purple | | 7 | `#f26d9c` pink |
-| 3 | `#43b97f` green | | 8 | `#7a86ff` indigo |
-| 4 | `#e5534b` red | | 9 | `#8fbf4d` lime |
+| # | Hue | Dark hex (vs `#16181d`) | Light hex (vs `#ffffff`) |
+|---|---|---|---|
+| 0 | blue   | `#4f8cff` (5.52:1) | `#2f6fe4` (4.65:1) |
+| 1 | orange | `#f2994a` (7.98:1) | `#b0530f` (5.13:1) |
+| 2 | purple | `#9b6dff` (5.10:1) | `#7b46d6` (5.69:1) |
+| 3 | green  | `#43b97f` (7.18:1) | `#1b7d4c` (5.14:1) |
+| 4 | red    | `#e5534b` (4.80:1) | `#c62f33` (5.45:1) |
+| 5 | teal   | `#3ec6c0` (8.49:1) | `#0c7d78` (4.98:1) |
+| 6 | yellow | `#e8c341` (10.41:1) | `#8a6f08` (4.82:1) |
+| 7 | pink   | `#f26d9c` (6.29:1) | `#c8437a` (4.63:1) |
+| 8 | indigo | `#7a86ff` (5.65:1) | `#5560e0` (5.08:1) |
+| 9 | lime   | `#8fbf4d` (8.23:1) | `#517c20` (4.94:1) |
 
-These hold ≥ 3:1 contrast against both `#16181d` and `#ffffff` at 2px strokes; do not lighten or
-darken per theme.
+Ratios are the lane color against that theme's `--bg-0` (2px stroke / dot fill) — all **≥4.6:1**,
+comfortably clearing the 3:1 graphics bar (WCAG 1.4.11). Do **not** reuse the dark hex in light mode.
+The light values double as the current-branch pill background (§6), so each also carries white pill
+text at ≥4.5:1.
 
 ## 6. Ref pills (beside commit message)
 
-Shape: 999px radius, 11px text, 600 weight, padding 2px 8px, max-width 160px with ellipsis,
-4px gap between pills. Rendered on the canvas in graph rows.
+Shape: 999px radius, `pillFont` 11px / 600 weight, padding 2px 8px, height 18px cozy / 15px compact,
+max-width 160px with ellipsis, 4px gap between pills. Rendered on the canvas in graph rows, in the
+left ref-column band.
 
 | Kind | Style |
 |---|---|
 | Local branch | bg = lane color at 18% alpha; text + 1px border = lane color |
-| Current branch (HEAD attached) | solid lane-color bg, `--accent-text` text, prefix `⌂ ` |
+| Current branch (HEAD attached) | solid lane-color bg (per-theme, §5), **luminance-adaptive text** (below), prefix `⌂ ` |
 | Remote branch | bg `--bg-2`, text `--text-2`, 1px `--border`; label `origin/name` |
 | Tag | bg `#d4a72c` at 18% alpha, text + border `#d4a72c`, prefix `# ` |
-| HEAD (detached) | solid `--danger` bg, white text, label `HEAD` |
+| HEAD (detached) | solid **`#b3261e`** bg (fixed, both themes), white text, label `HEAD` |
+
+**Luminance-adaptive pill text (added 2026-08-22, graph review).** The current-branch pill sits on a
+lane color, so a fixed white label failed catastrophically on the bright lanes (white on dark-mode
+yellow = 1.71:1). The label color is chosen per-pill as whichever of near-black `#16181d` or white
+`#ffffff` has the higher contrast with the lane background (`isDarkBg()` already exists in
+`GraphCanvas.tsx:66`). Result: near-black on the dark-mode (bright) lanes = **4.8–10.4:1**; white on
+the light-mode (darkened) lanes = **4.6–5.7:1** — all clear the 4.5:1 text bar in both themes.
+
+**Detached HEAD** uses a fixed dark red `#b3261e` background (not `--danger`, which gave white text
+only 3.70:1 in dark) — white on `#b3261e` is **6.54:1** in both themes. The `HEAD` label word
+carries the meaning; the color is secondary.
 
 ## 7. File status colors (right panel, M1+)
 
