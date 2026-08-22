@@ -17,7 +17,7 @@ async function openWithStatus(page: Page, flags: Record<string, string>): Promis
 test.describe('15 error injection', () => {
   test('remote=authfail: fetch surfaces authFailed, app stays usable', async ({ page }) => {
     await openWithStatus(page, { remote: 'authfail' });
-    await page.getByRole('button', { name: '↓ Fetch' }).click();
+    await page.getByRole('button', { name: 'Fetch', exact: true }).click();
     await expect(errorToast(page, /authentication failed for 'origin'/)).toBeVisible();
     await expect(graphCanvas(page)).toBeVisible();
     // Follow-up benign action still works.
@@ -27,14 +27,14 @@ test.describe('15 error injection', () => {
 
   test('remote=network: pull surfaces networkError', async ({ page }) => {
     await openWithStatus(page, { remote: 'network' });
-    await page.getByRole('button', { name: '⇣ Pull' }).click();
+    await page.getByRole('button', { name: 'Pull', exact: true }).click();
     await expect(errorToast(page, /network error talking to 'origin'/)).toBeVisible();
     await expect(graphCanvas(page)).toBeVisible();
   });
 
   test('remote=rejected: push surfaces the non-FF rejection', async ({ page }) => {
     await openWithStatus(page, { remote: 'rejected' });
-    await page.getByRole('button', { name: '↑ Push' }).click();
+    await page.getByRole('button', { name: 'Push', exact: true }).click();
     await expect(errorToast(page, /push rejected: the remote contains commits/)).toBeVisible();
     await expect(graphCanvas(page)).toBeVisible();
   });
@@ -69,7 +69,7 @@ test.describe('15 error injection', () => {
 
   test('hooks=failpush: push blocked; "Push anyway (skip hooks)" retries', async ({ page }) => {
     await openWithStatus(page, { hooks: 'failpush' });
-    await page.getByRole('button', { name: '↑ Push' }).click();
+    await page.getByRole('button', { name: 'Push', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'A git hook blocked this push' });
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Push anyway (skip hooks)' }).click();
