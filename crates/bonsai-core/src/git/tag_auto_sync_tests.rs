@@ -214,6 +214,47 @@ fn auto_sync_adopts_annotated_tag() {
     assert_eq!(temp_ref_count(work_dir.path()), 0);
 }
 
+/// A stale `refs/bonsai-tagsync/*` ref left by a crashed prior run must be swept
+/// BEFORE the fetch — otherwise a ghost whose remote tag was since deleted (so
+/// the force refspec never overwrites it) would be spuriously re-adopted. Here
+/// the remote has no tags at all, so the only way `ghost` could be adopted is
+/// the stale temp ref surviving into the reconcile pass.
+#[test]
+fn auto_sync_sweeps_preexisting_stale_temp_ref() {
+    let work_dir = crate::testutil::scratch_dir();
+    let bare_dir = crate::testutil::scratch_dir();
+    let repo = git2::Repository::init(work_dir.path()).expect("init work");
+    git2::Repository::init_bare(bare_dir.path()).expect("init bare");
+    let c0 = commit_file(&repo, "a.txt", "0", "c0");
+    let url = bare_dir.path().to_str().expect("utf8");
+    let mut remote = repo.remote("origin", url).expect("remote");
+    // Push HEAD so the bare remote is a valid fetch source (it has no tags).
+    remote
+        .push(&["refs/heads/master:refs/heads/master"], None)
+        .or_else(|_| remote.push(&["refs/heads/main:refs/heads/main"], None))
+        .expect("push head");
+
+    // Plant a stale temp ref as if a previous run crashed before cleanup.
+    repo.reference(
+        "refs/bonsai-tagsync/ghost",
+        c0,
+        true,
+        "planted stale temp ref",
+    )
+    .expect("plant ghost");
+
+    let report = auto_sync_tags(work_dir.path(), None).expect("auto-sync");
+    assert!(
+        report.adopted.is_empty(),
+        "stale temp ref must not be re-adopted"
+    );
+    assert!(
+        repo.find_reference("refs/tags/ghost").is_err(),
+        "no ghost tag should be created from a swept stale temp ref"
+    );
+    assert_eq!(temp_ref_count(work_dir.path()), 0, "temp namespace cleaned");
+}
+
 /// No remote configured => empty Ok report, never an error.
 #[test]
 fn auto_sync_no_remote_is_empty_ok() {

@@ -16,6 +16,11 @@ const CI = !!process.env.CI;
 /** Local Windows only — see the ASR note above. */
 const USE_EDGE_CHANNEL = !CI && process.platform === 'win32';
 
+// PORT override mirrors vite.config.ts, so a second agent session running in a
+// separate worktree can drive its own dev server + e2e on a free port instead of
+// silently reusing the default-1420 server of another checkout.
+const DEV_PORT = Number(process.env.PORT) || 1420;
+
 export default defineConfig({
   testDir: 'e2e',
   fullyParallel: true,
@@ -26,7 +31,7 @@ export default defineConfig({
   // from the uploaded artifact instead of just the text log.
   reporter: CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
-    baseURL: 'http://localhost:1420',
+    baseURL: `http://localhost:${DEV_PORT}`,
     trace: 'on-first-retry',
   },
   projects: [
@@ -36,7 +41,7 @@ export default defineConfig({
   ],
   webServer: {
     command: 'pnpm dev:mock',
-    port: 1420,
+    port: DEV_PORT,
     reuseExistingServer: !CI,
     timeout: 120_000,
   },

@@ -2661,9 +2661,6 @@ export function RepoWorkspace({
         externalItems={menus.externalToolsItems(repoPath)}
       />
 
-      {/* P84: always-mounted a11y live region for reveal announcements. */}
-      <RevealAnnouncer message={revealMessage} />
-
       <div className="panes">
         <Sidebar
           data={branches}
@@ -2859,6 +2856,12 @@ export function RepoWorkspace({
       {/* P68e: `.workspace-host`'s THIRD child (toolbar → .panes → dock), full width on
           purpose; renders null until the first run exists. */}
       <AiActivityPanel {...aiDock.panelProps} />
+
+      {/* P84: always-mounted a11y live region for reveal announcements. Rendered
+          AFTER the dock so `.workspace-host`'s counted toolbar → .panes → dock
+          child order (dock = 3rd child) is preserved — a `.sr-only` region is
+          position-agnostic for screen readers. */}
+      <RevealAnnouncer message={revealMessage} />
 
       <WorkspaceDialogs
         repoId={repoId}
