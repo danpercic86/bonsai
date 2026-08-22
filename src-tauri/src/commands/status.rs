@@ -14,6 +14,10 @@ pub async fn get_status(
 /// Runtime-free core of `get_status` (unit-testable without a Tauri app).
 pub(crate) async fn get_status_inner(state: &AppState, repo_id: &str) -> Result<StatusSnapshot, AppError> {
     let path = repo_path(state, repo_id)?;
+    // P86 instrumentation: this is the O(worktree) scan seam. `repo_opens` too —
+    // `read_status` opens the repo from `path`.
+    state.perf.inc_status_scans();
+    state.perf.inc_repo_opens();
     // F-T5-4 (audit #2 §3.2): the HEAD peel inside `read_status` spins forever
     // on a truncated loose commit — the wrapper converts that into a clean error.
     tauri::async_runtime::spawn_blocking(move || {
@@ -38,8 +42,19 @@ pub async fn get_graph(
 }
 
 /// Runtime-free core of `get_graph` (unit-testable without a Tauri app).
+///
+/// P86 note: `get_graph` is intentionally NOT layout-cached. The cache stores
+/// the STREAMING chunk stream (capped at `STREAM_MAX_COMMITS` = 1_000_000),
+/// whereas the one-shot layout is capped at `MAX_COMMITS` = 100_000; a single
+/// shared chunk cache cannot serve both caps without a stale/over-long result,
+/// and `get_graph` is off the refresh hot path (the frontend uses `streamGraph`
+/// — `get_graph` is retained for small-repo/tests/mock reuse). So it always
+/// walks. See `graph_cache.rs` and the P86 report.
 pub(crate) async fn get_graph_inner(state: &AppState, repo_id: &str) -> Result<GraphLayout, AppError> {
     let path = repo_path(state, repo_id)?;
+    // P86 instrumentation: uncached ⇒ every call is a real walk + open.
+    state.perf.inc_graph_walks();
+    state.perf.inc_repo_opens();
     // F-T5-4 (audit #2 §3.2): the one-shot walk spins forever on a truncated
     // loose commit — the wrapper converts that into a clean error. No tick seam
     // (single-shot): the deadline bounds the WHOLE walk, generous for the
@@ -68,7 +83,10 @@ pub async fn stream_graph(
     repo_id: String,
     on_chunk: tauri::ipc::Channel<GraphChunk>,
 ) -> Result<(), AppError> {
-    let path = repo_path(state.inner(), &repo_id)?;
+    // P86 B1: clone the workdir path AND the per-repo layout-cache handle out
+    // together under one brief map lock, then hand both into the blocking pool.
+    let (path, cache) = repo_path_and_graph_cache(state.inner(), &repo_id)?;
+    let perf = state.inner().perf.clone();
     tauri::async_runtime::spawn_blocking(move || {
         // F-T5-4 (audit #2 §3.2): a truncated loose object makes libgit2 spin
         // forever inside the walk, so the channel would never send `Done` and
@@ -76,10 +94,13 @@ pub async fn stream_graph(
         // deadline wrapper turns that into a clean reject (each emitted chunk
         // ticks liveness; a wedged walk stops ticking and times out).
         bonsai_core::git::timeout::run_with_git_timeout("stream_graph", move |progress| {
-            // `Channel::send` errs once the frontend drops the channel (component
-            // unmount / repo switch / `close_repo`); `is_ok() == false` stops the
-            // walk promptly with `Ok` (contract §6 cancellation).
-            stream_graph_core(&path, |chunk| {
+            // Cache-aware: an unchanged-topology refresh replays (HitVerbatim) or
+            // re-pills (HitRedecorate) the cached chunks with no revwalk; a real
+            // topology change falls through to a full walk that repopulates the
+            // cache. `Channel::send` errs once the frontend drops the channel
+            // (unmount / repo switch / `close_repo`); `is_ok() == false` stops
+            // the pass promptly with `Ok` (contract §6 cancellation).
+            crate::graph_cache::stream_graph_cached(&path, &cache, &perf, |chunk| {
                 progress.tick();
                 on_chunk.send(chunk).is_ok()
             })

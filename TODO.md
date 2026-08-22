@@ -61,11 +61,25 @@ after a single network round-trip. Full graph/status behavior otherwise unchange
 
 **Current step:** contract DONE (`docs/contracts/P86-refresh-caching.md`); P85 committed (fde91d7).
 Split into two serial increments: **P86a** (B3 scoped/reason-aware refresh + carry-ins CI-1..CI-4) —
-senior-dev DONE (gate-clean; CI-1 solved via a new echo-bypassing `external` origin; new
-`refreshScope.ts` + `useRepoChangeSubscription.ts`; bonus: stage/unstage/discard → `worktree` fixes the
-index-write echo→full-walk), **awaiting reviewer**; **P86b** (B1 graph-layout cache + B2 repo-handle
-cache [optional]) — queued. Deviations (contract matrix over prompt parenthetical): pull→`full`
-(moves HEAD), discard→`worktree` — both correct.
+senior-dev DONE + reviewer APPROVED (no MUST/SHOULD-FIX; 2 informational NITs), **committed e294500**;
+**P86b** (B1 graph-layout cache) — DONE + reviewer APPROVED (no MUST-FIX; classifier soundness traced,
+no false-hit path), **committed**. B2 (repo-handle cache) deferred as staged — clean follow-up needing
+pervasive `&Repository` core-fn variants. Deviation: `get_graph` left uncached (cap 100k vs stream 1M;
+off the hot path — frontend uses streamGraph).
+
+**P86b review follow-ups (non-blocking, recommend before batch ships):**
+- **PB-1 (memory cap — higher priority):** `graph_cache.rs` retains the full `Vec<GraphChunk>` up to
+  `STREAM_MAX_COMMITS` (1M) per open repo with NO cap/eviction; `buf.push(chunk.clone())` doubles the
+  transient alloc during each cold walk. Fine at the 20k target (~tens of MB) but unbounded on huge repos
+  (doubles the frontend copy). Fix: skip the store above a node-count threshold.
+- **PB-2 (cold-walk store race):** the store guard fingerprints the PRE-walk seed, not what the walk
+  observed, leaving a residual net-zero-double-mutation TOCTOU (astronomically improbable, self-heals).
+  Fix: derive the stored fingerprint from the walk's own observed seed (surface `stream_graph_core`'s
+  internal seed / fingerprint the emitted tips+node_oids).
+- NIT: `repo_opens` undercounts on Miss (post-walk probe not counted — matters only if B2's AC leans on it);
+  cache mutex held across chunk emission on hits (harmless today via per-repo `graphReqId` serialization).
+Deviations (contract matrix over prompt parenthetical): pull→`full` (moves HEAD), discard→`worktree` — both correct.
+NIT carry (non-blocking): backend double-emits `repo-changed{tags}` + `tag-auto-sync` for one sync (coalesced, harmless).
 
 **⚠ FLAG FOR USER (peer session, now ended):** `src/components/repoWorkspace/useWorkspaceKeyboard.test.tsx`
 fails in ISOLATION on the committed baseline (1 graph-nav `defaultPrevented` case), introduced by the peer's

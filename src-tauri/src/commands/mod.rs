@@ -6,6 +6,7 @@
 //! registered in `lib.rs`'s `generate_handler!` keep resolving unchanged.
 
 mod shared;
+mod debug;
 mod repo;
 mod ui_settings;
 mod mcp;
@@ -105,6 +106,7 @@ mod registration_tests;
 // re-export to test builds to avoid an unused-import warning in normal builds.
 #[cfg(test)]
 pub(crate) use shared::*;
+pub use debug::*;
 pub use repo::*;
 pub use ui_settings::*;
 pub use mcp::*;

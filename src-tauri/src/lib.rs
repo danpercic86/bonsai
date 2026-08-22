@@ -11,6 +11,8 @@ mod bundle_config_tests;
 #[cfg(test)]
 #[path = "settings_defaults_parity_tests.rs"]
 mod settings_defaults_parity_tests;
+pub mod graph_cache;
+pub mod perf;
 pub mod scheduler;
 pub mod settings;
 pub mod state;
@@ -283,7 +285,9 @@ pub fn run() {
             commands::forge_clear_token_for_host,
             commands::forge_invalidate_viewer,
             commands::get_repo_hooks_disclosure,
-            commands::ack_repo_hooks
+            commands::ack_repo_hooks,
+            commands::debug_perf_counters,
+            commands::debug_reset_perf_counters
         ])
         .build(tauri::generate_context!())
         .expect("error while running Bonsai")

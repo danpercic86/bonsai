@@ -271,6 +271,9 @@ where
                 RepoEntry {
                     path: workdir,
                     watcher,
+                    // Fresh empty layout cache (P86 B1): a re-arm of an open repo
+                    // must start `None` — topology may have changed while closed.
+                    graph_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
                 },
             )
         };

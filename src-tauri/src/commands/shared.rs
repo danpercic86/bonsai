@@ -100,7 +100,9 @@ pub(crate) use bonsai_core::git::worktree::{self, WorktreeInfo};
 pub(crate) use bonsai_core::git::worktree_copy::{self, CopyCandidate, CopyPlanEntry, CopySelection};
 pub(crate) use bonsai_core::git::tags;
 pub(crate) use bonsai_core::git::tag_sync;
-pub(crate) use bonsai_core::graph::{compute_graph, stream_graph_core, GraphChunk, GraphLayout};
+// `stream_graph_core` is reached directly by `graph_cache.rs` (the cache-aware
+// stream path), so it is intentionally NOT re-exported here.
+pub(crate) use bonsai_core::graph::{compute_graph, GraphChunk, GraphLayout};
 pub(crate) use bonsai_core::health::{collect_repo_health, RepoHealth};
 pub(crate) use crate::scheduler::{self, JobKind, JobOutcome, SchedulerState};
 pub(crate) use crate::settings::{
@@ -136,5 +138,23 @@ pub(crate) fn repo_path(state: &AppState, repo_id: &str) -> Result<std::path::Pa
     repos
         .get(repo_id)
         .map(|e| e.path.clone())
+        .ok_or(AppError::NoRepo)
+}
+
+/// Canonical workdir path AND the per-repo graph-layout cache handle (P86 B1),
+/// cloned out together under ONE brief map-lock acquisition (same pattern as
+/// `repo_path`, so the pair can never straddle a concurrent close/re-open).
+/// `NoRepo` if the id isn't open.
+pub(crate) fn repo_path_and_graph_cache(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<(std::path::PathBuf, std::sync::Arc<crate::graph_cache::GraphCache>), AppError> {
+    let repos = state
+        .repos
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    repos
+        .get(repo_id)
+        .map(|e| (e.path.clone(), e.graph_cache.clone()))
         .ok_or(AppError::NoRepo)
 }

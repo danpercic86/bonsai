@@ -16,9 +16,13 @@ use std::collections::{HashMap, HashSet};
 
 use crate::error::AppError;
 
+mod decorate;
 mod lane;
+mod seed;
 mod stream;
 use lane::LaneWalker;
+pub use decorate::redecorate_chunks;
+pub use seed::{graph_seed, GraphSeed};
 pub use stream::{
     stream_graph_core, GraphChunk, GraphStreamEdge, StreamNode, STREAM_BATCH, STREAM_FIRST_BATCH,
     STREAM_MAX_COMMITS,
@@ -117,7 +121,9 @@ impl GraphLayout {
     }
 }
 
-type RefMap = HashMap<git2::Oid, Vec<RefLabel>>;
+/// Ref pills keyed by the commit oid they decorate. Public so the P86 layout
+/// cache (command layer) can drive [`redecorate_chunks`] with a fresh decoration.
+pub type RefMap = HashMap<git2::Oid, Vec<RefLabel>>;
 
 /// The deterministic walk SEED shared by both graph paths (see [`collect_seed`]):
 /// `(labels per oid, deduped tips in push order, head oid, hidden oids)`.
