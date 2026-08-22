@@ -5,6 +5,7 @@
 // this only renders the precomputed TagSyncReport.
 import { useMemo, useState } from 'react';
 import type { TagSyncEntry, TagSyncReport } from '../../ipc';
+import type { RevealTarget } from '../../graph/reveal';
 import { relativeDate } from '../../graph/draw';
 import { buildPathTree } from '../../utils/pathTree';
 import { Tree } from '../Tree';
@@ -28,6 +29,7 @@ function TagRow({
   remote,
   ghost,
   onContextMenu,
+  onReveal,
   treeKey,
   level = 2,
 }: {
@@ -40,6 +42,8 @@ function TagRow({
   /** A remote-only ghost row (dimmed — not in the local repo yet). */
   ghost?: boolean;
   onContextMenu(name: string, clientX: number, clientY: number): void;
+  /** P84: single-click reveals the tag in the graph (by RefLabel shortname). */
+  onReveal?: (t: RevealTarget) => void;
   /** P-a11y §D.2: treeitem key (`tag:<name>`) + aria-level. */
   treeKey: string;
   level?: number;
@@ -56,6 +60,7 @@ function TagRow({
       {...item}
       role="treeitem"
       className={ghost ? 'branch-row branch-row-readonly branch-row-ghost' : 'branch-row branch-row-readonly'}
+      onClick={() => onReveal?.({ kind: 'ref', name })}
       onContextMenu={(e) => {
         e.preventDefault();
         onContextMenu(name, e.clientX, e.clientY);
@@ -84,6 +89,7 @@ export function TagsSection({
   tags,
   treeMode,
   onTagContextMenu,
+  onReveal,
   tagSyncReport,
   tagSyncState,
   tagSyncRemote,
@@ -93,6 +99,8 @@ export function TagsSection({
   tags: string[];
   treeMode: boolean;
   onTagContextMenu(name: string, clientX: number, clientY: number): void;
+  /** P84: single-click reveal, threaded to every tag row. */
+  onReveal?: (t: RevealTarget) => void;
   tagSyncReport: TagSyncReport | null;
   tagSyncState: TagSyncState;
   /** The remote the check targets, available even when no report was obtained
@@ -221,6 +229,7 @@ export function TagsSection({
                         sync={byName.get(l.item)}
                         remote={remote}
                         onContextMenu={onTagContextMenu}
+                        onReveal={onReveal}
                         treeKey={`tag:${l.item}`}
                         level={level}
                       />
@@ -237,6 +246,7 @@ export function TagsSection({
                         sync={byName.get(tag)}
                         remote={remote}
                         onContextMenu={onTagContextMenu}
+                        onReveal={onReveal}
                         treeKey={`tag:${tag}`}
                       />
                     ))}
@@ -255,6 +265,7 @@ export function TagsSection({
                       remote={remote}
                       ghost
                       onContextMenu={onTagContextMenu}
+                      onReveal={onReveal}
                       treeKey={`tag:${e.name}`}
                     />
                   ))}

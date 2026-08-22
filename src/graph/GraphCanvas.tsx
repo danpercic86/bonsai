@@ -56,7 +56,8 @@ import { createFrameRecorder } from './frameStats';
 import type { FrameStats } from './frameStats';
 import type { EffectiveMetrics } from './metrics';
 import type { RevealFlash } from './reveal';
-import { flashAlpha, flashDurationMs, flashRingRadius } from './revealFlash';
+import { flashAlpha, flashRingRadius } from './revealFlash';
+import { startRevealFlash } from './revealFlashRunner';
 
 export type { WipSummary };
 
@@ -205,6 +206,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   // when no flash is running. Its own rAF handle (separate from the scroll rAF).
   const flashStateRef = useRef<{ row: number; start: number } | null>(null);
   const flashRafRef = useRef(0);
+  const flashTimeoutRef = useRef(0);
   const scrollTopRef = useRef(0);
   const cssSizeRef = useRef({ w: 0, h: 0 });
   /** Cursor y relative to the scroller top; null while the pointer is outside. */
@@ -575,39 +577,18 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     if (next !== null) scroller.scrollTop = next;
   }, [selectedIndex, wip]);
 
-  // P84: nonce-driven reveal flash. A new `revealFlash.nonce` (re)starts a
-  // self-contained rAF loop that repaints each frame until the flash duration
-  // elapses, then paints once more to clear. Composites over normal paints
-  // (scroll during the flash simply repaints with the current alpha) and never
-  // blocks input. Selection drives the scroll-into-view; this only animates.
+  // P84: nonce-driven reveal flash. A new `revealFlash.nonce` (re)starts the
+  // flash on `revealFlash.index`; the runner handles both motion modes and
+  // returns the cleanup. See `revealFlashRunner.ts`.
   const flashNonce = revealFlash?.nonce ?? null;
   const flashRow = revealFlash?.index ?? null;
   useEffect(() => {
     if (flashNonce === null || flashRow === null) return;
-    flashStateRef.current = { row: flashRow, start: performance.now() };
-    const duration = flashDurationMs(reducedMotionRef.current);
-    const tick = () => {
-      const fs = flashStateRef.current;
-      if (fs === null) return;
-      const elapsed = performance.now() - fs.start;
-      paintNow();
-      if (elapsed >= duration) {
-        flashStateRef.current = null;
-        paintNow(); // final clear paint
-        flashRafRef.current = 0;
-        return;
-      }
-      flashRafRef.current = requestAnimationFrame(tick);
-    };
-    if (flashRafRef.current !== 0) cancelAnimationFrame(flashRafRef.current);
-    flashRafRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (flashRafRef.current !== 0) {
-        cancelAnimationFrame(flashRafRef.current);
-        flashRafRef.current = 0;
-      }
-      flashStateRef.current = null;
-    };
+    return startRevealFlash(flashRow, reducedMotionRef.current, paintNow, {
+      state: flashStateRef,
+      raf: flashRafRef,
+      timeout: flashTimeoutRef,
+    });
   }, [flashNonce, flashRow, paintNow]);
 
   // P7 §6.2: clamp the tooltip inside the host. Runs synchronously after the

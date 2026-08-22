@@ -551,8 +551,9 @@ export function RepoWorkspace({
       const i =
         t.kind === 'ref' ? revealIndex.byRef.get(t.name) ?? null : revealIndex.byOid.get(t.oid) ?? null;
       const label = revealTargetLabel(t);
+      revealNonceRef.current += 1; // §6: bump first; both paths thread it so repeats re-announce (invisible marker)
       if (i === null) {
-        setRevealMessage(revealMissMessage(label));
+        setRevealMessage(revealMissMessage(label, revealNonceRef.current));
         pushToast(
           'info',
           `"${label}" isn't in the loaded history yet. Load more commits to reveal it.`,
@@ -564,19 +565,12 @@ export function RepoWorkspace({
       // the transient attention cue on top. Nonce bump re-flashes even when the
       // row is already selected.
       setSelectedIndex(i);
-      revealNonceRef.current += 1;
       setRevealFlash({ index: i, nonce: revealNonceRef.current });
       const oid = graph?.nodes[i]?.id ?? '';
-      setRevealMessage(revealedMessage(label, oid));
+      setRevealMessage(revealedMessage(label, oid, revealNonceRef.current));
     },
     [revealIndex, graph, pushToast],
   );
-  // P84: the sidebar row-wiring increment consumes this handler (single-click on a
-  // branch/remote/tag/stash row → `onReveal`). Exposed via a ref now so wiring it
-  // is a one-line change in Sidebar without reshaping this container. Kept stable.
-  const revealHandlerRef = useRef(handleReveal);
-  revealHandlerRef.current = handleReveal;
-
   const [commitDiff, setCommitDiff] = useState<CommitDiff | null>(null);
   const [commitDiffLoading, setCommitDiffLoading] = useState(false);
   const [commitDiffError, setCommitDiffError] = useState<string | null>(null);
@@ -2704,6 +2698,7 @@ export function RepoWorkspace({
           onRemoteContextMenu={handleRemoteContextMenu}
           onAddRemote={() => setPendingAddRemote(true)}
           onCleanupBranches={() => setStaleCleanupOpen(true)}
+          onReveal={handleReveal}
         />
         <PaneDivider side="sidebar" onResize={onSidebarResize} onResizeEnd={onPaneResizeEnd} />
         <WorkspaceGraphPane

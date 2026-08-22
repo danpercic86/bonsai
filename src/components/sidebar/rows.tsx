@@ -5,6 +5,7 @@
 // (`onContextMenu`) and double-click (checkout) behaviour is byte-preserved from
 // the original inline components — the keyboard path is additive.
 import type { BranchInfo, RemoteInfo, WorktreeInfo } from '../../ipc';
+import type { RevealTarget } from '../../graph/reveal';
 import { relativeDate } from '../../graph/draw';
 import {
   CloudIcon,
@@ -42,6 +43,7 @@ export function BranchRow({
   busy,
   onCheckout,
   onContextMenu,
+  onReveal,
   displayName,
   treeKey,
   level = 2,
@@ -50,6 +52,9 @@ export function BranchRow({
   busy: boolean;
   onCheckout(name: string): void;
   onContextMenu: BranchContextMenu;
+  /** P84: single-click reveals the branch tip in the graph (additive to
+   *  double-click checkout; never hijacks keyboard). */
+  onReveal?: (t: RevealTarget) => void;
   /** P3b tree mode: visible basename; ALL semantics (title, checkout, badge,
    *  head glyph, menu) keep using the full branch.name. */
   displayName?: string;
@@ -72,6 +77,7 @@ export function BranchRow({
       {...item}
       role="treeitem"
       className={isHead ? 'branch-row branch-row-head' : 'branch-row'}
+      onClick={() => onReveal?.({ kind: 'ref', name: branch.name })}
       onDoubleClick={() => {
         // GitKraken muscle memory: double-click checks out (contract §4.2).
         if (!isHead && !busy) onCheckout(branch.name);
@@ -94,12 +100,15 @@ export function RemoteRow({
   name,
   displayName,
   onContextMenu,
+  onReveal,
   treeKey,
   level = 2,
 }: {
   name: string;
   displayName?: string;
   onContextMenu: BranchContextMenu;
+  /** P84: `name` is the full "origin/…" shorthand, matching RefLabel.name. */
+  onReveal?: (t: RevealTarget) => void;
   treeKey: string;
   level?: number;
 }) {
@@ -115,6 +124,7 @@ export function RemoteRow({
       {...item}
       role="treeitem"
       className="branch-row branch-row-readonly"
+      onClick={() => onReveal?.({ kind: 'ref', name })}
       onContextMenu={(e) => {
         e.preventDefault();
         onContextMenu(name, 'remoteBranch', e.clientX, e.clientY);
@@ -178,6 +188,7 @@ export function StashRow({
   message,
   ts,
   onContextMenu,
+  onReveal,
   treeKey,
   level = 2,
 }: {
@@ -186,6 +197,8 @@ export function StashRow({
   message: string;
   ts: number;
   onContextMenu(index: number, oid: string, clientX: number, clientY: number): void;
+  /** P84: stashes aren't ref-labelled in the graph → reveal by oid. */
+  onReveal?: (t: RevealTarget) => void;
   treeKey: string;
   level?: number;
 }) {
@@ -205,6 +218,7 @@ export function StashRow({
       {...item}
       role="treeitem"
       className="branch-row"
+      onClick={() => onReveal?.({ kind: 'oid', oid, label })}
       onContextMenu={(e) => {
         e.preventDefault();
         onContextMenu(index, oid, e.clientX, e.clientY);

@@ -6,11 +6,11 @@
 
 export type RevealTarget =
   | { kind: 'ref'; name: string } // RefLabel.name: "main" | "origin/main" | "v1.0"
-  | { kind: 'oid'; oid: string }; // full 40-hex (stashes)
+  | { kind: 'oid'; oid: string; label?: string }; // full 40-hex (stashes); label e.g. "stash@{0}"
 
 /** Human-facing label for a reveal target, used in the a11y announcement + toast. */
 export function revealTargetLabel(t: RevealTarget): string {
-  return t.kind === 'ref' ? t.name : t.oid.slice(0, 7);
+  return t.kind === 'ref' ? t.name : t.label ?? t.oid.slice(0, 7);
 }
 
 /**
