@@ -59,7 +59,9 @@ after a single network round-trip. Full graph/status behavior otherwise unchange
 
 ## ⚡ P86 — Refresh perf: graph-layout & repo-handle caching, scoped refresh — pending
 
-**Current step:** awaiting architect contract (shares `docs/contracts/P85-refresh-perf.md` or a P86 file).
+**Current step:** contract DONE (`docs/contracts/P86-refresh-caching.md`); P85 committed (fde91d7).
+Split into two serial increments: **P86a** (B3 scoped/reason-aware refresh + carry-ins CI-1..CI-4) —
+senior-dev IN PROGRESS; **P86b** (B1 graph-layout cache + B2 repo-handle cache [optional]) — queued.
 
 **Goal (workstream B).** Even with P85, every refresh re-walks the ENTIRE commit graph from scratch
 (`compute_graph` `graph.rs:129` / `stream_graph_core` `graph/stream.rs:110`), re-opens the
@@ -106,10 +108,12 @@ ui-designer open-Q decisions: (Q1) button keeps stable participle ("Pushing…")
 adjacent `.toolbar-phase` readout — confirmed; (Q3) pull copy = "Fetching…" during transfer, "Pull" as
 terminal row title — confirmed; (Q4) `Ctrl/Cmd+Shift+L` toggles the git-activity dock — confirmed;
 (Q5) dock geometry session-only, no settings keys v1 — confirmed.
-**(Q2) RECONCILE BEFORE P87 IMPL:** a real determinate bar + object/byte count needs the backend to
-surface git2 `transfer_progress` as STRUCTURED counts (a `progress` event / fields), not a throttled
-text line. Amend `P87-git-observability.md` event model to add a structured progress variant and align
-it with `P87-ui.md` before spawning P87 senior-dev.
+**(Q2) RESOLVED:** structured `Progress` event added — `GitTransferProgress {received/total/indexed
+Objects, receivedBytes, total/indexedDeltas?}` from git2 `RemoteCallbacks::transfer_progress`, throttled
+≤20/s in `remote.rs::fetch_remote`, additive default-no-op recorder method. Two sources, one stream:
+CLI exec seam (hook/force-push lines) + git2 counts (fetch/pull). Both contracts agree (P87 §14 +
+P87-ui §2.3/§9). **Push transfer-progress DEFERRED** (fetch/pull suffice; push slow-time is hooks via
+exec seam). **P87 impl now UNBLOCKED — queued behind P86.**
 
 **Goal (workstreams C + D).** Push/fetch/pull are blocking `invoke()`s with only a generic spinner;
 the exec seam (`git/exec.rs:137`) captures stdout/stderr and returns it **only after the process

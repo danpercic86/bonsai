@@ -5,6 +5,11 @@ This spec owns everything downstream of that data: the phase→copy map, the too
 treatment (**View C**), and the session log dock (**View D**). It does **not** change the store, the
 IPC surface, or `HookOutputDialog`'s existing behaviour.
 
+> **Amendment (2026-08-22):** §9-Q2 is **RESOLVED** — the data contract §14 now surfaces structured
+> `GitTransferProgress` (a `progress` event → `run.progress`), so the §2.3 determinate bar + count
+> readout read those fields directly rather than parsing text. §2.3 / §9-Q2 below are updated to the
+> concrete camelCase field names.
+
 House pattern mirrored throughout: the **bottom AI activity dock** (`ui-reference.md` §9, files
 `AiActivityPanel.tsx` / `AiActivityHeader.tsx` / `AiActivityLog.tsx` / `aiDockFormat.ts`). View D is
 the git analogue and reuses that dock's geometry, tokens, pill recipe, live-region rule, and log
@@ -119,15 +124,19 @@ The `.header-progress` 2px bar (bottom edge of `.workspace-toolbar`) gains a **d
   renders a full-width fill scaled by `transform: scaleX(var(--progress))` (transform, not width — no
   layout), `transition: transform 150ms ease-out`. When the fraction is unknown, omit
   `data-determinate` → the sweep as today.
-- **`objectsReadout(run)`** and the fraction both need received/total. The event model (§2 of the
-  data contract) currently only carries transfer progress as a throttled **text line**. Parsing
-  git's `Receiving objects:  N% (x/y)` line in the store is possible but fragile. **STRONG
-  RECOMMENDATION → architect:** surface `git2` `transfer_progress` as a structured optional field
-  (`received_objects` / `total_objects` / `received_bytes`) on the `network` phase (or a tiny new
-  `progress` event kind) rather than only as text. Cheap (the callback already has the ints) and it's
-  what makes both the determinate bar and the count readout robust. **Degradation:** if it stays
-  text-only, the store best-effort-parses the canonical line; if parsing yields nothing, the bar
-  stays indeterminate and the readout shows `Fetching…`. Flagged §9-Q2.
+- **Data source (RESOLVED — data contract §14).** The determinate bar and the count readout read the
+  structured `run.progress: GitTransferProgress | null` (set by the `progress` event, camelCase
+  fields `receivedObjects` / `totalObjects` / `indexedObjects` / `receivedBytes` /
+  `totalDeltas?` / `indexedDeltas?`). No text parsing.
+  - **Fraction** (the `--progress` value): `p && p.totalObjects > 0 ? p.receivedObjects /
+    p.totalObjects : null`. `null` (including `totalObjects === 0` or `run.progress === null`) → omit
+    `data-determinate`, fall back to the sweep.
+  - **`objectsReadout(run)`** (`gitActivityFormat.ts`, `string | null`): `p.totalObjects > 0` →
+    `` `${p.receivedObjects.toLocaleString()} / ${p.totalObjects.toLocaleString()} objects` ``; else
+    `p.receivedBytes > 0` → `` `${formatBytes(p.receivedBytes)} received` `` (`4.2 MB received`); else
+    `null` → the readout shows `phaseLabel(...)` (`Fetching…`).
+  - Only fetch/pull emit `progress`; push network stays indeterminate for v1 (data contract §14.6),
+    so push shows `Sending objects…` with the sweep.
 
 ### 2.4 States (View C)
 
@@ -330,9 +339,10 @@ binding to `useWorkspaceKeyboard`.
   `role="status" aria-live="polite" aria-atomic="true"` span in `GitActivityDock`. Announces the
   **active run's phase transitions and terminal result only** — e.g. `Running pre-push hook`,
   `Fetching`, `Push finished — success`, `Push failed`. It does **NOT** announce output lines (a
-  streaming log in a live region is hostile — same rule as §9). This is the single announcer for both
-  View C and View D; the toolbar button is `disabled` mid-op so its label change is not a reliable
-  announcement source.
+  streaming log in a live region is hostile — same rule as §9) and does **NOT** announce `progress`
+  ticks (the fraction is visual/`title`; announcing "12,340 objects" repeatedly is hostile). This is
+  the single announcer for both View C and View D; the toolbar button is `disabled` mid-op so its
+  label change is not a reliable announcement source.
 - **The log list is not a live region.** The body `<ol>` is `tabIndex={0}`, `aria-label="Git activity
   log"`, focusable and read on demand (mirror `AiActivityLog`).
 - **Keyboard nav:** Tab reaches the dock bar controls (chevron, Clear) then the list. Within the list,
@@ -344,7 +354,7 @@ binding to `useWorkspaceKeyboard`.
   re-focuses itself). Mirror the AI dock's `focusDock`/restore.
 - **No colour-only meaning anywhere:** run + hook status are word + glyph pills (§4.4); stderr lines
   use a left-border shape cue + `--text-1` + a visually-hidden `stderr:` prefix, not colour; the
-  determinate bar is backed by the numeric readout.
+  determinate bar is backed by the numeric `objectsReadout` readout.
 - **Hit targets ≥24px:** chevron, Clear, collapse toggle, Copy, the clickable phase readout — box
   grown by padding, glyph unchanged (§3.1).
 - **Contrast:** every pair is an existing §2 token used in a §2/§11-sanctioned way — labels `--text-1`
@@ -393,11 +403,13 @@ dialog body (verbatim, by design), never a label or announcement.
 - **Q1 (View C label placement).** Recommend the button keeps a stable short participle and the phase
   string lives in an adjacent `.toolbar-phase` readout (§2.1), NOT in the button label (avoids
   mid-op toolbar reflow). Confirm, or have the label itself carry the phase.
-- **Q2 (network progress data — architect).** For a determinate bar + a real object/byte count,
-  recommend the backend surface `git2 transfer_progress` as a **structured** field
-  (`received/total objects`, `received bytes`) rather than only a throttled text line. Without it the
-  bar stays indeterminate and the readout shows `Fetching…`. Needs an architect decision on the event
-  shape.
+- **Q2 (network progress data — architect). RESOLVED.** The data contract §14 surfaces `git2`
+  `transfer_progress` as a **structured** `progress` event → `run.progress: GitTransferProgress`
+  (`receivedObjects` / `totalObjects` / `receivedBytes` + optional deltas), throttled to ≤~20/sec.
+  §2.3 reads those fields directly (no text parsing): the determinate bar uses
+  `receivedObjects/totalObjects` (guard `totalObjects===0` → indeterminate) and `objectsReadout`
+  formats the count/byte string. fetch/pull wired; push network stays indeterminate for v1
+  (data contract §14.6). No further UI decision needed.
 - **Q3 (pull network copy).** Recommend `Fetching…` during a pull's transfer (names the real work),
   with `Pull` as the terminal row title. Confirm vs a distinct `Pulling…` during transfer.
 - **Q4 (shortcut).** Recommend `Ctrl/Cmd+Shift+L` to open the log (free in the current map; pairs
@@ -419,8 +431,9 @@ The data contract already specs the query seams; this maps them to what each mus
 - `?prePushFail` → `HookOutputDialog` opens (verbatim) **and** a `⚠ Failed` push row with `⚠ pre-push
   exit 1`, stderr in the body, the §3.5-4 dialog note.
 - `?pushSlow` / `?fetchSlow` → a `● Running` row, live elapsed ticking, live phase sub-line; ends
-  `✓ Success`. `?fetchSlow` should exercise the **determinate bar + count readout** if Q2 lands
-  (emit structured transfer counts); otherwise indeterminate + `Fetching…`.
+  `✓ Success`. `?fetchSlow` emits structured `progress` ticks → the **determinate bar + count
+  readout** (`--progress` ramps 0→1, readout `N / M objects`). `?fetchNoCount` → indeterminate +
+  `Fetching…`.
 - Flood seam → per-run cap 500 with `↑ trimmed` header + `⋯ trimmed` chip; run list cap 200.
 - Empty: run all seams then `Clear` → the §4.5 empty state (dock stays mounted).
 
