@@ -157,6 +157,11 @@ fn hkcu_registry_hit_when_path_misses() {
     let calls = env.calls();
     assert_eq!(calls[2], format!("reg:{HKCU}\\InstallPath"));
     assert!(!calls.iter().any(|c| c.contains("HKLM")), "{calls:?}");
+    // `bin_dir()` splits the install path with `Path::parent`, which only treats
+    // `\` as a separator on Windows hosts — so this Windows-path assertion is
+    // gated to Windows. The ladder resolution above (source, path, probe order)
+    // is validated on every host via the injected `TargetOs::Windows`.
+    #[cfg(windows)]
     assert_eq!(bin.bin_dir(), Some(Path::new(r"C:\Users\dev\AppData\Local\Programs\Git\cmd")));
 }
 
@@ -360,8 +365,8 @@ fn parse_reg_query_table() {
 //     Path / Fallback / a parentless Override.
 #[test]
 fn bin_dir_is_only_set_for_non_path_rungs() {
+    // Unix-style paths split identically on every host, so these run everywhere.
     let cases = [
-        (GitBinSource::Registry, r"C:\Git\cmd\git.exe", true),
         (GitBinSource::WellKnown, "/usr/local/bin/git", true),
         (GitBinSource::Override, "/opt/git/bin/git", true),
         (GitBinSource::Override, "git", false),
@@ -378,6 +383,16 @@ fn bin_dir_is_only_set_for_non_path_rungs() {
             expect_some,
             "bin_dir for {source:?} {path}"
         );
+    }
+    // A Registry rung only ever carries a Windows install path, and `bin_dir()`'s
+    // `Path::parent` split only parses `\` on Windows — assert it there only.
+    #[cfg(windows)]
+    {
+        let bin = GitBin {
+            path: PathBuf::from(r"C:\Git\cmd\git.exe"),
+            source: GitBinSource::Registry,
+        };
+        assert!(bin.bin_dir().is_some(), "bin_dir for Registry Windows path");
     }
 }
 
