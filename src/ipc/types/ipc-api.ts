@@ -1,4 +1,5 @@
 import type { AiAnalysis, AiAnalysisMode, AiAvailability, AiChangelog, AiDiffTarget, AiDigestRange, AiResolveBatch, AiResolveProposal, AiRunEvent, AiSummary, BranchNameProposal, BranchNameSource, ChangelogRange, CommitMessageProposal, ComposeApplyResult, ComposePlan, ComposeProposal } from './ai';
+import type { GitActivityEvent } from './activity';
 import type { AgentAsset, AgentAssetInput, AgentAssetInventory, AgentAssetKind, AiAssetInventory, AiGeneratedAsset, AssetContent, ContextProfile, ProfileActivation, ProfilePreviewEntry, ProfileStore, WorktreeContextStatus } from './ai-assets';
 import type { BranchDeleteResult, BranchesSnapshot, CheckoutResult, CreateBranchHereResult, MergeOutcome, RebaseOutcome, RebaseTodoOp, RemoteInfo, RenameBranchResult, StaleReport, TagAutoSyncEvent, TagAutoSyncReport, TagSyncReport } from './branches';
 import type { CherrypickOutcome, CommitResult, RevertOutcome } from './commit';
@@ -570,6 +571,11 @@ export interface IpcApi {
     paths: string[],
     onEvent: (e: AiRunEvent) => void,
   ): Promise<AiResolveBatch>;
+  /** P87. Register ONE long-lived channel that receives a `GitActivityEvent` for
+   *  EVERY git op this session (hooks + network). Fire-and-forget observability —
+   *  never gates an op. Call once on app/repo mount; re-invoke after an HMR/reload
+   *  (the backend prunes stale channels on send failure). Resolves immediately. */
+  gitActivitySubscribe(onEvent: (e: GitActivityEvent) => void): Promise<void>;
   /** P68 §B/D7. Cancel a streaming run. IDEMPOTENT: an unknown or already-finished
    *  id resolves — a cancel racing a completion is normal and must not error. */
   aiCancelRun(runId: string): Promise<void>;

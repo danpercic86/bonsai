@@ -14,6 +14,11 @@ pub(crate) use bonsai_core::assets::{
     ProfileStore, WorktreeContextStatus,
 };
 pub(crate) use bonsai_core::error::AppError;
+// P87 git-activity observability. `with_activity` (the command bracket) + the
+// activity types the op inners name; the emitter is derived to
+// `&dyn GitActivityRecorder` inside each `spawn_blocking`.
+pub(crate) use super::activity::with_activity;
+pub(crate) use bonsai_core::git::activity::{GitActivityCategory, GitActivityRecorder};
 // P62b/P63 forge command layer. Only the DTOs the command signatures NAME are
 // re-exported (mirrors the `compose_apply` / `ai_operation` convention below —
 // avoids an unused-import warning under -D warnings); the still-nested DTOs
@@ -61,7 +66,9 @@ pub(crate) use bonsai_core::git::branches::{
 };
 pub(crate) use bonsai_core::git::cherrypick::{self, CherrypickOutcome};
 pub(crate) use bonsai_core::git::clone::{clone_repo as clone_repo_core, init_repo as init_repo_core, CloneProgress};
-pub(crate) use bonsai_core::git::commit::{amend_commit, create_commit, CommitResult};
+pub(crate) use bonsai_core::git::commit::{
+    amend_commit_with_activity, create_commit_with_activity, CommitResult,
+};
 pub(crate) use bonsai_core::git::config::{self, ConfigLevelArg, ConfigView};
 pub(crate) use bonsai_core::git::conflict::{self, ConflictEntry, ConflictFile, ConflictResolution};
 pub(crate) use bonsai_core::git::diff::{
@@ -78,8 +85,8 @@ pub(crate) use bonsai_core::git::discard::{
 };
 pub(crate) use bonsai_core::git::discard_partial::discard_partial as discard_partial_core;
 pub(crate) use bonsai_core::git::remote::{
-    add_remote as add_remote_core, fetch_all, force_push_with_lease,
-    list_remotes as list_remotes_core, pull_ff, push_current,
+    add_remote as add_remote_core, fetch_all_with_activity, force_push_with_lease_with_activity,
+    list_remotes as list_remotes_core, pull_ff_with_activity, push_current_with_activity,
     remove_remote as remove_remote_core, rename_remote as rename_remote_core,
     set_remote_url as set_remote_url_core, FetchResult, PullResult, PushResult, RemoteInfo,
 };

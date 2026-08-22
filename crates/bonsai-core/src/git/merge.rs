@@ -7,15 +7,22 @@
 use std::path::Path;
 
 use crate::error::AppError;
+use crate::git::activity::GitActivityRecorder;
 use crate::git::autostash::{self, PopResult};
 use crate::git::bisect::require_no_bisect;
 use crate::git::commit::{self, resolve_signature, CommitResult};
 use crate::git::conflict::list_conflicts;
 use crate::git::exec::SpawnGitExec;
-use crate::git::hooks::{hooks_enabled, run_hook, run_hook_nonblocking, HookName};
+use crate::git::hooks::{
+    hooks_enabled, run_hook_nonblocking_streaming, run_hook_streaming, HookName,
+};
 use crate::git::signing::{self, resolve_signing};
 use crate::git::repo::read_head_info;
 use crate::git::stage::open_workdir_repo;
+// P87: the activity-recording merge-commit core lives in `merge_activity`
+// (file-size split); re-exported so `merge::commit_merge_with_activity` keeps
+// resolving for the command layer.
+pub use crate::git::merge_activity::commit_merge_with_activity;
 
 /// Wire: tagged "kind", camelCase (same recipe as PullResult).
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -314,7 +321,9 @@ pub fn merge_branch(
     } else {
         MergeHooks::Off
     };
-    let result = finalize_merge_commit(&mut repo, &message, None, hooks)?;
+    // `merge_branch` is not an activity-wrapped op (no dedicated category); the
+    // auto-merge commit records no activity (None).
+    let result = finalize_merge_commit(&mut repo, &message, None, hooks, None)?;
     let oid = result.oid;
     if let Some(stash) = stash_oid {
         return Ok(match autostash::pop_after_success(&mut repo, workdir, stash)? {
@@ -327,7 +336,7 @@ pub fn merge_branch(
 
 /// Which commit hooks [`finalize_merge_commit`] fires (F-A4-2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MergeHooks {
+pub(crate) enum MergeHooks {
     /// No hooks (`skip_hooks` / `bonsai.runHooks=false`).
     Off,
     /// `commit-msg` only — the clean auto-merge path. git's `git merge`
@@ -358,11 +367,12 @@ enum MergeHooks {
 /// message-policy behavior for `git merge`'s auto-commit. On ANY blocking
 /// hook rejection the merge is left PAUSED (MERGE_HEAD retained), never
 /// half-committed.
-fn finalize_merge_commit(
+pub(crate) fn finalize_merge_commit(
     repo: &mut git2::Repository,
     message: &str,
     sign: Option<bool>,
     hooks: MergeHooks,
+    activity: Option<&dyn GitActivityRecorder>,
 ) -> Result<CommitResult, AppError> {
     let run_pre_post = hooks == MergeHooks::Full;
     let run_commit_msg = hooks != MergeHooks::Off;
@@ -379,7 +389,7 @@ fn finalize_merge_commit(
     // (no commit, no ref move, merge state left intact for retry/abort).
     if run_pre_post {
         if let Some(wd) = workdir_buf.as_deref() {
-            run_hook(&SpawnGitExec, wd, HookName::PreCommit, &[], None)?;
+            run_hook_streaming(&SpawnGitExec, wd, HookName::PreCommit, &[], None, activity)?;
         }
     }
 
@@ -391,7 +401,7 @@ fn finalize_merge_commit(
     // commit-msg may rewrite the merge message file.
     if run_commit_msg {
         if let Some(wd) = workdir_buf.as_deref() {
-            msg = commit::run_commit_msg_hook(repo, wd, &msg)?;
+            msg = commit::run_commit_msg_hook(repo, wd, &msg, activity)?;
         }
     }
 
@@ -456,8 +466,9 @@ fn finalize_merge_commit(
     let mut hook_warning: Option<String> = None;
     if run_pre_post {
         if let Some(wd) = workdir_buf.as_deref() {
-            hook_warning = run_hook_nonblocking(&SpawnGitExec, wd, HookName::PostCommit, &[])
-                .warning(HookName::PostCommit);
+            hook_warning =
+                run_hook_nonblocking_streaming(&SpawnGitExec, wd, HookName::PostCommit, &[], activity)
+                    .warning(HookName::PostCommit);
         }
     }
 
@@ -489,26 +500,7 @@ pub fn commit_merge(
     sign: Option<bool>,
     skip_hooks: bool,
 ) -> Result<CommitResult, AppError> {
-    let mut repo = open_workdir_repo(workdir)?;
-
-    if repo.state() != git2::RepositoryState::Merge {
-        return Err(AppError::NoOperationInProgress(
-            "no merge in progress".to_string(),
-        ));
-    }
-    let index = repo.index()?;
-    if index.has_conflicts() {
-        let n = index.conflicts()?.count();
-        return Err(AppError::UnresolvedConflicts(format!(
-            "cannot commit: {n} unresolved conflict(s) remain"
-        )));
-    }
-    let hooks = if hooks_enabled(&repo.config()?.snapshot()?, skip_hooks) {
-        MergeHooks::Full
-    } else {
-        MergeHooks::Off
-    };
-    finalize_merge_commit(&mut repo, message, sign, hooks)
+    commit_merge_with_activity(workdir, message, sign, skip_hooks, None)
 }
 
 /// Blocking. Aborts a paused merge; restores pre-merge index + the worktree

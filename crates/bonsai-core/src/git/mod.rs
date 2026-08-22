@@ -19,6 +19,8 @@ pub mod ai_resolve_stream;
 /// (P68 §6.3). Private: only that module may fabricate run events.
 mod ai_resolve_stream_events;
 pub mod ai_summary;
+/// P87 git-activity observability: the event model + recorder/emitter.
+pub mod activity;
 pub mod autostash;
 pub mod bisect;
 pub mod blame;
@@ -26,6 +28,8 @@ pub mod branches;
 pub mod cherrypick;
 pub mod clone;
 pub mod commit;
+/// P87 activity-recording commit/amend cores (split from `commit.rs` for size).
+pub mod commit_activity;
 pub mod compose_apply;
 pub mod config;
 pub mod conflict;
@@ -35,12 +39,18 @@ pub mod diff;
 pub mod discard;
 pub mod discard_partial;
 pub mod exec;
+/// P87 `SpawnGitExec::exec_streaming` reader (split from `exec.rs` for size).
+pub mod exec_stream;
 pub mod history_index;
 pub mod hooks;
+/// P87 streaming hook variants (split from `hooks.rs` for size).
+pub mod hooks_stream;
 pub mod image_diff;
 pub mod intraline;
 pub mod maintenance;
 pub mod merge;
+/// P87 activity-recording merge-commit core (split from `merge.rs` for size).
+pub mod merge_activity;
 pub mod opstate;
 /// Cross-module symlink-escape (path-traversal) guard tests for `ensure_within_workdir`.
 #[cfg(test)]
@@ -49,6 +59,10 @@ pub mod rebase;
 pub mod rebase_interactive;
 pub mod reflog;
 pub mod remote;
+/// P87 activity-recording fetch/pull cores (split from `remote.rs` for size).
+pub mod remote_activity;
+/// P87 activity-recording push/force-push cores (split from `remote.rs`).
+pub mod remote_push_activity;
 pub mod reset;
 pub mod repo;
 pub mod revert;

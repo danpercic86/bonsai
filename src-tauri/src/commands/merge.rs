@@ -69,7 +69,9 @@ pub async fn commit_merge(
     commit_merge_inner(state.inner(), &repo_id, message, sign, skip_hooks).await
 }
 
-/// Runtime-free core of `commit_merge` (unit-testable without a Tauri app).
+/// Runtime-free core of `commit_merge` (unit-testable without a Tauri app). P87:
+/// wrapped in `with_activity` (category `MergeCommit`); a no-op when nobody is
+/// subscribed.
 pub(crate) async fn commit_merge_inner(
     state: &AppState,
     repo_id: &str,
@@ -77,11 +79,18 @@ pub(crate) async fn commit_merge_inner(
     sign: Option<bool>,
     skip_hooks: Option<bool>,
 ) -> Result<CommitResult, AppError> {
-    let path = repo_path(state, repo_id)?;
-    let skip = skip_hooks.unwrap_or(false);
-    tauri::async_runtime::spawn_blocking(move || merge::commit_merge(&path, &message, sign, skip))
+    with_activity(state.git_activity_hub(), GitActivityCategory::MergeCommit, move |emitter| async move {
+        let path = repo_path(state, repo_id)?;
+        let skip = skip_hooks.unwrap_or(false);
+        tauri::async_runtime::spawn_blocking(move || {
+            let rec: Option<&dyn GitActivityRecorder> =
+                emitter.as_deref().map(|e| e as &dyn GitActivityRecorder);
+            merge::commit_merge_with_activity(&path, &message, sign, skip, rec)
+        })
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    })
+    .await
 }
 
 /// Aborts a paused merge (worktree-destructive for merge-touched files —

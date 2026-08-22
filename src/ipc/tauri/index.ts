@@ -5,6 +5,7 @@ import { branchesCommands } from './branches';
 import { remotesCommands } from './remotes';
 import { tagsCommands } from './tags';
 import { mergeCommands } from './merge';
+import { activityCommands } from './activity';
 import { rebaseCommands } from './rebase';
 import { commitOpsCommands } from './commit-ops';
 import { stashCommands } from './stash';
@@ -30,6 +31,7 @@ export const tauriIpc: IpcApi = {
   ...remotesCommands,
   ...tagsCommands,
   ...mergeCommands,
+  ...activityCommands,
   ...rebaseCommands,
   ...commitOpsCommands,
   ...stashCommands,

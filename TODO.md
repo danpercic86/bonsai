@@ -59,8 +59,9 @@ after a single network round-trip. Full graph/status behavior otherwise unchange
 
 ## ⚡ P86 — Refresh perf: graph-layout & repo-handle caching, scoped refresh — pending
 
-**Current step:** contract DONE (`docs/contracts/P86-refresh-caching.md`); P85 committed (fde91d7).
-Split into two serial increments: **P86a** (B3 scoped/reason-aware refresh + carry-ins CI-1..CI-4) —
+**Current step:** COMPLETE (AI gate) — P86a `e294500` + P86b `88ba86a`. Follow-ups open: PB-1 (cache
+memory cap), PB-2 (cold-walk store fingerprint), B2 (repo-handle cache). Native wall-time = USER
+CHECKPOINT (batch). Original split into two serial increments: **P86a** (B3 scoped/reason-aware refresh + carry-ins CI-1..CI-4) —
 senior-dev DONE + reviewer APPROVED (no MUST/SHOULD-FIX; 2 informational NITs), **committed e294500**;
 **P86b** (B1 graph-layout cache) — DONE + reviewer APPROVED (no MUST-FIX; classifier soundness traced,
 no false-hit path), **committed**. B2 (repo-handle cache) deferred as staged — clean follow-up needing
@@ -126,6 +127,17 @@ Implementation QUEUED behind P85 → P86.
 Architect open-Q decisions: (1) Option B global `git_activity_subscribe` channel — confirmed;
 (2) fetch/pull network progress via git2 sideband — IN scope; (3) log session-scoped only, no on-disk
 retention v1; (4) NO cancel affordance v1 (read-only).
+
+**Impl split:** **P87a** (backend: `GitActivityEvent` stream + `GitActivityHub`/subscribe + streaming
+exec seam + hook/push phase + git2 `transfer_progress`) — senior-dev DONE (gate-clean: 917 core + 283
+tauri tests, clippy -D both crates, tsc/build/size; additive guarantees held, HookRejected byte-identical;
+god-files shrank via `_with_activity` sibling wrappers), reviewer APPROVED (no MUST/SHOULD-FIX; byte-identity,
+deadlock, cap, sanitization all verified), **committed**. NITs: hub mutex held across `Channel::send`
+(non-blocking, harmless); no-trailing-newline line delivery untested; command-layer active-path needs a
+P87b integration check. (+ security-auditor on full P87 before batch integrates — git hook output → UI is
+an untrusted surface); **P87b** (frontend:
+`useGitActivity` store + git-activity dock + toolbar phase readout + determinate progress bar + mock)
+— queued behind P87a (needs the locked event types).
 
 ui-designer open-Q decisions: (Q1) button keeps stable participle ("Pushing…") + granular phase in an
 adjacent `.toolbar-phase` readout — confirmed; (Q3) pull copy = "Fetching…" during transfer, "Pull" as

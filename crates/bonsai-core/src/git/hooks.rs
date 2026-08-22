@@ -56,6 +56,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::error::AppError;
 use crate::git::exec::GitExec;
+// P87: the streaming hook variants live in `hooks_stream` (file-size split);
+// re-exported so `crate::git::hooks::run_hook_streaming` keeps resolving for the
+// commit/merge/remote cores.
+pub use crate::git::hooks_stream::{run_hook_nonblocking_streaming, run_hook_streaming};
 
 /// The hooks Bonsai runs around its git2 mutations. `PrePush` is wired in
 /// P59a-2; the three commit hooks are P59a-core.
@@ -145,44 +149,7 @@ pub fn run_hook(
     args: &[String],
     stdin: Option<&[u8]>,
 ) -> Result<(), AppError> {
-    if matches!(plan_hook(workdir, hook), HookPlan::Skip) {
-        return Ok(()); // no hook file, no core.hooksPath ⇒ nothing to run
-    }
-    // `git hook run` does not forward its own stdin to the hook; a hook that
-    // reads stdin (pre-push) gets it via a temp file passed as --to-stdin. The
-    // handle deletes the file on drop, AFTER exec completes.
-    let stdin_tmp = match stdin {
-        Some(bytes) => Some(write_stdin_tempfile(hook, bytes)?),
-        None => None,
-    };
-    let argv = build_hook_run_args(hook, args, stdin_tmp.as_ref().map(TempStdin::path));
-    let argv_ref: Vec<&str> = argv.iter().map(String::as_str).collect();
-    let out = exec.exec(&argv_ref, workdir, None, &[])?;
-    if out.success {
-        return Ok(());
-    }
-    if is_unknown_subcommand(&out.stderr) {
-        // Git < 2.36 has no `hook` subcommand. `plan_hook` already confirmed a
-        // hook exists (else Skip), so refuse rather than bypass it silently.
-        return Err(AppError::Git(format!(
-            "hook execution needs Git ≥ 2.36 (this git cannot run the '{}' hook). \
-             Upgrade git, or disable hooks (unset bonsai.runHooks / use Skip hooks).",
-            hook.as_str()
-        )));
-    }
-    if is_git_infra_failure(&out.stderr) {
-        // git itself failed BEFORE the hook ran (F-A4-5) — not a rejection.
-        return Err(AppError::Git(format!(
-            "git could not run the {} hook: {}",
-            hook.as_str(),
-            combined_output(&out.stdout, &out.stderr)
-        )));
-    }
-    Err(AppError::HookRejected(format!(
-        "{} hook failed:\n{}",
-        hook.as_str(),
-        combined_output(&out.stdout, &out.stderr)
-    )))
+    run_hook_streaming(exec, workdir, hook, args, stdin, None)
 }
 
 /// Run a NON-blocking hook (post-commit): capture output, IGNORE a non-zero exit
@@ -195,38 +162,7 @@ pub fn run_hook_nonblocking(
     hook: HookName,
     args: &[String],
 ) -> HookRunInfo {
-    if matches!(plan_hook(workdir, hook), HookPlan::Skip) {
-        return HookRunInfo { ran: false, success: true, output: String::new() };
-    }
-    let argv = build_hook_run_args(hook, args, None);
-    let argv_ref: Vec<&str> = argv.iter().map(String::as_str).collect();
-    match exec.exec(&argv_ref, workdir, None, &[]) {
-        Ok(out) if out.success => HookRunInfo {
-            ran: true,
-            success: true,
-            output: combined_output(&out.stdout, &out.stderr),
-        },
-        Ok(out) if is_unknown_subcommand(&out.stderr) => HookRunInfo {
-            ran: false,
-            success: false,
-            output: format!(
-                "failed to run the {} hook: this git has no `hook run` subcommand (Git ≥ 2.36 required)",
-                hook.as_str()
-            ),
-        },
-        Ok(out) => HookRunInfo {
-            ran: true,
-            success: false,
-            output: combined_output(&out.stdout, &out.stderr),
-        },
-        // Audit #2 §3.3: carry the spawn/I/O error so the caller can surface it —
-        // an empty output here was indistinguishable from "no hook installed".
-        Err(e) => HookRunInfo {
-            ran: false,
-            success: false,
-            output: format!("failed to run the {} hook: {e}", hook.as_str()),
-        },
-    }
+    run_hook_nonblocking_streaming(exec, workdir, hook, args, None)
 }
 
 /// Pure `git hook run` argv builder (A2):
@@ -234,7 +170,7 @@ pub fn run_hook_nonblocking(
 /// `--ignore-missing` is ALWAYS present (F-A4-1): without it an absent hook
 /// exits 1 and would block the operation. The `--` separator is emitted ONLY
 /// when there are trailing args, so git never sees a dangling `--`.
-fn build_hook_run_args(hook: HookName, args: &[String], stdin_path: Option<&Path>) -> Vec<String> {
+pub(crate) fn build_hook_run_args(hook: HookName, args: &[String], stdin_path: Option<&Path>) -> Vec<String> {
     let mut out = vec![
         "hook".to_string(),
         "run".to_string(),
@@ -253,7 +189,7 @@ fn build_hook_run_args(hook: HookName, args: &[String], stdin_path: Option<&Path
 
 /// Whether `git hook run` should be spawned for `hook`. See the module-level
 /// "Why we pre-check" note for the trust argument.
-enum HookPlan {
+pub(crate) enum HookPlan {
     Skip,
     Run,
 }
@@ -279,7 +215,7 @@ fn hook_file_path(workdir: &Path, hook: HookName) -> Option<PathBuf> {
     Some(repo.commondir().join("hooks").join(hook.as_str()))
 }
 
-fn plan_hook(workdir: &Path, hook: HookName) -> HookPlan {
+pub(crate) fn plan_hook(workdir: &Path, hook: HookName) -> HookPlan {
     // Skip only when git's own resolution finds no file; a wrong "run" (incl.
     // the introspection-failure `None` ⇒ delegate to git) is harmless — the
     // argv carries `--ignore-missing`.
@@ -335,7 +271,7 @@ fn is_runnable_hook_file(path: &Path) -> bool {
 
 /// git's message for an unknown subcommand (Git < 2.36 has no `hook`):
 /// `git: 'hook' is not a git command.` — stable across git versions.
-fn is_unknown_subcommand(stderr: &str) -> bool {
+pub(crate) fn is_unknown_subcommand(stderr: &str) -> bool {
     stderr.contains("is not a git command")
 }
 
@@ -346,7 +282,7 @@ fn is_unknown_subcommand(stderr: &str) -> bool {
 /// are matched, and only at the START of stderr: "cannot find a hook named"
 /// (near-unreachable now that `--ignore-missing` is passed — kept as a
 /// belt-and-braces classifier), a spawn failure, and not-a-repository.
-fn is_git_infra_failure(stderr: &str) -> bool {
+pub(crate) fn is_git_infra_failure(stderr: &str) -> bool {
     let first = stderr.lines().next().unwrap_or("");
     let msg = first
         .strip_prefix("error: ")
@@ -360,7 +296,7 @@ fn is_git_infra_failure(stderr: &str) -> bool {
 
 /// Combined hook output for the error/info body: stdout then stderr, each
 /// trailing-trimmed, joined with a newline; empty parts skipped.
-fn combined_output(stdout: &str, stderr: &str) -> String {
+pub(crate) fn combined_output(stdout: &str, stderr: &str) -> String {
     let mut parts: Vec<&str> = Vec::new();
     let o = stdout.trim_end();
     let e = stderr.trim_end();
@@ -385,12 +321,12 @@ fn open_repo(workdir: &Path) -> Result<git2::Repository, AppError> {
 /// A temp file holding hook stdin bytes; deletes itself on drop. Dependency-free
 /// (tempfile is a dev-only dep) so it can live in non-test code — used by
 /// pre-push (P59a-2); the commit hooks pass no stdin.
-struct TempStdin {
+pub(crate) struct TempStdin {
     path: PathBuf,
 }
 
 impl TempStdin {
-    fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.path
     }
 }
@@ -403,7 +339,7 @@ impl Drop for TempStdin {
 
 static NEXT_TMP_ID: AtomicU64 = AtomicU64::new(0);
 
-fn write_stdin_tempfile(hook: HookName, bytes: &[u8]) -> Result<TempStdin, AppError> {
+pub(crate) fn write_stdin_tempfile(hook: HookName, bytes: &[u8]) -> Result<TempStdin, AppError> {
     use std::io::Write;
     let mut path = std::env::temp_dir();
     path.push(format!(
@@ -906,4 +842,5 @@ mod tests {
         write_hook(&hooks_dir(&repo), "pre-push", "#!/bin/sh\nexit 0\n");
         assert!(repo_has_runnable_hooks(dir.path()));
     }
+
 }

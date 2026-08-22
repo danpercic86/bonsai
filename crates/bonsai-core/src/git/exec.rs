@@ -29,6 +29,18 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::error::AppError;
+// P87: the streaming seam delivers each output line to a `LineSink`, tagged by
+// which captured stream it came from. `GitStream` lives in `activity` (the event
+// model) and is re-exported here so `exec::GitStream` keeps resolving for the
+// exec-seam callers that only touch the CLI shell-out.
+pub use crate::git::activity::GitStream;
+
+/// Called once per output line (already `\n`-split, newline excluded), on the
+/// CALLER's thread — so a `LineSink` need not be `Sync` (P87 §3). The default
+/// [`GitExec::exec_streaming`] never calls it; only [`SpawnGitExec`] does.
+pub trait LineSink {
+    fn line(&self, stream: GitStream, line: &str);
+}
 
 /// Combined stdout+stderr capture cap (F-A5-c). Generous — normal git output is
 /// tiny; this only fires on a pathological/runaway child. Bounds the capture
@@ -68,7 +80,7 @@ fn read_capped<R: Read>(mut r: R, counter: &AtomicUsize, cap: usize) -> std::io:
 /// Assemble the child `Command` with the never-prompt hardening + pipe wiring.
 /// Extracted so the argv/env/stdin assembly stays unit-testable without
 /// launching git (the env-hygiene invariant is asserted via `get_envs`).
-fn build_command(args: &[&str], cwd: &Path, stdin_present: bool, env: &[(&str, &str)]) -> Command {
+pub(crate) fn build_command(args: &[&str], cwd: &Path, stdin_present: bool, env: &[(&str, &str)]) -> Command {
     // P70: the program + Windows console suppression come from the shared
     // resolver, so a broken inherited PATH (MSI-relaunched app, per-user Git
     // install) still finds git. The never-prompt hardening below is unchanged.
@@ -128,6 +140,24 @@ pub trait GitExec {
         stdin: Option<&[u8]>,
         env: &[(&str, &str)],
     ) -> Result<GitOutput, AppError>;
+
+    /// P87: stream lines to `sink` as they arrive AND still return the full
+    /// buffered [`GitOutput`] (so the failure path keeps the COMPLETE combined
+    /// output for `HookRejected` / `HookOutputDialog`). DEFAULT = ignore the sink
+    /// and delegate to [`Self::exec`], so every existing fake/mock that only
+    /// impls `exec` keeps compiling and behaves EXACTLY as before (no lines, same
+    /// `GitOutput`). Only [`SpawnGitExec`] overrides it (in `exec_stream.rs`).
+    fn exec_streaming(
+        &self,
+        args: &[&str],
+        cwd: &Path,
+        stdin: Option<&[u8]>,
+        env: &[(&str, &str)],
+        sink: &dyn LineSink,
+    ) -> Result<GitOutput, AppError> {
+        let _ = sink;
+        self.exec(args, cwd, stdin, env)
+    }
 }
 
 /// Production executor: capture stdout+stderr+status, never prompt, no console
@@ -208,6 +238,23 @@ impl GitExec for SpawnGitExec {
             stdout: String::from_utf8_lossy(&stdout_bytes).into_owned(),
             stderr: String::from_utf8_lossy(&stderr_bytes).into_owned(),
         })
+    }
+
+    /// P87: same child + same hardening as [`Self::exec`], but reader threads
+    /// split output into lines and hand each COMPLETE line to `sink` on this
+    /// (caller) thread as it arrives. The returned [`GitOutput`] is
+    /// **byte-identical** to what buffered `exec` would produce for the same
+    /// child (for output under the 64 MiB cap). Heavy body lives in
+    /// `exec_stream.rs` (file-size split, contract §6).
+    fn exec_streaming(
+        &self,
+        args: &[&str],
+        cwd: &Path,
+        stdin: Option<&[u8]>,
+        env: &[(&str, &str)],
+        sink: &dyn LineSink,
+    ) -> Result<GitOutput, AppError> {
+        crate::git::exec_stream::spawn_exec_streaming(args, cwd, stdin, env, sink)
     }
 }
 

@@ -137,6 +137,7 @@ pub fn run() {
             commands::pull,
             commands::push,
             commands::force_push,
+            commands::git_activity_subscribe,
             commands::get_recent_repos,
             commands::remove_recent_repo,
             commands::get_ui_settings,

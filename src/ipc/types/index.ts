@@ -1,6 +1,7 @@
 // Barrel for the IPC type surface. Split by feature domain (P-refactor); the
 // import path `../ipc/types` / `./types` resolves here and re-exports every
 // domain module, so the exported name set is unchanged.
+export * from './activity';
 export * from './ai';
 export * from './ai-assets';
 export * from './branches';

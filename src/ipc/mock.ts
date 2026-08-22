@@ -7,6 +7,7 @@ import { graphStreamHandlers } from './mock/handlers/graphStream';
 import { branchHandlers } from './mock/handlers/branches';
 import { remotesSyncHandlers } from './mock/handlers/remotesSync';
 import { mergeHandlers } from './mock/handlers/merge';
+import { activityHandlers } from './mock/handlers/activity';
 import { aiHandlers } from './mock/handlers/ai';
 import { aiStreamHandlers } from './mock/handlers/aiStream';
 import { composeHandlers } from './mock/handlers/compose';
@@ -41,6 +42,7 @@ export const mockIpc: IpcApi = {
   ...branchHandlers,
   ...remotesSyncHandlers,
   ...mergeHandlers,
+  ...activityHandlers,
   ...aiHandlers,
   ...aiStreamHandlers,
   ...composeHandlers,
