@@ -61,7 +61,7 @@
     "src/components/AiAssetsPanel.tsx": 516,
     "src/components/ConflictEditor.tsx": 535,
     "src/components/RepoWorkspace.tsx": 2971,
-    "src/components/Sidebar.tsx": 819,
+    "src/components/Sidebar.tsx": 636,
     "src/components/workspaceMenus.ts": 886,
     "src/graph/GraphCanvas.tsx": 883,
     "src/ipc/fixtures/diffs.ts": 746,

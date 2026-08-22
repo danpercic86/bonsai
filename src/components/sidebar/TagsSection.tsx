@@ -13,6 +13,7 @@ import { filterByName, filterItems, filterTree } from '../repoWorkspace/listFilt
 import { SectionHeader } from './SectionHeader';
 import { TagSyncBadge } from './TagSyncBadge';
 import { SectionRollupBadge } from './SectionRollupBadge';
+import { useSidebarTreeItem } from './useSidebarTreeItem';
 
 /** P50d: show a section's inline filter box only once the list is long enough. */
 const FILTER_MIN_ROWS = 6;
@@ -27,6 +28,8 @@ function TagRow({
   remote,
   ghost,
   onContextMenu,
+  treeKey,
+  level = 2,
 }: {
   name: string;
   displayName?: string;
@@ -37,9 +40,21 @@ function TagRow({
   /** A remote-only ghost row (dimmed — not in the local repo yet). */
   ghost?: boolean;
   onContextMenu(name: string, clientX: number, clientY: number): void;
+  /** P-a11y §D.2: treeitem key (`tag:<name>`) + aria-level. */
+  treeKey: string;
+  level?: number;
 }) {
+  const item = useSidebarTreeItem({
+    treeKey,
+    level,
+    kind: 'leaf',
+    menuIsPrimary: true,
+    openMenuAt: (x, y) => onContextMenu(name, x, y),
+  });
   return (
     <li
+      {...item}
+      role="treeitem"
       className={ghost ? 'branch-row branch-row-readonly branch-row-ghost' : 'branch-row branch-row-readonly'}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -194,24 +209,27 @@ export function TagsSection({
                 tagTreeFiltered.length > 0 && (
                   <Tree
                     key={filtering ? 'tags-filter' : 'tags'}
+                    asGroup
                     nodes={tagTreeFiltered}
                     leafKey={(l) => l.item}
                     defaultCollapsed={!filtering}
                     initiallyExpanded={[]}
-                    renderLeaf={(l) => (
+                    renderLeaf={(l, level) => (
                       <TagRow
                         name={l.item}
                         displayName={l.name}
                         sync={byName.get(l.item)}
                         remote={remote}
                         onContextMenu={onTagContextMenu}
+                        treeKey={`tag:${l.item}`}
+                        level={level}
                       />
                     )}
                   />
                 )
               ) : (
                 tagsFiltered.length > 0 && (
-                  <ul className="branch-list">
+                  <ul className="branch-list" role="group">
                     {tagsFiltered.map((tag) => (
                       <TagRow
                         key={tag}
@@ -219,6 +237,7 @@ export function TagsSection({
                         sync={byName.get(tag)}
                         remote={remote}
                         onContextMenu={onTagContextMenu}
+                        treeKey={`tag:${tag}`}
                       />
                     ))}
                   </ul>
@@ -227,7 +246,7 @@ export function TagsSection({
               {/* §2.6: remote-only tags absent locally → ghost rows, appended
                   after the local list in both flat and tree modes. */}
               {remoteOnlyFiltered.length > 0 && (
-                <ul className="branch-list">
+                <ul className="branch-list" role="group">
                   {remoteOnlyFiltered.map((e) => (
                     <TagRow
                       key={`remote-only:${e.name}`}
@@ -236,6 +255,7 @@ export function TagsSection({
                       remote={remote}
                       ghost
                       onContextMenu={onTagContextMenu}
+                      treeKey={`tag:${e.name}`}
                     />
                   ))}
                 </ul>

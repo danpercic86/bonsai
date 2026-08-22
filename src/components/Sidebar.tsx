@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import type {
-  BranchInfo,
   BranchesSnapshot,
   ListView,
   RemoteInfo,
@@ -9,7 +8,6 @@ import type {
   TagSyncReport,
   WorktreeInfo,
 } from '../ipc';
-import { relativeDate } from '../graph/draw';
 import { DeleteIcon } from './menuIcons';
 import { errorMessage } from '../utils/errors';
 import { buildPathTree } from '../utils/pathTree';
@@ -20,14 +18,21 @@ import { SectionHeader } from './sidebar/SectionHeader';
 import { TagsSection, type TagSyncState } from './sidebar/TagsSection';
 import type { SubmoduleBusy } from './repoWorkspace/types';
 import { filterItems, filterTree } from './repoWorkspace/listFilter';
+import {
+  BranchRow,
+  ConfiguredRemoteRow,
+  DetachedHeadRow,
+  RemoteRow,
+  SkeletonRows,
+  StashRow,
+  WorktreeRow,
+} from './sidebar/rows';
+import { SidebarTreeProvider } from './sidebar/SidebarTreeContext';
+import { useSidebarTreeNav } from './sidebar/useSidebarTreeNav';
 
 /** P50d: show a section's inline type-to-filter box only once the list is long
  *  enough to warrant it — keeps short lists uncluttered (contract §7). */
 const FILTER_MIN_ROWS = 6;
-
-function shortOid(oid: string): string {
-  return oid.slice(0, 7);
-}
 
 /** P4d: proper ancestor folder prefixes of a branch name.
  *  "a/b/c" -> ["a", "a/b"]; root-level branch -> []. */
@@ -114,221 +119,12 @@ export interface SidebarProps {
   onCleanupBranches?(): void;
 }
 
-function AheadBehindBadge({ branch }: { branch: BranchInfo }) {
-  const ahead = branch.ahead ?? 0;
-  const behind = branch.behind ?? 0;
-  if (branch.upstream === null || (ahead === 0 && behind === 0)) return null;
-  const parts: string[] = [];
-  if (ahead > 0) parts.push(`↑${ahead}`);
-  if (behind > 0) parts.push(`↓${behind}`);
-  return (
-    <span className="branch-badge" title={`vs ${branch.upstream}`}>
-      {parts.join(' ')}
-    </span>
-  );
-}
-
-function BranchRow({
-  branch,
-  busy,
-  onCheckout,
-  onContextMenu,
-  displayName,
-}: {
-  branch: BranchInfo;
-  busy: boolean;
-  onCheckout(name: string): void;
-  onContextMenu(
-    name: string,
-    kind: 'localBranch' | 'remoteBranch',
-    clientX: number,
-    clientY: number,
-  ): void;
-  /** P3b tree mode: visible basename; ALL semantics (title, checkout, badge,
-   *  head glyph, menu) keep using the full branch.name. */
-  displayName?: string;
-}) {
-  return (
-    <li
-      className={branch.isHead ? 'branch-row branch-row-head' : 'branch-row'}
-      onDoubleClick={() => {
-        // GitKraken muscle memory: double-click checks out (contract §4.2).
-        if (!branch.isHead && !busy) onCheckout(branch.name);
-      }}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        onContextMenu(branch.name, 'localBranch', e.clientX, e.clientY);
-      }}
-    >
-      <span className="branch-glyph">{branch.isHead ? '●' : '⎇'}</span>
-      <span className="branch-name" title={branch.name}>
-        {displayName ?? branch.name}
-      </span>
-      <AheadBehindBadge branch={branch} />
-    </li>
-  );
-}
-
-function RemoteRow({
-  name,
-  displayName,
-  onContextMenu,
-}: {
-  name: string;
-  displayName?: string;
-  onContextMenu(
-    name: string,
-    kind: 'localBranch' | 'remoteBranch',
-    clientX: number,
-    clientY: number,
-  ): void;
-}) {
-  return (
-    <li
-      className="branch-row branch-row-readonly"
-      onContextMenu={(e) => {
-        e.preventDefault();
-        onContextMenu(name, 'remoteBranch', e.clientX, e.clientY);
-      }}
-    >
-      <span className="branch-glyph">{'☁'}</span>
-      <span className="branch-name branch-name-muted" title={name}>
-        {displayName ?? name}
-      </span>
-    </li>
-  );
-}
-
-/** P22 §6.2: a configured-remote row (name + fetch URL), distinct from the
- *  remote-tracking-branch rows. Right-click opens the manage menu. */
-function ConfiguredRemoteRow({
-  remote,
-  onContextMenu,
-}: {
-  remote: RemoteInfo;
-  onContextMenu(name: string, clientX: number, clientY: number): void;
-}) {
-  return (
-    <li
-      className="branch-row"
-      title={remote.url ?? ''}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        onContextMenu(remote.name, e.clientX, e.clientY);
-      }}
-    >
-      <span className="branch-glyph">{'☁'}</span>
-      <span className="branch-name" title={remote.name}>
-        {remote.name}
-      </span>
-      {remote.url !== null && (
-        <span className="branch-name branch-name-muted remote-url" title={remote.url}>
-          {remote.url}
-        </span>
-      )}
-    </li>
-  );
-}
-
-function StashRow({
-  index,
-  oid,
-  message,
-  ts,
-  onContextMenu,
-}: {
-  index: number;
-  oid: string;
-  message: string;
-  ts: number;
-  onContextMenu(index: number, oid: string, clientX: number, clientY: number): void;
-}) {
-  const label = `stash@{${index}}`;
-  const now = Math.floor(Date.now() / 1000);
-  return (
-    <li
-      className="branch-row"
-      onContextMenu={(e) => {
-        e.preventDefault();
-        // F-A6-B: pass the oid THIS row rendered so a later apply/pop/drop hits
-        // exactly the entry the user saw, even if the stack shifts meanwhile.
-        onContextMenu(index, oid, e.clientX, e.clientY);
-      }}
-    >
-      <span className="branch-glyph">{'⊟'}</span>
-      <span className="mono" title={label}>
-        {label}
-      </span>
-      <span className="branch-name branch-name-muted" title={message}>
-        {message}
-      </span>
-      <span className="branch-badge" title={label}>
-        {relativeDate(ts, now)}
-      </span>
-    </li>
-  );
-}
-
-/** P27 §6.2: display-only badge pills for a worktree row. A row may show more
- *  than one (e.g. current + main). Reuses the P19 badge intent classes. */
-function worktreeBadges(wt: WorktreeInfo): { label: string; intent: string; title?: string }[] {
-  const out: { label: string; intent: string; title?: string }[] = [];
-  if (wt.isCurrent) out.push({ label: 'current', intent: 'submodule-badge-ok' });
-  if (wt.isMain) out.push({ label: 'main', intent: 'submodule-badge-muted' });
-  if (wt.locked)
-    out.push({ label: 'locked', intent: 'submodule-badge-warn', title: wt.lockReason ?? 'locked' });
-  if (wt.prunable || !wt.valid) out.push({ label: 'stale', intent: 'submodule-badge-warn' });
-  return out;
-}
-
-function WorktreeRow({
-  wt,
-  onContextMenu,
-}: {
-  wt: WorktreeInfo;
-  onContextMenu(name: string, clientX: number, clientY: number): void;
-}) {
-  return (
-    <li
-      className="branch-row"
-      onContextMenu={(e) => {
-        e.preventDefault();
-        onContextMenu(wt.name, e.clientX, e.clientY);
-      }}
-    >
-      <span className="branch-glyph">{'⌥'}</span>
-      <span className="branch-name" title={wt.absPath}>
-        {wt.name}
-      </span>
-      {wt.valid && (
-        <span
-          className="branch-name branch-name-muted"
-          title={wt.branch ?? 'detached HEAD'}
-        >
-          {wt.branch ?? 'detached'}
-        </span>
-      )}
-      {worktreeBadges(wt).map((b) => (
-        <span key={b.label} className={`branch-badge ${b.intent}`} title={b.title ?? b.label}>
-          {b.label}
-        </span>
-      ))}
-    </li>
-  );
-}
-
-function SkeletonRows() {
-  return (
-    <div className="skeleton-group" aria-hidden="true">
-      {Array.from({ length: 3 }, (_, i) => (
-        <div key={i} className="skeleton-row" />
-      ))}
-    </div>
-  );
-}
-
 /** Left sidebar: branches / remotes / tags (M5 contract §4.2). Presentational
- *  only — all fetching and git operations live in App. */
+ *  only — all fetching and git operations live in App.
+ *
+ *  P-a11y §D: the six sections compose one `role="tree"` (roving tabindex, single
+ *  Tab stop). `useSidebarTreeNav` owns focus movement; each row wires itself as a
+ *  `treeitem` via `useSidebarTreeItem`. */
 export function Sidebar({
   data,
   loading,
@@ -377,6 +173,10 @@ export function Sidebar({
   const [createOpen, setCreateOpen] = useState(false);
   const [createValue, setCreateValue] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // P-a11y §D.4: the composite tree focus controller (roving tabindex + D.3
+  // movement + D.6 context-menu focus restore).
+  const nav = useSidebarTreeNav({ currentBranch });
 
   // P3c §8.5: while an operation is in progress, every branch mutation
   // (checkout / delete / create / merge) is disabled.
@@ -461,358 +261,375 @@ export function Sidebar({
       {data === null ? (
         loading && <SkeletonRows />
       ) : (
-        <>
-          <section className="sidebar-section">
-            <SectionHeader
-              label="Branches"
-              collapsed={branchesCollapsed}
-              onToggle={() => setBranchesCollapsed((c) => !c)}
-              extra={
-                !data.head.unborn && (
-                  <>
-                    {onCleanupBranches && (
+        <SidebarTreeProvider value={nav.context}>
+          <div className="sidebar-tree" {...nav.rootProps}>
+            <section className="sidebar-section">
+              <SectionHeader
+                label="Branches"
+                collapsed={branchesCollapsed}
+                onToggle={() => setBranchesCollapsed((c) => !c)}
+                extra={
+                  !data.head.unborn && (
+                    <>
+                      {onCleanupBranches && (
+                        <button
+                          type="button"
+                          className="sidebar-add sidebar-add-icon"
+                          aria-label="Clean up branches…"
+                          title="Clean up branches…"
+                          disabled={actionsDisabled}
+                          onClick={() => onCleanupBranches()}
+                        >
+                          <DeleteIcon />
+                        </button>
+                      )}
                       <button
                         type="button"
-                        className="sidebar-add sidebar-add-icon"
-                        aria-label="Clean up branches…"
-                        title="Clean up branches…"
+                        className="sidebar-add"
+                        aria-label="Create branch"
+                        title="Create branch"
                         disabled={actionsDisabled}
-                        onClick={() => onCleanupBranches()}
+                        onClick={() => {
+                          setBranchesCollapsed(false);
+                          setCreateOpen(true);
+                        }}
                       >
-                        <DeleteIcon />
+                        {'+'}
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      className="sidebar-add"
-                      aria-label="Create branch"
-                      title="Create branch"
-                      disabled={actionsDisabled}
-                      onClick={() => {
-                        setBranchesCollapsed(false);
-                        setCreateOpen(true);
-                      }}
-                    >
-                      {'+'}
-                    </button>
-                  </>
-                )
-              }
-            />
-            {!branchesCollapsed && (
-              <>
-                {showBranchFilter && (
-                  <ListFilterInput
-                    value={branchFilter}
-                    onChange={setBranchFilter}
-                    ariaLabel="Filter branches"
-                    count={branchFiltering ? localFlatFiltered.length : undefined}
-                  />
-                )}
-                {createOpen && (
-                  <div className="branch-create-row">
-                    <input
-                      className="branch-create-input"
-                      type="text"
-                      placeholder="new-branch-name"
-                      autoFocus
-                      value={createValue}
-                      disabled={actionsDisabled}
-                      onChange={(e) => {
-                        setCreateValue(e.target.value);
-                        setCreateError(null);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          void submitCreate();
-                        } else if (e.key === 'Escape') {
-                          closeCreate();
-                        }
-                      }}
-                      onBlur={() => {
-                        if (createValue.trim() === '') closeCreate();
-                      }}
+                    </>
+                  )
+                }
+              />
+              {!branchesCollapsed && (
+                <>
+                  {showBranchFilter && (
+                    <ListFilterInput
+                      value={branchFilter}
+                      onChange={setBranchFilter}
+                      ariaLabel="Filter branches"
+                      count={branchFiltering ? localFlatFiltered.length : undefined}
                     />
-                    {createError !== null && (
-                      <div className="branch-create-error" role="alert">
-                        {createError}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {(data.head.detached || !treeMode) && (
-                <ul className="branch-list">
-                  {data.head.detached && (
-                    <li className="branch-row branch-row-detached" title={data.head.oid}>
-                      <span className="branch-glyph">{'◎'}</span>
-                      <span className="branch-name">
-                        HEAD detached @ <span className="mono">{shortOid(data.head.oid)}</span>
-                      </span>
-                    </li>
                   )}
-                  {!treeMode &&
-                    localFlatFiltered.map((branch) => (
-                      <BranchRow
-                        key={branch.name}
-                        branch={branch}
-                        busy={actionsDisabled}
-                        onCheckout={onCheckout}
-                        onContextMenu={onContextMenu}
+                  {createOpen && (
+                    <div className="branch-create-row">
+                      <input
+                        className="branch-create-input"
+                        type="text"
+                        placeholder="new-branch-name"
+                        autoFocus
+                        value={createValue}
+                        disabled={actionsDisabled}
+                        onChange={(e) => {
+                          setCreateValue(e.target.value);
+                          setCreateError(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void submitCreate();
+                          } else if (e.key === 'Escape') {
+                            closeCreate();
+                          }
+                        }}
+                        onBlur={() => {
+                          if (createValue.trim() === '') closeCreate();
+                        }}
                       />
-                    ))}
-                </ul>
-                )}
-                {treeMode && localTreeFiltered.length > 0 && (
-                  <Tree
-                    // A filter-active key remounts with everything expanded so
-                    // matching leaves are visible (not hidden in collapsed dirs).
-                    key={
-                      branchFiltering
-                        ? `local-filter:${currentBranch ?? 'none'}`
-                        : `local:${currentBranch ?? 'none'}`
-                    }
-                    nodes={localTreeFiltered}
-                    leafKey={(l) => l.item.name}
-                    defaultCollapsed={!branchFiltering}
-                    initiallyExpanded={
-                      branchFiltering
-                        ? []
-                        : currentBranch !== null
-                          ? ancestorPrefixes(currentBranch)
-                          : []
-                    }
-                    renderLeaf={(l) => (
-                      <BranchRow
-                        branch={l.item}
-                        busy={actionsDisabled}
-                        onCheckout={onCheckout}
-                        onContextMenu={onContextMenu}
-                        displayName={l.name}
-                      />
-                    )}
-                  />
-                )}
-                {branchNoMatch && (
-                  <p className="branch-muted">{`No branches match '${branchFilter.trim()}'`}</p>
-                )}
-                {!data.head.detached && data.local.length === 0 && (
-                  <p className="branch-muted">No branches yet</p>
-                )}
-              </>
-            )}
-          </section>
-
-          <section className="sidebar-section">
-            <SectionHeader
-              label="Remotes"
-              collapsed={remotesCollapsed}
-              onToggle={() => setRemotesCollapsed((c) => !c)}
-              extra={
-                <button
-                  type="button"
-                  className="sidebar-add"
-                  aria-label="Add remote"
-                  title="Add remote"
-                  disabled={actionsDisabled}
-                  onClick={() => {
-                    setRemotesCollapsed(false);
-                    onAddRemote();
-                  }}
-                >
-                  {'+'}
-                </button>
-              }
-            />
-            {!remotesCollapsed && (
-              <>
-                {showRemoteFilter && (
-                  <ListFilterInput
-                    value={remoteFilter}
-                    onChange={setRemoteFilter}
-                    ariaLabel="Filter remotes"
-                    count={
-                      remoteFiltering
-                        ? remotesFiltered.length + remoteFlatFiltered.length
-                        : undefined
-                    }
-                  />
-                )}
-                {/* P22 §6.2: configured remotes on top (each right-clickable for
-                    Rename / Edit URL / Remove), independent of tracking refs. */}
-                {remotesFiltered.length > 0 && (
-                  <ul className="branch-list">
-                    {remotesFiltered.map((r) => (
-                      <ConfiguredRemoteRow
-                        key={r.name}
-                        remote={r}
-                        onContextMenu={onRemoteContextMenu}
-                      />
-                    ))}
-                  </ul>
-                )}
-                {/* Existing remote-tracking-branch tree, filtered display only. */}
-                {(treeMode ? remoteTreeFiltered.length > 0 : remoteFlatFiltered.length > 0) &&
-                  (treeMode ? (
+                      {createError !== null && (
+                        <div className="branch-create-error" role="alert">
+                          {createError}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {(data.head.detached || !treeMode) && (
+                    <ul className="branch-list" role="group">
+                      {data.head.detached && (
+                        <DetachedHeadRow oid={data.head.oid} treeKey="detached" />
+                      )}
+                      {!treeMode &&
+                        localFlatFiltered.map((branch) => (
+                          <BranchRow
+                            key={branch.name}
+                            branch={branch}
+                            busy={actionsDisabled}
+                            onCheckout={onCheckout}
+                            onContextMenu={onContextMenu}
+                            treeKey={`branch:${branch.name}`}
+                          />
+                        ))}
+                    </ul>
+                  )}
+                  {treeMode && localTreeFiltered.length > 0 && (
                     <Tree
-                      key={remoteFiltering ? 'remote-filter' : 'remote'}
-                      nodes={remoteTreeFiltered}
+                      // A filter-active key remounts with everything expanded so
+                      // matching leaves are visible (not hidden in collapsed dirs).
+                      key={
+                        branchFiltering
+                          ? `local-filter:${currentBranch ?? 'none'}`
+                          : `local:${currentBranch ?? 'none'}`
+                      }
+                      asGroup
+                      nodes={localTreeFiltered}
                       leafKey={(l) => l.item.name}
-                      defaultCollapsed={!remoteFiltering}
-                      initiallyExpanded={[]}
-                      renderLeaf={(l) => (
-                        <RemoteRow
-                          name={l.item.name}
-                          displayName={l.name}
+                      defaultCollapsed={!branchFiltering}
+                      initiallyExpanded={
+                        branchFiltering
+                          ? []
+                          : currentBranch !== null
+                            ? ancestorPrefixes(currentBranch)
+                            : []
+                      }
+                      renderLeaf={(l, level) => (
+                        <BranchRow
+                          branch={l.item}
+                          busy={actionsDisabled}
+                          onCheckout={onCheckout}
                           onContextMenu={onContextMenu}
+                          displayName={l.name}
+                          treeKey={`branch:${l.item.name}`}
+                          level={level}
                         />
                       )}
                     />
-                  ) : (
-                    <ul className="branch-list">
-                      {remoteFlatFiltered.map((r) => (
-                        <RemoteRow key={r.name} name={r.name} onContextMenu={onContextMenu} />
-                      ))}
-                    </ul>
-                  ))}
-                {remoteNoMatch && (
-                  <p className="branch-muted">{`No remotes match '${remoteFilter.trim()}'`}</p>
-                )}
-                {remotes.length === 0 && data.remote.length === 0 && (
-                  <p className="branch-muted">No remotes</p>
-                )}
-              </>
-            )}
-          </section>
+                  )}
+                  {branchNoMatch && (
+                    <p className="branch-muted">{`No branches match '${branchFilter.trim()}'`}</p>
+                  )}
+                  {!data.head.detached && data.local.length === 0 && (
+                    <p className="branch-muted">No branches yet</p>
+                  )}
+                </>
+              )}
+            </section>
 
-          <TagsSection
-            tags={data.tags}
-            treeMode={treeMode}
-            onTagContextMenu={onTagContextMenu}
-            tagSyncReport={tagSyncReport}
-            tagSyncState={tagSyncState}
-            tagSyncRemote={tagSyncRemote}
-            tagSyncCheckedAt={tagSyncCheckedAt}
-            onExpand={onTagsExpand}
-          />
-
-          <section className="sidebar-section">
-            <SectionHeader
-              label="Stashes"
-              collapsed={stashesCollapsed}
-              onToggle={() => setStashesCollapsed((c) => !c)}
-              extra={
-                !data.head.unborn && (
+            <section className="sidebar-section">
+              <SectionHeader
+                label="Remotes"
+                collapsed={remotesCollapsed}
+                onToggle={() => setRemotesCollapsed((c) => !c)}
+                extra={
                   <button
                     type="button"
                     className="sidebar-add"
-                    aria-label="Stash changes"
-                    title="Stash changes"
+                    aria-label="Add remote"
+                    title="Add remote"
                     disabled={actionsDisabled}
                     onClick={() => {
-                      setStashesCollapsed(false);
-                      onCreateStash();
+                      setRemotesCollapsed(false);
+                      onAddRemote();
                     }}
                   >
-                    {'⊟'}
+                    {'+'}
                   </button>
-                )
-              }
-            />
-            {!stashesCollapsed &&
-              (stashes.length === 0 ? (
-                <p className="branch-muted">No stashes</p>
-              ) : (
-                <ul className="branch-list">
-                  {stashes.map((s) => (
-                    <StashRow
-                      key={s.index}
-                      index={s.index}
-                      oid={s.oid}
-                      message={s.message}
-                      ts={s.ts}
-                      onContextMenu={onStashContextMenu}
+                }
+              />
+              {!remotesCollapsed && (
+                <>
+                  {showRemoteFilter && (
+                    <ListFilterInput
+                      value={remoteFilter}
+                      onChange={setRemoteFilter}
+                      ariaLabel="Filter remotes"
+                      count={
+                        remoteFiltering
+                          ? remotesFiltered.length + remoteFlatFiltered.length
+                          : undefined
+                      }
                     />
-                  ))}
-                </ul>
-              ))}
-          </section>
+                  )}
+                  {/* P22 §6.2: configured remotes on top (each right-clickable for
+                      Rename / Edit URL / Remove), independent of tracking refs. */}
+                  {remotesFiltered.length > 0 && (
+                    <ul className="branch-list" role="group">
+                      {remotesFiltered.map((r) => (
+                        <ConfiguredRemoteRow
+                          key={r.name}
+                          remote={r}
+                          onContextMenu={onRemoteContextMenu}
+                          treeKey={`remote:${r.name}`}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                  {/* Existing remote-tracking-branch tree, filtered display only. */}
+                  {(treeMode ? remoteTreeFiltered.length > 0 : remoteFlatFiltered.length > 0) &&
+                    (treeMode ? (
+                      <Tree
+                        key={remoteFiltering ? 'remote-filter' : 'remote'}
+                        asGroup
+                        nodes={remoteTreeFiltered}
+                        leafKey={(l) => l.item.name}
+                        defaultCollapsed={!remoteFiltering}
+                        initiallyExpanded={[]}
+                        renderLeaf={(l, level) => (
+                          <RemoteRow
+                            name={l.item.name}
+                            displayName={l.name}
+                            onContextMenu={onContextMenu}
+                            treeKey={`remote:${l.item.name}`}
+                            level={level}
+                          />
+                        )}
+                      />
+                    ) : (
+                      <ul className="branch-list" role="group">
+                        {remoteFlatFiltered.map((r) => (
+                          <RemoteRow
+                            key={r.name}
+                            name={r.name}
+                            onContextMenu={onContextMenu}
+                            treeKey={`remote:${r.name}`}
+                          />
+                        ))}
+                      </ul>
+                    ))}
+                  {remoteNoMatch && (
+                    <p className="branch-muted">{`No remotes match '${remoteFilter.trim()}'`}</p>
+                  )}
+                  {remotes.length === 0 && data.remote.length === 0 && (
+                    <p className="branch-muted">No remotes</p>
+                  )}
+                </>
+              )}
+            </section>
 
-          {/* P60d: always shown so a submodule can be added even when none
-              exist yet; the "+" opens the add (url + path) dialog. */}
-          <section className="sidebar-section">
-            <SectionHeader
-              label="Submodules"
-              collapsed={submodulesCollapsed}
-              onToggle={() => setSubmodulesCollapsed((c) => !c)}
-              extra={
-                <button
-                  type="button"
-                  className="sidebar-add"
-                  aria-label="Add submodule"
-                  title="Add submodule"
-                  disabled={actionsDisabled}
-                  onClick={() => {
-                    setSubmodulesCollapsed(false);
-                    onNewSubmodule();
-                  }}
-                >
-                  {'+'}
-                </button>
-              }
+            <TagsSection
+              tags={data.tags}
+              treeMode={treeMode}
+              onTagContextMenu={onTagContextMenu}
+              tagSyncReport={tagSyncReport}
+              tagSyncState={tagSyncState}
+              tagSyncRemote={tagSyncRemote}
+              tagSyncCheckedAt={tagSyncCheckedAt}
+              onExpand={onTagsExpand}
             />
-            {!submodulesCollapsed &&
-              (submodules.length === 0 ? (
-                <p className="branch-muted">No submodules</p>
-              ) : (
-                <ul className="branch-list">
-                  {submodules.map((s) => (
-                    <SubmoduleRow
-                      key={s.name}
-                      sub={s}
-                      submoduleBusy={submoduleBusy}
-                      onContextMenu={onSubmoduleContextMenu}
-                    />
-                  ))}
-                </ul>
-              ))}
-          </section>
 
-          {/* P27 §6.1: Worktrees — always shown when a repo is open (the main
-              row is always present in real repos). */}
-          <section className="sidebar-section">
-            <SectionHeader
-              label="Worktrees"
-              collapsed={worktreesCollapsed}
-              onToggle={() => setWorktreesCollapsed((c) => !c)}
-              extra={
-                <button
-                  type="button"
-                  className="sidebar-add"
-                  aria-label="New worktree"
-                  title="New worktree"
-                  disabled={actionsDisabled}
-                  onClick={() => {
-                    setWorktreesCollapsed(false);
-                    onNewWorktree();
-                  }}
-                >
-                  {'+'}
-                </button>
-              }
-            />
-            {!worktreesCollapsed &&
-              (worktrees.length === 0 ? (
-                <p className="branch-muted">No worktrees</p>
-              ) : (
-                <ul className="branch-list">
-                  {worktrees.map((w) => (
-                    <WorktreeRow key={w.name} wt={w} onContextMenu={onWorktreeContextMenu} />
-                  ))}
-                </ul>
-              ))}
-          </section>
-        </>
+            <section className="sidebar-section">
+              <SectionHeader
+                label="Stashes"
+                collapsed={stashesCollapsed}
+                onToggle={() => setStashesCollapsed((c) => !c)}
+                extra={
+                  !data.head.unborn && (
+                    <button
+                      type="button"
+                      className="sidebar-add"
+                      aria-label="Stash changes"
+                      title="Stash changes"
+                      disabled={actionsDisabled}
+                      onClick={() => {
+                        setStashesCollapsed(false);
+                        onCreateStash();
+                      }}
+                    >
+                      {'⊟'}
+                    </button>
+                  )
+                }
+              />
+              {!stashesCollapsed &&
+                (stashes.length === 0 ? (
+                  <p className="branch-muted">No stashes</p>
+                ) : (
+                  <ul className="branch-list" role="group">
+                    {stashes.map((s) => (
+                      <StashRow
+                        key={s.index}
+                        index={s.index}
+                        oid={s.oid}
+                        message={s.message}
+                        ts={s.ts}
+                        onContextMenu={onStashContextMenu}
+                        treeKey={`stash:${s.index}`}
+                      />
+                    ))}
+                  </ul>
+                ))}
+            </section>
+
+            {/* P60d: always shown so a submodule can be added even when none
+                exist yet; the "+" opens the add (url + path) dialog. */}
+            <section className="sidebar-section">
+              <SectionHeader
+                label="Submodules"
+                collapsed={submodulesCollapsed}
+                onToggle={() => setSubmodulesCollapsed((c) => !c)}
+                extra={
+                  <button
+                    type="button"
+                    className="sidebar-add"
+                    aria-label="Add submodule"
+                    title="Add submodule"
+                    disabled={actionsDisabled}
+                    onClick={() => {
+                      setSubmodulesCollapsed(false);
+                      onNewSubmodule();
+                    }}
+                  >
+                    {'+'}
+                  </button>
+                }
+              />
+              {!submodulesCollapsed &&
+                (submodules.length === 0 ? (
+                  <p className="branch-muted">No submodules</p>
+                ) : (
+                  <ul className="branch-list" role="group">
+                    {submodules.map((s) => (
+                      <SubmoduleRow
+                        key={s.name}
+                        sub={s}
+                        submoduleBusy={submoduleBusy}
+                        onContextMenu={onSubmoduleContextMenu}
+                        treeKey={`submodule:${s.name}`}
+                      />
+                    ))}
+                  </ul>
+                ))}
+            </section>
+
+            {/* P27 §6.1: Worktrees — always shown when a repo is open (the main
+                row is always present in real repos). */}
+            <section className="sidebar-section">
+              <SectionHeader
+                label="Worktrees"
+                collapsed={worktreesCollapsed}
+                onToggle={() => setWorktreesCollapsed((c) => !c)}
+                extra={
+                  <button
+                    type="button"
+                    className="sidebar-add"
+                    aria-label="New worktree"
+                    title="New worktree"
+                    disabled={actionsDisabled}
+                    onClick={() => {
+                      setWorktreesCollapsed(false);
+                      onNewWorktree();
+                    }}
+                  >
+                    {'+'}
+                  </button>
+                }
+              />
+              {!worktreesCollapsed &&
+                (worktrees.length === 0 ? (
+                  <p className="branch-muted">No worktrees</p>
+                ) : (
+                  <ul className="branch-list" role="group">
+                    {worktrees.map((w) => (
+                      <WorktreeRow
+                        key={w.name}
+                        wt={w}
+                        onContextMenu={onWorktreeContextMenu}
+                        treeKey={`worktree:${w.name}`}
+                      />
+                    ))}
+                  </ul>
+                ))}
+            </section>
+          </div>
+        </SidebarTreeProvider>
       )}
     </aside>
   );

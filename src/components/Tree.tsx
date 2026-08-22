@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { JSX, ReactNode } from 'react';
 import type { TreeLeaf, TreeNode } from '../utils/pathTree';
+import { useSidebarTreeItem } from './sidebar/useSidebarTreeItem';
 
 // P3b contract §4 — recursive collapsible tree renderer. Display-only; leaf
 // rows are supplied whole by the caller via renderLeaf (Tree never inspects
@@ -11,8 +12,9 @@ import type { TreeLeaf, TreeNode } from '../utils/pathTree';
 export interface TreeProps<T> {
   nodes: TreeNode<T>[];
   /** Renders a COMPLETE <li> for a leaf (reuse existing FileRow / BranchRow /
-   *  tag-row markup unchanged — Tree never inspects leaf content). */
-  renderLeaf(leaf: TreeLeaf<T>): ReactNode;
+   *  tag-row markup unchanged — Tree never inspects leaf content). `level` is the
+   *  1-based aria-level for the leaf (P-a11y §D.8); file-tree callers ignore it. */
+  renderLeaf(leaf: TreeLeaf<T>, level: number): ReactNode;
   /** React key for a leaf <li>'s wrapper position; must be unique per list
    *  (e.g. `${entry.status}:${entry.path}` for status rows, branch name for refs). */
   leafKey(leaf: TreeLeaf<T>): string;
@@ -34,6 +36,14 @@ export interface TreeProps<T> {
    *  decides what to render (e.g. stage/discard-all). Tree stays generic —
    *  branch/tag Trees pass nothing. Revealed on hover via CSS. */
   renderDirActions?(leaves: TreeLeaf<T>[]): ReactNode;
+  /** P-a11y §D.8: embedded in the sidebar's composite `role="tree"`. Root <ul>
+   *  becomes `role="group"` (no nested trees) and dir/leaf rows join the roving
+   *  tabindex + Arrow/Enter wiring. Off (default) ⇒ the status file tree, byte
+   *  identical to pre-P-a11y (`role="tree"`, no roving/aria-level). */
+  asGroup?: boolean;
+  /** P-a11y §D.8: aria-level of the top-level tree rows (sidebar sections put
+   *  their content at level 2, under the level-1 header). Default 2. */
+  baseLevel?: number;
 }
 
 function collectLeaves<T>(node: Extract<TreeNode<T>, { kind: 'dir' }>, out: TreeLeaf<T>[]): void {
@@ -52,63 +62,109 @@ function collectDirPrefixes<T>(nodes: TreeNode<T>[], out: string[]): void {
   }
 }
 
+/** A directory row. Split into its own component so the P-a11y treeitem hook can
+ *  run per-dir; the hook is inert (returns {}) unless `asGroup` embeds this Tree
+ *  in the sidebar tree, keeping the status file tree unchanged. */
+function TreeDir<T>({
+  node,
+  level,
+  expanded,
+  treeProps,
+  collapsed,
+  toggle,
+}: {
+  node: Extract<TreeNode<T>, { kind: 'dir' }>;
+  level: number;
+  expanded: boolean;
+  treeProps: TreeProps<T>;
+  collapsed: Set<string>;
+  toggle(prefix: string): void;
+}) {
+  const wired = treeProps.asGroup === true;
+  const item = useSidebarTreeItem({
+    treeKey: `dir:${node.fullPrefix}`,
+    level,
+    kind: 'group',
+    enabled: wired,
+    expanded,
+    onToggle: () => toggle(node.fullPrefix),
+  });
+  return (
+    <li {...item} role="treeitem" aria-expanded={expanded} className="tree-dir">
+      <div className="tree-dir-row">
+        <button
+          type="button"
+          className="tree-dir-toggle"
+          title={treeProps.dirActionHint}
+          // Roving tabindex owner is the <li>; the toggle stays click-focusable
+          // but leaves the Tab cycle so the sidebar tree has one Tab stop (§D.1).
+          tabIndex={wired ? -1 : undefined}
+          onClick={() => toggle(node.fullPrefix)}
+          onDoubleClick={
+            treeProps.onActivateDir
+              ? () => {
+                  const leaves: TreeLeaf<T>[] = [];
+                  collectLeaves(node, leaves);
+                  treeProps.onActivateDir!(leaves);
+                }
+              : undefined
+          }
+        >
+          <span className={`file-chevron${expanded ? ' file-chevron-open' : ''}`}>{'›'}</span>
+          <span className="tree-dir-name" title={node.fullPrefix}>
+            {node.name}
+          </span>
+        </button>
+        {treeProps.renderDirActions !== undefined &&
+          (() => {
+            const leaves: TreeLeaf<T>[] = [];
+            collectLeaves(node, leaves);
+            return treeProps.renderDirActions(leaves);
+          })()}
+      </div>
+      {expanded && (
+        <ul
+          role="group"
+          className={
+            treeProps.groupClassName !== undefined
+              ? `tree-group ${treeProps.groupClassName}`
+              : 'tree-group'
+          }
+        >
+          {renderNodes(node.children, treeProps, collapsed, toggle, level + 1)}
+        </ul>
+      )}
+    </li>
+  );
+}
+
 function renderNodes<T>(
   nodes: TreeNode<T>[],
   props: TreeProps<T>,
   collapsed: Set<string>,
   toggle: (prefix: string) => void,
+  level: number,
 ): ReactNode {
   return nodes.map((node) => {
     if (node.kind === 'leaf') {
       // renderLeaf returns a complete <li>; key it via a fragment wrapper-free
       // approach is not possible, so we rely on the caller's <li> being the
       // only child and key the array position with leafKey.
-      return <TreeLeafSlot key={props.leafKey(node)}>{props.renderLeaf(node)}</TreeLeafSlot>;
+      return (
+        <TreeLeafSlot key={props.leafKey(node)}>{props.renderLeaf(node, level)}</TreeLeafSlot>
+      );
     }
     const expanded = !collapsed.has(node.fullPrefix);
     return (
-      <li key={node.fullPrefix} role="treeitem" aria-expanded={expanded} className="tree-dir">
-        <div className="tree-dir-row">
-          <button
-            type="button"
-            className="tree-dir-toggle"
-            title={props.dirActionHint}
-            onClick={() => toggle(node.fullPrefix)}
-            onDoubleClick={
-              props.onActivateDir
-                ? () => {
-                    const leaves: TreeLeaf<T>[] = [];
-                    collectLeaves(node, leaves);
-                    props.onActivateDir!(leaves);
-                  }
-                : undefined
-            }
-          >
-            <span className={`file-chevron${expanded ? ' file-chevron-open' : ''}`}>{'›'}</span>
-            <span className="tree-dir-name" title={node.fullPrefix}>
-              {node.name}
-            </span>
-          </button>
-          {props.renderDirActions !== undefined &&
-            (() => {
-              const leaves: TreeLeaf<T>[] = [];
-              collectLeaves(node, leaves);
-              return props.renderDirActions(leaves);
-            })()}
-        </div>
-        {expanded && (
-          <ul
-            role="group"
-            className={
-              props.groupClassName !== undefined
-                ? `tree-group ${props.groupClassName}`
-                : 'tree-group'
-            }
-          >
-            {renderNodes(node.children, props, collapsed, toggle)}
-          </ul>
-        )}
-      </li>
+      <TreeDir
+        key={node.fullPrefix}
+        node={node}
+        level={level}
+        expanded={expanded}
+        treeProps={props}
+        collapsed={collapsed}
+        toggle={toggle}
+      />
     );
   });
 }
@@ -136,9 +192,10 @@ export function Tree<T>(props: TreeProps<T>): JSX.Element {
       return next;
     });
   };
+  const baseLevel = props.baseLevel ?? 2;
   return (
-    <ul className="tree" role="tree">
-      {renderNodes(props.nodes, props, collapsed, toggle)}
+    <ul className="tree" role={props.asGroup === true ? 'group' : 'tree'}>
+      {renderNodes(props.nodes, props, collapsed, toggle, baseLevel)}
     </ul>
   );
 }

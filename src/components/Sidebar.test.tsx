@@ -69,7 +69,7 @@ describe('Sidebar sections', () => {
     expect(screen.getByText('origin/main')).toBeInTheDocument();
     // Tags start collapsed by default; expanding shows the tag.
     expect(screen.queryByText('v1.0')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Tags/ }));
+    fireEvent.click(screen.getByRole('treeitem', { name: /Tags/ }));
     expect(screen.getByText('v1.0')).toBeInTheDocument();
     expect(screen.getByText('No stashes')).toBeInTheDocument();
     expect(screen.getByText('No submodules')).toBeInTheDocument();
@@ -119,7 +119,7 @@ describe('Sidebar sections', () => {
     expect(props.onContextMenu).toHaveBeenCalledWith('origin/main', 'remoteBranch', 1, 2);
     fireEvent.contextMenu(screen.getByText('origin').closest('li')!, { clientX: 3, clientY: 4 });
     expect(props.onRemoteContextMenu).toHaveBeenCalledWith('origin', 3, 4);
-    fireEvent.click(screen.getByRole('button', { name: /Tags/ }));
+    fireEvent.click(screen.getByRole('treeitem', { name: /Tags/ }));
     fireEvent.contextMenu(screen.getByText('v1.0').closest('li')!, { clientX: 5, clientY: 6 });
     expect(props.onTagContextMenu).toHaveBeenCalledWith('v1.0', 5, 6);
   });
@@ -267,7 +267,7 @@ describe('Sidebar sections', () => {
 
   it('collapsing a section hides its rows', () => {
     renderSidebar();
-    const toggle = screen.getByRole('button', { name: /Branches/ });
+    const toggle = screen.getByRole('treeitem', { name: /Branches/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'false');

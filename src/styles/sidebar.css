@@ -133,9 +133,12 @@
   opacity: 0.7;
 }
 
+/* B.2: the checked-out branch is conveyed by weight + the accent glyph +
+   aria-current — NOT by hue on the label (accent text fails AA on the hover
+   wash). Name text stays --text-1; the accent lives on the graphic glyph. */
 .branch-row-head .branch-name {
   font-weight: 600;
-  color: var(--accent);
+  color: var(--text-1);
 }
 
 .branch-row-head .branch-glyph {
