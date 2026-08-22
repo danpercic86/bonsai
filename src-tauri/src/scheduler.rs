@@ -498,7 +498,7 @@ async fn execute_job(
     if repo_changed {
         emit(SchedulerEvent::RepoChanged(RepoChangedPayload {
             repo_id: repo_id.clone(),
-            reason: "fs".to_string(),
+            reason: (if matches!(job, JobKind::AutoFetch) { "fetch" } else { "fs" }).to_string(),
         }));
     }
     emit(SchedulerEvent::JobStatus(payload));

@@ -14,10 +14,6 @@ function makeDeps(over: Partial<Deps> = {}): Deps {
   return {
     ...base(),
     refreshAll: asyncFn(),
-    // Accepted-but-unused after P85 A1 (see useRemoteOps deps note); still
-    // required by the deps shape until P86 drops them from RepoWorkspace.
-    refetchBranches: asyncFn(),
-    refetchGraph: asyncFn(),
     setRemoteOp: vi.fn(),
     setPendingForcePush: vi.fn(),
     setPendingNonFfPull: vi.fn(),
@@ -47,7 +43,9 @@ describe('handleFetch', () => {
     expect(fetch).toHaveBeenCalledWith(REPO);
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Fetched 2 remotes — 3 refs updated');
     // P85 A1: one echo-armed refreshAll (tag counts now arrive via tag-auto-sync).
+    // P86a: a fetch only touches remote metadata → remoteMeta scope.
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('remoteMeta');
     expectRemoteOpCycle(deps, 'fetch');
   });
 
@@ -126,7 +124,9 @@ describe('handlePush / pushCurrentBranch', () => {
       'Pushed feat → origin/feat (upstream set)',
     );
     // P85 A1: one echo-armed refreshAll, not raw refetchBranches/refetchGraph.
+    // P86a: a push only advances remote-tracking refs → refsOnly scope.
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly');
     expectRemoteOpCycle(deps, 'push');
   });
 

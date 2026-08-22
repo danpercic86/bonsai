@@ -7,6 +7,7 @@ import type {
   ReflogEntry,
   ResetMode,
 } from '../../ipc';
+import type { RefreshScope } from './refreshScope';
 
 /** Convenience alias for a `useState` setter. */
 export type Setter<T> = Dispatch<SetStateAction<T>>;
@@ -15,7 +16,7 @@ export type Setter<T> = Dispatch<SetStateAction<T>>;
  *  action hooks. These are the stable `useCallback` refetch/clear helpers +
  *  `refreshAll` defined once in the container. */
 export interface RefreshDeps {
-  refreshAll: () => Promise<void>;
+  refreshAll: (scope?: RefreshScope) => Promise<void>;
   refetchStatus: () => Promise<void>;
   refetchGraph: () => Promise<void>;
   refetchBranches: () => Promise<void>;

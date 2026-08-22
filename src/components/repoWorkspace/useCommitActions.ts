@@ -7,6 +7,7 @@ import { buildPathTree, flattenTreeLeaves } from '../../utils/pathTree';
 import type { ListView } from '../../ipc';
 import type { BranchesSnapshot, FileDiff, HeadInfo, ResetMode, StatusSnapshot } from '../../ipc';
 import type { DiffSlot } from '../StatusPanel';
+import type { RefreshScope } from './refreshScope';
 import type { BaseActionDeps, PendingDiscardForce, Setter } from './types';
 
 type CommitPushResolver = {
@@ -22,8 +23,7 @@ type CommitPushResolver = {
 /** Stage/unstage/commit/amend/reset/discard + Commit & Push (M3/M6/P20). */
 export function useCommitActions(
   deps: BaseActionDeps & {
-    refreshAll: () => Promise<void>;
-    refetchStatus: () => Promise<void>;
+    refreshAll: (scope?: RefreshScope) => Promise<void>;
     reportStatusError: (message: string) => void;
     fetchDiffSlot: (key: string, fetcher: () => Promise<FileDiff>) => Promise<void>;
     pushCurrentBranch: () => Promise<void>;
@@ -61,7 +61,6 @@ export function useCommitActions(
     pushToast,
     setMutating,
     refreshAll,
-    refetchStatus,
     reportStatusError,
     fetchDiffSlot,
     pushCurrentBranch,
@@ -122,7 +121,10 @@ export function useCommitActions(
     }
     try {
       await ipc.stage(repoId, paths);
-      await refetchStatus();
+      // P86a: staging is index-only (no HEAD move, no ref change) — `worktree`
+      // scope (status + opState). Routing through the echo-armed round also drops
+      // the `.git/index` write's own watcher echo (no more full re-walk per stage).
+      await refreshAll('worktree');
       if (nextTarget !== null) {
         const target = nextTarget;
         const fresh = statusRef.current;
@@ -152,7 +154,8 @@ export function useCommitActions(
     setMutating(true);
     try {
       await ipc.unstage(repoId, paths);
-      await refetchStatus();
+      // P86a: index-only — `worktree` scope (see handleStage).
+      await refreshAll('worktree');
     } catch (e) {
       reportStatusError(errorMessage(e));
     } finally {
@@ -313,7 +316,8 @@ export function useCommitActions(
     setMutating(true);
     try {
       await ipc.discardPaths(repoId, paths);
-      await refreshAll();
+      // P86a: discard reverts worktree/index only (no HEAD move) — `worktree` scope.
+      await refreshAll('worktree');
       pushToast('success', `Discarded changes to ${paths.length} file(s)`);
     } catch (e) {
       pushToast('error', errorMessage(e));
@@ -343,7 +347,8 @@ export function useCommitActions(
     setMutating(true);
     try {
       await ipc.discardPathsForce(repoId, paths);
-      await refreshAll();
+      // P86a: worktree/index-only revert (+ untracked delete) — `worktree` scope.
+      await refreshAll('worktree');
       pushToast('success', `Discarded ${paths.length} file(s)`);
     } catch (e) {
       pushToast('error', errorMessage(e));

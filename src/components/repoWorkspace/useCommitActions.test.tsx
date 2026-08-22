@@ -39,7 +39,6 @@ function makeDeps(over: Partial<Deps> = {}): Deps {
   return {
     ...base(),
     refreshAll: asyncFn(),
-    refetchStatus: asyncFn(),
     reportStatusError: vi.fn(),
     fetchDiffSlot: vi.fn(async (_key: string, fetcher: () => Promise<FileDiff>) => {
       await fetcher();
@@ -78,7 +77,8 @@ describe('handleStage', () => {
     const deps = makeDeps();
     await useCommitActions(deps).handleStage(['a.ts']);
     expect(stage).toHaveBeenCalledWith(REPO, ['a.ts']);
-    expect(deps.refetchStatus).toHaveBeenCalledTimes(1);
+    // P86a: staging is index-only → an echo-armed `worktree`-scope round.
+    expect(deps.refreshAll).toHaveBeenCalledWith('worktree');
     expectMutatingCycle(deps.setMutating);
   });
 
@@ -202,7 +202,8 @@ describe('handleUnstage', () => {
     const deps = makeDeps();
     await useCommitActions(deps).handleUnstage(['a.ts']);
     expect(unstage).toHaveBeenCalledWith(REPO, ['a.ts']);
-    expect(deps.refetchStatus).toHaveBeenCalledTimes(1);
+    // P86a: index-only → `worktree`-scope round.
+    expect(deps.refreshAll).toHaveBeenCalledWith('worktree');
 
     unstage.mockRejectedValue(appErr('git'));
     await useCommitActions(deps).handleUnstage(['a.ts']);
@@ -369,7 +370,10 @@ describe('reset / discard', () => {
     await actions.handleDiscardForce(['a.ts']);
     expect(force).toHaveBeenCalledWith(REPO, ['a.ts']);
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Discarded 1 file(s)');
+    // P86a: discard reverts the worktree/index only → `worktree`-scope rounds.
     expect(deps.refreshAll).toHaveBeenCalledTimes(2);
+    expect(deps.refreshAll).toHaveBeenNthCalledWith(1, 'worktree');
+    expect(deps.refreshAll).toHaveBeenNthCalledWith(2, 'worktree');
   });
 });
 

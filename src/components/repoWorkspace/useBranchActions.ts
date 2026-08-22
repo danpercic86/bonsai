@@ -1,18 +1,13 @@
 import { ipc } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
 import type { BranchesSnapshot } from '../../ipc';
+import type { RefreshScope } from './refreshScope';
 import type { BaseActionDeps, Setter } from './types';
 
 /** Local/remote branch create, checkout, delete (P6/P11/P33). */
 export function useBranchActions(
   deps: BaseActionDeps & {
-    refreshAll: () => Promise<void>;
-    // P85 A1: no longer USED here (every handler routes through refreshAll), but
-    // kept in the deps shape because RepoWorkspace.tsx still passes them in its
-    // object literal (an excess-property error otherwise). P86 removes both the
-    // call-site args and these two props together.
-    refetchBranches: () => Promise<void>;
-    refetchGraph: () => Promise<void>;
+    refreshAll: (scope?: RefreshScope) => Promise<void>;
     branches: BranchesSnapshot | null;
     setBranchesError: Setter<string | null>;
     setPendingCreateBranch: Setter<{ oid: string } | null>;
@@ -35,13 +30,16 @@ export function useBranchActions(
   // refetchGraph/refetchBranches. Arming suppresses the handler's own
   // `.git/refs/**` watcher echo → exactly ONE refresh round per mutation, not
   // two. `refreshAll()` never throws (P81) and keeps each handler's own
-  // try/catch/finally + toasts intact.
+  // try/catch/finally + toasts intact. P86a scopes each round to what its change
+  // touched: a create/rename-at-existing-commit is `refsOnly` (no worktree scan,
+  // no HEAD move); a delete or HEAD-moving op stays `full`.
   async function handleCreateBranch(name: string) {
     setBranchesError(null);
     setMutating(true);
     try {
       await ipc.createBranch(repoId, name);
-      await refreshAll();
+      // A create at an existing commit only adds a ref pill — refsOnly.
+      await refreshAll('refsOnly');
     } finally {
       setMutating(false);
     }
@@ -135,8 +133,9 @@ export function useBranchActions(
     setMutating(true);
     try {
       const res = await ipc.renameBranch(repoId, oldName, newName);
-      // A1: route through refreshAll whether or not HEAD moved (`res.wasHead`).
-      await refreshAll();
+      // A1: route through refreshAll whether or not HEAD moved. P86a: a rename of
+      // HEAD moves the current-branch label (full); a non-head rename is refsOnly.
+      await refreshAll(res.wasHead ? 'full' : 'refsOnly');
       pushToast(
         'success',
         `Renamed ${oldName} → ${newName}` +
@@ -166,13 +165,14 @@ export function useBranchActions(
   }
 
   // P6 §4.4: delete the LOCAL remote-tracking ref only (does not touch the
-  // server); A1 routes through refreshAll like handleDeleteBranch.
+  // server). P86a: removing a remote-tracking ref only drops a pill (no local
+  // HEAD move, no worktree change) — refsOnly.
   async function handleDeleteRemoteTracking(name: string) {
     setBranchesError(null);
     setMutating(true);
     try {
       await ipc.deleteRemoteBranch(repoId, name);
-      await refreshAll();
+      await refreshAll('refsOnly');
     } catch (e) {
       setBranchesError(errorMessage(e));
     } finally {

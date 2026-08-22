@@ -61,7 +61,16 @@ after a single network round-trip. Full graph/status behavior otherwise unchange
 
 **Current step:** contract DONE (`docs/contracts/P86-refresh-caching.md`); P85 committed (fde91d7).
 Split into two serial increments: **P86a** (B3 scoped/reason-aware refresh + carry-ins CI-1..CI-4) —
-senior-dev IN PROGRESS; **P86b** (B1 graph-layout cache + B2 repo-handle cache [optional]) — queued.
+senior-dev DONE (gate-clean; CI-1 solved via a new echo-bypassing `external` origin; new
+`refreshScope.ts` + `useRepoChangeSubscription.ts`; bonus: stage/unstage/discard → `worktree` fixes the
+index-write echo→full-walk), **awaiting reviewer**; **P86b** (B1 graph-layout cache + B2 repo-handle
+cache [optional]) — queued. Deviations (contract matrix over prompt parenthetical): pull→`full`
+(moves HEAD), discard→`worktree` — both correct.
+
+**⚠ FLAG FOR USER (peer session, now ended):** `src/components/repoWorkspace/useWorkspaceKeyboard.test.tsx`
+fails in ISOLATION on the committed baseline (1 graph-nav `defaultPrevented` case), introduced by the peer's
+graph-a11y commit `590f2ef`. Passes in the combined run → likely test-isolation flakiness, but it's in the
+peer's file (outside this batch's scope; I did not touch it). Needs a look before the branch merges.
 
 **Goal (workstream B).** Even with P85, every refresh re-walks the ENTIRE commit graph from scratch
 (`compute_graph` `graph.rs:129` / `stream_graph_core` `graph/stream.rs:110`), re-opens the

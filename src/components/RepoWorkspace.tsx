@@ -23,6 +23,8 @@ import type { GraphDisplayOptions } from '../graph/rightColumns';
 import { createGraphStream } from '../graph/streamAssembler';
 import { createGraphStreamApplier } from './repoWorkspace/graphStreamApply';
 import { useCoalescedRefresh, type RefreshOrigin } from './repoWorkspace/useCoalescedRefresh';
+import { type RefreshScope, slicesForScope } from './repoWorkspace/refreshScope';
+import { useRepoChangeSubscription } from './repoWorkspace/useRepoChangeSubscription';
 import type { IncrementalEdgeIndex } from '../graph/incrementalEdgeIndex';
 import { ipc } from '../ipc';
 import type {
@@ -1223,95 +1225,114 @@ export function RepoWorkspace({
   // so an external FS event never forces a network ls-remote (Flag 2).
   const pendingTagForceRef = useRef(false);
 
-  /** Composite post-op refresh (P1 §4.6): re-openRepo (refreshes header HEAD +
-   *  self-heals the watcher) + refetch status/graph/branches/opstate. Never
-   *  throws — failures surface as a sticky error toast. This is the canonical
-   *  refresh round (P81 §2); all origins funnel through the coalescer to it. */
-  const runRefreshRound = useCallback(async (): Promise<void> => {
-    const forceTagSync = pendingTagForceRef.current;
-    pendingTagForceRef.current = false;
-    try {
-      const { info } = await ipc.openRepo(repoPath);
-      setRepo(info);
-      if (isUsableRepo(info)) {
-        await Promise.all([
-          refetchStatus(),
-          refetchGraph(),
-          refetchBranches(),
-          refetchStashes(),
-          refetchSubmodules(),
-          refetchWorktrees(),
-          refetchRemotes(),
-          refetchOpState(),
-          refetchCompare(),
-          // P77: re-check tag drift on manual refresh / focus rescan (no-op until
-          // the Tags section has been opened once this session). P81 Flag 2: only
-          // forced origins pay the ls-remote; watcher events run non-forced.
-          refetchTagSync(forceTagSync ? { force: true } : undefined),
-        ]);
-      } else {
-        clearStatus();
-        clearGraph();
-        clearBranches();
-        clearStashes();
-        clearSubmodules();
-        clearWorktrees();
-        clearRemotes();
-        clearTagSync();
-        clearOpState();
-        clearCompare();
-        // P23d: drop any blame/history overlay + invalidate in-flight fetches so
-        // a stale overlay can't linger over the now-empty pane.
-        blameReqId.current += 1;
-        setBlame(null);
-        historyReqId.current += 1;
-        setHistory(null);
+  /** Composite post-op refresh (P1 §4.6): the canonical refresh round (P81 §2);
+   *  all origins funnel through the coalescer to it. P86a: SCOPED — only the
+   *  slices `scope` implies run, so a ref-only mutation never pays the O(worktree)
+   *  `get_status` scan and non-`full` scopes skip `openRepo` (they never move
+   *  HEAD). `full` still re-openRepos (refreshes header HEAD + self-heals the
+   *  watcher; clears everything if the repo went unusable). Never throws —
+   *  failures surface as a sticky error toast. */
+  const runRefreshRound = useCallback(
+    async (scope: RefreshScope): Promise<void> => {
+      const forceTagSync = pendingTagForceRef.current;
+      pendingTagForceRef.current = false;
+      const slices = slicesForScope(scope);
+      try {
+        if (slices.openRepo) {
+          const { info } = await ipc.openRepo(repoPath);
+          setRepo(info);
+          if (!isUsableRepo(info)) {
+            clearStatus();
+            clearGraph();
+            clearBranches();
+            clearStashes();
+            clearSubmodules();
+            clearWorktrees();
+            clearRemotes();
+            clearTagSync();
+            clearOpState();
+            clearCompare();
+            // P23d: drop any blame/history overlay + invalidate in-flight fetches
+            // so a stale overlay can't linger over the now-empty pane.
+            blameReqId.current += 1;
+            setBlame(null);
+            historyReqId.current += 1;
+            setHistory(null);
+            return;
+          }
+        }
+        const tasks: Promise<void>[] = [];
+        if (slices.status) tasks.push(refetchStatus());
+        if (slices.graph) tasks.push(refetchGraph());
+        if (slices.branches) tasks.push(refetchBranches());
+        if (slices.stashes) tasks.push(refetchStashes());
+        if (slices.submodules) tasks.push(refetchSubmodules());
+        if (slices.worktrees) tasks.push(refetchWorktrees());
+        if (slices.remotes) tasks.push(refetchRemotes());
+        if (slices.opState) tasks.push(refetchOpState());
+        if (slices.compare) tasks.push(refetchCompare());
+        if (slices.tagSync) {
+          // P77: re-check tag drift (no-op until the Tags section has been opened
+          // once this session). P81 Flag 2 / P86a: only `full` from a forcing
+          // origin (manual/focus/mutation) pays the ls-remote; `remoteMeta` and
+          // watcher-driven rounds run non-forced.
+          const forced = slices.tagSyncForcable && forceTagSync;
+          tasks.push(refetchTagSync(forced ? { force: true } : undefined));
+        }
+        await Promise.all(tasks);
+      } catch (e) {
+        pushToast('error', `Refresh failed: ${errorMessage(e)}`);
       }
-    } catch (e) {
-      pushToast('error', `Refresh failed: ${errorMessage(e)}`);
-    }
-  }, [
-    repoPath,
-    refetchStatus,
-    refetchGraph,
-    refetchBranches,
-    refetchStashes,
-    refetchSubmodules,
-    refetchWorktrees,
-    refetchRemotes,
-    refetchOpState,
-    refetchCompare,
-    refetchTagSync,
-    clearStatus,
-    clearGraph,
-    clearBranches,
-    clearStashes,
-    clearSubmodules,
-    clearWorktrees,
-    clearRemotes,
-    clearTagSync,
-    clearOpState,
-    clearCompare,
-    pushToast,
-  ]);
+    },
+    [
+      repoPath,
+      refetchStatus,
+      refetchGraph,
+      refetchBranches,
+      refetchStashes,
+      refetchSubmodules,
+      refetchWorktrees,
+      refetchRemotes,
+      refetchOpState,
+      refetchCompare,
+      refetchTagSync,
+      clearStatus,
+      clearGraph,
+      clearBranches,
+      clearStashes,
+      clearSubmodules,
+      clearWorktrees,
+      clearRemotes,
+      clearTagSync,
+      clearOpState,
+      clearCompare,
+      pushToast,
+    ],
+  );
 
   // P81 §2/§3: coalesce every refresh entry point onto the one canonical round.
   // The coalescer collapses overlapping requests (leading + at-most-one-trailing)
   // and the shared echo registry drops the self-caused watcher echo within TTL.
   const { refresh: coalescedRefresh } = useCoalescedRefresh(repoId, runRefreshRound);
   const refresh = useCallback(
-    (origin: RefreshOrigin): Promise<void> => {
-      // Forced tag-drift re-check for every non-watcher origin (mutation writes,
+    (origin: RefreshOrigin, scope: RefreshScope): Promise<void> => {
+      // Forced tag-drift re-check for user-initiated origins (mutation writes,
       // manual refresh, activation self-heal, focus rescan). Set BEFORE enqueuing
-      // so the round about to start reads it (P81 Flag 2).
-      if (origin !== 'watcher') pendingTagForceRef.current = true;
-      return coalescedRefresh(origin);
+      // so the round about to start reads it (P81 Flag 2). `watcher` (raw fs echo)
+      // and `external` (backend-confirmed change — the backend already ran the
+      // tag-sync) do NOT force a fresh ls-remote.
+      if (origin !== 'watcher' && origin !== 'external') pendingTagForceRef.current = true;
+      return coalescedRefresh(origin, scope);
     },
     [coalescedRefresh],
   );
-  // Name preserved: the ~11 mutation call sites + hook deps stay untouched.
-  // A mutation is a local write → arms echo suppression + forces tagSync.
-  const refreshAll = useCallback((): Promise<void> => refresh('mutation'), [refresh]);
+  // Name preserved: the mutation call sites + hook deps stay untouched (they now
+  // pass an explicit scope; the default keeps unscoped callers on `full`).
+  // A mutation is a local write → arms echo suppression + (for `full`) forces tagSync.
+  const refreshAll = useCallback(
+    (scope: RefreshScope = 'full'): Promise<void> => refresh('mutation', scope),
+    [refresh],
+  );
 
   // Initial load on mount: fetch state for repoId (the repo is already opened by
   // App — do NOT openRepo again here, §5.1). Runs for active AND background tabs.
@@ -1342,8 +1363,8 @@ export function RepoWorkspace({
       return;
     }
     // P81: activation ALWAYS refreshes (never echo-gated) — catches events
-    // missed while the tab was display:none.
-    if (active) void refreshRef.current('activation');
+    // missed while the tab was display:none. Full scope for the self-heal.
+    if (active) void refreshRef.current('activation', 'full');
   }, [active]);
 
   // Selection -> commit diff (M4 §4.4). Every selection change resets the shared
@@ -1401,35 +1422,9 @@ export function RepoWorkspace({
     setCommitBrowserOpen(false);
   }, [compare?.oid, selectedOid]);
 
-  // repo-changed subscription: filter to THIS repo; refetch regardless of active
-  // so a background tab stays fresh when its watcher fires (§7).
-  useEffect(() => {
-    let cancelled = false;
-    const unsubs: Unsubscribe[] = [];
-    const subscribe = async () => {
-      const off = await ipc.onRepoChanged((p) => {
-        if (p.repoId !== repoId) return;
-        // P81 §7: funnel the watcher echo through the coalesced round. Gated by
-        // echo suppression — the self-caused event within TTL is a no-op; a
-        // genuine external change (or one past the window) runs a full round.
-        void refresh('watcher');
-      });
-      if (cancelled) {
-        off();
-        return;
-      }
-      unsubs.push(off);
-    };
-    // Subscription loss = degraded live refresh only (manual refresh + focus
-    // rescan still work) — log, don't crash.
-    void subscribe().catch((e: unknown) => {
-      console.error('repo-changed subscription failed', e);
-    });
-    return () => {
-      cancelled = true;
-      for (const unsub of unsubs) unsub();
-    };
-  }, [repoId, refresh]);
+  // P86a: repo-changed + tag-auto-sync subscriptions (reason-aware refresh routing
+  // + the CI-3 tag-count toast) live in their own hook so the container stays thin.
+  useRepoChangeSubscription(repoId, refresh, pushToast);
 
   // Window-focus rescan: ACTIVE tab only (the visible tab is the one the user
   // just returned to; background tabs self-heal on activation, §7).
@@ -1439,8 +1434,8 @@ export function RepoWorkspace({
     const unsubs: Unsubscribe[] = [];
     const subscribe = async () => {
       const off = await ipc.onWindowFocus(() => {
-        // P81 §7: focus rescan ALWAYS refreshes (never echo-gated).
-        void refresh('focus');
+        // P81 §7: focus rescan ALWAYS refreshes (never echo-gated). Full self-heal.
+        void refresh('focus', 'full');
         forgeSignals.refresh('focus'); // P63: TTL-guarded (not forced)
       });
       if (cancelled) {
@@ -1547,7 +1542,7 @@ export function RepoWorkspace({
     if (refreshing) return;
     setRefreshing(true);
     try {
-      await refresh('manual'); // P81: always runs (never echo-gated)
+      await refresh('manual', 'full'); // P81: always runs (never echo-gated)
       verification.refresh();
       forgeSignals.refresh('manual', true); // P63: forced (bypass TTL)
       void refetchSigningStatus();
@@ -1590,8 +1585,6 @@ export function RepoWorkspace({
       pushToast,
       setMutating,
       refreshAll,
-      refetchBranches,
-      refetchGraph,
       setRemoteOp,
       setPendingForcePush,
       setPendingNonFfPull,
@@ -1627,7 +1620,6 @@ export function RepoWorkspace({
     pushToast,
     setMutating,
     refreshAll,
-    refetchStatus,
     reportStatusError,
     fetchDiffSlot,
     pushCurrentBranch,
@@ -1662,8 +1654,6 @@ export function RepoWorkspace({
     pushToast,
     setMutating,
     refreshAll,
-    refetchBranches,
-    refetchGraph,
     branches,
     setBranchesError,
     setPendingCreateBranch,

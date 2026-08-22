@@ -4,6 +4,7 @@ import { reportRemoteOpError } from '../../ipc/gitNotFound';
 import { isGitNotFound } from '../../ipc/errors';
 import { shortOid } from '../workspaceUtils';
 import { COMMIT_HOOK_CANCELED } from '../commitPushSignal';
+import type { RefreshScope } from './refreshScope';
 import type { BaseActionDeps, Setter } from './types';
 
 /** P60b: a fast-forward-only pull hit a diverged branch — drives NonFfPullDialog.
@@ -19,13 +20,7 @@ export interface NonFfPullInfo {
 /** M6 + P37b: fetch / pull / push / force-push-with-lease. */
 export function useRemoteOps(
   deps: BaseActionDeps & {
-    refreshAll: () => Promise<void>;
-    // P85 A1: no longer USED here (fetch/push/force-push route through refreshAll),
-    // but kept in the deps shape because RepoWorkspace.tsx still passes them in its
-    // object literal (an excess-property error otherwise). P86 removes both the
-    // call-site args and these two props together.
-    refetchBranches: () => Promise<void>;
-    refetchGraph: () => Promise<void>;
+    refreshAll: (scope?: RefreshScope) => Promise<void>;
     setRemoteOp: Setter<'fetch' | 'pull' | 'push' | null>;
     setPendingForcePush: Setter<boolean>;
     /** P60b: open the non-FF reconcile dialog (Merge / Rebase / Cancel). */
@@ -79,7 +74,9 @@ export function useRemoteOps(
         `Fetched ${n} remote${n === 1 ? '' : 's'}` +
           (k > 0 ? ` — ${k} ref${k === 1 ? '' : 's'} updated` : ''),
       );
-      await refreshAll();
+      // P86a: a fetch only updates remote-tracking refs + remote metadata (no
+      // local HEAD move, no worktree change) — remoteMeta scope.
+      await refreshAll('remoteMeta');
     } catch (e) {
       // P70 (UI §10.3): a user-PRESSED remote op still gets exactly one toast —
       // coalesced by key, so three presses never stack three sticky errors.
@@ -138,7 +135,9 @@ export function useRemoteOps(
               (res.setUpstream ? ' (upstream set)' : ''),
           );
         }
-        await refreshAll();
+        // P86a: a push advances the remote-tracking ref (+ maybe sets upstream) —
+        // refsOnly (no local HEAD move, no worktree change).
+        await refreshAll('refsOnly');
       }, false);
     } catch (e) {
       // Dialog dismissed (pre-push not skipped): nothing pushed, no error banner.
@@ -171,7 +170,8 @@ export function useRemoteOps(
         } else {
           pushToast('success', `Force-pushed ${res.branch} → ${res.remote}/${res.branch}`);
         }
-        await refreshAll();
+        // P86a: force-push only moves the remote-tracking ref — refsOnly.
+        await refreshAll('refsOnly');
       }, false);
     } catch (e) {
       // Dialog dismissed (pre-push not skipped): nothing pushed, no error banner.

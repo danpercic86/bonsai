@@ -103,9 +103,10 @@ export function completeMockJobRun(repoId: string, job: JobKind): void {
   };
   for (const cb of jobStatusListeners) cb(payload);
   // Rust emits repo-changed on autoFetch success with updatedRefs > 0 and on
-  // every healthRefresh success.
+  // every healthRefresh success. P86a: the auto-fetch tick carries reason "fetch"
+  // (→ remoteMeta scope) while healthRefresh stays "fs" (→ full).
   if (!failed && (job === 'healthRefresh' || (updatedRefs ?? 0) > 0)) {
-    const rc: RepoChangedPayload = { repoId, reason: 'fs' };
+    const rc: RepoChangedPayload = { repoId, reason: job === 'autoFetch' ? 'fetch' : 'fs' };
     for (const cb of repoChangedListeners) cb(rc);
   }
 }

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 
 import { useCoalescedRefresh } from './useCoalescedRefresh';
+import type { RefreshScope } from './refreshScope';
 import {
   ECHO_TAIL_MS,
   __resetEchoSuppression,
@@ -39,14 +40,14 @@ describe('useCoalescedRefresh', () => {
     const { result } = renderHook(() => useCoalescedRefresh('r1', run));
 
     await act(async () => {
-      await result.current.refresh('mutation');
+      await result.current.refresh('mutation', 'full');
     });
     expect(run).toHaveBeenCalledTimes(1);
     expect(isEchoSuppressed('r1')).toBe(true);
 
     vi.setSystemTime(300); // echo arrives inside the window
     await act(async () => {
-      await result.current.refresh('watcher');
+      await result.current.refresh('watcher', 'full');
     });
     expect(run).toHaveBeenCalledTimes(1); // suppressed — no second round
   });
@@ -59,11 +60,11 @@ describe('useCoalescedRefresh', () => {
       const base = i * 10_000; // each pair well outside the previous window
       vi.setSystemTime(base);
       await act(async () => {
-        await result.current.refresh('mutation');
+        await result.current.refresh('mutation', 'full');
       });
       vi.setSystemTime(base + 300);
       await act(async () => {
-        await result.current.refresh('watcher'); // suppressed
+        await result.current.refresh('watcher', 'full'); // suppressed
       });
     }
     expect(run).toHaveBeenCalledTimes(3);
@@ -73,7 +74,7 @@ describe('useCoalescedRefresh', () => {
     const run = makeRun();
     const { result } = renderHook(() => useCoalescedRefresh('r1', run));
     await act(async () => {
-      await result.current.refresh('watcher');
+      await result.current.refresh('watcher', 'full');
     });
     expect(run).toHaveBeenCalledTimes(1);
   });
@@ -84,13 +85,13 @@ describe('useCoalescedRefresh', () => {
 
     vi.setSystemTime(0);
     await act(async () => {
-      await result.current.refresh('mutation'); // round settles at t=0 → tail to 600
+      await result.current.refresh('mutation', 'full'); // round settles at t=0 → tail to 600
     });
     expect(run).toHaveBeenCalledTimes(1);
 
     vi.setSystemTime(ECHO_TAIL_MS); // tail expired (boundary is exclusive)
     await act(async () => {
-      await result.current.refresh('watcher');
+      await result.current.refresh('watcher', 'full');
     });
     expect(run).toHaveBeenCalledTimes(2);
   });
@@ -103,13 +104,13 @@ describe('useCoalescedRefresh', () => {
 
       vi.setSystemTime(0);
       await act(async () => {
-        await result.current.refresh('mutation');
+        await result.current.refresh('mutation', 'full');
       });
       expect(run).toHaveBeenCalledTimes(1);
 
       vi.setSystemTime(100); // inside the armed window
       await act(async () => {
-        await result.current.refresh(origin);
+        await result.current.refresh(origin, 'full');
       });
       expect(run, `origin=${origin}`).toHaveBeenCalledTimes(2);
     }
@@ -129,13 +130,13 @@ describe('useCoalescedRefresh', () => {
 
     let leading!: Promise<void>;
     act(() => {
-      leading = result.current.refresh('manual'); // starts round 0 (in flight)
+      leading = result.current.refresh('manual', 'full'); // starts round 0 (in flight)
     });
     expect(run).toHaveBeenCalledTimes(1);
 
     const collapsed: Promise<void>[] = [];
     act(() => {
-      for (let i = 0; i < 4; i += 1) collapsed.push(result.current.refresh('manual'));
+      for (let i = 0; i < 4; i += 1) collapsed.push(result.current.refresh('manual', 'full'));
     });
     expect(run).toHaveBeenCalledTimes(1); // collapsed, not stacked
 
@@ -162,11 +163,11 @@ describe('useCoalescedRefresh', () => {
 
     vi.setSystemTime(0);
     await act(async () => {
-      await hookA.result.current.refresh('mutation'); // arms A only
+      await hookA.result.current.refresh('mutation', 'full'); // arms A only
     });
     vi.setSystemTime(100);
     await act(async () => {
-      await hookB.result.current.refresh('watcher'); // B not gated
+      await hookB.result.current.refresh('watcher', 'full'); // B not gated
     });
     expect(runB).toHaveBeenCalledTimes(1);
   });
@@ -176,7 +177,7 @@ describe('useCoalescedRefresh', () => {
     const { result, unmount } = renderHook(() => useCoalescedRefresh('r1', run));
     vi.setSystemTime(0);
     await act(async () => {
-      await result.current.refresh('mutation');
+      await result.current.refresh('mutation', 'full');
     });
     expect(isEchoSuppressed('r1', 100)).toBe(true);
     unmount();
@@ -187,7 +188,7 @@ describe('useCoalescedRefresh', () => {
     const run = makeRun();
     const { result } = renderHook(() => useCoalescedRefresh('r1', run));
     await act(async () => {
-      await result.current.refresh('mutation');
+      await result.current.refresh('mutation', 'full');
     });
     expect(run).toHaveBeenCalledTimes(1);
     await flush();
@@ -209,7 +210,7 @@ describe('useCoalescedRefresh', () => {
     vi.setSystemTime(0);
     let mutation!: Promise<void>;
     act(() => {
-      mutation = result.current.refresh('mutation'); // round in flight
+      mutation = result.current.refresh('mutation', 'full'); // round in flight
     });
     expect(run).toHaveBeenCalledTimes(1);
 
@@ -219,7 +220,7 @@ describe('useCoalescedRefresh', () => {
     expect(isEchoSuppressed('r1')).toBe(true);
     let echo!: Promise<void>;
     act(() => {
-      echo = result.current.refresh('watcher');
+      echo = result.current.refresh('watcher', 'full');
     });
     await act(async () => {
       await echo;
@@ -241,7 +242,7 @@ describe('useCoalescedRefresh', () => {
     // After the tail a genuine external change runs a fresh round.
     vi.setSystemTime(5_000 + ECHO_TAIL_MS);
     act(() => {
-      void result.current.refresh('watcher');
+      void result.current.refresh('watcher', 'full');
     });
     expect(run).toHaveBeenCalledTimes(2);
     // Resolve the fresh round so nothing dangles into the next test.
@@ -258,13 +259,113 @@ describe('useCoalescedRefresh', () => {
     const { result } = renderHook(() => useCoalescedRefresh('r1', run));
 
     await act(async () => {
-      await result.current.refresh('mutation');
+      await result.current.refresh('mutation', 'full');
     });
     // A mutation + its (suppressed) watcher echo ⇒ exactly one round counted.
     vi.setSystemTime(100);
     await act(async () => {
-      await result.current.refresh('watcher');
+      await result.current.refresh('watcher', 'full');
     });
     expect(g.__bonsaiRefreshRounds).toBe(1);
+  });
+
+  it('P86a CI-1: an external (backend-confirmed) event bypasses the armed echo window', async () => {
+    const run = makeRun();
+    const { result } = renderHook(() => useCoalescedRefresh('r1', run));
+
+    vi.setSystemTime(0);
+    await act(async () => {
+      // A fetch arms echo suppression for its own remoteMeta round.
+      await result.current.refresh('mutation', 'remoteMeta');
+    });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(isEchoSuppressed('r1')).toBe(true); // inside the settle tail
+
+    // A raw notify echo (reason "fs") landing inside the window is DROPPED…
+    await act(async () => {
+      await result.current.refresh('watcher', 'full');
+    });
+    expect(run).toHaveBeenCalledTimes(1);
+
+    // …but a backend-confirmed reason:"tags" event (origin 'external') is NOT our
+    // own fs echo, so it refreshes anyway — the CI-1 regression fix.
+    await act(async () => {
+      await result.current.refresh('external', 'refsOnly');
+    });
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it('P86a: external origin never arms echo (a later watcher echo is not swallowed)', async () => {
+    const run = makeRun();
+    const { result } = renderHook(() => useCoalescedRefresh('r1', run));
+
+    vi.setSystemTime(0);
+    await act(async () => {
+      await result.current.refresh('external', 'refsOnly');
+    });
+    expect(run).toHaveBeenCalledTimes(1);
+    // No span was opened, so an unrelated watcher event runs a fresh round.
+    expect(isEchoSuppressed('r1')).toBe(false);
+    await act(async () => {
+      await result.current.refresh('watcher', 'full');
+    });
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it('P86a: records the executed round scope in window.__bonsaiRefreshScopes', async () => {
+    const g = globalThis as { __bonsaiRefreshScopes?: Record<string, number> };
+    g.__bonsaiRefreshScopes = {};
+    const run = makeRun();
+    const { result } = renderHook(() => useCoalescedRefresh('r1', run));
+
+    vi.setSystemTime(0);
+    await act(async () => {
+      await result.current.refresh('mutation', 'worktree');
+    });
+    vi.setSystemTime(10_000); // clear the first tail
+    await act(async () => {
+      await result.current.refresh('mutation', 'refsOnly');
+    });
+    expect(g.__bonsaiRefreshScopes).toMatchObject({ worktree: 1, refsOnly: 1 });
+  });
+
+  it('P86a: the trailing round runs the UNION of collapsed scopes (distinct → full)', async () => {
+    const g = globalThis as { __bonsaiRefreshScopes?: Record<string, number> };
+    g.__bonsaiRefreshScopes = {};
+    const box: { resolve: (() => void) | null } = { resolve: null };
+    const run = vi.fn<(scope: RefreshScope) => Promise<void>>(
+      () =>
+        new Promise<void>((r) => {
+          box.resolve = r;
+        }),
+    );
+    const { result } = renderHook(() => useCoalescedRefresh('r1', run));
+
+    let leading!: Promise<void>;
+    act(() => {
+      leading = result.current.refresh('manual', 'refsOnly'); // leading round (in flight)
+    });
+    expect(run).toHaveBeenNthCalledWith(1, 'refsOnly');
+
+    // Two DIFFERENT scopes collapse into the single trailing round → union = full.
+    act(() => {
+      void result.current.refresh('mutation', 'worktree');
+      void result.current.refresh('mutation', 'remoteMeta');
+    });
+
+    const first = box.resolve;
+    box.resolve = null;
+    await act(async () => {
+      first?.();
+      await leading;
+    });
+    expect(run).toHaveBeenNthCalledWith(2, 'full');
+
+    // Settle the trailing round so nothing dangles.
+    await act(async () => {
+      box.resolve?.();
+      await Promise.resolve();
+    });
+    expect(g.__bonsaiRefreshScopes).toMatchObject({ refsOnly: 1, full: 1 });
   });
 });

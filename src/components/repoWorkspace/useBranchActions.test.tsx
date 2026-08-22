@@ -30,10 +30,6 @@ function makeDeps(over: Partial<Deps> = {}): Deps {
   return {
     ...base(),
     refreshAll: asyncFn(),
-    // Accepted-but-unused after P85 A1 (see useBranchActions deps note); still
-    // required by the deps shape until P86 drops them from RepoWorkspace.
-    refetchBranches: asyncFn(),
-    refetchGraph: asyncFn(),
     branches: BRANCHES,
     setBranchesError: vi.fn(),
     setPendingCreateBranch: vi.fn(),
@@ -50,7 +46,9 @@ describe('handleCreateBranch', () => {
     expect(create).toHaveBeenCalledWith(REPO, 'new-branch');
     expect(deps.setBranchesError).toHaveBeenCalledWith(null);
     // P85 A1: one echo-armed refreshAll, not raw refetchBranches/refetchGraph.
+    // P86a: a create at an existing commit is a refsOnly round.
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly');
     expectMutatingCycle(deps.setMutating);
   });
 
@@ -173,7 +171,9 @@ describe('handleRenameBranch', () => {
     });
     const deps = makeDeps();
     await useBranchActions(deps).handleRenameBranch('main', 'trunk');
+    // P86a: renaming HEAD moves the current-branch label → full round.
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('full');
     expect(deps.pushToast).toHaveBeenCalledWith(
       'success',
       'Renamed main → trunk (tracking origin/main preserved)',
@@ -189,7 +189,9 @@ describe('handleRenameBranch', () => {
     await useBranchActions(deps).handleRenameBranch('feat', 'feature');
     expect(rename).toHaveBeenCalledWith(REPO, 'feat', 'feature');
     // P85 A1: non-HEAD rename now also routes through the echo-armed refreshAll.
+    // P86a: a non-HEAD rename only reshuffles ref pills → refsOnly.
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly');
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Renamed feat → feature');
 
     rename.mockRejectedValue(appErr('branchExists', 'exists'));

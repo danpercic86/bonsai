@@ -8,19 +8,37 @@ import { tagSyncHandlers } from './tagSync';
 import { repoChangedListeners, tagAutoSyncListeners } from '../events';
 import type { AppError, FetchResult, PullResult, PushResult, RepoChangedPayload, TagAutoSyncEvent } from '../../types';
 
-/** P85 A3: mirror the backend's FIRE-AND-FORGET fetch tag auto-sync. Runs the
- *  mock auto-sync OFF the fetch response, then — only when it actually changed
- *  local tags (adopted or moved) — dispatches `repo-changed{reason:'tags'}`
+/** P85 A3 / P86a CI-2: mirror the backend's FIRE-AND-FORGET fetch tag auto-sync.
+ *  Runs the mock auto-sync OFF the fetch response, then — only when it actually
+ *  changed local tags (adopted or moved) — dispatches `repo-changed{reason:'tags'}`
  *  (refresh the tag list) + `tag-auto-sync` (count toast) through the mock event
- *  registries. The delay lands the emit well after the fetch's own
- *  echo-suppression window so the harness stays self-consistent (the tags
- *  refresh is not swallowed as a self-echo). Repo closed before it runs ⇒ noop. */
+ *  registries.
+ *
+ *  The emit is scheduled at a SMALL realistic offset (a second network round-trip
+ *  right after the fetch), so it lands INSIDE the fetch round's echo-suppression
+ *  window — exactly like the backend. That is what makes it exercise CI-1: the
+ *  `reason:'tags'` event only refreshes because RepoWorkspace routes it through the
+ *  echo-BYPASSING `external` origin. (P85 deferred this ~1500 ms to clear the
+ *  window, which masked the bug.) Repo closed before it runs ⇒ noop. */
 function scheduleMockTagAutoSync(repoId: string): void {
   window.setTimeout(() => {
     void tagSyncHandlers
       .autoSyncTags(repoId, null)
       .then((report) => {
         if (report.adopted.length === 0 && report.moved.length === 0) return;
+        // Fidelity: reflect the adopted/moved tags into the branches snapshot so a
+        // refresh (refetchBranches) actually surfaces them — the real backend wrote
+        // them under refs/tags/*. Best-effort; skip if the repo closed meanwhile.
+        try {
+          const state = requireRepo(repoId);
+          const names = new Set(state.branches.tags);
+          for (const t of [...report.adopted, ...report.moved]) names.add(t);
+          state.branches.tags = [...names].sort((a, b) =>
+            a.toLowerCase().localeCompare(b.toLowerCase()),
+          );
+        } catch {
+          /* repo closed — nothing to reflect */
+        }
         const rc: RepoChangedPayload = { repoId, reason: 'tags' };
         for (const cb of repoChangedListeners) cb(rc);
         const ev: TagAutoSyncEvent = { repoId, report };
@@ -29,7 +47,7 @@ function scheduleMockTagAutoSync(repoId: string): void {
       .catch(() => {
         /* repo closed before the deferred sync ran — nothing to surface */
       });
-  }, 1500);
+  }, 50);
 }
 
 export const remotesSyncHandlers = {

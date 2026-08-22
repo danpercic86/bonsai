@@ -66,7 +66,8 @@ describe('completeMockJobRun', () => {
     });
     repoChangedListeners.add((p: RepoChangedPayload) => events.push(`repo:${p.reason}`));
     completeMockJobRun(REPO_ID, 'autoFetch');
-    expect(events).toEqual(['job:success:2', 'repo:fs']); // ordering matters
+    // P86a: auto-fetch carries reason "fetch" (→ remoteMeta scope). Ordering matters.
+    expect(events).toEqual(['job:success:2', 'repo:fetch']);
     const entry = seedJobStatuses(REPO_ID).find((s) => s.job === 'autoFetch');
     expect(entry).toMatchObject({
       lastOutcome: 'success',
