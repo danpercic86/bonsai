@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 import { ipc } from '../ipc';
 import { isEchoSuppressed } from './repoWorkspace/echoSuppression';
 import type {
@@ -328,6 +329,10 @@ export function RepoHealthPanel({ open, onClose, repoId }: RepoHealthPanelProps)
   // AiAssetsPanel.
   const fetchIdRef = useRef(0);
 
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Modal focus: move focus into the card on open, trap Tab, restore on close.
+  useDialogFocus(open, cardRef, true);
+
   const refresh = useCallback(async (): Promise<void> => {
     const id = (fetchIdRef.current += 1);
     setLoading(true);
@@ -386,7 +391,14 @@ export function RepoHealthPanel({ open, onClose, repoId }: RepoHealthPanelProps)
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="dialog-card ai-assets-card" role="dialog" aria-label="Repo Health">
+      <div
+        ref={cardRef}
+        className="dialog-card ai-assets-card"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Repo Health"
+        tabIndex={-1}
+      >
         <div className="shortcut-header">
           <h2 className="dialog-title shortcut-title">Repo Health</h2>
           <div className="asset-header-actions">

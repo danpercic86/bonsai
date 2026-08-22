@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ipc } from '../ipc';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 import { isEchoSuppressed } from './repoWorkspace/echoSuppression';
 import type {
   AgentAsset,
@@ -111,6 +112,8 @@ export function AiAssetsPanel({ open, onClose, repoId, aiEnabled }: AiAssetsPane
   // newer Refresh superseded it) and must NOT write state. Same discipline as
   // ProfileActivateDialog's cancelled flag.
   const fetchIdRef = useRef(0);
+  const cardRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(open, cardRef, true); // modal focus: focus in, trap Tab, restore
 
   const refresh = useCallback(async (): Promise<void> => {
     const id = (fetchIdRef.current += 1);
@@ -252,7 +255,7 @@ export function AiAssetsPanel({ open, onClose, repoId, aiEnabled }: AiAssetsPane
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="dialog-card ai-assets-card" role="dialog" aria-label="AI Assets">
+      <div ref={cardRef} className="dialog-card ai-assets-card" role="dialog" aria-modal="true" aria-label="AI Assets" tabIndex={-1}>
         <div className="shortcut-header">
           <h2 className="dialog-title shortcut-title">AI Assets</h2>
           <div className="asset-header-actions">

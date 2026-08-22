@@ -57,7 +57,9 @@ export function Toasts({ toasts, onDismiss }: ToastsProps) {
     if (import.meta.env.VITE_MOCK_IPC !== '1') return;
     void import('../ipc/mock/handlers/toasts').then((m) => m.replayToastSeam(pushToast));
   }, [pushToast]);
-  if (toasts.length === 0) return null;
+  // Always render the live region (even empty) so polite toasts (info/success/
+  // warning) are announced on FIRST appearance — a region inserted at the same
+  // time as its first child may not be announced. Error toasts keep role="alert".
   return (
     <div className="toast-stack" aria-live="polite">
       {toasts

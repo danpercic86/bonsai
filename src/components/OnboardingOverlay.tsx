@@ -11,6 +11,7 @@ import type { ReactNode } from 'react';
 import { ipc } from '../ipc';
 import type { ConfigView, RecentRepo } from '../ipc';
 import { errorMessage } from '../utils/errors';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 import { IdentityStep, OpenRepoStep, TourStep, WelcomeStep } from './OnboardingSteps';
 
 export type OnboardingStep = 'welcome' | 'openRepo' | 'identity' | 'tour';
@@ -56,6 +57,10 @@ export function OnboardingOverlay({
   onOpenRecent,
 }: OnboardingOverlayProps) {
   const [step, setStep] = useState<OnboardingStep>('welcome');
+
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Modal focus: move focus into the card on open, trap Tab, restore on close.
+  useDialogFocus(open, cardRef, true);
 
   // Identity (§2.3 identity step) — populated on entry to the identity step.
   const [identityLoading, setIdentityLoading] = useState(false);
@@ -208,7 +213,14 @@ export function OnboardingOverlay({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="dialog-card onboarding-card" role="dialog" aria-label="Welcome to Bonsai">
+      <div
+        ref={cardRef}
+        className="dialog-card onboarding-card"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Welcome to Bonsai"
+        tabIndex={-1}
+      >
         <div className="shortcut-header">
           <h2 className="dialog-title shortcut-title">{STEP_TITLES[step]}</h2>
           <button
@@ -236,9 +248,16 @@ export function OnboardingOverlay({
         <div className="onboarding-content">{body}</div>
 
         <div className="onboarding-footer">
-          <button type="button" className="onboarding-skip" onClick={onClose}>
-            {isLast ? 'Close' : 'Skip'}
-          </button>
+          {/* Skip only before the last step; the ✕ (top-right) always dismisses.
+              On the last step the left slot is empty so the footer shows just
+              Back + Finish (an empty span keeps the nav right-aligned). */}
+          {isLast ? (
+            <span />
+          ) : (
+            <button type="button" className="onboarding-skip" onClick={onClose}>
+              Skip
+            </button>
+          )}
           <div className="onboarding-nav">
             <button
               type="button"

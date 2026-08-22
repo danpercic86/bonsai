@@ -260,6 +260,9 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
       // P80: clear the stashed commit draft so a later amend excursion cannot
       // resurrect a message that was already committed.
       commitDraftRef.current = '';
+      // "Skip hooks" (--no-verify) is a one-shot bypass: reset it so a later
+      // commit doesn't silently skip hooks too.
+      setSkipHooks(false);
       setError(null);
     } catch (e) {
       // Set-upstream / hook dialog dismissed: nothing was committed. Leave the

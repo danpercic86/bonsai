@@ -14,9 +14,12 @@ const toast = (id: number, tone: Toast['tone'], text: string): Toast => ({
 });
 
 describe('Toasts', () => {
-  it('renders nothing for an empty stack', () => {
+  it('always renders the (empty) polite live region so first toasts are announced', () => {
     const { container } = render(<Toasts toasts={[]} onDismiss={vi.fn()} />);
-    expect(container).toBeEmptyDOMElement();
+    const region = container.querySelector('.toast-stack');
+    expect(region).toBeInTheDocument();
+    expect(region).toHaveAttribute('aria-live', 'polite');
+    expect(region?.querySelectorAll('.toast')).toHaveLength(0);
   });
 
   it('renders every pushed toast, newest (highest id) on top', () => {

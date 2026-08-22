@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { PaletteAction, PaletteGroup } from './paletteActions';
 import { filterActions } from './paletteActions';
 
@@ -52,6 +52,10 @@ export function CommandPalette({
   const [highlight, setHighlight] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  // Stable ids wiring the combobox input to its listbox + active option (a11y).
+  const baseId = useId();
+  const listboxId = `${baseId}-listbox`;
+  const optionId = (i: number) => `${baseId}-opt-${i}`;
 
   // Reset the query + focus the input on every open (a fresh session each time).
   useEffect(() => {
@@ -184,6 +188,8 @@ export function CommandPalette({
           type="text"
           role="combobox"
           aria-expanded={true}
+          aria-controls={listboxId}
+          aria-activedescendant={flat.length > 0 ? optionId(highlight) : undefined}
           aria-autocomplete="list"
           spellCheck={false}
           autoComplete="off"
@@ -193,7 +199,7 @@ export function CommandPalette({
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onInputKeyDown}
         />
-        <ul className="command-palette-list" role="listbox" ref={listRef}>
+        <ul className="command-palette-list" role="listbox" id={listboxId} ref={listRef}>
           {flat.length === 0 ? (
             <li className="command-palette-empty" role="option" aria-selected={false}>
               No matching commands
@@ -210,6 +216,7 @@ export function CommandPalette({
                 <Fragment key={a.id}>
                   {header}
                   <li
+                    id={optionId(i)}
                     role="option"
                     aria-selected={i === highlight}
                     aria-disabled={a.disabled === true}

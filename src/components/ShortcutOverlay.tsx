@@ -1,7 +1,9 @@
 // Keyboard-shortcut reference overlay (P1 contract §6.4). Static content;
 // closes on Esc (App's global handler), backdrop click, ✕, or `?` again.
 
+import { useRef } from 'react';
 import { keyLabel } from '../utils/platform';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 
 export interface ShortcutOverlayProps {
   open: boolean;
@@ -32,6 +34,10 @@ const SHORTCUTS: { keys: string[]; action: string }[] = [
 ];
 
 export function ShortcutOverlay({ open, onClose }: ShortcutOverlayProps) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Modal focus: move focus into the card on open, trap Tab, restore on close.
+  useDialogFocus(open, cardRef, true);
+
   if (!open) return null;
   return (
     <div
@@ -40,7 +46,14 @@ export function ShortcutOverlay({ open, onClose }: ShortcutOverlayProps) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="dialog-card shortcut-card" role="dialog" aria-label="Keyboard shortcuts">
+      <div
+        ref={cardRef}
+        className="dialog-card shortcut-card"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Keyboard shortcuts"
+        tabIndex={-1}
+      >
         <div className="shortcut-header">
           <h2 className="dialog-title shortcut-title">Keyboard shortcuts</h2>
           <button

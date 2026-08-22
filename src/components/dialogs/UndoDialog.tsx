@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { UndoKind, UndoPlan } from '../../ipc';
+import { useDialogFocus } from '../../hooks/useDialogFocus';
 
 export interface UndoDialogProps {
   /** The plan to reverse the last op, or null when the dialog is closed. */
@@ -34,6 +35,10 @@ const KIND_LABEL: Record<UndoKind, string> = {
  * ConfirmDialog/NonFfPullDialog — Esc and overlay-click cancel.
  */
 export function UndoDialog({ plan, busy, onConfirm, onCancel }: UndoDialogProps) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Modal focus: move focus into the card on open, trap Tab, restore on close.
+  useDialogFocus(plan !== null, cardRef, true);
+
   useEffect(() => {
     if (plan === null) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -63,10 +68,12 @@ export function UndoDialog({ plan, busy, onConfirm, onCancel }: UndoDialogProps)
   return (
     <div className="dialog-overlay" onClick={onCancel}>
       <div
+        ref={cardRef}
         className="dialog-card"
         role="dialog"
         aria-modal="true"
         aria-label={`Undo ${KIND_LABEL[plan.kind]}`}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="dialog-title">Undo {KIND_LABEL[plan.kind]}?</h2>

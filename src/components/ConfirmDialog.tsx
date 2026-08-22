@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 
 export interface ConfirmDialogProps {
   open: boolean;
@@ -37,6 +38,12 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // Restore focus to the trigger on close + trap Tab within the card. Called
+  // before the Cancel-focus effect below so it captures the real trigger, not
+  // Cancel. Initial focus stays on Cancel (a stray Enter must never confirm).
+  useDialogFocus(open, cardRef);
 
   useEffect(() => {
     if (open) cancelRef.current?.focus();
@@ -60,6 +67,7 @@ export function ConfirmDialog({
   return (
     <div className="dialog-overlay" onClick={onCancel}>
       <div
+        ref={cardRef}
         className={cardClass === undefined ? 'dialog-card' : `dialog-card ${cardClass}`}
         role="dialog"
         aria-modal="true"

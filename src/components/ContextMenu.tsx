@@ -355,6 +355,10 @@ export function ContextMenu({ x, y, items, onClose, header, busy }: ContextMenuP
       if (e.key === 'Escape') {
         e.preventDefault();
         onClose();
+      } else if (e.key === 'Tab') {
+        // Tab would move focus to an element behind the menu, orphaning it open.
+        // Close it and let focus proceed normally to the next control.
+        onClose();
       }
     };
     const onScroll = () => onClose();

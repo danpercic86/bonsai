@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 
 export interface PromptDialogProps {
   open: boolean;
@@ -39,7 +40,13 @@ export function PromptDialog({
   extraContent,
 }: PromptDialogProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   const [value, setValue] = useState(initialValue ?? '');
+
+  // Restore focus to the trigger on close + trap Tab within the card. Called
+  // before the seed/focus effect below so it captures the real trigger, not the
+  // input. Initial focus stays on the input (a prompt exists to submit text).
+  useDialogFocus(open, cardRef);
 
   // Seed the value + focus/select the input each time the dialog opens.
   useEffect(() => {
@@ -70,6 +77,7 @@ export function PromptDialog({
   return (
     <div className="dialog-overlay" onClick={onCancel}>
       <div
+        ref={cardRef}
         className="dialog-card"
         role="dialog"
         aria-modal="true"
