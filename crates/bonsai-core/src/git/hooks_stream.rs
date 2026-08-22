@@ -321,4 +321,73 @@ mod tests {
             other => panic!("both paths must reject identically: {other:?}"),
         }
     }
+
+    /// SECURITY: a hostile hook that floods stdout caps the EMITTED line events
+    /// at [`MAX_ACTIVITY_LINE_EVENTS`] (+ one truncation marker on `finished`),
+    /// yet the FULL output is still captured — surfaced here through the
+    /// `HookRejected` body. Event COUNT ≠ captured BYTES: the cap throttles only
+    /// what crosses IPC, never the buffered `GitOutput`.
+    #[test]
+    fn flooding_hook_caps_events_but_keeps_full_captured_output() {
+        use crate::git::activity::{ActivityEmitter, GitActivityEvent, GitActivityKind, MAX_ACTIVITY_LINE_EVENTS};
+
+        if !oracle_ready() {
+            return;
+        }
+        let dir = crate::testutil::scratch_dir();
+        let repo = init_repo(dir.path());
+        // 6000 lines (> the 5000 event cap) then a non-zero exit so the FULL
+        // combined output flows into HookRejected.
+        write_hook(
+            &hooks_dir(&repo),
+            "pre-commit",
+            "#!/bin/sh\ni=0\nwhile [ $i -lt 6000 ]; do echo \"floodline$i\"; i=$((i+1)); done\nexit 3\n",
+        );
+        let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::<GitActivityEvent>::new()));
+        let sink = std::sync::Arc::clone(&log);
+        let emitter = ActivityEmitter::new(
+            "git-test-flood".to_string(),
+            Box::new(move |ev| sink.lock().expect("lock").push(ev)),
+        );
+        let err = run_hook_streaming(
+            &SpawnGitExec,
+            dir.path(),
+            HookName::PreCommit,
+            &[],
+            None,
+            Some(&emitter),
+        )
+        .expect_err("failing hook ⇒ HookRejected");
+        emitter.finished(Some(3), false); // flushes the truncation marker
+
+        // FULL capture preserved: the last flooded line survives even though the
+        // event stream was capped well before it.
+        match &err {
+            AppError::HookRejected(m) => {
+                assert!(m.contains("floodline5999"), "full output must survive the event cap");
+            }
+            other => panic!("expected HookRejected, got {other:?}"),
+        }
+
+        // EVENT stream capped: exactly MAX_ACTIVITY_LINE_EVENTS real line events
+        // + exactly one truncation marker.
+        let events = log.lock().expect("lock");
+        let line_events: Vec<&str> = events
+            .iter()
+            .filter(|e| matches!(e.kind, GitActivityKind::StdoutLine | GitActivityKind::StderrLine))
+            .filter_map(|e| e.line.as_deref())
+            .collect();
+        let markers: Vec<&&str> = line_events.iter().filter(|l| l.contains("output truncated")).collect();
+        assert_eq!(markers.len(), 1, "exactly one truncation marker");
+        assert_eq!(
+            line_events.len(),
+            MAX_ACTIVITY_LINE_EVENTS + 1,
+            "capped line events + one marker"
+        );
+        assert!(
+            markers[0].contains("more lines suppressed"),
+            "marker states the suppressed count: {}",
+            markers[0]
+        );
+    }
 }

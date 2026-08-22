@@ -13,14 +13,28 @@
 //! + a `kind` discriminant, camelCase serde, optionals `skip_serializing_if` so a
 //! line event stays tiny on the wire.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
 /// Per-event line-length cap, in CHARS (never split a char boundary). One hook
 /// line can never forge extra log rows: [`activity_line`] strips C0/C1 + bidi
 /// controls AND bounds the length. The TOTAL output is still capped by exec's
-/// 64 MiB combined counter; the per-run LINE COUNT is bounded on the frontend.
+/// 64 MiB combined counter; the per-run LINE COUNT is bounded by
+/// [`MAX_ACTIVITY_LINE_EVENTS`] here (backend) AND again on the frontend.
 pub const MAX_ACTIVITY_LINE_CHARS: usize = 2000;
+
+/// Per-activity cap on the COUNT of line EVENTS emitted onto the activity stream.
+/// The exec seam's 64 MiB combined counter bounds captured BYTES; this bounds the
+/// NUMBER of tiny line events that cross the Tauri IPC boundary. Without it a
+/// hostile hook flooding stdout (`yes ''`, `while true; do echo; done`) sprays
+/// tens of millions of line events + serialized `GitActivityEvent`s across IPC
+/// (multi-GiB transient RSS, wedged UI) BEFORE the byte cap even trips (SECURITY).
+/// ~10× the frontend's 500-row display cap for headroom, but enforced BEFORE IPC:
+/// past it [`ActivityEmitter::line`] suppresses and [`ActivityEmitter::finished`]
+/// emits ONE truncation marker. This caps only EMITTED events — the captured
+/// `GitOutput` (and thus `HookRejected` / `HookOutputDialog`) stays FULL up to the
+/// byte cap and byte-identical to the buffered path.
+pub const MAX_ACTIVITY_LINE_EVENTS: usize = 5000;
 
 /// One push event on the git-activity stream. Compact by design — at most one
 /// line of text, and the optionals are absent unless the `kind` carries them.
@@ -151,6 +165,9 @@ pub struct ActivityEmitter {
     id: String,
     start: Instant,
     seq: AtomicU64,
+    /// Count of `line` calls this activity — the per-activity line-event cap
+    /// ([`MAX_ACTIVITY_LINE_EVENTS`]) is enforced against this before emitting.
+    line_events: AtomicUsize,
     emit: Box<dyn Fn(GitActivityEvent) + Send + Sync>,
 }
 
@@ -160,6 +177,7 @@ impl ActivityEmitter {
             id,
             start: Instant::now(),
             seq: AtomicU64::new(0),
+            line_events: AtomicUsize::new(0),
             emit,
         }
     }
@@ -204,10 +222,29 @@ impl ActivityEmitter {
 
     /// The terminal event. `code`/`success` mirror the op's outcome (best-effort;
     /// `None` code = killed / no single exit code — e.g. a hook rejection).
+    /// First flushes the truncation marker if the line-event cap was hit.
     pub fn finished(&self, code: Option<i32>, success: bool) {
+        self.flush_line_truncation();
         let mut ev = self.base(GitActivityKind::Finished);
         ev.code = code;
         ev.success = Some(success);
+        (self.emit)(ev);
+    }
+
+    /// If [`Self::line`] hit [`MAX_ACTIVITY_LINE_EVENTS`], emit exactly ONE final
+    /// marker line naming how many further lines were suppressed. It is a normal
+    /// (sanitized) line event — no new kind. Called once, from [`Self::finished`],
+    /// so the suppressed total is exact by the time it fires.
+    fn flush_line_truncation(&self) {
+        let total = self.line_events.load(Ordering::Relaxed);
+        let suppressed = total.saturating_sub(MAX_ACTIVITY_LINE_EVENTS);
+        if suppressed == 0 {
+            return;
+        }
+        let mut ev = self.base(GitActivityKind::StdoutLine);
+        ev.line = Some(activity_line(&format!(
+            "[bonsai] output truncated — {suppressed} more lines suppressed"
+        )));
         (self.emit)(ev);
     }
 }
@@ -223,6 +260,16 @@ impl GitActivityRecorder for ActivityEmitter {
     }
 
     fn line(&self, stream: GitStream, line: &str) {
+        // SECURITY: cap the COUNT of emitted line events per activity. The exec
+        // seam's 64 MiB counter bounds captured BYTES, but a hostile hook that
+        // floods stdout with tiny lines (`yes ''`) could otherwise push tens of
+        // millions of line events across the IPC boundary. Past the cap we count
+        // only (bounded, O(1)); `finished` flushes ONE marker with the suppressed
+        // total. The CAPTURE path is untouched, so `GitOutput` stays full.
+        let n = self.line_events.fetch_add(1, Ordering::Relaxed);
+        if n >= MAX_ACTIVITY_LINE_EVENTS {
+            return;
+        }
         let kind = match stream {
             GitStream::Stdout => GitActivityKind::StdoutLine,
             GitStream::Stderr => GitActivityKind::StderrLine,
@@ -269,16 +316,18 @@ pub fn activity_line(raw: &str) -> String {
     truncate_chars(&strip_control_chars(raw), MAX_ACTIVITY_LINE_CHARS)
 }
 
-/// Drop the characters that let one line of output pretend to be several, or to
-/// read backwards: C0/C1 controls (so `\n`, `\r`, `\t`, `\u{7f}`) plus the bidi
-/// overrides and isolates. Mirrors the rule in `crate::ai::stream` (duplicated
-/// per the P87 contract §2, to keep `git` decoupled from `ai` internals).
+/// Drop the characters that let one line of output pretend to be several, read
+/// backwards, or hide content: C0/C1 controls (so `\n`, `\r`, `\t`, `\u{7f}`),
+/// the bidi overrides/isolates, AND the zero-width chars (ZWSP/ZWNJ/ZWJ/BOM) that
+/// can splice or obfuscate log lines. Mirrors the rule in `crate::ai::stream`
+/// (duplicated per the P87 contract §2, to keep `git` decoupled from `ai`).
 fn strip_control_chars(text: &str) -> String {
     text.chars()
         .filter(|c| {
             let bidi = matches!(c,
                 '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}');
-            !c.is_control() && !bidi
+            let zero_width = matches!(c, '\u{200b}' | '\u{200c}' | '\u{200d}' | '\u{feff}');
+            !c.is_control() && !bidi && !zero_width
         })
         .collect()
 }
@@ -299,126 +348,5 @@ fn truncate_chars(text: &str, cap: usize) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::{Arc, Mutex};
-
-    /// Collects every emitted event so an assertion can inspect the full sequence.
-    fn recording() -> (Arc<ActivityEmitter>, Arc<Mutex<Vec<GitActivityEvent>>>) {
-        let log = Arc::new(Mutex::new(Vec::new()));
-        let sink = Arc::clone(&log);
-        let emitter = Arc::new(ActivityEmitter::new(
-            "git-test-0".to_string(),
-            Box::new(move |ev| sink.lock().expect("lock").push(ev)),
-        ));
-        (emitter, log)
-    }
-
-    #[test]
-    fn started_is_seq_zero_and_carries_category_and_phase() {
-        let (em, log) = recording();
-        em.started(GitActivityCategory::Push, GitPhaseKind::Preparing);
-        let events = log.lock().expect("lock");
-        assert_eq!(events.len(), 1);
-        let e = &events[0];
-        assert_eq!(e.seq, 0);
-        assert_eq!(e.kind, GitActivityKind::Started);
-        assert_eq!(e.category, Some(GitActivityCategory::Push));
-        assert_eq!(
-            e.phase,
-            Some(GitPhase {
-                kind: GitPhaseKind::Preparing,
-                hook: None
-            })
-        );
-    }
-
-    #[test]
-    fn seq_is_monotonic_across_kinds() {
-        let (em, log) = recording();
-        em.started(GitActivityCategory::Commit, GitPhaseKind::Preparing);
-        em.phase(GitPhaseKind::RunningHook, Some("pre-commit"));
-        em.line(GitStream::Stdout, "hello");
-        em.hook_done("pre-commit", Some(0), true);
-        em.finished(Some(0), true);
-        let events = log.lock().expect("lock");
-        let seqs: Vec<u64> = events.iter().map(|e| e.seq).collect();
-        assert_eq!(seqs, vec![0, 1, 2, 3, 4]);
-        assert_eq!(events[1].phase.as_ref().map(|p| p.hook.as_deref()), Some(Some("pre-commit")));
-        assert_eq!(events[2].line.as_deref(), Some("hello"));
-        assert_eq!(events[3].kind, GitActivityKind::HookDone);
-        assert_eq!(events[3].hook.as_deref(), Some("pre-commit"));
-    }
-
-    #[test]
-    fn line_kind_follows_stream() {
-        let (em, log) = recording();
-        em.line(GitStream::Stdout, "out");
-        em.line(GitStream::Stderr, "err");
-        let events = log.lock().expect("lock");
-        assert_eq!(events[0].kind, GitActivityKind::StdoutLine);
-        assert_eq!(events[1].kind, GitActivityKind::StderrLine);
-    }
-
-    /// `line` is control-stripped so an injected `\n` can never forge extra rows.
-    #[test]
-    fn line_strips_controls() {
-        let (em, log) = recording();
-        em.line(GitStream::Stdout, "safe\nINJECTED\r\tdone");
-        let events = log.lock().expect("lock");
-        assert_eq!(events[0].line.as_deref(), Some("safeINJECTEDdone"));
-    }
-
-    #[test]
-    fn activity_line_truncates_to_char_cap_with_ellipsis() {
-        let long = "x".repeat(MAX_ACTIVITY_LINE_CHARS + 50);
-        let out = activity_line(&long);
-        assert_eq!(out.chars().count(), MAX_ACTIVITY_LINE_CHARS);
-        assert!(out.ends_with('…'));
-        // A short line is unchanged.
-        assert_eq!(activity_line("short"), "short");
-    }
-
-    #[test]
-    fn progress_event_carries_counts_only() {
-        let (em, log) = recording();
-        em.progress(GitTransferProgress {
-            received_objects: 10,
-            total_objects: 100,
-            indexed_objects: 5,
-            received_bytes: 2048,
-            total_deltas: None,
-            indexed_deltas: None,
-        });
-        let events = log.lock().expect("lock");
-        let e = &events[0];
-        assert_eq!(e.kind, GitActivityKind::Progress);
-        assert_eq!(e.progress.map(|p| p.total_objects), Some(100));
-        assert!(e.line.is_none() && e.phase.is_none() && e.category.is_none());
-    }
-
-    /// Wire shape: camelCase, optionals ABSENT (not null) when unset, so a line
-    /// event stays tiny. Mirrors the TS `GitActivityEvent`.
-    #[test]
-    fn wire_shape_omits_absent_optionals() {
-        let (em, log) = recording();
-        em.line(GitStream::Stdout, "hi");
-        let events = log.lock().expect("lock");
-        let v = serde_json::to_value(&events[0]).expect("json");
-        let obj = v.as_object().expect("object");
-        // Exactly the run-level fields + `line` — no null optionals on the wire.
-        let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
-        keys.sort_unstable();
-        assert_eq!(keys, vec!["elapsedMs", "id", "kind", "line", "seq"]);
-        assert_eq!(obj.get("kind").and_then(|k| k.as_str()), Some("stdoutLine"));
-        assert_eq!(obj.get("line").and_then(|k| k.as_str()), Some("hi"));
-    }
-
-    #[test]
-    fn new_activity_id_is_unique_and_prefixed() {
-        let a = new_activity_id();
-        let b = new_activity_id();
-        assert_ne!(a, b);
-        assert!(a.starts_with("git-"), "unexpected id: {a}");
-    }
-}
+#[path = "activity_tests.rs"]
+mod tests;

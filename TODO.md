@@ -137,7 +137,26 @@ deadlock, cap, sanitization all verified), **committed**. NITs: hub mutex held a
 P87b integration check. (+ security-auditor on full P87 before batch integrates — git hook output → UI is
 an untrusted surface); **P87b** (frontend:
 `useGitActivity` store + git-activity dock + toolbar phase readout + determinate progress bar + mock)
-— queued behind P87a (needs the locked event types).
+— senior-dev IN PROGRESS (P87a event types locked @ 3bc616a; UI contract `P87-ui.md` + ui-reference §12.10).
+Include a mock-driven integration check for the active-path started/finished sequence (P87a review NIT #3).
+
+**P87 security audit (P87a backend, commit 3bc616a): no CRITICAL/HIGH.** Sanitization funnel, 64 MiB byte
+cap, integer/panic safety, progress throttle, command-exec all verified sound; hook code-exec is git's
+own pre-existing behavior (P59a disclosure), not new.
+- **M1 (MEDIUM — fixing now, backend, parallel to P87b):** line-EVENT emission is unbounded in count
+  (unbounded mpsc + IPC fan-out); a hostile hook flooding stdout → tens of millions of tiny events (~2GB
+  transient RSS + UI freeze) before the 64 MiB byte cap trips. Fix: bounded `sync_channel` backpressure in
+  `exec_stream.rs` + per-activity line-event cap in `ActivityEmitter::line` (emit one "output truncated — N
+  more" marker; GitOutput/HookRejected capture stays full & byte-identical). **DONE (senior-dev, gate-clean:
+  sync_channel(1024) backpressure + MAX_ACTIVITY_LINE_EVENTS=5000 + L1 zero-width strip; byte-identity
+  preserved; new activity_tests.rs keeps activity.rs <500; 25 cargo tests) — reviewer APPROVED (deadlock-safe,
+  byte-identity preserved, no off-by-one; 653 tests), COMMITTED.** Note: M1's lint:size flagged CommitBox.tsx + RepoWorkspace.tsx
+  over the ratchet — those are P87b's WIP → P87b must extract to stay under limit (added to P87b review).
+- **L1 (LOW):** `activity_line` strips C0/C1+bidi but not zero-width (U+200B–200D/FEFF) — optional cheap add.
+- **L2 (LOW, future):** activity events are app-global (no repoId) — fine under one-repo-open; tag+filter if
+  multi-repo lands. **L3 (INFO):** reader/child leak only on a sink panic (no panic path today).
+- **P87b review MUST confirm:** the log row renders `line` as a TEXT node, NOT `dangerouslySetInnerHTML`
+  (the audit couldn't verify the frontend; text + control-strip is the safety basis).
 
 ui-designer open-Q decisions: (Q1) button keeps stable participle ("Pushing…") + granular phase in an
 adjacent `.toolbar-phase` readout — confirmed; (Q3) pull copy = "Fetching…" during transfer, "Pull" as

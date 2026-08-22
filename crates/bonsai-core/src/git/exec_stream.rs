@@ -13,7 +13,7 @@
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::{sync_channel, SyncSender};
 use std::sync::Arc;
 
 use crate::error::AppError;
@@ -26,6 +26,17 @@ struct LineMsg {
     bytes: Vec<u8>,
 }
 
+/// Bound on the in-flight line queue between the reader threads and the caller
+/// (SECURITY / backpressure). The channel is BOUNDED so the readers BLOCK on a
+/// full queue when the sink/consumer falls behind — capping peak queued-line
+/// memory instead of letting a hostile hook that floods stdout (`yes ''`) pile
+/// tens of millions of tiny `LineMsg` on an unbounded queue (~GiB transient
+/// RSS). 1024 is generous versus any real hook's output yet the queue's own
+/// overhead stays tiny; total queued BYTES are already bounded by exec's shared
+/// 64 MiB cap. Draining happens on the caller thread, so this never deadlocks
+/// (the consumer always makes progress independently of the readers).
+const LINE_QUEUE_CAP: usize = 1024;
+
 /// Read `r` to EOF like `exec::read_capped` (same SHARED-counter cap so the
 /// combined capture is bounded at `cap`), while ALSO splitting the buffered
 /// bytes on `\n` and sending each complete line to `tx`. The full byte buffer is
@@ -37,7 +48,7 @@ fn read_streaming<R: Read>(
     stream: GitStream,
     counter: &AtomicUsize,
     cap: usize,
-    tx: &Sender<LineMsg>,
+    tx: &SyncSender<LineMsg>,
 ) -> std::io::Result<(Vec<u8>, bool)> {
     let mut buf = Vec::new();
     let mut overflow = false;
@@ -121,7 +132,9 @@ pub(crate) fn spawn_exec_streaming(
     // deadlock), bounded by ONE shared combined-byte counter, both draining to
     // EOF. Complete lines flow to the caller thread over the channel.
     let counter = Arc::new(AtomicUsize::new(0));
-    let (tx, rx) = channel::<LineMsg>();
+    // BOUNDED channel: readers block on a full queue (backpressure) so a flood
+    // can't grow the queue without bound — see `LINE_QUEUE_CAP`.
+    let (tx, rx) = sync_channel::<LineMsg>(LINE_QUEUE_CAP);
     let stdout_pipe = child.stdout.take();
     let stderr_pipe = child.stderr.take();
 
@@ -145,7 +158,9 @@ pub(crate) fn spawn_exec_streaming(
     drop(tx);
 
     // Drain on the caller thread: each complete line, in arrival order, to the
-    // sink (runs concurrently with the readers — no deadlock, unbounded channel).
+    // sink (runs concurrently with the readers). The channel is BOUNDED, so a
+    // slow sink applies backpressure to the readers; because the consumer here
+    // never waits on the readers before draining, a full queue can't deadlock.
     for msg in rx {
         sink.line(msg.stream, String::from_utf8_lossy(&msg.bytes).as_ref());
     }
@@ -243,6 +258,49 @@ mod tests {
             .map(|(_, l)| l.as_str())
             .collect();
         assert_eq!(stdout_lines, vec!["line1", "line2", "line3"]);
+    }
+
+    /// A sink that sleeps briefly per line so the reader threads outrun it and
+    /// the bounded channel fills — exercising the backpressure path.
+    struct SlowSink {
+        seen: Mutex<usize>,
+    }
+    impl LineSink for SlowSink {
+        fn line(&self, _stream: GitStream, _line: &str) {
+            std::thread::sleep(std::time::Duration::from_micros(50));
+            *self.seen.lock().expect("lock") += 1;
+        }
+    }
+
+    /// Backpressure + byte-identity under a SLOW consumer: with far more lines
+    /// than `LINE_QUEUE_CAP`, the reader threads block on the full bounded queue
+    /// (peak memory bounded, not unbounded growth) yet the op neither deadlocks
+    /// nor drops bytes — the returned `GitOutput` is byte-identical to buffered
+    /// `exec` and every line reaches the sink.
+    #[test]
+    fn slow_sink_backpressures_without_deadlock_or_byte_loss() {
+        if !have_git() {
+            eprintln!("skipping: `git` CLI not found");
+            return;
+        }
+        // ~2000 non-blank lines (> the 1024 queue cap) so a slow sink forces the
+        // readers to block on a full queue. `git stripspace` echoes them back
+        // verbatim (no blank lines to collapse). Kept < the 64 KiB pipe buffer.
+        let n = 2000usize;
+        let mut script = String::with_capacity(n * 6);
+        for i in 0..n {
+            script.push_str(&format!("ln{i}\n"));
+        }
+        let sink = SlowSink { seen: Mutex::new(0) };
+        let streamed = SpawnGitExec
+            .exec_streaming(&["stripspace"], Path::new("."), Some(script.as_bytes()), &[], &sink)
+            .expect("exec_streaming");
+        let buffered = SpawnGitExec
+            .exec(&["stripspace"], Path::new("."), Some(script.as_bytes()), &[])
+            .expect("exec");
+        assert_eq!(streamed.stdout, buffered.stdout, "byte-identical under backpressure");
+        assert_eq!(*sink.seen.lock().expect("lock"), n, "every line drained to the slow sink");
+        assert!(streamed.stdout.contains(&format!("ln{}", n - 1)), "last line present");
     }
 
     /// The DEFAULT trait impl (a fake that only impls `exec`) delegates to `exec`
