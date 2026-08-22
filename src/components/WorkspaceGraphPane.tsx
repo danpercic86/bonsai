@@ -15,6 +15,7 @@ import type { DiffSlot } from './StatusPanel';
 import type { UseCommitSearch } from './repoWorkspace/useCommitSearch';
 import type { UseHistorySearch } from './repoWorkspace/useHistorySearch';
 import { GraphCanvas } from '../graph/GraphCanvas';
+import { GraphSelectionAnnouncer } from './GraphSelectionAnnouncer';
 import type { GraphCanvasHandle } from '../graph/GraphCanvas';
 import type {
   BlameLine,
@@ -218,6 +219,9 @@ export function WorkspaceGraphPane({
     diffBrowserView !== null;
   return (
     <main className="graph-pane">
+      {/* M1: polite live region announcing the settled graph-grid selection
+          (canvas is opaque to SR). Permanently mounted for reliable pickup. */}
+      <GraphSelectionAnnouncer graph={graph} selectedIndex={selectedIndex} />
       {/* P50b: search bar at the top of the pane while open; a floating affordance
           otherwise (Ctrl/Cmd-F also opens it — the webview may steal that in the
           browser harness, so the button is the always-reachable entry point). */}

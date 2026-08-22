@@ -6,7 +6,7 @@
  *  right-click / hover hit-tests. */
 
 import type { GraphNode, RefLabel } from '../ipc';
-import { STASH_BG, STASH_COLOR, TAG_BG, TAG_COLOR } from './colors';
+import { adaptivePillText, DETACHED_HEAD_BG, STASH_BG, STASH_COLOR, TAG_BG, TAG_COLOR } from './colors';
 import type { Theme } from './colors';
 import { branchSignals, drawCiBadge, drawPrBadge, prBadgeWidth } from './forgeBadges';
 import type { CiBadge, PrBadge } from './forgeBadges';
@@ -99,7 +99,9 @@ export function entityStyle(e: RefEntity, node: GraphNode, theme: Theme): PillSt
   switch (e.kind) {
     case 'branch':
       if (e.isHead) {
-        return { fill: laneColor, text: theme.accentText, border: null, label: e.name };
+        // Luminance-adaptive label: the pill sits on a lane color, so pick
+        // near-black or white for max contrast (ui-reference §6, M4).
+        return { fill: laneColor, text: adaptivePillText(laneColor), border: null, label: e.name };
       }
       if (e.hasLocal) {
         return { fill: laneAlpha, text: laneColor, border: laneColor, label: e.name };
@@ -108,7 +110,9 @@ export function entityStyle(e: RefEntity, node: GraphNode, theme: Theme): PillSt
     case 'tag':
       return { fill: TAG_BG, text: TAG_COLOR, border: TAG_COLOR, label: `# ${e.name}` };
     case 'head':
-      return { fill: theme.danger, text: '#ffffff', border: null, label: e.name };
+      // Detached HEAD: fixed dark-red bg (both themes) + white text = 6.54:1
+      // (ui-reference §6, M4). --danger gave white only 3.70:1 in dark.
+      return { fill: DETACHED_HEAD_BG, text: '#ffffff', border: null, label: e.name };
     case 'stash':
       return { fill: STASH_BG, text: STASH_COLOR, border: STASH_COLOR, label: e.name };
   }

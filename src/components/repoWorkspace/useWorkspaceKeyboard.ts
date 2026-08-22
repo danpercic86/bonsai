@@ -303,6 +303,27 @@ export function useWorkspaceKeyboard(deps: {
         return;
       }
 
+      // M2 (graph review): the first Arrow/Page/Home/End with no prior selection
+      // seeds an anchor so keyboard nav works without a mouse click. Down/PageDown/
+      // Home anchor at headIndex (in range) else 0; Up/End anchor at the last row;
+      // PageUp anchors at 0 (contract M2, line 43).
+      if (graph !== null && graph.nodes.length > 0 && selectedIndex === null) {
+        const lastRow = graph.nodes.length - 1;
+        const headAnchor =
+          graph.headIndex !== null && graph.headIndex >= 0 && graph.headIndex <= lastRow
+            ? graph.headIndex
+            : 0;
+        let seed: number | null = null;
+        if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === 'Home') seed = headAnchor;
+        else if (e.key === 'ArrowUp' || e.key === 'End') seed = lastRow;
+        else if (e.key === 'PageUp') seed = 0; // contract M2: PageUp with none → 0
+        if (seed !== null) {
+          e.preventDefault();
+          setSelectedIndex(seed);
+          return;
+        }
+      }
+
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         if (selectedIndex === null || graph === null) return;
         e.preventDefault();

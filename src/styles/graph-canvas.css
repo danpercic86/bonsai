@@ -25,6 +25,18 @@
   cursor: default;
 }
 
+/* M1/S2: keyboard-focus ring on the graph grid, distinct from the per-row
+   --accent selection ring. Inset so the canvas (which overlays inset:0) does not
+   clip it. Keyboard-only (:focus-visible) — a mouse click does not paint it. */
+.graph-scroll:focus {
+  outline: none;
+}
+
+.graph-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
 /* P7 §6.3: hover tooltip (avatar full name / "+n" hidden refs). Absolutely
    positioned inside .graph-canvas-host; pointer-events:none so it never eats
    the overlay scroller's input. */
@@ -41,10 +53,14 @@
   font: 400 12px/1.4 var(--font-ui);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .graph-tooltip > div {
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .right-panel {

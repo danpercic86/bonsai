@@ -1,6 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { STASH_BG, STASH_COLOR, TAG_BG, TAG_COLOR, hexToRgba, resolveTheme } from './colors';
+import {
+  LANE_COLORS_DARK,
+  LANE_COLORS_LIGHT,
+  STASH_BG,
+  STASH_COLOR,
+  TAG_BG,
+  TAG_COLOR,
+  adaptivePillText,
+  hexToRgba,
+  resolveTheme,
+} from './colors';
 
 describe('hexToRgba', () => {
   it('converts 6-digit hex to rgba with the given alpha', () => {
@@ -58,16 +68,27 @@ describe('resolveTheme', () => {
 
   const fakeEl = {} as HTMLElement;
 
-  it('reads 10 lane colors and precomputes their 18% alpha variants', () => {
-    const vals: Record<string, string> = { '--lane-0': '#ff0000', '--lane-9': '#00ff00' };
-    stubComputedStyle(vals);
+  it('selects the dark lane palette on a dark --bg-0 (10 colors + 18% alpha)', () => {
+    stubComputedStyle({ '--bg-0': '#16181d' });
     const theme = resolveTheme(fakeEl);
     expect(theme.laneColors).toHaveLength(10);
     expect(theme.laneColorsAlpha).toHaveLength(10);
-    expect(theme.laneColors[0]).toBe('#ff0000');
-    expect(theme.laneColorsAlpha[0]).toBe('rgba(255, 0, 0, 0.18)');
-    expect(theme.laneColors[9]).toBe('#00ff00');
-    expect(theme.laneColorsAlpha[9]).toBe('rgba(0, 255, 0, 0.18)');
+    expect(theme.laneColors).toEqual([...LANE_COLORS_DARK]);
+    expect(theme.laneColorsAlpha[0]).toBe(hexToRgba(LANE_COLORS_DARK[0], 0.18));
+  });
+
+  it('selects the darkened light lane palette on a light --bg-0', () => {
+    stubComputedStyle({ '--bg-0': '#ffffff' });
+    const theme = resolveTheme(fakeEl);
+    expect(theme.laneColors).toEqual([...LANE_COLORS_LIGHT]);
+    expect(theme.laneColorsAlpha[0]).toBe(hexToRgba(LANE_COLORS_LIGHT[0], 0.18));
+  });
+
+  it('adaptivePillText picks near-black on bright bg and white on dark bg', () => {
+    // Bright light-palette lanes are still "dark" enough? verify by hue: a bright
+    // dark-mode lane (yellow) -> near-black; a dark light-mode lane -> white.
+    expect(adaptivePillText('#e8c341')).toBe('#16181d'); // bright yellow
+    expect(adaptivePillText('#1b7d4c')).toBe('#ffffff'); // darkened green
   });
 
   it('maps each custom property to its Theme field and trims whitespace', () => {
@@ -86,12 +107,12 @@ describe('resolveTheme', () => {
     expect(gpv).toHaveBeenCalledWith('--badge-unknown');
   });
 
-  it('missing custom properties resolve to empty strings (and alpha passthrough)', () => {
+  it('missing semantic properties resolve to empty strings; lanes fall back to dark', () => {
     stubComputedStyle({});
     const theme = resolveTheme(fakeEl);
     expect(theme.text1).toBe('');
-    expect(theme.laneColors.every((c) => c === '')).toBe(true);
-    // hexToRgba('') is defensive-passthrough, so alpha entries stay ''.
-    expect(theme.laneColorsAlpha.every((c) => c === '')).toBe(true);
+    // Missing --bg-0 ('') reads as dark (non-hex luminance 0), so the dark
+    // palette is used rather than empty strings.
+    expect(theme.laneColors).toEqual([...LANE_COLORS_DARK]);
   });
 });
