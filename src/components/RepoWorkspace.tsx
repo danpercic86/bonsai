@@ -15,6 +15,9 @@ import { PaneDivider } from './PaneDivider';
 import { Sidebar } from './Sidebar';
 import type { DiffSlot, WorkdirSection } from './StatusPanel';
 import type { GraphCanvasHandle, GraphContextTarget, WipSummary } from '../graph/GraphCanvas';
+import type { RevealTarget, RevealFlash } from '../graph/reveal';
+import { revealTargetLabel } from '../graph/reveal';
+import { RevealAnnouncer, revealedMessage, revealMissMessage } from './RevealAnnouncer';
 import { effectiveMetrics } from '../graph/metrics';
 import type { GraphDisplayOptions } from '../graph/rightColumns';
 import { createGraphStream } from '../graph/streamAssembler';
@@ -521,6 +524,59 @@ export function RepoWorkspace({
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const graphRef = useRef<GraphCanvasHandle>(null);
 
+  // P84: reveal-in-graph — flash descriptor (nonce-driven so re-revealing the
+  // same row re-flashes), a11y announcement, and the reduced-motion flag read
+  // once (never per-frame). `revealNonceRef` supplies a monotonic nonce.
+  const [revealFlash, setRevealFlash] = useState<RevealFlash | null>(null);
+  const [revealMessage, setRevealMessage] = useState('');
+  const revealNonceRef = useRef(0);
+  const reducedMotion = useMemo(
+    () =>
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    [],
+  );
+  // oid→row and refName→row lookups, rebuilt once per graph layout (first wins).
+  const revealIndex = useMemo(() => {
+    const byRef = new Map<string, number>();
+    const byOid = new Map<string, number>();
+    const nodes = graph?.nodes ?? [];
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
+      if (!byOid.has(node.id)) byOid.set(node.id, i);
+      for (const ref of node.refs ?? []) {
+        if (!byRef.has(ref.name)) byRef.set(ref.name, i);
+      }
+    }
+    return { byRef, byOid };
+  }, [graph]);
+
+  const handleReveal = useCallback(
+    (t: RevealTarget) => {
+      const i =
+        t.kind === 'ref' ? revealIndex.byRef.get(t.name) ?? null : revealIndex.byOid.get(t.oid) ?? null;
+      const label = revealTargetLabel(t);
+      revealNonceRef.current += 1; // §6: bump first; both paths thread it so repeats re-announce (invisible marker)
+      if (i === null) {
+        setRevealMessage(revealMissMessage(label, revealNonceRef.current));
+        pushToast(
+          'info',
+          `"${label}" isn't in the loaded history yet. Load more commits to reveal it.`,
+          'reveal-miss',
+        );
+        return;
+      }
+      // Selection drives the scroll-into-view (GraphCanvas effect); the flash is
+      // the transient attention cue on top. Nonce bump re-flashes even when the
+      // row is already selected.
+      setSelectedIndex(i);
+      setRevealFlash({ index: i, nonce: revealNonceRef.current });
+      const oid = graph?.nodes[i]?.id ?? '';
+      setRevealMessage(revealedMessage(label, oid, revealNonceRef.current));
+    },
+    [revealIndex, graph, pushToast],
+  );
   const [commitDiff, setCommitDiff] = useState<CommitDiff | null>(null);
   const [commitDiffLoading, setCommitDiffLoading] = useState(false);
   const [commitDiffError, setCommitDiffError] = useState<string | null>(null);
@@ -2645,6 +2701,7 @@ export function RepoWorkspace({
           onRemoteContextMenu={handleRemoteContextMenu}
           onAddRemote={() => setPendingAddRemote(true)}
           onCleanupBranches={() => setStaleCleanupOpen(true)}
+          onReveal={handleReveal}
         />
         <PaneDivider side="sidebar" onResize={onSidebarResize} onResizeEnd={onPaneResizeEnd} />
         <WorkspaceGraphPane
@@ -2668,6 +2725,8 @@ export function RepoWorkspace({
           onOpenPr={onOpenPr}
           edgeIndex={graphEdgeIndex ?? undefined}
           totalRows={graphTotal ?? undefined}
+          revealFlash={revealFlash}
+          reducedMotion={reducedMotion}
           search={search}
           searchScopeOptions={searchScopeOptions}
           historySearch={historySearch}
@@ -2803,6 +2862,12 @@ export function RepoWorkspace({
       {/* P68e: `.workspace-host`'s THIRD child (toolbar → .panes → dock), full width on
           purpose; renders null until the first run exists. */}
       <AiActivityPanel {...aiDock.panelProps} />
+
+      {/* P84: always-mounted a11y live region for reveal announcements. Rendered
+          AFTER the dock so `.workspace-host`'s counted toolbar → .panes → dock
+          child order (dock = 3rd child) is preserved — a `.sr-only` region is
+          position-agnostic for screen readers. */}
+      <RevealAnnouncer message={revealMessage} />
 
       <WorkspaceDialogs
         repoId={repoId}

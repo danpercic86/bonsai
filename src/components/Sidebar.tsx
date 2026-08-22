@@ -8,6 +8,7 @@ import type {
   TagSyncReport,
   WorktreeInfo,
 } from '../ipc';
+import type { RevealTarget } from '../graph/reveal';
 import { DeleteIcon } from './menuIcons';
 import { StashIcon } from './appIcons';
 import { errorMessage } from '../utils/errors';
@@ -118,6 +119,10 @@ export interface SidebarProps {
   /** P25d §6: "Clean up branches…" header action → opens the StaleBranchesDialog.
    *  Rendered only when there is a branch list (data present, not unborn). */
   onCleanupBranches?(): void;
+  /** P84: single-click a branch / remote / tag / stash row → reveal it in the
+   *  graph (scroll + flash). Additive to double-click checkout; keyboard is
+   *  intentionally out of scope. */
+  onReveal?: (t: RevealTarget) => void;
 }
 
 /** Left sidebar: branches / remotes / tags (M5 contract §4.2). Presentational
@@ -159,6 +164,7 @@ export function Sidebar({
   onRemoteContextMenu,
   onAddRemote,
   onCleanupBranches,
+  onReveal,
 }: SidebarProps) {
   const [branchesCollapsed, setBranchesCollapsed] = useState(false);
   const [remotesCollapsed, setRemotesCollapsed] = useState(false);
@@ -356,6 +362,7 @@ export function Sidebar({
                             busy={actionsDisabled}
                             onCheckout={onCheckout}
                             onContextMenu={onContextMenu}
+                            onReveal={onReveal}
                             treeKey={`branch:${branch.name}`}
                           />
                         ))}
@@ -387,6 +394,7 @@ export function Sidebar({
                           busy={actionsDisabled}
                           onCheckout={onCheckout}
                           onContextMenu={onContextMenu}
+                          onReveal={onReveal}
                           displayName={l.name}
                           treeKey={`branch:${l.item.name}`}
                           level={level}
@@ -468,6 +476,7 @@ export function Sidebar({
                             name={l.item.name}
                             displayName={l.name}
                             onContextMenu={onContextMenu}
+                            onReveal={onReveal}
                             treeKey={`remote:${l.item.name}`}
                             level={level}
                           />
@@ -480,6 +489,7 @@ export function Sidebar({
                             key={r.name}
                             name={r.name}
                             onContextMenu={onContextMenu}
+                            onReveal={onReveal}
                             treeKey={`remote:${r.name}`}
                           />
                         ))}
@@ -499,6 +509,7 @@ export function Sidebar({
               tags={data.tags}
               treeMode={treeMode}
               onTagContextMenu={onTagContextMenu}
+              onReveal={onReveal}
               tagSyncReport={tagSyncReport}
               tagSyncState={tagSyncState}
               tagSyncRemote={tagSyncRemote}
@@ -542,6 +553,7 @@ export function Sidebar({
                         message={s.message}
                         ts={s.ts}
                         onContextMenu={onStashContextMenu}
+                        onReveal={onReveal}
                         treeKey={`stash:${s.index}`}
                       />
                     ))}

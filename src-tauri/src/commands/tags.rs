@@ -125,6 +125,33 @@ pub(crate) async fn list_tag_sync_inner(
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Best-effort automatic tag reconciliation (P84): adopt remote-only tags,
+/// fast-forward FF-able stale tags, skip diverged ones. NEVER errors on
+/// no-remote/auth/network — returns an empty report. `noRepo` still surfaces.
+/// Does NOT emit `repo-changed` — the frontend refetches.
+#[tauri::command]
+pub async fn auto_sync_tags(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    remote: Option<String>,
+) -> Result<tag_sync::TagAutoSyncReport, AppError> {
+    auto_sync_tags_inner(state.inner(), &repo_id, remote).await
+}
+
+/// Runtime-free core of `auto_sync_tags` (unit-testable without a Tauri app).
+pub(crate) async fn auto_sync_tags_inner(
+    state: &AppState,
+    repo_id: &str,
+    remote: Option<String>,
+) -> Result<tag_sync::TagAutoSyncReport, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        tag_sync::auto_sync_tags(&path, remote.as_deref())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Force-update ONE local tag from `remote` (refspec `+refs/tags/<n>:refs/tags/
 /// <n>`). Corrects a stale/moved local tag. Errors: `noRepo` | `invalidName` |
 /// `noRemote` | `authFailed` | `networkError` | `git`. Does NOT emit

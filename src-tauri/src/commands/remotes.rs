@@ -12,7 +12,20 @@ pub async fn fetch(
     state: tauri::State<'_, AppState>,
     repo_id: String,
 ) -> Result<FetchResult, AppError> {
-    let result = fetch_inner(state.inner(), &repo_id).await?;
+    let mut result = fetch_inner(state.inner(), &repo_id).await?;
+    // P84: best-effort automatic tag reconciliation, folded into the response so
+    // the sidebar can refresh tags + toast the counts in the same round-trip.
+    // NEVER fails the fetch — `auto_sync_tags` returns an empty Ok on
+    // no-remote/auth/network, and we swallow any residual Err here.
+    if let Ok(path) = repo_path(state.inner(), &repo_id) {
+        let report = tauri::async_runtime::spawn_blocking(move || {
+            bonsai_core::git::tag_sync::auto_sync_tags(&path, None)
+        })
+        .await
+        .ok()
+        .and_then(Result::ok);
+        result.tag_auto_sync = report;
+    }
     // P52: when refs actually advanced, (re)write the commit-graph off the
     // response path (fire-and-forget, best-effort, never awaited — the fetch
     // result returns immediately regardless). Gated on `updated_refs > 0` so a

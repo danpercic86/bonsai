@@ -379,6 +379,13 @@ pub fn delete_remote_tag(workdir: &Path, remote_name: &str, tag_name: &str) -> R
     Ok(())
 }
 
+// P84 automatic tag reconciliation lives in its own focused file; re-exported so
+// the command layer / fetch flow keep using `tag_sync::{auto_sync_tags,
+// TagAutoSyncReport}` unchanged.
+#[path = "tag_auto_sync.rs"]
+mod auto;
+pub use auto::{auto_sync_tags, TagAutoSyncReport};
+
 #[cfg(test)]
 #[path = "tag_sync_tests.rs"]
 mod tests;

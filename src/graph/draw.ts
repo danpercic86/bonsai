@@ -75,6 +75,10 @@ export interface Interaction {
   /** P58c: oid → signature verdict for the LIT badge (visible rows only,
    *  cached by oid). `null` / a missing oid ⇒ the faint P51 stub. */
   verifyStatus: ReadonlyMap<string, VerifyStatus> | null;
+  /** P84: transient reveal flash for one row (row-bg pulse + dot halo, accent
+   *  family). `null` when no flash is active. `alpha`/`ringRadius` are
+   *  precomputed per frame by GraphCanvas from `revealFlash.ts`. */
+  flash?: { row: number; alpha: number; ringRadius: number } | null;
 }
 
 /** Long-edge middle segments are clamped to this margin around the canvas. */
@@ -333,6 +337,16 @@ export function drawGraph(
     rowBg(ix.selectedIndex, theme.selection);
   }
 
+  // Pass 2.5 (P84): reveal row-background pulse — a full-width accent overlay at
+  // an animated alpha, layered OVER the selection fill the revealed+selected row
+  // already has. Restore globalAlpha immediately.
+  if (ix.flash != null && ix.flash.alpha > 0 && ix.flash.row < n) {
+    const prevAlpha = ctx.globalAlpha;
+    ctx.globalAlpha = ix.flash.alpha;
+    rowBg(ix.flash.row, theme.accent);
+    ctx.globalAlpha = prevAlpha;
+  }
+
   // Pass 3: edges (under dots).
   ctx.lineWidth = m.edgeWidth;
   ctx.lineCap = 'round';
@@ -394,6 +408,19 @@ export function drawGraph(
       ctx.strokeStyle = theme.accent;
       ctx.lineWidth = 1.5;
       ctx.stroke();
+    }
+    // Pass 4 (P84): reveal dot halo — an expanding accent ring OUTSIDE the
+    // selection ring, same animated alpha as the row pulse. Primary attractor
+    // when the row background is busy with edges/pills.
+    if (ix.flash != null && ix.flash.row === row && ix.flash.alpha > 0) {
+      const prevAlpha = ctx.globalAlpha;
+      ctx.globalAlpha = ix.flash.alpha;
+      ctx.beginPath();
+      ctx.arc(x, y, ix.flash.ringRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = theme.accent;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.globalAlpha = prevAlpha;
     }
     // P50b: search-match ring — an outer ring in --match-ring so matches stay
     // spottable while scrolling (distinct radius + color from head/selection).

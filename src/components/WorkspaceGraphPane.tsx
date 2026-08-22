@@ -58,6 +58,9 @@ export interface WorkspaceGraphPaneProps {
   edgeIndex: GraphCanvasProps['edgeIndex'];
   /** P65b: total row count for the scroll extent while rows are still arriving. */
   totalRows: GraphCanvasProps['totalRows'];
+  /** P84: nonce-driven reveal flash + reduced-motion flag, forwarded to GraphCanvas. */
+  revealFlash: GraphCanvasProps['revealFlash'];
+  reducedMotion: GraphCanvasProps['reducedMotion'];
 
   /** P50b: commit-search state (bar + graph highlight + next/prev jump). */
   search: UseCommitSearch;
@@ -160,6 +163,8 @@ export function WorkspaceGraphPane({
   onOpenPr,
   edgeIndex,
   totalRows,
+  revealFlash,
+  reducedMotion,
   search,
   searchScopeOptions,
   historySearch,
@@ -312,6 +317,8 @@ export function WorkspaceGraphPane({
             onOpenPr={onOpenPr}
             edgeIndex={edgeIndex}
             totalRows={totalRows}
+            revealFlash={revealFlash}
+            reducedMotion={reducedMotion}
           />
         </ErrorBoundary>
       ) : null}

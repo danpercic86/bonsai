@@ -6,8 +6,8 @@
 //    (or disappears entirely for a remote-only ghost, which has no local side).
 // The report is held per-repo in memory so resolve ops persist across a
 // subsequent `listTagSync`, mirroring the on-disk backend truth.
-import type { AppError, IpcApi, TagSyncReport } from '../../types';
-import { buildTagSyncReport } from '../../fixtures/tagSync';
+import type { AppError, IpcApi, TagAutoSyncReport, TagSyncReport } from '../../types';
+import { AUTO_SYNC_FF_TAGS, buildTagSyncReport } from '../../fixtures/tagSync';
 import { delay, requireRepo, throwAuthFailed, throwNetworkError } from '../repoState';
 import type { MockRepoState } from '../repoState';
 
@@ -50,6 +50,53 @@ export const tagSyncHandlers = {
     if (state.remoteTrigger === 'network') throwNetworkError();
     const name = resolveRemote(state, remote);
     return structuredClone(reportFor(repoId, name));
+  },
+
+  async autoSyncTags(repoId: string, remote: string | null): Promise<TagAutoSyncReport> {
+    // Best-effort, mirrors the Rust never-fail contract: auth/network yield an
+    // EMPTY report (no throw), no remote yields an empty report too.
+    await delay(400);
+    const state = requireRepo(repoId);
+    let name: string;
+    try {
+      name = resolveRemote(state, remote);
+    } catch {
+      // No remote configured → empty report (not an error).
+      return { remote: '', adopted: [], moved: [], skippedDiverged: [] };
+    }
+    if (state.remoteTrigger === 'authfail' || state.remoteTrigger === 'network') {
+      return { remote: name, adopted: [], moved: [], skippedDiverged: [] };
+    }
+
+    const report = reportFor(repoId, name);
+    const adopted: string[] = [];
+    const moved: string[] = [];
+    const skippedDiverged: string[] = [];
+    for (const entry of report.entries) {
+      if (entry.status === 'remote-only' && entry.remoteOid !== null) {
+        // ADOPT: create the local tag at the remote committish.
+        entry.localOid = entry.remoteOid;
+        entry.status = 'in-sync';
+        adopted.push(entry.name);
+      } else if (entry.status === 'stale' && entry.remoteOid !== null) {
+        if (AUTO_SYNC_FF_TAGS.has(entry.name)) {
+          // MOVE: fast-forward the local ref onto the remote target.
+          entry.localOid = entry.remoteOid;
+          entry.status = 'in-sync';
+          moved.push(entry.name);
+        } else {
+          // Local ahead / diverged → leave untouched.
+          skippedDiverged.push(entry.name);
+        }
+      }
+    }
+    const ci = (a: string, b: string) => a.toLowerCase().localeCompare(b.toLowerCase());
+    return {
+      remote: name,
+      adopted: adopted.sort(ci),
+      moved: moved.sort(ci),
+      skippedDiverged: skippedDiverged.sort(ci),
+    };
   },
 
   async forceRefreshTag(repoId: string, remote: string, tagName: string): Promise<void> {

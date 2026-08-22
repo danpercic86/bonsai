@@ -25,7 +25,18 @@ const OID = {
   // Remote-only ghosts (no local ref).
   v120: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1',
   v200: 'f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2',
+  // v1.5.0: FF-able stale — remote strictly descends from local (auto-sync MOVE).
+  v150local: 'a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5',
+  v150remote: 'b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5',
 } as const;
+
+/**
+ * P84: stale tags whose REMOTE committish strictly descends from the local one,
+ * i.e. a fast-forward the auto-sync pass should MOVE. Any other stale tag is
+ * treated as diverged/local-ahead and reported as `skippedDiverged`. (The real
+ * backend derives this from `graph_descendant_of`; the mock reads this flag.)
+ */
+export const AUTO_SYNC_FF_TAGS: ReadonlySet<string> = new Set(['v1.5.0']);
 
 /**
  * Builds a FRESH tag-sync report for `remote` (deep-cloned per call so the mock's
@@ -44,6 +55,8 @@ export function buildTagSyncReport(remote: string): TagSyncReport {
       { name: 'v1.0', status: 'in-sync', localOid: OID.v10, remoteOid: OID.v10, annotated: false },
       // Flagship: annotated tag force-moved upstream → local committish is stale.
       { name: 'v1.1.0', status: 'stale', localOid: OID.v110local, remoteOid: OID.v110remote, annotated: true },
+      // FF-able stale: remote strictly ahead → auto-sync MOVES the local tag.
+      { name: 'v1.5.0', status: 'stale', localOid: OID.v150local, remoteOid: OID.v150remote, annotated: false },
       // Present on remote, absent locally (ghost rows — "fetch this tag").
       { name: 'v1.2.0', status: 'remote-only', localOid: null, remoteOid: OID.v120, annotated: false },
       { name: 'v2.0.0', status: 'remote-only', localOid: null, remoteOid: OID.v200, annotated: true },
