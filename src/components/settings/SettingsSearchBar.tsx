@@ -38,7 +38,7 @@ export function SettingsSearchBar({
         placeholder="Search settings"
         ariaLabel="Search settings"
       />
-      <p className="settings-search-status" role="status" aria-live="polite">
+      <p className="settings-search-status sr-only" role="status" aria-live="polite">
         {status}
       </p>
     </div>

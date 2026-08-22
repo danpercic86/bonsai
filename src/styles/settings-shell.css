@@ -201,17 +201,8 @@
   padding: 0 8px;
 }
 
-/* No `.sr-only` utility exists yet (ui-reference §12-F4), so the recipe is
-   local — same one as `.ai-dock-announce`. */
-.settings-search-status {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
+/* Visually-hidden search status live region — hiding comes from the shared
+   `.sr-only` utility (tokens-and-base.css). */
 
 /* ---- Search results (UI §3.1) ---- */
 

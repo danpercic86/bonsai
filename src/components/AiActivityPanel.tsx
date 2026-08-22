@@ -309,7 +309,7 @@ export const AiActivityPanel = forwardRef<AiActivityPanelHandle, AiActivityPanel
           </div>
         )}
 
-        <p className="ai-dock-announce" role="status" aria-live="polite" aria-atomic="true">
+        <p className="ai-dock-announce sr-only" role="status" aria-live="polite" aria-atomic="true">
           {announce}
         </p>
       </section>
