@@ -1,7 +1,15 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { CommitResult, ConflictEntry, ConflictFile, ConflictResolution, MergeOutcome, RepoOpState } from '../types';
+import type { CommitResult, ConflictEntry, ConflictFile, ConflictResolution, MergeOutcome, RepoHooksDisclosure, RepoOpState } from '../types';
 
 export const mergeCommands = {
+
+  getRepoHooksDisclosure(repoId: string): Promise<RepoHooksDisclosure> {
+    return invoke<RepoHooksDisclosure>('get_repo_hooks_disclosure', { repoId });
+  },
+
+  ackRepoHooks(repoId: string): Promise<void> {
+    return invoke<void>('ack_repo_hooks', { repoId });
+  },
 
   getOpState(repoId: string): Promise<RepoOpState> {
     return invoke<RepoOpState>('get_op_state', { repoId });

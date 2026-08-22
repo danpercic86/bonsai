@@ -162,6 +162,7 @@ export type {
   RemoteInfo,
   RepoChangedPayload,
   RepoHealth,
+  RepoHooksDisclosure,
   RepoInfo,
   RepoOpState,
   ResetMode,

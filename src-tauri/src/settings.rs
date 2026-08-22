@@ -197,6 +197,12 @@ pub struct Settings {
     pub forge_host_defaults: Vec<ForgeHostDefault>,
     /// P80: per-repo pinned account overrides (keyed by canonical workdir path).
     pub repo_forge_overrides: Vec<RepoForgeOverride>,
+    /// Repos whose one-time git-hook execution disclosure the user has
+    /// acknowledged (canonical workdir paths, deduped via
+    /// [`crate::commands::same_repo_path`] — mirrors `repo_forge_overrides`).
+    /// Additive `#[serde(default)]` (via the container-level `default`) ⇒ a
+    /// pre-existing settings.json without this key loads `[]`. NO version bump.
+    pub hooks_ack_repos: Vec<String>,
     /// P49: terminal launch command template (`{path}` placeholder). Empty ⇒
     /// per-OS auto-detect (see `bonsai_core::external`). Additive
     /// `#[serde(default)]` ⇒ a pre-P49 file loads `""`.
@@ -276,6 +282,7 @@ impl Default for Settings {
             forge_accounts: Vec::new(),
             forge_host_defaults: Vec::new(),
             repo_forge_overrides: Vec::new(),
+            hooks_ack_repos: Vec::new(),
             terminal_command: String::new(),
             editor_command: String::new(),
             ai_idle_timeout_secs: AI_IDLE_TIMEOUT_DEFAULT,
@@ -429,6 +436,25 @@ pub fn record_recent(s: &mut Settings, path: &str, now: i64) {
         },
     );
     s.recent_repos.truncate(MAX_RECENT_REPOS);
+}
+
+/// Whether the user has acknowledged `repo_path`'s one-time git-hook disclosure.
+/// Dedupe goes through [`crate::commands::same_repo_path`] (the canonicalizing
+/// compare the open-repo scan + `record_recent` use), so this and the repo
+/// registry agree on what "the same repo" is.
+pub fn hooks_ack_contains(s: &Settings, repo_path: &str) -> bool {
+    s.hooks_ack_repos
+        .iter()
+        .any(|p| crate::commands::same_repo_path(p, repo_path))
+}
+
+/// Record that the user acknowledged `repo_path`'s git-hook disclosure.
+/// Idempotent: a no-op when an equivalent path (per `same_repo_path`) is already
+/// present, so re-acking never grows the list.
+pub fn set_hooks_ack(s: &mut Settings, repo_path: &str) {
+    if !hooks_ack_contains(s, repo_path) {
+        s.hooks_ack_repos.push(repo_path.to_string());
+    }
 }
 
 #[cfg(test)]

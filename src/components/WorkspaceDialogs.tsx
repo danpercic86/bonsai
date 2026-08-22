@@ -1,4 +1,5 @@
 import { BulkAiConfirmDialog } from './dialogs/BulkAiConfirmDialog';
+import { ConfirmDialog } from './ConfirmDialog';
 import { DestructiveDialogs } from './dialogs/DestructiveDialogs';
 import { HookOutputDialog } from './HookOutputDialog';
 import { StashDialogs } from './dialogs/StashDialogs';
@@ -102,6 +103,13 @@ export interface WorkspaceDialogsProps {
   hookRetrying: boolean;
   onHookSkipRetry(): void;
   onHookCancel(): void;
+
+  /** First-time per-repo git-hook execution disclosure (block-until-acknowledged).
+   *  `pendingHookDisclosure` drives the ConfirmDialog; confirm ⇒ proceed + persist
+   *  the ack, cancel ⇒ the op is silently canceled. */
+  pendingHookDisclosure: boolean;
+  onHookDiscloseConfirm(): void;
+  onHookDiscloseCancel(): void;
 
   pendingHunkDiscard: { path: string; origPath: string | null; hunkIndex: number } | null;
   setPendingHunkDiscard: (v: { path: string; origPath: string | null; hunkIndex: number } | null) => void;
@@ -216,6 +224,24 @@ export function WorkspaceDialogs(props: WorkspaceDialogsProps) {
         onSkipRetry={props.onHookSkipRetry}
         onCancel={props.onHookCancel}
       />
+
+      <ConfirmDialog
+        open={props.pendingHookDisclosure}
+        title="This repository defines git hooks"
+        confirmLabel="Run hooks"
+        confirmVariant="primary"
+        busy={false}
+        onConfirm={props.onHookDiscloseConfirm}
+        onCancel={props.onHookDiscloseCancel}
+      >
+        <div>
+          Committing, merging, or pushing in this repository will run its git hooks
+          (<span className="mono">.git/hooks</span>). This is standard git behavior, but the
+          scripts can run arbitrary code on your machine. Bonsai shows this once per repository.
+          To disable hooks, set <span className="mono">bonsai.runHooks=false</span> in this
+          repo&apos;s git config, or use the <strong>Skip hooks</strong> toggle per operation.
+        </div>
+      </ConfirmDialog>
 
       <DestructiveDialogs
         mutating={props.mutating}

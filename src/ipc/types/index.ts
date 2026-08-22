@@ -13,6 +13,7 @@ export * from './forge';
 export * from './graph';
 export * from './health';
 export * from './history';
+export * from './hooks';
 export * from './ipc-api';
 export * from './jobs';
 export * from './mcp';

@@ -258,39 +258,79 @@ enum HookPlan {
     Run,
 }
 
-fn plan_hook(workdir: &Path, hook: HookName) -> HookPlan {
-    let repo = match open_repo(workdir) {
-        Ok(r) => r,
-        Err(_) => return HookPlan::Run, // cannot introspect ⇒ delegate to git
-    };
-    let cfg = match repo.config().and_then(|mut c| c.snapshot()) {
-        Ok(c) => c,
-        Err(_) => return HookPlan::Run,
-    };
-    // core.hooksPath: resolve like git — `get_path` applies the config
-    // layer's tilde expansion; a relative value is relative to the worktree
-    // root (githooks(5): git chdirs there before running hooks), which is
-    // exactly `workdir` for every caller. If the hook file is absent we skip
-    // the spawn (F-A4-1: bare `git hook run` would exit 1 for it). A wrong
-    // "run" here is harmless — the argv carries `--ignore-missing`.
+/// The on-disk path git would consult for `hook` — `core.hooksPath` if set &
+/// non-empty (`get_path` applies the config layer's tilde expansion; a relative
+/// value is relative to the worktree root, where git chdirs before running hooks
+/// — githooks(5) — which is exactly `workdir` for every caller), else the
+/// unambiguous default `<commondir>/hooks/<name>` (commondir so linked worktrees
+/// resolve to the shared hooks dir, matching git). `None` iff introspection
+/// fails (repo won't open / config unreadable). Does NOT check existence — the
+/// single discovery path shared by [`plan_hook`] and [`repo_has_runnable_hooks`]
+/// (A-D1: discovery is git's job, single-sourced).
+fn hook_file_path(workdir: &Path, hook: HookName) -> Option<PathBuf> {
+    let repo = open_repo(workdir).ok()?;
+    let cfg = repo.config().and_then(|mut c| c.snapshot()).ok()?;
     if let Ok(p) = cfg.get_path("core.hooksPath") {
         if !p.as_os_str().is_empty() {
             let base = if p.is_absolute() { p } else { workdir.join(p) };
-            return if base.join(hook.as_str()).is_file() {
-                HookPlan::Run
-            } else {
-                HookPlan::Skip
-            };
+            return Some(base.join(hook.as_str()));
         }
     }
-    // Default location is unambiguous: `<commondir>/hooks/<name>` (commondir so
-    // linked worktrees resolve to the shared hooks dir, matching git).
-    let candidate = repo.commondir().join("hooks").join(hook.as_str());
-    if candidate.is_file() {
-        HookPlan::Run
-    } else {
-        HookPlan::Skip
+    Some(repo.commondir().join("hooks").join(hook.as_str()))
+}
+
+fn plan_hook(workdir: &Path, hook: HookName) -> HookPlan {
+    // Skip only when git's own resolution finds no file; a wrong "run" (incl.
+    // the introspection-failure `None` ⇒ delegate to git) is harmless — the
+    // argv carries `--ignore-missing`.
+    hook_file_path(workdir, hook).map_or(HookPlan::Run, |p| {
+        if p.is_file() {
+            HookPlan::Run
+        } else {
+            HookPlan::Skip
+        }
+    })
+}
+
+/// The hooks a repo could fire during a Bonsai commit / amend / merge-commit /
+/// push, checked by [`repo_has_runnable_hooks`].
+const DISCLOSABLE_HOOKS: [HookName; 4] = [
+    HookName::PreCommit,
+    HookName::CommitMsg,
+    HookName::PostCommit,
+    HookName::PrePush,
+];
+
+/// True iff the repo has ≥1 hook Bonsai would actually run — for the one-time
+/// per-repo disclosure, NOT the execution path. PRECISE (unlike [`plan_hook`],
+/// which over-runs harmlessly under `--ignore-missing`): a hook counts only when
+/// it is present AND, on unix, executable (`mode & 0o111 != 0`); on windows,
+/// present is enough (git is shebang-driven, no exec bit) — so we disclose only
+/// for repos git itself would actually run a hook in. Introspection failure ⇒
+/// `false` (nothing to disclose we can prove). Blocking (git2 + fs) → callers
+/// wrap in `spawn_blocking`. NEVER panics.
+pub fn repo_has_runnable_hooks(workdir: &Path) -> bool {
+    DISCLOSABLE_HOOKS
+        .iter()
+        .any(|&hook| hook_file_path(workdir, hook).is_some_and(|p| is_runnable_hook_file(&p)))
+}
+
+/// unix: a hook counts only if it is a file with any execute bit set — exactly
+/// what git checks before running a `.git/hooks` script.
+#[cfg(unix)]
+fn is_runnable_hook_file(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    match std::fs::metadata(path) {
+        Ok(m) => m.is_file() && (m.permissions().mode() & 0o111 != 0),
+        Err(_) => false,
     }
+}
+
+/// windows: no exec bit — git runs a present hook via its shebang, so presence
+/// as a file is enough.
+#[cfg(not(unix))]
+fn is_runnable_hook_file(path: &Path) -> bool {
+    path.is_file()
 }
 
 /// git's message for an unknown subcommand (Git < 2.36 has no `hook`):
@@ -806,5 +846,64 @@ mod tests {
         run_hook(&PanicExec, dir.path(), HookName::PreCommit, &[], None).expect("no-op ok");
         let info = run_hook_nonblocking(&PanicExec, dir.path(), HookName::PostCommit, &[]);
         assert!(!info.ran && info.success, "post-commit no-op, not spawned");
+    }
+
+    // ---- detection: repo_has_runnable_hooks (git-binary-free) --------------
+
+    /// A fresh repo with no hooks installed ⇒ nothing to disclose.
+    #[test]
+    fn repo_has_runnable_hooks_none_false() {
+        let dir = crate::testutil::scratch_dir();
+        init_repo(dir.path());
+        assert!(!repo_has_runnable_hooks(dir.path()));
+    }
+
+    /// An executable pre-commit ⇒ detected (present + exec bit on unix).
+    #[test]
+    fn repo_has_runnable_hooks_exec_pre_commit_true() {
+        let dir = crate::testutil::scratch_dir();
+        let repo = init_repo(dir.path());
+        write_hook(&hooks_dir(&repo), "pre-commit", "#!/bin/sh\nexit 0\n");
+        assert!(repo_has_runnable_hooks(dir.path()));
+    }
+
+    /// unix: a present-but-NON-executable hook is NOT runnable — git skips it, so
+    /// we must not disclose for it. (No exec bit on Windows, so unix-only.)
+    #[cfg(unix)]
+    #[test]
+    fn repo_has_runnable_hooks_non_exec_false() {
+        let dir = crate::testutil::scratch_dir();
+        let repo = init_repo(dir.path());
+        let hooks = hooks_dir(&repo);
+        std::fs::create_dir_all(&hooks).expect("mkdir hooks");
+        // Plain write ⇒ 0o644 (no execute bit).
+        std::fs::write(hooks.join("pre-commit"), "#!/bin/sh\nexit 0\n").expect("write hook");
+        assert!(!repo_has_runnable_hooks(dir.path()));
+    }
+
+    /// `core.hooksPath` is honored — a runnable hook under the configured dir is
+    /// detected (proves discovery is git's, not a hardcoded `.git/hooks`).
+    #[test]
+    fn repo_has_runnable_hooks_honors_core_hooks_path() {
+        let dir = crate::testutil::scratch_dir();
+        let repo = init_repo(dir.path());
+        let alt = dir.path().join("myhooks");
+        write_hook(&alt, "pre-commit", "#!/bin/sh\nexit 0\n");
+        {
+            let mut cfg = repo.config().expect("config");
+            cfg.set_str("core.hooksPath", alt.to_str().expect("utf8"))
+                .expect("set hooksPath");
+        }
+        assert!(repo_has_runnable_hooks(dir.path()));
+    }
+
+    /// Detection covers ALL disclosable hooks, not just the commit ones: a repo
+    /// with only an executable pre-push is still disclosed.
+    #[test]
+    fn repo_has_runnable_hooks_pre_push_only_true() {
+        let dir = crate::testutil::scratch_dir();
+        let repo = init_repo(dir.path());
+        write_hook(&hooks_dir(&repo), "pre-push", "#!/bin/sh\nexit 0\n");
+        assert!(repo_has_runnable_hooks(dir.path()));
     }
 }

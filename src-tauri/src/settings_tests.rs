@@ -340,3 +340,47 @@ fn colored_profiles_survive_save_load_roundtrip() {
     let loaded = load_from(&file);
     assert_eq!(loaded.profiles, s.profiles);
 }
+
+// --- git-hook disclosure ack (per-repo) -------------------------------------
+
+/// `set_hooks_ack` is idempotent (re-acking never grows the list),
+/// `hooks_ack_contains` reflects membership, and the whole thing survives
+/// save_to/load_from on disk.
+#[test]
+fn hooks_ack_roundtrip() {
+    let mut s = Settings::default();
+    assert!(!hooks_ack_contains(&s, "D:\\Repos\\x"));
+
+    set_hooks_ack(&mut s, "D:\\Repos\\x");
+    assert!(hooks_ack_contains(&s, "D:\\Repos\\x"));
+    assert_eq!(s.hooks_ack_repos.len(), 1);
+
+    // Idempotent: the same path (and, for unresolvable temp paths, an ASCII-case
+    // variant — the `same_repo_path` string fallback) does not push a duplicate.
+    set_hooks_ack(&mut s, "D:\\Repos\\x");
+    set_hooks_ack(&mut s, "d:\\repos\\x");
+    assert_eq!(s.hooks_ack_repos.len(), 1, "re-ack must not grow the list");
+
+    set_hooks_ack(&mut s, "D:\\Repos\\y");
+    assert_eq!(s.hooks_ack_repos.len(), 2);
+    assert!(hooks_ack_contains(&s, "D:\\Repos\\y"));
+
+    let dir = tempfile::TempDir::new().expect("create temp dir");
+    let file = settings_path(&dir);
+    save_to(&file, &s).expect("save settings");
+    let loaded = load_from(&file);
+    assert_eq!(loaded.hooks_ack_repos, s.hooks_ack_repos);
+    assert!(hooks_ack_contains(&loaded, "D:\\Repos\\x"));
+}
+
+/// Additive-load: a pre-existing settings.json with NO `hooksAckRepos` key loads
+/// `[]` (the container-level `#[serde(default)]`; no version bump).
+#[test]
+fn settings_without_hooks_ack_repos_loads_empty() {
+    let blob = serde_json::json!({
+        "version": SETTINGS_VERSION,
+        "recentRepos": [],
+    });
+    let s: Settings = serde_json::from_value(blob).expect("legacy settings must deserialize");
+    assert!(s.hooks_ack_repos.is_empty());
+}

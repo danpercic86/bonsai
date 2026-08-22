@@ -9,6 +9,7 @@ import type { CommitDiff, CompareDiff, FileDiff, ImageDiff, ImageDiffRequest, Li
 import type { CommitStatus, CreatePrInput, ForgeAccount, ForgeKind, ForgeRepoContext, ForgeViewer, MergePrInput, PrDescription, PrDetail, PrListQuery, PrPage, ReviewComment } from './forge';
 import type { GraphChunk, GraphLayout } from './graph';
 import type { RepoHealth } from './health';
+import type { RepoHooksDisclosure } from './hooks';
 import type { BlameLine, FileHistoryEntry, ReflogEntry, UndoPlan } from './history';
 import type { JobKind, JobStatus, JobStatusChangedPayload } from './jobs';
 import type { McpStatus, SessionState } from './mcp';
@@ -199,6 +200,13 @@ export interface IpcApi {
   /** Abort a paused merge (worktree-destructive for merge-touched files).
    *  Rejects noOperationInProgress | git | noRepo. */
   abortMerge(repoId: string): Promise<void>;
+  /** Whether this repo has runnable git hooks and whether the user has been shown
+   *  the one-time execution disclosure. Drives the frontend hook-disclosure gate
+   *  (commit/amend/merge-commit/push). Rejects noRepo | git. */
+  getRepoHooksDisclosure(repoId: string): Promise<RepoHooksDisclosure>;
+  /** Record that the user acknowledged this repo's hook disclosure (persisted,
+   *  per-repo). Idempotent. Rejects noRepo | git. */
+  ackRepoHooks(repoId: string): Promise<void>;
   /** All current index conflicts, path-ascending. Rejects noRepo | git. */
   listConflicts(repoId: string): Promise<ConflictEntry[]>;
   /** Read-only marker view of one conflicted file. Rejects noRepo | git. */
