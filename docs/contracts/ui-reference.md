@@ -984,3 +984,74 @@ The number input shows a **draft** while focused and commits the clamped value o
   confirm button's busy label as the visible cue (no spinner-only state). Focus ring 2px `--accent`,
   1px offset, `:focus-visible` only. No new tokens; the only motion is the dialog's existing ≤150ms
   fade/scale-in, which already honours `prefers-reduced-motion`.
+
+### 12.10 Git activity: in-flight phase readout + session log dock (P87)
+
+Full contract: `docs/contracts/P87-ui.md`. The git analogue of the AI stream (§9). Two surfaces off
+**one** event stream: an in-flight **toolbar phase readout** (View C) and a bottom **git activity
+dock** (View D, a twin of the §9 AI dock). Reuses §9 geometry, §11 pills, the §9 log surface, and the
+§9 live-region rule. **No new theme token, no hex** — every colour aliases a §2 token.
+
+- **Phase copy is UI-derived.** The backend emits structured `category × phase{kind,hook}` only; the
+  human strings live in `gitActivityFormat.ts` (`phaseLabel`). Locked table in `P87-ui.md` §1
+  (`Running pre-push hook…` → `Sending objects…`/`Fetching…`, `Writing commit…`, generic `Working…`).
+  The RunningHook → Network transition is the canonical "it's not hung" fix.
+- **View C — two-part in-flight display.** The op button keeps a **stable short participle**
+  (`Pushing…`/`Fetching…`/`Committing…`, from `categoryMeta().participle`) so the toolbar never
+  reflows mid-op; the granular phase/progress rides an adjacent `.toolbar-phase` span reusing the
+  `.toolbar-job-status` treatment (11px `--text-2`). Applies on the workspace toolbar remote buttons
+  and the `CommitBox` commit button. The phase string is NOT put in the button label.
+- **Progress bar — indeterminate ↔ determinate.** `.header-progress` stays the indeterminate 2px
+  `header-progress-sweep` by default (preparing, hooks, push network, refresh). During a **fetch/pull
+  `network`** phase *with a derivable fraction* it gains `data-determinate` + `--progress: <0..1>`;
+  the `::after` fill scales by `transform: scaleX(var(--progress))` (transform, not width — no layout),
+  `transition: transform 150ms ease-out`. Determinacy + an object/byte count readout both require the
+  backend to surface `transfer_progress` as structured counts (flagged to the architect); text-only →
+  best-effort parse, else stays indeterminate. Never colour-only: the bar is backed by the readout.
+- **View D dock geometry** = §9 exactly: child of `.workspace-host` **after `.ai-dock`** (git dock is
+  the outermost/bottom; both collapse independently); `flex: none; overflow: hidden`; collapsed bar
+  30px cozy / 28px compact; expanded 120–600px (default 180, capped 60% viewport); `PaneDivider`
+  top-edge resizer (±8px, dbl-click → 180). **Divergence from §9:** the git dock returns `null` only
+  before the first op of the session, then **stays mounted** for the session (it is an always-on
+  record and its live region must persist) — and it **never auto-expands** (git ops are frequent;
+  contrast the AI dock's auto-expand on `awaitingInput`). Geometry may be session-only (recommended,
+  no settings change) or persisted like the AI dock (2 new keys — architect call).
+- **Tokens:** component-scoped `--git-dock-*` alias block on `.git-activity-dock`
+  (`--git-dock-bg: var(--bg-1)`, `--git-dock-log-bg: var(--bg-0)`, `--git-dock-meta: var(--text-2)`,
+  `--git-dock-border: var(--border)`), swapped by `.git-activity-dock[data-density='compact']`.
+  Status hue via local `--h`. Same alias discipline as `--ai-dock-*`.
+- **Run row anatomy.** Summary line: `.file-chevron` disclosure → category glyph (`aria-hidden`,
+  reuse `PushIcon`/`FetchIcon`/`PullIcon`/`MergeIcon`/`RefDotIcon`) → noun `--text-1` → target
+  (`→ origin/main`, `--text-2`, ellipsis + `title`) → optional `⋯ trimmed` hueless chip → status pill
+  → duration + `HH:MM` timestamp (both `--text-2`, never `--text-3` for read text; timestamp `title` =
+  full date-time). Expanded: per-hook sub-rows (`✓ exit 0` / `⚠ exit N` verdict pills — exit code
+  inside the label, never colour-only) → the output log (reuse `.ai-log`: mono, `--bg-0`, `pre-wrap`,
+  `.ai-log-dropped`/`.ai-log-trunc` chips; **stderr** lines get a 2px `--warning` left-border shape
+  cue + `--text-1` + a visually-hidden `stderr:` prefix, not colour) → a Copy button (reuse
+  `AiOutputPanel`'s Copy→Copied) → for a blocking-hook failure, a `--text-2` note tying to
+  `HookOutputDialog`.
+- **Status vocabulary** (§11 recipe, word + glyph): run `● Running` (`--h: --accent`) / `✓ Success` /
+  `⚠ Failed`; hook `✓ exit 0` / `⚠ exit N` / `⊘ killed`. `●` (not `✨`, which is AI; not `⚠`, which is
+  "failed") matches the toast info glyph (§10.2).
+- **Relationship to `HookOutputDialog` (unchanged).** The dialog stays the point-in-time **blocking**
+  modal (verbatim output + skip-hooks retry); the dock is the always-on record that *also* keeps
+  passing/successful runs whose output was previously discarded. A failed blocking-hook run appears in
+  **both**; the dock row is read-only and never re-offers "skip hooks".
+- **Clear** — header text button, `aria-label="Clear git activity log"`, ≥24px, disabled (`--text-3`)
+  when no terminal runs; clears terminal runs only (never a running one). **No confirm** — it discards
+  only ephemeral, session-scoped observability data (already gone on restart); nothing recoverable is
+  lost, so a confirm would be friction, not safety. This is the sanctioned no-confirm exception;
+  real destructive-git actions keep their confirmation.
+- **A11y.** One always-mounted visually-hidden `role="status" aria-live="polite"` announcer for the
+  **active run's phase transitions + terminal result only** (never output lines — the §9 rule); it is
+  the single announcer for both C and D (the op button is `disabled` mid-op). The log `<ol>` is
+  focusable (`tabIndex=0`, `aria-label="Git activity log"`) but **not** a live region. Keyboard:
+  Arrow up/down move row focus, Enter/Space toggle disclosure, Esc collapses; focus restores to the
+  invoker on collapse. Optional open shortcut `Ctrl/Cmd+Shift+L` (free in the map; pairs with
+  `+Shift+A`). Focus ring 2px `--accent`, 1px offset, `:focus-visible`.
+- **Entry points.** No new toolbar button: (1) the always-visible collapsed dock bar, (2) a
+  `Git activity` command-palette row (enabled once `runs.length > 0`, mirroring the AI dock gate),
+  (3) the clickable in-flight `.toolbar-phase` readout → expand + reveal the active run.
+- **Motion.** No dock height animation (§9 canvas-relayout prohibition — snap). `.file-chevron` 120ms;
+  determinate fill 150ms `scaleX`. Add the git-dock/bar selectors to the §9 `prefers-reduced-motion`
+  block (sweep → static 100% @ .6 opacity; chevron/fill snap).

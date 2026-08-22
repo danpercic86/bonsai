@@ -20,7 +20,95 @@ Status vocabulary: `pending` · `in-progress` · `done` · `awaiting USER CHECKP
 (deferred always carries a one-line reason). A milestone is `done` only when the AI gate **and** the
 native USER CHECKPOINT have both passed — the orchestrator never self-declares the second half.
 
-**History is archived, not deleted.** Archiving is a **move**, never a delete: condense on the board,
+**History is archived, not deleted.**
+
+---
+
+## ⚡ P85 — Refresh perf: route ref-mutations through echo-suppressed refresh — pending
+
+**Current step:** architect contract DONE (`docs/contracts/P85-refresh-perf.md`); senior-dev implementing
+A1+A2+A3. Decisions: A1 routes the 7 bypass handlers through the EXISTING `refreshAll()` (scope param
+deferred to P86 → P85 does NOT touch RepoWorkspace.tsx); A2 round-anchored echo suppression; A3 fetch
+fire-and-forget `auto_sync_tags` + watcher ignores `refs/bonsai-tagsync/**` + keep `tag-auto-sync` event
+(OD-P85-1=keep). Measurement: `window.__bonsaiRefreshRounds`. Shared working tree with peer session
+bonsai-c9 — path-scoped commits only; peer owns graph visuals/a11y (disjoint files).
+
+**Goal (workstream A of the 2026-08-22 perf investigation).** P81 (`be01422`) added refetch
+coalescing + watcher self-echo suppression, but several handlers bypass it — they call raw
+`refetchGraph()`/`refetchBranches()` instead of `refresh('mutation')`, so `armEcho` never fires and
+the `.git/refs/**` write they cause triggers a **second, un-suppressed full `runRefreshRound`** ~300 ms
+later via the watcher. A trivial `git branch` (one ref write) therefore pays for **two O(all-commits)
+graph walks** contending in `spawn_blocking`, each bounded only by a 30 s timeout → the reported
+**15–20 s branch create**. Same bug in fetch and push.
+
+Bypass handlers to fix: `handleCreateBranch` `useBranchActions.ts:31`, `handleDeleteBranch` `:100`,
+`handleRenameBranch` (non-head) `:132`, `handleDeleteRemoteTracking` `:164`, `handleFetch`
+`useRemoteOps.ts:61`, `pushCurrentBranch` `:117`, `doForcePush` `:151`. Also: harden echo suppression
+(the 600 ms `ECHO_TTL_MS` wall-clock window in `echoSuppression.ts` is fragile on large repos where a
+round + 300 ms debounce exceeds it → even commit/checkout/pull can double-refresh); and take fetch's
+awaited `auto_sync_tags` second network fetch (`remotes.rs:11` → `tag_auto_sync.rs`) off the critical
+path.
+
+**Acceptance:** each listed mutation triggers exactly ONE refresh round (verified via a refresh
+counter / instrumentation); echo suppression is robust regardless of round duration; fetch returns
+after a single network round-trip. Full graph/status behavior otherwise unchanged.
+
+## ⚡ P86 — Refresh perf: graph-layout & repo-handle caching, scoped refresh — pending
+
+**Current step:** awaiting architect contract (shares `docs/contracts/P85-refresh-perf.md` or a P86 file).
+
+**Goal (workstream B).** Even with P85, every refresh re-walks the ENTIRE commit graph from scratch
+(`compute_graph` `graph.rs:129` / `stream_graph_core` `graph/stream.rs:110`), re-opens the
+`git2::Repository` on every command (`state.rs:12` flags a handle cache as an unimplemented perf
+lever — 11 opens per `runRefreshRound`), and re-scans the whole working tree (`read_status`
+`git/status.rs:134`, `recurse_untracked_dirs(true)`) even for ref-only mutations. Add: a `GraphLayout`
+cache reused when the tip set is topologically unchanged (branch create adds a tip at an existing
+commit → identical topology, only a new ref pill); a repo-handle cache; scoped refresh rounds
+(`runRefreshRound` `RepoWorkspace.tsx:1230` refetches 11 things regardless of what changed); skip the
+status rescan on ref-only mutations. Also: background auto-fetch (`scheduler.rs:412`) fires the same
+full round on a timer → periodic jank.
+
+**Acceptance:** ref-only mutations reuse the cached layout (no full re-walk); repo handle reused across
+a refresh round; refresh rounds fetch only what the change reason implies; measurable drop in
+branch-create / fetch wall time on a large fixture.
+
+## ⚡ P87 — Git & hook output observability: live progress + session log — pending
+
+**Current step:** architect contract DONE (`docs/contracts/P87-git-observability.md`); ui-designer DONE
+(`docs/contracts/P87-ui.md` + ui-reference §12.10 — verified purely additive, 71/0, §1–§12.9 intact).
+Implementation QUEUED behind P85 → P86.
+
+Architect open-Q decisions: (1) Option B global `git_activity_subscribe` channel — confirmed;
+(2) fetch/pull network progress via git2 sideband — IN scope; (3) log session-scoped only, no on-disk
+retention v1; (4) NO cancel affordance v1 (read-only).
+
+ui-designer open-Q decisions: (Q1) button keeps stable participle ("Pushing…") + granular phase in an
+adjacent `.toolbar-phase` readout — confirmed; (Q3) pull copy = "Fetching…" during transfer, "Pull" as
+terminal row title — confirmed; (Q4) `Ctrl/Cmd+Shift+L` toggles the git-activity dock — confirmed;
+(Q5) dock geometry session-only, no settings keys v1 — confirmed.
+**(Q2) RECONCILE BEFORE P87 IMPL:** a real determinate bar + object/byte count needs the backend to
+surface git2 `transfer_progress` as STRUCTURED counts (a `progress` event / fields), not a throttled
+text line. Amend `P87-git-observability.md` event model to add a structured progress variant and align
+it with `P87-ui.md` before spawning P87 senior-dev.
+
+**Goal (workstreams C + D).** Push/fetch/pull are blocking `invoke()`s with only a generic spinner;
+the exec seam (`git/exec.rs:137`) captures stdout/stderr and returns it **only after the process
+exits** — so a long `pre-push` hook (run via `git hook run`, `remote.rs:385`) is a silent
+"forever" spinner. (a) **Live progress:** emit a phase signal so the UI shows a distinct "Running
+pre-push hook…" state, and stream hook stdout/stderr live via a Tauri channel (reuse the AI streaming
+pattern: `ai_stream.rs`, `crates/bonsai-core/src/ai/stream.rs`, `AiActivityLog.tsx`, `useAiRuns.ts`).
+(b) **Session log:** a persistent, session-retained "Git output" log of every git command + hook run
+(argv, exit code, stdout/stderr, timestamp), viewable anytime — including successful/passing hooks
+whose output is currently captured then discarded (`hooks.rs:161`). Failure path already good
+(`HookOutputDialog`, verbatim output + skip-hooks retry) — keep it and feed the same events into the
+log. Architecture: ONE git-activity event stream, two views (live + log). New UI surface → routes
+through `ui-designer` before senior-dev.
+
+**Acceptance:** during a push with a slow hook the UI shows "running hook" + live output; every git
+command/hook run is recorded in a reviewable session log with exit status; hook failure still opens the
+existing dialog. Streaming is line-buffered and bounded (reuse the 64 MiB cap).
+
+--- Archiving is a **move**, never a delete: condense on the board,
 keep the full text in the archive, and leave a pointer. Archive files are listed at the bottom;
 contract files are indexed in `docs/contracts/INDEX.md`.
 
