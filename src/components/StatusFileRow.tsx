@@ -3,6 +3,8 @@
  *  `entryPaths`, `splitPath`, `RowAction`) — this file imports no sibling, so the
  *  section files can depend on it without a cycle. */
 import type { FileStatus, StatusEntry } from '../ipc';
+import { HistoryIcon, DeleteIcon, RevertIcon } from './menuIcons';
+import { EyeIcon } from './appIcons';
 
 export const BADGES: Record<FileStatus, string> = {
   added: 'A',
@@ -121,7 +123,7 @@ export function StatusFileRow({
           aria-label={`Show history of ${entry.path}`}
           onClick={() => onFileHistory(entry.path)}
         >
-          {'🕑'}
+          <HistoryIcon />
         </button>
       )}
       {onBlame !== undefined && (
@@ -132,7 +134,7 @@ export function StatusFileRow({
           aria-label={`Blame ${entry.path}`}
           onClick={() => onBlame(entry.path)}
         >
-          {'👁'}
+          <EyeIcon />
         </button>
       )}
       {onDiscard !== undefined && (
@@ -144,7 +146,7 @@ export function StatusFileRow({
           disabled={disabled}
           onClick={() => onDiscard(entryPaths(entry))}
         >
-          {'↺'}
+          <RevertIcon />
         </button>
       )}
       {onDelete !== undefined && (
@@ -156,7 +158,7 @@ export function StatusFileRow({
           disabled={disabled}
           onClick={() => onDelete(entryPaths(entry))}
         >
-          {'🗑'}
+          <DeleteIcon />
         </button>
       )}
       {action !== null && (

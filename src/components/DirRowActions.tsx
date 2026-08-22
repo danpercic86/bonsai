@@ -1,4 +1,5 @@
 import type { JSX } from 'react';
+import { RevertIcon } from './menuIcons';
 
 /** Folder-level bulk action buttons rendered inside a `.tree-dir-row` (via
  *  Tree's `renderDirActions` render prop). Revealed on row hover / focus-within
@@ -33,7 +34,7 @@ export function DirRowActions({
           disabled={disabled}
           onClick={onDiscard}
         >
-          {'↺'}
+          <RevertIcon />
         </button>
       )}
       {onStage !== undefined && (

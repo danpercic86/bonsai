@@ -3,7 +3,10 @@
 // container `OnboardingOverlay.tsx`. Reordered flow (contract §2.2):
 // Welcome → Open/Clone → Identity → Tour.
 
+import type { JSX } from 'react';
+
 import type { RecentRepo } from '../ipc';
+import { GraphIcon, RobotIcon, ChartIcon } from './appIcons';
 
 function folderName(path: string): string {
   const segments = path.split(/[\\/]/).filter(Boolean);
@@ -222,26 +225,26 @@ export function IdentityStep({
 }
 
 interface TourCard {
-  icon: string;
+  icon: () => JSX.Element;
   title: string;
   body: string;
 }
 
 const TOUR_CARDS: TourCard[] = [
   {
-    icon: '🕸️',
+    icon: GraphIcon,
     title: 'Commit graph',
     body: 'The center pane draws your history as multi-colored branch lanes. Scroll it to explore, click a commit to inspect it.',
   },
   {
-    icon: '🤖',
+    icon: RobotIcon,
     title: 'AI assets',
-    body: 'The 🤖 button in the toolbar manages AI context files and agent assets, with drift detection across profiles.',
+    body: 'The AI assets button in the toolbar manages AI context files and agent assets, with drift detection across profiles.',
   },
   {
-    icon: '📊',
+    icon: ChartIcon,
     title: 'Repository health',
-    body: 'The 📊 button opens a read-only dashboard of stats, branches, working state, and structure for the open repo.',
+    body: 'The health button opens a read-only dashboard of stats, branches, working state, and structure for the open repo.',
   },
 ];
 
@@ -254,7 +257,7 @@ export function TourStep() {
         {TOUR_CARDS.map((c) => (
           <li key={c.title} className="onboarding-tour-card">
             <span className="onboarding-tour-icon" aria-hidden="true">
-              {c.icon}
+              <c.icon />
             </span>
             <div className="onboarding-tour-text">
               <h4 className="onboarding-tour-title">{c.title}</h4>

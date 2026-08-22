@@ -152,6 +152,16 @@
   margin-left: 0; /* the toolbar owns the auto margin */
 }
 
+/* Icon-system §3: standalone icon buttons carry a 16px SVG in their 32px box.
+   Scoped to the header + the toolbar-right group so it can never touch a
+   non-icon SVG (e.g. an identity avatar) elsewhere. Colour inherits via
+   currentColor from the button's existing token — no colour set here. */
+.header-toolbar .btn-icon svg,
+.toolbar-right .btn-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
 .toolbar-btn {
   height: 32px;
   padding: 0 10px;
@@ -167,6 +177,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   line-height: 1;
 }
 
@@ -177,6 +188,15 @@
 .toolbar-btn:disabled {
   color: var(--text-3);
   cursor: default;
+}
+
+/* Icon-system §3: toolbar text buttons render a 14px leading SVG + a label
+   span, spaced by the button's `gap`. `flex: none` keeps the glyph fixed while
+   long labels ellipsize. */
+.toolbar-btn svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
 }
 
 /* P37b: Push split-button — primary Push + a caret opening more push actions. */
@@ -196,6 +216,13 @@
   border-bottom-left-radius: 0;
   border-left: 1px solid var(--border);
   font-size: 10px;
+}
+
+/* Icon-system §3: the split caret is icon-only — a slightly smaller 12px chevron
+   than the 14px text-button icons. */
+.toolbar-caret svg {
+  width: 12px;
+  height: 12px;
 }
 
 /* P30 D11: small muted background-job readout next to the Fetch control. */

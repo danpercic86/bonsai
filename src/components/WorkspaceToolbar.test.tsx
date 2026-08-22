@@ -53,11 +53,11 @@ const btn = (name: string | RegExp) => screen.getByRole('button', { name });
 describe('WorkspaceToolbar', () => {
   it('idle state: remote ops + undo/reflog/refresh enabled and wired', () => {
     const { props } = renderBar();
-    fireEvent.click(btn('↓ Fetch'));
-    fireEvent.click(btn('⇣ Pull'));
-    fireEvent.click(btn('↑ Push'));
-    fireEvent.click(btn('↶ Undo'));
-    fireEvent.click(btn('↺ Reflog'));
+    fireEvent.click(btn('Fetch'));
+    fireEvent.click(btn('Pull'));
+    fireEvent.click(btn('Push'));
+    fireEvent.click(btn('Undo'));
+    fireEvent.click(btn('Reflog'));
     fireEvent.click(btn('Refresh'));
     expect(props.onFetch).toHaveBeenCalledTimes(1);
     expect(props.onPull).toHaveBeenCalledTimes(1);
@@ -69,31 +69,31 @@ describe('WorkspaceToolbar', () => {
 
   it('mutating disables fetch/pull/push/undo/caret/refresh', () => {
     renderBar({ mutating: true });
-    for (const name of ['↓ Fetch', '⇣ Pull', '↑ Push', '↶ Undo', 'More push actions', 'Refresh']) {
+    for (const name of ['Fetch', 'Pull', 'Push', 'Undo', 'More push actions', 'Refresh']) {
       expect(btn(name)).toBeDisabled();
     }
     // Reflog + external-open never touch git state — they stay enabled.
-    expect(btn('↺ Reflog')).toBeEnabled();
+    expect(btn('Reflog')).toBeEnabled();
     expect(btn('Open externally')).toBeEnabled();
   });
 
   it('refreshing disables the remote ops and shows the progress bar', () => {
     const { container } = renderBar({ refreshing: true });
-    expect(btn('↓ Fetch')).toBeDisabled();
+    expect(btn('Fetch')).toBeDisabled();
     expect(container.querySelector('.header-progress')).toBeInTheDocument();
   });
 
   it('canPullPush=false disables pull/push but not fetch', () => {
     renderBar({ canPullPush: false });
-    expect(btn('⇣ Pull')).toBeDisabled();
-    expect(btn('↑ Push')).toBeDisabled();
-    expect(btn('↓ Fetch')).toBeEnabled();
+    expect(btn('Pull')).toBeDisabled();
+    expect(btn('Push')).toBeDisabled();
+    expect(btn('Fetch')).toBeEnabled();
   });
 
   it('headBorn=false disables undo + reflog', () => {
     renderBar({ headBorn: false });
-    expect(btn('↶ Undo')).toBeDisabled();
-    expect(btn('↺ Reflog')).toBeDisabled();
+    expect(btn('Undo')).toBeDisabled();
+    expect(btn('Reflog')).toBeDisabled();
   });
 
   it('in-flight remote op flips the matching label', () => {
@@ -107,12 +107,12 @@ describe('WorkspaceToolbar', () => {
 
   it('push title: existing upstream vs set-upstream-on-first-push', () => {
     renderBar();
-    expect(btn('↑ Push')).toHaveAttribute(
+    expect(btn('Push')).toHaveAttribute(
       'title',
       `Push main to origin/main (${shortcutLabel('Mod+Shift+U')})`,
     );
     renderBar({ headBranch: { ...HEAD, upstream: null } });
-    expect(screen.getAllByRole('button', { name: '↑ Push' })[1]).toHaveAttribute(
+    expect(screen.getAllByRole('button', { name: 'Push' })[1]).toHaveAttribute(
       'title',
       `Push main to origin/main and set upstream (${shortcutLabel('Mod+Shift+U')})`,
     );
@@ -131,10 +131,10 @@ describe('WorkspaceToolbar', () => {
   it('AI buttons render only when eligible; What-changed disabled while loading', () => {
     renderBar();
     expect(screen.queryByText(/What changed/)).not.toBeInTheDocument();
-    expect(screen.queryByText('✨ Ask…')).not.toBeInTheDocument();
+    expect(screen.queryByText('Ask…')).not.toBeInTheDocument();
     const { props } = renderBar({ aiEligible: true, aiPanelLoading: true });
     expect(btn(/What changed/)).toBeDisabled();
-    fireEvent.click(btn('✨ Ask…'));
+    fireEvent.click(btn('Ask…'));
     expect(props.onAskBonsai).toHaveBeenCalledTimes(1);
   });
 
