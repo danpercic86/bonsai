@@ -113,7 +113,7 @@ test.describe('09 search & palette @smoke', () => {
     await openRepo(page);
     // The Tags section is collapsed by default — expand it first; with 7 seeded
     // tags (≥ threshold) the inline filter box renders.
-    await page.getByRole('button', { name: 'Tags' }).click();
+    await page.getByRole('treeitem', { name: 'Tags' }).click();
     const filter = page.getByLabel('Filter tags');
     await expect(filter).toBeVisible();
     await filter.fill('v1');

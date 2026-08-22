@@ -133,7 +133,7 @@ test.describe('14 destructive confirms @destructive', () => {
     await openRepo(page, FLAT);
     await sidebarSettled(page);
     // The Tags section is collapsed by default — expand it first.
-    await page.getByRole('button', { name: 'Tags' }).click();
+    await page.getByRole('treeitem', { name: 'Tags' }).click();
     let menu = await openBranchContextMenu(page, 'v1.1.0');
     // Exact match: P77 adds a sibling "Delete tag on origin…" remote item that a
     // substring 'Delete tag' would also match (strict-mode violation).
