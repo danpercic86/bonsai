@@ -493,9 +493,19 @@
 }
 
 .pr-generate-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   text-transform: none;
   letter-spacing: normal;
   color: var(--accent);
+}
+
+/* Icon-system §2.7: 14px leading SummarizeIcon + label. */
+.pr-generate-button svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
 }
 
 /* P83: PR actions footer bar (UI contract §1, §8). Pinned under the body/

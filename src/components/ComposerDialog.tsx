@@ -1,5 +1,6 @@
 import type { FileStatus } from '../ipc';
 import { DiffView } from './DiffView';
+import { SummarizeIcon } from './menuIcons';
 import { ComposerGroupCard } from './ComposerGroupCard';
 import type { MoveOption } from './ComposerGroupCard';
 import type { UseCommitComposer } from './repoWorkspace/useCommitComposer';
@@ -76,7 +77,7 @@ export function ComposerDialog({ composer, statusByPath }: ComposerDialogProps) 
       <div className="composer-dialog">
         <header className="composer-header">
           <span className="composer-icon" aria-hidden="true">
-            {'✨'}
+            <SummarizeIcon />
           </span>
           <span className="composer-heading">Compose commits</span>
           <button

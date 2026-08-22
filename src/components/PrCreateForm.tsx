@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { CreatePrInput, PrDescription } from '../ipc';
 import { Combobox, type ComboboxOption } from './Combobox';
+import { SummarizeIcon } from './menuIcons';
 import { usePushToast } from '../ToastContext';
 import { errorMessage } from '../utils/errors';
 
@@ -162,7 +163,14 @@ export function PrCreateForm({
               title={generateTitle}
               onClick={() => void runGenerate()}
             >
-              {generating ? 'Generating…' : '✨ Generate with AI'}
+              {generating ? (
+                'Generating…'
+              ) : (
+                <>
+                  <SummarizeIcon />
+                  <span>Generate with AI</span>
+                </>
+              )}
             </button>
           )}
         </span>

@@ -120,7 +120,7 @@ describe('PrCreateForm', () => {
     expect(onGenerateDescription).toHaveBeenCalledTimes(1);
     resolve(proposal);
     await waitFor(() => expect(titleInput()).toHaveValue('feat: add widgets'));
-    expect(generateBtn()).toHaveTextContent('✨ Generate with AI');
+    expect(generateBtn()).toHaveTextContent('Generate with AI');
     expect(generateBtn()).toBeEnabled();
   });
 

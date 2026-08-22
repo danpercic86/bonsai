@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ChangelogRange } from '../ipc';
 import { Combobox, type ComboboxOption } from './Combobox';
+import { SummarizeIcon } from './menuIcons';
 
 export interface ChangelogDialogProps {
   open: boolean;
@@ -120,7 +121,10 @@ export function ChangelogDialog({
         aria-label="Release notes"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="dialog-title">✨ Release notes</h2>
+        <h2 className="dialog-title dialog-title-ai">
+          <SummarizeIcon />
+          <span>Release notes</span>
+        </h2>
         <form
           onSubmit={(e) => {
             e.preventDefault();

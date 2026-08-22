@@ -29,6 +29,20 @@
   font-weight: 600;
 }
 
+/* Icon-system §2.7: AI dialog titles (What changed / Release notes) pair a 16px
+   leading SummarizeIcon with the heading text; colour flows via currentColor. */
+.dialog-title-ai {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dialog-title-ai svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
 .dialog-body {
   font-size: 13px;
   color: var(--text-1);

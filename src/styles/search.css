@@ -29,6 +29,14 @@
   font-size: 15px;
 }
 
+/* Icon-system §2.7: the history "Ask" bar uses a 14px SummarizeIcon in the
+   shared leading-icon slot (the commit search bar keeps its text glyph). */
+.commit-search-icon svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
 .commit-search-input {
   flex: 1;
   min-width: 80px;
@@ -378,6 +386,11 @@
 .history-ask {
   gap: 4px;
   white-space: nowrap;
+}
+.history-ask svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
 }
 .history-ask:not(:disabled) {
   border-color: var(--accent);

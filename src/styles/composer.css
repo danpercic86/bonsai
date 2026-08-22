@@ -36,7 +36,14 @@
 }
 
 .composer-icon {
+  display: inline-flex;
   font-size: 14px;
+}
+
+/* Icon-system §2.7: 14px SummarizeIcon, matching the AiOutputPanel header. */
+.composer-icon svg {
+  width: 14px;
+  height: 14px;
 }
 
 .composer-heading {
