@@ -193,6 +193,39 @@ fn resolve_conflict_text_happy_and_traversal() {
         .expect("commit merge");
 }
 
+/// P68 #7 / H1: ai_apply_resolution re-reads the sides and REFUSES a body with a
+/// line present in no version (AiNeedsReview; nothing written, file stays
+/// conflicted); a recombination of existing side lines writes through the single
+/// `resolve_conflict_text` core writer.
+#[test]
+fn ai_apply_resolution_gates_novel_but_writes_clean() {
+    let state = AppState::default();
+    let (dir, id, _c0) = fixture_repo(&state);
+    diverge(&state, &id, dir.path(), true);
+    block_on(merge_branch_inner(&state, &id, "feature".into(), None)).expect("merge");
+
+    // ours = "main\n", theirs = "feature\n", base = "base\n". A line in NO version
+    // is refused server-side; the worktree keeps its markers and stays conflicted.
+    let err = block_on(ai_apply_resolution_inner(
+        &state,
+        &id,
+        "a.txt".into(),
+        "totally invented line\n".into(),
+    ))
+    .expect_err("novel body must be gated");
+    assert!(matches!(err, AppError::AiNeedsReview(_)), "{err:?}");
+    assert!(read(dir.path(), "a.txt").contains("<<<<<<<"), "worktree stays conflicted");
+    assert_eq!(block_on(list_conflicts_inner(&state, &id)).expect("list").len(), 1);
+
+    // A recombination of existing side lines passes the gate and writes stage-0.
+    block_on(ai_apply_resolution_inner(&state, &id, "a.txt".into(), "main\nfeature\n".into()))
+        .expect("clean body writes");
+    assert_eq!(read(dir.path(), "a.txt"), "main\nfeature\n");
+    assert!(block_on(list_conflicts_inner(&state, &id)).expect("list").is_empty());
+    block_on(commit_merge_inner(&state, &id, "merged by ai".into(), None, None))
+        .expect("commit merge");
+}
+
 /// Clean rebase replays feature onto main (Rebased, 1 step, new parent = main
 /// tip).
 #[test]

@@ -1612,6 +1612,7 @@ export function RepoWorkspace({
     handleMergeBranch,
     handleResolveConflict,
     handleResolveConflictText,
+    handleAiApplyResolution,
     openAiProposal,
     handleCommitMerge,
     handleAbortMerge,
@@ -1632,7 +1633,7 @@ export function RepoWorkspace({
     pushToast,
     aiConflictAutonomy,
     aiEligible,
-    applyResolution: handleResolveConflictText,
+    applyResolution: handleAiApplyResolution, // P68 #7 / H1: GATED writer (not the manual save)
     refreshAll, // P68f: ONE refresh after a multi-file autoResolve stage, not N.
     openAiProposal,
     conflictPaths,

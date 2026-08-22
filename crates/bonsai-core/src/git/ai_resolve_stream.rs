@@ -21,8 +21,8 @@ use crate::ai::{self, AiResult, AiRunEvent, AiRunEventKind, RunControl, RunLimit
 use crate::error::AppError;
 
 use super::ai_resolve::{
-    build_single_payload, read_conflict_sides, AiResolveProposal, ConflictSides, RESOLVE_PROMPT,
-    SYSTEM_PROMPT,
+    build_single_payload, read_conflict_sides, resolution_is_novel, AiResolveProposal,
+    ConflictSides, RESOLVE_PROMPT, SYSTEM_PROMPT,
 };
 use super::ai_resolve_bulk::{
     build_bulk_payload, bulk_system_prompt, pack_batches, parse_bulk_response, part_bytes,
@@ -213,6 +213,10 @@ fn resolve_single(
     Ok(AiResolveBatch {
         run_id: ctl.run_id.clone(),
         proposals: vec![AiResolveProposal {
+            // H1 classification (defense-in-depth): the authoritative gate is the
+            // `ai_apply_resolution` command, but the frontend demotes on this flag so
+            // a novel body never reaches the write in the normal path.
+            needs_review: resolution_is_novel(sides, &res.text),
             path: sides.path.clone(),
             proposed_text: res.text,
             cost_usd: res.cost_usd,
@@ -232,6 +236,10 @@ fn resolve_bulk(
     events: &RunEvents<'_>,
     mut failed: Vec<AiResolveFailure>,
 ) -> Result<AiResolveBatch, AppError> {
+    // H1 classification: map each path to its sides ONCE so a bulk proposal is flagged
+    // `needs_review` by the SAME predicate as the single path (they cannot disagree).
+    let by_path: std::collections::HashMap<&str, &ConflictSides> =
+        sides.iter().map(|s| (s.path.as_str(), s)).collect();
     let measured: Vec<(String, usize)> =
         sides.iter().map(|s| (s.path.clone(), part_bytes(s))).collect();
     let (batches, oversize) = pack_batches(&measured, cfg.bulk_max_bytes);
@@ -300,7 +308,14 @@ fn resolve_bulk(
                     events.log(format!("ignoring a result block for an unrequested path: {path}"));
                 }
                 for (path, body) in parsed.proposals {
+                    // A proposal with no matching side is impossible by construction
+                    // (parse_bulk_response only returns requested paths), so it
+                    // defaults `false`.
+                    let needs_review = by_path
+                        .get(path.as_str())
+                        .is_some_and(|s| resolution_is_novel(s, &body));
                     proposals.push(AiResolveProposal {
+                        needs_review,
                         path,
                         proposed_text: body,
                         // Per-file cost is not knowable: one run covered them all.

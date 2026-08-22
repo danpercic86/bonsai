@@ -6,7 +6,7 @@
 /// | "unmergedBranch" | "branchNotFound"
 /// | "noRemote" | "noUpstream" | "authFailed" | "networkError"
 /// | "pushRejected" | "operationInProgress" | "noOperationInProgress"
-/// | "unresolvedConflicts" | "aiUnavailable" | "aiFailed"
+/// | "unresolvedConflicts" | "aiUnavailable" | "aiFailed" | "aiNeedsReview"
 /// | "externalToolFailed" | "hookRejected" | "gitNotFound"
 /// | "forgeUnsupported" | "forgeAuthRequired" | "forgeRateLimited" | "forgeApi",
 /// "message": "..." }`.
@@ -59,6 +59,11 @@ pub enum AppError {
     AiUnavailable(String),
     #[error("{0}")]
     AiFailed(String),
+    /// P68 #7 / H1: a body the novel-content gate refused to auto-stage — it has ≥1
+    /// line present in NO version of base/ours/theirs. Distinct from `AiFailed` so the
+    /// frontend routes it to review instead of showing a raw "failed" error toast.
+    #[error("{0}")]
+    AiNeedsReview(String),
     /// The user cancelled a streaming AI run via `ai_cancel_run` (P68 §B). NOT a
     /// failure — the frontend shows no error toast, only a `cancelled` run state.
     /// Distinct from `AiFailed` so the single catch path can tell them apart.
@@ -131,6 +136,7 @@ impl AppError {
             AppError::UnresolvedConflicts(_) => "unresolvedConflicts",
             AppError::AiUnavailable(_) => "aiUnavailable",
             AppError::AiFailed(_) => "aiFailed",
+            AppError::AiNeedsReview(_) => "aiNeedsReview",
             AppError::AiCancelled(_) => "aiCancelled",
             AppError::ExternalToolFailed(_) => "externalToolFailed",
             AppError::HookRejected(_) => "hookRejected",
@@ -164,6 +170,7 @@ impl AppError {
             | AppError::UnresolvedConflicts(m)
             | AppError::AiUnavailable(m)
             | AppError::AiFailed(m)
+            | AppError::AiNeedsReview(m)
             | AppError::AiCancelled(m)
             | AppError::ExternalToolFailed(m)
             | AppError::HookRejected(m)

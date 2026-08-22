@@ -49,7 +49,7 @@ export function makeDeps(over: Partial<AiRunsDeps> = {}): AiRunsDeps {
 export function batch(over: Partial<AiResolveBatch> = {}): AiResolveBatch {
   return {
     runId: 'run-1',
-    proposals: [{ path: 'a.ts', proposedText: CLEAN, costUsd: null }],
+    proposals: [{ path: 'a.ts', proposedText: CLEAN, costUsd: null, needsReview: false }],
     failed: [],
     costUsd: 0.0263,
     turns: 1,

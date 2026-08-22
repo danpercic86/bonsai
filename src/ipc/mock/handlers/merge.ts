@@ -5,6 +5,7 @@ import { delay, requireRepo } from '../repoState';
 import { seedOpState } from '../opStateSeed';
 import { hookRejectionFor } from '../hooksGate';
 import { sortByPath, upsert } from '../statusHelpers';
+import { resolutionIsNovel } from '../aiNovel';
 import type { AppError, CommitResult, ConflictEntry, ConflictFile, ConflictResolution, MergeOutcome, RepoOpState } from '../../types';
 
 export const mergeHandlers = {
@@ -160,6 +161,33 @@ export const mergeHandlers = {
     const entry = state.conflicts.find((c) => c.path === path);
     if (entry === undefined) {
       const err: AppError = { kind: 'git', message: `path '${path}' has no conflict` };
+      throw err;
+    }
+    state.conflicts = state.conflicts.filter((c) => c.path !== path);
+    state.conflictTexts.delete(path);
+    state.status.conflicted = state.status.conflicted.filter((e) => e.path !== path);
+  },
+
+  // P68 #7 / H1: the GATED AI stage. Runs the SAME novel-content predicate against the
+  // stored conflict sides (so the gate is real in the browser harness) and refuses a
+  // novel body with the SAME `aiNeedsReview` message the backend command returns; a
+  // clean body reuses the `resolveConflictText` state change.
+  async aiApplyResolution(repoId: string, path: string, content: string): Promise<void> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    const entry = state.conflicts.find((c) => c.path === path);
+    if (entry === undefined) {
+      const err: AppError = { kind: 'git', message: `path '${path}' has no conflict` };
+      throw err;
+    }
+    const file = state.conflictTexts.get(path);
+    // ConflictFile carries ours/theirs (no base) — enough to detect novelty here.
+    const sides = file === undefined ? [] : [file.ours, file.theirs];
+    if (resolutionIsNovel(sides, content)) {
+      const err: AppError = {
+        kind: 'aiNeedsReview',
+        message: `AI introduced content not present in any version of '${path}' — opened for review`,
+      };
       throw err;
     }
     state.conflicts = state.conflicts.filter((c) => c.path !== path);

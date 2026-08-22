@@ -164,9 +164,9 @@ describe('useAiRuns — autonomy routing and THE SAFETY GATE', () => {
       gate.resolve(
         batch({
           proposals: [
-            { path: 'a.ts', proposedText: CLEAN, costUsd: null },
-            { path: 'b.ts', proposedText: CLEAN, costUsd: null },
-            { path: 'c.ts', proposedText: CLEAN, costUsd: null },
+            { path: 'a.ts', proposedText: CLEAN, costUsd: null, needsReview: false },
+            { path: 'b.ts', proposedText: CLEAN, costUsd: null, needsReview: false },
+            { path: 'c.ts', proposedText: CLEAN, costUsd: null, needsReview: false },
           ],
         }),
       );
@@ -201,8 +201,8 @@ describe('useAiRuns — autonomy routing and THE SAFETY GATE', () => {
       gate.resolve(
         batch({
           proposals: [
-            { path: 'a.ts', proposedText: CLEAN, costUsd: null },
-            { path: 'b.ts', proposedText: MARKERFUL, costUsd: null },
+            { path: 'a.ts', proposedText: CLEAN, costUsd: null, needsReview: false },
+            { path: 'b.ts', proposedText: MARKERFUL, costUsd: null, needsReview: false },
           ],
         }),
       );
@@ -240,9 +240,9 @@ describe('useAiRuns — autonomy routing and THE SAFETY GATE', () => {
       gate.resolve(
         batch({
           proposals: [
-            { path: 'a.ts', proposedText: MARKERFUL, costUsd: null },
-            { path: 'b.ts', proposedText: CLEAN, costUsd: null },
-            { path: 'c.ts', proposedText: MARKERFUL, costUsd: null },
+            { path: 'a.ts', proposedText: MARKERFUL, costUsd: null, needsReview: false },
+            { path: 'b.ts', proposedText: CLEAN, costUsd: null, needsReview: false },
+            { path: 'c.ts', proposedText: MARKERFUL, costUsd: null, needsReview: false },
           ],
         }),
       );
@@ -278,8 +278,8 @@ describe('useAiRuns — autonomy routing and THE SAFETY GATE', () => {
       gate.resolve(
         batch({
           proposals: [
-            { path: 'a.ts', proposedText: MARKERFUL, costUsd: null },
-            { path: 'b.ts', proposedText: MARKERFUL, costUsd: null },
+            { path: 'a.ts', proposedText: MARKERFUL, costUsd: null, needsReview: false },
+            { path: 'b.ts', proposedText: MARKERFUL, costUsd: null, needsReview: false },
           ],
         }),
       );
@@ -309,7 +309,7 @@ describe('useAiRuns — autonomy routing and THE SAFETY GATE', () => {
     act(() => result.current.startConflictRun('a.ts'));
     await act(async () => {
       gate.resolve(
-        batch({ proposals: [{ path: 'a.ts', proposedText: MARKERFUL, costUsd: null }] }),
+        batch({ proposals: [{ path: 'a.ts', proposedText: MARKERFUL, costUsd: null, needsReview: false }] }),
       );
       await Promise.resolve();
     });
@@ -330,7 +330,7 @@ describe('useAiRuns — autonomy routing and THE SAFETY GATE', () => {
     act(() => result.current.startConflictRun('a.ts'));
     await act(async () => {
       gate.resolve(
-        batch({ proposals: [{ path: 'a.ts', proposedText: MARKERFUL, costUsd: null }] }),
+        batch({ proposals: [{ path: 'a.ts', proposedText: MARKERFUL, costUsd: null, needsReview: false }] }),
       );
       await Promise.resolve();
     });
@@ -346,7 +346,7 @@ describe('useAiRuns — autonomy routing and THE SAFETY GATE', () => {
     await act(async () => {
       gate.resolve(
         batch({
-          proposals: [{ path: 'a.ts', proposedText: CLEAN, costUsd: null }],
+          proposals: [{ path: 'a.ts', proposedText: CLEAN, costUsd: null, needsReview: false }],
           failed: [{ path: 'b.ts', reason: 'no result block returned' }],
         }),
       );

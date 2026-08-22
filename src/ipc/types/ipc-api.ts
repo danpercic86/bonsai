@@ -208,6 +208,9 @@ export interface IpcApi {
   /** Stage user-authored resolved text for one conflicted path (P12).
    *  Rejects noRepo | git | invalidName. */
   resolveConflictText(repoId: string, path: string, content: string): Promise<void>;
+  /** P68 #7 / H1: stage an AI-proposed resolution, gated server-side by the novel-content check.
+   *  Rejects aiNeedsReview (body has lines in no version) | aiFailed | git | invalidName | noRepo. */
+  aiApplyResolution(repoId: string, path: string, content: string): Promise<void>;
   /** Start a rebase of the current branch onto `onto` (local or remote-tracking
    *  shorthand). Rejects operationInProgress | branchNotFound | checkoutConflict
    *  | configMissing | git | noRepo. */

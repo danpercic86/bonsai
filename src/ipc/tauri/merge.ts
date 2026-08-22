@@ -34,4 +34,10 @@ export const mergeCommands = {
   resolveConflictText(repoId: string, path: string, content: string): Promise<void> {
     return invoke<void>('resolve_conflict_text', { repoId, path, content });
   },
+
+  // P68 #7 / H1: gated AI stage — the backend re-reads the sides and rejects a
+  // novel body (`aiNeedsReview`) before writing.
+  aiApplyResolution(repoId: string, path: string, content: string): Promise<void> {
+    return invoke<void>('ai_apply_resolution', { repoId, path, content });
+  },
 };

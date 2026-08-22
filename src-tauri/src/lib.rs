@@ -151,6 +151,7 @@ pub fn run() {
             commands::get_conflict,
             commands::resolve_conflict,
             commands::resolve_conflict_text,
+            commands::ai_apply_resolution,
             commands::check_ai_availability,
             commands::ai_resolve_conflict,
             commands::ai_resolve_conflict_stream,
