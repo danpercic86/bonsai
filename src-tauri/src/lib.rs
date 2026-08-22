@@ -235,6 +235,7 @@ pub fn run() {
             commands::delete_tag,
             commands::push_tag,
             commands::list_tag_sync,
+            commands::auto_sync_tags,
             commands::force_refresh_tag,
             commands::delete_remote_tag,
             commands::list_remotes,

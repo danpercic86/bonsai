@@ -65,6 +65,22 @@ export interface TagSyncReport {
   entries: TagSyncEntry[];
 }
 
+/**
+ * P84: result of one non-interactive automatic tag-sync pass (run on fetch or
+ * on demand). Best-effort — auth/network/no-remote yield an empty report, never
+ * an error. All buckets are sorted case-insensitively.
+ */
+export interface TagAutoSyncReport {
+  /** The remote actually reconciled ("" when none configured / skipped). */
+  remote: string;
+  /** Tag names newly created locally from a remote-only tag. */
+  adopted: string[];
+  /** Tag names whose local ref was fast-forwarded onto the remote target. */
+  moved: string[];
+  /** Stale tags left untouched (local ahead or diverged — not a strict FF). */
+  skippedDiverged: string[];
+}
+
 export interface BranchesSnapshot {
   /** Sorted case-insensitively by name. */
   local: BranchInfo[];

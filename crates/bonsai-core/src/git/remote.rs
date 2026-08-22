@@ -42,6 +42,13 @@ pub struct RemoteFetchResult {
 pub struct FetchResult {
     /// One entry per configured remote, in remote-list order.
     pub remotes: Vec<RemoteFetchResult>,
+    /// P84: best-effort automatic tag reconciliation performed after EVERY fetch
+    /// (not gated on refs advancing — the point is to pull down missing/moved tags
+    /// even when branches are already up to date). `None` only when auto-sync could
+    /// not run at all (e.g. no remote configured, or it was swallowed on error); a
+    /// populated report otherwise (which may itself have empty buckets).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag_auto_sync: Option<crate::git::tag_sync::TagAutoSyncReport>,
 }
 
 /// Outcome of a fast-forward-only pull. `WouldNotFastForward` is a RESULT,
@@ -179,7 +186,10 @@ pub fn fetch_all(workdir: &Path) -> Result<FetchResult, AppError> {
     for name in &names {
         remotes.push(fetch_remote(&repo, name)?);
     }
-    Ok(FetchResult { remotes })
+    Ok(FetchResult {
+        remotes,
+        tag_auto_sync: None,
+    })
 }
 
 /// Blocking. Fetches the current branch's upstream remote, then fast-forwards
@@ -902,6 +912,7 @@ mod tests {
                 received_objects: 12,
                 updated_refs: 1,
             }],
+            tag_auto_sync: None,
         })
         .expect("json");
         assert_eq!(

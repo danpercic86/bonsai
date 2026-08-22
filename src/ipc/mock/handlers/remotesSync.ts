@@ -4,6 +4,7 @@ import { randomOid } from '../../fixtures/oids';
 import { delay, requireRepo, throwAuthFailed, throwNetworkError } from '../repoState';
 import { prePushRejectionFor } from '../hooksGate';
 import { throwIfGitMocksMissing } from './gitEnv';
+import { tagSyncHandlers } from './tagSync';
 import type { AppError, FetchResult, PullResult, PushResult } from '../../types';
 
 export const remotesSyncHandlers = {
@@ -15,6 +16,9 @@ export const remotesSyncHandlers = {
     const state = requireRepo(repoId);
     if (state.remoteTrigger === 'authfail') throwAuthFailed();
     if (state.remoteTrigger === 'network') throwNetworkError();
+    // P84: auto tag-sync runs after EVERY fetch (not just when refs advance), so
+    // missing/moved tags are pulled down even when branches are already current.
+    const tagAutoSync = await tagSyncHandlers.autoSyncTags(repoId, null);
     if (!state.fetched) {
       state.fetched = true;
       // The fetch "discovers" one new upstream commit on main.
@@ -22,9 +26,15 @@ export const remotesSyncHandlers = {
       if (main !== undefined && main.upstream !== null) {
         main.behind = 1;
       }
-      return { remotes: [{ remote: 'origin', receivedObjects: 12, updatedRefs: 1 }] };
+      return {
+        remotes: [{ remote: 'origin', receivedObjects: 12, updatedRefs: 1 }],
+        tagAutoSync,
+      };
     }
-    return { remotes: [{ remote: 'origin', receivedObjects: 0, updatedRefs: 0 }] };
+    return {
+      remotes: [{ remote: 'origin', receivedObjects: 0, updatedRefs: 0 }],
+      tagAutoSync,
+    };
   },
 
   async pull(repoId: string): Promise<PullResult> {

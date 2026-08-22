@@ -1,6 +1,6 @@
 import type { AiAnalysis, AiAnalysisMode, AiAvailability, AiChangelog, AiDiffTarget, AiDigestRange, AiResolveBatch, AiResolveProposal, AiRunEvent, AiSummary, BranchNameProposal, BranchNameSource, ChangelogRange, CommitMessageProposal, ComposeApplyResult, ComposePlan, ComposeProposal } from './ai';
 import type { AgentAsset, AgentAssetInput, AgentAssetInventory, AgentAssetKind, AiAssetInventory, AiGeneratedAsset, AssetContent, ContextProfile, ProfileActivation, ProfilePreviewEntry, ProfileStore, WorktreeContextStatus } from './ai-assets';
-import type { BranchDeleteResult, BranchesSnapshot, CheckoutResult, CreateBranchHereResult, MergeOutcome, RebaseOutcome, RebaseTodoOp, RemoteInfo, RenameBranchResult, StaleReport, TagSyncReport } from './branches';
+import type { BranchDeleteResult, BranchesSnapshot, CheckoutResult, CreateBranchHereResult, MergeOutcome, RebaseOutcome, RebaseTodoOp, RemoteInfo, RenameBranchResult, StaleReport, TagAutoSyncReport, TagSyncReport } from './branches';
 import type { CherrypickOutcome, CommitResult, RevertOutcome } from './commit';
 import type { BisectOutcome, CloneProgress, GitAvailability, OpenRepoResult, RecentRepo, RepoChangedPayload, RepoOpState, ResetMode, Unsubscribe } from './common';
 import type { ConfigLevelArg, ConfigView } from './config';
@@ -479,6 +479,10 @@ export interface IpcApi {
    *  round-trip; best-effort — callers must render the plain tags list even when
    *  this rejects. Rejects noRepo | noRemote | authFailed | networkError | git. */
   listTagSync(repoId: string, remote: string | null): Promise<TagSyncReport>;
+  /** P84: best-effort automatic tag reconciliation (adopt remote-only, FF stale,
+   *  skip diverged). Never rejects on no-remote/auth/network — resolves an empty
+   *  report instead. Rejects noRepo only. */
+  autoSyncTags(repoId: string, remote: string | null): Promise<TagAutoSyncReport>;
   /** Force-update one local tag from `remote`. Rejects noRepo | invalidName |
    *  noRemote | authFailed | networkError | git. */
   forceRefreshTag(repoId: string, remote: string, tagName: string): Promise<void>;

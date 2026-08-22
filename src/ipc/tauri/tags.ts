@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { TagSyncReport } from '../types';
+import type { TagAutoSyncReport, TagSyncReport } from '../types';
 
 export const tagsCommands = {
 
@@ -25,6 +25,11 @@ export const tagsCommands = {
   // P77: tag sync.
   listTagSync(repoId: string, remote: string | null): Promise<TagSyncReport> {
     return invoke<TagSyncReport>('list_tag_sync', { repoId, remote });
+  },
+
+  // P84: best-effort automatic tag reconciliation (adopt/move/skip).
+  autoSyncTags(repoId: string, remote: string | null): Promise<TagAutoSyncReport> {
+    return invoke<TagAutoSyncReport>('auto_sync_tags', { repoId, remote });
   },
 
   forceRefreshTag(repoId: string, remote: string, tagName: string): Promise<void> {

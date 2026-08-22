@@ -1,3 +1,5 @@
+import type { TagAutoSyncReport } from './branches';
+
 export interface RemoteFetchResult {
   /** Remote name, e.g. "origin". */
   remote: string;
@@ -9,6 +11,11 @@ export interface RemoteFetchResult {
 export interface FetchResult {
   /** One entry per configured remote, in remote-list order. */
   remotes: RemoteFetchResult[];
+  /**
+   * P84: best-effort automatic tag reconciliation performed after the fetch.
+   * Absent when the fetch was a no-op or auto-sync did not run.
+   */
+  tagAutoSync?: TagAutoSyncReport;
 }
 
 export type PullResult =

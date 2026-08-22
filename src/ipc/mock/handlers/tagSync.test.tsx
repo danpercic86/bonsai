@@ -64,6 +64,33 @@ describe('listTagSync handler', () => {
   });
 });
 
+describe('autoSyncTags handler (P84)', () => {
+  it('adopts remote-only, moves FF-able stale, skips diverged; leaves the rest', async () => {
+    const repoId = await openDefault();
+    const rep = await run(tagSyncHandlers.autoSyncTags(repoId, null));
+    expect(rep.remote).toBe('origin');
+    // remote-only fixtures → adopted.
+    expect(rep.adopted).toEqual(['v1.2.0', 'v2.0.0']);
+    // FF-able stale (fixture flag) → moved.
+    expect(rep.moved).toEqual(['v1.5.0']);
+    // diverged stale (v1.1.0) → skipped.
+    expect(rep.skippedDiverged).toEqual(['v1.1.0']);
+
+    // The live report reflects the mutations on the next listTagSync.
+    const after = await run(tagSyncHandlers.listTagSync(repoId, null));
+    expect(statusOf(after, 'v1.2.0')).toBe('in-sync');
+    expect(statusOf(after, 'v1.5.0')).toBe('in-sync');
+    expect(statusOf(after, 'v1.1.0')).toBe('stale'); // untouched
+  });
+
+  it('returns an empty report (no throw) on auth/network — best-effort like Rust', async () => {
+    const net = await run(tagSyncHandlers.autoSyncTags(await openWithRemote('network'), null));
+    expect(net).toEqual({ remote: 'origin', adopted: [], moved: [], skippedDiverged: [] });
+    const auth = await run(tagSyncHandlers.autoSyncTags(await openWithRemote('authfail'), null));
+    expect(auth.adopted).toEqual([]);
+  });
+});
+
 describe('forceRefreshTag handler', () => {
   it('flips a stale row to in-sync by fast-forwarding local onto the remote committish', async () => {
     const repoId = await openDefault();

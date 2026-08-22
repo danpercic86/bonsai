@@ -55,8 +55,22 @@ import type { IncrementalEdgeIndex } from './incrementalEdgeIndex';
 import { createFrameRecorder } from './frameStats';
 import type { FrameStats } from './frameStats';
 import type { EffectiveMetrics } from './metrics';
+import type { RevealFlash } from './reveal';
+import { flashAlpha, flashDurationMs, flashRingRadius } from './revealFlash';
 
 export type { WipSummary };
+
+/** True when a `#rrggbb` background reads as dark (relative luminance < 0.5).
+ *  Non-hex input defaults to dark (the app's default theme). */
+function isDarkBg(hex: string): boolean {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
+  if (m === null) return true;
+  const v = parseInt(m[1], 16);
+  const r = ((v >> 16) & 0xff) / 255;
+  const g = ((v >> 8) & 0xff) / 255;
+  const b = (v & 0xff) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5;
+}
 
 /** Right-click target on the graph: a ref pill, or a bare commit row. */
 export type GraphContextTarget =
@@ -117,6 +131,13 @@ export interface GraphCanvasProps {
    *  still arriving. Absent ⇒ the spacer uses `layout.nodes.length` (one-shot /
    *  grow-as-you-go). */
   totalRows?: number;
+  /** P84: nonce-driven reveal flash. A NEW `nonce` (re)starts the row-pulse +
+   *  dot-halo highlight on `index`; `null`/absent means no flash. Nonce-driven so
+   *  re-revealing the already-selected row re-flashes. */
+  revealFlash?: RevealFlash | null;
+  /** P84: `prefers-reduced-motion` (read once in the container). When true the
+   *  flash is a static hold, not an animated pulse (revealFlash.ts §3.1). */
+  reducedMotion?: boolean;
 }
 
 /** P2c §5.2: imperative escape hatch — App needs the DOM-measured visible row
@@ -161,6 +182,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     onOpenPr,
     edgeIndex,
     totalRows,
+    revealFlash,
+    reducedMotion = false,
   },
   ref,
 ) {
@@ -172,9 +195,16 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   // paths (mirror of themeRef) so they never close over a stale knob set.
   const metricsRef = useRef(metrics);
   metricsRef.current = metrics;
+  // P84: latest reduced-motion flag, read by the paint + flash rAF loop.
+  const reducedMotionRef = useRef(reducedMotion);
+  reducedMotionRef.current = reducedMotion;
   /** Row index, `null` (none), or `-1` sentinel for the synthetic WIP row. */
   const hoverRowRef = useRef<number | null>(null);
   const rafRef = useRef(0);
+  // P84: active reveal flash — the target row + animation start timestamp; null
+  // when no flash is running. Its own rAF handle (separate from the scroll rAF).
+  const flashStateRef = useRef<{ row: number; start: number } | null>(null);
+  const flashRafRef = useRef(0);
   const scrollTopRef = useRef(0);
   const cssSizeRef = useRef({ w: 0, h: 0 });
   /** Cursor y relative to the scroller top; null while the pointer is outside. */
@@ -335,13 +365,29 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       : memoIx !== null
         ? edgesInRange(lay, memoIx, firstRow, lastRow)
         : [];
+    // P84: compute the reveal flash (row-bg pulse + dot halo) for this frame from
+    // the animation start timestamp; the rAF loop below drives repaints.
+    let flash: { row: number; alpha: number; ringRadius: number } | null = null;
+    const fs = flashStateRef.current;
+    if (fs !== null) {
+      const elapsed = performance.now() - fs.start;
+      const dark = isDarkBg(themeRef.current.bg0);
+      const alpha = flashAlpha(elapsed, dark, reducedMotionRef.current);
+      if (alpha > 0) {
+        flash = {
+          row: fs.row,
+          alpha,
+          ringRadius: flashRingRadius(elapsed, m.avatarSelRingRadius, reducedMotionRef.current),
+        };
+      }
+    }
     drawGraph(
       ctx,
       lay,
       visibleEdges,
       { firstRow, lastRow, scrollTop: layoutScrollTop, width: w, height: h, rightInset },
       themeRef.current,
-      { hoverRow, selectedIndex: sel, matchRows: matchSet, verifyStatus: verifyStatus ?? null },
+      { hoverRow, selectedIndex: sel, matchRows: matchSet, verifyStatus: verifyStatus ?? null, flash },
       display,
       m,
     );
@@ -528,6 +574,41 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     );
     if (next !== null) scroller.scrollTop = next;
   }, [selectedIndex, wip]);
+
+  // P84: nonce-driven reveal flash. A new `revealFlash.nonce` (re)starts a
+  // self-contained rAF loop that repaints each frame until the flash duration
+  // elapses, then paints once more to clear. Composites over normal paints
+  // (scroll during the flash simply repaints with the current alpha) and never
+  // blocks input. Selection drives the scroll-into-view; this only animates.
+  const flashNonce = revealFlash?.nonce ?? null;
+  const flashRow = revealFlash?.index ?? null;
+  useEffect(() => {
+    if (flashNonce === null || flashRow === null) return;
+    flashStateRef.current = { row: flashRow, start: performance.now() };
+    const duration = flashDurationMs(reducedMotionRef.current);
+    const tick = () => {
+      const fs = flashStateRef.current;
+      if (fs === null) return;
+      const elapsed = performance.now() - fs.start;
+      paintNow();
+      if (elapsed >= duration) {
+        flashStateRef.current = null;
+        paintNow(); // final clear paint
+        flashRafRef.current = 0;
+        return;
+      }
+      flashRafRef.current = requestAnimationFrame(tick);
+    };
+    if (flashRafRef.current !== 0) cancelAnimationFrame(flashRafRef.current);
+    flashRafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (flashRafRef.current !== 0) {
+        cancelAnimationFrame(flashRafRef.current);
+        flashRafRef.current = 0;
+      }
+      flashStateRef.current = null;
+    };
+  }, [flashNonce, flashRow, paintNow]);
 
   // P7 §6.2: clamp the tooltip inside the host. Runs synchronously after the
   // tooltip renders (at its un-clamped anchor point) but before paint, so the
