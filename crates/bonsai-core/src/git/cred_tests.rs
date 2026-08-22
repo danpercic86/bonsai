@@ -410,3 +410,25 @@ fn credential_fill_no_helper_configured_does_not_hang() {
     );
     assert_eq!(result, FillOutcome::NoCredentials);
 }
+
+/// CVE-2020-5260 class (defense-in-depth): a URL carrying any ASCII control
+/// char — especially CR/LF, which could inject a second request line into
+/// `git credential fill` and leak a different host's stored credential — is
+/// flagged by the pure guard, while clean URLs pass. `credential_fill` uses
+/// this to refuse such a URL before writing (returns `NoCredentials`), no live
+/// git process needed for the check.
+#[test]
+fn cred_url_control_char_is_rejected() {
+    // Clean URLs (HTTPS with userinfo/query/fragment, SCP-like SSH) pass.
+    assert!(!url_has_control_char("https://github.com/owner/repo.git"));
+    assert!(!url_has_control_char("https://user@host.example/a/b?q=1#f"));
+    assert!(!url_has_control_char("git@github.com:owner/repo.git"));
+
+    // The injection vectors: a newline or CR smuggling a second key=value line.
+    assert!(url_has_control_char("https://host.example/\nhost=evil.example"));
+    assert!(url_has_control_char("https://host.example/\rprotocol=https"));
+    // NUL, DEL, and tab (all in the 0x00–0x1F / 0x7F range) are rejected too.
+    assert!(url_has_control_char("https://host.example/\0"));
+    assert!(url_has_control_char("https://host.example/\x7f"));
+    assert!(url_has_control_char("https://host.example/\t"));
+}

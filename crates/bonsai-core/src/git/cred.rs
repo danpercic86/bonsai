@@ -116,6 +116,19 @@ pub(crate) fn next_cred_method(
     None
 }
 
+/// True iff `url` contains any ASCII control character (0x00–0x1F or 0x7F).
+///
+/// `git credential fill` reads a newline-delimited `key=value` request on
+/// stdin, so a raw control char — especially CR/LF — smuggled into the URL
+/// (which ultimately derives from a possibly attacker-controlled `.git/config`
+/// remote) could inject an extra `host=`/`protocol=` line and coax the helper
+/// into returning a DIFFERENT host's stored credential (CVE-2020-5260 class).
+/// `credential_fill` refuses such a URL rather than write it. PURE — no spawn,
+/// unit-testable without a live git process.
+fn url_has_control_char(url: &str) -> bool {
+    url.bytes().any(|b| b <= 0x1F || b == 0x7F)
+}
+
 /// Resolves HTTPS credentials via the user's REAL configured credential
 /// helper by shelling out to `git credential fill` — NOT libgit2's own
 /// reimplementation (see addendum preamble). `repo_path`: cwd for the child
@@ -138,6 +151,17 @@ pub(crate) fn next_cred_method(
 /// former is what produced the misleading "no cached credentials" toast when
 /// the app inherited a PATH without git.
 pub(crate) fn credential_fill(repo_path: Option<&Path>, url: &str) -> FillOutcome {
+    // CVE-2020-5260 class (defense-in-depth): the URL ultimately derives from a
+    // possibly attacker-controlled `.git/config` remote. `git credential fill`
+    // parses a newline-delimited request on stdin, so a raw CR/LF (or any
+    // control char) in the URL could inject a second `host=`/`protocol=` line
+    // and make the helper hand back a different host's stored credential. Refuse
+    // BEFORE spawning — surface it exactly like the stdin-write-failure path
+    // below (helper produced nothing) so the ladder falls through to SSH/default
+    // and ultimately a clean auth failure, never a cross-host credential leak.
+    if url_has_control_char(url) {
+        return FillOutcome::NoCredentials;
+    }
     let mut cmd = gitbin::git_command();
     // Never block on an interactive prompt. GIT_TERMINAL_PROMPT=0 only gates the
     // *terminal* prompt; git also has an askpass path (a GUI dialog on Git for

@@ -487,3 +487,24 @@ fn resolve_register_cwd_prechecks_repo_path() {
 
     resolve_register_cwd(None).expect("None falls back to the process cwd");
 }
+
+/// Security (defense-in-depth): `register_mcp_with_claude` validates `scope`
+/// against the locked allow-list BEFORE spawning `claude mcp add`. "user" and
+/// "local" pass; "project" — which would write the embedded server's bearer
+/// token into a committable repo-local `.mcp.json` — and any other value are
+/// rejected as a clean `AppError::Other`, with no subprocess spawned (the check
+/// is a pure inner fn, so this exercises the reject path runtime-free).
+#[test]
+fn validate_register_scope_rejects_non_allowlisted() {
+    validate_register_scope("user").expect("\"user\" is allowed");
+    validate_register_scope("local").expect("\"local\" is allowed");
+
+    for bad in ["project", "User", "LOCAL", "", "user ", "global", "dynamic"] {
+        let err = validate_register_scope(bad)
+            .expect_err("non-allowlisted scope must be rejected before spawning");
+        assert!(
+            matches!(err, AppError::Other(ref m) if m.contains("scope")),
+            "{bad:?}: expected Other(scope…), got {err:?}"
+        );
+    }
+}
