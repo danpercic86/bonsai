@@ -54,6 +54,7 @@
     "crates/bonsai-mcp/tests/mcp_stdio.rs": 621,
     "src-tauri/src/commands/ai.rs": 543,
     "src-tauri/src/commands/tests_ai_stream.rs": 545,
+    "src-tauri/src/commands/tests_repo_session_misc.rs": 510,
     "src-tauri/src/mcp.rs": 1588,
     "src-tauri/src/scheduler.rs": 1431,
     "src/App.tsx": 1069,
