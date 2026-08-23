@@ -24,7 +24,19 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
-## 🔴 P87c — batch gate-fix (full `pnpm gate` after P87b) — in-progress
+## ✅ PERF + OBSERVABILITY BATCH (P85–P87) — AI GATE GREEN (2026-08-23) — USER CHECKPOINTS PENDING
+
+**Full `pnpm gate` re-run CLEAN @ `b802482`: all 8 steps passed (GATE_EXIT=0)** — cargo test/clippy (both
+crates), frontend tsc+build, vitest, eslint (38≤40), file-size ratchet, playwright e2e. Commits: P85 `fde91d7`,
+P86a `e294500`, P86b `88ba86a`, P87a `3bc616a`, M1 `9eceafe`, P87b `298e45b`, P87c `c9a523c`, P87d `b802482`.
+Browser-harness verified (mock): determinate fetch progress (12.5k→25k/50k objects, scaleX .25→.5), "Running
+pre-push hook…" phase, `.toolbar-phase` = --text-2, hook-fail dialog + failed dock row. Security-audited (no
+HIGH/CRITICAL; M1 fixed). **PENDING: native USER CHECKPOINTs** (real branch-create/fetch wall-time; live look of
+phase readout + progress bar + log dock in `pnpm tauri dev`). Non-blocking follow-ups: PB-1/PB-2 (cache mem cap +
+cold-walk fp), B2 (repo-handle cache), FU-1..4 (P87b: target row label, commitAmend row, row role/aria-expanded,
+clickable dock bar), RepoWorkspace refactor, AiActivityPanel aria-label (NIT).
+
+## 🔴 P87c — batch gate-fix (full `pnpm gate` after P87b) — DONE
 
 **Current step:** full gate RED → senior-dev fixing the two real batch regressions. Full gate at commit
 298e45b: cargo/tsc/build GREEN; **eslint FAIL** (41/40 warnings — unused `eslint-disable` in CommitBox.tsx:173,184
