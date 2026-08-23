@@ -404,15 +404,29 @@ describe('graph navigation', () => {
     expect(deps.setSelectedIndex).toHaveBeenLastCalledWith(9);
   });
 
-  it('nav is inert (and not default-prevented) with no selection or no graph', () => {
-    for (const over of [{ selectedIndex: null }, { graph: null }] as const) {
-      const deps = navDeps(over);
-      const h = mount(deps);
-      expect(press('ArrowDown').defaultPrevented).toBe(false);
-      expect(press('Home').defaultPrevented).toBe(false);
-      expect(deps.setSelectedIndex).not.toHaveBeenCalled();
-      h.unmount();
-    }
+  it('nav is inert (and not default-prevented) with no graph', () => {
+    // No graph → the M2 seed block is skipped and every nav key falls through to
+    // the inert guards (ts:340-341), which return before preventDefault.
+    const deps = navDeps({ graph: null });
+    mount(deps);
+    expect(press('ArrowDown').defaultPrevented).toBe(false);
+    expect(press('Home').defaultPrevented).toBe(false);
+    expect(deps.setSelectedIndex).not.toHaveBeenCalled();
+  });
+
+  it('first nav key seeds an anchor when a graph is present but nothing is selected (M2)', () => {
+    // navDeps' graph(10) has headIndex null, so headAnchor falls back to 0 and
+    // lastRow = 9 (ts:319-338). Down/Home anchor at headAnchor; Up/End at lastRow.
+    const deps = navDeps({ selectedIndex: null });
+    mount(deps);
+    expect(press('ArrowDown').defaultPrevented).toBe(true);
+    expect(deps.setSelectedIndex).toHaveBeenLastCalledWith(0);
+    expect(press('Home').defaultPrevented).toBe(true);
+    expect(deps.setSelectedIndex).toHaveBeenLastCalledWith(0);
+    expect(press('ArrowUp').defaultPrevented).toBe(true);
+    expect(deps.setSelectedIndex).toHaveBeenLastCalledWith(9);
+    expect(press('End').defaultPrevented).toBe(true);
+    expect(deps.setSelectedIndex).toHaveBeenLastCalledWith(9);
   });
 
   it('nav is inert while typing in an input', () => {

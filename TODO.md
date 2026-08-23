@@ -44,9 +44,13 @@ GitActivityDock.tsx, e2e/20-sidebar-reveal.spec.ts + eslint-directive removals i
 
 ## 🔴 P87d — fix the pre-existing peer nav test (USER APPROVED 2026-08-23) — pending
 `useWorkspaceKeyboard.test.tsx > "nav is inert (and not default-prevented) with no selection or no graph"` fails (peer's
-590f2ef "first arrow seeds selection"). User chose "Fix it too". Likely fix: guard the seed-selection so it only
-preventDefaults/acts when a graph exists (no-graph case stays inert). Confirm intent from the test's two cases
-(no-selection-but-graph should seed; no-graph should stay inert).
+590f2ef "first arrow seeds selection"). User chose "Fix it too". **Diagnosis: TEST-ONLY fix — the app is
+CORRECT.** `useWorkspaceKeyboard.ts:320-338` implements the intended M2 feature: graph present + `selectedIndex===null`
+→ first arrow SEEDS selection (preventDefault + setSelectedIndex). The old test's `{selectedIndex:null}` (graph-present)
+case wrongly asserts inert; the `{graph:null}` case is still correctly inert. Fix the TEST (split: no-graph→inert;
+graph+no-selection→seeds), do NOT touch useWorkspaceKeyboard.ts. Routed to tester.
+**P87d DONE (tester):** split into two tests (no-graph→inert; graph+no-selection→seeds anchor: ArrowDown/Home→0,
+ArrowUp/End→9); 40 passed, no app code touched. Committing, then full-gate re-run CLEAN.
 
 ---
 
