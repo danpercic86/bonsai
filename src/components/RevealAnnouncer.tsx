@@ -13,6 +13,14 @@
 export interface RevealAnnouncerProps {
   /** The message to announce; empty string renders nothing (initial state). */
   message: string;
+  /**
+   * Accessible name for this live region. The app mounts several `role="status"`
+   * sr-only regions (sidebar reveal, graph-grid selection); an `aria-label`
+   * disambiguates them for assistive tech and for tests, WITHOUT changing what is
+   * announced — the spoken content is still the text child, not the label.
+   * Defaults to "Reveal status" (the P84 sidebar-reveal region).
+   */
+  label?: string;
 }
 
 // An invisible zero-width marker whose presence toggles with the reveal nonce's
@@ -33,9 +41,15 @@ export function revealMissMessage(ref: string, nonce = 0): string {
   return `${ref} is not in the loaded history` + nonceMarker(nonce);
 }
 
-export function RevealAnnouncer({ message }: RevealAnnouncerProps) {
+export function RevealAnnouncer({ message, label = 'Reveal status' }: RevealAnnouncerProps) {
   return (
-    <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+    <span
+      className="sr-only"
+      role="status"
+      aria-label={label}
+      aria-live="polite"
+      aria-atomic="true"
+    >
       {message}
     </span>
   );

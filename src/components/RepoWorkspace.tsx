@@ -851,7 +851,6 @@ export function RepoWorkspace({
     );
     // overlayMeta is read via ref; the primitive deps below capture every change
     // that matters (which file, which section) plus a status-driven refresh.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repoId, overlayMeta?.path, overlayMeta?.kind, overlayMeta?.origPath, status]);
 
   // P17c: which granular action the open overlay offers, or null (read-only).

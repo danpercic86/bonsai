@@ -44,5 +44,7 @@ export function GraphSelectionAnnouncer({ graph, selectedIndex }: GraphSelection
     }, 150);
     return () => window.clearTimeout(id);
   }, [graph, selectedIndex]);
-  return <RevealAnnouncer message={message} />;
+  // Distinct accessible name so this graph-selection region and the sidebar-reveal
+  // region (both `role="status"` sr-only spans) are individually addressable.
+  return <RevealAnnouncer message={message} label="Graph selection" />;
 }

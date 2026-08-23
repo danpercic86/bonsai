@@ -25,9 +25,14 @@ async function openWithStatus(page: Page): Promise<void> {
   await expect(page.getByTestId('status-panel').getByText(/Staged \(/)).toBeVisible();
 }
 
-/** The always-mounted P84 reveal live region (RevealAnnouncer.tsx). */
+/**
+ * The always-mounted P84 reveal live region (RevealAnnouncer.tsx). The app mounts
+ * several `role="status"` sr-only regions (sidebar reveal, graph-grid selection,
+ * git-activity dock), so target this one by its accessible name ("Reveal status")
+ * rather than a bare role/class selector that would resolve to multiple elements.
+ */
 function announcer(page: Page): Locator {
-  return page.locator('span.sr-only[role="status"]');
+  return page.getByRole('status', { name: /reveal/i });
 }
 
 /** A sidebar tree row containing the exactly-titled name span. */

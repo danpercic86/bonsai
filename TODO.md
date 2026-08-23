@@ -24,6 +24,32 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
+## 🔴 P87c — batch gate-fix (full `pnpm gate` after P87b) — in-progress
+
+**Current step:** full gate RED → senior-dev fixing the two real batch regressions. Full gate at commit
+298e45b: cargo/tsc/build GREEN; **eslint FAIL** (41/40 warnings — unused `eslint-disable` in CommitBox.tsx:173,184
++ RepoWorkspace.tsx:854, my-modified files; new P87 files clean); **playwright e2e FAIL** — P87b's git-dock
+`span.sr-only[role="status"]` live region collides with the peer's `RevealAnnouncer`, so `e2e/20-sidebar-reveal.spec.ts`'s
+`announcer()` locator matches 2 elements (strict-mode violation, 3 tests). **vitest** 1 failed/2267 passed = the
+PRE-EXISTING peer `useWorkspaceKeyboard.test.tsx > "nav is inert…"` (590f2ef; NOT this batch — separate decision).
+Fix: (1) remove the unused eslint-disable directives → ≤40; (2) disambiguate the live regions (aria-label + scope the
+e2e helper). Then re-run the full gate CLEAN (no harness on 1420).
+
+**P87c DONE (senior-dev, verified): eslint 41→38 (exit 0); e2e 20-sidebar-reveal + 26-a11y-toasts 12 passed; tsc clean.**
+CORRECTION: the e2e collision was PEER-vs-PEER (`RevealAnnouncer` + `GraphSelectionAnnouncer`, both span.sr-only[role=status]),
+NOT this batch — GitActivityDock renders a `<p>`, never matched. So BOTH the e2e and vitest gate failures were pre-existing
+in the peer's 590f2ef (committed pending USER CHECKPOINT, gate not green). Fix disambiguates via aria-label ("Reveal status",
+"Graph selection", "Git activity") + name-scoped e2e locator. Files: RevealAnnouncer.tsx, GraphSelectionAnnouncer.tsx,
+GitActivityDock.tsx, e2e/20-sidebar-reveal.spec.ts + eslint-directive removals in CommitBox.tsx/RepoWorkspace.tsx.
+
+## 🔴 P87d — fix the pre-existing peer nav test (USER APPROVED 2026-08-23) — pending
+`useWorkspaceKeyboard.test.tsx > "nav is inert (and not default-prevented) with no selection or no graph"` fails (peer's
+590f2ef "first arrow seeds selection"). User chose "Fix it too". Likely fix: guard the seed-selection so it only
+preventDefaults/acts when a graph exists (no-graph case stays inert). Confirm intent from the test's two cases
+(no-selection-but-graph should seed; no-graph should stay inert).
+
+---
+
 ## ⚡ P85 — Refresh perf: route ref-mutations through echo-suppressed refresh — pending
 
 **Current step:** DONE (committed) — reviewer APPROVED (no MUST-FIX; A2 arm/disarm + A3 emit both

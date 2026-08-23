@@ -212,6 +212,7 @@ export const GitActivityDock = forwardRef<GitActivityDockHandle, GitActivityDock
         <p
           className="git-dock-announce sr-only"
           role="status"
+          aria-label="Git activity"
           aria-live="polite"
           aria-atomic="true"
         >

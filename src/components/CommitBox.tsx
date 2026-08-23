@@ -170,7 +170,6 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
       setMessage(commitDraftRef.current);
       amendSeededRef.current = false;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [amend, amendMessage]);
 
   // Async-race guard: amendMessage may resolve AFTER amend already flipped true.
@@ -181,7 +180,6 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
       setMessage(amendMessage);
       amendSeededRef.current = true;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [amend, amendMessage]);
 
   const merge = mode === 'merge';
