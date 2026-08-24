@@ -355,6 +355,77 @@ describe('commitMenuItems', () => {
   });
 });
 
+// checkoutMenuItems is a private closure; its output is prepended FIRST into
+// commitMenuItems, so we assert its structure through the head of that list.
+// UI contract §1/§2/§2b: 0-tip → single top-level detached item; 1-tip →
+// grouped parent (default = branch checkout) + flyout [branch, detached];
+// ≥2-tip → INERT parent (no onSelect) + flyout [branch…, detached last].
+describe('checkoutMenuItems (via commitMenuItems head)', () => {
+  const LABEL = 'Checkout commit (detached)';
+
+  it('0 local tips → a single top-level detached item, ordered first, exact label', () => {
+    const deps = makeDeps();
+    const items = createWorkspaceMenus(deps).commitMenuItems(OID_OTHER);
+    // items[0] is the only checkout entry (no grouping) with the exact label.
+    expect(items[0].label).toBe(LABEL);
+    expect(items[0].children).toBeUndefined();
+    // Exactly one checkout entry exists overall.
+    expect(labelsOf(items).filter((l) => l === LABEL || l === 'Checkout')).toEqual([LABEL]);
+    items[0].onSelect?.();
+    expect(deps.handleCheckoutCommit).toHaveBeenCalledWith(OID_OTHER);
+  });
+
+  it('1 local tip → grouped parent (default = branch checkout) + flyout [branch, detached]', () => {
+    const deps = makeDeps();
+    // feature (non-head) tips OID_FEATURE.
+    const items = createWorkspaceMenus(deps).commitMenuItems(OID_FEATURE);
+    const parent = items[0];
+    expect(parent.label).toBe('Checkout feature');
+    // Parent click = default branch checkout.
+    parent.onSelect?.();
+    expect(deps.handleCheckoutBranch).toHaveBeenCalledWith('feature');
+    // Flyout: branch first, detached LAST.
+    expect(parent.children?.map((c) => c.label)).toEqual(['Checkout feature', LABEL]);
+    parent.children?.[1].onSelect?.();
+    expect(deps.handleCheckoutCommit).toHaveBeenCalledWith(OID_FEATURE);
+  });
+
+  it('≥2 local tips → INERT parent (no onSelect) + flyout [branch…, detached last]', () => {
+    const deps = makeDeps({
+      branches: makeSnapshot({
+        local: [
+          featureBranch({ name: 'alpha', tip: OID_OTHER }),
+          featureBranch({ name: 'beta', tip: OID_OTHER }),
+          mainBranch(),
+        ],
+      }),
+    });
+    const items = createWorkspaceMenus(deps).commitMenuItems(OID_OTHER);
+    const parent = items[0];
+    expect(parent.label).toBe('Checkout');
+    // INERT: parent has NO default action (only opens the flyout).
+    expect(parent.onSelect).toBeUndefined();
+    // One `Checkout <name>` per branch in snapshot order, detached LAST.
+    expect(parent.children?.map((c) => c.label)).toEqual([
+      'Checkout alpha',
+      'Checkout beta',
+      LABEL,
+    ]);
+    // Children carry the real actions.
+    parent.children?.[0].onSelect?.();
+    expect(deps.handleCheckoutBranch).toHaveBeenCalledWith('alpha');
+    parent.children?.[2].onSelect?.();
+    expect(deps.handleCheckoutCommit).toHaveBeenCalledWith(OID_OTHER);
+  });
+
+  it('the current-HEAD branch tip is excluded from the tip list (§1)', () => {
+    // main (head) tips OID_HEAD → filtered out → single detached item, no group.
+    const items = createWorkspaceMenus(makeDeps()).commitMenuItems(OID_HEAD);
+    expect(items[0].label).toBe(LABEL);
+    expect(items[0].children).toBeUndefined();
+  });
+});
+
 describe('buildContextItems', () => {
   const menus = (over: Parameters<typeof makeDeps>[0] = {}) =>
     createWorkspaceMenus(makeDeps(over));

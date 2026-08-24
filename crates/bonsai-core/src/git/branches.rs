@@ -114,3 +114,5 @@ mod create_branch_here_tests;
 mod checkout_autostash_tests;
 #[cfg(test)]
 mod rename_branch_tests;
+#[cfg(test)]
+mod checkout_commit_detached_tests;
