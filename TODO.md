@@ -48,7 +48,12 @@ clippy 0-warn workspace, eslint 38≤40, file-size ok, vitest 2288 passed, tsc+b
 (1 skip; 1 flake = `e2e/07-rebase.spec.ts` timing, PASSES isolated 1.8m — rebase is outside the P88a matrix, not a
 regression). Commits: contract `31bf4bd`, P88a `2412d8b`, B2a `f4c060c`, B2b `52f5d74`, PB-1 `cc5fdac`, P88a-tests
 `709c9cc`. Branch `perf/git-action-round2` (off c0825a3/1.3.0), NOT merged/pushed. **PENDING: native USER CHECKPOINTs
-+ merge decision.** User confirmed "go ahead with B2 after this" (2026-08-24).
++ merge decision.** User confirmed "go ahead with B2 after this" (2026-08-24). **Then user chose "Do FU-B2c now"
+(2026-08-24) → FU-B2c IN PROGRESS. Architect design DONE (contract §FU-B2c): Option 1 = move owned `Repository`
+in/out through new `run_with_git_timeout_owned` + `with_repo_timed`/`_mut_timed` wrappers (Send-only, one owner at a
+time; leak-on-timeout self-heals; watchdog abandonment preserved). ODs resolved: accept leak no-cap, delegate the
+existing `run_with_git_timeout_with` to the owned variant, `get_graph` out of scope. Repurpose the 2 now-false
+once-per-call tests. Senior-dev implementing.**
 
 **NEW FOLLOW-UPS (this batch):**
 - **FU-B2c (perf, MED — the remaining B2 win):** hoist `with_repo` OUTSIDE `run_with_git_timeout` for `get_status`+
