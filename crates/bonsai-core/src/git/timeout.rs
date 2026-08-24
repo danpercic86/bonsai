@@ -108,30 +108,83 @@ where
     T: Send + 'static,
     F: FnOnce(&GitProgress) -> Result<T, AppError> + Send + 'static,
 {
+    // FU-B2c de-dup: this is the thin `((), …)` adapter over the owned variant so
+    // exactly ONE copy of the recv loop exists. The moved value is the unit — no
+    // handle survives — and the error strings/paths are produced by the owned
+    // loop verbatim, so the existing timeout tests and callers are unchanged.
+    let (_u, res) = run_with_git_timeout_owned_with(op, deadline, (), move |p, ()| ((), f(p)));
+    res
+}
+
+/// Like [`run_with_git_timeout`], but MOVES an owned `val: T` into the worker and
+/// back out. `f` receives `val` by value and returns it alongside its result, so
+/// the handle survives an inner git error and is re-cachable by the caller.
+///
+/// Return contract:
+/// * `(Some(val), Ok(r))`   — `f` completed; git op ok. Caller RE-CACHES `val`.
+/// * `(Some(val), Err(e))`  — `f` completed; inner git error. Caller RE-CACHES `val`.
+/// * `(None, Err(Git ..))`  — inactivity timeout; worker abandoned, `val` leaked
+///   with it (self-healing: the caller's cache entry stays absent → reopen).
+/// * `(None, Err(Other ..))`— worker panicked / spawn failed; `val` gone.
+pub fn run_with_git_timeout_owned<T, R, F>(op: &str, val: T, f: F) -> (Option<T>, Result<R, AppError>)
+where
+    T: Send + 'static,
+    R: Send + 'static,
+    F: FnOnce(&GitProgress, T) -> (T, Result<R, AppError>) + Send + 'static,
+{
+    run_with_git_timeout_owned_with(op, effective_deadline(), val, f)
+}
+
+/// Explicit-deadline twin of [`run_with_git_timeout_owned`] (tests / short
+/// deadlines), mirroring [`run_with_git_timeout_with`]. Same abandon-on-hang
+/// safety and the SAME error strings; the only difference from the non-owned
+/// loop is that the channel carries `(T, Result<R, _>)` so the moved value comes
+/// back out on a `Some(_)` result.
+pub fn run_with_git_timeout_owned_with<T, R, F>(
+    op: &str,
+    deadline: Duration,
+    val: T,
+    f: F,
+) -> (Option<T>, Result<R, AppError>)
+where
+    T: Send + 'static,
+    R: Send + 'static,
+    F: FnOnce(&GitProgress, T) -> (T, Result<R, AppError>) + Send + 'static,
+{
     let progress = GitProgress::new();
     let worker_progress = progress.clone();
-    let (tx, rx) = std::sync::mpsc::channel::<Result<T, AppError>>();
+    let (tx, rx) = std::sync::mpsc::channel::<(T, Result<R, AppError>)>();
     let spawned = std::thread::Builder::new()
         .name(format!("bonsai-git-{op}"))
         .spawn(move || {
-            let _ = tx.send(f(&worker_progress));
+            // Moves `val` into the worker; it is returned alongside the result.
+            let _ = tx.send(f(&worker_progress, val));
         });
     if let Err(e) = spawned {
-        return Err(AppError::Other(format!(
-            "failed to spawn worker thread for {op}: {e}"
-        )));
+        // `val` was consumed by the failed spawn closure — unrecoverable.
+        return (
+            None,
+            Err(AppError::Other(format!(
+                "failed to spawn worker thread for {op}: {e}"
+            ))),
+        );
     }
 
     let mut last_count = progress.count();
     let mut last_activity = Instant::now();
     loop {
         match rx.recv_timeout(POLL.min(deadline)) {
-            Ok(result) => return result, // worker finished (join not needed: detached by design)
+            // Worker finished (join not needed: detached by design). The moved
+            // value comes back so the caller can re-cache it.
+            Ok((val, res)) => return (Some(val), res),
             Err(RecvTimeoutError::Disconnected) => {
                 // Sender dropped without a value ⇒ the worker panicked.
-                return Err(AppError::Other(format!(
-                    "internal error: the {op} worker thread panicked"
-                )));
+                return (
+                    None,
+                    Err(AppError::Other(format!(
+                        "internal error: the {op} worker thread panicked"
+                    ))),
+                );
             }
             Err(RecvTimeoutError::Timeout) => {
                 let count = progress.count();
@@ -139,13 +192,17 @@ where
                     last_count = count;
                     last_activity = Instant::now();
                 } else if last_activity.elapsed() >= deadline {
-                    // Detach the wedged worker (see the doc comment).
-                    return Err(AppError::Git(format!(
-                        "repository object database appears corrupt (operation timed out): \
-                         {op} made no progress for {}s. Run `git fsck` to locate the damaged \
-                         object; the stalled worker was abandoned.",
-                        deadline.as_secs().max(1)
-                    )));
+                    // Detach the wedged worker (see the doc comment). The moved
+                    // value leaks with it; the caller leaves its cache absent.
+                    return (
+                        None,
+                        Err(AppError::Git(format!(
+                            "repository object database appears corrupt (operation timed out): \
+                             {op} made no progress for {}s. Run `git fsck` to locate the damaged \
+                             object; the stalled worker was abandoned.",
+                            deadline.as_secs().max(1)
+                        ))),
+                    );
                 }
             }
         }
@@ -218,6 +275,58 @@ mod tests {
         })
         .expect_err("panic surfaces as an error");
         assert!(matches!(err, AppError::Other(m) if m.contains("panicked")));
+    }
+
+    /// FU-B2c owned variant: a fast closure returns BOTH the moved value and its
+    /// result (`(Some(val), Ok(r))`), so the caller can re-cache the handle.
+    #[test]
+    fn owned_returns_value_and_result() {
+        let (val, res) = run_with_git_timeout_owned_with(
+            "owned-fast",
+            Duration::from_secs(5),
+            String::from("handle"),
+            |_p, v| (v, Ok::<u32, AppError>(9)),
+        );
+        assert_eq!(val.as_deref(), Some("handle"), "moved value comes back");
+        assert_eq!(res.expect("ok"), 9);
+    }
+
+    /// FU-B2c owned variant: an inner git error still returns the moved value
+    /// (`(Some(val), Err(e))`) — the handle survives an inner failure.
+    #[test]
+    fn owned_inner_error_still_returns_value() {
+        let (val, res) = run_with_git_timeout_owned_with(
+            "owned-err",
+            Duration::from_secs(5),
+            String::from("handle"),
+            |_p, v| (v, Err::<(), _>(AppError::Git("boom".to_string()))),
+        );
+        assert_eq!(val.as_deref(), Some("handle"), "value survives inner error");
+        assert!(matches!(res, Err(AppError::Git(m)) if m == "boom"));
+    }
+
+    /// FU-B2c AC-(b): a hanging owned closure times out PROMPTLY with the corrupt-
+    /// odb `AppError::Git`, returns `None` (marker abandoned with the worker), and
+    /// the test finishes long before the 10-minute sleep.
+    #[test]
+    fn owned_hanging_closure_times_out_and_drops_value() {
+        let (val, res) = run_with_git_timeout_owned_with(
+            "owned-hang",
+            Duration::from_millis(300),
+            String::from("marker"),
+            |_p, v| {
+                std::thread::sleep(Duration::from_secs(600));
+                (v, Ok::<(), AppError>(()))
+            },
+        );
+        assert!(val.is_none(), "timed-out worker abandons the moved value");
+        match res {
+            Err(AppError::Git(m)) => {
+                assert!(m.contains("operation timed out"), "message: {m}");
+                assert!(m.contains("owned-hang"), "names the op: {m}");
+            }
+            other => panic!("expected Git timeout error, got {other:?}"),
+        }
     }
 
     /// Env-override parse: unset/garbage/zero ⇒ default; a positive integer ⇒ ms.

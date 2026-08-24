@@ -40,8 +40,10 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::Duration;
 
 use bonsai_core::error::AppError;
+use bonsai_core::git::timeout::{effective_deadline, run_with_git_timeout_owned_with, GitProgress};
 
 use crate::perf::PerfState;
 
@@ -116,230 +118,100 @@ pub fn with_repo_mut<R>(
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use bonsai_core::git::branches::{list_refs, list_refs_with};
-    use bonsai_core::git::stash::list_stashes_with;
-    use bonsai_core::git::status::{read_status, read_status_with};
-    use bonsai_core::git::worktree::list_worktrees_with;
-    use bonsai_core::graph::graph_seed_with;
-
-    /// init + identity + one commit + a `feature` branch — enough content for
-    /// every routed reader to succeed.
-    fn fixture() -> tempfile::TempDir {
-        let dir = tempfile::TempDir::new().expect("temp dir");
-        let repo = git2::Repository::init(dir.path()).expect("init");
-        {
-            let mut cfg = repo.config().expect("config");
-            cfg.set_str("user.name", "Test User").expect("name");
-            cfg.set_str("user.email", "test@example.com").expect("email");
-            cfg.set_bool("core.autocrlf", false).expect("autocrlf");
-        }
-        std::fs::write(dir.path().join("a.txt"), "base\n").expect("write");
-        let mut index = repo.index().expect("index");
-        index.add_path(Path::new("a.txt")).expect("add");
-        index.write().expect("write index");
-        let tree = repo.find_tree(index.write_tree().expect("tree")).expect("find tree");
-        let sig = git2::Signature::now("Test User", "test@example.com").expect("sig");
-        let head = repo
-            .commit(Some("HEAD"), &sig, &sig, "C0", &tree, &[])
-            .expect("commit");
-        let head_commit = repo.find_commit(head).expect("head commit");
-        repo.branch("feature", &head_commit, false).expect("branch");
-        dir
-    }
-
-    /// One refresh round's worth of routed reads, calling `with_repo*` DIRECTLY
-    /// (no `run_with_git_timeout` wrapper). This is exactly the production path of
-    /// the LIST TRIO (`list_branches`/`list_stashes`/`list_worktrees`), which run
-    /// on the persistent blocking-pool thread and so DO reuse across rounds. It is
-    /// NOT the path of `get_status`/`stream_graph` — those run inside the timeout
-    /// wrapper (fresh watchdog thread per call) and open once per call; that is
-    /// covered separately by [`tests::get_status_opens_once_per_call`] /
-    /// [`tests::stream_graph_path_opens_once_per_call`].
-    fn run_round(id: &str, gen: u64, path: &Path, perf: &PerfState) {
-        with_repo(id, gen, path, perf, read_status_with).expect("status");
-        with_repo(id, gen, path, perf, list_refs_with).expect("refs");
-        with_repo(id, gen, path, perf, list_worktrees_with).expect("worktrees");
-        with_repo_mut(id, gen, path, perf, list_stashes_with).expect("stashes");
-        with_repo_mut(id, gen, path, perf, |r| graph_seed_with(r).map(|_| ())).expect("seed");
-    }
-
-    /// AC-b1 (DIRECT / list-command path): N routed reads on a cold thread share
-    /// ONE open; a warm round on the same thread + generation re-opens nothing.
-    /// This measures the direct `with_repo*` path (the list trio's production
-    /// behaviour), NOT the timeout-wrapped status/graph path — see `run_round`.
-    #[test]
-    fn ac_b1_round_shares_one_open_warm_round_zero() {
-        let dir = fixture();
-        let perf = PerfState::default();
-        let id = "ac-b1";
-
-        run_round(id, 1, dir.path(), &perf);
-        let cold = perf.snapshot().repo_opens;
-
-        perf.reset();
-        run_round(id, 1, dir.path(), &perf);
-        let warm = perf.snapshot().repo_opens;
-
-        assert_eq!(cold, 1, "5 direct reads must share ONE open on a cold thread");
-        assert_eq!(warm, 0, "a warm round (same thread + generation) re-opens nothing");
-    }
-
-    /// Production-path honesty (status): `get_status_inner` runs its `with_repo`
-    /// call inside `run_with_git_timeout`, which spawns a FRESH watchdog thread
-    /// per call ⇒ the `HANDLES` thread-local is empty each call ⇒ status opens
-    /// ONCE PER CALL, with NO cross-round reuse. Two calls ⇒ two opens (would be
-    /// 1 if the handle were reused across rounds). Documents the limitation.
-    #[test]
-    fn get_status_opens_once_per_call() {
-        use crate::commands::{get_status_inner, open_repo_inner};
-        use crate::state::AppState;
-        use tauri::async_runtime::block_on;
-
-        let dir = fixture();
-        let state = AppState::default();
-        let opened = block_on(open_repo_inner(
-            &state,
-            dir.path().to_string_lossy().into_owned(),
-            |_id| Box::new(|| {}),
-        ))
-        .expect("open");
-        let id = opened.repo_id;
-
-        state.perf.reset();
-        block_on(get_status_inner(&state, &id)).expect("status 1");
-        block_on(get_status_inner(&state, &id)).expect("status 2");
-
-        assert_eq!(
-            state.perf.snapshot().repo_opens,
-            2,
-            "status opens once PER CALL — fresh watchdog thread ⇒ empty HANDLES ⇒ no cross-round reuse"
-        );
-    }
-
-    /// Production-path honesty (graph): the `stream_graph` command routes through
-    /// `run_with_git_timeout` → `with_repo_mut` → `stream_graph_cached_with` (no
-    /// runtime-free `stream_graph_inner` exists, so this reconstructs that exact
-    /// wrapper). Each call gets a fresh watchdog thread ⇒ opens ONCE PER CALL;
-    /// within a call the seed probe + walk + store re-probe SHARE that one open
-    /// (the graph's real B2b win). Two calls ⇒ two opens (no cross-round reuse).
-    #[test]
-    fn stream_graph_path_opens_once_per_call() {
-        use bonsai_core::git::timeout::run_with_git_timeout;
-        use std::sync::{Arc, Mutex};
-
-        let dir = fixture();
-        let path = dir.path().to_path_buf();
-        let perf = Arc::new(PerfState::default());
-        let cache: Arc<crate::graph_cache::GraphCache> = Arc::new(Mutex::new(None));
-
-        for _ in 0..2 {
-            let path = path.clone();
-            let perf = perf.clone();
-            let cache = cache.clone();
-            run_with_git_timeout("stream_graph", move |_progress| {
-                with_repo_mut("graph-timeout", 1, &path, &perf, |repo| {
-                    crate::graph_cache::stream_graph_cached_with(repo, &cache, &perf, |_chunk| true)
-                })
-            })
-            .expect("graph");
-        }
-
-        assert_eq!(
-            perf.snapshot().repo_opens,
-            2,
-            "graph opens once PER CALL (seed+walk+re-probe fused within a call; no cross-round reuse)"
-        );
-    }
-
-    /// AC-b3: a generation bump (close+open re-arm) evicts the stale handle and
-    /// forces a reopen; the next call at the new generation reuses.
-    #[test]
-    fn ac_b3_generation_bump_forces_reopen() {
-        let dir = fixture();
-        let perf = PerfState::default();
-        let id = "ac-b3";
-
-        with_repo(id, 1, dir.path(), &perf, read_status_with).expect("gen1 a");
-        with_repo(id, 1, dir.path(), &perf, read_status_with).expect("gen1 b");
-        assert_eq!(perf.snapshot().repo_opens, 1, "gen 1: one open then reuse");
-
-        perf.reset();
-        with_repo(id, 2, dir.path(), &perf, read_status_with).expect("gen2 a");
-        assert_eq!(perf.snapshot().repo_opens, 1, "generation bump reopens");
-
-        perf.reset();
-        with_repo(id, 2, dir.path(), &perf, read_status_with).expect("gen2 b");
-        assert_eq!(perf.snapshot().repo_opens, 0, "gen 2 handle reused after reopen");
-    }
-
-    /// AC-b5: status through a REUSED handle after an EXTERNAL index write (via a
-    /// second `Repository`) equals a fresh open — proves the `index.read(true)`
-    /// freshness guard in `read_status_with`.
-    #[test]
-    fn ac_b5_status_reused_handle_sees_external_index_write() {
-        let dir = fixture();
-        let path = dir.path();
-        let perf = PerfState::default();
-        let id = "ac-b5-idx";
-
-        let s1 = with_repo(id, 1, path, &perf, read_status_with).expect("s1");
-
-        // External index write through an INDEPENDENT handle: stage a new file.
-        let repo2 = git2::Repository::open(path).expect("open 2");
-        std::fs::write(path.join("new.txt"), "x\n").expect("write new");
-        let mut idx = repo2.index().expect("index 2");
-        idx.add_path(Path::new("new.txt")).expect("add new");
-        idx.write().expect("write index 2");
-        drop(idx);
-        drop(repo2);
-
-        let s2 = with_repo(id, 1, path, &perf, read_status_with).expect("s2");
-        let fresh = read_status(path).expect("fresh");
-
-        assert_eq!(
-            s2, fresh,
-            "reused handle must equal a fresh open after an external index write"
-        );
-        assert_ne!(s1, s2, "the external stage must be visible through the reused handle");
-        assert!(
-            s2.staged.iter().any(|e| e.path == "new.txt"),
-            "new.txt must show as STAGED (not untracked) ⇒ index was reloaded"
-        );
-    }
-
-    /// AC-b5 (ref half): `list_refs` through a REUSED handle sees an EXTERNALLY
-    /// created branch — refs are re-read on demand, the load-bearing point for
-    /// the graph B1 classify and the branch list.
-    #[test]
-    fn ac_b5_refs_reused_handle_sees_external_branch() {
-        let dir = fixture();
-        let path = dir.path();
-        let perf = PerfState::default();
-        let id = "ac-b5-refs";
-
-        let before = with_repo(id, 1, path, &perf, list_refs_with).expect("before");
-
-        {
-            let repo2 = git2::Repository::open(path).expect("open 2");
-            let head = repo2.head().expect("head").peel_to_commit().expect("commit");
-            repo2.branch("externally-added", &head, false).expect("branch");
-            // `head` (borrows `repo2`) drops at the end of this block, before `repo2`.
-        }
-
-        let after = with_repo(id, 1, path, &perf, list_refs_with).expect("after");
-        let fresh = list_refs(path).expect("fresh");
-
-        assert!(
-            !before.local.iter().any(|b| b.name == "externally-added"),
-            "branch absent before the external create"
-        );
-        assert!(
-            after.local.iter().any(|b| b.name == "externally-added"),
-            "reused handle must see the externally created branch"
-        );
-        assert_eq!(after.local.len(), fresh.local.len(), "matches a fresh open");
-    }
+/// FU-B2c: `&mut` handle reuse ACROSS the corrupt-object watchdog. Runs on the
+/// caller's (blocking-pool) thread, OUTSIDE the watchdog. Takes the cached handle
+/// out of `HANDLES` for `(repo_id, generation)` — opening + `perf.inc_repo_opens()`
+/// only on a miss / stale generation — MOVES it THROUGH `run_with_git_timeout_owned`
+/// (so `Repository`'s `Send`-but-`!Sync` handle is owned by exactly one thread at
+/// every instant), and puts it back on a `Some(_)` return. On timeout/panic the
+/// handle is abandoned with the worker and the entry stays absent ⇒ the next call
+/// reopens (self-healing).
+///
+/// This is the status/graph twin of [`with_repo_mut`]: the direct variant reuses
+/// only when called on the persistent blocking-pool thread (the list trio), while
+/// this one reuses even though the git work runs on a fresh watchdog thread.
+pub fn with_repo_mut_timed<R>(
+    op: &str,
+    repo_id: &str,
+    generation: u64,
+    path: &Path,
+    perf: &PerfState,
+    f: impl FnOnce(&GitProgress, &mut git2::Repository) -> Result<R, AppError> + Send + 'static,
+) -> Result<R, AppError>
+where
+    R: Send + 'static,
+{
+    with_repo_mut_timed_with(op, effective_deadline(), repo_id, generation, path, perf, f)
 }
+
+/// Shared twin of [`with_repo_mut_timed`] (narrows `&mut` → `&`) for readers that
+/// only need shared access (`read_status_with`). Delegates to the `&mut` variant.
+pub fn with_repo_timed<R>(
+    op: &str,
+    repo_id: &str,
+    generation: u64,
+    path: &Path,
+    perf: &PerfState,
+    f: impl FnOnce(&GitProgress, &git2::Repository) -> Result<R, AppError> + Send + 'static,
+) -> Result<R, AppError>
+where
+    R: Send + 'static,
+{
+    with_repo_mut_timed(op, repo_id, generation, path, perf, move |progress, repo| {
+        f(progress, repo)
+    })
+}
+
+/// Explicit-deadline internal variant so timeout behaviour is testable env-free.
+/// [`with_repo_mut_timed`] delegates here with [`effective_deadline`]. Takes the
+/// handle out, moves it through the owned watchdog, and re-caches it iff it came
+/// back (Ok OR inner Err); a `None` (timeout / panic) leaves the entry absent.
+fn with_repo_mut_timed_with<R>(
+    op: &str,
+    deadline: Duration,
+    repo_id: &str,
+    generation: u64,
+    path: &Path,
+    perf: &PerfState,
+    f: impl FnOnce(&GitProgress, &mut git2::Repository) -> Result<R, AppError> + Send + 'static,
+) -> Result<R, AppError>
+where
+    R: Send + 'static,
+{
+    // 1. TAKE the handle out of THIS pool thread's thread-local (open + count only
+    //    on a miss / stale-generation evict). Borrows `repo_id`/`path`/`perf` on
+    //    the pool thread only.
+    let repo = HANDLES.with(|cell| {
+        let mut map = cell.borrow_mut();
+        let key = (repo_id.to_string(), generation);
+        if let Some(r) = map.remove(&key) {
+            return Ok(r); // exact-gen hit → take ownership
+        }
+        // A close / open re-arm bumped the generation ⇒ drop the id's stale entry.
+        map.retain(|(id, _), _| id != repo_id);
+        let r = open_no_search(path)?;
+        perf.inc_repo_opens(); // count the ACTUAL open only (AC-b1)
+        Ok::<_, AppError>(r)
+    })?;
+
+    // 2. MOVE it through the watchdog; `f` gets it by `&mut`, returns it by value.
+    //    Only `f` and `repo` cross to the watchdog thread; the pool thread blocks
+    //    here until it returns, so no aliasing and no `Sync` bound is needed.
+    let (returned, result) = run_with_git_timeout_owned_with(op, deadline, repo, move |progress, mut repo| {
+        let res = f(progress, &mut repo);
+        (repo, res)
+    });
+
+    // 3. Re-cache iff it came back (Ok OR inner Err). `None` ⇒ abandoned with the
+    //    wedged worker ⇒ leave absent so the next call reopens cleanly.
+    if let Some(repo) = returned {
+        HANDLES.with(|cell| {
+            cell.borrow_mut()
+                .insert((repo_id.to_string(), generation), repo);
+        });
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests;
