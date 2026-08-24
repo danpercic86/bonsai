@@ -112,6 +112,7 @@ describe('handlePopStash', () => {
     await actions.handlePopStash(0);
     expect(pop).toHaveBeenCalledWith(REPO, 0, false, undefined);
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Popped stash@{0}');
+    expect(deps.refreshAll).toHaveBeenCalledWith('stash'); // P88a row 8
 
     pop.mockResolvedValue({ kind: 'conflicts', paths: ['a.ts', 'b.ts'] });
     await actions.handlePopStash(0);

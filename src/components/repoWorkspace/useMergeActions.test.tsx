@@ -106,6 +106,16 @@ describe('resolve conflict', () => {
     const deps = makeDeps();
     await useMergeActions(deps).handleResolveConflictText('a.ts', 'body', 'Resolved a.ts with AI');
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Resolved a.ts with AI');
+    expect(deps.refreshAll).toHaveBeenCalledWith('worktree'); // P88a row 11
+  });
+
+  it('handleResolveConflictText deferRefresh:true stages WITHOUT refreshing (bulk refreshes once)', async () => {
+    vi.spyOn(mockIpc, 'resolveConflictText').mockResolvedValue(undefined);
+    const deps = makeDeps();
+    // P88a row 11 (deferred branch): a bulk caller passes deferRefresh=true so it can
+    // run ONE refreshAll after the whole loop instead of one per file.
+    await useMergeActions(deps).handleResolveConflictText('a.ts', 'body', null, true);
+    expect(deps.refreshAll).not.toHaveBeenCalled();
   });
 
   it('handleResolveConflictText toasts AND rethrows on error (editor stays open)', async () => {
