@@ -1645,6 +1645,7 @@ export function RepoWorkspace({
   const {
     handleCreateBranch,
     handleCheckoutBranch,
+    handleCheckoutCommit,
     handleCreateBranchHere,
     handleDeleteBranch,
     handleRenameBranch,
@@ -2512,6 +2513,7 @@ export function RepoWorkspace({
     pushToast,
     handleCheckoutRemote,
     handleCheckoutBranch,
+    handleCheckoutCommit,
     setPendingCreateBranch,
     runSummarize,
     runAnalyze,

@@ -100,6 +100,33 @@ pub(crate) async fn checkout_branch_inner(
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// Dirty-safe checkout of an arbitrary commit → DETACHED HEAD: auto-stash ->
+/// safe checkout -> set_head_detached -> re-apply stash. No auto-FF. A conflicted
+/// re-apply is a SUCCESS carrying `apply: Some(conflicts)` (stash retained).
+/// Errors: `invalidName` | `git` | `operationInProgress` | `configMissing` |
+/// `checkoutConflict` | `noRepo`. Does NOT emit `repo-changed` (frontend calls
+/// refreshAll).
+#[tauri::command]
+pub async fn checkout_commit(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    oid: String,
+) -> Result<CheckoutResult, AppError> {
+    checkout_commit_inner(state.inner(), &repo_id, oid).await
+}
+
+/// Runtime-free core of `checkout_commit` (unit-testable without a Tauri app).
+pub(crate) async fn checkout_commit_inner(
+    state: &AppState,
+    repo_id: &str,
+    oid: String,
+) -> Result<CheckoutResult, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || branches::checkout_commit_detached(&path, &oid))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Deletes a LOCAL, fully merged, non-current branch (M5 contract §2.6 —
 /// unmerged deletion is blocked; no force-delete in v1).
 /// Errors: `branchNotFound` | `unmergedBranch` | `git` | `noRepo`.

@@ -68,6 +68,7 @@ export function makeDeps(over: Partial<WorkspaceMenuDeps> = {}): WorkspaceMenuDe
     pushToast: vi.fn(),
     handleCheckoutRemote: vi.fn(),
     handleCheckoutBranch: vi.fn(),
+    handleCheckoutCommit: vi.fn(),
     setPendingCreateBranch: vi.fn(),
     runSummarize: vi.fn(),
     runAnalyze: vi.fn(),

@@ -98,6 +98,7 @@ export interface WorkspaceMenuDeps {
   pushToast: PushToast;
   handleCheckoutRemote(name: string): void;
   handleCheckoutBranch(name: string): void;
+  handleCheckoutCommit(oid: string): void;
   setPendingCreateBranch(v: { oid: string }): void;
   runSummarize(base: string, target: string): void;
   runAnalyze(target: AiDiffTarget, mode: AiAnalysisMode, title: string): void;
@@ -189,6 +190,7 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     pushToast,
     handleCheckoutRemote,
     handleCheckoutBranch,
+    handleCheckoutCommit,
     setPendingCreateBranch,
     runSummarize,
     runAnalyze,
@@ -267,6 +269,8 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     const tip = entry.tip;
     const items: ContextMenuItem[] = [
       {
+        // Grouped: parent default = this branch's checkout; flyout adds the
+        // detached-at-tip option (UI contract §2 pill form).
         label: 'Checkout',
         icon: createElement(CheckoutIcon),
         disabled: gate,
@@ -274,6 +278,23 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
           void (kind === 'remoteBranch'
             ? handleCheckoutRemote(name)
             : handleCheckoutBranch(name)),
+        children: [
+          {
+            label: `Checkout ${name}`,
+            icon: createElement(CheckoutIcon),
+            disabled: gate,
+            onSelect: () =>
+              void (kind === 'remoteBranch'
+                ? handleCheckoutRemote(name)
+                : handleCheckoutBranch(name)),
+          },
+          {
+            label: 'Checkout commit (detached)',
+            icon: createElement(CheckoutIcon),
+            disabled: gate,
+            onSelect: () => void handleCheckoutCommit(tip),
+          },
+        ],
       },
       {
         label: 'Copy branch name',
@@ -540,6 +561,10 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
 
     const items: ContextMenuItem[] = [];
 
+    // Checkout is the most-primary action → FIRST. Graph tag pills pass an oid;
+    // sidebar tag rows pass null (no reachable target) → no checkout (matches today).
+    if (oid !== null) items.push(...checkoutMenuItems(oid));
+
     // 1. Update to remote target (stale) — resolve-in-place, no confirm (§3).
     if (status === 'stale' && syncRemote !== null) {
       items.push({
@@ -771,10 +796,69 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     return items;
   }
 
+  // Checkout entries for a commit oid — the most-primary action, so prepended
+  // FIRST in commit/tag menus (UI contract §2). Keyed off the LOCAL branches
+  // tipping this oid, excluding the current HEAD branch:
+  //   0 → single top-level `Checkout commit (detached)`
+  //   1 → grouped: parent = that branch's checkout + flyout (branch, detached)
+  //  ≥2 → INERT parent `Checkout` (no onSelect → opens flyout only); flyout =
+  //       one `Checkout <name>` per branch (snapshot order) then detached LAST.
+  function checkoutMenuItems(oid: string): ContextMenuItem[] {
+    if (head === null || head.unborn) return [];
+    const gate = mutating || opActive;
+    const localTips = branches?.local.filter((b) => b.tip === oid && !b.isHead) ?? [];
+
+    const detached: ContextMenuItem = {
+      label: 'Checkout commit (detached)',
+      icon: createElement(CheckoutIcon),
+      disabled: gate,
+      onSelect: () => void handleCheckoutCommit(oid),
+    };
+
+    if (localTips.length === 0) {
+      // Pure no-op (already detached at this oid, no other branch) → omit.
+      if (head.detached && head.oid === oid) return [];
+      return [detached];
+    }
+
+    const children: ContextMenuItem[] = localTips.map((b) => ({
+      label: `Checkout ${b.name}`,
+      icon: createElement(CheckoutIcon),
+      disabled: gate,
+      onSelect: () => void handleCheckoutBranch(b.name),
+    }));
+    children.push(detached);
+
+    if (localTips.length === 1) {
+      const only = localTips[0];
+      return [
+        {
+          label: `Checkout ${only.name}`,
+          icon: createElement(CheckoutIcon),
+          disabled: gate,
+          onSelect: () => void handleCheckoutBranch(only.name),
+          children,
+        },
+      ];
+    }
+
+    // ≥2 branches → INERT parent: no onSelect (opens flyout only). Its
+    // `disabled` is left unset so the flyout stays openable while a write is in
+    // flight; the child actions carry `disabled: gate`.
+    return [
+      {
+        label: 'Checkout',
+        icon: createElement(CheckoutIcon),
+        children,
+      },
+    ];
+  }
+
   function commitMenuItems(oid: string): ContextMenuItem[] {
     if (head === null || head.unborn) return [];
     const gate = mutating || opActive;
     return [
+      ...checkoutMenuItems(oid),
       ...commitActionItems(oid),
       // Interactive-rebase-from-here + bisect stay commit-row-only (not part of
       // the shared commit-action set). Gated on an attached born HEAD, matching

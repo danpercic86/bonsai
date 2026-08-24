@@ -1,7 +1,7 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
 import type { IpcApi } from '../../types';
 import { randomOid } from '../../fixtures/oids';
-import { buildStaleReport, delay, isInvalidBranchName, query, requireRepo } from '../repoState';
+import { buildStaleReport, delay, isInvalidBranchName, query, requireRepo, setDetached } from '../repoState';
 import { upsert } from '../statusHelpers';
 import type { AppError, BranchDeleteResult, BranchDeleteStatus, BranchesSnapshot, CheckoutResult, CreateBranchHereResult, RenameBranchResult, StaleReport } from '../../types';
 
@@ -162,6 +162,32 @@ export const branchHandlers = {
     }
     // Clean carry-over: the changes moved with us — status preserved as-is.
     return { stashed: true, fastForwarded, apply: { kind: 'applied' } };
+  },
+
+  // Dirty-safe detached checkout: auto-stash → detach onto `oid` → re-apply.
+  // Stateful so the graph HEAD detached pill moves on the next refreshAll. No
+  // auto-FF (detached HEAD tracks nothing). `?checkout=detachconflict` exercises
+  // the conflicted re-apply (stash RETAINED) toast.
+  async checkoutCommit(repoId: string, oid: string): Promise<CheckoutResult> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    // No-op: already detached at this oid → item is omitted by UI; guard the race.
+    if (state.kind === 'detached' && state.headOid === oid) {
+      return { stashed: false, fastForwarded: false, apply: null };
+    }
+    const s = state.status;
+    const dirty =
+      s.staged.length > 0 ||
+      s.unstaged.length > 0 ||
+      s.untracked.length > 0 ||
+      s.conflicted.length > 0;
+    setDetached(state, oid);
+    if (!dirty) return { stashed: false, fastForwarded: false, apply: null };
+    if (query('checkout') === 'detachconflict') {
+      upsert(s.conflicted, { path: 'src/app.ts', origPath: null, status: 'conflicted' });
+      return { stashed: true, fastForwarded: false, apply: { kind: 'conflicts', paths: ['src/app.ts'] } };
+    }
+    return { stashed: true, fastForwarded: false, apply: { kind: 'applied' } };
   },
 
   async deleteBranch(repoId: string, name: string): Promise<void> {

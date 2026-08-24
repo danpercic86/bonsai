@@ -266,6 +266,7 @@ describe('resetMenuItems', () => {
 describe('commitMenuItems', () => {
   it('attached idle repo: full order incl. interactive rebase, bisect pair, reset', () => {
     expect(labelsOf(createWorkspaceMenus(makeDeps()).commitMenuItems(OID_OTHER))).toEqual([
+      'Checkout commit (detached)',
       'Create branch here',
       'Create tag here',
       'Compare with HEAD',
@@ -291,6 +292,7 @@ describe('commitMenuItems', () => {
       makeDeps({ head: makeHead({ detached: true }), headBranch: null }),
     ).commitMenuItems(OID_OTHER);
     expect(labelsOf(items)).toEqual([
+      'Checkout commit (detached)',
       'Create branch here',
       'Create tag here',
       'Compare with HEAD',
@@ -379,8 +381,10 @@ describe('buildContextItems', () => {
   it('graph tag pill passes the node oid → commit actions appended', () => {
     const items = menus().buildContextItems(target(ref('v1.0', 'tag'), OID_OTHER));
     expect(labelsOf(items)).toContain('Create branch here'); // only with a non-null oid
+    // Checkout is prepended FIRST (most-primary action).
+    expect(labelsOf(items)[0]).toBe('Checkout commit (detached)');
     // P77 §3: with no sync report the first tag item is the publish action.
-    expect(labelsOf(items)[0]).toBe('Push tag to origin');
+    expect(labelsOf(items)).toContain('Push tag to origin');
   });
 
   it('local branch pill delegates to branchMenuItems', () => {
@@ -396,6 +400,9 @@ describe('buildContextItems', () => {
     );
     expect(labelsOf(items)).toEqual([
       'Rename…',
+      // Detaching from the current branch is a real state change (UI §2b case e):
+      // the branch child is filtered as current HEAD → single detached item.
+      'Checkout commit (detached)',
       'Create branch here',
       'Create tag here',
       'Compare with HEAD',

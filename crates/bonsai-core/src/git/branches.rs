@@ -21,7 +21,9 @@ mod list;
 mod remote;
 mod rename;
 
-pub use checkout::{checkout_branch, checkout_branch_autostash, CheckoutResult};
+pub use checkout::{
+    checkout_branch, checkout_branch_autostash, checkout_commit_detached, CheckoutResult,
+};
 pub use create::{create_branch, create_branch_here, CreateBranchHereResult};
 pub use delete::delete_branch;
 pub use list::list_refs;
