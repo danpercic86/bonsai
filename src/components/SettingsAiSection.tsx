@@ -66,7 +66,11 @@ export function SettingsAiSection({
               name="ai-autonomy"
               checked={aiConflictAutonomy === 'proposeReview'}
               disabled={!aiActive}
-              aria-describedby="ai-autonomy-propose-hint"
+              aria-describedby={
+                aiActive
+                  ? 'ai-autonomy-propose-hint'
+                  : 'ai-autonomy-propose-hint ai-autonomy-disabled-hint'
+              }
               onChange={() => onChange({ aiConflictAutonomy: 'proposeReview' })}
             />
             <span>Propose &amp; review</span>
@@ -83,7 +87,11 @@ export function SettingsAiSection({
               name="ai-autonomy"
               checked={aiConflictAutonomy === 'autoResolve'}
               disabled={!aiActive}
-              aria-describedby="ai-autonomy-auto-hint"
+              aria-describedby={
+                aiActive
+                  ? 'ai-autonomy-auto-hint'
+                  : 'ai-autonomy-auto-hint ai-autonomy-disabled-hint'
+              }
               onChange={() => onChange({ aiConflictAutonomy: 'autoResolve' })}
             />
             <span>Resolve automatically</span>
@@ -94,6 +102,14 @@ export function SettingsAiSection({
           </p>
         </div>
       </SettingsRow>
+
+      {!aiActive && (
+        <p className="settings-group-lead" id="ai-autonomy-disabled-hint">
+          {aiEnabled
+            ? 'Turn “Enable AI features” off and on again to confirm access.'
+            : 'Turn on “Enable AI features” above to change this.'}
+        </p>
+      )}
 
       {/* UI §1.3 #43: unchanged. */}
       {aiAvailability === null ? (
