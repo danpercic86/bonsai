@@ -1055,3 +1055,26 @@ dock** (View D, a twin of the §9 AI dock). Reuses §9 geometry, §11 pills, the
 - **Motion.** No dock height animation (§9 canvas-relayout prohibition — snap). `.file-chevron` 120ms;
   determinate fill 150ms `scaleX`. Add the git-dock/bar selectors to the §9 `prefers-reduced-motion`
   block (sweep → static 100% @ .6 opacity; chevron/fill snap).
+
+## 13. Icon system (SVG chrome)
+
+Full contract: `docs/contracts/lucide-icons-ui.md`. As of the Lucide migration, all SVG chrome icons
+come from **`lucide-react`** (imported per-icon, never the barrel). The prior hand-drawn glyphs used a
+16×16 grid with fractional coordinates and blurred on macOS/WebKit; Lucide's 24×24 integer grid fixes
+this.
+
+- **Wrappers, not call-site changes.** `src/components/appIcons.tsx` and `src/components/menuIcons.tsx`
+  keep their existing exported names (`SunIcon`, `GearIcon`, `CheckoutIcon`, …); each returns its
+  mapped Lucide component with the shared `ICON_PROPS`. Call sites (~26) are untouched.
+- **Render spec.** `size={16}`, `strokeWidth={2}` (Lucide default → 1.33px effective at 16px, matching
+  the old ~1.4 weight). Do **not** set `absoluteStrokeWidth`. No `color` prop — glyphs inherit
+  `currentColor` so state (hover/disabled/`--text-*`) and both themes flow from the enclosing button.
+  No `shape-rendering`/`vector-effect` override (Lucide `geometricPrecision` is correct; `crispEdges`
+  would harm curves). `strokeWidth={2.1}` is the exact-1.4 option if ever needed, but 2 is the spec.
+- **A11y.** Every chrome glyph is decorative: `aria-hidden` + `focusable={false}` on the SVG; the
+  accessible name lives on the button/menuitem. Hit-target geometry (§3.1) is unchanged — the box
+  grows, the 16px glyph does not.
+- **Bespoke exceptions** (no adequate Lucide match — kept hand-drawn on the existing `svgProps`
+  recipe): `RefDotIcon` (solid filled dot), `RebaseIcon`, `RebaseInteractiveIcon`, `BisectIcon`.
+- **Canvas glyphs are separate.** The commit-graph glyphs in `src/graph/draw.ts` are canvas-drawn (not
+  SVG DOM), keep their 1.4 stroke, and are out of scope for this migration.

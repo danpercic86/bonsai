@@ -1,11 +1,40 @@
-// P10 §4.2: inline-SVG icon set for context-menu actions. No external deps.
-// Each is a 16×16 monochrome glyph that inherits color from the enclosing
-// `.context-menu-icon` span (so hover/disabled color flows through). Default
-// stroke style matches the graph glyphs in draw.ts: currentColor, 1.4 stroke,
-// no fill, round caps/joins. `fill="currentColor"` is used only where a solid
-// shape reads better.
+// Context-menu action icons, now backed by `lucide-react` (see
+// docs/contracts/lucide-icons-ui.md). Every export name is preserved so call
+// sites are unchanged. Each wrapper returns its mapped Lucide component with the
+// shared ICON_PROPS spread — inheriting color/hover/disabled from the enclosing
+// `.context-menu-icon` span via `currentColor`.
+//
+// KEPT BESPOKE (no adequate Lucide match): RebaseIcon, RebaseInteractiveIcon,
+// BisectIcon. They keep the hand-drawn `svgProps` recipe below.
+import {
+  Check,
+  GitBranchPlus,
+  Copy,
+  GitMerge,
+  RotateCcw,
+  Cherry,
+  Undo,
+  Columns2,
+  Trash2,
+  Tag,
+  Sparkles,
+  ArchiveRestore,
+  ArchiveX,
+  History,
+  SquareTerminal,
+  FolderOpen,
+  Code,
+} from 'lucide-react';
 
-// Shared root props so every glyph is pixel-consistent.
+// Shared render props for all Lucide chrome icons (identical to appIcons').
+const ICON_PROPS = {
+  size: 16,
+  strokeWidth: 2,
+  'aria-hidden': true,
+  focusable: false as const,
+} as const;
+
+// Hand-drawn recipe — used ONLY by the bespoke-kept glyphs below.
 const svgProps = {
   width: 16,
   height: 16,
@@ -17,54 +46,19 @@ const svgProps = {
   strokeLinejoin: 'round' as const,
 };
 
-/** Checkout — a check-mark (branch switch confirmed). */
-export function CheckoutIcon() {
-  return (
-    <svg {...svgProps}>
-      <path d="M3.5 8.5 L6.5 11.5 L12.5 4.5" />
-    </svg>
-  );
-}
+/** Check (Lucide) — checkout / branch switch confirmed. */
+export const CheckoutIcon = () => <Check {...ICON_PROPS} />;
 
-/** Create branch here — a trunk with a fork branching to a new dot. */
-export function BranchIcon() {
-  return (
-    <svg {...svgProps}>
-      <circle cx="4.5" cy="3" r="1.5" />
-      <circle cx="4.5" cy="13" r="1.5" />
-      <circle cx="11.5" cy="6.5" r="1.5" />
-      <path d="M4.5 4.5 V11.5" />
-      <path d="M4.5 8 C4.5 6 7 6.5 10 6.5" />
-    </svg>
-  );
-}
+/** GitBranchPlus (Lucide) — create branch here. */
+export const BranchIcon = () => <GitBranchPlus {...ICON_PROPS} />;
 
-/** Copy — two overlapping rounded rectangles (classic copy glyph). */
-export function CopyIcon() {
-  return (
-    <svg {...svgProps}>
-      {/* back sheet: L-shaped outline peeking out top-left */}
-      <path d="M6 5.5 V3.5 a1 1 0 0 1 1 -1 H12.5 a1 1 0 0 1 1 1 V10 a1 1 0 0 1 -1 1 H11.5" />
-      {/* front sheet */}
-      <rect x="2.5" y="5" width="8" height="8.5" rx="1.4" />
-    </svg>
-  );
-}
+/** Copy (Lucide) — copy. */
+export const CopyIcon = () => <Copy {...ICON_PROPS} />;
 
-/** Merge — two branches converging into one (git-merge glyph). */
-export function MergeIcon() {
-  return (
-    <svg {...svgProps}>
-      <circle cx="4" cy="4" r="1.5" />
-      <circle cx="12" cy="4" r="1.5" />
-      <circle cx="8" cy="12.5" r="1.5" />
-      <path d="M4 5.5 C4 8.5 8 8 8 11" />
-      <path d="M12 5.5 C12 8.5 8 8 8 11" />
-    </svg>
-  );
-}
+/** GitMerge (Lucide) — merge. */
+export const MergeIcon = () => <GitMerge {...ICON_PROPS} />;
 
-/** Rebase — a branch lifted (arc) onto a baseline, with an up arrow. */
+/** Rebase — a branch lifted (arc) onto a baseline. KEPT BESPOKE (no Lucide match). */
 export function RebaseIcon() {
   return (
     <svg {...svgProps}>
@@ -78,7 +72,7 @@ export function RebaseIcon() {
   );
 }
 
-/** Rebase (interactive) — the rebase arc plus a short todo-list (edit-plan cue). */
+/** Rebase (interactive) — the rebase arc plus a short todo-list. KEPT BESPOKE. */
 export function RebaseInteractiveIcon() {
   return (
     <svg {...svgProps}>
@@ -92,129 +86,34 @@ export function RebaseInteractiveIcon() {
   );
 }
 
-/** Reset — a branch pointer rewound onto a target marker dot (distinct from the
- *  HistoryIcon clock and the RebaseIcon arc). */
-export function ResetIcon() {
-  return (
-    <svg {...svgProps}>
-      {/* destination marker (solid) the branch is reset onto */}
-      <circle cx="3.5" cy="8" r="1.6" fill="currentColor" stroke="none" />
-      {/* current tip (hollow) */}
-      <circle cx="12.5" cy="8" r="1.5" />
-      {/* line rewinding back to the marker */}
-      <path d="M11 8 H5.6" />
-      {/* arrowhead pointing back-left onto the marker */}
-      <path d="M7.2 5.8 L5.2 8 L7.2 10.2" />
-    </svg>
-  );
-}
+/** RotateCcw (Lucide) — reset (rewind branch pointer). Close, not exact. */
+export const ResetIcon = () => <RotateCcw {...ICON_PROPS} />;
 
-/** Cherry-pick — a pair of cherries (circles) with stems and a leaf. */
-export function CherryPickIcon() {
-  return (
-    <svg {...svgProps}>
-      {/* two cherries */}
-      <circle cx="5" cy="11.5" r="2.3" />
-      <circle cx="10.5" cy="12" r="2" />
-      {/* stems converging to a top point */}
-      <path d="M5 9.2 C6 6 8.5 4 11.5 2.8" />
-      <path d="M10.5 10 C10 7 10.3 4.6 11.5 2.8" />
-      {/* leaf */}
-      <path d="M11.5 2.8 C13 2 14.2 2.9 13.8 4.4 C12.3 4.7 11.5 4 11.5 2.8 Z" />
-    </svg>
-  );
-}
+/** Cherry (Lucide) — cherry-pick. */
+export const CherryPickIcon = () => <Cherry {...ICON_PROPS} />;
 
-/** Revert — a counter-clockwise undo arrow (open loop + back-pointing head),
- *  distinct from the clock-based HistoryIcon. */
-export function RevertIcon() {
-  return (
-    <svg {...svgProps}>
-      {/* counter-clockwise loop, open at the top-left */}
-      <path d="M5.4 4.2 A4.6 4.6 0 1 0 9.2 3.4" />
-      {/* arrowhead at the open end, pointing back */}
-      <path d="M5.6 1.9 L4.7 4.5 L7.4 5.1" />
-    </svg>
-  );
-}
+/** Undo (Lucide) — revert; single-arrow undo, kept distinct from UndoIcon→Undo2. */
+export const RevertIcon = () => <Undo {...ICON_PROPS} />;
 
-/** Compare — two side-by-side panes (split diff). */
-export function CompareIcon() {
-  return (
-    <svg {...svgProps}>
-      <rect x="2" y="3" width="12" height="10" rx="1.4" />
-      <path d="M8 3 V13" />
-    </svg>
-  );
-}
+/** Columns2 (Lucide) — compare (two side-by-side panes). */
+export const CompareIcon = () => <Columns2 {...ICON_PROPS} />;
 
-/** Delete / Drop — a trash can (lid + handle + tapering body + two strokes). */
-export function DeleteIcon() {
-  return (
-    <svg {...svgProps}>
-      {/* lid */}
-      <path d="M2.5 4.5 H13.5" />
-      {/* handle */}
-      <path d="M6 4.5 V3.4 a0.8 0.8 0 0 1 0.8 -0.8 h2.4 a0.8 0.8 0 0 1 0.8 0.8 V4.5" />
-      {/* body (tapering can) */}
-      <path d="M3.8 4.5 L4.5 13.1 a1 1 0 0 0 1 0.9 H10.5 a1 1 0 0 0 1 -0.9 L12.2 4.5" />
-      {/* two vertical strokes */}
-      <path d="M7 7 V11.5" />
-      <path d="M9 7 V11.5" />
-    </svg>
-  );
-}
+/** Trash2 (Lucide) — delete / drop. */
+export const DeleteIcon = () => <Trash2 {...ICON_PROPS} />;
 
-/** Create tag here (P22) — a luggage/price tag with a punch hole. */
-export function TagIcon() {
-  return (
-    <svg {...svgProps}>
-      <path d="M7.5 2.5 H12 a1.5 1.5 0 0 1 1.5 1.5 V8.5 L8 14 L2 8 Z" />
-      <circle cx="10.5" cy="5.5" r="1" />
-    </svg>
-  );
-}
+/** Tag (Lucide) — create tag here. */
+export const TagIcon = () => <Tag {...ICON_PROPS} />;
 
-/** Summarize (P15c) — a four-point sparkle (AI affordance, matches the ✨
- *  glyph used elsewhere for AI actions). */
-export function SummarizeIcon() {
-  return (
-    <svg {...svgProps}>
-      <path d="M8 2 L9.2 6.8 L14 8 L9.2 9.2 L8 14 L6.8 9.2 L2 8 L6.8 6.8 Z" />
-    </svg>
-  );
-}
+/** Sparkles (Lucide) — summarize (AI affordance). */
+export const SummarizeIcon = () => <Sparkles {...ICON_PROPS} />;
 
-/** Stash Apply — the drawer/tray (echoes draw.ts drawStashIcon) with a down
- *  arrow going into the worktree. */
-export function StashApplyIcon() {
-  return (
-    <svg {...svgProps}>
-      {/* down arrow */}
-      <path d="M8 1.5 V6" />
-      <path d="M6 4 L8 6 L10 4" />
-      {/* tray/drawer */}
-      <rect x="3" y="8" width="10" height="6" rx="1.2" />
-      <path d="M6 10.4 H10" />
-    </svg>
-  );
-}
+/** ArchiveRestore (Lucide) — stash apply (keeps in stack). */
+export const StashApplyIcon = () => <ArchiveRestore {...ICON_PROPS} />;
 
-/** Stash Pop — the same tray with an up-and-out arrow (remove from stack). */
-export function StashPopIcon() {
-  return (
-    <svg {...svgProps}>
-      {/* up-and-out arrow */}
-      <path d="M8 6 V1.5" />
-      <path d="M6 3.5 L8 1.5 L10 3.5" />
-      {/* tray/drawer */}
-      <rect x="3" y="8" width="10" height="6" rx="1.2" />
-      <path d="M6 10.4 H10" />
-    </svg>
-  );
-}
+/** ArchiveX (Lucide) — stash pop (restore and remove from stack). Close, not exact. */
+export const StashPopIcon = () => <ArchiveX {...ICON_PROPS} />;
 
-/** Bisect (P39) — a range bar with a midpoint marker (binary search split). */
+/** Bisect — a range bar with a midpoint marker. KEPT BESPOKE (no Lucide match). */
 export function BisectIcon() {
   return (
     <svg {...svgProps}>
@@ -229,51 +128,14 @@ export function BisectIcon() {
   );
 }
 
-/** History / reflog (P38) — a clock face with a counter-clockwise rewind arrow. */
-export function HistoryIcon() {
-  return (
-    <svg {...svgProps}>
-      <circle cx="8" cy="8.5" r="5" />
-      {/* clock hands */}
-      <path d="M8 5.5 V8.5 L10 10" />
-      {/* rewind arrowhead at the top-left of the dial */}
-      <path d="M3.4 5 L3.2 7.4 L5.6 7.2" />
-    </svg>
-  );
-}
+/** History (Lucide) — history / reflog. */
+export const HistoryIcon = () => <History {...ICON_PROPS} />;
 
-/** Open in terminal (P49) — a console window with a prompt caret + command line. */
-export function TerminalIcon() {
-  return (
-    <svg {...svgProps}>
-      <rect x="2" y="3" width="12" height="10" rx="1.4" />
-      {/* prompt caret */}
-      <path d="M4.5 6.5 L6.5 8.5 L4.5 10.5" />
-      {/* command line */}
-      <path d="M8 10.5 H11" />
-    </svg>
-  );
-}
+/** SquareTerminal (Lucide) — open in terminal. */
+export const TerminalIcon = () => <SquareTerminal {...ICON_PROPS} />;
 
-/** Reveal in file manager (P49) — an open folder with a lifted front flap,
- *  distinct from the closed-folder cues elsewhere. */
-export function FolderOpenIcon() {
-  return (
-    <svg {...svgProps}>
-      {/* back tab of the folder */}
-      <path d="M2 4.5 a1 1 0 0 1 1 -1 H6 L7.5 5 H13 a1 1 0 0 1 1 1 V7 H2 Z" />
-      {/* open front flap */}
-      <path d="M2.4 7 H14 L12.4 12.2 a1 1 0 0 1 -0.95 0.8 H3.2 a1 1 0 0 1 -0.98 -0.8 Z" />
-    </svg>
-  );
-}
+/** FolderOpen (Lucide) — reveal in file manager. */
+export const FolderOpenIcon = () => <FolderOpen {...ICON_PROPS} />;
 
-/** Open in editor (P49) — a `</>` code glyph (VS Code family auto-detect). */
-export function EditorIcon() {
-  return (
-    <svg {...svgProps}>
-      <path d="M6 4.5 L2.5 8 L6 11.5" />
-      <path d="M10 4.5 L13.5 8 L10 11.5" />
-    </svg>
-  );
-}
+/** Code (Lucide) — open in editor. */
+export const EditorIcon = () => <Code {...ICON_PROPS} />;
