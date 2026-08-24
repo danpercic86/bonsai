@@ -22,24 +22,42 @@ pub fn create_stash(
     scope: StashScope,
 ) -> Result<CreateStashResult, AppError> {
     let mut repo = open_workdir_repo(workdir)?;
-    require_clean(&repo)?;
+    create_stash_with(&mut repo, message, scope)
+}
+
+/// Handle-reusing twin of [`create_stash`] (P88b/B2a): runs against an
+/// already-open `&mut Repository` so a composite mutation opens the repo once.
+/// Byte-identical to `create_stash` minus the `open_workdir_repo` call. The
+/// bare-repo guard that `open_workdir_repo` performs is NOT re-run here, so each
+/// caller preserves it at the original point: the worktree-probing composite
+/// (`checkout_branch_autostash`) hits it via `ensure_not_bare` inside
+/// `branch_checked_out_elsewhere_with` before reaching this, while the
+/// `open_repo_at`-based composites (`create_branch_here`,
+/// `checkout_commit_detached`) reinstate `stage::ensure_not_bare` explicitly
+/// immediately before calling this.
+pub fn create_stash_with(
+    repo: &mut git2::Repository,
+    message: Option<&str>,
+    scope: StashScope,
+) -> Result<CreateStashResult, AppError> {
+    require_clean(repo)?;
     // A clean detached-HEAD bisect is invisible to `require_clean` — refuse
     // (covers both native and staged scopes, incl. `create_staged_stash`).
-    require_no_bisect(&repo)?;
+    require_no_bisect(repo)?;
 
     // Identity is required to author the stash commit; surface ConfigMissing
     // early, consistent with commit/merge.
     let sig = resolve_signature(&repo.config()?.snapshot()?)?;
 
     match scope {
-        StashScope::All => native_stash(&mut repo, &sig, message, git2::StashFlags::DEFAULT),
+        StashScope::All => native_stash(repo, &sig, message, git2::StashFlags::DEFAULT),
         StashScope::AllWithUntracked => native_stash(
-            &mut repo,
+            repo,
             &sig,
             message,
             git2::StashFlags::DEFAULT | git2::StashFlags::INCLUDE_UNTRACKED,
         ),
-        StashScope::Staged => create_staged_stash(&mut repo, &sig, message),
+        StashScope::Staged => create_staged_stash(repo, &sig, message),
     }
 }
 

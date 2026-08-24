@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::error::AppError;
-use crate::git::worktree;
+use crate::git::worktree_reuse;
 
 use super::open_repo_at;
 
@@ -97,9 +97,11 @@ pub fn checkout_remote(workdir: &Path, remote_shorthand: &str) -> Result<(), App
 
     // Reusing an EXISTING local branch: refuse if it is checked out in another
     // worktree (a just-created branch cannot be). Mirrors `checkout_branch`;
-    // runs before any side effect.
+    // runs before any side effect. Reuses the already-open handle (P88b/B2a).
     if !created {
-        if let Some(other) = worktree::branch_checked_out_elsewhere(workdir, local_name)? {
+        if let Some(other) =
+            worktree_reuse::branch_checked_out_elsewhere_with(&repo, workdir, local_name)?
+        {
             return Err(AppError::BranchCheckedOutElsewhere(format!(
                 "branch '{local_name}' is already checked out at '{other}'"
             )));

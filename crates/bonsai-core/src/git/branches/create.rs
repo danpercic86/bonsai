@@ -3,9 +3,10 @@
 use std::path::Path;
 
 use crate::error::AppError;
+use crate::git::stage;
 use crate::git::stash;
 
-use super::{checkout_branch, delete_branch, open_repo_at, validate_branch_name};
+use super::{checkout_branch_with, delete_branch_with, open_repo_at, validate_branch_name};
 
 /// Blocking. Creates local branch `name` at the current HEAD commit.
 /// Does NOT check out.
@@ -66,14 +67,20 @@ pub fn create_branch_here(
 ) -> Result<CreateBranchHereResult, AppError> {
     // 1. Validate & resolve FIRST — zero side effects on any failure here.
     validate_branch_name(name)?;
-    let repo = open_repo_at(workdir)?;
+    // Open the repo ONCE (P88b/B2a) and thread the handle through every
+    // sub-primitive.
+    let mut repo = open_repo_at(workdir)?;
 
     let target_oid = git2::Oid::from_str(oid).map_err(|_| {
         AppError::Git(format!(
             "cannot create branch: '{oid}' is not a valid commit id"
         ))
     })?;
-    let target = repo.find_commit(target_oid).map_err(|_| {
+    // Validate the commit exists now (the borrow is released immediately — the
+    // result is unbound); it is re-looked-up in step 4 for the actual
+    // `branch()` call so no `Commit` borrow of `repo` is held across the
+    // `&mut repo` auto-stash below.
+    repo.find_commit(target_oid).map_err(|_| {
         AppError::Git(format!("cannot create branch: commit '{oid}' not found"))
     })?;
 
@@ -92,14 +99,25 @@ pub fn create_branch_here(
     //    → created:false) AND the mid-merge/rebase guard (OperationInProgress).
     //    `configMissing` may surface here (stash authors a commit) — let it
     //    propagate. `stashed == true` means work must be re-applied afterwards.
+    //    Reinstate the bare-repo guard that the old `create_stash →
+    //    open_workdir_repo` path performed (this composite opens via
+    //    `open_repo_at`, which does NOT bare-check) — placed HERE, right before
+    //    the stash, so the original ordering (name/oid/branch-exists validation
+    //    BEFORE the bare error) is byte-identical (P88b/B2a).
+    stage::ensure_not_bare(&repo)?;
     let stashed =
-        stash::create_stash(workdir, None, stash::StashScope::AllWithUntracked)?.created;
+        stash::create_stash_with(&mut repo, None, stash::StashScope::AllWithUntracked)?.created;
 
     // 4. Create the branch ref at the resolved commit. On failure, restore the
     //    stashed work onto the original branch (best-effort) before returning.
-    if let Err(e) = repo.branch(name, &target, /* force */ false) {
+    //    The `Commit` is scoped to this expression so no immutable borrow of
+    //    `repo` outlives it — the error path needs `&mut repo` for `pop_stash`.
+    let branch_res = repo
+        .find_commit(target_oid)
+        .and_then(|target| repo.branch(name, &target, /* force */ false).map(|_| ()));
+    if let Err(e) = branch_res {
         if stashed {
-            let _ = stash::pop_stash(workdir, 0, false, None);
+            let _ = stash::pop_stash_with(&mut repo, workdir, 0, false, None);
         }
         if e.code() == git2::ErrorCode::Exists {
             return Err(AppError::BranchExists(format!(
@@ -112,10 +130,10 @@ pub fn create_branch_here(
     // 5. SAFE checkout the new branch. On failure, roll back so nothing is
     //    stranded: delete the just-created ref and restore stashed work (both
     //    best-effort). Post-stash the worktree is clean, so this is defensive.
-    if let Err(e) = checkout_branch(workdir, name) {
-        let _ = delete_branch(workdir, name);
+    if let Err(e) = checkout_branch_with(&repo, workdir, name) {
+        let _ = delete_branch_with(&repo, name);
         if stashed {
-            let _ = stash::pop_stash(workdir, 0, false, None);
+            let _ = stash::pop_stash_with(&mut repo, workdir, 0, false, None);
         }
         return Err(e);
     }
@@ -124,7 +142,7 @@ pub fn create_branch_here(
     //    and RETAINS on conflict (never lossy). A `Conflicts` outcome is a
     //    SUCCESS return (branch created & checked out; changes present w/ markers).
     if stashed {
-        let outcome = stash::pop_stash(workdir, 0, false, None)?;
+        let outcome = stash::pop_stash_with(&mut repo, workdir, 0, false, None)?;
         return Ok(CreateBranchHereResult {
             stashed: true,
             apply: Some(outcome),

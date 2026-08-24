@@ -22,10 +22,11 @@ mod remote;
 mod rename;
 
 pub use checkout::{
-    checkout_branch, checkout_branch_autostash, checkout_commit_detached, CheckoutResult,
+    checkout_branch, checkout_branch_autostash, checkout_branch_with, checkout_commit_detached,
+    CheckoutResult,
 };
 pub use create::{create_branch, create_branch_here, CreateBranchHereResult};
-pub use delete::delete_branch;
+pub use delete::{delete_branch, delete_branch_with};
 pub use list::list_refs;
 pub use remote::{checkout_remote, delete_remote_tracking};
 pub use rename::{rename_branch, RenameBranchResult};

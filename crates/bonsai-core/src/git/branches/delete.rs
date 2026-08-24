@@ -13,7 +13,13 @@ use super::open_repo_at;
 /// semantics, so the `-d` merged-check is implemented here).
 pub fn delete_branch(workdir: &Path, name: &str) -> Result<(), AppError> {
     let repo = open_repo_at(workdir)?;
+    delete_branch_with(&repo, name)
+}
 
+/// Handle-reusing twin of [`delete_branch`] (P88b/B2a): runs against an
+/// already-open `&Repository` so a composite mutation opens the repo once.
+/// Byte-identical to `delete_branch` minus the `open_repo_at` call.
+pub fn delete_branch_with(repo: &git2::Repository, name: &str) -> Result<(), AppError> {
     let mut branch = match repo.find_branch(name, git2::BranchType::Local) {
         Ok(b) => b,
         Err(e) if e.code() == git2::ErrorCode::NotFound => {

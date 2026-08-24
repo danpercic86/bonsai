@@ -17,12 +17,22 @@ pub(crate) fn open_workdir_repo(workdir: &Path) -> Result<git2::Repository, AppE
         git2::RepositoryOpenFlags::NO_SEARCH,
         std::iter::empty::<&std::ffi::OsStr>(),
     )?;
+    ensure_not_bare(&repo)?;
+    Ok(repo)
+}
+
+/// Rejects a bare repository for index/worktree mutations. Extracted from
+/// `open_workdir_repo` (P88b/B2a) so a composite mutation that reuses ONE
+/// already-open handle can reproduce the exact bare-repo guard at the same
+/// point a per-`&Path` sub-call would have hit it — keeping behaviour
+/// byte-identical while opening the repo only once.
+pub(crate) fn ensure_not_bare(repo: &git2::Repository) -> Result<(), AppError> {
     if repo.is_bare() {
         return Err(AppError::Git(
             "cannot modify index: repository is bare".to_string(),
         ));
     }
-    Ok(repo)
+    Ok(())
 }
 
 /// Validates a wire path (worktree-relative, forward slashes). Rejects empty

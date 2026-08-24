@@ -86,6 +86,8 @@ pub mod timefmt;
 pub mod timeout;
 pub mod undo;
 pub mod worktree;
+/// P88b/B2a handle-reusing twins of the worktree readers (crate-internal).
+pub(crate) mod worktree_reuse;
 pub mod worktree_copy;
 
 /// libgit2 re-hashes every object it inflates to verify its id (strict

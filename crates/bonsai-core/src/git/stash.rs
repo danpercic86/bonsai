@@ -30,8 +30,8 @@ mod apply;
 mod create;
 mod list;
 
-pub use apply::{apply_stash, drop_stash, pop_stash};
-pub use create::create_stash;
+pub use apply::{apply_stash, drop_stash, pop_stash, pop_stash_with};
+pub use create::{create_stash, create_stash_with};
 pub use list::list_stashes;
 
 // The private helpers below live in the submodules now; the two `#[cfg(test)]`

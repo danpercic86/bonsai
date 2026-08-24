@@ -319,14 +319,29 @@ pub fn pop_stash(
     expected_oid: Option<&str>,
 ) -> Result<ApplyStashOutcome, AppError> {
     let mut repo = open_workdir_repo(workdir)?;
-    require_clean(&repo)?;
+    pop_stash_with(&mut repo, workdir, index, skip_reserved, expected_oid)
+}
+
+/// Handle-reusing twin of [`pop_stash`] (P88b/B2a): runs against an already-open
+/// `&mut Repository` so a composite mutation opens the repo once. `workdir` is
+/// still threaded for the conflict-path reader. Byte-identical to `pop_stash`
+/// minus the `open_workdir_repo` call (the bare-repo guard is preserved by the
+/// composite's own open path).
+pub fn pop_stash_with(
+    repo: &mut git2::Repository,
+    workdir: &Path,
+    index: usize,
+    skip_reserved: bool,
+    expected_oid: Option<&str>,
+) -> Result<ApplyStashOutcome, AppError> {
+    require_clean(&*repo)?;
     // A clean detached-HEAD bisect is invisible to `require_clean` — refuse.
-    require_no_bisect(&repo)?;
-    verify_expected_oid(&repo, index, expected_oid)?;
+    require_no_bisect(&*repo)?;
+    verify_expected_oid(&*repo, index, expected_oid)?;
 
     if !skip_reserved {
         // Preflight: block (mutate nothing, never drop) on reserved paths.
-        let (reserved, _allowed) = stash_path_sets(&repo, index)?;
+        let (reserved, _allowed) = stash_path_sets(&*repo, index)?;
         if !reserved.is_empty() {
             return Ok(ApplyStashOutcome::ReservedPaths { paths: reserved });
         }
@@ -356,7 +371,7 @@ pub fn pop_stash(
 
     // skip_reserved: apply the non-reserved paths. Because the skipped blobs
     // survive ONLY in the stash, we must NOT drop — pop stays lossless here.
-    let (reserved, allowed) = stash_path_sets(&repo, index)?;
+    let (reserved, allowed) = stash_path_sets(&*repo, index)?;
     if allowed.is_empty() {
         // EVERY path is reserved. libgit2 treats a zero-length checkout pathspec
         // as "match everything", so passing an empty allowlist would re-attempt

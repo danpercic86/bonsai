@@ -26,7 +26,18 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ## ⚡ P88 — Git-action perf round 2 (refresh-scope cluster + repo-handle cache) — in-progress
 
-**Current step:** contract DONE (`docs/contracts/P88-git-action-perf.md`, ~267 lines). 3 open decisions RESOLVED
+**Current step:** **P88a DONE + committed `2412d8b`** (reviewer APPROVED, no MUST-FIX; tsc clean, eslint 0-err,
+110 vitest pass). 2 SHOULD-FIX = tester gaps for batch-end pass: add `refreshAll('stash')` assertion to stash-pop
+test (`useStashActions.test.tsx` ~:107) + `refreshAll('worktree')` assertion to `stageResolvedText` test
+(`useMergeActions.test.tsx` ~:104, incl. the `deferRefresh:true`→not-called branch). **B2a DONE** (reviewer
+APPROVED; 6 `*_with` twins + new `worktree_reuse.rs`; 4 composites now open once — `checkout_branch_autostash`,
+`create_branch_here`, `checkout_commit_detached`, `checkout_remote`; bare-repo guard restored → byte-identical;
+1486 core tests unchanged, clippy -D clean both crates). AC-b2 counter not observable in bonsai-core (repo_opens
+instrumented only at src-tauri seam) → B2b makes the round-level drop measurable; B2a proven by inspection (one
+`open_repo_at`/composite). **Now: B2b** (thread-local `with_repo` round handle cache + `index.read(true)` freshness
+guard) then PB-1 (graph-cache node cap). User confirmed "go ahead with B2 after this" (2026-08-24).
+--- earlier ---
+contract DONE (`docs/contracts/P88-git-action-perf.md`, ~267 lines). 3 open decisions RESOLVED
 by orchestrator (accept architect recs): **OD-P88-1** keep set-url raw `refetchRemotes()` (config-only, watcher
 ignores → no echo); **OD-P88-2** B2 = **thread-local handle cache keyed `(repo_id, generation)`** (NOT a `Mutex`
 — a mutex would serialize the round's ~11 concurrent `spawn_blocking` commands); **OD-P88-3** stage B2 as B2a

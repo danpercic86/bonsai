@@ -3,8 +3,9 @@
 use std::path::Path;
 
 use crate::error::AppError;
+use crate::git::stage;
 use crate::git::stash;
-use crate::git::worktree;
+use crate::git::worktree_reuse;
 
 use super::open_repo_at;
 
@@ -15,7 +16,18 @@ use super::open_repo_at;
 /// so a conflict leaves both the worktree and HEAD untouched.
 pub fn checkout_branch(workdir: &Path, name: &str) -> Result<(), AppError> {
     let repo = open_repo_at(workdir)?;
+    checkout_branch_with(&repo, workdir, name)
+}
 
+/// Handle-reusing twin of [`checkout_branch`] (P88b/B2a): runs against an
+/// already-open `&Repository` so a composite mutation opens the repo once.
+/// `workdir` is still threaded for the checked-out-elsewhere worktree probe.
+/// Byte-identical to `checkout_branch` minus the `open_repo_at` call.
+pub fn checkout_branch_with(
+    repo: &git2::Repository,
+    workdir: &Path,
+    name: &str,
+) -> Result<(), AppError> {
     let branch = match repo.find_branch(name, git2::BranchType::Local) {
         Ok(b) => b,
         Err(e) if e.code() == git2::ErrorCode::NotFound => {
@@ -32,7 +44,7 @@ pub fn checkout_branch(workdir: &Path, name: &str) -> Result<(), AppError> {
     // Refuse if the branch is checked out in ANOTHER worktree (git-like:
     // "fatal: '<b>' is already checked out at '<path>'") — two worktrees on
     // one branch corrupt each other's view. Runs before any side effect.
-    if let Some(other) = worktree::branch_checked_out_elsewhere(workdir, name)? {
+    if let Some(other) = worktree_reuse::branch_checked_out_elsewhere_with(repo, workdir, name)? {
         return Err(AppError::BranchCheckedOutElsewhere(format!(
             "branch '{name}' is already checked out at '{other}'"
         )));
@@ -94,17 +106,21 @@ pub fn checkout_branch_autostash(
     workdir: &Path,
     name: &str,
 ) -> Result<CheckoutResult, AppError> {
-    // 0. Resolve up-front — zero side effects on failure.
-    let repo = open_repo_at(workdir)?;
-    let branch = match repo.find_branch(name, git2::BranchType::Local) {
-        Ok(b) => b,
-        Err(e) if e.code() == git2::ErrorCode::NotFound => {
-            return Err(AppError::BranchNotFound(format!("branch '{name}' not found")));
-        }
-        Err(e) => return Err(e.into()),
+    // 0. Resolve up-front — zero side effects on failure. Open the repo ONCE
+    //    (P88b/B2a) and thread the handle through every sub-primitive.
+    let mut repo = open_repo_at(workdir)?;
+    let is_head = {
+        let branch = match repo.find_branch(name, git2::BranchType::Local) {
+            Ok(b) => b,
+            Err(e) if e.code() == git2::ErrorCode::NotFound => {
+                return Err(AppError::BranchNotFound(format!("branch '{name}' not found")));
+            }
+            Err(e) => return Err(e.into()),
+        };
+        // No-op when already checked out (UI hides the action; guard the race).
+        branch.is_head()
     };
-    // No-op when already checked out (UI hides the action; guard the race).
-    if branch.is_head() {
+    if is_head {
         return Ok(CheckoutResult {
             stashed: false,
             fast_forwarded: false,
@@ -115,7 +131,7 @@ pub fn checkout_branch_autostash(
     // 0b. Refuse if the branch is checked out in ANOTHER worktree (git-like:
     //     "fatal: '<b>' is already checked out at '<path>'"). Runs before any
     //     side effect, so a refusal changes nothing.
-    if let Some(other) = worktree::branch_checked_out_elsewhere(workdir, name)? {
+    if let Some(other) = worktree_reuse::branch_checked_out_elsewhere_with(&repo, workdir, name)? {
         return Err(AppError::BranchCheckedOutElsewhere(format!(
             "branch '{name}' is already checked out at '{other}'"
         )));
@@ -125,13 +141,13 @@ pub fn checkout_branch_autostash(
     //    → created:false) AND the mid-merge/rebase guard (OperationInProgress).
     //    `configMissing` may surface here (stash authors a commit) — propagate.
     let stashed =
-        stash::create_stash(workdir, None, stash::StashScope::AllWithUntracked)?.created;
+        stash::create_stash_with(&mut repo, None, stash::StashScope::AllWithUntracked)?.created;
 
     // 2. SAFE checkout. On ANY failure, restore stash (best-effort) then return.
     //    Post-stash the worktree is clean, so a real conflict here is defensive.
-    if let Err(e) = checkout_branch(workdir, name) {
+    if let Err(e) = checkout_branch_with(&repo, workdir, name) {
         if stashed {
-            let _ = stash::pop_stash(workdir, 0, false, None);
+            let _ = stash::pop_stash_with(&mut repo, workdir, 0, false, None);
         }
         return Err(e);
     }
@@ -147,7 +163,7 @@ pub fn checkout_branch_autostash(
     //    and RETAINS on conflict (never lossy). A `Conflicts` outcome is a
     //    SUCCESS return (branch switched; changes present w/ markers).
     if stashed {
-        let outcome = stash::pop_stash(workdir, 0, false, None)?;
+        let outcome = stash::pop_stash_with(&mut repo, workdir, 0, false, None)?;
         return Ok(CheckoutResult {
             stashed: true,
             fast_forwarded,
@@ -174,12 +190,16 @@ pub fn checkout_branch_autostash(
 /// a commit) | `operationInProgress` (via `create_stash`) | `configMissing`
 /// (via `create_stash`) | `checkoutConflict` (defensive, post-stash) | `noRepo`.
 pub fn checkout_commit_detached(workdir: &Path, oid: &str) -> Result<CheckoutResult, AppError> {
-    // 0. Resolve up-front — zero side effects on failure.
-    let repo = open_repo_at(workdir)?;
+    // 0. Resolve up-front — zero side effects on failure. Open the repo ONCE
+    //    (P88b/B2a) and thread the handle through every sub-primitive.
+    let mut repo = open_repo_at(workdir)?;
     let target_oid = git2::Oid::from_str(oid)
         .map_err(|_| AppError::InvalidName(format!("invalid commit id '{oid}'")))?;
-    let commit = repo
-        .find_commit(target_oid)
+    // Validate the commit exists now (the borrow is released immediately — the
+    // result is unbound), so a bad oid errors with zero side effects. It is
+    // re-looked-up in step 2 for `checkout_tree` so no `Commit` borrow of `repo`
+    // is held across the `&mut repo` auto-stash below.
+    repo.find_commit(target_oid)
         .map_err(|_| AppError::Git(format!("commit '{oid}' not found")))?;
 
     // 0b. No-op guard: HEAD already detached AT this oid → nothing to do.
@@ -195,16 +215,26 @@ pub fn checkout_commit_detached(workdir: &Path, oid: &str) -> Result<CheckoutRes
 
     // 1. Auto-stash. `create_stash` owns the dirty-vs-clean decision AND the
     //    mid-merge/rebase guard (OperationInProgress). `configMissing` may surface.
+    //    Reinstate the bare-repo guard the old `create_stash → open_workdir_repo`
+    //    path performed (this composite opens via `open_repo_at`, which does NOT
+    //    bare-check) — placed HERE, right before the stash, so the original
+    //    ordering (oid validation + no-op guard BEFORE the bare error) is
+    //    byte-identical (P88b/B2a).
+    stage::ensure_not_bare(&repo)?;
     let stashed =
-        stash::create_stash(workdir, None, stash::StashScope::AllWithUntracked)?.created;
+        stash::create_stash_with(&mut repo, None, stash::StashScope::AllWithUntracked)?.created;
 
     // 2. SAFE checkout. On ANY failure, restore stash (best-effort) then return.
-    let commit_obj = commit.as_object();
-    let mut opts = git2::build::CheckoutBuilder::new();
-    opts.safe(); // DEFAULT SAFE MODE — never .force()
-    if let Err(e) = repo.checkout_tree(commit_obj, Some(&mut opts)) {
+    //    The `Commit` is scoped to this expression so no immutable borrow of
+    //    `repo` outlives it — the error path needs `&mut repo` for `pop_stash`.
+    let checkout_res = repo.find_commit(target_oid).and_then(|commit| {
+        let mut opts = git2::build::CheckoutBuilder::new();
+        opts.safe(); // DEFAULT SAFE MODE — never .force()
+        repo.checkout_tree(commit.as_object(), Some(&mut opts))
+    });
+    if let Err(e) = checkout_res {
         if stashed {
-            let _ = stash::pop_stash(workdir, 0, false, None);
+            let _ = stash::pop_stash_with(&mut repo, workdir, 0, false, None);
         }
         return Err(if e.code() == git2::ErrorCode::Conflict {
             AppError::CheckoutConflict(format!(
@@ -225,14 +255,14 @@ pub fn checkout_commit_detached(workdir: &Path, oid: &str) -> Result<CheckoutRes
     //    keep the contract's tree-then-HEAD ordering and best-effort restore.
     if let Err(e) = repo.set_head_detached(target_oid) {
         if stashed {
-            let _ = stash::pop_stash(workdir, 0, false, None);
+            let _ = stash::pop_stash_with(&mut repo, workdir, 0, false, None);
         }
         return Err(e.into());
     }
 
     // 4. Re-apply carried work iff stashed. Conflicts → SUCCESS, stash retained.
     if stashed {
-        let outcome = stash::pop_stash(workdir, 0, false, None)?;
+        let outcome = stash::pop_stash_with(&mut repo, workdir, 0, false, None)?;
         return Ok(CheckoutResult {
             stashed: true,
             fast_forwarded: false,
