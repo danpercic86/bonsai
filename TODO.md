@@ -53,7 +53,12 @@ regression). Commits: contract `31bf4bd`, P88a `2412d8b`, B2a `f4c060c`, B2b `52
 in/out through new `run_with_git_timeout_owned` + `with_repo_timed`/`_mut_timed` wrappers (Send-only, one owner at a
 time; leak-on-timeout self-heals; watchdog abandonment preserved). ODs resolved: accept leak no-cap, delegate the
 existing `run_with_git_timeout_with` to the owned variant, `get_graph` out of scope. Repurpose the 2 now-false
-once-per-call tests. Senior-dev implementing.**
+once-per-call tests. **DONE + committed `97190de`** — reviewer APPROVED (watchdog abandonment byte-identical, move/leak
+sound, one-owner-at-a-time; no MUST/SHOULD-FIX, 2 informational NITs). New `run_with_git_timeout_owned{,_with}` +
+`with_repo_timed`/`_mut_timed`; `run_with_git_timeout_with` delegated to the owned variant (1 recv loop, byte-identical).
+Warm status+graph round now opens **0** (was 2/call). bonsai-core 1489, bonsai 297; `repo_handle` tests split to
+`repo_handle/tests.rs`. Rust gate (`pnpm gate --rust`) GREEN @ `97190de`: nextest + doctests + clippy -D all pass
+(frontend untouched → prior full-gate green at `cc5fdac` still holds). **P88 batch (incl. FU-B2c) AI-gate COMPLETE.**
 
 **NEW FOLLOW-UPS (this batch):**
 - **FU-B2c (perf, MED — the remaining B2 win):** hoist `with_repo` OUTSIDE `run_with_git_timeout` for `get_status`+
