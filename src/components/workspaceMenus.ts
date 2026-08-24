@@ -16,8 +16,6 @@ import {
   RebaseInteractiveIcon,
   ResetIcon,
   RevertIcon,
-  StashApplyIcon,
-  StashPopIcon,
   SummarizeIcon,
   TagIcon,
   TerminalIcon,
@@ -43,6 +41,12 @@ import type {
   PendingDeleteRemoteTag,
   PendingForceMoveTag,
 } from './dialogs/TagSyncDialogs';
+import {
+  remoteMenuItems as remoteMenuItemsImpl,
+  stashMenuItems as stashMenuItemsImpl,
+  submoduleMenuItems as submoduleMenuItemsImpl,
+  worktreeMenuItems as worktreeMenuItemsImpl,
+} from './workspaceMenusRows';
 
 /** P49: the three external-launch handlers a filesystem path is opened with.
  *  Each takes the target path so one handler set drives every entry point
@@ -202,19 +206,6 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     setPendingDeleteRemote,
     setPendingDeleteBranch,
     setPendingRenameBranch,
-    handleApplyStash,
-    handlePopStash,
-    setPendingDropStash,
-    handleInitSubmodule,
-    handleUpdateSubmodule,
-    handleSyncSubmodule,
-    setPendingDeinitSubmodule,
-    setPendingRemoveSubmodule,
-    onOpenRepoPath,
-    setWorktreeContextOpen,
-    setPendingWorktreeLock,
-    handleUnlockWorktree,
-    setPendingWorktreeRemove,
     setPendingDeleteTag,
     handlePushTag,
     tagSync,
@@ -222,9 +213,6 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     handleFetchRemoteTag,
     setPendingDeleteRemoteTag,
     setPendingForceMoveTag,
-    setPendingRenameRemote,
-    setPendingEditUrl,
-    setPendingRemoveRemote,
     setPendingCreateTag,
     handleCherrypick,
     handleRevert,
@@ -416,128 +404,18 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     return items;
   }
 
-  // P9 §6.4: build the right-click menu for a stash row. Apply/Pop need a clean,
-  // idle repo (gated on mutating || opActive); Drop is allowed mid-op (it only
-  // edits the stash reflog) → routes through the ConfirmDialog.
-  // F-A6-B: `oid` is the value the stash row rendered; thread it into every
-  // action so a stack shift between render and confirm can't hit the wrong entry.
-  // Optional because the graph stash pill only knows the base commit oid, not the
-  // stash entry oid — it omits it (guard is best-effort; sidebar rows always pass).
+  // Row menus (stash/submodule/worktree/remote) are extracted to
+  // workspaceMenusRows.ts; these thin wrappers bind the current deps/extHandlers.
   function stashMenuItems(index: number, oid?: string): ContextMenuItem[] {
-    const gate = mutating || opActive;
-    return [
-      {
-        label: 'Apply',
-        icon: createElement(StashApplyIcon),
-        disabled: gate,
-        onSelect: () => void handleApplyStash(index, oid),
-      },
-      {
-        label: 'Pop',
-        icon: createElement(StashPopIcon),
-        disabled: gate,
-        onSelect: () => void handlePopStash(index, oid),
-      },
-      {
-        label: 'Drop',
-        icon: createElement(DeleteIcon),
-        disabled: mutating,
-        onSelect: () => setPendingDropStash({ index, oid }),
-      },
-    ];
+    return stashMenuItemsImpl(deps, index, oid);
   }
 
-  // P19 §6.4 + P73 §3.2: submodule row menu. "Initialize and check out" and
-  // "Update" are the same backend call (sm.update(init:true)) as a mutually-
-  // exclusive pair — one is live per row state, like Lock…/Unlock below. Deinit
-  // is a no-op once uninitialized; open-in-tab needs files on disk.
   function submoduleMenuItems(sub: SubmoduleInfo): ContextMenuItem[] {
-    const gate = mutating || opActive;
-    const uninit = sub.status === 'uninitialized';
-    return [
-      {
-        label: 'Initialize and check out',
-        icon: createElement(BranchIcon),
-        disabled: gate || !uninit,
-        onSelect: () => void handleInitSubmodule(sub.name),
-      },
-      {
-        label: 'Update',
-        icon: createElement(StashApplyIcon),
-        disabled: gate || uninit,
-        onSelect: () => void handleUpdateSubmodule(sub.name),
-      },
-      {
-        label: 'Sync',
-        icon: createElement(RebaseIcon),
-        disabled: gate,
-        onSelect: () => void handleSyncSubmodule(sub.name),
-      },
-      // P60d: deinit clears config + empties the worktree (keeps .gitmodules).
-      {
-        label: 'Deinitialize…',
-        icon: createElement(ResetIcon),
-        disabled: gate || uninit,
-        onSelect: () => setPendingDeinitSubmodule(sub.name),
-      },
-      {
-        label: 'Remove…',
-        icon: createElement(DeleteIcon),
-        disabled: gate,
-        tone: 'danger',
-        onSelect: () => setPendingRemoveSubmodule(sub.name),
-      },
-      {
-        label: 'Open in new tab',
-        icon: createElement(CompareIcon),
-        disabled: uninit,
-        onSelect: () => onOpenRepoPath(sub.absPath),
-      },
-      // P49: launch external tools at the submodule's absolute workdir. Always
-      // enabled (they touch no git state) — never gated by `gate` above.
-      ...externalToolsItems(sub.absPath, extHandlers),
-    ];
+    return submoduleMenuItemsImpl(deps, extHandlers, sub);
   }
 
-  // P27 §6.4: worktree row menu. Open-in-tab needs an intact working tree;
-  // Lock/Unlock apply to linked worktrees only; Remove is disabled for
-  // main/current/locked in the UI AND refused server-side (§2.6).
   function worktreeMenuItems(wt: WorktreeInfo): ContextMenuItem[] {
-    const gate = mutating || opActive;
-    return [
-      {
-        label: 'Open in new tab',
-        icon: createElement(CompareIcon),
-        disabled: wt.isCurrent || !wt.valid,
-        onSelect: () => onOpenRepoPath(wt.absPath),
-      },
-      {
-        label: 'AI context…',
-        // Read-only matrix — always openable; per-row activation is gated
-        // inside the dialog (D6) and by the preview safety gate.
-        disabled: false,
-        onSelect: () => setWorktreeContextOpen(true),
-      },
-      {
-        label: 'Lock…',
-        disabled: gate || wt.isMain || wt.locked,
-        onSelect: () => setPendingWorktreeLock(wt.name),
-      },
-      {
-        label: 'Unlock',
-        disabled: gate || !wt.locked,
-        onSelect: () => void handleUnlockWorktree(wt.name),
-      },
-      {
-        label: 'Remove…',
-        icon: createElement(DeleteIcon),
-        disabled: gate || wt.isMain || wt.isCurrent || wt.locked,
-        onSelect: () => setPendingWorktreeRemove({ name: wt.name, absPath: wt.absPath }),
-      },
-      // P49: launch external tools at the worktree's absolute workdir. Always
-      // enabled — never gated by `gate` above.
-      ...externalToolsItems(wt.absPath, extHandlers),
-    ];
+    return worktreeMenuItemsImpl(deps, extHandlers, wt);
   }
 
   // P22 §7.2: the shared tag menu — used by the graph tag pill AND the sidebar
@@ -659,29 +537,9 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
   }
 
   // P22 §7.2: the configured-remote management menu (sidebar rows only).
+  // Extracted to workspaceMenusRows.ts; this wrapper binds the current deps.
   function remoteMenuItems(name: string): ContextMenuItem[] {
-    const gate = mutating || opActive;
-    const url = remotes.find((r) => r.name === name)?.url ?? '';
-    return [
-      {
-        label: 'Rename…',
-        icon: createElement(BranchIcon),
-        disabled: gate,
-        onSelect: () => setPendingRenameRemote({ name }),
-      },
-      {
-        label: 'Edit URL…',
-        icon: createElement(CompareIcon),
-        disabled: gate,
-        onSelect: () => setPendingEditUrl({ name, url }),
-      },
-      {
-        label: 'Remove…',
-        icon: createElement(DeleteIcon),
-        disabled: gate,
-        onSelect: () => setPendingRemoveRemote(name),
-      },
-    ];
+    return remoteMenuItemsImpl(deps, name);
   }
 
   // P5 §5.2 / P6 §4.2: the commit-row menu — "Create branch here" + "Compare

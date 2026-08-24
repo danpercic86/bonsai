@@ -2,7 +2,7 @@
   "_comment": "Ratchet baseline for scripts/check-file-size.mjs — line counts of files already over the 500-line soft limit. These may only shrink. Regenerate with `pnpm lint:size -- --update-baseline`.",
   "limit": 500,
   "files": {
-    "crates/bonsai-core/src/ai/mod.rs": 673,
+    "crates/bonsai-core/src/ai/mod.rs": 600,
     "crates/bonsai-core/src/ai/session.rs": 505,
     "crates/bonsai-core/src/ai/session_tests.rs": 509,
     "crates/bonsai-core/src/assets/bundle.rs": 1366,
@@ -38,7 +38,6 @@
     "crates/bonsai-core/src/health.rs": 1260,
     "crates/bonsai-core/tests/ai_digest_cli.rs": 526,
     "crates/bonsai-core/tests/ai_stream_bulk_cli.rs": 533,
-    "crates/bonsai-core/tests/branches_cli.rs": 661,
     "crates/bonsai-core/tests/conflict_cli.rs": 641,
     "crates/bonsai-core/tests/diff_cli.rs": 1027,
     "crates/bonsai-core/tests/discard_partial_cli.rs": 505,
@@ -59,11 +58,11 @@
     "src/App.tsx": 1069,
     "src/components/AiAssetsPanel.tsx": 516,
     "src/components/ConflictEditor.tsx": 535,
-    "src/components/RepoWorkspace.tsx": 3048,
+    "src/components/RepoWorkspace.tsx": 2993,
     "src/components/Sidebar.tsx": 649,
-    "src/components/workspaceMenus.ts": 886,
+    "src/components/workspaceMenus.ts": 828,
     "src/graph/GraphCanvas.tsx": 938,
     "src/ipc/fixtures/diffs.ts": 746,
-    "src/ipc/types/ipc-api.ts": 830
+    "src/ipc/types/ipc-api.ts": 760
   }
 }

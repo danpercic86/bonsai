@@ -7,7 +7,8 @@ import type { BisectOutcome, CloneProgress, GitAvailability, OpenRepoResult, Rec
 import type { ConfigLevelArg, ConfigView } from './config';
 import type { ConflictEntry, ConflictFile, ConflictResolution } from './conflict';
 import type { CommitDiff, CompareDiff, FileDiff, ImageDiff, ImageDiffRequest, LineSelection } from './diff';
-import type { CommitStatus, CreatePrInput, ForgeAccount, ForgeKind, ForgeRepoContext, ForgeViewer, MergePrInput, PrDescription, PrDetail, PrListQuery, PrPage, ReviewComment } from './forge';
+import type { PrDescription } from './forge';
+import type { IpcApiForge } from './ipc-api-forge';
 import type { GraphChunk, GraphLayout } from './graph';
 import type { RepoHealth } from './health';
 import type { RepoHooksDisclosure } from './hooks';
@@ -25,7 +26,7 @@ import type { SubmoduleDeinitOutcome, SubmoduleInfo, SubmoduleRemoveOutcome } fr
 import type { UpdateCheckResult, UpdateProgress } from './update';
 import type { CopyCandidate, CopyPlanEntry, CopySelection, WorktreeInfo } from './worktree';
 
-export interface IpcApi {
+export interface IpcApi extends IpcApiForge {
   /** Open (or focus) a repo. Returns the canonical `repoId` + info. A usable
    *  repo (isRepo && !bare) creates/refreshes a keyed entry; re-opening an
    *  already-open path focuses it (same `repoId`, no reset). Rejects {@link AppError}. */
@@ -439,7 +440,6 @@ export interface IpcApi {
   /** P60d/P82: remove entirely (deinit + git rm + drop .git/modules). DESTRUCTIVE.
    *  `force` semantics as `deinitSubmodule`. Rejects noRepo | invalidName | git. */
   removeSubmodule(repoId: string, name: string, force: boolean): Promise<SubmoduleRemoveOutcome>;
-  // --- P27: worktrees ---
   /** All worktrees (main first) with resolved branch/oid/badges. Rejects noRepo | git. */
   listWorktrees(repoId: string): Promise<WorktreeInfo[]>;
   /** Create a worktree checking out `branch`, at a derived
@@ -471,12 +471,10 @@ export interface IpcApi {
     name: string,
     selections: CopySelection[],
   ): Promise<WorktreeInfo>;
-  // --- P29: repo health ---
   /** All four repo-health sections in one round-trip (READ-ONLY). Per-section
    *  failures land in `Section.error` inside the payload; the call itself
    *  rejects only noRepo | other (join). */
   getRepoHealth(repoId: string): Promise<RepoHealth>;
-  // --- P22: tags ---
   /** Create a tag at `targetOid`. `message` non-null ⇒ annotated (needs git identity),
    *  null ⇒ lightweight. `force` overwrites (v1 UI passes false). Rejects
    *  noRepo | invalidName | configMissing | git. */
@@ -492,7 +490,6 @@ export interface IpcApi {
   /** Push refs/tags/<tagName> to `remote`. `force` false in v1. Rejects
    *  noRepo | noRemote | authFailed | networkError | pushRejected | git. */
   pushTag(repoId: string, remote: string, tagName: string, force: boolean): Promise<void>;
-  // --- P77: tag sync ---
   /** Live tag reconciliation vs `remote` (null => default remote). One ls-remote
    *  round-trip; best-effort — callers must render the plain tags list even when
    *  this rejects. Rejects noRepo | noRemote | authFailed | networkError | git. */
@@ -505,7 +502,6 @@ export interface IpcApi {
   /** Delete a tag on `remote` (destructive — confirm first). Rejects noRepo |
    *  invalidName | noRemote | authFailed | networkError | pushRejected | git. */
   deleteRemoteTag(repoId: string, remote: string, tagName: string): Promise<void>;
-  // --- P22: remotes ---
   /** Configured remotes (name + fetch URL). Rejects noRepo | git. */
   listRemotes(repoId: string): Promise<RemoteInfo[]>;
   /** Add a remote. Rejects noRepo | invalidName | git. */
@@ -761,76 +757,4 @@ export interface IpcApi {
    *  Never resolves in practice (process exits). In the mock it is a logged
    *  no-op. */
   relaunchApp(): Promise<void>;
-  // --- P62: forge / PR integration ---
-  /** Repo identity from `origin` + keychain presence (no network). An
-   *  unrecognized/unparseable origin returns a friendly `unknown`-provider
-   *  context, NOT an error. Rejects AppError (`noRepo` | `noRemote` | `git`). */
-  forgeRepoContext(repoId: string): Promise<ForgeRepoContext>;
-  /** One page of PR summaries for the state filter (`perPage` capped at 50).
-   *  Rejects AppError (`noRepo` | `forgeUnsupported` | `noRemote` |
-   *  `forgeRateLimited` | `forgeApi` | `networkError` | `git`). */
-  forgeListPrs(repoId: string, query: PrListQuery): Promise<PrPage>;
-  /** A single PR (body, diff stats, mergeable, labels). Rejects AppError
-   *  (`noRepo` | `forgeUnsupported` | `forgeApi` | `forgeRateLimited` |
-   *  `networkError` | `git`). */
-  forgeGetPr(repoId: string, number: number): Promise<PrDetail>;
-  /** Open a new PR; REQUIRES a stored token. Rejects AppError (`noRepo` |
-   *  `forgeAuthRequired` | `forgeUnsupported` | `forgeApi` | `forgeRateLimited`
-   *  | `networkError` | `git`). */
-  forgeCreatePr(repoId: string, input: CreatePrInput): Promise<PrDetail>;
-  /** Merge a PR; REQUIRES a stored token. Never force-merges — a not-mergeable
-   *  PR rejects with a clear `forgeApi` message and changes nothing. Rejects
-   *  AppError (`noRepo` | `forgeAuthRequired` | `forgeUnsupported` | `forgeApi`
-   *  | `forgeRateLimited` | `authFailed` | `networkError` | `git`). */
-  forgeMergePr(repoId: string, number: number, input: MergePrInput): Promise<PrDetail>;
-  /** Close/decline/abandon a PR WITHOUT merging; REQUIRES a stored token.
-   *  Rejects AppError (`noRepo` | `forgeAuthRequired` | `forgeUnsupported` |
-   *  `forgeApi` | `forgeRateLimited` | `authFailed` | `networkError` | `git`). */
-  forgeClosePr(repoId: string, number: number): Promise<PrDetail>;
-  /** Merged review + conversation comments, sorted by creation time. Rejects
-   *  AppError (`noRepo` | `forgeUnsupported` | `forgeApi` | `forgeRateLimited`
-   *  | `networkError` | `git`). */
-  forgeListReviewComments(repoId: string, number: number): Promise<ReviewComment[]>;
-  /** Validate a pasted PAT (`GET /user`) and store it in the OS keychain keyed
-   *  by host; resolves with the authenticated viewer. A rejected token stores
-   *  NOTHING and the token is never logged/echoed. Rejects AppError (`noRepo` |
-   *  `authFailed` | `forgeUnsupported` | `noRemote` | `forgeRateLimited` |
-   *  `networkError`). */
-  forgeSetToken(repoId: string, token: string): Promise<ForgeViewer>;
-  /** Sign out: delete the host's PAT from the keychain + evict the cached
-   *  viewer. Idempotent. Rejects AppError (`noRepo` | `noRemote`). */
-  forgeClearToken(repoId: string): Promise<void>;
-  /** P63: batch commit/CI statuses for graph badges — one CommitStatus per
-   *  requested sha, in the SAME order (one round-trip / one spawn_blocking).
-   *  Rejects AppError (`noRepo` | `forgeUnsupported` | `noRemote` | `forgeApi`
-   *  | `forgeRateLimited` | `authFailed` | `networkError` | `git`). */
-  forgeCommitStatuses(repoId: string, shas: string[]): Promise<CommitStatus[]>;
-  // --- P79/P80: global forge account management (repo-independent) ---
-  /** P80: all forge accounts across all hosts (the settings index), each with
-   *  live `connected` + `isHostDefault` + best-effort login/avatar. No network.
-   *  Rejects AppError (`other`). */
-  forgeListAccounts(): Promise<ForgeAccount[]>;
-  /** P80: validate + store a PAT for `host`/`kind` directly (no repo), learn the
-   *  login, store under a three-part keychain key, upsert the account, and set it
-   *  as the host default if none exists. Rejects AppError (`authFailed` |
-   *  `forgeUnsupported` | `forgeRateLimited` | `networkError` | `other`). */
-  forgeAddAccount(host: string, kind: ForgeKind, token: string): Promise<ForgeViewer>;
-  /** P79 back-compat alias for {@link forgeAddAccount} (same behavior). */
-  forgeSetTokenForHost(host: string, kind: ForgeKind, token: string): Promise<ForgeViewer>;
-  /** P80: delete an account's token (by its keychain key), remove the record, and
-   *  clean references (host default, repo overrides). Idempotent. Rejects
-   *  AppError (`other`). */
-  forgeRemoveAccount(accountId: string): Promise<void>;
-  /** P80: set/replace the default account for `host`. Rejects AppError (`other`)
-   *  if `accountId` isn't on the host. */
-  forgeSetHostDefault(host: string, accountId: string): Promise<void>;
-  /** P80: pin (`accountId`) or clear (`null` ⇒ inherit) a repo's account
-   *  override. Rejects AppError (`noRepo` | `other`). */
-  forgeSetRepoAccount(repoId: string, accountId: string | null): Promise<void>;
-  /** P79: sign out ALL accounts on a host — delete their tokens + records +
-   *  defaults + overrides. Idempotent. Rejects AppError (`other`). */
-  forgeClearTokenForHost(host: string): Promise<void>;
-  /** P79: evict a host's cached viewer WITHOUT deleting the token (expiry flow).
-   *  Infallible. */
-  forgeInvalidateViewer(host: string): Promise<void>;
 }
