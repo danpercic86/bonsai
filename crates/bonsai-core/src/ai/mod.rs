@@ -9,6 +9,13 @@ pub mod payload;
 // (`stream`), process lifecycle (`session`) and the cancel/reply map
 // (`registry`), split so the NDJSON mapping is testable without a child (D12).
 pub mod registry;
+/// macOS/Linux `claude` CLI discovery ladder (spec 001): the process's own
+/// `PATH`, then the user's login-shell `PATH`, then a short list of
+/// well-known install directories. Windows keeps using
+/// [`crate::procutil::resolve_program`] instead (see `resolve_bin` below) —
+/// this module doesn't exist on that platform.
+#[cfg(not(windows))]
+mod bin_resolve;
 /// Private: [`RunControl`] is the module's whole public surface (re-exported
 /// below), and `run_claude_streaming` is the only way to drive a session.
 mod session;
@@ -318,19 +325,40 @@ fn run_process(
 }
 
 /// Resolve the binary to spawn: `CLAUDE_BIN_ENV` override (tests) wins,
-/// verbatim. Otherwise resolve `claude` against PATH with PATHEXT awareness
-/// via [`crate::procutil::resolve_program`] — on Windows a bare
-/// `Command::new("claude")` does NOT find the npm `claude.cmd` shim
-/// (CreateProcess only appends `.exe`), so an npm-only install would fail
-/// every AI feature (audit §2.7). An unresolvable name falls back to the bare
-/// `claude` so the spawn's `NotFound` → `AiUnavailable` error path still
-/// fires naturally. (P13)
+/// verbatim (AC6, spec 001). Otherwise the ladder is platform-specific:
+///
+/// - **Windows**: resolve `claude` against `PATH` with PATHEXT awareness via
+///   [`crate::procutil::resolve_program`] — a bare `Command::new("claude")`
+///   does NOT find the npm `claude.cmd` shim (CreateProcess only appends
+///   `.exe`), so an npm-only install would fail every AI feature (audit
+///   §2.7). Unchanged by spec 001 (AC5).
+/// - **macOS/Linux**: [`bin_resolve::resolve`] — the process's own inherited
+///   `PATH` first (AC2: identical outcome to today when discovery already
+///   works, e.g. a terminal launch), then the user's **login shell**'s
+///   `PATH` (spec 001's actual fix: a GUI launch — double-click, Spotlight,
+///   Dock — inherits a minimal launchd/display-manager `PATH` that omits
+///   anything only added by `.zshrc`/`.zprofile`/`.bashrc`), then a short
+///   list of well-known install directories. The login-shell probe is cached
+///   for the process's lifetime, so it runs at most once (AC4), and is
+///   bounded by a short timeout so a hung/broken shell can't stall an AI
+///   feature (spec 001 edge case).
+///
+/// Either ladder falls back to the bare `claude` name, unresolved, so the
+/// spawn's `NotFound` → `AiUnavailable` error path still fires naturally when
+/// nothing is found anywhere (AC3). (P13; spec 001)
 fn resolve_bin() -> std::path::PathBuf {
     if let Ok(overridden) = std::env::var(CLAUDE_BIN_ENV) {
         return std::path::PathBuf::from(overridden);
     }
-    crate::procutil::resolve_program("claude")
-        .unwrap_or_else(|_| std::path::PathBuf::from("claude"))
+    #[cfg(windows)]
+    {
+        crate::procutil::resolve_program("claude")
+            .unwrap_or_else(|_| std::path::PathBuf::from("claude"))
+    }
+    #[cfg(not(windows))]
+    {
+        bin_resolve::resolve("claude")
+    }
 }
 
 /// Kill `child` AND its descendants (audit §2.7). On Windows the resolved
