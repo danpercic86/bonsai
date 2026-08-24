@@ -29,6 +29,21 @@ use bonsai_core::graph::{
 
 use crate::perf::PerfState;
 
+/// PB-1 store cap. A cold walk is cached only while its emitted node count stays
+/// within this bound; a larger repo re-walks each refresh (correct, uncached)
+/// instead of retaining the whole `Vec<GraphChunk>` — which reaches ~150–250 MB
+/// at the 1M `STREAM_MAX_COMMITS` ceiling. 50k = 2.5× the 20k jank-free target,
+/// bounding per-repo cache memory to ~10–25 MB at the cap.
+const GRAPH_CACHE_MAX_NODES: usize = 50_000;
+
+/// PB-1 store gate (pure, so the decision is unit-testable at a tiny cap without
+/// a 50k-commit fixture). A cold walk is retained only while its emitted node
+/// count stays at or below `max`; once it exceeds `max` the walk still streams
+/// through uncached and re-walks on the next refresh.
+fn should_store(node_count: usize, max: usize) -> bool {
+    node_count <= max
+}
+
 /// The cached graph output for one repo, plus everything the classifier needs.
 /// Stored behind [`GraphCache`] in each `RepoEntry`.
 pub struct CachedGraph {
@@ -197,6 +212,20 @@ pub fn stream_graph_cached_with(
     repo: &mut git2::Repository,
     cache: &GraphCache,
     perf: &PerfState,
+    emit: impl FnMut(GraphChunk) -> bool,
+) -> Result<(), AppError> {
+    stream_graph_cached_capped(repo, cache, perf, GRAPH_CACHE_MAX_NODES, emit)
+}
+
+/// PB-1: [`stream_graph_cached_with`] with an explicit store cap so the store
+/// decision is exercisable at a tiny threshold in tests. The emit path and the
+/// walk counting (`inc_graph_walks`) are identical regardless of `max_nodes`;
+/// only whether the completed cold walk is retained in `cache` depends on it.
+fn stream_graph_cached_capped(
+    repo: &mut git2::Repository,
+    cache: &GraphCache,
+    perf: &PerfState,
+    max_nodes: usize,
     mut emit: impl FnMut(GraphChunk) -> bool,
 ) -> Result<(), AppError> {
     let seed = graph_seed_with(repo)?;
@@ -247,6 +276,8 @@ pub fn stream_graph_cached_with(
 
             let mut buf: Vec<GraphChunk> = Vec::new();
             let mut node_oids: HashSet<git2::Oid> = HashSet::new();
+            let mut node_count: usize = 0;
+            let mut too_big = false;
             let mut saw_done = false;
             // P88b/B2b: the walk reuses the SAME handle as the seed probe above
             // (was a second open) — one open serves both. `repo_opens` is bumped
@@ -254,26 +285,49 @@ pub fn stream_graph_cached_with(
             stream_graph_from_repo(repo, |chunk| {
                 match &chunk {
                     GraphChunk::Batch { nodes, .. } => {
-                        for n in nodes {
-                            if let Ok(o) = git2::Oid::from_str(&n.id) {
-                                node_oids.insert(o);
+                        node_count += nodes.len();
+                        // PB-1: the moment the walk's node count exceeds the
+                        // cap, free the store buffers immediately and stop
+                        // buffering (`too_big`) so the huge Vec is never even
+                        // transiently retained past the threshold.
+                        if too_big {
+                            // already over cap — retain nothing.
+                        } else if should_store(node_count, max_nodes) {
+                            for n in nodes {
+                                if let Ok(o) = git2::Oid::from_str(&n.id) {
+                                    node_oids.insert(o);
+                                }
                             }
+                        } else {
+                            too_big = true;
+                            buf.clear();
+                            buf.shrink_to_fit();
+                            node_oids.clear();
+                            node_oids.shrink_to_fit();
                         }
                     }
                     GraphChunk::Done { .. } => saw_done = true,
                     GraphChunk::Meta { .. } => {}
                 }
-                buf.push(chunk.clone());
+                // The emit path is UNCHANGED — every chunk streams to the
+                // frontend regardless of `too_big`; only the store buffer is
+                // gated.
+                if !too_big {
+                    buf.push(chunk.clone());
+                }
                 emit(chunk)
             })?;
 
-            // Only cache a COMPLETE walk whose topology is observably unchanged
-            // across the walk window. If the sink died mid-stream (`!saw_done`)
-            // the buffer is partial; if a mutation raced the walk the bracketing
-            // seed differs — either way we skip the store (safe Miss next time)
-            // rather than risk a stale hit. The bracket probe is an internal
-            // consistency check, not a serving open, so it is not counted.
-            if saw_done && seed_unchanged_with(repo, &tips, seed.head, &hide) {
+            // Skip the store when the walk exceeded the cap (`too_big`): the
+            // repo re-walks each refresh (a correct, uncached Miss) rather than
+            // retaining a huge Vec. Otherwise cache a COMPLETE walk whose
+            // topology is observably unchanged across the walk window. If the
+            // sink died mid-stream (`!saw_done`) the buffer is partial; if a
+            // mutation raced the walk the bracketing seed differs — either way
+            // we skip the store (safe Miss next time) rather than risk a stale
+            // hit. The bracket probe is an internal consistency check, not a
+            // serving open, so it is not counted.
+            if !too_big && saw_done && seed_unchanged_with(repo, &tips, seed.head, &hide) {
                 let mut guard = cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 *guard = Some(CachedGraph {
                     seed_fp,

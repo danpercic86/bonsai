@@ -34,8 +34,26 @@ APPROVED; 6 `*_with` twins + new `worktree_reuse.rs`; 4 composites now open once
 `create_branch_here`, `checkout_commit_detached`, `checkout_remote`; bare-repo guard restored → byte-identical;
 1486 core tests unchanged, clippy -D clean both crates). AC-b2 counter not observable in bonsai-core (repo_opens
 instrumented only at src-tauri seam) → B2b makes the round-level drop measurable; B2a proven by inspection (one
-`open_repo_at`/composite). **Now: B2b** (thread-local `with_repo` round handle cache + `index.read(true)` freshness
-guard) then PB-1 (graph-cache node cap). User confirmed "go ahead with B2 after this" (2026-08-24).
+`open_repo_at`/composite). **B2b DONE + committed `52f5d74`** (reviewer APPROVED; config-staleness AUTHORITATIVELY
+CLEARED via libgit2 1.9.6 source — config auto-refreshes on read). New `src-tauri/repo_handle.rs` (`with_repo`/
+`with_repo_mut`, generation-keyed eviction on open/close); `read_status_with` forces `index.read(true)`. bonsai-core
+1486 unchanged (byte-identical), bonsai 289 (+2). **Honest scope:** list trio (branches/stashes/worktrees) get
+cross-round reuse (0 opens warm); `stream_graph` fuses seed+walk+reprobe to 1 open/call; **`get_status`+`stream_graph`
+do NOT get cross-round reuse** — they run inside `run_with_git_timeout` (fresh watchdog thread/call) so open once per
+call (no regression: status was always 1/call, graph improved 3→1). **Now: PB-1** (graph-cache node cap, in flight)
+then batch tester + full gate. User confirmed "go ahead with B2 after this" (2026-08-24).
+
+**NEW FOLLOW-UPS (this batch):**
+- **FU-B2c (perf, MED — the remaining B2 win):** hoist `with_repo` OUTSIDE `run_with_git_timeout` for `get_status`+
+  `stream_graph` so they reuse the pooled handle across rounds too. Non-trivial — the corrupt-object watchdog
+  (`timeout.rs:114`) spawns a fresh detachable thread per call, so a shared `&mut Repository` can't cross safely; needs
+  either a persistent watchdog worker with its own handle cache, or move-in/move-back ownership of the handle (leak one
+  on timeout). Modest win (open overhead is a constant factor; the O(worktree)/O(commits) work is unaffected) — decide
+  if worth the risk to the safety path. Recommend a dedicated increment, not inline.
+- **Known flake (pre-existing, untouched):** `watcher::tests::git_internals_filtered` (`watcher.rs`) is a timing flake
+  (`unwrap_err` on an `Instant`); passes on isolated re-run. Not caused by this batch.
+- **P88a tester gaps (carry to batch tester):** stash-pop `refreshAll('stash')` assertion + `stageResolvedText`
+  `refreshAll('worktree')` assertion (incl. `deferRefresh:true`→not-called).
 --- earlier ---
 contract DONE (`docs/contracts/P88-git-action-perf.md`, ~267 lines). 3 open decisions RESOLVED
 by orchestrator (accept architect recs): **OD-P88-1** keep set-url raw `refetchRemotes()` (config-only, watcher
