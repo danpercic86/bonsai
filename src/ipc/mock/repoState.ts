@@ -343,6 +343,18 @@ export function requireRepo(repoId: string): MockRepoState {
 }
 
 /**
+ * Flip a mock repo to a DETACHED HEAD at `oid`: clears every local branch's
+ * `isHead`, sets the discriminant + `headOid`, and rewrites the head snapshot so
+ * the next `listBranches`/`buildInfo` reports detached. Used by `checkoutCommit`.
+ */
+export function setDetached(state: MockRepoState, oid: string): void {
+  for (const b of state.branches.local) b.isHead = false;
+  state.kind = 'detached';
+  state.headOid = oid;
+  state.branches.head = { branchName: null, oid, detached: true, unborn: false };
+}
+
+/**
  * True when `oid` matches a known ref tip: HEAD, a local branch tip, or a
  * remote-tracking branch tip. Tags are `string[]` (no oids) in the mock, so
  * they are not considered here. Lets diff/compare mocks treat ref-pill tips as

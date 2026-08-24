@@ -19,6 +19,10 @@ export const branchesCommands = {
     return invoke<CheckoutResult>('checkout_branch', { repoId, name });
   },
 
+  checkoutCommit(repoId: string, oid: string): Promise<CheckoutResult> {
+    return invoke<CheckoutResult>('checkout_commit', { repoId, oid });
+  },
+
   deleteBranch(repoId: string, name: string): Promise<void> {
     return invoke<void>('delete_branch', { repoId, name });
   },

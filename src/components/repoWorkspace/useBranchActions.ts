@@ -149,6 +149,31 @@ export function useBranchActions(
     }
   }
 
+  // Checkout arbitrary commit → detached HEAD. Non-destructive (no confirm),
+  // dirty-safe (auto-stash/re-apply). HEAD moves → refreshAll full.
+  async function handleCheckoutCommit(oid: string) {
+    const short = oid.slice(0, 7);
+    setMutating(true);
+    try {
+      const res = await ipc.checkoutCommit(repoId, oid);
+      await refreshAll();
+      if (res.apply?.kind === 'conflicts') {
+        pushToast(
+          'warning',
+          `Detached HEAD at ${short}; your changes were carried over with conflicts and kept safe at stash@{0} — resolve them in the status panel`,
+        );
+      } else if (res.stashed) {
+        pushToast('success', `Detached HEAD at ${short} (stashed & re-applied)`);
+      } else {
+        pushToast('success', `Detached HEAD at ${short} — commit or create a branch to keep new work`);
+      }
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
+    }
+  }
+
   // P6 §4.4: GitKraken-style remote checkout — create/reuse a local tracking
   // branch and switch to it (HEAD moves, so refreshAll like handleCheckoutBranch).
   async function handleCheckoutRemote(name: string) {
@@ -183,6 +208,7 @@ export function useBranchActions(
   return {
     handleCreateBranch,
     handleCheckoutBranch,
+    handleCheckoutCommit,
     handleCreateBranchHere,
     handleDeleteBranch,
     handleRenameBranch,

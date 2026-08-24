@@ -127,6 +127,7 @@ pub fn run() {
             commands::create_branch,
             commands::create_branch_here,
             commands::checkout_branch,
+            commands::checkout_commit,
             commands::delete_branch,
             commands::rename_branch,
             commands::checkout_remote,

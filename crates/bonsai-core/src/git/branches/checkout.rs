@@ -163,6 +163,90 @@ pub fn checkout_branch_autostash(
     })
 }
 
+/// Blocking. Checks out arbitrary commit `oid` as a DETACHED HEAD, dirty-safe:
+/// auto-stash -> safe checkout_tree -> set_head_detached -> re-apply stash.
+/// NO auto-FF (a detached HEAD tracks nothing; `fast_forwarded` always false).
+/// A conflicted re-apply is a SUCCESS carrying `apply: Some(Conflicts{..})`
+/// (stash retained, never lossy). SAFE checkout only — never force; a conflict
+/// before `set_head_detached` leaves the worktree + HEAD untouched.
+///
+/// Errors: `invalidName` (oid not a parseable oid) | `git` (oid not found or not
+/// a commit) | `operationInProgress` (via `create_stash`) | `configMissing`
+/// (via `create_stash`) | `checkoutConflict` (defensive, post-stash) | `noRepo`.
+pub fn checkout_commit_detached(workdir: &Path, oid: &str) -> Result<CheckoutResult, AppError> {
+    // 0. Resolve up-front — zero side effects on failure.
+    let repo = open_repo_at(workdir)?;
+    let target_oid = git2::Oid::from_str(oid)
+        .map_err(|_| AppError::InvalidName(format!("invalid commit id '{oid}'")))?;
+    let commit = repo
+        .find_commit(target_oid)
+        .map_err(|_| AppError::Git(format!("commit '{oid}' not found")))?;
+
+    // 0b. No-op guard: HEAD already detached AT this oid → nothing to do.
+    if repo.head_detached().unwrap_or(false)
+        && repo.head().ok().and_then(|h| h.target()) == Some(target_oid)
+    {
+        return Ok(CheckoutResult {
+            stashed: false,
+            fast_forwarded: false,
+            apply: None,
+        });
+    }
+
+    // 1. Auto-stash. `create_stash` owns the dirty-vs-clean decision AND the
+    //    mid-merge/rebase guard (OperationInProgress). `configMissing` may surface.
+    let stashed =
+        stash::create_stash(workdir, None, stash::StashScope::AllWithUntracked)?.created;
+
+    // 2. SAFE checkout. On ANY failure, restore stash (best-effort) then return.
+    let commit_obj = commit.as_object();
+    let mut opts = git2::build::CheckoutBuilder::new();
+    opts.safe(); // DEFAULT SAFE MODE — never .force()
+    if let Err(e) = repo.checkout_tree(commit_obj, Some(&mut opts)) {
+        if stashed {
+            let _ = stash::pop_stash(workdir, 0, false, None);
+        }
+        return Err(if e.code() == git2::ErrorCode::Conflict {
+            AppError::CheckoutConflict(format!(
+                "cannot checkout '{oid}': local changes would be overwritten. \
+                 Commit or discard them first."
+            ))
+        } else {
+            e.into()
+        });
+    }
+
+    // 3. Detach HEAD onto the commit. NB: unlike checkout_branch (where
+    //    checkout_branch rewrites tree+HEAD atomically), here the tree was
+    //    already checked out in step 2, so a set_head_detached failure would
+    //    leave the worktree on the new tree with HEAD still on the old ref.
+    //    This is effectively unreachable — set_head_detached to an already-
+    //    resolved oid does not fail after a successful checkout_tree — so we
+    //    keep the contract's tree-then-HEAD ordering and best-effort restore.
+    if let Err(e) = repo.set_head_detached(target_oid) {
+        if stashed {
+            let _ = stash::pop_stash(workdir, 0, false, None);
+        }
+        return Err(e.into());
+    }
+
+    // 4. Re-apply carried work iff stashed. Conflicts → SUCCESS, stash retained.
+    if stashed {
+        let outcome = stash::pop_stash(workdir, 0, false, None)?;
+        return Ok(CheckoutResult {
+            stashed: true,
+            fast_forwarded: false,
+            apply: Some(outcome),
+        });
+    }
+
+    Ok(CheckoutResult {
+        stashed: false,
+        fast_forwarded: false,
+        apply: None,
+    })
+}
+
 /// No-fetch fast-forward of LOCAL branch `name` to its upstream tracking ref.
 /// Resolves the upstream oid from the already-present remote-tracking ref
 /// (`Branch::upstream()` performs no network I/O). Fast-forwards only when

@@ -151,6 +151,12 @@ export interface IpcApi {
    *  branchNotFound | operationInProgress | configMissing | checkoutConflict |
    *  git | noRepo. */
   checkoutBranch(repoId: string, name: string): Promise<CheckoutResult>;
+  /** Dirty-safe checkout of an arbitrary commit → DETACHED HEAD: auto-stash →
+   *  safe checkout → detach → re-apply stash. No auto-FF (`fastForwarded` always
+   *  false). A conflicted re-apply is a SUCCESS carrying `apply: {kind:'conflicts'}`
+   *  (stash retained). Rejects invalidName | git | operationInProgress |
+   *  configMissing | checkoutConflict | noRepo. */
+  checkoutCommit(repoId: string, oid: string): Promise<CheckoutResult>;
   /** Delete a LOCAL, fully merged, non-current branch. Rejects
    *  branchNotFound | unmergedBranch | git | noRepo. */
   deleteBranch(repoId: string, name: string): Promise<void>;
