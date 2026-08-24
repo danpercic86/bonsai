@@ -24,6 +24,53 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
+## ⚡ P88 — Git-action perf round 2 (refresh-scope cluster + repo-handle cache) — in-progress
+
+**Current step:** contract DONE (`docs/contracts/P88-git-action-perf.md`, ~267 lines). 3 open decisions RESOLVED
+by orchestrator (accept architect recs): **OD-P88-1** keep set-url raw `refetchRemotes()` (config-only, watcher
+ignores → no echo); **OD-P88-2** B2 = **thread-local handle cache keyed `(repo_id, generation)`** (NOT a `Mutex`
+— a mutex would serialize the round's ~11 concurrent `spawn_blocking` commands); **OD-P88-3** stage B2 as B2a
+(thread `&Repository` through composite ops, zero freshness risk) → B2b (round handle cache + index `read(true)`
+freshness guard). Next: branch off `main` @ `c0825a3`, delegate **P88a** to senior-dev. **No ui-designer** (no
+visible UI change; same data, fewer/narrower refreshes). Peer session `bonsai-c9` = release, tree clean.
+
+**Audit result (verified clean — do NOT "fix"):** `spawn_blocking` discipline fully clean (198 cmds/198 wraps, no
+git2 on async thread); network off critical path (tag auto-sync fire-and-forget, 1 round-trip); `runRefreshRound`
+is parallel (`Promise.all`, RepoWorkspace.tsx:1209); ref-only refresh skips O(worktree) status scan (P86a works);
+render hot-paths memoized. **PB-2 resolved** (post-walk re-probe guards the TOCTOU) — retire it.
+
+### P88a — Theme 1: frontend refresh-scope cluster (FIRST — quick, low-risk, extends P85/P86a)
+A class of handlers never adopted the P85 echo-arming pattern: they refetch via raw `refetchX()` instead of
+`refreshAll(scope)`, so they skip the coalescer AND don't arm echo-suppression → the op's own `.git` write triggers
+an **unsuppressed `full` watcher round ~300 ms later** (the exact P85 double-refresh). Plus several over-broad scopes.
+- **Under-armed (route through `refreshAll`):** tag create/delete/sync `useTagRemoteActions.ts:31` (HIGH); stash drop
+  `useStashActions.ts:119` (MED-HIGH); commit-composer `useCommitComposer.ts:256` (MED, also leaves ahead/behind stale);
+  remote add/remove/rename + set-url `useTagRemoteActions.ts:153/192` + submodule add/deinit/remove `useSubmoduleActions.ts:48` (MED-LOW).
+- **Over-broad scope:** delete LOCAL branch `full`→`refsOnly` `useBranchActions.ts:112` (HIGH — inconsistent w/ deleteRemoteTracking:200);
+  stash push/apply/pop `full`→new `stash` scope `useStashActions.ts:28/71/105` (MED); merge conflict-resolve `full`→`worktree`
+  **per-file** `useMergeActions.ts:81/112` (MED).
+- **Blocker:** 3 hooks type dep as `refreshAll: () => Promise<void>` (no scope) → can't narrow. Fix: widen to
+  `(scope?: RefreshScope)`; add a `stash` scope (status+graph+stashes) to `refreshScope.ts`; route the ~6 bypass handlers.
+- **Acceptance:** each listed action fires exactly ONE refresh round (verify via `window.__bonsaiRefreshRounds`), at the
+  minimal-correct scope; no unsuppressed watcher echo; UI still consistent (no stale ahead/behind after commit).
+
+### P88b — Theme 2: backend repo-handle cache (B2) + PB-1 memory cap (SECOND — bigger, careful)
+- **B2 (HIGH, biggest structural win):** no `git2::Repository` cached in `RepoEntry` (`state.rs:58`); ~9–11 opens per
+  full round; multi-step actions re-open ~5× in one op (dirty checkout `checkout.rs:98/118/128/132/150`). Fix
+  (OD-P88-2): **thread-local** `Repository` cache keyed `(repo_id, generation)` + `&Repository`-taking `*_with` core
+  variants (NOT a `Mutex` — preserves the round's parallel fan-out); measurable via `repo_opens` (`perf.rs:17` —
+  "would drive toward 1"). B2a (composite single-open) first, then B2b (round cache). Naturally fixes the multi-step
+  5× and the miss-path 3× open.
+- **PB-1 (MED, bundle w/ B2):** `graph_cache.rs` retains the whole chunk stream up to STREAM_MAX_COMMITS=1M (~150–250
+  MB/repo at cap, no eviction). Fix: skip the store above a row threshold (or intern strings).
+- **Delete-branch cache miss (MED, defer/document):** `graph_cache.rs:139` requires old-tips ⊆ new-tips for a redecorate;
+  tip removal always Misses → full re-walk even for a merged branch. Frontend `refsOnly` (P88a) is the cheap win; the
+  backend reachability check is hard — accept a documented conservative miss for now.
+- **Scheduler note (LOW, no action):** `healthRefresh` fires a full round per tick but is OFF by default.
+
+**Follow-up verdicts (this audit):** B2 still-stands (highest value) · PB-1 still-stands · PB-2 RESOLVED (retire) ·
+FU-1..4 still-open (non-perf, low) · RepoWorkspace refactor still-stands (maintainability, not perf).
+
 ## ✅ PERF + OBSERVABILITY BATCH (P85–P87) — AI GATE GREEN (2026-08-23) — USER CHECKPOINTS PENDING
 
 **Full `pnpm gate` re-run CLEAN @ `b802482`: all 8 steps passed (GATE_EXIT=0)** — cargo test/clippy (both
