@@ -6,6 +6,41 @@ All notable changes to Bonsai are documented here. The format is based on
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-08-24
+
+Checkout from the graph, a live git-activity log, a complete lucide-react icon system, and a
+keyboard-navigable sidebar — plus a batch of performance, accessibility, and security hardening.
+
+### Added
+
+- **Check out a commit into detached HEAD** directly from the graph and ref pills, and
+  fast-forward a local branch when checking out its remote-tracking counterpart.
+- **Git-activity log dock** — a live stream of git phases and progress, backed by a streaming
+  execution seam with bounded line-event emission.
+- **Sidebar single-click reveals the ref in the graph**, with automatic tag synchronisation on
+  fetch.
+- **Keyboard-navigable sidebar** (`role=tree` with roving tabindex) and improved graph a11y
+  (grid semantics, light-mode lane palette, higher-contrast ref pills).
+- **First-time per-repo git-hook execution disclosure** and an AI conflict novel-content gate.
+
+### Changed
+
+- **Migrated all chrome icons to lucide-react**, replacing the previous inline-SVG/glyph set
+  across the header, toolbar, file rows, onboarding, sidebar, and AI dialogs/menus.
+
+### Fixed
+
+- Resolve the `claude` CLI via a login-shell PATH fallback on macOS/Linux.
+- Don't dismiss the clone dialog on an accidental backdrop click.
+- Dialog focus management and modal semantics.
+- Guard raw-fs git paths against symlinked-ancestor escape; validate MCP scope and reject
+  control characters in credential URLs.
+
+### Performance
+
+- Per-repo layout cache (redecorate instead of re-walking the graph), scoped reason-aware refresh
+  rounds, and elimination of double-refreshes on branch/fetch/push.
+
 ## [1.2.0] — 2026-08-22
 
 Pull request review and management from inside Bonsai — merge and close/decline PRs across all four
@@ -429,7 +464,8 @@ The MVP and first productization phase. Highlights:
 - Tauri v2 auto-update scaffolding (behind Bonsai IPC) and a first-run onboarding overlay.
 - An embedded MCP server exposing structured Git data (graph, diffs, conflicts) to AI tools.
 
-[Unreleased]: https://github.com/danpercic86/bonsai/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/danpercic86/bonsai/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/danpercic86/bonsai/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/danpercic86/bonsai/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/danpercic86/bonsai/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/danpercic86/bonsai/compare/v0.3.1...v1.0.0
