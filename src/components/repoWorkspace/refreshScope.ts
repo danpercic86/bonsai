@@ -12,12 +12,23 @@
 //   refsOnly    |    –      –     ✓      ✓        –       ✓       –       –       –          –         –
 //   remoteMeta  |    –      –     ✓      ✓        ✓       ✓       –       –       –          –         ✓(non-forced)
 //   worktree    |    –      ✓     –      –        –       –       ✓       –       –          –         –
+//   stash       |    –      ✓     ✓      –        –       –       –       ✓       –          –         –
+//
+// P88a: `stash` (push/apply/pop/drop) touches the worktree+index (→ status), the
+// refs/stash reflog + the synthetic stash node in the walk (→ graph, a B1 Miss on
+// the hide-set change), and the stash list (→ stashes). No HEAD move ⇒ openRepo:false.
 //
 // refsOnly / remoteMeta / worktree skip `openRepo` because they never move HEAD
 // (HEAD-moving ops go through `full`) — the header HEAD label + watcher self-heal
 // are unaffected. The matrix is conservative: an unsure handler uses `full`.
 
-export type RefreshScope = 'full' | 'refsOnly' | 'remoteMeta' | 'worktree';
+export type RefreshScope = 'full' | 'refsOnly' | 'remoteMeta' | 'worktree' | 'stash';
+
+/** The container's coalesced-refresh callback signature. Exported so every domain
+ *  action hook narrows its `refreshAll` dep identically and can pass a scope
+ *  (`refreshAll('worktree')` etc.). The runtime callback in `RepoWorkspace.tsx`
+ *  already has this exact shape (`(scope?: RefreshScope) => Promise<void>`). */
+export type RefreshAll = (scope?: RefreshScope) => Promise<void>;
 
 /** Which refetch callbacks a scoped `runRefreshRound` invokes. `tagSyncForcable`
  *  gates whether an origin-forced ls-remote drift check is allowed: only `full`
@@ -71,6 +82,7 @@ const SLICES: Record<RefreshScope, RefreshSlices> = {
   refsOnly: { ...NONE, graph: true, branches: true, compare: true },
   remoteMeta: { ...NONE, graph: true, branches: true, remotes: true, compare: true, tagSync: true },
   worktree: { ...NONE, status: true, opState: true },
+  stash: { ...NONE, status: true, graph: true, stashes: true },
 };
 
 /** The slice set a scoped round runs. */

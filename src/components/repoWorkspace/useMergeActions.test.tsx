@@ -98,6 +98,7 @@ describe('resolve conflict', () => {
     await useMergeActions(deps).handleResolveConflict('a.ts', 'ours');
     expect(resolve).toHaveBeenCalledWith(REPO, 'a.ts', 'ours');
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('worktree'); // P88a row 10
   });
 
   it('handleResolveConflictText takes an optional success message (the AI copy)', async () => {

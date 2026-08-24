@@ -1,18 +1,18 @@
 import { ipc } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
 import type { StashScope } from '../../ipc';
+import type { RefreshAll } from './refreshScope';
 import type { BaseActionDeps, PendingReservedStash, Setter } from './types';
 
 /** P9 / P34: scope-aware stash handling. */
 export function useStashActions(
   deps: BaseActionDeps & {
-    refreshAll: () => Promise<void>;
+    refreshAll: RefreshAll;
     refetchStashes: () => Promise<void>;
-    refetchGraph: () => Promise<void>;
     setPendingReservedStash: Setter<PendingReservedStash | null>;
   },
 ) {
-  const { repoId, pushToast, setMutating, refreshAll, refetchStashes, refetchGraph, setPendingReservedStash } =
+  const { repoId, pushToast, setMutating, refreshAll, refetchStashes, setPendingReservedStash } =
     deps;
 
   async function handleCreateStash(scope: StashScope) {
@@ -25,7 +25,8 @@ export function useStashActions(
         res.created ? 'success' : 'info',
         res.created ? successCopy : 'Nothing to stash — working tree is clean',
       );
-      await refreshAll(); // status + graph (pills) + stashes
+      // P88a row 6: narrow the full round to status + graph (pills) + stashes.
+      await refreshAll('stash');
     } catch (e) {
       pushToast('error', errorMessage(e));
     } finally {
@@ -68,7 +69,8 @@ export function useStashActions(
           );
           break;
       }
-      await refreshAll();
+      // P88a row 7: apply mutates worktree+index+stash list ⇒ stash scope.
+      await refreshAll('stash');
     } catch (e) {
       reportStashError(e);
     } finally {
@@ -102,7 +104,8 @@ export function useStashActions(
           );
           break;
       }
-      await refreshAll();
+      // P88a row 8: pop mutates worktree+index+stash list ⇒ stash scope.
+      await refreshAll('stash');
     } catch (e) {
       reportStashError(e);
     } finally {
@@ -116,7 +119,9 @@ export function useStashActions(
     try {
       await ipc.dropStash(repoId, index, expectedOid);
       pushToast('success', `Dropped stash@{${index}}`);
-      await Promise.all([refetchStashes(), refetchGraph()]); // pills change; worktree does not
+      // P88a row 9: the refs/stash write trips the watcher — route through the
+      // echo-armed refreshAll('stash') (one coalesced round) instead of a raw pair.
+      await refreshAll('stash');
     } catch (e) {
       reportStashError(e);
     } finally {

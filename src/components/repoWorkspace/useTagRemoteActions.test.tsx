@@ -26,8 +26,7 @@ type Deps = Parameters<typeof useTagRemoteActions>[0];
 function makeDeps(over: Partial<Deps> = {}): Deps {
   return {
     ...base(),
-    refetchBranches: asyncFn(),
-    refetchGraph: asyncFn(),
+    refreshAll: asyncFn(),
     refetchRemotes: asyncFn(),
     refetchTagSync: asyncFn(),
     ...over,
@@ -35,28 +34,30 @@ function makeDeps(over: Partial<Deps> = {}): Deps {
 }
 
 describe('tags', () => {
-  it('createTag passes force:false, toasts, refetches branches + graph (not remotes)', async () => {
+  it('createTag passes force:false, toasts, fires refreshAll(refsOnly) + forced tagSync (P88a row 1)', async () => {
     const create = vi.spyOn(mockIpc, 'createTag').mockResolvedValue(undefined);
     const deps = makeDeps();
     await useTagRemoteActions(deps).handleCreateTag(OID, 'v1.0', 'release');
     expect(create).toHaveBeenCalledWith(REPO, 'v1.0', OID, 'release', false);
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Created tag v1.0');
-    expect(deps.refetchBranches).toHaveBeenCalledTimes(1);
-    expect(deps.refetchGraph).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly');
+    // The forced sync verdict is kept explicitly — no scope forces an ls-remote.
+    expect(deps.refetchTagSync).toHaveBeenCalledWith({ force: true });
     expect(deps.refetchRemotes).not.toHaveBeenCalled();
     expectMutatingCycle(deps.setMutating);
   });
 
-  it('createTag error (tag exists) → error toast, no refetch', async () => {
+  it('createTag error (tag exists) → error toast, no refresh', async () => {
     vi.spyOn(mockIpc, 'createTag').mockRejectedValue(appErr('git', 'tag exists'));
     const deps = makeDeps();
     await useTagRemoteActions(deps).handleCreateTag(OID, 'v1.0', null);
     expect(deps.pushToast).toHaveBeenCalledWith('error', 'tag exists');
-    expect(deps.refetchBranches).not.toHaveBeenCalled();
+    expect(deps.refreshAll).not.toHaveBeenCalled();
     expect(deps.setMutating).toHaveBeenLastCalledWith(false);
   });
 
-  it('deleteTag toasts + refetches; pushTag toasts and refetches NOTHING', async () => {
+  it('deleteTag toasts + refreshes(refsOnly); pushTag toasts and only re-checks tag sync', async () => {
     const del = vi.spyOn(mockIpc, 'deleteTag').mockResolvedValue(undefined);
     const push = vi.spyOn(mockIpc, 'pushTag').mockResolvedValue(undefined);
     const deps = makeDeps();
@@ -64,12 +65,13 @@ describe('tags', () => {
     await actions.handleDeleteTag('v1.0');
     expect(del).toHaveBeenCalledWith(REPO, 'v1.0');
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Deleted tag v1.0');
-    expect(deps.refetchGraph).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly');
 
     await actions.handlePushTag('origin', 'v1.0');
     expect(push).toHaveBeenCalledWith(REPO, 'origin', 'v1.0', false);
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Pushed tag v1.0 → origin');
-    expect(deps.refetchGraph).toHaveBeenCalledTimes(1); // unchanged — push moves no local ref
+    expect(deps.refreshAll).toHaveBeenCalledTimes(1); // unchanged — push moves no local ref
     expect(deps.refetchRemotes).not.toHaveBeenCalled();
   });
 
@@ -106,18 +108,17 @@ describe('tags', () => {
 });
 
 describe('remotes', () => {
-  it('addRemote refetches remotes + branches + graph and toasts', async () => {
+  it('addRemote fires refreshAll(remoteMeta) and toasts (P88a row 2)', async () => {
     const add = vi.spyOn(mockIpc, 'addRemote').mockResolvedValue(undefined);
     const deps = makeDeps();
     await useTagRemoteActions(deps).handleAddRemote('fork', 'https://x/y.git');
     expect(add).toHaveBeenCalledWith(REPO, 'fork', 'https://x/y.git');
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Added remote fork');
-    expect(deps.refetchRemotes).toHaveBeenCalledTimes(1);
-    expect(deps.refetchBranches).toHaveBeenCalledTimes(1);
-    expect(deps.refetchGraph).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('remoteMeta');
   });
 
-  it('removeRemote / renameRemote refetch all three; errors toast', async () => {
+  it('removeRemote / renameRemote fire refreshAll(remoteMeta); errors toast + no refresh (P88a rows 3-4)', async () => {
     const remove = vi.spyOn(mockIpc, 'removeRemote').mockResolvedValue(undefined);
     const rename = vi
       .spyOn(mockIpc, 'renameRemote')
@@ -127,22 +128,24 @@ describe('remotes', () => {
     await actions.handleRemoveRemote('fork');
     expect(remove).toHaveBeenCalledWith(REPO, 'fork');
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Removed remote fork');
-    expect(deps.refetchRemotes).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('remoteMeta');
 
     await actions.handleRenameRemote('origin', 'upstream');
     expect(rename).toHaveBeenCalledWith(REPO, 'origin', 'upstream');
     expect(deps.pushToast).toHaveBeenCalledWith('error', 'name in use');
-    expect(deps.refetchRemotes).toHaveBeenCalledTimes(1); // no refetch on failure
+    expect(deps.refreshAll).toHaveBeenCalledTimes(1); // no refresh on failure
   });
 
-  it('setRemoteUrl refetches ONLY the remotes list', async () => {
+  it('setRemoteUrl refetches ONLY the remotes list — no refreshAll (P88a row 5 / OD-P88-1)', async () => {
     const setUrl = vi.spyOn(mockIpc, 'setRemoteUrl').mockResolvedValue(undefined);
     const deps = makeDeps();
     await useTagRemoteActions(deps).handleSetRemoteUrl('origin', 'git@x:y.git');
     expect(setUrl).toHaveBeenCalledWith(REPO, 'origin', 'git@x:y.git');
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Updated URL for origin');
     expect(deps.refetchRemotes).toHaveBeenCalledTimes(1);
-    expect(deps.refetchBranches).not.toHaveBeenCalled();
-    expect(deps.refetchGraph).not.toHaveBeenCalled();
+    // config-only write; the watcher ignores .git/config, so there is no echo to
+    // arm and no ref/graph change to refresh.
+    expect(deps.refreshAll).not.toHaveBeenCalled();
   });
 });

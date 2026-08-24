@@ -54,8 +54,25 @@ describe('slicesForScope', () => {
     expect(s.openRepo).toBe(false);
   });
 
+  it('stash = status + graph + stashes only (P88a; no branches/remotes/openRepo)', () => {
+    const s = slicesForScope('stash');
+    expect(s.status).toBe(true);
+    expect(s.graph).toBe(true);
+    expect(s.stashes).toBe(true);
+    // Everything else is false — a stash op moves no HEAD and touches no remote/ref list.
+    expect(s.openRepo).toBe(false);
+    expect(s.branches).toBe(false);
+    expect(s.remotes).toBe(false);
+    expect(s.submodules).toBe(false);
+    expect(s.worktrees).toBe(false);
+    expect(s.opState).toBe(false);
+    expect(s.compare).toBe(false);
+    expect(s.tagSync).toBe(false);
+    expect(s.tagSyncForcable).toBe(false);
+  });
+
   it('only full reopens the repo (self-heal / header HEAD)', () => {
-    for (const scope of ['refsOnly', 'remoteMeta', 'worktree'] as const) {
+    for (const scope of ['refsOnly', 'remoteMeta', 'worktree', 'stash'] as const) {
       expect(slicesForScope(scope).openRepo).toBe(false);
     }
     expect(slicesForScope('full').openRepo).toBe(true);
@@ -64,7 +81,7 @@ describe('slicesForScope', () => {
 
 describe('unionScopes', () => {
   it('a single scope passes through', () => {
-    for (const scope of ['full', 'refsOnly', 'remoteMeta', 'worktree'] as const) {
+    for (const scope of ['full', 'refsOnly', 'remoteMeta', 'worktree', 'stash'] as const) {
       expect(unionScopes([scope])).toBe(scope);
     }
   });

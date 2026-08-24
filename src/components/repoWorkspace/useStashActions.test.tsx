@@ -20,7 +20,6 @@ function makeDeps(over: Partial<Deps> = {}): Deps {
     ...base(),
     refreshAll: asyncFn(),
     refetchStashes: asyncFn(),
-    refetchGraph: asyncFn(),
     setPendingReservedStash: vi.fn(),
     ...over,
   };
@@ -34,6 +33,7 @@ describe('handleCreateStash', () => {
     expect(create).toHaveBeenCalledWith(REPO, null, 'staged');
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Stashed staged changes');
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('stash'); // P88a row 6
     expectMutatingCycle(deps.setMutating);
   });
 
@@ -61,6 +61,7 @@ describe('handleApplyStash', () => {
     expect(apply).toHaveBeenCalledWith(REPO, 1, false, undefined);
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Applied stash@{1}');
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('stash'); // P88a row 7
   });
 
   it('reservedPaths → arms the confirm dialog, SKIPS refreshAll, clears mutating', async () => {
@@ -141,15 +142,17 @@ describe('handlePopStash', () => {
 });
 
 describe('handleDropStash (confirm-gated upstream)', () => {
-  it('drops, toasts, and refetches ONLY stashes + graph (worktree untouched)', async () => {
+  it('drops, toasts, and fires ONE echo-armed refreshAll(stash) round (P88a row 9)', async () => {
     const drop = vi.spyOn(mockIpc, 'dropStash').mockResolvedValue(undefined);
     const deps = makeDeps();
     await useStashActions(deps).handleDropStash(1);
     expect(drop).toHaveBeenCalledWith(REPO, 1, undefined);
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Dropped stash@{1}');
-    expect(deps.refetchStashes).toHaveBeenCalledTimes(1);
-    expect(deps.refetchGraph).toHaveBeenCalledTimes(1);
-    expect(deps.refreshAll).not.toHaveBeenCalled();
+    // P88a row 9: the raw refetchStashes+refetchGraph pair is now the echo-armed
+    // refreshAll('stash') (status+graph+stashes), so the refs/stash write's watcher
+    // echo is suppressed instead of triggering a second unscoped round.
+    expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('stash');
   });
 
   it('errors toast and clear mutating', async () => {
@@ -205,7 +208,8 @@ describe('F-A6-B wrong-target guard (expectedOid)', () => {
     const dropDeps = makeDeps();
     await useStashActions(dropDeps).handleDropStash(0, 'stale');
     expect(dropDeps.pushToast).toHaveBeenCalledWith('error', GUARD_MSG);
-    // Drop already refetches on success; on the guard rejection it also re-syncs.
+    // On success drop fires refreshAll('stash'); on the guard rejection reportStashError
+    // re-syncs the stale list via refetchStashes (the F-A6-B recovery path).
     expect(dropDeps.refetchStashes).toHaveBeenCalledTimes(1);
   });
 

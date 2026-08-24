@@ -1649,7 +1649,6 @@ export function RepoWorkspace({
     setMutating,
     refreshAll,
     refetchStashes,
-    refetchGraph,
     setPendingReservedStash,
   });
 
@@ -1665,9 +1664,8 @@ export function RepoWorkspace({
     pushToast,
     setMutating,
     setSubmoduleBusy,
+    refreshAll,
     refetchSubmodules,
-    refetchStatus,
-    refetchGraph,
     onSubmoduleDirtyRefused: (name, op) => setPendingForceSubmodule({ name, op }),
   });
 
@@ -1696,8 +1694,7 @@ export function RepoWorkspace({
     repoId,
     pushToast,
     setMutating,
-    refetchBranches,
-    refetchGraph,
+    refreshAll,
     refetchRemotes,
     refetchTagSync,
   });
@@ -2134,8 +2131,7 @@ export function RepoWorkspace({
   );
   const composer = useCommitComposer({
     repoId,
-    refetchStatus,
-    refetchGraph,
+    refreshAll,
     pushToast,
     previewFileDiff: previewComposerFileDiff,
   });

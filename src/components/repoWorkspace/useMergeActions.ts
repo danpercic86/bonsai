@@ -3,6 +3,7 @@ import { errorMessage } from '../../utils/errors';
 import { COMMIT_HOOK_CANCELED } from '../commitPushSignal';
 import type { ConflictResolution } from '../../ipc';
 import type { DiffSlot } from '../StatusPanel';
+import type { RefreshAll } from './refreshScope';
 import type { BaseActionDeps, Setter } from './types';
 
 /** P3c merge + conflict handling.
@@ -14,7 +15,7 @@ import type { BaseActionDeps, Setter } from './types';
  *  losing that race costs the editor SLOT, never the proposal. */
 export function useMergeActions(
   deps: BaseActionDeps & {
-    refreshAll: () => Promise<void>;
+    refreshAll: RefreshAll;
     setDiffSlot: Setter<DiffSlot | null>;
     fileDiffReqId: { current: number };
     /** P59a: wrap the merge commit so a `hookRejected` opens the
@@ -78,7 +79,9 @@ export function useMergeActions(
     setMutating(true);
     try {
       await ipc.resolveConflict(repoId, path, resolution);
-      await refreshAll();
+      // P88a row 10: index-only stage, no HEAD move ⇒ worktree scope (keeps opState
+      // since the merge is still in progress). Armed refresh drops the echo.
+      await refreshAll('worktree');
     } catch (e) {
       pushToast('error', errorMessage(e));
     } finally {
@@ -109,7 +112,8 @@ export function useMergeActions(
     setMutating(true);
     try {
       await write(repoId, path, content);
-      if (!deferRefresh) await refreshAll();
+      // P88a row 11: per-file resolved-text stage — index-only, no HEAD move ⇒ worktree.
+      if (!deferRefresh) await refreshAll('worktree');
       if (successMessage !== null) {
         pushToast('success', successMessage ?? `Staged resolution for ${path}`);
       }

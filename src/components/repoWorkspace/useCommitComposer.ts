@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { ipc } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
 import type { ComposeGroup, FileDiff } from '../../ipc';
+import type { RefreshAll } from './refreshScope';
 import type { PushToast } from '../../ToastContext';
 
 /** The editable plan working-copy: the ordered groups plus the "left
@@ -139,17 +140,16 @@ export interface UseCommitComposer {
  *  a last-wins reqId guard (mirrors useCommitSearch); the plan reducers mutate
  *  only local state; `apply` builds a ComposePlan from the groups (the
  *  unassigned bucket is intentionally OMITTED → those files stay uncommitted),
- *  applies it, toasts, refetches graph+status and closes. WRITES NOTHING until
- *  the explicit "Create N commits" confirm. */
+ *  applies it, toasts, fires one full refresh round and closes. WRITES NOTHING
+ *  until the explicit "Create N commits" confirm. */
 export function useCommitComposer(deps: {
   repoId: string;
-  refetchStatus(): void;
-  refetchGraph(): void;
+  refreshAll: RefreshAll;
   pushToast: PushToast;
   /** Reuses RepoWorkspace's existing workdir file-diff IPC for the row Preview. */
   previewFileDiff(path: string): Promise<FileDiff>;
 }): UseCommitComposer {
-  const { repoId, refetchStatus, refetchGraph, pushToast, previewFileDiff } = deps;
+  const { repoId, refreshAll, pushToast, previewFileDiff } = deps;
 
   const [open, setOpen] = useState(false);
   const openRef = useRef(false);
@@ -254,8 +254,9 @@ export function useCommitComposer(deps: {
       applyingRef.current = false;
       setApplying(false);
       pushToast('success', `Created ${result.commits.length} commit(s)`);
-      refetchStatus();
-      refetchGraph();
+      // P88a row 12: HEAD moved ⇒ one full round. The old raw refetchStatus/Graph
+      // pair omitted `branches`, leaving ahead/behind stale after the commits land.
+      void refreshAll();
       setOpen(false);
       resetState();
     } catch (e) {
@@ -265,7 +266,7 @@ export function useCommitComposer(deps: {
       setError(msg);
       pushToast('error', msg);
     }
-  }, [repoId, groups, pushToast, refetchStatus, refetchGraph, resetState]);
+  }, [repoId, groups, pushToast, refreshAll, resetState]);
 
   const previewFile = useCallback(
     (path: string) => {

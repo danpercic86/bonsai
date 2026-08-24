@@ -30,9 +30,8 @@ type Deps = Parameters<typeof useSubmoduleActions>[0];
 function makeDeps(over: Partial<Deps> = {}): Deps {
   return {
     ...base(),
+    refreshAll: asyncFn(),
     refetchSubmodules: asyncFn(),
-    refetchStatus: asyncFn(),
-    refetchGraph: asyncFn(),
     setSubmoduleBusy: vi.fn(),
     onSubmoduleDirtyRefused: vi.fn(),
     ...over,
@@ -49,8 +48,8 @@ describe('init / update / sync (non-destructive to the superproject)', () => {
     expect(init).not.toHaveBeenCalled();
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Checked out libs/core');
     expect(deps.refetchSubmodules).toHaveBeenCalledTimes(1);
-    expect(deps.refetchStatus).not.toHaveBeenCalled();
-    expect(deps.refetchGraph).not.toHaveBeenCalled();
+    // init/update/sync touch no superproject state ⇒ no worktree refresh round.
+    expect(deps.refreshAll).not.toHaveBeenCalled();
     expectMutatingCycle(deps.setMutating);
   });
 
@@ -128,18 +127,18 @@ describe('init / update / sync (non-destructive to the superproject)', () => {
 });
 
 describe('add / deinit / remove (superproject index changes)', () => {
-  it('add toasts the resolved path and refetches submodules + status + graph', async () => {
+  it('add toasts the resolved path and fires refreshAll(worktree) + a submodule refetch (P88a row 14)', async () => {
     const add = vi.spyOn(mockIpc, 'addSubmodule').mockResolvedValue(INFO);
     const deps = makeDeps();
     await useSubmoduleActions(deps).handleAddSubmodule('https://x/core.git', 'libs/core');
     expect(add).toHaveBeenCalledWith(REPO, 'https://x/core.git', 'libs/core');
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Added submodule libs/core');
     expect(deps.refetchSubmodules).toHaveBeenCalledTimes(1);
-    expect(deps.refetchStatus).toHaveBeenCalledTimes(1);
-    expect(deps.refetchGraph).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('worktree');
   });
 
-  it('deinit + remove refetch all three; errors get the prefixed toast + a refetch', async () => {
+  it('deinit + remove fire refreshAll(worktree) + a submodule refetch; errors still refresh', async () => {
     const deinit = vi
       .spyOn(mockIpc, 'deinitSubmodule')
       .mockResolvedValue({ kind: 'deinitialized' });
@@ -151,7 +150,8 @@ describe('add / deinit / remove (superproject index changes)', () => {
     await actions.handleDeinitSubmodule('libs/core');
     expect(deinit).toHaveBeenCalledWith(REPO, 'libs/core', false);
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Deinitialized libs/core');
-    expect(deps.refetchStatus).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('worktree');
 
     await actions.handleRemoveSubmodule('libs/core');
     expect(remove).toHaveBeenCalledWith(REPO, 'libs/core', false);
@@ -160,8 +160,8 @@ describe('add / deinit / remove (superproject index changes)', () => {
       "Couldn't remove libs/core. has local changes",
       'submodule:libs/core',
     );
-    // P73: the failure path refetches too (the row may not be what we thought).
-    expect(deps.refetchStatus).toHaveBeenCalledTimes(2);
+    // P73: the failure path refreshes too (the row may not be what we thought).
+    expect(deps.refreshAll).toHaveBeenCalledTimes(2);
     expect(deps.setMutating).toHaveBeenLastCalledWith(false);
   });
 

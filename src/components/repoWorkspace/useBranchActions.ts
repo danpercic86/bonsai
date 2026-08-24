@@ -107,9 +107,11 @@ export function useBranchActions(
     setMutating(true);
     try {
       await ipc.deleteBranch(repoId, name);
-      // A branch delete can drop commits from the reachable set (real topology
-      // change), so a full round is warranted.
-      await refreshAll();
+      // P88a row 13: a local delete moves no HEAD and touches no worktree, so match
+      // handleDeleteRemoteTracking on `refsOnly` (skips status/remotes/stashes/etc).
+      // The graph slice still re-walks: a tip removal is a B1 cache Miss (correct —
+      // commits only reachable via the deleted branch drop out).
+      await refreshAll('refsOnly');
     } catch (e) {
       setBranchesError(errorMessage(e));
     } finally {

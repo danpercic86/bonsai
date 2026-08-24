@@ -1,35 +1,31 @@
 import { ipc } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
 import { reportRemoteOpError } from '../../ipc/gitNotFound';
+import type { RefreshAll } from './refreshScope';
 import type { BaseActionDeps } from './types';
 
-/** P22: tag + remote management. Tag create/delete refetch branches (tag list,
- *  §2.0) + graph (pill). Add/remove/rename move remote-tracking refs (and thus
- *  graph pills), so those refetch remotes + branches + graph; set-url changes
- *  only the RemoteInfo list. */
+/** P22: tag + remote management. Tag create/delete change the ref/pill set, so
+ *  they route through the echo-armed `refreshAll('refsOnly')` (graph + branch/tag
+ *  list + compare) plus a FORCED tag-sync verdict (no scope forces ls-remote).
+ *  Add/remove/rename move remote-tracking refs → `refreshAll('remoteMeta')`;
+ *  set-url writes only `.git/config` (watcher ignores it) so it stays on a raw
+ *  `refetchRemotes()` (P88a OD-P88-1). */
 export function useTagRemoteActions(
   deps: BaseActionDeps & {
-    refetchBranches: () => Promise<void>;
-    refetchGraph: () => Promise<void>;
+    refreshAll: RefreshAll;
     refetchRemotes: () => Promise<void>;
     /** P77: re-run listTagSync after a resolve op mutates local/remote tags. */
     refetchTagSync: (opts?: { force?: boolean }) => Promise<void>;
   },
 ) {
-  const {
-    repoId,
-    pushToast,
-    setMutating,
-    refetchBranches,
-    refetchGraph,
-    refetchRemotes,
-    refetchTagSync,
-  } = deps;
+  const { repoId, pushToast, setMutating, refreshAll, refetchRemotes, refetchTagSync } = deps;
 
-  /** P77 §5: refetch the surfaces a tag resolve touches — branch list (tag list),
-   *  graph (pills) and the live sync verdict. */
+  /** P77 §5 / P88a row 1: refetch the surfaces a tag resolve touches — the ref set
+   *  (graph + branch/tag list + compare, via `refsOnly`) and the FORCED sync verdict
+   *  (no scope forces an ls-remote, so keep the explicit forced tagSync). Armed
+   *  refresh drops the tag write's own watcher echo → one round. */
   async function refreshAfterTagOp() {
-    await Promise.all([refetchBranches(), refetchGraph(), refetchTagSync({ force: true })]);
+    await Promise.all([refreshAll('refsOnly'), refetchTagSync({ force: true })]);
   }
 
   async function handleCreateTag(oid: string, name: string, message: string | null) {
@@ -150,7 +146,9 @@ export function useTagRemoteActions(
     try {
       await ipc.addRemote(repoId, name, url);
       pushToast('success', `Added remote ${name}`);
-      await Promise.all([refetchRemotes(), refetchBranches(), refetchGraph()]);
+      // P88a rows 2-4: add/remove/rename move remote-tracking refs ⇒ remoteMeta
+      // (graph + branches + remotes + compare + non-forced tagSync), echo-armed.
+      await refreshAll('remoteMeta');
     } catch (e) {
       pushToast('error', errorMessage(e));
     } finally {
@@ -163,7 +161,9 @@ export function useTagRemoteActions(
     try {
       await ipc.removeRemote(repoId, name);
       pushToast('success', `Removed remote ${name}`);
-      await Promise.all([refetchRemotes(), refetchBranches(), refetchGraph()]);
+      // P88a rows 2-4: add/remove/rename move remote-tracking refs ⇒ remoteMeta
+      // (graph + branches + remotes + compare + non-forced tagSync), echo-armed.
+      await refreshAll('remoteMeta');
     } catch (e) {
       pushToast('error', errorMessage(e));
     } finally {
@@ -176,7 +176,9 @@ export function useTagRemoteActions(
     try {
       await ipc.renameRemote(repoId, name, newName);
       pushToast('success', `Renamed remote ${name} → ${newName}`);
-      await Promise.all([refetchRemotes(), refetchBranches(), refetchGraph()]);
+      // P88a rows 2-4: add/remove/rename move remote-tracking refs ⇒ remoteMeta
+      // (graph + branches + remotes + compare + non-forced tagSync), echo-armed.
+      await refreshAll('remoteMeta');
     } catch (e) {
       pushToast('error', errorMessage(e));
     } finally {

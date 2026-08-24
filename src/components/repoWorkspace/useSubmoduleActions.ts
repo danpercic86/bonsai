@@ -1,5 +1,6 @@
 import { ipc } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
+import type { RefreshAll } from './refreshScope';
 import type { BaseActionDeps, Setter, SubmoduleBusy } from './types';
 
 // Re-exported so the container imports the busy-state type from the hook that
@@ -19,9 +20,8 @@ export type { SubmoduleBusy } from './types';
  *  what is actually on disk. */
 export function useSubmoduleActions(
   deps: BaseActionDeps & {
+    refreshAll: RefreshAll;
     refetchSubmodules: () => Promise<void>;
-    refetchStatus: () => Promise<void>;
-    refetchGraph: () => Promise<void>;
     /** P73 §6.1: row-local busy pill; set per op, cleared in `finally`. */
     setSubmoduleBusy: Setter<SubmoduleBusy | null>;
     /** P82 (F-A7-7): the plain deinit/remove refused because the submodule
@@ -36,16 +36,16 @@ export function useSubmoduleActions(
     pushToast,
     setMutating,
     setSubmoduleBusy,
+    refreshAll,
     refetchSubmodules,
-    refetchStatus,
-    refetchGraph,
     onSubmoduleDirtyRefused,
   } = deps;
 
-  // add/deinit/remove edit the superproject index + worktree → refetch status +
-  // graph alongside the submodule list.
+  // P88a row 14: add/deinit/remove edit the superproject index + `.gitmodules`
+  // (worktree) → the echo-armed `refreshAll('worktree')` covers status + arms the
+  // watcher echo; the submodule list has no scope slice, so keep its refetch.
   async function refreshAfterChange() {
-    await Promise.all([refetchSubmodules(), refetchStatus(), refetchGraph()]);
+    await Promise.all([refreshAll('worktree'), refetchSubmodules()]);
   }
 
   /** P73 §5-§6: the shared shape of every row-scoped submodule op — busy pill,

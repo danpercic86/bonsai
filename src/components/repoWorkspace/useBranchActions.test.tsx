@@ -137,7 +137,9 @@ describe('handleDeleteBranch / handleDeleteRemoteTracking', () => {
     await useBranchActions(deps).handleDeleteBranch('feat');
     expect(del).toHaveBeenCalledWith(REPO, 'feat');
     // P85 A1: one echo-armed refreshAll (a delete can drop reachable commits).
+    // P88a row 13: scoped to refsOnly (no HEAD move / worktree change; graph re-walks).
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly');
 
     del.mockRejectedValue(appErr('unmergedBranch', 'not merged'));
     await useBranchActions(deps).handleDeleteBranch('feat');
