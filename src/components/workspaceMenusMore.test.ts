@@ -198,6 +198,7 @@ describe('tagMenuItems', () => {
   it('graph pill (oid set): commit actions appended after the tag items', () => {
     const items = createWorkspaceMenus(makeDeps()).tagMenuItems('v1.0', OID_OTHER);
     expect(labelsOf(items)).toEqual([
+      'Checkout commit (detached)',
       'Push tag to origin',
       'Copy tag name',
       'Release notes since previous tag',
