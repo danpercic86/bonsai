@@ -40,8 +40,15 @@ CLEARED via libgit2 1.9.6 source — config auto-refreshes on read). New `src-ta
 1486 unchanged (byte-identical), bonsai 289 (+2). **Honest scope:** list trio (branches/stashes/worktrees) get
 cross-round reuse (0 opens warm); `stream_graph` fuses seed+walk+reprobe to 1 open/call; **`get_status`+`stream_graph`
 do NOT get cross-round reuse** — they run inside `run_with_git_timeout` (fresh watchdog thread/call) so open once per
-call (no regression: status was always 1/call, graph improved 3→1). **Now: PB-1** (graph-cache node cap, in flight)
-then batch tester + full gate. User confirmed "go ahead with B2 after this" (2026-08-24).
+call (no regression: status was always 1/call, graph improved 3→1). **PB-1 DONE + committed `cc5fdac`** (50k-node
+store cap; byte-identical emit; bonsai 293). **P88a test-gap fill committed `709c9cc`.**
+
+**✅ P88 BATCH AI GATE GREEN (2026-08-24).** Full `pnpm gate` PASS: nextest 2019 passed (6 skipped), doctests clean,
+clippy 0-warn workspace, eslint 38≤40, file-size ok, vitest 2288 passed, tsc+build clean, playwright e2e 159 passed
+(1 skip; 1 flake = `e2e/07-rebase.spec.ts` timing, PASSES isolated 1.8m — rebase is outside the P88a matrix, not a
+regression). Commits: contract `31bf4bd`, P88a `2412d8b`, B2a `f4c060c`, B2b `52f5d74`, PB-1 `cc5fdac`, P88a-tests
+`709c9cc`. Branch `perf/git-action-round2` (off c0825a3/1.3.0), NOT merged/pushed. **PENDING: native USER CHECKPOINTs
++ merge decision.** User confirmed "go ahead with B2 after this" (2026-08-24).
 
 **NEW FOLLOW-UPS (this batch):**
 - **FU-B2c (perf, MED — the remaining B2 win):** hoist `with_repo` OUTSIDE `run_with_git_timeout` for `get_status`+
