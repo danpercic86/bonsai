@@ -96,6 +96,11 @@ contract shapes. The authoritative per-milestone contracts live in `docs/contrac
 `docs/contracts/ui-reference.md` is the canonical design system (tokens, geometry, graph metrics,
 ref pills, states) and is owned by `ui-designer` — no other agent edits it.
 
+For scoped, ad-hoc feature work or fixes that don't warrant a full milestone, use the lightweight
+`/specify` → `/plan` → `/tasks` slash commands (`.claude/commands/`), which write to
+`docs/specs/<NNN-slug>/` — see `docs/specs/README.md` for how this relates to the milestone loop
+below.
+
 ## Gate verification — AI gates vs USER CHECKPOINTs
 
 Every milestone gate splits into two kinds of checks:
