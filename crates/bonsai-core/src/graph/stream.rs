@@ -128,14 +128,41 @@ pub(crate) fn stream_graph_core_with(
     first_batch: usize,
     batch: usize,
     max_commits: usize,
-    mut emit: impl FnMut(GraphChunk) -> bool,
+    emit: impl FnMut(GraphChunk) -> bool,
 ) -> Result<(), AppError> {
     let mut repo = open_no_search(workdir)?;
-    let (mut refs, tips, head_oid, hide) = collect_seed(&mut repo)?;
+    stream_graph_from_repo_with(&mut repo, first_batch, batch, max_commits, emit)
+}
+
+/// Blocking. P88b/B2b round handle cache: stream the walk from an ALREADY-OPEN
+/// handle so the `stream_graph` command opens the repo ONCE for the cheap seed
+/// probe AND the walk, instead of re-opening for each. Byte-identical to
+/// [`stream_graph_core`] — the `&Path` entry points above open then delegate
+/// here. `&mut` is required because `collect_seed` runs `stash_foreach`.
+pub fn stream_graph_from_repo(
+    repo: &mut git2::Repository,
+    emit: impl FnMut(GraphChunk) -> bool,
+) -> Result<(), AppError> {
+    stream_graph_from_repo_with(repo, STREAM_FIRST_BATCH, STREAM_BATCH, STREAM_MAX_COMMITS, emit)
+}
+
+/// [`stream_graph_from_repo`] with the batch/cap constants parameterized (test +
+/// `&Path`-wrapper seam). See [`stream_graph_core_with`].
+pub(crate) fn stream_graph_from_repo_with(
+    repo: &mut git2::Repository,
+    first_batch: usize,
+    batch: usize,
+    max_commits: usize,
+    mut emit: impl FnMut(GraphChunk) -> bool,
+) -> Result<(), AppError> {
+    let (mut refs, tips, head_oid, hide) = collect_seed(repo)?;
+    // Downgrade to a shared borrow for the walk (the seed pass above needed
+    // `&mut` for `stash_foreach`; the revwalk + lane stepping only read).
+    let repo: &git2::Repository = repo;
     let head_hex = head_oid.map(|h| h.to_string());
 
     if !emit(GraphChunk::Meta {
-        total: cheap_total(&repo)?,
+        total: cheap_total(repo)?,
         head_oid: head_hex,
     }) {
         return Ok(()); // sink gone before the first row
@@ -151,7 +178,7 @@ pub(crate) fn stream_graph_core_with(
         return Ok(());
     }
 
-    let revwalk = seeded_revwalk(&repo, &tips)?;
+    let revwalk = seeded_revwalk(repo, &tips)?;
     let hidden: HashSet<git2::Oid> = hide.iter().copied().collect();
     let mut walker = LaneWalker::new(hidden);
 
@@ -172,7 +199,7 @@ pub(crate) fn stream_graph_core_with(
             truncated = true;
             break;
         }
-        let (node, edges) = walker.step(&repo, oid, row, &mut refs)?;
+        let (node, edges) = walker.step(repo, oid, row, &mut refs)?;
         buf_nodes.push(node);
         buf_edges.extend(edges);
         row += 1;

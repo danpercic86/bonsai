@@ -137,11 +137,26 @@ pub fn read_status(workdir: &std::path::Path) -> Result<StatusSnapshot, AppError
         git2::RepositoryOpenFlags::NO_SEARCH,
         std::iter::empty::<&std::ffi::OsStr>(),
     )?;
+    read_status_with(&repo)
+}
+
+/// Blocking. P88b/B2b: [`read_status`] from an ALREADY-OPEN handle (round handle
+/// cache). The `&Path` entry point above opens then delegates here.
+///
+/// FRESHNESS GUARD: `Repository::index()` returns a CACHED index; a handle reused
+/// across a refresh round (`repo_handle::with_repo`) would otherwise serve a
+/// STALE index after an external `index.write()`. We reload it from disk before
+/// scanning so `repo.statuses()` (which reads the same cached index) observes the
+/// current staged state. A no-op on a fresh handle ⇒ byte-identical output.
+pub fn read_status_with(repo: &git2::Repository) -> Result<StatusSnapshot, AppError> {
     if repo.is_bare() {
         return Err(AppError::Git(
             "cannot compute status: repository is bare".to_string(),
         ));
     }
+
+    // See the doc-comment above: force the cached index fresh before the scan.
+    repo.index()?.read(true)?;
 
     let mut opts = git2::StatusOptions::new();
     opts.include_untracked(true)
@@ -164,16 +179,22 @@ pub fn read_status(workdir: &std::path::Path) -> Result<StatusSnapshot, AppError
     // whole-second stat-cache trust (see `wt_modified_is_stat_clean`). Both are
     // best-effort: if either is unavailable we simply never suppress. On
     // macOS/Linux (nsec git) there is no phantom, so this context is not built.
+    // `wd` is the worktree root. Byte-identical to the pre-B2b
+    // `repo.workdir().unwrap_or(workdir)`: for a non-bare repo (guaranteed above)
+    // `repo.workdir()` is the same directory the `&Path` wrapper opened from, so
+    // the `unwrap_or(workdir)` fallback was already unreachable. We build the
+    // context only when `workdir()` is present (never fabricate a `.git`-dir
+    // path); if it were absent we simply never suppress, honouring the
+    // best-effort contract below.
     #[cfg(windows)]
-    let racy_ctx = {
+    let racy_ctx = repo.workdir().map(|wd| {
         let index = repo.index().ok();
         let index_mtime_secs = std::fs::metadata(repo.path().join("index"))
             .ok()
             .as_ref()
             .and_then(mtime_secs);
-        let wd = repo.workdir().unwrap_or(workdir);
         (index, index_mtime_secs, wd)
-    };
+    });
 
     let mut snapshot = StatusSnapshot::default();
     for entry in statuses.iter() {
@@ -235,12 +256,11 @@ pub fn read_status(workdir: &std::path::Path) -> Result<StatusSnapshot, AppError
             // `wt_modified_is_stat_clean`). Everywhere else git uses nsec mtime
             // and agrees with libgit2, so always emit.
             #[cfg(windows)]
-            let stat_clean = {
-                let (index, index_mtime_secs, wd) = &racy_ctx;
+            let stat_clean = racy_ctx.as_ref().is_some_and(|(index, index_mtime_secs, wd)| {
                 index
                     .as_ref()
                     .is_some_and(|idx| wt_modified_is_stat_clean(idx, *index_mtime_secs, wd, &path))
-            };
+            });
             #[cfg(not(windows))]
             let stat_clean = false;
             if !stat_clean {

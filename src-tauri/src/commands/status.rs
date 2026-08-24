@@ -13,16 +13,25 @@ pub async fn get_status(
 
 /// Runtime-free core of `get_status` (unit-testable without a Tauri app).
 pub(crate) async fn get_status_inner(state: &AppState, repo_id: &str) -> Result<StatusSnapshot, AppError> {
-    let path = repo_path(state, repo_id)?;
-    // P86 instrumentation: this is the O(worktree) scan seam. `repo_opens` too —
-    // `read_status` opens the repo from `path`.
+    // P88b/B2b: resolve path + handle-cache generation, then route the scan
+    // through the `git2::Repository` handle cache (`with_repo`), which bumps
+    // `repo_opens` ONCE per actual open — no inline bump here. NOTE: this runs
+    // inside `run_with_git_timeout` (fresh watchdog thread per call), so the
+    // thread-local `HANDLES` is empty each call ⇒ status opens ONCE PER CALL, no
+    // cross-round reuse. The routing still de-duplicates the open should the
+    // seam ever move off the timeout thread, and adds the index-freshness guard.
+    let (path, generation) = repo_path_and_gen(state, repo_id)?;
+    let perf = state.perf.clone();
+    let repo_id = repo_id.to_string();
+    // P86 instrumentation: this is the O(worktree) scan seam.
     state.perf.inc_status_scans();
-    state.perf.inc_repo_opens();
     // F-T5-4 (audit #2 §3.2): the HEAD peel inside `read_status` spins forever
     // on a truncated loose commit — the wrapper converts that into a clean error.
     tauri::async_runtime::spawn_blocking(move || {
         bonsai_core::git::timeout::run_with_git_timeout("read_status", move |_progress| {
-            read_status(&path)
+            crate::repo_handle::with_repo(&repo_id, generation, &path, &perf, |repo| {
+                read_status_with(repo)
+            })
         })
     })
     .await
@@ -86,6 +95,12 @@ pub async fn stream_graph(
     // P86 B1: clone the workdir path AND the per-repo layout-cache handle out
     // together under one brief map lock, then hand both into the blocking pool.
     let (path, cache) = repo_path_and_graph_cache(state.inner(), &repo_id)?;
+    // P88b/B2b: the handle-cache generation, so the seed probe + walk + store
+    // re-probe reuse ONE `git2::Repository` WITHIN this call (was two opens).
+    // This runs inside `run_with_git_timeout` (fresh watchdog thread per call),
+    // so there is NO cross-round reuse — the fusion is per-call only. Evicted on
+    // a re-open/close via the generation bump.
+    let generation = repo_generation(state.inner(), &repo_id);
     let perf = state.inner().perf.clone();
     tauri::async_runtime::spawn_blocking(move || {
         // F-T5-4 (audit #2 §3.2): a truncated loose object makes libgit2 spin
@@ -100,9 +115,11 @@ pub async fn stream_graph(
             // cache. `Channel::send` errs once the frontend drops the channel
             // (unmount / repo switch / `close_repo`); `is_ok() == false` stops
             // the pass promptly with `Ok` (contract §6 cancellation).
-            crate::graph_cache::stream_graph_cached(&path, &cache, &perf, |chunk| {
-                progress.tick();
-                on_chunk.send(chunk).is_ok()
+            crate::repo_handle::with_repo_mut(&repo_id, generation, &path, &perf, |repo| {
+                crate::graph_cache::stream_graph_cached_with(repo, &cache, &perf, |chunk| {
+                    progress.tick();
+                    on_chunk.send(chunk).is_ok()
+                })
             })
         })
     })

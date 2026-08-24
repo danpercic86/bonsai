@@ -280,6 +280,12 @@ where
         // Drop the replaced entry (its watcher's debounce thread joins) off the
         // map lock.
         drop(previous);
+
+        // P88b/B2b: bump the handle-cache generation so any blocking-pool thread
+        // still holding a `git2::Repository` from a PRIOR arm of this id (e.g. a
+        // re-open after close, or a self-healing re-arm) evicts + reopens on its
+        // next `with_repo` call rather than serving a handle from before.
+        bump_repo_generation(state, &repo_id);
     }
     // Non-usable open (non-repo or bare): insert nothing, touch no other entry.
 
@@ -312,6 +318,11 @@ pub(crate) async fn close_repo_inner(state: &AppState, repo_id: &str) -> Result<
         repos.remove(repo_id)
     };
     drop(entry); // watcher stops, debounce thread joins here
+
+    // P88b/B2b: bump the handle-cache generation so every blocking-pool thread's
+    // cached `git2::Repository` for this id is evicted on its next `with_repo`
+    // call — a closed repo must never keep an open handle around.
+    bump_repo_generation(state, repo_id);
     Ok(())
 }
 

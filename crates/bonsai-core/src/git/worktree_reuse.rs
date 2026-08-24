@@ -22,7 +22,7 @@ use super::worktree::{build_linked_row, build_main_row, canonical, main_workdir,
 /// before. Reproduces `open_workdir_repo`'s bare-repo guard via `ensure_not_bare`
 /// so a handle opened without that check (e.g. `branches::open_repo_at`) still
 /// refuses a bare repo at the same point.
-pub(crate) fn list_worktrees_with(
+pub fn list_worktrees_with(
     repo: &git2::Repository,
 ) -> Result<Vec<WorktreeInfo>, AppError> {
     ensure_not_bare(repo)?;

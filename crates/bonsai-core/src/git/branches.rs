@@ -27,7 +27,7 @@ pub use checkout::{
 };
 pub use create::{create_branch, create_branch_here, CreateBranchHereResult};
 pub use delete::{delete_branch, delete_branch_with};
-pub use list::list_refs;
+pub use list::{list_refs, list_refs_with};
 pub use remote::{checkout_remote, delete_remote_tracking};
 pub use rename::{rename_branch, RenameBranchResult};
 

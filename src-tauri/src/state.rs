@@ -73,6 +73,15 @@ pub struct RepoEntry {
 #[derive(Default)]
 pub struct AppState {
     pub repos: Mutex<HashMap<String, RepoEntry>>,
+    /// P88b/B2b: per-`repoId` generation counter for the thread-local
+    /// `git2::Repository` handle cache (`repo_handle::with_repo`). Bumped on every
+    /// `open_repo` re-arm and on `close_repo` so a reopen/close lazily EVICTS every
+    /// blocking-pool thread's stale cached handle on its next `with_repo` call.
+    /// Distinct from `repos` (which is removed on close): this map is only ever
+    /// INCREMENTED and entries persist across close, so a stale handle keyed to an
+    /// old generation can never be silently reused after a re-open. Small +
+    /// bounded by the distinct repoIds opened in a session.
+    pub repo_generations: Mutex<HashMap<String, u64>>,
     /// Backend perf counters (P86 instrumentation) — shared behind an `Arc` so
     /// blocking-pool tasks can bump them. Read via `debug_perf_counters`.
     pub perf: Arc<PerfState>,

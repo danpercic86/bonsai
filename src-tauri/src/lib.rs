@@ -13,6 +13,7 @@ mod bundle_config_tests;
 mod settings_defaults_parity_tests;
 pub mod graph_cache;
 pub mod perf;
+pub mod repo_handle;
 pub mod scheduler;
 pub mod settings;
 pub mod state;

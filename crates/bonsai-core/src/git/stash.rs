@@ -32,7 +32,7 @@ mod list;
 
 pub use apply::{apply_stash, drop_stash, pop_stash, pop_stash_with};
 pub use create::{create_stash, create_stash_with};
-pub use list::list_stashes;
+pub use list::{list_stashes, list_stashes_with};
 
 // The private helpers below live in the submodules now; the two `#[cfg(test)]`
 // sibling test modules reach them (and `Path`) through `use super::*`, so

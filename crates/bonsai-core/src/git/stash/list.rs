@@ -16,8 +16,17 @@ use super::StashEntry;
 /// oid/base_oid/ts AFTER via the stash reflog (`refs/stash`), where entry `i`'s
 /// `id_new()` is the stash commit oid.
 pub fn list_stashes(workdir: &Path) -> Result<Vec<StashEntry>, AppError> {
-    let mut repo = open_workdir_repo(workdir)?;
+    let mut repo = open_workdir_repo(workdir)?; // rejects bare
+    list_stashes_with(&mut repo)
+}
 
+/// Blocking. P88b/B2b: [`list_stashes`] from an ALREADY-OPEN handle (round handle
+/// cache). The `&Path` entry point above opens (rejecting bare) then delegates
+/// here. `&mut` is required because `stash_foreach` needs it; the stash reflog
+/// (`refs/stash`) + its commits are re-read on demand ⇒ byte-identical output.
+/// The routed command never reaches a bare repo (bare repos are excluded from
+/// the open-repos map), so no bare guard is duplicated here.
+pub fn list_stashes_with(repo: &mut git2::Repository) -> Result<Vec<StashEntry>, AppError> {
     let mut raw: Vec<(usize, String)> = Vec::new();
     repo.stash_foreach(|index, message, _oid| {
         // NOTE: we intentionally do NOT capture oid here — resolving base/ts

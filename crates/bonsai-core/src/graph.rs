@@ -22,10 +22,10 @@ mod seed;
 mod stream;
 use lane::LaneWalker;
 pub use decorate::redecorate_chunks;
-pub use seed::{graph_seed, GraphSeed};
+pub use seed::{graph_seed, graph_seed_with, GraphSeed};
 pub use stream::{
-    stream_graph_core, GraphChunk, GraphStreamEdge, StreamNode, STREAM_BATCH, STREAM_FIRST_BATCH,
-    STREAM_MAX_COMMITS,
+    stream_graph_core, stream_graph_from_repo, GraphChunk, GraphStreamEdge, StreamNode,
+    STREAM_BATCH, STREAM_FIRST_BATCH, STREAM_MAX_COMMITS,
 };
 
 /// Hard cap on the walk; beyond it the layout is truncated (§2.8).

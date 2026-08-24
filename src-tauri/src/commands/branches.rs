@@ -17,10 +17,18 @@ pub(crate) async fn list_branches_inner(
     state: &AppState,
     repo_id: &str,
 ) -> Result<BranchesSnapshot, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || branches::list_refs(&path))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    // P88b/B2b: route through the per-thread handle cache. Refs/tags/HEAD are
+    // re-read on demand, so a reused handle reads current on-disk state.
+    let (path, generation) = repo_path_and_gen(state, repo_id)?;
+    let perf = state.perf.clone();
+    let repo_id = repo_id.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::repo_handle::with_repo(&repo_id, generation, &path, &perf, |repo| {
+            branches::list_refs_with(repo)
+        })
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Creates a local branch at the current HEAD commit — does NOT check out

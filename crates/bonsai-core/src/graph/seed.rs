@@ -28,7 +28,17 @@ pub struct GraphSeed {
 /// `stream_graph_core` are unchanged and still collect their own seed internally.
 pub fn graph_seed(workdir: &std::path::Path) -> Result<GraphSeed, AppError> {
     let mut repo = open_no_search(workdir)?;
-    let (refs, tips, head, hide) = collect_seed(&mut repo)?;
+    graph_seed_with(&mut repo)
+}
+
+/// Blocking. P88b/B2b: [`graph_seed`] from an ALREADY-OPEN handle (round handle
+/// cache) — the cache probe reuses the round's shared `git2::Repository` instead
+/// of re-opening. Byte-identical to [`graph_seed`]: refs re-stat / `packed-refs`
+/// reloads on mtime change and `stash_foreach` re-reads, so a reused handle reads
+/// current on-disk topology (the load-bearing point for the B1 classify). `&mut`
+/// is required because `collect_seed` runs `stash_foreach`.
+pub fn graph_seed_with(repo: &mut git2::Repository) -> Result<GraphSeed, AppError> {
+    let (refs, tips, head, hide) = collect_seed(repo)?;
     Ok(GraphSeed {
         refs,
         tips,

@@ -99,7 +99,7 @@ pub(crate) use bonsai_core::git::stage_partial::{
     stage_partial as stage_partial_core, unstage_partial as unstage_partial_core, LineSelection,
 };
 pub(crate) use bonsai_core::git::stash::{self, ApplyStashOutcome, CreateStashResult, StashEntry, StashScope};
-pub(crate) use bonsai_core::git::status::{read_status, StatusSnapshot};
+pub(crate) use bonsai_core::git::status::{read_status_with, StatusSnapshot};
 pub(crate) use bonsai_core::git::submodule::{
     self, SubmoduleDeinitOutcome, SubmoduleInfo, SubmoduleRemoveOutcome,
 };
@@ -164,4 +164,43 @@ pub(crate) fn repo_path_and_graph_cache(
         .get(repo_id)
         .map(|e| (e.path.clone(), e.graph_cache.clone()))
         .ok_or(AppError::NoRepo)
+}
+
+/// Canonical workdir path AND the current handle-cache generation for `repo_id`
+/// (P88b/B2b), for routing a READ command through `repo_handle::with_repo`.
+/// `NoRepo` if the id isn't open. Two brief, independent map locks (path, then
+/// generation), each released before any git work — same lock-and-clone
+/// discipline as `repo_path`.
+pub(crate) fn repo_path_and_gen(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<(std::path::PathBuf, u64), AppError> {
+    let path = repo_path(state, repo_id)?;
+    let generation = repo_generation(state, repo_id);
+    Ok((path, generation))
+}
+
+/// Current handle-cache generation for `repo_id` (P88b/B2b); 0 when the id has
+/// never been armed (an open repo always bumps to ≥ 1 on open). Poison-recovered
+/// like `repo_path`.
+pub(crate) fn repo_generation(state: &AppState, repo_id: &str) -> u64 {
+    let gens = state
+        .repo_generations
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    gens.get(repo_id).copied().unwrap_or(0)
+}
+
+/// Bumps `repo_id`'s handle-cache generation (P88b/B2b) so every blocking-pool
+/// thread's cached `git2::Repository` for the id is evicted on its next
+/// `with_repo` call. Called on the `open_repo` re-arm and on `close_repo`.
+/// `wrapping_add` avoids a theoretical overflow panic — the generation only ever
+/// needs to DIFFER from the previous value to force eviction.
+pub(crate) fn bump_repo_generation(state: &AppState, repo_id: &str) {
+    let mut gens = state
+        .repo_generations
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let g = gens.entry(repo_id.to_string()).or_insert(0);
+    *g = g.wrapping_add(1);
 }

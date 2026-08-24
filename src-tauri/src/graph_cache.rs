@@ -23,8 +23,8 @@ use std::sync::Mutex;
 
 use bonsai_core::error::AppError;
 use bonsai_core::graph::{
-    graph_seed, redecorate_chunks, stream_graph_core, GraphChunk, GraphSeed, RefKind, RefLabel,
-    RefMap,
+    graph_seed_with, redecorate_chunks, stream_graph_from_repo, GraphChunk, GraphSeed, RefKind,
+    RefLabel, RefMap,
 };
 
 use crate::perf::PerfState;
@@ -173,10 +173,33 @@ pub fn stream_graph_cached(
     workdir: &Path,
     cache: &GraphCache,
     perf: &PerfState,
+    emit: impl FnMut(GraphChunk) -> bool,
+) -> Result<(), AppError> {
+    // `&Path` entry (tests / non-routed callers): open ONE handle, then run the
+    // same cache-aware body the routed `stream_graph` command drives through
+    // `repo_handle::with_repo_mut`. The open is NOT counted here — `repo_opens`
+    // is instrumented only at the handle-cache seam (P88b reconciliation), so
+    // this direct path is a diagnostics no-op for that counter.
+    let mut repo = git2::Repository::open_ext(
+        workdir,
+        git2::RepositoryOpenFlags::NO_SEARCH,
+        std::iter::empty::<&std::ffi::OsStr>(),
+    )?;
+    stream_graph_cached_with(&mut repo, cache, perf, emit)
+}
+
+/// P88b/B2b: cache-aware graph stream from an ALREADY-OPEN handle (the round
+/// handle cache). Byte-identical to [`stream_graph_cached`]; the `&Path` entry
+/// point above opens then delegates here. `&mut` is required because the seed
+/// probe runs `stash_foreach`. Opens are counted ONCE by
+/// `repo_handle::with_repo_mut` at the command seam — never inline here.
+pub fn stream_graph_cached_with(
+    repo: &mut git2::Repository,
+    cache: &GraphCache,
+    perf: &PerfState,
     mut emit: impl FnMut(GraphChunk) -> bool,
 ) -> Result<(), AppError> {
-    let seed = graph_seed(workdir)?;
-    perf.inc_repo_opens();
+    let seed = graph_seed_with(repo)?;
 
     let tips: BTreeSet<git2::Oid> = seed.tips.iter().copied().collect();
     let hide: BTreeSet<git2::Oid> = seed.hide.iter().copied().collect();
@@ -225,8 +248,10 @@ pub fn stream_graph_cached(
             let mut buf: Vec<GraphChunk> = Vec::new();
             let mut node_oids: HashSet<git2::Oid> = HashSet::new();
             let mut saw_done = false;
-            perf.inc_repo_opens(); // stream_graph_core opens again (B2 would fuse)
-            stream_graph_core(workdir, |chunk| {
+            // P88b/B2b: the walk reuses the SAME handle as the seed probe above
+            // (was a second open) — one open serves both. `repo_opens` is bumped
+            // once by `with_repo_mut` at the command seam, never here.
+            stream_graph_from_repo(repo, |chunk| {
                 match &chunk {
                     GraphChunk::Batch { nodes, .. } => {
                         for n in nodes {
@@ -248,7 +273,7 @@ pub fn stream_graph_cached(
             // seed differs — either way we skip the store (safe Miss next time)
             // rather than risk a stale hit. The bracket probe is an internal
             // consistency check, not a serving open, so it is not counted.
-            if saw_done && seed_unchanged(workdir, &tips, seed.head, &hide) {
+            if saw_done && seed_unchanged_with(repo, &tips, seed.head, &hide) {
                 let mut guard = cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 *guard = Some(CachedGraph {
                     seed_fp,
@@ -268,13 +293,13 @@ pub fn stream_graph_cached(
 /// Re-probe the seed after a walk and report whether the WALK identity
 /// (`tips`/`head`/`hide`) is unchanged — the store guard against a mutation
 /// racing the cold walk. A probe failure is treated as "changed" (skip caching).
-fn seed_unchanged(
-    workdir: &Path,
+fn seed_unchanged_with(
+    repo: &mut git2::Repository,
     tips: &BTreeSet<git2::Oid>,
     head: Option<git2::Oid>,
     hide: &BTreeSet<git2::Oid>,
 ) -> bool {
-    match graph_seed(workdir) {
+    match graph_seed_with(repo) {
         Ok(GraphSeed {
             tips: t2,
             head: h2,

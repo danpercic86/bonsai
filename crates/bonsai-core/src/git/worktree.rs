@@ -61,8 +61,14 @@ pub struct WorktreeInfo {
 /// exactly like the branch/ref listers.
 pub fn list_worktrees(workdir: &Path) -> Result<Vec<WorktreeInfo>, AppError> {
     let repo = open_workdir_repo(workdir)?; // rejects bare
-    super::worktree_reuse::list_worktrees_with(&repo)
+    list_worktrees_with(&repo)
 }
+
+/// P88b/B2b re-export: the handle-reusing twin so the command layer can route
+/// `list_worktrees` through the round handle cache. `list_worktrees_with` itself
+/// re-checks bare (`ensure_not_bare`), so a `with_repo` handle (opened without a
+/// bare guard) still refuses a bare repo at the same point.
+pub use super::worktree_reuse::list_worktrees_with;
 
 /// Blocking. Returns the ABSOLUTE working-dir path (forward slashes) of a
 /// *different* worktree that currently has local branch `name` checked out, or

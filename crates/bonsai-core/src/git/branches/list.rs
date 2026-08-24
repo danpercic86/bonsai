@@ -13,7 +13,15 @@ use super::{ci_cmp, open_repo_at, BranchInfo, BranchesSnapshot, RemoteBranchInfo
 /// never an error.
 pub fn list_refs(workdir: &Path) -> Result<BranchesSnapshot, AppError> {
     let repo = open_repo_at(workdir)?;
-    let head = read_head_info(&repo)?;
+    list_refs_with(&repo)
+}
+
+/// Blocking. P88b/B2b: [`list_refs`] from an ALREADY-OPEN handle (round handle
+/// cache). The `&Path` entry point above opens then delegates here. Refs are
+/// re-stat'd / `packed-refs` reloaded on demand, so a reused handle reads current
+/// on-disk branches/tags/HEAD ⇒ byte-identical output.
+pub fn list_refs_with(repo: &git2::Repository) -> Result<BranchesSnapshot, AppError> {
+    let head = read_head_info(repo)?;
 
     let mut local = Vec::new();
     for item in repo.branches(Some(git2::BranchType::Local))? {
