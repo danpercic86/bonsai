@@ -59,6 +59,11 @@ sound, one-owner-at-a-time; no MUST/SHOULD-FIX, 2 informational NITs). New `run_
 Warm status+graph round now opens **0** (was 2/call). bonsai-core 1489, bonsai 297; `repo_handle` tests split to
 `repo_handle/tests.rs`. Rust gate (`pnpm gate --rust`) GREEN @ `97190de`: nextest + doctests + clippy -D all pass
 (frontend untouched → prior full-gate green at `cc5fdac` still holds). **P88 batch (incl. FU-B2c) AI-gate COMPLETE.**
+**User chose HOLD ON BRANCH (2026-08-24): no merge, no push — awaiting native USER CHECKPOINTs in `pnpm tauri dev`
+before the merge decision.** Branch `perf/git-action-round2` tip = `059caf3` (10 commits off `c0825a3`/1.3.0).
+Native checks to run: create/delete tag, stash push/pop/drop, commit, add/remove remote+submodule, delete local
+branch, file-by-file conflict resolve — all snappy + consistent UI (no stale ahead/behind after commit); no
+regression in checkout/fetch/pull/push/rebase/merge.
 
 **NEW FOLLOW-UPS (this batch):**
 - **FU-B2c (perf, MED — the remaining B2 win):** hoist `with_repo` OUTSIDE `run_with_git_timeout` for `get_status`+
