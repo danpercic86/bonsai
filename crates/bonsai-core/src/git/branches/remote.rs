@@ -11,9 +11,22 @@ use super::open_repo_at;
 /// branch for the remote-tracking ref `remote_shorthand` ("<remote>/<branch>")
 /// and safe-checkout it. SAFE checkout only — never force (P6 contract §2.2).
 ///
-/// A name collision (a local branch of the same short name already exists) just
-/// switches to the existing local branch — it is NOT repointed. Safe checkout
-/// runs before any ref mutation, so a conflict leaves HEAD + worktree untouched
+/// When NO local branch of the same short name exists, a new local tracking
+/// branch is created at the remote tip with its upstream set, then checked out.
+///
+/// When a local branch of that name ALREADY exists, its tip is compared to the
+/// remote tip by ancestry and the ref is only ever moved forward:
+/// - equal tips → check out the local branch as-is (no ref move);
+/// - local strictly BEHIND (fast-forwardable) → safe-checkout the remote tip,
+///   then fast-forward `refs/heads/<name>` onto it, ending on the local branch
+///   at the remote's commit;
+/// - local strictly AHEAD → check out the local branch as-is (it already
+///   contains everything the remote has; no ref move);
+/// - DIVERGED (neither tip is an ancestor of the other) → error, change nothing.
+///
+/// The diverged/error and "checked out elsewhere" conditions are detected BEFORE
+/// any worktree or ref mutation, and the SAFE checkout runs before any ref move,
+/// so an error (divergence or conflict) leaves HEAD + worktree + refs untouched
 /// and creates nothing.
 pub fn checkout_remote(workdir: &Path, remote_shorthand: &str) -> Result<(), AppError> {
     let repo = open_repo_at(workdir)?;
@@ -45,18 +58,42 @@ pub fn checkout_remote(workdir: &Path, remote_shorthand: &str) -> Result<(), App
         ))
     })?;
 
-    // Decide the checkout target + whether we create — BEFORE touching the
-    // worktree, so a conflict leaves everything untouched and creates nothing.
-    let (checkout_oid, created) = match repo.find_branch(local_name, git2::BranchType::Local) {
-        Ok(existing) => {
-            let oid = existing.get().target().ok_or_else(|| {
-                AppError::Git(format!("branch '{local_name}' has no target commit"))
-            })?;
-            (oid, false)
-        }
-        Err(e) if e.code() == git2::ErrorCode::NotFound => (remote_tip, true),
-        Err(e) => return Err(e.into()),
-    };
+    // Decide the checkout target, whether we create, and whether we must
+    // fast-forward the local ref — ALL before touching the worktree, so a
+    // divergence error or conflict leaves everything untouched and creates
+    // nothing.
+    let (checkout_oid, created, fast_forward) =
+        match repo.find_branch(local_name, git2::BranchType::Local) {
+            Ok(existing) => {
+                let local_tip = existing.get().target().ok_or_else(|| {
+                    AppError::Git(format!("branch '{local_name}' has no target commit"))
+                })?;
+                if local_tip == remote_tip {
+                    // Equal tips: check out the local branch as-is, no ref move.
+                    (local_tip, false, false)
+                } else {
+                    let base = repo.merge_base(local_tip, remote_tip)?;
+                    if base == local_tip {
+                        // Local strictly BEHIND → fast-forwardable. Check out the
+                        // remote tip, then move the local ref onto it.
+                        (remote_tip, false, true)
+                    } else if base == remote_tip {
+                        // Local strictly AHEAD → already contains the remote; keep
+                        // the local branch where it is.
+                        (local_tip, false, false)
+                    } else {
+                        // Diverged: neither tip is an ancestor of the other.
+                        // Refuse BEFORE any mutation.
+                        return Err(AppError::Git(format!(
+                            "cannot check out '{remote_shorthand}': local branch \
+                             '{local_name}' has diverged from it; not fast-forwardable"
+                        )));
+                    }
+                }
+            }
+            Err(e) if e.code() == git2::ErrorCode::NotFound => (remote_tip, true, false),
+            Err(e) => return Err(e.into()),
+        };
 
     // Reusing an EXISTING local branch: refuse if it is checked out in another
     // worktree (a just-created branch cannot be). Mirrors `checkout_branch`;
@@ -103,6 +140,14 @@ pub fn checkout_remote(workdir: &Path, remote_shorthand: &str) -> Result<(), App
             Err(e) if e.code() == git2::ErrorCode::Exists => {}
             Err(e) => return Err(e.into()),
         }
+    } else if fast_forward {
+        // Local was strictly behind and the worktree is now at the remote tip:
+        // fast-forward the local ref onto it (force-update refs/heads/<name>).
+        repo.find_reference(&format!("refs/heads/{local_name}"))?
+            .set_target(
+                remote_tip,
+                "bonsai: fast-forward on remote checkout",
+            )?;
     }
 
     repo.set_head(&format!("refs/heads/{local_name}"))?;
