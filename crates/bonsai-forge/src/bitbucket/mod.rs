@@ -10,6 +10,7 @@
 //! `user:app_password` → `Basic` scheme is a documented fallback, not implemented.
 
 mod dto;
+mod refs;
 mod rest;
 
 use bonsai_core::error::AppError;
@@ -136,13 +137,11 @@ impl ForgeProvider for BitbucketProvider {
         dto::parse_pr_detail(&resp.body)
     }
 
-    fn pr_refs(&self, _number: u64) -> Result<PrRefs, AppError> {
-        // P89a2: Bitbucket needs source/destination commit hashes + fork clone
-        // URL (source.repository.links.clone) parsing before the local PR diff
-        // can resolve fork heads. Deferred to a follow-up increment.
-        Err(AppError::ForgeUnsupported(
-            "local PR diff is not yet available for Bitbucket".to_string(),
-        ))
+    fn pr_refs(&self, number: u64) -> Result<PrRefs, AppError> {
+        self.require_supported()?;
+        let url = rest::pull_request_url(self.workspace(), self.slug(), number);
+        let resp = rest::get(self.transport(), &url, self.token.as_deref())?;
+        refs::parse_pr_refs(&resp.body, number)
     }
 
     fn create_pr(&self, input: &CreatePrInput) -> Result<PrDetail, AppError> {
