@@ -1,3 +1,5 @@
+import type { FileDiffHeader } from './diff';
+
 // --- P62 forge / PR integration (mirrors crates/bonsai-forge/src/types.rs) ---
 
 /** Which forge backs `origin` (detected from the remote URL). */
@@ -83,6 +85,22 @@ export interface PrDetail {
   deletions: number;
   changedFiles: number;
   labels: string[];
+}
+/** P89: locally-computed base…head (three-dot) diff stats for a PR. Counts +
+ *  changed-files list are computed by bonsai-core from the fetched endpoints,
+ *  replacing the forge-reported `PrDetail` counts once loaded. `files` is
+ *  headers-only (sorted path-ascending); per-file hunks are fetched on demand
+ *  via `forgePrFileDiff`. Mirrors the Rust `PrDiffStats`. */
+export interface PrDiffStats {
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  /** merge-base(base,head) — the OLD side of the diff; "" for unrelated histories. */
+  mergeBaseOid: string;
+  baseOid: string;
+  headOid: string;
+  /** Sorted path-ascending; headers only (hunks fetched per file). */
+  files: FileDiffHeader[];
 }
 /** PR list request. `perPage` is capped `<= 50` by the provider. */
 export interface PrListQuery {

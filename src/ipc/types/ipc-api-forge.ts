@@ -7,10 +7,12 @@ import type {
   ForgeViewer,
   MergePrInput,
   PrDetail,
+  PrDiffStats,
   PrListQuery,
   PrPage,
   ReviewComment,
 } from './forge';
+import type { FileDiff } from './diff';
 
 /** P62+: forge / PR integration + global forge account management, split out of
  *  `IpcApi` (which extends this) to keep whole-file reads cheap. Behaviour is
@@ -59,6 +61,25 @@ export interface IpcApiForge {
    *  Rejects AppError (`noRepo` | `forgeUnsupported` | `noRemote` | `forgeApi`
    *  | `forgeRateLimited` | `authFailed` | `networkError` | `git`). */
   forgeCommitStatuses(repoId: string, shas: string[]): Promise<CommitStatus[]>;
+  /** P89: auto-fetch the PR's base+head endpoints, then compute the base…head
+   *  (three-dot) diff LOCALLY — `+X / −Y / N files` + headers-only file list.
+   *  Prefer this over `PrDetail`'s forge counts once loaded. Fork/un-fetched
+   *  heads are brought local first; up-to-date repos skip the network. Rejects
+   *  AppError (`noRepo` | `forgeUnsupported` | `noRemote` | `forgeApi` |
+   *  `forgeRateLimited` | `networkError` | `authFailed` | `git`). */
+  forgePrDiff(repoId: string, number: number): Promise<PrDiffStats>;
+  /** P89: hunks for ONE file of the PR diff. The oids come from a prior
+   *  `forgePrDiff` (no network, no refetch — pure local git). Rejects AppError
+   *  (`noRepo` | `git`). */
+  forgePrFileDiff(
+    repoId: string,
+    mergeBaseOid: string,
+    headOid: string,
+    path: string,
+    origPath: string | null,
+    fullContext: boolean,
+    intraline: boolean,
+  ): Promise<FileDiff>;
   /** P80: all forge accounts across all hosts (the settings index), each with
    *  live `connected` + `isHostDefault` + best-effort login/avatar. No network.
    *  Rejects AppError (`other`). */

@@ -21,6 +21,7 @@ import {
   FORGE_REVIEW_COMMENTS,
   FORGE_VIEWER,
 } from '../../fixtures/forge';
+import { PR_DIFF_STATS, PR_DIFF_STATS_EMPTY, mockPrFileDiff } from '../../fixtures/prDiff';
 import { SUPPORTED_MERGE_METHODS } from '../../types';
 import {
   accountStore,
@@ -34,6 +35,7 @@ import type {
   AppError,
   CommitStatus,
   CreatePrInput,
+  FileDiff,
   ForgeAccount,
   ForgeKind,
   ForgeRepoContext,
@@ -42,6 +44,7 @@ import type {
   MergePrInput,
   PrDescription,
   PrDetail,
+  PrDiffStats,
   PrListQuery,
   PrPage,
   PrState,
@@ -249,6 +252,33 @@ export const forgeHandlers = {
     }
     prStateOverlay.set(number, 'closed');
     return forgeHandlers.forgeGetPr(repoId, number);
+  },
+
+  // P89: locally-computed PR base…head diff. Auto-fetch is a no-op in the mock;
+  // returns canned stats + headers. `?forge=empty` ⇒ base===head (empty state);
+  // `?forge=off` ⇒ networkError (fetch-failed/offline path, via offGuard).
+  async forgePrDiff(repoId: string, _number: number): Promise<PrDiffStats> {
+    await delay(250);
+    requireRepo(repoId);
+    offGuard();
+    if (urlParam('forge') === 'empty') return PR_DIFF_STATS_EMPTY;
+    return PR_DIFF_STATS;
+  },
+
+  // P89: hunks for ONE file of the PR diff — pure local (no offGuard/refetch),
+  // routed by path exactly like the backend's `pr_file_diff`.
+  async forgePrFileDiff(
+    repoId: string,
+    _mergeBaseOid: string,
+    _headOid: string,
+    path: string,
+    origPath: string | null,
+    _fullContext: boolean,
+    _intraline: boolean,
+  ): Promise<FileDiff> {
+    await delay(120);
+    requireRepo(repoId);
+    return mockPrFileDiff(path, origPath);
   },
 
   async forgeListReviewComments(repoId: string, _number: number): Promise<ReviewComment[]> {

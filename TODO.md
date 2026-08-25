@@ -53,8 +53,10 @@ DONE** (working tree, gate-clean): `pr_diff.rs` engine (fetch base+head, merge_b
 tree diff, per-file hunks), `PrRefs`+`pr_refs` trait, **GitHub+GitLab impl; Azure+Bitbucket stubbed
 → P89a2**. Cmds `forge_pr_diff`/`forge_pr_file_diff` registered. cargo check + clippy -D clean, 5 tests.
 **Azure matters (user uses Azure DevOps PRs) → P89a2 prioritized.**
-Now: reviewer on P89a ∥ senior-dev P89b (frontend types + mock/fixtures). Then commit P89a →
-P89a2 (Azure+Bitbucket) ∥ P89c (UI).
+**P89a reviewer APPROVED** (no MUST/SHOULD-FIX; 3 cosmetic NITs → fold into cleanup) + committed
+`1e0dfff` on branch `feat/pr-local-diff` (off main). Now: P89b (frontend types+mock/fixtures) in
+flight. Next: P89a2 (Azure+Bitbucket pr_refs — Azure is user's critical path) ∥ P89c (UI:
+prPanel/PrChangesSection+PrFileRow+usePrFileDiffs, reuse DiffView).
 
 ---
 

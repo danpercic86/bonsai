@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { CommitStatus, CreatePrInput, ForgeAccount, ForgeKind, ForgeRepoContext, ForgeViewer, MergePrInput, PrDetail, PrListQuery, PrPage, ReviewComment } from '../types';
+import type { CommitStatus, CreatePrInput, FileDiff, ForgeAccount, ForgeKind, ForgeRepoContext, ForgeViewer, MergePrInput, PrDetail, PrDiffStats, PrListQuery, PrPage, ReviewComment } from '../types';
 
 export const forgeCommands = {
 
@@ -27,6 +27,32 @@ export const forgeCommands = {
 
   forgeClosePr(repoId: string, number: number): Promise<PrDetail> {
     return invoke<PrDetail>('forge_close_pr', { repoId, number });
+  },
+
+  // P89: locally-computed PR base…head diff. Arg keys mirror the Rust command
+  // param names (snake_case: number, merge_base_oid, head_oid, orig_path, …).
+  forgePrDiff(repoId: string, number: number): Promise<PrDiffStats> {
+    return invoke<PrDiffStats>('forge_pr_diff', { repoId, number });
+  },
+
+  forgePrFileDiff(
+    repoId: string,
+    mergeBaseOid: string,
+    headOid: string,
+    path: string,
+    origPath: string | null,
+    fullContext: boolean,
+    intraline: boolean,
+  ): Promise<FileDiff> {
+    return invoke<FileDiff>('forge_pr_file_diff', {
+      repoId,
+      mergeBaseOid,
+      headOid,
+      path,
+      origPath,
+      fullContext,
+      intraline,
+    });
   },
 
   forgeListReviewComments(repoId: string, number: number): Promise<ReviewComment[]> {
