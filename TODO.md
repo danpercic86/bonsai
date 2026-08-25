@@ -24,6 +24,40 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
+## 🟡 P89 — PR files & local diff view — in-progress
+
+**Goal:** Show a PR's changed-files list and per-file diffs directly in Bonsai, with correct
++/−/changed-files counts. Counts + diffs are computed **locally** from the PR's base and head
+commits (reuse `bonsai-core` diff engine `collect_headers` / `get_commit_diff`), not from the forge
+API (which returns `+0/−0` on several forges/endpoints). Auto-fetch the PR's base+head refs on open
+so fork PRs and un-fetched branches still work. Forge-agnostic (Azure DevOps, GitHub, GitLab, all).
+
+**User decisions (2026-08-25):** (1) Auto-fetch PR refs on open, diff `merge-base(base,head)..head`;
+(2) Full scope — correct counts + changed-files list + click-to-view per-file diff reusing the
+existing diff viewer; (3) Forge-agnostic.
+
+**Acceptance criteria:**
+- Opening a PR shows correct `+X / −Y / N files` computed locally (matches `git diff` base...head).
+- Changed-files list rendered in the PR panel; selecting a file shows its diff in the existing viewer.
+- Works when head is a fork branch / not yet fetched (auto-fetch of PR refs).
+- Graceful states: fetch-in-progress, fetch-failed/offline, base or head unresolved.
+- Forge-agnostic: each forge exposes base+head ref info; local diff path is shared.
+- No Rust/React boundary violation; heavy git2 work in spawn_blocking; files under ~500 lines.
+
+**Current step:** contract DONE (`docs/contracts/P89-pr-local-diff.md`). OQs accepted w/ architect
+recs (no backend TTL guard; Azure head via lastMergeSourceCommit; defer PR-ref cleanup to Polish).
+IPC: `forge_pr_diff` (auto-fetch base+head, local base…head diff → PrDiffStats) + `forge_pr_file_diff`
+(pure-local per-file hunks). UI contract DONE (`P89-ui.md`: inline accordion in PR panel, reuse DiffView/DiffCard, no new
+tokens; components `prPanel/PrChangesSection.tsx`+`PrFileRow.tsx`+`usePrFileDiffs`). **P89a backend
+DONE** (working tree, gate-clean): `pr_diff.rs` engine (fetch base+head, merge_base→three-dot
+tree diff, per-file hunks), `PrRefs`+`pr_refs` trait, **GitHub+GitLab impl; Azure+Bitbucket stubbed
+→ P89a2**. Cmds `forge_pr_diff`/`forge_pr_file_diff` registered. cargo check + clippy -D clean, 5 tests.
+**Azure matters (user uses Azure DevOps PRs) → P89a2 prioritized.**
+Now: reviewer on P89a ∥ senior-dev P89b (frontend types + mock/fixtures). Then commit P89a →
+P89a2 (Azure+Bitbucket) ∥ P89c (UI).
+
+---
+
 ## ⚡ P88 — Git-action perf round 2 (refresh-scope cluster + repo-handle cache) — in-progress
 
 **Current step:** **P88a DONE + committed `2412d8b`** (reviewer APPROVED, no MUST-FIX; tsc clean, eslint 0-err,

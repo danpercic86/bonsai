@@ -75,6 +75,7 @@ pub(crate) use bonsai_core::git::diff::{
     commit_diff, commit_file_diff, compare_head_diff, compare_head_file_diff, workdir_file_diff,
     CommitDiff, CompareDiff, FileDiff,
 };
+pub(crate) use bonsai_core::git::pr_diff::{self, PrDiffStats};
 pub(crate) use bonsai_core::git::image_diff::{self, ImageDiff, ImageDiffRequest};
 pub(crate) use bonsai_core::git::merge::{self, MergeOutcome};
 pub(crate) use bonsai_core::git::opstate::{read_op_state, RepoOpState};

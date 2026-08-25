@@ -10,10 +10,11 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use bonsai_core::error::AppError;
+use bonsai_core::git::pr_diff::FetchTarget;
 
 use crate::types::{
     CheckRollup, CommentKind, CommitStatus, CreatePrInput, ForgeViewer, MergeMethod, MergePrInput,
-    PrDetail, PrState, PrSummary, ReviewComment, StatusContext,
+    PrDetail, PrRefs, PrState, PrSummary, ReviewComment, StatusContext,
 };
 
 /// Parse a GitLab body into `T`; a malformed body ⇒ `ForgeApi` (never a token).
@@ -65,6 +66,10 @@ struct GlMergeRequest {
     /// Head sha of the source branch (P63 needs it); occasionally null.
     #[serde(default)]
     sha: Option<String>,
+    /// Base/head SHAs of the MR diff (present on the detail endpoint). The
+    /// `base_sha` is the merge-base tip we diff against; `head_sha` mirrors `sha`.
+    #[serde(default)]
+    diff_refs: Option<GlDiffRefs>,
     // ---- detail-only ----
     #[serde(default)]
     description: Option<String>,
@@ -72,6 +77,14 @@ struct GlMergeRequest {
     detailed_merge_status: Option<String>,
     #[serde(default)]
     labels: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct GlDiffRefs {
+    #[serde(default)]
+    base_sha: Option<String>,
+    #[serde(default)]
+    head_sha: Option<String>,
 }
 
 impl GlMergeRequest {
@@ -246,6 +259,38 @@ pub fn parse_mr_list(body: &str) -> Result<Vec<PrSummary>, AppError> {
 }
 
 /// `GET …/merge_requests/{iid}` (or the POST response) ⇒ [`PrDetail`].
+/// `GET …/merge_requests/{iid}` ⇒ [`PrRefs`] (P89). The head is fetched via
+/// `refs/merge-requests/<iid>/head`, which covers fork MRs, so both endpoints
+/// fetch from the origin remote (`url: None`). `base_sha`/`head_sha` come from
+/// `diff_refs` (falling back to `sha` for the head); an absent `base_sha` leaves
+/// the base resolve empty — the diff engine then errors clearly on a bad oid.
+pub fn parse_mr_refs(body: &str, iid: u64) -> Result<PrRefs, AppError> {
+    let mr: GlMergeRequest = from_json(body)?;
+    let diff_refs = mr.diff_refs.unwrap_or(GlDiffRefs {
+        base_sha: None,
+        head_sha: None,
+    });
+    let head_oid = diff_refs
+        .head_sha
+        .or(mr.sha)
+        .unwrap_or_default();
+    let base_oid = diff_refs.base_sha.unwrap_or_default();
+    Ok(PrRefs {
+        base_oid: base_oid.clone(),
+        head_oid: head_oid.clone(),
+        base_fetch: FetchTarget {
+            url: None,
+            refspec: format!("+refs/heads/{}:refs/bonsai/pr/{iid}/base", mr.target_branch),
+            resolve: base_oid,
+        },
+        head_fetch: FetchTarget {
+            url: None,
+            refspec: format!("+refs/merge-requests/{iid}/head:refs/bonsai/pr/{iid}/head"),
+            resolve: head_oid,
+        },
+    })
+}
+
 pub fn parse_mr_detail(body: &str) -> Result<PrDetail, AppError> {
     let mr: GlMergeRequest = from_json(body)?;
     Ok(mr.into_detail())

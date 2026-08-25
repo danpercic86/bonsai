@@ -16,7 +16,7 @@ use crate::http::HttpTransport;
 use crate::provider::ForgeProvider;
 use crate::types::{
     CommitStatus, CreatePrInput, ForgeKind, ForgeRepoContext, ForgeViewer, MergePrInput, PrDetail,
-    PrListQuery, PrPage, ReviewComment,
+    PrListQuery, PrPage, PrRefs, ReviewComment,
 };
 
 /// `origin` always resolves to a single remote; the provider reports it.
@@ -134,6 +134,13 @@ impl ForgeProvider for GitLabProvider {
         let url = rest::merge_request_url(self.host(), &self.project_id(), number);
         let resp = rest::get(self.transport(), &url, self.token.as_deref())?;
         dto::parse_mr_detail(&resp.body)
+    }
+
+    fn pr_refs(&self, number: u64) -> Result<PrRefs, AppError> {
+        self.require_supported()?;
+        let url = rest::merge_request_url(self.host(), &self.project_id(), number);
+        let resp = rest::get(self.transport(), &url, self.token.as_deref())?;
+        dto::parse_mr_refs(&resp.body, number)
     }
 
     fn create_pr(&self, input: &CreatePrInput) -> Result<PrDetail, AppError> {

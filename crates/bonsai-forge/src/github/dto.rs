@@ -10,9 +10,11 @@ use serde::{Deserialize, Serialize};
 
 use bonsai_core::error::AppError;
 
+use bonsai_core::git::pr_diff::FetchTarget;
+
 use crate::types::{
     CommentKind, CommitStatus, CreatePrInput, ForgeViewer, MergeMethod, MergePrInput, PrDetail,
-    PrState, PrSummary, ReviewComment, StatusContext,
+    PrRefs, PrState, PrSummary, ReviewComment, StatusContext,
 };
 
 use super::rollup;
@@ -234,6 +236,28 @@ pub fn parse_pr_list(body: &str) -> Result<Vec<PrSummary>, AppError> {
 pub fn parse_pr_detail(body: &str) -> Result<PrDetail, AppError> {
     let pull: GhPull = from_json(body)?;
     Ok(pull.into_detail())
+}
+
+/// `GET …/pulls/{n}` ⇒ [`PrRefs`] (P89). The head is fetched via
+/// `refs/pull/<n>/head`, which GitHub exposes for fork PRs too, so both
+/// endpoints fetch from the origin remote (`url: None`). `resolve` is the tip
+/// SHA either way, so the diff engine resolves by oid regardless of ref naming.
+pub fn parse_pr_refs(body: &str, number: u64) -> Result<PrRefs, AppError> {
+    let pull: GhPull = from_json(body)?;
+    Ok(PrRefs {
+        base_oid: pull.base.sha.clone(),
+        head_oid: pull.head.sha.clone(),
+        base_fetch: FetchTarget {
+            url: None,
+            refspec: format!("+refs/heads/{}:refs/bonsai/pr/{number}/base", pull.base.ref_),
+            resolve: pull.base.sha.clone(),
+        },
+        head_fetch: FetchTarget {
+            url: None,
+            refspec: format!("+refs/pull/{number}/head:refs/bonsai/pr/{number}/head"),
+            resolve: pull.head.sha,
+        },
+    })
 }
 
 /// `GET …/pulls/{n}/comments` (diff-line) ⇒ `Vec<ReviewComment>` (kind=Review).
@@ -479,6 +503,25 @@ mod tests {
         assert_eq!(v["base"], "main");
         assert_eq!(v["draft"], true);
         assert_eq!(v["maintainer_can_modify"], true);
+    }
+
+    #[test]
+    fn parse_pr_refs_builds_fetch_plan() {
+        let body = r#"{
+            "number": 42, "title": "T", "state": "open",
+            "head": { "ref": "feature", "sha": "aaa" },
+            "base": { "ref": "main", "sha": "bbb" },
+            "comments": 0, "created_at": "x", "updated_at": "y",
+            "html_url": "https://github.com/o/r/pull/42"
+        }"#;
+        let refs = parse_pr_refs(body, 42).unwrap();
+        assert_eq!(refs.base_oid, "bbb");
+        assert_eq!(refs.head_oid, "aaa");
+        assert!(refs.base_fetch.url.is_none() && refs.head_fetch.url.is_none());
+        assert_eq!(refs.base_fetch.refspec, "+refs/heads/main:refs/bonsai/pr/42/base");
+        assert_eq!(refs.head_fetch.refspec, "+refs/pull/42/head:refs/bonsai/pr/42/head");
+        assert_eq!(refs.base_fetch.resolve, "bbb");
+        assert_eq!(refs.head_fetch.resolve, "aaa");
     }
 
     #[test]

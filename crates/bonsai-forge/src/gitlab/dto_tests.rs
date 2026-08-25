@@ -184,3 +184,23 @@
         let err = parse_mr_list("not json").unwrap_err();
         assert!(matches!(err, AppError::ForgeApi(_)), "got {err:?}");
     }
+
+    #[test]
+    fn parse_mr_refs_builds_fetch_plan() {
+        let body = r#"{
+            "iid": 7, "title": "T", "state": "opened",
+            "source_branch": "feature", "target_branch": "main",
+            "created_at": "x", "updated_at": "y", "web_url": "https://gl/mr/7",
+            "sha": "aaa",
+            "diff_refs": { "base_sha": "bbb", "head_sha": "aaa", "start_sha": "bbb" }
+        }"#;
+        let refs = parse_mr_refs(body, 7).unwrap();
+        assert_eq!(refs.base_oid, "bbb");
+        assert_eq!(refs.head_oid, "aaa");
+        assert!(refs.base_fetch.url.is_none() && refs.head_fetch.url.is_none());
+        assert_eq!(refs.base_fetch.refspec, "+refs/heads/main:refs/bonsai/pr/7/base");
+        assert_eq!(
+            refs.head_fetch.refspec,
+            "+refs/merge-requests/7/head:refs/bonsai/pr/7/head"
+        );
+    }

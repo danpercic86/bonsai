@@ -272,6 +272,8 @@ pub fn run() {
             commands::forge_repo_context,
             commands::forge_list_prs,
             commands::forge_get_pr,
+            commands::forge_pr_diff,
+            commands::forge_pr_file_diff,
             commands::forge_create_pr,
             commands::forge_merge_pr,
             commands::forge_close_pr,

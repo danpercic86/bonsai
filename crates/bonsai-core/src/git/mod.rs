@@ -52,6 +52,8 @@ pub mod merge;
 /// P87 activity-recording merge-commit core (split from `merge.rs` for size).
 pub mod merge_activity;
 pub mod opstate;
+/// P89 PR local diff: auto-fetch base+head then compute the base…head tree diff.
+pub mod pr_diff;
 /// Cross-module symlink-escape (path-traversal) guard tests for `ensure_within_workdir`.
 #[cfg(test)]
 mod path_traversal_tests;

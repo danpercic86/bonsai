@@ -351,6 +351,99 @@ pub(crate) async fn forge_clear_token_inner(
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
+/// P89: auto-fetch a PR's base+head endpoints into local refs, then compute the
+/// base…head (three-dot) diff LOCALLY (counts + changed-files headers). Does NOT
+/// emit `repo-changed` — only fetches objects, never touches user refs/worktree.
+/// Errors: `noRepo` | `forgeUnsupported` | `noRemote` | `forgeApi` |
+/// `forgeRateLimited` | `networkError` | `authFailed` | `git`.
+#[tauri::command]
+pub async fn forge_pr_diff(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    number: u64,
+) -> Result<PrDiffStats, AppError> {
+    let file = settings::settings_file(&app)?;
+    forge_pr_diff_inner(state.inner(), &file, &repo_id, number).await
+}
+
+/// Runtime-free core of `forge_pr_diff`. The provider call (`pr_refs`) + the git2
+/// fetch + local diff all run inside ONE `spawn_blocking`.
+pub(crate) async fn forge_pr_diff_inner(
+    state: &AppState,
+    settings_file: &std::path::Path,
+    repo_id: &str,
+    number: u64,
+) -> Result<PrDiffStats, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    let file = settings_file.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        let key = crate::commands::resolved_key(&workdir, &file)?;
+        let provider = bonsai_forge::open_with_key(&workdir, key.as_deref())?;
+        let refs = provider.pr_refs(number)?;
+        let ep = pr_diff::fetch_pr_endpoints(&workdir, &refs.base_fetch, &refs.head_fetch)?;
+        pr_diff::pr_diff_headers(&workdir, &ep.base_oid, &ep.head_oid)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// P89: hunks for ONE file of a PR diff. The oids come from a prior
+/// `forge_pr_diff` (no network, no refetch) — pure local git2. Errors:
+/// `noRepo` | `git`.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn forge_pr_file_diff(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    merge_base_oid: String,
+    head_oid: String,
+    path: String,
+    orig_path: Option<String>,
+    full_context: bool,
+    intraline: bool,
+) -> Result<FileDiff, AppError> {
+    forge_pr_file_diff_inner(
+        state.inner(),
+        &repo_id,
+        merge_base_oid,
+        head_oid,
+        path,
+        orig_path,
+        full_context,
+        intraline,
+    )
+    .await
+}
+
+/// Runtime-free core of `forge_pr_file_diff`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn forge_pr_file_diff_inner(
+    state: &AppState,
+    repo_id: &str,
+    merge_base_oid: String,
+    head_oid: String,
+    path: String,
+    orig_path: Option<String>,
+    full_context: bool,
+    intraline: bool,
+) -> Result<FileDiff, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        pr_diff::pr_file_diff(
+            &workdir,
+            &merge_base_oid,
+            &head_oid,
+            &path,
+            orig_path.as_deref(),
+            full_context,
+            intraline,
+        )
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// Batch commit/CI statuses (P63): one [`CommitStatus`] per requested sha, in
 /// the SAME order (nothing skipped). Runs the whole batch of combined-status
 /// lookups inside ONE `spawn_blocking`, mirroring `verify_commits`. Errors:

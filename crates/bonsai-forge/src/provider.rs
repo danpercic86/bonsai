@@ -14,7 +14,7 @@ use bonsai_core::error::AppError;
 pub use crate::types::ForgeKind;
 use crate::types::{
     CommitStatus, CreatePrInput, ForgeRepoContext, ForgeViewer, MergePrInput, PrDetail,
-    PrListQuery, PrPage, ReviewComment,
+    PrListQuery, PrPage, PrRefs, ReviewComment,
 };
 
 pub trait ForgeProvider: Send + Sync {
@@ -28,6 +28,13 @@ pub trait ForgeProvider: Send + Sync {
 
     fn list_prs(&self, query: &PrListQuery) -> Result<PrPage, AppError>;
     fn get_pr(&self, number: u64) -> Result<PrDetail, AppError>;
+
+    /// P89: one network call to read the PR's base/head tips + a neutral fetch
+    /// plan (`PrRefs`). Fork heads carry the fork clone URL in `head_fetch.url`.
+    /// Requires the PR-read scope only. Consumed by
+    /// `bonsai_core::git::pr_diff::fetch_pr_endpoints` to bring both endpoints
+    /// local before the diff is computed.
+    fn pr_refs(&self, number: u64) -> Result<PrRefs, AppError>;
     /// Requires a token ⇒ `ForgeAuthRequired` when none is stored.
     fn create_pr(&self, input: &CreatePrInput) -> Result<PrDetail, AppError>;
     fn list_review_comments(&self, number: u64) -> Result<Vec<ReviewComment>, AppError>;

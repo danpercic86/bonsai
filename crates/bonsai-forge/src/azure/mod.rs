@@ -24,7 +24,7 @@ use crate::http::HttpTransport;
 use crate::provider::ForgeProvider;
 use crate::types::{
     CommitStatus, CreatePrInput, ForgeKind, ForgeRepoContext, ForgeViewer, MergePrInput, PrDetail,
-    PrListQuery, PrPage, ReviewComment,
+    PrListQuery, PrPage, PrRefs, ReviewComment,
 };
 
 /// `origin` always resolves to a single remote; the provider reports it.
@@ -209,6 +209,15 @@ impl ForgeProvider for AzureDevOpsProvider {
         let url = rest::pull_request_url(org, project, repo, number);
         let resp = rest::get(self.transport(), &url, self.token.as_deref())?;
         dto::parse_pr_detail(&resp.body, &self.target.web_url)
+    }
+
+    fn pr_refs(&self, _number: u64) -> Result<PrRefs, AppError> {
+        // P89a2: Azure needs lastMergeSourceCommit/lastMergeTargetCommit +
+        // fork (forkSource / repository.remoteUrl) parsing before the local PR
+        // diff can resolve fork heads. Deferred to a follow-up increment.
+        Err(AppError::ForgeUnsupported(
+            "local PR diff is not yet available for Azure DevOps".to_string(),
+        ))
     }
 
     fn create_pr(&self, input: &CreatePrInput) -> Result<PrDetail, AppError> {

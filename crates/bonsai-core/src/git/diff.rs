@@ -670,7 +670,7 @@ pub(crate) fn commit_trees<'r>(
 /// word-level pass on each hunk in place. Binary / too-large diffs carry no
 /// hunks, so they are left untouched. `intraline=false` is a no-op, keeping the
 /// `FileDiff` wire byte-identical to pre-P61a.
-fn maybe_annotate(mut fd: FileDiff, intraline: bool) -> FileDiff {
+pub(crate) fn maybe_annotate(mut fd: FileDiff, intraline: bool) -> FileDiff {
     if intraline && !fd.binary && !fd.too_large {
         for hunk in &mut fd.hunks {
             crate::git::intraline::annotate_hunk(hunk);

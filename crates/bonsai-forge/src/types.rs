@@ -145,6 +145,20 @@ pub struct PrDetail {
     pub labels: Vec<String>,
 }
 
+/// P89: the base/head tips of a PR plus a neutral fetch plan to bring each one
+/// reachable locally. `base_oid`/`head_oid` are the tip SHAs from the PR payload
+/// (also carried in the `FetchTarget.resolve` fields). Fork heads carry the fork
+/// clone URL in `head_fetch.url`. Not an IPC type itself — consumed by
+/// `bonsai_core::git::pr_diff::fetch_pr_endpoints`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrRefs {
+    pub base_oid: String,
+    pub head_oid: String,
+    pub base_fetch: bonsai_core::git::pr_diff::FetchTarget,
+    pub head_fetch: bonsai_core::git::pr_diff::FetchTarget,
+}
+
 /// PR list request. `per_page` is capped `<= 50` by the provider.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
