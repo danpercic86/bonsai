@@ -24,13 +24,13 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
-## 🚧 P90 — Per-branch CI Checks view — AI gate GREEN; awaiting USER CHECKPOINT
+## ✅ P90 — Per-branch CI Checks view — DONE (AI gate + USER CHECKPOINT both green 2026-08-25)
 
-**Current step:** AI gate passed (tsc/build clean, 52 vitest, size ratchet OK; harness-verified all
+**Current step:** none — AI gate passed (tsc/build clean, 52 vitest, size ratchet OK; harness-verified all
 per-branch states, no-auto-switch, connect, links, live-region). Reviewer + ui-designer both approved
-(MUST-FIX push-refresh fixed). **Awaiting native USER CHECKPOINT:** run `pnpm tauri dev` against a
-real forge repo, click branches, confirm Checks tab shows live per-check detail and refreshes on
-fetch/pull/push.
+(MUST-FIX push-refresh fixed). **USER CHECKPOINT VERIFIED (2026-08-25):** user confirmed on the native
+app — Checks tab shows live per-check detail and refreshes on fetch/pull/push. Committed `b0e880c` on
+`feat/pr-local-diff` (branch still UNMERGED/UNPUSHED — see P89 merge decision).
 
 **Follow-ups (deferred):** P90.1 per-check timing fields; header commit-summary text; command-palette
 `Refresh checks` / `Show checks`; mock fixtures for noForge/error reachable by click.
@@ -149,11 +149,11 @@ sound, one-owner-at-a-time; no MUST/SHOULD-FIX, 2 informational NITs). New `run_
 Warm status+graph round now opens **0** (was 2/call). bonsai-core 1489, bonsai 297; `repo_handle` tests split to
 `repo_handle/tests.rs`. Rust gate (`pnpm gate --rust`) GREEN @ `97190de`: nextest + doctests + clippy -D all pass
 (frontend untouched → prior full-gate green at `cc5fdac` still holds). **P88 batch (incl. FU-B2c) AI-gate COMPLETE.**
-**User chose HOLD ON BRANCH (2026-08-24): no merge, no push — awaiting native USER CHECKPOINTs in `pnpm tauri dev`
-before the merge decision.** Branch `perf/git-action-round2` tip = `059caf3` (10 commits off `c0825a3`/1.3.0).
-Native checks to run: create/delete tag, stash push/pop/drop, commit, add/remove remote+submodule, delete local
-branch, file-by-file conflict resolve — all snappy + consistent UI (no stale ahead/behind after commit); no
-regression in checkout/fetch/pull/push/rebase/merge.
+**USER CHECKPOINTs VERIFIED (2026-08-25):** user confirmed on the native app — create/delete tag, stash
+push/pop/drop, commit, add/remove remote+submodule, delete local branch, file-by-file conflict resolve all
+snappy + consistent UI (no stale ahead/behind after commit); no regression in checkout/fetch/pull/push/rebase/merge.
+Branch `perf/git-action-round2` tip = `059caf3` (10 commits off `c0825a3`/1.3.0) — **still UNMERGED/UNPUSHED,
+awaiting merge decision** (checkpoints done, merge is a separate call).
 
 **NEW FOLLOW-UPS (this batch):**
 - **FU-B2c (perf, MED — the remaining B2 win):** hoist `with_repo` OUTSIDE `run_with_git_timeout` for `get_status`+
@@ -212,15 +212,15 @@ an **unsuppressed `full` watcher round ~300 ms later** (the exact P85 double-ref
 **Follow-up verdicts (this audit):** B2 still-stands (highest value) · PB-1 still-stands · PB-2 RESOLVED (retire) ·
 FU-1..4 still-open (non-perf, low) · RepoWorkspace refactor still-stands (maintainability, not perf).
 
-## ✅ PERF + OBSERVABILITY BATCH (P85–P87) — AI GATE GREEN (2026-08-23) — USER CHECKPOINTS PENDING
+## ✅ PERF + OBSERVABILITY BATCH (P85–P87) — AI GATE GREEN + USER CHECKPOINTS VERIFIED (2026-08-25)
 
 **Full `pnpm gate` re-run CLEAN @ `b802482`: all 8 steps passed (GATE_EXIT=0)** — cargo test/clippy (both
 crates), frontend tsc+build, vitest, eslint (38≤40), file-size ratchet, playwright e2e. Commits: P85 `fde91d7`,
 P86a `e294500`, P86b `88ba86a`, P87a `3bc616a`, M1 `9eceafe`, P87b `298e45b`, P87c `c9a523c`, P87d `b802482`.
 Browser-harness verified (mock): determinate fetch progress (12.5k→25k/50k objects, scaleX .25→.5), "Running
 pre-push hook…" phase, `.toolbar-phase` = --text-2, hook-fail dialog + failed dock row. Security-audited (no
-HIGH/CRITICAL; M1 fixed). **PENDING: native USER CHECKPOINTs** (real branch-create/fetch wall-time; live look of
-phase readout + progress bar + log dock in `pnpm tauri dev`). Non-blocking follow-ups: PB-1/PB-2 (cache mem cap +
+HIGH/CRITICAL; M1 fixed). **USER CHECKPOINTs VERIFIED (2026-08-25):** user confirmed real branch-create/fetch
+wall-time + live phase readout + progress bar + log dock in `pnpm tauri dev`. Non-blocking follow-ups: PB-1/PB-2 (cache mem cap +
 cold-walk fp), B2 (repo-handle cache), FU-1..4 (P87b: target row label, commitAmend row, row role/aria-expanded,
 clickable dock bar), RepoWorkspace refactor, AiActivityPanel aria-label (NIT).
 
