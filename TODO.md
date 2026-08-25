@@ -97,10 +97,9 @@ P89 touches no e2e/AI-dock/health code. Commits on `feat/pr-local-diff` (off mai
 **USER CHECKPOINT VERIFIED (2026-08-25):** user confirmed everything OK on the native app (Azure +
 GitHub PR changed-files list + correct three-dot counts + expand-to-diff; fork-head auto-fetch;
 offline/Retry). Branch `feat/pr-local-diff` still **NOT merged/pushed** — awaiting merge decision.
-Follow-ups (user chose FIX NOW 2026-08-25, branch stays unmerged): senior-dev implementing SF1
-(empty-state header local 0-counts, `PrDetailContainer.tsx:70`) + SF2 (stale-refetch keep dimmed
-rows, `PrChangesSection.tsx:106`) + NIT (Azure old-TFS fork fallback, `azure/refs.rs:76`). Then
-review + targeted gate → commit on `feat/pr-local-diff`.
+Follow-ups SF1+SF2+NIT **DONE + committed `fe23d08`** (reviewer APPROVED; tsc clean, 24 vitest,
+clippy -D clean, 6 azure::refs tests incl. 3 new TFS-fallback cases). **All P89 follow-ups cleared.**
+Branch `feat/pr-local-diff` (8 P89 commits) stays UNMERGED/UNPUSHED per user. Nothing left on P89.
 
 ---
 
