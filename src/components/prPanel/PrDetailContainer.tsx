@@ -7,7 +7,10 @@ import { ConfirmDialog } from '../ConfirmDialog';
 import { closeActionGerund, closeActionLabel, closeActionPast } from '../PrActionsBar';
 import { PrDetailView } from '../PrDetailView';
 import { PrReviewComments } from '../PrReviewComments';
+import { PrChangesSection } from './PrChangesSection';
 import { PrMergeDialog } from './PrMergeDialog';
+import { usePrDiff } from './usePrDiff';
+import { usePrFileDiffs } from './usePrFileDiffs';
 
 // P83 — PR detail sub-container: owns the merge/close busy + dialog state and
 // the two mutating IPC calls, and mounts PrDetailView + the merge/close dialogs.
@@ -58,6 +61,26 @@ export function PrDetailContainer({
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
   const { summary } = detail;
+
+  // P89: local base…head diff — auto-fetch on open, keyed by repoId + PR number
+  // + head sha (re-open cache / head-advance staleness live in the hook). The
+  // per-file hunk fetcher is keyed off the resolved merge-base/head oids.
+  const prDiff = usePrDiff(repoId, summary.number, summary.headSha);
+  const fileDiffs = usePrFileDiffs(
+    repoId,
+    prDiff.stats?.mergeBaseOid ?? '',
+    prDiff.stats?.headOid ?? '',
+  );
+  // Header counts: locally-computed once ready, else the forge fallback (§2).
+  const headerStats =
+    prDiff.status === 'ready' && prDiff.stats !== null
+      ? prDiff.stats
+      : {
+          additions: detail.additions,
+          deletions: detail.deletions,
+          changedFiles: detail.changedFiles,
+        };
+
   const supportedMethods = SUPPORTED_MERGE_METHODS[kind];
   const actionBusy = merging || closing;
   const closeVerb = closeActionLabel(kind); // Close | Decline | Abandon
@@ -128,6 +151,17 @@ export function PrDetailContainer({
         busy={actionBusy}
         onMerge={() => setShowMergeDialog(true)}
         onClose={() => setShowCloseConfirm(true)}
+        stats={headerStats}
+        changesSlot={
+          <PrChangesSection
+            status={prDiff.status}
+            stats={prDiff.stats}
+            stale={prDiff.stale}
+            errorCause={prDiff.errorCause}
+            onRetry={prDiff.retry}
+            fileDiffs={fileDiffs}
+          />
+        }
       >
         <PrReviewComments comments={comments} loading={commentsLoading} error={commentsError} />
       </PrDetailView>

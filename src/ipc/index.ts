@@ -149,6 +149,7 @@ export type {
   PrimaryCommitAction,
   PrDescription,
   PrDetail,
+  PrDiffStats,
   PrListQuery,
   PrNavRequest,
   PrPage,

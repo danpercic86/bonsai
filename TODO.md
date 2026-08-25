@@ -54,9 +54,21 @@ tree diff, per-file hunks), `PrRefs`+`pr_refs` trait, **GitHub+GitLab impl; Azur
 → P89a2**. Cmds `forge_pr_diff`/`forge_pr_file_diff` registered. cargo check + clippy -D clean, 5 tests.
 **Azure matters (user uses Azure DevOps PRs) → P89a2 prioritized.**
 **P89a reviewer APPROVED** (no MUST/SHOULD-FIX; 3 cosmetic NITs → fold into cleanup) + committed
-`1e0dfff` on branch `feat/pr-local-diff` (off main). Now: P89b (frontend types+mock/fixtures) in
-flight. Next: P89a2 (Azure+Bitbucket pr_refs — Azure is user's critical path) ∥ P89c (UI:
-prPanel/PrChangesSection+PrFileRow+usePrFileDiffs, reuse DiffView).
+`1e0dfff` on branch `feat/pr-local-diff` (off main). **P89b DONE + committed `23285d7`** (PrDiffStats TS type, invoke wrappers, mock/fixtures; tsc clean).
+Flag: `github/dto.rs` now 532 lines (>500 soft limit) from P89a → split folded into P89a2.
+**P89a2 DONE** (working tree, gate-green): Azure + Bitbucket `pr_refs` in new `azure/refs.rs` +
+`bitbucket/refs.rs`; all 4 forges now implemented; 11 ref tests pass, clippy -D clean. **P89c DONE** (working tree): prPanel/{PrChangesSection,PrFileRow}.tsx + usePrDiff/usePrFileDiffs
+hooks; PrDetailView thin composer w/ local-count header + forge fallback; all states + a11y; tsc
+clean, PrDetailView.test 3/3. **Harness verified** (mock ?forge=auth): Changed-files section renders
+(+12/5 files), expanding src/pr/view.rs shows its diff hunk inline via DiffView. Screenshot blocked
+(headless pane) → pixel proof = USER CHECKPOINT. **dto.rs split DONE** (refactorer, working tree):
+github/dto.rs 532→386 + new dto_tests.rs 148; 211 tests identical, clippy clean.
+**Reviewer APPROVED** (no MUST-FIX). SHOULD-FIX follow-ups: (SF1) empty-state header should show
+local 0-counts not forge fallback (`PrDetailContainer.tsx:70`); (SF2) stale head-advance refetch
+should keep prior rows dimmed (`.diff-stale`) not collapse to skeleton (`PrChangesSection.tsx:106`);
+NIT: Azure old-TFS fork fallback when `lastMergeSourceCommit` absent (`azure/refs.rs:76`, acceptable).
+Awaiting ui-designer verdict (may promote SF1/SF2). Then: tester → commit → integrate/gate →
+native USER CHECKPOINT (real Azure PR + screenshot).
 
 ---
 

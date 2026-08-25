@@ -16,6 +16,11 @@ function renderDetail() {
       onBack={onBack}
       onOpenUrl={onOpenUrl}
       kind="gitHub"
+      stats={{
+        additions: FORGE_PR_DETAIL.additions,
+        deletions: FORGE_PR_DETAIL.deletions,
+        changedFiles: FORGE_PR_DETAIL.changedFiles,
+      }}
       supportedMethods={['merge', 'squash', 'rebase']}
       busy={false}
       onMerge={vi.fn()}

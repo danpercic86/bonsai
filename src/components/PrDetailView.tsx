@@ -57,6 +57,13 @@ export interface PrDetailViewProps {
   onOpenUrl(url: string): void;
   /** Comments component (or its loading/error state) rendered under the body. */
   children?: ReactNode;
+  /** P89: the changed-files section, rendered between the comments and the
+   *  actions bar (contract §1). */
+  changesSlot?: ReactNode;
+  /** P89: effective diff counts for the header stats row — locally computed
+   *  (`PrDiffStats`) once ready, else the forge-reported `detail` fallback.
+   *  The container decides which to pass (contract §2). */
+  stats: { additions: number; deletions: number; changedFiles: number };
   /** P83: forge kind (drives the per-forge close label + method filter). */
   kind: ForgeKind;
   /** P83: merge methods this forge supports (already filtered). */
@@ -74,6 +81,8 @@ export function PrDetailView({
   onBack,
   onOpenUrl,
   children,
+  changesSlot,
+  stats,
   kind,
   supportedMethods,
   busy,
@@ -129,10 +138,10 @@ export function PrDetailView({
           {summary.state === 'open' && (
             <span className={`pr-mergeable pr-mergeable-${merge.cls}`}>{merge.text}</span>
           )}
-          <span className="pr-stat-add">{`+${detail.additions}`}</span>
-          <span className="pr-stat-del">{`−${detail.deletions}`}</span>
+          <span className="pr-stat-add">{`+${stats.additions}`}</span>
+          <span className="pr-stat-del">{`−${stats.deletions}`}</span>
           <span className="pr-stat-files">
-            {`${detail.changedFiles} file${detail.changedFiles === 1 ? '' : 's'}`}
+            {`${stats.changedFiles} file${stats.changedFiles === 1 ? '' : 's'}`}
           </span>
         </div>
         {detail.labels.length > 0 && (
@@ -153,6 +162,8 @@ export function PrDetailView({
       )}
 
       {children}
+
+      {changesSlot}
 
       <PrActionsBar
         state={summary.state}

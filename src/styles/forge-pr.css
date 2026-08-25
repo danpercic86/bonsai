@@ -766,3 +766,54 @@
   color: var(--warning);
 }
 
+
+/* P89: PR changed-files section (contract §1). Reuses right-panel density
+   paddings (matches .pr-actions-bar) + the diff-card/file-* classes for rows;
+   only the section wrapper + head are new. No new tokens. */
+.pr-changes {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+[data-density='compact'] .pr-changes {
+  padding: 8px 12px;
+}
+
+.pr-changes-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+[data-density='compact'] .pr-changes-head {
+  margin-bottom: 6px;
+}
+
+.pr-changes-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.pr-changes-count {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* Push Collapse-all / Retry to the row end. */
+.pr-changes-collapse-all,
+.pr-changes-retry {
+  margin-left: auto;
+}
+
+.pr-changes-loading {
+  margin: 0 0 6px;
+}
+
+/* The rows reuse .diff-card geometry; the list is an unstyled stack. */
+.pr-changes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
