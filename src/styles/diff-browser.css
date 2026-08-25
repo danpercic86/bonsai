@@ -122,9 +122,20 @@
   padding: 0;
 }
 
+/* House selected-row recipe (ui-reference §12.1): --selection bg + --text-1/600
+ * label + the inset accent bar used for active items (tabs, settings rail). The
+ * status badge keeps its semantic hue. */
 .diff-tree-selected,
 .diff-tree-selected:hover {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  background: var(--selection);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.diff-tree-selected .file-path,
+.diff-tree-selected .diff-tree-root-label,
+.diff-tree-selected .tree-dir-name {
+  color: var(--text-1);
+  font-weight: 600;
 }
 
 /* The DiffFileTree flows in the narrower right panel — no fixed width. */

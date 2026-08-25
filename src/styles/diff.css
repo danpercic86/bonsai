@@ -38,8 +38,20 @@ span.file-row-main {
   transform: rotate(90deg);
 }
 
-.file-row-expanded {
-  background: var(--bg-2);
+/* Selected (expanded-for-diff) row. Distinct from :hover — which is var(--bg-2)
+ * — so a selected file no longer reads as merely hovered. Uses the house
+ * selected-row recipe (ui-reference §12.1): --selection bg + --text-1/600 label
+ * + the inset accent bar used for active items elsewhere (tabs, settings rail).
+ * The status badge keeps its semantic hue (green A / red D / …). */
+.file-row-expanded,
+.file-row-expanded:hover {
+  background: var(--selection);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.file-row-expanded .file-name {
+  color: var(--text-1);
+  font-weight: 600;
 }
 
 /* P3a: DiffSlotView renders only inside the overlay body — height comes from
