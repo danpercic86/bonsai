@@ -77,6 +77,26 @@ export function PrChangesSection({
 
   const count = stats?.changedFiles ?? files.length;
 
+  // SF2: on a head-advance refetch the hook keeps the prior stats and sets
+  // `stale`. Keep rendering the existing rows underneath, dimmed via
+  // `.diff-stale`, instead of collapsing to a skeleton — only the FIRST load
+  // (no prior rows) shows the bare skeleton.
+  const showStaleRows = status === 'loading' && stale && files.length > 0;
+  const fileList = (
+    <ul className={`pr-changes-list${stale ? ' diff-stale' : ''}`}>
+      {files.map((f) => (
+        <PrFileRow
+          key={f.path}
+          header={f}
+          entry={f.binary ? undefined : getEntry(f.path)}
+          collapsed={!expanded.has(f.path)}
+          onToggle={toggle}
+          onRetry={retryFile}
+        />
+      ))}
+    </ul>
+  );
+
   return (
     <section className="pr-changes" role="region" aria-label="Changed files">
       <div className="pr-changes-head">
@@ -103,14 +123,20 @@ export function PrChangesSection({
         )}
       </div>
 
-      {status === 'loading' && (
-        <>
-          <p className="pane-empty pr-changes-loading">Computing diff…</p>
-          <div className={`skeleton-group${stale ? ' diff-stale' : ''}`} aria-hidden="true">
-            <SkeletonRows />
-          </div>
-        </>
-      )}
+      {status === 'loading' &&
+        (showStaleRows ? (
+          <>
+            <p className="pane-empty pr-changes-loading">Computing diff…</p>
+            {fileList}
+          </>
+        ) : (
+          <>
+            <p className="pane-empty pr-changes-loading">Computing diff…</p>
+            <div className="skeleton-group" aria-hidden="true">
+              <SkeletonRows />
+            </div>
+          </>
+        ))}
 
       {status === 'error' && (
         <div className="error-banner" role="alert">
@@ -122,20 +148,7 @@ export function PrChangesSection({
         <p className="pane-empty">No changes between base and head.</p>
       )}
 
-      {status === 'ready' && (
-        <ul className={`pr-changes-list${stale ? ' diff-stale' : ''}`}>
-          {files.map((f) => (
-            <PrFileRow
-              key={f.path}
-              header={f}
-              entry={f.binary ? undefined : getEntry(f.path)}
-              collapsed={!expanded.has(f.path)}
-              onToggle={toggle}
-              onRetry={retryFile}
-            />
-          ))}
-        </ul>
-      )}
+      {status === 'ready' && fileList}
     </section>
   );
 }

@@ -71,9 +71,13 @@ export function PrDetailContainer({
     prDiff.stats?.mergeBaseOid ?? '',
     prDiff.stats?.headOid ?? '',
   );
-  // Header counts: locally-computed once ready, else the forge fallback (§2).
+  // Header counts: use the authoritative local stats once the local diff has
+  // resolved — ready OR empty, i.e. even when it's 0/0/0 (SF1: an empty local
+  // diff must show +0/-0/0 files, not the forge's stale non-zero counts). Only
+  // fall back to the forge-reported counts while still loading or on error.
+  const localResolved = prDiff.status === 'ready' || prDiff.status === 'empty';
   const headerStats =
-    prDiff.status === 'ready' && prDiff.stats !== null
+    localResolved && prDiff.stats !== null
       ? prDiff.stats
       : {
           additions: detail.additions,

@@ -24,6 +24,25 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
+## 🚧 P90 — Per-branch CI Checks view — in-progress
+
+**Current step:** design — architect (data/IPC contract) + ui-designer (UX + placement) running concurrently.
+
+**Goal:** A dedicated right-panel view (new tab near "Working" / "Pull requests", exact placement
+decided by ui-designer) that shows CI check details for the branch the user clicked in the sidebar.
+Shows per-check detail (name, state, description, link) beyond the existing graph rollup badge, and
+refreshes to latest status on every fetch / pull / push.
+
+**Known backend surface (already shipped, reuse):**
+- `CommitStatus { sha, state, total, passed, failed, pending, contexts }` and
+  `StatusContext { name, state, description, target_url }` — `crates/bonsai-forge/src/types.rs:280-302`.
+- IPC `forgeCommitStatuses(repoId, shas[]) -> CommitStatus[]` — `src/ipc/tauri/forge.ts`.
+- `forgeSignals` already refreshes CI verdicts after fetch/pull — `src/components/repoWorkspace/useForgeSignals.ts`.
+- Right-panel tabs `'work' | 'prs'` — `src/components/WorkspaceRightPanel.tsx:251-270`.
+
+**Open scope decisions (architect/ui-designer to resolve, flag to user):** whether `StatusContext`
+needs new timing fields; behavior when forge unconfigured / branch has no upstream.
+
 ## ✅ P89 — PR files & local diff view — DONE (AI gate + USER CHECKPOINT both green 2026-08-25)
 
 **Goal:** Show a PR's changed-files list and per-file diffs directly in Bonsai, with correct
@@ -78,9 +97,10 @@ P89 touches no e2e/AI-dock/health code. Commits on `feat/pr-local-diff` (off mai
 **USER CHECKPOINT VERIFIED (2026-08-25):** user confirmed everything OK on the native app (Azure +
 GitHub PR changed-files list + correct three-dot counts + expand-to-diff; fork-head auto-fetch;
 offline/Retry). Branch `feat/pr-local-diff` still **NOT merged/pushed** — awaiting merge decision.
-Open follow-ups (non-blocking): SF1 empty-state header local 0-counts (`PrDetailContainer.tsx:70`),
-SF2 stale-refetch keep dimmed rows (`PrChangesSection.tsx:106`), NIT Azure old-TFS fork fallback
-(`azure/refs.rs:76`).
+Follow-ups (user chose FIX NOW 2026-08-25, branch stays unmerged): senior-dev implementing SF1
+(empty-state header local 0-counts, `PrDetailContainer.tsx:70`) + SF2 (stale-refetch keep dimmed
+rows, `PrChangesSection.tsx:106`) + NIT (Azure old-TFS fork fallback, `azure/refs.rs:76`). Then
+review + targeted gate → commit on `feat/pr-local-diff`.
 
 ---
 

@@ -89,11 +89,36 @@ pub fn parse_pr_refs(body: &str, number: u64) -> Result<PrRefs, AppError> {
         .and_then(|f| f.repository)
         .and_then(|r| r.remote_url);
 
+    // OQ-2 legacy-TFS fallback: `lastMergeSourceCommit` can be absent on very old
+    // TFS, so we have no head SHA. Rather than silently emptying `head_oid` (which
+    // makes the diff fail to resolve), fetch the raw `sourceRefName` into our
+    // namespaced head ref and resolve by that ref NAME instead of a fixed SHA.
+    // Requires a source branch to resolve against; otherwise surface a clear error.
+    let head_ref = format!("refs/bonsai/pr/{number}/head");
+    let missing_source_sha = head_oid.is_empty();
+    if missing_source_sha && pr.source_ref_name.is_empty() {
+        return Err(AppError::ForgeApi(format!(
+            "Azure DevOps PR #{number} has no merge commit yet and no source branch to \
+             resolve its head from; the diff isn't available until the PR is refreshed."
+        )));
+    }
+
     let head_fetch = match fork_url {
         Some(url) => FetchTarget {
             url: Some(url),
-            refspec: format!("+{}:refs/bonsai/pr/{number}/head", pr.source_ref_name),
-            resolve: head_oid.clone(),
+            refspec: format!("+{}:{head_ref}", pr.source_ref_name),
+            resolve: if missing_source_sha {
+                head_ref.clone()
+            } else {
+                head_oid.clone()
+            },
+        },
+        None if missing_source_sha => FetchTarget {
+            // No server merge ref available: fetch the source branch from origin
+            // and resolve by our local ref name.
+            url: None,
+            refspec: format!("+{}:{head_ref}", pr.source_ref_name),
+            resolve: head_ref.clone(),
         },
         None => FetchTarget {
             url: None,
@@ -166,6 +191,58 @@ mod tests {
         assert_eq!(refs.head_fetch.resolve, "aaa");
         // base always fetched from origin.
         assert!(refs.base_fetch.url.is_none());
+    }
+
+    #[test]
+    fn missing_source_commit_same_repo_resolves_by_ref_name() {
+        // Legacy TFS: no `lastMergeSourceCommit`. Fetch the source branch from
+        // origin into our head ref and resolve by that ref name, not a SHA.
+        let body = r#"{
+            "pullRequestId": 5, "title": "T", "status": "active",
+            "sourceRefName": "refs/heads/feature", "targetRefName": "refs/heads/main",
+            "lastMergeTargetCommit": { "commitId": "bbb" }
+        }"#;
+        let refs = parse_pr_refs(body, 5).unwrap();
+        assert!(refs.head_fetch.url.is_none());
+        assert_eq!(
+            refs.head_fetch.refspec,
+            "+refs/heads/feature:refs/bonsai/pr/5/head"
+        );
+        assert_eq!(refs.head_fetch.resolve, "refs/bonsai/pr/5/head");
+        assert_eq!(refs.base_oid, "bbb");
+    }
+
+    #[test]
+    fn missing_source_commit_fork_resolves_by_ref_name() {
+        let body = r#"{
+            "pullRequestId": 9, "title": "T", "status": "active",
+            "sourceRefName": "refs/heads/feature", "targetRefName": "refs/heads/main",
+            "lastMergeTargetCommit": { "commitId": "bbb" },
+            "forkSource": { "repository": {
+                "remoteUrl": "https://dev.azure.com/org/proj/_git/fork"
+            } }
+        }"#;
+        let refs = parse_pr_refs(body, 9).unwrap();
+        assert_eq!(
+            refs.head_fetch.url.as_deref(),
+            Some("https://dev.azure.com/org/proj/_git/fork")
+        );
+        assert_eq!(
+            refs.head_fetch.refspec,
+            "+refs/heads/feature:refs/bonsai/pr/9/head"
+        );
+        assert_eq!(refs.head_fetch.resolve, "refs/bonsai/pr/9/head");
+    }
+
+    #[test]
+    fn missing_source_commit_and_no_source_ref_is_error() {
+        let body = r#"{
+            "pullRequestId": 3, "title": "T", "status": "active",
+            "targetRefName": "refs/heads/main",
+            "lastMergeTargetCommit": { "commitId": "bbb" }
+        }"#;
+        let err = parse_pr_refs(body, 3).unwrap_err();
+        assert!(matches!(err, AppError::ForgeApi(_)), "got {err:?}");
     }
 
     #[test]
