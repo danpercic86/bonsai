@@ -214,6 +214,26 @@ export const FORGE_PR_LIST: PrSummary[] = [
     headSha: '99aabbccddeeff00112233445566778899aabbcc',
   },
   {
+    // P89 §8: a PATHOLOGICAL fixture — a 5-digit PR number with a very long
+    // title on a graph tip (local `main`, MAIN_TIP, which also carries a pending
+    // CI dot). Exercises the PR-pill width cap / `#num` truncation in the graph
+    // FORGE column and the full-title tooltip overflow in the PR detail/list.
+    number: 98765,
+    title:
+      'Rework the commit-graph lane-assignment pass to keep colours stable while scrolling over very large histories, extract the layout math into its own Rust module, and add regression fixtures covering fork/merge fan-out',
+    state: 'open',
+    isDraft: false,
+    author: 'ada-lovelace',
+    authorAvatarUrl: null,
+    sourceBranch: 'main',
+    targetBranch: 'release',
+    comments: 12,
+    createdAt: '2026-08-20T09:00:00Z',
+    updatedAt: '2026-08-24T18:30:00Z',
+    url: 'https://github.com/octo-org/bonsai/pull/98765',
+    headSha: MAIN_TIP,
+  },
+  {
     // P83: a CLOSED (not merged) PR so the action bar is absent.
     number: 119,
     title: 'Experiment: WebGL graph renderer (closed)',

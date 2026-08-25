@@ -50,6 +50,11 @@ export interface RightColumns {
   /** Includes the verified-badge slot at its LEFT: badgeSlot + gap + SHA text. */
   sha: ColRect | null;
   date: ColRect | null;
+  /** PR-badge-placement §2.2: leftmost column of the pack (adjacent to the
+   *  summary), holding the row's forge signals (CI dot + PR pill). Reserved only
+   *  when a forge signal is both enabled and present; null otherwise (the summary
+   *  reclaims the width, like any other disabled column). */
+  forge: ColRect | null;
   /** Left edge available to the summary (right end of its flex zone). */
   summaryEndX: number;
 }
@@ -82,5 +87,12 @@ export function computeRightColumns(
   const date = display.showDate ? place(m.dateColWidth) : null;
   const sha = display.showSha ? place(shaWidth(m)) : null;
   const author = display.showAuthor ? place(m.authorColWidth) : null;
-  return { author, sha, date, summaryEndX: cursor };
+  // PR-badge-placement §2.2: forge is the leftmost column — placed LAST in the
+  // right→left pack so it lands adjacent to the summary. Reserved only when a
+  // forge signal is both enabled and present (else the summary reclaims it).
+  const forgeShown =
+    (display.showPrBadge && display.prByBranch.size > 0) ||
+    (display.showCiStatus && display.ciBySha.size > 0);
+  const forge = forgeShown ? place(m.forgeColWidth) : null;
+  return { author, sha, date, forge, summaryEndX: cursor };
 }

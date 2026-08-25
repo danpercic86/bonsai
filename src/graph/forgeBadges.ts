@@ -1,14 +1,17 @@
-/** P63: PURE forge-signal badge subsystem for the commit graph's LEFT ref band.
- *  Defines the per-branch PR / CI badge model, the state→visual classifiers, the
- *  width helper, the canvas draw fns, and the `branchSignals` display-time gate.
+/** PURE forge-signal badge subsystem for the commit graph's FORGE column
+ *  (PR-badge-placement contract). Defines the per-branch PR / CI badge model,
+ *  the state→visual classifiers, the PR-state glyph, the width helper, the
+ *  canvas draw fns, the `branchSignals` display-time gate, the row-level
+ *  `rowForgeSignal` selector, and the `layoutForgeCell` intra-column geometry.
  *  No React, no IPC — mirrors `verifyBadge.ts` (classifier) + `drawRowText.ts`
- *  (glyph helpers) so it unit-tests headlessly. The renderer (refLabels.ts) and
- *  the hit-test (GraphCanvas.tsx) both consume the geometry laid out from here,
+ *  (glyph helpers) so it unit-tests headlessly. Both the draw pass (drawRowText)
+ *  and the hit-test (GraphCanvas.tsx) consume `rowForgeSignal` + `layoutForgeCell`
  *  so draw and hit-test share one source of truth. */
 
-import type { CheckRollup, GraphNode, PrState } from '../ipc';
+import type { CheckRollup, GraphNode, PrState, RefLabel } from '../ipc';
 import type { Theme } from './colors';
 import { FONT_UI, METRICS } from './metrics';
+import { groupRefs } from './refLabels';
 import type { RefEntity } from './refLabels';
 import type { GraphDisplayOptions } from './rightColumns';
 import { measure, truncateToWidth } from './textMeasure';
@@ -95,13 +98,82 @@ export function branchSignals(
   return { pr, ci };
 }
 
-/** Measured width of a PR badge pill (`2*padX + measure("#num")`, capped at
- *  `prBadgeMaxWidth`). Sets `ctx.font` to `pillFont` (== the ref-band loop
- *  invariant) to measure — safe to call inside `layoutRefLabels`. PURE. */
+/** PR-badge-placement §3: leading PR-state glyph, the NON-COLOUR carrier of PR
+ *  lifecycle (colour alone was a house-rule violation). Drawn inside the pill,
+ *  before `#num`, in the pill's label colour. ○ open / ◆ merged / ✕ closed;
+ *  a draft is an open-but-unready PR ⇒ same ○ family, distinguished by the
+ *  grey outline fill. PURE. */
+export function prStateGlyph(pr: PrBadge): string {
+  if (pr.isDraft) return '○';
+  switch (pr.state) {
+    case 'open':
+      return '○';
+    case 'merged':
+      return '◆';
+    case 'closed':
+      return '✕';
+  }
+}
+
+/** Gap (px) between the PR-state glyph and the `#num` label inside the pill. */
+const PR_GLYPH_GAP = 3;
+
+/** Measured width of a PR badge pill (`2*padX + glyphW + gap + measure("#num")`,
+ *  capped at `prBadgeMaxWidth`). Sets `ctx.font` to `pillFont` to measure. PURE. */
 export function prBadgeWidth(ctx: CanvasRenderingContext2D, pr: PrBadge): number {
   ctx.font = `${METRICS.pillFont} ${FONT_UI}`;
-  const raw = 2 * METRICS.prBadgePadX + Math.ceil(measure(ctx, `#${pr.number}`));
+  const glyphW = Math.ceil(measure(ctx, prStateGlyph(pr)));
+  const raw =
+    2 * METRICS.prBadgePadX + glyphW + PR_GLYPH_GAP + Math.ceil(measure(ctx, `#${pr.number}`));
   return Math.min(raw, METRICS.prBadgeMaxWidth);
+}
+
+/** PR-badge-placement §2.4: the forge signals a ROW should carry. A row may hold
+ *  several branch entities; the cell shows the signals of the FIRST branch
+ *  entity (in `groupRefs` order: detached-head, then branches local-first) that
+ *  has any. Returns `null` when no branch entity carries a signal. Single source
+ *  of truth for both `drawRowText` and `forgeHitAt`. PURE. */
+export function rowForgeSignal(
+  refs: readonly RefLabel[] | undefined,
+  node: GraphNode,
+  display: GraphDisplayOptions,
+  /** PERF: the `groupRefs(refs)` result already computed by the caller (the ref
+   *  band pass computes one per row per frame). Pass it to avoid a second
+   *  allocation; omitted ⇒ grouped here. */
+  groups?: readonly RefEntity[],
+): { pr: PrBadge | null; ci: CiBadge | null } | null {
+  // A ref-less row can carry no branch signal — skip grouping entirely (the
+  // common case: most rows have no refs, so this avoids a Map+array alloc/frame).
+  if (refs === undefined || refs.length === 0) return null;
+  for (const e of groups ?? groupRefs(refs)) {
+    const sig = branchSignals(e, node, display);
+    if (sig.pr !== null || sig.ci !== null) return sig;
+  }
+  return null;
+}
+
+/** PR-badge-placement §2.3: laid-out geometry of a row's forge cell, anchored at
+ *  the column's `leftX` (pills line up on their LEFT edges). The CI dot is
+ *  centered at `cx`; the PR pill spans `[x, x+w]`. Either may be null. */
+export interface ForgeCellLayout {
+  ci: { badge: CiBadge; cx: number } | null;
+  pr: { badge: PrBadge; x: number; w: number } | null;
+}
+
+/** PR-badge-placement §2.3: place a row's forge signals inside the column.
+ *  CI dot centered at `leftX + ciBadgeSize/2`; the PR pill's left edge follows
+ *  the dot+gap (or hugs `leftX` when there is no CI). Sets `ctx.font` (via
+ *  `prBadgeWidth`) to measure the pill. PURE. */
+export function layoutForgeCell(
+  ctx: CanvasRenderingContext2D,
+  leftX: number,
+  signal: { pr: PrBadge | null; ci: CiBadge | null },
+): ForgeCellLayout {
+  const ci = signal.ci !== null ? { badge: signal.ci, cx: leftX + METRICS.ciBadgeSize / 2 } : null;
+  const prX = leftX + (signal.ci !== null ? METRICS.ciBadgeSize + METRICS.signalGap : 0);
+  const pr =
+    signal.pr !== null ? { badge: signal.pr, x: prX, w: prBadgeWidth(ctx, signal.pr) } : null;
+  return { ci, pr };
 }
 
 /** Draw the CI dot centered at `(cx, cy)`. save/restore so the glyph stroke
@@ -187,8 +259,19 @@ export function drawPrBadge(
     ctx.lineWidth = 1;
     ctx.stroke();
   }
+  // Leading PR-state glyph (non-colour carrier), then the `#num` label after a
+  // small gap; both in the pill's label colour. The `#num` is truncated to the
+  // width remaining after the glyph so the pill never overflows its cap.
   ctx.font = `${METRICS.pillFont} ${FONT_UI}`;
   ctx.fillStyle = v.text;
   ctx.textAlign = 'left';
-  ctx.fillText(truncateToWidth(ctx, v.label, w - 2 * METRICS.prBadgePadX), x + METRICS.prBadgePadX, cy);
+  const glyph = prStateGlyph(badge);
+  const glyphW = Math.ceil(measure(ctx, glyph));
+  ctx.fillText(glyph, x + METRICS.prBadgePadX, cy);
+  const numMax = w - 2 * METRICS.prBadgePadX - glyphW - PR_GLYPH_GAP;
+  ctx.fillText(
+    truncateToWidth(ctx, v.label, numMax),
+    x + METRICS.prBadgePadX + glyphW + PR_GLYPH_GAP,
+    cy,
+  );
 }

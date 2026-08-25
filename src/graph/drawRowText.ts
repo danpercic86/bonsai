@@ -9,8 +9,10 @@
 import type { GraphNode, VerifyStatus } from '../ipc';
 import type { Theme } from './colors';
 import { relativeDate, shortSha } from './dates';
+import { drawCiBadge, drawPrBadge, layoutForgeCell, rowForgeSignal } from './forgeBadges';
 import { FONT_MONO, FONT_UI } from './metrics';
 import type { EffectiveMetrics } from './metrics';
+import type { RefEntity } from './refLabels';
 import type { GraphDisplayOptions, RightColumns } from './rightColumns';
 import { truncateToWidth } from './textMeasure';
 import { verifyBadgeKind } from './verifyBadge';
@@ -28,6 +30,9 @@ export function drawRowText(
   /** P58c: this commit's signature verdict, or `undefined` when not yet
    *  verified (⇒ the faint P51 stub). Looked up by oid in draw.ts. */
   status: VerifyStatus | undefined,
+  /** PERF: the row's `groupRefs(node.refs)` result, already computed by the
+   *  band pass — reused for the forge cell to avoid a second grouping/frame. */
+  groups: readonly RefEntity[],
 ): void {
   // summary — flexes from summaryStartX to cols.summaryEndX, reclaiming the
   // space of any disabled right column. With only the date column shown this
@@ -74,6 +79,20 @@ export function drawRowText(
     ctx.fillStyle = theme.text3;
     ctx.textAlign = 'right';
     ctx.fillText(truncateToWidth(ctx, relativeDate(ts, now), m.dateColWidth), cols.date.rightX, cy);
+  }
+
+  // forge — leftmost pack column (PR-badge-placement): the row's CI dot + PR pill
+  // for the first branch entity that carries a signal, left-aligned at the
+  // column's leftX. The column is reserved only when forge data is present, and
+  // is compact-suppressed upstream (toggles arrive false), so nothing draws in
+  // compact mode. drawCiBadge save/restores; drawPrBadge leaves textAlign 'left'.
+  if (cols.forge !== null) {
+    const signal = rowForgeSignal(node.refs, node, display, groups);
+    if (signal !== null) {
+      const cell = layoutForgeCell(ctx, cols.forge.leftX, signal);
+      if (cell.ci !== null) drawCiBadge(ctx, cell.ci.cx, cy, cell.ci.badge, theme);
+      if (cell.pr !== null) drawPrBadge(ctx, cell.pr.x, cy, cell.pr.w, cell.pr.badge, theme);
+    }
   }
 }
 

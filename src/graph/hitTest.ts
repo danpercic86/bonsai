@@ -4,6 +4,7 @@
  *  component — behavior-preserving. */
 
 import type { RefLabel } from '../ipc';
+import type { ForgeCellLayout } from './forgeBadges';
 import type { LaidRefLabel, RefEntity } from './refLabels';
 import type { Rect } from './viewport';
 
@@ -61,40 +62,63 @@ export function pillHitAt(laid: readonly LaidRefLabel[], x: number): LaidRefLabe
   return laid.find((l) => l.entity !== null && x >= l.x && x <= l.x + l.w);
 }
 
-/** P63: the PR badge rect under `x`, if any (the click path — PR only). */
-export function prBadgeHitAt(
-  laid: readonly LaidRefLabel[],
-  x: number,
-): NonNullable<NonNullable<LaidRefLabel['signals']>['pr']> | null {
-  const hit = laid.find(
-    (l) => l.signals?.pr != null && x >= l.signals.pr.x && x <= l.signals.pr.x + l.signals.pr.w,
-  );
-  return hit?.signals?.pr ?? null;
-}
+// ---------- forge-column hit resolution (PR-badge-placement §6) ----------
 
-/** P63 hover: a forge-signal badge under `x` — per laid label, the PR pill is
- *  checked before the CI dot (the rects never overlap the pill body; they sit
- *  to its right). Returns the first hit in laid order, or `null`. */
-export type SignalHit =
-  | { kind: 'pr'; pr: NonNullable<NonNullable<LaidRefLabel['signals']>['pr']> }
-  | { kind: 'ci'; ci: NonNullable<NonNullable<LaidRefLabel['signals']>['ci']> };
+/** A forge-signal hit inside the FORGE column: the PR pill (checked first — the
+ *  click/tooltip target) or the CI dot (tooltip-only). The rects never overlap
+ *  (the PR pill sits right of the dot), so PR-before-CI is only a tie-breaker. */
+export type ForgeHit =
+  | { kind: 'pr'; pr: NonNullable<ForgeCellLayout['pr']> }
+  | { kind: 'ci'; ci: NonNullable<ForgeCellLayout['ci']> };
 
-export function signalHitAt(
-  laid: readonly LaidRefLabel[],
+/** PR-badge-placement §6: resolve a forge-signal under `x` within a row's laid
+ *  forge cell (from `layoutForgeCell`). The PR pill is `[x, x+w]`; the CI dot is
+ *  a `ciBadgeSize`-wide box centered at `cx`. Returns `null` when `x` falls in
+ *  neither (blank rail cell, or gap between the dot and the pill). PURE. */
+export function forgeHitAt(
+  cell: ForgeCellLayout,
   x: number,
   ciBadgeSize: number,
-): SignalHit | null {
-  for (const l of laid) {
-    if (l.signals === null) continue;
-    const pr = l.signals.pr;
-    if (pr !== null && x >= pr.x && x <= pr.x + pr.w) return { kind: 'pr', pr };
-    const ci = l.signals.ci;
-    if (ci !== null) {
-      const half = ciBadgeSize / 2;
-      if (x >= ci.cx - half && x <= ci.cx + half) return { kind: 'ci', ci };
-    }
+): ForgeHit | null {
+  const pr = cell.pr;
+  if (pr !== null && x >= pr.x && x <= pr.x + pr.w) return { kind: 'pr', pr };
+  const ci = cell.ci;
+  if (ci !== null) {
+    const half = ciBadgeSize / 2;
+    if (x >= ci.cx - half && x <= ci.cx + half) return { kind: 'ci', ci };
   }
   return null;
+}
+
+/** PR-badge-placement §6: build the hover-tooltip target for a forge-column hit
+ *  (PR pill → 2-line `PR #n (state)` + title; CI dot → 1-line checks rollup), or
+ *  `null` when `x` hits neither. Keeps the tooltip copy + anchor geometry out of
+ *  the component. PURE. */
+export function forgeTooltipTarget(
+  cell: ForgeCellLayout,
+  x: number,
+  ciBadgeSize: number,
+  cy: number,
+  pillHeight: number,
+): TooltipState | null {
+  const hit = forgeHitAt(cell, x, ciBadgeSize);
+  if (hit === null) return null;
+  if (hit.kind === 'pr') {
+    const pr = hit.pr;
+    const state = pr.badge.isDraft ? 'draft' : pr.badge.state;
+    return {
+      kind: 'pr',
+      lines: [`PR #${pr.badge.number} (${state})`, pr.badge.title],
+      anchor: { left: pr.x, top: cy - pillHeight / 2, width: pr.w, height: pillHeight },
+    };
+  }
+  const half = ciBadgeSize / 2;
+  const b = hit.ci.badge;
+  return {
+    kind: 'ci',
+    lines: [`Checks: ${b.passed} passed, ${b.failed} failed, ${b.pending} pending`],
+    anchor: { left: hit.ci.cx - half, top: cy - half, width: ciBadgeSize, height: ciBadgeSize },
+  };
 }
 
 // ---------- tooltip target identity (P7 §6.1) ----------

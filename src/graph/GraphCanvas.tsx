@@ -29,14 +29,15 @@ import { formatAbsolute } from './dates';
 import {
   chipHitAt,
   fallbackBranchRef,
+  forgeHitAt,
+  forgeTooltipTarget,
   hitTestRow,
   pillHitAt,
-  prBadgeHitAt,
   sameTarget,
-  signalHitAt,
   targetRefOf,
 } from './hitTest';
 import type { TooltipState } from './hitTest';
+import { layoutForgeCell, rowForgeSignal } from './forgeBadges';
 import {
   backingStoreSize,
   clampTooltipPos,
@@ -702,28 +703,6 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
           anchor: { left: hitLabel.x, top: cy - m.pillHeight / 2, width: hitLabel.w, height: m.pillHeight },
         };
       }
-      // P63: forge-signal badges — precedence AFTER the shown pill (the signal
-      // rects sit to the right of the pill body, so they never overlap it).
-      const sig = signalHitAt(laid, x, m.ciBadgeSize);
-      if (sig !== null && sig.kind === 'pr') {
-        const pr = sig.pr;
-        const state = pr.badge.isDraft ? 'draft' : pr.badge.state;
-        return {
-          kind: 'pr',
-          lines: [`PR #${pr.badge.number} (${state})`, pr.badge.title],
-          anchor: { left: pr.x, top: cy - m.pillHeight / 2, width: pr.w, height: m.pillHeight },
-        };
-      }
-      if (sig !== null && sig.kind === 'ci') {
-        const ci = sig.ci;
-        const half = m.ciBadgeSize / 2;
-        const b = ci.badge;
-        return {
-          kind: 'ci',
-          lines: [`Checks: ${b.passed} passed, ${b.failed} failed, ${b.pending} pending`],
-          anchor: { left: ci.cx - half, top: cy - half, width: m.ciBadgeSize, height: m.ciBadgeSize },
-        };
-      }
     }
     // P51b: hovering the date column → FULL absolute timestamps (authored +
     // committed), one per line; the inline date stays relative. Recompute the
@@ -734,6 +713,16 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       : 0;
     const effRight = cssSizeRef.current.w - rightInset;
     const cols = computeRightColumns(effRight, display, m);
+    // PR-badge-placement §6: forge column — the PR pill (tooltip) or CI dot.
+    // Same pure helpers the draw pass uses, so the hit boxes match the pixels.
+    if (cols.forge !== null && x >= cols.forge.leftX && x <= cols.forge.rightX) {
+      const signal = rowForgeSignal(node.refs, node, display);
+      if (signal !== null) {
+        const cell = layoutForgeCell(ctx, cols.forge.leftX, signal);
+        const t = forgeTooltipTarget(cell, x, m.ciBadgeSize, cy, m.pillHeight);
+        if (t !== null) return t;
+      }
+    }
     if (cols.date !== null && x >= cols.date.leftX && x <= cols.date.rightX) {
       return {
         kind: 'date',
@@ -809,20 +798,26 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       onSelect(null);
       return;
     }
-    // P63: a PR badge in the LEFT ref band → open that PR (do NOT select the
-    // row). Recompute the row's laid labels with the SAME pure helper the draw
-    // pass + ref hit-tests use, so the signal rects match the pixels exactly.
+    // PR-badge-placement §6: a PR pill in the FORGE column → open that PR (do
+    // NOT select the row). Recompute the column geometry + the row's forge cell
+    // with the SAME pure helpers the draw pass uses, so the pill rect matches the
+    // pixels exactly.
     const node = layout.nodes[hit];
-    if (onOpenPr !== undefined && x < m.refColWidth && node.refs !== undefined && node.refs.length > 0) {
+    if (onOpenPr !== undefined && node.refs !== undefined && node.refs.length > 0) {
       const ctx = canvasRef.current?.getContext('2d') ?? null;
-      const theme = themeRef.current;
-      if (ctx !== null && theme !== null) {
-        const { startX, budget } = refColArea(m);
-        const laid = layoutRefLabels(ctx, groupRefs(node.refs), node, theme, startX, budget, display);
-        const prHit = prBadgeHitAt(laid, x);
-        if (prHit !== null) {
-          onOpenPr(prHit.badge.number);
-          return;
+      if (ctx !== null) {
+        const rightInset = scroller.offsetWidth - scroller.clientWidth;
+        const cols = computeRightColumns(cssSizeRef.current.w - rightInset, display, m);
+        if (cols.forge !== null && x >= cols.forge.leftX && x <= cols.forge.rightX) {
+          const signal = rowForgeSignal(node.refs, node, display);
+          if (signal !== null) {
+            const cell = layoutForgeCell(ctx, cols.forge.leftX, signal);
+            const forgeHit = forgeHitAt(cell, x, m.ciBadgeSize);
+            if (forgeHit !== null && forgeHit.kind === 'pr') {
+              onOpenPr(forgeHit.pr.badge.number);
+              return;
+            }
+          }
         }
       }
     }

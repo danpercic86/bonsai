@@ -194,6 +194,9 @@ section mirrors them — update both together.
 - **Row height:** **32px** (cozy) / **22px** (compact). Lane width (x-spacing between lane centers):
   **16px**. Left graph gutter: 12px before lane 0. A fixed **180px** left ref-column band
   (`refColWidth`) precedes the graph and carries the ref pills (§6).
+- **Forge column** (§6.1): fixed **74px** (`forgeColWidth` = `ciBadgeSize` 11 + `signalGap` 6 +
+  `prBadgeMaxWidth` 56 + 1px slack); PR pill max width **56px** (`prBadgeMaxWidth`, was 46 — +10px
+  for the leading PR-state glyph). Reserved only when forge data is present; suppressed in compact.
 - **Commit node = author avatar, not a bare dot.** A filled disc of radius **10px** (cozy) / **8px**
   (compact) at the commit's lane x, hue-hashed from the author (HSL sat 52 / light 42 —
   theme-invariant, legible on both backgrounds) with the author's 1–2 initials in 600 11px. Behind
@@ -211,8 +214,13 @@ section mirrors them — update both together.
   points `(x1, y1 + rowHeight/2)` and `(x2, y2 − rowHeight/2)` — vertical tangents at both ends,
   GitKraken-style S-curve. Straight vertical segments elsewhere.
 - **Right of the graph:** ref pills (§6), then the commit summary (`--text-1`, `summaryFont` 13px
-  cozy / 12px compact, truncated), then the optional author / relative-date / short-SHA columns
-  (`--text-2`, `metaFont` 12px cozy / 11px compact) as space and the per-row display toggles allow.
+  cozy / 12px compact, truncated), then the metadata pack — a leftmost **forge column**
+  (`forgeColWidth` 74px, adjacent to the summary) followed by the optional author / relative-date /
+  short-SHA columns (`--text-2`, `metaFont` 12px cozy / 11px compact) as space and the per-row
+  display toggles allow. The forge column holds the row's CI dot + PR pill (§6); it is reserved
+  only when forge data is present (else the summary reclaims its width) and is suppressed in
+  compact mode. PR/CI signals no longer render in the left ref band — only the ahead/behind chip
+  stays there.
 - **HiDPI:** canvas backing store scaled by `devicePixelRatio`; all metrics above are CSS px.
 
 ### 4.1 Keyboard & screen-reader access (added 2026-08-22, graph review)
@@ -284,6 +292,33 @@ the light-mode (darkened) lanes = **4.6–5.7:1** — all clear the 4.5:1 text b
 **Detached HEAD** uses a fixed dark red `#b3261e` background (not `--danger`, which gave white text
 only 3.70:1 in dark) — white on `#b3261e` is **6.54:1** in both themes. The `HEAD` label word
 carries the meaning; the color is secondary.
+
+### 6.1 Forge column — PR pill + CI dot (PR-badge-placement)
+
+The forge PR pill and CI status dot render in the dedicated **forge column** (§4, leftmost of the
+metadata pack) — **not** in the left ref band. Intra-column layout is left-aligned at the column's
+left edge: CI dot centered at `leftX + ciBadgeSize/2`, then the PR pill (`signalGap` after the dot,
+or hugging `leftX` when there is no CI). The pill is `pillHeight` tall, `prBadgeMaxWidth` 56px max.
+The row shows the signals of its first branch entity that carries any.
+
+PR pill fills: open `--badge-good`, merged `#8957e5` (fixed violet, both themes), closed
+`--badge-warn`, draft grey **outline** (`--bg-2` fill, `--text-3` border, `--text-2` label).
+
+**PR-state glyph (non-colour carrier).** Colour alone must never carry PR lifecycle (§7 house rule).
+A leading glyph sits inside the pill, before `#num`, in the label colour. This is a distinct
+extension of the house glyph vocabulary (§7), not a synonym of the CI dot glyphs:
+
+| State  | Pill                  | Glyph | Meaning carrier |
+|--------|-----------------------|-------|-----------------|
+| open   | filled `--badge-good` | `○`   | hollow ring = active/open |
+| merged | filled `#8957e5`      | `◆`   | filled diamond = merged |
+| closed | filled `--badge-warn` | `✕`   | house dismiss/close glyph |
+| draft  | grey **outline**      | `○`   | open family, distinguished by outline fill |
+
+CI dot glyphs are unchanged: `✓` success · `✕` failure/error · pending dot · neutral dash.
+
+**A11y:** the canvas is opaque, so the settled row live-region announcement (§4.1) appends the
+forge signal when present: `" PR #{n} {state}."` and `" Checks {rollup}."`.
 
 ## 7. File status colors (right panel, M1+)
 

@@ -46,13 +46,17 @@ export const METRICS = {
   /** P7 §3.4/§8: ref-label glyph box + gap (icon-icon and icon-label). */
   iconSize: 11,
   iconGap: 3,
-  /** P63 §5: forge-signal badges trailing a branch pill (LEFT band). The PR
-   *  pill's max width fits "#12345"; the CI dot box == iconSize; `signalGap`
-   *  precedes each signal (a touch clearer than pillGap, like chipGap). */
-  prBadgeMaxWidth: 46,
+  /** PR-badge-placement §2.1: forge-signal badges now live in a dedicated
+   *  right-hand FORGE column (leftmost of the metadata pack), not the ref band.
+   *  The PR pill's max width fits the leading PR-state glyph + "#12345"; the CI
+   *  dot box == ciBadgeSize; `signalGap` separates the CI dot from the PR pill. */
+  prBadgeMaxWidth: 56, // was 46 — +10px for the leading PR-state glyph
   prBadgePadX: 5,
   ciBadgeSize: 11,
   signalGap: 6,
+  /** Fixed width of the forge column = ciBadgeSize(11) + signalGap(6) +
+   *  prBadgeMaxWidth(56) + 1px slack. Reserved only when forge data is present. */
+  forgeColWidth: 74,
 } as const;
 
 /** The three user-tunable geometry knobs (P11 §2.3) — the METRICS fields the

@@ -456,15 +456,16 @@ export function drawGraph(
     // 5a (LEFT): ref column — collapsed entities capped by the fixed band with
     // a trailing "+n" chip. Layout is the shared pure helper (single source of
     // truth with the hit-test); this pass only paints the laid-out labels.
-    const laid = layoutRefLabels(ctx, groupRefs(node.refs), node, theme, startX, budget, display);
-    for (const l of laid) drawRefLabelAt(ctx, l, y, theme);
+    const groups = groupRefs(node.refs);
+    const laid = layoutRefLabels(ctx, groups, node, theme, startX, budget, display);
+    for (const l of laid) drawRefLabelAt(ctx, l, y);
 
     // 5b–5e (RIGHT): summary (flex) + optional author / SHA(+badge) / date
     // columns, packed by `cols`. Toggling a column off reclaims its width.
     // P58c: the SHA-slot badge lights from this row's cached verdict (undefined
     // ⇒ the faint stub, so off-screen/unverified rows stay faint).
     const status = ix.verifyStatus?.get(node.id);
-    drawRowText(ctx, node, y, sx, cols, display, theme, m, now, status);
+    drawRowText(ctx, node, y, sx, cols, display, theme, m, now, status, groups);
   }
   ctx.textAlign = 'left';
 }
