@@ -43,6 +43,8 @@ function renderPanel(over: Partial<WorkspaceRightPanelProps> = {}) {
     prBaseOptions: [],
     prCompareOptions: [],
     prNav: null,
+    checksTarget: null,
+    checksRefreshSeq: 0,
     opState: { kind: 'none' },
     conflicts: [],
     mutating: false,
@@ -271,6 +273,7 @@ describe('WorkspaceRightPanel commit-options menu (P80 §2b)', () => {
     const { container } = renderPanel();
     expect(screen.getByRole('tab', { name: 'Working' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Pull requests' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Checks' })).toBeInTheDocument();
     const work = container.querySelector('.right-panel-work');
     expect(work).not.toBeNull();
     expect(work).not.toHaveAttribute('hidden');
@@ -287,6 +290,18 @@ describe('WorkspaceRightPanel commit-options menu (P80 §2b)', () => {
       '.right-panel',
     );
     expect(compact).toHaveAttribute('data-density', 'compact');
+  });
+
+  it('the Checks tab selects via onSelectRightPaneTab and mounts only when active', () => {
+    // P90: the third tab. Inactive ⇒ ChecksPanel not mounted (no work for a
+    // hidden panel); clicking the tab requests the switch.
+    const { props, container } = renderPanel();
+    expect(container.querySelector('.checks-panel')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Checks' }));
+    expect(props.onSelectRightPaneTab).toHaveBeenCalledWith('checks');
+    // When active, the panel mounts (idle empty state, no target).
+    const active = renderPanel({ rightPaneTab: 'checks' });
+    expect(active.container.querySelector('.checks-panel')).not.toBeNull();
   });
 
   it('keeps the work wrapper MOUNTED (only `hidden`) while the PRs tab is active', () => {

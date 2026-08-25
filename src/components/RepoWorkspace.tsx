@@ -17,6 +17,7 @@ import type { DiffSlot, WorkdirSection } from './StatusPanel';
 import type { GraphCanvasHandle, GraphContextTarget, WipSummary } from '../graph/GraphCanvas';
 import type { RevealTarget, RevealFlash } from '../graph/reveal';
 import { revealTargetLabel } from '../graph/reveal';
+import { useChecksTab } from './repoWorkspace/useChecksTab';
 import { RevealAnnouncer, revealedMessage, revealMissMessage } from './RevealAnnouncer';
 import { effectiveMetrics } from '../graph/metrics';
 import type { GraphDisplayOptions } from '../graph/rightColumns';
@@ -160,7 +161,7 @@ export function RepoWorkspace({
 
   // P62c: right-pane tab — the existing working/compare/commit tri-state
   // ('work') vs the pull-request panel ('prs'). PrPanel mounts only under 'prs'.
-  const [rightPaneTab, setRightPaneTab] = useState<'work' | 'prs'>('work');
+  const [rightPaneTab, setRightPaneTab] = useState<'work' | 'prs' | 'checks'>('work');
 
   // P30 D11: background-job status readout (fed by get_job_status on mount +
   // live job-status-changed events); jobNow re-renders the relative label.
@@ -175,6 +176,7 @@ export function RepoWorkspace({
   const [branches, setBranches] = useState<BranchesSnapshot | null>(null);
   const [branchesError, setBranchesError] = useState<string | null>(null);
   const [branchesLoading, setBranchesLoading] = useState(false);
+  const checksTab = useChecksTab(branches, branches?.local.find((b) => b.isHead)?.name ?? null); // P90
 
   // P51c: local-branch ahead/behind, keyed by branch name, for the graph's
   // ahead/behind chip. Only branches WITH an upstream (non-null counts) are
@@ -505,6 +507,7 @@ export function RepoWorkspace({
       const i =
         t.kind === 'ref' ? revealIndex.byRef.get(t.name) ?? null : revealIndex.byOid.get(t.oid) ?? null;
       const label = revealTargetLabel(t);
+      checksTab.revealBranch(t); // P90: re-scope the Checks tab (tags/stashes ⇒ no-op)
       revealNonceRef.current += 1; // §6: bump first; both paths thread it so repeats re-announce (invisible marker)
       if (i === null) {
         setRevealMessage(revealMissMessage(label, revealNonceRef.current));
@@ -523,7 +526,7 @@ export function RepoWorkspace({
       const oid = graph?.nodes[i]?.id ?? '';
       setRevealMessage(revealedMessage(label, oid, revealNonceRef.current));
     },
-    [revealIndex, graph, pushToast],
+    [revealIndex, graph, pushToast, checksTab.revealBranch],
   );
   const [commitDiff, setCommitDiff] = useState<CommitDiff | null>(null);
   const [commitDiffLoading, setCommitDiffLoading] = useState(false);
@@ -1382,6 +1385,7 @@ export function RepoWorkspace({
         // P81 §7: focus rescan ALWAYS refreshes (never echo-gated). Full self-heal.
         void refresh('focus', 'full');
         forgeSignals.refresh('focus'); // P63: TTL-guarded (not forced)
+        checksTab.bumpRefresh(); // P90: refresh-on-focus for the Checks tab
       });
       if (cancelled) {
         off();
@@ -1397,7 +1401,7 @@ export function RepoWorkspace({
       cancelled = true;
       for (const unsub of unsubs) unsub();
     };
-  }, [active, refresh, forgeSignals.refresh]);
+  }, [active, refresh, forgeSignals.refresh, checksTab.bumpRefresh]);
 
   // P63: a new graph layout identity (post fetch/pull/branch-op) may carry new
   // branch tips → TTL-guarded forge-signal refresh so their badges appear. Fires
@@ -1524,6 +1528,11 @@ export function RepoWorkspace({
   const commitSignature =
     selectedOid !== null ? (verification.detailsFor(selectedOid) ?? null) : null;
 
+  // P63/P90: force forge-signal + Checks refetch after any remote op (fetch/pull + push).
+  const bumpForgeAndChecks = useCallback(() => {
+    forgeSignals.refresh('remote', true);
+    checksTab.bumpRefresh();
+  }, [forgeSignals.refresh, checksTab.bumpRefresh]);
   const { handleFetch, handlePull, pushCurrentBranch, handlePush, handleForcePush, doForcePush } =
     useRemoteOps({
       repoId,
@@ -1534,17 +1543,11 @@ export function RepoWorkspace({
       setPendingForcePush,
       setPendingNonFfPull,
       runWithHookGate: hookGate.runWithHookGate,
+      onPushComplete: bumpForgeAndChecks,
     });
 
-  // P63: fetch/pull success may land new tips or new CI verdicts → FORCE a
-  // forge-signal refresh (bypass TTL) after they complete. Both internally catch
-  // + toast, so they resolve normally (the `.then` runs on completion).
-  const onFetch = useCallback(() => {
-    void handleFetch().then(() => forgeSignals.refresh('remote', true));
-  }, [handleFetch, forgeSignals.refresh]);
-  const onPull = useCallback(() => {
-    void handlePull().then(() => forgeSignals.refresh('remote', true));
-  }, [handlePull, forgeSignals.refresh]);
+  const onFetch = useCallback(() => void handleFetch().then(bumpForgeAndChecks), [handleFetch, bumpForgeAndChecks]);
+  const onPull = useCallback(() => void handlePull().then(bumpForgeAndChecks), [handlePull, bumpForgeAndChecks]);
 
   const {
     handleStage,
@@ -2724,6 +2727,10 @@ export function RepoWorkspace({
           prBaseOptions={prBaseOptions}
           prCompareOptions={prCompareOptions}
           prNav={prNav}
+          checksTarget={checksTab.target}
+          checksRefreshSeq={checksTab.refreshSeq}
+          onPushChecksBranch={checksTab.target?.name === headBranch?.name ? () => void pushCurrentBranch() : undefined}
+          onRevealCommit={(oid) => handleReveal({ kind: 'oid', oid })}
           opState={opState}
           conflicts={conflicts}
           mutating={mutating}

@@ -32,6 +32,7 @@
 @import './styles/image-diff.css';
 @import './styles/diff-browser.css';
 @import './styles/commit-panel.css';
+@import './styles/checks-panel.css';
 @import './styles/sidebar.css';
 @import './styles/dialogs.css';
 @import './styles/dialogs-forms.css';

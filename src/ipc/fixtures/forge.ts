@@ -10,6 +10,7 @@
 // badges to their pills, and `commitStatusFor(sha)` returns a CommitStatus for
 // each of those branch-tip shas covering every CheckRollup (success / failure /
 // pending / neutral / none).
+import { MOCK_OID } from './branches';
 import type {
   CheckRollup,
   CommitStatus,
@@ -305,6 +306,11 @@ function ctx(name: string, state: CheckRollup, description: string): StatusConte
   };
 }
 
+/** A status context with NO target URL (link-out column collapses — §2.3). */
+function ctxNoUrl(name: string, state: CheckRollup, description: string | null): StatusContext {
+  return { name, state, description, targetUrl: null };
+}
+
 /** Assemble a CommitStatus, counting passed/failed/pending from `contexts` the
  *  same way the Rust rollup does (neutral/none don't count toward the tallies). */
 function mkStatus(sha: string, state: CheckRollup, contexts: StatusContext[]): CommitStatus {
@@ -347,6 +353,49 @@ const FORGE_COMMIT_STATUSES: Record<string, CommitStatus> = {
   ]),
   // `gh-pages` tip (PR #125 head) — no checks configured ⇒ None (nothing drawn).
   [GH_PAGES_TIP]: mkStatus(GH_PAGES_TIP, 'none', []),
+
+  // --- P90: keyed by the SIDEBAR branch-snapshot tips (src/ipc/fixtures/
+  // branches.ts) so clicking a branch in the sidebar drives the Checks tab to a
+  // real state (the graph-tip keys above key the badge cache; these key the tab).
+  //
+  // `main` (MOCK_OID) — the pathological MIXED case: all five glyphs, the §4.9
+  // failure-first sort, a link-out mix (one row with no target_url), and a 90-char
+  // name + 200-char description + already-long branch context for ellipsis proof.
+  [MOCK_OID]: mkStatus(MOCK_OID, 'failure', [
+    ctx('build / linux', 'success', 'Compiled in 42s'),
+    ctx('build / windows', 'success', 'Compiled in 51s'),
+    ctx('test / integration', 'failure', '3 failing'),
+    ctx('deploy / preview', 'error', 'Errored: timeout contacting the preview cluster'),
+    ctxNoUrl('lint', 'pending', 'Queued…'),
+    ctx('codecov / patch', 'neutral', 'Neutral — no coverage delta'),
+    ctx(
+      'e2e / very-long-suite-name-that-should-ellipsize-across-the-available-row-width-xx',
+      'success',
+      'Ran 1,284 scenarios across chromium, firefox and webkit; the longest scenario took 3m12s and the whole shard finished well within the configured timeout budget for this branch.',
+    ),
+  ]),
+
+  // `feature/sidebar` tip ('a'*40) — all-pass (rollup pill green, §4.8).
+  ['a'.repeat(40)]: mkStatus('a'.repeat(40), 'success', [
+    ctx('build', 'success', 'Build succeeded'),
+    ctx('test', 'success', '512 passed'),
+    ctxNoUrl('format', 'success', null),
+  ]),
+
+  // `feat` tip ('d'*40) — a single failing test drives overall Failure.
+  ['d'.repeat(40)]: mkStatus('d'.repeat(40), 'failure', [
+    ctx('build', 'success', 'Build succeeded'),
+    ctx('test', 'failure', '2 tests failed'),
+  ]),
+
+  // `exp` tip ('e'*40) — forge returns an EMPTY set ⇒ noChecks (§4.6).
+  ['e'.repeat(40)]: mkStatus('e'.repeat(40), 'none', []),
+
+  // `dev` tip ('2'*40) — a deploy still running ⇒ Pending (§3 pending pill).
+  ['2'.repeat(40)]: mkStatus('2'.repeat(40), 'pending', [
+    ctx('build', 'success', 'Build succeeded'),
+    ctxNoUrl('deploy', 'pending', 'Deploying to staging'),
+  ]),
 };
 
 /** Canned CI/commit status for a branch-tip sha, or null when none is defined.

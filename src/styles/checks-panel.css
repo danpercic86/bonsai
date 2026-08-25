@@ -1,0 +1,215 @@
+/* P90: per-branch CI Checks tab. All colours are existing tokens (no new token);
+   the right panel is a --rp-* density scope. Selectors prefixed `.checks-`. */
+
+.checks-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* --- header block (§2.2) --- */
+.checks-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.checks-header-row1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.checks-branch {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checks-refresh {
+  margin-left: auto;
+}
+
+.checks-header-row2 {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.checks-tip-sha {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+button.checks-tip-sha {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+button.checks-tip-sha:hover {
+  color: var(--text-1);
+  text-decoration: underline;
+}
+
+.checks-header-row3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.checks-freshness {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+/* --- rollup pill (§3.2) --- */
+.checks-rollup-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  color: var(--text-1);
+}
+
+.checks-rollup-glyph {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.checks-rollup-pill--good {
+  background: color-mix(in srgb, var(--badge-good) 14%, transparent);
+  border-color: color-mix(in srgb, var(--badge-good) 40%, transparent);
+}
+.checks-rollup-pill--good .checks-rollup-glyph {
+  color: var(--badge-good);
+}
+
+.checks-rollup-pill--warn {
+  background: color-mix(in srgb, var(--badge-warn) 14%, transparent);
+  border-color: color-mix(in srgb, var(--badge-warn) 40%, transparent);
+}
+.checks-rollup-pill--warn .checks-rollup-glyph {
+  color: var(--badge-warn);
+}
+
+.checks-rollup-pill--pending {
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+}
+.checks-rollup-pill--pending .checks-rollup-glyph {
+  color: var(--warning);
+}
+
+.checks-rollup-pill--neutral {
+  background: color-mix(in srgb, var(--text-2) 12%, transparent);
+}
+.checks-rollup-pill--neutral .checks-rollup-glyph {
+  color: var(--text-3);
+}
+
+/* --- check list (§2.3) --- */
+.checks-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.checks-row {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  column-gap: 8px;
+  align-items: center;
+  min-height: var(--rp-row-h, 32px);
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.checks-row:hover {
+  background: var(--bg-2);
+}
+
+.checks-glyph {
+  font-size: 14px;
+  line-height: 1;
+  text-align: center;
+}
+.checks-glyph--good {
+  color: var(--badge-good);
+}
+.checks-glyph--warn {
+  color: var(--badge-warn);
+}
+.checks-glyph--pending {
+  color: var(--warning);
+}
+.checks-glyph--neutral {
+  color: var(--text-3);
+}
+
+.checks-row-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.checks-row-name {
+  font-size: 13px;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checks-row-desc {
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- states --- */
+.checks-state {
+  padding: 12px;
+}
+
+.checks-loading {
+  padding: 8px 12px;
+}
+
+.checks-state .pane-empty-title {
+  display: block;
+  color: var(--text-1);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.checks-state .pane-empty-reason {
+  display: block;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.checks-state .pane-empty-action {
+  margin-top: 12px;
+}

@@ -32,6 +32,10 @@ export function useRemoteOps(
       attempt: (skipHooks: boolean) => Promise<void>,
       skipHooks: boolean,
     ) => Promise<void>;
+    /** P90: fire after a push/force-push completes so the Checks tab + graph CI
+     *  badges refetch (fetch/pull are wrapped at the call site; push is not, and
+     *  wrapping onPush would miss the commit-and-push path — so bump here). */
+    onPushComplete?: () => void;
   },
 ) {
   const {
@@ -43,6 +47,7 @@ export function useRemoteOps(
     setPendingForcePush,
     setPendingNonFfPull,
     runWithHookGate,
+    onPushComplete,
   } = deps;
 
   // P85 A1: fetch/push/force-push route their post-op refresh through the
@@ -138,6 +143,8 @@ export function useRemoteOps(
         // P86a: a push advances the remote-tracking ref (+ maybe sets upstream) —
         // refsOnly (no local HEAD move, no worktree change).
         await refreshAll('refsOnly');
+        // P90: refresh the Checks tab + graph CI badges after a successful push.
+        onPushComplete?.();
       }, false);
     } catch (e) {
       // Dialog dismissed (pre-push not skipped): nothing pushed, no error banner.
@@ -172,6 +179,8 @@ export function useRemoteOps(
         }
         // P86a: force-push only moves the remote-tracking ref — refsOnly.
         await refreshAll('refsOnly');
+        // P90: refresh the Checks tab + graph CI badges after a successful push.
+        onPushComplete?.();
       }, false);
     } catch (e) {
       // Dialog dismissed (pre-push not skipped): nothing pushed, no error banner.

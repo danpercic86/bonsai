@@ -24,9 +24,20 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
-## 🚧 P90 — Per-branch CI Checks view — in-progress
+## 🚧 P90 — Per-branch CI Checks view — AI gate GREEN; awaiting USER CHECKPOINT
 
-**Current step:** design — architect (data/IPC contract) + ui-designer (UX + placement) running concurrently.
+**Current step:** AI gate passed (tsc/build clean, 52 vitest, size ratchet OK; harness-verified all
+per-branch states, no-auto-switch, connect, links, live-region). Reviewer + ui-designer both approved
+(MUST-FIX push-refresh fixed). **Awaiting native USER CHECKPOINT:** run `pnpm tauri dev` against a
+real forge repo, click branches, confirm Checks tab shows live per-check detail and refreshes on
+fetch/pull/push.
+
+**Follow-ups (deferred):** P90.1 per-check timing fields; header commit-summary text; command-palette
+`Refresh checks` / `Show checks`; mock fixtures for noForge/error reachable by click.
+
+**User decisions (2026-08-25):** (1) Defer per-check timing fields to P90.1 — ship v1 with
+name/state/description/link (all already on `StatusContext`); (2) No auto-switch to Checks tab on
+branch click (content updates, focus stays); (3) Placement = third right-panel tab "Checks".
 
 **Goal:** A dedicated right-panel view (new tab near "Working" / "Pull requests", exact placement
 decided by ui-designer) that shows CI check details for the branch the user clicked in the sidebar.

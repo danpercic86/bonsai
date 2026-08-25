@@ -2,6 +2,8 @@ import type { ComponentProps, RefObject } from 'react';
 import type { ComboboxOption } from './Combobox';
 import { CommitBox } from './CommitBox';
 import type { CommitBoxHandle } from './CommitBox';
+import { ChecksPanel } from './checksPanel/ChecksPanel';
+import type { ChecksTarget } from './checksPanel/checksTarget';
 import { CommitPanel } from './CommitPanel';
 import { ComparePanel } from './ComparePanel';
 import { OpBanner } from './OpBanner';
@@ -35,9 +37,18 @@ export interface WorkspaceRightPanelProps {
 
   /** P62c: canonical repo id — threaded to the PR panel under the 'prs' tab. */
   repoId: string;
-  /** P62c: active right-pane tab (owned by RepoWorkspace). */
-  rightPaneTab: 'work' | 'prs';
-  onSelectRightPaneTab(tab: 'work' | 'prs'): void;
+  /** P62c/P90: active right-pane tab (owned by RepoWorkspace). */
+  rightPaneTab: 'work' | 'prs' | 'checks';
+  onSelectRightPaneTab(tab: 'work' | 'prs' | 'checks'): void;
+  /** P90: the branch resolved from the last sidebar reveal (or HEAD) → Checks tab. */
+  checksTarget: ChecksTarget | null;
+  /** P90: bumped on fetch/pull to force a silent Checks refetch. */
+  checksRefreshSeq: number;
+  /** P90 §4.4: push the checks target (defined only when it is the current
+   *  branch); drives the "Push branch" affordance in the no-upstream empty state. */
+  onPushChecksBranch?(): void;
+  /** P90: reveal a commit oid in the graph (Checks tip-sha affordance). */
+  onRevealCommit?(oid: string): void;
   /** P62c: current branch name — seeds the PR create form's compare field. */
   prDefaultHead: string | null;
   /** P78: base-branch hint for the PR create form (upstream target/main). */
@@ -234,6 +245,10 @@ export function WorkspaceRightPanel({
   prBaseOptions,
   prCompareOptions,
   prNav,
+  checksTarget,
+  checksRefreshSeq,
+  onPushChecksBranch,
+  onRevealCommit,
 }: WorkspaceRightPanelProps) {
   // Audit §2.2: `selectedIndex` can point PAST the end of `graph.nodes` — a
   // streaming refetch publishes its first partial batch BEFORE the progressive
@@ -266,6 +281,15 @@ export function WorkspaceRightPanel({
           onClick={() => onSelectRightPaneTab('prs')}
         >
           Pull requests
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={rightPaneTab === 'checks'}
+          className={`right-pane-tab${rightPaneTab === 'checks' ? ' active' : ''}`}
+          onClick={() => onSelectRightPaneTab('checks')}
+        >
+          Checks
         </button>
       </div>
       <div className="right-panel-work" hidden={rightPaneTab !== 'work'}>
@@ -409,6 +433,17 @@ export function WorkspaceRightPanel({
           compareOptions={prCompareOptions}
           openToPr={prNav}
           aiEligible={aiEligible}
+          onManageAccounts={onOpenAccountSettings}
+        />
+      )}
+      {rightPaneTab === 'checks' && (
+        <ChecksPanel
+          repoId={repoId}
+          target={checksTarget}
+          refreshSeq={checksRefreshSeq}
+          active={rightPaneTab === 'checks'}
+          onRevealCommit={onRevealCommit}
+          onPush={onPushChecksBranch}
           onManageAccounts={onOpenAccountSettings}
         />
       )}
