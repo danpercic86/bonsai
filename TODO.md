@@ -24,7 +24,7 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
-## 🟢 P89 — PR files & local diff view — AI gate GREEN, awaiting USER CHECKPOINT
+## ✅ P89 — PR files & local diff view — DONE (AI gate + USER CHECKPOINT both green 2026-08-25)
 
 **Goal:** Show a PR's changed-files list and per-file diffs directly in Bonsai, with correct
 +/−/changed-files counts. Counts + diffs are computed **locally** from the PR's base and head
@@ -75,8 +75,9 @@ nextest+doctests+clippy 0-warn, eslint, file-size OK, vitest, tsc+build all pass
 (`16-history-undo-health`, `17-ai-dock ?aiFlood`) are **pre-existing flakes** — pass 16/16 isolated;
 P89 touches no e2e/AI-dock/health code. Commits on `feat/pr-local-diff` (off main): `1e0dfff` `23285d7`
 `71171d4` `a0f0575` `a988388` `48ae17f`. **NOT merged/pushed.**
-**PENDING native USER CHECKPOINT** (see tester smoke list): real Azure + GitHub PR → changed-files
-list + correct three-dot counts + expand-to-diff; fork-head auto-fetch; offline/Retry state; screenshot.
+**USER CHECKPOINT VERIFIED (2026-08-25):** user confirmed everything OK on the native app (Azure +
+GitHub PR changed-files list + correct three-dot counts + expand-to-diff; fork-head auto-fetch;
+offline/Retry). Branch `feat/pr-local-diff` still **NOT merged/pushed** — awaiting merge decision.
 Open follow-ups (non-blocking): SF1 empty-state header local 0-counts (`PrDetailContainer.tsx:70`),
 SF2 stale-refetch keep dimmed rows (`PrChangesSection.tsx:106`), NIT Azure old-TFS fork fallback
 (`azure/refs.rs:76`).
