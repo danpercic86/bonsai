@@ -15,10 +15,10 @@ import { PaneDivider } from './PaneDivider';
 import { Sidebar } from './Sidebar';
 import type { DiffSlot, WorkdirSection } from './StatusPanel';
 import type { GraphCanvasHandle, GraphContextTarget, WipSummary } from '../graph/GraphCanvas';
-import type { RevealTarget, RevealFlash } from '../graph/reveal';
-import { revealTargetLabel } from '../graph/reveal';
 import { useChecksTab } from './repoWorkspace/useChecksTab';
-import { RevealAnnouncer, revealedMessage, revealMissMessage } from './RevealAnnouncer';
+import { useAiPanel } from './repoWorkspace/useAiPanel';
+import { useReveal } from './repoWorkspace/useReveal';
+import { RevealAnnouncer } from './RevealAnnouncer';
 import { effectiveMetrics } from '../graph/metrics';
 import type { GraphDisplayOptions } from '../graph/rightColumns';
 import { createGraphStream } from '../graph/streamAssembler';
@@ -29,12 +29,8 @@ import { useRepoChangeSubscription } from './repoWorkspace/useRepoChangeSubscrip
 import type { IncrementalEdgeIndex } from '../graph/incrementalEdgeIndex';
 import { ipc } from '../ipc';
 import type {
-  AiAnalysisMode,
-  AiDiffTarget,
-  AiDigestRange,
   BlameLine,
   BranchesSnapshot,
-  ChangelogRange,
   CommitDiff,
   CompareDiff,
   ConflictEntry,
@@ -205,23 +201,19 @@ export function RepoWorkspace({
   // Tracks conflict count across renders so we auto-open the first conflicted
   // file exactly once per conflict episode (0 -> >0 edge), not on every refetch.
   const prevConflictCountRef = useRef(0);
-  // P15b: explain/review output panel (read-only prose). RepoWorkspace owns the
-  // ipc.aiAnalyzeDiff call + the panel's loading/error/result state; the panel is
-  // presentational. `null` => not shown. A req-id guards against a stale response
-  // overwriting a newer request or a closed panel.
-  const [aiPanel, setAiPanel] = useState<{
-    title: string;
-    text: string | null;
-    loading: boolean;
-    error: string | null;
-    costUsd: number | null;
-    /** P56b: opt-in editable body — set only by runChangelog so the notes can be
-     *  tweaked before copying. Every other runner omits it (read-only <pre>). */
-    editable?: boolean;
-  } | null>(null);
-  const aiPanelReqId = useRef(0);
-  const aiPanelOpenRef = useRef(false);
-  aiPanelOpenRef.current = aiPanel !== null;
+  // P15b/P15c/P28/P53a/P56b/P57c: the shared read-only AI-output panel + every
+  // runner that fills it now live in useAiPanel (repoWorkspace/useAiPanel.ts).
+  const {
+    aiPanel,
+    aiPanelOpenRef,
+    runAnalyze,
+    runHistoryAnswer,
+    runSummarize,
+    runDigest,
+    runChangelog,
+    onBlameExplain,
+    closeAiPanel,
+  } = useAiPanel(repoId);
   const [abortConfirmOpen, setAbortConfirmOpen] = useState(false);
   const commitBoxRef = useRef<CommitBoxHandle>(null);
   // P6 §4.5: pending branch/remote deletes drive the two confirm dialogs; the
@@ -474,60 +466,14 @@ export function RepoWorkspace({
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const graphRef = useRef<GraphCanvasHandle>(null);
 
-  // P84: reveal-in-graph — flash descriptor (nonce-driven so re-revealing the
-  // same row re-flashes), a11y announcement, and the reduced-motion flag read
-  // once (never per-frame). `revealNonceRef` supplies a monotonic nonce.
-  const [revealFlash, setRevealFlash] = useState<RevealFlash | null>(null);
-  const [revealMessage, setRevealMessage] = useState('');
-  const revealNonceRef = useRef(0);
-  const reducedMotion = useMemo(
-    () =>
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-    [],
-  );
-  // oid→row and refName→row lookups, rebuilt once per graph layout (first wins).
-  const revealIndex = useMemo(() => {
-    const byRef = new Map<string, number>();
-    const byOid = new Map<string, number>();
-    const nodes = graph?.nodes ?? [];
-    for (let i = 0; i < nodes.length; i++) {
-      const node = nodes[i];
-      if (!byOid.has(node.id)) byOid.set(node.id, i);
-      for (const ref of node.refs ?? []) {
-        if (!byRef.has(ref.name)) byRef.set(ref.name, i);
-      }
-    }
-    return { byRef, byOid };
-  }, [graph]);
-
-  const handleReveal = useCallback(
-    (t: RevealTarget) => {
-      const i =
-        t.kind === 'ref' ? revealIndex.byRef.get(t.name) ?? null : revealIndex.byOid.get(t.oid) ?? null;
-      const label = revealTargetLabel(t);
-      checksTab.revealBranch(t); // P90: re-scope the Checks tab (tags/stashes ⇒ no-op)
-      revealNonceRef.current += 1; // §6: bump first; both paths thread it so repeats re-announce (invisible marker)
-      if (i === null) {
-        setRevealMessage(revealMissMessage(label, revealNonceRef.current));
-        pushToast(
-          'info',
-          `"${label}" isn't in the loaded history yet. Load more commits to reveal it.`,
-          'reveal-miss',
-        );
-        return;
-      }
-      // Selection drives the scroll-into-view (GraphCanvas effect); the flash is
-      // the transient attention cue on top. Nonce bump re-flashes even when the
-      // row is already selected.
-      setSelectedIndex(i);
-      setRevealFlash({ index: i, nonce: revealNonceRef.current });
-      const oid = graph?.nodes[i]?.id ?? '';
-      setRevealMessage(revealedMessage(label, oid, revealNonceRef.current));
-    },
-    [revealIndex, graph, pushToast, checksTab.revealBranch],
-  );
+  // P84: reveal-in-graph — flash descriptor + a11y announcement + reduced-motion
+  // flag + oid/refName→row lookups now live in useReveal (repoWorkspace/useReveal.ts).
+  const { revealFlash, revealMessage, reducedMotion, handleReveal } = useReveal({
+    graph,
+    setSelectedIndex,
+    revealBranch: checksTab.revealBranch,
+    pushToast,
+  });
   const [commitDiff, setCommitDiff] = useState<CommitDiff | null>(null);
   const [commitDiffLoading, setCommitDiffLoading] = useState(false);
   const [commitDiffError, setCommitDiffError] = useState<string | null>(null);
@@ -1773,173 +1719,9 @@ export function RepoWorkspace({
     reportStatusError,
   });
 
-  // P15b: run an explain/review analysis of a diff target and show the prose in
-  // the AiOutputPanel. Read-only — writes nothing. Guarded by a req-id so a slow
-  // response can't clobber a newer request or a closed panel.
-  const runAnalyze = useCallback(
-    (target: AiDiffTarget, mode: AiAnalysisMode, title: string) => {
-      const id = ++aiPanelReqId.current;
-      setAiPanel({ title, text: null, loading: true, error: null, costUsd: null });
-      ipc.aiAnalyzeDiff(repoId, target, mode).then(
-        (res) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: res.text, loading: false, error: null, costUsd: res.costUsd });
-        },
-        (e: unknown) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: null, loading: false, error: errorMessage(e), costUsd: null });
-        },
-      );
-    },
-    [repoId],
-  );
-
-  // P57c: answer a natural-language history question grounded in the retrieved
-  // commits' real diffs, rendering the prose in the shared AiOutputPanel. Shares
-  // runAnalyze's last-wins req-id guard so a slow/superseded response can't
-  // clobber a newer request or a closed panel. `runHistoryAnswer` is handed to
-  // useHistorySearch as its `runAiAnswer` route.
-  const runHistoryAnswer = useCallback(
-    (question: string, topK: number) => {
-      const title = `History: "${question}"`;
-      const id = ++aiPanelReqId.current;
-      setAiPanel({ title, text: null, loading: true, error: null, costUsd: null });
-      ipc.aiSearchHistory(repoId, question, topK).then(
-        (res) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: res.text, loading: false, error: null, costUsd: res.costUsd });
-        },
-        (e: unknown) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: null, loading: false, error: errorMessage(e), costUsd: null });
-        },
-      );
-    },
-    [repoId],
-  );
-
-  // P15c: summarize the commits/diff unique to `target` vs `base` and show the
-  // prose in the AiOutputPanel. Read-only — writes nothing. Shares the same
-  // req-id guard as runAnalyze so a slow response can't clobber a newer request
-  // or a closed panel.
-  const runSummarize = useCallback(
-    (base: string, target: string) => {
-      const title = `Summary: ${base} → ${target}`;
-      const id = ++aiPanelReqId.current;
-      setAiPanel({ title, text: null, loading: true, error: null, costUsd: null });
-      ipc.aiSummarizeRange(repoId, base, target).then(
-        (res) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: res.text, loading: false, error: null, costUsd: res.costUsd });
-        },
-        (e: unknown) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: null, loading: false, error: errorMessage(e), costUsd: null });
-        },
-      );
-    },
-    [repoId],
-  );
-
-  // P28 §7: digest "what changed" over a range and show the prose in the
-  // AiOutputPanel. Read-only — writes nothing. Shares the same req-id guard as
-  // runAnalyze so a slow response can't clobber a newer request or a closed
-  // panel. `title` is range-derived, built by WhatChangedDialog.
-  const runDigest = useCallback(
-    (range: AiDigestRange, title: string) => {
-      const id = ++aiPanelReqId.current;
-      setAiPanel({ title, text: null, loading: true, error: null, costUsd: null });
-      ipc.aiDigest(repoId, range).then(
-        (res) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: res.text, loading: false, error: null, costUsd: res.costUsd });
-        },
-        (e: unknown) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: null, loading: false, error: errorMessage(e), costUsd: null });
-        },
-      );
-    },
-    [repoId],
-  );
-
-  // P56b §6: generate grouped release notes for a tag/ref range and show the
-  // Markdown in the AiOutputPanel (editable). Read-only — writes nothing. Shares
-  // the same req-id guard as runAnalyze so a slow response can't clobber a newer
-  // request or a closed panel. The provisional `title` covers the loading state;
-  // on success the header becomes `Release notes: <fromRef>..<toRef>` from the
-  // RESOLVED range (e.g. the previous-tag name for sinceLastTag).
-  const runChangelog = useCallback(
-    (range: ChangelogRange, title: string) => {
-      const id = ++aiPanelReqId.current;
-      setAiPanel({ title, text: null, loading: true, error: null, costUsd: null, editable: true });
-      ipc.aiChangelog(repoId, range).then(
-        (res) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({
-            title: `Release notes: ${res.fromRef}..${res.toRef}`,
-            text: res.text,
-            loading: false,
-            error: null,
-            costUsd: res.costUsd,
-            editable: true,
-          });
-        },
-        (e: unknown) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({
-            title,
-            text: null,
-            loading: false,
-            error: errorMessage(e),
-            costUsd: null,
-            editable: true,
-          });
-        },
-      );
-    },
-    [repoId],
-  );
-
   // P56b: open the general "Release notes…" range picker (palette entry). Stable
   // so the palette-action useMemo doesn't rebuild each render.
   const openChangelog = useCallback(() => setChangelogOpen(true), []);
-
-  // P53a: blame-why — explain WHY a line exists and show the prose in the
-  // AiOutputPanel. Read-only — writes nothing. Shares the same req-id guard as
-  // runAnalyze so a slow response can't clobber a newer request or a closed
-  // panel. `atOid` is the blamed version (null => HEAD in v1).
-  const runExplainLine = useCallback(
-    (path: string, lineNo: number, atOid: string | null, title: string) => {
-      const id = ++aiPanelReqId.current;
-      setAiPanel({ title, text: null, loading: true, error: null, costUsd: null });
-      ipc.aiExplainLine(repoId, path, lineNo, atOid).then(
-        (res) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: res.text, loading: false, error: null, costUsd: res.costUsd });
-        },
-        (e: unknown) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: null, loading: false, error: errorMessage(e), costUsd: null });
-        },
-      );
-    },
-    [repoId],
-  );
-
-  // P53a: BlameView "Why?" entry point — blame is always vs HEAD in v1, so
-  // atOid is null. Title mirrors the mock/backend grounding label.
-  const onBlameExplain = useCallback(
-    (path: string, lineNo: number) => {
-      runExplainLine(path, lineNo, null, `Why line ${lineNo} of ${path}`);
-    },
-    [runExplainLine],
-  );
-
-  const closeAiPanel = useCallback(() => {
-    aiPanelReqId.current += 1;
-    setAiPanel(null);
-  }, []);
 
   // P55c: map a natural-language `request` to ONE allowlisted, previewable op via
   // the READ-ONLY planner. Mirrors runAnalyze's last-wins req-id guard so a slow,

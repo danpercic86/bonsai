@@ -58,10 +58,10 @@
     "src/App.tsx": 1069,
     "src/components/AiAssetsPanel.tsx": 516,
     "src/components/ConflictEditor.tsx": 535,
-    "src/components/RepoWorkspace.tsx": 2996,
+    "src/components/RepoWorkspace.tsx": 2778,
     "src/components/Sidebar.tsx": 649,
     "src/components/workspaceMenus.ts": 828,
-    "src/graph/GraphCanvas.tsx": 938,
+    "src/graph/GraphCanvas.tsx": 933,
     "src/ipc/fixtures/diffs.ts": 746,
     "src/ipc/types/ipc-api.ts": 760
   }
