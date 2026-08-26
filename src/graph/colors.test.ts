@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  LANE_COLORS_BONSAI_DARK,
+  LANE_COLORS_BONSAI_LIGHT,
   LANE_COLORS_DARK,
   LANE_COLORS_LIGHT,
   STASH_BG,
@@ -11,6 +13,13 @@ import {
   hexToRgba,
   resolveTheme,
 } from './colors';
+import {
+  BLOSSOM_ALPHA_DARK,
+  BLOSSOM_ALPHA_LIGHT,
+  EDGE_TAPER_COZY,
+  SEASON_PALETTES,
+  type GraphSeason,
+} from './palettes';
 
 describe('hexToRgba', () => {
   it('converts 6-digit hex to rgba with the given alpha', () => {
@@ -114,5 +123,111 @@ describe('resolveTheme', () => {
     // Missing --bg-0 ('') reads as dark (non-hex luminance 0), so the dark
     // palette is used rather than empty strings.
     expect(theme.laneColors).toEqual([...LANE_COLORS_DARK]);
+  });
+
+  // ── Spec-002: Bonsai theme resolution matrix ────────────────────────────
+  // graphStyle × app light/dark (via --bg-0) × season. Wiring is asserted
+  // against the palettes.ts constants, never re-hardcoded hexes.
+  const DARK_BG = '#16181d';
+  const LIGHT_BG = '#ffffff';
+  const ACCENT = '#2266ff';
+
+  describe('Bonsai theme matrix', () => {
+    const seasons: GraphSeason[] = ['living', 'spring', 'autumn'];
+
+    it('standard theme is byte-for-byte independent of the season argument', () => {
+      stubComputedStyle({ '--bg-0': DARK_BG, '--accent': ACCENT });
+      // Default args === explicit standard; season must not leak into standard.
+      expect(resolveTheme(fakeEl)).toEqual(resolveTheme(fakeEl, 'standard', 'autumn'));
+      expect(resolveTheme(fakeEl, 'standard', 'living')).toEqual(
+        resolveTheme(fakeEl, 'standard', 'spring'),
+      );
+    });
+
+    it('standard theme carries inert Bonsai flags (backdrop === bg0, no blossom, flat taper)', () => {
+      for (const bg of [DARK_BG, LIGHT_BG]) {
+        stubComputedStyle({ '--bg-0': bg, '--accent': ACCENT });
+        const t = resolveTheme(fakeEl, 'standard', 'living');
+        expect(t.graphStyle).toBe('standard');
+        expect(t.bonsai).toBe(false);
+        expect(t.graphBackdrop).toBe(t.bg0);
+        expect(t.graphBackdropTop).toBe(t.bg0);
+        expect(t.graphBackdropBottom).toBe(t.bg0);
+        expect(t.blossomAlpha).toBe(0);
+        expect(t.blossomAccent).toBe(ACCENT); // falls back to --accent
+        // All three taper widths collapse to the single stroke (branch) width.
+        expect(t.edgeTipWidth).toBe(EDGE_TAPER_COZY.branch);
+        expect(t.edgeBranchWidth).toBe(EDGE_TAPER_COZY.branch);
+        expect(t.edgeTrunkWidth).toBe(EDGE_TAPER_COZY.branch);
+        // Standard uses the standard lane palette, not the Bonsai one.
+        expect(t.laneColors).toEqual([...(bg === DARK_BG ? LANE_COLORS_DARK : LANE_COLORS_LIGHT)]);
+      }
+    });
+
+    it('Bonsai selects the dark lane palette on a dark app mode, for every season', () => {
+      for (const season of seasons) {
+        stubComputedStyle({ '--bg-0': DARK_BG, '--accent': ACCENT });
+        const t = resolveTheme(fakeEl, 'bonsai', season);
+        expect(t.graphStyle).toBe('bonsai');
+        expect(t.bonsai).toBe(true);
+        expect(t.laneColors).toEqual([...LANE_COLORS_BONSAI_DARK]);
+        expect(t.laneColorsAlpha[0]).toBe(hexToRgba(LANE_COLORS_BONSAI_DARK[0], 0.18));
+      }
+    });
+
+    it('Bonsai selects the light lane palette on a light app mode, for every season', () => {
+      for (const season of seasons) {
+        stubComputedStyle({ '--bg-0': LIGHT_BG, '--accent': ACCENT });
+        const t = resolveTheme(fakeEl, 'bonsai', season);
+        expect(t.laneColors).toEqual([...LANE_COLORS_BONSAI_LIGHT]);
+        expect(t.laneColorsAlpha[0]).toBe(hexToRgba(LANE_COLORS_BONSAI_LIGHT[0], 0.18));
+      }
+    });
+
+    it('Bonsai layers the per-season backdrop + blossom accent for the resolved app mode', () => {
+      for (const season of seasons) {
+        const sp = SEASON_PALETTES[season];
+        stubComputedStyle({ '--bg-0': DARK_BG, '--accent': ACCENT });
+        const dark = resolveTheme(fakeEl, 'bonsai', season);
+        expect(dark.graphBackdrop).toBe(sp.backdropDark);
+        expect(dark.graphBackdropTop).toBe(sp.backdropDarkTop);
+        expect(dark.graphBackdropBottom).toBe(sp.backdropDarkBottom);
+        expect(dark.blossomAccent).toBe(sp.blossomAccentDark);
+        expect(dark.blossomAlpha).toBe(BLOSSOM_ALPHA_DARK);
+
+        stubComputedStyle({ '--bg-0': LIGHT_BG, '--accent': ACCENT });
+        const light = resolveTheme(fakeEl, 'bonsai', season);
+        expect(light.graphBackdrop).toBe(sp.backdropLight);
+        expect(light.graphBackdropTop).toBe(sp.backdropLightTop);
+        expect(light.graphBackdropBottom).toBe(sp.backdropLightBottom);
+        expect(light.blossomAccent).toBe(sp.blossomAccentLight);
+        expect(light.blossomAlpha).toBe(BLOSSOM_ALPHA_LIGHT);
+      }
+    });
+
+    it('Bonsai backdrop is distinct from bg0 and blossom is painted (flags actually set)', () => {
+      stubComputedStyle({ '--bg-0': DARK_BG, '--accent': ACCENT });
+      const t = resolveTheme(fakeEl, 'bonsai', 'living');
+      expect(t.graphBackdrop).not.toBe(t.bg0);
+      expect(t.blossomAlpha).toBeGreaterThan(0);
+    });
+
+    it('Bonsai taper widths strictly increase tip < branch < trunk', () => {
+      stubComputedStyle({ '--bg-0': DARK_BG, '--accent': ACCENT });
+      const t = resolveTheme(fakeEl, 'bonsai', 'living');
+      expect(t.edgeTipWidth).toBeLessThan(t.edgeBranchWidth);
+      expect(t.edgeBranchWidth).toBeLessThan(t.edgeTrunkWidth);
+      expect(t.edgeTipWidth).toBe(EDGE_TAPER_COZY.tip);
+      expect(t.edgeTrunkWidth).toBe(EDGE_TAPER_COZY.trunk);
+    });
+  });
+
+  describe('Bonsai palettes (spec-002 §1.1/§1.2)', () => {
+    it('both Bonsai palettes have 10 distinct colors', () => {
+      for (const pal of [LANE_COLORS_BONSAI_DARK, LANE_COLORS_BONSAI_LIGHT]) {
+        expect(pal).toHaveLength(10);
+        expect(new Set(pal).size).toBe(10);
+      }
+    });
   });
 });

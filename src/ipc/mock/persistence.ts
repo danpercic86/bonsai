@@ -285,12 +285,13 @@ export function readUiSettings(): UiSettings {
           ? g.showCiStatus
           : DEFAULT_UI_SETTINGS.graph.showCiStatus,
     });
-    // Spec-002 (additive/optional, frontend-only): commit-graph style + season.
-    // OMITTED from the result when the blob does not carry a valid value — the
-    // keys are absent from the Rust-pinned defaults oracle, so emitting them only
-    // when persisted keeps a pre-spec blob byte-identical on round-trip while an
-    // explicit choice survives reload. Consumers apply `?? default` (see
-    // useUiSettings), so absence reads as 'standard' / DEFAULT_SEASON.
+    // Spec-002 (additive/optional): commit-graph style + season. OMITTED from the
+    // result when the blob does not carry a valid value, so a pre-spec blob stays
+    // byte-identical on round-trip while an explicit choice survives reload. (The
+    // keys ARE present in the shared defaults oracle / native settings; this
+    // omit-when-absent only governs an already-persisted mock blob.) Consumers
+    // apply `?? default` (see useUiSettings), so absence reads as 'standard' /
+    // DEFAULT_SEASON.
     const graphStyle: GraphStyle | undefined =
       parsed.graphStyle === 'bonsai' || parsed.graphStyle === 'standard'
         ? parsed.graphStyle
