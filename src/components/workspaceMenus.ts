@@ -1,11 +1,8 @@
 import { createElement } from 'react';
 import type { ContextMenuItem } from './ContextMenu';
 import {
-  BisectIcon,
   BranchIcon,
   CheckoutIcon,
-  CherryPickIcon,
-  CompareIcon,
   CopyIcon,
   DeleteIcon,
   EditorIcon,
@@ -14,13 +11,9 @@ import {
   MergeIcon,
   RebaseIcon,
   RebaseInteractiveIcon,
-  ResetIcon,
-  RevertIcon,
   SummarizeIcon,
-  TagIcon,
   TerminalIcon,
 } from './menuIcons';
-import { shortOid } from './workspaceUtils';
 import { errorMessage } from '../utils/errors';
 import type { PushToast } from '../ToastContext';
 import type {
@@ -47,6 +40,12 @@ import {
   submoduleMenuItems as submoduleMenuItemsImpl,
   worktreeMenuItems as worktreeMenuItemsImpl,
 } from './workspaceMenusRows';
+import {
+  commitActionItems as commitActionItemsImpl,
+  commitMenuItems as commitMenuItemsImpl,
+  resetMenuItems as resetMenuItemsImpl,
+} from './workspaceMenusCommit';
+import { tagMenuItems as tagMenuItemsImpl } from './workspaceMenusTag';
 
 /** P49: the three external-launch handlers a filesystem path is opened with.
  *  Each takes the target path so one handler set drives every entry point
@@ -186,42 +185,22 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
   const {
     branches,
     headBranch,
-    head,
     mutating,
     opActive,
     aiEligible,
-    remotes,
     pushToast,
     handleCheckoutRemote,
     handleCheckoutBranch,
     handleCheckoutCommit,
-    setPendingCreateBranch,
     runSummarize,
     runAnalyze,
-    runChangelog,
     handleMergeBranch,
     setPendingRebase,
     openRebasePlan,
-    handleCompareWithHead,
     setPendingDeleteRemote,
     setPendingDeleteBranch,
     setPendingRenameBranch,
-    setPendingDeleteTag,
-    handlePushTag,
-    tagSync,
-    handleForceRefreshTag,
-    handleFetchRemoteTag,
-    setPendingDeleteRemoteTag,
-    setPendingForceMoveTag,
-    setPendingCreateTag,
-    handleCherrypick,
-    handleRevert,
-    setPendingReset,
     onViewReflog,
-    pendingBisectBad,
-    bisectActive,
-    handleMarkBisectBad,
-    handleStartBisect,
     onOpenInTerminal,
     onRevealInFileManager,
     onOpenInEditor,
@@ -418,122 +397,10 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     return worktreeMenuItemsImpl(deps, extHandlers, wt);
   }
 
-  // P22 §7.2: the shared tag menu — used by the graph tag pill AND the sidebar
-  // tag rows. Delete (ConfirmDialog) + Copy + one "Push tag to <remote>" per
-  // configured remote (§OPEN-7: 0 → no push item; 1 → single; >1 → one each).
+  // P22 §7.2: the shared tag menu. Extracted to workspaceMenusTag.ts; this
+  // wrapper binds the current deps.
   function tagMenuItems(name: string, oid: string | null): ContextMenuItem[] {
-    const gate = mutating || opActive;
-    // P77 §3: the per-name sync verdict gates the resolve items. Undefined when no
-    // check has run / the remote is unavailable → the menu degrades to the
-    // pre-P77 set (copy / release notes / push / delete-local).
-    const entry = tagSync?.entries.find((e) => e.name === name);
-    const status = entry?.status;
-    const syncRemote = tagSync?.remote ?? null;
-    const isRemoteOnly = status === 'remote-only';
-    const oldShort = entry?.remoteOid?.slice(0, 7) ?? '';
-    const newShort = entry?.localOid?.slice(0, 7) ?? '';
-    // Item 7 shows only when the tag exists on the remote (in-sync/stale/remote-
-    // only) — never for unpushed (nothing there) or the reserved deleted-on-remote.
-    const existsOnRemote =
-      status === 'in-sync' || status === 'stale' || status === 'remote-only';
-
-    const items: ContextMenuItem[] = [];
-
-    // Checkout is the most-primary action → FIRST. Graph tag pills pass an oid;
-    // sidebar tag rows pass null (no reachable target) → no checkout (matches today).
-    if (oid !== null) items.push(...checkoutMenuItems(oid));
-
-    // 1. Update to remote target (stale) — resolve-in-place, no confirm (§3).
-    if (status === 'stale' && syncRemote !== null) {
-      items.push({
-        label: 'Update to remote target',
-        icon: createElement(TagIcon),
-        disabled: gate,
-        onSelect: () => void handleForceRefreshTag(syncRemote, name),
-      });
-    }
-    // 2. Create local tag (remote-only ghost row).
-    if (isRemoteOnly && syncRemote !== null) {
-      items.push({
-        label: 'Create local tag',
-        icon: createElement(TagIcon),
-        disabled: gate,
-        onSelect: () => void handleFetchRemoteTag(syncRemote, name),
-      });
-    }
-    // 3. Push tag to {remote} (existing) — one per configured remote. Skipped for
-    // a remote-only row (no local tag to push).
-    if (!isRemoteOnly) {
-      for (const r of remotes) {
-        items.push({
-          label: `Push tag to ${r.name}`,
-          icon: createElement(TagIcon),
-          disabled: gate,
-          onSelect: () => void handlePushTag(r.name, name),
-        });
-      }
-    }
-    // 4. Copy tag name (existing) — always.
-    items.push({
-      label: 'Copy tag name',
-      icon: createElement(CopyIcon),
-      disabled: false,
-      onSelect: () => {
-        const p =
-          navigator.clipboard?.writeText(name) ??
-          Promise.reject(new Error('Clipboard unavailable'));
-        void p
-          .then(() => pushToast('success', 'Copied tag name'))
-          .catch((e) => pushToast('error', `Copy failed: ${errorMessage(e)}`));
-      },
-    });
-    // 5. Release notes since previous tag (existing) — AI-gated. Not for a ghost
-    // row (no local history to summarise).
-    if (!isRemoteOnly) {
-      items.push({
-        label: 'Release notes since previous tag',
-        icon: createElement(SummarizeIcon),
-        disabled: !aiEligible,
-        onSelect: () =>
-          runChangelog({ kind: 'sinceLastTag', target: name }, `Release notes for ${name}`),
-      });
-    }
-    // 6. Delete tag (existing, local) — skipped for a remote-only ghost (no local
-    // tag exists). Routes through the existing local confirm.
-    if (!isRemoteOnly) {
-      items.push({
-        label: 'Delete tag',
-        icon: createElement(DeleteIcon),
-        disabled: gate,
-        onSelect: () => setPendingDeleteTag(name),
-      });
-    }
-    // 7. Delete tag on {remote}… (danger → confirm §4.1).
-    if (existsOnRemote && syncRemote !== null) {
-      items.push({
-        label: `Delete tag on ${syncRemote}…`,
-        icon: createElement(DeleteIcon),
-        disabled: gate,
-        tone: 'danger',
-        onSelect: () => setPendingDeleteRemoteTag({ name, remote: syncRemote }),
-      });
-    }
-    // 8. Force-move tag on {remote}… (stale, danger → confirm §4.2).
-    if (status === 'stale' && syncRemote !== null) {
-      items.push({
-        label: `Force-move tag on ${syncRemote}…`,
-        icon: createElement(TagIcon),
-        disabled: gate,
-        tone: 'danger',
-        onSelect: () =>
-          setPendingForceMoveTag({ name, remote: syncRemote, oldShort, newShort }),
-      });
-    }
-    // P47 (Part A, Fork-1): a GRAPH tag pill carries its target oid (the node id),
-    // so it gets the shared commit actions after the tag-specific items. Sidebar
-    // tag rows pass `oid === null` and keep only the tag/sync actions above.
-    if (oid !== null) items.push(...commitActionItems(oid));
-    return items;
+    return tagMenuItemsImpl(deps, name, oid);
   }
 
   // P22 §7.2: the configured-remote management menu (sidebar rows only).
@@ -549,216 +416,19 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
   // born HEAD, an idle repo, and a target that is not already the current tip.
   // Hard is suffixed "…" (opens the extra-warning ConfirmDialog). Returns [] when
   // reset is not offered (so callers can spread unconditionally).
+  // Commit-oid menu builders (reset / commit-actions / checkout / commit-row) are
+  // extracted to workspaceMenusCommit.ts; these thin wrappers bind the current
+  // deps so the intra-factory callers below stay unchanged.
   function resetMenuItems(targetOid: string): ContextMenuItem[] {
-    if (head === null || head.unborn || head.detached) return [];
-    if (targetOid === head.oid) return [];
-    const gate = mutating || opActive;
-    const b = headBranch?.name ?? 'HEAD';
-    // Grouped reset: click the parent = mixed reset (default); the flyout exposes
-    // Soft / Mixed / Hard…. Hard is suffixed "…" (extra-warning ConfirmDialog) and
-    // flagged danger. Returned as a single-element array so callers keep spreading.
-    return [
-      {
-        label: `Reset ${b} to here`,
-        icon: createElement(ResetIcon),
-        disabled: gate,
-        onSelect: () => setPendingReset({ oid: targetOid, mode: 'mixed' }),
-        children: [
-          {
-            label: 'Soft',
-            icon: createElement(ResetIcon),
-            disabled: gate,
-            onSelect: () => setPendingReset({ oid: targetOid, mode: 'soft' }),
-          },
-          {
-            label: 'Mixed',
-            icon: createElement(ResetIcon),
-            disabled: gate,
-            onSelect: () => setPendingReset({ oid: targetOid, mode: 'mixed' }),
-          },
-          {
-            label: 'Hard…',
-            icon: createElement(ResetIcon),
-            disabled: gate,
-            tone: 'danger',
-            onSelect: () => setPendingReset({ oid: targetOid, mode: 'hard' }),
-          },
-        ],
-      },
-    ];
+    return resetMenuItemsImpl(deps, targetOid);
   }
 
-  // P47 (Part A): the shared oid-based commit-action set. Extracted from
-  // commitMenuItems so branch pills and graph tag pills reach the same actions
-  // as commit rows (no arbitrary split) — spread by callers exactly as
-  // resetMenuItems is. Order: Create branch here, Create tag here, Compare with
-  // HEAD, then (attached HEAD only) Cherry-pick, Revert — matching the commit-row
-  // order preserved below. Returns [] when there is no usable HEAD so callers can
-  // spread unconditionally.
   function commitActionItems(oid: string): ContextMenuItem[] {
-    if (head === null || head.unborn) return [];
-    const gate = mutating || opActive;
-    const items: ContextMenuItem[] = [
-      {
-        label: 'Create branch here',
-        icon: createElement(BranchIcon),
-        disabled: gate,
-        onSelect: () => setPendingCreateBranch({ oid }),
-      },
-      {
-        label: 'Create tag here',
-        icon: createElement(TagIcon),
-        disabled: gate,
-        onSelect: () => setPendingCreateTag({ oid }),
-      },
-      {
-        label: 'Compare with HEAD',
-        icon: createElement(CompareIcon),
-        disabled: false,
-        onSelect: () => handleCompareWithHead(oid),
-      },
-    ];
-    // P53b §5.2: "Explain this commit" — reuses the existing ai_analyze_diff
-    // explain path ({kind:'commit'}); the backend now grounds the explanation on
-    // the full commit MESSAGE (D2), not just the diff. Read-only, so it sits in
-    // this read-only group AFTER "Compare with HEAD" and BEFORE Cherry-pick/
-    // Revert, and is offered on detached HEAD too. Disabled unless AI is eligible
-    // (installed && enabled && consented). runAnalyze's req-id guards staleness.
-    items.push({
-      label: 'Explain this commit',
-      icon: createElement(SummarizeIcon),
-      disabled: !aiEligible,
-      onSelect: () =>
-        runAnalyze({ kind: 'commit', oid }, 'explain', `Explain commit ${oid.slice(0, 7)}`),
-    });
-    // P20 §5.2/§6: cherry-pick / revert onto the current branch. Gated on an
-    // attached born HEAD (excluded on detached HEAD, which the backend rejects
-    // — mirrors resetMenuItems) and an idle repo. On Conflicts the existing
-    // OpBanner/conflict flow takes over.
-    if (!head.detached) {
-      items.push(
-        {
-          label: 'Cherry-pick onto current…',
-          icon: createElement(CherryPickIcon),
-          disabled: gate,
-          onSelect: () => void handleCherrypick(oid),
-        },
-        {
-          label: 'Revert commit',
-          icon: createElement(RevertIcon),
-          disabled: gate,
-          onSelect: () => void handleRevert(oid),
-        },
-      );
-    }
-    return items;
-  }
-
-  // Checkout entries for a commit oid — the most-primary action, so prepended
-  // FIRST in commit/tag menus (UI contract §2). Keyed off the LOCAL branches
-  // tipping this oid, excluding the current HEAD branch:
-  //   0 → single top-level `Checkout commit (detached)`
-  //   1 → grouped: parent = that branch's checkout + flyout (branch, detached)
-  //  ≥2 → INERT parent `Checkout` (no onSelect → opens flyout only); flyout =
-  //       one `Checkout <name>` per branch (snapshot order) then detached LAST.
-  function checkoutMenuItems(oid: string): ContextMenuItem[] {
-    if (head === null || head.unborn) return [];
-    const gate = mutating || opActive;
-    const localTips = branches?.local.filter((b) => b.tip === oid && !b.isHead) ?? [];
-
-    const detached: ContextMenuItem = {
-      label: 'Checkout commit (detached)',
-      icon: createElement(CheckoutIcon),
-      disabled: gate,
-      onSelect: () => void handleCheckoutCommit(oid),
-    };
-
-    if (localTips.length === 0) {
-      // Pure no-op (already detached at this oid, no other branch) → omit.
-      if (head.detached && head.oid === oid) return [];
-      return [detached];
-    }
-
-    const children: ContextMenuItem[] = localTips.map((b) => ({
-      label: `Checkout ${b.name}`,
-      icon: createElement(CheckoutIcon),
-      disabled: gate,
-      onSelect: () => void handleCheckoutBranch(b.name),
-    }));
-    children.push(detached);
-
-    if (localTips.length === 1) {
-      const only = localTips[0];
-      return [
-        {
-          label: `Checkout ${only.name}`,
-          icon: createElement(CheckoutIcon),
-          disabled: gate,
-          onSelect: () => void handleCheckoutBranch(only.name),
-          children,
-        },
-      ];
-    }
-
-    // ≥2 branches → INERT parent: no onSelect (opens flyout only). Its
-    // `disabled` is left unset so the flyout stays openable while a write is in
-    // flight; the child actions carry `disabled: gate`.
-    return [
-      {
-        label: 'Checkout',
-        icon: createElement(CheckoutIcon),
-        children,
-      },
-    ];
+    return commitActionItemsImpl(deps, oid);
   }
 
   function commitMenuItems(oid: string): ContextMenuItem[] {
-    if (head === null || head.unborn) return [];
-    const gate = mutating || opActive;
-    return [
-      ...checkoutMenuItems(oid),
-      ...commitActionItems(oid),
-      // Interactive-rebase-from-here + bisect stay commit-row-only (not part of
-      // the shared commit-action set). Gated on an attached born HEAD, matching
-      // the cherry-pick/revert gate in commitActionItems.
-      ...(head.detached
-        ? []
-        : [
-            // P23b §8.2: interactive rebase replaying THIS commit..HEAD onto the
-            // selected commit (it becomes the `onto` base). Gated like cherry-pick.
-            {
-              label: 'Interactive rebase from here…',
-              icon: createElement(RebaseInteractiveIcon),
-              disabled: gate,
-              onSelect: () => void openRebasePlan({ ontoOid: oid, ontoLabel: shortOid(oid) }),
-            },
-            // P39b §8: two-click git-bisect start. First mark a BAD commit
-            // (records the oid + hints), then on an OLDER commit "Mark GOOD &
-            // start bisect" begins the search. Hidden while a bisect is already
-            // running (the OpBanner drives it then). The good item is enabled
-            // only once a bad is pending; picking a non-ancestor good surfaces
-            // the backend error.
-            ...(bisectActive
-              ? []
-              : [
-                  {
-                    label: 'Start bisect: mark this BAD',
-                    icon: createElement(BisectIcon),
-                    disabled: gate,
-                    onSelect: () => handleMarkBisectBad(oid),
-                  },
-                  {
-                    label: 'Mark GOOD & start bisect',
-                    icon: createElement(BisectIcon),
-                    disabled: gate || pendingBisectBad === null || pendingBisectBad === oid,
-                    onSelect: () => {
-                      if (pendingBisectBad !== null) handleStartBisect(pendingBisectBad, oid);
-                    },
-                  },
-                ]),
-          ]),
-      ...resetMenuItems(oid),
-    ];
+    return commitMenuItemsImpl(deps, oid);
   }
 
   // P5 §5.2 / P6 §4.2: build the right-click menu items for a graph target. Ref

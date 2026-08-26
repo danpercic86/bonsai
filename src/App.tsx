@@ -35,47 +35,19 @@ import type {
   McpStatus,
   PaneWidths,
   RecentRepo,
-  RepoInfo,
   SessionState,
   Theme,
 } from './ipc';
 import { errorMessage, isAppError } from './utils/errors';
-
-function folderName(path: string): string {
-  const segments = path.split(/[\\/]/).filter(Boolean);
-  return segments[segments.length - 1] ?? path;
-}
-
-function isUsableRepo(info: RepoInfo): boolean {
-  return info.isRepo && !info.bare;
-}
-
-function unusableRepoMessage(info: RepoInfo): string {
-  return info.isRepo
-    ? `Bare repositories are not supported: ${info.path}`
-    : `Not a Git repository: ${info.path}`;
-}
-
-// P2a §2.5: persisted-sanity clamp ranges (mirrors settings.rs clamp_pane_widths).
-const SIDEBAR_MIN = 180;
-const SIDEBAR_MAX = 480;
-const RIGHT_PANEL_MIN = 280;
-const RIGHT_PANEL_MAX = 640;
-const GRAPH_MIN_WIDTH = 480;
-const DEFAULT_PANE_WIDTHS: PaneWidths = { sidebar: 240, rightPanel: 380 };
-
-/** Live-drag clamp (§2.5): the persisted range intersected with the current
- * window size and the graph pane's floor. */
-function clampLive(value: number, side: 'sidebar' | 'rightPanel', otherWidth: number): number {
-  const [min, max] = side === 'sidebar' ? [SIDEBAR_MIN, SIDEBAR_MAX] : [RIGHT_PANEL_MIN, RIGHT_PANEL_MAX];
-  const dynamicMax = Math.min(max, window.innerWidth - otherWidth - GRAPH_MIN_WIDTH);
-  return Math.max(min, Math.min(value, Math.max(min, dynamicMax)));
-}
-
-/** P2b §4.2: sets data-theme on <html>. */
-function applyTheme(theme: Theme): void {
-  document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
-}
+import {
+  applyTheme,
+  clampLive,
+  DEFAULT_PANE_WIDTHS,
+  folderName,
+  isUsableRepo,
+  unusableRepoMessage,
+} from './appHelpers';
+import { useAppShortcuts } from './hooks/useAppShortcuts';
 
 export default function App() {
   // ----- App-global state (§5.1) -----
@@ -727,36 +699,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Esc: close only the TOPMOST global overlay per keypress (LIFO peel:
-  // shortcut overlay → settings → AI assets → health → onboarding). TabStrip's
-  // own Esc handles its menu; skip when it consumed the keypress. Workspace
-  // Esc-layering is separate.
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (menuOpen) return;
-      if (overlayOpen) {
-        setOverlayOpen(false);
-        return;
-      }
-      if (settings.open) {
-        settings.close();
-        return;
-      }
-      if (aiAssetsOpen) {
-        setAiAssetsOpen(false);
-        return;
-      }
-      if (healthOpen) {
-        setHealthOpen(false);
-        return;
-      }
-      if (onboardingOpen) closeOnboarding();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [menuOpen, overlayOpen, settings, aiAssetsOpen, healthOpen, onboardingOpen, closeOnboarding]);
-
   const globalModalOpen =
     overlayOpen ||
     menuOpen ||
@@ -769,69 +711,24 @@ export default function App() {
     mcpWriteConsentOpen ||
     update.dialogOpen;
 
-  // Global shortcuts (§5.1): Ctrl+O open, ? overlay, Ctrl+Tab / Ctrl+Shift+Tab
-  // cycle tabs, Ctrl+W close active tab.
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      const ctrl = e.ctrlKey || e.metaKey;
-
-      const target = e.target as HTMLElement | null;
-      const typing =
-        target !== null &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable);
-
-      if (menuOpen) return;
-
-      if (ctrl && e.key.toLowerCase() === 'o') {
-        e.preventDefault();
-        void handleOpenRepository();
-        return;
-      }
-
-      // UI §7.2: registered ABOVE the typing guard so it works from the commit
-      // box. A no-op while ANY global modal is open — toggling a modal from a
-      // shortcut is surprising, and opening Settings UNDERNEATH the AI-assets /
-      // health / onboarding overlays would be worse (it would appear only after
-      // the user dismissed something unrelated).
-      if (ctrl && e.key === ',') {
-        e.preventDefault();
-        if (!globalModalOpen) settings.openAt(null);
-        return;
-      }
-
-      if (ctrl && e.key === 'Tab') {
-        e.preventDefault();
-        const cur = tabsRef.current;
-        if (cur.length === 0) return;
-        const idx = cur.findIndex((t) => t.repoId === activeRepo);
-        const base = idx === -1 ? 0 : idx;
-        const nextIdx = (base + (e.shiftKey ? -1 : 1) + cur.length) % cur.length;
-        setActiveRepo(cur[nextIdx].repoId);
-        return;
-      }
-
-      if (typing) return;
-
-      // Ctrl+W gated behind the typing guard: word-delete muscle memory in the
-      // commit box must not close the tab (and lose the unsent message).
-      if (ctrl && e.key.toLowerCase() === 'w') {
-        e.preventDefault();
-        if (activeRepo !== null) closeTab(activeRepo);
-        return;
-      }
-
-      if (e.key === '?') {
-        e.preventDefault();
-        setOverlayOpen((cur) => !cur);
-        return;
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [menuOpen, activeRepo, handleOpenRepository, closeTab, settings, globalModalOpen]);
+  useAppShortcuts({
+    menuOpen,
+    overlayOpen,
+    settings,
+    aiAssetsOpen,
+    healthOpen,
+    onboardingOpen,
+    closeOnboarding,
+    setOverlayOpen,
+    setAiAssetsOpen,
+    setHealthOpen,
+    activeRepo,
+    handleOpenRepository,
+    closeTab,
+    globalModalOpen,
+    tabsRef,
+    setActiveRepo,
+  });
 
   return (
     <ToastContext.Provider value={pushToast}>

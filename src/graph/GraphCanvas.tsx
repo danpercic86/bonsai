@@ -19,18 +19,14 @@ import {
   drawHeadGuide,
   drawWipRow,
   initials,
-  laneX,
   refColArea,
   relativeDate,
 } from './draw';
 import type { WipSummary } from './draw';
-import { entityStyle, groupRefs, layoutRefLabels } from './refLabels';
-import { formatAbsolute } from './dates';
+import { groupRefs, layoutRefLabels } from './refLabels';
 import {
-  chipHitAt,
   fallbackBranchRef,
   forgeHitAt,
-  forgeTooltipTarget,
   hitTestRow,
   pillHitAt,
   sameTarget,
@@ -59,6 +55,7 @@ import type { EffectiveMetrics } from './metrics';
 import type { RevealFlash } from './reveal';
 import { flashAlpha, flashRingRadius } from './revealFlash';
 import { startRevealFlash } from './revealFlashRunner';
+import { resolveHoverTarget } from './hoverTarget';
 
 export type { WipSummary };
 
@@ -656,87 +653,25 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   };
 
   // P7 §6.1: resolve the hover tooltip target from a cursor position (scroller/
-  // host CSS coords). Avatar disc → author-name tooltip; a "+n" chip in the LEFT
-  // ref column → the hidden-entity list. Pure over current props/refs; returns
-  // null for empty area, the WIP row, or when no ctx/theme is available.
-  const computeHoverTarget = (x: number, y: number, scrollTop: number): TooltipState | null => {
-    const { layout: lay, wip, display } = propsRef.current;
-    const row = hitTestAtMouseY(y, scrollTop);
-    if (row === null || row < 0) return null; // none, or the WIP row (-1)
-    const node = lay.nodes[row];
-    const ctx = canvasRef.current?.getContext('2d') ?? null;
-    const theme = themeRef.current;
-    if (ctx === null || theme === null) return null;
-    const m = metricsRef.current;
-    const wipOffset = wip !== null ? 1 : 0;
-    const cy = (row + wipOffset) * m.rowHeight + m.rowHeight / 2 - scrollTop;
-    const cx = laneX(node.lane, m);
-    if (avatarHit(x, y, cx, cy, m)) {
-      const r = m.avatarRadius + m.avatarBgRingExtra;
-      return {
-        kind: 'avatar',
-        text: node.author,
-        anchor: { left: cx - r, top: cy - r, width: 2 * r, height: 2 * r },
-      };
-    }
-    if (node.refs !== undefined && node.refs.length > 0 && x < m.refColWidth) {
-      const { startX, budget } = refColArea(m);
-      const entities = groupRefs(node.refs);
-      const laid = layoutRefLabels(ctx, entities, node, theme, startX, budget, display);
-      const chip = chipHitAt(laid, x);
-      if (chip !== undefined) {
-        const shown = laid.filter((l) => l.entity !== null).length;
-        const lines = entities.slice(shown).map((e) => entityStyle(e, node, theme).label);
-        return {
-          kind: 'overflow',
-          lines,
-          anchor: { left: chip.x, top: cy - m.pillHeight / 2, width: chip.w, height: m.pillHeight },
-        };
-      }
-      // §14.2: hovering a SHOWN branch pill → full branch-name tooltip.
-      // Precedence: avatar (earlier) → chip (above) → shown pill.
-      const hitLabel = pillHitAt(laid, x);
-      if (hitLabel !== undefined && hitLabel.entity !== null && hitLabel.entity.kind === 'branch') {
-        return {
-          kind: 'ref',
-          text: hitLabel.entity.name,
-          anchor: { left: hitLabel.x, top: cy - m.pillHeight / 2, width: hitLabel.w, height: m.pillHeight },
-        };
-      }
-    }
-    // P51b: hovering the date column → FULL absolute timestamps (authored +
-    // committed), one per line; the inline date stays relative. Recompute the
-    // column geometry with the SAME pure helper the draw pass uses so the hit
-    // box matches the drawn column exactly. (`display` is read at the top.)
-    const rightInset = scrollerRef.current
-      ? scrollerRef.current.offsetWidth - scrollerRef.current.clientWidth
-      : 0;
-    const effRight = cssSizeRef.current.w - rightInset;
-    const cols = computeRightColumns(effRight, display, m);
-    // PR-badge-placement §6: forge column — the PR pill (tooltip) or CI dot.
-    // Same pure helpers the draw pass uses, so the hit boxes match the pixels.
-    if (cols.forge !== null && x >= cols.forge.leftX && x <= cols.forge.rightX) {
-      const signal = rowForgeSignal(node.refs, node, display);
-      if (signal !== null) {
-        const cell = layoutForgeCell(ctx, cols.forge.leftX, signal);
-        const t = forgeTooltipTarget(cell, x, m.ciBadgeSize, cy, m.pillHeight);
-        if (t !== null) return t;
-      }
-    }
-    if (cols.date !== null && x >= cols.date.leftX && x <= cols.date.rightX) {
-      return {
-        kind: 'date',
-        lines: [`Authored  ${formatAbsolute(node.ts)}`, `Committed ${formatAbsolute(node.committerTs)}`],
-        anchor: {
-          left: cols.date.leftX,
-          top: cy - m.pillHeight / 2,
-          width: cols.date.width,
-          height: m.pillHeight,
-        },
-      };
-    }
-    return null;
-  };
+  // host CSS coords). Pure resolution lives in `hoverTarget.ts`; this wrapper
+  // just gathers the container's live props/refs/measurements for it.
+  const computeHoverTarget = (x: number, y: number, scrollTop: number): TooltipState | null =>
+    resolveHoverTarget({
+      x,
+      y,
+      scrollTop,
+      row: hitTestAtMouseY(y, scrollTop),
+      layout: propsRef.current.layout,
+      wip: propsRef.current.wip,
+      display: propsRef.current.display,
+      m: metricsRef.current,
+      ctx: canvasRef.current?.getContext('2d') ?? null,
+      theme: themeRef.current,
+      rightInset: scrollerRef.current
+        ? scrollerRef.current.offsetWidth - scrollerRef.current.clientWidth
+        : 0,
+      cssWidth: cssSizeRef.current.w,
+    });
 
   // Scroll handler ONLY records scrollTop and schedules one rAF paint (§4.1).
   const handleScroll = () => {
