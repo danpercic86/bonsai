@@ -63,6 +63,7 @@ CSS custom properties on `:root` (dark, default) and `[data-theme="light"]`.
 | `--danger` | `#e5534b` | `#d13438` | errors, destructive |
 | `--success` | `#57ab5a` | `#1a7f37` | staged/added |
 | `--warning` | `#d4a72c` | `#9a6700` | modified/dirty |
+| `--graph-canvas-bg` | `#16181d` | `#ffffff` | graph-pane surface behind the canvas (container div, load skeleton, empty state) — keeps the DOM behind the canvas seamless with the canvas fill. Aliases `--bg-0` by default; the **Bonsai graph style** (spec 002) overrides it via `[data-graph-style='bonsai']` to a warm backdrop: **`#17140f`** dark / **`#f4efe6`** light. See §5.1. |
 
 Focus: 2px `--accent` outline, offset 1px, keyboard only (`:focus-visible`).
 
@@ -209,7 +210,8 @@ section mirrors them — update both together.
 - **Search-match:** an outer ring in `--match-ring` at a radius distinct from the selection/HEAD
   rings, so a match stays spottable while scrolling.
 - **Edge stroke:** **2px**, round caps, color = the edge lane's color from the **per-theme** palette
-  (§5).
+  (§5). The **Bonsai graph style** (§5.1) steps edge width per bezier segment (thinner toward the
+  tip, thicker toward the trunk) without moving any endpoint — see §5.1 / `002-bonsai-graph-theme-ui.md` §3.
 - **Fork/merge curve:** cubic bézier between (x1, y1) and (x2, y2) of adjacent rows with control
   points `(x1, y1 + rowHeight/2)` and `(x2, y2 − rowHeight/2)` — vertical tangents at both ends,
   GitKraken-style S-curve. Straight vertical segments elsewhere.
@@ -267,6 +269,47 @@ Ratios are the lane color against that theme's `--bg-0` (2px stroke / dot fill) 
 comfortably clearing the 3:1 graphics bar (WCAG 1.4.11). Do **not** reuse the dark hex in light mode.
 The light values double as the current-branch pill background (§6), so each also carries white pill
 text at ≥4.5:1.
+
+### 5.1 Bonsai graph style — palettes & backdrop (spec 002)
+
+The **Bonsai graph style** is a selectable third look (Settings → Appearance → Graph style), a
+**reskin only** — identical topology, ordering, stable lanes, ref pills, and virtualized scroll. It
+has its **own light and dark lane palettes** and a warm paper/soil backdrop. Full visual spec (node
+blossom, edge taper, sway, seasons, settings control, all states): `docs/contracts/002-bonsai-graph-theme-ui.md`.
+Only the token/palette **canon** lives here.
+
+Backdrop base colors (also the halo fill; `--graph-canvas-bg` override, §2): dark **`#17140f`**
+(L≈0.080), light **`#f4efe6`** (L≈0.939). Palettes are graph-layer constants
+(`LANE_COLORS_BONSAI_DARK` / `_LIGHT`) mirroring the `LANE_COLORS_*` precedent — **not** CSS vars.
+Ratios use the codebase's non-gamma `relLuminance` (the exact function `adaptivePillText` branches
+on); true-WCAG margins are wider, so these are conservative.
+
+**`LANE_COLORS_BONSAI_DARK`** — bright foliage on warm soil. All L≈0.66–0.78, so `adaptivePillText`
+picks near-black `#16181d` (pill ratios ≥11.7:1); vs backdrop `#17140f` all ≥5.0:1.
+
+| # | Name | Hex |  | # | Name | Hex |
+|---|------|-----|--|---|------|-----|
+| 0 | sage green | `#86c5b0` |  | 5 | jade teal  | `#7fccc4` |
+| 1 | warm sand  | `#e3c07a` |  | 6 | gold ochre | `#ddc85f` |
+| 2 | lilac bloom| `#c3a6e0` |  | 7 | rose bloom | `#e6a6bf` |
+| 3 | moss leaf  | `#9cc873` |  | 8 | wisteria   | `#a3aee6` |
+| 4 | clay       | `#e39b83` |  | 9 | young lime | `#bcd17a` |
+
+**`LANE_COLORS_BONSAI_LIGHT`** — deep bark/forest ink on paper. All L≈0.16–0.17, so
+`adaptivePillText` picks white `#ffffff` (pill ratios ≥4.8:1); vs backdrop `#f4efe6` all ≥5.3:1. Do
+**not** brighten past L≈0.18 or white pill text drops below 4.5:1.
+
+| # | Name | Hex |  | # | Name | Hex |
+|---|------|-----|--|---|------|-----|
+| 0 | deep pine  | `#123330` |  | 5 | deep teal   | `#0b3038` |
+| 1 | bark umber | `#45280e` |  | 6 | dark ochre  | `#332907` |
+| 2 | plum bloom | `#372440` |  | 7 | deep rose   | `#4e1e30` |
+| 3 | forest grn | `#163419` |  | 8 | deep indigo | `#24284e` |
+| 4 | deep clay  | `#501e16` |  | 9 | dark olive  | `#2c3009` |
+
+Seasons (Living/Spring/Autumn) shift only the blossom accent + backdrop tint, **never the 10 lane
+hues**, so every ratio above holds across seasons. Fixed semantic colors (`STASH_COLOR`,
+`TAG_COLOR`, `DETACHED_HEAD_BG`) stay fixed in Bonsai. Full tables + rationale in the 002 contract.
 
 ## 6. Ref pills (beside commit message)
 
