@@ -54,7 +54,7 @@ export function useSway(opts: {
     }
     swayStateRef.current = null;
     if (wasRunning) paint();
-  }, [paint]);
+  }, [paint, swayStateRef]);
 
   // Arm a bounded settle NOW. No-op unless Bonsai + motion on + document visible.
   // Mirrors startRevealFlash's animated path: a self-contained rAF repaints each
@@ -89,7 +89,7 @@ export function useSway(opts: {
     };
     if (swayRafRef.current !== 0) cancelAnimationFrame(swayRafRef.current);
     swayRafRef.current = requestAnimationFrame(tick);
-  }, [paint, graphStyleRef, reducedMotionRef]);
+  }, [paint, graphStyleRef, reducedMotionRef, swayStateRef]);
 
   const onScroll = useCallback(() => {
     if (swayStateRef.current !== null) {
@@ -106,7 +106,7 @@ export function useSway(opts: {
         armSway();
       }, SWAY_ARM_DELAY_MS);
     }
-  }, [armSway, graphStyleRef, reducedMotionRef]);
+  }, [armSway, graphStyleRef, reducedMotionRef, swayStateRef]);
 
   // Arm on selection change (skip mount so opening a repo doesn't sway).
   const selMountRef = useRef(false);

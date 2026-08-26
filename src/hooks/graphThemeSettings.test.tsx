@@ -5,9 +5,9 @@
  *  Split across three layers, matching where the behavior actually lives:
  *   - mock IPC round-trip: a write survives a re-read AND lands in localStorage
  *     (that is the "reload" story — every read re-parses the blob);
- *   - legacy blob: a stored blob lacking both keys re-reads with them ABSENT —
- *     the mock deliberately omits the keys so a pre-spec blob stays byte-identical
- *     (the `?? default` defaulting is the consumer's job, asserted below);
+ *   - legacy blob: a stored blob lacking both keys re-reads with them DEFAULTED
+ *     to 'standard' / 'living', exactly like every other additive field (a
+ *     missing/wrong-shape blob reads back as a complete UiSettings);
  *   - hook defaulting: hydrating a settings object without the fields yields
  *     'standard' / 'living', and a style patch does NOT bump metricsVersion. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -47,17 +47,18 @@ describe('mock IPC round-trip (real timers — handlers await delay)', () => {
     expect(afterReload.graphSeason).toBe('spring');
   });
 
-  it('a stored blob missing both keys re-reads with them ABSENT (pre-spec byte-identity)', async () => {
+  it('a stored blob missing both keys re-reads with them DEFAULTED (standard/living)', async () => {
     // Seed a minimal legacy blob lacking both keys.
     window.localStorage.setItem(
       UI_SETTINGS_KEY,
       JSON.stringify({ theme: 'light', paneWidths: { sidebar: 300, rightPanel: 400 } }),
     );
     const s = await mockIpc.getUiSettings();
-    // Correct app behavior: the mock omits the keys rather than minting them, so
-    // a round-trip of an old blob does not gain new keys. Consumers default them.
-    expect(s.graphStyle).toBeUndefined();
-    expect(s.graphSeason).toBeUndefined();
+    // Correct app behavior: read fills the keys from the shared defaults, exactly
+    // like every other additive field — a legacy/missing blob reads back as a
+    // complete UiSettings (the keys are pinned in the defaults oracle).
+    expect(s.graphStyle).toBe('standard');
+    expect(s.graphSeason).toBe('living');
     expect(s.theme).toBe('light');
   });
 });

@@ -285,21 +285,19 @@ export function readUiSettings(): UiSettings {
           ? g.showCiStatus
           : DEFAULT_UI_SETTINGS.graph.showCiStatus,
     });
-    // Spec-002 (additive/optional): commit-graph style + season. OMITTED from the
-    // result when the blob does not carry a valid value, so a pre-spec blob stays
-    // byte-identical on round-trip while an explicit choice survives reload. (The
-    // keys ARE present in the shared defaults oracle / native settings; this
-    // omit-when-absent only governs an already-persisted mock blob.) Consumers
-    // apply `?? default` (see useUiSettings), so absence reads as 'standard' /
-    // DEFAULT_SEASON.
-    const graphStyle: GraphStyle | undefined =
+    // Spec-002 (additive): commit-graph style + season. Fall back to the shared
+    // defaults when the blob omits/garbles them — same as every other additive
+    // field below, so a wrong-shape or missing blob reads back as the complete
+    // DEFAULT_UI_SETTINGS (the keys are pinned in the defaults oracle + native
+    // settings). Season is ignored while graphStyle === 'standard'.
+    const graphStyle: GraphStyle =
       parsed.graphStyle === 'bonsai' || parsed.graphStyle === 'standard'
         ? parsed.graphStyle
-        : undefined;
-    const graphSeason: GraphSeason | undefined =
+        : (DEFAULT_UI_SETTINGS.graphStyle ?? 'standard');
+    const graphSeason: GraphSeason =
       typeof parsed.graphSeason === 'string' && GRAPH_SEASONS.has(parsed.graphSeason)
         ? (parsed.graphSeason as GraphSeason)
-        : undefined;
+        : (DEFAULT_UI_SETTINGS.graphSeason ?? 'living');
     // P13 AI fields (additive, like autoFetch/graph): fall back to defaults.
     const aiEnabled =
       typeof parsed.aiEnabled === 'boolean' ? parsed.aiEnabled : DEFAULT_UI_SETTINGS.aiEnabled;
@@ -352,8 +350,8 @@ export function readUiSettings(): UiSettings {
       autoFetch,
       healthRefresh,
       graph,
-      ...(graphStyle !== undefined ? { graphStyle } : {}),
-      ...(graphSeason !== undefined ? { graphSeason } : {}),
+      graphStyle,
+      graphSeason,
       aiEnabled,
       aiConflictAutonomy,
       aiConsented,
