@@ -91,6 +91,10 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
   // Theme in the pane; numbered here as new §1.3 rows).
   62: ['appearance.graph-style'],
   63: ['appearance.graph-season'],
+  // Spec-003 §4 — Commit graph → Declutter: first-parent switch + branch-filter
+  // summary/Clear row.
+  64: ['graph.first-parent'],
+  65: ['graph.branch-filters'],
 };
 
 /**
@@ -103,12 +107,12 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
  */
 const DISSOLVED_ROWS: ReadonlySet<number> = new Set([5, 25, 38, 39, 40, 43, 52, 55]);
 
-describe('UI §1.3 coverage — all 63 rows, structurally', () => {
-  it('maps exactly rows 1..63', () => {
+describe('UI §1.3 coverage — all 65 rows, structurally', () => {
+  it('maps exactly rows 1..65', () => {
     const rows = Object.keys(COVERAGE)
       .map(Number)
       .sort((a, b) => a - b);
-    expect(rows).toEqual(Array.from({ length: 63 }, (_, i) => i + 1));
+    expect(rows).toEqual(Array.from({ length: 65 }, (_, i) => i + 1));
   });
 
   it('names only real entries, and every entry is claimed by some row', () => {
@@ -133,7 +137,7 @@ describe('UI §1.3 coverage — all 63 rows, structurally', () => {
         owner.set(id, Number(row));
       }
     }
-    // 63 rows − 8 dissolved, expanded by the pair/card rows.
+    // 65 rows − 8 dissolved, expanded by the pair/card rows.
     expect(owner.size).toBe(SETTINGS_INDEX.length);
     // A dissolved row must fold INTO a row that really exists.
     for (const row of DISSOLVED_ROWS) {

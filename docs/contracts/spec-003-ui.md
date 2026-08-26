@@ -43,6 +43,7 @@ type GraphRefFilter = { mode: 'solo' | 'hide'; refs: string[] } | null; // full 
 > partially stale set, the flag reads `true` and the UI cannot tell. **Recommend** an additive
 > `meta.seedRefsApplied?: boolean` ("the seed-ref restriction took effect"). §2.2 specs both the
 > with-field and without-field behaviour so implementation is unblocked either way.
+> *(Resolved in implementation: `seedRefsApplied` shipped.)*
 
 **New files** (container/presentational split, all well under 500 lines):
 
@@ -105,7 +106,10 @@ graph pane's top-right fab cluster, beside the existing `.graph-search-fab`.
   `Graph is filtered — some commits are hidden. Click to review or clear.`
 - **States.** Hover: `background: var(--bg-3)`. Pressed: `--bg-3` + no transform. Focus:
   `:focus-visible` 2px `--accent` outline, 1px offset. Disabled: never (hidden instead). Popover
-  open: `aria-expanded="true"` + persistent `--bg-3` fill.
+  open: `aria-expanded="true"` + persistent `--bg-3` fill — required on **both** the active chip
+  (note: `aria-expanded` sits on the inner `.graph-filter-chip-body` button, so the outer pill
+  needs `:has(...)` or an explicit open class) **and** the inactive icon-only fab (the popover
+  opens from either).
 - **A11y.** Chip body: `<button aria-haspopup="dialog" aria-expanded aria-label="Graph filters:
   {activeSummary}">` when active, `aria-label="Graph filters"` when inactive. The ✕ is a separate
   sibling button (never a nested button).
@@ -143,7 +147,10 @@ box-shadow: 0 8px 24px rgb(0 0 0 / .32)` (existing menu shadow); same z-layer as
 (house rule, ui-ref §12.4 — no Bonsai dialog traps; a lone trap would be the inconsistency).
 Tab order: switch → ref ✕s (DOM order) → Show full graph. Esc closes and restores focus to the
 chip; if the chip unmounted (all filters cleared then closed), focus goes to `.graph-scroll`.
-Click-away and focus leaving the popover close it. While open, App's global shortcuts are
+Click-away and focus leaving the popover close it — **but a click on the popover's own
+non-interactive content (help text, header, padding) must NOT close it**: a blur whose pointer-down
+originated inside the popover root is ignored (track the last `mousedown` target, or re-check
+`document.activeElement` containment in a deferred frame). While open, App's global shortcuts are
 suppressed via the existing `onMenuOpenChange` lift (TabStrip/identity-menu precedent).
 
 ### 2.2 Stale-fallback state (honest messaging)
@@ -163,6 +170,13 @@ Popover section 3 replaces the ref list with that sentence (12px `--text-2`, max
 the footer button reads `Clear saved filter` (enabled). Contrast: label `--text-1` over warning
 14% tint = 9.2:1+ dark / 11.7:1+ light; `⚠` glyph ≥3.8:1 both themes (measured recipe, ui-ref
 §10.2/§11). No toast, no banner — the state is passive until the user looks.
+
+**Stale + first-parent both present (`seedRefsApplied: false` ∧ `firstParent: true`).** The
+first-parent filter DID apply, so the copy must not claim the full graph. Chip label:
+`First-parent · Filter not applied` (same warning-pill styling). `title`:
+`Your saved branch filter doesn't match any branches in this repository. First-parent is still
+applied.` Popover: stale sentence uses the same two-sentence copy; switch reflects the live
+first-parent state as usual; footer stays `Clear saved filter` and clears both knobs.
 
 ---
 
@@ -220,7 +234,8 @@ the chip + the soloed rows' markers carry the state).
 ## 4. Settings — Commit graph category, new group "Declutter"
 
 Rendered by `SettingsGraphDeclutterSection.tsx` after the existing groups; standard §12.2 row
-anatomy; both rows registered in the settings catalog (searchable).
+anatomy; both rows registered in the settings catalog (searchable). Catalog `label` strings must
+match the rendered row labels exactly (search results display the catalog label).
 
 1. **Row `graph.first-parent`** — Switch. Label `First-parent only`. Help (12px `--text-2`):
    `Follow each commit's first parent so merged-in side histories collapse out of the graph.`
@@ -233,6 +248,10 @@ anatomy; both rows registered in the settings catalog (searchable).
    `Solo: {name} +{n}` / `{n} branches hidden` / `Saved filter matches no branches in this
    repository.` (stale) / `None. Right-click a branch in the sidebar to solo or hide it.`
    Keywords: `solo hide branch filter declutter show full graph`.
+   *(Accepted deviation 2026-08-26: the stale sentence is NOT rendered in Settings — the
+   `seedRefsApplied` verdict is per-repo workspace runtime state and SettingsPanel has no
+   repo-state channel. The chip carries the stale state. Revisit only if Settings ever gains a
+   repo-state feed.)*
 
 Because persistence is **global** (plan risk, accepted), the note's stale sentence is the honest
 per-repo readout. Both themes: all row parts are existing settings primitives — no new pairs.
@@ -249,6 +268,7 @@ per-repo readout. Both themes: all row parts are existing settings primitives �
 | Hide set | `n branches hidden` | HIDDEN list | `EyeOff` on hidden | `n branches hidden` |
 | Both | `First-parent · Solo: x` | switch on + list | markers | both rows active |
 | Stale fallback | ⚠ `Filter not applied` | stale sentence | no markers | stale sentence |
+| Stale + first-parent | ⚠ `First-parent · Filter not applied` (§2.2) | stale sentence (two-sentence copy) | no markers | row 1 on |
 | Search bar open + filter active | chip stays, shifted below the bar (§2 gate) | — | — | — |
 | Loading (graph reload) | chip stays; no spinner (reload uses existing stream path) | — | — | — |
 | Error (graph load fails) | existing `.graph-error-banner` owns it; chip unchanged | — | — | — |

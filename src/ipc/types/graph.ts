@@ -84,9 +84,29 @@ export interface StreamEdge {
  *  - `done`: terminal authoritative scalars. `totalRows` == nodes emitted;
  *    `headIndex` resolved; `truncated` set at the streaming cap. */
 export type GraphChunk =
-  | { kind: 'meta'; total: number | null; headOid: string | null }
+  | {
+      kind: 'meta';
+      total: number | null;
+      headOid: string | null;
+      /** Spec-003 (additive, absent = false): ANY filter took effect on this walk. */
+      filtered?: boolean;
+      /** Spec-003 (additive, absent = false): the seed-ref restriction specifically
+       *  took effect (false under the stale-refs fallback even when `filtered`). */
+      seedRefsApplied?: boolean;
+    }
   | { kind: 'batch'; startRow: number; laneCountSoFar: number; nodes: StreamNode[]; edges: StreamEdge[] }
   | { kind: 'done'; totalRows: number; laneCount: number; headIndex: number | null; truncated: boolean };
+
+/** Spec-003: the wire graph filter (mirrors Rust `GraphFilter`, camelCase,
+ *  serde-default — `{ firstParent: false, seedRefs: null }` == today's walk). */
+export interface GraphFilter {
+  firstParent: boolean;
+  /** Full ref names (`refs/heads/x`, `refs/remotes/origin/x`, `refs/tags/v1`).
+   *  `null` = all refs (today's behavior). `[]` = hide-all → HEAD-only seed.
+   *  Non-empty matching zero existing refs = stale → backend falls back to the
+   *  full graph and reports `seedRefsApplied: false`. */
+  seedRefs: string[] | null;
+}
 
 /** Graph geometry knobs (P11 §2.3) — pure render geometry, not layout math. */
 /** Which timestamp the graph's date column + relative/absolute date use (P51).

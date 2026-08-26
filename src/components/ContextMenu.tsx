@@ -27,6 +27,11 @@ export interface ContextMenuItem {
    * ellipsised, never focusable. The row grows 32 → 46px when present.
    */
   detail?: string;
+  /**
+   * Spec-003 (UI §3.1): a hairline group separator rendered ABOVE this row.
+   * Purely visual (`role="presentation"`); keyboard navigation is unaffected.
+   */
+  separatorBefore?: boolean;
 }
 
 export interface ContextMenuProps {
@@ -258,7 +263,11 @@ function MenuList({
                must NOT remount: it holds keyboard focus in a menu that stays
                open for the whole write. These lists never reorder in place. */
             key={i}
-            className="context-menu-row"
+            className={
+              item.separatorBefore === true
+                ? 'context-menu-row context-menu-row--separated'
+                : 'context-menu-row'
+            }
             onMouseEnter={() => onRowEnter(i, item)}
             onMouseLeave={() => onRowLeave(i, item)}
           >

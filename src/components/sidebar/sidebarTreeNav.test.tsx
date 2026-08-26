@@ -205,14 +205,18 @@ describe('sidebar tree — activation (D.5)', () => {
     expect(onCheckout).toHaveBeenCalledTimes(1); // HEAD Enter did nothing
   });
 
-  it('Enter on the HEAD row does not open a menu (branchMenuItems is empty)', () => {
+  it('HEAD row: Enter opens nothing; the menu key requests the menu (spec-003 filter group)', () => {
+    // Spec-003 gave the HEAD row a (filter-only) context menu, so the keyboard
+    // menu key must reach onContextMenu like right-click does; the container
+    // decides whether any items open. Enter (primary) still does nothing.
     const onContextMenu = vi.fn();
     const { container } = renderSidebar({ onContextMenu });
     const head = item(container, 'branch:main')!;
     head.focus();
     fireEvent.keyDown(head, { key: 'Enter' });
-    fireEvent.keyDown(head, { key: 'F10', shiftKey: true });
     expect(onContextMenu).not.toHaveBeenCalled();
+    fireEvent.keyDown(head, { key: 'F10', shiftKey: true });
+    expect(onContextMenu).toHaveBeenCalledWith('main', 'localBranch', expect.any(Number), expect.any(Number));
   });
 });
 

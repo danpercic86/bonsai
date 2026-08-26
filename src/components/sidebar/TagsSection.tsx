@@ -11,6 +11,7 @@ import { buildPathTree } from '../../utils/pathTree';
 import { Tree } from '../Tree';
 import { ListFilterInput } from '../ListFilterInput';
 import { filterByName, filterItems, filterTree } from '../repoWorkspace/listFilter';
+import { RefFilterMarker } from './RefFilterMarker';
 import { SectionHeader } from './SectionHeader';
 import { TagSyncBadge } from './TagSyncBadge';
 import { SectionRollupBadge } from './SectionRollupBadge';
@@ -72,6 +73,8 @@ function TagRow({
       <span className="branch-name branch-name-muted" title={name}>
         {displayName ?? name}
       </span>
+      {/* Spec-003 §3.3: solo/hidden marker after the name, before the sync badge. */}
+      <RefFilterMarker fullRef={`refs/tags/${name}`} />
       {sync !== undefined && remote !== null && (
         <TagSyncBadge
           status={sync.status}

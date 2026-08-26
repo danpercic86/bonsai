@@ -71,6 +71,8 @@ function renderPanel(over: Partial<SettingsPanelProps> = {}) {
     graph: GRAPH,
     graphStyle: 'standard',
     graphSeason: 'living',
+    graphFirstParent: false,
+    graphRefFilter: null,
     onChange: vi.fn(),
     onToggleTheme: vi.fn(),
     onToggleListView: vi.fn(),

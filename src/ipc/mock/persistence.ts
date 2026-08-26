@@ -2,7 +2,7 @@
 import { AUTO_FETCH_INTERVAL_MAX, AUTO_FETCH_INTERVAL_MIN, AVATAR_RADIUS_MAX, AVATAR_RADIUS_MIN, HEALTH_REFRESH_INTERVAL_MAX, HEALTH_REFRESH_INTERVAL_MIN, LANE_WIDTH_MAX, LANE_WIDTH_MIN, ROW_HEIGHT_MAX, ROW_HEIGHT_MIN } from '../../settings/ranges';
 import { DEFAULT_UI_SETTINGS as PRODUCTION_DEFAULT_UI_SETTINGS } from '../../settings/defaults';
 import { parseAiRunSettings } from './aiRunSettings';
-import type { AiAutonomy, AutoFetchSettings, GraphDateBasis, GraphPrefs, GraphSeason, GraphStyle, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, PanelDensity, PrimaryCommitAction, ProfileColor, RecentRepo, SessionState, Theme, UiSettings } from '../types';
+import type { AiAutonomy, AutoFetchSettings, GraphDateBasis, GraphPrefs, GraphRefFilter, GraphSeason, GraphStyle, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, PanelDensity, PrimaryCommitAction, ProfileColor, RecentRepo, SessionState, Theme, UiSettings } from '../types';
 
 /** Spec-002: closed enum guards for the two additive graph-theme prefs. */
 const GRAPH_SEASONS: ReadonlySet<string> = new Set<GraphSeason>(['living', 'spring', 'autumn']);
@@ -203,6 +203,17 @@ export function sanitizeProfiles(raw: unknown): IdentityProfile[] | null {
   });
 }
 
+/** Spec-003: shape-check a persisted `graphRefFilter` intent — mode must be
+ *  'solo' | 'hide' and refs a string array (non-string entries dropped);
+ *  anything else (incl. a malformed object) degrades to null. Pure. */
+export function sanitizeGraphRefFilter(raw: unknown): GraphRefFilter | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const { mode, refs } = raw as { mode?: unknown; refs?: unknown };
+  if (mode !== 'solo' && mode !== 'hide') return null;
+  if (!Array.isArray(refs)) return null;
+  return { mode, refs: refs.filter((r): r is string => typeof r === 'string') };
+}
+
 /** Corrupt/missing storage degrades to the default — mirrors load_from. */
 export function readUiSettings(): UiSettings {
   try {
@@ -298,6 +309,10 @@ export function readUiSettings(): UiSettings {
       typeof parsed.graphSeason === 'string' && GRAPH_SEASONS.has(parsed.graphSeason)
         ? (parsed.graphSeason as GraphSeason)
         : (DEFAULT_UI_SETTINGS.graphSeason ?? 'living');
+    // Spec-003 (additive): first-parent toggle + solo/hide intent. Malformed
+    // graphRefFilter degrades to null (no ref filter), never throws.
+    const graphFirstParent = parsed.graphFirstParent === true;
+    const graphRefFilter = sanitizeGraphRefFilter(parsed.graphRefFilter);
     // P13 AI fields (additive, like autoFetch/graph): fall back to defaults.
     const aiEnabled =
       typeof parsed.aiEnabled === 'boolean' ? parsed.aiEnabled : DEFAULT_UI_SETTINGS.aiEnabled;
@@ -352,6 +367,8 @@ export function readUiSettings(): UiSettings {
       graph,
       graphStyle,
       graphSeason,
+      graphFirstParent,
+      graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,
       aiConsented,

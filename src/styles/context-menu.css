@@ -79,6 +79,13 @@
   flex-direction: column;
 }
 
+/* Spec-003 (UI §3.1): hairline group separator above a row. */
+.context-menu-row--separated {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
 /* Label takes the middle space; ellipsizes long branch names. */
 .context-menu-label {
   flex: 1 1 auto;

@@ -72,6 +72,26 @@ pub enum GraphSeason {
     Autumn,
 }
 
+/// Spec-003: which way the persisted graph ref filter reads (`"solo"` = show
+/// only these refs; `"hide"` = show all but these). Settings-layer INTENT type
+/// — the backend stores it opaquely and never interprets it; the frontend
+/// derives the wire `GraphFilter.seedRefs` whitelist from it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RefFilterMode {
+    Solo,
+    Hide,
+}
+
+/// Spec-003: persisted graph ref-filter INTENT (global, graphStyle precedent).
+/// `refs` are full ref names (`refs/heads/x`, ...). Opaque to the backend.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphRefFilter {
+    pub mode: RefFilterMode,
+    pub refs: Vec<String>,
+}
+
 /// AI conflict-resolution autonomy (P13). ProposeReview = user accepts before
 /// anything is written/staged (default); AutoResolve = write+stage immediately,
 /// user reviews the staged diff before commit_merge.

@@ -54,6 +54,22 @@ describe('createGraphStreamApplier', () => {
     expect(a.poisoned).toBe(false);
   });
 
+  it('spec-003: meta surfaces the filter flags through setFilterFlags (absent → false)', () => {
+    const sinks = { ...makeSinks(), setFilterFlags: vi.fn<NonNullable<GraphStreamSinks['setFilterFlags']>>() };
+    const a = createGraphStreamApplier(createGraphStream(), null, sinks, vi.fn());
+    a.handle(meta); // legacy meta without the flags → both coerce to false
+    expect(sinks.setFilterFlags).toHaveBeenLastCalledWith({
+      filtered: false,
+      seedRefsApplied: false,
+    });
+    const b = createGraphStreamApplier(createGraphStream(), null, sinks, vi.fn());
+    b.handle({ ...meta, filtered: true, seedRefsApplied: false } as GraphChunk);
+    expect(sinks.setFilterFlags).toHaveBeenLastCalledWith({
+      filtered: true,
+      seedRefsApplied: false,
+    });
+  });
+
   it('remaps the prior selection the instant its row arrives, exactly once', () => {
     const sinks = makeSinks();
     const a = createGraphStreamApplier(createGraphStream(), oid(2), sinks, vi.fn());

@@ -2,7 +2,7 @@
 
 **Spec:** ./spec.md
 **UI contract:** ../../contracts/spec-003-ui.md
-**Status:** draft (amended for accepted UI-contract flags 1+2)
+**Status:** implemented (AI gate green 2026-08-26; USER CHECKPOINT pending)
 
 ## Approach
 

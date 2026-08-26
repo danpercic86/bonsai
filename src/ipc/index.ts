@@ -103,6 +103,8 @@ export type {
   GitTransferProgress,
   GraphChunk,
   GraphEdge,
+  GraphFilter,
+  GraphRefFilter,
   GitAvailability,
   GitBinSource,
   GraphLayout,

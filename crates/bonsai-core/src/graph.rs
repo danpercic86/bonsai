@@ -17,11 +17,16 @@ use std::collections::{HashMap, HashSet};
 use crate::error::AppError;
 
 mod decorate;
+mod filter;
 mod lane;
 mod seed;
+mod stash_seed;
 mod stream;
+use filter::SeedPlan;
+use stash_seed::collect_stashes;
 use lane::LaneWalker;
 pub use decorate::redecorate_chunks;
+pub use filter::GraphFilter;
 pub use seed::{graph_seed, graph_seed_with, GraphSeed};
 pub use stream::{
     stream_graph_core, stream_graph_from_repo, GraphChunk, GraphStreamEdge, StreamNode,
@@ -126,19 +131,35 @@ impl GraphLayout {
 pub type RefMap = HashMap<git2::Oid, Vec<RefLabel>>;
 
 /// The deterministic walk SEED shared by both graph paths (see [`collect_seed`]):
-/// `(labels per oid, deduped tips in push order, head oid, hidden oids)`.
-type WalkSeed = (RefMap, Vec<git2::Oid>, Option<git2::Oid>, Vec<git2::Oid>);
+/// `(labels per oid, deduped tips in push order, head oid, hidden oids,
+/// seed_refs_applied)`.
+type WalkSeed = (
+    RefMap,
+    Vec<git2::Oid>,
+    Option<git2::Oid>,
+    Vec<git2::Oid>,
+    bool,
+);
 
 /// Blocking. Opens the repo at `workdir` (no upward search, same as
 /// `read_status`) and computes the full layout. Unborn HEAD / zero refs →
-/// empty layout, NOT an error.
+/// empty layout, NOT an error. Thin wrapper over [`compute_graph_with`] with
+/// the default (no-op) filter — spec-003 regression guard: identical output.
 pub fn compute_graph(workdir: &std::path::Path) -> Result<GraphLayout, AppError> {
+    compute_graph_with(workdir, &GraphFilter::default())
+}
+
+/// [`compute_graph`] with a graph declutter filter (spec-003).
+pub fn compute_graph_with(
+    workdir: &std::path::Path,
+    filter: &GraphFilter,
+) -> Result<GraphLayout, AppError> {
     let mut repo = open_no_search(workdir)?;
-    let (refs, tips, head_oid, hide) = collect_seed(&mut repo)?;
+    let (refs, tips, head_oid, hide, _applied) = collect_seed(&mut repo, filter)?;
     if tips.is_empty() {
         return Ok(GraphLayout::empty());
     }
-    layout_walk(&repo, &tips, refs, head_oid, &hide)
+    layout_walk(&repo, &tips, refs, head_oid, &hide, filter.first_parent)
 }
 
 /// Opens the repo at `workdir` with NO upward search (same as `read_status`).
@@ -163,9 +184,17 @@ fn open_no_search(workdir: &std::path::Path) -> Result<git2::Repository, AppErro
 /// tips are appended AFTER the branch/remote/tag/HEAD tips in ascending stash
 /// index order (determinism, §1.6), then tips are re-deduped preserving first
 /// occurrence (a stash `W` could coincide with an existing tip).
-fn collect_seed(repo: &mut git2::Repository) -> Result<WalkSeed, AppError> {
-    let stashes = collect_stashes(repo)?;
-    let (mut refs, mut tips, head_oid) = collect_refs(repo)?;
+///
+/// Spec-003: `filter.seed_refs` restricts which refs seed the walk (see
+/// [`SeedPlan`]); stash tips are excluded whenever the restriction is active.
+fn collect_seed(repo: &mut git2::Repository, filter: &GraphFilter) -> Result<WalkSeed, AppError> {
+    let plan = SeedPlan::new(repo, filter);
+    let stashes = if plan.seed_stashes() {
+        collect_stashes(repo)?
+    } else {
+        Vec::new()
+    };
+    let (mut refs, mut tips, head_oid) = collect_refs(repo, &plan)?;
 
     let mut hide: Vec<git2::Oid> = Vec::new();
     for s in &stashes {
@@ -180,72 +209,26 @@ fn collect_seed(repo: &mut git2::Repository) -> Result<WalkSeed, AppError> {
     let mut seen: HashSet<git2::Oid> = HashSet::new();
     tips.retain(|o| seen.insert(*o));
 
-    Ok((refs, tips, head_oid, hide))
+    Ok((refs, tips, head_oid, hide, plan.applied()))
 }
 
 /// Builds the revwalk shared by both paths: `TOPOLOGICAL | TIME`, with the tips
-/// pushed in the given deterministic order.
+/// pushed in the given deterministic order. `first_parent` simplifies the walk
+/// to first parents (spec-003; paired with the `LaneWalker` parent truncation).
 fn seeded_revwalk<'r>(
     repo: &'r git2::Repository,
     tips: &[git2::Oid],
+    first_parent: bool,
 ) -> Result<git2::Revwalk<'r>, AppError> {
     let mut revwalk = repo.revwalk()?;
     revwalk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)?;
+    if first_parent {
+        revwalk.simplify_first_parent()?;
+    }
     for &tip in tips {
         revwalk.push(tip)?;
     }
     Ok(revwalk)
-}
-
-/// One stash resolved for the walk. `stash_oid` (= commit `W`) is pushed as a
-/// revwalk TIP so the stash appears as its own node; `hide` = the stash's
-/// synthetic parents (index commit `I` = parent 1, untracked commit `U` =
-/// parent 2 if present) which are skip-emitted in `layout_walk` so they never
-/// become nodes (NOT via `revwalk.hide`, which would also exclude `I`'s parent
-/// `B` — see the note there). `W`'s FIRST parent (the base `B`) is left visible
-/// and reached naturally, yielding the single `W → B` edge.
-struct StashSeed {
-    index: usize,
-    stash_oid: git2::Oid,
-    hide: Vec<git2::Oid>,
-}
-
-/// O(stashes). Enumerate the stash stack (ascending index, `stash@{0}` first);
-/// for each, resolve `W` via the `refs/stash` reflog (entry `i`.`id_new()`), then
-/// derive `hide` from `W`'s parents `[1..]` (skip parent 0 = base). A missing
-/// `refs/stash` → empty; unresolvable entries are skipped. Requires `&mut` for
-/// `stash_foreach`.
-///
-/// Perf: stashes add O(few) extra tips/hides to the walk. The M2d 20k perf
-/// fixture contains no stashes, so this is a no-op there and the criterion
-/// benchmark is unaffected.
-fn collect_stashes(repo: &mut git2::Repository) -> Result<Vec<StashSeed>, AppError> {
-    let mut idxs: Vec<usize> = Vec::new();
-    repo.stash_foreach(|index, _msg, _oid| {
-        idxs.push(index);
-        true
-    })?;
-    let reflog = match repo.reflog("refs/stash") {
-        Ok(r) => r,
-        Err(_) => return Ok(Vec::new()), // no stash ref → nothing to inject
-    };
-    let mut out = Vec::with_capacity(idxs.len());
-    for &index in &idxs {
-        if let Some(entry) = reflog.get(index) {
-            let stash_oid = entry.id_new();
-            if let Ok(commit) = repo.find_commit(stash_oid) {
-                // parents 1.. = the index commit `I` and optional untracked
-                // commit `U`; parent 0 = base `B` is left visible.
-                let hide: Vec<git2::Oid> = commit.parent_ids().skip(1).collect();
-                out.push(StashSeed {
-                    index,
-                    stash_oid,
-                    hide,
-                });
-            }
-        }
-    }
-    Ok(out) // ascending by index (stash@{0} first)
 }
 
 /// Sort rank for pill order (§2.2): detached Head first, then LocalBranch
@@ -263,8 +246,13 @@ fn pill_rank(kind: RefKind) -> u8 {
 
 /// Collects ref labels per commit and the deterministic tip list for the walk.
 /// Returns `(labels per oid, deduped tips in push order, head oid)`.
+///
+/// Spec-003: `plan` restricts which refs become tips AND keep their pill
+/// labels (hidden refs' pills vanish for free); HEAD is always seeded, with a
+/// synthesized detached-style `Head` label when its branch was filtered out.
 fn collect_refs(
     repo: &git2::Repository,
+    plan: &SeedPlan,
 ) -> Result<(RefMap, Vec<git2::Oid>, Option<git2::Oid>), AppError> {
     let mut labels: RefMap = HashMap::new();
     let mut tips: Vec<git2::Oid> = Vec::new();
@@ -302,6 +290,7 @@ fn collect_refs(
         locals.push((name, oid));
     }
     locals.sort();
+    locals.retain(|(name, _)| plan.keep(&format!("refs/heads/{name}")));
     for (name, oid) in locals {
         let is_head = !detached && head_branch.as_deref() == Some(name.as_str());
         labels.entry(oid).or_default().push(RefLabel {
@@ -330,6 +319,7 @@ fn collect_refs(
         remotes.push((name, oid));
     }
     remotes.sort();
+    remotes.retain(|(name, _)| plan.keep(&format!("refs/remotes/{name}")));
     for (name, oid) in remotes {
         labels.entry(oid).or_default().push(RefLabel {
             name,
@@ -355,6 +345,7 @@ fn collect_refs(
         tags.push((name, oid));
     }
     tags.sort();
+    tags.retain(|(name, _)| plan.keep(&format!("refs/tags/{name}")));
     for (name, oid) in tags {
         labels.entry(oid).or_default().push(RefLabel {
             name,
@@ -375,6 +366,9 @@ fn collect_refs(
         }
         tips.push(oid);
     }
+    // Spec-003: if HEAD is attached but its branch label was filtered out, add
+    // a detached-style Head label so the HEAD pill always resolves.
+    plan.synthesize_head_label(&mut labels, head_oid, detached, head_branch.as_deref());
 
     // Sort each commit's labels into pill order.
     for v in labels.values_mut() {
@@ -399,8 +393,9 @@ fn layout_walk(
     mut refs: RefMap,
     head_oid: Option<git2::Oid>,
     hide: &[git2::Oid],
+    first_parent: bool,
 ) -> Result<GraphLayout, AppError> {
-    let revwalk = seeded_revwalk(repo, tips)?;
+    let revwalk = seeded_revwalk(repo, tips, first_parent)?;
     // Stash synthetic parents (`I` = staged index, `U` = untracked) must never
     // become nodes. We do NOT use `revwalk.hide` for this: `hide(I)` marks I AND
     // its ancestors uninteresting, and `I`'s parent IS the stash base `B`, so it
@@ -410,7 +405,7 @@ fn layout_walk(
     // any commit's parent list, so `B` stays reachable via the branch/stash
     // tips. A hidden oid absent from the graph is a tolerated no-op.
     let hidden: HashSet<git2::Oid> = hide.iter().copied().collect();
-    let mut walker = LaneWalker::new(hidden);
+    let mut walker = LaneWalker::new(hidden, first_parent);
 
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<GraphEdge> = Vec::new();
@@ -474,3 +469,5 @@ fn layout_walk(
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_filter;

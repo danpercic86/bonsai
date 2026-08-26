@@ -52,6 +52,8 @@ const MUTATED: UiSettings = {
     showPrBadge: true,
     showCiStatus: true,
   },
+  // Spec-003: the first-parent row's reset leaf.
+  graphFirstParent: true,
   terminalCommand: 'wt.exe {path}',
   editorCommand: 'code {path}',
   aiEnabled: false,
@@ -88,6 +90,7 @@ const RESET_LEAVES: Readonly<Record<string, string>> = {
   'graph.signature-badge': 'graph.showSignatureBadge',
   'graph.pr-badges': 'graph.showPrBadge',
   'graph.ci-status': 'graph.showCiStatus',
+  'graph.first-parent': 'graphFirstParent',
   'ai.conflict-resolution': 'aiConflictAutonomy',
   'ai.repository-access': 'aiConflictTools',
   'ai.stream-output': 'aiStreamLog',

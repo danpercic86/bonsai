@@ -15,6 +15,7 @@ import {
   StashIcon,
   WorktreeIcon,
 } from '../appIcons';
+import { RefFilterMarker } from './RefFilterMarker';
 import { useSidebarTreeItem } from './useSidebarTreeItem';
 
 type BranchContextMenu = (
@@ -62,15 +63,16 @@ export function BranchRow({
   level?: number;
 }) {
   const isHead = branch.isHead;
-  // HEAD branch: Enter no-op (already checked out) and no menu (branchMenuItems is
-  // empty for HEAD, matching right-click). Non-HEAD: Enter = checkout (D.5).
+  // HEAD branch: Enter no-op (already checked out). The keyboard menu opens for
+  // every row — spec-003 gives the HEAD row a (filter-only) menu, matching
+  // right-click, so the old `!isHead` gate would desync the two paths.
   const item = useSidebarTreeItem({
     treeKey,
     level,
     kind: 'leaf',
     ariaCurrent: isHead,
     onPrimary: isHead || busy ? undefined : () => onCheckout(branch.name),
-    openMenuAt: isHead ? undefined : (x, y) => onContextMenu(branch.name, 'localBranch', x, y),
+    openMenuAt: (x, y) => onContextMenu(branch.name, 'localBranch', x, y),
   });
   return (
     <li
@@ -91,6 +93,8 @@ export function BranchRow({
       <span className="branch-name" title={branch.name}>
         {displayName ?? branch.name}
       </span>
+      {/* Spec-003 §3.3: solo/hidden marker after the name, before status pills. */}
+      <RefFilterMarker fullRef={`refs/heads/${branch.name}`} />
       <AheadBehindBadge branch={branch} />
     </li>
   );
@@ -134,6 +138,8 @@ export function RemoteRow({
       <span className="branch-name branch-name-muted" title={name}>
         {displayName ?? name}
       </span>
+      {/* Spec-003 §3.3: `name` is the "origin/…" shorthand → refs/remotes/<name>. */}
+      <RefFilterMarker fullRef={`refs/remotes/${name}`} />
     </li>
   );
 }

@@ -20,6 +20,11 @@ pub struct UiSettings {
     pub graph_style: GraphStyle,
     /// Spec-002: seasonal accent for the Bonsai style (default Living).
     pub graph_season: GraphSeason,
+    /// Spec-003: first-parent graph declutter toggle (default false).
+    pub graph_first_parent: bool,
+    /// Spec-003: persisted graph ref-filter INTENT (default None). Opaque to
+    /// the backend; the frontend derives the wire whitelist from it.
+    pub graph_ref_filter: Option<GraphRefFilter>,
     pub auto_fetch: AutoFetch,
     /// Health-refresh background job (P30 D7).
     pub health_refresh: HealthRefresh,
@@ -80,6 +85,15 @@ pub struct UiSettingsPatch {
     /// Spec-002: commit-graph style + season; each patches independently.
     pub graph_style: Option<GraphStyle>,
     pub graph_season: Option<GraphSeason>,
+    /// Spec-003: first-parent declutter toggle; patches independently.
+    pub graph_first_parent: Option<bool>,
+    /// Spec-003: graph ref-filter intent. Double-option so an explicit `null`
+    /// (clear the filter) is distinguishable from an ABSENT key (leave
+    /// unchanged): missing → `None`, `null` → `Some(None)`, a value →
+    /// `Some(Some(v))`. The field-level `default` is mandatory: with a custom
+    /// `deserialize_with`, a missing key would otherwise be a hard error.
+    #[serde(default, deserialize_with = "double_option")]
+    pub graph_ref_filter: Option<Option<GraphRefFilter>>,
     /// Whole-struct patch (like `pane_widths`): the frontend sends the entire
     /// nested object when any sub-field changes.
     pub auto_fetch: Option<AutoFetch>,
@@ -120,6 +134,18 @@ pub struct UiSettingsPatch {
     pub ai_dock_collapsed: Option<bool>,
 }
 
+/// Distinguishes an ABSENT patch key (don't touch) from an explicit `null`
+/// (clear): missing → `None` (via the field default), `null` → `Some(None)`,
+/// a value → `Some(Some(v))`. A plain `Option<Option<T>>` can't — serde folds
+/// `null` and missing together at the outer level.
+fn double_option<'de, T, D>(de: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: serde::Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    serde::Deserialize::deserialize(de).map(Some)
+}
+
 /// Pure patch application: only `Some(..)` fields of `patch` mutate `s`; pane
 /// widths are clamped on write. Extracted from `set_ui_settings` so its
 /// partial-update semantics are unit-testable without a Tauri app
@@ -145,6 +171,13 @@ pub(crate) fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     }
     if let Some(graph_season) = patch.graph_season {
         s.graph_season = graph_season;
+    }
+    if let Some(graph_first_parent) = patch.graph_first_parent {
+        s.graph_first_parent = graph_first_parent;
+    }
+    // Double-option: `Some(None)` (an explicit wire `null`) CLEARS the filter.
+    if let Some(graph_ref_filter) = patch.graph_ref_filter {
+        s.graph_ref_filter = graph_ref_filter;
     }
     if let Some(auto_fetch) = patch.auto_fetch {
         s.auto_fetch = clamp_auto_fetch(auto_fetch);
@@ -240,6 +273,8 @@ pub(crate) fn ui_settings_of(s: &settings::Settings) -> UiSettings {
         primary_commit_action: s.primary_commit_action,
         graph_style: s.graph_style,
         graph_season: s.graph_season,
+        graph_first_parent: s.graph_first_parent,
+        graph_ref_filter: s.graph_ref_filter.clone(),
         auto_fetch: s.auto_fetch,
         health_refresh: s.health_refresh,
         graph: s.graph,

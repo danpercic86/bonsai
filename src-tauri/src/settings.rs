@@ -131,6 +131,13 @@ pub struct Settings {
     /// Spec-002: seasonal accent for the Bonsai style. Additive `#[serde(default)]`;
     /// a legacy file loads `GraphSeason::default()` (Living). NOT clamped.
     pub graph_season: GraphSeason,
+    /// Spec-003: first-parent graph declutter toggle. Additive `#[serde(default)]`
+    /// (via the container-level `default`); a legacy file loads `false`. NOT clamped.
+    pub graph_first_parent: bool,
+    /// Spec-003: persisted graph ref-filter INTENT (solo/hide + full ref names).
+    /// Opaque to the backend — the frontend derives the wire whitelist. Additive
+    /// `#[serde(default)]`; a legacy file loads `None`. NOT clamped.
+    pub graph_ref_filter: Option<GraphRefFilter>,
     /// Open tabs, in display order (repoIds == canonical workdir paths).
     /// Additive (P3e §6.1); a legacy file without this key loads as empty.
     pub open_repos: Vec<String>,
@@ -270,6 +277,8 @@ impl Default for Settings {
             primary_commit_action: PrimaryCommitAction::default(),
             graph_style: GraphStyle::default(),
             graph_season: GraphSeason::default(),
+            graph_first_parent: false,
+            graph_ref_filter: None,
             open_repos: Vec::new(),
             active_repo: None,
             auto_fetch: AutoFetch::default(),

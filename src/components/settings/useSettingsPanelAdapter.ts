@@ -28,6 +28,7 @@ import type {
   AiAvailability,
   AutoFetchSettings,
   GraphPrefs,
+  GraphRefFilter,
   GraphSeason,
   GraphStyle,
   HealthRefreshSettings,
@@ -68,6 +69,10 @@ export interface SettingsPanelProps {
    *  persisted values to concrete defaults, so these arrive non-null. */
   graphStyle: GraphStyle;
   graphSeason: GraphSeason;
+  /** Spec-003: graph declutter prefs (App resolves the optional persisted
+   *  values to concrete defaults, like graphStyle/graphSeason). */
+  graphFirstParent: boolean;
+  graphRefFilter: GraphRefFilter | null;
   /** Fires on ANY change with a partial patch; App debounces the persist +
    *  updates its own state so consumers re-render live. */
   onChange(patch: UiSettingsPatch): void;
@@ -241,6 +246,8 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     graph,
     graphStyle,
     graphSeason,
+    graphFirstParent,
+    graphRefFilter,
     aiConflictAutonomy,
     aiAvailability,
     aiRun,
@@ -275,6 +282,10 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       autoFetch,
       healthRefresh,
       graph,
+      // Spec-003: live values (the DEFAULT_UI_SETTINGS spread only supplies
+      // defaults) so the first-parent row's ↺ tracks the real state.
+      graphFirstParent,
+      graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,
       aiConsented,
@@ -294,6 +305,8 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       autoFetch,
       healthRefresh,
       graph,
+      graphFirstParent,
+      graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,
       aiConsented,
@@ -332,6 +345,8 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       graph,
       graphStyle,
       graphSeason,
+      graphFirstParent,
+      graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,
       aiConsented,
@@ -365,6 +380,8 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       graph,
       graphStyle,
       graphSeason,
+      graphFirstParent,
+      graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,
       aiConsented,

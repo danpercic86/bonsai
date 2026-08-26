@@ -20,6 +20,7 @@
 @import './styles/layout-panes.css';
 @import './styles/search.css';
 @import './styles/graph-canvas.css';
+@import './styles/graph-filter.css';
 @import './styles/right-panel-density.css';
 @import './styles/empty-and-errors.css';
 @import './styles/status-panel.css';

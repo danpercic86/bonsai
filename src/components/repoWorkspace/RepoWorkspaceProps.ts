@@ -2,6 +2,7 @@ import type {
   AiAutonomy,
   AiAvailability,
   GraphPrefs,
+  GraphRefFilter,
   GraphSeason,
   GraphStyle,
   ListView,
@@ -38,6 +39,11 @@ export interface RepoWorkspaceProps {
   /** spec 002: Bonsai graph paint style + season, threaded into the canvas. */
   graphStyle: GraphStyle;
   graphSeason: GraphSeason;
+  /** Spec-003: persisted graph-declutter intent (App/useUiSettings owns the
+   *  state); `onGraphFilterChange` patches it via the debounced settings path. */
+  graphFirstParent: boolean;
+  graphRefFilter: GraphRefFilter | null;
+  onGraphFilterChange(patch: UiSettingsPatch): void;
   /** P13 §8: AI assistance settings + CLI health (App owns these + consent). */
   aiEnabled: boolean;
   aiConflictAutonomy: AiAutonomy;

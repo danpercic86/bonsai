@@ -121,6 +121,9 @@ export const MINIMAL: FixtureValues = {
   // the fixture supplies the concrete defaults the SettingsPanel props require.
   graphStyle: 'standard',
   graphSeason: 'living',
+  // Spec-003: same optional-in-UiSettings treatment.
+  graphFirstParent: false,
+  graphRefFilter: null,
   aiEnabled: false,
   aiConflictAutonomy: D.aiConflictAutonomy,
   aiConsented: false,
@@ -173,6 +176,10 @@ export const MAXIMAL: FixtureValues = {
     showPrBadge: true,
     showCiStatus: true,
   },
+  // Spec-003: first-parent OFF its default (↺ present); a live ref filter so the
+  // Branch-filters Clear button renders enabled.
+  graphFirstParent: true,
+  graphRefFilter: { mode: 'solo', refs: ['refs/heads/main'] },
   aiEnabled: true,
   aiConsented: true,
   aiConflictAutonomy: 'autoResolve',

@@ -15,6 +15,8 @@ import type { DiffSlot } from './StatusPanel';
 import type { UseCommitSearch } from './repoWorkspace/useCommitSearch';
 import type { UseHistorySearch } from './repoWorkspace/useHistorySearch';
 import { GraphCanvas } from '../graph/GraphCanvas';
+import { GraphFilterChip } from './GraphFilterChip';
+import type { GraphFilterController } from '../hooks/useGraphFilter';
 import { GraphSelectionAnnouncer } from './GraphSelectionAnnouncer';
 import type { GraphCanvasHandle } from '../graph/GraphCanvas';
 import type {
@@ -65,6 +67,10 @@ export interface WorkspaceGraphPaneProps {
   /** spec 002: Bonsai graph style + season, forwarded to GraphCanvas. */
   graphStyle: GraphCanvasProps['graphStyle'];
   graphSeason: GraphCanvasProps['graphSeason'];
+  /** Spec-003: the declutter controller (chip + popover) and the backend's
+   *  stale verdict (saved refs matched nothing → warning chip). */
+  graphFilter: GraphFilterController;
+  graphFilterStale: boolean;
 
   /** P50b: commit-search state (bar + graph highlight + next/prev jump). */
   search: UseCommitSearch;
@@ -171,6 +177,8 @@ export function WorkspaceGraphPane({
   reducedMotion,
   graphStyle,
   graphSeason,
+  graphFilter,
+  graphFilterStale,
   search,
   searchScopeOptions,
   historySearch,
@@ -263,6 +271,27 @@ export function WorkspaceGraphPane({
           </button>
         )
       )}
+      {/* Spec-003 §2: the graph-filter chip. Hidden only when there is no graph,
+          HEAD is unborn, or a full overlay covers the pane. While the search bar
+          or Ask-history panel is open the ACTIVE/stale chip stays (shifted below
+          the bar); the icon-only inactive fab hides (it is chrome, not the
+          indicator). */}
+      {graph !== null &&
+        head?.unborn !== true &&
+        !anyOverlayOpen &&
+        (graphFilter.requested || (!search.open && !historySearch.open)) && (
+          <GraphFilterChip
+            controller={graphFilter}
+            stale={graphFilterStale}
+            belowBar={search.open || historySearch.open}
+            // Follow-up (spec-003): global-shortcut suppression while the popover
+            // is open needs an App-level lift; the popover contains its own Esc.
+            onMenuOpenChange={() => {}}
+            focusGraph={() => {
+              document.querySelector<HTMLElement>('.graph-scroll')?.focus();
+            }}
+          />
+        )}
       {/* P57c: the "Ask history" overlay (semantic search + AI answer). Its own
           top overlay, independent of the P50 literal-search bar. */}
       {historySearch.open && (

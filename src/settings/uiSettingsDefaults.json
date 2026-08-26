@@ -6,6 +6,8 @@
   "primaryCommitAction": "commit",
   "graphStyle": "standard",
   "graphSeason": "living",
+  "graphFirstParent": false,
+  "graphRefFilter": null,
   "autoFetch": { "enabled": false, "intervalMinutes": 5 },
   "healthRefresh": { "enabled": false, "intervalMinutes": 30 },
   "graph": {

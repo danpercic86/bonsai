@@ -101,6 +101,11 @@ export const sessionHandlers = {
       graph: patch.graph !== undefined ? clampGraphPrefs(patch.graph) : current.graph,
       ...(graphStyle !== undefined ? { graphStyle } : {}),
       ...(graphSeason !== undefined ? { graphSeason } : {}),
+      // Spec-003: first-parent + ref-filter intent. `graphRefFilter: null` in a
+      // patch is a real value (clear the filter), so `!== undefined` gates it.
+      graphFirstParent: patch.graphFirstParent ?? current.graphFirstParent ?? false,
+      graphRefFilter:
+        patch.graphRefFilter !== undefined ? patch.graphRefFilter : (current.graphRefFilter ?? null),
       aiEnabled: patch.aiEnabled ?? current.aiEnabled,
       aiConflictAutonomy: patch.aiConflictAutonomy ?? current.aiConflictAutonomy,
       aiConsented: patch.aiConsented ?? current.aiConsented,

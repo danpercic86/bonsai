@@ -29,7 +29,9 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 Branch: `feat/bonsai-graph-theme` (stacked on spec-002, per user decision). Autonomous
 straight-through run; USER CHECKPOINTs collected in the ledger below and presented at the end.
 
-**Current step:** spec-003 — specify/plan/tasks
+**Current step:** spec-003 — reviewer + ui-designer both APPROVED after 1 fix round; tester green (nextest 2064, vitest 2369, e2e 164+4 new, perf gate 3/3 — first-parent 206ms vs full 258ms); `pnpm gate` running → then commit wip(spec-003) and start spec-004 implementation (plan+UI contract+tasks all done)
+
+Spec-003 follow-ups filed (SHOULD-FIX/NIT, velocity mode): RepoWorkspace.tsx +53 growth (queue for refactor campaign); AC7 scroll-to-top when selection doesn't survive filter change; popover Esc vs capture-phase global listeners; settings-panel stale sentence; mock HEAD-pill synthesis divergence (comment); SeedPlan staleness vs symbolic refs (origin/HEAD); transient stale-chip flash between filter change and next meta; chip top:50px offset (ui-designer call).
 
 Delivery units (in order):
 - **spec-003** — Declutter: first-parent toggle + branch solo/hide (brief #1 sub 1+2, Rust `GraphFilter`) — in-progress

@@ -98,6 +98,16 @@ import { useForgeSignals } from './repoWorkspace/useForgeSignals';
 import { useHistorySearch } from './repoWorkspace/useHistorySearch';
 import { useCommitComposer } from './repoWorkspace/useCommitComposer';
 import { usePalette } from './repoWorkspace/usePalette';
+import { useGraphFilterRefetch } from '../hooks/useGraphFilter';
+import { useGraphFilterWiring } from './repoWorkspace/useGraphFilterWiring';
+import { useExternalTools } from './repoWorkspace/useExternalTools';
+import { bisectSummariesOf } from './repoWorkspace/bisectSummaries';
+import {
+  graphFilterPaletteEntries,
+  headRowFilterMenuItems,
+  refFilterMenuItems,
+} from './workspaceMenusFilter';
+import { RefFilterMarkerContext } from './sidebar/refFilterMarkerContext';
 import { buildPaletteActions, type PaletteAction } from './paletteActions';
 import { safeOpDispatch } from './safeOpDispatch';
 import type { ComboboxOption } from './Combobox';
@@ -121,6 +131,9 @@ export function RepoWorkspace({
   metricsVersion,
   graphStyle,
   graphSeason,
+  graphFirstParent,
+  graphRefFilter,
+  onGraphFilterChange,
   aiEnabled,
   aiConflictAutonomy,
   aiConsented,
@@ -557,6 +570,10 @@ export function RepoWorkspace({
   const graphDataRef = useRef(graph);
   graphDataRef.current = graph;
 
+  // Spec-003: graph-declutter controller + refetch ref + meta truth flags.
+  const { graphFilter, graphFilterRef, setGraphFilterFlags, stale: graphFilterStale } =
+    useGraphFilterWiring({ graphFirstParent, graphRefFilter, onGraphFilterChange, branches });
+
   // P58c: per-oid signature verify cache, keyed on the graph's visible range;
   // gated on the showSignatureBadge pref (off ⇒ empty map, NO verify requests).
   const verification = useCommitVerification({
@@ -981,14 +998,14 @@ export function RepoWorkspace({
     const applier = createGraphStreamApplier(
       stream,
       prevSelectedId,
-      { setGraph, setGraphEdgeIndex, setGraphTotal, setSelectedIndex },
+      { setGraph, setGraphEdgeIndex, setGraphTotal, setSelectedIndex, setFilterFlags: setGraphFilterFlags },
       (e) => {
         if (id === graphReqId.current) setGraphError(errorMessage(e));
       },
     );
     setGraphLoading(true);
     try {
-      await ipc.streamGraph(repoId, (chunk) => {
+      await ipc.streamGraph(repoId, graphFilterRef.current, (chunk) => {
         if (id !== graphReqId.current) return; // stale / superseded stream
         applier.handle(chunk);
       });
@@ -1010,7 +1027,7 @@ export function RepoWorkspace({
     } finally {
       if (id === graphReqId.current) setGraphLoading(false);
     }
-  }, [repoId]);
+  }, [repoId, graphFilterRef, setGraphFilterFlags]); // both hook-stable
 
   const refetchBranches = useCallback(async () => {
     const id = ++branchesReqId.current;
@@ -1882,6 +1899,9 @@ export function RepoWorkspace({
   // next/prev reuse revealCommitByOid (the single-selection reveal path).
   const search = useCommitSearch({ repoId, graph, revealCommitByOid, pushToast });
 
+  // Spec-003: a declutter-filter change reloads the graph (+ selection reveal).
+  useGraphFilterRefetch({ filterKey: graphFilter.filterKey, refetchGraph, selectedIndexRef, graphDataRef, revealCommitByOid });
+
   // P57c: semantic-history "Ask history" — retrieval + AI answer. The answer
   // routes into the shared AiOutputPanel via runHistoryAnswer (aiPanel req-id).
   const historySearch = useHistorySearch({
@@ -1996,6 +2016,7 @@ export function RepoWorkspace({
     actions.unshift(...aiDock.paletteEntries.lead);
     actions.push(...aiDock.paletteEntries.trail);
     actions.push(...gitDock.paletteEntries); // P87b §5: the "Git activity" row.
+    actions.push(...graphFilterPaletteEntries(graphFilter)); // Spec-003 §3.2.
     return actions;
   }, [
     palette.open,
@@ -2020,6 +2041,7 @@ export function RepoWorkspace({
     appCommands,
     aiDock.paletteEntries,
     gitDock.paletteEntries,
+    graphFilter,
   ]);
 
   function handleToggleConflictView(path: string) {
@@ -2136,7 +2158,10 @@ export function RepoWorkspace({
     clientX: number,
     clientY: number,
   ) {
-    const items = menus.branchMenuItems(name, kind);
+    let items = menus.branchMenuItems(name, kind);
+    // Spec-003 §3.1: the checked-out branch gets the solo/hide group alone.
+    if (items.length === 0 && kind === 'localBranch' && headBranch?.name === name)
+      items = headRowFilterMenuItems(graphFilter, name);
     if (items.length === 0) return;
     setMenu({ x: clientX, y: clientY, items });
   }
@@ -2203,28 +2228,8 @@ export function RepoWorkspace({
   // P37b: force-push needs a normal-push-capable HEAD with a configured upstream.
   const canForcePush = canPullPush && headBranch?.upstream != null;
 
-  // P49b: launch external tools at a filesystem path (repo / worktree /
-  // submodule). Never gated by mutating/opActive — launches touch no git state.
-  // Failures surface via the shared AppError→toast path; success is silent (the
-  // opened window is its own feedback).
-  const handleOpenInTerminal = useCallback(
-    (path: string) => {
-      void ipc.openInTerminal(path).catch((e) => pushToast('error', errorMessage(e)));
-    },
-    [pushToast],
-  );
-  const handleRevealInFileManager = useCallback(
-    (path: string) => {
-      void ipc.revealInFileManager(path).catch((e) => pushToast('error', errorMessage(e)));
-    },
-    [pushToast],
-  );
-  const handleOpenInEditor = useCallback(
-    (path: string) => {
-      void ipc.openInEditor(path).catch((e) => pushToast('error', errorMessage(e)));
-    },
-    [pushToast],
-  );
+  const { handleOpenInTerminal, handleRevealInFileManager, handleOpenInEditor } =
+    useExternalTools(pushToast); // P49b launchers (extracted to useExternalTools.ts)
 
   // P3e §menu-extraction: the context-menu item-array builders live in
   // workspaceMenus.ts now; rebuild them each render over the current state +
@@ -2292,21 +2297,11 @@ export function RepoWorkspace({
     onOpenInTerminal: handleOpenInTerminal,
     onRevealInFileManager: handleRevealInFileManager,
     onOpenInEditor: handleOpenInEditor,
+    refFilterItems: (fullRef, noun) => refFilterMenuItems(graphFilter, fullRef, noun),
   });
 
-  // P39b: short summaries for the bisect banner's first-bad / current oids,
-  // resolved from the loaded graph (missing → the banner falls back to shortOid).
-  const bisectSummaries: Record<string, string> | undefined = (() => {
-    if (opState.kind !== 'bisect') return undefined;
-    const map: Record<string, string> = {};
-    const nodes = graph?.nodes ?? [];
-    for (const oid of [opState.current, opState.firstBad]) {
-      if (oid === null) continue;
-      const s = nodes.find((n) => n.id === oid)?.summary;
-      if (s !== undefined) map[oid] = s;
-    }
-    return map;
-  })();
+  // P39b: bisect-banner oid summaries (extracted to bisectSummaries.ts).
+  const bisectSummaries = bisectSummariesOf(opState, graph);
 
   // P38 §7.2/§7.3: reflog restore wiring. Both actions arm the SHARED dialogs
   // (create-branch PromptDialog / reset ConfirmDialog) — no new mutation path.
@@ -2395,6 +2390,8 @@ export function RepoWorkspace({
       />
 
       <div className="panes">
+        {/* Spec-003 §3.3: rows read solo/hidden membership from this context. */}
+        <RefFilterMarkerContext.Provider value={graphFilter.markerFor}>
         <Sidebar
           data={branches}
           loading={branchesLoading}
@@ -2430,6 +2427,7 @@ export function RepoWorkspace({
           onCleanupBranches={() => setStaleCleanupOpen(true)}
           onReveal={handleReveal}
         />
+        </RefFilterMarkerContext.Provider>
         <PaneDivider side="sidebar" onResize={onSidebarResize} onResizeEnd={onPaneResizeEnd} />
         <WorkspaceGraphPane
           graphError={graphError}
@@ -2456,6 +2454,8 @@ export function RepoWorkspace({
           reducedMotion={reducedMotion}
           graphStyle={graphStyle}
           graphSeason={graphSeason}
+          graphFilter={graphFilter}
+          graphFilterStale={graphFilterStale}
           search={search}
           searchScopeOptions={searchScopeOptions}
           historySearch={historySearch}

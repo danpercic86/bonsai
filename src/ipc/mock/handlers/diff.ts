@@ -12,6 +12,7 @@ import type {
   CommitDiff,
   CompareDiff,
   FileDiff,
+  GraphFilter,
   GraphLayout,
   ImageDiff,
   ImageDiffRequest,
@@ -171,7 +172,9 @@ export const diffHandlers = {
     };
   },
 
-  async getGraph(repoId: string): Promise<GraphLayout> {
+  // Spec-003: the optional filter is accepted for signature parity but ignored —
+  // the streamed path (graphStream.ts) is the filtered surface the UI uses.
+  async getGraph(repoId: string, _filter?: GraphFilter): Promise<GraphLayout> {
     await delay(150);
     // Built fresh per call (timestamps relative to now; callers own the copy).
     // The default fixture prepends synthetic mock-commit rows (P1 §3.5) and

@@ -67,16 +67,21 @@ pub(super) struct LaneWalker {
     /// routing regardless, so retaining it here costs the stream nothing (moved,
     /// never cloned).
     last_parents: Vec<git2::Oid>,
+    /// Spec-003 first-parent mode: truncate parent routing to parent 0 (paired
+    /// with `simplify_first_parent` on the revwalk — the walk never emits the
+    /// other parents, so routing edges to them would leave dangling lanes).
+    first_parent: bool,
 }
 
 impl LaneWalker {
-    pub(super) fn new(hidden: HashSet<git2::Oid>) -> Self {
+    pub(super) fn new(hidden: HashSet<git2::Oid>, first_parent: bool) -> Self {
         LaneWalker {
             lanes: Vec::new(),
             pending: HashMap::new(),
             index_of: HashMap::new(),
             hidden,
             last_parents: Vec::new(),
+            first_parent,
         }
     }
 
@@ -153,10 +158,15 @@ impl LaneWalker {
         // 4. Route edges to parents / update reservations. Skip-emitted stash
         //    parents (`I`/`U`) are filtered out so `W` keeps only its base `B`
         //    → a single `W → B` edge and no dangling lane reservation.
-        let parents: Vec<git2::Oid> = commit
+        let mut parents: Vec<git2::Oid> = commit
             .parent_ids()
             .filter(|p| !self.hidden.contains(p))
             .collect();
+        // Spec-003 first-parent mode: only parent 0 is walked (the revwalk is
+        // simplified), so never route edges to the other parents.
+        if self.first_parent {
+            parents.truncate(1);
+        }
         if parents.is_empty() {
             self.lanes[lane] = None; // root: line ends here
         } else {

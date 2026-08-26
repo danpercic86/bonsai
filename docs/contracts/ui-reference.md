@@ -215,6 +215,10 @@ section mirrors them — update both together.
 - **Fork/merge curve:** cubic bézier between (x1, y1) and (x2, y2) of adjacent rows with control
   points `(x1, y1 + rowHeight/2)` and `(x2, y2 − rowHeight/2)` — vertical tangents at both ends,
   GitKraken-style S-curve. Straight vertical segments elsewhere.
+- **Fold-pill display rows (spec 004):** with "Fold linear runs" on, a collapsed linear run renders
+  as one uniform-height display row — dashed lane connector + a "⋯ N commits" pill in the §6
+  local-branch recipe on the run's lane colour, painted by `src/graph/drawFold.ts`. Full spec
+  (geometry, states, keyboard, re-collapse): `docs/contracts/spec-004-ui.md`.
 - **Right of the graph:** ref pills (§6), then the commit summary (`--text-1`, `summaryFont` 13px
   cozy / 12px compact, truncated), then the metadata pack — a leftmost **forge column**
   (`forgeColWidth` 74px, adjacent to the summary) followed by the optional author / relative-date /
@@ -242,6 +246,11 @@ The `<canvas>` is opaque to assistive tech, so the graph MUST be a focusable com
 - A permanently-mounted polite live region (the RevealAnnouncer / §9–§10 split) announces the
   settled selection: `"{summary} — {author}, {relative date}. Row {n+1} of {N}. {ref summary}"`,
   debounced ~150 ms so a held arrow key does not flood the reader.
+- **Row counts are display rows (amended 2026-08-26, spec 004).** With fold active, model rows lie
+  to assistive tech: `aria-rowcount`, active-descendant row ids, and the announcer's
+  `"Row {n} of {N}"` all use **display** indices (`foldModel.displayRowCount`; display == model
+  when fold is off, so pre-fold behaviour is unchanged). Fold-pill rows are navigable
+  active-descendant targets with their own accessible name — see `spec-004-ui.md` §3.
 
 ## 5. Lane color palette (deterministic, per theme)
 

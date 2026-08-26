@@ -48,6 +48,9 @@ const DEFAULTS: UiSettings = {
   graphStyle: 'standard',
   /** Spec-002: seasonal accent for the Bonsai style; ignored while standard. */
   graphSeason: 'living',
+  /** Spec-003: first-parent graph walk off; no solo/hide ref filter. */
+  graphFirstParent: false,
+  graphRefFilter: null,
   /** P11: auto-fetch OFF, 5-minute interval. */
   autoFetch: { enabled: false, intervalMinutes: 5 },
   /** P30: periodic status/health refresh OFF, 30-minute interval. */

@@ -75,7 +75,7 @@ fn get_repo_health_requires_open_repo() {
 fn get_graph_no_repo_and_unborn() {
     let state = AppState::default();
 
-    let err = tauri::async_runtime::block_on(get_graph_inner(&state, MISSING_ID))
+    let err = tauri::async_runtime::block_on(get_graph_inner(&state, MISSING_ID, None))
         .expect_err("no repo open must be NoRepo");
     assert!(matches!(err, AppError::NoRepo));
 
@@ -83,7 +83,7 @@ fn get_graph_no_repo_and_unborn() {
     git2::Repository::init(repo_dir.path()).expect("init repo");
     let id = open(&state, repo_dir.path()).expect("open unborn repo").repo_id;
 
-    let layout = tauri::async_runtime::block_on(get_graph_inner(&state, &id))
+    let layout = tauri::async_runtime::block_on(get_graph_inner(&state, &id, None))
         .expect("empty layout for unborn repo");
     assert!(layout.nodes.is_empty());
     assert_eq!(layout.head_index, None);

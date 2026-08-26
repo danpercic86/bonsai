@@ -13,7 +13,7 @@ use std::collections::HashSet;
 
 use crate::error::AppError;
 
-use super::{collect_seed, open_no_search, seeded_revwalk, LaneWalker, RefLabel};
+use super::{collect_seed, open_no_search, seeded_revwalk, GraphFilter, LaneWalker, RefLabel};
 
 /// First flush: the first screenful + generous overscan, kept small so the
 /// initial paint is instant.
@@ -79,6 +79,14 @@ pub enum GraphChunk {
     Meta {
         total: Option<u32>,
         head_oid: Option<String>,
+        /// Spec-003: ANY declutter filter took effect
+        /// (`seed_refs_applied || first_parent`). Additive; `false` == the
+        /// full, unfiltered graph.
+        filtered: bool,
+        /// Spec-003: the seed-ref restriction specifically took effect —
+        /// `false` under the stale-refs fallback even when a non-empty
+        /// `seedRefs` was requested (the UI's stale-warning truth signal).
+        seed_refs_applied: bool,
     },
     /// A run of consecutive rows `[start_row, start_row + nodes.len())` plus the
     /// edges FINALIZED within them (every edge whose parent `to` falls in this
@@ -113,6 +121,7 @@ pub fn stream_graph_core(
 ) -> Result<(), AppError> {
     stream_graph_core_with(
         workdir,
+        &GraphFilter::default(),
         STREAM_FIRST_BATCH,
         STREAM_BATCH,
         STREAM_MAX_COMMITS,
@@ -125,13 +134,14 @@ pub fn stream_graph_core(
 /// batch sizes to prove batch boundaries never move a lane (contract §7).
 pub(crate) fn stream_graph_core_with(
     workdir: &std::path::Path,
+    filter: &GraphFilter,
     first_batch: usize,
     batch: usize,
     max_commits: usize,
     emit: impl FnMut(GraphChunk) -> bool,
 ) -> Result<(), AppError> {
     let mut repo = open_no_search(workdir)?;
-    stream_graph_from_repo_with(&mut repo, first_batch, batch, max_commits, emit)
+    stream_graph_from_repo_with(&mut repo, filter, first_batch, batch, max_commits, emit)
 }
 
 /// Blocking. P88b/B2b round handle cache: stream the walk from an ALREADY-OPEN
@@ -141,21 +151,30 @@ pub(crate) fn stream_graph_core_with(
 /// here. `&mut` is required because `collect_seed` runs `stash_foreach`.
 pub fn stream_graph_from_repo(
     repo: &mut git2::Repository,
+    filter: &GraphFilter,
     emit: impl FnMut(GraphChunk) -> bool,
 ) -> Result<(), AppError> {
-    stream_graph_from_repo_with(repo, STREAM_FIRST_BATCH, STREAM_BATCH, STREAM_MAX_COMMITS, emit)
+    stream_graph_from_repo_with(
+        repo,
+        filter,
+        STREAM_FIRST_BATCH,
+        STREAM_BATCH,
+        STREAM_MAX_COMMITS,
+        emit,
+    )
 }
 
 /// [`stream_graph_from_repo`] with the batch/cap constants parameterized (test +
 /// `&Path`-wrapper seam). See [`stream_graph_core_with`].
 pub(crate) fn stream_graph_from_repo_with(
     repo: &mut git2::Repository,
+    filter: &GraphFilter,
     first_batch: usize,
     batch: usize,
     max_commits: usize,
     mut emit: impl FnMut(GraphChunk) -> bool,
 ) -> Result<(), AppError> {
-    let (mut refs, tips, head_oid, hide) = collect_seed(repo)?;
+    let (mut refs, tips, head_oid, hide, seed_refs_applied) = collect_seed(repo, filter)?;
     // Downgrade to a shared borrow for the walk (the seed pass above needed
     // `&mut` for `stash_foreach`; the revwalk + lane stepping only read).
     let repo: &git2::Repository = repo;
@@ -164,6 +183,10 @@ pub(crate) fn stream_graph_from_repo_with(
     if !emit(GraphChunk::Meta {
         total: cheap_total(repo)?,
         head_oid: head_hex,
+        // Spec-003 truth flags, set right after `collect_seed` (before the
+        // empty-tips early return — hide-all on a tiny repo hits that path).
+        filtered: seed_refs_applied || filter.first_parent,
+        seed_refs_applied,
     }) {
         return Ok(()); // sink gone before the first row
     }
@@ -178,9 +201,9 @@ pub(crate) fn stream_graph_from_repo_with(
         return Ok(());
     }
 
-    let revwalk = seeded_revwalk(repo, &tips)?;
+    let revwalk = seeded_revwalk(repo, &tips, filter.first_parent)?;
     let hidden: HashSet<git2::Oid> = hide.iter().copied().collect();
-    let mut walker = LaneWalker::new(hidden);
+    let mut walker = LaneWalker::new(hidden, filter.first_parent);
 
     let mut buf_nodes: Vec<StreamNode> = Vec::new();
     let mut buf_edges: Vec<GraphStreamEdge> = Vec::new();
@@ -263,11 +286,19 @@ mod tests {
         let v = serde_json::to_value(GraphChunk::Meta {
             total: Some(3),
             head_oid: Some("abc".to_string()),
+            filtered: true,
+            seed_refs_applied: true,
         })
         .expect("serialize Meta");
         assert_eq!(
             v,
-            serde_json::json!({ "kind": "meta", "total": 3, "headOid": "abc" })
+            serde_json::json!({
+                "kind": "meta",
+                "total": 3,
+                "headOid": "abc",
+                "filtered": true,
+                "seedRefsApplied": true,
+            })
         );
     }
 
@@ -278,11 +309,19 @@ mod tests {
         let v = serde_json::to_value(GraphChunk::Meta {
             total: None,
             head_oid: None,
+            filtered: false,
+            seed_refs_applied: false,
         })
         .expect("serialize Meta");
         assert_eq!(
             v,
-            serde_json::json!({ "kind": "meta", "total": null, "headOid": null })
+            serde_json::json!({
+                "kind": "meta",
+                "total": null,
+                "headOid": null,
+                "filtered": false,
+                "seedRefsApplied": false,
+            })
         );
     }
 

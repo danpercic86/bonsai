@@ -9,6 +9,15 @@ export type { GraphSeason } from '../../graph/palettes';
 
 export type Theme = 'dark' | 'light';
 
+/** Spec-003: the persisted graph ref-filter INTENT (opaque to the backend).
+ *  The wire `GraphFilter.seedRefs` whitelist is derived from this at request
+ *  time (`useGraphFilter`): solo → `refs` verbatim; hide → known refs − `refs`. */
+export interface GraphRefFilter {
+  mode: 'solo' | 'hide';
+  /** Full ref names (`refs/heads/x`, `refs/remotes/origin/x`, `refs/tags/v1`). */
+  refs: string[];
+}
+
 /** Flat vs tree-grouped list rendering (P3b §2) — pure display preference. */
 export type ListView = 'tree' | 'flat';
 
@@ -56,6 +65,12 @@ export interface UiSettings {
   /** Spec-002: seasonal accent for the Bonsai style. Additive/optional; absent ⇒
    *  `DEFAULT_SEASON` ('living'). Ignored while `graphStyle === 'standard'`. */
   graphSeason?: GraphSeason;
+  /** Spec-003: first-parent graph walk. Additive/optional like graphStyle;
+   *  absent ⇒ false. */
+  graphFirstParent?: boolean;
+  /** Spec-003: persisted solo/hide intent; `null` (or absent) ⇒ no ref filter.
+   *  GLOBAL like graphStyle (plan risk, accepted). */
+  graphRefFilter?: GraphRefFilter | null;
   // AI assistance (P13).
   aiEnabled: boolean;
   aiConflictAutonomy: AiAutonomy;
@@ -121,6 +136,9 @@ export interface UiSettingsPatch {
    *  appearance prefs. */
   graphStyle?: GraphStyle;
   graphSeason?: GraphSeason;
+  /** Spec-003: first-parent toggle + ref-filter intent; patch independently. */
+  graphFirstParent?: boolean;
+  graphRefFilter?: GraphRefFilter | null;
   // AI assistance (P13).
   aiEnabled?: boolean;
   aiConflictAutonomy?: AiAutonomy;

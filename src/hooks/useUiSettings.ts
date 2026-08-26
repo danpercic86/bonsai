@@ -28,6 +28,7 @@ import type {
   AiConflictTools,
   AutoFetchSettings,
   GraphPrefs,
+  GraphRefFilter,
   GraphSeason,
   GraphStyle,
   HealthRefreshSettings,
@@ -64,6 +65,11 @@ export interface UiSettingsController {
   graphStyle: GraphStyle;
   /** Spec-002: seasonal accent for the Bonsai style. */
   graphSeason: GraphSeason;
+  /** Spec-003: first-parent graph walk (default false). Additive/optional like
+   *  graphStyle; NO metricsVersion bump (geometry is unchanged). */
+  graphFirstParent: boolean;
+  /** Spec-003: persisted solo/hide ref-filter intent (null = none). */
+  graphRefFilter: GraphRefFilter | null;
   /** P11d §4.3: bumped on every graph-knob change → GraphCanvas full re-measure. */
   metricsVersion: number;
   aiEnabled: boolean;
@@ -134,6 +140,9 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
   // default; hydration coalesces a missing persisted value to the same default.
   const [graphStyle, setGraphStyle] = useState<GraphStyle>('standard');
   const [graphSeason, setGraphSeason] = useState<GraphSeason>(DEFAULT_SEASON);
+  // Spec-003: graph declutter prefs — additive/optional like graphStyle above.
+  const [graphFirstParent, setGraphFirstParent] = useState(false);
+  const [graphRefFilter, setGraphRefFilter] = useState<GraphRefFilter | null>(null);
   // P11d §4.3: bumped on every graph-knob change → GraphCanvas full re-measure.
   const [metricsVersion, setMetricsVersion] = useState(0);
   // P13 §8: AI assistance settings (App-owned; threaded to Settings + each
@@ -322,6 +331,10 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
       // metricsVersion bump (GraphCanvas re-resolves the theme itself, task 3).
       if (patch.graphStyle !== undefined) setGraphStyle(patch.graphStyle);
       if (patch.graphSeason !== undefined) setGraphSeason(patch.graphSeason);
+      // Spec-003: no metricsVersion bump — the walk changes, not the geometry.
+      // `graphRefFilter: null` is a real value (clear), so `!== undefined` gates.
+      if (patch.graphFirstParent !== undefined) setGraphFirstParent(patch.graphFirstParent);
+      if (patch.graphRefFilter !== undefined) setGraphRefFilter(patch.graphRefFilter);
       if (patch.aiEnabled !== undefined) setAiEnabled(patch.aiEnabled);
       if (patch.aiConflictAutonomy !== undefined) setAiConflictAutonomy(patch.aiConflictAutonomy);
       if (patch.aiConsented !== undefined) setAiConsented(patch.aiConsented);
@@ -360,6 +373,9 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
     // Spec-002 (additive/optional): missing ⇒ default.
     setGraphStyle(s.graphStyle ?? 'standard');
     setGraphSeason(s.graphSeason ?? DEFAULT_SEASON);
+    // Spec-003 (additive/optional): missing ⇒ default.
+    setGraphFirstParent(s.graphFirstParent ?? false);
+    setGraphRefFilter(s.graphRefFilter ?? null);
     setAiEnabled(s.aiEnabled);
     setAiConflictAutonomy(s.aiConflictAutonomy);
     setAiConsented(s.aiConsented);
@@ -389,6 +405,8 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
     graph,
     graphStyle,
     graphSeason,
+    graphFirstParent,
+    graphRefFilter,
     metricsVersion,
     aiEnabled,
     aiConflictAutonomy,

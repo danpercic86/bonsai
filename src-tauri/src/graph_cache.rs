@@ -23,8 +23,8 @@ use std::sync::Mutex;
 
 use bonsai_core::error::AppError;
 use bonsai_core::graph::{
-    graph_seed_with, redecorate_chunks, stream_graph_from_repo, GraphChunk, GraphSeed, RefKind,
-    RefLabel, RefMap,
+    graph_seed_with, redecorate_chunks, stream_graph_from_repo, GraphChunk, GraphFilter,
+    GraphSeed, RefKind, RefLabel, RefMap,
 };
 
 use crate::perf::PerfState;
@@ -47,6 +47,10 @@ fn should_store(node_count: usize, max: usize) -> bool {
 /// The cached graph output for one repo, plus everything the classifier needs.
 /// Stored behind [`GraphCache`] in each `RepoEntry`.
 pub struct CachedGraph {
+    /// Spec-003: the declutter filter this walk was computed under. Any filter
+    /// mismatch is an unconditional Miss (a filtered stream must never be
+    /// served for a different filter, and vice versa).
+    pub filter: GraphFilter,
     /// Hash of the WALK identity: `(sorted tips, head, sorted hide)`. Stored as
     /// a compact digest (contract shape); NOT used as an equality proxy —
     /// [`classify`] compares the exact `tips`/`head`/`hide` sets below so a hash
@@ -153,6 +157,7 @@ fn deco_fingerprint(refs: &RefMap) -> u64 {
 ///   to an unwalked oid, or any hide-set change all land here.
 fn classify(
     cache: Option<&CachedGraph>,
+    filter: &GraphFilter,
     tips: &BTreeSet<git2::Oid>,
     head: Option<git2::Oid>,
     hide: &BTreeSet<git2::Oid>,
@@ -161,6 +166,11 @@ fn classify(
     let Some(c) = cache else {
         return Classification::Miss;
     };
+    // Spec-003: filter equality is a precondition for ANY hit — the cached
+    // chunks (nodes, pills, Meta flags) are only valid under the same filter.
+    if filter != &c.filter {
+        return Classification::Miss;
+    }
     if tips == &c.tips && head == c.head && hide == &c.hide {
         return if deco_fp == c.deco_fp {
             Classification::HitVerbatim
@@ -188,6 +198,7 @@ pub fn stream_graph_cached(
     workdir: &Path,
     cache: &GraphCache,
     perf: &PerfState,
+    filter: &GraphFilter,
     emit: impl FnMut(GraphChunk) -> bool,
 ) -> Result<(), AppError> {
     // `&Path` entry (tests / non-routed callers): open ONE handle, then run the
@@ -200,7 +211,7 @@ pub fn stream_graph_cached(
         git2::RepositoryOpenFlags::NO_SEARCH,
         std::iter::empty::<&std::ffi::OsStr>(),
     )?;
-    stream_graph_cached_with(&mut repo, cache, perf, emit)
+    stream_graph_cached_with(&mut repo, cache, perf, filter, emit)
 }
 
 /// P88b/B2b: cache-aware graph stream from an ALREADY-OPEN handle (the round
@@ -212,9 +223,10 @@ pub fn stream_graph_cached_with(
     repo: &mut git2::Repository,
     cache: &GraphCache,
     perf: &PerfState,
+    filter: &GraphFilter,
     emit: impl FnMut(GraphChunk) -> bool,
 ) -> Result<(), AppError> {
-    stream_graph_cached_capped(repo, cache, perf, GRAPH_CACHE_MAX_NODES, emit)
+    stream_graph_cached_capped(repo, cache, perf, filter, GRAPH_CACHE_MAX_NODES, emit)
 }
 
 /// PB-1: [`stream_graph_cached_with`] with an explicit store cap so the store
@@ -225,10 +237,14 @@ fn stream_graph_cached_capped(
     repo: &mut git2::Repository,
     cache: &GraphCache,
     perf: &PerfState,
+    filter: &GraphFilter,
     max_nodes: usize,
     mut emit: impl FnMut(GraphChunk) -> bool,
 ) -> Result<(), AppError> {
-    let seed = graph_seed_with(repo)?;
+    // Spec-003: the probe seed is FILTERED — the classify, the HitRedecorate
+    // re-pill, and the store re-probe below all observe the same restricted
+    // ref set, so hidden pills can never resurrect from a cached redecorate.
+    let seed = graph_seed_with(repo, filter)?;
 
     let tips: BTreeSet<git2::Oid> = seed.tips.iter().copied().collect();
     let hide: BTreeSet<git2::Oid> = seed.hide.iter().copied().collect();
@@ -236,7 +252,7 @@ fn stream_graph_cached_capped(
     let seed_fp = seed_fingerprint(&tips, seed.head, &hide);
 
     let mut guard = cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    match classify(guard.as_ref(), &tips, seed.head, &hide, deco_fp) {
+    match classify(guard.as_ref(), filter, &tips, seed.head, &hide, deco_fp) {
         Classification::HitVerbatim => {
             perf.inc_graph_cache_hits();
             if let Some(c) = guard.as_ref() {
@@ -255,6 +271,24 @@ fn stream_graph_cached_capped(
                 // identity to the fresh seed. `node_oids` is unchanged by
                 // construction (a redecorate never adds/removes nodes).
                 redecorate_chunks(&mut c.chunks, &seed.refs, seed.head);
+                // Spec-003: the Meta truth flags depend on the filter resolved
+                // against CURRENT refs (a rename can flip a solo whitelist into
+                // the stale fallback while the tip OIDs stay equal), so they
+                // must be rewritten from the FRESH seed — replaying the cached
+                // values would show an active filter chip exactly when the
+                // stale warning is required. HitVerbatim is safe by
+                // construction (identical deco fingerprint ⇒ identical seed).
+                for chunk in c.chunks.iter_mut() {
+                    if let GraphChunk::Meta {
+                        filtered,
+                        seed_refs_applied,
+                        ..
+                    } = chunk
+                    {
+                        *seed_refs_applied = seed.seed_refs_applied;
+                        *filtered = seed.seed_refs_applied || filter.first_parent;
+                    }
+                }
                 c.tips = tips;
                 c.hide = hide;
                 c.head = seed.head;
@@ -282,7 +316,7 @@ fn stream_graph_cached_capped(
             // P88b/B2b: the walk reuses the SAME handle as the seed probe above
             // (was a second open) — one open serves both. `repo_opens` is bumped
             // once by `with_repo_mut` at the command seam, never here.
-            stream_graph_from_repo(repo, |chunk| {
+            stream_graph_from_repo(repo, filter, |chunk| {
                 match &chunk {
                     GraphChunk::Batch { nodes, .. } => {
                         node_count += nodes.len();
@@ -327,9 +361,11 @@ fn stream_graph_cached_capped(
             // we skip the store (safe Miss next time) rather than risk a stale
             // hit. The bracket probe is an internal consistency check, not a
             // serving open, so it is not counted.
-            if !too_big && saw_done && seed_unchanged_with(repo, &tips, seed.head, &hide) {
+            if !too_big && saw_done && seed_unchanged_with(repo, filter, &tips, seed.head, &hide)
+            {
                 let mut guard = cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 *guard = Some(CachedGraph {
+                    filter: filter.clone(),
                     seed_fp,
                     deco_fp,
                     tips,
@@ -349,11 +385,12 @@ fn stream_graph_cached_capped(
 /// racing the cold walk. A probe failure is treated as "changed" (skip caching).
 fn seed_unchanged_with(
     repo: &mut git2::Repository,
+    filter: &GraphFilter,
     tips: &BTreeSet<git2::Oid>,
     head: Option<git2::Oid>,
     hide: &BTreeSet<git2::Oid>,
 ) -> bool {
-    match graph_seed_with(repo) {
+    match graph_seed_with(repo, filter) {
         Ok(GraphSeed {
             tips: t2,
             head: h2,
@@ -370,3 +407,5 @@ fn seed_unchanged_with(
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_filter;

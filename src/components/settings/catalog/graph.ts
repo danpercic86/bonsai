@@ -1,6 +1,6 @@
 /** P69 §4 — Commit graph category rows (UI §1.3 #10–#21). */
 import type { SettingsIndexEntry } from '../types';
-import { resetField } from './reset';
+import { resetField, resetKey } from './reset';
 
 export const GRAPH_ENTRIES: readonly SettingsIndexEntry[] = [
   {
@@ -122,5 +122,28 @@ export const GRAPH_ENTRIES: readonly SettingsIndexEntry[] = [
     keywords: 'checks pipeline build forge',
     control: 'switch',
     reset: resetField('graph', 'showCiStatus', 'Off'),
+  },
+  // Spec-003 — the "Declutter" group (UI contract §4).
+  {
+    id: 'graph.first-parent',
+    category: 'graph',
+    group: 'Declutter',
+    label: 'First-parent only',
+    help: "Follow each commit's first parent so merged-in side histories collapse out of the graph.",
+    keywords: 'first parent simplify mainline declutter filter merge',
+    control: 'switch',
+    reset: resetKey('graphFirstParent', 'Off'),
+  },
+  {
+    id: 'graph.branch-filters',
+    category: 'graph',
+    group: 'Declutter',
+    label: 'Branch filters',
+    help: 'The sidebar is the editor — right-click a branch to solo or hide it.',
+    keywords: 'solo hide branch filter declutter show full graph',
+    // 'readonly': the row is a read-only summary; the Clear button keeps its own
+    // aria-label ("Clear branch filters", contract §4) which deliberately
+    // differs from the row label — the 'button' kind would pin them equal.
+    control: 'readonly',
   },
 ];

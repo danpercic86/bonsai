@@ -169,7 +169,7 @@ export default function App() {
     primaryCommitAction,
     autoFetch,
     healthRefresh,
-    graph, graphStyle, graphSeason,
+    graph, graphStyle, graphSeason, graphFirstParent, graphRefFilter,
     metricsVersion,
     aiEnabled,
     aiConflictAutonomy,
@@ -797,8 +797,8 @@ export default function App() {
                 globalModalOpen={globalModalOpen}
                 graph={graph}
                 metricsVersion={metricsVersion}
-                graphStyle={graphStyle}
-                graphSeason={graphSeason}
+                graphStyle={graphStyle} graphSeason={graphSeason}
+                graphFirstParent={graphFirstParent} graphRefFilter={graphRefFilter} onGraphFilterChange={handleSettingsChange}
                 aiEnabled={aiEnabled}
                 aiConflictAutonomy={aiConflictAutonomy}
                 aiConsented={aiConsented}
@@ -853,7 +853,7 @@ export default function App() {
           autoFetch={autoFetch}
           healthRefresh={healthRefresh}
           graph={graph} graphStyle={graphStyle} graphSeason={graphSeason}
-          onChange={handleSettingsChange}
+          graphFirstParent={graphFirstParent} graphRefFilter={graphRefFilter} onChange={handleSettingsChange}
           onToggleTheme={toggleTheme}
           onToggleListView={toggleListView}
           aiEnabled={aiEnabled}

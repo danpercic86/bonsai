@@ -16,7 +16,7 @@ use bonsai_core::git::branches::{list_refs, list_refs_with};
 use bonsai_core::git::stash::list_stashes_with;
 use bonsai_core::git::status::{read_status, read_status_with, StatusSnapshot};
 use bonsai_core::git::worktree::list_worktrees_with;
-use bonsai_core::graph::{graph_seed_with, GraphChunk};
+use bonsai_core::graph::{graph_seed_with, GraphChunk, GraphFilter};
 use std::sync::{Arc, Mutex};
 
 use crate::graph_cache::GraphCache;
@@ -55,7 +55,7 @@ fn run_round(id: &str, gen: u64, path: &Path, perf: &PerfState) {
     with_repo(id, gen, path, perf, list_refs_with).expect("refs");
     with_repo(id, gen, path, perf, list_worktrees_with).expect("worktrees");
     with_repo_mut(id, gen, path, perf, list_stashes_with).expect("stashes");
-    with_repo_mut(id, gen, path, perf, |r| graph_seed_with(r).map(|_| ())).expect("seed");
+    with_repo_mut(id, gen, path, perf, |r| graph_seed_with(r, &GraphFilter::default()).map(|_| ())).expect("seed");
 }
 
 /// Drive a graph stream through `with_repo_mut_timed` (the FU-B2c seam), the
@@ -68,10 +68,16 @@ fn graph_chunks_timed(id: &str, gen: u64, path: &Path, perf: &Arc<PerfState>) ->
     let (tx, rx) = std::sync::mpsc::channel::<GraphChunk>();
     let perf_walk = perf.clone();
     with_repo_mut_timed("stream_graph", id, gen, path, perf, move |progress, repo| {
-        crate::graph_cache::stream_graph_cached_with(repo, &cache, &perf_walk, |chunk| {
-            progress.tick();
-            tx.send(chunk).is_ok()
-        })
+        crate::graph_cache::stream_graph_cached_with(
+            repo,
+            &cache,
+            &perf_walk,
+            &GraphFilter::default(),
+            |chunk| {
+                progress.tick();
+                tx.send(chunk).is_ok()
+            },
+        )
     })
     .expect("graph stream");
     rx.into_iter().collect()
@@ -242,10 +248,16 @@ fn fu_b2c_graph_timed_byte_identical() {
     let fresh_cache: Arc<GraphCache> = Arc::new(Mutex::new(None));
     let fresh_perf = PerfState::default();
     let mut fresh: Vec<GraphChunk> = Vec::new();
-    crate::graph_cache::stream_graph_cached(path, &fresh_cache, &fresh_perf, |chunk| {
-        fresh.push(chunk);
-        true
-    })
+    crate::graph_cache::stream_graph_cached(
+        path,
+        &fresh_cache,
+        &fresh_perf,
+        &GraphFilter::default(),
+        |chunk| {
+            fresh.push(chunk);
+            true
+        },
+    )
     .expect("fresh graph stream");
 
     assert_eq!(timed.len(), fresh.len(), "same chunk count");

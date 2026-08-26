@@ -1,0 +1,239 @@
+/* Spec-003 — graph declutter: filter chip + popover (UI contract §2/§2.1/§2.2)
+   and the sidebar row markers (§3.3). No new tokens — every color is an
+   existing custom property; recipes follow the search-fab / ContextMenu canon. */
+
+/* Inactive state: icon-only ghost button mirroring .graph-search-fab exactly,
+   sitting 8px to its left (fab is right:14 + 30 wide → 52). */
+.graph-filter-fab {
+  position: absolute;
+  top: 10px;
+  right: 52px;
+  z-index: 5;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-1) 88%, transparent);
+  color: var(--text-2);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.graph-filter-fab:hover,
+.graph-filter-fab[aria-expanded='true'] {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+/* Active state = the "filtered" indicator (AC5): a labeled chip. */
+.graph-filter-chip {
+  position: absolute;
+  top: 13px; /* vertically centered against the 30px fab at top:10 */
+  right: 52px;
+  z-index: 5;
+  height: 24px;
+  padding: 0 4px 0 8px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-1);
+  cursor: pointer;
+}
+/* Popover-open fill: aria-expanded sits on the INNER body button (§2 a11y),
+   so the outer pill matches via :has(). */
+.graph-filter-chip:hover,
+.graph-filter-chip:has(.graph-filter-chip-body[aria-expanded='true']) {
+  background: var(--bg-3);
+}
+.graph-filter-chip-label {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.graph-filter-chip-glyph {
+  flex: none;
+  color: var(--accent);
+  display: inline-flex;
+}
+/* While the search bar / Ask-history panel is open the pane content starts
+   below it — shift the chip down so it never collides with the bar (§2 gate). */
+.graph-filter-below-bar {
+  top: 50px;
+}
+.graph-filter-chip .graph-filter-clear {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  border-radius: 999px;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.graph-filter-chip .graph-filter-clear:hover {
+  background: color-mix(in srgb, currentcolor 12%, transparent);
+}
+
+/* Stale fallback (§2.2): the §11 verdict-pill recipe with --h: var(--warning). */
+.graph-filter-chip-stale {
+  background: color-mix(in srgb, var(--warning) 14%, var(--bg-2));
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+}
+.graph-filter-chip-stale .graph-filter-chip-glyph {
+  color: var(--warning);
+}
+
+/* Chip body + clear share the outer pill; body is a real <button>. */
+.graph-filter-chip-body {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+/* Popover (§2.1). Same z-layer as ContextMenu; existing menu shadow. */
+.graph-filter-popover {
+  position: absolute;
+  top: 42px;
+  right: 52px;
+  z-index: 60;
+  width: 280px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.32);
+  animation: graph-filter-pop 120ms ease-out;
+}
+.graph-filter-popover.graph-filter-below-bar {
+  top: 82px;
+}
+@keyframes graph-filter-pop {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .graph-filter-popover {
+    animation: none;
+  }
+}
+
+.graph-filter-switch-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.graph-filter-switch-label {
+  font-size: 13px;
+  color: var(--text-1);
+}
+.graph-filter-help {
+  font-size: 12px;
+  color: var(--text-2);
+  margin: 2px 0 0;
+}
+.graph-filter-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 12px 0;
+}
+.graph-filter-section-header {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin: 0 0 4px;
+}
+.graph-filter-ref-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 192px; /* 8 rows for pathological sets */
+  overflow-y: auto;
+}
+.graph-filter-ref-row {
+  height: 24px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.graph-filter-ref-glyph {
+  flex: none;
+  display: inline-flex;
+}
+.graph-filter-ref-glyph-solo {
+  color: var(--accent);
+}
+.graph-filter-ref-glyph-hidden {
+  color: var(--text-2);
+}
+.graph-filter-ref-name {
+  font-size: 12px;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.graph-filter-ref-remove {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  flex: none;
+}
+.graph-filter-ref-remove:hover {
+  background: color-mix(in srgb, currentcolor 12%, transparent);
+  color: var(--text-1);
+}
+.graph-filter-empty,
+.graph-filter-stale-note {
+  font-size: 12px;
+  color: var(--text-2);
+  margin: 0;
+  max-width: 56ch;
+}
+.graph-filter-footer-btn {
+  width: 100%;
+  height: 32px;
+  margin-top: 12px;
+}
+.graph-filter-footer-btn:disabled {
+  opacity: 0.55;
+}
+
+/* Sidebar row markers (§3.3): trailing 12px glyph after the name. Never dims
+   the row; the accessible-name suffix is a visually-hidden span. */
+.ref-filter-marker {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+.ref-filter-marker-solo {
+  color: var(--accent);
+}
+.ref-filter-marker-hidden {
+  color: var(--text-2);
+}

@@ -5,7 +5,7 @@
 //! commit / a dropped tip re-walks (Miss).
 
 use super::*;
-use bonsai_core::graph::{GraphChunk, RefKind, RefLabel};
+use bonsai_core::graph::{GraphChunk, GraphFilter, RefKind, RefLabel};
 
 // ---- fixtures ------------------------------------------------------------
 
@@ -66,7 +66,7 @@ fn linear_fixture() -> (tempfile::TempDir, git2::Repository, [git2::Oid; 3]) {
 
 fn run(path: &std::path::Path, cache: &GraphCache, perf: &PerfState) -> Vec<GraphChunk> {
     let mut out = Vec::new();
-    stream_graph_cached(path, cache, perf, |c| {
+    stream_graph_cached(path, cache, perf, &GraphFilter::default(), |c| {
         out.push(c);
         true
     })
@@ -89,7 +89,7 @@ fn run_capped(
     )
     .expect("open");
     let mut out = Vec::new();
-    stream_graph_cached_capped(&mut repo, cache, perf, max_nodes, |c| {
+    stream_graph_cached_capped(&mut repo, cache, perf, &GraphFilter::default(), max_nodes, |c| {
         out.push(c);
         true
     })
@@ -331,7 +331,7 @@ fn redecorate_on_head_move_to_existing_commit() {
 #[test]
 fn fingerprints_track_changes() {
     let (dir, repo, [_c0, c1, c2]) = linear_fixture();
-    let s1 = bonsai_core::graph::graph_seed(dir.path()).expect("seed");
+    let s1 = bonsai_core::graph::graph_seed(dir.path(), &GraphFilter::default()).expect("seed");
     let tips1: BTreeSet<git2::Oid> = s1.tips.iter().copied().collect();
     let hide1: BTreeSet<git2::Oid> = s1.hide.iter().copied().collect();
     let seed_fp1 = seed_fingerprint(&tips1, s1.head, &hide1);
@@ -339,7 +339,7 @@ fn fingerprints_track_changes() {
 
     // Ref-only add at an existing commit: seed_fp changes (new tip), deco_fp too.
     branch(&repo, "feature", c1);
-    let s2 = bonsai_core::graph::graph_seed(dir.path()).expect("seed");
+    let s2 = bonsai_core::graph::graph_seed(dir.path(), &GraphFilter::default()).expect("seed");
     let tips2: BTreeSet<git2::Oid> = s2.tips.iter().copied().collect();
     let hide2: BTreeSet<git2::Oid> = s2.hide.iter().copied().collect();
     assert_ne!(seed_fp1, seed_fingerprint(&tips2, s2.head, &hide2));
@@ -350,7 +350,7 @@ fn fingerprints_track_changes() {
     delete_branch(&repo, "feature");
     let obj = repo.find_object(c2, None).expect("obj");
     repo.tag_lightweight("v1", &obj, false).expect("tag");
-    let s3 = bonsai_core::graph::graph_seed(dir.path()).expect("seed");
+    let s3 = bonsai_core::graph::graph_seed(dir.path(), &GraphFilter::default()).expect("seed");
     let tips3: BTreeSet<git2::Oid> = s3.tips.iter().copied().collect();
     let hide3: BTreeSet<git2::Oid> = s3.hide.iter().copied().collect();
     // Tips/head/hide back to the c0..c2 set (tag target c2 is already a tip).

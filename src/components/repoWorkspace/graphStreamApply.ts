@@ -24,6 +24,8 @@ export interface GraphStreamSinks {
   setGraphEdgeIndex(index: IncrementalEdgeIndex): void;
   setGraphTotal(total: number | null): void;
   setSelectedIndex(index: number | null): void;
+  /** Spec-003: the meta chunk's filter flags (absent on the wire = false). */
+  setFilterFlags?(flags: { filtered: boolean; seedRefsApplied: boolean }): void;
 }
 
 export interface GraphStreamApplier {
@@ -48,6 +50,11 @@ export function createGraphStreamApplier(
     // carries no rows, so update just the scroll extent and wait.
     if (chunk.kind === 'meta') {
       sinks.setGraphTotal(stream.total);
+      // Spec-003: surface the filter truth flags (coerce absent → false).
+      sinks.setFilterFlags?.({
+        filtered: chunk.filtered === true,
+        seedRefsApplied: chunk.seedRefsApplied === true,
+      });
       return;
     }
     // Identity bump -> GraphCanvas repaints; edge index + total set together
