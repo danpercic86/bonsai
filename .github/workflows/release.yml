@@ -53,10 +53,17 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
-  workflow_dispatch: {}
+  # NOTE: no `push: tags` trigger. With Immutable releases enabled, GitHub
+  # protects the release-tag namespace — a release tag can only be created
+  # through the releases API, never by `git push` (that fails with
+  # "Cannot create ref due to creations being restricted"). So we trigger
+  # manually and let the create-release job create the tag via the API below.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to create (e.g. v1.4.0). Defaults to v<package.json version>.'
+        required: false
+        default: ''
 
 # Allow the jobs to create the GitHub Release and upload assets.
 permissions:
@@ -85,10 +92,13 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const tag = context.ref_type === 'tag'
-              ? context.ref.replace('refs/tags/', '')
-              : `app-v${{ steps.version.outputs.version }}`;
-            const name = `Bonsai v${{ steps.version.outputs.version }}`;
+            const input = `${{ github.event.inputs.tag }}`.trim();
+            const tag = input || `v${{ steps.version.outputs.version }}`;
+            const name = `Bonsai ${tag}`;
+
+            // createRelease with a tag_name that doesn't exist yet creates the
+            // tag through the releases API — the only sanctioned way to create a
+            // release tag when Immutable releases is enabled.
 
             // Reuse an existing draft for this tag if a previous run left one,
             // otherwise create a fresh draft.
@@ -103,6 +113,7 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 tag_name: tag,
+                target_commitish: context.sha,
                 name,
                 body: 'See the assets below to download and install this version.',
                 draft: true,
