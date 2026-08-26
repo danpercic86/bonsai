@@ -4,6 +4,8 @@
   "listView": "tree",
   "panelDensity": "cozy",
   "primaryCommitAction": "commit",
+  "graphStyle": "standard",
+  "graphSeason": "living",
   "autoFetch": { "enabled": false, "intervalMinutes": 5 },
   "healthRefresh": { "enabled": false, "intervalMinutes": 30 },
   "graph": {

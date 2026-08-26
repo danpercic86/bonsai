@@ -87,6 +87,10 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
   60: ['accounts.add'],
   // P80 §2b D1 — General → Committing: primary commit action segmented control.
   61: ['general.primary-commit-action'],
+  // Spec-002 §6 — Appearance: commit-graph style + seasonal accent (placed after
+  // Theme in the pane; numbered here as new §1.3 rows).
+  62: ['appearance.graph-style'],
+  63: ['appearance.graph-season'],
 };
 
 /**
@@ -99,12 +103,12 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
  */
 const DISSOLVED_ROWS: ReadonlySet<number> = new Set([5, 25, 38, 39, 40, 43, 52, 55]);
 
-describe('UI §1.3 coverage — all 61 rows, structurally', () => {
-  it('maps exactly rows 1..61', () => {
+describe('UI §1.3 coverage — all 63 rows, structurally', () => {
+  it('maps exactly rows 1..63', () => {
     const rows = Object.keys(COVERAGE)
       .map(Number)
       .sort((a, b) => a - b);
-    expect(rows).toEqual(Array.from({ length: 61 }, (_, i) => i + 1));
+    expect(rows).toEqual(Array.from({ length: 63 }, (_, i) => i + 1));
   });
 
   it('names only real entries, and every entry is claimed by some row', () => {
@@ -129,7 +133,7 @@ describe('UI §1.3 coverage — all 61 rows, structurally', () => {
         owner.set(id, Number(row));
       }
     }
-    // 61 rows − 8 dissolved, expanded by the pair/card rows.
+    // 63 rows − 8 dissolved, expanded by the pair/card rows.
     expect(owner.size).toBe(SETTINGS_INDEX.length);
     // A dissolved row must fold INTO a row that really exists.
     for (const row of DISSOLVED_ROWS) {

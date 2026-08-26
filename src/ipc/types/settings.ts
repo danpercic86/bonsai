@@ -1,6 +1,11 @@
 import type { AiAutonomy, AiConflictTools } from './ai';
 import type { IdentityProfile } from './config';
 import type { GraphPrefs } from './graph';
+import type { GraphSeason } from '../../graph/palettes';
+import type { GraphStyle } from '../../graph/colors';
+
+export type { GraphStyle } from '../../graph/colors';
+export type { GraphSeason } from '../../graph/palettes';
 
 export type Theme = 'dark' | 'light';
 
@@ -44,6 +49,13 @@ export interface UiSettings {
   /** P30: periodic read-only refresh signal (backend scheduler). */
   healthRefresh: HealthRefreshSettings;
   graph: GraphPrefs;
+  /** Spec-002: commit-graph visual style. Additive/optional — persisted natively
+   *  (Rust `graph_style`) and pinned in the defaults oracle as `'standard'`; an older
+   *  persisted blob that omits it loads as `'standard'`. */
+  graphStyle?: GraphStyle;
+  /** Spec-002: seasonal accent for the Bonsai style. Additive/optional; absent ⇒
+   *  `DEFAULT_SEASON` ('living'). Ignored while `graphStyle === 'standard'`. */
+  graphSeason?: GraphSeason;
   // AI assistance (P13).
   aiEnabled: boolean;
   aiConflictAutonomy: AiAutonomy;
@@ -105,6 +117,10 @@ export interface UiSettingsPatch {
   /** Whole-struct patch, like autoFetch (P30 D7). */
   healthRefresh?: HealthRefreshSettings;
   graph?: GraphPrefs;
+  /** Spec-002: commit-graph style + season; patch independently like the other
+   *  appearance prefs. */
+  graphStyle?: GraphStyle;
+  graphSeason?: GraphSeason;
   // AI assistance (P13).
   aiEnabled?: boolean;
   aiConflictAutonomy?: AiAutonomy;

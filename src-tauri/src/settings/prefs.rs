@@ -48,6 +48,30 @@ pub enum PrimaryCommitAction {
     CommitPush,
 }
 
+/// Commit-graph visual style (spec-002). `Standard` is the classic GitKraken-style
+/// lanes; `Bonsai` is the organic reskin. Pure UI preference; display-only, no Git
+/// effect. Additive `#[serde(default)]` (via the container-level `default` on
+/// `Settings`) — a pre-spec-002 settings.json without this key loads `Standard`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GraphStyle {
+    #[default]
+    Standard,
+    Bonsai,
+}
+
+/// Seasonal accent for the Bonsai graph style (spec-002). Ignored while
+/// `GraphStyle::Standard` is active. Pure UI preference; display-only, no Git
+/// effect. Additive `#[serde(default)]`; a legacy file loads `Living`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GraphSeason {
+    #[default]
+    Living,
+    Spring,
+    Autumn,
+}
+
 /// AI conflict-resolution autonomy (P13). ProposeReview = user accepts before
 /// anything is written/staged (default); AutoResolve = write+stage immediately,
 /// user reviews the staged diff before commit_merge.

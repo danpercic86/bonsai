@@ -351,6 +351,47 @@ fn old_settings_file_without_panel_density_loads_default() {
     assert_eq!(loaded.pane_widths.sidebar, 300);
 }
 
+/// Spec-002: a settings.json without `graphStyle`/`graphSeason` loads with the
+/// defaults (`Standard`/`Living`) and does NOT bump the version — the additive,
+/// no-migration guard for the two graph-theme prefs. A round-trip of non-default
+/// values (below) proves they survive save/load, i.e. a native restart.
+#[test]
+fn old_settings_file_without_graph_theme_loads_defaults() {
+    let dir = tempfile::TempDir::new().expect("create temp dir");
+    let file = settings_path(&dir);
+    let json = r#"{
+            "version": 1,
+            "recentRepos": [],
+            "theme": "light",
+            "paneWidths": { "sidebar": 300, "rightPanel": 400 }
+        }"#;
+    std::fs::write(&file, json).expect("write pre-spec-002 settings.json");
+
+    let loaded = load_from(&file);
+    assert_eq!(loaded.graph_style, GraphStyle::Standard);
+    assert_eq!(loaded.graph_season, GraphSeason::Living);
+    assert_eq!(loaded.version, SETTINGS_VERSION);
+    assert_eq!(loaded.theme, ThemeChoice::Light);
+}
+
+/// Spec-002: non-default `graphStyle`/`graphSeason` round-trip through save/load
+/// (the persistence acceptance behind surviving a native restart).
+#[test]
+fn graph_theme_prefs_roundtrip() {
+    let dir = tempfile::TempDir::new().expect("create temp dir");
+    let file = settings_path(&dir);
+    let s = Settings {
+        graph_style: GraphStyle::Bonsai,
+        graph_season: GraphSeason::Autumn,
+        ..Settings::default()
+    };
+    save_to(&file, &s).expect("save settings");
+
+    let loaded = load_from(&file);
+    assert_eq!(loaded.graph_style, GraphStyle::Bonsai);
+    assert_eq!(loaded.graph_season, GraphSeason::Autumn);
+}
+
 /// P79: a pre-P79 settings.json (no `forgeHosts` key) loads with an empty index
 /// and does NOT bump the version or rewrite anything on load.
 #[test]

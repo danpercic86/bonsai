@@ -27,6 +27,8 @@ import { drawRefLabelAt, drawStashIcon, groupRefs, layoutRefLabels } from './ref
 import { computeRightColumns } from './rightColumns';
 import type { GraphDisplayOptions } from './rightColumns';
 import { measure } from './textMeasure';
+import { drawBlossom, drawBonsaiBackdrop, drawBonsaiEdge } from './drawBonsai';
+import { swayOffset } from './sway';
 // P67 §1: the guideline's geometry is computed in viewport.ts (contract D2);
 // this module only strokes/fills the result.
 import type { HeadGuide } from './viewport';
@@ -79,16 +81,20 @@ export interface Interaction {
    *  family). `null` when no flash is active. `alpha`/`ringRadius` are
    *  precomputed per frame by GraphCanvas from `revealFlash.ts`. */
   flash?: { row: number; alpha: number; ringRadius: number } | null;
+  /** spec 002 §5: settle-on-scroll sway — `elapsedMs` since arm; `null` = idle. */
+  sway?: { elapsedMs: number } | null;
 }
 
-/** Long-edge middle segments are clamped to this margin around the canvas. */
-const EDGE_CLAMP_MARGIN = 56;
+/** Long-edge middle segments are clamped to this margin around the canvas.
+ *  Exported so the Bonsai edge painter (`drawBonsai.ts`) clamps identically. */
+export const EDGE_CLAMP_MARGIN = 56;
 
 // ---------- edges (§1.3 three-segment render rule) ----------
 
 /** One-row segment: straight vertical if same x, else cubic bézier with
- * vertical tangents — control points (x1, y1+14) and (x2, y2-14). */
-function segmentTo(
+ * vertical tangents — control points (x1, y1+14) and (x2, y2-14). Exported so
+ * the Bonsai edge painter reuses the exact same curve (endpoints verbatim). */
+export function segmentTo(
   ctx: CanvasRenderingContext2D,
   x1: number,
   y1: number,
@@ -213,7 +219,9 @@ export function drawWipRow(
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.arc(x, y, 4, 0, Math.PI * 2);
-  ctx.fillStyle = theme.bg0;
+  // Backdrop-colored fill (== bg0 in the standard theme; the paper/soil color in
+  // Bonsai, §7) so the dashed WIP marker never punches a bg0 hole in the backdrop.
+  ctx.fillStyle = theme.graphBackdrop;
   ctx.fill();
   ctx.strokeStyle = theme.warning;
   ctx.stroke();
@@ -321,9 +329,14 @@ export function drawGraph(
   const firstRow = Math.max(0, vp.firstRow);
   const lastRow = Math.min(n - 1, vp.lastRow);
 
-  // Pass 1: clear.
-  ctx.fillStyle = theme.bg0;
-  ctx.fillRect(0, 0, vp.width, vp.height);
+  // Pass 1: clear. Bonsai paints the near-flat paper/soil backdrop (§4.1) as the
+  // first fill; the standard theme keeps its flat `bg0` clear byte-for-byte.
+  if (theme.bonsai) {
+    drawBonsaiBackdrop(ctx, vp.width, vp.height, theme);
+  } else {
+    ctx.fillStyle = theme.bg0;
+    ctx.fillRect(0, 0, vp.width, vp.height);
+  }
 
   // Pass 2: row backgrounds (selection wins over hover).
   const rowBg = (row: number, color: string): void => {
@@ -350,7 +363,10 @@ export function drawGraph(
   // Pass 3: edges (under dots).
   ctx.lineWidth = m.edgeWidth;
   ctx.lineCap = 'round';
-  for (const e of visibleEdges) drawEdge(ctx, e, nodes, vp, theme, m);
+  for (const e of visibleEdges) {
+    if (theme.bonsai) drawBonsaiEdge(ctx, e, nodes, vp, theme, m);
+    else drawEdge(ctx, e, nodes, vp, theme, m);
+  }
 
   // Pass 4: author-initials avatars (P7 §2.1 — replaces the plain lane dot).
   // Inner→outer: bg ring → avatar disc → lane ring → initials → HEAD ring →
@@ -359,7 +375,9 @@ export function drawGraph(
   ctx.textBaseline = 'middle';
   for (let row = firstRow; row <= lastRow; row++) {
     const node = nodes[row];
-    const x = laneX(node.lane, m);
+    // spec 002 §5: paint-time-only glyph sway (edges never move; `y` untouched).
+    const sway = theme.bonsai && ix.sway != null ? swayOffset(ix.sway.elapsedMs, node.lane, false) : 0;
+    const x = laneX(node.lane, m) + sway;
     const y = rowY(row, vp.scrollTop, m);
     const laneColor = theme.laneColors[node.lane % 10];
     const ac = avatarColor(node.author);
@@ -367,11 +385,22 @@ export function drawGraph(
     // P10 §2.1: a stash node draws a violet disc + glyph instead of the avatar.
     const isStash = node.refs?.some((r) => r.kind === 'stash') ?? false;
 
-    // bg ring — bg0 halo so edges passing under the avatar read cleanly.
+    // bg ring — backdrop halo so edges passing under the avatar read cleanly.
+    // `graphBackdrop` equals `bg0` in the standard theme (unchanged there) and
+    // the paper/soil color in Bonsai (§2.1), so the halo never punches a
+    // wrong-colored hole in the backdrop.
     ctx.beginPath();
     ctx.arc(x, y, m.avatarRadius + m.avatarBgRingExtra, 0, Math.PI * 2);
-    ctx.fillStyle = theme.bg0;
+    ctx.fillStyle = theme.graphBackdrop;
     ctx.fill();
+
+    // Additive blossom (§2.3), painted BEHIND the disc: full 5-petal on HEAD, a
+    // single top bud on the selected (non-HEAD) node. `x`/`y` are the (future)
+    // sway-offset glyph center — task 4 passes an offset x so the whole glyph
+    // translates as a unit; today the offset is 0.
+    if (theme.bonsai && (layout.headIndex === row || selected)) {
+      drawBlossom(ctx, x, y, theme, m, layout.headIndex === row ? 'blossom' : 'bud');
+    }
 
     if (isStash) {
       drawStashNode(ctx, x, y, m);

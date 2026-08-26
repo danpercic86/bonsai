@@ -21,6 +21,12 @@
   the browser harness persists them. Fields additive/optional for back-compat with saved settings.
   — `src/ipc/types/*` (UI settings), `src/components/settings/**` (catalog + hooks +
   `categories/AppearanceCategory.tsx`), `src/ipc/mock.ts` — owner: senior-dev
+- [ ] 2b. Rust settings persistence: add `graph_style` / `graph_season` serde fields to the
+  native UI-settings struct in `src-tauri/**/settings/prefs.rs` (+ the `ui_settings_of` mapping and
+  the defaults oracle / parity test), so `setUiSettings` persists them across a native app restart
+  (acceptance #3). Additive, defaulted for back-compat with existing on-disk settings. This is
+  settings storage only — NOT git or layout logic, so the Rust/React invariant is preserved.
+  — `src-tauri/**/settings/prefs.rs` (+ oracle) — owner: senior-dev
 - [ ] 3. Bonsai painters: branch node + edge + backdrop drawing on the Theme flags. Nodes keep the
   avatar + rings (rings remain the state carriers) and add the **additive blossom** — full 5-petal
   for HEAD, single top-bud for selected — with distinct silhouettes; edges use stepped `lineWidth`
@@ -37,6 +43,10 @@
   when graphStyle is standard). Zero motion under `prefers-reduced-motion`. Wire its lifecycle in
   `GraphCanvas.tsx`. — `src/graph/sway.ts`, `src/graph/GraphCanvas.tsx`, `src/graph/drawBonsai.ts`
   — owner: senior-dev
+- [ ] 3c. [P] DOM backdrop token: implement UI contract §4.2 — a `--graph-canvas-bg` token and a
+  `data-graph-style="bonsai"` root attribute so the graph-pane container, load skeleton, and error
+  state sit on the Bonsai backdrop color (matching the canvas). CSS/DOM only, no canvas painter.
+  — `src/styles.css` (+ the root attribute setter), owner: senior-dev
 - [ ] 5. Review changes from tasks 1–4 — correctness, Rust/React boundary (must stay React-only),
   the ~500-line splits, and **verify the idle path stays quiet**: no rAF scheduled once the settle
   completes and none when graphStyle is standard. Check against spec acceptance criteria + UI

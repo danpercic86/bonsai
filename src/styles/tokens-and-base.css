@@ -9,6 +9,12 @@
   color-scheme: dark;
 
   --bg-0: #16181d;
+  /* spec-002 §4.2: the surface behind the commit-graph canvas (container div,
+     load skeleton, empty/error states) so there is no seam where the DOM meets
+     the painted backdrop. Default aliases --bg-0 (resolved lazily, so it tracks
+     the light-theme --bg-0 too); the Bonsai style overrides it below to the warm
+     soil/paper backdrop the canvas painter uses. */
+  --graph-canvas-bg: var(--bg-0);
   --bg-1: #1d2026;
   --bg-2: #262a31;
   --bg-3: #2f343d;
@@ -132,6 +138,18 @@
   --syn-number: #0550ae;   --syn-function: #8250df; --syn-title: #8250df;
   --syn-type: #953800;     --syn-attr: #0550ae;     --syn-tag: #0a7d33;
   --syn-operator: #4b515c; --syn-punctuation: #4b515c; --syn-meta: #8a919e;
+}
+
+/* spec-002 §4.2: Bonsai graph-style backdrop overrides. `data-graph-style` sits
+   on <html> alongside `data-theme` (set in src/appHelpers.ts), so both selectors
+   match the root element; the light rule's two-attribute specificity wins under
+   light theme. Only --graph-canvas-bg changes — the standard style is untouched. */
+[data-graph-style='bonsai'] {
+  --graph-canvas-bg: #17140f; /* warm soil-black, matches the dark canvas backdrop */
+}
+
+[data-graph-style='bonsai'][data-theme='light'] {
+  --graph-canvas-bg: #f4efe6; /* warm rice-paper, matches the light canvas backdrop */
 }
 
 * {

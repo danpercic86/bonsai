@@ -69,6 +69,8 @@ function renderPanel(over: Partial<SettingsPanelProps> = {}) {
     autoFetch: { enabled: true, intervalMinutes: 10 },
     healthRefresh: { enabled: false, intervalMinutes: 30 },
     graph: GRAPH,
+    graphStyle: 'standard',
+    graphSeason: 'living',
     onChange: vi.fn(),
     onToggleTheme: vi.fn(),
     onToggleListView: vi.fn(),

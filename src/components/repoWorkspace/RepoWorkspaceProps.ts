@@ -2,6 +2,8 @@ import type {
   AiAutonomy,
   AiAvailability,
   GraphPrefs,
+  GraphSeason,
+  GraphStyle,
   ListView,
   PaneWidths,
   PanelDensity,
@@ -33,6 +35,9 @@ export interface RepoWorkspaceProps {
   graph: GraphPrefs;
   /** P11d §4.3: bumped by App on every graph-knob change → GraphCanvas re-measure. */
   metricsVersion: number;
+  /** spec 002: Bonsai graph paint style + season, threaded into the canvas. */
+  graphStyle: GraphStyle;
+  graphSeason: GraphSeason;
   /** P13 §8: AI assistance settings + CLI health (App owns these + consent). */
   aiEnabled: boolean;
   aiConflictAutonomy: AiAutonomy;

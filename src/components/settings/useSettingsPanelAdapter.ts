@@ -28,6 +28,8 @@ import type {
   AiAvailability,
   AutoFetchSettings,
   GraphPrefs,
+  GraphSeason,
+  GraphStyle,
   HealthRefreshSettings,
   IdentityProfile,
   ListView,
@@ -62,6 +64,10 @@ export interface SettingsPanelProps {
   /** P30: periodic read-only refresh signal (backend scheduler). */
   healthRefresh: HealthRefreshSettings;
   graph: GraphPrefs;
+  /** Spec-002: commit-graph visual style + season. App resolves the (optional)
+   *  persisted values to concrete defaults, so these arrive non-null. */
+  graphStyle: GraphStyle;
+  graphSeason: GraphSeason;
   /** Fires on ANY change with a partial patch; App debounces the persist +
    *  updates its own state so consumers re-render live. */
   onChange(patch: UiSettingsPatch): void;
@@ -233,6 +239,8 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     autoFetch,
     healthRefresh,
     graph,
+    graphStyle,
+    graphSeason,
     aiConflictAutonomy,
     aiAvailability,
     aiRun,
@@ -322,6 +330,8 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       autoFetch,
       healthRefresh,
       graph,
+      graphStyle,
+      graphSeason,
       aiEnabled,
       aiConflictAutonomy,
       aiConsented,
@@ -353,6 +363,8 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       autoFetch,
       healthRefresh,
       graph,
+      graphStyle,
+      graphSeason,
       aiEnabled,
       aiConflictAutonomy,
       aiConsented,

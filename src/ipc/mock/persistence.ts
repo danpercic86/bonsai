@@ -2,7 +2,10 @@
 import { AUTO_FETCH_INTERVAL_MAX, AUTO_FETCH_INTERVAL_MIN, AVATAR_RADIUS_MAX, AVATAR_RADIUS_MIN, HEALTH_REFRESH_INTERVAL_MAX, HEALTH_REFRESH_INTERVAL_MIN, LANE_WIDTH_MAX, LANE_WIDTH_MIN, ROW_HEIGHT_MAX, ROW_HEIGHT_MIN } from '../../settings/ranges';
 import { DEFAULT_UI_SETTINGS as PRODUCTION_DEFAULT_UI_SETTINGS } from '../../settings/defaults';
 import { parseAiRunSettings } from './aiRunSettings';
-import type { AiAutonomy, AutoFetchSettings, GraphDateBasis, GraphPrefs, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, PanelDensity, PrimaryCommitAction, ProfileColor, RecentRepo, SessionState, Theme, UiSettings } from '../types';
+import type { AiAutonomy, AutoFetchSettings, GraphDateBasis, GraphPrefs, GraphSeason, GraphStyle, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, PanelDensity, PrimaryCommitAction, ProfileColor, RecentRepo, SessionState, Theme, UiSettings } from '../types';
+
+/** Spec-002: closed enum guards for the two additive graph-theme prefs. */
+const GRAPH_SEASONS: ReadonlySet<string> = new Set<GraphSeason>(['living', 'spring', 'autumn']);
 
 /** P82: the closed palette (mirrors Rust `ProfileColor`). Used to validate a
  *  persisted profile's `color` field — an invalid value normalizes to neutral. */
@@ -282,6 +285,20 @@ export function readUiSettings(): UiSettings {
           ? g.showCiStatus
           : DEFAULT_UI_SETTINGS.graph.showCiStatus,
     });
+    // Spec-002 (additive/optional, frontend-only): commit-graph style + season.
+    // OMITTED from the result when the blob does not carry a valid value — the
+    // keys are absent from the Rust-pinned defaults oracle, so emitting them only
+    // when persisted keeps a pre-spec blob byte-identical on round-trip while an
+    // explicit choice survives reload. Consumers apply `?? default` (see
+    // useUiSettings), so absence reads as 'standard' / DEFAULT_SEASON.
+    const graphStyle: GraphStyle | undefined =
+      parsed.graphStyle === 'bonsai' || parsed.graphStyle === 'standard'
+        ? parsed.graphStyle
+        : undefined;
+    const graphSeason: GraphSeason | undefined =
+      typeof parsed.graphSeason === 'string' && GRAPH_SEASONS.has(parsed.graphSeason)
+        ? (parsed.graphSeason as GraphSeason)
+        : undefined;
     // P13 AI fields (additive, like autoFetch/graph): fall back to defaults.
     const aiEnabled =
       typeof parsed.aiEnabled === 'boolean' ? parsed.aiEnabled : DEFAULT_UI_SETTINGS.aiEnabled;
@@ -334,6 +351,8 @@ export function readUiSettings(): UiSettings {
       autoFetch,
       healthRefresh,
       graph,
+      ...(graphStyle !== undefined ? { graphStyle } : {}),
+      ...(graphSeason !== undefined ? { graphSeason } : {}),
       aiEnabled,
       aiConflictAutonomy,
       aiConsented,

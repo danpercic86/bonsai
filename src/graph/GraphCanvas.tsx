@@ -10,7 +10,8 @@ import {
 } from 'react';
 import type { GraphLayout, RefLabel, VerifyStatus } from '../ipc';
 import { isDarkBg, resolveTheme } from './colors';
-import type { Theme } from './colors';
+import type { GraphStyle, Theme } from './colors';
+import type { GraphSeason } from './palettes';
 import {
   avatarColor,
   avatarHit,
@@ -55,6 +56,7 @@ import type { EffectiveMetrics } from './metrics';
 import type { RevealFlash } from './reveal';
 import { flashAlpha, flashRingRadius } from './revealFlash';
 import { startRevealFlash } from './revealFlashRunner';
+import { useSway } from './useSway';
 import { resolveHoverTarget } from './hoverTarget';
 
 export type { WipSummary };
@@ -125,6 +127,10 @@ export interface GraphCanvasProps {
   /** P84: `prefers-reduced-motion` (read once in the container). When true the
    *  flash is a static hold, not an animated pulse (revealFlash.ts §3.1). */
   reducedMotion?: boolean;
+  /** spec 002: Bonsai paint style + season → `resolveTheme` (mirrors
+   *  `themeVersion`; a change re-resolves + repaints). Default standard/living. */
+  graphStyle?: GraphStyle;
+  graphSeason?: GraphSeason;
 }
 
 /** P2c §5.2: imperative escape hatch — App needs the DOM-measured visible row
@@ -171,6 +177,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     totalRows,
     revealFlash,
     reducedMotion = false,
+    graphStyle = 'standard',
+    graphSeason = 'living',
   },
   ref,
 ) {
@@ -185,6 +193,11 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   // P84: latest reduced-motion flag, read by the paint + flash rAF loop.
   const reducedMotionRef = useRef(reducedMotion);
   reducedMotionRef.current = reducedMotion;
+  // spec 002: latest Bonsai style/season for the paint path's theme re-resolve.
+  const graphStyleRef = useRef(graphStyle);
+  graphStyleRef.current = graphStyle;
+  const graphSeasonRef = useRef(graphSeason);
+  graphSeasonRef.current = graphSeason;
   /** Row index, `null` (none), or `-1` sentinel for the synthetic WIP row. */
   const hoverRowRef = useRef<number | null>(null);
   const rafRef = useRef(0);
@@ -193,6 +206,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   const flashStateRef = useRef<{ row: number; start: number } | null>(null);
   const flashRafRef = useRef(0);
   const flashTimeoutRef = useRef(0);
+  // spec 002 §5: active settle descriptor (arm timestamp) read by the paint path;
+  // the rAF lifecycle that drives + clears it lives in `useSway`.
+  const swayStateRef = useRef<{ start: number } | null>(null);
   const scrollTopRef = useRef(0);
   const cssSizeRef = useRef({ w: 0, h: 0 });
   /** Cursor y relative to the scroller top; null while the pointer is outside. */
@@ -300,7 +316,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     if (canvas === null) return;
     const ctx = canvas.getContext('2d');
     if (ctx === null) return;
-    themeRef.current ??= resolveTheme(canvas);
+    themeRef.current ??= resolveTheme(canvas, graphStyleRef.current, graphSeasonRef.current);
 
     const t0 = STATS_ENABLED ? performance.now() : 0;
     const m = metricsRef.current;
@@ -369,13 +385,22 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
         };
       }
     }
+    // spec 002 §5: resolve the active settle for this frame (Bonsai only; never
+    // under reduced motion — arming is gated). `elapsedMs` drives the per-lane
+    // paint-time glyph offset in draw.ts; the rAF loop below stops requesting
+    // frames once the settle completes, so nothing is scheduled at idle.
+    let sway: { elapsedMs: number } | null = null;
+    const sw = swayStateRef.current;
+    if (sw !== null && graphStyleRef.current === 'bonsai' && !reducedMotionRef.current) {
+      sway = { elapsedMs: performance.now() - sw.start };
+    }
     drawGraph(
       ctx,
       lay,
       visibleEdges,
       { firstRow, lastRow, scrollTop: layoutScrollTop, width: w, height: h, rightInset },
       themeRef.current,
-      { hoverRow, selectedIndex: sel, matchRows: matchSet, verifyStatus: verifyStatus ?? null, flash },
+      { hoverRow, selectedIndex: sel, matchRows: matchSet, verifyStatus: verifyStatus ?? null, flash, sway },
       display,
       m,
     );
@@ -432,6 +457,19 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   const schedulePaint = useCallback(() => {
     if (rafRef.current === 0) rafRef.current = requestAnimationFrame(paintFrame);
   }, [paintFrame]);
+
+  // spec 002 §5: settle-on-scroll sway lifecycle (bounded, self-terminating).
+  // The hook owns its own rAF + arm-debounce timer; `swayStateRef` is read by the
+  // paint path below and `onScroll` is called from `handleScroll`.
+  const { onScroll: onSwayScroll } = useSway({
+    paint: paintNow,
+    graphStyle,
+    graphStyleRef,
+    reducedMotion,
+    reducedMotionRef,
+    selectedIndex,
+    swayStateRef,
+  });
 
   // Backing store = css size × dpr; transform set once here, not per paint.
   const resize = useCallback(() => {
@@ -523,10 +561,10 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null) return;
-    themeRef.current = resolveTheme(canvas);
+    themeRef.current = resolveTheme(canvas, graphStyle, graphSeason);
     schedulePaint();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [themeVersion]);
+  }, [themeVersion, graphStyle, graphSeason]);
 
   // P11d §4.3: a graph-knob change re-maps every row↔pixel relationship. The
   // spacer height (total scrollable extent) recomputes on render from the new
@@ -688,6 +726,10 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
         setTooltip((prev) => (sameTarget(prev, next) ? prev : next));
       }
     }
+    // spec 002 §5: sway plays AFTER motion stops, never during — the hook cancels
+    // any live settle (offset 0 while scrolling) and re-arms on a scroll-stop
+    // debounce. Inert under standard/reduced-motion, so the idle path stays quiet.
+    onSwayScroll();
     schedulePaint();
   };
 

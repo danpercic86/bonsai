@@ -16,6 +16,10 @@ pub struct UiSettings {
     pub panel_density: PanelDensity,
     /// P80 D1: which commit button is emphasized in the Working tab.
     pub primary_commit_action: PrimaryCommitAction,
+    /// Spec-002: commit-graph visual style (default Standard).
+    pub graph_style: GraphStyle,
+    /// Spec-002: seasonal accent for the Bonsai style (default Living).
+    pub graph_season: GraphSeason,
     pub auto_fetch: AutoFetch,
     /// Health-refresh background job (P30 D7).
     pub health_refresh: HealthRefresh,
@@ -73,6 +77,9 @@ pub struct UiSettingsPatch {
     pub panel_density: Option<PanelDensity>,
     /// P80 D1: primary commit action; patches independently.
     pub primary_commit_action: Option<PrimaryCommitAction>,
+    /// Spec-002: commit-graph style + season; each patches independently.
+    pub graph_style: Option<GraphStyle>,
+    pub graph_season: Option<GraphSeason>,
     /// Whole-struct patch (like `pane_widths`): the frontend sends the entire
     /// nested object when any sub-field changes.
     pub auto_fetch: Option<AutoFetch>,
@@ -132,6 +139,12 @@ pub(crate) fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     }
     if let Some(primary_commit_action) = patch.primary_commit_action {
         s.primary_commit_action = primary_commit_action;
+    }
+    if let Some(graph_style) = patch.graph_style {
+        s.graph_style = graph_style;
+    }
+    if let Some(graph_season) = patch.graph_season {
+        s.graph_season = graph_season;
     }
     if let Some(auto_fetch) = patch.auto_fetch {
         s.auto_fetch = clamp_auto_fetch(auto_fetch);
@@ -225,6 +238,8 @@ pub(crate) fn ui_settings_of(s: &settings::Settings) -> UiSettings {
         list_view: s.list_view,
         panel_density: s.panel_density,
         primary_commit_action: s.primary_commit_action,
+        graph_style: s.graph_style,
+        graph_season: s.graph_season,
         auto_fetch: s.auto_fetch,
         health_refresh: s.health_refresh,
         graph: s.graph,

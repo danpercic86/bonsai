@@ -108,6 +108,8 @@ export type {
   GraphLayout,
   GraphNode,
   GraphPrefs,
+  GraphSeason,
+  GraphStyle,
   StreamEdge,
   StreamNode,
   HeadInfo,

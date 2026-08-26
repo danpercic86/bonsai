@@ -42,6 +42,12 @@ const DEFAULTS: UiSettings = {
   panelDensity: 'cozy',
   /** P80 D1: the always-safe, non-network action is the default primary. */
   primaryCommitAction: 'commit',
+  /** Spec-002: classic lanes by default; `bonsai` is the opt-in organic reskin.
+   *  Pinned in the shared oracle + Rust `Settings::default()` (task 2b) so it
+   *  survives a native restart. */
+  graphStyle: 'standard',
+  /** Spec-002: seasonal accent for the Bonsai style; ignored while standard. */
+  graphSeason: 'living',
   /** P11: auto-fetch OFF, 5-minute interval. */
   autoFetch: { enabled: false, intervalMinutes: 5 },
   /** P30: periodic status/health refresh OFF, 30-minute interval. */

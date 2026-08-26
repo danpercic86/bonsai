@@ -62,6 +62,9 @@ export interface WorkspaceGraphPaneProps {
   /** P84: nonce-driven reveal flash + reduced-motion flag, forwarded to GraphCanvas. */
   revealFlash: GraphCanvasProps['revealFlash'];
   reducedMotion: GraphCanvasProps['reducedMotion'];
+  /** spec 002: Bonsai graph style + season, forwarded to GraphCanvas. */
+  graphStyle: GraphCanvasProps['graphStyle'];
+  graphSeason: GraphCanvasProps['graphSeason'];
 
   /** P50b: commit-search state (bar + graph highlight + next/prev jump). */
   search: UseCommitSearch;
@@ -166,6 +169,8 @@ export function WorkspaceGraphPane({
   totalRows,
   revealFlash,
   reducedMotion,
+  graphStyle,
+  graphSeason,
   search,
   searchScopeOptions,
   historySearch,
@@ -279,8 +284,9 @@ export function WorkspaceGraphPane({
             </span>
             <p className="graph-pane-empty-title">No commits yet</p>
             <p className="pane-empty">
-              Stage your changes and write your first commit in the panel on the right — it will
-              appear here as the root of your history.
+              {graphStyle === 'bonsai'
+                ? 'This branch is an empty pot — make your first commit to grow it.'
+                : 'Stage your changes and write your first commit in the panel on the right — it will appear here as the root of your history.'}
             </p>
             <button
               type="button"
@@ -323,6 +329,8 @@ export function WorkspaceGraphPane({
             totalRows={totalRows}
             revealFlash={revealFlash}
             reducedMotion={reducedMotion}
+            graphStyle={graphStyle}
+            graphSeason={graphSeason}
           />
         </ErrorBoundary>
       ) : null}

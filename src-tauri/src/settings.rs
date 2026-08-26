@@ -124,6 +124,13 @@ pub struct Settings {
     /// settings.json without this key loads `PrimaryCommitAction::default()`
     /// (Commit). Pure UI preference; NOT clamped.
     pub primary_commit_action: PrimaryCommitAction,
+    /// Spec-002: commit-graph visual style. Additive `#[serde(default)]` (via the
+    /// container-level `default`); a pre-spec-002 settings.json without this key
+    /// loads `GraphStyle::default()` (Standard). Pure UI preference; NOT clamped.
+    pub graph_style: GraphStyle,
+    /// Spec-002: seasonal accent for the Bonsai style. Additive `#[serde(default)]`;
+    /// a legacy file loads `GraphSeason::default()` (Living). NOT clamped.
+    pub graph_season: GraphSeason,
     /// Open tabs, in display order (repoIds == canonical workdir paths).
     /// Additive (P3e §6.1); a legacy file without this key loads as empty.
     pub open_repos: Vec<String>,
@@ -261,6 +268,8 @@ impl Default for Settings {
             list_view: ListView::default(),
             panel_density: PanelDensity::default(),
             primary_commit_action: PrimaryCommitAction::default(),
+            graph_style: GraphStyle::default(),
+            graph_season: GraphSeason::default(),
             open_repos: Vec::new(),
             active_repo: None,
             auto_fetch: AutoFetch::default(),

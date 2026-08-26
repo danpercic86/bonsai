@@ -26,9 +26,10 @@
     "crates/bonsai-mcp/tests/mcp_stdio.rs": 621,
     "src-tauri/src/commands/tests_ai_stream.rs": 545,
     "src-tauri/src/commands/tests_repo_session_misc.rs": 510,
-    "src/App.tsx": 966,
-    "src/components/RepoWorkspace.tsx": 2778,
-    "src/graph/GraphCanvas.tsx": 868,
+    "src-tauri/src/settings_ui_tests.rs": 519,
+    "src/App.tsx": 977,
+    "src/components/RepoWorkspace.tsx": 2782,
+    "src/graph/GraphCanvas.tsx": 910,
     "src/ipc/fixtures/diffs.ts": 746,
     "src/ipc/types/ipc-api.ts": 760
   }

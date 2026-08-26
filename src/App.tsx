@@ -40,6 +40,7 @@ import type {
 } from './ipc';
 import { errorMessage, isAppError } from './utils/errors';
 import {
+  applyGraphStyle,
   applyTheme,
   clampLive,
   DEFAULT_PANE_WIDTHS,
@@ -168,7 +169,7 @@ export default function App() {
     primaryCommitAction,
     autoFetch,
     healthRefresh,
-    graph,
+    graph, graphStyle, graphSeason,
     metricsVersion,
     aiEnabled,
     aiConflictAutonomy,
@@ -187,6 +188,14 @@ export default function App() {
     queueSettingsWrite,
     hydrateUiSettings,
   } = useUiSettings(pushToast);
+
+  // spec-002 §4.2: reflect the active graph style onto <html> (alongside
+  // data-theme) so the --graph-canvas-bg token switches the DOM surface behind
+  // the canvas. Covers both launch hydration and live toggles via the one
+  // graphStyle value the settings hook owns.
+  useEffect(() => {
+    applyGraphStyle(graphStyle);
+  }, [graphStyle]);
 
   // ----- Session persistence (§6): debounced whole-session write -----
   const sessionSaveTimer = useRef<number | null>(null);
@@ -788,6 +797,8 @@ export default function App() {
                 globalModalOpen={globalModalOpen}
                 graph={graph}
                 metricsVersion={metricsVersion}
+                graphStyle={graphStyle}
+                graphSeason={graphSeason}
                 aiEnabled={aiEnabled}
                 aiConflictAutonomy={aiConflictAutonomy}
                 aiConsented={aiConsented}
@@ -841,7 +852,7 @@ export default function App() {
           primaryCommitAction={primaryCommitAction}
           autoFetch={autoFetch}
           healthRefresh={healthRefresh}
-          graph={graph}
+          graph={graph} graphStyle={graphStyle} graphSeason={graphSeason}
           onChange={handleSettingsChange}
           onToggleTheme={toggleTheme}
           onToggleListView={toggleListView}

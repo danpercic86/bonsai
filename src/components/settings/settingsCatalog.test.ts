@@ -439,6 +439,7 @@ describe('entry control kinds', () => {
     const kinds = new Set<SettingsIndexEntry['control']>([
       'switch',
       'segmented',
+      'combobox',
       'radiogroup',
       'numberSlider',
       'text',

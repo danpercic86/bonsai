@@ -79,6 +79,10 @@ export const sessionHandlers = {
   async setUiSettings(patch: UiSettingsPatch): Promise<UiSettings> {
     await delay(150);
     const current = readUiSettings();
+    // Spec-002 (additive/optional): merge only when a value exists (patch or
+    // stored blob), so a write never mints keys the Rust-pinned oracle lacks.
+    const graphStyle = patch.graphStyle ?? current.graphStyle;
+    const graphSeason = patch.graphSeason ?? current.graphSeason;
     const next: UiSettings = {
       theme: patch.theme ?? current.theme,
       paneWidths:
@@ -95,6 +99,8 @@ export const sessionHandlers = {
           ? clampHealthRefresh(patch.healthRefresh)
           : current.healthRefresh,
       graph: patch.graph !== undefined ? clampGraphPrefs(patch.graph) : current.graph,
+      ...(graphStyle !== undefined ? { graphStyle } : {}),
+      ...(graphSeason !== undefined ? { graphSeason } : {}),
       aiEnabled: patch.aiEnabled ?? current.aiEnabled,
       aiConflictAutonomy: patch.aiConflictAutonomy ?? current.aiConflictAutonomy,
       aiConsented: patch.aiConsented ?? current.aiConsented,

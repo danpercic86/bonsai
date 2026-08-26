@@ -117,6 +117,10 @@ export const MINIMAL: FixtureValues = {
   autoFetch: D.autoFetch,
   healthRefresh: D.healthRefresh,
   graph: D.graph,
+  // Spec-002: optional in UiSettings, so `cloneDefaultUiSettings()` omits them —
+  // the fixture supplies the concrete defaults the SettingsPanel props require.
+  graphStyle: 'standard',
+  graphSeason: 'living',
   aiEnabled: false,
   aiConflictAutonomy: D.aiConflictAutonomy,
   aiConsented: false,

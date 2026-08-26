@@ -119,6 +119,8 @@ export function RepoWorkspace({
   globalModalOpen,
   graph: graphPrefs,
   metricsVersion,
+  graphStyle,
+  graphSeason,
   aiEnabled,
   aiConflictAutonomy,
   aiConsented,
@@ -2452,6 +2454,8 @@ export function RepoWorkspace({
           totalRows={graphTotal ?? undefined}
           revealFlash={revealFlash}
           reducedMotion={reducedMotion}
+          graphStyle={graphStyle}
+          graphSeason={graphSeason}
           search={search}
           searchScopeOptions={searchScopeOptions}
           historySearch={historySearch}
