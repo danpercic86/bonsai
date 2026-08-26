@@ -9,9 +9,14 @@ use std::path::Path;
 use crate::error::AppError;
 use crate::git::bisect::require_no_bisect;
 use crate::git::commit::resolve_signature;
-use crate::git::conflict::list_conflicts;
 use crate::git::repo::read_head_info;
 use crate::git::stage::{ensure_no_untracked_collision, open_workdir_repo};
+
+mod drive;
+use drive::{
+    cleanup_failed_start, commit_current, is_rebase_state, map_conflict, read_head_from_rebase,
+    run_rebase_loop, DriveResult,
+};
 
 /// Shared message for a checkout/base conflict (the initial base checkout or a
 /// mid-replay checkout that would overwrite local changes). Byte-identical to
@@ -53,149 +58,6 @@ pub enum RebaseOutcome {
     },
 }
 
-/// Result of driving the rebase plan to completion or to the next pause.
-enum DriveResult {
-    Completed {
-        head: String,
-        steps: u32,
-    },
-    Paused {
-        paths: Vec<String>,
-        current_step: u32,
-        total_steps: u32,
-    },
-}
-
-/// Maps a git2 error raised while starting or driving a rebase: a `Conflict`
-/// code means the checkout would overwrite local changes (surface the friendly
-/// CheckoutConflict), everything else falls through to the generic `From`
-/// (`AppError::Git`). Applied at the git2-error origin because `AppError` does
-/// not carry git2 codes.
-fn map_conflict(e: git2::Error) -> AppError {
-    if e.code() == git2::ErrorCode::Conflict {
-        AppError::CheckoutConflict(CONFLICT_MSG.to_string())
-    } else {
-        e.into()
-    }
-}
-
-/// 1-based current step (== git `msgnum`) and total (== `end`).
-fn steps(rebase: &mut git2::Rebase<'_>) -> (u32, u32) {
-    let current = rebase
-        .operation_current()
-        .map(|c| c as u32 + 1)
-        .unwrap_or(0);
-    let total = rebase.len() as u32;
-    (current, total)
-}
-
-/// Commits the CURRENT rebase operation, preserving its original author (the
-/// `None` author reuses the pick's name/email/author-time) and stamping the
-/// resolved `committer`. An `ErrorCode::Applied` means the pick became EMPTY
-/// (its change is already on the new base) → DROP it, matching default
-/// `git rebase`. (§3.6)
-fn commit_current(
-    rebase: &mut git2::Rebase<'_>,
-    committer: &git2::Signature<'_>,
-) -> Result<(), AppError> {
-    match rebase.commit(None, committer, None) {
-        Ok(_) => Ok(()),
-        Err(e) if e.code() == git2::ErrorCode::Applied => Ok(()),
-        Err(e) => Err(e.into()),
-    }
-}
-
-/// Drives the plan: apply each patch, pause on the first conflict (KEEPING the
-/// on-disk rebase state — that is NOT an error), else commit it and continue;
-/// when the plan is exhausted, `finish()` reattaches HEAD and moves the branch
-/// ref. `committer` is stamped on every replayed commit and on `finish()`. (§3.4)
-fn run_rebase_loop(
-    workdir: &Path,
-    repo: &git2::Repository,
-    rebase: &mut git2::Rebase<'_>,
-    committer: &git2::Signature<'_>,
-) -> Result<DriveResult, AppError> {
-    loop {
-        match rebase.next() {
-            None => break,                                 // plan exhausted
-            Some(Err(e)) => return Err(map_conflict(e)),   // caller decides abort-vs-keep
-            Some(Ok(_op)) => {
-                // op.kind() is always Pick for plain rebase.
-                if repo.index()?.has_conflicts() {
-                    let (current_step, total_steps) = steps(rebase);
-                    let paths: Vec<String> = list_conflicts(workdir)?
-                        .into_iter()
-                        .map(|c| c.path)
-                        .collect();
-                    return Ok(DriveResult::Paused {
-                        paths,
-                        current_step,
-                        total_steps,
-                    });
-                }
-                commit_current(rebase, committer)?;
-            }
-        }
-    }
-    // Plan exhausted -> finalize.
-    let total = rebase.len() as u32;
-    rebase.finish(Some(committer))?;
-    let head = repo.head()?.peel_to_commit()?.id().to_string();
-    Ok(DriveResult::Completed { head, steps: total })
-}
-
-/// START-only cleanup. GUARANTEE: a failed `rebase_branch` restores
-/// `RepositoryState::Clean` and leaves no half-initialized rebase. Best-effort,
-/// in order; each step ignores its own error. Because §3.1.5 allows a dirty
-/// worktree, the only START failure that can touch the worktree is the initial
-/// base checkout, which fails atomically as `CheckoutConflict` before any
-/// commit is rewritten. (§3.5)
-fn cleanup_failed_start(repo: &git2::Repository, head_oid: git2::Oid) {
-    if let Ok(mut r) = repo.open_rebase(None) {
-        let _ = r.abort(); // normal path: full restore
-    }
-    if repo.state() != git2::RepositoryState::Clean {
-        // belt-and-suspenders
-        let _ = repo.cleanup_state();
-        if let Ok(commit) = repo.find_commit(head_oid) {
-            if let Ok(tree) = commit.tree() {
-                if let Ok(mut idx) = repo.index() {
-                    let _ = idx.read_tree(&tree);
-                    let _ = idx.write();
-                }
-            }
-        }
-    }
-}
-
-/// True for every on-disk rebase repository state.
-fn is_rebase_state(s: git2::RepositoryState) -> bool {
-    matches!(
-        s,
-        git2::RepositoryState::RebaseMerge
-            | git2::RepositoryState::Rebase
-            | git2::RepositoryState::RebaseInteractive
-    )
-}
-
-/// Best-effort display name of the branch being rebased: read
-/// `rebase-merge/head-name` (strip `refs/heads/`); after a completed `finish()`
-/// the file is gone, so fall back to HEAD's branch name. NEVER errors — the
-/// `branch` field is display-only (toasts). (§3.7)
-fn read_head_from_rebase(repo: &git2::Repository) -> String {
-    let head_name_path = repo.path().join("rebase-merge").join("head-name");
-    if let Ok(content) = std::fs::read_to_string(&head_name_path) {
-        let trimmed = content.trim();
-        let name = trimmed.strip_prefix("refs/heads/").unwrap_or(trimmed);
-        if !name.is_empty() {
-            return name.to_string();
-        }
-    }
-    read_head_info(repo)
-        .ok()
-        .and_then(|h| h.branch_name)
-        .unwrap_or_default()
-}
 
 /// Blocking. Starts a rebase of the current branch onto `onto_name` (local
 /// shorthand "main" OR remote-tracking shorthand "origin/main").
@@ -535,96 +397,4 @@ fn rebase_orig_head(repo: &git2::Repository, rebase: &git2::Rebase<'_>) -> Optio
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    // ---------------------------------------------- wire shape (TS mirrors)
-
-    /// The serde tag/casing must match the TS RebaseOutcome union exactly.
-    #[test]
-    fn wire_shapes_are_camel_case_tagged() {
-        let v = serde_json::to_value(RebaseOutcome::UpToDate).expect("json");
-        assert_eq!(v, serde_json::json!({ "kind": "upToDate" }));
-
-        let v = serde_json::to_value(RebaseOutcome::FastForwarded {
-            branch: "topic".to_string(),
-            to: "a".repeat(40),
-        })
-        .expect("json");
-        assert_eq!(
-            v,
-            serde_json::json!({ "kind": "fastForwarded", "branch": "topic", "to": "a".repeat(40) })
-        );
-
-        let v = serde_json::to_value(RebaseOutcome::Rebased {
-            branch: "topic".to_string(),
-            head: "b".repeat(40),
-            steps: 2,
-            warnings: Vec::new(),
-        })
-        .expect("json");
-        assert_eq!(
-            v,
-            serde_json::json!({ "kind": "rebased", "branch": "topic", "head": "b".repeat(40), "steps": 2 }),
-            "empty warnings are omitted from the wire (skip_serializing_if)"
-        );
-
-        // A non-empty warnings list surfaces as a `warnings` array (toasted by the UI).
-        let v = serde_json::to_value(RebaseOutcome::Rebased {
-            branch: "topic".to_string(),
-            head: "b".repeat(40),
-            steps: 2,
-            warnings: vec!["reword of 1234567 was dropped".to_string()],
-        })
-        .expect("json");
-        assert_eq!(
-            v,
-            serde_json::json!({
-                "kind": "rebased",
-                "branch": "topic",
-                "head": "b".repeat(40),
-                "steps": 2,
-                "warnings": ["reword of 1234567 was dropped"]
-            })
-        );
-
-        let v = serde_json::to_value(RebaseOutcome::Conflicts {
-            paths: vec!["README.md".to_string(), "src/auth.ts".to_string()],
-            current_step: 2,
-            total_steps: 3,
-        })
-        .expect("json");
-        assert_eq!(
-            v,
-            serde_json::json!({
-                "kind": "conflicts",
-                "paths": ["README.md", "src/auth.ts"],
-                "currentStep": 2,
-                "totalSteps": 3
-            })
-        );
-    }
-
-    // ------------------------------------------------------- preconditions
-
-    #[test]
-    fn rebase_preconditions_on_fresh_repo() {
-        let dir = crate::testutil::scratch_dir();
-        git2::Repository::init(dir.path()).expect("init repo");
-
-        // Unborn HEAD refuses before onto resolution.
-        let err = rebase_branch(dir.path(), "main").expect_err("unborn");
-        match err {
-            AppError::Git(m) => assert!(m.contains("no commits yet"), "got: {m}"),
-            other => panic!("expected Git, got {other:?}"),
-        }
-
-        // continue / skip / abort with no rebase in progress.
-        let err = rebase_continue(dir.path()).expect_err("no rebase");
-        assert!(matches!(err, AppError::NoOperationInProgress(_)));
-        let err = rebase_skip(dir.path()).expect_err("no rebase");
-        assert!(matches!(err, AppError::NoOperationInProgress(_)));
-        let err = rebase_abort(dir.path()).expect_err("no rebase");
-        assert!(matches!(err, AppError::NoOperationInProgress(_)));
-    }
-}
+mod tests;
