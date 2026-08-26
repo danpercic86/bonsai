@@ -49,10 +49,16 @@ async function openPrTab(page: Page): Promise<void> {
   );
 }
 
-/** Hover-sweep the LEFT ref band of a display row until the graph tooltip
- *  matches `text`; returns the matching PAGE coordinates or null. The tooltip
- *  hit-rects come from the same pure layout the canvas draw pass uses, so a
- *  match proves the pill/badge is actually drawn there. */
+/** Hover-sweep an entire display row until the graph tooltip matches `text`;
+ *  returns the matching PAGE coordinates or null. The tooltip hit-rects come
+ *  from the same pure layout the canvas draw pass uses, so a match proves the
+ *  pill/badge is actually drawn there. Sweeps the FULL row width (not just the
+ *  left ref band): forge signals (PR pill + CI dot) live in the right-aligned
+ *  metadata pack's forge column, whose x is computed from the viewport width
+ *  (see computeRightColumns / PR-badge-placement §2.2), so a fixed left-band
+ *  sweep would miss them. A full-width sweep finds the target wherever it is
+ *  drawn and stays robust if column geometry shifts again. The `hasText` filter
+ *  guarantees only the intended tooltip counts as a hit. */
 async function sweepRefBand(
   page: Page,
   displayRow: number,
@@ -62,9 +68,9 @@ async function sweepRefBand(
   if (box === null) throw new Error('graph scroller has no bounding box');
   const y = box.y + displayRow * DEFAULT_ROW_HEIGHT + DEFAULT_ROW_HEIGHT / 2;
   const tip = page.getByRole('tooltip').filter({ hasText: text });
-  // Park the cursor off the band first so re-sweeps re-trigger mousemove.
-  await page.mouse.move(box.x + 400, box.y + 2);
-  for (let x = 8; x < 178; x += 5) {
+  // Park the cursor off the row first so re-sweeps re-trigger mousemove.
+  await page.mouse.move(box.x + box.width - 4, box.y + 2);
+  for (let x = 8; x < box.width - 4; x += 5) {
     await page.mouse.move(box.x + x, y);
     try {
       await expect(tip).toBeVisible({ timeout: 50 });
