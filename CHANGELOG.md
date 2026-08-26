@@ -6,6 +6,38 @@ All notable changes to Bonsai are documented here. The format is based on
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-08-26
+
+Accurate pull-request diffs computed locally, a per-branch CI checks view, and a dedicated forge
+column in the graph — plus a large git-action performance round and an internal file-size cleanup.
+
+### Added
+
+- **Pull-request changed-files list with inline per-file diffs**, computed **locally** from the
+  base…head merge base rather than from forge-reported stats. This gives correct line counts on
+  every forge — including Azure DevOps, which previously reported +0/−0 — and works for GitHub,
+  GitLab, Bitbucket, and Azure DevOps. Binary and rename cases are handled.
+- **Per-branch "Checks" tab** in the right panel showing the branch's CI status, refreshed on
+  fetch/pull/push.
+
+### Changed
+
+- **PR and CI badges moved into a dedicated forge column** in the commit graph, keeping the graph
+  lanes clean while surfacing forge state alongside each commit.
+
+### Fixed
+
+- Make the selected diff-file row clearly visible.
+- Pull-request panel: correct empty-state header counts, dim stale results while refetching, and
+  fall back to the Azure TFS API path where needed.
+
+### Performance
+
+- **Git-action performance round two.** Refresh rounds now reuse a single repository handle
+  (thread-local handle cache, composite mutations open the repo once), cutting per-refresh-round
+  repository opens from roughly nine-to-eleven down to about one. The graph-layout cache is capped
+  at 50k nodes.
+
 ## [1.3.0] — 2026-08-24
 
 Checkout from the graph, a live git-activity log, a complete lucide-react icon system, and a
