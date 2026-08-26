@@ -64,6 +64,7 @@ fn solo(names: &[&str]) -> GraphFilter {
     GraphFilter {
         first_parent: false,
         seed_refs: Some(names.iter().map(|s| s.to_string()).collect()),
+        ..Default::default()
     }
 }
 
@@ -156,6 +157,7 @@ fn first_parent_walk_is_cached_and_replayed() {
     let f = GraphFilter {
         first_parent: true,
         seed_refs: None,
+        ..Default::default()
     };
     let first = run(dir.path(), &cache, &perf, &f);
     let second = run(dir.path(), &cache, &perf, &f);

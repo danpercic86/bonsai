@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import type { ComponentProps, RefObject } from 'react';
 import { AiOutputPanel } from './AiOutputPanel';
 import { BlameView } from './BlameView';
@@ -17,6 +18,8 @@ import type { UseHistorySearch } from './repoWorkspace/useHistorySearch';
 import { GraphCanvas } from '../graph/GraphCanvas';
 import { GraphFilterChip } from './GraphFilterChip';
 import type { GraphFilterController } from '../hooks/useGraphFilter';
+import type { GraphFoldController } from '../hooks/useGraphFold';
+import type { GraphFoldView } from '../graph/foldView';
 import { GraphSelectionAnnouncer } from './GraphSelectionAnnouncer';
 import type { GraphCanvasHandle } from '../graph/GraphCanvas';
 import type {
@@ -70,6 +73,8 @@ export interface WorkspaceGraphPaneProps {
   /** Spec-003: the declutter controller (chip + popover) and the backend's
    *  stale verdict (saved refs matched nothing → warning chip). */
   graphFilter: GraphFilterController;
+  /** Spec-004: the fold controller (expansion state + display-row model). */
+  graphFold: GraphFoldController;
   graphFilterStale: boolean;
 
   /** P50b: commit-search state (bar + graph highlight + next/prev jump). */
@@ -178,6 +183,7 @@ export function WorkspaceGraphPane({
   graphStyle,
   graphSeason,
   graphFilter,
+  graphFold,
   graphFilterStale,
   search,
   searchScopeOptions,
@@ -223,6 +229,25 @@ export function WorkspaceGraphPane({
 }: WorkspaceGraphPaneProps) {
   // P50b: the floating search affordance is only shown over a bare graph — hide
   // it while any overlay covers the pane (it would poke through the corner).
+  // Spec-004: GraphCanvas's fold view-model — only while the mapping is real
+  // (fold on + spans present), so the fold-off path stays byte-identical.
+  const foldView = useMemo<GraphFoldView | undefined>(() => {
+    if (graphFold.model === null) return undefined;
+    return {
+      model: graphFold.model,
+      expandedSpans: graphFold.expandedSpans,
+      activePillStart: graphFold.activePillStart,
+      onToggleSpan: graphFold.toggleSpan,
+    };
+  }, [graphFold.model, graphFold.expandedSpans, graphFold.activePillStart, graphFold.toggleSpan]);
+  const announcerFold = useMemo(
+    () => ({
+      model: graphFold.model,
+      activePillStart: graphFold.activePillStart,
+      expandedSpans: graphFold.expandedSpans,
+    }),
+    [graphFold.model, graphFold.activePillStart, graphFold.expandedSpans],
+  );
   const anyOverlayOpen =
     diffSlot !== null ||
     blame !== null ||
@@ -234,7 +259,7 @@ export function WorkspaceGraphPane({
     <main className="graph-pane">
       {/* M1: polite live region announcing the settled graph-grid selection
           (canvas is opaque to SR). Permanently mounted for reliable pickup. */}
-      <GraphSelectionAnnouncer graph={graph} selectedIndex={selectedIndex} display={display} />
+      <GraphSelectionAnnouncer graph={graph} selectedIndex={selectedIndex} display={display} fold={announcerFold} />
       {/* P50b: search bar at the top of the pane while open; a floating affordance
           otherwise (Ctrl/Cmd-F also opens it — the webview may steal that in the
           browser harness, so the button is the always-reachable entry point). */}
@@ -360,6 +385,7 @@ export function WorkspaceGraphPane({
             reducedMotion={reducedMotion}
             graphStyle={graphStyle}
             graphSeason={graphSeason}
+            fold={foldView}
           />
         </ErrorBoundary>
       ) : null}

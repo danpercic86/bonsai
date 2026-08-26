@@ -23,8 +23,8 @@ use std::sync::Mutex;
 
 use bonsai_core::error::AppError;
 use bonsai_core::graph::{
-    graph_seed_with, redecorate_chunks, stream_graph_from_repo, GraphChunk, GraphFilter,
-    GraphSeed, RefKind, RefLabel, RefMap,
+    fold_spans_of_chunks, graph_seed_with, redecorate_chunks, stream_graph_from_repo_collect,
+    FoldSpan, GraphChunk, GraphFilter, GraphSeed, RefKind, RefLabel, RefMap,
 };
 
 use crate::perf::PerfState;
@@ -69,8 +69,13 @@ pub struct CachedGraph {
     /// Every oid emitted as a node by the walk (tips AND interior commits). A new
     /// tip must already be a member for a HitRedecorate — proves no new commit.
     pub node_oids: HashSet<git2::Oid>,
-    /// The exact `Meta … Batch* … Done` wire stream, replayed verbatim on a hit.
+    /// The exact `Meta … Batch* … Done` wire stream, replayed verbatim on a hit
+    /// (spec-004: except `Done.fold_spans`, always re-injected per request).
     pub chunks: Vec<GraphChunk>,
+    /// Spec-004: rows whose REAL parent count > 1 (sorted; recorded before the
+    /// first-parent truncate) so cache-hit fold-span recomputation never
+    /// re-touches libgit2. Spans themselves are NEVER cached.
+    pub merge_rows: Vec<u32>,
 }
 
 /// Per-repo cache slot. `None` until the first walk; reset to `None` on
@@ -166,9 +171,12 @@ fn classify(
     let Some(c) = cache else {
         return Classification::Miss;
     };
-    // Spec-003: filter equality is a precondition for ANY hit — the cached
-    // chunks (nodes, pills, Meta flags) are only valid under the same filter.
-    if filter != &c.filter {
+    // Spec-003/004: WALK-identity equality (`first_parent` + `seed_refs`) is a
+    // precondition for ANY hit — the cached chunks (nodes, pills, Meta flags)
+    // are only valid under the same walk. `fold_linear` is excluded: fold
+    // never changes the walk, so a fold toggle classifies as a Hit and its
+    // spans are recomputed per request at replay time.
+    if !filter.walk_eq(&c.filter) {
         return Classification::Miss;
     }
     if tips == &c.tips && head == c.head && hide == &c.hide {
@@ -256,11 +264,9 @@ fn stream_graph_cached_capped(
         Classification::HitVerbatim => {
             perf.inc_graph_cache_hits();
             if let Some(c) = guard.as_ref() {
-                for chunk in &c.chunks {
-                    if !emit(chunk.clone()) {
-                        return Ok(());
-                    }
-                }
+                let spans = request_spans(c, filter);
+                // Sink-gone mid-replay is a clean stop either way (Ok).
+                let _ = replay_chunks(&c.chunks, spans, &mut emit);
             }
             Ok(())
         }
@@ -294,11 +300,11 @@ fn stream_graph_cached_capped(
                 c.head = seed.head;
                 c.deco_fp = deco_fp;
                 c.seed_fp = seed_fp;
-                for chunk in &c.chunks {
-                    if !emit(chunk.clone()) {
-                        return Ok(());
-                    }
-                }
+                // Spec-004: spans are computed POST-redecorate (a ref landing
+                // mid-run must break that run) and injected at replay time.
+                let spans = request_spans(c, filter);
+                // Sink-gone mid-replay is a clean stop either way (Ok).
+                let _ = replay_chunks(&c.chunks, spans, &mut emit);
             }
             Ok(())
         }
@@ -309,6 +315,9 @@ fn stream_graph_cached_capped(
             drop(guard);
 
             let mut buf: Vec<GraphChunk> = Vec::new();
+            // Spec-004: merge rows are collected on EVERY cold walk (cheap; a
+            // later fold-on request must recompute spans without libgit2).
+            let mut merge_rows: Vec<u32> = Vec::new();
             let mut node_oids: HashSet<git2::Oid> = HashSet::new();
             let mut node_count: usize = 0;
             let mut too_big = false;
@@ -316,7 +325,7 @@ fn stream_graph_cached_capped(
             // P88b/B2b: the walk reuses the SAME handle as the seed probe above
             // (was a second open) — one open serves both. `repo_opens` is bumped
             // once by `with_repo_mut` at the command seam, never here.
-            stream_graph_from_repo(repo, filter, |chunk| {
+            stream_graph_from_repo_collect(repo, filter, &mut merge_rows, |chunk| {
                 match &chunk {
                     GraphChunk::Batch { nodes, .. } => {
                         node_count += nodes.len();
@@ -373,11 +382,56 @@ fn stream_graph_cached_capped(
                     hide,
                     node_oids,
                     chunks: buf,
+                    merge_rows,
                 });
             }
             Ok(())
         }
     }
+}
+
+/// Spec-004: the per-request fold spans for a cached graph — recomputed from
+/// the cached rows/edges (+ their CURRENT, possibly just-redecorated refs) and
+/// the stored `merge_rows`; empty when the request has fold off. Never cached.
+fn request_spans(c: &CachedGraph, filter: &GraphFilter) -> Vec<FoldSpan> {
+    if filter.fold_linear {
+        fold_spans_of_chunks(&c.chunks, &c.merge_rows, filter.first_parent)
+    } else {
+        Vec::new()
+    }
+}
+
+/// Spec-004: replay cached chunks, ALWAYS overwriting `Done.fold_spans` with
+/// the per-request `spans` — a cached `Done` carries whatever the miss-time
+/// request produced, which must never leak to a request with a different
+/// `fold_linear` (or stale refs). Returns `false` when the sink is gone.
+fn replay_chunks(
+    chunks: &[GraphChunk],
+    spans: Vec<FoldSpan>,
+    emit: &mut impl FnMut(GraphChunk) -> bool,
+) -> bool {
+    for chunk in chunks {
+        let out = match chunk {
+            GraphChunk::Done {
+                total_rows,
+                lane_count,
+                head_index,
+                truncated,
+                ..
+            } => GraphChunk::Done {
+                total_rows: *total_rows,
+                lane_count: *lane_count,
+                head_index: *head_index,
+                truncated: *truncated,
+                fold_spans: spans.clone(),
+            },
+            other => other.clone(),
+        };
+        if !emit(out) {
+            return false;
+        }
+    }
+    true
 }
 
 /// Re-probe the seed after a walk and report whether the WALK identity
@@ -409,3 +463,5 @@ fn seed_unchanged_with(
 mod tests;
 #[cfg(test)]
 mod tests_filter;
+#[cfg(test)]
+mod tests_fold;

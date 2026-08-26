@@ -1,6 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { GraphLayout } from '../../ipc';
 import type { GraphCanvasHandle } from '../../graph/GraphCanvas';
+import { foldPillRow, foldRowAt, foldToDisplay } from '../../hooks/useGraphFold';
+import type { GraphFoldController } from '../../hooks/useGraphFold';
 import type { DiffSlot } from '../StatusPanel';
 import type { Setter } from './types';
 
@@ -60,6 +62,10 @@ export function useWorkspaceKeyboard(deps: {
   selectedIndex: number | null;
   graph: GraphLayout | null;
   graphRef: { current: GraphCanvasHandle | null };
+  /** Spec-004: fold controller — while its model is active, graph nav runs in
+   *  DISPLAY space with the UI-contract §3 pill semantics (land-don't-select,
+   *  Enter/Space/→ expand, ← collapse). Absent/identity ⇒ legacy nav verbatim. */
+  fold?: GraphFoldController;
   /** P68e §4.4: `Ctrl/Cmd+Shift+A` — expand the AI activity dock and focus the reply
    *  box if a run is blocked, else the log. Bound BEFORE the typing guard on purpose:
    *  Claude's question can arrive while the user is mid-commit-message, and this is
@@ -115,6 +121,7 @@ export function useWorkspaceKeyboard(deps: {
     selectedIndex,
     graph,
     graphRef,
+    fold,
     onAiActivity,
     onGitActivity,
     handleRefresh,
@@ -217,6 +224,14 @@ export function useWorkspaceKeyboard(deps: {
     closeComposer,
   ]);
 
+  // Spec-004 §3: after Enter-expand the next arrow must resume FROM the pill's
+  // display index (not teleport back to a far-away selection). A ref — never
+  // render-visible state — so it can't paint as an active-but-unselected row.
+  const navAnchorRef = useRef<number | null>(null);
+  useEffect(() => {
+    navAnchorRef.current = null; // any selection change invalidates the anchor
+  }, [selectedIndex]);
+
   // Per-repo shortcut effect (active tab only, §5.1): refresh / fetch / pull /
   // push / graph nav. Global modals + this repo's own dialogs suppress it.
   useEffect(() => {
@@ -316,6 +331,72 @@ export function useWorkspaceKeyboard(deps: {
         return;
       }
 
+      // Spec-004 (UI contract §3): while fold is active, graph nav operates on
+      // DISPLAY rows. Arrows LAND on fold-pill rows (active-descendant only —
+      // the commit selection never changes); Enter/Space/ArrowRight expand the
+      // active pill; ArrowLeft collapses the expanded run containing the
+      // selection (the restored pill becomes the active row).
+      const foldModel = fold !== undefined && fold.model !== null ? fold.model : null;
+      if (foldModel !== null && graph !== null && graph.nodes.length > 0) {
+        const displayCount = foldModel.displayRowCount;
+        const activePill = fold!.activePillStart;
+        if (activePill !== null && (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowRight')) {
+          e.preventDefault();
+          // Anchor the NEXT arrow at the pill's former display index (== the
+          // run's first revealed row post-expand).
+          navAnchorRef.current = activePill;
+          fold!.toggleSpan(activePill); // a pill row is always collapsed → expand
+          return;
+        }
+        if (e.key === 'ArrowLeft') {
+          if (selectedIndex !== null && fold!.collapseRunContaining(selectedIndex)) {
+            e.preventDefault();
+          }
+          return; // no-op on rows outside an expanded run (reserved)
+        }
+        if (
+          e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'PageDown' ||
+          e.key === 'PageUp' || e.key === 'Home' || e.key === 'End'
+        ) {
+          e.preventDefault();
+          const activeDisplay = foldPillRow(foldModel, activePill);
+          const anchor = navAnchorRef.current;
+          navAnchorRef.current = null; // consumed by this nav step
+          const cur =
+            activeDisplay ??
+            (anchor !== null
+              ? foldToDisplay(foldModel, anchor)
+              : selectedIndex !== null
+                ? foldToDisplay(foldModel, selectedIndex)
+                : null);
+          const lastRow = displayCount - 1;
+          let next: number;
+          if (cur === null) {
+            // Seed anchors (M2 rule, display space; anchor rows are never hidden).
+            const headDisplay =
+              graph.headIndex !== null ? foldToDisplay(foldModel, graph.headIndex) : 0;
+            if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === 'Home') next = headDisplay;
+            else if (e.key === 'ArrowUp' || e.key === 'End') next = lastRow;
+            else next = 0; // PageUp with none → 0
+          } else if (e.key === 'Home') next = 0;
+          else if (e.key === 'End') next = lastRow;
+          else {
+            const page = graphRef.current?.getVisibleRowCount() ?? 10;
+            const delta =
+              e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : e.key === 'PageDown' ? page : -page;
+            next = Math.max(0, Math.min(cur + delta, lastRow));
+          }
+          const at = foldRowAt(foldModel, next);
+          if (at.kind === 'fold') {
+            fold!.setActivePill(at.span.start); // land, don't select
+          } else {
+            fold!.setActivePill(null);
+            setSelectedIndex(at.row);
+          }
+          return;
+        }
+      }
+
       // M2 (graph review): the first Arrow/Page/Home/End with no prior selection
       // seeds an anchor so keyboard nav works without a mouse click. Down/PageDown/
       // Home anchor at headIndex (in range) else 0; Up/End anchor at the last row;
@@ -390,5 +471,6 @@ export function useWorkspaceKeyboard(deps: {
     onGitActivity,
     selectedIndex,
     graph,
+    fold,
   ]);
 }

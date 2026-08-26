@@ -215,6 +215,25 @@ fn set_ui_settings_patch_external_commands_is_partial() {
     assert_eq!(s.editor_command, "code {path}");
 }
 
+/// Spec-004: `graphFoldLinear` patches independently (camelCase on the wire)
+/// and an absent key leaves it untouched.
+#[test]
+fn set_ui_settings_patch_graph_fold_linear_is_partial() {
+    let mut s = settings::Settings::default();
+    assert!(!s.graph_fold_linear);
+
+    let patch: UiSettingsPatch =
+        serde_json::from_str(r#"{ "graphFoldLinear": true }"#).expect("fold patch");
+    apply_patch(&mut s, patch);
+    assert!(s.graph_fold_linear);
+    assert!(!s.graph_first_parent, "sibling pref untouched");
+
+    // An absent key leaves it unchanged.
+    let patch: UiSettingsPatch = serde_json::from_str(r#"{ "theme": "light" }"#).expect("patch");
+    apply_patch(&mut s, patch);
+    assert!(s.graph_fold_linear);
+}
+
 /// Spec-003: the two declutter prefs patch independently, and the
 /// `graphRefFilter` double-option distinguishes ABSENT (leave unchanged) from
 /// an explicit `null` (clear) on the wire.

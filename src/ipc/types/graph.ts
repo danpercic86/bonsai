@@ -34,6 +34,19 @@ export interface GraphEdge {
   lane: number;
 }
 
+/** Spec-004: a maximal foldable run of "uneventful" commits. `start..start+count`
+ *  are the HIDDEN model rows; the anchor rows `start-1` and `start+count` stay
+ *  visible. Mirrors Rust `FoldSpan` (camelCase). The fold pill is a frontend
+ *  display-row construct (`src/graph/foldModel.ts`) — no folded wire node. */
+export interface FoldSpan {
+  /** First hidden row (model index). */
+  start: number;
+  /** Hidden rows == the pill's N (>= MIN_FOLD_RUN = 5). */
+  count: number;
+  /** The run's lane (pill color). */
+  lane: number;
+}
+
 export interface GraphLayout {
   /** Row number == index in this array (no row field on the wire). */
   nodes: GraphNode[];
@@ -42,6 +55,9 @@ export interface GraphLayout {
   laneCount: number;
   headIndex: number | null;
   truncated: boolean;
+  /** Spec-004: foldable-run metadata; OMITTED when empty (fold off / none
+   *  found) — absent == []. Parity with the stream `done` chunk. */
+  foldSpans?: FoldSpan[];
 }
 
 /** P65 (streamed graph): one commit row as delivered by `streamGraph`. Identical
@@ -95,7 +111,16 @@ export type GraphChunk =
       seedRefsApplied?: boolean;
     }
   | { kind: 'batch'; startRow: number; laneCountSoFar: number; nodes: StreamNode[]; edges: StreamEdge[] }
-  | { kind: 'done'; totalRows: number; laneCount: number; headIndex: number | null; truncated: boolean };
+  | {
+      kind: 'done';
+      totalRows: number;
+      laneCount: number;
+      headIndex: number | null;
+      truncated: boolean;
+      /** Spec-004 (additive, absent == []): foldable-run metadata. Rides `done`
+       *  because the rule needs the full edge set. */
+      foldSpans?: FoldSpan[];
+    };
 
 /** Spec-003: the wire graph filter (mirrors Rust `GraphFilter`, camelCase,
  *  serde-default — `{ firstParent: false, seedRefs: null }` == today's walk). */
@@ -106,6 +131,9 @@ export interface GraphFilter {
    *  Non-empty matching zero existing refs = stale → backend falls back to the
    *  full graph and reports `seedRefsApplied: false`. */
   seedRefs: string[] | null;
+  /** Spec-004: gates fold-span computation only — NEVER changes the walk
+   *  (excluded from the backend's cache walk key). */
+  foldLinear: boolean;
 }
 
 /** Graph geometry knobs (P11 §2.3) — pure render geometry, not layout math. */

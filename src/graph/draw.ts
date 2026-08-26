@@ -26,7 +26,6 @@ import {
 import { drawRefLabelAt, drawStashIcon, groupRefs, layoutRefLabels } from './refLabels';
 import { computeRightColumns } from './rightColumns';
 import type { GraphDisplayOptions } from './rightColumns';
-import { measure } from './textMeasure';
 import { drawBlossom, drawBonsaiBackdrop, drawBonsaiEdge } from './drawBonsai';
 import { swayOffset } from './sway';
 // P67 §1: the guideline's geometry is computed in viewport.ts (contract D2);
@@ -73,7 +72,7 @@ export interface Interaction {
   selectedIndex: number | null;
   /** P50b: rows carrying a commit-search match → an outer `--match-ring` ring.
    *  `null` when search is closed / has no visible matches (no ring pass). */
-  matchRows: Set<number> | null;
+  matchRows: ReadonlySet<number> | null;
   /** P58c: oid → signature verdict for the LIT badge (visible rows only,
    *  cached by oid). `null` / a missing oid ⇒ the faint P51 stub. */
   verifyStatus: ReadonlyMap<string, VerifyStatus> | null;
@@ -83,6 +82,9 @@ export interface Interaction {
   flash?: { row: number; alpha: number; ringRadius: number } | null;
   /** spec 002 §5: settle-on-scroll sway — `elapsedMs` since arm; `null` = idle. */
   sway?: { elapsedMs: number } | null;
+  /** Spec-004: DISPLAY rows that are fold pills — skipped by the avatar + text
+   *  passes (drawFold.ts paints them after drawGraph). Absent/null = none. */
+  foldRows?: ReadonlySet<number> | null;
 }
 
 /** Long-edge middle segments are clamped to this margin around the canvas.
@@ -182,66 +184,10 @@ export function drawStashNode(
 
 // ---------- WIP (uncommitted changes) row (P1 §9.3) ----------
 
-export interface WipSummary {
-  fileCount: number;
-}
-
-/** Draws the frontend-composited WIP row (P1 §9.1/§9.3). `vp.scrollTop` is the
- * RAW (un-offset) scroll position.
- *
- * P67 §1: the dashed connector to the HEAD dot MOVED OUT of this function into
- * `drawHeadGuide` below, so it paints at every scroll position. What remains
- * here — the hover background, the dashed marker circle and the
- * "Uncommitted changes (n)" label — belongs to the WIP row itself and keeps the
- * caller's near-top gate. */
-export function drawWipRow(
-  ctx: CanvasRenderingContext2D,
-  layout: GraphLayout,
-  wip: WipSummary,
-  vp: Viewport,
-  theme: Theme,
-  hovered: boolean,
-  m: EffectiveMetrics,
-): void {
-  const RH = m.rowHeight;
-  const headIndex = layout.headIndex;
-  const headLane = headIndex !== null ? layout.nodes[headIndex].lane : 0;
-  const x = laneX(headLane, m);
-  const y = RH / 2 - vp.scrollTop;
-
-  if (hovered) {
-    ctx.fillStyle = theme.bg2;
-    ctx.fillRect(0, -vp.scrollTop, vp.width, RH);
-  }
-
-  ctx.save();
-  ctx.setLineDash([3, 3]);
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.arc(x, y, 4, 0, Math.PI * 2);
-  // Backdrop-colored fill (== bg0 in the standard theme; the paper/soil color in
-  // Bonsai, §7) so the dashed WIP marker never punches a bg0 hole in the backdrop.
-  ctx.fillStyle = theme.graphBackdrop;
-  ctx.fill();
-  ctx.strokeStyle = theme.warning;
-  ctx.stroke();
-  ctx.restore();
-
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'left';
-  // P7 §7: WIP label moves to the summary zone; the LEFT ref band stays empty.
-  const textX = summaryStartX(layout.laneCount, m);
-  ctx.font = `italic ${m.summaryFont} ${FONT_UI}`;
-  ctx.fillStyle = theme.text2;
-  const label = 'Uncommitted changes';
-  ctx.fillText(label, textX, y);
-  const labelW = measure(ctx, label);
-
-  ctx.font = `${m.metaFont} ${FONT_UI}`;
-  ctx.fillStyle = theme.text3;
-  const count = `(${wip.fileCount} file${wip.fileCount === 1 ? '' : 's'})`;
-  ctx.fillText(count, textX + labelW + 6, y);
-}
+// Spec-004 size split: the WIP row painter moved VERBATIM to drawWip.ts;
+// re-exported so existing `from './draw'` call sites keep working.
+export { drawWipRow } from './drawWip';
+export type { WipSummary } from './drawWip';
 
 // ---------- HEAD guideline (P67 §1) ----------
 
@@ -374,6 +320,7 @@ export function drawGraph(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   for (let row = firstRow; row <= lastRow; row++) {
+    if (ix.foldRows?.has(row) === true) continue; // spec-004: pill row (drawFold)
     const node = nodes[row];
     // spec 002 §5: paint-time-only glyph sway (edges never move; `y` untouched).
     const sway = theme.bonsai && ix.sway != null ? swayOffset(ix.sway.elapsedMs, node.lane, false) : 0;
@@ -479,6 +426,7 @@ export function drawGraph(
 
   ctx.textBaseline = 'middle';
   for (let row = firstRow; row <= lastRow; row++) {
+    if (ix.foldRows?.has(row) === true) continue; // spec-004: pill row (drawFold)
     const node = nodes[row];
     const y = rowY(row, vp.scrollTop, m);
 

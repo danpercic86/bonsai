@@ -10,7 +10,7 @@ import { SettingsGraphDeclutterSection } from '../SettingsGraphDeclutterSection'
 import { useSettingsActions, useSettingsValues } from '../SettingsContext';
 
 export function GraphCategory() {
-  const { graph, graphFirstParent, graphRefFilter } = useSettingsValues();
+  const { graph, graphFirstParent, graphFoldLinear, graphRefFilter } = useSettingsValues();
   const { change } = useSettingsActions();
 
   /* --- Graph (geometry sliders + P51 per-row detail toggles) --- */
@@ -20,6 +20,7 @@ export function GraphCategory() {
       {/* Spec-003: the "Declutter" group (first-parent + branch filters). */}
       <SettingsGraphDeclutterSection
         graphFirstParent={graphFirstParent}
+        graphFoldLinear={graphFoldLinear}
         graphRefFilter={graphRefFilter}
         onChange={change}
       />

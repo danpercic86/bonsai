@@ -252,6 +252,13 @@ The `<canvas>` is opaque to assistive tech, so the graph MUST be a focusable com
   when fold is off, so pre-fold behaviour is unchanged). Fold-pill rows are navigable
   active-descendant targets with their own accessible name — see `spec-004-ui.md` §3.
 
+### 4.2 Graph right-edge overlay stack (added 2026-08-26, spec 005)
+
+Native scrollbar (never covered; overlays sit at `right: rightInset`) → `.graph-rail` overview
+rail `z-index: 4` → search/filter fabs and filter chip `z-index: 5`. Fabs win pointer events in
+the top ~40px overlap band. New right-edge overlays slot into this stack rather than inventing
+z values.
+
 ## 5. Lane color palette (deterministic, per theme)
 
 Assigned by `lane % 10`, computed in Rust with the layout; stable while scrolling by construction.

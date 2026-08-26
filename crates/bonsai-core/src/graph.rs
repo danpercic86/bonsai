@@ -18,6 +18,7 @@ use crate::error::AppError;
 
 mod decorate;
 mod filter;
+mod fold;
 mod lane;
 mod seed;
 mod stash_seed;
@@ -27,10 +28,11 @@ use stash_seed::collect_stashes;
 use lane::LaneWalker;
 pub use decorate::redecorate_chunks;
 pub use filter::GraphFilter;
+pub use fold::{compute_fold_spans, fold_spans_of_chunks, FoldScan, FoldSpan, MIN_FOLD_RUN};
 pub use seed::{graph_seed, graph_seed_with, GraphSeed};
 pub use stream::{
-    stream_graph_core, stream_graph_from_repo, GraphChunk, GraphStreamEdge, StreamNode,
-    STREAM_BATCH, STREAM_FIRST_BATCH, STREAM_MAX_COMMITS,
+    stream_graph_core, stream_graph_from_repo, stream_graph_from_repo_collect, GraphChunk,
+    GraphStreamEdge, StreamNode, STREAM_BATCH, STREAM_FIRST_BATCH, STREAM_MAX_COMMITS,
 };
 
 /// Hard cap on the walk; beyond it the layout is truncated (§2.8).
@@ -112,6 +114,10 @@ pub struct GraphLayout {
     pub head_index: Option<u32>,
     /// Walk stopped at [`MAX_COMMITS`].
     pub truncated: bool,
+    /// Spec-004: foldable-run metadata (`foldSpans`; OMITTED when empty —
+    /// fold off or none found). Additive; parity with `Done.fold_spans`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub fold_spans: Vec<FoldSpan>,
 }
 
 impl GraphLayout {
@@ -122,6 +128,7 @@ impl GraphLayout {
             lane_count: 0,
             head_index: None,
             truncated: false,
+            fold_spans: Vec::new(),
         }
     }
 }
@@ -159,7 +166,7 @@ pub fn compute_graph_with(
     if tips.is_empty() {
         return Ok(GraphLayout::empty());
     }
-    layout_walk(&repo, &tips, refs, head_oid, &hide, filter.first_parent)
+    layout_walk(&repo, &tips, refs, head_oid, &hide, filter)
 }
 
 /// Opens the repo at `workdir` with NO upward search (same as `read_status`).
@@ -393,8 +400,9 @@ fn layout_walk(
     mut refs: RefMap,
     head_oid: Option<git2::Oid>,
     hide: &[git2::Oid],
-    first_parent: bool,
+    filter: &GraphFilter,
 ) -> Result<GraphLayout, AppError> {
+    let first_parent = filter.first_parent;
     let revwalk = seeded_revwalk(repo, tips, first_parent)?;
     // Stash synthetic parents (`I` = staged index, `U` = untracked) must never
     // become nodes. We do NOT use `revwalk.hide` for this: `hide(I)` marks I AND
@@ -411,6 +419,8 @@ fn layout_walk(
     let mut edges: Vec<GraphEdge> = Vec::new();
     let mut raw_parents: Vec<Vec<git2::Oid>> = Vec::new();
     let mut truncated = false;
+    // Spec-004: fold spans, computed over the SAME walk output when requested.
+    let mut fold: Option<fold::FoldScan> = filter.fold_linear.then(fold::FoldScan::new);
 
     for oid in revwalk {
         let oid = oid?;
@@ -425,6 +435,12 @@ fn layout_walk(
         // Row == final node index (skipped oids leave no gap).
         let row = nodes.len() as u32;
         let (node, node_edges) = walker.step(repo, oid, row, &mut refs)?;
+        if let Some(scan) = fold.as_mut() {
+            scan.push_row(node.lane, node.refs.is_empty(), walker.last_was_merge());
+            for e in &node_edges {
+                scan.push_edge(e.from, e.to, e.lane);
+            }
+        }
         // Keep this row's raw parent oids for the `index_of` resolution below
         // (byte-identical to the pre-`LaneWalker` code); streaming skips this.
         raw_parents.push(walker.take_last_parents());
@@ -457,6 +473,10 @@ fn layout_walk(
     edges.sort_unstable_by_key(|e| (e.from, e.to)); // required wire order (§1.1)
     let head_index = head_oid.and_then(|h| walker.row_of(&h));
     let lane_count = walker.lane_count();
+    let fold_spans = match fold {
+        Some(scan) => scan.finish(head_index, first_parent),
+        None => Vec::new(),
+    };
 
     Ok(GraphLayout {
         nodes,
@@ -464,6 +484,7 @@ fn layout_walk(
         lane_count,
         head_index,
         truncated,
+        fold_spans,
     })
 }
 
@@ -471,3 +492,5 @@ fn layout_walk(
 mod tests;
 #[cfg(test)]
 mod tests_filter;
+#[cfg(test)]
+mod tests_fold;

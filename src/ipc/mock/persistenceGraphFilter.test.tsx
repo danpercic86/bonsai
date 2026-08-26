@@ -18,6 +18,15 @@ describe('graph declutter prefs (spec-003)', () => {
     expect(s.graphRefFilter).toBeNull();
   });
 
+  // Spec-004: graphFoldLinear rides the same tolerant parse.
+  it('graphFoldLinear: default false; round-trips; malformed → false', () => {
+    expect(readUiSettings().graphFoldLinear).toBe(false);
+    writeUiSettings({ ...readUiSettings(), graphFoldLinear: true });
+    expect(readUiSettings().graphFoldLinear).toBe(true);
+    window.localStorage.setItem(UI_KEY, JSON.stringify({ graphFoldLinear: 'yes' }));
+    expect(readUiSettings().graphFoldLinear).toBe(false);
+  });
+
   it('round-trips both prefs', () => {
     const s = readUiSettings();
     writeUiSettings({

@@ -312,6 +312,8 @@ export function readUiSettings(): UiSettings {
     // Spec-003 (additive): first-parent toggle + solo/hide intent. Malformed
     // graphRefFilter degrades to null (no ref filter), never throws.
     const graphFirstParent = parsed.graphFirstParent === true;
+    // Spec-004 (additive): fold-linear toggle. Malformed → false, never throws.
+    const graphFoldLinear = parsed.graphFoldLinear === true;
     const graphRefFilter = sanitizeGraphRefFilter(parsed.graphRefFilter);
     // P13 AI fields (additive, like autoFetch/graph): fall back to defaults.
     const aiEnabled =
@@ -368,6 +370,7 @@ export function readUiSettings(): UiSettings {
       graphStyle,
       graphSeason,
       graphFirstParent,
+      graphFoldLinear,
       graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,

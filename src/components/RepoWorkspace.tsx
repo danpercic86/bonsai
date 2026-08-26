@@ -111,6 +111,7 @@ import { RefFilterMarkerContext } from './sidebar/refFilterMarkerContext';
 import { buildPaletteActions, type PaletteAction } from './paletteActions';
 import { safeOpDispatch } from './safeOpDispatch';
 import type { ComboboxOption } from './Combobox';
+import { findCommitByPrefix, searchScopeOptionsOf } from './repoWorkspace/searchHelpers';
 
 export type { RepoWorkspaceProps } from './repoWorkspace/RepoWorkspaceProps';
 import type { RepoWorkspaceProps } from './repoWorkspace/RepoWorkspaceProps';
@@ -132,6 +133,7 @@ export function RepoWorkspace({
   graphStyle,
   graphSeason,
   graphFirstParent,
+  graphFoldLinear,
   graphRefFilter,
   onGraphFilterChange,
   aiEnabled,
@@ -570,9 +572,10 @@ export function RepoWorkspace({
   const graphDataRef = useRef(graph);
   graphDataRef.current = graph;
 
-  // Spec-003: graph-declutter controller + refetch ref + meta truth flags.
-  const { graphFilter, graphFilterRef, setGraphFilterFlags, stale: graphFilterStale } =
-    useGraphFilterWiring({ graphFirstParent, graphRefFilter, onGraphFilterChange, branches });
+  // Spec-003/004: graph-declutter controller + fold state + meta truth flags.
+  const { graphFilter, fold, graphFilterRef, setGraphFilterFlags, stale: graphFilterStale } =
+    useGraphFilterWiring({ graphFirstParent, graphFoldLinear, graphRefFilter, onGraphFilterChange,
+      branches, repoId, graphTotalRows: graph?.nodes.length ?? 0, selectedIndexRef, selectedIndex });
 
   // P58c: per-oid signature verify cache, keyed on the graph's visible range;
   // gated on the showSignatureBadge pref (off ⇒ empty map, NO verify requests).
@@ -998,7 +1001,7 @@ export function RepoWorkspace({
     const applier = createGraphStreamApplier(
       stream,
       prevSelectedId,
-      { setGraph, setGraphEdgeIndex, setGraphTotal, setSelectedIndex, setFilterFlags: setGraphFilterFlags },
+      { setGraph, setGraphEdgeIndex, setGraphTotal, setSelectedIndex, setFilterFlags: setGraphFilterFlags, setFoldSpans: fold.setSpans },
       (e) => {
         if (id === graphReqId.current) setGraphError(errorMessage(e));
       },
@@ -1027,7 +1030,7 @@ export function RepoWorkspace({
     } finally {
       if (id === graphReqId.current) setGraphLoading(false);
     }
-  }, [repoId, graphFilterRef, setGraphFilterFlags]); // both hook-stable
+  }, [repoId, graphFilterRef, setGraphFilterFlags, fold.setSpans]); // all hook-stable
 
   const refetchBranches = useCallback(async () => {
     const id = ++branchesReqId.current;
@@ -1893,14 +1896,16 @@ export function RepoWorkspace({
     compareRef,
     clearCompare,
     setSelectedIndex,
+    expandForReveal: fold.expandFor,
   });
 
   // P50b: commit search — state hook drives the search bar + graph match rings;
   // next/prev reuse revealCommitByOid (the single-selection reveal path).
   const search = useCommitSearch({ repoId, graph, revealCommitByOid, pushToast });
 
-  // Spec-003: a declutter-filter change reloads the graph (+ selection reveal).
-  useGraphFilterRefetch({ filterKey: graphFilter.filterKey, refetchGraph, selectedIndexRef, graphDataRef, revealCommitByOid });
+  // Spec-003/004: a WALK change reloads the graph (+ selection reveal); the
+  // fold rising edge re-requests for spans (toggle-off stays local, plan lock).
+  useGraphFilterRefetch({ filterKey: graphFilter.walkKey, foldLinear: graphFilter.foldLinear, refetchGraph, selectedIndexRef, graphDataRef, revealCommitByOid });
 
   // P57c: semantic-history "Ask history" — retrieval + AI answer. The answer
   // routes into the shared AiOutputPanel via runHistoryAnswer (aiPanel req-id).
@@ -1953,12 +1958,7 @@ export function RepoWorkspace({
     return m;
   }, [status]);
   // Branch/ref scope options for the search bar (All refs + local + remote).
-  const searchScopeOptions = useMemo<ComboboxOption[]>(() => {
-    const opts: ComboboxOption[] = [{ value: '', label: 'All refs' }];
-    for (const b of branches?.local ?? []) opts.push({ value: b.name, label: b.name });
-    for (const r of branches?.remote ?? []) opts.push({ value: r.name, label: r.name });
-    return opts;
-  }, [branches]);
+  const searchScopeOptions = useMemo<ComboboxOption[]>(() => searchScopeOptionsOf(branches), [branches]);
 
   // P50c: command palette (Ctrl/Cmd-K). usePalette owns open/close; the
   // accelerator + Esc-layering are wired through useWorkspaceKeyboard below. The
@@ -1979,10 +1979,8 @@ export function RepoWorkspace({
   const paletteRunSearch = useCallback((t: string) => search.openSearch(t), [search.openSearch]);
   const paletteJumpToCommit = useCallback(
     (prefix: string) => {
-      const g = graphDataRef.current;
-      const p = prefix.toLowerCase();
-      const node = g?.nodes.find((n) => n.id.startsWith(p));
-      if (node !== undefined) revealCommitByOid(node.id);
+      const oid = findCommitByPrefix(graphDataRef.current, prefix);
+      if (oid !== null) revealCommitByOid(oid);
       else pushToast('info', `No commit matching ${prefix} in the current view`);
     },
     [revealCommitByOid, pushToast],
@@ -2217,6 +2215,7 @@ export function RepoWorkspace({
     selectedIndex,
     graph,
     graphRef,
+    fold, // spec-004: display-space nav + pill land/expand/collapse semantics
     onAiActivity: aiDock.focusDock,
     onGitActivity: gitDock.toggleDock,
     handleRefresh,
@@ -2455,6 +2454,7 @@ export function RepoWorkspace({
           graphStyle={graphStyle}
           graphSeason={graphSeason}
           graphFilter={graphFilter}
+          graphFold={fold}
           graphFilterStale={graphFilterStale}
           search={search}
           searchScopeOptions={searchScopeOptions}

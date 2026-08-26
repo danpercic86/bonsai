@@ -67,15 +67,16 @@ function layout(sideRef: boolean, extra?: { stashRow?: boolean }): GraphLayout {
 describe('applyGraphFilter', () => {
   it('null / default filter → the layout passes through, unfiltered', () => {
     const l = layout(true);
-    expect(applyGraphFilter(l, null)).toEqual({ layout: l, filtered: false, seedRefsApplied: false });
+    expect(applyGraphFilter(l, null)).toEqual({ layout: l, filtered: false, seedRefsApplied: false, mergeRows: [0] });
     expect(
-      applyGraphFilter(l, { firstParent: false, seedRefs: null }).filtered,
+      applyGraphFilter(l, { firstParent: false, seedRefs: null, foldLinear: false }).filtered,
     ).toBe(false);
   });
 
   it('first-parent with the side ref DELETED → side node absent, indices remapped', () => {
     const { layout: out, filtered, seedRefsApplied } = applyGraphFilter(layout(false), {
       firstParent: true,
+      foldLinear: false,
       seedRefs: null,
     });
     expect(filtered).toBe(true);
@@ -93,13 +94,14 @@ describe('applyGraphFilter', () => {
   });
 
   it('first-parent with the side ref PRESENT → its tip + line remain (documented semantics)', () => {
-    const { layout: out } = applyGraphFilter(layout(true), { firstParent: true, seedRefs: null });
+    const { layout: out } = applyGraphFilter(layout(true), { firstParent: true, seedRefs: null, foldLinear: false });
     expect(out.nodes.map((n) => n.id)).toEqual([oid(0), oid(1), oid(2), oid(3)]);
   });
 
   it('solo side → ancestry(side) ∪ ancestry(HEAD); other pills stripped; HEAD synthesized', () => {
     const { layout: out, filtered, seedRefsApplied } = applyGraphFilter(layout(true), {
       firstParent: false,
+      foldLinear: false,
       seedRefs: ['refs/heads/side'],
     });
     expect(filtered).toBe(true);
@@ -113,6 +115,7 @@ describe('applyGraphFilter', () => {
   it('hide-all (seedRefs []) → HEAD-only seed, seedRefsApplied true', () => {
     const { layout: out, filtered, seedRefsApplied } = applyGraphFilter(layout(true), {
       firstParent: false,
+      foldLinear: false,
       seedRefs: [],
     });
     expect(filtered).toBe(true);
@@ -124,9 +127,9 @@ describe('applyGraphFilter', () => {
 
   it('stale seedRefs (zero matches) → full layout, seedRefsApplied false; filtered == firstParent', () => {
     const l = layout(true);
-    const stale = applyGraphFilter(l, { firstParent: false, seedRefs: ['refs/heads/deleted'] });
-    expect(stale).toEqual({ layout: l, filtered: false, seedRefsApplied: false });
-    const staleFp = applyGraphFilter(l, { firstParent: true, seedRefs: ['refs/heads/deleted'] });
+    const stale = applyGraphFilter(l, { firstParent: false, seedRefs: ['refs/heads/deleted'], foldLinear: false });
+    expect(stale).toEqual({ layout: l, filtered: false, seedRefsApplied: false, mergeRows: [0] });
+    const staleFp = applyGraphFilter(l, { firstParent: true, seedRefs: ['refs/heads/deleted'], foldLinear: false });
     expect(staleFp.filtered).toBe(true);
     expect(staleFp.seedRefsApplied).toBe(false);
     // First-parent still applied on the fallback walk.
@@ -135,9 +138,9 @@ describe('applyGraphFilter', () => {
 
   it('stash tips: seeded under a null-seed first-parent walk, excluded under solo', () => {
     const l = layout(true, { stashRow: true });
-    const fp = applyGraphFilter(l, { firstParent: true, seedRefs: null });
+    const fp = applyGraphFilter(l, { firstParent: true, seedRefs: null, foldLinear: false });
     expect(fp.layout.nodes.some((n) => n.id === oid(9))).toBe(true);
-    const solo = applyGraphFilter(l, { firstParent: false, seedRefs: ['refs/heads/main'] });
+    const solo = applyGraphFilter(l, { firstParent: false, seedRefs: ['refs/heads/main'], foldLinear: false });
     expect(solo.layout.nodes.some((n) => n.id === oid(9))).toBe(false);
   });
 });

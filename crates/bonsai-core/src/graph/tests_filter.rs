@@ -50,6 +50,7 @@ fn stream_truncates_at_cap_under_first_parent_filter() {
     let filter = GraphFilter {
         first_parent: true,
         seed_refs: None,
+        ..Default::default()
     };
     let mut chunks: Vec<GraphChunk> = Vec::new();
     super::stream::stream_graph_core_with(dir.path(), &filter, 1, 1, 2, |c| {

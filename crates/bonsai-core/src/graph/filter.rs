@@ -31,6 +31,18 @@ pub struct GraphFilter {
     /// Some([]) = hide-all → HEAD-only seed. Some(non-empty) matching zero
     /// existing refs = stale → fallback to None semantics (seedRefsApplied=false).
     pub seed_refs: Option<Vec<String>>,
+    /// Spec-004: gates fold-span computation ONLY — it never changes the walk.
+    /// Excluded from [`walk_eq`](Self::walk_eq) so toggling fold is a cache Hit.
+    pub fold_linear: bool,
+}
+
+impl GraphFilter {
+    /// WALK-identity equality: `first_parent` + `seed_refs` only. `fold_linear`
+    /// is deliberately excluded — it gates per-request span computation, so a
+    /// fold toggle must classify as a cache Hit, not a re-walk (spec-004).
+    pub fn walk_eq(&self, other: &GraphFilter) -> bool {
+        self.first_parent == other.first_parent && self.seed_refs == other.seed_refs
+    }
 }
 
 /// Whether a whitelist name would actually be ENUMERATED by `collect_refs`,

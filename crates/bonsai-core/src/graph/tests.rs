@@ -762,10 +762,7 @@ fn assemble(chunks: &[GraphChunk]) -> GraphLayout {
                 lane_count = lane_count.max(*lane_count_so_far);
             }
             GraphChunk::Done {
-                total_rows,
-                lane_count: lc,
-                head_index: hi,
-                truncated: tr,
+                total_rows, lane_count: lc, head_index: hi, truncated: tr, ..
             } => {
                 assert_eq!(
                     *total_rows as usize,
@@ -802,6 +799,7 @@ fn assemble(chunks: &[GraphChunk]) -> GraphLayout {
         lane_count,
         head_index,
         truncated,
+        fold_spans: Vec::new(),
     }
 }
 
@@ -955,10 +953,7 @@ fn stream_unborn_repo_emits_meta_then_done() {
     }
     match &chunks[1] {
         GraphChunk::Done {
-            total_rows,
-            lane_count,
-            head_index,
-            truncated,
+            total_rows, lane_count, head_index, truncated, ..
         } => {
             assert_eq!(*total_rows, 0);
             assert_eq!(*lane_count, 0);

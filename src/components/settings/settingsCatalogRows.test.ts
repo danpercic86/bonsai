@@ -95,6 +95,8 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
   // summary/Clear row.
   64: ['graph.first-parent'],
   65: ['graph.branch-filters'],
+  // Spec-004 §4.3 — Commit graph → Declutter: fold-linear switch.
+  66: ['graph.fold-linear'],
 };
 
 /**
@@ -107,12 +109,12 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
  */
 const DISSOLVED_ROWS: ReadonlySet<number> = new Set([5, 25, 38, 39, 40, 43, 52, 55]);
 
-describe('UI §1.3 coverage — all 65 rows, structurally', () => {
-  it('maps exactly rows 1..65', () => {
+describe('UI §1.3 coverage — all 66 rows, structurally', () => {
+  it('maps exactly rows 1..66', () => {
     const rows = Object.keys(COVERAGE)
       .map(Number)
       .sort((a, b) => a - b);
-    expect(rows).toEqual(Array.from({ length: 65 }, (_, i) => i + 1));
+    expect(rows).toEqual(Array.from({ length: 66 }, (_, i) => i + 1));
   });
 
   it('names only real entries, and every entry is claimed by some row', () => {

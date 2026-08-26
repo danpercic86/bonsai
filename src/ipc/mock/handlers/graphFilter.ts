@@ -21,6 +21,10 @@ export interface FilteredGraph {
   filtered: boolean;
   /** The seed-ref restriction specifically took effect. */
   seedRefsApplied: boolean;
+  /** Spec-004: rows (post-remap) whose REAL parent count is > 1 — the fold
+   *  rule's merge bit under first-parent (the filtered layout truncates
+   *  `parents`, so it cannot show this itself). Sorted ascending. */
+  mergeRows: number[];
 }
 
 /** Full ref name → the fixture RefLabel shorthand it would carry.
@@ -88,7 +92,13 @@ export function applyGraphFilter(layout: GraphLayout, filter: GraphFilter | null
   if (layout.headIndex !== null) seeds.add(layout.headIndex);
 
   const filtered = seedRefsApplied || firstParent;
-  if (!filtered) return { layout, filtered: false, seedRefsApplied: false };
+  if (!filtered) {
+    const mergeRows: number[] = [];
+    for (let i = 0; i < layout.nodes.length; i++) {
+      if (layout.nodes[i].parents.length > 1) mergeRows.push(i);
+    }
+    return { layout, filtered: false, seedRefsApplied: false, mergeRows };
+  }
 
   // --- BFS over parents (first parent only under firstParent). ---
   const kept = new Set<number>();
@@ -108,8 +118,10 @@ export function applyGraphFilter(layout: GraphLayout, filter: GraphFilter | null
   keptRows.forEach((row, i) => newIndex.set(row, i));
 
   let maxLane = 0;
-  const nodes: GraphNode[] = keptRows.map((row) => {
+  const mergeRows: number[] = [];
+  const nodes: GraphNode[] = keptRows.map((row, newRow) => {
     const n = layout.nodes[row];
+    if (n.parents.length > 1) mergeRows.push(newRow); // REAL (pre-truncate) merge
     if (n.lane > maxLane) maxLane = n.lane;
     const parentsWalked = firstParent ? n.parents.slice(0, 1) : n.parents;
     const parents = parentsWalked
@@ -156,5 +168,6 @@ export function applyGraphFilter(layout: GraphLayout, filter: GraphFilter | null
     layout: { nodes, edges, laneCount: maxLane + 1, headIndex, truncated: layout.truncated },
     filtered,
     seedRefsApplied,
+    mergeRows,
   };
 }

@@ -135,6 +135,16 @@ export const GRAPH_ENTRIES: readonly SettingsIndexEntry[] = [
     reset: resetKey('graphFirstParent', 'Off'),
   },
   {
+    id: 'graph.fold-linear',
+    category: 'graph',
+    group: 'Declutter',
+    label: 'Fold linear runs',
+    help: 'Collapse long runs of plain commits into "⋯ N commits" rows you can expand in place.',
+    keywords: 'fold collapse linear runs condense declutter graph',
+    control: 'switch',
+    reset: resetKey('graphFoldLinear', 'Off'),
+  },
+  {
     id: 'graph.branch-filters',
     category: 'graph',
     group: 'Declutter',

@@ -2,7 +2,7 @@
 
 **Spec:** ./spec.md
 **UI contract:** ../../contracts/spec-004-ui.md (pending — ui-designer)
-**Status:** draft
+**Status:** implemented (AI gate green 2026-08-27; USER CHECKPOINT pending)
 
 ## Approach
 

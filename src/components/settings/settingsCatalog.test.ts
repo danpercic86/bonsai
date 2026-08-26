@@ -54,6 +54,8 @@ const MUTATED: UiSettings = {
   },
   // Spec-003: the first-parent row's reset leaf.
   graphFirstParent: true,
+  // Spec-004: the fold-linear row's reset leaf.
+  graphFoldLinear: true,
   terminalCommand: 'wt.exe {path}',
   editorCommand: 'code {path}',
   aiEnabled: false,
@@ -91,6 +93,7 @@ const RESET_LEAVES: Readonly<Record<string, string>> = {
   'graph.pr-badges': 'graph.showPrBadge',
   'graph.ci-status': 'graph.showCiStatus',
   'graph.first-parent': 'graphFirstParent',
+  'graph.fold-linear': 'graphFoldLinear',
   'ai.conflict-resolution': 'aiConflictAutonomy',
   'ai.repository-access': 'aiConflictTools',
   'ai.stream-output': 'aiStreamLog',

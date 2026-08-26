@@ -106,6 +106,7 @@ mod tests {
                 lane_count: 2,
                 head_index: None,
                 truncated: false,
+                fold_spans: Vec::new(),
             },
         ];
 

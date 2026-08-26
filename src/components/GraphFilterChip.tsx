@@ -8,6 +8,7 @@ import { useCallback, useRef, useState } from 'react';
 import { ListFilter } from 'lucide-react';
 
 import type { GraphFilterController } from '../hooks/useGraphFilter';
+import { graphFilterSummary } from '../hooks/useGraphFilter';
 import { GraphFilterPopover } from './GraphFilterPopover';
 
 export interface GraphFilterChipProps {
@@ -53,6 +54,16 @@ export function GraphFilterChip({
 
   const active = controller.requested;
   const shift = belowBar ? ' graph-filter-below-bar' : '';
+  // Spec-004 §4.2: stale concerns only the REF filter. While fold and/or
+  // first-parent are also on, the chip keeps the normal active recipe with the
+  // honest segments (ref segment dropped) and a ⚠ glyph; the stale sentence
+  // lives in the popover. The full warning chip renders only when stale is the
+  // SOLE state.
+  const staleOthers = stale
+    ? graphFilterSummary(controller.firstParent, null, controller.foldLinear)
+    : '';
+  const fullWarning = stale && staleOthers === '';
+  const label = stale ? staleOthers : controller.activeSummary;
 
   return (
     <>
@@ -70,9 +81,8 @@ export function GraphFilterChip({
         >
           <ListFilter size={16} strokeWidth={2} aria-hidden="true" />
         </button>
-      ) : stale ? (
-        // §2.2: with first-parent ALSO active the copy must not claim the full
-        // graph — first-parent did apply; only the ref restriction fell back.
+      ) : fullWarning ? (
+        // §2.2: stale is the SOLE state → the full warning chip.
         <span className={`graph-filter-chip graph-filter-chip-stale${shift}`}>
           <button
             ref={chipRef}
@@ -80,22 +90,14 @@ export function GraphFilterChip({
             className="graph-filter-chip-body"
             aria-haspopup="dialog"
             aria-expanded={open}
-            aria-label={`Graph filters: ${
-              controller.firstParent ? 'First-parent · Filter not applied' : 'Filter not applied'
-            }`}
-            title={
-              controller.firstParent
-                ? "Your saved branch filter doesn't match any branches in this repository. First-parent is still applied."
-                : "Your saved branch filter doesn't match any branches in this repository — showing the full graph."
-            }
+            aria-label="Graph filters: Filter not applied"
+            title="Your saved branch filter doesn't match any branches in this repository — showing the full graph."
             onClick={() => setOpenLifted(!open)}
           >
             <span className="graph-filter-chip-glyph" aria-hidden="true">
               {'⚠'}
             </span>
-            <span className="graph-filter-chip-label">
-              {controller.firstParent ? 'First-parent · Filter not applied' : 'Filter not applied'}
-            </span>
+            <span className="graph-filter-chip-label">Filter not applied</span>
           </button>
           <button
             type="button"
@@ -115,14 +117,18 @@ export function GraphFilterChip({
             className="graph-filter-chip-body"
             aria-haspopup="dialog"
             aria-expanded={open}
-            aria-label={`Graph filters: ${controller.activeSummary}`}
-            title={`${controller.activeSummary}. Graph is filtered — some commits are hidden. Click to review or clear.`}
+            aria-label={`Graph filters: ${label}`}
+            title={`${label}. Graph is filtered — some commits are hidden. Click to review or clear.`}
             onClick={() => setOpenLifted(!open)}
           >
-            <span className="graph-filter-chip-glyph" aria-hidden="true">
-              <ListFilter size={14} strokeWidth={2} />
+            {/* Spec-004 §4.2: stale-with-other-declutter swaps only the glyph. */}
+            <span
+              className={`graph-filter-chip-glyph${stale ? ' graph-filter-chip-glyph-warning' : ''}`}
+              aria-hidden="true"
+            >
+              {stale ? '⚠' : <ListFilter size={14} strokeWidth={2} />}
             </span>
-            <span className="graph-filter-chip-label">{controller.activeSummary}</span>
+            <span className="graph-filter-chip-label">{label}</span>
           </button>
           <button
             type="button"

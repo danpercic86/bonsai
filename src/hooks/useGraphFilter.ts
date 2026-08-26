@@ -18,6 +18,8 @@ import type {
 
 export interface UseGraphFilterArgs {
   graphFirstParent: boolean;
+  /** Spec-004: fold linear runs (persisted; gates span computation only). */
+  graphFoldLinear: boolean;
   graphRefFilter: GraphRefFilter | null;
   /** App's debounced settings path (live state update + persist). */
   onSettingsChange(patch: UiSettingsPatch): void;
@@ -27,11 +29,17 @@ export interface UseGraphFilterArgs {
 
 export interface GraphFilterController {
   firstParent: boolean;
+  /** Spec-004: the persisted fold-linear toggle. */
+  foldLinear: boolean;
   refFilter: GraphRefFilter | null;
   /** Derived wire filter; `null` when nothing is requested (default walk). */
   filter: GraphFilter | null;
   /** Stable serialization of `filter` — effect key (identity churns per render). */
   filterKey: string;
+  /** Spec-004: serialization of the WALK subset (firstParent + seedRefs — the
+   *  mirror of Rust `walk_eq`). Fold toggles never change it, so keying the
+   *  refetch on it keeps toggle-OFF a zero-IPC local operation (plan lock). */
+  walkKey: string;
   /** Any filter requested (chip shows the active state). */
   requested: boolean;
   /** True when the request carries a seed-ref restriction (stale detection). */
@@ -41,6 +49,8 @@ export interface GraphFilterController {
   /** Sidebar row marker for a FULL ref name (§3.3); null = no marker. */
   markerFor(fullRef: string): 'solo' | 'hidden' | null;
   toggleFirstParent(): void;
+  /** Spec-004: flip the persisted fold-linear toggle. */
+  toggleFoldLinear(): void;
   soloRef(fullRef: string): void;
   addToSolo(fullRef: string): void;
   hideRef(fullRef: string): void;
@@ -72,6 +82,7 @@ export function deriveGraphFilter(
   firstParent: boolean,
   refFilter: GraphRefFilter | null,
   knownRefs: string[],
+  foldLinear = false,
 ): GraphFilter | null {
   let seedRefs: string[] | null = null;
   if (refFilter !== null && refFilter.refs.length > 0) {
@@ -80,18 +91,22 @@ export function deriveGraphFilter(
         ? [...refFilter.refs]
         : knownRefs.filter((r) => !refFilter.refs.includes(r)); // may be [] = hide-all
   }
-  if (!firstParent && seedRefs === null) return null;
-  return { firstParent, seedRefs };
+  if (!firstParent && seedRefs === null && !foldLinear) return null;
+  return { firstParent, seedRefs, foldLinear };
 }
 
-/** Chip label per UI contract §2 ("First-parent" / "Solo: x +n" /
- *  "n branches hidden", joined with " · "). Empty when nothing is requested. */
+/** Chip label per UI contract §2 + spec-004 §4 ("First-parent" / "Folded" /
+ *  "Solo: x +n" / "n branches hidden", joined with " · "). Fold is FRONTEND
+ *  truth — the segment ORs in the local toggle, never a backend flag. Empty
+ *  when nothing is requested. */
 export function graphFilterSummary(
   firstParent: boolean,
   refFilter: GraphRefFilter | null,
+  foldLinear = false,
 ): string {
   const parts: string[] = [];
   if (firstParent) parts.push('First-parent');
+  if (foldLinear) parts.push('Folded');
   if (refFilter !== null && refFilter.refs.length > 0) {
     const n = refFilter.refs.length;
     if (refFilter.mode === 'solo') {
@@ -111,13 +126,28 @@ export function graphFilterSummary(
  *  survives the reload, scroll it into view via the shared reveal path —
  *  refetchGraph itself clears a selection that didn't. */
 export function useGraphFilterRefetch(args: {
+  /** Spec-004: the WALK-subset key (`controller.walkKey`), NOT the full
+   *  filterKey — fold toggles must not re-key this effect (toggle-OFF is a
+   *  zero-IPC local collapse; toggle-ON re-requests via the effect below). */
   filterKey: string;
+  /** Spec-004: rising edge (false→true) re-requests the stream so the backend
+   *  can attach `foldSpans` (a cache Hit replay). Falling edge: nothing. */
+  foldLinear?: boolean;
   refetchGraph(): Promise<void>;
   selectedIndexRef: RefObject<number | null>;
   graphDataRef: RefObject<GraphLayout | null>;
   revealCommitByOid(oid: string): void;
 }): void {
-  const { filterKey, refetchGraph, selectedIndexRef, graphDataRef, revealCommitByOid } = args;
+  const { filterKey, foldLinear = false, refetchGraph, selectedIndexRef, graphDataRef, revealCommitByOid } = args;
+  // Spec-004: fold-on re-request. Skipped on mount (initial load already used
+  // the hydrated filter, fold included).
+  const prevFoldRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    const prev = prevFoldRef.current;
+    prevFoldRef.current = foldLinear;
+    if (prev === null || prev === foldLinear || !foldLinear) return;
+    void refetchGraph();
+  }, [foldLinear, refetchGraph]);
   const prevKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const prev = prevKeyRef.current;
@@ -135,6 +165,7 @@ export function useGraphFilterRefetch(args: {
 
 export function useGraphFilter({
   graphFirstParent,
+  graphFoldLinear,
   graphRefFilter,
   onSettingsChange,
   branches,
@@ -149,11 +180,22 @@ export function useGraphFilter({
     // graph instead; the snapshot's arrival re-keys the refetch.
     const effective =
       branches === null && graphRefFilter?.mode === 'hide' ? null : graphRefFilter;
-    return deriveGraphFilter(graphFirstParent, effective, knownRefs);
-  }, [graphFirstParent, graphRefFilter, knownRefs, branches]);
+    return deriveGraphFilter(graphFirstParent, effective, knownRefs, graphFoldLinear);
+  }, [graphFirstParent, graphFoldLinear, graphRefFilter, knownRefs, branches]);
   // Hide-mode derivation mints a new array per branches refresh — key effects on
   // this stable string so a content-identical refilter never refetches the graph.
   const filterKey = useMemo(() => JSON.stringify(filter), [filter]);
+  // Spec-004: the walk subset (fold cleared) — mirror of Rust `walk_eq`.
+  // NORMALIZED so `null` (no filter) and a fold-only filter serialize the same:
+  // toggling fold must never change this key (the fold effect owns that edge).
+  const walkKey = useMemo(
+    () =>
+      JSON.stringify({
+        firstParent: filter?.firstParent ?? false,
+        seedRefs: filter?.seedRefs ?? null,
+      }),
+    [filter],
+  );
 
   const setRefFilter = useCallback(
     (next: GraphRefFilter | null) => onSettingsChange({ graphRefFilter: next }),
@@ -163,6 +205,11 @@ export function useGraphFilter({
   const toggleFirstParent = useCallback(
     () => onSettingsChange({ graphFirstParent: !graphFirstParent }),
     [onSettingsChange, graphFirstParent],
+  );
+  // Spec-004: one setting, two controls (popover switch + Settings row).
+  const toggleFoldLinear = useCallback(
+    () => onSettingsChange({ graphFoldLinear: !graphFoldLinear }),
+    [onSettingsChange, graphFoldLinear],
   );
   // Modes are exclusive (§1): a fresh solo/hide replaces the other mode's set.
   const soloRef = useCallback(
@@ -200,8 +247,10 @@ export function useGraphFilter({
     },
     [setRefFilter, graphRefFilter],
   );
+  // Spec-004: "Show full graph" clears every declutter control, fold included.
   const clearAll = useCallback(
-    () => onSettingsChange({ graphFirstParent: false, graphRefFilter: null }),
+    () =>
+      onSettingsChange({ graphFirstParent: false, graphFoldLinear: false, graphRefFilter: null }),
     [onSettingsChange],
   );
 
@@ -214,22 +263,25 @@ export function useGraphFilter({
   );
 
   const activeSummary = useMemo(
-    () => graphFilterSummary(graphFirstParent, graphRefFilter),
-    [graphFirstParent, graphRefFilter],
+    () => graphFilterSummary(graphFirstParent, graphRefFilter, graphFoldLinear),
+    [graphFirstParent, graphRefFilter, graphFoldLinear],
   );
   // Memoized controller: consumers (palette registry, chip) depend on the
   // object identity, so it must only churn when a field actually changes.
   return useMemo(
     () => ({
       firstParent: graphFirstParent,
+      foldLinear: graphFoldLinear,
       refFilter: graphRefFilter,
       filter,
       filterKey,
+      walkKey,
       requested: filter !== null,
       refsRequested: filter !== null && filter.seedRefs !== null,
       activeSummary,
       markerFor,
       toggleFirstParent,
+      toggleFoldLinear,
       soloRef,
       addToSolo,
       hideRef,
@@ -238,12 +290,15 @@ export function useGraphFilter({
     }),
     [
       graphFirstParent,
+      graphFoldLinear,
       graphRefFilter,
       filter,
       filterKey,
+      walkKey,
       activeSummary,
       markerFor,
       toggleFirstParent,
+      toggleFoldLinear,
       soloRef,
       addToSolo,
       hideRef,

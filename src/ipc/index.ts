@@ -101,6 +101,7 @@ export type {
   GitPhase,
   GitPhaseKind,
   GitTransferProgress,
+  FoldSpan,
   GraphChunk,
   GraphEdge,
   GraphFilter,

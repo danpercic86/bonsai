@@ -6,6 +6,7 @@
 // a newer streamGraph for the same repo makes the older loop STOP before `done`.
 import type { GraphChunk, GraphFilter, IpcApi, StreamEdge, StreamNode } from '../../types';
 import { applyGraphFilter } from './graphFilter';
+import { computeMockFoldSpans } from './graphFold';
 import { resolveLayout } from './layout';
 import { delay, requireRepo } from '../repoState';
 
@@ -29,10 +30,16 @@ export const graphStreamHandlers = {
   ): Promise<void> {
     // Spec-003: run the resolved layout through the fixture-side filter before
     // chunking; the meta chunk reports the same flags the Rust stream emits.
-    const { layout, filtered, seedRefsApplied } = applyGraphFilter(
+    const { layout, filtered, seedRefsApplied, mergeRows } = applyGraphFilter(
       resolveLayout(requireRepo(repoId)),
       filter,
     );
+    // Spec-004: spans ride the terminal `done` chunk only (the rule needs the
+    // full edge set); fold NEVER affects `filtered` — it does not change the walk.
+    const foldSpans =
+      filter?.foldLinear === true
+        ? computeMockFoldSpans(layout, mergeRows, filter.firstParent)
+        : [];
     const myGen = (streamGen.get(repoId) ?? 0) + 1;
     streamGen.set(repoId, myGen);
 
@@ -96,6 +103,8 @@ export const graphStreamHandlers = {
       laneCount: layout.laneCount,
       headIndex: layout.headIndex,
       truncated: layout.truncated,
+      // Mirrors the Rust `skip_serializing_if = Vec::is_empty` (absent == []).
+      ...(foldSpans.length > 0 ? { foldSpans } : {}),
     });
   },
 } satisfies Partial<IpcApi>;

@@ -16,10 +16,13 @@ import { SettingsRow } from './SettingsRow';
 import { SettingsSwitchRow } from './SettingsSwitchRow';
 
 const FIRST_PARENT = 'graph.first-parent';
+const FOLD_LINEAR = 'graph.fold-linear';
 const BRANCH_FILTERS = 'graph.branch-filters';
 
 export interface SettingsGraphDeclutterSectionProps {
   graphFirstParent: boolean;
+  /** Spec-004: fold-linear toggle (same value as the popover switch). */
+  graphFoldLinear: boolean;
   graphRefFilter: GraphRefFilter | null;
   /** The shared debounced settings patch channel (App owns the persist). */
   onChange(patch: UiSettingsPatch): void;
@@ -40,6 +43,7 @@ function filterNote(refFilter: GraphRefFilter | null): string {
 
 export function SettingsGraphDeclutterSection({
   graphFirstParent,
+  graphFoldLinear,
   graphRefFilter,
   onChange,
 }: SettingsGraphDeclutterSectionProps) {
@@ -51,6 +55,13 @@ export function SettingsGraphDeclutterSection({
         id={FIRST_PARENT}
         checked={graphFirstParent}
         onChange={(next) => onChange({ graphFirstParent: next })}
+      />
+      {/* Spec-004 §4.3: row 3 — the fold-linear switch (one setting, two
+          controls with the graph-pane popover). */}
+      <SettingsSwitchRow
+        id={FOLD_LINEAR}
+        checked={graphFoldLinear}
+        onChange={(next) => onChange({ graphFoldLinear: next })}
       />
       <SettingsRow
         id={BRANCH_FILTERS}

@@ -92,6 +92,11 @@
 .graph-filter-chip-stale .graph-filter-chip-glyph {
   color: var(--warning);
 }
+/* Spec-004 §4.2: stale while fold/first-parent are also on — the chip keeps
+   the normal active recipe; ONLY the leading glyph swaps to the warning ⚠. */
+.graph-filter-chip-glyph-warning {
+  color: var(--warning);
+}
 
 /* Chip body + clear share the outer pill; body is a real <button>. */
 .graph-filter-chip-body {

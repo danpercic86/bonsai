@@ -104,6 +104,8 @@ export const sessionHandlers = {
       // Spec-003: first-parent + ref-filter intent. `graphRefFilter: null` in a
       // patch is a real value (clear the filter), so `!== undefined` gates it.
       graphFirstParent: patch.graphFirstParent ?? current.graphFirstParent ?? false,
+      // Spec-004: fold-linear toggle patches independently (first-parent precedent).
+      graphFoldLinear: patch.graphFoldLinear ?? current.graphFoldLinear ?? false,
       graphRefFilter:
         patch.graphRefFilter !== undefined ? patch.graphRefFilter : (current.graphRefFilter ?? null),
       aiEnabled: patch.aiEnabled ?? current.aiEnabled,

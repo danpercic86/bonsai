@@ -42,6 +42,8 @@ export interface RepoWorkspaceProps {
   /** Spec-003: persisted graph-declutter intent (App/useUiSettings owns the
    *  state); `onGraphFilterChange` patches it via the debounced settings path. */
   graphFirstParent: boolean;
+  /** Spec-004: persisted fold-linear-runs toggle. */
+  graphFoldLinear: boolean;
   graphRefFilter: GraphRefFilter | null;
   onGraphFilterChange(patch: UiSettingsPatch): void;
   /** P13 §8: AI assistance settings + CLI health (App owns these + consent). */

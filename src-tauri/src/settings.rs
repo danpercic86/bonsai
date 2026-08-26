@@ -134,6 +134,10 @@ pub struct Settings {
     /// Spec-003: first-parent graph declutter toggle. Additive `#[serde(default)]`
     /// (via the container-level `default`); a legacy file loads `false`. NOT clamped.
     pub graph_first_parent: bool,
+    /// Spec-004: fold-linear-runs graph toggle. Additive `#[serde(default)]`
+    /// (via the container-level `default`); a legacy file loads `false`. NOT
+    /// clamped. Exact `graph_first_parent` precedent.
+    pub graph_fold_linear: bool,
     /// Spec-003: persisted graph ref-filter INTENT (solo/hide + full ref names).
     /// Opaque to the backend — the frontend derives the wire whitelist. Additive
     /// `#[serde(default)]`; a legacy file loads `None`. NOT clamped.
@@ -278,6 +282,7 @@ impl Default for Settings {
             graph_style: GraphStyle::default(),
             graph_season: GraphSeason::default(),
             graph_first_parent: false,
+            graph_fold_linear: false,
             graph_ref_filter: None,
             open_repos: Vec::new(),
             active_repo: None,

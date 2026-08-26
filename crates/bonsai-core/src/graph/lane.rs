@@ -67,6 +67,11 @@ pub(super) struct LaneWalker {
     /// routing regardless, so retaining it here costs the stream nothing (moved,
     /// never cloned).
     last_parents: Vec<git2::Oid>,
+    /// Spec-004: whether the most recent [`step`](Self::step)'s commit is a
+    /// REAL merge — filtered (non-hidden) parent count > 1, recorded BEFORE
+    /// the first-parent truncate. Powers the `merge_rows` bitset so fold rule
+    /// 5 holds even when the view truncates parents.
+    last_real_merge: bool,
     /// Spec-003 first-parent mode: truncate parent routing to parent 0 (paired
     /// with `simplify_first_parent` on the revwalk — the walk never emits the
     /// other parents, so routing edges to them would leave dangling lanes).
@@ -81,8 +86,16 @@ impl LaneWalker {
             index_of: HashMap::new(),
             hidden,
             last_parents: Vec::new(),
+            last_real_merge: false,
             first_parent,
         }
+    }
+
+    /// Whether the most recent [`step`](Self::step)'s commit had more than one
+    /// real (non-hidden) parent — true even under first-parent mode, whose
+    /// truncation happens AFTER this is recorded (spec-004 fold rule 5).
+    pub(super) fn last_was_merge(&self) -> bool {
+        self.last_real_merge
     }
 
     /// Number of lanes ever active (== `lanes.len()`; monotonic — drives the
@@ -162,6 +175,8 @@ impl LaneWalker {
             .parent_ids()
             .filter(|p| !self.hidden.contains(p))
             .collect();
+        // Spec-004: record the REAL merge bit before any truncation.
+        self.last_real_merge = parents.len() > 1;
         // Spec-003 first-parent mode: only parent 0 is walked (the revwalk is
         // simplified), so never route edges to the other parents.
         if self.first_parent {

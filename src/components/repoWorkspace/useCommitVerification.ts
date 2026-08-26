@@ -19,8 +19,10 @@ export interface UseCommitVerification {
    *  the same cache, so a selected commit needs no extra IPC. */
   detailsFor(oid: string): CommitVerification | undefined;
   /** From GraphCanvas: the visible (overscanned) row window changed. Maps rows
-   *  → oids, collects the UNCACHED ones, and debounces one batched verify. */
-  onVisibleRangeChange(first: number, last: number): void;
+   *  → oids, collects the UNCACHED ones, and debounces one batched verify.
+   *  Spec-004: with fold active `modelRows` lists the visible COMMIT model rows
+   *  explicitly (a collapsed run's hidden commits are never requested). */
+  onVisibleRangeChange(first: number, last: number, modelRows?: readonly number[]): void;
   /** Drop the cache + re-request the current window (Refresh action + after a
    *  successful commit, so the new HEAD verifies). */
   refresh(): void;
@@ -56,7 +58,9 @@ export function useCommitVerification(deps: {
   const debounceRef = useRef<number | null>(null);
   /** Latest visible window — recorded on EVERY range change (even while
    *  disabled) so a later enable re-verifies the CURRENT rows. */
-  const pendingRef = useRef<{ first: number; last: number } | null>(null);
+  const pendingRef = useRef<{ first: number; last: number; rows?: readonly number[] } | null>(
+    null,
+  );
 
   const clearDebounce = useCallback(() => {
     if (debounceRef.current !== null) {
@@ -76,9 +80,14 @@ export function useCommitVerification(deps: {
     const nodes = layout.nodes;
     const first = Math.max(0, range.first);
     const last = Math.min(nodes.length - 1, range.last);
+    // Spec-004: an explicit visible-commit row list wins over the dense range.
+    const rowList =
+      range.rows !== undefined
+        ? range.rows
+        : Array.from({ length: Math.max(0, last - first + 1) }, (_, i) => first + i);
     const uncached: string[] = [];
     const seen = new Set<string>();
-    for (let row = first; row <= last; row++) {
+    for (const row of rowList) {
       const oid = nodes[row]?.id;
       if (oid === undefined || seen.has(oid) || cacheRef.current.has(oid)) continue;
       seen.add(oid);
@@ -116,10 +125,10 @@ export function useCommitVerification(deps: {
   }, [clearDebounce, runFetch]);
 
   const onVisibleRangeChange = useCallback(
-    (first: number, last: number) => {
+    (first: number, last: number, modelRows?: readonly number[]) => {
       // Always record the latest window (so a re-enable re-fetches the CURRENT
       // rows); only actually request while enabled — "off" makes NO request.
-      pendingRef.current = { first, last };
+      pendingRef.current = { first, last, rows: modelRows };
       if (!enabledRef.current) return;
       scheduleFetch();
     },

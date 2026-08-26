@@ -72,6 +72,8 @@ export interface SettingsPanelProps {
   /** Spec-003: graph declutter prefs (App resolves the optional persisted
    *  values to concrete defaults, like graphStyle/graphSeason). */
   graphFirstParent: boolean;
+  /** Spec-004: fold-linear toggle. */
+  graphFoldLinear: boolean;
   graphRefFilter: GraphRefFilter | null;
   /** Fires on ANY change with a partial patch; App debounces the persist +
    *  updates its own state so consumers re-render live. */
@@ -247,6 +249,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     graphStyle,
     graphSeason,
     graphFirstParent,
+    graphFoldLinear,
     graphRefFilter,
     aiConflictAutonomy,
     aiAvailability,
@@ -285,6 +288,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       // Spec-003: live values (the DEFAULT_UI_SETTINGS spread only supplies
       // defaults) so the first-parent row's ↺ tracks the real state.
       graphFirstParent,
+      graphFoldLinear,
       graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,
@@ -306,6 +310,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       healthRefresh,
       graph,
       graphFirstParent,
+      graphFoldLinear,
       graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,
@@ -346,6 +351,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       graphStyle,
       graphSeason,
       graphFirstParent,
+      graphFoldLinear,
       graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,
@@ -381,6 +387,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       graphStyle,
       graphSeason,
       graphFirstParent,
+      graphFoldLinear,
       graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,

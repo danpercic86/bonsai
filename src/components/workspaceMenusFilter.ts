@@ -99,6 +99,14 @@ export function graphFilterPaletteEntries(controller: GraphFilterController): Pa
       keywords: 'graph filter declutter simplify mainline',
       run: controller.toggleFirstParent,
     },
+    // Spec-004 §3: palette-only, no shortcut (same call as spec-003).
+    {
+      id: 'graph.toggle-fold-linear',
+      title: 'Toggle fold linear runs',
+      group: 'action',
+      keywords: 'fold collapse linear runs condense declutter graph',
+      run: controller.toggleFoldLinear,
+    },
     {
       id: 'graph.clear-filters',
       title: 'Clear graph filters',

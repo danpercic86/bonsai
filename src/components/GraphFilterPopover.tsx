@@ -97,6 +97,23 @@ export function GraphFilterPopover({
           </p>
         </div>
       </div>
+      {/* Spec-004 §4.1: the fold-linear switch joins the declutter group. */}
+      <div className="graph-filter-switch-row">
+        <SettingsSwitch
+          id="graph-filter-fold-linear"
+          checked={controller.foldLinear}
+          describedBy="graph-filter-fold-linear-help"
+          onChange={() => controller.toggleFoldLinear()}
+        />
+        <div>
+          <label className="graph-filter-switch-label" htmlFor="graph-filter-fold-linear">
+            Fold linear runs
+          </label>
+          <p className="graph-filter-help" id="graph-filter-fold-linear-help">
+            {'Collapse stretches of plain commits — no branches, merges, or tags — into a single expandable row.'}
+          </p>
+        </div>
+      </div>
       <hr className="graph-filter-divider" />
       {stale ? (
         // §2.2: with first-parent also on, the two-sentence copy — first-parent

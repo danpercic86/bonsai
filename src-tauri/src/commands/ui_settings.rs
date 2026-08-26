@@ -22,6 +22,8 @@ pub struct UiSettings {
     pub graph_season: GraphSeason,
     /// Spec-003: first-parent graph declutter toggle (default false).
     pub graph_first_parent: bool,
+    /// Spec-004: fold-linear-runs graph toggle (default false).
+    pub graph_fold_linear: bool,
     /// Spec-003: persisted graph ref-filter INTENT (default None). Opaque to
     /// the backend; the frontend derives the wire whitelist from it.
     pub graph_ref_filter: Option<GraphRefFilter>,
@@ -87,6 +89,8 @@ pub struct UiSettingsPatch {
     pub graph_season: Option<GraphSeason>,
     /// Spec-003: first-parent declutter toggle; patches independently.
     pub graph_first_parent: Option<bool>,
+    /// Spec-004: fold-linear-runs toggle; patches independently.
+    pub graph_fold_linear: Option<bool>,
     /// Spec-003: graph ref-filter intent. Double-option so an explicit `null`
     /// (clear the filter) is distinguishable from an ABSENT key (leave
     /// unchanged): missing → `None`, `null` → `Some(None)`, a value →
@@ -174,6 +178,9 @@ pub(crate) fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     }
     if let Some(graph_first_parent) = patch.graph_first_parent {
         s.graph_first_parent = graph_first_parent;
+    }
+    if let Some(graph_fold_linear) = patch.graph_fold_linear {
+        s.graph_fold_linear = graph_fold_linear;
     }
     // Double-option: `Some(None)` (an explicit wire `null`) CLEARS the filter.
     if let Some(graph_ref_filter) = patch.graph_ref_filter {
@@ -274,6 +281,7 @@ pub(crate) fn ui_settings_of(s: &settings::Settings) -> UiSettings {
         graph_style: s.graph_style,
         graph_season: s.graph_season,
         graph_first_parent: s.graph_first_parent,
+        graph_fold_linear: s.graph_fold_linear,
         graph_ref_filter: s.graph_ref_filter.clone(),
         auto_fetch: s.auto_fetch,
         health_refresh: s.health_refresh,

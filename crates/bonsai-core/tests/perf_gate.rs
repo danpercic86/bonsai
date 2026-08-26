@@ -58,6 +58,7 @@ fn first_parent_layout_not_slower_than_full() {
     let fp = GraphFilter {
         first_parent: true,
         seed_refs: None,
+        ..Default::default()
     };
 
     // Warm-up both paths (page cache, odb, commit-graph).

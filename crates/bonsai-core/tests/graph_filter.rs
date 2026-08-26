@@ -69,6 +69,7 @@ fn fp() -> GraphFilter {
     GraphFilter {
         first_parent: true,
         seed_refs: None,
+        ..Default::default()
     }
 }
 
@@ -76,6 +77,7 @@ fn seeds(names: &[&str]) -> GraphFilter {
     GraphFilter {
         first_parent: false,
         seed_refs: Some(names.iter().map(|s| s.to_string()).collect()),
+        ..Default::default()
     }
 }
 
@@ -405,6 +407,7 @@ fn meta_flags_matrix() {
             GraphFilter {
                 first_parent: true,
                 seed_refs: Some(vec!["refs/heads/nope".to_string()]),
+                ..Default::default()
             },
             (true, false),
             "all stale + first-parent",

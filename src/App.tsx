@@ -169,7 +169,7 @@ export default function App() {
     primaryCommitAction,
     autoFetch,
     healthRefresh,
-    graph, graphStyle, graphSeason, graphFirstParent, graphRefFilter,
+    graph, graphStyle, graphSeason, graphFirstParent, graphFoldLinear, graphRefFilter,
     metricsVersion,
     aiEnabled,
     aiConflictAutonomy,
@@ -798,7 +798,7 @@ export default function App() {
                 graph={graph}
                 metricsVersion={metricsVersion}
                 graphStyle={graphStyle} graphSeason={graphSeason}
-                graphFirstParent={graphFirstParent} graphRefFilter={graphRefFilter} onGraphFilterChange={handleSettingsChange}
+                graphFirstParent={graphFirstParent} graphFoldLinear={graphFoldLinear} graphRefFilter={graphRefFilter} onGraphFilterChange={handleSettingsChange}
                 aiEnabled={aiEnabled}
                 aiConflictAutonomy={aiConflictAutonomy}
                 aiConsented={aiConsented}
@@ -853,7 +853,7 @@ export default function App() {
           autoFetch={autoFetch}
           healthRefresh={healthRefresh}
           graph={graph} graphStyle={graphStyle} graphSeason={graphSeason}
-          graphFirstParent={graphFirstParent} graphRefFilter={graphRefFilter} onChange={handleSettingsChange}
+          graphFirstParent={graphFirstParent} graphFoldLinear={graphFoldLinear} graphRefFilter={graphRefFilter} onChange={handleSettingsChange}
           onToggleTheme={toggleTheme}
           onToggleListView={toggleListView}
           aiEnabled={aiEnabled}

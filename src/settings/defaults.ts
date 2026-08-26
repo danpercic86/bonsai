@@ -50,6 +50,8 @@ const DEFAULTS: UiSettings = {
   graphSeason: 'living',
   /** Spec-003: first-parent graph walk off; no solo/hide ref filter. */
   graphFirstParent: false,
+  /** Spec-004: fold linear runs off by default. */
+  graphFoldLinear: false,
   graphRefFilter: null,
   /** P11: auto-fetch OFF, 5-minute interval. */
   autoFetch: { enabled: false, intervalMinutes: 5 },

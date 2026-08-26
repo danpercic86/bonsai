@@ -14,6 +14,9 @@ import { relativeDate } from '../graph/dates';
 import { rowForgeSignal } from '../graph/forgeBadges';
 import type { CheckRollup } from '../ipc';
 import type { GraphDisplayOptions } from '../graph/rightColumns';
+import { foldCountLabel } from '../graph/drawFold';
+import { modelToDisplay, pillRowOfStart, spanAt } from '../graph/foldModel';
+import type { FoldModel } from '../graph/foldModel';
 
 /** SR words for each CI rollup — plain language, never the raw enum. `none` maps
  *  to '' because `ciBadgeVisual('none')` draws nothing, so nothing is announced. */
@@ -33,6 +36,14 @@ export interface GraphSelectionAnnouncerProps {
    *  announcement can carry the forge signal (canvas pill colour has no SR
    *  equivalent). Optional — omitted ⇒ no forge suffix. */
   display?: GraphDisplayOptions;
+  /** Spec-004 (ui-ref §4.1 amendment): with fold active, "Row n of N" uses
+   *  DISPLAY indices, and a keyboard-active fold pill announces itself. */
+  fold?: {
+    model: FoldModel | null;
+    activePillStart: number | null;
+    /** Expanded spans — their `start` row appends the §3 boundary sentence. */
+    expandedSpans?: readonly { start: number; count: number; lane: number }[];
+  };
 }
 
 /** Short human summary of a node's refs for the announcement, or '' when none. */
@@ -69,26 +80,46 @@ export function selectionMessage(
   graph: GraphLayout | null,
   selectedIndex: number | null,
   display?: GraphDisplayOptions,
+  fold?: GraphSelectionAnnouncerProps['fold'],
 ): string {
-  if (graph === null || selectedIndex === null) return '';
+  if (graph === null) return '';
+  const model = fold?.model ?? null;
+  // Spec-004 §3: a keyboard-active fold pill wins over the settled selection.
+  if (model !== null && fold?.activePillStart != null) {
+    const span = spanAt(model.collapsed, fold.activePillStart);
+    const pillRow = pillRowOfStart(model, fold.activePillStart);
+    if (span !== null && pillRow !== null) {
+      return `${foldCountLabel(span.count)} commits folded. Row ${pillRow + 1} of ${model.displayRowCount}. Press Enter to expand.`;
+    }
+  }
+  if (selectedIndex === null) return '';
   const node = graph.nodes[selectedIndex];
   if (node === undefined) return '';
-  const total = graph.nodes.length;
+  // Spec-004 (ui-ref §4.1): row counts are DISPLAY rows; display == model when
+  // fold is off, so pre-fold announcements are unchanged.
+  const total = model !== null ? model.displayRowCount : graph.nodes.length;
+  const rowIndex = model !== null ? modelToDisplay(model, selectedIndex) : selectedIndex;
   const rel = relativeDate(node.ts, Math.floor(Date.now() / 1000));
   const refs = refSummary(node.refs);
-  const base = `${node.summary} — ${node.author}, ${rel}. Row ${selectedIndex + 1} of ${total}.`;
+  const base = `${node.summary} — ${node.author}, ${rel}. Row ${rowIndex + 1} of ${total}.`;
   const head = refs === '' ? base : `${base} ${refs}`;
-  return `${head}${forgeSummary(node, display)}`;
+  // Spec-004 §3: the boundary row of an EXPANDED run appends the collapse hint.
+  const boundary = fold?.expandedSpans?.find((s) => s.start === selectedIndex);
+  const suffix =
+    boundary !== undefined
+      ? ` Start of an expanded run of ${foldCountLabel(boundary.count)} commits. Press Left Arrow to collapse.`
+      : '';
+  return `${head}${forgeSummary(node, display)}${suffix}`;
 }
 
-export function GraphSelectionAnnouncer({ graph, selectedIndex, display }: GraphSelectionAnnouncerProps) {
+export function GraphSelectionAnnouncer({ graph, selectedIndex, display, fold }: GraphSelectionAnnouncerProps) {
   const [message, setMessage] = useState('');
   useEffect(() => {
     const id = window.setTimeout(() => {
-      setMessage(selectionMessage(graph, selectedIndex, display));
+      setMessage(selectionMessage(graph, selectedIndex, display, fold));
     }, 150);
     return () => window.clearTimeout(id);
-  }, [graph, selectedIndex, display]);
+  }, [graph, selectedIndex, display, fold]);
   // Distinct accessible name so this graph-selection region and the sidebar-reveal
   // region (both `role="status"` sr-only spans) are individually addressable.
   return <RevealAnnouncer message={message} label="Graph selection" />;
