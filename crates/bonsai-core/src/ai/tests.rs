@@ -4,6 +4,7 @@
 
 use super::testutil::{env_lock, set_mode, stub_path, STUB_MODE_ENV};
 use super::*;
+use std::time::Instant;
 
 #[test]
 fn run_claude_success_strips_and_parses() {
