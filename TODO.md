@@ -24,6 +24,31 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
+## 🔄 Graph-features run (2026-08-26) — briefs from docs/ideas/graph-features-brief.md — in-progress
+
+Branch: `feat/bonsai-graph-theme` (stacked on spec-002, per user decision). Autonomous
+straight-through run; USER CHECKPOINTs collected in the ledger below and presented at the end.
+
+**Current step:** spec-003 — specify/plan/tasks
+
+Delivery units (in order):
+- **spec-003** — Declutter: first-parent toggle + branch solo/hide (brief #1 sub 1+2, Rust `GraphFilter`) — in-progress
+- **spec-004** — Fold linear runs (brief #1 sub 3, node-schema `folded` kind) — pending
+- **spec-005** — Match rail + minimap (briefs #2+#3, shared rail, frontend-only) — pending
+- **spec-006** — Author coloring + parent-highlight on hover (brief #4, frontend-only) — pending
+- **spec-007** — Replay/story mode (brief #5, frontend-only) — pending
+
+Locked decisions (brief recommendations, adopted for the run): solo/hide always keeps HEAD's
+ancestry; topology toggles in Commit-graph settings category, author-color in Appearance; minimap
+on-demand by default; default `GraphFilter` output byte-identical (regression test in spec-003);
+mock IPC updated in the same increment as every IPC change.
+
+**USER CHECKPOINT ledger (all pending — collected at end of run):**
+- [ ] 20k-repo scroll feel in every declutter mode (first-parent / solo / folded)
+- [ ] Minimap: no idle cost when hidden; no jank on 20k repo
+- [ ] Hover parent-highlight: no idle repaints, feel
+- [ ] Replay: animation smoothness, reduced-motion behavior, no rAF when paused
+
 ## ✅ P90 — Per-branch CI Checks view — DONE (AI gate + USER CHECKPOINT both green 2026-08-25)
 
 **Current step:** none — AI gate passed (tsc/build clean, 52 vitest, size ratchet OK; harness-verified all
