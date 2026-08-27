@@ -24,12 +24,12 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
-## 🔄 Graph-features run (2026-08-26) — briefs from docs/ideas/graph-features-brief.md — in-progress
+## ✅ Graph-features run (2026-08-26) — briefs from docs/ideas/graph-features-brief.md — DONE (AI gate + USER CHECKPOINTs green 2026-08-27)
 
 Branch: `feat/bonsai-graph-theme` (stacked on spec-002, per user decision). Autonomous
 straight-through run; USER CHECKPOINTs collected in the ledger below and presented at the end.
 
-**Current step:** ALL FIVE SPECS COMMITTED — AI gates green; awaiting USER CHECKPOINTs (ledger below). Branch tip d763ae2 on feat/bonsai-graph-theme (UNMERGED, stacked on spec-002 theme work).
+**Current step:** none — DONE. All five specs committed, AI gates green, **USER CHECKPOINTs VERIFIED (2026-08-27)** (ledger below). Branch `feat/bonsai-graph-theme` **MERGED into local `main`** 2026-08-27 (no push).
 
 Delivery units (all AI-gate green):
 - **spec-003** — Declutter: first-parent + branch solo/hide — COMMITTED 4b2f737 (2026-08-26)
@@ -43,7 +43,7 @@ center DiffBrowser (new `pr` source, mergeBase..head via forgePrFileDiff; compar
 precedence; compact file list stays in the right panel). Follow-ups (non-blocking): rename-case
 Rust test for `ImageDiffRequest::Range` (`orig_path: Some` branch untested); auto-collapse or
 virtualize DiffBrowser above N files for very large PRs; native USER CHECKPOINT — PR image diff
-renders real comparison (mock intercepts getImageDiff).
+renders real comparison — **VERIFIED 2026-08-27**.
 
 Run follow-ups (non-blocking): eslint warnings 37/40 cap — burn down; bespoke Bonsai sprout (spec-007 AC5 full form); mock resolveLayout ignores kind:'unborn' (blocks empty-repo fab-gate e2e); settings-panel stale sentence + AC7 scroll-to-top + popover Esc capture (spec-003); rail wheel deltaMode + hexToRgba per-pixel alloc + small-repo dashed density (spec-005, cosmetic); foldView displayToModelRow dup (spec-004); transient stale-chip flash between filter change and next meta (spec-003); refactor queue: RepoWorkspace ~2776, GraphCanvas ~898; at-cap files: WorkspaceGraphPane 499, settings.rs, graph.rs 496.
 
@@ -52,12 +52,12 @@ ancestry; topology toggles in Commit-graph settings category, author-color in Ap
 on-demand by default; default `GraphFilter` output byte-identical (regression test in spec-003);
 mock IPC updated in the same increment as every IPC change.
 
-**USER CHECKPOINT ledger (all pending — collected at end of run):**
-- [ ] 20k-repo scroll feel in every declutter mode (first-parent / solo / folded)
-- [ ] Minimap: no idle cost when hidden; no jank on 20k repo
-- [ ] Hover parent-highlight: no idle repaints, feel
-- [ ] Replay: animation smoothness, reduced-motion behavior, no rAF when paused
-- [ ] Author-color legibility in all 4 theme×style combos (light-mode worst case ≈3.4:1 vs Bonsai paper — thinnest contrast margin in the system)
+**USER CHECKPOINT ledger — ALL VERIFIED by user 2026-08-27:**
+- [x] 20k-repo scroll feel in every declutter mode (first-parent / solo / folded)
+- [x] Minimap: no idle cost when hidden; no jank on 20k repo
+- [x] Hover parent-highlight: no idle repaints, feel
+- [x] Replay: animation smoothness, reduced-motion behavior, no rAF when paused
+- [x] Author-color legibility in all 4 theme×style combos (light-mode worst case ≈3.4:1 vs Bonsai paper — thinnest contrast margin in the system)
 
 ## ✅ P90 — Per-branch CI Checks view — DONE (AI gate + USER CHECKPOINT both green 2026-08-25)
 
@@ -172,8 +172,7 @@ store cap; byte-identical emit; bonsai 293). **P88a test-gap fill committed `709
 clippy 0-warn workspace, eslint 38≤40, file-size ok, vitest 2288 passed, tsc+build clean, playwright e2e 159 passed
 (1 skip; 1 flake = `e2e/07-rebase.spec.ts` timing, PASSES isolated 1.8m — rebase is outside the P88a matrix, not a
 regression). Commits: contract `31bf4bd`, P88a `2412d8b`, B2a `f4c060c`, B2b `52f5d74`, PB-1 `cc5fdac`, P88a-tests
-`709c9cc`. Branch `perf/git-action-round2` (off c0825a3/1.3.0), NOT merged/pushed. **PENDING: native USER CHECKPOINTs
-+ merge decision.** User confirmed "go ahead with B2 after this" (2026-08-24). **Then user chose "Do FU-B2c now"
+`709c9cc`. Branch `perf/git-action-round2` (off c0825a3/1.3.0), NOT merged/pushed. **Native USER CHECKPOINTs VERIFIED 2026-08-25; merge decision still open.** User confirmed "go ahead with B2 after this" (2026-08-24). **Then user chose "Do FU-B2c now"
 (2026-08-24) → FU-B2c IN PROGRESS. Architect design DONE (contract §FU-B2c): Option 1 = move owned `Repository`
 in/out through new `run_with_git_timeout_owned` + `with_repo_timed`/`_mut_timed` wrappers (Send-only, one owner at a
 time; leak-on-timeout self-heals; watchdog abandonment preserved). ODs resolved: accept leak no-cap, delegate the
@@ -665,11 +664,11 @@ modules (a real refactor with call-graph impact, not a leaf move).
 - **CommandPalette highlight resets on `actions` array identity — RESOLVED** (`0798c55`). Reset now
   keys on the ordered visible row-id set, not array identity. vitest 14/14.
 - **Refetch storm (audit #1 §3.10) — RESOLVED** (`be01422`, now milestone P81 above — native
-  checkpoint pending).
+  checkpoint VERIFIED 2026-08-27).
 - **Stash `expectedOid` UI wiring — RESOLVED** (`f36683e`). UI threads the rendered `StashEntry.oid`
   through the F-A6-B wrong-target guard. vitest 2079.
 - **Submodule dirty-deinit force flag (F-A7-7) — RESOLVED** (`ede7674`, now milestone P82 above —
-  native checkpoint pending).
+  native checkpoint VERIFIED 2026-08-27).
 - **`STDERR_GRACE_TOTAL` absolute cap — RESOLVED** (`95b7632`). `drain_stderr` now clamps each
   per-recv wait to the remaining time, so total ≤ `STDERR_GRACE_TOTAL`.
 - **P70 credential-subsystem split (refactorer) — RESOLVED** (no action needed; item was stale).
