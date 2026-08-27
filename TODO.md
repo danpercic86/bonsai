@@ -26,8 +26,11 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ## 📐 P91 — Observability: Dev mode, structured logs, local telemetry & metrics — PLANNING (awaiting user approval)
 
-**Current step:** contracts written; plan presented to user — **STOP AT PLAN** per user decision
-(2026-08-27). No senior-dev spawn until the user approves and resolves the open decisions.
+**Current step:** APPROVED — **increment 1 (Rust log core) IN PROGRESS** (senior-dev, 2026-08-27).
+Concurrently: architect adding a **performance-diagnosis addendum** (intra-operation phase spans,
+slow-command + queue-delay + cache-collapse anomaly rules, percentile rollups) after the user asked
+whether the plan also identifies perf issues — constrained to ADDITIVE schema changes only so it
+cannot collide with the in-flight increment 1.
 
 **Goal:** make unintended app behaviour mechanically visible. The user reports UI flickers and
 "things that don't look right"; they want to enable a Dev mode, reproduce, and send the resulting
