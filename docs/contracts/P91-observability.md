@@ -32,7 +32,7 @@ list. Nothing in this contract is pending an answer.
 |---|---|
 | `obs/mod.rs` | re-exports; `ObsState` held in `AppState` |
 | `obs/record.rs` | `LogRecord` + all payload enums; schema version constant |
-| `obs/redact.rs` | session salt, `Redactor` (stable-within-session id assignment), token scrubber |
+| `obs/redact.rs` | session salt, `Redactor` (salt-seeded counter ordinals, §7.2), token scrubber |
 | `obs/sink.rs` | bounded MPSC → writer thread; `try_send`, drop counter, flush; `RollAndPurge` control message |
 | `obs/writer.rs` | file naming, JSONL append, rotation, pruning, header record, **purge** (§6.1) |
 | `obs/anomaly.rs` | streaming detectors (§5) over the unified record stream |
@@ -52,7 +52,7 @@ list. Nothing in this contract is pending an answer.
 | `obs/types.ts` | TS mirror of `LogRecord` + `TraceId` |
 | `obs/enabled.ts` | `obsEnabled()` / `obsLevel()` — single boolean read, set once at boot + on settings change |
 | `obs/trace.ts` | `newTrace()`, `withTrace()`, `currentTrace()` (sync ambient), `bindTrace()` |
-| `obs/redact.ts` | frontend mirror of `Redactor` (same scheme, same session salt, fetched at boot) |
+| `obs/redact.ts` | frontend `Redactor` — **`ui:`-namespaced** ordinals + the shared `argsHash` (§7.2) |
 | `obs/log.ts` | `logRecord(r)` — no-op fast path when disabled; enqueues to batcher |
 | `obs/batcher.ts` | ring buffer, flush on 500 ms / 100 records / `visibilitychange` / `beforeunload` |
 | `obs/ipcProxy.ts` | `instrumentIpc(api: IpcApi): IpcApi` — the frontend choke point |
@@ -451,8 +451,8 @@ Every anomaly record carries `refs: number[]` (the implicated `seq`s) so the AI 
 straight to the evidence without scanning.
 
 **Anomaly detection is redaction-independent by construction:** every rule keys off `cmd` names,
-`argsHash`, scopes, component ids, counts and timings — never off repo content. A `strict` log has
-exactly the same anomaly signal as a `raw` one.
+`argsHash`, scopes, component ids, counts and timings — never off repo content, **and never off a
+redaction ordinal** (§7.2 (c)). A `strict` log has exactly the same anomaly signal as a `raw` one.
 
 ### 5.1 Duration & saturation rules (ADDITIVE; **increment 5**)
 
@@ -464,7 +464,7 @@ distribution reusing the §8 `Histogram` bucket shape** (same 8 boundaries — n
 on ipc.result(cmd, ms):
     h = baseline[cmd]                      # in-memory, session-scoped, ≤200 cmd keys
     if h.count >= MIN_SAMPLES(=20):
-        p95 = percentile_from_buckets(h, 0.95)      # bucket upper bound, §8.1
+        p95 = h.percentile_ms(0.95)        # §8.1, interpolated within the containing bucket
         if ms > max(FLOOR_MS(=150), K(=3.0) * p95):
             emit slow-command{cmd, ms, p95, samples: h.count}
     if ms > HARD_MS(=10_000):              # catch-all, fires even before MIN_SAMPLES
@@ -479,7 +479,8 @@ with a default row and per-command overrides (`get_graph` floor 1200 ms; `commit
   not fire;
 - `MIN_SAMPLES` suppresses the cold-start burst (a repo open fires nothing);
 - **rate limit: at most 1 `slow-command` per `cmd` per 10 s**;
-- `k × p95` on a bucketed p95 is intentionally coarse — it fires on step changes, not on jitter.
+- the p95 is bucket-derived and therefore coarse by construction — the rule fires on step changes,
+  not on jitter.
 
 **`slow-phase`:** when a `slow-command` fires and the correlated `span` (same `trace`) has a phase
 ≥70 % of `ms`, emit `slow-phase{op, phase, ms, share}` referencing both seqs. This is the record
@@ -500,6 +501,8 @@ invalidates). Detail carries the counts; `refs` point at the offending spans. Cr
   logs/
     bonsai-2026-08-27T14-03-11-<sessionId>.jsonl     # one file per session
     bonsai-...-1.jsonl                               # rotation part when size cap hit
+  exports/                                           # §6.2 — default target for log_export_session
+    bonsai-...-<sessionId>.zip
   metrics/
     usage.json
 ```
@@ -522,6 +525,8 @@ invalidates). Detail carries the counts; `refs` point at the offending spans. Cr
 - **Frontend → file:** `log_append(records: Vec<LogRecord>)`, called by `obs/batcher.ts` at
   500 ms / 100 records / page-hide. The batcher drops oldest on overflow (cap 5000) and reports
   the drop as a `drop` record. `log_append` is on the instrumentation exclusion list.
+- **The session salt is NEVER written to any log file, export or metrics file** (§7.2). It exists
+  in memory and crosses IPC exactly once, to the frontend, via `log_session_info`.
 - **Mock mode:** the sink client writes to an in-memory ring buffer; `window.__bonsaiDumpLogs()`
   returns the JSONL string so the browser harness can assert schema + anomalies with no Tauri.
 
@@ -542,7 +547,7 @@ async fn logs_delete_all(
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogsDeleteResult {
-    /// Files actually removed from disk.
+    /// Files actually removed from disk (log parts AND export zips — see `deleted_exports`).
     pub deleted_files: u32,
     /// Bytes reclaimed (sum of the sizes of the removed files, measured before removal).
     pub deleted_bytes: u64,
@@ -553,12 +558,17 @@ pub struct LogsDeleteResult {
     pub active_file: Option<String>,     // file NAME only, not a path
     /// True when the writer was rolled to a new file as part of this operation.
     pub rolled: bool,
+    /// §6.2 — how many of `deleted_files` were export zips. Optional/additive; the UI uses it
+    /// to say "4 log files and 1 export" instead of an undifferentiated count.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_exports: Option<u32>,
 }
 ```
 ```ts
 export interface LogsDeleteResult {
   deletedFiles: number; deletedBytes: number; failedFiles: number;
   activeFile: string | null; rolled: boolean;
+  deletedExports?: number;
 }
 ```
 
@@ -568,7 +578,8 @@ awaits its completion (`spawn_blocking`, so the UI never blocks). The writer, on
 1. flushes and **closes** the current file (releasing the Windows handle);
 2. opens a **new** session file with a fresh `session` header record carrying `afterPurge: true`;
 3. enumerates every other `*.jsonl` in `logs/`, records each file's size, and deletes it;
-4. returns counts, with `rolled: true` and `active_file: Some(<new file name>)`.
+4. deletes every export artifact in scope per §6.2;
+5. returns counts, with `rolled: true` and `active_file: Some(<new file name>)`.
 
 Rationale: it is the only option that satisfies the privacy intent (**every byte written before the
 click is gone, including the current session's — that is what "delete all" must mean for a
@@ -577,7 +588,7 @@ user to disable Dev mode and lose their in-progress debugging session. "Keep the
 leave the very `raw`-names session the user is trying to erase; "refuse while active" makes the
 feature unavailable in the exact state where it matters most.
 
-When Dev mode is OFF, no writer exists: the command deletes every `*.jsonl` in `logs/` and returns
+When Dev mode is OFF, no writer exists: the command deletes every in-scope file and returns
 `rolled: false`, `active_file: None`.
 
 Other rules:
@@ -586,23 +597,56 @@ Other rules:
   must state "Deleted N files (X MB); M could not be removed." A `failed_files > 0` result is a
   visible warning state, not a silent no-op.
 - `deleted_bytes` is summed from `metadata().len()` read **immediately before** each successful
-  removal, so the number the UI shows is what was actually reclaimed.
-- Scope is exactly `<app_config_dir>/logs/*.jsonl` (plus any `*.jsonl.tmp`). The command never
-  touches `metrics/`, `settings.json`, or anything outside `logs/`.
+  removal, so the number the UI shows is what was actually reclaimed. Export zips are included in
+  both `deleted_files` and `deleted_bytes`, and additionally counted in `deleted_exports`.
+- **Purge scope — exactly these, and nothing else:**
+  `<app_config_dir>/logs/*.jsonl`, `<app_config_dir>/logs/*.jsonl.tmp`,
+  `<app_config_dir>/logs/*.zip` (stray/legacy exports), and `<app_config_dir>/exports/*.zip`.
+  The command never touches `metrics/`, `settings.json`, or anything outside those two directories.
 - `logs_delete_all` is on the IPC-instrumentation exclusion list (§2.3) — deleting logs must not
   itself write a log record into the file that survives.
 - The UI **must confirm before invoking** (destructive-operation guardrail), and the confirm copy
-  states the file count and total bytes obtained from `log_session_info` beforehand.
+  states the file count and total bytes obtained from `log_session_info` beforehand, **and the
+  §6.2 out-of-scope caveat**.
 - **Mock IPC:** `src/ipc/mock/obs.ts` clears the in-memory ring buffer and returns a plausible
-  `LogsDeleteResult` (`deletedFiles: 3, deletedBytes: 1_248_130, failedFiles: 0, rolled: true,
-  activeFile: 'bonsai-…-mock.jsonl'`), so the browser harness exercises both the success and the
-  `failedFiles > 0` copy path (a fixture flag toggles the latter).
+  `LogsDeleteResult` (`deletedFiles: 4, deletedBytes: 1_248_130, failedFiles: 0, rolled: true,
+  activeFile: 'bonsai-…-mock.jsonl', deletedExports: 1`), so the browser harness exercises both the
+  success and the `failedFiles > 0` copy path (a fixture flag toggles the latter).
+
+### 6.2 Export artifacts are in the delete scope — **DECIDED (2026-08-27), do not re-open**
+
+**The defect this closes.** `log_export_session` previously defaulted its zip into `logs/`, while
+the purge scope was `*.jsonl` only. A user could export a **`raw`-names** session, click "Delete all
+log files", get a success toast, and still have a zip full of real branch / tag / file / repo names
+on disk. That is precisely the scenario decision 7 exists to prevent, so a "delete" that leaves it
+behind is a privacy bug, not a scoping nicety.
+
+**Resolution — both halves, because either alone leaves a hole:**
+1. **Exports default outside `logs/`.** `log_export_session(dest: None)` writes to
+   `<app_config_dir>/exports/`, and the save dialog opens there. `logs/` holds only the writer's own
+   files, so rotation/pruning logic never has to reason about foreign file types.
+2. **The purge covers Bonsai-created export zips** in *both* `exports/` and `logs/` (the latter for
+   files written by builds predating this rule, and for a user who steered the save dialog back into
+   `logs/`). "Delete all log files" must mean *every log artifact Bonsai put in its own config
+   directory*.
+
+**A zip the user deliberately saved into `logs/` or `exports/` is deleted.** That is intended: those
+two directories are app-managed, the confirm dialog states the count and bytes before anything is
+removed, and the alternative — silently retaining a raw-names archive — is the worse failure. A user
+who wants to keep an export saves it **anywhere else** via the dialog.
+
+**Honest reporting, and the limit of the guarantee.** Exports the user saved outside the app config
+directory (Desktop, Downloads, a chat upload) are physically unreachable and are **not** deleted.
+The confirm copy and the post-export content statement must both say so in one line — e.g. "Exports
+you saved elsewhere are not removed." Claiming a completeness the command cannot deliver would be
+the same class of defect as the one this section fixes.
 
 ### Commands
 ```rust
 #[tauri::command] async fn log_append(state: State<'_, AppState>, records: Vec<LogRecord>) -> Result<(), AppError>;
 #[tauri::command] async fn log_session_info(state: State<'_, AppState>) -> Result<LogSessionInfo, AppError>;
 #[tauri::command] async fn log_reveal_dir(app: AppHandle) -> Result<(), AppError>;
+/// dest = None ⇒ `<app_config_dir>/exports/` (§6.2). NEVER defaults into `logs/`.
 #[tauri::command] async fn log_export_session(app: AppHandle, dest: Option<String>) -> Result<String, AppError>; // zips current session parts, returns path
 #[tauri::command] async fn logs_delete_all(app: AppHandle, state: State<'_, AppState>) -> Result<LogsDeleteResult, AppError>; // §6.1
 #[tauri::command] async fn metrics_snapshot(state: State<'_, AppState>) -> Result<MetricsSnapshot, AppError>;
@@ -613,8 +657,12 @@ export interface LogSessionInfo {
   sessionId: string; dir: string; files: string[]; bytes: number;
   records: number; anomalies: number; dropped: number;
   redaction: RedactionMode;
+  /** Session salt, hex. In-process only — never written to a log file or export (§7.2). */
+  salt: string;
   /** Total across ALL log files on disk, not just this session — the confirm copy needs it. */
   totalFiles: number; totalBytes: number;
+  /** §6.2 — export zips inside the purge scope, so the confirm copy can name them. */
+  exportFiles?: number; exportBytes?: number;
 }
 ```
 All seven added to `IpcApi`, `src/ipc/tauri/obs.ts`, `src/ipc/mock/obs.ts`, and
@@ -655,31 +703,67 @@ identifies the repo, its people or its contents does.
 | Commit SHAs | first 7 chars kept (needed to correlate; not identifying on their own) | full SHA |
 | Tokens, passwords, `Authorization` headers, PATs, SSH keys | **NEVER, under any setting** | **NEVER** |
 | Error messages | scrubbed of paths, refs, URLs and tokens | kept, tokens still scrubbed |
+| **Session salt** | **never written to a file or export, in either mode** (§6, §7.2) | **never** |
 
-`raw` mode is precisely why §6.1 exists: it is the only mode that puts real names on disk, and the
-user must be able to remove them on demand.
+`raw` mode is precisely why §6.1/§6.2 exist: it is the only mode that puts real names on disk, and
+the user must be able to remove them — including from an export zip — on demand.
 
-### 7.2 Hashing scheme
+### 7.2 Ordinal scheme — **DECIDED: salt-seeded counters; ordinals are side-local**
+
+The three properties previously demanded here were not jointly achievable, and the contradiction is
+resolved explicitly:
+
+| | Property | Holds? |
+|---|---|---|
+| (a) | An ordinal is **stable within a session**: the same value is always `ref#3` in every record emitted by that side | **YES** |
+| (b) | Ordinals **differ across sessions**, so two files cannot be cross-linked or dictionary-attacked | **YES** |
+| (c) | Frontend and Rust **independently agree** on the same ordinal for the same value | **NO — struck** |
+
+**Why (c) is struck rather than engineered.** A counter assigns ordinals in first-sight order, and
+the two sides observe values in different orders, so agreement is impossible without either a shared
+mapping (a synchronous IPC round-trip per value — unacceptable on the render path) or a pure
+`hash(salt, value) → ordinal`. The hash option was **rejected on privacy grounds**: to be mirrored
+synchronously in TS it must be a non-cryptographic hash (FNV-1a-64), and the input space for branch,
+tag and remote names is small and highly guessable. Anyone who learned the salt could dictionary-
+attack every ordinal in the file, and salt-free structural attacks on a non-PRF are cheap. A counter
+leaks **strictly less**: it reveals only first-sight order, never anything about the value — which is
+what makes the §7 "safe to hand to a third party" claim true. A cryptographic keyed hash would
+restore secrecy but cannot be mirrored synchronously in the frontend fast path.
+
+**Consequences, specified so the two sides can never be confused:**
+- **Rust ordinals are bare** (`ref#3`, `path#7`, `repo#1`). **Frontend ordinals are `ui:`-prefixed**
+  (`ui:ref#3`, `ui:path#7`). The two namespaces are disjoint by construction, so a merged file can
+  never imply that a UI `ref#3` and a Rust `ref#3` are the same branch. This prefix is the whole
+  mitigation for the "silently implies two different branches" failure mode, and it is mandatory.
+- **The reviewing AI does not need cross-side ordinal identity, and must not attempt to infer it.**
+  Correlation across the boundary runs on `trace` / `span` / `seq` and on `argsHash` — every §5 rule
+  already keys off exactly those. A UI `ipc.call` and its Rust `ipc.recv` share a `trace`; that is a
+  stronger join than a name match would be.
+- `redactionNote` (§7.3) states this in one sentence: ordinals are per-side and per-session; join on
+  `trace`/`span`/`argsHash`, never on ordinal equality.
 
 ```rust
 // obs/redact.rs
 pub struct Redactor { salt: [u8; 16], ids: DashMap<(Kind, String), u32>, next: AtomicU32 }
 impl Redactor {
     /// Returns e.g. "path#7". First sight of a value assigns the next ordinal for its Kind.
+    /// The counter's starting point is SEEDED FROM THE SALT, which is what delivers (b).
     pub fn tag(&self, kind: Kind, value: &str) -> String;
-    pub fn hash_args(&self, canonical_json: &str) -> String;   // 8-hex, salted
+    pub fn hash_args(&self, canonical_json: &str) -> String;   // 8-hex, salted FNV-1a-64
 }
 pub enum Kind { Repo, Path, Ref, Remote, Other }
 ```
-- **Salt: 16 random bytes generated per session, held in memory only, never persisted.**
-  Consequence — the same branch is `ref#3` in every record of one file (so the AI reviewer can
-  correlate) and is a *different* ordinal in tomorrow's file (so files cannot be cross-linked or
-  dictionary-attacked). This is the explicitly required property. A purge roll (§6.1) keeps the
-  session salt: the new file continues the same session's ordinals.
-- The frontend gets the same salt at boot via `log_session_info` and applies the identical scheme
-  in `src/obs/redact.ts`, so UI-side and Rust-side records agree on `ref#3`.
-- `argsHash` is a salted 8-hex digest of the canonicalized JSON args. It powers `dup-ipc` without
-  storing content — one mechanism serving both §5 and §7.
+- **Salt: 16 random bytes generated per session, held in memory only, never persisted** — not to a
+  log file, not into an export zip, not to `usage.json`. The frontend receives it once at boot via
+  `log_session_info` (in-process IPC) and uses it to seed its own counter and its `argsHash`.
+- A purge roll (§6.1) keeps the session salt: the new file continues the same session's ordinals.
+- **`argsHash` is a shared equality token, and the one thing both sides compute identically:** a
+  salted FNV-1a-64 digest (8 hex) over the **raw canonical JSON** of the arguments, so a UI call and
+  its Rust arrival hash alike. It powers `dup-ipc` without storing content.
+  **FNV-1a-64 is adequate here and only here**, for two stated reasons: equality is the only
+  property required of it, and the salt never leaves the process, so a file on its own carries no
+  key with which to brute-force the digest. It is **not** a concealment primitive — no future change
+  may reintroduce a value into the log on the grounds that "it is only a hash".
 - **Token scrubber runs last, on every string field, in both modes**, against a fixed pattern set
   (`ghp_`, `github_pat_`, `gh[pousr]_`, `xox[baprs]-`, `AZDO`/base64 PAT shape, `Bearer …`,
   `://user:pass@`, `-----BEGIN … PRIVATE KEY-----`, any value under a key matching
@@ -688,13 +772,15 @@ pub enum Kind { Repo, Path, Ref, Remote, Other }
 ### 7.3 Mode disclosure & UI statement
 
 - The `session` header record carries `redaction` and a `redactionNote` string, so a reviewer
-  opening the file **immediately knows what they are looking at** without external context.
+  opening the file **immediately knows what they are looking at** without external context. The
+  note includes the §7.2 sentence about side-local ordinals.
 - `dev.include-raw-names` (the `raw` toggle) requires an explicit confirm dialog and shows a
   persistent warning row while on. Turning it on starts a **new** log file (a single file never
   mixes modes).
 - The Settings Dev page shows a fixed, always-visible statement of log contents. Copy is
   ui-designer's; the *content* is exactly the §7.1 table plus: "Logs are written only to this
-  computer. Bonsai never uploads them." plus a pointer to the delete action.
+  computer. Bonsai never uploads them." plus a pointer to the delete action **and the §6.2 line
+  that exports saved outside Bonsai's folder are not removed**.
 
 ---
 
@@ -881,13 +967,13 @@ New category `'dev'` (rail last, `dividerBefore: true`), rows:
 |---|---|---|
 | `dev.enabled` | switch | master Dev-mode gate; OFF ⇒ no instrumentation active, no file writes, **no automatic log deletion** |
 | `dev.level` | segmented | `info` / `debug` / `trace` (`trace` force-enables frame capture) |
-| `dev.capture-ipc` | switch | ipc/event/channel records (default on) |
+| `dev.capture-ipc` | switch | ipc/event/channel/span records (default on) |
 | `dev.capture-react` | switch | render/render.tally/effect/state records (default on) |
 | `dev.capture-frames` | switch | frame records (default off — high volume) |
 | `dev.include-raw-names` | switch | `strict` → `raw` (§7). Default **off**. Confirm dialog on enable; persistent warning row while on; starts a new log file |
 | `dev.reveal-logs` | button | `log_reveal_dir()` |
-| `dev.export-session` | button | `log_export_session()` → save dialog; re-shows the content statement first |
-| `dev.delete-logs` | button (destructive) | **§6.1** — confirm dialog first, stating `totalFiles` / `totalBytes` from `log_session_info`; then `logs_delete_all()`. Reports the result honestly: success count + bytes, and a warning state when `failedFiles > 0`. When Dev mode is ON, the copy states that logging continues into a new, empty file |
+| `dev.export-session` | button | `log_export_session()` → save dialog defaulting to `exports/` (§6.2); re-shows the content statement first, including that exports saved outside Bonsai's folder are not covered by the delete action |
+| `dev.delete-logs` | button (destructive) | **§6.1/§6.2** — confirm dialog first, stating `totalFiles` / `totalBytes` **and `exportFiles` / `exportBytes`** from `log_session_info`; then `logs_delete_all()`. Reports the result honestly: success count + bytes (naming exports separately via `deletedExports`), and a warning state when `failedFiles > 0`. When Dev mode is ON, the copy states that logging continues into a new, empty file |
 | `dev.session-info` | readonly | `LogSessionInfo` summary (files, size, records, anomalies, dropped, redaction mode); refreshes after a delete |
 | `dev.privacy-note` | readonly | the fixed §7.3 statement of what a log file contains |
 
@@ -933,7 +1019,7 @@ is written on each enable.
 | Dev mode **ON, sidebar** | a single ref change on a **500-ref** repo produces **≤ 8** react records total (container `each` + 4 aggregate tallies), never one per row | vitest: mount the sidebar with a 500-ref fixture, trigger one ref change, count records |
 | Sink | never blocks a caller (bounded `try_send`), writer thread only | test: fill the channel, assert producers return immediately and a `drop` record appears |
 | `logs_delete_all` | runs on `spawn_blocking`; UI never blocks; no log record is lost between the flush and the new file opening | test: enqueue records concurrently with a purge, assert none are lost after the roll |
-| Redactor | ≤ 5 µs per record (`DashMap` hit + one salted hash) | bench in `obs/redact.rs` tests |
+| Redactor | ≤ 5 µs per record (`DashMap` hit + one salted FNV-1a-64 hash) | bench in `obs/redact.rs` tests |
 | Metrics percentiles | `percentile_ms` is O(8); no sample buffer exists; a day bucket stays ≤ ~3 KB | `cargo test`: 1M observations leave the histogram byte-size unchanged |
 
 ---
@@ -944,20 +1030,26 @@ Seven increments, dependency-ordered; each sized for one fresh-context senior-de
 the pipe, **4 is the milestone's payload**, 5 makes it self-analysing, 6–7 are the durable-metrics
 and user-surface tails.
 
-**Amendment routing (2026-08-27):** increment 1 is **unchanged** — it does not implement §3.1.
-The `span` kind, `SpanPayload` and `obs/phase.rs` land in **increment 3**; the duration/saturation
-rules in **increment 5**; the percentile API in **increment 6**. Increment 1's `LogKind` enum simply
-gains one variant in increment 3 (additive, no rework).
+**Amendment routing (2026-08-27):** increment 1 is **unchanged** in scope — it does not implement
+§3.1. The `span` kind, `SpanPayload` and `obs/phase.rs` land in **increment 3**; the
+duration/saturation rules in **increment 5**; the percentile API in **increment 6**. Increment 1's
+`LogKind` enum simply gains one variant in increment 3 (additive, no rework).
+
+**Defect-fix routing (2026-08-27, §13 rows 16–17):** §7.2 **confirms** increment 1's salt-seeded
+counters — no reimplementation. The only increment-1 deltas are `log_export_session`'s default
+destination (`exports/`, §6.2) and `LogSessionInfo` gaining `salt` + optional
+`exportFiles`/`exportBytes`. The `ui:` ordinal prefix is increment-2 (frontend) work; the widened
+purge scope is increment-7 work.
 
 | # | Increment | UI? | Scope | Acceptance |
 |---|---|---|---|---|
-| 1 | **Log core (Rust)** — `obs/record.rs`, `redact.rs`, `sink.rs`, `writer.rs`, `commands/obs.rs` (`log_append`, `log_session_info`, `log_reveal_dir`, `log_export_session`), `DevSettings` + all 8 lockstep files, mock IPC stubs. **No §3.1 work.** | no | schema, redaction, sink, rotation, pruning, flush-on-exit, settings plumbing | `cargo test`: rotation at cap; pruning keeps N; backpressure emits `drop`; exit flush loses 0 records; `Redactor` assigns stable ordinals within a session and different ones across sessions; token scrubber catches every fixture pattern; **turning Dev mode off deletes no file**. Enabling Dev mode creates a `logs/*.jsonl` whose first line is a valid `session` record naming the redaction mode |
-| 2 | **Frontend pipeline** — `obs/{types,enabled,trace,redact,log,batcher,ipcProxy}.ts`, wire into `src/ipc/index.ts`, mock ring buffer + `__bonsaiDumpLogs()` | no | proxy, trace minting, redaction mirror, batching | vitest: a mock-IPC call produces paired `ipc.call`/`ipc.result` sharing one trace + one span; disabled ⇒ method identity preserved; ≤1 `log_append` per 500 ms; a call with a path argument logs `argsHash`+`argsShape` and **no path substring** |
+| 1 | **Log core (Rust)** — `obs/record.rs`, `redact.rs`, `sink.rs`, `writer.rs`, `commands/obs.rs` (`log_append`, `log_session_info`, `log_reveal_dir`, `log_export_session`), `DevSettings` + all 8 lockstep files, mock IPC stubs. **No §3.1 work.** | no | schema, redaction, sink, rotation, pruning, flush-on-exit, settings plumbing | `cargo test`: rotation at cap; pruning keeps N; backpressure emits `drop`; exit flush loses 0 records; `Redactor` assigns stable ordinals within a session and different ones across sessions (§7.2 (a)+(b); **(c) is explicitly NOT required — do not test for cross-side agreement**); token scrubber catches every fixture pattern; **turning Dev mode off deletes no file**. Enabling Dev mode creates a `logs/*.jsonl` whose first line is a valid `session` record naming the redaction mode. **§6.2:** `log_export_session(None)` writes into `<app_config_dir>/exports/` and a test asserts **no `.zip` is ever created inside `logs/`**; `log_session_info` returns the session `salt` and, when exports exist, `exportFiles`/`exportBytes`; a test asserts the salt appears in **no** file on disk |
+| 2 | **Frontend pipeline** — `obs/{types,enabled,trace,redact,log,batcher,ipcProxy}.ts`, wire into `src/ipc/index.ts`, mock ring buffer + `__bonsaiDumpLogs()` | no | proxy, trace minting, redaction mirror, batching | vitest: a mock-IPC call produces paired `ipc.call`/`ipc.result` sharing one trace + one span; disabled ⇒ method identity preserved; ≤1 `log_append` per 500 ms; a call with a path argument logs `argsHash`+`argsShape` and **no path substring**. **§7.2:** every frontend ordinal is `ui:`-prefixed (regex test over a full fixture run — a bare `ref#`/`path#`/`repo#` from `src: 'ui'` is a failure); frontend and Rust produce the **same `argsHash`** for the same canonical args + salt (fixture-vector test); ordinals are stable within the session |
 | 3 | **Rust dispatch + events + watcher + §3.1 spans** — `invoke_shim.rs` (§2.3, incl. the §2.3.1 contingency note in the module doc), `trace.rs`, **`obs/phase.rs` + the `span` `LogKind`/`SpanPayload` (additive to `record.rs`) + the three §3.1.2 call sites + `queuedMs`/pool gauge in `repo_handle.rs` + `deadlineFrac` from `run_with_git_timeout*` + `cache` from `graph_cache.rs`**, migrate every `emit(` site to `emit_logged` with an explicit `TraceMeta`, watcher batch/debounce records, mock `span` fixtures | no | backend choke point + intra-operation breakdown | every dispatch yields an `ipc.recv` stamped with the frontend-injected `__trace`; no `emit` site remains unmigrated (grep test); a git-op burst yields watcher `fired` records with correct `paths`/`relevant`/`debounceMs`. **Spans:** (a) a `get_graph` on a fixture repo emits exactly **one** `span{op:'graph.get'}` whose `phases` cover `revwalk`/`decorate`/`lane` and whose phase sum ≤ `ms`; (b) `queuedMs` is present and ≥0 on every git span, and a test that saturates the blocking pool shows `queuedMs > 0` and `poolInflight >= poolMax`; (c) a forced near-timeout yields `deadlineFrac ≥ 0.8`; (d) a cache-served graph emits `cache:'hit'` with no `revwalk` phase; (e) recorder overhead bench < 5 µs; (f) `bonsai-core` gains **no** dependency on `obs` (compile test). **If `tauri::ipc::Invoke` will not compile, execute §2.3.1 (drop the shim) and drop only the `ipc.recv` criterion — spans are unaffected — do not modify command signatures** |
 | 4 | **Refresh + echo causality + React causality across the SIX surfaces** — `armEcho(repoId, trace)`, suppressed-watcher record at `useCoalescedRefresh.ts:82`, `pendingTracesRef` + `refresh` records, `obs/react.ts` + `obs/renderTally.ts`, applied per the §9.3 table (incl. the sidebar), `frameStats` routing | **yes** | **the flicker evidence** | (a) a mutation followed by its fs echo yields a `watcher` record with `suppressed:true` and `causedBy` = the mutation's trace; (b) one mutation ⇒ exactly one `refresh` record listing every collapsed contributing trace; (c) an effect re-run with unchanged deps emits `effect-no-change`; (d) **sidebar: one ref change on a 500-ref fixture yields ≤8 react records — one `each` record for `Sidebar.tsx` plus one `render.tally` per section/row component — and zero per-row records**; (e) a sidebar flicker (repeated re-render with no ref change) shows as a `render.tally` with `renders > 3 × instances` |
-| 5 | **Anomaly detector** — `obs/anomaly.rs`, every sink-side rule in §5 incl. `render-storm` **and the §5.1 performance rules** (`slow-command`, `slow-phase`, `queue-delay`, `pool-saturation`, `watchdog-pressure`, `cache-collapse`) + the `SLOW_RULES` constants table | no | derived records | scripted double-click in the harness produces a `dup-ipc` anomaly whose `refs` point at the two `ipc.call` seqs; each rule has a unit test with a true-positive and a true-negative case. **§5.1 specifically:** (a) a synthetic stream of 50 normal `get_graph` results at 900 ms followed by one at 4 s fires **exactly one** `slow-command`; (b) the same 50 results at a *uniformly* high 900 ms fire **none** (large-repo non-firing test); (c) fewer than `MIN_SAMPLES` results fire nothing except the >10 s catch-all; (d) the rate limit caps repeats at 1 per cmd per 10 s; (e) a slow span dominated by `lane` fires `slow-phase{phase:'lane'}` referencing both seqs; (f) 5 spans with `cache:'redecorate'` and no mutation fire `cache-collapse`, and the same 5 *with* an intervening mutation fire nothing; (g) 3 spans with `queuedMs 150` in 5 s fire `queue-delay`; (h) baseline map stays at the 200-key cap |
+| 5 | **Anomaly detector** — `obs/anomaly.rs`, every sink-side rule in §5 incl. `render-storm` **and the §5.1 performance rules** (`slow-command`, `slow-phase`, `queue-delay`, `pool-saturation`, `watchdog-pressure`, `cache-collapse`) + the `SLOW_RULES` constants table | no | derived records | scripted double-click in the harness produces a `dup-ipc` anomaly whose `refs` point at the two `ipc.call` seqs; each rule has a unit test with a true-positive and a true-negative case; **a test asserts no rule reads a redaction ordinal** (§7.2). **§5.1 specifically:** (a) a synthetic stream of 50 normal `get_graph` results at 900 ms followed by one at 4 s fires **exactly one** `slow-command`; (b) the same 50 results at a *uniformly* high 900 ms fire **none** (large-repo non-firing test); (c) fewer than `MIN_SAMPLES` results fire nothing except the >10 s catch-all; (d) the rate limit caps repeats at 1 per cmd per 10 s; (e) a slow span dominated by `lane` fires `slow-phase{phase:'lane'}` referencing both seqs; (f) 5 spans with `cache:'redecorate'` and no mutation fire `cache-collapse`, and the same 5 *with* an intervening mutation fire nothing; (g) 3 spans with `queuedMs 150` in 5 s fire `queue-delay`; (h) baseline map stays at the 200-key cap |
 | 6 | **Metrics** — `obs/metrics.rs`, `metrics_file.rs`, `perf.rs` absorption, `metrics_snapshot`/`metrics_reset` + mock, **§8.1 `percentile_ms`/`mean_ms` + the derived `p50Ms`/`p95Ms` snapshot fields + folding `span` phase durations into the allow-listed `op.*` histogram keys** | no | durable local aggregates | counters survive restart; `.bak` recovery on a corrupt file; daily bucketing correct across a simulated date change; `perf` deltas appear as `perf.*`; test asserts `obs/` reaches no HTTP dependency and that no metric key is user-derived; **`metrics_reset` exists as a command and appears in no catalog row**. **§8.1:** (a) `percentile_ms` matches a brute-force reference within one bucket width on 10k synthetic samples; (b) 1M observations leave `usage.json` byte-size unchanged (no sample retention); (c) `p50Ms`/`p95Ms` appear on `metrics_snapshot()` output and are **absent** from `usage.json` on disk; (d) `op.graph.get.lane` accumulates from `span` phases across two days and the two days' `p95Ms` are independently comparable; (e) the histogram key set stays within the allow-list |
-| 7 | **Settings Dev page + `logs_delete_all`** — the `RollAndPurge` writer path + `logs_delete_all` command + mock, `LogSessionInfo.totalFiles/totalBytes`, catalog rows, `DevPage.tsx`, reveal/export/delete actions, raw-names confirm + warning, privacy statement | **yes** (ui-designer first) | user surface + purge | catalog parity test passes; toggling `dev.enabled` starts/stops writing **and deletes nothing**; enabling raw names confirms and starts a new file; export produces a zip of the session parts. **`logs_delete_all`:** (a) Dev mode OFF ⇒ every `*.jsonl` removed, `rolled:false`, `activeFile:null`; (b) **Dev mode ON ⇒ the writer rolls to a new file with an `afterPurge:true` header, every prior file (including the one just closed) is removed, `rolled:true`, `activeFile` names the new file, and logging continues with no lost record**; (c) `deletedFiles` / `deletedBytes` **exactly match** the files and byte sizes removed, asserted against a pre-seeded fixture directory; (d) a file made undeletable increments `failedFiles`, the command still returns `Ok`, and the UI shows the partial-result warning; (e) nothing outside `logs/` is touched (assert `metrics/` and `settings.json` survive); (f) the delete is confirm-gated and writes no record into the surviving file |
+| 7 | **Settings Dev page + `logs_delete_all`** — the `RollAndPurge` writer path + `logs_delete_all` command + mock, `LogSessionInfo.totalFiles/totalBytes` (+ export counts), catalog rows, `DevPage.tsx`, reveal/export/delete actions, raw-names confirm + warning, privacy statement | **yes** (ui-designer first) | user surface + purge | catalog parity test passes; toggling `dev.enabled` starts/stops writing **and deletes nothing**; enabling raw names confirms and starts a new file; export produces a zip of the session parts **in `exports/`**. **`logs_delete_all`:** (a) Dev mode OFF ⇒ every in-scope file removed, `rolled:false`, `activeFile:null`; (b) **Dev mode ON ⇒ the writer rolls to a new file with an `afterPurge:true` header, every prior file (including the one just closed) is removed, `rolled:true`, `activeFile` names the new file, and logging continues with no lost record**; (c) `deletedFiles` / `deletedBytes` **exactly match** the files and byte sizes removed, asserted against a pre-seeded fixture directory; (d) a file made undeletable increments `failedFiles`, the command still returns `Ok`, and the UI shows the partial-result warning; (e) nothing outside `logs/` and `exports/` is touched (assert `metrics/` and `settings.json` survive); (f) the delete is confirm-gated and writes no record into the surviving file. **§6.2:** (g) **export a session, then delete: the zip in `exports/` is gone**, `deletedExports` counts it, and its bytes are included in `deletedBytes`; (h) a `.zip` seeded into `logs/` is also removed; (i) a zip saved *outside* both directories survives and the confirm copy says so |
 
 Increments 4 and 7 require a `ui-designer` pass (`docs/contracts/P91-observability-ui.md`) before
 senior-dev.
@@ -970,17 +1062,17 @@ fixture produces a `slow-command` + `slow-phase` pair whose `refs` resolve to th
 budgets hold, incl. the sidebar record-count bound and the ≤1-span-per-operation bound; a real
 `logs/*.jsonl` from a `pnpm tauri dev` session is parsed line-by-line by a test asserting schema
 validity and **zero redaction violations** (regex scan for path separators, `@`, `http`, known token
-shapes, and any branch name present in the fixture repo).
+shapes, the session salt, and any branch name present in the fixture repo).
 
 **USER CHECKPOINT:** open a real repo in the native window with Dev mode ON, perform the actions
 that flicker (**including the sidebar interactions where flickering was observed**), then (a)
 "Reveal logs folder" opens the correct directory, (b) "Export session" produces a zip, (c) the user
 reads the exported JSONL and confirms it identifies the misbehaviour **and contains nothing they
 would not send to a third party**, (d) **"Delete all log files" with Dev mode still ON empties the
-folder down to one fresh file, the reported count/size look right, and logging visibly continues**,
-(e) with Dev mode OFF, graph scroll on a 20k-commit repo feels unchanged, (f) **on a large repo, an
-operation that feels slow produces a `span` record whose phases plausibly explain where the time
-went**.
+folder down to one fresh file — including the zip exported in step (b) — the reported count/size
+look right, and logging visibly continues**, (e) with Dev mode OFF, graph scroll on a 20k-commit
+repo feels unchanged, (f) **on a large repo, an operation that feels slow produces a `span` record
+whose phases plausibly explain where the time went**.
 
 ---
 
@@ -1003,8 +1095,12 @@ went**.
 | 13 | Cache-effectiveness rule | **DECIDED — `cache-collapse`**, driven by an optional `cache` field on the `graph.get` span emitted by `graph_cache.rs` (site-local knowledge, per §5's philosophy) and suppressed when a mutation occurred in the window | §3.1, §5.1, §12 inc. 5 |
 | 14 | Durable percentiles | **DECIDED — no new storage type.** The existing `Histogram` is the bounded summary; `percentile_ms()` derives p50/p95 from the frozen 8 buckets at snapshot time, and `p50Ms`/`p95Ms` are **derived, never persisted**. Phase durations fold into allow-listed `op.*` sub-keys so week-over-week regression is answerable per phase. Bucket boundaries are frozen — changing them would break existing `usage.json` files | §8.1, §11, §12 inc. 6 |
 | 15 | Interaction-latency (gesture → paint) | **DEFERRED — reason recorded.** Needs rAF-after-commit plumbing in all six surfaces and is unverifiable in the headless harness (0×0 pane ⇒ no rAF). The `gesture → ipc.result.ms → span.phases → render.tally → frame/jank-trace` chain already triangulates the motivating complaints. Revisit only if a real complaint resists that chain after increment 5 | §9.4 |
+| 16 | **§7.2 contradiction — ordinal scheme** (raised by senior-dev during increment 1) | **RESOLVED — keep salt-seeded counters; (a) and (b) hold, (c) cross-side agreement is STRUCK.** A counter cannot agree across sides (different first-sight order), and the only synchronous-mirrorable alternative, `FNV-1a-64(salt, value) → ordinal`, was **rejected on privacy grounds**: branch/tag/remote names are a small, guessable input space and FNV is not a PRF, so anyone with the salt could dictionary-attack every ordinal — while a counter leaks only first-sight order. A cryptographic keyed hash would restore secrecy but cannot be mirrored synchronously on the render path. **Mitigation for the "two different branches look identical" failure mode: frontend ordinals are `ui:`-prefixed**, so the namespaces are disjoint and conflation is impossible. Cross-side correlation uses `trace`/`span`/`seq` and `argsHash` — which every §5 rule already does; **no rule may read an ordinal**. `argsHash` stays salted FNV-1a-64 over raw canonical JSON (equality token only; the salt never leaves the process, and §6/§7.1 now forbid writing it to any file). **Increment 1's implementation stands — no reimplementation**; §12 inc. 1 tests are correct as written and must NOT assert (c) | §7.2, §7.1, §7.3, §6, §5, §12 inc. 1 & 2 & 5 |
+| 17 | **Export/delete privacy hole** (raised by senior-dev during increment 1) | **RESOLVED — both halves.** `log_export_session` defaulted its zip *into* `logs/`, whose purge scope was `*.jsonl` only, so "Delete all log files" reported success while a **`raw`-names** zip survived — defeating decision 7 outright. Fix: (1) exports default to `<app_config_dir>/exports/`, never `logs/`; (2) the purge scope widens to `logs/*.jsonl`, `logs/*.jsonl.tmp`, `logs/*.zip` and `exports/*.zip`. A zip the user deliberately saved into either app-managed directory **is** deleted — that is intended, the confirm dialog states counts and bytes first, and silently retaining a raw-names archive is the worse failure. Exports saved elsewhere are unreachable and are **not** deleted; the confirm copy and the export content statement must both say so, because claiming completeness the command cannot deliver is the same class of defect. Counts stay honest: export zips appear in `deletedFiles`/`deletedBytes` and are additionally broken out in the new optional `deletedExports` | §6, §6.1, §6.2, §7.1, §10, §12 inc. 1 & 7 |
 
 **Deferred follow-ups (explicitly out of P91):** app-wide React instrumentation beyond the six
 surfaces; the Statistics page and any UI for `metrics_reset`; selective/per-file log deletion (v1
 is all-or-nothing); **interaction-latency (gesture→paint) measurement (§9.4)**; **phase
-instrumentation of any operation beyond the three in §3.1.2** (e.g. fetch/push, blame, search).
+instrumentation of any operation beyond the three in §3.1.2** (e.g. fetch/push, blame, search);
+**deletion of exports the user saved outside Bonsai's config directory** (physically unreachable —
+§6.2 requires disclosing this, not solving it).
