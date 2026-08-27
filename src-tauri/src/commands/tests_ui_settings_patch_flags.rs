@@ -336,3 +336,53 @@ fn set_ui_settings_patch_graph_declutter_is_partial() {
         })
     );
 }
+
+/// P91 §10: `dev` is a WHOLE-STRUCT patch (the `autoFetch` precedent) with
+/// camelCase keys, it patches independently of its siblings, and an absent key
+/// leaves the persisted value alone. A pre-P91 settings blob (no `dev` key)
+/// loads Dev mode OFF with strict redaction.
+#[test]
+fn set_ui_settings_patch_dev_is_partial() {
+    let mut s = settings::Settings::default();
+    assert!(!s.dev.enabled, "Dev mode is off by default");
+    assert!(!s.dev.include_raw_names, "strict redaction by default");
+    assert_eq!(s.dev.level, crate::obs::record::LogLevel::Debug);
+
+    let patch: UiSettingsPatch = serde_json::from_str(
+        r#"{ "dev": { "enabled": true, "level": "trace", "captureIpc": false,
+                      "captureReact": true, "captureFrames": true,
+                      "includeRawNames": true } }"#,
+    )
+    .expect("dev patch");
+    apply_patch(&mut s, patch);
+    assert!(s.dev.enabled);
+    assert_eq!(s.dev.level, crate::obs::record::LogLevel::Trace);
+    assert!(!s.dev.capture_ipc);
+    assert!(s.dev.capture_frames);
+    assert!(s.dev.include_raw_names);
+    assert_eq!(s.theme, settings::ThemeChoice::Dark, "sibling untouched");
+
+    // An absent key leaves the whole struct unchanged.
+    let patch: UiSettingsPatch = serde_json::from_str(r#"{ "theme": "light" }"#).expect("patch");
+    apply_patch(&mut s, patch);
+    assert!(s.dev.enabled);
+    assert_eq!(s.dev.level, crate::obs::record::LogLevel::Trace);
+
+    // A partial `dev` object relies on the struct-level `#[serde(default)]`:
+    // omitted sub-fields load their defaults, never garbage.
+    let patch: UiSettingsPatch =
+        serde_json::from_str(r#"{ "dev": { "enabled": true } }"#).expect("partial dev");
+    apply_patch(&mut s, patch);
+    assert!(s.dev.enabled);
+    assert!(!s.dev.include_raw_names, "omitted sub-field takes its default");
+}
+
+/// P91 §10 back-compat: a settings.json written before P91 loads with Dev mode
+/// off — the additive `#[serde(default)]` promise, asserted rather than assumed.
+#[test]
+fn legacy_settings_without_dev_key_loads_dev_off() {
+    let s: settings::Settings =
+        serde_json::from_str(r#"{ "version": 1, "recentRepos": [] }"#).expect("legacy blob");
+    assert_eq!(s.dev, settings::DevSettings::default());
+    assert!(!s.dev.enabled);
+}

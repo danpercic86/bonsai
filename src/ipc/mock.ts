@@ -31,6 +31,7 @@ import { updateHandlers } from './mock/handlers/update';
 import { gitEnvHandlers } from './mock/handlers/gitEnv';
 import { externalHandlers } from './mock/handlers/external';
 import { forgeHandlers } from './mock/handlers/forge';
+import { obsHandlers } from './mock/handlers/obs';
 
 // Assembled from per-domain handler groups. Public surface unchanged: index.ts
 // still imports { mockIpc } from './mock'.
@@ -66,4 +67,5 @@ export const mockIpc: IpcApi = {
   ...gitEnvHandlers,
   ...externalHandlers,
   ...forgeHandlers,
+  ...obsHandlers,
 };

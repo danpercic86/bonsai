@@ -18,6 +18,7 @@ export * from './hooks';
 export * from './ipc-api';
 export * from './jobs';
 export * from './mcp';
+export * from './obs';
 export * from './remotes';
 export * from './safe-op';
 export * from './search';

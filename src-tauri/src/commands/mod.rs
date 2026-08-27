@@ -44,6 +44,7 @@ mod external;
 mod forge;
 mod forge_accounts;
 mod git_env;
+mod obs;
 
 #[cfg(test)]
 mod tests_support;
@@ -56,6 +57,9 @@ mod tests_branch_merge_guards;
 
 #[cfg(test)]
 mod tests_repo_isolation;
+
+#[cfg(test)]
+mod tests_obs;
 
 #[cfg(test)]
 mod tests_ui_settings_patch;
@@ -145,3 +149,4 @@ pub use external::*;
 pub use forge::*;
 pub use forge_accounts::*;
 pub use git_env::*;
+pub use obs::*;

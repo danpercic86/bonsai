@@ -234,6 +234,11 @@ pub struct Settings {
     pub ai_dock_height: u32,
     /// Persisted collapsed state of the AI activity dock (P68 §E).
     pub ai_dock_collapsed: bool,
+    /// P91 §10: Dev-mode / observability settings. Additive `#[serde(default)]`
+    /// (via the container-level `default`) — a pre-P91 settings.json loads
+    /// `DevSettings::default()` (Dev mode OFF, strict redaction). NOT clamped
+    /// (no numeric range). Whole-struct patch, like `auto_fetch`.
+    pub dev: DevSettings,
 }
 
 impl Default for Settings {
@@ -289,6 +294,7 @@ impl Default for Settings {
             ai_max_budget_usd: 0.0,
             ai_dock_height: AI_DOCK_HEIGHT_DEFAULT,
             ai_dock_collapsed: false,
+            dev: DevSettings::default(),
         }
     }
 }

@@ -257,3 +257,46 @@ impl Default for GraphPrefs {
         }
     }
 }
+
+/// P91 §10 — Dev-mode (observability) settings.
+///
+/// A NESTED struct on `Settings`, following the `auto_fetch` / `health_refresh`
+/// precedent exactly: it patches as a whole object, is additive
+/// `#[serde(default)]` (via the container-level `default` on `Settings` and the
+/// one on this struct), and a pre-P91 `settings.json` loads every field at its
+/// default — i.e. Dev mode OFF, strict redaction. NO version bump.
+///
+/// `enabled: false` is the shipped default and `include_raw_names: false` is a
+/// privacy default, not a preference: `raw` is the only mode that writes real
+/// repo/ref/path names to disk (§7.1) and it requires an explicit confirm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DevSettings {
+    /// Master gate. OFF ⇒ no sink, no writer thread, no file writes — and, per
+    /// §6 decision 4, **no deletion of anything already written**.
+    pub enabled: bool,
+    /// Capture threshold; `Trace` additionally force-enables frame capture (§5).
+    pub level: crate::obs::record::LogLevel,
+    /// ipc/event/channel records (§10).
+    pub capture_ipc: bool,
+    /// render/render.tally/effect/state records (§10).
+    pub capture_react: bool,
+    /// frame records — default OFF, high volume (§10).
+    pub capture_frames: bool,
+    /// `strict` → `raw` (§7). Toggling it starts a NEW log file so one file never
+    /// mixes redaction modes (§7.3).
+    pub include_raw_names: bool,
+}
+
+impl Default for DevSettings {
+    fn default() -> Self {
+        DevSettings {
+            enabled: false,
+            level: crate::obs::record::LogLevel::Debug,
+            capture_ipc: true,
+            capture_react: true,
+            capture_frames: false,
+            include_raw_names: false,
+        }
+    }
+}

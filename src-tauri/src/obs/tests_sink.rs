@@ -1,0 +1,220 @@
+//! P91 §6/§11 sink tests — zero loss on exit, non-blocking backpressure with a
+//! `drop` record, and the §6 decision-4 guarantee that stopping Dev mode deletes
+//! nothing.
+
+use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use super::record::{LogLevel, LogPayload, LogRecord, LogSource, RedactionMode};
+use super::sink::Sink;
+use super::writer::{list_log_files, LogWriter, Limits, WriterConfig};
+use super::ObsState;
+
+fn cfg(dir: &Path) -> WriterConfig {
+    WriterConfig {
+        dir: dir.to_path_buf(),
+        session_id: "sfeedface".into(),
+        started_secs: 1_787_839_391,
+        app_version: "1.5.0".into(),
+        os: "windows".into(),
+        level: LogLevel::Debug,
+        redaction: RedactionMode::Strict,
+        limits: Limits::default(),
+    }
+}
+
+fn rec(n: u64) -> LogRecord {
+    LogRecord {
+        seq: 0,
+        ts: 1_787_839_391_000,
+        mono: n,
+        src: LogSource::Ui,
+        lvl: LogLevel::Debug,
+        trace: None,
+        span: None,
+        caused_by: None,
+        payload: LogPayload::Gesture {
+            origin: "click".into(),
+            gesture: format!("test.{n}"),
+        },
+    }
+}
+
+fn all_lines(dir: &Path) -> Vec<serde_json::Value> {
+    let mut out = Vec::new();
+    for (name, _) in list_log_files(dir) {
+        let text = std::fs::read_to_string(dir.join(name)).expect("read log part");
+        for line in text.lines() {
+            out.push(serde_json::from_str(line).expect("valid JSON line"));
+        }
+    }
+    out
+}
+
+/// §12 row 1: "exit flush loses 0 records".
+#[test]
+fn shutdown_flushes_every_accepted_record() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let sink = Sink::start(cfg(dir.path())).expect("start");
+    for i in 0..500 {
+        sink.enqueue(rec(i));
+    }
+    assert_eq!(sink.dropped(), 0, "500 records fit the 4096-deep queue");
+    sink.shutdown();
+
+    let rows = all_lines(dir.path());
+    assert_eq!(rows.len(), 501, "one session header + 500 records");
+    assert_eq!(rows[0]["kind"], "session");
+    // seq is dense and monotonic — the ordering guarantee of §3.
+    for (i, row) in rows.iter().enumerate() {
+        assert_eq!(row["seq"], (i as u64) + 1);
+    }
+    for i in 0..500u64 {
+        assert_eq!(rows[(i as usize) + 1]["gesture"], format!("test.{i}"));
+    }
+}
+
+/// §11: "never blocks a caller (bounded `try_send`)". Producers must return
+/// immediately and every record must be either written or counted — never
+/// silently lost and never waited on.
+#[test]
+fn producers_never_block_and_overflow_is_accounted_for() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let sink = Sink::start(cfg(dir.path())).expect("start");
+    const N: u64 = 40_000;
+    let start = std::time::Instant::now();
+    for i in 0..N {
+        sink.enqueue(rec(i));
+    }
+    let elapsed = start.elapsed();
+    assert_eq!(
+        sink.accepted() + sink.dropped(),
+        N,
+        "every record is either queued or counted as dropped"
+    );
+    assert!(
+        elapsed < std::time::Duration::from_secs(20),
+        "enqueue applied backpressure to the caller: {elapsed:?}"
+    );
+    sink.shutdown();
+
+    let rows = all_lines(dir.path());
+    let dropped_total: u64 = rows
+        .iter()
+        .filter(|r| r["kind"] == "drop")
+        .map(|r| r["dropped"].as_u64().unwrap_or(0))
+        .sum();
+    assert_eq!(
+        dropped_total,
+        sink.dropped(),
+        "every dropped record is reported by a `drop` record"
+    );
+}
+
+/// The `drop` record itself, driven deterministically (a live sink may or may
+/// not overflow depending on the machine, so the mechanism is tested directly).
+#[test]
+fn drop_records_report_the_backpressure_gap() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut w = LogWriter::open(cfg(dir.path()), std::sync::Arc::new(super::redact::Redactor::with_salt([3; 16]))).expect("open");
+    let name = w.active_file().to_string();
+    w.write_record(rec(1)).expect("write");
+    let dropped = AtomicU64::new(7);
+    let mut reported = 0;
+    super::sink::emit_pending_drops(&mut w, &dropped, &mut reported);
+    // Nothing new to report the second time — no duplicate record.
+    super::sink::emit_pending_drops(&mut w, &dropped, &mut reported);
+    dropped.store(9, Ordering::Relaxed);
+    super::sink::emit_pending_drops(&mut w, &dropped, &mut reported);
+    w.flush().expect("flush");
+    drop(w);
+
+    let text = std::fs::read_to_string(dir.path().join(name)).expect("read");
+    let drops: Vec<serde_json::Value> = text
+        .lines()
+        .map(|l| serde_json::from_str::<serde_json::Value>(l).expect("json"))
+        .filter(|r| r["kind"] == "drop")
+        .collect();
+    assert_eq!(drops.len(), 2, "one record per reporting gap: {drops:?}");
+    assert_eq!(drops[0]["dropped"], 7);
+    assert_eq!(drops[0]["sinceSeq"], 2, "the last seq written before the gap");
+    assert_eq!(drops[1]["dropped"], 2);
+}
+
+/// §6 decision 4 + §12 row 1: "turning Dev mode off deletes no file".
+#[test]
+fn stopping_the_sink_deletes_nothing() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // A file from an EARLIER session, plus a non-log sibling.
+    std::fs::write(
+        dir.path().join("bonsai-2026-08-01T10-00-00-s00000001.jsonl"),
+        "{}\n",
+    )
+    .expect("seed");
+    std::fs::write(dir.path().join("settings-like.json"), "{}").expect("seed");
+
+    let state = ObsState::from_sink(Sink::start(cfg(dir.path())).expect("start"));
+    for i in 0..10 {
+        state.sink().expect("sink").enqueue(rec(i));
+    }
+    super::stop(&state);
+
+    assert!(!state.is_enabled(), "the session is closed");
+    let left = list_log_files(dir.path());
+    assert_eq!(left.len(), 2, "both log files survive: {left:?}");
+    assert!(dir.path().join("settings-like.json").exists());
+    // And the just-closed session kept its records (flushed, not truncated).
+    let rows = all_lines(dir.path());
+    assert_eq!(rows.iter().filter(|r| r["kind"] == "gesture").count(), 10);
+}
+
+/// §7.2 / §12 row 1 — **the salt is never written to any file or export.**
+///
+/// It is the one secret in the system: it seeds the ordinal counters and the
+/// `argsHash`, so a salt on disk next to the file it protects would make both
+/// mechanisms decorative. The test writes records that deliberately CONTAIN the
+/// salt (a hostile/buggy producer echoing it back) and then greps every byte the
+/// session produced, log parts and export zip alike.
+#[test]
+fn the_session_salt_never_reaches_disk() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let logs = dir.path().join("logs");
+    let exports = dir.path().join("exports");
+    std::fs::create_dir_all(&logs).expect("logs dir");
+
+    let mut c = cfg(&logs);
+    c.dir.clone_from(&logs);
+    let sink = Sink::start(c).expect("start");
+    let salt = sink.redactor().salt_hex();
+    assert_eq!(salt.len(), 32);
+
+    for i in 0..5 {
+        sink.enqueue(rec(i));
+    }
+    // A record whose payload echoes the salt back at us.
+    sink.enqueue(LogRecord {
+        payload: LogPayload::Gesture {
+            origin: "click".into(),
+            gesture: format!("echo.{salt}"),
+        },
+        ..rec(99)
+    });
+    sink.shutdown();
+
+    crate::commands::export_session(&logs, &exports, None, None).expect("export");
+
+    let mut scanned = 0usize;
+    for dir in [&logs, &exports] {
+        for entry in std::fs::read_dir(dir).expect("read dir").flatten() {
+            let bytes = std::fs::read(entry.path()).expect("read file");
+            let text = String::from_utf8_lossy(&bytes);
+            assert!(
+                !text.contains(&salt),
+                "the session salt reached {:?}",
+                entry.path()
+            );
+            scanned += 1;
+        }
+    }
+    assert!(scanned >= 2, "the scan must cover a log part and the zip");
+}

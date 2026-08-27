@@ -70,6 +70,9 @@ pub struct UiSettings {
     pub ai_max_budget_usd: f64,
     pub ai_dock_height: u32,
     pub ai_dock_collapsed: bool,
+    /// P91 §10: Dev-mode / observability settings (whole-struct, like
+    /// `auto_fetch`).
+    pub dev: DevSettings,
 }
 
 /// Partial patch for `set_ui_settings` — only `Some(..)` fields are applied
@@ -144,6 +147,10 @@ pub struct UiSettingsPatch {
     pub ai_max_budget_usd: Option<f64>,
     pub ai_dock_height: Option<u32>,
     pub ai_dock_collapsed: Option<bool>,
+    /// P91 §10: whole-struct patch — the frontend sends the entire `dev` object
+    /// when any sub-field changes (the `auto_fetch` / `health_refresh`
+    /// precedent). NOT clamped: no field has a numeric range.
+    pub dev: Option<DevSettings>,
 }
 
 /// Distinguishes an ABSENT patch key (don't touch) from an explicit `null`
@@ -272,6 +279,11 @@ pub(crate) fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     if let Some(v) = patch.ai_dock_collapsed {
         s.ai_dock_collapsed = v;
     }
+    // P91 §10: whole-struct, unclamped. The sink is (re)started by the caller
+    // AFTER the save, never here — `apply_patch` is pure by contract.
+    if let Some(dev) = patch.dev {
+        s.dev = dev;
+    }
     clamp_ai_settings(s);
 }
 
@@ -322,6 +334,7 @@ pub(crate) fn ui_settings_of(s: &settings::Settings) -> UiSettings {
         ai_max_budget_usd: s.ai_max_budget_usd,
         ai_dock_height: s.ai_dock_height,
         ai_dock_collapsed: s.ai_dock_collapsed,
+        dev: s.dev,
     }
 }
 
@@ -364,6 +377,25 @@ pub async fn set_ui_settings(
             health_refresh: ui.health_refresh,
         },
     );
+    // P91 §10: Dev mode takes effect IMMEDIATELY (no restart) — start, stop or
+    // restart the sink to match what was just persisted. `spawn_blocking`
+    // because it opens a file and prunes the folder; the `AppHandle` (not a
+    // `State` borrow) is what lets that work off-thread. A failure here is
+    // NON-FATAL and must not undo a saved setting: the user's preference is
+    // stored, the UI reports the state via `log_session_info`, and the next
+    // toggle retries.
+    let obs_handle = app.clone();
+    let dev = ui.dev;
+    if let Err(e) = tauri::async_runtime::spawn_blocking(move || {
+        use tauri::Manager;
+        let obs_state = obs_handle.state::<crate::obs::ObsState>();
+        crate::obs::apply_dev_settings(&obs_handle, &obs_state, &dev)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    {
+        eprintln!("bonsai: cannot apply dev-mode logging settings (non-fatal): {e}");
+    }
     Ok(ui)
 }
 

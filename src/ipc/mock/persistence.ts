@@ -2,7 +2,16 @@
 import { AUTO_FETCH_INTERVAL_MAX, AUTO_FETCH_INTERVAL_MIN, AVATAR_RADIUS_MAX, AVATAR_RADIUS_MIN, HEALTH_REFRESH_INTERVAL_MAX, HEALTH_REFRESH_INTERVAL_MIN, LANE_WIDTH_MAX, LANE_WIDTH_MIN, ROW_HEIGHT_MAX, ROW_HEIGHT_MIN } from '../../settings/ranges';
 import { DEFAULT_UI_SETTINGS as PRODUCTION_DEFAULT_UI_SETTINGS } from '../../settings/defaults';
 import { parseAiRunSettings } from './aiRunSettings';
-import type { AiAutonomy, AutoFetchSettings, GraphColorMode, GraphDateBasis, GraphPrefs, GraphRefFilter, GraphSeason, GraphStyle, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, PanelDensity, PrimaryCommitAction, ProfileColor, RecentRepo, SessionState, Theme, UiSettings } from '../types';
+import type { AiAutonomy, AutoFetchSettings, DevSettings, GraphColorMode, GraphDateBasis, GraphPrefs, GraphRefFilter, GraphSeason, GraphStyle, HealthRefreshSettings, IdentityProfile, ListView, LogLevel, PaneWidths, PanelDensity, PrimaryCommitAction, ProfileColor, RecentRepo, SessionState, Theme, UiSettings } from '../types';
+
+/** P91 §3: the closed log-level set (mirrors Rust `LogLevel`). */
+const LOG_LEVELS: ReadonlySet<string> = new Set<LogLevel>([
+  'error',
+  'warn',
+  'info',
+  'debug',
+  'trace',
+]);
 
 /** Spec-002: closed enum guards for the two additive graph-theme prefs. */
 const GRAPH_SEASONS: ReadonlySet<string> = new Set<GraphSeason>(['living', 'spring', 'autumn']);
@@ -214,6 +223,27 @@ export function sanitizeGraphRefFilter(raw: unknown): GraphRefFilter | null {
   return { mode, refs: refs.filter((r): r is string => typeof r === 'string') };
 }
 
+/** P91 §10: shape-check a persisted `dev` object. Every field falls back to the
+ *  production default independently (mirrors the Rust per-field
+ *  `#[serde(default)]`), so a pre-P91 blob, a missing key or a garbled object all
+ *  read back as Dev mode OFF with strict redaction — never a partial struct and
+ *  never a throw. Pure. */
+export function sanitizeDevSettings(raw: unknown): DevSettings {
+  const d = (typeof raw === 'object' && raw !== null ? raw : {}) as Partial<DevSettings>;
+  const fallback = DEFAULT_UI_SETTINGS.dev;
+  const level: LogLevel =
+    typeof d.level === 'string' && LOG_LEVELS.has(d.level) ? (d.level as LogLevel) : fallback.level;
+  return {
+    enabled: typeof d.enabled === 'boolean' ? d.enabled : fallback.enabled,
+    level,
+    captureIpc: typeof d.captureIpc === 'boolean' ? d.captureIpc : fallback.captureIpc,
+    captureReact: typeof d.captureReact === 'boolean' ? d.captureReact : fallback.captureReact,
+    captureFrames: typeof d.captureFrames === 'boolean' ? d.captureFrames : fallback.captureFrames,
+    includeRawNames:
+      typeof d.includeRawNames === 'boolean' ? d.includeRawNames : fallback.includeRawNames,
+  };
+}
+
 /** Corrupt/missing storage degrades to the default — mirrors load_from. */
 export function readUiSettings(): UiSettings {
   try {
@@ -365,6 +395,10 @@ export function readUiSettings(): UiSettings {
     // P68 §8.3 (additive, like the P13 AI fields): per-field tolerant parse +
     // the clamp mirror; a pre-P68 blob loads every default.
     const aiRun = parseAiRunSettings(parsed);
+    // P91 §10 (additive, like autoFetch/healthRefresh): per-field tolerant parse
+    // so a pre-P91 blob — or a garbled `dev` object — reads back as Dev mode OFF
+    // with strict redaction rather than throwing or minting a partial struct.
+    const dev = sanitizeDevSettings(parsed.dev);
     return {
       theme,
       paneWidths,
@@ -391,6 +425,7 @@ export function readUiSettings(): UiSettings {
       profiles,
       terminalCommand,
       editorCommand,
+      dev,
       ...aiRun,
     };
   } catch {

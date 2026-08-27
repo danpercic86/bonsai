@@ -130,6 +130,8 @@ export interface UiSettings {
   aiDockHeight: number;
   /** Dock starts collapsed (header only). Default false. */
   aiDockCollapsed: boolean;
+  /** P91 §10: Dev-mode / observability settings (whole-struct, like autoFetch). */
+  dev: DevSettings;
 }
 
 export interface UiSettingsPatch {
@@ -187,4 +189,36 @@ export interface UiSettingsPatch {
   aiMaxBudgetUsd?: number;
   aiDockHeight?: number;
   aiDockCollapsed?: boolean;
+  /** P91 §10: whole-struct patch (the autoFetch precedent). */
+  dev?: DevSettings;
+}
+
+/** P91 §3: log verbosity — also the Dev-mode capture threshold. Mirrors Rust
+ *  `LogLevel` (lowercase on the wire). `'trace'` force-enables frame capture. */
+export type LogLevel = 'error' | 'warn' | 'info' | 'debug' | 'trace';
+
+/** P91 §7: redaction mode of a whole log FILE. A file never mixes modes —
+ *  toggling `includeRawNames` starts a new file. Mirrors Rust `RedactionMode`. */
+export type RedactionMode = 'strict' | 'raw';
+
+/** P91 §10: Dev-mode (observability) settings.
+ *
+ *  A nested, whole-struct patch like `autoFetch` / `healthRefresh`: the frontend
+ *  sends the ENTIRE object when any sub-field changes. Mirrors Rust
+ *  `DevSettings`; every field is required here because Rust always serializes
+ *  the whole struct (the defaults oracle pins it). */
+export interface DevSettings {
+  /** Master gate; default false. OFF ⇒ nothing is captured and, per §6, nothing
+   *  already written is deleted. */
+  enabled: boolean;
+  /** Capture threshold; default 'debug'. */
+  level: LogLevel;
+  /** ipc/event/channel records; default true. */
+  captureIpc: boolean;
+  /** render/render.tally/effect/state records; default true. */
+  captureReact: boolean;
+  /** frame records; default false (high volume). */
+  captureFrames: boolean;
+  /** `strict` → `raw` (§7). Default false; confirm-gated, starts a new file. */
+  includeRawNames: boolean;
 }

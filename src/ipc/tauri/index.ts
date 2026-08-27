@@ -20,6 +20,7 @@ import { mcpCommands } from './mcp';
 import { appCommands } from './app';
 import { updateCommands } from './update';
 import { forgeCommands } from './forge';
+import { obsCommands } from './obs';
 
 // Real-Tauri IPC surface. Split by concern (P-refactor); the render/app code
 // imports `tauriIpc` from `../ipc/tauri` unchanged — this barrel composes the
@@ -46,4 +47,5 @@ export const tauriIpc: IpcApi = {
   ...appCommands,
   ...updateCommands,
   ...forgeCommands,
+  ...obsCommands,
 };

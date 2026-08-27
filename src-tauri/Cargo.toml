@@ -30,6 +30,10 @@ axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
 rand = "0.9"
 subtle = "2"
+# P91 §10 `log_export_session`: zips the session parts for the user to send.
+# Pure Rust (no C), already in Cargo.lock as a transitive dep, and only the
+# flate2 deflate codec is enabled — no AES, no bzip2, no zstd.
+zip = { version = "4", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 # The macOS universal build cross-compiles an x86_64 slice from the arm64 CI
 # runner. git2's https/ssh stack (libgit2-sys + libssh2-sys) links native

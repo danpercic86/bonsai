@@ -122,6 +122,10 @@ export const sessionHandlers = {
       profiles: patch.profiles ?? current.profiles,
       terminalCommand: patch.terminalCommand ?? current.terminalCommand,
       editorCommand: patch.editorCommand ?? current.editorCommand,
+      // P91 §10: whole-struct patch (mirrors Rust `apply_patch`); the harness
+      // sink is (re)started from the merged value, exactly as Rust restarts the
+      // real sink after the save.
+      dev: patch.dev ?? current.dev,
       // P68 §8.3: each of the ten AI-run knobs patches independently of
       // graph/listView/panelDensity, then the whole slice is clamped on write
       // (mirrors apply_patch → clamp_ai_settings).

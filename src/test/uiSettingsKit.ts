@@ -73,6 +73,16 @@ export const HYDRATED: UiSettings = {
   aiMaxBudgetUsd: 3,
   aiDockHeight: 320,
   aiDockCollapsed: true,
+  // P91 §10: every sub-field differs from `DevSettings::default()` so hydration
+  // of the nested struct cannot pass vacuously.
+  dev: {
+    enabled: true,
+    level: 'trace',
+    captureIpc: false,
+    captureReact: false,
+    captureFrames: true,
+    includeRawNames: true,
+  },
 };
 
 /** A graph patch that differs from the hook's defaults in a few knobs. */

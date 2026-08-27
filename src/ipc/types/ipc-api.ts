@@ -8,7 +8,7 @@ import type { ConfigLevelArg, ConfigView } from './config';
 import type { ConflictEntry, ConflictFile, ConflictResolution } from './conflict';
 import type { CommitDiff, CompareDiff, FileDiff, ImageDiff, ImageDiffRequest, LineSelection } from './diff';
 import type { PrDescription } from './forge';
-import type { IpcApiForge } from './ipc-api-forge';
+import type { IpcApiForge } from './ipc-api-forge'; import type { IpcApiObs } from './ipc-api-obs';
 import type { GraphChunk, GraphFilter, GraphLayout } from './graph';
 import type { RepoHealth } from './health';
 import type { RepoHooksDisclosure } from './hooks';
@@ -26,7 +26,7 @@ import type { SubmoduleDeinitOutcome, SubmoduleInfo, SubmoduleRemoveOutcome } fr
 import type { UpdateCheckResult, UpdateProgress } from './update';
 import type { CopyCandidate, CopyPlanEntry, CopySelection, WorktreeInfo } from './worktree';
 
-export interface IpcApi extends IpcApiForge {
+export interface IpcApi extends IpcApiForge, IpcApiObs {
   /** Open (or focus) a repo. Returns the canonical `repoId` + info. A usable
    *  repo (isRepo && !bare) creates/refreshes a keyed entry; re-opening an
    *  already-open path focuses it (same `repoId`, no reset). Rejects {@link AppError}. */

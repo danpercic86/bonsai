@@ -1,0 +1,267 @@
+//! P91 §6 — the bounded sink: a `sync_channel(4096)` feeding one dedicated
+//! writer thread.
+//!
+//! ONE concern: getting a record from any thread to the writer **without ever
+//! blocking the caller**. Every producer uses `try_send`; a full channel bumps a
+//! drop counter and returns immediately, and the writer emits one `drop` record
+//! (§3) when it drains. No lock is held across a write, and the git and UI paths
+//! never wait on IO.
+//!
+//! Shutdown is a HANDSHAKE, not a bare `join`: `Shutdown` carries a reply channel,
+//! the writer flushes and acks, and only then is the thread joined. The 2 s §6
+//! budget covers the WHOLE handshake — the enqueue of the shutdown message as
+//! well as the wait for the ack — and on expiry the writer is detached rather
+//! than joined. That is what makes "a wedged writer cannot hang application exit"
+//! literally true on the main thread, while a healthy writer still provably
+//! loses zero records.
+
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TrySendError};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use bonsai_core::error::AppError;
+
+use super::record::{LogLevel, LogPayload, LogRecord, LogSource, RedactionMode};
+use super::redact::Redactor;
+use super::writer::{now_ms, LogWriter, WriterConfig};
+
+/// Bounded queue depth (§6).
+pub const CHANNEL_CAPACITY: usize = 4096;
+/// Idle flush cadence (§6).
+pub const FLUSH_INTERVAL: Duration = Duration::from_secs(1);
+/// Budget for the exit handshake (§6).
+pub const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+
+enum SinkMsg {
+    /// Boxed: the enum's size is otherwise the largest payload variant, and this
+    /// value is copied into the channel on every single record.
+    Record(Box<LogRecord>),
+    Flush,
+    Shutdown(SyncSender<()>),
+}
+
+/// A live logging session: the writer thread plus everything the commands need
+/// to describe it.
+///
+/// The [`Redactor`] lives HERE, not in the writer, so a future `RollAndPurge`
+/// (§6.1) keeps the session's ordinals across the new file — `ref#3` stays
+/// `ref#3` after a purge, exactly as §7.2 requires.
+pub struct Sink {
+    tx: SyncSender<SinkMsg>,
+    dropped: Arc<AtomicU64>,
+    join: Mutex<Option<std::thread::JoinHandle<()>>>,
+    redactor: Arc<Redactor>,
+    session_id: String,
+    started_ms: i64,
+    dir: std::path::PathBuf,
+    redaction: RedactionMode,
+    level: LogLevel,
+    /// Records accepted by the channel (a lower bound on records written).
+    accepted: AtomicU64,
+}
+
+impl Sink {
+    /// Opens the session file and starts the writer thread. Any IO failure is
+    /// returned rather than swallowed — the caller surfaces it to the UI.
+    pub fn start(cfg: WriterConfig) -> Result<Sink, AppError> {
+        let session_id = cfg.session_id.clone();
+        let dir = cfg.dir.clone();
+        let redaction = cfg.redaction;
+        let level = cfg.level;
+        // Open BEFORE spawning so a bad directory/permission is reported to the
+        // caller instead of dying silently on a detached thread.
+        let redactor = Arc::new(Redactor::new());
+        let writer = LogWriter::open(cfg, Arc::clone(&redactor))?;
+        let (tx, rx) = sync_channel::<SinkMsg>(CHANNEL_CAPACITY);
+        let dropped = Arc::new(AtomicU64::new(0));
+        let thread_dropped = Arc::clone(&dropped);
+        let join = std::thread::Builder::new()
+            .name("bonsai-obs-writer".into())
+            .spawn(move || writer_loop(writer, rx, thread_dropped))
+            .map_err(|e| AppError::Other(format!("cannot start log writer thread: {e}")))?;
+        Ok(Sink {
+            tx,
+            dropped,
+            join: Mutex::new(Some(join)),
+            redactor,
+            session_id,
+            started_ms: now_ms(),
+            dir,
+            redaction,
+            level,
+            accepted: AtomicU64::new(0),
+        })
+    }
+
+    pub fn redactor(&self) -> &Arc<Redactor> {
+        &self.redactor
+    }
+
+    pub fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
+    pub fn dir(&self) -> &std::path::Path {
+        &self.dir
+    }
+
+    pub fn redaction(&self) -> RedactionMode {
+        self.redaction
+    }
+
+    pub fn level(&self) -> LogLevel {
+        self.level
+    }
+
+    pub fn dropped(&self) -> u64 {
+        self.dropped.load(Ordering::Relaxed)
+    }
+
+    pub fn accepted(&self) -> u64 {
+        self.accepted.load(Ordering::Relaxed)
+    }
+
+    /// NEVER blocks. A full queue costs one atomic increment and the record is
+    /// gone — accounted for by the `drop` record the writer emits (§6).
+    pub fn enqueue(&self, rec: LogRecord) {
+        match self.tx.try_send(SinkMsg::Record(Box::new(rec))) {
+            Ok(()) => {
+                self.accepted.fetch_add(1, Ordering::Relaxed);
+            }
+            Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => {
+                self.dropped.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// Best-effort explicit flush (window blur, `log_session_info`). Also
+    /// non-blocking: the writer flushes on its own 1 s cadence regardless.
+    pub fn request_flush(&self) {
+        let _ = self.tx.try_send(SinkMsg::Flush);
+    }
+
+    /// Flush-and-stop handshake (§6). Blocks the CALLER for at most
+    /// `SHUTDOWN_TIMEOUT`; only ever called from `spawn_blocking` or the exit hook.
+    pub fn shutdown(&self) {
+        let deadline = std::time::Instant::now() + SHUTDOWN_TIMEOUT;
+        let (ack_tx, ack_rx) = sync_channel::<()>(1);
+
+        // The ENTIRE handshake is budgeted, send included. A blocking `send`
+        // would wait for a writer wedged mid-`write_all` (full disk, network
+        // drive, an AV scanner holding the handle) — and this runs on the MAIN
+        // thread from `RunEvent::ExitRequested`, so that would hang app exit.
+        // A dropped log tail is an acceptable price; a frozen window is not.
+        let mut msg = SinkMsg::Shutdown(ack_tx);
+        let mut sent = false;
+        while std::time::Instant::now() < deadline {
+            match self.tx.try_send(msg) {
+                Ok(()) => {
+                    sent = true;
+                    break;
+                }
+                Err(TrySendError::Full(returned)) => {
+                    msg = returned;
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                // Writer already gone: nothing to hand off, nothing to wait for.
+                Err(TrySendError::Disconnected(_)) => return,
+            }
+        }
+        if !sent {
+            return;
+        }
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if ack_rx.recv_timeout(remaining).is_err() {
+            // No ack inside the budget ⇒ the writer is wedged. DETACH rather than
+            // join: the handle stays in place, the thread dies with the process,
+            // and exit proceeds.
+            return;
+        }
+        let handle = self
+            .join
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        if let Some(h) = handle {
+            // The ack already proves the flush completed, so this join returns
+            // immediately.
+            let _ = h.join();
+        }
+    }
+}
+
+impl Drop for Sink {
+    fn drop(&mut self) {
+        // Runs on whatever thread releases the last `Arc` — which, via
+        // `ObsState`, can be the main thread. [`Sink::shutdown`] is fully
+        // budgeted for exactly that reason.
+        self.shutdown();
+    }
+}
+
+/// The writer thread. Owns the file exclusively; assigns `seq` in write order.
+fn writer_loop(mut writer: LogWriter, rx: Receiver<SinkMsg>, dropped: Arc<AtomicU64>) {
+    let mut reported_drops: u64 = 0;
+    loop {
+        match rx.recv_timeout(FLUSH_INTERVAL) {
+            Ok(SinkMsg::Record(rec)) => {
+                emit_pending_drops(&mut writer, &dropped, &mut reported_drops);
+                // A write failure (disk full, folder deleted underneath us) must
+                // not kill the thread: the next record may well succeed, and a
+                // dead writer would silently stop all logging.
+                let _ = writer.write_record(*rec);
+            }
+            Ok(SinkMsg::Flush) => {
+                let _ = writer.flush();
+            }
+            Ok(SinkMsg::Shutdown(ack)) => {
+                emit_pending_drops(&mut writer, &dropped, &mut reported_drops);
+                let _ = writer.flush();
+                let _ = ack.send(());
+                return;
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                emit_pending_drops(&mut writer, &dropped, &mut reported_drops);
+                let _ = writer.flush();
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                let _ = writer.flush();
+                return;
+            }
+        }
+    }
+}
+
+/// Emits ONE `drop` record covering everything backpressure discarded since the
+/// last report (§3 `DropPayload`), so a storm costs one line, not thousands.
+pub(super) fn emit_pending_drops(writer: &mut LogWriter, dropped: &AtomicU64, reported: &mut u64) {
+    let total = dropped.load(Ordering::Relaxed);
+    if total <= *reported {
+        return;
+    }
+    let since_seq = writer.seq();
+    let delta = total - *reported;
+    *reported = total;
+    let _ = writer.write_record(LogRecord {
+        seq: 0,
+        ts: now_ms(),
+        mono: 0,
+        src: LogSource::Rust,
+        lvl: LogLevel::Error,
+        trace: None,
+        span: None,
+        caused_by: None,
+        payload: LogPayload::Drop {
+            dropped: delta,
+            since_seq,
+        },
+    });
+}
+
+impl Sink {
+    /// Ms since session start, for records minted on the Rust side.
+    pub fn mono(&self) -> u64 {
+        (now_ms() - self.started_ms).max(0) as u64
+    }
+}

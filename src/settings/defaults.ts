@@ -106,6 +106,17 @@ const DEFAULTS: UiSettings = {
   aiMaxBudgetUsd: 0,
   aiDockHeight: 180,
   aiDockCollapsed: false,
+  /** P91 §10: Dev mode is OFF and redaction is STRICT out of the box. Both are
+   *  privacy defaults rather than preferences — `includeRawNames` is the only
+   *  mode that writes real repo/ref/path names to disk, and it is confirm-gated. */
+  dev: {
+    enabled: false,
+    level: 'debug',
+    captureIpc: true,
+    captureReact: true,
+    captureFrames: false,
+    includeRawNames: false,
+  },
 };
 
 for (const nested of [
@@ -114,6 +125,7 @@ for (const nested of [
   DEFAULTS.healthRefresh,
   DEFAULTS.graph,
   DEFAULTS.profiles,
+  DEFAULTS.dev,
 ]) {
   Object.freeze(nested);
 }

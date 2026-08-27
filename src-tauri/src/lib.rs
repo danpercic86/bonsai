@@ -12,6 +12,7 @@ mod bundle_config_tests;
 #[path = "settings_defaults_parity_tests.rs"]
 mod settings_defaults_parity_tests;
 pub mod graph_cache;
+pub mod obs;
 pub mod perf;
 pub mod repo_handle;
 pub mod scheduler;
@@ -58,6 +59,9 @@ pub fn run() {
         // aborted from JS. Cleared on exit below.
         .manage(bonsai_core::ai::AiRunRegistry::default())
         .manage(scheduler::SchedulerState::default())
+        // P91 §1: the observability sink. `None` until Dev mode is enabled — with
+        // Dev mode off there is no writer thread and no allocation at all.
+        .manage(obs::ObsState::default())
         .setup(|app| {
             // P30: seed the scheduler config from persisted settings, then
             // start the ONE global tick loop (D2). Settings-load failure is
@@ -85,6 +89,16 @@ pub fn run() {
                     // correct (read or write) tool set — no separate write-gate call
                     // needed. Start failure (e.g. the persisted port is busy) is
                     // non-fatal: log and continue so the app still launches.
+                    // P91 §10: restore Dev-mode logging across a restart. The
+                    // flag was persisted; without this the user would have to
+                    // re-toggle it every launch. Failure is non-fatal — the app
+                    // must still start when the log folder is unwritable.
+                    if s.dev.enabled {
+                        let obs_state = app.state::<obs::ObsState>();
+                        if let Err(e) = obs::apply_dev_settings(&handle, &obs_state, &s.dev) {
+                            eprintln!("bonsai: cannot start dev-mode logging (non-fatal): {e}");
+                        }
+                    }
                     if s.mcp_enabled {
                         let mcp_handle = app.handle().clone();
                         tauri::async_runtime::spawn(async move {
@@ -292,7 +306,11 @@ pub fn run() {
             commands::get_repo_hooks_disclosure,
             commands::ack_repo_hooks,
             commands::debug_perf_counters,
-            commands::debug_reset_perf_counters
+            commands::debug_reset_perf_counters,
+            commands::log_append,
+            commands::log_session_info,
+            commands::log_reveal_dir,
+            commands::log_export_session
         ])
         .build(tauri::generate_context!())
         .expect("error while running Bonsai")
@@ -306,6 +324,9 @@ pub fn run() {
                 // without this a `claude` child (and the node process behind the
                 // npm shim) could outlive the window indefinitely.
                 app.state::<bonsai_core::ai::AiRunRegistry>().cancel_all();
+                // P91 §6: flush-and-join the log writer (2 s handshake) so a
+                // clean exit loses ZERO records. A no-op when Dev mode is off.
+                obs::shutdown_on_exit(&app.state::<obs::ObsState>());
             }
         });
 }
