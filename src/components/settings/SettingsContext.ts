@@ -55,10 +55,26 @@ export type SettingsPersistedValues = Pick<
   | 'profiles'
   | 'terminalCommand'
   | 'editorCommand'
-> & {
-  /** The eight AI-run knobs, threaded whole (the `graph`/`autoFetch` idiom). */
-  aiRun: AiRunPrefs;
-};
+> &
+  /** Spec-002: optional in `UiSettings` (frontend-only, absent from the Rust
+   *  oracle), but the adapter resolves them to concrete defaults, so the pages
+   *  read them non-optional. `Required<Pick<…>>` keeps a rename a compile error. */
+  /** Spec-003: same optional-in-UiSettings, resolved-by-the-adapter treatment. */
+  Required<
+    Pick<
+      UiSettings,
+      | 'graphStyle'
+      | 'graphSeason'
+      | 'graphFirstParent'
+      | 'graphFoldLinear'
+      | 'graphMinimapAlwaysShow'
+      | 'graphColorMode'
+      | 'graphRefFilter'
+    >
+  > & {
+    /** The eight AI-run knobs, threaded whole (the `graph`/`autoFetch` idiom). */
+    aiRun: AiRunPrefs;
+  };
 
 /** Runtime facts that are NOT persisted settings. */
 export interface SettingsRuntimeValues {

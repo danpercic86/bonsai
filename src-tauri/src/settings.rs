@@ -14,11 +14,13 @@ use bonsai_core::error::AppError;
 mod clamp;
 mod forge_accounts;
 mod forge_hosts;
+mod identity;
 mod prefs;
 
 pub use clamp::*;
 pub use forge_accounts::*;
 pub use forge_hosts::*;
+pub use identity::*;
 pub use prefs::*;
 
 /// Serializes every load→mutate→save cycle in this process (audit §2.3).
@@ -44,47 +46,8 @@ pub struct RecentRepo {
     pub last_opened: i64,
 }
 
-/// Curated identity-profile color (P82). Closed named palette — maps to a
-/// theme-aware CSS token in the frontend (see P82-ui.md); no raw hex on the wire.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize,
-)]
-#[serde(rename_all = "camelCase")]
-pub enum ProfileColor {
-    #[default]
-    Neutral,
-    Slate,
-    Blue,
-    Teal,
-    Green,
-    Amber,
-    Orange,
-    Purple,
-    Pink,
-}
-
-/// One named identity profile (P44). Global app setting; applied to a repo's
-/// Local git config on demand. `id` is a stable frontend-generated UUID.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IdentityProfile {
-    /// Stable id (frontend-generated `crypto.randomUUID()`); never reused.
-    pub id: String,
-    /// Display label, e.g. "Work". Empty/duplicate allowed but discouraged
-    /// (frontend soft-validates non-empty).
-    pub label: String,
-    pub user_name: String,
-    pub user_email: String,
-    /// Optional `user.signingkey`. None/empty ⇒ not written on apply.
-    pub signing_key: Option<String>,
-    /// P82: display color. Additive field-level `#[serde(default)]` — a pre-P82
-    /// profile (no `color` key) deserializes as `ProfileColor::Neutral`. The
-    /// container-level `default` on `Settings` does NOT cover a missing field on a
-    /// `Vec` element, so this must be field-level. Display-only; never written to
-    /// git config on apply.
-    #[serde(default)]
-    pub color: ProfileColor,
-}
+// P44/P82 identity-profile types (`ProfileColor`, `IdentityProfile`) live in
+// `settings/identity.rs` (spec-006 size split), re-exported above.
 
 /// On-disk settings wire format:
 /// `{ "version": 1, "recentRepos": [ { "path": "...", "lastOpened": 0 } ],
@@ -124,6 +87,28 @@ pub struct Settings {
     /// settings.json without this key loads `PrimaryCommitAction::default()`
     /// (Commit). Pure UI preference; NOT clamped.
     pub primary_commit_action: PrimaryCommitAction,
+    /// Spec-002: commit-graph visual style. Additive `#[serde(default)]` (via the
+    /// container-level `default`); a pre-spec-002 settings.json without this key
+    /// loads `GraphStyle::default()` (Standard). Pure UI preference; NOT clamped.
+    pub graph_style: GraphStyle,
+    /// Spec-002: seasonal accent for the Bonsai style. Additive `#[serde(default)]`;
+    /// a legacy file loads `GraphSeason::default()` (Living). NOT clamped.
+    pub graph_season: GraphSeason,
+    /// Spec-003: first-parent graph declutter toggle. Additive `#[serde(default)]`
+    /// (via the container-level `default`); a legacy file loads `false`. NOT clamped.
+    pub graph_first_parent: bool,
+    /// Spec-004: fold-linear-runs graph toggle. Additive `#[serde(default)]`
+    /// (via the container-level `default`); a legacy file loads `false`. NOT
+    /// clamped. Exact `graph_first_parent` precedent.
+    pub graph_fold_linear: bool,
+    /// Spec-005: always-show overview rail. Additive default; legacy → false.
+    pub graph_minimap_always_show: bool,
+    /// Spec-006: graph edge/ring coloring. Additive default; legacy → Lane.
+    pub graph_color_mode: GraphColorMode,
+    /// Spec-003: persisted graph ref-filter INTENT (solo/hide + full ref names).
+    /// Opaque to the backend — the frontend derives the wire whitelist. Additive
+    /// `#[serde(default)]`; a legacy file loads `None`. NOT clamped.
+    pub graph_ref_filter: Option<GraphRefFilter>,
     /// Open tabs, in display order (repoIds == canonical workdir paths).
     /// Additive (P3e §6.1); a legacy file without this key loads as empty.
     pub open_repos: Vec<String>,
@@ -261,6 +246,13 @@ impl Default for Settings {
             list_view: ListView::default(),
             panel_density: PanelDensity::default(),
             primary_commit_action: PrimaryCommitAction::default(),
+            graph_style: GraphStyle::default(),
+            graph_season: GraphSeason::default(),
+            graph_first_parent: false,
+            graph_fold_linear: false,
+            graph_minimap_always_show: false,
+            graph_color_mode: GraphColorMode::default(),
+            graph_ref_filter: None,
             open_repos: Vec::new(),
             active_repo: None,
             auto_fetch: AutoFetch::default(),

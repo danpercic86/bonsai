@@ -6,12 +6,31 @@
 // (Geometry / Row details / Badges), which is why this file did not need to.
 
 import { SettingsGraphSection } from '../../SettingsGraphSection';
+import { SettingsGraphDeclutterSection } from '../SettingsGraphDeclutterSection';
+import { SettingsGraphOverviewSection } from '../SettingsGraphOverviewSection';
 import { useSettingsActions, useSettingsValues } from '../SettingsContext';
 
 export function GraphCategory() {
-  const { graph } = useSettingsValues();
+  const { graph, graphFirstParent, graphFoldLinear, graphMinimapAlwaysShow, graphRefFilter } =
+    useSettingsValues();
   const { change } = useSettingsActions();
 
   /* --- Graph (geometry sliders + P51 per-row detail toggles) --- */
-  return <SettingsGraphSection graph={graph} onChange={change} />;
+  return (
+    <>
+      <SettingsGraphSection graph={graph} onChange={change} />
+      {/* Spec-003: the "Declutter" group (first-parent + branch filters). */}
+      <SettingsGraphDeclutterSection
+        graphFirstParent={graphFirstParent}
+        graphFoldLinear={graphFoldLinear}
+        graphRefFilter={graphRefFilter}
+        onChange={change}
+      />
+      {/* Spec-005: the "Overview" group (overview-rail always-show). */}
+      <SettingsGraphOverviewSection
+        graphMinimapAlwaysShow={graphMinimapAlwaysShow}
+        onChange={change}
+      />
+    </>
+  );
 }

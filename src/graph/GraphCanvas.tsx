@@ -3,66 +3,57 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
-import type { GraphLayout, RefLabel, VerifyStatus } from '../ipc';
-import { isDarkBg, resolveTheme } from './colors';
-import type { Theme } from './colors';
-import {
-  avatarColor,
-  avatarHit,
-  drawGraph,
-  drawHeadEdgeMarker,
-  drawHeadGuide,
-  drawWipRow,
-  initials,
-  refColArea,
-  relativeDate,
-} from './draw';
+import type { GraphLayout, VerifyStatus } from '../ipc';
+import { resolveTheme } from './colors';
+import type { GraphStyle, Theme } from './colors';
+import type { GraphSeason } from './palettes';
+import { drawGraph, drawHeadEdgeMarker, drawHeadGuide, drawWipRow } from './draw';
 import type { WipSummary } from './draw';
-import { groupRefs, layoutRefLabels } from './refLabels';
-import {
-  fallbackBranchRef,
-  forgeHitAt,
-  hitTestRow,
-  pillHitAt,
-  sameTarget,
-  targetRefOf,
-} from './hitTest';
+import { hitTestRow, sameTarget } from './hitTest';
 import type { TooltipState } from './hitTest';
-import { layoutForgeCell, rowForgeSignal } from './forgeBadges';
 import {
   backingStoreSize,
-  clampTooltipPos,
   headGuide,
   scrollRowIntoView,
   spacerHeight,
   visibleRowCount,
   visibleRowRange,
 } from './viewport';
-import { runP7SelfTest } from './selfTest';
-import { computeRightColumns } from './rightColumns';
 import type { GraphDisplayOptions } from './rightColumns';
-import type { P7SelfTestResult } from './frameStats';
 import { buildEdgeIndex, edgesInRange } from './edgeIndex';
 import type { IncrementalEdgeIndex } from './incrementalEdgeIndex';
 import { createFrameRecorder } from './frameStats';
-import type { FrameStats } from './frameStats';
 import type { EffectiveMetrics } from './metrics';
+import { resolveContextTarget } from './contextTarget';
+import { useMockDevHooks } from './useMockDevHooks';
+// Spec-004: fold display-row model — projection, pill painting, mappings.
+import { projectLayout } from './foldProject';
+import { collapsePillHit, drawFoldRows } from './drawFold';
+import { resolveGraphClick } from './graphClick';
+import { activeRowA11y, displaySelection, foldCursorFor, mapMatchRows } from './foldView';
+import type { GraphFoldView } from './foldView';
+import { displayToModel, pillRowOfStart } from './foldModel';
+import { reportVisibleRange, resolveFlash, resolveSway } from './paintFx';
 import type { RevealFlash } from './reveal';
-import { flashAlpha, flashRingRadius } from './revealFlash';
 import { startRevealFlash } from './revealFlashRunner';
+import { useSway } from './useSway';
 import { resolveHoverTarget } from './hoverTarget';
+import { GraphTooltipOverlay } from './GraphTooltipOverlay';
+import { useCanvasResizeObserver } from './useCanvasResizeObserver';
+// Spec-005: overview rail — mounted ONLY while visible (zero idle cost).
+import { OverviewRail, type RailInput } from './rail/OverviewRail';
+import { useRailReveal } from './rail/useRailReveal';
 
 export type { WipSummary };
 
-/** Right-click target on the graph: a ref pill, or a bare commit row. */
-export type GraphContextTarget =
-  | { kind: 'ref'; ref: RefLabel; oid: string }
-  | { kind: 'commit'; index: number; oid: string };
+// Right-click target on the graph — moved to contextTarget.ts (spec-004 size
+// split); re-exported so existing import sites keep working.
+export type { GraphContextTarget } from './contextTarget';
+import type { GraphContextTarget } from './contextTarget';
 
 export interface GraphCanvasProps {
   layout: GraphLayout;
@@ -102,9 +93,12 @@ export interface GraphCanvasProps {
    *  stub. A new map identity triggers a repaint so badges light in place. */
   verifyStatus?: ReadonlyMap<string, VerifyStatus>;
   /** P58c: fired once per paint after the visible window is computed (only when
-   *  first/last changed). Drives the debounced verify request for exactly the
-   *  visible (overscanned) rows — the badge is virtualized. */
-  onVisibleRangeChange?(first: number, last: number): void;
+   *  the window changed). Drives the debounced verify request for exactly the
+   *  visible (overscanned) rows — the badge is virtualized. Spec-004: with fold
+   *  active `first`/`last` are the min/max visible MODEL rows and `modelRows`
+   *  lists exactly the visible commit rows (fold rows skipped), so a giant
+   *  collapsed run never balloons the verify request. */
+  onVisibleRangeChange?(first: number, last: number, modelRows?: readonly number[]): void;
   /** P63: a PR badge on a branch-tip pill was clicked → open that PR in the
    *  right-pane PR panel. When absent, PR-badge clicks fall through to the
    *  normal row-select. */
@@ -125,6 +119,16 @@ export interface GraphCanvasProps {
   /** P84: `prefers-reduced-motion` (read once in the container). When true the
    *  flash is a static hold, not an animated pulse (revealFlash.ts §3.1). */
   reducedMotion?: boolean;
+  /** spec 002: Bonsai paint style + season → `resolveTheme` (mirrors
+   *  `themeVersion`; a change re-resolves + repaints). Default standard/living. */
+  graphStyle?: GraphStyle;
+  graphSeason?: GraphSeason;
+  /** Spec-004: fold view-model (collapsed-span mapping + expansion callbacks).
+   *  Absent ⇒ fold inactive; every path is byte-identical to pre-fold. */
+  fold?: GraphFoldView;
+  /** Spec-005: overview-rail bundle (RepoWorkspace assembles it). Absent ⇒ no
+   *  rail plumbing at all — hover-zone checks and mount both skipped. */
+  rail?: RailInput;
 }
 
 /** P2c §5.2: imperative escape hatch — App needs the DOM-measured visible row
@@ -171,6 +175,10 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     totalRows,
     revealFlash,
     reducedMotion = false,
+    graphStyle = 'standard',
+    graphSeason = 'living',
+    fold,
+    rail,
   },
   ref,
 ) {
@@ -185,14 +193,24 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   // P84: latest reduced-motion flag, read by the paint + flash rAF loop.
   const reducedMotionRef = useRef(reducedMotion);
   reducedMotionRef.current = reducedMotion;
+  // spec 002: latest Bonsai style/season for the paint path's theme re-resolve.
+  const graphStyleRef = useRef(graphStyle);
+  graphStyleRef.current = graphStyle;
+  const graphSeasonRef = useRef(graphSeason);
+  graphSeasonRef.current = graphSeason;
   /** Row index, `null` (none), or `-1` sentinel for the synthetic WIP row. */
   const hoverRowRef = useRef<number | null>(null);
+  /** Spec-004 §1: fold-pill row under a held mouse button (pressed tint). */
+  const pressedRowRef = useRef<number | null>(null);
   const rafRef = useRef(0);
   // P84: active reveal flash — the target row + animation start timestamp; null
   // when no flash is running. Its own rAF handle (separate from the scroll rAF).
   const flashStateRef = useRef<{ row: number; start: number } | null>(null);
   const flashRafRef = useRef(0);
   const flashTimeoutRef = useRef(0);
+  // spec 002 §5: active settle descriptor (arm timestamp) read by the paint path;
+  // the rAF lifecycle that drives + clears it lives in `useSway`.
+  const swayStateRef = useRef<{ start: number } | null>(null);
   const scrollTopRef = useRef(0);
   const cssSizeRef = useRef({ w: 0, h: 0 });
   /** Cursor y relative to the scroller top; null while the pointer is outside. */
@@ -212,12 +230,11 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
 
   // P7 §6: hover tooltip. State changes ONLY when the hover TARGET changes (the
   // sameTarget guard), so re-renders are rare and the per-frame canvas paint
-  // path (paintNow) never depends on tooltip state. `tipRef` measures the DOM
-  // node in a layout effect; `tipPos` holds the clamped {left,top} once measured
-  // (initial render uses the un-clamped anchor point — see the layout effect).
+  // path (paintNow) never depends on tooltip state. Measurement/clamp + DOM
+  // live in GraphTooltipOverlay (spec-004 size split).
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
-  const tipRef = useRef<HTMLDivElement>(null);
-  const [tipPos, setTipPos] = useState<{ left: number; top: number } | null>(null);
+  // Spec-005: rail hover-zone / reveal-latch / drag-pin state (useRailReveal).
+  const railReveal = useRailReveal();
 
   useImperativeHandle(
     ref,
@@ -228,51 +245,84 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     [],
   );
 
+  // Spec-004: display-space projection. Identity (the input layout object)
+  // whenever fold is inactive or nothing is collapsed. Spans only exist after
+  // the stream's `done`, so this never runs per streamed batch in anger. Keyed
+  // on model/expandedSpans (NOT the whole `fold` bundle) so an active-pill
+  // change never re-projects 20k rows.
+  const foldModel = fold !== undefined ? fold.model : null;
+  const foldExpanded = fold?.expandedSpans;
+  const projected = useMemo(
+    () =>
+      foldModel !== null && foldExpanded !== undefined
+        ? projectLayout(layout, foldModel, foldExpanded)
+        : null,
+    [layout, foldModel, foldExpanded],
+  );
+  const dLayout = projected !== null ? projected.layout : layout;
+  const foldRows = projected !== null && !projected.identity ? projected.foldRows : null;
+  const boundaryRows =
+    projected !== null && projected.boundaryRows.size > 0 ? projected.boundaryRows : null;
+  const foldRowSet = useMemo(
+    () => (foldRows !== null ? new Set(foldRows.keys()) : null),
+    [foldRows],
+  );
+  // Spec-004 §3: the keyboard-active pill row (display index), derived from the
+  // stable span `start` so expansion remaps never leave a dangling row.
+  const activeRow =
+    fold !== undefined && fold.activePillStart !== null
+      ? pillRowOfStart(fold.model, fold.activePillStart)
+      : null;
+  // Selection in display space; a HIDDEN selection moves its ring to the pill.
+  const dSel = displaySelection(foldModel, selectedIndex);
+
   // Edge culling index, built once per layout object (§4.4). P65b: on the
   // streamed path the assembler supplies `edgeIndex` (its own incremental index),
   // so we skip the internal build entirely — otherwise it would be an O(n)
   // rebuild on every streamed batch (layout identity bumps per batch).
-  const memoIndex = useMemo(
-    () => (edgeIndex !== undefined ? null : buildEdgeIndex(layout)),
-    [layout, edgeIndex],
-  );
+  // Spec-004: a non-identity projection owns its own display-space edge array,
+  // so it always builds a one-shot index (streamed or not).
+  const memoIndex = useMemo(() => {
+    if (projected !== null && !projected.identity) return buildEdgeIndex(projected.layout);
+    return edgeIndex !== undefined ? null : buildEdgeIndex(layout);
+  }, [layout, edgeIndex, projected]);
+  const incIndex = projected !== null && !projected.identity ? undefined : edgeIndex;
 
   // P50b: search-match set, rebuilt once per matchRows prop change (not per
   // frame). null when there are no matches so the draw pass skips the ring.
-  const matchSet = useMemo(
-    () => (matchRows !== undefined && matchRows.length > 0 ? new Set(matchRows) : null),
-    [matchRows],
-  );
+  // Spec-004: model rows mapped to display rows (hidden matches dropped).
+  const matchSet = useMemo(() => {
+    const base = matchRows !== undefined && matchRows.length > 0 ? new Set(matchRows) : null;
+    return mapMatchRows(foldModel, base);
+  }, [matchRows, foldModel]);
 
   // Latest props for the stable paint callback. `edgeIndex` is the streamed
   // incremental index (or undefined); `memoIndex` is the one-shot index (or null
   // when streamed) — paintNow picks whichever is present (§4.3).
-  const propsRef = useRef({
-    layout,
-    selectedIndex,
-    edgeIndex,
+  const currentProps = {
+    layout: dLayout,
+    selectedIndex: dSel.row,
+    edgeIndex: incIndex,
     memoIndex,
     wip,
     matchSet,
     display,
     verifyStatus,
     onVisibleRangeChange,
-  });
-  propsRef.current = {
-    layout,
-    selectedIndex,
-    edgeIndex,
-    memoIndex,
-    wip,
-    matchSet,
-    display,
-    verifyStatus,
-    onVisibleRangeChange,
+    foldModel,
+    foldRows,
+    boundaryRows,
+    foldRowSet,
+    activeRow,
+    selPillRow: dSel.pillRow,
   };
+  const propsRef = useRef(currentProps);
+  propsRef.current = currentProps;
 
   // P58c: last visible window reported to onVisibleRangeChange — guards
-  // redundant fires (only when first/last actually changed).
-  const lastRangeRef = useRef<{ first: number; last: number } | null>(null);
+  // redundant fires (only when the window actually changed). `count` is the
+  // spec-004 modelRows length (-1 when fold is inactive).
+  const lastRangeRef = useRef<{ first: number; last: number; count: number } | null>(null);
 
   const recordFrame = useCallback((kind: 'paint' | 'gap', durMs: number) => {
     const rec = kind === 'paint' ? paintRecorderRef.current : gapRecorderRef.current;
@@ -300,7 +350,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     if (canvas === null) return;
     const ctx = canvas.getContext('2d');
     if (ctx === null) return;
-    themeRef.current ??= resolveTheme(canvas);
+    themeRef.current ??= resolveTheme(canvas, graphStyleRef.current, graphSeasonRef.current);
 
     const t0 = STATS_ENABLED ? performance.now() : 0;
     const m = metricsRef.current;
@@ -315,6 +365,12 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       display,
       verifyStatus,
       onVisibleRangeChange,
+      foldModel,
+      foldRows,
+      boundaryRows,
+      foldRowSet,
+      activeRow,
+      selPillRow,
     } = propsRef.current;
     const { w, h } = cssSizeRef.current;
     const scrollTop = scrollerRef.current?.scrollTop ?? scrollTopRef.current;
@@ -333,11 +389,10 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     // verify hook fetches badges for exactly these rows. Fires after the window
     // is computed; guarded so a redundant same-range paint does not re-request.
     if (onVisibleRangeChange !== undefined && n > 0) {
-      const prev = lastRangeRef.current;
-      if (prev === null || prev.first !== firstRow || prev.last !== lastRow) {
-        lastRangeRef.current = { first: firstRow, last: lastRow };
-        onVisibleRangeChange(firstRow, lastRow);
-      }
+      const next = reportVisibleRange(
+        onVisibleRangeChange, lastRangeRef.current, firstRow, lastRow, n, foldModel, foldRows,
+      );
+      if (next !== null) lastRangeRef.current = next;
     }
     const hoverRow = hoverRowRef.current !== null && hoverRowRef.current >= 0 ? hoverRowRef.current : null;
     // P7e §13.2: reserve the native vertical-scrollbar width on the right (0 when
@@ -353,32 +408,39 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       : memoIx !== null
         ? edgesInRange(lay, memoIx, firstRow, lastRow)
         : [];
-    // P84: compute the reveal flash (row-bg pulse + dot halo) for this frame from
-    // the animation start timestamp; the rAF loop below drives repaints.
-    let flash: { row: number; alpha: number; ringRadius: number } | null = null;
-    const fs = flashStateRef.current;
-    if (fs !== null) {
-      const elapsed = performance.now() - fs.start;
-      const dark = isDarkBg(themeRef.current.bg0);
-      const alpha = flashAlpha(elapsed, dark, reducedMotionRef.current);
-      if (alpha > 0) {
-        flash = {
-          row: fs.row,
-          alpha,
-          ringRadius: flashRingRadius(elapsed, m.avatarSelRingRadius, reducedMotionRef.current),
-        };
-      }
-    }
+    // P84 reveal flash + spec-002 sway, resolved per frame (paintFx.ts).
+    const flash = resolveFlash(
+      flashStateRef.current, themeRef.current, m.avatarSelRingRadius, reducedMotionRef.current, foldModel,
+    );
+    const sway = resolveSway(swayStateRef.current, graphStyleRef.current, reducedMotionRef.current);
     drawGraph(
       ctx,
       lay,
       visibleEdges,
       { firstRow, lastRow, scrollTop: layoutScrollTop, width: w, height: h, rightInset },
       themeRef.current,
-      { hoverRow, selectedIndex: sel, matchRows: matchSet, verifyStatus: verifyStatus ?? null, flash },
+      { hoverRow, selectedIndex: sel, matchRows: matchSet, verifyStatus: verifyStatus ?? null, flash, sway, foldRows: foldRowSet },
       display,
       m,
     );
+    // Spec-004: fold pills + boundary collapse pills paint over the row grid
+    // (fold rows themselves were skipped by drawGraph's avatar/text passes).
+    if (foldRows !== null || boundaryRows !== null) {
+      drawFoldRows(
+        ctx,
+        foldRows ?? new Map(),
+        boundaryRows ?? new Map(),
+        { firstRow, lastRow, scrollTop: layoutScrollTop, width: w },
+        themeRef.current,
+        m,
+        {
+          hoverRow,
+          pressedRow: pressedRowRef.current,
+          activeRow,
+          selectionRow: selPillRow,
+        },
+      );
+    }
     // P67 §1: the dashed HEAD guideline is INDEPENDENT of the WIP row's near-top
     // gate — it must point at the checked-out commit at every scroll position.
     // Drawn before drawWipRow so the dashed WIP marker circle paints on top.
@@ -433,6 +495,19 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     if (rafRef.current === 0) rafRef.current = requestAnimationFrame(paintFrame);
   }, [paintFrame]);
 
+  // spec 002 §5: settle-on-scroll sway lifecycle (bounded, self-terminating).
+  // The hook owns its own rAF + arm-debounce timer; `swayStateRef` is read by the
+  // paint path below and `onScroll` is called from `handleScroll`.
+  const { onScroll: onSwayScroll } = useSway({
+    paint: paintNow,
+    graphStyle,
+    graphStyleRef,
+    reducedMotion,
+    reducedMotionRef,
+    selectedIndex,
+    swayStateRef,
+  });
+
   // Backing store = css size × dpr; transform set once here, not per paint.
   const resize = useCallback(() => {
     const host = hostRef.current;
@@ -458,36 +533,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     paintNow();
   }, [paintNow]);
 
-  // Mount: ResizeObserver on the host + DPR-change handling (re-armed
-  // matchMedia listener, §4.3). resize() also performs the initial paint.
-  useEffect(() => {
-    const host = hostRef.current;
-    if (host === null) return;
-    resize();
-    const ro = new ResizeObserver(() => resize());
-    ro.observe(host);
-
-    let mq: MediaQueryList | null = null;
-    const onDprChange = (): void => {
-      resize();
-      arm();
-    };
-    const arm = (): void => {
-      mq?.removeEventListener('change', onDprChange);
-      mq = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
-      mq.addEventListener('change', onDprChange);
-    };
-    arm();
-
-    return () => {
-      ro.disconnect();
-      mq?.removeEventListener('change', onDprChange);
-      if (rafRef.current !== 0) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = 0;
-      }
-    };
-  }, [resize]);
+  // Mount: ResizeObserver + DPR handling — moved verbatim to its own hook
+  // (spec-005 size offset). resize() also performs the initial paint.
+  useCanvasResizeObserver(hostRef, resize, rafRef);
 
   // P3e §5.4: authoritative remeasure-on-show. When `active` flips true (tab
   // shown after display:none), re-run the SAME `resize()` the ResizeObserver
@@ -503,17 +551,21 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       return;
     }
     if (active) resize();
+    else railReveal.reset(); // spec-005: drop the rail's hover state when hidden
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, resize]);
 
   // Layout/selection changes repaint synchronously; the mount paint already
   // happened inside resize() above (single mount paint — no double paint).
+  // Spec-004: `projected`/`activeRow` join the deps — expand/collapse and the
+  // keyboard-active pill are pure paint-state changes.
   useEffect(() => {
     if (!firstDataPaintSkippedRef.current) {
       firstDataPaintSkippedRef.current = true;
       return;
     }
     paintNow();
-  }, [paintNow, layout, selectedIndex, wip, matchSet, display, verifyStatus]);
+  }, [paintNow, layout, selectedIndex, wip, matchSet, display, verifyStatus, projected, activeRow]);
 
   // P2b §4.4: theme changes re-resolve the cached CSS-variable colors and
   // repaint. Runs once on mount too (themeVersion starts at 0), which is
@@ -523,10 +575,10 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null) return;
-    themeRef.current = resolveTheme(canvas);
+    themeRef.current = resolveTheme(canvas, graphStyle, graphSeason);
     schedulePaint();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [themeVersion]);
+  }, [themeVersion, graphStyle, graphSeason]);
 
   // P11d §4.3: a graph-knob change re-maps every row↔pixel relationship. The
   // spacer height (total scrollable extent) recomputes on render from the new
@@ -549,19 +601,23 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   // Down in App), bring the row into view if it's outside the visible window.
   // Pure scroll adjustment — row position accounts for the WIP row offset:
   // target y = (row + wipOffset) * rowHeight.
+  // Spec-004: operates on DISPLAY rows — the fold model joins the deps because
+  // reveal-after-expand changes the mapping without changing `selectedIndex`.
+  // A keyboard-active pill row scrolls into view the same way (never selected).
+  const scrollTarget = activeRow ?? dSel.row ?? dSel.pillRow;
   useEffect(() => {
-    if (selectedIndex === null) return;
+    if (scrollTarget === null) return;
     const scroller = scrollerRef.current;
     if (scroller === null) return;
     const next = scrollRowIntoView(
-      selectedIndex,
+      scrollTarget,
       wip !== null ? 1 : 0,
       metricsRef.current.rowHeight,
       scroller.scrollTop,
       scroller.clientHeight,
     );
     if (next !== null) scroller.scrollTop = next;
-  }, [selectedIndex, wip]);
+  }, [scrollTarget, wip]);
 
   // P84: nonce-driven reveal flash. A new `revealFlash.nonce` (re)starts the
   // flash on `revealFlash.index`; the runner handles both motion modes and
@@ -577,72 +633,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     });
   }, [flashNonce, flashRow, paintNow]);
 
-  // P7 §6.2: clamp the tooltip inside the host. Runs synchronously after the
-  // tooltip renders (at its un-clamped anchor point) but before paint, so the
-  // correction is flicker-free. Default below the anchor; flip above / pull left
-  // when it would overflow the host edges.
-  useLayoutEffect(() => {
-    if (tooltip === null) {
-      setTipPos(null);
-      return;
-    }
-    const tip = tipRef.current;
-    const host = hostRef.current;
-    if (tip === null || host === null) return;
-    setTipPos(
-      clampTooltipPos(
-        tooltip.anchor,
-        tip.offsetWidth,
-        tip.offsetHeight,
-        host.clientWidth,
-        host.clientHeight,
-      ),
-    );
-  }, [tooltip]);
-
-  // Mock-mode dev hook: programmatic scroll sweep with frame timing (§4.7).
-  useEffect(() => {
-    if (!MOCK_MODE) return;
-    const scrollSweep = (durationMs = 10000): Promise<FrameStats> =>
-      new Promise((resolve) => {
-        const scroller = scrollerRef.current;
-        const rec = createFrameRecorder();
-        if (scroller === null) {
-          resolve(rec.flushSummary());
-          return;
-        }
-        const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-        const start = performance.now();
-        let prev = start;
-        const step = (ts: number): void => {
-          rec.record(ts - prev);
-          prev = ts;
-          const t = Math.min(1, (ts - start) / durationMs);
-          scroller.scrollTop = (t < 0.5 ? t * 2 : (1 - t) * 2) * maxTop;
-          if (t < 1) {
-            requestAnimationFrame(step);
-          } else {
-            const stats = rec.flushSummary();
-            if (import.meta.env.DEV) console.log(`[bonsai] scroll-test ${JSON.stringify(stats)}`);
-            resolve(stats);
-          }
-        };
-        requestAnimationFrame(step);
-      });
-
-    // P7 §10 item 2: expose the pure helpers + a self-test (mock only, mirroring
-    // scrollSweep). The orchestrator reads `window.__bonsai.p7SelfTest()`.
-    // T3.6: the self-test body lives in selfTest.ts now (moved verbatim).
-    // P67 §1.5: `headGuide` joins the bag — the only way to assert the guideline
-    // geometry from a headless pane (no canvas pixel is ever produced there).
-    const p7 = { initials, avatarColor, groupRefs, layoutRefLabels, refColArea, avatarHit, relativeDate, headGuide };
-    const p7SelfTest = (): P7SelfTestResult => runP7SelfTest(canvasRef.current);
-
-    window.__bonsai = { scrollSweep, p7, p7SelfTest };
-    return () => {
-      if (window.__bonsai?.scrollSweep === scrollSweep) delete window.__bonsai;
-    };
-  }, []);
+  // Mock-mode dev hooks (`window.__bonsai`) — moved to useMockDevHooks.ts.
+  useMockDevHooks(canvasRef, scrollerRef);
 
   /** Hover-ref encoding: row index, `-1` for the WIP row, or `null`. */
   const hitTestAtMouseY = (yCss: number, scrollTop: number): number | null => {
@@ -655,12 +647,15 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   // P7 §6.1: resolve the hover tooltip target from a cursor position (scroller/
   // host CSS coords). Pure resolution lives in `hoverTarget.ts`; this wrapper
   // just gathers the container's live props/refs/measurements for it.
-  const computeHoverTarget = (x: number, y: number, scrollTop: number): TooltipState | null =>
-    resolveHoverTarget({
+  const computeHoverTarget = (x: number, y: number, scrollTop: number): TooltipState | null => {
+    // Spec-004: fold-pill rows carry no hover tooltip (the pill is the label).
+    const row = hitTestAtMouseY(y, scrollTop);
+    if (row !== null && row >= 0 && propsRef.current.foldRowSet?.has(row) === true) return null;
+    return resolveHoverTarget({
       x,
       y,
       scrollTop,
-      row: hitTestAtMouseY(y, scrollTop),
+      row,
       layout: propsRef.current.layout,
       wip: propsRef.current.wip,
       display: propsRef.current.display,
@@ -672,6 +667,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
         : 0,
       cssWidth: cssSizeRef.current.w,
     });
+  };
 
   // Scroll handler ONLY records scrollTop and schedules one rAF paint (§4.1).
   const handleScroll = () => {
@@ -688,6 +684,10 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
         setTooltip((prev) => (sameTarget(prev, next) ? prev : next));
       }
     }
+    // spec 002 §5: sway plays AFTER motion stops, never during — the hook cancels
+    // any live settle (offset 0 while scrolling) and re-arms on a scroll-stop
+    // debounce. Inert under standard/reduced-motion, so the idle path stays quiet.
+    onSwayScroll();
     schedulePaint();
   };
 
@@ -699,10 +699,25 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     const x = e.clientX - rect.left;
     mouseYRef.current = y;
     mouseXRef.current = x;
+    // Spec-005: right-edge hover zone (scrollbar included); transitions only.
+    if (rail !== undefined) railReveal.onZoneCheck(x, scroller);
     const row = hitTestAtMouseY(y, scroller.scrollTop);
     if (row !== hoverRowRef.current) {
       hoverRowRef.current = row;
       schedulePaint(); // repaint only when the hovered row changed, via rAF
+    }
+    // Spec-004 §1/§2: pointer cursor over fold-pill rows / the collapse pill.
+    if (propsRef.current.foldRowSet !== null || propsRef.current.boundaryRows !== null) {
+      const ctx = canvasRef.current?.getContext('2d') ?? null;
+      scroller.style.cursor = foldCursorFor(
+        row,
+        x,
+        propsRef.current.foldRowSet,
+        propsRef.current.boundaryRows,
+        (span, px) => ctx !== null && collapsePillHit(ctx, span, metricsRef.current, px),
+      );
+    } else if (scroller.style.cursor !== '') {
+      scroller.style.cursor = '';
     }
     // P7 §6.1: recompute the hover tooltip target; setTooltip only fires on a
     // real target change (sameTarget), so this is not a per-frame React churn.
@@ -713,117 +728,123 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   const handleMouseLeave = () => {
     mouseYRef.current = null;
     mouseXRef.current = null;
+    railReveal.onLeave(); // spec-005: leaving the scroller exits the hover zone
     setTooltip(null); // P7 §6.2: dismiss on leave
+    // Spec-004: drop the pointer cursor + a held pill press on leave.
+    if (scrollerRef.current !== null) scrollerRef.current.style.cursor = '';
+    if (pressedRowRef.current !== null) {
+      pressedRowRef.current = null;
+      schedulePaint();
+    }
     if (hoverRowRef.current !== null) {
       hoverRowRef.current = null;
       schedulePaint();
     }
   };
 
+  // Spec-004 §1: pressed-frame tint on a fold-pill row.
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    const scroller = scrollerRef.current;
+    if (scroller === null || propsRef.current.foldRowSet === null) return;
+    const row = hitTestAtMouseY(e.clientY - scroller.getBoundingClientRect().top, scroller.scrollTop);
+    if (row !== null && row >= 0 && propsRef.current.foldRowSet.has(row)) {
+      pressedRowRef.current = row;
+      schedulePaint();
+    }
+  };
+  const handleMouseUp = () => {
+    if (pressedRowRef.current !== null) {
+      pressedRowRef.current = null;
+      schedulePaint();
+    }
+  };
+
+  // Click resolution lives in graphClick.ts (spec-004 split): empty area →
+  // deselect; fold pill / boundary collapse pill → toggle; PR badge → open PR;
+  // else select the MODEL row (toggle-off when it is already selected).
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const scroller = scrollerRef.current;
     if (scroller === null) return;
     const rect = scroller.getBoundingClientRect();
-    const y = e.clientY - rect.top;
     const x = e.clientX - rect.left;
     const m = metricsRef.current;
-    const wipOffset = wip !== null ? 1 : 0;
-    const hit = hitTestRow(y, scroller.scrollTop, wipOffset, layout.nodes.length, m.rowHeight);
-    if (hit === null || hit === 'wip') {
-      onSelect(null);
-      return;
-    }
-    // PR-badge-placement §6: a PR pill in the FORGE column → open that PR (do
-    // NOT select the row). Recompute the column geometry + the row's forge cell
-    // with the SAME pure helpers the draw pass uses, so the pill rect matches the
-    // pixels exactly.
-    const node = layout.nodes[hit];
-    if (onOpenPr !== undefined && node.refs !== undefined && node.refs.length > 0) {
-      const ctx = canvasRef.current?.getContext('2d') ?? null;
-      if (ctx !== null) {
-        const rightInset = scroller.offsetWidth - scroller.clientWidth;
-        const cols = computeRightColumns(cssSizeRef.current.w - rightInset, display, m);
-        if (cols.forge !== null && x >= cols.forge.leftX && x <= cols.forge.rightX) {
-          const signal = rowForgeSignal(node.refs, node, display);
-          if (signal !== null) {
-            const cell = layoutForgeCell(ctx, cols.forge.leftX, signal);
-            const forgeHit = forgeHitAt(cell, x, m.ciBadgeSize);
-            if (forgeHit !== null && forgeHit.kind === 'pr') {
-              onOpenPr(forgeHit.pr.badge.number);
-              return;
-            }
-          }
-        }
-      }
-    }
-    onSelect(hit === selectedIndex ? null : hit);
+    const action = resolveGraphClick({
+      hit: hitTestRow(
+        e.clientY - rect.top,
+        scroller.scrollTop,
+        wip !== null ? 1 : 0,
+        dLayout.nodes.length,
+        m.rowHeight,
+      ),
+      x,
+      layout: dLayout,
+      foldModel,
+      foldRows,
+      boundaryRows,
+      ctx: canvasRef.current?.getContext('2d') ?? null,
+      m,
+      display,
+      effectiveWidth: cssSizeRef.current.w - (scroller.offsetWidth - scroller.clientWidth),
+      prBadgesActive: onOpenPr !== undefined,
+    });
+    if (action.kind === 'deselect') onSelect(null);
+    else if (action.kind === 'toggleSpan') fold?.onToggleSpan(action.start);
+    else if (action.kind === 'openPr') onOpenPr?.(action.number);
+    else if (action.kind === 'select') onSelect(action.modelRow === selectedIndex ? null : action.modelRow);
   };
 
   // P5 §4.2 / P7 §5: right-click hit-test. Always suppress the native menu over
-  // the graph; then resolve a ref label in the LEFT ref column (via the shared
-  // layoutRefLabels layout — single source of truth with the draw pass) or fall
-  // through to the commit row. Parity with P6 is preserved: the emitted
-  // GraphContextTarget shape is unchanged; only the ref RESOLUTION moved left.
+  // the graph; resolution moved verbatim to contextTarget.ts (spec-004 split).
+  // Fold-pill rows get no menu; commit targets carry the MODEL row index.
   const handleContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     const scroller = scrollerRef.current;
-    if (scroller === null) return;
+    if (scroller === null || onContextMenu === undefined) return;
     const rect = scroller.getBoundingClientRect();
     const y = e.clientY - rect.top;
     const x = e.clientX - rect.left;
     const m = metricsRef.current;
     const wipOffset = wip !== null ? 1 : 0;
-    const hit = hitTestRow(y, scroller.scrollTop, wipOffset, layout.nodes.length, m.rowHeight);
+    const hit = hitTestRow(y, scroller.scrollTop, wipOffset, dLayout.nodes.length, m.rowHeight);
     if (hit === null || hit === 'wip') return;
-    const node = layout.nodes[hit];
-    const ctx = canvasRef.current?.getContext('2d') ?? null;
-    const theme = themeRef.current;
-    if (
-      ctx !== null &&
-      theme !== null &&
-      x < m.refColWidth &&
-      node.refs !== undefined &&
-      node.refs.length > 0
-    ) {
-      const { startX, budget } = refColArea(m);
-      const laid = layoutRefLabels(ctx, groupRefs(node.refs), node, theme, startX, budget, display);
-      const hitLabel = pillHitAt(laid, x);
-      if (hitLabel !== undefined && hitLabel.entity !== null) {
-        const ref = targetRefOf(hitLabel.entity);
-        if (ref !== null) {
-          onContextMenu?.({ kind: 'ref', ref, oid: node.id }, e.clientX, e.clientY);
-          return;
-        }
-        // tag/head resolve to a ref whose branchMenuItems is [] → no menu opens;
-        // fall through to the whole-row / commit target (matches today's behavior).
-      }
+    let index = hit;
+    if (foldModel !== null) {
+      const d = displayToModel(foldModel, hit);
+      if (d.kind === 'fold') return; // no context menu on a pill row
+      index = d.row;
     }
-    // P18b: whole-row branch fallback. If no SPECIFIC pill was hit (e.g. the
-    // click landed on the dot/avatar/summary, or right of the ref band), but the
-    // row carries a branch/remoteBranch, open that branch's menu (the superset).
-    // Runs for ANY x — not gated on the ref band. Stash/tag/head-only rows and
-    // ref-less rows fall through to the commit target (the precise hit-test above
-    // already covered stash/tag pills inside the band).
-    if (node.refs !== undefined && node.refs.length > 0) {
-      const ref = fallbackBranchRef(groupRefs(node.refs));
-      if (ref !== null) {
-        onContextMenu?.({ kind: 'ref', ref, oid: node.id }, e.clientX, e.clientY);
-        return;
-      }
-    }
-    // Empty band OR the "+n" chip OR a non-branch entity → commit target.
-    onContextMenu?.({ kind: 'commit', index: hit, oid: node.id }, e.clientX, e.clientY);
+    const target = resolveContextTarget({
+      x,
+      index,
+      node: dLayout.nodes[hit],
+      ctx: canvasRef.current?.getContext('2d') ?? null,
+      theme: themeRef.current,
+      m,
+      display,
+    });
+    onContextMenu(target, e.clientX, e.clientY);
   };
 
   // P11d §4.3: spacer (total scroll extent) tracks the live rowHeight knob so
   // the scrollbar range re-maps on every graph-metric change. P65b: on the
   // streamed path `totalRows` extends the extent to the full repo while rows are
   // still arriving (grow-as-you-go); absent ⇒ layout.nodes.length (unchanged).
-  const spacerH = spacerHeight(
-    Math.max(layout.nodes.length, totalRows ?? 0),
-    wip !== null ? 1 : 0,
-    metrics.rowHeight,
-  );
+  // Spec-004: with collapsed spans the extent is the DISPLAY row count (spans
+  // only exist after `done`, so the streamed grow-as-you-go path is unaffected).
+  const displayRowCount =
+    foldRows !== null ? dLayout.nodes.length : Math.max(layout.nodes.length, totalRows ?? 0);
+  const spacerH = spacerHeight(displayRowCount, wip !== null ? 1 : 0, metrics.rowHeight);
+  // §4.1 amended (spec-004): aria row counts + active-descendant ids use
+  // DISPLAY rows; the active pill row wins over the selection while set.
+  const ariaRowCount = foldRows !== null ? dLayout.nodes.length : (totalRows ?? layout.nodes.length);
+  const ariaActiveRow = activeRow ?? dSel.row ?? dSel.pillRow;
+  // WCAG 4.1.2 (ui-designer ruling): the active-descendant id must resolve to a
+  // real element — ONE sr-only row, updated per active row, carrying the §3
+  // accessible name (fold-off: the plain row text, same emission as pre-fold).
+  const activeA11y =
+    ariaActiveRow !== null
+      ? activeRowA11y(ariaActiveRow, dLayout.nodes, foldRows, boundaryRows)
+      : null;
 
   return (
     <div ref={hostRef} className="graph-canvas-host">
@@ -835,34 +856,43 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
         tabIndex={0}
         role="grid"
         aria-label="Commit graph"
-        aria-rowcount={totalRows ?? layout.nodes.length}
-        aria-activedescendant={selectedIndex !== null ? `graph-row-${selectedIndex}` : undefined}
+        aria-rowcount={ariaRowCount}
+        aria-activedescendant={ariaActiveRow !== null ? `graph-row-${ariaActiveRow}` : undefined}
         onScroll={handleScroll}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
       >
+        {ariaActiveRow !== null && activeA11y !== null && (
+          <div
+            id={`graph-row-${ariaActiveRow}`}
+            role="row"
+            aria-rowindex={ariaActiveRow + 1}
+            aria-selected={dSel.row === ariaActiveRow}
+            aria-expanded={activeA11y.expanded}
+            className="sr-only"
+          >
+            {activeA11y.label}
+          </div>
+        )}
         <div className="graph-spacer" style={{ height: `${spacerH}px` }} />
       </div>
-      {tooltip !== null && (
-        <div
-          ref={tipRef}
-          className="graph-tooltip"
-          role="tooltip"
-          style={{
-            left: `${tipPos?.left ?? tooltip.anchor.left}px`,
-            top: `${tipPos?.top ?? tooltip.anchor.top + tooltip.anchor.height + 4}px`,
-          }}
-        >
-          {tooltip.kind === 'overflow' ||
-          tooltip.kind === 'date' ||
-          tooltip.kind === 'pr' ||
-          tooltip.kind === 'ci'
-            ? tooltip.lines.map((l, i) => <div key={i}>{l}</div>)
-            : tooltip.text}
-        </div>
-      )}
+      {/* Spec-005: mounted ONLY while visible — hidden ⇒ zero DOM/listeners. */}
+      {rail !== undefined && displayRowCount > 0 &&
+        (rail.ringsLive || rail.alwaysShow || railReveal.revealed) && (
+          <OverviewRail
+            rail={rail} layout={dLayout} foldModel={foldModel}
+            displayRowCount={displayRowCount} scrollerRef={scrollerRef}
+            pointerInZone={railReveal.pointerInZone}
+            fadeIn={!rail.ringsLive && !rail.alwaysShow}
+            themeVersion={themeVersion} onHide={railReveal.hide}
+            onDraggingChange={railReveal.onDraggingChange}
+          />
+        )}
+      <GraphTooltipOverlay tooltip={tooltip} hostRef={hostRef} />
     </div>
   );
 });

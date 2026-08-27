@@ -9,7 +9,7 @@ import type { ConflictEntry, ConflictFile, ConflictResolution } from './conflict
 import type { CommitDiff, CompareDiff, FileDiff, ImageDiff, ImageDiffRequest, LineSelection } from './diff';
 import type { PrDescription } from './forge';
 import type { IpcApiForge } from './ipc-api-forge';
-import type { GraphChunk, GraphLayout } from './graph';
+import type { GraphChunk, GraphFilter, GraphLayout } from './graph';
 import type { RepoHealth } from './health';
 import type { RepoHooksDisclosure } from './hooks';
 import type { BlameLine, FileHistoryEntry, ReflogEntry, UndoPlan } from './history';
@@ -45,14 +45,14 @@ export interface IpcApi extends IpcApiForge {
   pickFolder(): Promise<string | null>;
   /** Rejects with {@link AppError} (`noRepo` when the id is not open). */
   getStatus(repoId: string): Promise<StatusSnapshot>;
-  /** Full graph layout for a repo. Rejects with {@link AppError} (`noRepo` when the id is not open). */
-  getGraph(repoId: string): Promise<GraphLayout>;
-  /** P65: stream the graph layout for a repo as ordered chunks (meta -> batch* ->
-   *  done). The frontend passes a plain callback; the Tauri impl bridges it
-   *  through a `Channel`, the mock invokes it directly. Resolves when the stream
-   *  completes (after the `done` chunk). Rejects with {@link AppError} (`noRepo`
-   *  when the id is not open, `git`). `getGraph` is retained (small-repo/tests). */
-  streamGraph(repoId: string, onChunk: (c: GraphChunk) => void): Promise<void>;
+  /** Full graph layout (optional spec-003 walk `filter`). Rejects with {@link AppError} (`noRepo` when the id is not open). */
+  getGraph(repoId: string, filter?: GraphFilter): Promise<GraphLayout>;
+  /** P65: stream the graph layout as ordered chunks (meta -> batch* -> done).
+   *  Plain callback (the Tauri impl bridges a `Channel`); resolves after `done`;
+   *  rejects {@link AppError} (`noRepo`, `git`). `getGraph` stays (small-repo/tests).
+   *  Spec-003: `filter` restricts the walk (`null` ⇒ default); the `meta` chunk
+   *  reports `filtered`/`seedRefsApplied`. */
+  streamGraph(repoId: string, filter: GraphFilter | null, onChunk: (c: GraphChunk) => void): Promise<void>;
   /** Stage paths (worktree-relative, forward slashes — StatusEntry.path strings). Atomic. */
   stage(repoId: string, paths: string[]): Promise<void>;
   /** Unstage paths. Atomic. Safe (worktree never touched). */

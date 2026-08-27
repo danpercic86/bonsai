@@ -51,8 +51,9 @@ pub(crate) async fn get_status_inner(state: &AppState, repo_id: &str) -> Result<
 pub async fn get_graph(
     state: tauri::State<'_, AppState>,
     repo_id: String,
+    filter: Option<GraphFilter>,
 ) -> Result<GraphLayout, AppError> {
-    get_graph_inner(state.inner(), &repo_id).await
+    get_graph_inner(state.inner(), &repo_id, filter).await
 }
 
 /// Runtime-free core of `get_graph` (unit-testable without a Tauri app).
@@ -64,8 +65,15 @@ pub async fn get_graph(
 /// and `get_graph` is off the refresh hot path (the frontend uses `streamGraph`
 /// — `get_graph` is retained for small-repo/tests/mock reuse). So it always
 /// walks. See `graph_cache.rs` and the P86 report.
-pub(crate) async fn get_graph_inner(state: &AppState, repo_id: &str) -> Result<GraphLayout, AppError> {
+pub(crate) async fn get_graph_inner(
+    state: &AppState,
+    repo_id: &str,
+    filter: Option<GraphFilter>,
+) -> Result<GraphLayout, AppError> {
     let path = repo_path(state, repo_id)?;
+    // Spec-003: `None` == the default (no-op) filter — existing callers and the
+    // mock keep today's behavior without sending the argument.
+    let filter = filter.unwrap_or_default();
     // P86 instrumentation: uncached ⇒ every call is a real walk + open.
     state.perf.inc_graph_walks();
     state.perf.inc_repo_opens();
@@ -75,7 +83,7 @@ pub(crate) async fn get_graph_inner(state: &AppState, repo_id: &str) -> Result<G
     // MAX_COMMITS-capped layout and overridable via BONSAI_GIT_TIMEOUT_MS.
     tauri::async_runtime::spawn_blocking(move || {
         bonsai_core::git::timeout::run_with_git_timeout("compute_graph", move |_progress| {
-            compute_graph(&path)
+            compute_graph_with(&path, &filter)
         })
     })
     .await
@@ -95,8 +103,11 @@ pub(crate) async fn get_graph_inner(state: &AppState, repo_id: &str) -> Result<G
 pub async fn stream_graph(
     state: tauri::State<'_, AppState>,
     repo_id: String,
+    filter: Option<GraphFilter>,
     on_chunk: tauri::ipc::Channel<GraphChunk>,
 ) -> Result<(), AppError> {
+    // Spec-003: `None` == the default (no-op) filter.
+    let filter = filter.unwrap_or_default();
     // P86 B1: clone the workdir path AND the per-repo layout-cache handle out
     // together under one brief map lock, then hand both into the blocking pool.
     let (path, cache) = repo_path_and_graph_cache(state.inner(), &repo_id)?;
@@ -133,10 +144,16 @@ pub async fn stream_graph(
                 // drops the channel (unmount / repo switch / `close_repo`);
                 // `is_ok() == false` stops the pass promptly with `Ok`
                 // (contract §6 cancellation).
-                crate::graph_cache::stream_graph_cached_with(repo, &cache, &perf_walk, |chunk| {
-                    progress.tick();
-                    on_chunk.send(chunk).is_ok()
-                })
+                crate::graph_cache::stream_graph_cached_with(
+                    repo,
+                    &cache,
+                    &perf_walk,
+                    &filter,
+                    |chunk| {
+                        progress.tick();
+                        on_chunk.send(chunk).is_ok()
+                    },
+                )
             },
         )
     })

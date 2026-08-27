@@ -60,6 +60,7 @@ const REPEAT_INSTANCES: Record<SettingsRowRepeat, (fx: Fixture) => readonly stri
 const ROLE_FOR: Record<Exclude<SettingsControlKind, 'readonly' | 'group'>, string> = {
   switch: 'checkbox',
   segmented: 'radiogroup',
+  combobox: 'combobox',
   radiogroup: 'radiogroup',
   color: 'radiogroup',
   numberSlider: 'spinbutton',

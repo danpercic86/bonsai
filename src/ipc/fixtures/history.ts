@@ -4,7 +4,9 @@ import type { BlameLine, FileHistoryEntry } from '../types';
 // P23d §10.2: blame/file-history fixtures. The oids mirror fixtures/graph.ts
 // `oid(row)` (row hex, 2 digits, repeated 20×) so reveal-in-graph resolves to a
 // real node in the default mock layout. Authors mirror that fixture's `author`
-// (even rows Ada, odd rows Grace). The keyed paths are REAL status rows
+// rotation on the referenced rows (0/8 → Ada, 1/5 → Grace; the graph fixture
+// rotates 4 authors since spec-006 but keeps these rows pinned). The keyed
+// paths are REAL status rows
 // (`src/main.rs` shows in both Staged + Changes; `README.md` in Changes) so the
 // row-action buttons produce populated views; every other path → git error / [].
 export const BLAME_FIXTURE_PATHS = new Set(['src/main.rs', 'README.md']);

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import type { ComponentProps, RefObject } from 'react';
 import { AiOutputPanel } from './AiOutputPanel';
 import { BlameView } from './BlameView';
@@ -5,16 +6,25 @@ import { CommitSearchBar } from './CommitSearchBar';
 import type { ComboboxOption } from './Combobox';
 import { HistorySearchPanel } from './HistorySearchPanel';
 import { DiffBrowser } from './DiffBrowser';
+import { diffBrowserSourceKey } from './diffBrowserSourceKey';
 import { DiffOverlay } from './DiffOverlay';
 import type { DiffOverlayMeta } from './DiffOverlay';
 import { ErrorBoundary } from './ErrorBoundary';
 import { FileHistoryView } from './FileHistoryView';
+import { GraphPaneEmptyState } from './GraphPaneEmptyState';
+import { ReplayFab } from '../graph/replay/ReplayFab';
+import { ReplayMode } from '../graph/replay/ReplayMode';
+import type { ReplayPaneProps } from './repoWorkspace/replayProps';
 import { ReflogView } from './ReflogView';
 import { shortcutLabel } from '../utils/platform';
 import type { DiffSlot } from './StatusPanel';
 import type { UseCommitSearch } from './repoWorkspace/useCommitSearch';
 import type { UseHistorySearch } from './repoWorkspace/useHistorySearch';
 import { GraphCanvas } from '../graph/GraphCanvas';
+import { GraphFilterChip } from './GraphFilterChip';
+import type { GraphFilterController } from '../hooks/useGraphFilter';
+import type { GraphFoldController } from '../hooks/useGraphFold';
+import type { GraphFoldView } from '../graph/foldView';
 import { GraphSelectionAnnouncer } from './GraphSelectionAnnouncer';
 import type { GraphCanvasHandle } from '../graph/GraphCanvas';
 import type {
@@ -62,6 +72,19 @@ export interface WorkspaceGraphPaneProps {
   /** P84: nonce-driven reveal flash + reduced-motion flag, forwarded to GraphCanvas. */
   revealFlash: GraphCanvasProps['revealFlash'];
   reducedMotion: GraphCanvasProps['reducedMotion'];
+  /** spec 002: Bonsai graph style + season, forwarded to GraphCanvas. */
+  graphStyle: GraphCanvasProps['graphStyle'];
+  graphSeason: GraphCanvasProps['graphSeason'];
+  /** Spec-003: the declutter controller (chip + popover) and the backend's
+   *  stale verdict (saved refs matched nothing → warning chip). */
+  graphFilter: GraphFilterController;
+  /** Spec-004: the fold controller (expansion state + display-row model). */
+  graphFold: GraphFoldController;
+  /** Spec-005: overview-rail bundle (assembled in repoWorkspace/railProps.ts). */
+  rail: GraphCanvasProps['rail'];
+  graphFilterStale: boolean;
+  /** Spec-007: replay bundle (fab gate + overlay props; replayProps.ts). */
+  replay: ReplayPaneProps;
 
   /** P50b: commit-search state (bar + graph highlight + next/prev jump). */
   search: UseCommitSearch;
@@ -166,6 +189,13 @@ export function WorkspaceGraphPane({
   totalRows,
   revealFlash,
   reducedMotion,
+  graphStyle,
+  graphSeason,
+  graphFilter,
+  graphFold,
+  rail,
+  graphFilterStale,
+  replay,
   search,
   searchScopeOptions,
   historySearch,
@@ -210,6 +240,25 @@ export function WorkspaceGraphPane({
 }: WorkspaceGraphPaneProps) {
   // P50b: the floating search affordance is only shown over a bare graph — hide
   // it while any overlay covers the pane (it would poke through the corner).
+  // Spec-004: GraphCanvas's fold view-model — only while the mapping is real
+  // (fold on + spans present), so the fold-off path stays byte-identical.
+  const foldView = useMemo<GraphFoldView | undefined>(() => {
+    if (graphFold.model === null) return undefined;
+    return {
+      model: graphFold.model,
+      expandedSpans: graphFold.expandedSpans,
+      activePillStart: graphFold.activePillStart,
+      onToggleSpan: graphFold.toggleSpan,
+    };
+  }, [graphFold.model, graphFold.expandedSpans, graphFold.activePillStart, graphFold.toggleSpan]);
+  const announcerFold = useMemo(
+    () => ({
+      model: graphFold.model,
+      activePillStart: graphFold.activePillStart,
+      expandedSpans: graphFold.expandedSpans,
+    }),
+    [graphFold.model, graphFold.activePillStart, graphFold.expandedSpans],
+  );
   const anyOverlayOpen =
     diffSlot !== null ||
     blame !== null ||
@@ -221,7 +270,7 @@ export function WorkspaceGraphPane({
     <main className="graph-pane">
       {/* M1: polite live region announcing the settled graph-grid selection
           (canvas is opaque to SR). Permanently mounted for reliable pickup. */}
-      <GraphSelectionAnnouncer graph={graph} selectedIndex={selectedIndex} display={display} />
+      <GraphSelectionAnnouncer graph={graph} selectedIndex={selectedIndex} display={display} fold={announcerFold} />
       {/* P50b: search bar at the top of the pane while open; a floating affordance
           otherwise (Ctrl/Cmd-F also opens it — the webview may steal that in the
           browser harness, so the button is the always-reachable entry point). */}
@@ -258,6 +307,32 @@ export function WorkspaceGraphPane({
           </button>
         )
       )}
+      {/* Spec-003 §2: the graph-filter chip. Hidden only when there is no graph,
+          HEAD is unborn, or a full overlay covers the pane. While the search bar
+          or Ask-history panel is open the ACTIVE/stale chip stays (shifted below
+          the bar); the icon-only inactive fab hides (it is chrome, not the
+          indicator). */}
+      {graph !== null &&
+        head?.unborn !== true &&
+        !anyOverlayOpen &&
+        (graphFilter.requested || (!search.open && !historySearch.open)) && (
+          <GraphFilterChip
+            controller={graphFilter}
+            stale={graphFilterStale}
+            belowBar={search.open || historySearch.open}
+            // Follow-up (spec-003): global-shortcut suppression while the popover
+            // is open needs an App-level lift; the popover contains its own Esc.
+            onMenuOpenChange={() => {}}
+            focusGraph={() => {
+              document.querySelector<HTMLElement>('.graph-scroll')?.focus();
+            }}
+          />
+        )}
+      {/* Spec-007 §2.2: replay fab — third in the cluster (leftmost). Stays
+          visible-but-disabled on an empty layout; hides with the cluster. */}
+      {graph !== null && !anyOverlayOpen && !search.open && !historySearch.open && (
+        <ReplayFab disabled={!replay.canReplay} onOpen={replay.onOpen} />
+      )}
       {/* P57c: the "Ask history" overlay (semantic search + AI answer). Its own
           top overlay, independent of the P50 literal-search bar. */}
       {historySearch.open && (
@@ -272,25 +347,10 @@ export function WorkspaceGraphPane({
         </div>
       )}
       {head?.unborn ? (
-        <div className="graph-pane-empty">
-          <div className="graph-pane-empty-card">
-            <span className="graph-pane-empty-mark" aria-hidden="true">
-              {'🌱'}
-            </span>
-            <p className="graph-pane-empty-title">No commits yet</p>
-            <p className="pane-empty">
-              Stage your changes and write your first commit in the panel on the right — it will
-              appear here as the root of your history.
-            </p>
-            <button
-              type="button"
-              className="btn-secondary graph-pane-empty-identity"
-              onClick={onOpenIdentitySettings}
-            >
-              Set your Git identity
-            </button>
-          </div>
-        </div>
+        <GraphPaneEmptyState
+          bonsai={graphStyle === 'bonsai'}
+          onOpenIdentitySettings={onOpenIdentitySettings}
+        />
       ) : graph !== null ? (
         <ErrorBoundary label="Commit graph">
           <GraphCanvas
@@ -307,14 +367,17 @@ export function WorkspaceGraphPane({
             }}
             wip={wip}
             themeVersion={themeVersion}
-            active={active}
+            // Spec-007: frozen (P3e tab-hide path) under the replay overlay.
+            active={active && !replay.open}
             onContextMenu={onContextMenu}
             metrics={metrics}
             metricsVersion={metricsVersion}
             // P57c: while the Ask-history overlay is open its hit rings take the
             // shared matchRows channel; otherwise the P50 search rings do. Both
             // are memoized in their hooks, so this stays reference-stable.
+            // Spec-005: railProps.ts mirrors this exact pick — keep in sync.
             matchRows={historySearch.open ? historySearch.matchRows : search.matchRows}
+            rail={rail}
             display={display}
             verifyStatus={verifyStatus}
             onVisibleRangeChange={onVisibleRangeChange}
@@ -323,6 +386,9 @@ export function WorkspaceGraphPane({
             totalRows={totalRows}
             revealFlash={revealFlash}
             reducedMotion={reducedMotion}
+            graphStyle={graphStyle}
+            graphSeason={graphSeason}
+            fold={foldView}
           />
         </ErrorBoundary>
       ) : null}
@@ -412,13 +478,12 @@ export function WorkspaceGraphPane({
         />
       )}
       {/* P11g-rev §4.5: all-files DiffBrowser (header + stacked scroll only)
-          over the canvas. Compare mode auto-opens; commit mode is
-          explicit-open. The `key` on source.oid remounts fresh for a
-          DIFFERENT target/commit (clears cache+queue) but survives a refetch
-          of the SAME oid. */}
+          over the canvas. Compare/pr modes auto-open; commit is explicit-open.
+          The source-key `key` remounts fresh for a DIFFERENT target
+          (clears cache+queue) but survives a refetch of the SAME one. */}
       {diffBrowserView !== null && (
         <DiffBrowser
-          key={`${diffBrowserView.source.mode}:${diffBrowserView.source.oid}`}
+          key={`${diffBrowserView.source.mode}:${diffBrowserSourceKey(diffBrowserView.source)}`}
           repoId={repoId}
           source={diffBrowserView.source}
           files={diffBrowserView.files}
@@ -427,6 +492,9 @@ export function WorkspaceGraphPane({
           onClose={diffBrowserView.onClose}
         />
       )}
+      {/* Spec-007: the replay overlay (z-6) covers the whole pane column; the
+          working canvas above stays mounted inactive — exit restore is free. */}
+      {replay.mode !== null && <ReplayMode {...replay.mode} />}
     </main>
   );
 }

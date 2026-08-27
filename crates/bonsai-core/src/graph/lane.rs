@@ -67,17 +67,35 @@ pub(super) struct LaneWalker {
     /// routing regardless, so retaining it here costs the stream nothing (moved,
     /// never cloned).
     last_parents: Vec<git2::Oid>,
+    /// Spec-004: whether the most recent [`step`](Self::step)'s commit is a
+    /// REAL merge — filtered (non-hidden) parent count > 1, recorded BEFORE
+    /// the first-parent truncate. Powers the `merge_rows` bitset so fold rule
+    /// 5 holds even when the view truncates parents.
+    last_real_merge: bool,
+    /// Spec-003 first-parent mode: truncate parent routing to parent 0 (paired
+    /// with `simplify_first_parent` on the revwalk — the walk never emits the
+    /// other parents, so routing edges to them would leave dangling lanes).
+    first_parent: bool,
 }
 
 impl LaneWalker {
-    pub(super) fn new(hidden: HashSet<git2::Oid>) -> Self {
+    pub(super) fn new(hidden: HashSet<git2::Oid>, first_parent: bool) -> Self {
         LaneWalker {
             lanes: Vec::new(),
             pending: HashMap::new(),
             index_of: HashMap::new(),
             hidden,
             last_parents: Vec::new(),
+            last_real_merge: false,
+            first_parent,
         }
+    }
+
+    /// Whether the most recent [`step`](Self::step)'s commit had more than one
+    /// real (non-hidden) parent — true even under first-parent mode, whose
+    /// truncation happens AFTER this is recorded (spec-004 fold rule 5).
+    pub(super) fn last_was_merge(&self) -> bool {
+        self.last_real_merge
     }
 
     /// Number of lanes ever active (== `lanes.len()`; monotonic — drives the
@@ -153,10 +171,17 @@ impl LaneWalker {
         // 4. Route edges to parents / update reservations. Skip-emitted stash
         //    parents (`I`/`U`) are filtered out so `W` keeps only its base `B`
         //    → a single `W → B` edge and no dangling lane reservation.
-        let parents: Vec<git2::Oid> = commit
+        let mut parents: Vec<git2::Oid> = commit
             .parent_ids()
             .filter(|p| !self.hidden.contains(p))
             .collect();
+        // Spec-004: record the REAL merge bit before any truncation.
+        self.last_real_merge = parents.len() > 1;
+        // Spec-003 first-parent mode: only parent 0 is walked (the revwalk is
+        // simplified), so never route edges to the other parents.
+        if self.first_parent {
+            parents.truncate(1);
+        }
         if parents.is_empty() {
             self.lanes[lane] = None; // root: line ends here
         } else {

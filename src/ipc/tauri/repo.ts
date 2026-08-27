@@ -1,6 +1,6 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import type { CloneProgress, GitAvailability, GraphChunk, GraphLayout, OpenRepoResult, RepoHealth, StatusSnapshot } from '../types';
+import type { CloneProgress, GitAvailability, GraphChunk, GraphFilter, GraphLayout, OpenRepoResult, RepoHealth, StatusSnapshot } from '../types';
 
 export const repoCommands = {
   openRepo(path: string): Promise<OpenRepoResult> {
@@ -35,16 +35,20 @@ export const repoCommands = {
     return invoke<StatusSnapshot>('get_status', { repoId });
   },
 
-  getGraph(repoId: string): Promise<GraphLayout> {
-    return invoke<GraphLayout>('get_graph', { repoId });
+  getGraph(repoId: string, filter?: GraphFilter): Promise<GraphLayout> {
+    return invoke<GraphLayout>('get_graph', { repoId, filter: filter ?? null });
   },
 
-  streamGraph(repoId: string, onChunk: (c: GraphChunk) => void): Promise<void> {
+  streamGraph(
+    repoId: string,
+    filter: GraphFilter | null,
+    onChunk: (c: GraphChunk) => void,
+  ): Promise<void> {
     const channel = new Channel<GraphChunk>();
     channel.onmessage = onChunk;
     // Tauri auto-serializes the Channel as the `on_chunk` command argument
     // (mirrors historyIndexBuild / cloneRepo).
-    return invoke<void>('stream_graph', { repoId, onChunk: channel });
+    return invoke<void>('stream_graph', { repoId, filter, onChunk: channel });
   },
 
   // P70: git executable preflight (never rejects for git state).

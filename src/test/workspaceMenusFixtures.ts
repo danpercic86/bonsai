@@ -66,6 +66,8 @@ export function makeDeps(over: Partial<WorkspaceMenuDeps> = {}): WorkspaceMenuDe
     aiEligible: false,
     remotes: [{ name: 'origin', url: 'https://example.com/r.git' }],
     pushToast: vi.fn(),
+    // Spec-003: default = no filter items (tests exercising the group override).
+    refFilterItems: () => [],
     handleCheckoutRemote: vi.fn(),
     handleCheckoutBranch: vi.fn(),
     handleCheckoutCommit: vi.fn(),

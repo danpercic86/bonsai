@@ -42,6 +42,21 @@ const DEFAULTS: UiSettings = {
   panelDensity: 'cozy',
   /** P80 D1: the always-safe, non-network action is the default primary. */
   primaryCommitAction: 'commit',
+  /** Spec-002: classic lanes by default; `bonsai` is the opt-in organic reskin.
+   *  Pinned in the shared oracle + Rust `Settings::default()` (task 2b) so it
+   *  survives a native restart. */
+  graphStyle: 'standard',
+  /** Spec-002: seasonal accent for the Bonsai style; ignored while standard. */
+  graphSeason: 'living',
+  /** Spec-003: first-parent graph walk off; no solo/hide ref filter. */
+  graphFirstParent: false,
+  /** Spec-004: fold linear runs off by default. */
+  graphFoldLinear: false,
+  /** Spec-005: overview rail on-demand (hover/search) by default. */
+  graphMinimapAlwaysShow: false,
+  /** Spec-006: classic branch-lane edge coloring by default. */
+  graphColorMode: 'lane',
+  graphRefFilter: null,
   /** P11: auto-fetch OFF, 5-minute interval. */
   autoFetch: { enabled: false, intervalMinutes: 5 },
   /** P30: periodic status/health refresh OFF, 30-minute interval. */

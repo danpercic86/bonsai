@@ -1,6 +1,32 @@
 /** Theme resolution for the canvas graph (contract M2-graph.md §3.2).
  * Colors live as CSS custom properties in styles.css; this module reads them
- * ONCE per mount/theme change — callers cache the result, never per frame. */
+ * ONCE per mount/theme change — callers cache the result, never per frame.
+ *
+ * Lane palettes + Bonsai seasonal data live in `palettes.ts` (pure data); this
+ * module is logic-only. Standard palettes are re-exported for back-compat. */
+
+import {
+  BLOSSOM_ALPHA_DARK,
+  BLOSSOM_ALPHA_LIGHT,
+  EDGE_TAPER_COZY,
+  LANE_COLORS_BONSAI_DARK,
+  LANE_COLORS_BONSAI_LIGHT,
+  LANE_COLORS_DARK,
+  LANE_COLORS_LIGHT,
+  SEASON_PALETTES,
+  type GraphSeason,
+} from './palettes';
+
+export {
+  LANE_COLORS_DARK,
+  LANE_COLORS_LIGHT,
+  LANE_COLORS_BONSAI_DARK,
+  LANE_COLORS_BONSAI_LIGHT,
+} from './palettes';
+export type { GraphSeason } from './palettes';
+
+/** Bonsai vs standard graph paint. Orthogonal to app light/dark. */
+export type GraphStyle = 'standard' | 'bonsai';
 
 export interface Theme {
   /** 10 entries, graph-layer lane palette for the resolved theme (ui-reference §5). */
@@ -25,37 +51,33 @@ export interface Theme {
   badgeGood: string;
   badgeWarn: string;
   badgeUnknown: string;
-}
 
-/** Lane palettes (ui-reference §5). Deterministic `lane % 10` assignment; stable
- *  while scrolling by construction. Theme-specific: the light palette darkens each
- *  hue to clear the 3:1 graphics bar vs `#ffffff` (the dark palette is unchanged).
- *  These live as graph-layer constants (NOT CSS `--lane-N` vars) so the draw layer
- *  owns the palette and selects by resolved theme. Hue order 0..9 preserved. */
-export const LANE_COLORS_DARK: readonly string[] = [
-  '#4f8cff', // 0 blue
-  '#f2994a', // 1 orange
-  '#9b6dff', // 2 purple
-  '#43b97f', // 3 green
-  '#e5534b', // 4 red
-  '#3ec6c0', // 5 teal
-  '#e8c341', // 6 yellow
-  '#f26d9c', // 7 pink
-  '#7a86ff', // 8 indigo
-  '#8fbf4d', // 9 lime
-];
-export const LANE_COLORS_LIGHT: readonly string[] = [
-  '#2f6fe4', // 0 blue
-  '#b0530f', // 1 orange
-  '#7b46d6', // 2 purple
-  '#1b7d4c', // 3 green
-  '#c62f33', // 4 red
-  '#0c7d78', // 5 teal
-  '#8a6f08', // 6 yellow
-  '#c8437a', // 7 pink
-  '#5560e0', // 8 indigo
-  '#517c20', // 9 lime
-];
+  // ── Bonsai styling (spec 002 UI contract). For graphStyle==='standard' these
+  //    carry inert defaults (graphBackdrop === bg0, taper widths mirror the
+  //    single stroke) so the standard draw paths are byte-for-byte unchanged. ──
+  /** Active graph paint style; the draw layer branches on this. */
+  graphStyle: GraphStyle;
+  /** Convenience mirror of `graphStyle === 'bonsai'`. */
+  bonsai: boolean;
+  /** Backdrop base color (§4.1) — also the avatar-halo base in Bonsai. In the
+   *  standard theme this equals `bg0` so the halo is unchanged. */
+  graphBackdrop: string;
+  /** Vertical-gradient endpoints for the canvas backdrop (§4.1). Equal to
+   *  `graphBackdrop` in the standard theme. */
+  graphBackdropTop: string;
+  graphBackdropBottom: string;
+  /** Season blossom/HEAD accent (§2.3). Falls back to `accent` in standard. */
+  blossomAccent: string;
+  /** Blossom fill alpha (§2.3). 0 in standard (no blossom painted). */
+  blossomAlpha: number;
+  /** Stepped edge taper widths (§3): tip (newer), branch (=today's edgeWidth),
+   *  trunk (older). In standard all three equal the single stroke width so the
+   *  standard stroke is unchanged. Bonsai defaults to the cozy step; task 3 may
+   *  swap to the density-specific step from `metrics.ts`. */
+  edgeTipWidth: number;
+  edgeBranchWidth: number;
+  edgeTrunkWidth: number;
+}
 
 /** Detached-HEAD pill background (ui-reference §6). Fixed dark red in both themes
  *  (white text = 6.54:1); replaces `--danger`, which gave only 3.70:1 in dark. */
@@ -109,16 +131,50 @@ export const STASH_COLOR = '#9a7cff';
 /** Stash pill background, precomputed at module load. */
 export const STASH_BG = hexToRgba(STASH_COLOR, 0.18);
 
-/** One getComputedStyle pass over the element's resolved custom properties. */
-export function resolveTheme(el: HTMLElement): Theme {
+/** One getComputedStyle pass over the element's resolved custom properties.
+ *
+ * `graphStyle`/`graphSeason` select the Bonsai paint layer; both default so
+ * existing callers (which pass only `el`) keep the standard theme byte-for-byte.
+ * The lane palette is graph-layer-owned (not CSS vars): standard selects by the
+ * resolved app mode (bg0 luminance); Bonsai selects its own light/dark palette
+ * by the same mode, and layers season accent + backdrop on top. */
+export function resolveTheme(
+  el: HTMLElement,
+  graphStyle: GraphStyle = 'standard',
+  graphSeason: GraphSeason = 'living',
+): Theme {
   const cs = getComputedStyle(el);
   const read = (name: string): string => cs.getPropertyValue(name).trim();
 
-  // Lane palette is graph-layer-owned (not CSS vars); select by resolved theme.
   const bg0 = read('--bg-0');
-  const palette = isDarkBg(bg0) ? LANE_COLORS_DARK : LANE_COLORS_LIGHT;
-  const laneColors = palette.slice();
+  const dark = isDarkBg(bg0);
+  const bonsai = graphStyle === 'bonsai';
+
+  const standardPalette = dark ? LANE_COLORS_DARK : LANE_COLORS_LIGHT;
+  const bonsaiPalette = dark ? LANE_COLORS_BONSAI_DARK : LANE_COLORS_BONSAI_LIGHT;
+  const laneColors = (bonsai ? bonsaiPalette : standardPalette).slice();
   const laneColorsAlpha = laneColors.map((c) => hexToRgba(c, 0.18));
+
+  const accent = read('--accent');
+  const season = SEASON_PALETTES[graphSeason];
+  const graphBackdrop = bonsai ? (dark ? season.backdropDark : season.backdropLight) : bg0;
+  const graphBackdropTop = bonsai
+    ? dark
+      ? season.backdropDarkTop
+      : season.backdropLightTop
+    : bg0;
+  const graphBackdropBottom = bonsai
+    ? dark
+      ? season.backdropDarkBottom
+      : season.backdropLightBottom
+    : bg0;
+  const blossomAccent = bonsai
+    ? dark
+      ? season.blossomAccentDark
+      : season.blossomAccentLight
+    : accent;
+  const blossomAlpha = bonsai ? (dark ? BLOSSOM_ALPHA_DARK : BLOSSOM_ALPHA_LIGHT) : 0;
+  const taper = EDGE_TAPER_COZY;
 
   return {
     laneColors,
@@ -130,7 +186,7 @@ export function resolveTheme(el: HTMLElement): Theme {
     text2: read('--text-2'),
     text3: read('--text-3'),
     selection: read('--selection'),
-    accent: read('--accent'),
+    accent,
     accentText: read('--accent-text'),
     danger: read('--danger'),
     warning: read('--warning'),
@@ -138,5 +194,15 @@ export function resolveTheme(el: HTMLElement): Theme {
     badgeGood: read('--badge-good'),
     badgeWarn: read('--badge-warn'),
     badgeUnknown: read('--badge-unknown'),
+    graphStyle,
+    bonsai,
+    graphBackdrop,
+    graphBackdropTop,
+    graphBackdropBottom,
+    blossomAccent,
+    blossomAlpha,
+    edgeTipWidth: bonsai ? taper.tip : taper.branch,
+    edgeBranchWidth: taper.branch,
+    edgeTrunkWidth: bonsai ? taper.trunk : taper.branch,
   };
 }

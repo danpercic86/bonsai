@@ -1,7 +1,7 @@
 use super::*;
 
 /// Initializes a repo in a fresh temp dir with local user config set.
-fn init_repo() -> (tempfile::TempDir, git2::Repository) {
+pub(super) fn init_repo() -> (tempfile::TempDir, git2::Repository) {
     let dir = tempfile::TempDir::new().expect("create temp dir");
     let repo = git2::Repository::init(dir.path()).expect("init repo");
     {
@@ -16,7 +16,7 @@ fn init_repo() -> (tempfile::TempDir, git2::Repository) {
 
 /// Creates a commit from an in-memory tree with an EXPLICIT timestamp
 /// (walk-order determinism depends on distinct times). No ref is updated.
-fn commit(repo: &git2::Repository, msg: &str, parents: &[git2::Oid], t: i64) -> git2::Oid {
+pub(super) fn commit(repo: &git2::Repository, msg: &str, parents: &[git2::Oid], t: i64) -> git2::Oid {
     let sig = git2::Signature::new("Test User", "test@example.com", &git2::Time::new(t, 0))
         .expect("signature");
     let blob = repo.blob(msg.as_bytes()).expect("blob");
@@ -32,12 +32,12 @@ fn commit(repo: &git2::Repository, msg: &str, parents: &[git2::Oid], t: i64) -> 
         .expect("commit")
 }
 
-fn branch(repo: &git2::Repository, name: &str, oid: git2::Oid) {
+pub(super) fn branch(repo: &git2::Repository, name: &str, oid: git2::Oid) {
     let c = repo.find_commit(oid).expect("find commit");
     repo.branch(name, &c, true).expect("create branch");
 }
 
-fn set_head(repo: &git2::Repository, name: &str) {
+pub(super) fn set_head(repo: &git2::Repository, name: &str) {
     repo.set_head(&format!("refs/heads/{name}")).expect("set head");
 }
 
@@ -696,7 +696,7 @@ fn capture_stream(
     max: usize,
 ) -> Vec<GraphChunk> {
     let mut chunks: Vec<GraphChunk> = Vec::new();
-    super::stream::stream_graph_core_with(dir, first, batch, max, |c| {
+    super::stream::stream_graph_core_with(dir, &GraphFilter::default(), first, batch, max, |c| {
         chunks.push(c);
         true
     })
@@ -762,10 +762,7 @@ fn assemble(chunks: &[GraphChunk]) -> GraphLayout {
                 lane_count = lane_count.max(*lane_count_so_far);
             }
             GraphChunk::Done {
-                total_rows,
-                lane_count: lc,
-                head_index: hi,
-                truncated: tr,
+                total_rows, lane_count: lc, head_index: hi, truncated: tr, ..
             } => {
                 assert_eq!(
                     *total_rows as usize,
@@ -802,6 +799,7 @@ fn assemble(chunks: &[GraphChunk]) -> GraphLayout {
         lane_count,
         head_index,
         truncated,
+        fold_spans: Vec::new(),
     }
 }
 
@@ -947,7 +945,7 @@ fn stream_unborn_repo_emits_meta_then_done() {
     let chunks = capture_stream(dir.path(), 512, 512, STREAM_MAX_COMMITS);
     assert_eq!(chunks.len(), 2, "exactly Meta + Done");
     match &chunks[0] {
-        GraphChunk::Meta { total, head_oid } => {
+        GraphChunk::Meta { total, head_oid, .. } => {
             assert_eq!(*total, None, "v1 grows-as-you-go (OQ2)");
             assert!(head_oid.is_none(), "unborn HEAD");
         }
@@ -955,10 +953,7 @@ fn stream_unborn_repo_emits_meta_then_done() {
     }
     match &chunks[1] {
         GraphChunk::Done {
-            total_rows,
-            lane_count,
-            head_index,
-            truncated,
+            total_rows, lane_count, head_index, truncated, ..
         } => {
             assert_eq!(*total_rows, 0);
             assert_eq!(*lane_count, 0);

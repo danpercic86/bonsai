@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ipc, SUPPORTED_MERGE_METHODS } from '../../ipc';
-import type { ForgeKind, MergePrInput, PrDetail, ReviewComment } from '../../ipc';
+import type { ForgeKind, MergePrInput, PrDetail, PrDiffStats, ReviewComment } from '../../ipc';
 import { usePushToast } from '../../ToastContext';
 import { errorMessage } from '../../utils/errors';
 import { ConfirmDialog } from '../ConfirmDialog';
@@ -10,7 +10,6 @@ import { PrReviewComments } from '../PrReviewComments';
 import { PrChangesSection } from './PrChangesSection';
 import { PrMergeDialog } from './PrMergeDialog';
 import { usePrDiff } from './usePrDiff';
-import { usePrFileDiffs } from './usePrFileDiffs';
 
 // P83 — PR detail sub-container: owns the merge/close busy + dialog state and
 // the two mutating IPC calls, and mounts PrDetailView + the merge/close dialogs.
@@ -37,6 +36,11 @@ export interface PrDetailContainerProps {
   /** Route an `authFailed` error to the parent's reauth flow. Returns true when
    *  handled (caller then suppresses the extra toast). */
   onAuthFailed(e: unknown): boolean;
+  /** Open the CENTER-pane DiffBrowser on this PR's resolved local diff.
+   *  Auto-called once stats resolve (≥1 file) and by the file-list rows. */
+  onOpenPrDiff(stats: PrDiffStats, prNumber: number, title: string): void;
+  /** Close the center-pane PR diff (this detail unmounted / PR switched). */
+  onClosePrDiff(): void;
 }
 
 export function PrDetailContainer({
@@ -53,6 +57,8 @@ export function PrDetailContainer({
   onListChanged,
   onReload,
   onAuthFailed,
+  onOpenPrDiff,
+  onClosePrDiff,
 }: PrDetailContainerProps) {
   const pushToast = usePushToast();
   const [merging, setMerging] = useState(false);
@@ -66,11 +72,19 @@ export function PrDetailContainer({
   // + head sha (re-open cache / head-advance staleness live in the hook). The
   // per-file hunk fetcher is keyed off the resolved merge-base/head oids.
   const prDiff = usePrDiff(repoId, summary.number, summary.headSha);
-  const fileDiffs = usePrFileDiffs(
-    repoId,
-    prDiff.stats?.mergeBaseOid ?? '',
-    prDiff.stats?.headOid ?? '',
-  );
+
+  // Center-pane diff browser: AUTO-OPEN once the local diff resolves with ≥1
+  // file (mirrors compare mode). Re-fires on a head-advance refetch (new stats
+  // object) so the browser tracks the fresh oids. Closed via the cleanup below.
+  const prStats = prDiff.status === 'ready' ? prDiff.stats : null;
+  useEffect(() => {
+    if (prStats !== null && prStats.files.length > 0) {
+      onOpenPrDiff(prStats, summary.number, `#${summary.number} · ${summary.title}`);
+    }
+  }, [prStats, summary.number, summary.title, onOpenPrDiff]);
+  // Close when THIS detail goes away: unmount (back-to-list, tab switch — the
+  // whole PrPanel unmounts) or a same-mount PR switch (post-create replace).
+  useEffect(() => () => onClosePrDiff(), [summary.number, onClosePrDiff]);
   // Header counts: use the authoritative local stats once the local diff has
   // resolved — ready OR empty, i.e. even when it's 0/0/0 (SF1: an empty local
   // diff must show +0/-0/0 files, not the forge's stale non-zero counts). Only
@@ -158,12 +172,18 @@ export function PrDetailContainer({
         stats={headerStats}
         changesSlot={
           <PrChangesSection
+            key={summary.number}
             status={prDiff.status}
             stats={prDiff.stats}
             stale={prDiff.stale}
             errorCause={prDiff.errorCause}
             onRetry={prDiff.retry}
-            fileDiffs={fileDiffs}
+            onOpenBrowser={
+              prStats !== null && prStats.files.length > 0
+                ? () =>
+                    onOpenPrDiff(prStats, summary.number, `#${summary.number} · ${summary.title}`)
+                : undefined
+            }
           />
         }
       >

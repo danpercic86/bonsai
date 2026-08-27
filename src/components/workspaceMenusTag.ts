@@ -104,6 +104,11 @@ export function tagMenuItems(
         runChangelog({ kind: 'sinceLastTag', target: name }, `Release notes for ${name}`),
     });
   }
+  // Spec-003 §3.1: the solo/hide group — above the destructive items. A
+  // remote-only ghost has no local ref in the graph, so no filter items.
+  if (!isRemoteOnly) {
+    items.push(...deps.refFilterItems(`refs/tags/${name}`, 'tag'));
+  }
   // 6. Delete tag (existing, local) — skipped for a remote-only ghost (no local
   // tag exists). Routes through the existing local confirm.
   if (!isRemoteOnly) {

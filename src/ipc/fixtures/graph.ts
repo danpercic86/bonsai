@@ -12,9 +12,26 @@ function oid(row: number): string {
   return row.toString(16).padStart(2, '0').repeat(20);
 }
 
+/** Spec-006 §5.1: ≥4 distinct authors, interleaved. The rotation is chosen so
+ *  every row pinned by other fixtures/tests keeps its historical author:
+ *  rows 0/8 → Ada, rows 1/5 → Grace (e2e 02 details assertions, history.ts
+ *  blame/file-history, diffs.ts hardcoded entries). '林小明' covers the CJK
+ *  case on interleaved rows; 'Radia Perlman' is the 4th identity. */
+const AUTHOR_ROTATION = ['Ada Lovelace', 'Grace Hopper', '林小明', 'Radia Perlman'];
+
 function author(row: number): string {
-  return row % 2 === 0 ? 'Ada Lovelace' : 'Grace Hopper';
+  return AUTHOR_ROTATION[row % AUTHOR_ROTATION.length];
 }
+
+/** Spec-006 §5.6 odd-name authors (hash-path coverage: empty, single char,
+ *  ~60-char). Chain rows 9–26 only — never rows the e2e specs click or that
+ *  history/diff fixtures pin. Empty string intentionally overrides via `??`
+ *  (only null/undefined fall through), exercising the avatar '?' fallback. */
+const ODD_AUTHOR_ROWS: ReadonlyMap<number, string> = new Map([
+  [10, ''],
+  [12, 'x'],
+  [16, 'Maximiliana Wolfeschlegelsteinhausenbergerdorff von Quixote-Smith'],
+]);
 
 /**
  * 30-row mock layout per contract M2-graph.md §3.5. Rows 0–7 exercise the
@@ -70,7 +87,7 @@ export function buildMockGraph(): GraphLayout {
   ]);
   push('feat: polish', 1, [4], [{ name: 'feat', kind: 'localBranch', isHead: false }]);
   push('experiment', 2, [5], [{ name: 'exp', kind: 'localBranch', isHead: false }]);
-  // P7 §9: single-token author → initials "TO" (other rows yield "AL"/"GH").
+  // P7 §9: single-token author → initials "TO" (rotation rows yield "AL"/"GH"/…).
   // P10 §3.1: base-row stash pills removed — stashes are now their OWN nodes
   // (see withStashNodes), so `core work 4` is the plain base for stash@{0}.
   push('core work 4', 0, [5], undefined, 'torvalds');
@@ -101,7 +118,7 @@ export function buildMockGraph(): GraphLayout {
 
   // Rows 8–26: linear chain L19..L1 on lane 0.
   for (let row = 8; row <= 26; row++) {
-    push(`chore: history ${27 - row}`, 0, [row + 1]);
+    push(`chore: history ${27 - row}`, 0, [row + 1], undefined, ODD_AUTHOR_ROWS.get(row));
     edges.push({ from: row, to: row + 1, lane: 0 });
   }
 

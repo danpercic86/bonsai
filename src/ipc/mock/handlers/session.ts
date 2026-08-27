@@ -79,6 +79,10 @@ export const sessionHandlers = {
   async setUiSettings(patch: UiSettingsPatch): Promise<UiSettings> {
     await delay(150);
     const current = readUiSettings();
+    // Spec-002 (additive/optional): merge only when a value exists (patch or
+    // stored blob), so a write never mints keys the Rust-pinned oracle lacks.
+    const graphStyle = patch.graphStyle ?? current.graphStyle;
+    const graphSeason = patch.graphSeason ?? current.graphSeason;
     const next: UiSettings = {
       theme: patch.theme ?? current.theme,
       paneWidths:
@@ -95,6 +99,19 @@ export const sessionHandlers = {
           ? clampHealthRefresh(patch.healthRefresh)
           : current.healthRefresh,
       graph: patch.graph !== undefined ? clampGraphPrefs(patch.graph) : current.graph,
+      ...(graphStyle !== undefined ? { graphStyle } : {}),
+      ...(graphSeason !== undefined ? { graphSeason } : {}),
+      // Spec-003: first-parent + ref-filter intent. `graphRefFilter: null` in a
+      // patch is a real value (clear the filter), so `!== undefined` gates it.
+      graphFirstParent: patch.graphFirstParent ?? current.graphFirstParent ?? false,
+      // Spec-004: fold-linear toggle patches independently (first-parent precedent).
+      graphFoldLinear: patch.graphFoldLinear ?? current.graphFoldLinear ?? false,
+      // Spec-005: always-show overview rail (same plain-bool precedent).
+      graphMinimapAlwaysShow: patch.graphMinimapAlwaysShow ?? current.graphMinimapAlwaysShow ?? false,
+      // Spec-006: edge/ring coloring (same plain-enum precedent; default 'lane').
+      graphColorMode: patch.graphColorMode ?? current.graphColorMode ?? 'lane',
+      graphRefFilter:
+        patch.graphRefFilter !== undefined ? patch.graphRefFilter : (current.graphRefFilter ?? null),
       aiEnabled: patch.aiEnabled ?? current.aiEnabled,
       aiConflictAutonomy: patch.aiConflictAutonomy ?? current.aiConflictAutonomy,
       aiConsented: patch.aiConsented ?? current.aiConsented,

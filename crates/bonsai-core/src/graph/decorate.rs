@@ -63,6 +63,8 @@ mod tests {
             GraphChunk::Meta {
                 total: Some(2),
                 head_oid: None,
+                filtered: false,
+                seed_refs_applied: false,
             },
             GraphChunk::Batch {
                 start_row: 0,
@@ -104,6 +106,7 @@ mod tests {
                 lane_count: 2,
                 head_index: None,
                 truncated: false,
+                fold_spans: Vec::new(),
             },
         ];
 

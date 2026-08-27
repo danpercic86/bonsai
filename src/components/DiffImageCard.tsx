@@ -7,7 +7,7 @@ import { DiffImageView } from './DiffImageView';
 import type { ImageMode } from './DiffImageView';
 import type { DiffBrowserSource } from './DiffBrowser';
 
-// P61b (SHOULD-FIX follow-up): the commit/compare counterpart to the workdir
+// P61b (SHOULD-FIX follow-up): the commit/compare/pr counterpart to the workdir
 // image overlay (RepoWorkspace → DiffOverlay). DiffBrowser streams text files
 // through its bounded FileDiff queue; image headers are `binary:true` and so are
 // excluded from that queue — this card instead does its OWN local getImageDiff
@@ -19,7 +19,7 @@ import type { DiffBrowserSource } from './DiffBrowser';
 
 export interface DiffImageCardProps {
   repoId: string;
-  /** The browser's active source; `mode` selects the commit-vs-compare request. */
+  /** The browser's active source; `mode` selects the commit/compare/range request. */
   source: DiffBrowserSource;
   /** Header for THIS image file (path + origPath for renames). */
   header: FileDiffHeader;
@@ -35,14 +35,32 @@ export function DiffImageCard({ repoId, source, header }: DiffImageCardProps) {
   // Race guard: only the newest in-flight request may write state (drop stale).
   const reqIdRef = useRef(0);
 
+  // Primitive deps for the fetch effect: `source` is a memo-rebuilt object
+  // (recreated on every watcher refresh) — depending on it would refetch the
+  // image each tick even when nothing changed. `pr` carries two oids, the
+  // other modes one — unused slots are null so the dep list stays primitive.
+  const sourceMode = source.mode;
+  const sourceOid = source.mode === 'pr' ? null : source.oid;
+  const prBaseOid = source.mode === 'pr' ? source.mergeBaseOid : null;
+  const prHeadOid = source.mode === 'pr' ? source.headOid : null;
+
   useEffect(() => {
     // Build the request from the browser's context. Workdir never reaches here
     // (that overlay lives in RepoWorkspace). For `compare`, source.oid is the
-    // "to" commit — HEAD is the implicit "from" (matches compareWithHeadFileDiff).
-    const request: ImageDiffRequest =
-      source.mode === 'commit'
-        ? { kind: 'commit', oid: source.oid, path: header.path, origPath: header.origPath }
-        : { kind: 'compare', toOid: source.oid, path: header.path, origPath: header.origPath };
+    // "to" commit — HEAD is the implicit "from" (matches
+    // compareWithHeadFileDiff). For `pr`, old = merge-base, new = PR head.
+    const at = { path: header.path, origPath: header.origPath };
+    let request: ImageDiffRequest;
+    if (sourceMode === 'pr') {
+      if (prBaseOid === null || prHeadOid === null) return; // unreachable
+      request = { kind: 'range', oldOid: prBaseOid, newOid: prHeadOid, ...at };
+    } else if (sourceOid === null) {
+      return; // unreachable: commit/compare always carry an oid
+    } else if (sourceMode === 'commit') {
+      request = { kind: 'commit', oid: sourceOid, ...at };
+    } else {
+      request = { kind: 'compare', toOid: sourceOid, ...at };
+    }
     const id = ++reqIdRef.current;
     setLoading(true);
     setError(null);
@@ -59,7 +77,7 @@ export function DiffImageCard({ repoId, source, header }: DiffImageCardProps) {
         setLoading(false);
       },
     );
-  }, [repoId, source.oid, source.mode, header.path, header.origPath, retryTick]);
+  }, [repoId, sourceMode, sourceOid, prBaseOid, prHeadOid, header.path, header.origPath, retryTick]);
 
   return (
     <div className="diff-image-card">

@@ -35,3 +35,14 @@ export function clampLive(value: number, side: 'sidebar' | 'rightPanel', otherWi
 export function applyTheme(theme: Theme): void {
   document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
 }
+
+/** spec-002 §4.2: sets data-graph-style on <html> (alongside data-theme) so the
+ *  --graph-canvas-bg token switches to the Bonsai backdrop. Standard clears the
+ *  attribute rather than writing a value, keeping the default cascade untouched. */
+export function applyGraphStyle(graphStyle: 'standard' | 'bonsai'): void {
+  if (graphStyle === 'bonsai') {
+    document.documentElement.setAttribute('data-graph-style', 'bonsai');
+  } else {
+    document.documentElement.removeAttribute('data-graph-style');
+  }
+}

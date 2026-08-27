@@ -62,6 +62,25 @@ describe('DiffImageCard', () => {
     expect(container.querySelector('.img-swipe-stage')).toBeInTheDocument();
   });
 
+  it('pr source fetches with kind:"range" (oldOid = merge-base, newOid = head)', async () => {
+    const spy = vi.spyOn(mockIpc, 'getImageDiff').mockResolvedValue(DIFF);
+    render(
+      <DiffImageCard
+        repoId="/mock/repo"
+        source={{ mode: 'pr', mergeBaseOid: 'base789', headOid: 'head012', prNumber: 7, title: 't' }}
+        header={HEADER}
+      />,
+    );
+    expect(spy).toHaveBeenCalledWith('/mock/repo', {
+      kind: 'range',
+      oldOid: 'base789',
+      newOid: 'head012',
+      path: 'logo.png',
+      origPath: null,
+    });
+    expect(await screen.findByAltText('Old version')).toBeInTheDocument();
+  });
+
   it('shows the skeleton while loading, then the error banner with a working Retry', async () => {
     const spy = vi
       .spyOn(mockIpc, 'getImageDiff')

@@ -27,7 +27,11 @@ import type {
   AiAutonomy,
   AiAvailability,
   AutoFetchSettings,
+  GraphColorMode,
   GraphPrefs,
+  GraphRefFilter,
+  GraphSeason,
+  GraphStyle,
   HealthRefreshSettings,
   IdentityProfile,
   ListView,
@@ -62,6 +66,20 @@ export interface SettingsPanelProps {
   /** P30: periodic read-only refresh signal (backend scheduler). */
   healthRefresh: HealthRefreshSettings;
   graph: GraphPrefs;
+  /** Spec-002: commit-graph visual style + season. App resolves the (optional)
+   *  persisted values to concrete defaults, so these arrive non-null. */
+  graphStyle: GraphStyle;
+  graphSeason: GraphSeason;
+  /** Spec-003: graph declutter prefs (App resolves the optional persisted
+   *  values to concrete defaults, like graphStyle/graphSeason). */
+  graphFirstParent: boolean;
+  /** Spec-004: fold-linear toggle. */
+  graphFoldLinear: boolean;
+  /** Spec-005: overview-rail always-show toggle. */
+  graphMinimapAlwaysShow: boolean;
+  /** Spec-006: graph edge/ring coloring (lane vs author hue). */
+  graphColorMode: GraphColorMode;
+  graphRefFilter: GraphRefFilter | null;
   /** Fires on ANY change with a partial patch; App debounces the persist +
    *  updates its own state so consumers re-render live. */
   onChange(patch: UiSettingsPatch): void;
@@ -233,6 +251,13 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     autoFetch,
     healthRefresh,
     graph,
+    graphStyle,
+    graphSeason,
+    graphFirstParent,
+    graphFoldLinear,
+    graphMinimapAlwaysShow,
+    graphColorMode,
+    graphRefFilter,
     aiConflictAutonomy,
     aiAvailability,
     aiRun,
@@ -267,6 +292,12 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       autoFetch,
       healthRefresh,
       graph,
+      // Spec-003: live values (the DEFAULT_UI_SETTINGS spread only supplies
+      // defaults) so the first-parent row's ↺ tracks the real state.
+      graphFirstParent,
+      graphFoldLinear,
+      graphMinimapAlwaysShow,
+      graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,
       aiConsented,
@@ -286,6 +317,10 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       autoFetch,
       healthRefresh,
       graph,
+      graphFirstParent,
+      graphFoldLinear,
+      graphMinimapAlwaysShow,
+      graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,
       aiConsented,
@@ -322,6 +357,13 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       autoFetch,
       healthRefresh,
       graph,
+      graphStyle,
+      graphSeason,
+      graphFirstParent,
+      graphFoldLinear,
+      graphMinimapAlwaysShow,
+      graphColorMode,
+      graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,
       aiConsented,
@@ -353,6 +395,13 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       autoFetch,
       healthRefresh,
       graph,
+      graphStyle,
+      graphSeason,
+      graphFirstParent,
+      graphFoldLinear,
+      graphMinimapAlwaysShow,
+      graphColorMode,
+      graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,
       aiConsented,

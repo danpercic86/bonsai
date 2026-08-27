@@ -4,7 +4,7 @@
 //! private `open_no_search` + `collect_seed` from the parent module — the exact
 //! same seed both graph paths compute — WITHOUT walking history.
 
-use super::{collect_seed, open_no_search, RefMap};
+use super::{collect_seed, open_no_search, GraphFilter, RefMap};
 use crate::error::AppError;
 
 /// The cheap O(refs) walk SEED exposed for the P86 layout cache: everything that
@@ -19,6 +19,9 @@ pub struct GraphSeed {
     pub head: Option<git2::Oid>,
     /// Stash synthetic parents (`I`/`U`) skip-emitted by the walk.
     pub hide: Vec<git2::Oid>,
+    /// Spec-003: whether the seed-ref restriction of the filter actually took
+    /// effect (`false` under the default filter OR the stale-refs fallback).
+    pub seed_refs_applied: bool,
 }
 
 /// Blocking. Opens `workdir` (NO_SEARCH, same as `compute_graph`) and collects
@@ -26,9 +29,9 @@ pub struct GraphSeed {
 /// O(commits). This is the cache probe the `stream_graph` command runs on every
 /// request to classify Hit / HitRedecorate / Miss (P86 B1). `compute_graph` /
 /// `stream_graph_core` are unchanged and still collect their own seed internally.
-pub fn graph_seed(workdir: &std::path::Path) -> Result<GraphSeed, AppError> {
+pub fn graph_seed(workdir: &std::path::Path, filter: &GraphFilter) -> Result<GraphSeed, AppError> {
     let mut repo = open_no_search(workdir)?;
-    graph_seed_with(&mut repo)
+    graph_seed_with(&mut repo, filter)
 }
 
 /// Blocking. P88b/B2b: [`graph_seed`] from an ALREADY-OPEN handle (round handle
@@ -37,12 +40,16 @@ pub fn graph_seed(workdir: &std::path::Path) -> Result<GraphSeed, AppError> {
 /// reloads on mtime change and `stash_foreach` re-reads, so a reused handle reads
 /// current on-disk topology (the load-bearing point for the B1 classify). `&mut`
 /// is required because `collect_seed` runs `stash_foreach`.
-pub fn graph_seed_with(repo: &mut git2::Repository) -> Result<GraphSeed, AppError> {
-    let (refs, tips, head, hide) = collect_seed(repo)?;
+pub fn graph_seed_with(
+    repo: &mut git2::Repository,
+    filter: &GraphFilter,
+) -> Result<GraphSeed, AppError> {
+    let (refs, tips, head, hide, seed_refs_applied) = collect_seed(repo, filter)?;
     Ok(GraphSeed {
         refs,
         tips,
         head,
         hide,
+        seed_refs_applied,
     })
 }

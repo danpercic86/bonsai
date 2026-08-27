@@ -4,7 +4,9 @@
 // StreamEdge carries its child's parent `ord`). `getGraph` stays (searchCommits
 // still reuses `resolveLayout`). A per-repo generation models backend supersede:
 // a newer streamGraph for the same repo makes the older loop STOP before `done`.
-import type { GraphChunk, IpcApi, StreamEdge, StreamNode } from '../../types';
+import type { GraphChunk, GraphFilter, IpcApi, StreamEdge, StreamNode } from '../../types';
+import { applyGraphFilter } from './graphFilter';
+import { computeMockFoldSpans } from './graphFold';
 import { resolveLayout } from './layout';
 import { delay, requireRepo } from '../repoState';
 
@@ -21,8 +23,23 @@ const BATCH_DELAY_MS = 30;
 const streamGen = new Map<string, number>();
 
 export const graphStreamHandlers = {
-  async streamGraph(repoId: string, onChunk: (c: GraphChunk) => void): Promise<void> {
-    const layout = resolveLayout(requireRepo(repoId));
+  async streamGraph(
+    repoId: string,
+    filter: GraphFilter | null,
+    onChunk: (c: GraphChunk) => void,
+  ): Promise<void> {
+    // Spec-003: run the resolved layout through the fixture-side filter before
+    // chunking; the meta chunk reports the same flags the Rust stream emits.
+    const { layout, filtered, seedRefsApplied, mergeRows } = applyGraphFilter(
+      resolveLayout(requireRepo(repoId)),
+      filter,
+    );
+    // Spec-004: spans ride the terminal `done` chunk only (the rule needs the
+    // full edge set); fold NEVER affects `filtered` — it does not change the walk.
+    const foldSpans =
+      filter?.foldLinear === true
+        ? computeMockFoldSpans(layout, mergeRows, filter.firstParent)
+        : [];
     const myGen = (streamGen.get(repoId) ?? 0) + 1;
     streamGen.set(repoId, myGen);
 
@@ -31,6 +48,8 @@ export const graphStreamHandlers = {
       kind: 'meta',
       total,
       headOid: layout.headIndex !== null ? layout.nodes[layout.headIndex].id : null,
+      filtered,
+      seedRefsApplied,
     });
 
     let start = 0;
@@ -84,6 +103,8 @@ export const graphStreamHandlers = {
       laneCount: layout.laneCount,
       headIndex: layout.headIndex,
       truncated: layout.truncated,
+      // Mirrors the Rust `skip_serializing_if = Vec::is_empty` (absent == []).
+      ...(foldSpans.length > 0 ? { foldSpans } : {}),
     });
   },
 } satisfies Partial<IpcApi>;

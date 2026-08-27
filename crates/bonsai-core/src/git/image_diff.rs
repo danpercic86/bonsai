@@ -60,7 +60,7 @@ pub struct ImageDiff {
     pub new_too_large: bool,
 }
 
-/// Which pair to load — mirrors the three file-diff contexts so the frontend
+/// Which pair to load — mirrors the file-diff contexts so the frontend
 /// constructs it exactly where it picks a `*_file_diff` command today.
 /// (`tag = "kind"`, all keys + field names camelCase.)
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
@@ -82,6 +82,14 @@ pub enum ImageDiffRequest {
     /// old = HEAD tree blob (unborn -> `None`); new = to-commit tree blob.
     Compare {
         to_oid: String,
+        path: String,
+        orig_path: Option<String>,
+    },
+    /// Arbitrary commit pair (P89 PR mode: old = merge-base tree blob,
+    /// new = head tree blob). Both oids must resolve to commits.
+    Range {
+        old_oid: String,
+        new_oid: String,
         path: String,
         orig_path: Option<String>,
     },
@@ -215,6 +223,9 @@ pub fn get_image_diff(workdir: &Path, req: &ImageDiffRequest) -> Result<ImageDif
         }
         | ImageDiffRequest::Compare {
             path, orig_path, ..
+        }
+        | ImageDiffRequest::Range {
+            path, orig_path, ..
         } => (path.as_str(), orig_path.as_deref()),
     };
     validate_rel_path(path)?;
@@ -269,6 +280,16 @@ pub fn get_image_diff(workdir: &Path, req: &ImageDiffRequest) -> Result<ImageDif
                 None => None, // unborn HEAD
             };
             (old, blob_from_tree(&repo, &to_tree, path)?)
+        }
+        ImageDiffRequest::Range {
+            old_oid, new_oid, ..
+        } => {
+            let old_tree = repo.find_commit(git2::Oid::from_str(old_oid)?)?.tree()?;
+            let new_tree = repo.find_commit(git2::Oid::from_str(new_oid)?)?.tree()?;
+            (
+                blob_from_tree(&repo, &old_tree, old_lookup)?,
+                blob_from_tree(&repo, &new_tree, path)?,
+            )
         }
     };
 

@@ -2,7 +2,10 @@
 import { AUTO_FETCH_INTERVAL_MAX, AUTO_FETCH_INTERVAL_MIN, AVATAR_RADIUS_MAX, AVATAR_RADIUS_MIN, HEALTH_REFRESH_INTERVAL_MAX, HEALTH_REFRESH_INTERVAL_MIN, LANE_WIDTH_MAX, LANE_WIDTH_MIN, ROW_HEIGHT_MAX, ROW_HEIGHT_MIN } from '../../settings/ranges';
 import { DEFAULT_UI_SETTINGS as PRODUCTION_DEFAULT_UI_SETTINGS } from '../../settings/defaults';
 import { parseAiRunSettings } from './aiRunSettings';
-import type { AiAutonomy, AutoFetchSettings, GraphDateBasis, GraphPrefs, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, PanelDensity, PrimaryCommitAction, ProfileColor, RecentRepo, SessionState, Theme, UiSettings } from '../types';
+import type { AiAutonomy, AutoFetchSettings, GraphColorMode, GraphDateBasis, GraphPrefs, GraphRefFilter, GraphSeason, GraphStyle, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, PanelDensity, PrimaryCommitAction, ProfileColor, RecentRepo, SessionState, Theme, UiSettings } from '../types';
+
+/** Spec-002: closed enum guards for the two additive graph-theme prefs. */
+const GRAPH_SEASONS: ReadonlySet<string> = new Set<GraphSeason>(['living', 'spring', 'autumn']);
 
 /** P82: the closed palette (mirrors Rust `ProfileColor`). Used to validate a
  *  persisted profile's `color` field — an invalid value normalizes to neutral. */
@@ -200,6 +203,17 @@ export function sanitizeProfiles(raw: unknown): IdentityProfile[] | null {
   });
 }
 
+/** Spec-003: shape-check a persisted `graphRefFilter` intent — mode must be
+ *  'solo' | 'hide' and refs a string array (non-string entries dropped);
+ *  anything else (incl. a malformed object) degrades to null. Pure. */
+export function sanitizeGraphRefFilter(raw: unknown): GraphRefFilter | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const { mode, refs } = raw as { mode?: unknown; refs?: unknown };
+  if (mode !== 'solo' && mode !== 'hide') return null;
+  if (!Array.isArray(refs)) return null;
+  return { mode, refs: refs.filter((r): r is string => typeof r === 'string') };
+}
+
 /** Corrupt/missing storage degrades to the default — mirrors load_from. */
 export function readUiSettings(): UiSettings {
   try {
@@ -282,6 +296,32 @@ export function readUiSettings(): UiSettings {
           ? g.showCiStatus
           : DEFAULT_UI_SETTINGS.graph.showCiStatus,
     });
+    // Spec-002 (additive): commit-graph style + season. Fall back to the shared
+    // defaults when the blob omits/garbles them — same as every other additive
+    // field below, so a wrong-shape or missing blob reads back as the complete
+    // DEFAULT_UI_SETTINGS (the keys are pinned in the defaults oracle + native
+    // settings). Season is ignored while graphStyle === 'standard'.
+    const graphStyle: GraphStyle =
+      parsed.graphStyle === 'bonsai' || parsed.graphStyle === 'standard'
+        ? parsed.graphStyle
+        : (DEFAULT_UI_SETTINGS.graphStyle ?? 'standard');
+    const graphSeason: GraphSeason =
+      typeof parsed.graphSeason === 'string' && GRAPH_SEASONS.has(parsed.graphSeason)
+        ? (parsed.graphSeason as GraphSeason)
+        : (DEFAULT_UI_SETTINGS.graphSeason ?? 'living');
+    // Spec-003 (additive): first-parent toggle + solo/hide intent. Malformed
+    // graphRefFilter degrades to null (no ref filter), never throws.
+    const graphFirstParent = parsed.graphFirstParent === true;
+    // Spec-004 (additive): fold-linear toggle. Malformed → false, never throws.
+    const graphFoldLinear = parsed.graphFoldLinear === true;
+    // Spec-005 (additive): always-show overview rail. Malformed → false.
+    const graphMinimapAlwaysShow = parsed.graphMinimapAlwaysShow === true;
+    // Spec-006 (additive): edge/ring coloring. Malformed → 'lane', never throws.
+    const graphColorMode: GraphColorMode =
+      parsed.graphColorMode === 'author' || parsed.graphColorMode === 'lane'
+        ? parsed.graphColorMode
+        : 'lane';
+    const graphRefFilter = sanitizeGraphRefFilter(parsed.graphRefFilter);
     // P13 AI fields (additive, like autoFetch/graph): fall back to defaults.
     const aiEnabled =
       typeof parsed.aiEnabled === 'boolean' ? parsed.aiEnabled : DEFAULT_UI_SETTINGS.aiEnabled;
@@ -334,6 +374,13 @@ export function readUiSettings(): UiSettings {
       autoFetch,
       healthRefresh,
       graph,
+      graphStyle,
+      graphSeason,
+      graphFirstParent,
+      graphFoldLinear,
+      graphMinimapAlwaysShow,
+      graphColorMode,
+      graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,
       aiConsented,

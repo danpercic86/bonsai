@@ -16,6 +16,21 @@ pub struct UiSettings {
     pub panel_density: PanelDensity,
     /// P80 D1: which commit button is emphasized in the Working tab.
     pub primary_commit_action: PrimaryCommitAction,
+    /// Spec-002: commit-graph visual style (default Standard).
+    pub graph_style: GraphStyle,
+    /// Spec-002: seasonal accent for the Bonsai style (default Living).
+    pub graph_season: GraphSeason,
+    /// Spec-003: first-parent graph declutter toggle (default false).
+    pub graph_first_parent: bool,
+    /// Spec-004: fold-linear-runs graph toggle (default false).
+    pub graph_fold_linear: bool,
+    /// Spec-005: always-show overview rail (default false).
+    pub graph_minimap_always_show: bool,
+    /// Spec-006: graph edge/ring coloring (default Lane).
+    pub graph_color_mode: GraphColorMode,
+    /// Spec-003: persisted graph ref-filter INTENT (default None). Opaque to
+    /// the backend; the frontend derives the wire whitelist from it.
+    pub graph_ref_filter: Option<GraphRefFilter>,
     pub auto_fetch: AutoFetch,
     /// Health-refresh background job (P30 D7).
     pub health_refresh: HealthRefresh,
@@ -73,6 +88,24 @@ pub struct UiSettingsPatch {
     pub panel_density: Option<PanelDensity>,
     /// P80 D1: primary commit action; patches independently.
     pub primary_commit_action: Option<PrimaryCommitAction>,
+    /// Spec-002: commit-graph style + season; each patches independently.
+    pub graph_style: Option<GraphStyle>,
+    pub graph_season: Option<GraphSeason>,
+    /// Spec-003: first-parent declutter toggle; patches independently.
+    pub graph_first_parent: Option<bool>,
+    /// Spec-004: fold-linear-runs toggle; patches independently.
+    pub graph_fold_linear: Option<bool>,
+    /// Spec-005: always-show overview rail; patches independently.
+    pub graph_minimap_always_show: Option<bool>,
+    /// Spec-006: graph edge/ring coloring; patches independently.
+    pub graph_color_mode: Option<GraphColorMode>,
+    /// Spec-003: graph ref-filter intent. Double-option so an explicit `null`
+    /// (clear the filter) is distinguishable from an ABSENT key (leave
+    /// unchanged): missing → `None`, `null` → `Some(None)`, a value →
+    /// `Some(Some(v))`. The field-level `default` is mandatory: with a custom
+    /// `deserialize_with`, a missing key would otherwise be a hard error.
+    #[serde(default, deserialize_with = "double_option")]
+    pub graph_ref_filter: Option<Option<GraphRefFilter>>,
     /// Whole-struct patch (like `pane_widths`): the frontend sends the entire
     /// nested object when any sub-field changes.
     pub auto_fetch: Option<AutoFetch>,
@@ -113,6 +146,18 @@ pub struct UiSettingsPatch {
     pub ai_dock_collapsed: Option<bool>,
 }
 
+/// Distinguishes an ABSENT patch key (don't touch) from an explicit `null`
+/// (clear): missing → `None` (via the field default), `null` → `Some(None)`,
+/// a value → `Some(Some(v))`. A plain `Option<Option<T>>` can't — serde folds
+/// `null` and missing together at the outer level.
+fn double_option<'de, T, D>(de: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: serde::Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    serde::Deserialize::deserialize(de).map(Some)
+}
+
 /// Pure patch application: only `Some(..)` fields of `patch` mutate `s`; pane
 /// widths are clamped on write. Extracted from `set_ui_settings` so its
 /// partial-update semantics are unit-testable without a Tauri app
@@ -132,6 +177,28 @@ pub(crate) fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     }
     if let Some(primary_commit_action) = patch.primary_commit_action {
         s.primary_commit_action = primary_commit_action;
+    }
+    if let Some(graph_style) = patch.graph_style {
+        s.graph_style = graph_style;
+    }
+    if let Some(graph_season) = patch.graph_season {
+        s.graph_season = graph_season;
+    }
+    if let Some(graph_first_parent) = patch.graph_first_parent {
+        s.graph_first_parent = graph_first_parent;
+    }
+    if let Some(graph_fold_linear) = patch.graph_fold_linear {
+        s.graph_fold_linear = graph_fold_linear;
+    }
+    if let Some(graph_minimap_always_show) = patch.graph_minimap_always_show {
+        s.graph_minimap_always_show = graph_minimap_always_show;
+    }
+    if let Some(graph_color_mode) = patch.graph_color_mode {
+        s.graph_color_mode = graph_color_mode;
+    }
+    // Double-option: `Some(None)` (an explicit wire `null`) CLEARS the filter.
+    if let Some(graph_ref_filter) = patch.graph_ref_filter {
+        s.graph_ref_filter = graph_ref_filter;
     }
     if let Some(auto_fetch) = patch.auto_fetch {
         s.auto_fetch = clamp_auto_fetch(auto_fetch);
@@ -225,6 +292,13 @@ pub(crate) fn ui_settings_of(s: &settings::Settings) -> UiSettings {
         list_view: s.list_view,
         panel_density: s.panel_density,
         primary_commit_action: s.primary_commit_action,
+        graph_style: s.graph_style,
+        graph_season: s.graph_season,
+        graph_first_parent: s.graph_first_parent,
+        graph_fold_linear: s.graph_fold_linear,
+        graph_minimap_always_show: s.graph_minimap_always_show,
+        graph_color_mode: s.graph_color_mode,
+        graph_ref_filter: s.graph_ref_filter.clone(),
         auto_fetch: s.auto_fetch,
         health_refresh: s.health_refresh,
         graph: s.graph,

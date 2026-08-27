@@ -214,3 +214,125 @@ fn set_ui_settings_patch_external_commands_is_partial() {
     assert_eq!(s.terminal_command, "");
     assert_eq!(s.editor_command, "code {path}");
 }
+
+/// Spec-004: `graphFoldLinear` patches independently (camelCase on the wire)
+/// and an absent key leaves it untouched.
+#[test]
+fn set_ui_settings_patch_graph_fold_linear_is_partial() {
+    let mut s = settings::Settings::default();
+    assert!(!s.graph_fold_linear);
+
+    let patch: UiSettingsPatch =
+        serde_json::from_str(r#"{ "graphFoldLinear": true }"#).expect("fold patch");
+    apply_patch(&mut s, patch);
+    assert!(s.graph_fold_linear);
+    assert!(!s.graph_first_parent, "sibling pref untouched");
+
+    // An absent key leaves it unchanged.
+    let patch: UiSettingsPatch = serde_json::from_str(r#"{ "theme": "light" }"#).expect("patch");
+    apply_patch(&mut s, patch);
+    assert!(s.graph_fold_linear);
+}
+
+/// Spec-005: `graphMinimapAlwaysShow` patches independently (camelCase on the
+/// wire) and an absent key leaves it untouched.
+#[test]
+fn set_ui_settings_patch_graph_minimap_always_show_is_partial() {
+    let mut s = settings::Settings::default();
+    assert!(!s.graph_minimap_always_show);
+
+    let patch: UiSettingsPatch =
+        serde_json::from_str(r#"{ "graphMinimapAlwaysShow": true }"#).expect("minimap patch");
+    apply_patch(&mut s, patch);
+    assert!(s.graph_minimap_always_show);
+    assert!(!s.graph_fold_linear, "sibling pref untouched");
+
+    // An absent key leaves it unchanged.
+    let patch: UiSettingsPatch = serde_json::from_str(r#"{ "theme": "light" }"#).expect("patch");
+    apply_patch(&mut s, patch);
+    assert!(s.graph_minimap_always_show);
+}
+
+/// Spec-006: `graphColorMode` patches independently (camelCase key, lowercase
+/// value on the wire) and an absent key leaves it untouched.
+#[test]
+fn set_ui_settings_patch_graph_color_mode_is_partial() {
+    let mut s = settings::Settings::default();
+    assert_eq!(s.graph_color_mode, settings::GraphColorMode::Lane);
+
+    let patch: UiSettingsPatch =
+        serde_json::from_str(r#"{ "graphColorMode": "author" }"#).expect("color-mode patch");
+    apply_patch(&mut s, patch);
+    assert_eq!(s.graph_color_mode, settings::GraphColorMode::Author);
+    assert!(!s.graph_fold_linear, "sibling pref untouched");
+
+    // An absent key leaves it unchanged.
+    let patch: UiSettingsPatch = serde_json::from_str(r#"{ "theme": "light" }"#).expect("patch");
+    apply_patch(&mut s, patch);
+    assert_eq!(s.graph_color_mode, settings::GraphColorMode::Author);
+}
+
+/// Spec-003: the two declutter prefs patch independently, and the
+/// `graphRefFilter` double-option distinguishes ABSENT (leave unchanged) from
+/// an explicit `null` (clear) on the wire.
+#[test]
+fn set_ui_settings_patch_graph_declutter_is_partial() {
+    let mut s = settings::Settings::default();
+    assert!(!s.graph_first_parent);
+    assert_eq!(s.graph_ref_filter, None);
+
+    // Only `graph_first_parent` changes; the ref filter untouched.
+    apply_patch(
+        &mut s,
+        UiSettingsPatch {
+            graph_first_parent: Some(true),
+            ..Default::default()
+        },
+    );
+    assert!(s.graph_first_parent);
+    assert_eq!(s.graph_ref_filter, None);
+
+    // Set the ref filter; first-parent preserved.
+    let filter = GraphRefFilter {
+        mode: settings::RefFilterMode::Hide,
+        refs: vec!["refs/heads/wip".to_string()],
+    };
+    apply_patch(
+        &mut s,
+        UiSettingsPatch {
+            graph_ref_filter: Some(Some(filter.clone())),
+            ..Default::default()
+        },
+    );
+    assert_eq!(s.graph_ref_filter, Some(filter.clone()));
+    assert!(s.graph_first_parent);
+
+    // An ABSENT key on the wire leaves the filter unchanged...
+    let patch: UiSettingsPatch =
+        serde_json::from_str(r#"{ "theme": "light" }"#).expect("patch without graphRefFilter");
+    assert_eq!(patch.graph_ref_filter, None, "missing key → don't touch");
+    apply_patch(&mut s, patch);
+    assert_eq!(s.graph_ref_filter, Some(filter));
+
+    // ...while an explicit `null` CLEARS it.
+    let patch: UiSettingsPatch =
+        serde_json::from_str(r#"{ "graphRefFilter": null }"#).expect("patch with null");
+    assert_eq!(patch.graph_ref_filter, Some(None), "null → clear");
+    apply_patch(&mut s, patch);
+    assert_eq!(s.graph_ref_filter, None);
+    assert!(s.graph_first_parent, "sibling pref untouched by the clear");
+
+    // And a full value round-trips through the wire patch too.
+    let patch: UiSettingsPatch = serde_json::from_str(
+        r#"{ "graphRefFilter": { "mode": "solo", "refs": ["refs/heads/main"] } }"#,
+    )
+    .expect("patch with value");
+    apply_patch(&mut s, patch);
+    assert_eq!(
+        s.graph_ref_filter,
+        Some(GraphRefFilter {
+            mode: settings::RefFilterMode::Solo,
+            refs: vec!["refs/heads/main".to_string()],
+        })
+    );
+}

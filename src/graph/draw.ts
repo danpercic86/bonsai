@@ -10,8 +10,10 @@
  * geometry + avatar-identity helpers to `geometry.ts` (re-exported below). */
 
 import type { GraphEdge, GraphLayout, GraphNode, VerifyStatus } from '../ipc';
-import { STASH_COLOR } from './colors';
+import { isDarkBg, STASH_COLOR } from './colors';
 import type { Theme } from './colors';
+import { authorEdgeColor } from './authorColor';
+import { highlightTargets } from './highlight';
 import { FONT_UI } from './metrics';
 import type { EffectiveMetrics } from './metrics';
 import { drawRowText } from './drawRowText';
@@ -26,7 +28,8 @@ import {
 import { drawRefLabelAt, drawStashIcon, groupRefs, layoutRefLabels } from './refLabels';
 import { computeRightColumns } from './rightColumns';
 import type { GraphDisplayOptions } from './rightColumns';
-import { measure } from './textMeasure';
+import { drawBlossom, drawBonsaiBackdrop, drawBonsaiEdge } from './drawBonsai';
+import { swayOffset } from './sway';
 // P67 §1: the guideline's geometry is computed in viewport.ts (contract D2);
 // this module only strokes/fills the result.
 import type { HeadGuide } from './viewport';
@@ -71,7 +74,7 @@ export interface Interaction {
   selectedIndex: number | null;
   /** P50b: rows carrying a commit-search match → an outer `--match-ring` ring.
    *  `null` when search is closed / has no visible matches (no ring pass). */
-  matchRows: Set<number> | null;
+  matchRows: ReadonlySet<number> | null;
   /** P58c: oid → signature verdict for the LIT badge (visible rows only,
    *  cached by oid). `null` / a missing oid ⇒ the faint P51 stub. */
   verifyStatus: ReadonlyMap<string, VerifyStatus> | null;
@@ -79,16 +82,23 @@ export interface Interaction {
    *  family). `null` when no flash is active. `alpha`/`ringRadius` are
    *  precomputed per frame by GraphCanvas from `revealFlash.ts`. */
   flash?: { row: number; alpha: number; ringRadius: number } | null;
+  /** spec 002 §5: settle-on-scroll sway — `elapsedMs` since arm; `null` = idle. */
+  sway?: { elapsedMs: number } | null;
+  /** Spec-004: DISPLAY rows that are fold pills — skipped by the avatar + text
+   *  passes (drawFold.ts paints them after drawGraph). Absent/null = none. */
+  foldRows?: ReadonlySet<number> | null;
 }
 
-/** Long-edge middle segments are clamped to this margin around the canvas. */
-const EDGE_CLAMP_MARGIN = 56;
+/** Long-edge middle segments are clamped to this margin around the canvas.
+ *  Exported so the Bonsai edge painter (`drawBonsai.ts`) clamps identically. */
+export const EDGE_CLAMP_MARGIN = 56;
 
 // ---------- edges (§1.3 three-segment render rule) ----------
 
 /** One-row segment: straight vertical if same x, else cubic bézier with
- * vertical tangents — control points (x1, y1+14) and (x2, y2-14). */
-function segmentTo(
+ * vertical tangents — control points (x1, y1+14) and (x2, y2-14). Exported so
+ * the Bonsai edge painter reuses the exact same curve (endpoints verbatim). */
+export function segmentTo(
   ctx: CanvasRenderingContext2D,
   x1: number,
   y1: number,
@@ -101,13 +111,16 @@ function segmentTo(
   else ctx.bezierCurveTo(x1, y1 + halfRow, x2, y2 - halfRow, x2, y2);
 }
 
+/** Standard-style edge. `color` is the caller-resolved (lane- or author-mode)
+ *  stroke; `emphasis` (spec-006 pass 3.5) widens the stroke by that many px. */
 function drawEdge(
   ctx: CanvasRenderingContext2D,
   e: GraphEdge,
   nodes: readonly GraphNode[],
   vp: Viewport,
-  theme: Theme,
   m: EffectiveMetrics,
+  color: string,
+  emphasis = 0,
 ): void {
   const halfRow = m.rowHeight / 2;
   const fromLane = nodes[e.from].lane;
@@ -117,7 +130,8 @@ function drawEdge(
   const tx = laneX(toLane, m);
   const ty = rowY(e.to, vp.scrollTop, m);
 
-  ctx.strokeStyle = theme.laneColors[e.lane % 10];
+  ctx.strokeStyle = color;
+  ctx.lineWidth = m.edgeWidth + emphasis;
   ctx.beginPath();
   if (e.to === e.from + 1) {
     segmentTo(ctx, fx, fy, tx, ty, halfRow);
@@ -176,64 +190,10 @@ export function drawStashNode(
 
 // ---------- WIP (uncommitted changes) row (P1 §9.3) ----------
 
-export interface WipSummary {
-  fileCount: number;
-}
-
-/** Draws the frontend-composited WIP row (P1 §9.1/§9.3). `vp.scrollTop` is the
- * RAW (un-offset) scroll position.
- *
- * P67 §1: the dashed connector to the HEAD dot MOVED OUT of this function into
- * `drawHeadGuide` below, so it paints at every scroll position. What remains
- * here — the hover background, the dashed marker circle and the
- * "Uncommitted changes (n)" label — belongs to the WIP row itself and keeps the
- * caller's near-top gate. */
-export function drawWipRow(
-  ctx: CanvasRenderingContext2D,
-  layout: GraphLayout,
-  wip: WipSummary,
-  vp: Viewport,
-  theme: Theme,
-  hovered: boolean,
-  m: EffectiveMetrics,
-): void {
-  const RH = m.rowHeight;
-  const headIndex = layout.headIndex;
-  const headLane = headIndex !== null ? layout.nodes[headIndex].lane : 0;
-  const x = laneX(headLane, m);
-  const y = RH / 2 - vp.scrollTop;
-
-  if (hovered) {
-    ctx.fillStyle = theme.bg2;
-    ctx.fillRect(0, -vp.scrollTop, vp.width, RH);
-  }
-
-  ctx.save();
-  ctx.setLineDash([3, 3]);
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.arc(x, y, 4, 0, Math.PI * 2);
-  ctx.fillStyle = theme.bg0;
-  ctx.fill();
-  ctx.strokeStyle = theme.warning;
-  ctx.stroke();
-  ctx.restore();
-
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'left';
-  // P7 §7: WIP label moves to the summary zone; the LEFT ref band stays empty.
-  const textX = summaryStartX(layout.laneCount, m);
-  ctx.font = `italic ${m.summaryFont} ${FONT_UI}`;
-  ctx.fillStyle = theme.text2;
-  const label = 'Uncommitted changes';
-  ctx.fillText(label, textX, y);
-  const labelW = measure(ctx, label);
-
-  ctx.font = `${m.metaFont} ${FONT_UI}`;
-  ctx.fillStyle = theme.text3;
-  const count = `(${wip.fileCount} file${wip.fileCount === 1 ? '' : 's'})`;
-  ctx.fillText(count, textX + labelW + 6, y);
-}
+// Spec-004 size split: the WIP row painter moved VERBATIM to drawWip.ts;
+// re-exported so existing `from './draw'` call sites keep working.
+export { drawWipRow } from './drawWip';
+export type { WipSummary } from './drawWip';
 
 // ---------- HEAD guideline (P67 §1) ----------
 
@@ -321,9 +281,14 @@ export function drawGraph(
   const firstRow = Math.max(0, vp.firstRow);
   const lastRow = Math.min(n - 1, vp.lastRow);
 
-  // Pass 1: clear.
-  ctx.fillStyle = theme.bg0;
-  ctx.fillRect(0, 0, vp.width, vp.height);
+  // Pass 1: clear. Bonsai paints the near-flat paper/soil backdrop (§4.1) as the
+  // first fill; the standard theme keeps its flat `bg0` clear byte-for-byte.
+  if (theme.bonsai) {
+    drawBonsaiBackdrop(ctx, vp.width, vp.height, theme);
+  } else {
+    ctx.fillStyle = theme.bg0;
+    ctx.fillRect(0, 0, vp.width, vp.height);
+  }
 
   // Pass 2: row backgrounds (selection wins over hover).
   const rowBg = (row: number, color: string): void => {
@@ -347,10 +312,32 @@ export function drawGraph(
     ctx.globalAlpha = prevAlpha;
   }
 
-  // Pass 3: edges (under dots).
+  // Pass 3: edges (under dots). Spec-006: the stroke color is mode-resolved —
+  // classic lane palette, or the CHILD commit's author hue in author mode.
+  const authorMode = display.colorMode === 'author';
+  const darkBg = authorMode && isDarkBg(theme.bg0);
+  const edgeColor = (e: GraphEdge): string =>
+    authorMode
+      ? authorEdgeColor(nodes[e.from].author, darkBg)
+      : theme.laneColors[e.lane % 10];
   ctx.lineWidth = m.edgeWidth;
   ctx.lineCap = 'round';
-  for (const e of visibleEdges) drawEdge(ctx, e, nodes, vp, theme, m);
+  for (const e of visibleEdges) {
+    if (theme.bonsai) drawBonsaiEdge(ctx, e, nodes, vp, theme, m, edgeColor(e));
+    else drawEdge(ctx, e, nodes, vp, m, edgeColor(e));
+  }
+
+  // Pass 3.5 (spec-006): parent-highlight emphasis — re-stroke the hovered (or
+  // selected) row's direct parent edges at width +1.5 in the edge's own
+  // mode-resolved color. Targets are display-space by construction
+  // (highlight.ts filters the projected visibleEdges; fold pills yield none).
+  const hl = highlightTargets(visibleEdges, ix.hoverRow ?? ix.selectedIndex, ix.foldRows);
+  for (const e of hl.edges) {
+    if (theme.bonsai) drawBonsaiEdge(ctx, e, nodes, vp, theme, m, edgeColor(e), 1.5);
+    else drawEdge(ctx, e, nodes, vp, m, edgeColor(e), 1.5);
+  }
+  ctx.lineWidth = m.edgeWidth;
+  const parentRingRows = hl.parentRows.length > 0 ? new Set(hl.parentRows) : null;
 
   // Pass 4: author-initials avatars (P7 §2.1 — replaces the plain lane dot).
   // Inner→outer: bg ring → avatar disc → lane ring → initials → HEAD ring →
@@ -358,20 +345,38 @@ export function drawGraph(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   for (let row = firstRow; row <= lastRow; row++) {
+    if (ix.foldRows?.has(row) === true) continue; // spec-004: pill row (drawFold)
     const node = nodes[row];
-    const x = laneX(node.lane, m);
+    // spec 002 §5: paint-time-only glyph sway (edges never move; `y` untouched).
+    const sway = theme.bonsai && ix.sway != null ? swayOffset(ix.sway.elapsedMs, node.lane, false) : 0;
+    const x = laneX(node.lane, m) + sway;
     const y = rowY(row, vp.scrollTop, m);
-    const laneColor = theme.laneColors[node.lane % 10];
+    // Spec-006 §1.1: in author mode the thin lane ring (and the parent ring
+    // below) take the author hue; every other pass-4 element is unchanged.
+    const laneColor = authorMode
+      ? authorEdgeColor(node.author, darkBg)
+      : theme.laneColors[node.lane % 10];
     const ac = avatarColor(node.author);
     const selected = ix.selectedIndex === row;
     // P10 §2.1: a stash node draws a violet disc + glyph instead of the avatar.
     const isStash = node.refs?.some((r) => r.kind === 'stash') ?? false;
 
-    // bg ring — bg0 halo so edges passing under the avatar read cleanly.
+    // bg ring — backdrop halo so edges passing under the avatar read cleanly.
+    // `graphBackdrop` equals `bg0` in the standard theme (unchanged there) and
+    // the paper/soil color in Bonsai (§2.1), so the halo never punches a
+    // wrong-colored hole in the backdrop.
     ctx.beginPath();
     ctx.arc(x, y, m.avatarRadius + m.avatarBgRingExtra, 0, Math.PI * 2);
-    ctx.fillStyle = theme.bg0;
+    ctx.fillStyle = theme.graphBackdrop;
     ctx.fill();
+
+    // Additive blossom (§2.3), painted BEHIND the disc: full 5-petal on HEAD, a
+    // single top bud on the selected (non-HEAD) node. `x`/`y` are the (future)
+    // sway-offset glyph center — task 4 passes an offset x so the whole glyph
+    // translates as a unit; today the offset is 0.
+    if (theme.bonsai && (layout.headIndex === row || selected)) {
+      drawBlossom(ctx, x, y, theme, m, layout.headIndex === row ? 'blossom' : 'bud');
+    }
 
     if (isStash) {
       drawStashNode(ctx, x, y, m);
@@ -431,6 +436,16 @@ export function drawGraph(
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
+    // Spec-006 §2.3: parent-highlight ring — OUTSIDE the match ring (+3.5, so
+    // the two never overwrite each other), in the parent node's mode-resolved
+    // color. Off-viewport parents are skipped by the row loop itself.
+    if (parentRingRows !== null && parentRingRows.has(row)) {
+      ctx.beginPath();
+      ctx.arc(x, y, m.avatarSelRingRadius + 3.5, 0, Math.PI * 2);
+      ctx.strokeStyle = laneColor;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
   }
   // Restore the text-pass expectations (textAlign) and edge lineWidth so the
   // next paint's edges are unaffected (matches the old pass-4 cleanup).
@@ -450,6 +465,7 @@ export function drawGraph(
 
   ctx.textBaseline = 'middle';
   for (let row = firstRow; row <= lastRow; row++) {
+    if (ix.foldRows?.has(row) === true) continue; // spec-004: pill row (drawFold)
     const node = nodes[row];
     const y = rowY(row, vp.scrollTop, m);
 

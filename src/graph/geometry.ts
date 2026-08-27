@@ -86,9 +86,16 @@ function hashString(s: string): number {
   return h >>> 0;
 }
 
+/** Spec-006: deterministic author hue — FNV-1a over the trimmed name, % 360.
+ *  The exact hash behind `avatarColor`, exported so author-mode edge colors
+ *  (`authorColor.ts`) share one hue identity with the avatar disc. */
+export function authorHue(name: string): number {
+  return hashString(name.trim()) % 360;
+}
+
 /** P7 §2.3: deterministic name→color. Same name ⇒ same hue, always. */
 export function avatarColor(name: string): AvatarColor {
-  const hue = hashString(name.trim()) % 360;
+  const hue = authorHue(name);
   return { bg: `hsl(${hue}, ${AVATAR.sat}%, ${AVATAR.light}%)`, text: '#ffffff' };
 }
 

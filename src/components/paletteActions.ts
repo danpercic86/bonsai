@@ -43,6 +43,10 @@ export interface BuildPaletteDeps {
   onOpenSearch(): void;
   /** P57c: open the "Ask history" overlay (semantic search + AI answer). */
   onOpenHistory(): void;
+  /** Spec-007: enter replay mode (animated history playback). */
+  onReplayHistory(): void;
+  /** False on an empty/unborn layout — the row renders disabled. */
+  canReplay: boolean;
   // Navigation source data + the shared reveal path.
   branches: BranchesSnapshot | null;
   graph: GraphLayout | null;
@@ -91,6 +95,8 @@ export function buildPaletteActions(deps: BuildPaletteDeps): PaletteAction[] {
     onNewWorktree,
     onOpenSearch,
     onOpenHistory,
+    onReplayHistory,
+    canReplay,
     branches,
     graph,
     revealCommitByOid,
@@ -168,6 +174,17 @@ export function buildPaletteActions(deps: BuildPaletteDeps): PaletteAction[] {
     group: 'action',
     keywords: 'ai semantic history question ask why when relevant commits search',
     run: onOpenHistory,
+  });
+  // Spec-007 §2.1: no ellipsis (acts immediately) and no shortcut; disabled
+  // with the hint when the loaded layout has no commits.
+  out.push({
+    id: 'repo.replay',
+    title: 'Replay history',
+    hint: canReplay ? undefined : 'No commits to replay',
+    group: 'action',
+    keywords: 'replay animate playback grow story timeline graph',
+    disabled: !canReplay,
+    run: onReplayHistory,
   });
 
   // App-level actions (toggle theme/lists, open Settings / AI Assets / Health,

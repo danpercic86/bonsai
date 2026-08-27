@@ -117,6 +117,18 @@ export const MINIMAL: FixtureValues = {
   autoFetch: D.autoFetch,
   healthRefresh: D.healthRefresh,
   graph: D.graph,
+  // Spec-002: optional in UiSettings, so `cloneDefaultUiSettings()` omits them —
+  // the fixture supplies the concrete defaults the SettingsPanel props require.
+  graphStyle: 'standard',
+  graphSeason: 'living',
+  // Spec-003/004: same optional-in-UiSettings treatment.
+  graphFirstParent: false,
+  graphFoldLinear: false,
+  // Spec-005: overview-rail always-show, same treatment.
+  graphMinimapAlwaysShow: false,
+  // Spec-006: edge/ring coloring, same treatment.
+  graphColorMode: 'lane',
+  graphRefFilter: null,
   aiEnabled: false,
   aiConflictAutonomy: D.aiConflictAutonomy,
   aiConsented: false,
@@ -169,6 +181,16 @@ export const MAXIMAL: FixtureValues = {
     showPrBadge: true,
     showCiStatus: true,
   },
+  // Spec-003: first-parent OFF its default (↺ present); a live ref filter so the
+  // Branch-filters Clear button renders enabled.
+  graphFirstParent: true,
+  // Spec-004: fold ON its default too (↺ present on the fold row).
+  graphFoldLinear: true,
+  // Spec-005: rail always-show ON its default (↺ present on the row).
+  graphMinimapAlwaysShow: true,
+  // Spec-006: author coloring OFF its default.
+  graphColorMode: 'author',
+  graphRefFilter: { mode: 'solo', refs: ['refs/heads/main'] },
   aiEnabled: true,
   aiConsented: true,
   aiConflictAutonomy: 'autoResolve',

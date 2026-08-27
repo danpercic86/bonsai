@@ -1,4 +1,22 @@
-import type { GraphLayout, SearchQuery, SearchResults } from '../../ipc';
+import type { BranchesSnapshot, GraphLayout, SearchQuery, SearchResults } from '../../ipc';
+
+/** Palette "jump to commit": first node whose oid starts with `prefix`
+ *  (case-insensitive), or null — extracted from RepoWorkspace (spec-004). */
+export function findCommitByPrefix(g: GraphLayout | null, prefix: string): string | null {
+  const p = prefix.toLowerCase();
+  return g?.nodes.find((n) => n.id.startsWith(p))?.id ?? null;
+}
+
+/** Branch/ref scope options for the search bar (All refs + local + remote) —
+ *  extracted from RepoWorkspace (spec-004 size ratchet). */
+export function searchScopeOptionsOf(
+  branches: BranchesSnapshot | null,
+): { value: string; label: string }[] {
+  const opts = [{ value: '', label: 'All refs' }];
+  for (const b of branches?.local ?? []) opts.push({ value: b.name, label: b.name });
+  for (const r of branches?.remote ?? []) opts.push({ value: r.name, label: r.name });
+  return opts;
+}
 
 /** P50b: pure helpers for commit-search graph highlight + next/prev jump. Kept
  *  separate from the hook so the index math is trivially unit-testable and

@@ -27,6 +27,9 @@ export function useReadOverlays(deps: {
   compareRef: { current: { oid: string } | null };
   clearCompare: () => void;
   setSelectedIndex: Setter<number | null>;
+  /** Spec-004 §5: expand the collapsed fold run containing a model row BEFORE
+   *  revealing it (synchronous remap; the P84 flash then runs unchanged). */
+  expandForReveal?: (modelRow: number) => void;
 }) {
   const {
     repoId,
@@ -44,6 +47,7 @@ export function useReadOverlays(deps: {
     compareRef,
     clearCompare,
     setSelectedIndex,
+    expandForReveal,
   } = deps;
 
   // Close helpers bump the matching reqId so a still-in-flight blameFile/
@@ -103,9 +107,12 @@ export function useReadOverlays(deps: {
       closeBlame();
       closeHistory();
       closeReflog();
+      // Spec-004 §5: auto-expand the containing collapsed run first, so the
+      // display mapping already shows the row when selection/scroll land.
+      expandForReveal?.(idx);
       setSelectedIndex(idx);
     },
-    [pushToast, clearCompare, closeBlame, closeHistory, closeReflog, graphDataRef, compareRef, setSelectedIndex],
+    [pushToast, clearCompare, closeBlame, closeHistory, closeReflog, graphDataRef, compareRef, setSelectedIndex, expandForReveal],
   );
 
   // Blame is against the committed HEAD version (atOid=null) in v1. Cross-

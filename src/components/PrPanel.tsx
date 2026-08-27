@@ -4,6 +4,7 @@ import type {
   CreatePrInput,
   ForgeRepoContext,
   PrDetail,
+  PrDiffStats,
   PrNavRequest,
   PrStateFilter,
   PrSummary,
@@ -49,7 +50,13 @@ export interface PrPanelProps {
   /** P80: open Settings → Accounts (the kebab's "Manage accounts…"). Optional —
    *  a no-op when the host app does not wire it. */
   onManageAccounts?(): void;
+  /** Open/close the center-pane PR diff browser (auto-open once a PR detail's
+   *  local diff resolves, like compare mode). Optional — no-ops when unwired. */
+  onOpenPrDiff?(stats: PrDiffStats, prNumber: number, title: string): void;
+  onClosePrDiff?(): void;
 }
+
+const noop = () => undefined;
 
 export function PrPanel({
   repoId,
@@ -60,6 +67,8 @@ export function PrPanel({
   baseOptions = [],
   compareOptions = [],
   onManageAccounts,
+  onOpenPrDiff = noop,
+  onClosePrDiff = noop,
 }: PrPanelProps) {
   const pushToast = usePushToast();
 
@@ -270,21 +279,12 @@ export function PrPanel({
    *  panel's "Create a token" link and the detail view's "Open in browser".
    *  Both children stay presentational; a launch failure names the intent first
    *  (per-site prefix) and then the backend's tool/reason text. */
-  function openTokenPage(url: string) {
+  const openExternal = (prefix: string) => (url: string) =>
     void ipc
       .openUrl(url)
-      .catch((e: unknown) =>
-        pushToast('error', `Could not open the token page: ${errorMessage(e)}`),
-      );
-  }
-
-  function openPrPage(url: string) {
-    void ipc
-      .openUrl(url)
-      .catch((e: unknown) =>
-        pushToast('error', `Could not open the pull request page: ${errorMessage(e)}`),
-      );
-  }
+      .catch((e: unknown) => pushToast('error', `${prefix}: ${errorMessage(e)}`));
+  const openTokenPage = openExternal('Could not open the token page');
+  const openPrPage = openExternal('Could not open the pull request page');
 
   function handleCreate(input: CreatePrInput) {
     setCreating(true);
@@ -472,6 +472,8 @@ export function PrPanel({
           onListChanged={() => setListTick((t) => t + 1)}
           onReload={loadDetail}
           onAuthFailed={handleAuthFailed}
+          onOpenPrDiff={onOpenPrDiff}
+          onClosePrDiff={onClosePrDiff}
         />
       );
     }

@@ -21,7 +21,9 @@ export type SettingsStructKey = 'graph' | 'autoFetch' | 'healthRefresh';
  * straight into a patch. Whole-struct fields go through `resetField` instead.
  */
 export type ScalarUiSettingsKey = {
-  [K in keyof UiSettings]: UiSettings[K] extends string | number | boolean ? K : never;
+  [K in keyof UiSettings]-?: NonNullable<UiSettings[K]> extends string | number | boolean
+    ? K
+    : never;
 }[keyof UiSettings];
 
 /** Reset for a top-level scalar key: compare and patch that key alone. */

@@ -337,8 +337,9 @@ describe('settings search — the live region (§3.2)', () => {
 
   it('agrees with English in the singular', () => {
     renderPanel();
-    // "colour" is the British spelling kept as a keyword on exactly one row.
-    type('colour');
+    // "nesting" is a keyword on exactly one row (Appearance → File lists).
+    // (Spec-006 gave "colour" a second visible match: appearance.graph-colors.)
+    type('nesting');
     expect(screen.getByRole('status')).toHaveTextContent('1 setting matches');
   });
 });

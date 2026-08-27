@@ -43,6 +43,9 @@ export type SettingsRowId = string;
 export type SettingsControlKind =
   | 'switch'
   | 'segmented'
+  /** Spec-002: a searchable single-select (`Combobox`), for >3 exclusive values
+   *  (or a set that will grow past 3). Rendered with `role="combobox"`. */
+  | 'combobox'
   | 'radiogroup'
   /** P82: a swatch grid of native radios (a radiogroup, but rendered as color
    *  cells; `IdentityColorPicker`). Distinct from `segmented` (text-only, ≤3). */

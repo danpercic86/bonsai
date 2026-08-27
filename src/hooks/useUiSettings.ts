@@ -28,6 +28,10 @@ import type {
   AiConflictTools,
   AutoFetchSettings,
   GraphPrefs,
+  GraphRefFilter,
+  GraphColorMode,
+  GraphSeason,
+  GraphStyle,
   HealthRefreshSettings,
   IdentityProfile,
   PanelDensity,
@@ -35,6 +39,7 @@ import type {
   UiSettings,
   UiSettingsPatch,
 } from '../ipc';
+import { DEFAULT_SEASON } from '../graph/palettes';
 import { errorMessage } from '../utils/errors';
 
 /** App's toast pusher. Passed in (rather than re-derived from context here) so
@@ -55,6 +60,24 @@ export interface UiSettingsController {
   autoFetch: AutoFetchSettings;
   healthRefresh: HealthRefreshSettings;
   graph: GraphPrefs;
+  /** Spec-002: commit-graph visual style (standard vs Bonsai). Ride the debounced
+   *  patch path like panelDensity; NO metricsVersion bump (geometry is unchanged —
+   *  GraphCanvas re-resolves the palette on its own, task 3). */
+  graphStyle: GraphStyle;
+  /** Spec-002: seasonal accent for the Bonsai style. */
+  graphSeason: GraphSeason;
+  /** Spec-003: first-parent graph walk (default false). Additive/optional like
+   *  graphStyle; NO metricsVersion bump (geometry is unchanged). */
+  graphFirstParent: boolean;
+  /** Spec-004: fold linear runs (default false). No metricsVersion bump. */
+  graphFoldLinear: boolean;
+  /** Spec-005: always-show overview rail (default false). No metricsVersion bump. */
+  graphMinimapAlwaysShow: boolean;
+  /** Spec-006: graph edge/ring coloring (default 'lane'). Paint-only — no
+   *  metricsVersion bump (geometry is unchanged). */
+  graphColorMode: GraphColorMode;
+  /** Spec-003: persisted solo/hide ref-filter intent (null = none). */
+  graphRefFilter: GraphRefFilter | null;
   /** P11d §4.3: bumped on every graph-knob change → GraphCanvas full re-measure. */
   metricsVersion: number;
   aiEnabled: boolean;
@@ -120,6 +143,19 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
     showPrBadge: false,
     showCiStatus: false,
   });
+  // Spec-002: commit-graph visual style + season. Additive/optional settings
+  // (absent from the Rust-pinned defaults oracle), so the initial state IS the
+  // default; hydration coalesces a missing persisted value to the same default.
+  const [graphStyle, setGraphStyle] = useState<GraphStyle>('standard');
+  const [graphSeason, setGraphSeason] = useState<GraphSeason>(DEFAULT_SEASON);
+  // Spec-003: graph declutter prefs — additive/optional like graphStyle above.
+  const [graphFirstParent, setGraphFirstParent] = useState(false);
+  const [graphFoldLinear, setGraphFoldLinear] = useState(false);
+  // Spec-005: overview-rail always-show — same additive-bool pattern.
+  const [graphMinimapAlwaysShow, setGraphMinimapAlwaysShow] = useState(false);
+  // Spec-006: author-coloring mode — paint-only pref, same additive pattern.
+  const [graphColorMode, setGraphColorMode] = useState<GraphColorMode>('lane');
+  const [graphRefFilter, setGraphRefFilter] = useState<GraphRefFilter | null>(null);
   // P11d §4.3: bumped on every graph-knob change → GraphCanvas full re-measure.
   const [metricsVersion, setMetricsVersion] = useState(0);
   // P13 §8: AI assistance settings (App-owned; threaded to Settings + each
@@ -304,6 +340,18 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
         setGraph(patch.graph);
         setMetricsVersion((v) => v + 1);
       }
+      // Spec-002: style/season change the palette, not the geometry — no
+      // metricsVersion bump (GraphCanvas re-resolves the theme itself, task 3).
+      if (patch.graphStyle !== undefined) setGraphStyle(patch.graphStyle);
+      if (patch.graphSeason !== undefined) setGraphSeason(patch.graphSeason);
+      // Spec-003: no metricsVersion bump — the walk changes, not the geometry.
+      // `graphRefFilter: null` is a real value (clear), so `!== undefined` gates.
+      if (patch.graphFirstParent !== undefined) setGraphFirstParent(patch.graphFirstParent);
+      if (patch.graphFoldLinear !== undefined) setGraphFoldLinear(patch.graphFoldLinear);
+      if (patch.graphMinimapAlwaysShow !== undefined)
+        setGraphMinimapAlwaysShow(patch.graphMinimapAlwaysShow);
+      if (patch.graphColorMode !== undefined) setGraphColorMode(patch.graphColorMode);
+      if (patch.graphRefFilter !== undefined) setGraphRefFilter(patch.graphRefFilter);
       if (patch.aiEnabled !== undefined) setAiEnabled(patch.aiEnabled);
       if (patch.aiConflictAutonomy !== undefined) setAiConflictAutonomy(patch.aiConflictAutonomy);
       if (patch.aiConsented !== undefined) setAiConsented(patch.aiConsented);
@@ -339,6 +387,15 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
     setHealthRefresh(s.healthRefresh);
     setGraph(s.graph);
     setMetricsVersion((v) => v + 1);
+    // Spec-002 (additive/optional): missing ⇒ default.
+    setGraphStyle(s.graphStyle ?? 'standard');
+    setGraphSeason(s.graphSeason ?? DEFAULT_SEASON);
+    // Spec-003 (additive/optional): missing ⇒ default.
+    setGraphFirstParent(s.graphFirstParent ?? false);
+    setGraphFoldLinear(s.graphFoldLinear ?? false);
+    setGraphMinimapAlwaysShow(s.graphMinimapAlwaysShow ?? false);
+    setGraphColorMode(s.graphColorMode ?? 'lane');
+    setGraphRefFilter(s.graphRefFilter ?? null);
     setAiEnabled(s.aiEnabled);
     setAiConflictAutonomy(s.aiConflictAutonomy);
     setAiConsented(s.aiConsented);
@@ -366,6 +423,13 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
     autoFetch,
     healthRefresh,
     graph,
+    graphStyle,
+    graphSeason,
+    graphFirstParent,
+    graphFoldLinear,
+    graphMinimapAlwaysShow,
+    graphColorMode,
+    graphRefFilter,
     metricsVersion,
     aiEnabled,
     aiConflictAutonomy,

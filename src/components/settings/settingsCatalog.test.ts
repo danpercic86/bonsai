@@ -52,6 +52,12 @@ const MUTATED: UiSettings = {
     showPrBadge: true,
     showCiStatus: true,
   },
+  // Spec-003: the first-parent row's reset leaf.
+  graphFirstParent: true,
+  // Spec-004: the fold-linear row's reset leaf.
+  graphFoldLinear: true,
+  // Spec-005: the overview-rail always-show row's reset leaf.
+  graphMinimapAlwaysShow: true,
   terminalCommand: 'wt.exe {path}',
   editorCommand: 'code {path}',
   aiEnabled: false,
@@ -88,6 +94,9 @@ const RESET_LEAVES: Readonly<Record<string, string>> = {
   'graph.signature-badge': 'graph.showSignatureBadge',
   'graph.pr-badges': 'graph.showPrBadge',
   'graph.ci-status': 'graph.showCiStatus',
+  'graph.first-parent': 'graphFirstParent',
+  'graph.fold-linear': 'graphFoldLinear',
+  'graph.minimap-always-show': 'graphMinimapAlwaysShow',
   'ai.conflict-resolution': 'aiConflictAutonomy',
   'ai.repository-access': 'aiConflictTools',
   'ai.stream-output': 'aiStreamLog',
@@ -248,6 +257,7 @@ describe('search', () => {
     expect(searchSettings('husky', ALL).map((e) => e.id)).toEqual(['git-config.run-hooks']);
     expect(searchSettings('colour', ALL).map((e) => e.id)).toEqual([
       'appearance.theme',
+      'appearance.graph-colors',
       'identities.profile-color',
     ]);
     expect(searchSettings('upstream', ALL).map((e) => e.id)).toContain('graph.ahead-behind');
@@ -439,6 +449,7 @@ describe('entry control kinds', () => {
     const kinds = new Set<SettingsIndexEntry['control']>([
       'switch',
       'segmented',
+      'combobox',
       'radiogroup',
       'numberSlider',
       'text',

@@ -23,9 +23,14 @@ import { effectiveMetrics } from '../graph/metrics';
 import type { GraphDisplayOptions } from '../graph/rightColumns';
 import { createGraphStream } from '../graph/streamAssembler';
 import { createGraphStreamApplier } from './repoWorkspace/graphStreamApply';
+import { composerPreviewFileDiff } from './repoWorkspace/composerPreview';
+import { useRailInput } from './repoWorkspace/railProps';
+import { useReplayController } from './repoWorkspace/replayProps';
+import { usePaletteCallbacks } from './repoWorkspace/paletteCallbacks';
 import { useCoalescedRefresh, type RefreshOrigin } from './repoWorkspace/useCoalescedRefresh';
 import { type RefreshScope, slicesForScope } from './repoWorkspace/refreshScope';
 import { useRepoChangeSubscription } from './repoWorkspace/useRepoChangeSubscription';
+import { usePrDiffBrowser } from './repoWorkspace/usePrDiffBrowser';
 import type { IncrementalEdgeIndex } from '../graph/incrementalEdgeIndex';
 import { ipc } from '../ipc';
 import type {
@@ -98,9 +103,20 @@ import { useForgeSignals } from './repoWorkspace/useForgeSignals';
 import { useHistorySearch } from './repoWorkspace/useHistorySearch';
 import { useCommitComposer } from './repoWorkspace/useCommitComposer';
 import { usePalette } from './repoWorkspace/usePalette';
+import { useGraphFilterRefetch } from '../hooks/useGraphFilter';
+import { useGraphFilterWiring } from './repoWorkspace/useGraphFilterWiring';
+import { useExternalTools } from './repoWorkspace/useExternalTools';
+import { bisectSummariesOf } from './repoWorkspace/bisectSummaries';
+import {
+  graphFilterPaletteEntries,
+  headRowFilterMenuItems,
+  refFilterMenuItems,
+} from './workspaceMenusFilter';
+import { RefFilterMarkerContext } from './sidebar/refFilterMarkerContext';
 import { buildPaletteActions, type PaletteAction } from './paletteActions';
 import { safeOpDispatch } from './safeOpDispatch';
 import type { ComboboxOption } from './Combobox';
+import { searchScopeOptionsOf } from './repoWorkspace/searchHelpers';
 
 export type { RepoWorkspaceProps } from './repoWorkspace/RepoWorkspaceProps';
 import type { RepoWorkspaceProps } from './repoWorkspace/RepoWorkspaceProps';
@@ -119,6 +135,14 @@ export function RepoWorkspace({
   globalModalOpen,
   graph: graphPrefs,
   metricsVersion,
+  graphStyle,
+  graphSeason,
+  graphFirstParent,
+  graphFoldLinear,
+  graphMinimapAlwaysShow,
+  graphColorMode,
+  graphRefFilter,
+  onGraphFilterChange,
   aiEnabled,
   aiConflictAutonomy,
   aiConsented,
@@ -529,6 +553,19 @@ export function RepoWorkspace({
   const [commitBrowserOpen, setCommitBrowserOpen] = useState(false);
   const commitBrowserOpenRef = useRef(commitBrowserOpen);
   commitBrowserOpenRef.current = commitBrowserOpen;
+  // Latest compare target read by refetchCompare (and usePrDiffBrowser's
+  // open-suppression) without widening effect/callback deps.
+  const compareRef = useRef(compare);
+  compareRef.current = compare;
+  // PR mode: the open PR's local diff → center DiffBrowser (usePrDiffBrowser).
+  const { openPrDiff, closePrDiff, prBrowserView } = usePrDiffBrowser(
+    setScope,
+    setCommitBrowserOpen,
+    compareRef,
+  );
+  // Assigned after the diffBrowserView memo below (rendered-branch signal);
+  // declared here because useWorkspaceKeyboard consumes it earlier in the body.
+  const prBrowserOpenRef = useRef(false);
 
   const statusReqId = useRef(0);
   const graphReqId = useRef(0);
@@ -554,6 +591,11 @@ export function RepoWorkspace({
   selectedIndexRef.current = selectedIndex;
   const graphDataRef = useRef(graph);
   graphDataRef.current = graph;
+
+  // Spec-003/004: graph-declutter controller + fold state + meta truth flags.
+  const { graphFilter, fold, graphFilterRef, setGraphFilterFlags, stale: graphFilterStale } =
+    useGraphFilterWiring({ graphFirstParent, graphFoldLinear, graphRefFilter, onGraphFilterChange,
+      branches, repoId, graphTotalRows: graph?.nodes.length ?? 0, selectedIndexRef, selectedIndex });
 
   // P58c: per-oid signature verify cache, keyed on the graph's visible range;
   // gated on the showSignatureBadge pref (off ⇒ empty map, NO verify requests).
@@ -583,6 +625,8 @@ export function RepoWorkspace({
   // pure layer never sees `compact`.
   const graphDisplay = useMemo<GraphDisplayOptions>(
     () => ({
+      // Spec-006: paint-only edge/ring coloring (lane palette vs author hue).
+      colorMode: graphColorMode,
       showSha: graphPrefs.showSha,
       showAuthor: graphPrefs.showAuthor,
       showDate: graphPrefs.showDate,
@@ -595,7 +639,7 @@ export function RepoWorkspace({
       prByBranch: forgeSignals.prByBranch,
       ciBySha: forgeSignals.ciBySha,
     }),
-    [graphPrefs, branchStats, forgeSignals.prByBranch, forgeSignals.ciBySha],
+    [graphColorMode, graphPrefs, branchStats, forgeSignals.prByBranch, forgeSignals.ciBySha],
   );
 
   // P63: right-pane PR navigation request — a graph PR-badge click sets the
@@ -620,9 +664,6 @@ export function RepoWorkspace({
     void refetchSigningStatus();
   }, [refetchSigningStatus]);
 
-  // Latest compare target read by refetchCompare without widening effect deps.
-  const compareRef = useRef(compare);
-  compareRef.current = compare;
   // Commit whose diff/panel is currently loaded — lets the selection effect skip
   // a reset+refetch when the selected OID is unchanged (tab switch / watcher tick
   // that only shifts the row index).
@@ -959,6 +1000,8 @@ export function RepoWorkspace({
     collapseDiffSlot();
   }, [collapseDiffSlot]);
 
+  // Spec-005: bumped once per stream `done` — the rail's bucket-rebuild key.
+  const [railGeneration, setRailGeneration] = useState(0);
   const refetchGraph = useCallback(async () => {
     // The `graphReqId` generation is the cancellation crux (P65 §6): it now gates
     // chunk APPLICATION — chunks from a superseded stream (repo switch / new
@@ -979,14 +1022,14 @@ export function RepoWorkspace({
     const applier = createGraphStreamApplier(
       stream,
       prevSelectedId,
-      { setGraph, setGraphEdgeIndex, setGraphTotal, setSelectedIndex },
+      { setGraph, setGraphEdgeIndex, setGraphTotal, setSelectedIndex, setFilterFlags: setGraphFilterFlags, setFoldSpans: fold.setSpans, onDone: () => setRailGeneration((g) => g + 1) },
       (e) => {
         if (id === graphReqId.current) setGraphError(errorMessage(e));
       },
     );
     setGraphLoading(true);
     try {
-      await ipc.streamGraph(repoId, (chunk) => {
+      await ipc.streamGraph(repoId, graphFilterRef.current, (chunk) => {
         if (id !== graphReqId.current) return; // stale / superseded stream
         applier.handle(chunk);
       });
@@ -1008,7 +1051,7 @@ export function RepoWorkspace({
     } finally {
       if (id === graphReqId.current) setGraphLoading(false);
     }
-  }, [repoId]);
+  }, [repoId, graphFilterRef, setGraphFilterFlags, fold.setSpans]); // all hook-stable
 
   const refetchBranches = useCallback(async () => {
     const id = ++branchesReqId.current;
@@ -1314,7 +1357,8 @@ export function RepoWorkspace({
   useEffect(() => {
     setScope({ kind: 'root' });
     setCommitBrowserOpen(false);
-  }, [compare?.oid, selectedOid]);
+    closePrDiff(); // picking a commit / opening compare dismisses a PR diff too
+  }, [compare?.oid, selectedOid, closePrDiff]);
 
   // P86a: repo-changed + tag-auto-sync subscriptions (reason-aware refresh routing
   // + the CI-3 tag-count toast) live in their own hook so the container stays thin.
@@ -1874,11 +1918,16 @@ export function RepoWorkspace({
     compareRef,
     clearCompare,
     setSelectedIndex,
+    expandForReveal: fold.expandFor,
   });
 
   // P50b: commit search — state hook drives the search bar + graph match rings;
   // next/prev reuse revealCommitByOid (the single-selection reveal path).
   const search = useCommitSearch({ repoId, graph, revealCommitByOid, pushToast });
+
+  // Spec-003/004: a WALK change reloads the graph (+ selection reveal); the
+  // fold rising edge re-requests for spans (toggle-off stays local, plan lock).
+  useGraphFilterRefetch({ filterKey: graphFilter.walkKey, foldLinear: graphFilter.foldLinear, refetchGraph, selectedIndexRef, graphDataRef, revealCommitByOid });
 
   // P57c: semantic-history "Ask history" — retrieval + AI answer. The answer
   // routes into the shared AiOutputPanel via runHistoryAnswer (aiPanel req-id).
@@ -1891,27 +1940,17 @@ export function RepoWorkspace({
     pushToast,
   });
 
-  // P54c: commit composer. The row "Preview" reuses the EXISTING workdir file-
-  // diff IPC — resolve the changed file's section from the latest snapshot
-  // (unstaged → untracked → staged) and fetch that file's diff (no new path).
+  // Spec-005: the overview-rail bundle (channel pick + jump resolvers live in
+  // railProps.ts; GraphCanvas mounts the rail only while visible).
+  const rail = useRailInput({ search, historySearch, graph, revealCommitByOid, generation: railGeneration, alwaysShow: graphMinimapAlwaysShow });
+
+  // Spec-007: replay controller (entry snapshot + fab/palette gate) — replayProps.ts.
+  const replay = useReplayController({ graph, metrics, metricsVersion, display: graphDisplay,
+    graphStyle, graphSeason, themeVersion, reducedMotion, pushToast });
+
+  // P54c: commit composer row "Preview" — moved to composerPreview.ts.
   const previewComposerFileDiff = useCallback(
-    (path: string): Promise<FileDiff> => {
-      const s = statusRef.current;
-      let entry: StatusEntry | undefined;
-      let staged = false;
-      if (s !== null) {
-        entry = s.unstaged.find((e) => e.path === path);
-        if (entry === undefined) entry = s.untracked.find((e) => e.path === path);
-        if (entry === undefined) {
-          entry = s.staged.find((e) => e.path === path);
-          staged = entry !== undefined;
-        }
-      }
-      if (entry === undefined) {
-        return Promise.reject(new Error(`No working-tree diff available for ${path}`));
-      }
-      return ipc.getWorkdirFileDiff(repoId, entry.path, entry.origPath, staged, false, false);
-    },
+    (path: string): Promise<FileDiff> => composerPreviewFileDiff(statusRef.current, repoId, path),
     [repoId],
   );
   const composer = useCommitComposer({
@@ -1931,12 +1970,7 @@ export function RepoWorkspace({
     return m;
   }, [status]);
   // Branch/ref scope options for the search bar (All refs + local + remote).
-  const searchScopeOptions = useMemo<ComboboxOption[]>(() => {
-    const opts: ComboboxOption[] = [{ value: '', label: 'All refs' }];
-    for (const b of branches?.local ?? []) opts.push({ value: b.name, label: b.name });
-    for (const r of branches?.remote ?? []) opts.push({ value: r.name, label: r.name });
-    return opts;
-  }, [branches]);
+  const searchScopeOptions = useMemo<ComboboxOption[]>(() => searchScopeOptionsOf(branches), [branches]);
 
   // P50c: command palette (Ctrl/Cmd-K). usePalette owns open/close; the
   // accelerator + Esc-layering are wired through useWorkspaceKeyboard below. The
@@ -1944,27 +1978,13 @@ export function RepoWorkspace({
   // graph) and merges the repo-scoped actions with App's `appCommands`.
   const palette = usePalette({ active });
 
-  // "New branch…" opens the shared create-branch PromptDialog seeded at HEAD (a
-  // dialog — never a raw mutation); disabled when detached/unborn or busy.
-  const openNewBranch = useCallback(() => {
-    if (headBranch !== null) setPendingCreateBranch({ oid: headBranch.tip });
-  }, [headBranch]);
-  const openNewWorktree = useCallback(() => setNewWorktreeOpen(true), []);
-  const openSearchEmpty = useCallback(() => search.openSearch(), [search.openSearch]);
-
-  // Dynamic palette rows: prefill + open the search bar, or jump to a commit by
-  // oid prefix — both reuse the non-mutating single-selection reveal path.
-  const paletteRunSearch = useCallback((t: string) => search.openSearch(t), [search.openSearch]);
-  const paletteJumpToCommit = useCallback(
-    (prefix: string) => {
-      const g = graphDataRef.current;
-      const p = prefix.toLowerCase();
-      const node = g?.nodes.find((n) => n.id.startsWith(p));
-      if (node !== undefined) revealCommitByOid(node.id);
-      else pushToast('info', `No commit matching ${prefix} in the current view`);
-    },
-    [revealCommitByOid, pushToast],
-  );
+  // New-branch/new-worktree/search openers + dynamic palette rows — moved
+  // verbatim to paletteCallbacks.ts (spec-007 size offset).
+  const { openNewBranch, openNewWorktree, openSearchEmpty, paletteRunSearch, paletteJumpToCommit } =
+    usePaletteCallbacks({
+      headBranch, setPendingCreateBranch, setNewWorktreeOpen,
+      openSearch: search.openSearch, graphDataRef, revealCommitByOid, pushToast,
+    });
 
   const paletteActions = useMemo<PaletteAction[]>(() => {
     if (!palette.open) return [];
@@ -1984,6 +2004,8 @@ export function RepoWorkspace({
       onNewWorktree: openNewWorktree,
       onOpenSearch: openSearchEmpty,
       onOpenHistory: historySearch.openPanel,
+      onReplayHistory: replay.onOpen,
+      canReplay: replay.canReplay,
       branches,
       graph,
       revealCommitByOid,
@@ -1994,6 +2016,7 @@ export function RepoWorkspace({
     actions.unshift(...aiDock.paletteEntries.lead);
     actions.push(...aiDock.paletteEntries.trail);
     actions.push(...gitDock.paletteEntries); // P87b §5: the "Git activity" row.
+    actions.push(...graphFilterPaletteEntries(graphFilter)); // Spec-003 §3.2.
     return actions;
   }, [
     palette.open,
@@ -2018,6 +2041,8 @@ export function RepoWorkspace({
     appCommands,
     aiDock.paletteEntries,
     gitDock.paletteEntries,
+    graphFilter,
+    replay.onOpen, replay.canReplay,
   ]);
 
   function handleToggleConflictView(path: string) {
@@ -2134,7 +2159,10 @@ export function RepoWorkspace({
     clientX: number,
     clientY: number,
   ) {
-    const items = menus.branchMenuItems(name, kind);
+    let items = menus.branchMenuItems(name, kind);
+    // Spec-003 §3.1: the checked-out branch gets the solo/hide group alone.
+    if (items.length === 0 && kind === 'localBranch' && headBranch?.name === name)
+      items = headRowFilterMenuItems(graphFilter, name);
     if (items.length === 0) return;
     setMenu({ x: clientX, y: clientY, items });
   }
@@ -2158,6 +2186,8 @@ export function RepoWorkspace({
     historyOpenRef,
     reflogOpenRef,
     commitBrowserOpenRef,
+    prBrowserOpenRef,
+    closePrBrowser: closePrDiff,
     composerOpenRef: composer.openRef,
     closeComposer: composer.escClose,
     composerOpen: composer.open,
@@ -2167,6 +2197,8 @@ export function RepoWorkspace({
     closeHistorySearch: historySearch.close,
     paletteOpenRef: palette.openRef,
     closePalette: palette.close,
+    // Spec-007: Esc peel + inert-gate backstops while the replay overlay is up.
+    replayOpenRef: replay.openRef, closeReplay: replay.onExit, replayOpen: replay.open,
     diffSlotRef,
     compareRef,
     setSelectedIndex,
@@ -2190,6 +2222,7 @@ export function RepoWorkspace({
     selectedIndex,
     graph,
     graphRef,
+    fold, // spec-004: display-space nav + pill land/expand/collapse semantics
     onAiActivity: aiDock.focusDock,
     onGitActivity: gitDock.toggleDock,
     handleRefresh,
@@ -2201,28 +2234,8 @@ export function RepoWorkspace({
   // P37b: force-push needs a normal-push-capable HEAD with a configured upstream.
   const canForcePush = canPullPush && headBranch?.upstream != null;
 
-  // P49b: launch external tools at a filesystem path (repo / worktree /
-  // submodule). Never gated by mutating/opActive — launches touch no git state.
-  // Failures surface via the shared AppError→toast path; success is silent (the
-  // opened window is its own feedback).
-  const handleOpenInTerminal = useCallback(
-    (path: string) => {
-      void ipc.openInTerminal(path).catch((e) => pushToast('error', errorMessage(e)));
-    },
-    [pushToast],
-  );
-  const handleRevealInFileManager = useCallback(
-    (path: string) => {
-      void ipc.revealInFileManager(path).catch((e) => pushToast('error', errorMessage(e)));
-    },
-    [pushToast],
-  );
-  const handleOpenInEditor = useCallback(
-    (path: string) => {
-      void ipc.openInEditor(path).catch((e) => pushToast('error', errorMessage(e)));
-    },
-    [pushToast],
-  );
+  const { handleOpenInTerminal, handleRevealInFileManager, handleOpenInEditor } =
+    useExternalTools(pushToast); // P49b launchers (extracted to useExternalTools.ts)
 
   // P3e §menu-extraction: the context-menu item-array builders live in
   // workspaceMenus.ts now; rebuild them each render over the current state +
@@ -2290,21 +2303,11 @@ export function RepoWorkspace({
     onOpenInTerminal: handleOpenInTerminal,
     onRevealInFileManager: handleRevealInFileManager,
     onOpenInEditor: handleOpenInEditor,
+    refFilterItems: (fullRef, noun) => refFilterMenuItems(graphFilter, fullRef, noun),
   });
 
-  // P39b: short summaries for the bisect banner's first-bad / current oids,
-  // resolved from the loaded graph (missing → the banner falls back to shortOid).
-  const bisectSummaries: Record<string, string> | undefined = (() => {
-    if (opState.kind !== 'bisect') return undefined;
-    const map: Record<string, string> = {};
-    const nodes = graph?.nodes ?? [];
-    for (const oid of [opState.current, opState.firstBad]) {
-      if (oid === null) continue;
-      const s = nodes.find((n) => n.id === oid)?.summary;
-      if (s !== undefined) map[oid] = s;
-    }
-    return map;
-  })();
+  // P39b: bisect-banner oid summaries (extracted to bisectSummaries.ts).
+  const bisectSummaries = bisectSummariesOf(opState, graph);
 
   // P38 §7.2/§7.3: reflog restore wiring. Both actions arm the SHARED dialogs
   // (create-branch PromptDialog / reset ConfirmDialog) — no new mutation path.
@@ -2338,6 +2341,8 @@ export function RepoWorkspace({
         onClose: clearCompare, // × in compare mode exits compare (compare IS the diff)
       };
     }
+    // PR mode: AUTO-OPENED by the PR panel (beats commit; compare beats it).
+    if (prBrowserView !== null) return prBrowserView;
     // Commit mode: EXPLICIT-open only.
     if (selectedIndex !== null && graph !== null && commitBrowserOpen && commitDiff !== null) {
       // Mid-stream partial layout: the selected commit's row is not in the
@@ -2358,7 +2363,12 @@ export function RepoWorkspace({
       }
     }
     return null;
-  }, [compare, compareData, selectedIndex, graph, commitBrowserOpen, commitDiff, headBranch, clearCompare]);
+  }, [compare, compareData, prBrowserView, selectedIndex, graph, commitBrowserOpen, commitDiff, headBranch, clearCompare]);
+
+  // Esc-layering flag derived from the RENDERED branch (not raw PR state):
+  // while compare wins the memo, an open-but-invisible PR layer must not
+  // swallow an Esc press meant for compare.
+  prBrowserOpenRef.current = diffBrowserView !== null && diffBrowserView === prBrowserView;
 
   return (
     <>
@@ -2393,6 +2403,8 @@ export function RepoWorkspace({
       />
 
       <div className="panes">
+        {/* Spec-003 §3.3: rows read solo/hidden membership from this context. */}
+        <RefFilterMarkerContext.Provider value={graphFilter.markerFor}>
         <Sidebar
           data={branches}
           loading={branchesLoading}
@@ -2428,6 +2440,7 @@ export function RepoWorkspace({
           onCleanupBranches={() => setStaleCleanupOpen(true)}
           onReveal={handleReveal}
         />
+        </RefFilterMarkerContext.Provider>
         <PaneDivider side="sidebar" onResize={onSidebarResize} onResizeEnd={onPaneResizeEnd} />
         <WorkspaceGraphPane
           graphError={graphError}
@@ -2452,6 +2465,13 @@ export function RepoWorkspace({
           totalRows={graphTotal ?? undefined}
           revealFlash={revealFlash}
           reducedMotion={reducedMotion}
+          graphStyle={graphStyle}
+          graphSeason={graphSeason}
+          graphFilter={graphFilter}
+          replay={replay}
+          graphFold={fold}
+          rail={rail}
+          graphFilterStale={graphFilterStale}
           search={search}
           searchScopeOptions={searchScopeOptions}
           historySearch={historySearch}
@@ -2509,6 +2529,8 @@ export function RepoWorkspace({
           prBaseOptions={prBaseOptions}
           prCompareOptions={prCompareOptions}
           prNav={prNav}
+          onOpenPrDiff={openPrDiff}
+          onClosePrDiff={closePrDiff}
           checksTarget={checksTab.target}
           checksRefreshSeq={checksTab.refreshSeq}
           onPushChecksBranch={checksTab.target?.name === headBranch?.name ? () => void pushCurrentBranch() : undefined}

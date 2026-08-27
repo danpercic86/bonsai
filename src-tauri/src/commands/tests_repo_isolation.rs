@@ -23,7 +23,7 @@ fn isolation_independent_status_and_commit() {
     write_stage_commit(&state, &id_a, dir_a.path(), "a.txt", "hello", "first in A");
 
     // A now has one commit; its status is clean.
-    let graph_a = tauri::async_runtime::block_on(get_graph_inner(&state, &id_a))
+    let graph_a = tauri::async_runtime::block_on(get_graph_inner(&state, &id_a, None))
         .expect("graph A");
     assert_eq!(graph_a.nodes.len(), 1, "A should have exactly one commit");
     let status_a = tauri::async_runtime::block_on(get_status_inner(&state, &id_a))
@@ -31,7 +31,7 @@ fn isolation_independent_status_and_commit() {
     assert!(status_a.staged.is_empty() && status_a.unstaged.is_empty());
 
     // B is untouched: still unborn, empty graph, no files.
-    let graph_b = tauri::async_runtime::block_on(get_graph_inner(&state, &id_b))
+    let graph_b = tauri::async_runtime::block_on(get_graph_inner(&state, &id_b, None))
         .expect("graph B");
     assert!(graph_b.nodes.is_empty(), "B must be unaffected by a commit in A");
     let status_b = tauri::async_runtime::block_on(get_status_inner(&state, &id_b))
@@ -219,7 +219,7 @@ fn isolation_in_progress_merge_does_not_leak() {
         .expect("branches B before");
     let status_b_before = tauri::async_runtime::block_on(get_status_inner(&state, &id_b))
         .expect("status B before");
-    let graph_b_before = tauri::async_runtime::block_on(get_graph_inner(&state, &id_b))
+    let graph_b_before = tauri::async_runtime::block_on(get_graph_inner(&state, &id_b, None))
         .expect("graph B before");
 
     // Now drive A into a paused merge.
@@ -265,7 +265,7 @@ fn isolation_in_progress_merge_does_not_leak() {
         "B's working-dir status must be unchanged"
     );
 
-    let graph_b_after = tauri::async_runtime::block_on(get_graph_inner(&state, &id_b))
+    let graph_b_after = tauri::async_runtime::block_on(get_graph_inner(&state, &id_b, None))
         .expect("graph B after");
     assert_eq!(
         graph_b_after.nodes.len(),

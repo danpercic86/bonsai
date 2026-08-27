@@ -344,3 +344,142 @@ fn health_refresh_roundtrip_backcompat_and_clamp() {
     );
     assert!(loaded.health_refresh.enabled);
 }
+
+/// Spec-003: a settings.json without `graphFirstParent`/`graphRefFilter` loads
+/// the defaults (`false`/`None`) with no version bump — the additive guard for
+/// the two declutter prefs.
+#[test]
+fn old_settings_file_without_graph_declutter_loads_defaults() {
+    let dir = tempfile::TempDir::new().expect("create temp dir");
+    let file = settings_path(&dir);
+    let json = r#"{
+            "version": 1,
+            "recentRepos": [],
+            "theme": "light",
+            "paneWidths": { "sidebar": 300, "rightPanel": 400 }
+        }"#;
+    std::fs::write(&file, json).expect("write pre-spec-003 settings.json");
+
+    let loaded = load_from(&file);
+    assert!(!loaded.graph_first_parent);
+    assert_eq!(loaded.graph_ref_filter, None);
+    assert_eq!(loaded.version, SETTINGS_VERSION);
+}
+
+/// Spec-003: non-default declutter prefs round-trip through save/load (the
+/// persistence acceptance behind surviving a native restart).
+#[test]
+fn graph_declutter_prefs_roundtrip() {
+    let dir = tempfile::TempDir::new().expect("create temp dir");
+    let file = settings_path(&dir);
+    let s = Settings {
+        graph_first_parent: true,
+        graph_ref_filter: Some(GraphRefFilter {
+            mode: RefFilterMode::Solo,
+            refs: vec!["refs/heads/main".to_string()],
+        }),
+        ..Settings::default()
+    };
+    save_to(&file, &s).expect("save settings");
+
+    let loaded = load_from(&file);
+    assert!(loaded.graph_first_parent);
+    assert_eq!(
+        loaded.graph_ref_filter,
+        Some(GraphRefFilter {
+            mode: RefFilterMode::Solo,
+            refs: vec!["refs/heads/main".to_string()],
+        })
+    );
+}
+
+/// Spec-004: `graphFoldLinear` — legacy file loads the default (false, no
+/// version bump); a non-default value round-trips through save/load.
+#[test]
+fn graph_fold_linear_pref_default_and_roundtrip() {
+    let dir = tempfile::TempDir::new().expect("create temp dir");
+    let file = settings_path(&dir);
+    let json = r#"{ "version": 1, "recentRepos": [] }"#;
+    std::fs::write(&file, json).expect("write pre-spec-004 settings.json");
+    let loaded = load_from(&file);
+    assert!(!loaded.graph_fold_linear, "legacy file → default false");
+    assert_eq!(loaded.version, SETTINGS_VERSION);
+
+    let s = Settings {
+        graph_fold_linear: true,
+        ..Settings::default()
+    };
+    save_to(&file, &s).expect("save settings");
+    assert!(load_from(&file).graph_fold_linear, "true round-trips");
+}
+
+/// Spec-005: `graphMinimapAlwaysShow` — legacy file loads the default (false);
+/// a non-default value round-trips through save/load.
+#[test]
+fn graph_minimap_always_show_pref_default_and_roundtrip() {
+    let dir = tempfile::TempDir::new().expect("create temp dir");
+    let file = settings_path(&dir);
+    let json = r#"{ "version": 1, "recentRepos": [] }"#;
+    std::fs::write(&file, json).expect("write pre-spec-005 settings.json");
+    let loaded = load_from(&file);
+    assert!(!loaded.graph_minimap_always_show, "legacy file → default false");
+    assert_eq!(loaded.version, SETTINGS_VERSION);
+
+    let s = Settings {
+        graph_minimap_always_show: true,
+        ..Settings::default()
+    };
+    save_to(&file, &s).expect("save settings");
+    assert!(
+        load_from(&file).graph_minimap_always_show,
+        "true round-trips"
+    );
+}
+
+/// Spec-006: `graphColorMode` — legacy file loads the default (Lane); a
+/// non-default value round-trips through save/load lowercase on the wire.
+#[test]
+fn graph_color_mode_pref_default_and_roundtrip() {
+    let dir = tempfile::TempDir::new().expect("create temp dir");
+    let file = settings_path(&dir);
+    let json = r#"{ "version": 1, "recentRepos": [] }"#;
+    std::fs::write(&file, json).expect("write pre-spec-006 settings.json");
+    let loaded = load_from(&file);
+    assert_eq!(
+        loaded.graph_color_mode,
+        GraphColorMode::Lane,
+        "legacy file → default lane"
+    );
+    assert_eq!(loaded.version, SETTINGS_VERSION);
+
+    let s = Settings {
+        graph_color_mode: GraphColorMode::Author,
+        ..Settings::default()
+    };
+    save_to(&file, &s).expect("save settings");
+    assert_eq!(
+        load_from(&file).graph_color_mode,
+        GraphColorMode::Author,
+        "author round-trips"
+    );
+    let text = std::fs::read_to_string(&file).expect("read settings.json");
+    assert!(
+        text.contains(r#""graphColorMode": "author""#),
+        "wire shape: camelCase key, lowercase value"
+    );
+}
+
+/// Spec-003 wire shape: `mode` serializes lowercase (`"solo"`/`"hide"`) and the
+/// struct is camelCase — pinned so the TS mirror never drifts.
+#[test]
+fn graph_ref_filter_wire_shape() {
+    let v = serde_json::to_value(GraphRefFilter {
+        mode: RefFilterMode::Hide,
+        refs: vec!["refs/tags/v1".to_string()],
+    })
+    .expect("serialize");
+    assert_eq!(
+        v,
+        serde_json::json!({ "mode": "hide", "refs": ["refs/tags/v1"] })
+    );
+}

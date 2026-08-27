@@ -32,7 +32,11 @@
 }
 
 .graph-pane {
-  background: var(--bg-0);
+  /* spec-002 §4.2: sits on the graph-canvas backdrop token (aliases --bg-0 for
+     the standard style) so the container, the load state (bare pane while the
+     graph is null), the empty "pot" card, and the error banner all share the
+     canvas backdrop — no seam where the DOM meets the painted surface. */
+  background: var(--graph-canvas-bg);
   min-width: 0;
   position: relative;
   overflow: hidden;

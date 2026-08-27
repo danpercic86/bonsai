@@ -1,8 +1,26 @@
 import type { AiAutonomy, AiConflictTools } from './ai';
 import type { IdentityProfile } from './config';
 import type { GraphPrefs } from './graph';
+import type { GraphSeason } from '../../graph/palettes';
+import type { GraphStyle } from '../../graph/colors';
+
+export type { GraphStyle } from '../../graph/colors';
+export type { GraphSeason } from '../../graph/palettes';
+
+/** Spec-006: graph edge/lane-ring coloring — classic lanes vs author hue.
+ *  Mirrors Rust `GraphColorMode` (lowercase on the wire). */
+export type GraphColorMode = 'lane' | 'author';
 
 export type Theme = 'dark' | 'light';
+
+/** Spec-003: the persisted graph ref-filter INTENT (opaque to the backend).
+ *  The wire `GraphFilter.seedRefs` whitelist is derived from this at request
+ *  time (`useGraphFilter`): solo → `refs` verbatim; hide → known refs − `refs`. */
+export interface GraphRefFilter {
+  mode: 'solo' | 'hide';
+  /** Full ref names (`refs/heads/x`, `refs/remotes/origin/x`, `refs/tags/v1`). */
+  refs: string[];
+}
 
 /** Flat vs tree-grouped list rendering (P3b §2) — pure display preference. */
 export type ListView = 'tree' | 'flat';
@@ -44,6 +62,27 @@ export interface UiSettings {
   /** P30: periodic read-only refresh signal (backend scheduler). */
   healthRefresh: HealthRefreshSettings;
   graph: GraphPrefs;
+  /** Spec-002: commit-graph visual style. Additive/optional — persisted natively
+   *  (Rust `graph_style`) and pinned in the defaults oracle as `'standard'`; an older
+   *  persisted blob that omits it loads as `'standard'`. */
+  graphStyle?: GraphStyle;
+  /** Spec-002: seasonal accent for the Bonsai style. Additive/optional; absent ⇒
+   *  `DEFAULT_SEASON` ('living'). Ignored while `graphStyle === 'standard'`. */
+  graphSeason?: GraphSeason;
+  /** Spec-003: first-parent graph walk. Additive/optional like graphStyle;
+   *  absent ⇒ false. */
+  graphFirstParent?: boolean;
+  /** Spec-004: fold linear runs into "⋯ N commits" rows. Additive/optional;
+   *  absent ⇒ false. */
+  graphFoldLinear?: boolean;
+  /** Spec-005: always show the graph overview rail. Additive/optional;
+   *  absent ⇒ false. */
+  graphMinimapAlwaysShow?: boolean;
+  /** Spec-006: graph edge/ring coloring. Additive/optional; absent ⇒ 'lane'. */
+  graphColorMode?: GraphColorMode;
+  /** Spec-003: persisted solo/hide intent; `null` (or absent) ⇒ no ref filter.
+   *  GLOBAL like graphStyle (plan risk, accepted). */
+  graphRefFilter?: GraphRefFilter | null;
   // AI assistance (P13).
   aiEnabled: boolean;
   aiConflictAutonomy: AiAutonomy;
@@ -105,6 +144,19 @@ export interface UiSettingsPatch {
   /** Whole-struct patch, like autoFetch (P30 D7). */
   healthRefresh?: HealthRefreshSettings;
   graph?: GraphPrefs;
+  /** Spec-002: commit-graph style + season; patch independently like the other
+   *  appearance prefs. */
+  graphStyle?: GraphStyle;
+  graphSeason?: GraphSeason;
+  /** Spec-003: first-parent toggle + ref-filter intent; patch independently. */
+  graphFirstParent?: boolean;
+  /** Spec-004: fold-linear-runs toggle; patches independently. */
+  graphFoldLinear?: boolean;
+  /** Spec-005: always-show overview rail; patches independently. */
+  graphMinimapAlwaysShow?: boolean;
+  /** Spec-006: graph edge/ring coloring; patches independently. */
+  graphColorMode?: GraphColorMode;
+  graphRefFilter?: GraphRefFilter | null;
   // AI assistance (P13).
   aiEnabled?: boolean;
   aiConflictAutonomy?: AiAutonomy;

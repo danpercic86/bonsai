@@ -1,6 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { GraphLayout } from '../../ipc';
 import type { GraphCanvasHandle } from '../../graph/GraphCanvas';
+import { foldPillRow, foldRowAt, foldToDisplay } from '../../hooks/useGraphFold';
+import type { GraphFoldController } from '../../hooks/useGraphFold';
 import type { DiffSlot } from '../StatusPanel';
 import type { Setter } from './types';
 
@@ -24,6 +26,9 @@ export function useWorkspaceKeyboard(deps: {
   historyOpenRef: { current: boolean };
   reflogOpenRef: { current: boolean };
   commitBrowserOpenRef: { current: boolean };
+  // PR-mode DiffBrowser peel layer (mutually exclusive with commit mode).
+  prBrowserOpenRef: { readonly current: boolean };
+  closePrBrowser: () => void;
   // P54c: the commit composer is a top-level modal — Esc peels it (preview
   // first, then the dialog) before the diff/compare layers; a no-op while
   // applying (op in flight). `composerOpen` also gates graph-nav below.
@@ -38,6 +43,12 @@ export function useWorkspaceKeyboard(deps: {
   // P50c: the command palette is a top-level modal — Esc peels it first.
   paletteOpenRef: { current: boolean };
   closePalette: () => void;
+  // Spec-007: replay overlay. Its own capture handler normally wins; these are
+  // the focus-elsewhere backstops so Esc/arrows never mutate the state UNDER
+  // the overlay (exact-restore guarantee).
+  replayOpenRef: { readonly current: boolean };
+  closeReplay: () => void;
+  replayOpen: boolean;
   diffSlotRef: { current: DiffSlot | null };
   compareRef: { current: { oid: string } | null };
   setSelectedIndex: Setter<number | null>;
@@ -60,6 +71,10 @@ export function useWorkspaceKeyboard(deps: {
   selectedIndex: number | null;
   graph: GraphLayout | null;
   graphRef: { current: GraphCanvasHandle | null };
+  /** Spec-004: fold controller — while its model is active, graph nav runs in
+   *  DISPLAY space with the UI-contract §3 pill semantics (land-don't-select,
+   *  Enter/Space/→ expand, ← collapse). Absent/identity ⇒ legacy nav verbatim. */
+  fold?: GraphFoldController;
   /** P68e §4.4: `Ctrl/Cmd+Shift+A` — expand the AI activity dock and focus the reply
    *  box if a run is blocked, else the log. Bound BEFORE the typing guard on purpose:
    *  Claude's question can arrive while the user is mid-commit-message, and this is
@@ -87,6 +102,8 @@ export function useWorkspaceKeyboard(deps: {
     historyOpenRef,
     reflogOpenRef,
     commitBrowserOpenRef,
+    prBrowserOpenRef,
+    closePrBrowser,
     composerOpenRef,
     closeComposer,
     composerOpen,
@@ -96,6 +113,9 @@ export function useWorkspaceKeyboard(deps: {
     closeHistorySearch,
     paletteOpenRef,
     closePalette,
+    replayOpenRef,
+    closeReplay,
+    replayOpen,
     diffSlotRef,
     compareRef,
     setSelectedIndex,
@@ -115,6 +135,7 @@ export function useWorkspaceKeyboard(deps: {
     selectedIndex,
     graph,
     graphRef,
+    fold,
     onAiActivity,
     onGitActivity,
     handleRefresh,
@@ -147,6 +168,12 @@ export function useWorkspaceKeyboard(deps: {
         closeComposer();
         return;
       }
+      // Spec-007: the replay overlay peels next (below the true modals above
+      // it, above every covered layer — Esc must never touch those).
+      if (replayOpenRef.current) {
+        closeReplay();
+        return;
+      }
       const target = e.target as HTMLElement | null;
       if (target !== null && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) return;
       // P11g-rev §4.7: layering, topmost first. The commit-mode DiffBrowser
@@ -169,6 +196,11 @@ export function useWorkspaceKeyboard(deps: {
       }
       if (reflogOpenRef.current) {
         closeReflog();
+        return;
+      }
+      // PR-mode browser peels with the commit-mode one (mutually exclusive).
+      if (prBrowserOpenRef.current) {
+        closePrBrowser();
         return;
       }
       if (commitBrowserOpenRef.current) {
@@ -215,7 +247,17 @@ export function useWorkspaceKeyboard(deps: {
     closeHistorySearch,
     closePalette,
     closeComposer,
+    closeReplay,
+    closePrBrowser,
   ]);
+
+  // Spec-004 §3: after Enter-expand the next arrow must resume FROM the pill's
+  // display index (not teleport back to a far-away selection). A ref — never
+  // render-visible state — so it can't paint as an active-but-unselected row.
+  const navAnchorRef = useRef<number | null>(null);
+  useEffect(() => {
+    navAnchorRef.current = null; // any selection change invalidates the anchor
+  }, [selectedIndex]);
 
   // Per-repo shortcut effect (active tab only, §5.1): refresh / fetch / pull /
   // push / graph nav. Global modals + this repo's own dialogs suppress it.
@@ -245,7 +287,10 @@ export function useWorkspaceKeyboard(deps: {
       // guard so it works from the commit box too; suppressed under a dialog.
       if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault();
-        if (!dialogOpen && !abortConfirmOpen && !composerOpen) openSearch();
+        // Spec-007: not under the replay overlay — the bar would open invisibly
+        // beneath it, steal focus from the trap, and eat the first Esc.
+        if (!dialogOpen && !abortConfirmOpen && !composerOpen && !replayOpenRef.current)
+          openSearch();
         return;
       }
 
@@ -294,7 +339,8 @@ export function useWorkspaceKeyboard(deps: {
         searchOpen ||
         paletteOpen ||
         composerOpen ||
-        historySearchOpen
+        historySearchOpen ||
+        replayOpen // spec-007: the transport owns arrows/Home/End while up
       )
         return;
 
@@ -314,6 +360,72 @@ export function useWorkspaceKeyboard(deps: {
         e.preventDefault();
         if (!refreshing && !mutating && canPullPush) void handlePush();
         return;
+      }
+
+      // Spec-004 (UI contract §3): while fold is active, graph nav operates on
+      // DISPLAY rows. Arrows LAND on fold-pill rows (active-descendant only —
+      // the commit selection never changes); Enter/Space/ArrowRight expand the
+      // active pill; ArrowLeft collapses the expanded run containing the
+      // selection (the restored pill becomes the active row).
+      const foldModel = fold !== undefined && fold.model !== null ? fold.model : null;
+      if (foldModel !== null && graph !== null && graph.nodes.length > 0) {
+        const displayCount = foldModel.displayRowCount;
+        const activePill = fold!.activePillStart;
+        if (activePill !== null && (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowRight')) {
+          e.preventDefault();
+          // Anchor the NEXT arrow at the pill's former display index (== the
+          // run's first revealed row post-expand).
+          navAnchorRef.current = activePill;
+          fold!.toggleSpan(activePill); // a pill row is always collapsed → expand
+          return;
+        }
+        if (e.key === 'ArrowLeft') {
+          if (selectedIndex !== null && fold!.collapseRunContaining(selectedIndex)) {
+            e.preventDefault();
+          }
+          return; // no-op on rows outside an expanded run (reserved)
+        }
+        if (
+          e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'PageDown' ||
+          e.key === 'PageUp' || e.key === 'Home' || e.key === 'End'
+        ) {
+          e.preventDefault();
+          const activeDisplay = foldPillRow(foldModel, activePill);
+          const anchor = navAnchorRef.current;
+          navAnchorRef.current = null; // consumed by this nav step
+          const cur =
+            activeDisplay ??
+            (anchor !== null
+              ? foldToDisplay(foldModel, anchor)
+              : selectedIndex !== null
+                ? foldToDisplay(foldModel, selectedIndex)
+                : null);
+          const lastRow = displayCount - 1;
+          let next: number;
+          if (cur === null) {
+            // Seed anchors (M2 rule, display space; anchor rows are never hidden).
+            const headDisplay =
+              graph.headIndex !== null ? foldToDisplay(foldModel, graph.headIndex) : 0;
+            if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === 'Home') next = headDisplay;
+            else if (e.key === 'ArrowUp' || e.key === 'End') next = lastRow;
+            else next = 0; // PageUp with none → 0
+          } else if (e.key === 'Home') next = 0;
+          else if (e.key === 'End') next = lastRow;
+          else {
+            const page = graphRef.current?.getVisibleRowCount() ?? 10;
+            const delta =
+              e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : e.key === 'PageDown' ? page : -page;
+            next = Math.max(0, Math.min(cur + delta, lastRow));
+          }
+          const at = foldRowAt(foldModel, next);
+          if (at.kind === 'fold') {
+            fold!.setActivePill(at.span.start); // land, don't select
+          } else {
+            fold!.setActivePill(null);
+            setSelectedIndex(at.row);
+          }
+          return;
+        }
       }
 
       // M2 (graph review): the first Arrow/Page/Home/End with no prior selection
@@ -386,9 +498,11 @@ export function useWorkspaceKeyboard(deps: {
     paletteOpen,
     togglePalette,
     composerOpen,
+    replayOpen,
     onAiActivity,
     onGitActivity,
     selectedIndex,
     graph,
+    fold,
   ]);
 }

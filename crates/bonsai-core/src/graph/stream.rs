@@ -13,7 +13,8 @@ use std::collections::HashSet;
 
 use crate::error::AppError;
 
-use super::{collect_seed, open_no_search, seeded_revwalk, LaneWalker, RefLabel};
+use super::fold::{FoldScan, FoldSpan};
+use super::{collect_seed, open_no_search, seeded_revwalk, GraphFilter, LaneWalker, RefLabel};
 
 /// First flush: the first screenful + generous overscan, kept small so the
 /// initial paint is instant.
@@ -79,6 +80,14 @@ pub enum GraphChunk {
     Meta {
         total: Option<u32>,
         head_oid: Option<String>,
+        /// Spec-003: ANY declutter filter took effect
+        /// (`seed_refs_applied || first_parent`). Additive; `false` == the
+        /// full, unfiltered graph.
+        filtered: bool,
+        /// Spec-003: the seed-ref restriction specifically took effect —
+        /// `false` under the stale-refs fallback even when a non-empty
+        /// `seedRefs` was requested (the UI's stale-warning truth signal).
+        seed_refs_applied: bool,
     },
     /// A run of consecutive rows `[start_row, start_row + nodes.len())` plus the
     /// edges FINALIZED within them (every edge whose parent `to` falls in this
@@ -98,6 +107,12 @@ pub enum GraphChunk {
         lane_count: u32,
         head_index: Option<u32>,
         truncated: bool,
+        /// Spec-004: foldable-run metadata (`foldSpans` on the wire; OMITTED
+        /// when empty — fold off or no spans found). Rides `Done` because the
+        /// rule needs the full edge set. Per-request, never trusted from a
+        /// cached replay (the cache injects fresh spans at replay time).
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        fold_spans: Vec<FoldSpan>,
     },
 }
 
@@ -113,6 +128,7 @@ pub fn stream_graph_core(
 ) -> Result<(), AppError> {
     stream_graph_core_with(
         workdir,
+        &GraphFilter::default(),
         STREAM_FIRST_BATCH,
         STREAM_BATCH,
         STREAM_MAX_COMMITS,
@@ -125,13 +141,14 @@ pub fn stream_graph_core(
 /// batch sizes to prove batch boundaries never move a lane (contract §7).
 pub(crate) fn stream_graph_core_with(
     workdir: &std::path::Path,
+    filter: &GraphFilter,
     first_batch: usize,
     batch: usize,
     max_commits: usize,
     emit: impl FnMut(GraphChunk) -> bool,
 ) -> Result<(), AppError> {
     let mut repo = open_no_search(workdir)?;
-    stream_graph_from_repo_with(&mut repo, first_batch, batch, max_commits, emit)
+    stream_graph_from_repo_with(&mut repo, filter, first_batch, batch, max_commits, emit)
 }
 
 /// Blocking. P88b/B2b round handle cache: stream the walk from an ALREADY-OPEN
@@ -141,21 +158,64 @@ pub(crate) fn stream_graph_core_with(
 /// here. `&mut` is required because `collect_seed` runs `stash_foreach`.
 pub fn stream_graph_from_repo(
     repo: &mut git2::Repository,
+    filter: &GraphFilter,
     emit: impl FnMut(GraphChunk) -> bool,
 ) -> Result<(), AppError> {
-    stream_graph_from_repo_with(repo, STREAM_FIRST_BATCH, STREAM_BATCH, STREAM_MAX_COMMITS, emit)
+    stream_graph_from_repo_with(
+        repo,
+        filter,
+        STREAM_FIRST_BATCH,
+        STREAM_BATCH,
+        STREAM_MAX_COMMITS,
+        emit,
+    )
 }
 
 /// [`stream_graph_from_repo`] with the batch/cap constants parameterized (test +
 /// `&Path`-wrapper seam). See [`stream_graph_core_with`].
 pub(crate) fn stream_graph_from_repo_with(
     repo: &mut git2::Repository,
+    filter: &GraphFilter,
     first_batch: usize,
     batch: usize,
     max_commits: usize,
+    emit: impl FnMut(GraphChunk) -> bool,
+) -> Result<(), AppError> {
+    stream_graph_inner(repo, filter, first_batch, batch, max_commits, None, emit)
+}
+
+/// Spec-004 cache seam: identical to [`stream_graph_from_repo`], additionally
+/// collecting the walk's REAL-merge rows (filtered parent count > 1, recorded
+/// before the first-parent truncate) into `merge_rows` — the layout cache
+/// stores them so cache-hit span recomputation never re-touches libgit2.
+pub fn stream_graph_from_repo_collect(
+    repo: &mut git2::Repository,
+    filter: &GraphFilter,
+    merge_rows: &mut Vec<u32>,
+    emit: impl FnMut(GraphChunk) -> bool,
+) -> Result<(), AppError> {
+    stream_graph_inner(
+        repo,
+        filter,
+        STREAM_FIRST_BATCH,
+        STREAM_BATCH,
+        STREAM_MAX_COMMITS,
+        Some(merge_rows),
+        emit,
+    )
+}
+
+/// The single walk body behind every streaming entry point.
+fn stream_graph_inner(
+    repo: &mut git2::Repository,
+    filter: &GraphFilter,
+    first_batch: usize,
+    batch: usize,
+    max_commits: usize,
+    mut merge_out: Option<&mut Vec<u32>>,
     mut emit: impl FnMut(GraphChunk) -> bool,
 ) -> Result<(), AppError> {
-    let (mut refs, tips, head_oid, hide) = collect_seed(repo)?;
+    let (mut refs, tips, head_oid, hide, seed_refs_applied) = collect_seed(repo, filter)?;
     // Downgrade to a shared borrow for the walk (the seed pass above needed
     // `&mut` for `stash_foreach`; the revwalk + lane stepping only read).
     let repo: &git2::Repository = repo;
@@ -164,6 +224,10 @@ pub(crate) fn stream_graph_from_repo_with(
     if !emit(GraphChunk::Meta {
         total: cheap_total(repo)?,
         head_oid: head_hex,
+        // Spec-003 truth flags, set right after `collect_seed` (before the
+        // empty-tips early return — hide-all on a tiny repo hits that path).
+        filtered: seed_refs_applied || filter.first_parent,
+        seed_refs_applied,
     }) {
         return Ok(()); // sink gone before the first row
     }
@@ -174,13 +238,14 @@ pub(crate) fn stream_graph_from_repo_with(
             lane_count: 0,
             head_index: None,
             truncated: false,
+            fold_spans: Vec::new(),
         });
         return Ok(());
     }
 
-    let revwalk = seeded_revwalk(repo, &tips)?;
+    let revwalk = seeded_revwalk(repo, &tips, filter.first_parent)?;
     let hidden: HashSet<git2::Oid> = hide.iter().copied().collect();
-    let mut walker = LaneWalker::new(hidden);
+    let mut walker = LaneWalker::new(hidden, filter.first_parent);
 
     let mut buf_nodes: Vec<StreamNode> = Vec::new();
     let mut buf_edges: Vec<GraphStreamEdge> = Vec::new();
@@ -188,6 +253,9 @@ pub(crate) fn stream_graph_from_repo_with(
     let mut row: u32 = 0;
     let mut truncated = false;
     let mut limit = first_batch; // small first flush = instant paint
+    // Spec-004: spans are computed only when requested; merge rows only when
+    // a collector was passed (the layout-cache store path).
+    let mut fold: Option<FoldScan> = filter.fold_linear.then(FoldScan::new);
 
     for oid in revwalk {
         let oid = oid?;
@@ -200,6 +268,18 @@ pub(crate) fn stream_graph_from_repo_with(
             break;
         }
         let (node, edges) = walker.step(repo, oid, row, &mut refs)?;
+        let real_merge = walker.last_was_merge();
+        if real_merge {
+            if let Some(out) = merge_out.as_deref_mut() {
+                out.push(row);
+            }
+        }
+        if let Some(scan) = fold.as_mut() {
+            scan.push_row(node.lane, node.refs.is_empty(), real_merge);
+            for e in &edges {
+                scan.push_edge(e.from, e.to, e.lane);
+            }
+        }
         buf_nodes.push(node);
         buf_edges.extend(edges);
         row += 1;
@@ -228,11 +308,16 @@ pub(crate) fn stream_graph_from_repo_with(
     }
 
     let head_index = head_oid.and_then(|h| walker.row_of(&h));
+    let fold_spans = match fold {
+        Some(scan) => scan.finish(head_index, filter.first_parent),
+        None => Vec::new(),
+    };
     emit(GraphChunk::Done {
         total_rows: row,
         lane_count: walker.lane_count(),
         head_index,
         truncated,
+        fold_spans,
     });
     Ok(())
 }
@@ -248,166 +333,7 @@ fn cheap_total(_repo: &git2::Repository) -> Result<Option<u32>, AppError> {
     Ok(None)
 }
 
-/// Wire-shape guards for the P65a→P65b seam. These assert the EXACT camelCase
-/// JSON the frontend `GraphChunk` mirror (contract §2.2) folds. They fail loudly
-/// if anyone ever drops `#[serde(rename_all_fields = "camelCase")]` /
-/// `rename_all = "camelCase"` and a snake_case key leaks onto the wire.
+/// Wire-shape guard tests live in `stream_wire_tests.rs` (size ratchet).
 #[cfg(test)]
-mod tests {
-    use super::{GraphChunk, GraphStreamEdge, StreamNode};
-    use crate::graph::{RefKind, RefLabel};
-
-    /// `Meta` with both fields populated → exact camelCase object.
-    #[test]
-    fn meta_some_wire_shape() {
-        let v = serde_json::to_value(GraphChunk::Meta {
-            total: Some(3),
-            head_oid: Some("abc".to_string()),
-        })
-        .expect("serialize Meta");
-        assert_eq!(
-            v,
-            serde_json::json!({ "kind": "meta", "total": 3, "headOid": "abc" })
-        );
-    }
-
-    /// `None` scalars serialize as JSON `null` (present, not omitted): the mirror
-    /// types them `number | null` / `string | null`.
-    #[test]
-    fn meta_none_wire_shape() {
-        let v = serde_json::to_value(GraphChunk::Meta {
-            total: None,
-            head_oid: None,
-        })
-        .expect("serialize Meta");
-        assert_eq!(
-            v,
-            serde_json::json!({ "kind": "meta", "total": null, "headOid": null })
-        );
-    }
-
-    /// `Batch` + its nested `StreamNode` / `GraphStreamEdge` all serialize
-    /// camelCase; empty `refs` is OMITTED and `committer_ts` never leaks.
-    #[test]
-    fn batch_wire_shape() {
-        let chunk = GraphChunk::Batch {
-            start_row: 5,
-            lane_count_so_far: 3,
-            nodes: vec![StreamNode {
-                id: "deadbeef".to_string(),
-                lane: 2,
-                refs: vec![],
-                summary: "msg".to_string(),
-                author: "Ada".to_string(),
-                ts: 100,
-                committer_ts: 200,
-            }],
-            edges: vec![GraphStreamEdge {
-                from: 0,
-                to: 1,
-                lane: 2,
-                ord: 1,
-            }],
-        };
-        let v = serde_json::to_value(chunk).expect("serialize Batch");
-
-        assert_eq!(v["kind"], "batch");
-        assert_eq!(v["startRow"], 5);
-        assert_eq!(v["laneCountSoFar"], 3);
-
-        // StreamNode: whole-object equality pins the exact key set (empty `refs`
-        // OMITTED) so any extra/renamed key fails ...
-        let node = &v["nodes"][0];
-        assert_eq!(
-            *node,
-            serde_json::json!({
-                "id": "deadbeef",
-                "lane": 2,
-                "summary": "msg",
-                "author": "Ada",
-                "ts": 100,
-                "committerTs": 200,
-            })
-        );
-        // ... and explicit presence/absence checks make a snake_case regression
-        // scream with a clear message.
-        assert!(node.get("committerTs").is_some(), "committerTs present");
-        assert!(
-            node.get("committer_ts").is_none(),
-            "snake_case committer_ts must be absent"
-        );
-        assert!(node.get("refs").is_none(), "refs omitted when empty");
-
-        // GraphStreamEdge wire shape.
-        assert_eq!(
-            v["edges"][0],
-            serde_json::json!({ "from": 0, "to": 1, "lane": 2, "ord": 1 })
-        );
-    }
-
-    /// A non-empty `refs` vec is PRESENT on the wire (the `skip_serializing_if`
-    /// only fires when empty), and each `RefLabel` is itself camelCase.
-    #[test]
-    fn stream_node_refs_present_when_nonempty() {
-        let node = StreamNode {
-            id: "abc".to_string(),
-            lane: 0,
-            refs: vec![RefLabel {
-                name: "main".to_string(),
-                kind: RefKind::LocalBranch,
-                is_head: true,
-            }],
-            summary: "s".to_string(),
-            author: "a".to_string(),
-            ts: 1,
-            committer_ts: 2,
-        };
-        let v = serde_json::to_value(&node).expect("serialize StreamNode");
-        assert!(v.get("refs").is_some(), "refs present when non-empty");
-        assert_eq!(
-            v["refs"][0],
-            serde_json::json!({ "name": "main", "kind": "localBranch", "isHead": true })
-        );
-    }
-
-    /// `Done` terminal scalars all camelCase; covers both `Some`/`None`
-    /// `head_index` (mirror types it `number | null`).
-    #[test]
-    fn done_wire_shape() {
-        let with_head = serde_json::to_value(GraphChunk::Done {
-            total_rows: 42,
-            lane_count: 4,
-            head_index: Some(7),
-            truncated: false,
-        })
-        .expect("serialize Done");
-        assert_eq!(
-            with_head,
-            serde_json::json!({
-                "kind": "done",
-                "totalRows": 42,
-                "laneCount": 4,
-                "headIndex": 7,
-                "truncated": false,
-            })
-        );
-
-        let no_head = serde_json::to_value(GraphChunk::Done {
-            total_rows: 0,
-            lane_count: 0,
-            head_index: None,
-            truncated: true,
-        })
-        .expect("serialize Done");
-        assert_eq!(
-            no_head,
-            serde_json::json!({
-                "kind": "done",
-                "totalRows": 0,
-                "laneCount": 0,
-                "headIndex": null,
-                "truncated": true,
-            })
-        );
-    }
-}
+#[path = "stream_wire_tests.rs"]
+mod tests;

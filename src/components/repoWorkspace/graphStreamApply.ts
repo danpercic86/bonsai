@@ -8,7 +8,7 @@
 import { guardChunks } from '../../graph/chunkGuard';
 import type { GraphStream } from '../../graph/streamAssembler';
 import type { IncrementalEdgeIndex } from '../../graph/incrementalEdgeIndex';
-import type { GraphChunk, GraphLayout } from '../../ipc';
+import type { FoldSpan, GraphChunk, GraphLayout } from '../../ipc';
 
 /** P65b: bump the layout object identity per applied stream batch (the growing
  *  arrays inside are shared) so GraphCanvas's `[..., layout]` repaint effect
@@ -24,6 +24,12 @@ export interface GraphStreamSinks {
   setGraphEdgeIndex(index: IncrementalEdgeIndex): void;
   setGraphTotal(total: number | null): void;
   setSelectedIndex(index: number | null): void;
+  /** Spec-003: the meta chunk's filter flags (absent on the wire = false). */
+  setFilterFlags?(flags: { filtered: boolean; seedRefsApplied: boolean }): void;
+  /** Spec-004: the done chunk's fold spans (absent on the wire = []). */
+  setFoldSpans?(spans: readonly FoldSpan[]): void;
+  /** Spec-005: fired once when the stream reaches `done` (rail generation bump). */
+  onDone?(): void;
 }
 
 export interface GraphStreamApplier {
@@ -48,7 +54,18 @@ export function createGraphStreamApplier(
     // carries no rows, so update just the scroll extent and wait.
     if (chunk.kind === 'meta') {
       sinks.setGraphTotal(stream.total);
+      // Spec-003: surface the filter truth flags (coerce absent → false).
+      sinks.setFilterFlags?.({
+        filtered: chunk.filtered === true,
+        seedRefsApplied: chunk.seedRefsApplied === true,
+      });
       return;
+    }
+    // Spec-004: spans ride ONLY the terminal done chunk; publish them with the
+    // final layout so the one-time collapse happens in the same render.
+    if (chunk.kind === 'done') {
+      sinks.setFoldSpans?.(chunk.foldSpans ?? []);
+      sinks.onDone?.();
     }
     // Identity bump -> GraphCanvas repaints; edge index + total set together
     // with the layout so the three never disagree in one render.

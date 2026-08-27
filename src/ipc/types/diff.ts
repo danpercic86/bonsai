@@ -120,4 +120,6 @@ export interface ImageDiff {
 export type ImageDiffRequest =
   | { kind: 'workdir'; path: string; origPath: string | null; staged: boolean }
   | { kind: 'commit'; oid: string; path: string; origPath: string | null }
-  | { kind: 'compare'; toOid: string; path: string; origPath: string | null };
+  | { kind: 'compare'; toOid: string; path: string; origPath: string | null }
+  /** Arbitrary commit pair (PR mode: old = merge-base, new = PR head). */
+  | { kind: 'range'; oldOid: string; newOid: string; path: string; origPath: string | null };

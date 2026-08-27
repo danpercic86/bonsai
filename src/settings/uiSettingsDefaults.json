@@ -4,6 +4,13 @@
   "listView": "tree",
   "panelDensity": "cozy",
   "primaryCommitAction": "commit",
+  "graphStyle": "standard",
+  "graphSeason": "living",
+  "graphFirstParent": false,
+  "graphFoldLinear": false,
+  "graphMinimapAlwaysShow": false,
+  "graphColorMode": "lane",
+  "graphRefFilter": null,
   "autoFetch": { "enabled": false, "intervalMinutes": 5 },
   "healthRefresh": { "enabled": false, "intervalMinutes": 30 },
   "graph": {
