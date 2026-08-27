@@ -30,6 +30,7 @@ import { usePaletteCallbacks } from './repoWorkspace/paletteCallbacks';
 import { useCoalescedRefresh, type RefreshOrigin } from './repoWorkspace/useCoalescedRefresh';
 import { type RefreshScope, slicesForScope } from './repoWorkspace/refreshScope';
 import { useRepoChangeSubscription } from './repoWorkspace/useRepoChangeSubscription';
+import { usePrDiffBrowser } from './repoWorkspace/usePrDiffBrowser';
 import type { IncrementalEdgeIndex } from '../graph/incrementalEdgeIndex';
 import { ipc } from '../ipc';
 import type {
@@ -552,6 +553,19 @@ export function RepoWorkspace({
   const [commitBrowserOpen, setCommitBrowserOpen] = useState(false);
   const commitBrowserOpenRef = useRef(commitBrowserOpen);
   commitBrowserOpenRef.current = commitBrowserOpen;
+  // Latest compare target read by refetchCompare (and usePrDiffBrowser's
+  // open-suppression) without widening effect/callback deps.
+  const compareRef = useRef(compare);
+  compareRef.current = compare;
+  // PR mode: the open PR's local diff → center DiffBrowser (usePrDiffBrowser).
+  const { openPrDiff, closePrDiff, prBrowserView } = usePrDiffBrowser(
+    setScope,
+    setCommitBrowserOpen,
+    compareRef,
+  );
+  // Assigned after the diffBrowserView memo below (rendered-branch signal);
+  // declared here because useWorkspaceKeyboard consumes it earlier in the body.
+  const prBrowserOpenRef = useRef(false);
 
   const statusReqId = useRef(0);
   const graphReqId = useRef(0);
@@ -650,9 +664,6 @@ export function RepoWorkspace({
     void refetchSigningStatus();
   }, [refetchSigningStatus]);
 
-  // Latest compare target read by refetchCompare without widening effect deps.
-  const compareRef = useRef(compare);
-  compareRef.current = compare;
   // Commit whose diff/panel is currently loaded — lets the selection effect skip
   // a reset+refetch when the selected OID is unchanged (tab switch / watcher tick
   // that only shifts the row index).
@@ -1346,7 +1357,8 @@ export function RepoWorkspace({
   useEffect(() => {
     setScope({ kind: 'root' });
     setCommitBrowserOpen(false);
-  }, [compare?.oid, selectedOid]);
+    closePrDiff(); // picking a commit / opening compare dismisses a PR diff too
+  }, [compare?.oid, selectedOid, closePrDiff]);
 
   // P86a: repo-changed + tag-auto-sync subscriptions (reason-aware refresh routing
   // + the CI-3 tag-count toast) live in their own hook so the container stays thin.
@@ -2174,6 +2186,8 @@ export function RepoWorkspace({
     historyOpenRef,
     reflogOpenRef,
     commitBrowserOpenRef,
+    prBrowserOpenRef,
+    closePrBrowser: closePrDiff,
     composerOpenRef: composer.openRef,
     closeComposer: composer.escClose,
     composerOpen: composer.open,
@@ -2327,6 +2341,8 @@ export function RepoWorkspace({
         onClose: clearCompare, // × in compare mode exits compare (compare IS the diff)
       };
     }
+    // PR mode: AUTO-OPENED by the PR panel (beats commit; compare beats it).
+    if (prBrowserView !== null) return prBrowserView;
     // Commit mode: EXPLICIT-open only.
     if (selectedIndex !== null && graph !== null && commitBrowserOpen && commitDiff !== null) {
       // Mid-stream partial layout: the selected commit's row is not in the
@@ -2347,7 +2363,12 @@ export function RepoWorkspace({
       }
     }
     return null;
-  }, [compare, compareData, selectedIndex, graph, commitBrowserOpen, commitDiff, headBranch, clearCompare]);
+  }, [compare, compareData, prBrowserView, selectedIndex, graph, commitBrowserOpen, commitDiff, headBranch, clearCompare]);
+
+  // Esc-layering flag derived from the RENDERED branch (not raw PR state):
+  // while compare wins the memo, an open-but-invisible PR layer must not
+  // swallow an Esc press meant for compare.
+  prBrowserOpenRef.current = diffBrowserView !== null && diffBrowserView === prBrowserView;
 
   return (
     <>
@@ -2508,6 +2529,8 @@ export function RepoWorkspace({
           prBaseOptions={prBaseOptions}
           prCompareOptions={prCompareOptions}
           prNav={prNav}
+          onOpenPrDiff={openPrDiff}
+          onClosePrDiff={closePrDiff}
           checksTarget={checksTab.target}
           checksRefreshSeq={checksTab.refreshSeq}
           onPushChecksBranch={checksTab.target?.name === headBranch?.name ? () => void pushCurrentBranch() : undefined}

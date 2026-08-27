@@ -801,10 +801,19 @@
   color: var(--text-3);
 }
 
-/* Push Collapse-all / Retry to the row end. */
-.pr-changes-collapse-all,
+/* Push View-diffs / Retry to the row end. */
+.pr-changes-view-diffs,
 .pr-changes-retry {
   margin-left: auto;
+}
+
+/* Compact rows (no expand chevron/body): keep .diff-card-header geometry but
+   as standalone list rows; the non-interactive variant drops the pointer. */
+.pr-file-row {
+  margin: 0 0 2px;
+}
+.pr-file-row > div.diff-card-header {
+  cursor: default;
 }
 
 .pr-changes-loading {

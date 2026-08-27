@@ -44,6 +44,7 @@ function makeDeps(over: Partial<Deps> = {}): Deps {
     historyOpenRef: { current: false },
     reflogOpenRef: { current: false },
     commitBrowserOpenRef: { current: false },
+    prBrowserOpenRef: { current: false }, closePrBrowser: vi.fn(),
     composerOpenRef: { current: false },
     closeComposer: vi.fn(),
     composerOpen: false,
@@ -53,9 +54,7 @@ function makeDeps(over: Partial<Deps> = {}): Deps {
     closeHistorySearch: vi.fn(),
     paletteOpenRef: { current: false },
     closePalette: vi.fn(),
-    replayOpenRef: { current: false },
-    closeReplay: vi.fn(),
-    replayOpen: false,
+    replayOpenRef: { current: false }, closeReplay: vi.fn(), replayOpen: false,
     diffSlotRef: { current: null },
     compareRef: { current: null },
     setSelectedIndex: vi.fn(),
@@ -111,7 +110,8 @@ function attachedInput(tag: 'input' | 'textarea' | 'select' = 'input') {
 describe('Esc peel order', () => {
   it('peels exactly the topmost open layer, in contract order', () => {
     // Full stack open: palette > composer > aiPanel > blame > history > reflog
-    // > commitBrowser > search > historySearch > diffSlot > compare > deselect.
+    // > prBrowser > commitBrowser > search > historySearch > diffSlot > compare
+    // > deselect.
     const deps = makeDeps({
       paletteOpenRef: { current: true },
       composerOpenRef: { current: true },
@@ -120,6 +120,7 @@ describe('Esc peel order', () => {
       historyOpenRef: { current: true },
       reflogOpenRef: { current: true },
       commitBrowserOpenRef: { current: true },
+      prBrowserOpenRef: { current: true },
       searchOpenRef: { current: true },
       historySearchOpenRef: { current: true },
       diffSlotRef: { current: {} as DiffSlot },
@@ -134,6 +135,7 @@ describe('Esc peel order', () => {
       [() => (deps.blameOpenRef.current = false), deps.closeBlame as never],
       [() => (deps.historyOpenRef.current = false), deps.closeHistory as never],
       [() => (deps.reflogOpenRef.current = false), deps.closeReflog as never],
+      [() => ((deps.prBrowserOpenRef as { current: boolean }).current = false), deps.closePrBrowser as never],
       [() => (deps.commitBrowserOpenRef.current = false), deps.setCommitBrowserOpen as never],
       [() => (deps.searchOpenRef.current = false), deps.closeSearch as never],
       [() => (deps.historySearchOpenRef.current = false), deps.closeHistorySearch as never],

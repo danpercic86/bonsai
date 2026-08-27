@@ -5,6 +5,7 @@ import { errorMessage } from '../utils/errors';
 import { isImagePath } from '../utils/imagePaths';
 import { buildPathTree, flattenTreeLeaves } from '../utils/pathTree';
 import { SkeletonRows } from './CommitPanel';
+import { diffBrowserSourceKey } from './diffBrowserSourceKey';
 import type { DiffScope } from './DiffFileTree';
 import { DiffImageCard } from './DiffImageCard';
 import { DiffView } from './DiffView';
@@ -47,7 +48,8 @@ type CardState =
  *  per-file image card (DiffImageCard) can map it to an ImageDiffRequest. */
 export type DiffBrowserSource =
   | { mode: 'commit'; oid: string; title: string }
-  | { mode: 'compare'; oid: string; fromLabel: string; toLabel: string };
+  | { mode: 'compare'; oid: string; fromLabel: string; toLabel: string }
+  | { mode: 'pr'; mergeBaseOid: string; headOid: string; prNumber: number; title: string };
 
 export interface DiffBrowserProps {
   repoId: string;
@@ -119,7 +121,7 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
       if (path === undefined) break;
       const src = sourceRef.current;
       const fullContext = modeRef.current === 'file';
-      const key = `${src.oid}:${path}:${modeRef.current}`;
+      const key = `${diffBrowserSourceKey(src)}:${path}:${modeRef.current}`;
       const entry = cacheRef.current.get(key);
       if (entry === undefined || entry.state !== 'idle') continue; // superseded
       const header = filesRef.current.find((f) => f.path === path);
@@ -137,14 +139,24 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
               fullContext,
               false, // P61a: intraline emphasis is an overlay-only toggle
             )
-          : ipc.compareWithHeadFileDiff(
-              repoIdRef.current,
-              src.oid,
-              header.path,
-              header.origPath,
-              fullContext,
-              false, // P61a: intraline emphasis is an overlay-only toggle
-            );
+          : src.mode === 'compare'
+            ? ipc.compareWithHeadFileDiff(
+                repoIdRef.current,
+                src.oid,
+                header.path,
+                header.origPath,
+                fullContext,
+                false, // P61a: intraline emphasis is an overlay-only toggle
+              )
+            : ipc.forgePrFileDiff(
+                repoIdRef.current,
+                src.mergeBaseOid,
+                src.headOid,
+                header.path,
+                header.origPath,
+                fullContext,
+                false, // intraline emphasis: overlay-only, same as above
+              );
       void request
         .then(
           (diff) => {
@@ -167,7 +179,7 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
   const enqueue = useCallback(
     (path: string) => {
       if (cancelledRef.current) return;
-      const key = `${sourceRef.current.oid}:${path}:${modeRef.current}`;
+      const key = `${diffBrowserSourceKey(sourceRef.current)}:${path}:${modeRef.current}`;
       if (cacheRef.current.has(key)) return; // already queued/loading/ready/error
       cacheRef.current.set(key, { state: 'idle' });
       queueRef.current.push(path);
@@ -178,7 +190,9 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
 
   const retry = useCallback(
     (path: string) => {
-      cacheRef.current.delete(`${sourceRef.current.oid}:${path}:${modeRef.current}`);
+      cacheRef.current.delete(
+        `${diffBrowserSourceKey(sourceRef.current)}:${path}:${modeRef.current}`,
+      );
       enqueue(path);
     },
     [enqueue],
@@ -329,7 +343,11 @@ export function DiffBrowser({ repoId, source, files, scope, listView, onClose }:
               repoId={repoId}
               source={source}
               header={f}
-              entry={f.binary ? undefined : cacheRef.current.get(`${source.oid}:${f.path}:${mode}`)}
+              entry={
+                f.binary
+                  ? undefined
+                  : cacheRef.current.get(`${diffBrowserSourceKey(source)}:${f.path}:${mode}`)
+              }
               viewMode={mode}
               onRetry={retry}
               collapsed={collapsed.has(f.path)}
@@ -435,7 +453,9 @@ function DiffCardBody({
   // P61b: image files (D4; svg excluded) render the image comparison card, which
   // does its own getImageDiff fetch. Checked BEFORE the binary placeholder since
   // images are `binary:true` too; non-image binaries keep the placeholder below.
-  if (isImagePath(header.path)) {
+  // pr mode: ImageDiffRequest cannot express a merge-base..head pair, so PR
+  // images fall through to the binary placeholder (same as the old inline rows).
+  if (isImagePath(header.path) && source.mode !== 'pr') {
     return <DiffImageCard repoId={repoId} source={source} header={header} />;
   }
   if (header.binary) return <div className="diff-placeholder">Binary file</div>;

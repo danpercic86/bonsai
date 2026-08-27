@@ -26,6 +26,9 @@ export function useWorkspaceKeyboard(deps: {
   historyOpenRef: { current: boolean };
   reflogOpenRef: { current: boolean };
   commitBrowserOpenRef: { current: boolean };
+  // PR-mode DiffBrowser peel layer (mutually exclusive with commit mode).
+  prBrowserOpenRef: { readonly current: boolean };
+  closePrBrowser: () => void;
   // P54c: the commit composer is a top-level modal — Esc peels it (preview
   // first, then the dialog) before the diff/compare layers; a no-op while
   // applying (op in flight). `composerOpen` also gates graph-nav below.
@@ -99,6 +102,8 @@ export function useWorkspaceKeyboard(deps: {
     historyOpenRef,
     reflogOpenRef,
     commitBrowserOpenRef,
+    prBrowserOpenRef,
+    closePrBrowser,
     composerOpenRef,
     closeComposer,
     composerOpen,
@@ -193,6 +198,11 @@ export function useWorkspaceKeyboard(deps: {
         closeReflog();
         return;
       }
+      // PR-mode browser peels with the commit-mode one (mutually exclusive).
+      if (prBrowserOpenRef.current) {
+        closePrBrowser();
+        return;
+      }
       if (commitBrowserOpenRef.current) {
         setCommitBrowserOpen(false);
         return;
@@ -238,6 +248,7 @@ export function useWorkspaceKeyboard(deps: {
     closePalette,
     closeComposer,
     closeReplay,
+    closePrBrowser,
   ]);
 
   // Spec-004 §3: after Enter-expand the next arrow must resume FROM the pill's

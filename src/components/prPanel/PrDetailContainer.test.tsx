@@ -44,6 +44,8 @@ function renderContainer(kind: ForgeKind = 'gitHub') {
         onListChanged={onListChanged}
         onReload={onReload}
         onAuthFailed={onAuthFailed}
+        onOpenPrDiff={vi.fn()}
+        onClosePrDiff={vi.fn()}
       />
     </ToastContext.Provider>,
   );

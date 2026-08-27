@@ -20,6 +20,7 @@ import type {
   ListView,
   PanelDensity,
   PrimaryCommitAction,
+  PrDiffStats,
   PrNavRequest,
   RepoOpState,
   SigningStatus,
@@ -60,6 +61,10 @@ export interface WorkspaceRightPanelProps {
   /** P63: external "open PR N" request from a graph PR-badge click (bumped
    *  `seq` re-opens the same PR). Threaded into PrPanel's `openToPr`. */
   prNav: PrNavRequest | null;
+  /** PR-diff center browser: open with a resolved PrDiffStats / close it.
+   *  Threaded into PrPanel → PrDetailContainer (auto-open on diff resolve). */
+  onOpenPrDiff(stats: PrDiffStats, prNumber: number, title: string): void;
+  onClosePrDiff(): void;
 
   opState: RepoOpState;
   conflicts: StatusPanelProps['conflicts'];
@@ -245,6 +250,8 @@ export function WorkspaceRightPanel({
   prBaseOptions,
   prCompareOptions,
   prNav,
+  onOpenPrDiff,
+  onClosePrDiff,
   checksTarget,
   checksRefreshSeq,
   onPushChecksBranch,
@@ -432,6 +439,8 @@ export function WorkspaceRightPanel({
           baseOptions={prBaseOptions}
           compareOptions={prCompareOptions}
           openToPr={prNav}
+          onOpenPrDiff={onOpenPrDiff}
+          onClosePrDiff={onClosePrDiff}
           aiEligible={aiEligible}
           onManageAccounts={onOpenAccountSettings}
         />

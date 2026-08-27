@@ -6,6 +6,7 @@ import { CommitSearchBar } from './CommitSearchBar';
 import type { ComboboxOption } from './Combobox';
 import { HistorySearchPanel } from './HistorySearchPanel';
 import { DiffBrowser } from './DiffBrowser';
+import { diffBrowserSourceKey } from './diffBrowserSourceKey';
 import { DiffOverlay } from './DiffOverlay';
 import type { DiffOverlayMeta } from './DiffOverlay';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -477,13 +478,12 @@ export function WorkspaceGraphPane({
         />
       )}
       {/* P11g-rev §4.5: all-files DiffBrowser (header + stacked scroll only)
-          over the canvas. Compare mode auto-opens; commit mode is
-          explicit-open. The `key` on source.oid remounts fresh for a
-          DIFFERENT target/commit (clears cache+queue) but survives a refetch
-          of the SAME oid. */}
+          over the canvas. Compare/pr modes auto-open; commit is explicit-open.
+          The source-key `key` remounts fresh for a DIFFERENT target
+          (clears cache+queue) but survives a refetch of the SAME one. */}
       {diffBrowserView !== null && (
         <DiffBrowser
-          key={`${diffBrowserView.source.mode}:${diffBrowserView.source.oid}`}
+          key={`${diffBrowserView.source.mode}:${diffBrowserSourceKey(diffBrowserView.source)}`}
           repoId={repoId}
           source={diffBrowserView.source}
           files={diffBrowserView.files}

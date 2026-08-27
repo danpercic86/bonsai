@@ -64,6 +64,8 @@ function renderPanel(over: Partial<WorkspaceRightPanelProps>) {
     prBaseOptions: [],
     prCompareOptions: [],
     prNav: null,
+    onOpenPrDiff: () => undefined,
+    onClosePrDiff: () => undefined,
     checksTarget: null,
     checksRefreshSeq: 0,
     opState: { kind: 'none' },

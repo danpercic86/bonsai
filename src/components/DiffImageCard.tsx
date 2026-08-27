@@ -35,14 +35,23 @@ export function DiffImageCard({ repoId, source, header }: DiffImageCardProps) {
   // Race guard: only the newest in-flight request may write state (drop stale).
   const reqIdRef = useRef(0);
 
+  // Primitive deps for the fetch effect: `source` is a memo-rebuilt object
+  // (recreated on every watcher refresh) — depending on it would refetch the
+  // image each tick even when nothing changed.
+  const sourceMode = source.mode;
+  const sourceOid = source.mode === 'pr' ? null : source.oid;
+
   useEffect(() => {
     // Build the request from the browser's context. Workdir never reaches here
-    // (that overlay lives in RepoWorkspace). For `compare`, source.oid is the
-    // "to" commit — HEAD is the implicit "from" (matches compareWithHeadFileDiff).
+    // (that overlay lives in RepoWorkspace), and neither does `pr` (DiffCardBody
+    // routes PR images to the binary placeholder — ImageDiffRequest cannot
+    // express merge-base..head). For `compare`, source.oid is the "to" commit —
+    // HEAD is the implicit "from" (matches compareWithHeadFileDiff).
+    if (sourceMode === 'pr' || sourceOid === null) return;
     const request: ImageDiffRequest =
-      source.mode === 'commit'
-        ? { kind: 'commit', oid: source.oid, path: header.path, origPath: header.origPath }
-        : { kind: 'compare', toOid: source.oid, path: header.path, origPath: header.origPath };
+      sourceMode === 'commit'
+        ? { kind: 'commit', oid: sourceOid, path: header.path, origPath: header.origPath }
+        : { kind: 'compare', toOid: sourceOid, path: header.path, origPath: header.origPath };
     const id = ++reqIdRef.current;
     setLoading(true);
     setError(null);
@@ -59,7 +68,7 @@ export function DiffImageCard({ repoId, source, header }: DiffImageCardProps) {
         setLoading(false);
       },
     );
-  }, [repoId, source.oid, source.mode, header.path, header.origPath, retryTick]);
+  }, [repoId, sourceMode, sourceOid, header.path, header.origPath, retryTick]);
 
   return (
     <div className="diff-image-card">
