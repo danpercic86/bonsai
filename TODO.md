@@ -47,6 +47,14 @@ existing gesture → ipc.result.ms → span.phases → render.tally → jank-tra
 triangulates the motivating complaints.
 **Nit for the increment-5 prompt:** §5.1 pseudocode says p95 = bucket upper bound, §8.1 says linear
 interpolation — pick one at implementation time.
+**⚠️ PRE-EXISTING GATE FAILURE (not P91):** `pnpm lint:size` is RED on `main` as a result of the
+graph-features merge (fa499e2), verified independent of increment 1 —
+`src/components/repoWorkspace/useWorkspaceKeyboard.ts` is **508 lines and a NEW offender** absent
+from `scripts/file-size-baseline.json` (grew in 4cbc75f, PR center-diff), and
+`src/components/RepoWorkspace.tsx` is **2800 vs baseline 2787 (+13)**. Neither file is touched by
+P91. Must be fixed by `refactorer` (behavior-preserving split, identical before/after test counts)
+before any full `pnpm gate` can go green — spun out as its own task.
+
 **Orchestrator scope error corrected:** I briefed senior-dev to build `logs_delete_all` in
 increment 1; the contract assigns it to increment 7. Told it to keep the work if already done
 (backend-only, correct per §6.1) and record it as pulled forward, else skip.
