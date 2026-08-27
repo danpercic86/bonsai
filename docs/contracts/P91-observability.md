@@ -32,9 +32,9 @@ list. Nothing in this contract is pending an answer.
 |---|---|
 | `obs/mod.rs` | re-exports; `ObsState` held in `AppState` |
 | `obs/record.rs` | `LogRecord` + all payload enums; schema version constant |
-| `obs/redact.rs` | session salt, `Redactor` (salt-seeded counter ordinals, §7.2), token scrubber |
+| `obs/redact.rs` | session salt, `Redactor` (salt-seeded counter ordinals, §7.2), token scrubber (§7.2.1) |
 | `obs/sink.rs` | bounded MPSC → writer thread; `try_send`, drop counter, flush; `RollAndPurge` control message |
-| `obs/writer.rs` | file naming, JSONL append, rotation, pruning, header record, **purge** (§6.1) |
+| `obs/writer.rs` | file naming, JSONL append, rotation (§6.3), pruning, header record, **purge** (§6.1) |
 | `obs/anomaly.rs` | streaming detectors (§5) over the unified record stream |
 | `obs/trace.rs` | `TraceId` type, minting, `TraceMeta`, `emit_logged` event helper |
 | `obs/phase.rs` | **(inc. 3)** `PhaseRecorder` — explicit sub-span timing + `span` record emission (§3.1) |
@@ -209,10 +209,12 @@ that repeats the same scope with no intervening mutation is a `redundant-refresh
 
 ## 3. Record schema (v1)
 
-> **Amendment rule (2026-08-27).** Everything in §3.1 is **ADDITIVE ONLY**: one new `LogKind`
-> variant plus new fields that are **all optional with `#[serde(default)]`** on the Rust side and
-> `?:` on the TS side. No existing field is renamed, retyped, or redefined; `OBS_SCHEMA_VERSION`
-> stays `1`. A reader of a v1 record without these fields stays valid.
+> **Amendment rule (2026-08-27).** Everything added after increment 1 shipped is **ADDITIVE ONLY**:
+> new `LogKind` variants plus new fields that are **all optional with `#[serde(default)]`** on the
+> Rust side and `?:` on the TS side. No existing field is renamed, retyped, or redefined;
+> `OBS_SCHEMA_VERSION` stays `1`. A reader of a v1 record without these fields stays valid.
+> Additive since increment 1: `'span'` (§3.1), `'truncate'` (§6.3), and the two optional
+> `SessionPayload` truncation fields.
 
 ```ts
 export const OBS_SCHEMA_VERSION = 1;
@@ -241,6 +243,7 @@ export type LogKind =
   | 'render'       | 'render.tally' | 'effect' | 'state'
   | 'frame'        | 'error'      | 'anomaly'
   | 'span'                                  // ← added, §3.1
+  | 'truncate'                              // ← added, §6.3
   | 'drop';
 ```
 
@@ -252,7 +255,13 @@ interface SessionPayload  { schema: number; app: string; os: string; sessionId: 
                             /** Human-readable one-liner restating §7 for the reviewer. */
                             redactionNote: string;
                             /** True when this header opens a file created by a purge roll (§6.1). */
-                            afterPurge?: boolean; }
+                            afterPurge?: boolean;
+                            /** §6.3 — ADDITIVE. True when one or more EARLIER parts of this
+                             *  session have already been deleted, i.e. this file is NOT the
+                             *  beginning of the session. */
+                            truncated?: boolean;
+                            /** §6.3 — ADDITIVE. Count of earlier parts deleted so far. */
+                            droppedParts?: number; }
 interface GesturePayload  { origin: TraceOrigin; gesture: string; }
 interface IpcCallPayload  { cmd: string; argsHash: string; argsShape?: ArgShape;
                             args?: Record<string, unknown>; } // only when redaction==='raw'
@@ -285,6 +294,17 @@ interface AnomalyPayload  { rule: AnomalyRule; severity: 'info'|'warn'|'error';
                             detail: string; refs: number[];  // seq numbers of implicated records
                             traces: TraceId[]; }
 interface DropPayload     { dropped: number; sinceSeq: number; } // sink backpressure
+/** §6.3 — ADDITIVE. Emitted into the SURVIVING (newest) part immediately after an earlier part
+ *  of the same session group is deleted to honour the part cap. Distinct from `drop`, which is
+ *  in-memory sink backpressure: `truncate` is loss of records ALREADY WRITTEN to disk. */
+interface TruncatePayload  { reason: 'max-parts';
+                             /** How many parts have now been deleted for this session. */
+                             droppedParts: number;
+                             /** Redacted part label, e.g. `part#0` — never a path. */
+                             droppedPart: string;
+                             bytes: number;
+                             /** Lowest `seq` still present on disk, when known. */
+                             firstRetainedSeq?: number; }
 ```
 
 `ArgShape` = `Record<string, 'str'|'num'|'bool'|'null'|`arr:${number}`|`obj:${number}`>` — key
@@ -454,6 +474,10 @@ straight to the evidence without scanning.
 `argsHash`, scopes, component ids, counts and timings — never off repo content, **and never off a
 redaction ordinal** (§7.2 (c)). A `strict` log has exactly the same anomaly signal as a `raw` one.
 
+**`truncate` is not an anomaly rule** (§6.3) — it is a factual record of on-disk loss. It carries no
+severity beyond `warn` and no detector consumes it; its only consumer is the reviewing AI's
+completeness check.
+
 ### 5.1 Duration & saturation rules (ADDITIVE; **increment 5**)
 
 **`slow-command` — self-calibrating, per command.** A single global threshold is wrong (`get_graph`
@@ -510,13 +534,17 @@ invalidates). Detail carries the counts; `refs` point at the offending spans. Cr
   (schema version, app version, OS, **redaction mode + `redactionNote`**).
 - **File granularity — DECIDED: one file per session** (matches "send me the log from when it
   flickered", and keeps one file to one redaction mode). Not daily, not per-repo.
-- **Rotation:** 16 MB per part, max 8 parts per session; **pruning:** keep the 10 most recent
-  session files, total cap 256 MB, oldest deleted first at session start.
+- **Rotation:** 16 MB per part, max 8 parts per session. **Rotation is never refused** — see §6.3
+  for what happens at the part cap.
+- **Pruning:** keep the 10 most recent session files, total cap 256 MB, oldest deleted first.
+  Pruning runs at session start **and after every rotation** (§6.3) — running it only at
+  `LogWriter::open` left the total cap unenforced for the whole life of a long session.
 - **Retention — DECIDED: no AUTOMATIC deletion beyond the caps above.** Turning Dev mode off closes
   the sink and leaves every existing file on disk (the user's whole workflow is exporting *after*
   the fact). Implementations must not add delete-on-disable, delete-on-uninstall, or age-based
   expiry. **This prohibition covers automatic deletion only** — the explicit, user-initiated
-  `logs_delete_all` (§6.1) is in scope for v1 and is not a violation of it.
+  `logs_delete_all` (§6.1) and the part-cap eviction (§6.3) are the two in-scope exceptions, both
+  bounded by an explicit cap.
 - **Sink:** `std::sync::mpsc::sync_channel(4096)` → one dedicated writer thread with a
   `BufWriter`. All producers use `try_send`; on full, increment a drop counter and emit one `drop`
   record when it drains. **Never blocks the git or UI paths — no lock is held across a write.**
@@ -641,6 +669,56 @@ The confirm copy and the post-export content statement must both say so in one l
 you saved elsewhere are not removed." Claiming a completeness the command cannot deliver would be
 the same class of defect as the one this section fixes.
 
+### 6.3 Rotation at the part cap — **RATIFIED (2026-08-27): evict the oldest part, never refuse rotation**
+
+**The defect this closes** (found by reviewer during increment 1). The original §6 wording implied
+that once `max_parts` files existed the writer would keep appending to the last part. Because
+`prune` runs only from `LogWriter::open` — once, at session start — and never prunes the last
+remaining group, a single event-storm session had **no size bound at all** and could grow past the
+256 MB total cap until the next app launch. That defeats the entire point of having caps.
+
+**Ratified behaviour** (as directed by the orchestrator and implemented in increment 1 — this
+section makes it contract, the code stands unchanged):
+
+- Rotation is **never refused**. When the part count for the current session group is already at
+  `max_parts`, the writer deletes the **oldest part of that same session group** (scoped by
+  file-name prefix, so no other session is ever touched) and then opens the new part.
+- Pruning additionally runs **after every rotation**, not only at open, so the 256 MB total cap is
+  enforced continuously rather than once per launch.
+- Bound restored: a session occupies at most `max_parts × 16 MB` = **128 MB**, always.
+
+**Why evict-oldest rather than the alternatives.** Refusing rotation is what created the unbounded
+case. Stopping logging at the cap would silently blind the tool at exactly the moment something is
+going wrong. Between "lose the oldest evidence" and "lose the newest evidence", the newest is worth
+more: the user's workflow is "it just flickered — here is the log", and the anomaly they are chasing
+is at the end of the file. **Never discard the newest evidence** is the invariant; discarding the
+oldest is the only remaining lever.
+
+**User-visible consequence, stated plainly because it is a real loss.** A truncated log can no
+longer show the **first** occurrence of a bug. For the double-trigger investigation this milestone
+exists to serve, that matters: "the effect ran twice on the very first repo open" is unprovable from
+a file whose beginning is gone. Two mitigations, both required:
+
+1. **The truncation is recorded in-band, never silent.** Immediately after deleting a part, the
+   writer emits a `truncate` record (§3) into the surviving newest part, and every subsequent part
+   header carries `truncated: true` + `droppedParts: n`. **The reviewing AI must treat the absence
+   of an early record in a `truncated` file as inconclusive, not as evidence of absence** — this
+   sentence belongs in `redactionNote`/the reviewer preamble.
+2. **Hitting the cap is itself a finding.** 128 MB of JSONL is an event storm by definition, so a
+   truncated session will also contain `event-storm` / `watcher-storm` / `render-storm` / `drop`
+   records. The remedy the UI should suggest is narrowing capture (`dev.level`, turning off
+   `dev.capture-frames` / `dev.capture-react`) and reproducing in a shorter session — not a bigger
+   cap.
+
+`truncate` is distinct from `drop`: `drop` is in-memory backpressure (records that never reached
+disk); `truncate` is loss of records that **were** on disk. Conflating them would mislead the
+reviewer about where the loss happened.
+
+**Increment routing:** the eviction + prune-on-rotation behaviour **shipped in increment 1 and is
+ratified as-is**. The additive `truncate` record and the two optional `SessionPayload` fields land in
+**increment 7** (the increment that already reopens `writer.rs` for `RollAndPurge`), so nothing
+disturbs the in-flight increment 2.
+
 ### Commands
 ```rust
 #[tauri::command] async fn log_append(state: State<'_, AppState>, records: Vec<LogRecord>) -> Result<(), AppError>;
@@ -663,6 +741,8 @@ export interface LogSessionInfo {
   totalFiles: number; totalBytes: number;
   /** §6.2 — export zips inside the purge scope, so the confirm copy can name them. */
   exportFiles?: number; exportBytes?: number;
+  /** §6.3 — parts of THIS session already evicted at the part cap; >0 ⇒ the session is truncated. */
+  droppedParts?: number;
 }
 ```
 All seven added to `IpcApi`, `src/ipc/tauri/obs.ts`, `src/ipc/mock/obs.ts`, and
@@ -764,16 +844,77 @@ pub enum Kind { Repo, Path, Ref, Remote, Other }
   property required of it, and the salt never leaves the process, so a file on its own carries no
   key with which to brute-force the digest. It is **not** a concealment primitive — no future change
   may reintroduce a value into the log on the grounds that "it is only a hash".
-- **Token scrubber runs last, on every string field, in both modes**, against a fixed pattern set
-  (`ghp_`, `github_pat_`, `gh[pousr]_`, `xox[baprs]-`, `AZDO`/base64 PAT shape, `Bearer …`,
-  `://user:pass@`, `-----BEGIN … PRIVATE KEY-----`, any value under a key matching
-  `/token|secret|password|passphrase|auth/i`). Matches become `<redacted:token>`.
+
+#### 7.2.1 Token scrubber — **RATIFIED (2026-08-27)**, constants named
+
+The scrubber runs **last, on every string field, in both redaction modes**. Two independent layers;
+a miss in one must not depend on the other.
+
+**Layer A — keyword/prefix-established patterns (length-independent where the keyword is
+unambiguous). Increment 1's MUST-FIX round already built this layer out; the table below is the
+authoritative status so no later increment re-adds working code.**
+
+| Pattern | Status | Where |
+|---|---|---|
+| `TOKEN_PREFIXES` as **`(prefix, min_len)` pairs** — the mechanism that lets short tokens be caught under the global floor | **SHIPPED (inc. 1)** | `obs/redact.rs:190` (doc comment names the `glpat-` 26-char case), table at `:213` |
+| `glpat-` (12), plus `gldt-`, `glrt-`, `ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_`, `github_pat_`, `npm_`, `AKIA`/`ASIA`, `AIza`, `sk-`/`sk_live_`/`rk_live_`, `dckr_pat_`, `xox[baprs]-`, `xoxe-` | **SHIPPED (inc. 1)** | `obs/redact.rs:213` |
+| `Bearer <token>` **and `Basic <token>`** | **SHIPPED (inc. 1)** | `obs/redact.rs:382` |
+| Looser length rule for keyword-established credentials (a `Basic` credential is only ~24 chars) | **SHIPPED (inc. 1)** | `obs/redact.rs:304-305` |
+| `://user:pass@` URL userinfo; `-----BEGIN … PRIVATE KEY-----`; `is_sensitive_key` on JSON keys matching `/token|secret|password|passphrase|auth/i` | **SHIPPED (inc. 1)** | `obs/redact.rs:232-243` for the key rule |
+| **`eyJ[A-Za-z0-9_-]{10,}\.` — JWT header prefix** | **OPEN → increment 3** | new |
+| **`key=value` / `key: value` credential pairs matched INSIDE a plain-text string body**, using the same sensitive-key vocabulary as `is_sensitive_key` | **OPEN → increment 3** | new |
+
+**Do not disturb the `basic` guard.** `redact.rs:377-394` deliberately treats `bearer` and `basic`
+asymmetrically: `basic` additionally requires the following word to look like credential material,
+because "basic" occurs in ordinary prose ("basic auth is disabled") where swallowing the next word
+would corrupt an error message for zero privacy gain. Both directions are tested. Any increment-3
+work on Layer A must leave that asymmetry intact.
+
+**Why the two open items are genuinely uncaught, and why they are worth the pass:**
+- **JWTs.** A `.` disqualifies a Layer-B candidate and no shipped Layer-A prefix matches, so a JWT
+  in an error body or an `Authorization` value that lost its `Bearer ` keyword passes through today.
+  The `eyJ` prefix is base64 of `{"`, so it is high-precision — near-zero false-positive risk.
+- **In-string `key=value` pairs.** `is_sensitive_key` (`redact.rs:232-243`) is **key-name-based**, so
+  it only fires on structured JSON keys. Credential-helper and `.netrc` output is line-oriented text
+  that arrives inside a *single string value*, where nothing currently inspects it. This is the
+  highest-value remaining gap for a Git client, because it is the shape a real credential actually
+  takes when git hands it back to us.
+
+**Layer B — generic high-entropy heuristic** (the ratified base64/PAT shape, for credentials with no
+recognisable keyword or prefix). Increment 1's original form rejected any candidate containing `/`,
+which made base64 secrets containing `/` structurally uncatchable while §7.2 explicitly demanded the
+"base64 PAT shape". The implemented replacement is **ratified with these named constants**:
+
+| Constant | Value | Role |
+|---|---|---|
+| `MIN_SECRET_LEN` | **32** | total candidate length floor (was 40; lowered to reach Azure DevOps / base64 shapes) |
+| `MIN_B64_RUN` | **24** | a candidate containing `/` qualifies only if some `/`-free run is ≥ this |
+
+plus: an **alpha + digit mix** is required, and **pure hex is excluded** (so 40-char SHAs survive).
+Note that Layer B is *not* the path by which short keyword-established credentials are caught —
+`redact.rs:304-305` handles those — so its 32-char floor is not a recall gap.
+
+**Why the run test is sound.** Random base64 hits `/` about once per 64 characters, so a real secret
+almost always contains a ≥24-char `/`-free run; path segments are human-named and rarely reach 24
+characters, and when they do (`useRepoChangeSubscription` is 25) they are word-shaped with no digits
+and so fail the alpha+digit requirement. Verified both directions in increment 1: a base64 secret
+with an embedded `/` is caught; `/home/developer/projects/bonsai/src/components/settings/categories`
+is untouched. **32 and 24 are ratified as the right constants** — 32 is the shortest *unkeyworded*
+credential shape Bonsai handles (Bitbucket app passwords, Azure DevOps PATs), and dropping
+`MIN_B64_RUN` below 24 starts colliding with long camelCase path segments for no recall gain.
+
+**Accepted consequences, all fail-safe.** scp-style remotes (`git@host:o/r.git`) ordinalise as
+`path#` rather than `remote#`; UUID-shaped strings ≥32 chars over-redact; a long camelCase path
+segment that happens to contain a digit may over-redact. **This trade is deliberate: a missed
+credential is unrecoverable, while an over-redacted path costs only reviewer legibility.** Precision
+is subordinate to recall here, permanently.
 
 ### 7.3 Mode disclosure & UI statement
 
 - The `session` header record carries `redaction` and a `redactionNote` string, so a reviewer
   opening the file **immediately knows what they are looking at** without external context. The
-  note includes the §7.2 sentence about side-local ordinals.
+  note includes the §7.2 sentence about side-local ordinals **and, when `truncated` is set, the
+  §6.3 sentence that early records are missing and absence is not evidence of absence**.
 - `dev.include-raw-names` (the `raw` toggle) requires an explicit confirm dialog and shows a
   persistent warning row while on. Turning it on starts a **new** log file (a single file never
   mixes modes).
@@ -974,7 +1115,7 @@ New category `'dev'` (rail last, `dividerBefore: true`), rows:
 | `dev.reveal-logs` | button | `log_reveal_dir()` |
 | `dev.export-session` | button | `log_export_session()` → save dialog defaulting to `exports/` (§6.2); re-shows the content statement first, including that exports saved outside Bonsai's folder are not covered by the delete action |
 | `dev.delete-logs` | button (destructive) | **§6.1/§6.2** — confirm dialog first, stating `totalFiles` / `totalBytes` **and `exportFiles` / `exportBytes`** from `log_session_info`; then `logs_delete_all()`. Reports the result honestly: success count + bytes (naming exports separately via `deletedExports`), and a warning state when `failedFiles > 0`. When Dev mode is ON, the copy states that logging continues into a new, empty file |
-| `dev.session-info` | readonly | `LogSessionInfo` summary (files, size, records, anomalies, dropped, redaction mode); refreshes after a delete |
+| `dev.session-info` | readonly | `LogSessionInfo` summary (files, size, records, anomalies, dropped, redaction mode). **When `droppedParts > 0`, shows a warning line: the session hit its 128 MB cap and its earliest records were discarded (§6.3), with the suggestion to narrow capture and reproduce in a shorter session.** Refreshes after a delete |
 | `dev.privacy-note` | readonly | the fixed §7.3 statement of what a log file contains |
 
 **No new setting row for spans.** `span` records ride the existing `dev.capture-ipc` gate (they are
@@ -1017,6 +1158,7 @@ is written on each enable.
 | Dev mode **ON, spans** | ≤ **5 µs** per operation; ≤ **16** phases per span; **exactly 1 `span` record per completed operation** — a 20k-commit repo open produces ≤ 5 span records (~1 KB total), a graph scroll session ≤ 1 per served `get_graph`. Phase timing must never appear on a per-commit or per-file path | `cargo test`: a `graph.get` produces exactly one `span` with ≤16 phases; a bench asserts recorder overhead < 5 µs; grep test asserts no `PhaseRecorder` use inside a loop over commits/files |
 | Dev mode **ON, anomaly baselines** | §5.1 in-memory baselines are ≤ **200 `cmd` keys × 1 `Histogram`** (~10 KB), fixed size, never persisted | `cargo test`: feeding 10k distinct cmd names keeps the map at the cap (LRU eviction) |
 | Dev mode **ON, sidebar** | a single ref change on a **500-ref** repo produces **≤ 8** react records total (container `each` + 4 aggregate tallies), never one per row | vitest: mount the sidebar with a 500-ref fixture, trigger one ref change, count records |
+| **Disk, per session** | **hard bound `max_parts × 16 MB` = 128 MB**, enforced continuously by §6.3 eviction + prune-on-rotation — never only at launch | `cargo test`: drive a writer past `max_parts` and assert the group never exceeds the bound, the oldest part is the one deleted, the newest part survives, and no other session group is touched |
 | Sink | never blocks a caller (bounded `try_send`), writer thread only | test: fill the channel, assert producers return immediately and a `drop` record appears |
 | `logs_delete_all` | runs on `spawn_blocking`; UI never blocks; no log record is lost between the flush and the new file opening | test: enqueue records concurrently with a purge, assert none are lost after the roll |
 | Redactor | ≤ 5 µs per record (`DashMap` hit + one salted FNV-1a-64 hash) | bench in `obs/redact.rs` tests |
@@ -1032,24 +1174,28 @@ and user-surface tails.
 
 **Amendment routing (2026-08-27):** increment 1 is **unchanged** in scope — it does not implement
 §3.1. The `span` kind, `SpanPayload` and `obs/phase.rs` land in **increment 3**; the
-duration/saturation rules in **increment 5**; the percentile API in **increment 6**. Increment 1's
-`LogKind` enum simply gains one variant in increment 3 (additive, no rework).
+duration/saturation rules in **increment 5**; the percentile API in **increment 6**.
 
-**Defect-fix routing (2026-08-27, §13 rows 16–17):** §7.2 **confirms** increment 1's salt-seeded
-counters — no reimplementation. The only increment-1 deltas are `log_export_session`'s default
-destination (`exports/`, §6.2) and `LogSessionInfo` gaining `salt` + optional
-`exportFiles`/`exportBytes`. The `ui:` ordinal prefix is increment-2 (frontend) work; the widened
-purge scope is increment-7 work.
+**Post-increment-1 ratifications (§13 rows 16–19).** Increment 1 is committed (`1b94529`); nothing
+below asks for it to be rewritten:
+- §7.2 **confirms** its salt-seeded counters. §7.2.1 **ratifies** its Layer-B heuristic and constants
+  (`MIN_SECRET_LEN = 32`, `MIN_B64_RUN = 24`) **and records its Layer-A prefix/keyword table — incl.
+  `glpat-` and `Basic` — as already shipped.** Only two Layer-A items remain open.
+- §6.3 **ratifies** its rotation-eviction + prune-on-rotation behaviour.
+- Remaining deltas are all **additions**: the `ui:` ordinal prefix (increment 2), the **two** open
+  Layer-A patterns (increment 3), the `truncate` record + optional `SessionPayload`/
+  `LogSessionInfo` truncation fields (increment 7), and the widened purge scope (increment 7).
+  `log_export_session`'s `exports/` default and `LogSessionInfo.salt` were folded into increment 1.
 
 | # | Increment | UI? | Scope | Acceptance |
 |---|---|---|---|---|
-| 1 | **Log core (Rust)** — `obs/record.rs`, `redact.rs`, `sink.rs`, `writer.rs`, `commands/obs.rs` (`log_append`, `log_session_info`, `log_reveal_dir`, `log_export_session`), `DevSettings` + all 8 lockstep files, mock IPC stubs. **No §3.1 work.** | no | schema, redaction, sink, rotation, pruning, flush-on-exit, settings plumbing | `cargo test`: rotation at cap; pruning keeps N; backpressure emits `drop`; exit flush loses 0 records; `Redactor` assigns stable ordinals within a session and different ones across sessions (§7.2 (a)+(b); **(c) is explicitly NOT required — do not test for cross-side agreement**); token scrubber catches every fixture pattern; **turning Dev mode off deletes no file**. Enabling Dev mode creates a `logs/*.jsonl` whose first line is a valid `session` record naming the redaction mode. **§6.2:** `log_export_session(None)` writes into `<app_config_dir>/exports/` and a test asserts **no `.zip` is ever created inside `logs/`**; `log_session_info` returns the session `salt` and, when exports exist, `exportFiles`/`exportBytes`; a test asserts the salt appears in **no** file on disk |
+| 1 | **Log core (Rust)** — `obs/record.rs`, `redact.rs`, `sink.rs`, `writer.rs`, `commands/obs.rs` (`log_append`, `log_session_info`, `log_reveal_dir`, `log_export_session`), `DevSettings` + all 8 lockstep files, mock IPC stubs. **No §3.1 work.** | no | schema, redaction, sink, rotation, pruning, flush-on-exit, settings plumbing | `cargo test`: rotation at cap **evicts the oldest part of the current group and never refuses rotation (§6.3), prune runs after each rotation, and the session stays ≤128 MB**; pruning keeps N; backpressure emits `drop`; exit flush loses 0 records; `Redactor` assigns stable ordinals within a session and different ones across sessions (§7.2 (a)+(b); **(c) is explicitly NOT required — do not test for cross-side agreement**); the §7.2.1 scrubber catches every shipped Layer-A pattern **and every fixture in the `(prefix, min_len)` table**, keeps the `basic`-in-prose negative case, and leaves a long real path untouched; **turning Dev mode off deletes no file**. Enabling Dev mode creates a `logs/*.jsonl` whose first line is a valid `session` record naming the redaction mode. **§6.2:** `log_export_session(None)` writes into `<app_config_dir>/exports/` and a test asserts **no `.zip` is ever created inside `logs/`**; `log_session_info` returns the session `salt` and, when exports exist, `exportFiles`/`exportBytes`; a test asserts the salt appears in **no** file on disk |
 | 2 | **Frontend pipeline** — `obs/{types,enabled,trace,redact,log,batcher,ipcProxy}.ts`, wire into `src/ipc/index.ts`, mock ring buffer + `__bonsaiDumpLogs()` | no | proxy, trace minting, redaction mirror, batching | vitest: a mock-IPC call produces paired `ipc.call`/`ipc.result` sharing one trace + one span; disabled ⇒ method identity preserved; ≤1 `log_append` per 500 ms; a call with a path argument logs `argsHash`+`argsShape` and **no path substring**. **§7.2:** every frontend ordinal is `ui:`-prefixed (regex test over a full fixture run — a bare `ref#`/`path#`/`repo#` from `src: 'ui'` is a failure); frontend and Rust produce the **same `argsHash`** for the same canonical args + salt (fixture-vector test); ordinals are stable within the session |
-| 3 | **Rust dispatch + events + watcher + §3.1 spans** — `invoke_shim.rs` (§2.3, incl. the §2.3.1 contingency note in the module doc), `trace.rs`, **`obs/phase.rs` + the `span` `LogKind`/`SpanPayload` (additive to `record.rs`) + the three §3.1.2 call sites + `queuedMs`/pool gauge in `repo_handle.rs` + `deadlineFrac` from `run_with_git_timeout*` + `cache` from `graph_cache.rs`**, migrate every `emit(` site to `emit_logged` with an explicit `TraceMeta`, watcher batch/debounce records, mock `span` fixtures | no | backend choke point + intra-operation breakdown | every dispatch yields an `ipc.recv` stamped with the frontend-injected `__trace`; no `emit` site remains unmigrated (grep test); a git-op burst yields watcher `fired` records with correct `paths`/`relevant`/`debounceMs`. **Spans:** (a) a `get_graph` on a fixture repo emits exactly **one** `span{op:'graph.get'}` whose `phases` cover `revwalk`/`decorate`/`lane` and whose phase sum ≤ `ms`; (b) `queuedMs` is present and ≥0 on every git span, and a test that saturates the blocking pool shows `queuedMs > 0` and `poolInflight >= poolMax`; (c) a forced near-timeout yields `deadlineFrac ≥ 0.8`; (d) a cache-served graph emits `cache:'hit'` with no `revwalk` phase; (e) recorder overhead bench < 5 µs; (f) `bonsai-core` gains **no** dependency on `obs` (compile test). **If `tauri::ipc::Invoke` will not compile, execute §2.3.1 (drop the shim) and drop only the `ipc.recv` criterion — spans are unaffected — do not modify command signatures** |
+| 3 | **Rust dispatch + events + watcher + §3.1 spans + the TWO open §7.2.1 Layer-A patterns** — `invoke_shim.rs` (§2.3, incl. the §2.3.1 contingency note in the module doc), `trace.rs`, **`obs/phase.rs` + the `span` `LogKind`/`SpanPayload` (additive to `record.rs`) + the three §3.1.2 call sites + `queuedMs`/pool gauge in `repo_handle.rs` + `deadlineFrac` from `run_with_git_timeout*` + `cache` from `graph_cache.rs`**, migrate every `emit(` site to `emit_logged` with an explicit `TraceMeta`, watcher batch/debounce records, mock `span` fixtures, **the `eyJ…` JWT prefix + in-string `key=value` credential pairs** | no | backend choke point + intra-operation breakdown | every dispatch yields an `ipc.recv` stamped with the frontend-injected `__trace`; no `emit` site remains unmigrated (grep test); a git-op burst yields watcher `fired` records with correct `paths`/`relevant`/`debounceMs`. **Spans:** (a) a `get_graph` on a fixture repo emits exactly **one** `span{op:'graph.get'}` whose `phases` cover `revwalk`/`decorate`/`lane` and whose phase sum ≤ `ms`; (b) `queuedMs` is present and ≥0 on every git span, and a test that saturates the blocking pool shows `queuedMs > 0` and `poolInflight >= poolMax`; (c) a forced near-timeout yields `deadlineFrac ≥ 0.8`; (d) a cache-served graph emits `cache:'hit'` with no `revwalk` phase; (e) recorder overhead bench < 5 µs; (f) `bonsai-core` gains **no** dependency on `obs` (compile test). **§7.2.1 — exactly two additions, nothing else in Layer A is touched:** a JWT (`eyJ…`) and a plain-text `password=…` credential-helper line are both redacted; **`glpat-` and `Basic` are ALREADY SHIPPED — do not re-add them**, and the `redact.rs:377-394` `basic`-in-prose asymmetry must survive unchanged (its existing negative test still passes); a 40-char SHA and a long real path still untouched. **If `tauri::ipc::Invoke` will not compile, execute §2.3.1 (drop the shim) and drop only the `ipc.recv` criterion — spans are unaffected — do not modify command signatures** |
 | 4 | **Refresh + echo causality + React causality across the SIX surfaces** — `armEcho(repoId, trace)`, suppressed-watcher record at `useCoalescedRefresh.ts:82`, `pendingTracesRef` + `refresh` records, `obs/react.ts` + `obs/renderTally.ts`, applied per the §9.3 table (incl. the sidebar), `frameStats` routing | **yes** | **the flicker evidence** | (a) a mutation followed by its fs echo yields a `watcher` record with `suppressed:true` and `causedBy` = the mutation's trace; (b) one mutation ⇒ exactly one `refresh` record listing every collapsed contributing trace; (c) an effect re-run with unchanged deps emits `effect-no-change`; (d) **sidebar: one ref change on a 500-ref fixture yields ≤8 react records — one `each` record for `Sidebar.tsx` plus one `render.tally` per section/row component — and zero per-row records**; (e) a sidebar flicker (repeated re-render with no ref change) shows as a `render.tally` with `renders > 3 × instances` |
-| 5 | **Anomaly detector** — `obs/anomaly.rs`, every sink-side rule in §5 incl. `render-storm` **and the §5.1 performance rules** (`slow-command`, `slow-phase`, `queue-delay`, `pool-saturation`, `watchdog-pressure`, `cache-collapse`) + the `SLOW_RULES` constants table | no | derived records | scripted double-click in the harness produces a `dup-ipc` anomaly whose `refs` point at the two `ipc.call` seqs; each rule has a unit test with a true-positive and a true-negative case; **a test asserts no rule reads a redaction ordinal** (§7.2). **§5.1 specifically:** (a) a synthetic stream of 50 normal `get_graph` results at 900 ms followed by one at 4 s fires **exactly one** `slow-command`; (b) the same 50 results at a *uniformly* high 900 ms fire **none** (large-repo non-firing test); (c) fewer than `MIN_SAMPLES` results fire nothing except the >10 s catch-all; (d) the rate limit caps repeats at 1 per cmd per 10 s; (e) a slow span dominated by `lane` fires `slow-phase{phase:'lane'}` referencing both seqs; (f) 5 spans with `cache:'redecorate'` and no mutation fire `cache-collapse`, and the same 5 *with* an intervening mutation fire nothing; (g) 3 spans with `queuedMs 150` in 5 s fire `queue-delay`; (h) baseline map stays at the 200-key cap |
+| 5 | **Anomaly detector** — `obs/anomaly.rs`, every sink-side rule in §5 incl. `render-storm` **and the §5.1 performance rules** (`slow-command`, `slow-phase`, `queue-delay`, `pool-saturation`, `watchdog-pressure`, `cache-collapse`) + the `SLOW_RULES` constants table | no | derived records | scripted double-click in the harness produces a `dup-ipc` anomaly whose `refs` point at the two `ipc.call` seqs; each rule has a unit test with a true-positive and a true-negative case; **tests assert no rule reads a redaction ordinal (§7.2) and no rule consumes `truncate` (§6.3)**. **§5.1 specifically:** (a) a synthetic stream of 50 normal `get_graph` results at 900 ms followed by one at 4 s fires **exactly one** `slow-command`; (b) the same 50 results at a *uniformly* high 900 ms fire **none** (large-repo non-firing test); (c) fewer than `MIN_SAMPLES` results fire nothing except the >10 s catch-all; (d) the rate limit caps repeats at 1 per cmd per 10 s; (e) a slow span dominated by `lane` fires `slow-phase{phase:'lane'}` referencing both seqs; (f) 5 spans with `cache:'redecorate'` and no mutation fire `cache-collapse`, and the same 5 *with* an intervening mutation fire nothing; (g) 3 spans with `queuedMs 150` in 5 s fire `queue-delay`; (h) baseline map stays at the 200-key cap |
 | 6 | **Metrics** — `obs/metrics.rs`, `metrics_file.rs`, `perf.rs` absorption, `metrics_snapshot`/`metrics_reset` + mock, **§8.1 `percentile_ms`/`mean_ms` + the derived `p50Ms`/`p95Ms` snapshot fields + folding `span` phase durations into the allow-listed `op.*` histogram keys** | no | durable local aggregates | counters survive restart; `.bak` recovery on a corrupt file; daily bucketing correct across a simulated date change; `perf` deltas appear as `perf.*`; test asserts `obs/` reaches no HTTP dependency and that no metric key is user-derived; **`metrics_reset` exists as a command and appears in no catalog row**. **§8.1:** (a) `percentile_ms` matches a brute-force reference within one bucket width on 10k synthetic samples; (b) 1M observations leave `usage.json` byte-size unchanged (no sample retention); (c) `p50Ms`/`p95Ms` appear on `metrics_snapshot()` output and are **absent** from `usage.json` on disk; (d) `op.graph.get.lane` accumulates from `span` phases across two days and the two days' `p95Ms` are independently comparable; (e) the histogram key set stays within the allow-list |
-| 7 | **Settings Dev page + `logs_delete_all`** — the `RollAndPurge` writer path + `logs_delete_all` command + mock, `LogSessionInfo.totalFiles/totalBytes` (+ export counts), catalog rows, `DevPage.tsx`, reveal/export/delete actions, raw-names confirm + warning, privacy statement | **yes** (ui-designer first) | user surface + purge | catalog parity test passes; toggling `dev.enabled` starts/stops writing **and deletes nothing**; enabling raw names confirms and starts a new file; export produces a zip of the session parts **in `exports/`**. **`logs_delete_all`:** (a) Dev mode OFF ⇒ every in-scope file removed, `rolled:false`, `activeFile:null`; (b) **Dev mode ON ⇒ the writer rolls to a new file with an `afterPurge:true` header, every prior file (including the one just closed) is removed, `rolled:true`, `activeFile` names the new file, and logging continues with no lost record**; (c) `deletedFiles` / `deletedBytes` **exactly match** the files and byte sizes removed, asserted against a pre-seeded fixture directory; (d) a file made undeletable increments `failedFiles`, the command still returns `Ok`, and the UI shows the partial-result warning; (e) nothing outside `logs/` and `exports/` is touched (assert `metrics/` and `settings.json` survive); (f) the delete is confirm-gated and writes no record into the surviving file. **§6.2:** (g) **export a session, then delete: the zip in `exports/` is gone**, `deletedExports` counts it, and its bytes are included in `deletedBytes`; (h) a `.zip` seeded into `logs/` is also removed; (i) a zip saved *outside* both directories survives and the confirm copy says so |
+| 7 | **Settings Dev page + `logs_delete_all` + §6.3 truncation record** — the `RollAndPurge` writer path + `logs_delete_all` command + mock, **the `truncate` record + `SessionPayload.truncated`/`droppedParts` + `LogSessionInfo.droppedParts`**, `LogSessionInfo.totalFiles/totalBytes` (+ export counts), catalog rows, `DevPage.tsx`, reveal/export/delete actions, raw-names confirm + warning, privacy statement | **yes** (ui-designer first) | user surface + purge + truncation disclosure | catalog parity test passes; toggling `dev.enabled` starts/stops writing **and deletes nothing**; enabling raw names confirms and starts a new file; export produces a zip of the session parts **in `exports/`**. **`logs_delete_all`:** (a) Dev mode OFF ⇒ every in-scope file removed, `rolled:false`, `activeFile:null`; (b) **Dev mode ON ⇒ the writer rolls to a new file with an `afterPurge:true` header, every prior file (including the one just closed) is removed, `rolled:true`, `activeFile` names the new file, and logging continues with no lost record**; (c) `deletedFiles` / `deletedBytes` **exactly match** the files and byte sizes removed, asserted against a pre-seeded fixture directory; (d) a file made undeletable increments `failedFiles`, the command still returns `Ok`, and the UI shows the partial-result warning; (e) nothing outside `logs/` and `exports/` is touched (assert `metrics/` and `settings.json` survive); (f) the delete is confirm-gated and writes no record into the surviving file. **§6.2:** (g) **export a session, then delete: the zip in `exports/` is gone**, `deletedExports` counts it, and its bytes are included in `deletedBytes`; (h) a `.zip` seeded into `logs/` is also removed; (i) a zip saved *outside* both directories survives and the confirm copy says so. **§6.3:** (j) driving a writer past `max_parts` emits exactly one `truncate` record per evicted part **into the surviving newest part**, with `droppedParts` incrementing; (k) every part header opened after an eviction carries `truncated:true` + `droppedParts`; (l) `log_session_info` reports `droppedParts` and the Dev page shows the truncation warning line |
 
 Increments 4 and 7 require a `ui-designer` pass (`docs/contracts/P91-observability-ui.md`) before
 senior-dev.
@@ -1059,10 +1205,11 @@ senior-dev.
 scripted flicker scenario (including a sidebar ref change) and `__bonsaiDumpLogs()` output is
 inspected for correct traces and at least one true-positive anomaly; **the mock slow-`graph.get`
 fixture produces a `slow-command` + `slow-phase` pair whose `refs` resolve to the span**; §11
-budgets hold, incl. the sidebar record-count bound and the ≤1-span-per-operation bound; a real
-`logs/*.jsonl` from a `pnpm tauri dev` session is parsed line-by-line by a test asserting schema
-validity and **zero redaction violations** (regex scan for path separators, `@`, `http`, known token
-shapes, the session salt, and any branch name present in the fixture repo).
+budgets hold, incl. the sidebar record-count bound, the ≤1-span-per-operation bound and the
+**128 MB per-session disk bound**; a real `logs/*.jsonl` from a `pnpm tauri dev` session is parsed
+line-by-line by a test asserting schema validity and **zero redaction violations** (regex scan for
+path separators, `@`, `http`, known token shapes, the session salt, and any branch name present in
+the fixture repo).
 
 **USER CHECKPOINT:** open a real repo in the native window with Dev mode ON, perform the actions
 that flicker (**including the sidebar interactions where flickering was observed**), then (a)
@@ -1087,7 +1234,7 @@ whose phases plausibly explain where the time went**.
 | 5 | Log file granularity | **APPROVED — one file per session** | §6 |
 | 6 | `metrics_reset` | **APPROVED — ship the command, expose no UI** until a Statistics page exists | §6, §10, §12 inc. 6 |
 | 7 | **"Delete all log files"** | **PULLED INTO v1** (was a deferred follow-up under decision 4; raised by ui-designer, accepted by the user). Rationale: logs survive Dev mode being disabled, and pruning only fires after 10 newer sessions — so one `raw`-names session can leave real names on disk indefinitely for an occasional debugger. Manual folder deletion is not an acceptable remedy for a privacy-relevant artifact the app created. Behaviour with the writer active: **roll to a new file, then purge everything else** | §6.1, §6 Commands, §7.1, §10 (`dev.delete-logs`), §11, §12 inc. 7 |
-| 8 | **Performance dimension added** (user, 2026-08-27) | **ACCEPTED.** P91 must diagnose *slowness*, not only redundancy. All schema work is **ADDITIVE ONLY** (one new `LogKind` + optional `#[serde(default)]` fields); `OBS_SCHEMA_VERSION` stays 1 so the in-flight increment-1 implementation absorbs it without rework | §3.1, §5.1, §8.1, §11, §12 |
+| 8 | **Performance dimension added** (user, 2026-08-27) | **ACCEPTED.** P91 must diagnose *slowness*, not only redundancy. All schema work is **ADDITIVE ONLY** (new `LogKind` variants + optional `#[serde(default)]` fields); `OBS_SCHEMA_VERSION` stays 1 so the in-flight implementation absorbs it without rework | §3.1, §5.1, §8.1, §11, §12 |
 | 9 | Intra-operation breakdown shape | **DECIDED — one `span` record per operation with a `phases[]` array**, not one record per phase (volume: ~1 line per heavy op). Mechanism is an **explicit `PhaseRecorder` value**, never a task-local — consistent with §2.2's rejection of an ambient backend trace. Nesting is expressed by dotted labels, not a structural tree | §3.1, §3.1.1 |
 | 10 | Where phase timing lives | **DECIDED — at the `src-tauri` caller layer** (`graph_cache.rs`, the status and diff command bodies), **not** inside `crates/bonsai-core`. bonsai-core must not depend on `obs/`; the src-tauri layer already orchestrates these calls and already increments `perf.rs`. **Exactly three ops** (`graph.get`, `status.scan`, `diff.compute`) and ~11 phase labels in v1; a fourth op needs a new decision row | §3.1.2, §12 inc. 3 |
 | 11 | Contention / saturation records | **DECIDED — optional fields on the same `span` record** (`queuedMs`, `poolInflight`, `poolMax`, `deadlineFrac`), not new record kinds. Queue delay is captured around `spawn_blocking` in `repo_handle.rs`; watchdog pressure comes from the existing `run_with_git_timeout*` deadline. One operation ⇒ one line | §3.1.3, §5, §12 inc. 3 |
@@ -1097,10 +1244,13 @@ whose phases plausibly explain where the time went**.
 | 15 | Interaction-latency (gesture → paint) | **DEFERRED — reason recorded.** Needs rAF-after-commit plumbing in all six surfaces and is unverifiable in the headless harness (0×0 pane ⇒ no rAF). The `gesture → ipc.result.ms → span.phases → render.tally → frame/jank-trace` chain already triangulates the motivating complaints. Revisit only if a real complaint resists that chain after increment 5 | §9.4 |
 | 16 | **§7.2 contradiction — ordinal scheme** (raised by senior-dev during increment 1) | **RESOLVED — keep salt-seeded counters; (a) and (b) hold, (c) cross-side agreement is STRUCK.** A counter cannot agree across sides (different first-sight order), and the only synchronous-mirrorable alternative, `FNV-1a-64(salt, value) → ordinal`, was **rejected on privacy grounds**: branch/tag/remote names are a small, guessable input space and FNV is not a PRF, so anyone with the salt could dictionary-attack every ordinal — while a counter leaks only first-sight order. A cryptographic keyed hash would restore secrecy but cannot be mirrored synchronously on the render path. **Mitigation for the "two different branches look identical" failure mode: frontend ordinals are `ui:`-prefixed**, so the namespaces are disjoint and conflation is impossible. Cross-side correlation uses `trace`/`span`/`seq` and `argsHash` — which every §5 rule already does; **no rule may read an ordinal**. `argsHash` stays salted FNV-1a-64 over raw canonical JSON (equality token only; the salt never leaves the process, and §6/§7.1 now forbid writing it to any file). **Increment 1's implementation stands — no reimplementation**; §12 inc. 1 tests are correct as written and must NOT assert (c) | §7.2, §7.1, §7.3, §6, §5, §12 inc. 1 & 2 & 5 |
 | 17 | **Export/delete privacy hole** (raised by senior-dev during increment 1) | **RESOLVED — both halves.** `log_export_session` defaulted its zip *into* `logs/`, whose purge scope was `*.jsonl` only, so "Delete all log files" reported success while a **`raw`-names** zip survived — defeating decision 7 outright. Fix: (1) exports default to `<app_config_dir>/exports/`, never `logs/`; (2) the purge scope widens to `logs/*.jsonl`, `logs/*.jsonl.tmp`, `logs/*.zip` and `exports/*.zip`. A zip the user deliberately saved into either app-managed directory **is** deleted — that is intended, the confirm dialog states counts and bytes first, and silently retaining a raw-names archive is the worse failure. Exports saved elsewhere are unreachable and are **not** deleted; the confirm copy and the export content statement must both say so, because claiming completeness the command cannot deliver is the same class of defect. Counts stay honest: export zips appear in `deletedFiles`/`deletedBytes` and are additionally broken out in the new optional `deletedExports` | §6, §6.1, §6.2, §7.1, §10, §12 inc. 1 & 7 |
+| 18 | **Rotation past `max_parts`** (found by reviewer, directed by orchestrator during increment 1) | **RATIFIED AS IMPLEMENTED — evict the oldest part of the current session group; never refuse rotation.** The original "keep appending to the last part" wording left a session unbounded, because `prune` ran only at `LogWriter::open` and never pruned the last group — a single event-storm session could exceed the 256 MB cap until the next launch. Eviction restores a hard **128 MB** per-session bound while preserving the **never discard the newest evidence** invariant (the user's workflow puts the anomaly at the end of the file). Pruning also now runs **after every rotation**, not only at open, so the total cap is enforced continuously. **Accepted cost, disclosed not hidden:** a truncated log cannot prove the *first* occurrence of a bug, which matters for double-trigger work — so truncation is recorded in-band (new additive `truncate` record + `SessionPayload.truncated`/`droppedParts` + `LogSessionInfo.droppedParts`), the reviewing AI must treat missing early records in a truncated file as **inconclusive rather than absent**, and the Dev page surfaces a warning suggesting narrower capture instead of a bigger cap. `truncate` ≠ `drop`: one is on-disk loss, the other in-memory backpressure. **Increment 1's code stands; the additive record lands in increment 7** | §6, §6.3, §3, §5, §7.3, §10, §11, §12 inc. 1 & 7 |
+| 19 | **Token scrubber — Layer B heuristic + Layer A status** (implemented in increment 1 incl. its MUST-FIX round; ratification requested) | **RATIFIED. Layer B constants named: `MIN_SECRET_LEN = 32`, `MIN_B64_RUN = 24`**, alpha+digit mix required, pure hex excluded. The original `/`-rejecting form made §7.2's own "base64 PAT shape" structurally uncatchable. The run test is sound because random base64 hits `/` about once per 64 chars while path segments are human-named and short — and the few that reach 24 chars are word-shaped and fail the digit requirement. Accepted, fail-safe consequences: scp-style remotes ordinalise as `path#` not `remote#`; UUID-shaped strings ≥32 chars and digit-bearing long camelCase segments over-redact. **Precision is permanently subordinate to recall: a missed credential is unrecoverable, an over-redacted path costs only legibility.** **Layer A is largely SHIPPED and must not be re-implemented** — increment 1's MUST-FIX round converted `TOKEN_PREFIXES` to `(prefix, min_len)` pairs (`redact.rs:190`, `:213`) precisely so short tokens escape the global floor, and shipped `glpat-` (+ `gldt-`/`glrt-`/`npm_`/`AKIA`/`ASIA`/`AIza`/`sk-`/`dckr_pat_`/`xoxe-` …), **`Basic` alongside `Bearer`** (`:382`) with a deliberate **`basic`-in-prose guard** (`:377-394`, must survive untouched) and a looser keyword-established length rule (`:304-305`) that already covers ~24-char `Basic` credentials. **Only TWO Layer-A items remain open, both additive in increment 3:** the `eyJ…` **JWT** prefix (a `.` disqualifies a Layer-B candidate and no prefix matches, so JWTs pass through today) and **`key=value` / `key: value` pairs matched inside plain-text string bodies** — `is_sensitive_key` (`:232-243`) is key-name-based and never sees line-oriented credential-helper / `.netrc` output, which is the shape a real credential takes when git hands it back. An earlier revision of this row listed `glpat-` and `Basic` as open; that assessed the pre-MUST-FIX state and is **corrected here** | §7.2.1, §12 inc. 1 & 3 |
 
 **Deferred follow-ups (explicitly out of P91):** app-wide React instrumentation beyond the six
 surfaces; the Statistics page and any UI for `metrics_reset`; selective/per-file log deletion (v1
 is all-or-nothing); **interaction-latency (gesture→paint) measurement (§9.4)**; **phase
 instrumentation of any operation beyond the three in §3.1.2** (e.g. fetch/push, blame, search);
 **deletion of exports the user saved outside Bonsai's config directory** (physically unreachable —
-§6.2 requires disclosing this, not solving it).
+§6.2 requires disclosing this, not solving it); **a user-configurable part/size cap** (§6.3 chose
+disclosure + narrower capture over a bigger cap).
