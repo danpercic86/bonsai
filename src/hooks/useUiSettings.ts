@@ -29,6 +29,7 @@ import type {
   AutoFetchSettings,
   GraphPrefs,
   GraphRefFilter,
+  GraphColorMode,
   GraphSeason,
   GraphStyle,
   HealthRefreshSettings,
@@ -72,6 +73,9 @@ export interface UiSettingsController {
   graphFoldLinear: boolean;
   /** Spec-005: always-show overview rail (default false). No metricsVersion bump. */
   graphMinimapAlwaysShow: boolean;
+  /** Spec-006: graph edge/ring coloring (default 'lane'). Paint-only — no
+   *  metricsVersion bump (geometry is unchanged). */
+  graphColorMode: GraphColorMode;
   /** Spec-003: persisted solo/hide ref-filter intent (null = none). */
   graphRefFilter: GraphRefFilter | null;
   /** P11d §4.3: bumped on every graph-knob change → GraphCanvas full re-measure. */
@@ -149,6 +153,8 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
   const [graphFoldLinear, setGraphFoldLinear] = useState(false);
   // Spec-005: overview-rail always-show — same additive-bool pattern.
   const [graphMinimapAlwaysShow, setGraphMinimapAlwaysShow] = useState(false);
+  // Spec-006: author-coloring mode — paint-only pref, same additive pattern.
+  const [graphColorMode, setGraphColorMode] = useState<GraphColorMode>('lane');
   const [graphRefFilter, setGraphRefFilter] = useState<GraphRefFilter | null>(null);
   // P11d §4.3: bumped on every graph-knob change → GraphCanvas full re-measure.
   const [metricsVersion, setMetricsVersion] = useState(0);
@@ -344,6 +350,7 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
       if (patch.graphFoldLinear !== undefined) setGraphFoldLinear(patch.graphFoldLinear);
       if (patch.graphMinimapAlwaysShow !== undefined)
         setGraphMinimapAlwaysShow(patch.graphMinimapAlwaysShow);
+      if (patch.graphColorMode !== undefined) setGraphColorMode(patch.graphColorMode);
       if (patch.graphRefFilter !== undefined) setGraphRefFilter(patch.graphRefFilter);
       if (patch.aiEnabled !== undefined) setAiEnabled(patch.aiEnabled);
       if (patch.aiConflictAutonomy !== undefined) setAiConflictAutonomy(patch.aiConflictAutonomy);
@@ -387,6 +394,7 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
     setGraphFirstParent(s.graphFirstParent ?? false);
     setGraphFoldLinear(s.graphFoldLinear ?? false);
     setGraphMinimapAlwaysShow(s.graphMinimapAlwaysShow ?? false);
+    setGraphColorMode(s.graphColorMode ?? 'lane');
     setGraphRefFilter(s.graphRefFilter ?? null);
     setAiEnabled(s.aiEnabled);
     setAiConflictAutonomy(s.aiConflictAutonomy);
@@ -420,6 +428,7 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
     graphFirstParent,
     graphFoldLinear,
     graphMinimapAlwaysShow,
+    graphColorMode,
     graphRefFilter,
     metricsVersion,
     aiEnabled,

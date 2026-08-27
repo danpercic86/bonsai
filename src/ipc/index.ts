@@ -108,6 +108,7 @@ export type {
   GraphRefFilter,
   GitAvailability,
   GitBinSource,
+  GraphColorMode,
   GraphLayout,
   GraphNode,
   GraphPrefs,

@@ -126,6 +126,8 @@ export const MINIMAL: FixtureValues = {
   graphFoldLinear: false,
   // Spec-005: overview-rail always-show, same treatment.
   graphMinimapAlwaysShow: false,
+  // Spec-006: edge/ring coloring, same treatment.
+  graphColorMode: 'lane',
   graphRefFilter: null,
   aiEnabled: false,
   aiConflictAutonomy: D.aiConflictAutonomy,
@@ -186,6 +188,8 @@ export const MAXIMAL: FixtureValues = {
   graphFoldLinear: true,
   // Spec-005: rail always-show ON its default (↺ present on the row).
   graphMinimapAlwaysShow: true,
+  // Spec-006: author coloring OFF its default.
+  graphColorMode: 'author',
   graphRefFilter: { mode: 'solo', refs: ['refs/heads/main'] },
   aiEnabled: true,
   aiConsented: true,

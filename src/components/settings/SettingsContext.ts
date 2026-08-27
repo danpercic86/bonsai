@@ -68,6 +68,7 @@ export type SettingsPersistedValues = Pick<
       | 'graphFirstParent'
       | 'graphFoldLinear'
       | 'graphMinimapAlwaysShow'
+      | 'graphColorMode'
       | 'graphRefFilter'
     >
   > & {

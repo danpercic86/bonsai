@@ -108,6 +108,8 @@ export const sessionHandlers = {
       graphFoldLinear: patch.graphFoldLinear ?? current.graphFoldLinear ?? false,
       // Spec-005: always-show overview rail (same plain-bool precedent).
       graphMinimapAlwaysShow: patch.graphMinimapAlwaysShow ?? current.graphMinimapAlwaysShow ?? false,
+      // Spec-006: edge/ring coloring (same plain-enum precedent; default 'lane').
+      graphColorMode: patch.graphColorMode ?? current.graphColorMode ?? 'lane',
       graphRefFilter:
         patch.graphRefFilter !== undefined ? patch.graphRefFilter : (current.graphRefFilter ?? null),
       aiEnabled: patch.aiEnabled ?? current.aiEnabled,

@@ -54,6 +54,8 @@ const DEFAULTS: UiSettings = {
   graphFoldLinear: false,
   /** Spec-005: overview rail on-demand (hover/search) by default. */
   graphMinimapAlwaysShow: false,
+  /** Spec-006: classic branch-lane edge coloring by default. */
+  graphColorMode: 'lane',
   graphRefFilter: null,
   /** P11: auto-fetch OFF, 5-minute interval. */
   autoFetch: { enabled: false, intervalMinutes: 5 },

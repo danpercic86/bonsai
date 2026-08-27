@@ -257,7 +257,9 @@ The `<canvas>` is opaque to assistive tech, so the graph MUST be a focusable com
 Native scrollbar (never covered; overlays sit at `right: rightInset`) → `.graph-rail` overview
 rail `z-index: 4` → search/filter fabs and filter chip `z-index: 5`. Fabs win pointer events in
 the top ~40px overlap band. New right-edge overlays slot into this stack rather than inventing
-z values.
+z values. The replay fab (spec 007) is the third member of the fab cluster, leftmost; the replay
+overlay itself sits above everything in the pane at `z-index: 6`. Replay's frontier motion
+reuses the revealFlash pattern (600ms, +5px halo) — no new motion vocabulary.
 
 ## 5. Lane color palette (deterministic, per theme)
 

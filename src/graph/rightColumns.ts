@@ -13,6 +13,9 @@ import type { EffectiveMetrics } from './metrics';
  *  `showAheadBehind`/`branchStats` are consumed by the ref-band chip in P51c;
  *  they ride along here now (inert) so the interface stays stable. */
 export interface GraphDisplayOptions {
+  /** Spec-006: edge/lane-ring coloring — classic lane palette vs the commit
+   *  author's hue (`authorColor.ts`). Avatars/pills/backdrop are unchanged. */
+  colorMode: 'lane' | 'author';
   showSha: boolean;
   showAuthor: boolean;
   showDate: boolean;

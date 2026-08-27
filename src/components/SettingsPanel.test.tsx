@@ -74,6 +74,7 @@ function renderPanel(over: Partial<SettingsPanelProps> = {}) {
     graphFirstParent: false,
     graphFoldLinear: false,
     graphMinimapAlwaysShow: false,
+    graphColorMode: 'lane',
     graphRefFilter: null,
     onChange: vi.fn(),
     onToggleTheme: vi.fn(),

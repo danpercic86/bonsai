@@ -2,7 +2,7 @@
 import { AUTO_FETCH_INTERVAL_MAX, AUTO_FETCH_INTERVAL_MIN, AVATAR_RADIUS_MAX, AVATAR_RADIUS_MIN, HEALTH_REFRESH_INTERVAL_MAX, HEALTH_REFRESH_INTERVAL_MIN, LANE_WIDTH_MAX, LANE_WIDTH_MIN, ROW_HEIGHT_MAX, ROW_HEIGHT_MIN } from '../../settings/ranges';
 import { DEFAULT_UI_SETTINGS as PRODUCTION_DEFAULT_UI_SETTINGS } from '../../settings/defaults';
 import { parseAiRunSettings } from './aiRunSettings';
-import type { AiAutonomy, AutoFetchSettings, GraphDateBasis, GraphPrefs, GraphRefFilter, GraphSeason, GraphStyle, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, PanelDensity, PrimaryCommitAction, ProfileColor, RecentRepo, SessionState, Theme, UiSettings } from '../types';
+import type { AiAutonomy, AutoFetchSettings, GraphColorMode, GraphDateBasis, GraphPrefs, GraphRefFilter, GraphSeason, GraphStyle, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, PanelDensity, PrimaryCommitAction, ProfileColor, RecentRepo, SessionState, Theme, UiSettings } from '../types';
 
 /** Spec-002: closed enum guards for the two additive graph-theme prefs. */
 const GRAPH_SEASONS: ReadonlySet<string> = new Set<GraphSeason>(['living', 'spring', 'autumn']);
@@ -316,6 +316,11 @@ export function readUiSettings(): UiSettings {
     const graphFoldLinear = parsed.graphFoldLinear === true;
     // Spec-005 (additive): always-show overview rail. Malformed → false.
     const graphMinimapAlwaysShow = parsed.graphMinimapAlwaysShow === true;
+    // Spec-006 (additive): edge/ring coloring. Malformed → 'lane', never throws.
+    const graphColorMode: GraphColorMode =
+      parsed.graphColorMode === 'author' || parsed.graphColorMode === 'lane'
+        ? parsed.graphColorMode
+        : 'lane';
     const graphRefFilter = sanitizeGraphRefFilter(parsed.graphRefFilter);
     // P13 AI fields (additive, like autoFetch/graph): fall back to defaults.
     const aiEnabled =
@@ -374,6 +379,7 @@ export function readUiSettings(): UiSettings {
       graphFirstParent,
       graphFoldLinear,
       graphMinimapAlwaysShow,
+      graphColorMode,
       graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,

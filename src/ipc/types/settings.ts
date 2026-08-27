@@ -7,6 +7,10 @@ import type { GraphStyle } from '../../graph/colors';
 export type { GraphStyle } from '../../graph/colors';
 export type { GraphSeason } from '../../graph/palettes';
 
+/** Spec-006: graph edge/lane-ring coloring — classic lanes vs author hue.
+ *  Mirrors Rust `GraphColorMode` (lowercase on the wire). */
+export type GraphColorMode = 'lane' | 'author';
+
 export type Theme = 'dark' | 'light';
 
 /** Spec-003: the persisted graph ref-filter INTENT (opaque to the backend).
@@ -74,6 +78,8 @@ export interface UiSettings {
   /** Spec-005: always show the graph overview rail. Additive/optional;
    *  absent ⇒ false. */
   graphMinimapAlwaysShow?: boolean;
+  /** Spec-006: graph edge/ring coloring. Additive/optional; absent ⇒ 'lane'. */
+  graphColorMode?: GraphColorMode;
   /** Spec-003: persisted solo/hide intent; `null` (or absent) ⇒ no ref filter.
    *  GLOBAL like graphStyle (plan risk, accepted). */
   graphRefFilter?: GraphRefFilter | null;
@@ -148,6 +154,8 @@ export interface UiSettingsPatch {
   graphFoldLinear?: boolean;
   /** Spec-005: always-show overview rail; patches independently. */
   graphMinimapAlwaysShow?: boolean;
+  /** Spec-006: graph edge/ring coloring; patches independently. */
+  graphColorMode?: GraphColorMode;
   graphRefFilter?: GraphRefFilter | null;
   // AI assistance (P13).
   aiEnabled?: boolean;

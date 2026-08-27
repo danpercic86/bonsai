@@ -30,6 +30,7 @@ describe('formatAheadBehind', () => {
 
 function disp(over: Partial<GraphDisplayOptions> = {}): GraphDisplayOptions {
   return {
+    colorMode: 'lane',
     showSha: true,
     showAuthor: false,
     showDate: true,

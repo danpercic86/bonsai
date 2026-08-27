@@ -35,6 +35,15 @@ export const APPEARANCE_ENTRIES: readonly SettingsIndexEntry[] = [
     control: 'combobox',
   },
   {
+    id: 'appearance.graph-colors',
+    category: 'appearance',
+    group: 'Appearance',
+    label: 'Graph colors',
+    help: 'Color graph edges by branch lane or by commit author. Author colors match the avatars.',
+    keywords: 'author lane colour color identity graph edges who',
+    control: 'segmented',
+  },
+  {
     id: 'appearance.file-lists',
     category: 'appearance',
     group: 'Appearance',

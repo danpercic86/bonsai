@@ -264,6 +264,7 @@ export function runP7SelfTest(canvas: HTMLCanvasElement | null): P7SelfTestResul
     // Chip-disabled display: this overflow self-test predates P51c and must
     // stay independent of ahead/behind reservation.
     const noChipsDisplay: GraphDisplayOptions = {
+      colorMode: 'lane',
       showSha: true,
       showAuthor: false,
       showDate: true,

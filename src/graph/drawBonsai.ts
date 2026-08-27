@@ -51,6 +51,8 @@ export function drawBonsaiEdge(
   vp: Viewport,
   theme: Theme,
   m: EffectiveMetrics,
+  color: string,
+  emphasis = 0,
 ): void {
   const halfRow = m.rowHeight / 2;
   const fromLane = nodes[e.from].lane;
@@ -60,10 +62,12 @@ export function drawBonsaiEdge(
   const tx = laneX(toLane, m);
   const ty = rowY(e.to, vp.scrollTop, m);
 
-  ctx.strokeStyle = theme.laneColors[e.lane % 10];
+  // Spec-006: caller-resolved (lane- or author-mode) stroke; `emphasis` widens
+  // every stepped segment by the same px so the taper is preserved (§2.2).
+  ctx.strokeStyle = color;
 
   if (e.to === e.from + 1) {
-    ctx.lineWidth = theme.edgeBranchWidth;
+    ctx.lineWidth = theme.edgeBranchWidth + emphasis;
     ctx.beginPath();
     segmentTo(ctx, fx, fy, tx, ty, halfRow);
     ctx.stroke();
@@ -78,7 +82,7 @@ export function drawBonsaiEdge(
 
   // top curve fromLane -> e.lane (tip: thinnest, toward the newer tip)
   if (yTop >= clampTop) {
-    ctx.lineWidth = theme.edgeTipWidth;
+    ctx.lineWidth = theme.edgeTipWidth + emphasis;
     ctx.beginPath();
     segmentTo(ctx, fx, fy, mx, yTop, halfRow);
     ctx.stroke();
@@ -87,7 +91,7 @@ export function drawBonsaiEdge(
   const runTop = Math.max(yTop, clampTop);
   const runBot = Math.min(yBot, clampBot);
   if (runBot > runTop) {
-    ctx.lineWidth = theme.edgeBranchWidth;
+    ctx.lineWidth = theme.edgeBranchWidth + emphasis;
     ctx.beginPath();
     ctx.moveTo(mx, runTop);
     ctx.lineTo(mx, runBot);
@@ -95,7 +99,7 @@ export function drawBonsaiEdge(
   }
   // bottom curve e.lane -> toLane (trunk: thickest, toward the older parent)
   if (yBot <= clampBot) {
-    ctx.lineWidth = theme.edgeTrunkWidth;
+    ctx.lineWidth = theme.edgeTrunkWidth + emphasis;
     ctx.beginPath();
     segmentTo(ctx, mx, yBot, tx, ty, halfRow);
     ctx.stroke();

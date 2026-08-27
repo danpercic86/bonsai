@@ -18,11 +18,19 @@ import { SettingsRow } from '../SettingsRow';
 import { SettingsSegmented } from '../SettingsSegmented';
 import { useSettingsActions, useSettingsValues } from '../SettingsContext';
 import { Combobox } from '../../Combobox';
-import type { GraphSeason, GraphStyle, ListView, PanelDensity, Theme } from '../../../ipc';
+import type {
+  GraphColorMode,
+  GraphSeason,
+  GraphStyle,
+  ListView,
+  PanelDensity,
+  Theme,
+} from '../../../ipc';
 
 const THEME = 'appearance.theme';
 const GRAPH_STYLE = 'appearance.graph-style';
 const GRAPH_SEASON = 'appearance.graph-season';
+const GRAPH_COLORS = 'appearance.graph-colors';
 const FILE_LISTS = 'appearance.file-lists';
 const DENSITY = 'appearance.panel-density';
 
@@ -33,7 +41,8 @@ const SEASON_OPTIONS = [
 ];
 
 export function AppearanceCategory() {
-  const { theme, listView, panelDensity, graphStyle, graphSeason } = useSettingsValues();
+  const { theme, listView, panelDensity, graphStyle, graphSeason, graphColorMode } =
+    useSettingsValues();
   const { change, toggleTheme, toggleListView } = useSettingsActions();
 
   // §12.3.3: Season depends on graphStyle. When Standard, the whole group is
@@ -95,6 +104,22 @@ export function AppearanceCategory() {
           />
         </SettingsRow>
       </fieldset>
+
+      {/* Spec-006: edge/lane-ring coloring — after Season (keeps the Graph
+          style + Season dependency pair adjacent), per spec-006-ui.md §1.3. */}
+      <SettingsRow id={GRAPH_COLORS}>
+        <SettingsSegmented<GraphColorMode>
+          name={GRAPH_COLORS}
+          value={graphColorMode}
+          labelledBy={settingsRowLabelId(GRAPH_COLORS)}
+          describedBy={settingsRowHelpId(GRAPH_COLORS)}
+          options={[
+            { value: 'lane', label: 'Branch lanes' },
+            { value: 'author', label: 'Author' },
+          ]}
+          onChange={(next) => change({ graphColorMode: next })}
+        />
+      </SettingsRow>
 
       <SettingsRow id={FILE_LISTS}>
         <SettingsSegmented<ListView>

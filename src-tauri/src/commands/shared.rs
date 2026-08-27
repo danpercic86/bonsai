@@ -115,7 +115,7 @@ pub(crate) use bonsai_core::health::{collect_repo_health, RepoHealth};
 pub(crate) use crate::scheduler::{self, JobKind, JobOutcome, SchedulerState};
 pub(crate) use crate::settings::{
     self, clamp_ai_settings, clamp_auto_fetch, clamp_graph_prefs, clamp_health_refresh,
-    clamp_pane_widths, AiAutonomy, AiConflictTools, AutoFetch, GraphPrefs, GraphRefFilter, GraphSeason, GraphStyle,
+    clamp_pane_widths, AiAutonomy, AiConflictTools, AutoFetch, GraphColorMode, GraphPrefs, GraphRefFilter, GraphSeason, GraphStyle,
     HealthRefresh, IdentityProfile, ListView, PaneWidths, PanelDensity, PrimaryCommitAction,
     RecentRepo, ThemeChoice,
 };

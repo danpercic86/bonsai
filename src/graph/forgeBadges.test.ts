@@ -107,6 +107,7 @@ describe('ciBadgeVisual', () => {
 
 function disp(over: Partial<GraphDisplayOptions> = {}): GraphDisplayOptions {
   return {
+    colorMode: 'lane',
     showSha: false,
     showAuthor: false,
     showDate: false,

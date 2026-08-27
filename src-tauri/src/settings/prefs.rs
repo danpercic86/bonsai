@@ -72,6 +72,18 @@ pub enum GraphSeason {
     Autumn,
 }
 
+/// Spec-006: commit-graph edge/lane-ring coloring — classic branch lanes vs
+/// the commit author's hue. Pure UI preference; display-only, no Git effect.
+/// Additive `#[serde(default)]` (via the container-level `default` on
+/// `Settings`) — a pre-spec-006 settings.json without this key loads `Lane`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GraphColorMode {
+    #[default]
+    Lane,
+    Author,
+}
+
 /// Spec-003: which way the persisted graph ref filter reads (`"solo"` = show
 /// only these refs; `"hide"` = show all but these). Settings-layer INTENT type
 /// — the backend stores it opaquely and never interprets it; the frontend

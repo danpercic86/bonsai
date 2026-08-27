@@ -26,6 +26,8 @@ pub struct UiSettings {
     pub graph_fold_linear: bool,
     /// Spec-005: always-show overview rail (default false).
     pub graph_minimap_always_show: bool,
+    /// Spec-006: graph edge/ring coloring (default Lane).
+    pub graph_color_mode: GraphColorMode,
     /// Spec-003: persisted graph ref-filter INTENT (default None). Opaque to
     /// the backend; the frontend derives the wire whitelist from it.
     pub graph_ref_filter: Option<GraphRefFilter>,
@@ -95,6 +97,8 @@ pub struct UiSettingsPatch {
     pub graph_fold_linear: Option<bool>,
     /// Spec-005: always-show overview rail; patches independently.
     pub graph_minimap_always_show: Option<bool>,
+    /// Spec-006: graph edge/ring coloring; patches independently.
+    pub graph_color_mode: Option<GraphColorMode>,
     /// Spec-003: graph ref-filter intent. Double-option so an explicit `null`
     /// (clear the filter) is distinguishable from an ABSENT key (leave
     /// unchanged): missing → `None`, `null` → `Some(None)`, a value →
@@ -188,6 +192,9 @@ pub(crate) fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     }
     if let Some(graph_minimap_always_show) = patch.graph_minimap_always_show {
         s.graph_minimap_always_show = graph_minimap_always_show;
+    }
+    if let Some(graph_color_mode) = patch.graph_color_mode {
+        s.graph_color_mode = graph_color_mode;
     }
     // Double-option: `Some(None)` (an explicit wire `null`) CLEARS the filter.
     if let Some(graph_ref_filter) = patch.graph_ref_filter {
@@ -290,6 +297,7 @@ pub(crate) fn ui_settings_of(s: &settings::Settings) -> UiSettings {
         graph_first_parent: s.graph_first_parent,
         graph_fold_linear: s.graph_fold_linear,
         graph_minimap_always_show: s.graph_minimap_always_show,
+        graph_color_mode: s.graph_color_mode,
         graph_ref_filter: s.graph_ref_filter.clone(),
         auto_fetch: s.auto_fetch,
         health_refresh: s.health_refresh,

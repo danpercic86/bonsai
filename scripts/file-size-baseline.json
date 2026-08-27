@@ -10,7 +10,7 @@
     "crates/bonsai-core/src/git/ai_operation_resolve.rs": 522,
     "crates/bonsai-core/src/git/branches/checkout_autostash_tests.rs": 819,
     "crates/bonsai-core/src/git/stash/tests.rs": 1330,
-    "crates/bonsai-core/src/graph/tests.rs": 1017,
+    "crates/bonsai-core/src/graph/tests.rs": 1012,
     "crates/bonsai-core/tests/ai_digest_cli.rs": 526,
     "crates/bonsai-core/tests/ai_stream_bulk_cli.rs": 533,
     "crates/bonsai-core/tests/conflict_cli.rs": 641,
@@ -28,8 +28,8 @@
     "src-tauri/src/commands/tests_repo_session_misc.rs": 510,
     "src-tauri/src/settings_ui_tests.rs": 519,
     "src/App.tsx": 977,
-    "src/components/RepoWorkspace.tsx": 2782,
-    "src/graph/GraphCanvas.tsx": 910,
+    "src/components/RepoWorkspace.tsx": 2777,
+    "src/graph/GraphCanvas.tsx": 898,
     "src/ipc/fixtures/diffs.ts": 746,
     "src/ipc/types/ipc-api.ts": 760
   }

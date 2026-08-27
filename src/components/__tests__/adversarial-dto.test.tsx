@@ -131,6 +131,7 @@ const METRICS = effectiveMetrics({ avatarRadius: 10, rowHeight: 32, laneWidth: 1
 
 function disp(): GraphDisplayOptions {
   return {
+    colorMode: 'lane',
     showSha: false,
     showAuthor: false,
     showDate: false,

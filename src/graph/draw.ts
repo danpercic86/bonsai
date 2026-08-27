@@ -10,8 +10,10 @@
  * geometry + avatar-identity helpers to `geometry.ts` (re-exported below). */
 
 import type { GraphEdge, GraphLayout, GraphNode, VerifyStatus } from '../ipc';
-import { STASH_COLOR } from './colors';
+import { isDarkBg, STASH_COLOR } from './colors';
 import type { Theme } from './colors';
+import { authorEdgeColor } from './authorColor';
+import { highlightTargets } from './highlight';
 import { FONT_UI } from './metrics';
 import type { EffectiveMetrics } from './metrics';
 import { drawRowText } from './drawRowText';
@@ -109,13 +111,16 @@ export function segmentTo(
   else ctx.bezierCurveTo(x1, y1 + halfRow, x2, y2 - halfRow, x2, y2);
 }
 
+/** Standard-style edge. `color` is the caller-resolved (lane- or author-mode)
+ *  stroke; `emphasis` (spec-006 pass 3.5) widens the stroke by that many px. */
 function drawEdge(
   ctx: CanvasRenderingContext2D,
   e: GraphEdge,
   nodes: readonly GraphNode[],
   vp: Viewport,
-  theme: Theme,
   m: EffectiveMetrics,
+  color: string,
+  emphasis = 0,
 ): void {
   const halfRow = m.rowHeight / 2;
   const fromLane = nodes[e.from].lane;
@@ -125,7 +130,8 @@ function drawEdge(
   const tx = laneX(toLane, m);
   const ty = rowY(e.to, vp.scrollTop, m);
 
-  ctx.strokeStyle = theme.laneColors[e.lane % 10];
+  ctx.strokeStyle = color;
+  ctx.lineWidth = m.edgeWidth + emphasis;
   ctx.beginPath();
   if (e.to === e.from + 1) {
     segmentTo(ctx, fx, fy, tx, ty, halfRow);
@@ -306,13 +312,32 @@ export function drawGraph(
     ctx.globalAlpha = prevAlpha;
   }
 
-  // Pass 3: edges (under dots).
+  // Pass 3: edges (under dots). Spec-006: the stroke color is mode-resolved —
+  // classic lane palette, or the CHILD commit's author hue in author mode.
+  const authorMode = display.colorMode === 'author';
+  const darkBg = authorMode && isDarkBg(theme.bg0);
+  const edgeColor = (e: GraphEdge): string =>
+    authorMode
+      ? authorEdgeColor(nodes[e.from].author, darkBg)
+      : theme.laneColors[e.lane % 10];
   ctx.lineWidth = m.edgeWidth;
   ctx.lineCap = 'round';
   for (const e of visibleEdges) {
-    if (theme.bonsai) drawBonsaiEdge(ctx, e, nodes, vp, theme, m);
-    else drawEdge(ctx, e, nodes, vp, theme, m);
+    if (theme.bonsai) drawBonsaiEdge(ctx, e, nodes, vp, theme, m, edgeColor(e));
+    else drawEdge(ctx, e, nodes, vp, m, edgeColor(e));
   }
+
+  // Pass 3.5 (spec-006): parent-highlight emphasis — re-stroke the hovered (or
+  // selected) row's direct parent edges at width +1.5 in the edge's own
+  // mode-resolved color. Targets are display-space by construction
+  // (highlight.ts filters the projected visibleEdges; fold pills yield none).
+  const hl = highlightTargets(visibleEdges, ix.hoverRow ?? ix.selectedIndex, ix.foldRows);
+  for (const e of hl.edges) {
+    if (theme.bonsai) drawBonsaiEdge(ctx, e, nodes, vp, theme, m, edgeColor(e), 1.5);
+    else drawEdge(ctx, e, nodes, vp, m, edgeColor(e), 1.5);
+  }
+  ctx.lineWidth = m.edgeWidth;
+  const parentRingRows = hl.parentRows.length > 0 ? new Set(hl.parentRows) : null;
 
   // Pass 4: author-initials avatars (P7 §2.1 — replaces the plain lane dot).
   // Inner→outer: bg ring → avatar disc → lane ring → initials → HEAD ring →
@@ -326,7 +351,11 @@ export function drawGraph(
     const sway = theme.bonsai && ix.sway != null ? swayOffset(ix.sway.elapsedMs, node.lane, false) : 0;
     const x = laneX(node.lane, m) + sway;
     const y = rowY(row, vp.scrollTop, m);
-    const laneColor = theme.laneColors[node.lane % 10];
+    // Spec-006 §1.1: in author mode the thin lane ring (and the parent ring
+    // below) take the author hue; every other pass-4 element is unchanged.
+    const laneColor = authorMode
+      ? authorEdgeColor(node.author, darkBg)
+      : theme.laneColors[node.lane % 10];
     const ac = avatarColor(node.author);
     const selected = ix.selectedIndex === row;
     // P10 §2.1: a stash node draws a violet disc + glyph instead of the avatar.
@@ -404,6 +433,16 @@ export function drawGraph(
       ctx.beginPath();
       ctx.arc(x, y, m.avatarSelRingRadius + 1.5, 0, Math.PI * 2);
       ctx.strokeStyle = theme.matchRing;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    // Spec-006 §2.3: parent-highlight ring — OUTSIDE the match ring (+3.5, so
+    // the two never overwrite each other), in the parent node's mode-resolved
+    // color. Off-viewport parents are skipped by the row loop itself.
+    if (parentRingRows !== null && parentRingRows.has(row)) {
+      ctx.beginPath();
+      ctx.arc(x, y, m.avatarSelRingRadius + 3.5, 0, Math.PI * 2);
+      ctx.strokeStyle = laneColor;
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }

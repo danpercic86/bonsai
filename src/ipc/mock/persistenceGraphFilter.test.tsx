@@ -36,6 +36,17 @@ describe('graph declutter prefs (spec-003)', () => {
     expect(readUiSettings().graphMinimapAlwaysShow).toBe(false);
   });
 
+  // Spec-006: graphColorMode rides the same tolerant parse (enum, not bool).
+  it("graphColorMode: default 'lane'; round-trips; malformed → 'lane'", () => {
+    expect(readUiSettings().graphColorMode).toBe('lane');
+    writeUiSettings({ ...readUiSettings(), graphColorMode: 'author' });
+    expect(readUiSettings().graphColorMode).toBe('author');
+    window.localStorage.setItem(UI_KEY, JSON.stringify({ graphColorMode: 'rainbow' }));
+    expect(readUiSettings().graphColorMode).toBe('lane');
+    window.localStorage.setItem(UI_KEY, JSON.stringify({ graphColorMode: true }));
+    expect(readUiSettings().graphColorMode).toBe('lane');
+  });
+
   it('round-trips both prefs', () => {
     const s = readUiSettings();
     writeUiSettings({

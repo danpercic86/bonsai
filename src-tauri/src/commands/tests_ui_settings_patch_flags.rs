@@ -253,6 +253,25 @@ fn set_ui_settings_patch_graph_minimap_always_show_is_partial() {
     assert!(s.graph_minimap_always_show);
 }
 
+/// Spec-006: `graphColorMode` patches independently (camelCase key, lowercase
+/// value on the wire) and an absent key leaves it untouched.
+#[test]
+fn set_ui_settings_patch_graph_color_mode_is_partial() {
+    let mut s = settings::Settings::default();
+    assert_eq!(s.graph_color_mode, settings::GraphColorMode::Lane);
+
+    let patch: UiSettingsPatch =
+        serde_json::from_str(r#"{ "graphColorMode": "author" }"#).expect("color-mode patch");
+    apply_patch(&mut s, patch);
+    assert_eq!(s.graph_color_mode, settings::GraphColorMode::Author);
+    assert!(!s.graph_fold_linear, "sibling pref untouched");
+
+    // An absent key leaves it unchanged.
+    let patch: UiSettingsPatch = serde_json::from_str(r#"{ "theme": "light" }"#).expect("patch");
+    apply_patch(&mut s, patch);
+    assert_eq!(s.graph_color_mode, settings::GraphColorMode::Author);
+}
+
 /// Spec-003: the two declutter prefs patch independently, and the
 /// `graphRefFilter` double-option distinguishes ABSENT (leave unchanged) from
 /// an explicit `null` (clear) on the wire.

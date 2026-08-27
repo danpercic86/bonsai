@@ -27,6 +27,7 @@ import type {
   AiAutonomy,
   AiAvailability,
   AutoFetchSettings,
+  GraphColorMode,
   GraphPrefs,
   GraphRefFilter,
   GraphSeason,
@@ -76,6 +77,8 @@ export interface SettingsPanelProps {
   graphFoldLinear: boolean;
   /** Spec-005: overview-rail always-show toggle. */
   graphMinimapAlwaysShow: boolean;
+  /** Spec-006: graph edge/ring coloring (lane vs author hue). */
+  graphColorMode: GraphColorMode;
   graphRefFilter: GraphRefFilter | null;
   /** Fires on ANY change with a partial patch; App debounces the persist +
    *  updates its own state so consumers re-render live. */
@@ -253,6 +256,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     graphFirstParent,
     graphFoldLinear,
     graphMinimapAlwaysShow,
+    graphColorMode,
     graphRefFilter,
     aiConflictAutonomy,
     aiAvailability,
@@ -358,6 +362,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       graphFirstParent,
       graphFoldLinear,
       graphMinimapAlwaysShow,
+      graphColorMode,
       graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,
@@ -395,6 +400,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       graphFirstParent,
       graphFoldLinear,
       graphMinimapAlwaysShow,
+      graphColorMode,
       graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,

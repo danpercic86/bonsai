@@ -1,6 +1,7 @@
 import type {
   AiAutonomy,
   AiAvailability,
+  GraphColorMode,
   GraphPrefs,
   GraphRefFilter,
   GraphSeason,
@@ -46,6 +47,8 @@ export interface RepoWorkspaceProps {
   graphFoldLinear: boolean;
   /** Spec-005: persisted overview-rail always-show toggle. */
   graphMinimapAlwaysShow: boolean;
+  /** Spec-006: persisted edge/ring coloring (lane vs author hue). */
+  graphColorMode: GraphColorMode;
   graphRefFilter: GraphRefFilter | null;
   onGraphFilterChange(patch: UiSettingsPatch): void;
   /** P13 §8: AI assistance settings + CLI health (App owns these + consent). */

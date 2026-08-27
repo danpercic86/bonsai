@@ -137,6 +137,7 @@ export function RepoWorkspace({
   graphFirstParent,
   graphFoldLinear,
   graphMinimapAlwaysShow,
+  graphColorMode,
   graphRefFilter,
   onGraphFilterChange,
   aiEnabled,
@@ -608,6 +609,8 @@ export function RepoWorkspace({
   // pure layer never sees `compact`.
   const graphDisplay = useMemo<GraphDisplayOptions>(
     () => ({
+      // Spec-006: paint-only edge/ring coloring (lane palette vs author hue).
+      colorMode: graphColorMode,
       showSha: graphPrefs.showSha,
       showAuthor: graphPrefs.showAuthor,
       showDate: graphPrefs.showDate,
@@ -620,7 +623,7 @@ export function RepoWorkspace({
       prByBranch: forgeSignals.prByBranch,
       ciBySha: forgeSignals.ciBySha,
     }),
-    [graphPrefs, branchStats, forgeSignals.prByBranch, forgeSignals.ciBySha],
+    [graphColorMode, graphPrefs, branchStats, forgeSignals.prByBranch, forgeSignals.ciBySha],
   );
 
   // P63: right-pane PR navigation request — a graph PR-badge click sets the

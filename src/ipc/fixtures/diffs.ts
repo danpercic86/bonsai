@@ -331,8 +331,8 @@ export function mockCommitDiff(index: number, oid: string): CommitDiff {
         oid,
         summary: 'core work 1',
         message: 'core work 1\n\nFirst pass over the core module.',
-        authorName: 'Grace Hopper',
-        authorEmail: 'grace@example.com',
+        authorName: 'Radia Perlman', // spec-006: mirrors graph.ts AUTHOR_ROTATION (7 % 4 = 3)
+        authorEmail: 'radia@example.com',
         authorTs: ts,
         committerTs: ts,
         parents: [fixtureOid(8) ?? FAKE_PARENT_OID],

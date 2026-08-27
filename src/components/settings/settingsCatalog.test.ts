@@ -257,6 +257,7 @@ describe('search', () => {
     expect(searchSettings('husky', ALL).map((e) => e.id)).toEqual(['git-config.run-hooks']);
     expect(searchSettings('colour', ALL).map((e) => e.id)).toEqual([
       'appearance.theme',
+      'appearance.graph-colors',
       'identities.profile-color',
     ]);
     expect(searchSettings('upstream', ALL).map((e) => e.id)).toContain('graph.ahead-behind');

@@ -99,6 +99,8 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
   66: ['graph.fold-linear'],
   // Spec-005 §6 — Commit graph → Overview: always-show overview rail switch.
   67: ['graph.minimap-always-show'],
+  // Spec-006 §1.3 — Appearance: graph edge/ring coloring segmented control.
+  68: ['appearance.graph-colors'],
 };
 
 /**
@@ -111,12 +113,12 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
  */
 const DISSOLVED_ROWS: ReadonlySet<number> = new Set([5, 25, 38, 39, 40, 43, 52, 55]);
 
-describe('UI §1.3 coverage — all 67 rows, structurally', () => {
-  it('maps exactly rows 1..67', () => {
+describe('UI §1.3 coverage — all 68 rows, structurally', () => {
+  it('maps exactly rows 1..68', () => {
     const rows = Object.keys(COVERAGE)
       .map(Number)
       .sort((a, b) => a - b);
-    expect(rows).toEqual(Array.from({ length: 67 }, (_, i) => i + 1));
+    expect(rows).toEqual(Array.from({ length: 68 }, (_, i) => i + 1));
   });
 
   it('names only real entries, and every entry is claimed by some row', () => {
