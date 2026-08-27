@@ -9,6 +9,10 @@
 `--text-1/-2/-3`, `--accent`, `--graph-canvas-bg`, `--radius` where noted). The frontier-pulse
 alphas are code constants in `src/graph/replay/` (revealFlash precedent), not CSS tokens.
 
+> **Amended 2026-08-27 (post-implementation review):** §2.2 fab radius + chip offset corrected,
+> fab visibility gate clarified; §5 long-content rule simplified to ellipsis-only; palette-over-
+> replay behavior recorded in §2.1. Each amendment is marked inline.
+
 ---
 
 ## 1. AC5 ruling — recorded downscope (FLAG for orchestrator)
@@ -32,20 +36,32 @@ untouched, and stays inside the single-rAF budget.
   has 0 rows. Disabled hint text: `No commits to replay`.
 - **No global keyboard shortcut.** Recommendation, recorded: ~150 commands already; a secondary
   "wow" mode does not earn chrome-level key real estate. Palette + fab only.
+- **Amended:** Ctrl/Cmd+K remains openable *over* an active replay — the palette is a true modal
+  above the overlay (its own focus scope; replay's trap only sees keys that bubble to the
+  overlay root). Invoking "Replay history" while replay is already open restarts the replay
+  from a fresh snapshot; acceptable v1 behavior, recorded.
 
 ### 2.2 Graph-pane fab (visible discovery)
 
-A third fab in the §4.2 right-edge cluster (z-index 5, same 30px circular fab recipe as the
-search/filter fabs in `graph-filter.css` / existing fab CSS — same size, bg, border, hover,
-focus ring). Order right→left at the top edge: **search · filter · replay** (replay leftmost,
-i.e. lowest priority position; it displaces nothing — the chip's `right: 52px` anchor moves to
-clear it, implementer adjusts the chip offset by one fab slot + 8px gap only when the replay fab
-is present, which is always when a layout is loaded).
+A third fab in the §4.2 right-edge cluster (z-index 5, same 30×30 fab recipe — **8px radius,
+matching the existing search/filter fabs** [amended: earlier "circular" wording was wrong] —
+same bg, border, hover, focus ring). Order right→left at the top edge: **search · filter ·
+replay** (replay leftmost, `right: 90px`; it spans **[90, 120]px from the pane's right edge**).
 
+- **Filter-chip clearance (amended, geometry verified):** the active filter chip anchors its
+  right edge at `right:` and grows leftward, so clearing the replay fab requires the chip's
+  right edge left of the fab's *left* edge plus the 8px gap: `right: 120 + 8 = 128px`. The
+  contract's earlier "one fab slot + 8px" (→ 90) placed the chip's right edge on the fab's
+  right edge and grew it *under* the fab — wrong. **`right: 128px` is canonical**, scoped to
+  when the replay fab is present (`.graph-pane:has(.graph-replay-fab)`); the below-bar chip
+  variant is unaffected (the cluster hides while the search/Ask-history bar is open).
 - Glyph: `▶` (11px, `--text-2`; `--accent` on hover). `aria-label="Replay history"`,
   `title="Replay history"`.
-- Disabled when layout is empty/unborn: fab stays visible, `disabled`, 40% opacity glyph,
-  `title="No commits to replay"`. Not hidden — discoverability over tidiness here.
+- **Visibility gate (amended for precision):** when no layout is loaded at all
+  (`graph === null` — no repo / still loading) the fab is **hidden with the rest of the
+  cluster**, exactly like the search/filter fabs. When a layout is loaded but empty/unborn
+  (0 rows), the fab stays **visible and `disabled`**: 40% opacity glyph,
+  `title="No commits to replay"` — discoverability over tidiness.
 - While replay is open the fab cluster is underneath the overlay and inert (overlay covers the
   pane); no state change needed on the fabs themselves.
 
@@ -101,7 +117,8 @@ is present, which is always when a layout is loaded).
    commit, never raw ms).
 3. **Speed selector** — the `.settings-segment` recipe verbatim (min-height 24px, radiogroup
    semantics), options `1×` `2×` `4×`, `aria-label="Playback speed"`. Hidden under reduced
-   motion (§6).
+   motion (§6). The radiogroup is **one Tab stop** (arrow keys move within it, native radio
+   roving behavior); the overlay's focus trap must not surface each radio as its own stop.
 4. **Progress label** — `--text-3` 11.5px, tabular-nums: `412 / 1,204 · Jun 2024`
    (revealed / total · frontier commit month-year). `aria-hidden` (the slider valuetext carries
    it); truncates with ellipsis first when the bar is narrow.
@@ -114,10 +131,14 @@ All controls: standard focus ring — 2px `--accent`, 1px offset, `:focus-visibl
 
 - On entry, focus moves to the **Play/Pause button** (or the scrubber under reduced motion).
   Focus is trapped within the overlay (transport controls only; the canvas is not focusable —
-  replay is presentational, no row selection).
+  replay is presentational, no row selection). The overlay root carries `role="dialog"` with
+  an accessible name and **`aria-modal="true"`**.
 - **Space / K**: play ↔ pause. **← / →**: scrub by `max(1, n/500)` rows (pauses playback if
-  playing — see §5 scrub rule). **Shift+←/→**: 10× that step. **Home / End**: jump to start /
-  full reveal. **Esc**: exit. Tab order: play → scrubber → speed → close.
+  playing — see §5 scrub rule; arrow keys on a focused speed radio keep native radiogroup
+  navigation). **Shift+←/→**: 10× that step. **Home / End**: jump to start / full reveal.
+  "Start" = playhead 0 = the oldest commit revealed (1 visible row, never a blank canvas —
+  blank exists only pre-play). Ruled 2026-08-27 reconciling this line with the model convention.
+  **Esc**: exit. Tab order: play → scrubber → speed (one stop) → close.
 - On exit, focus returns to the **replay fab** (or, if entry was via palette and the fab is
   disabled/absent, to the graph canvas host — the standard palette focus-restore path).
 
@@ -160,7 +181,7 @@ All controls: standard focus ring — 2px `--accent`, 1px offset, `:focus-visibl
 | **Empty/unborn** | Entry disabled (§2); palette no-op notice if raced. |
 | **Truncated (100k cap)** | The existing truncated indicator remains visible above the transport bar; replay covers loaded rows only. |
 | **Theme switch / resize mid-replay** | Re-render at current cutoff (theme via `themeVersion` prop; resize via `useCanvasResizeObserver`), no state loss. |
-| **Long content** | Progress label truncates before the scrubber shrinks below 160px; at pane widths <420px the label drops entirely (scrubber valuetext still carries it). |
+| **Long content** | **Amended:** progress label truncates with ellipsis (flex `0 1 auto`, min-width 0) before the scrubber shrinks below its 160px floor; the label is `aria-hidden` and the slider valuetext always carries the full text. The earlier "<420px pane width: drop the label entirely" rule is withdrawn — it would need a container query for a marginal win; ellipsis-only is blessed. |
 
 Both themes: every surface above is token-composed (`--bg-1` bar on `--graph-canvas-bg` canvas)
 and needs no per-theme values beyond the pulse alphas already split dark/light. Contrast:

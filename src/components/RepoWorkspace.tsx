@@ -25,6 +25,8 @@ import { createGraphStream } from '../graph/streamAssembler';
 import { createGraphStreamApplier } from './repoWorkspace/graphStreamApply';
 import { composerPreviewFileDiff } from './repoWorkspace/composerPreview';
 import { useRailInput } from './repoWorkspace/railProps';
+import { useReplayController } from './repoWorkspace/replayProps';
+import { usePaletteCallbacks } from './repoWorkspace/paletteCallbacks';
 import { useCoalescedRefresh, type RefreshOrigin } from './repoWorkspace/useCoalescedRefresh';
 import { type RefreshScope, slicesForScope } from './repoWorkspace/refreshScope';
 import { useRepoChangeSubscription } from './repoWorkspace/useRepoChangeSubscription';
@@ -113,7 +115,7 @@ import { RefFilterMarkerContext } from './sidebar/refFilterMarkerContext';
 import { buildPaletteActions, type PaletteAction } from './paletteActions';
 import { safeOpDispatch } from './safeOpDispatch';
 import type { ComboboxOption } from './Combobox';
-import { findCommitByPrefix, searchScopeOptionsOf } from './repoWorkspace/searchHelpers';
+import { searchScopeOptionsOf } from './repoWorkspace/searchHelpers';
 
 export type { RepoWorkspaceProps } from './repoWorkspace/RepoWorkspaceProps';
 import type { RepoWorkspaceProps } from './repoWorkspace/RepoWorkspaceProps';
@@ -1930,6 +1932,10 @@ export function RepoWorkspace({
   // railProps.ts; GraphCanvas mounts the rail only while visible).
   const rail = useRailInput({ search, historySearch, graph, revealCommitByOid, generation: railGeneration, alwaysShow: graphMinimapAlwaysShow });
 
+  // Spec-007: replay controller (entry snapshot + fab/palette gate) — replayProps.ts.
+  const replay = useReplayController({ graph, metrics, metricsVersion, display: graphDisplay,
+    graphStyle, graphSeason, themeVersion, reducedMotion, pushToast });
+
   // P54c: commit composer row "Preview" — moved to composerPreview.ts.
   const previewComposerFileDiff = useCallback(
     (path: string): Promise<FileDiff> => composerPreviewFileDiff(statusRef.current, repoId, path),
@@ -1960,25 +1966,13 @@ export function RepoWorkspace({
   // graph) and merges the repo-scoped actions with App's `appCommands`.
   const palette = usePalette({ active });
 
-  // "New branch…" opens the shared create-branch PromptDialog seeded at HEAD (a
-  // dialog — never a raw mutation); disabled when detached/unborn or busy.
-  const openNewBranch = useCallback(() => {
-    if (headBranch !== null) setPendingCreateBranch({ oid: headBranch.tip });
-  }, [headBranch]);
-  const openNewWorktree = useCallback(() => setNewWorktreeOpen(true), []);
-  const openSearchEmpty = useCallback(() => search.openSearch(), [search.openSearch]);
-
-  // Dynamic palette rows: prefill + open the search bar, or jump to a commit by
-  // oid prefix — both reuse the non-mutating single-selection reveal path.
-  const paletteRunSearch = useCallback((t: string) => search.openSearch(t), [search.openSearch]);
-  const paletteJumpToCommit = useCallback(
-    (prefix: string) => {
-      const oid = findCommitByPrefix(graphDataRef.current, prefix);
-      if (oid !== null) revealCommitByOid(oid);
-      else pushToast('info', `No commit matching ${prefix} in the current view`);
-    },
-    [revealCommitByOid, pushToast],
-  );
+  // New-branch/new-worktree/search openers + dynamic palette rows — moved
+  // verbatim to paletteCallbacks.ts (spec-007 size offset).
+  const { openNewBranch, openNewWorktree, openSearchEmpty, paletteRunSearch, paletteJumpToCommit } =
+    usePaletteCallbacks({
+      headBranch, setPendingCreateBranch, setNewWorktreeOpen,
+      openSearch: search.openSearch, graphDataRef, revealCommitByOid, pushToast,
+    });
 
   const paletteActions = useMemo<PaletteAction[]>(() => {
     if (!palette.open) return [];
@@ -1998,6 +1992,8 @@ export function RepoWorkspace({
       onNewWorktree: openNewWorktree,
       onOpenSearch: openSearchEmpty,
       onOpenHistory: historySearch.openPanel,
+      onReplayHistory: replay.onOpen,
+      canReplay: replay.canReplay,
       branches,
       graph,
       revealCommitByOid,
@@ -2034,6 +2030,7 @@ export function RepoWorkspace({
     aiDock.paletteEntries,
     gitDock.paletteEntries,
     graphFilter,
+    replay.onOpen, replay.canReplay,
   ]);
 
   function handleToggleConflictView(path: string) {
@@ -2186,6 +2183,8 @@ export function RepoWorkspace({
     closeHistorySearch: historySearch.close,
     paletteOpenRef: palette.openRef,
     closePalette: palette.close,
+    // Spec-007: Esc peel + inert-gate backstops while the replay overlay is up.
+    replayOpenRef: replay.openRef, closeReplay: replay.onExit, replayOpen: replay.open,
     diffSlotRef,
     compareRef,
     setSelectedIndex,
@@ -2448,6 +2447,7 @@ export function RepoWorkspace({
           graphStyle={graphStyle}
           graphSeason={graphSeason}
           graphFilter={graphFilter}
+          replay={replay}
           graphFold={fold}
           rail={rail}
           graphFilterStale={graphFilterStale}

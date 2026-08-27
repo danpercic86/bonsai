@@ -22,6 +22,7 @@
 @import './styles/graph-canvas.css';
 @import './styles/graph-filter.css';
 @import './styles/graph-rail.css';
+@import './styles/graph-replay.css';
 @import './styles/right-panel-density.css';
 @import './styles/empty-and-errors.css';
 @import './styles/status-panel.css';

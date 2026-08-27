@@ -40,6 +40,12 @@ export function useWorkspaceKeyboard(deps: {
   // P50c: the command palette is a top-level modal — Esc peels it first.
   paletteOpenRef: { current: boolean };
   closePalette: () => void;
+  // Spec-007: replay overlay. Its own capture handler normally wins; these are
+  // the focus-elsewhere backstops so Esc/arrows never mutate the state UNDER
+  // the overlay (exact-restore guarantee).
+  replayOpenRef: { readonly current: boolean };
+  closeReplay: () => void;
+  replayOpen: boolean;
   diffSlotRef: { current: DiffSlot | null };
   compareRef: { current: { oid: string } | null };
   setSelectedIndex: Setter<number | null>;
@@ -102,6 +108,9 @@ export function useWorkspaceKeyboard(deps: {
     closeHistorySearch,
     paletteOpenRef,
     closePalette,
+    replayOpenRef,
+    closeReplay,
+    replayOpen,
     diffSlotRef,
     compareRef,
     setSelectedIndex,
@@ -152,6 +161,12 @@ export function useWorkspaceKeyboard(deps: {
       // while applying so an in-flight create isn't interrupted.
       if (composerOpenRef.current) {
         closeComposer();
+        return;
+      }
+      // Spec-007: the replay overlay peels next (below the true modals above
+      // it, above every covered layer — Esc must never touch those).
+      if (replayOpenRef.current) {
+        closeReplay();
         return;
       }
       const target = e.target as HTMLElement | null;
@@ -222,6 +237,7 @@ export function useWorkspaceKeyboard(deps: {
     closeHistorySearch,
     closePalette,
     closeComposer,
+    closeReplay,
   ]);
 
   // Spec-004 §3: after Enter-expand the next arrow must resume FROM the pill's
@@ -260,7 +276,10 @@ export function useWorkspaceKeyboard(deps: {
       // guard so it works from the commit box too; suppressed under a dialog.
       if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault();
-        if (!dialogOpen && !abortConfirmOpen && !composerOpen) openSearch();
+        // Spec-007: not under the replay overlay — the bar would open invisibly
+        // beneath it, steal focus from the trap, and eat the first Esc.
+        if (!dialogOpen && !abortConfirmOpen && !composerOpen && !replayOpenRef.current)
+          openSearch();
         return;
       }
 
@@ -309,7 +328,8 @@ export function useWorkspaceKeyboard(deps: {
         searchOpen ||
         paletteOpen ||
         composerOpen ||
-        historySearchOpen
+        historySearchOpen ||
+        replayOpen // spec-007: the transport owns arrows/Home/End while up
       )
         return;
 
@@ -467,6 +487,7 @@ export function useWorkspaceKeyboard(deps: {
     paletteOpen,
     togglePalette,
     composerOpen,
+    replayOpen,
     onAiActivity,
     onGitActivity,
     selectedIndex,

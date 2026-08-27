@@ -10,6 +10,10 @@ import { DiffOverlay } from './DiffOverlay';
 import type { DiffOverlayMeta } from './DiffOverlay';
 import { ErrorBoundary } from './ErrorBoundary';
 import { FileHistoryView } from './FileHistoryView';
+import { GraphPaneEmptyState } from './GraphPaneEmptyState';
+import { ReplayFab } from '../graph/replay/ReplayFab';
+import { ReplayMode } from '../graph/replay/ReplayMode';
+import type { ReplayPaneProps } from './repoWorkspace/replayProps';
 import { ReflogView } from './ReflogView';
 import { shortcutLabel } from '../utils/platform';
 import type { DiffSlot } from './StatusPanel';
@@ -78,6 +82,8 @@ export interface WorkspaceGraphPaneProps {
   /** Spec-005: overview-rail bundle (assembled in repoWorkspace/railProps.ts). */
   rail: GraphCanvasProps['rail'];
   graphFilterStale: boolean;
+  /** Spec-007: replay bundle (fab gate + overlay props; replayProps.ts). */
+  replay: ReplayPaneProps;
 
   /** P50b: commit-search state (bar + graph highlight + next/prev jump). */
   search: UseCommitSearch;
@@ -188,6 +194,7 @@ export function WorkspaceGraphPane({
   graphFold,
   rail,
   graphFilterStale,
+  replay,
   search,
   searchScopeOptions,
   historySearch,
@@ -320,6 +327,11 @@ export function WorkspaceGraphPane({
             }}
           />
         )}
+      {/* Spec-007 §2.2: replay fab — third in the cluster (leftmost). Stays
+          visible-but-disabled on an empty layout; hides with the cluster. */}
+      {graph !== null && !anyOverlayOpen && !search.open && !historySearch.open && (
+        <ReplayFab disabled={!replay.canReplay} onOpen={replay.onOpen} />
+      )}
       {/* P57c: the "Ask history" overlay (semantic search + AI answer). Its own
           top overlay, independent of the P50 literal-search bar. */}
       {historySearch.open && (
@@ -334,26 +346,10 @@ export function WorkspaceGraphPane({
         </div>
       )}
       {head?.unborn ? (
-        <div className="graph-pane-empty">
-          <div className="graph-pane-empty-card">
-            <span className="graph-pane-empty-mark" aria-hidden="true">
-              {'🌱'}
-            </span>
-            <p className="graph-pane-empty-title">No commits yet</p>
-            <p className="pane-empty">
-              {graphStyle === 'bonsai'
-                ? 'This branch is an empty pot — make your first commit to grow it.'
-                : 'Stage your changes and write your first commit in the panel on the right — it will appear here as the root of your history.'}
-            </p>
-            <button
-              type="button"
-              className="btn-secondary graph-pane-empty-identity"
-              onClick={onOpenIdentitySettings}
-            >
-              Set your Git identity
-            </button>
-          </div>
-        </div>
+        <GraphPaneEmptyState
+          bonsai={graphStyle === 'bonsai'}
+          onOpenIdentitySettings={onOpenIdentitySettings}
+        />
       ) : graph !== null ? (
         <ErrorBoundary label="Commit graph">
           <GraphCanvas
@@ -370,7 +366,8 @@ export function WorkspaceGraphPane({
             }}
             wip={wip}
             themeVersion={themeVersion}
-            active={active}
+            // Spec-007: frozen (P3e tab-hide path) under the replay overlay.
+            active={active && !replay.open}
             onContextMenu={onContextMenu}
             metrics={metrics}
             metricsVersion={metricsVersion}
@@ -495,6 +492,9 @@ export function WorkspaceGraphPane({
           onClose={diffBrowserView.onClose}
         />
       )}
+      {/* Spec-007: the replay overlay (z-6) covers the whole pane column; the
+          working canvas above stays mounted inactive — exit restore is free. */}
+      {replay.mode !== null && <ReplayMode {...replay.mode} />}
     </main>
   );
 }
