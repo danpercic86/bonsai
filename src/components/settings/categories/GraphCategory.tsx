@@ -7,10 +7,12 @@
 
 import { SettingsGraphSection } from '../../SettingsGraphSection';
 import { SettingsGraphDeclutterSection } from '../SettingsGraphDeclutterSection';
+import { SettingsGraphOverviewSection } from '../SettingsGraphOverviewSection';
 import { useSettingsActions, useSettingsValues } from '../SettingsContext';
 
 export function GraphCategory() {
-  const { graph, graphFirstParent, graphFoldLinear, graphRefFilter } = useSettingsValues();
+  const { graph, graphFirstParent, graphFoldLinear, graphMinimapAlwaysShow, graphRefFilter } =
+    useSettingsValues();
   const { change } = useSettingsActions();
 
   /* --- Graph (geometry sliders + P51 per-row detail toggles) --- */
@@ -22,6 +24,11 @@ export function GraphCategory() {
         graphFirstParent={graphFirstParent}
         graphFoldLinear={graphFoldLinear}
         graphRefFilter={graphRefFilter}
+        onChange={change}
+      />
+      {/* Spec-005: the "Overview" group (overview-rail always-show). */}
+      <SettingsGraphOverviewSection
+        graphMinimapAlwaysShow={graphMinimapAlwaysShow}
         onChange={change}
       />
     </>

@@ -27,6 +27,15 @@ describe('graph declutter prefs (spec-003)', () => {
     expect(readUiSettings().graphFoldLinear).toBe(false);
   });
 
+  // Spec-005: graphMinimapAlwaysShow rides the same tolerant parse.
+  it('graphMinimapAlwaysShow: default false; round-trips; malformed → false', () => {
+    expect(readUiSettings().graphMinimapAlwaysShow).toBe(false);
+    writeUiSettings({ ...readUiSettings(), graphMinimapAlwaysShow: true });
+    expect(readUiSettings().graphMinimapAlwaysShow).toBe(true);
+    window.localStorage.setItem(UI_KEY, JSON.stringify({ graphMinimapAlwaysShow: 1 }));
+    expect(readUiSettings().graphMinimapAlwaysShow).toBe(false);
+  });
+
   it('round-trips both prefs', () => {
     const s = readUiSettings();
     writeUiSettings({

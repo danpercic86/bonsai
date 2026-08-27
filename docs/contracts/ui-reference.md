@@ -327,6 +327,26 @@ Seasons (Living/Spring/Autumn) shift only the blossom accent + backdrop tint, **
 hues**, so every ratio above holds across seasons. Fixed semantic colors (`STASH_COLOR`,
 `TAG_COLOR`, `DETACHED_HEAD_BG`) stay fixed in Bonsai. Full tables + rationale in the 002 contract.
 
+### 5.2 Author color mode (spec 006)
+
+A persisted alternative to lane coloring (`graphColorMode: 'lane' | 'author'`, Settings →
+Appearance → "Graph colors"). In author mode, edges and the avatar lane ring take the **child
+commit's author hue**: `authorHue(name) = FNV-1a(name.trim()) % 360` — the identical hash behind
+`avatarColor`, so edges and avatar discs share one hue identity per author. Per-theme S/L
+constants (graph-layer constants in `src/graph/authorColor.ts`, not CSS vars; one pair serves
+both graph styles):
+
+| Resolved theme | Formula | Worst-case hue | Measured worst contrast |
+|---|---|---|---|
+| Dark | `hsl(h, 60%, 65%)` | h≈240 (blue/violet) | ≈4.3:1 vs `#16181d`, ≈4.4:1 vs `#17140f` |
+| Light | `hsl(h, 60%, 33%)` | h≈60 (yellow) | ≈3.9:1 vs `#ffffff`, ≈3.4:1 vs `#f4efe6` |
+
+All hues clear the 3:1 graphics bar on every background. Do not raise light L past 33 (yellow
+falls under 3:1 vs the Bonsai paper backdrop) and do not reuse `AVATAR{52,42}` for edges (those
+constants are tuned for white initials on the disc, not for background contrast). Avatar discs,
+pills, backdrops, and semantic colors are unchanged in author mode. Ring stacking + parent
+highlight: `spec-006-ui.md` §2.3.
+
 ## 6. Ref pills (beside commit message)
 
 Shape: 999px radius, `pillFont` 11px / 600 weight, padding 2px 8px, height 18px cozy / 15px compact,

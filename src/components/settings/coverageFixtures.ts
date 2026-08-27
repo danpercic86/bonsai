@@ -124,6 +124,8 @@ export const MINIMAL: FixtureValues = {
   // Spec-003/004: same optional-in-UiSettings treatment.
   graphFirstParent: false,
   graphFoldLinear: false,
+  // Spec-005: overview-rail always-show, same treatment.
+  graphMinimapAlwaysShow: false,
   graphRefFilter: null,
   aiEnabled: false,
   aiConflictAutonomy: D.aiConflictAutonomy,
@@ -182,6 +184,8 @@ export const MAXIMAL: FixtureValues = {
   graphFirstParent: true,
   // Spec-004: fold ON its default too (↺ present on the fold row).
   graphFoldLinear: true,
+  // Spec-005: rail always-show ON its default (↺ present on the row).
+  graphMinimapAlwaysShow: true,
   graphRefFilter: { mode: 'solo', refs: ['refs/heads/main'] },
   aiEnabled: true,
   aiConsented: true,

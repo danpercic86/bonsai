@@ -82,6 +82,29 @@ describe('createGraphStreamApplier', () => {
     expect(sinks.setSelectedIndex).toHaveBeenCalledExactlyOnceWith(2);
   });
 
+  it('spec-005: onDone fires exactly once, only at the done chunk (rail generation bump)', () => {
+    const onDone = vi.fn<NonNullable<GraphStreamSinks['onDone']>>();
+    const sinks = { ...makeSinks(), onDone };
+    const a = createGraphStreamApplier(createGraphStream(), null, sinks, vi.fn());
+    a.handle(meta);
+    a.handle(batch(0, [0, 1]));
+    a.handle(batch(2, [2, 3]));
+    expect(onDone).not.toHaveBeenCalled(); // never on meta/batch
+    a.handle({ kind: 'done', totalRows: 4, laneCount: 1, headIndex: 0, truncated: false });
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it('spec-005: a poisoned stream drops the done chunk — no stale generation bump', () => {
+    const onDone = vi.fn<NonNullable<GraphStreamSinks['onDone']>>();
+    const sinks = { ...makeSinks(), onDone };
+    const a = createGraphStreamApplier(createGraphStream(), null, sinks, vi.fn());
+    a.handle(meta);
+    a.handle(batch(7, [0])); // gap on the first batch -> poison
+    expect(a.poisoned).toBe(true);
+    a.handle({ kind: 'done', totalRows: 4, laneCount: 1, headIndex: 0, truncated: false });
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
   it('a non-contiguous batch surfaces ONE error, poisons, and drops later chunks (§3.8)', () => {
     const sinks = makeSinks();
     const onError = vi.fn();

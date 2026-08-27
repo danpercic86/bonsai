@@ -29,7 +29,7 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 Branch: `feat/bonsai-graph-theme` (stacked on spec-002, per user decision). Autonomous
 straight-through run; USER CHECKPOINTs collected in the ledger below and presented at the end.
 
-**Current step:** spec-004 — both units done; reviewer APPROVED, ui-designer approve-with-fixes; fix round (aria-activedescendant sr-only target + cursor/tint/locale) running → then tester + gate + commit. spec-005 docs all ready. Watch: graph.rs at 496/500 — split before next touch. Spec-004 follow-ups filed: foldView displayToModelRow duplication; GraphCanvas 906 ln on refactor queue.
+**Current step:** spec-005 — implemented; reviewer + ui-designer both APPROVED (SHOULD-FIXes applied same pass); tester running → gate + commit. spec-006 plan + UI contract + tasks ready. Watch (at cap): WorkspaceGraphPane 500, settings.rs 500, graph.rs 496; GraphCanvas 898. Spec-004/005 follow-up NITs filed: foldView displayToModelRow dup; wheel deltaMode normalization; hexToRgba per-pixel alloc; small-repo dashed density strip (cosmetic).
 
 Spec-003 follow-ups filed (SHOULD-FIX/NIT, velocity mode): RepoWorkspace.tsx +53 growth (queue for refactor campaign); AC7 scroll-to-top when selection doesn't survive filter change; popover Esc vs capture-phase global listeners; settings-panel stale sentence; mock HEAD-pill synthesis divergence (comment); SeedPlan staleness vs symbolic refs (origin/HEAD); transient stale-chip flash between filter change and next meta; chip top:50px offset (ui-designer call).
 

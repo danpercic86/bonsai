@@ -75,6 +75,8 @@ export interface WorkspaceGraphPaneProps {
   graphFilter: GraphFilterController;
   /** Spec-004: the fold controller (expansion state + display-row model). */
   graphFold: GraphFoldController;
+  /** Spec-005: overview-rail bundle (assembled in repoWorkspace/railProps.ts). */
+  rail: GraphCanvasProps['rail'];
   graphFilterStale: boolean;
 
   /** P50b: commit-search state (bar + graph highlight + next/prev jump). */
@@ -184,6 +186,7 @@ export function WorkspaceGraphPane({
   graphSeason,
   graphFilter,
   graphFold,
+  rail,
   graphFilterStale,
   search,
   searchScopeOptions,
@@ -374,7 +377,9 @@ export function WorkspaceGraphPane({
             // P57c: while the Ask-history overlay is open its hit rings take the
             // shared matchRows channel; otherwise the P50 search rings do. Both
             // are memoized in their hooks, so this stays reference-stable.
+            // Spec-005: railProps.ts mirrors this exact pick — keep in sync.
             matchRows={historySearch.open ? historySearch.matchRows : search.matchRows}
+            rail={rail}
             display={display}
             verifyStatus={verifyStatus}
             onVisibleRangeChange={onVisibleRangeChange}

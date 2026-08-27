@@ -138,6 +138,8 @@ pub struct Settings {
     /// (via the container-level `default`); a legacy file loads `false`. NOT
     /// clamped. Exact `graph_first_parent` precedent.
     pub graph_fold_linear: bool,
+    /// Spec-005: always-show overview rail. Additive default; legacy → false.
+    pub graph_minimap_always_show: bool,
     /// Spec-003: persisted graph ref-filter INTENT (solo/hide + full ref names).
     /// Opaque to the backend — the frontend derives the wire whitelist. Additive
     /// `#[serde(default)]`; a legacy file loads `None`. NOT clamped.
@@ -283,6 +285,7 @@ impl Default for Settings {
             graph_season: GraphSeason::default(),
             graph_first_parent: false,
             graph_fold_linear: false,
+            graph_minimap_always_show: false,
             graph_ref_filter: None,
             open_repos: Vec::new(),
             active_repo: None,

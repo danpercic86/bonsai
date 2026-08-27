@@ -56,6 +56,8 @@ const MUTATED: UiSettings = {
   graphFirstParent: true,
   // Spec-004: the fold-linear row's reset leaf.
   graphFoldLinear: true,
+  // Spec-005: the overview-rail always-show row's reset leaf.
+  graphMinimapAlwaysShow: true,
   terminalCommand: 'wt.exe {path}',
   editorCommand: 'code {path}',
   aiEnabled: false,
@@ -94,6 +96,7 @@ const RESET_LEAVES: Readonly<Record<string, string>> = {
   'graph.ci-status': 'graph.showCiStatus',
   'graph.first-parent': 'graphFirstParent',
   'graph.fold-linear': 'graphFoldLinear',
+  'graph.minimap-always-show': 'graphMinimapAlwaysShow',
   'ai.conflict-resolution': 'aiConflictAutonomy',
   'ai.repository-access': 'aiConflictTools',
   'ai.stream-output': 'aiStreamLog',

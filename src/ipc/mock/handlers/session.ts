@@ -106,6 +106,8 @@ export const sessionHandlers = {
       graphFirstParent: patch.graphFirstParent ?? current.graphFirstParent ?? false,
       // Spec-004: fold-linear toggle patches independently (first-parent precedent).
       graphFoldLinear: patch.graphFoldLinear ?? current.graphFoldLinear ?? false,
+      // Spec-005: always-show overview rail (same plain-bool precedent).
+      graphMinimapAlwaysShow: patch.graphMinimapAlwaysShow ?? current.graphMinimapAlwaysShow ?? false,
       graphRefFilter:
         patch.graphRefFilter !== undefined ? patch.graphRefFilter : (current.graphRefFilter ?? null),
       aiEnabled: patch.aiEnabled ?? current.aiEnabled,

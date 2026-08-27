@@ -28,6 +28,8 @@ export interface GraphStreamSinks {
   setFilterFlags?(flags: { filtered: boolean; seedRefsApplied: boolean }): void;
   /** Spec-004: the done chunk's fold spans (absent on the wire = []). */
   setFoldSpans?(spans: readonly FoldSpan[]): void;
+  /** Spec-005: fired once when the stream reaches `done` (rail generation bump). */
+  onDone?(): void;
 }
 
 export interface GraphStreamApplier {
@@ -61,7 +63,10 @@ export function createGraphStreamApplier(
     }
     // Spec-004: spans ride ONLY the terminal done chunk; publish them with the
     // final layout so the one-time collapse happens in the same render.
-    if (chunk.kind === 'done') sinks.setFoldSpans?.(chunk.foldSpans ?? []);
+    if (chunk.kind === 'done') {
+      sinks.setFoldSpans?.(chunk.foldSpans ?? []);
+      sinks.onDone?.();
+    }
     // Identity bump -> GraphCanvas repaints; edge index + total set together
     // with the layout so the three never disagree in one render.
     sinks.setGraph(wrapStreamLayout(stream.layout));

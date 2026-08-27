@@ -70,6 +70,8 @@ export interface UiSettingsController {
   graphFirstParent: boolean;
   /** Spec-004: fold linear runs (default false). No metricsVersion bump. */
   graphFoldLinear: boolean;
+  /** Spec-005: always-show overview rail (default false). No metricsVersion bump. */
+  graphMinimapAlwaysShow: boolean;
   /** Spec-003: persisted solo/hide ref-filter intent (null = none). */
   graphRefFilter: GraphRefFilter | null;
   /** P11d §4.3: bumped on every graph-knob change → GraphCanvas full re-measure. */
@@ -145,6 +147,8 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
   // Spec-003: graph declutter prefs — additive/optional like graphStyle above.
   const [graphFirstParent, setGraphFirstParent] = useState(false);
   const [graphFoldLinear, setGraphFoldLinear] = useState(false);
+  // Spec-005: overview-rail always-show — same additive-bool pattern.
+  const [graphMinimapAlwaysShow, setGraphMinimapAlwaysShow] = useState(false);
   const [graphRefFilter, setGraphRefFilter] = useState<GraphRefFilter | null>(null);
   // P11d §4.3: bumped on every graph-knob change → GraphCanvas full re-measure.
   const [metricsVersion, setMetricsVersion] = useState(0);
@@ -338,6 +342,8 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
       // `graphRefFilter: null` is a real value (clear), so `!== undefined` gates.
       if (patch.graphFirstParent !== undefined) setGraphFirstParent(patch.graphFirstParent);
       if (patch.graphFoldLinear !== undefined) setGraphFoldLinear(patch.graphFoldLinear);
+      if (patch.graphMinimapAlwaysShow !== undefined)
+        setGraphMinimapAlwaysShow(patch.graphMinimapAlwaysShow);
       if (patch.graphRefFilter !== undefined) setGraphRefFilter(patch.graphRefFilter);
       if (patch.aiEnabled !== undefined) setAiEnabled(patch.aiEnabled);
       if (patch.aiConflictAutonomy !== undefined) setAiConflictAutonomy(patch.aiConflictAutonomy);
@@ -380,6 +386,7 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
     // Spec-003 (additive/optional): missing ⇒ default.
     setGraphFirstParent(s.graphFirstParent ?? false);
     setGraphFoldLinear(s.graphFoldLinear ?? false);
+    setGraphMinimapAlwaysShow(s.graphMinimapAlwaysShow ?? false);
     setGraphRefFilter(s.graphRefFilter ?? null);
     setAiEnabled(s.aiEnabled);
     setAiConflictAutonomy(s.aiConflictAutonomy);
@@ -412,6 +419,7 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
     graphSeason,
     graphFirstParent,
     graphFoldLinear,
+    graphMinimapAlwaysShow,
     graphRefFilter,
     metricsVersion,
     aiEnabled,

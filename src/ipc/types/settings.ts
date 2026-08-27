@@ -71,6 +71,9 @@ export interface UiSettings {
   /** Spec-004: fold linear runs into "⋯ N commits" rows. Additive/optional;
    *  absent ⇒ false. */
   graphFoldLinear?: boolean;
+  /** Spec-005: always show the graph overview rail. Additive/optional;
+   *  absent ⇒ false. */
+  graphMinimapAlwaysShow?: boolean;
   /** Spec-003: persisted solo/hide intent; `null` (or absent) ⇒ no ref filter.
    *  GLOBAL like graphStyle (plan risk, accepted). */
   graphRefFilter?: GraphRefFilter | null;
@@ -143,6 +146,8 @@ export interface UiSettingsPatch {
   graphFirstParent?: boolean;
   /** Spec-004: fold-linear-runs toggle; patches independently. */
   graphFoldLinear?: boolean;
+  /** Spec-005: always-show overview rail; patches independently. */
+  graphMinimapAlwaysShow?: boolean;
   graphRefFilter?: GraphRefFilter | null;
   // AI assistance (P13).
   aiEnabled?: boolean;

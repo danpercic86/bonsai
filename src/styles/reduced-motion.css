@@ -56,5 +56,12 @@
   .settings-reset {
     transition: none;
   }
+
+  /* Spec-005 (UI §4): the overview rail's only motion is the 120 ms mount
+     fade-in (a keyframe animation) — instant appear under reduced motion. */
+  .graph-rail {
+    animation: none;
+    transition: none;
+  }
 }
 

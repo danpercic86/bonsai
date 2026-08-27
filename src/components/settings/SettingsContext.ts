@@ -63,7 +63,12 @@ export type SettingsPersistedValues = Pick<
   Required<
     Pick<
       UiSettings,
-      'graphStyle' | 'graphSeason' | 'graphFirstParent' | 'graphFoldLinear' | 'graphRefFilter'
+      | 'graphStyle'
+      | 'graphSeason'
+      | 'graphFirstParent'
+      | 'graphFoldLinear'
+      | 'graphMinimapAlwaysShow'
+      | 'graphRefFilter'
     >
   > & {
     /** The eight AI-run knobs, threaded whole (the `graph`/`autoFetch` idiom). */

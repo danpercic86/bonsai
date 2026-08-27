@@ -156,4 +156,15 @@ export const GRAPH_ENTRIES: readonly SettingsIndexEntry[] = [
     // differs from the row label — the 'button' kind would pin them equal.
     control: 'readonly',
   },
+  // Spec-005 — the "Overview" group (UI contract §6), after Declutter.
+  {
+    id: 'graph.minimap-always-show',
+    category: 'graph',
+    group: 'Overview',
+    label: 'Always show overview rail',
+    help: "Keep the minimap of the whole history visible along the graph's right edge. When off, it appears on hover or while search is open.",
+    keywords: 'minimap overview rail scrollbar map history ticks',
+    control: 'switch',
+    reset: resetKey('graphMinimapAlwaysShow', 'Off'),
+  },
 ];

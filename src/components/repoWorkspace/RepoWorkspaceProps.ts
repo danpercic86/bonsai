@@ -44,6 +44,8 @@ export interface RepoWorkspaceProps {
   graphFirstParent: boolean;
   /** Spec-004: persisted fold-linear-runs toggle. */
   graphFoldLinear: boolean;
+  /** Spec-005: persisted overview-rail always-show toggle. */
+  graphMinimapAlwaysShow: boolean;
   graphRefFilter: GraphRefFilter | null;
   onGraphFilterChange(patch: UiSettingsPatch): void;
   /** P13 §8: AI assistance settings + CLI health (App owns these + consent). */

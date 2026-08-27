@@ -52,6 +52,8 @@ const DEFAULTS: UiSettings = {
   graphFirstParent: false,
   /** Spec-004: fold linear runs off by default. */
   graphFoldLinear: false,
+  /** Spec-005: overview rail on-demand (hover/search) by default. */
+  graphMinimapAlwaysShow: false,
   graphRefFilter: null,
   /** P11: auto-fetch OFF, 5-minute interval. */
   autoFetch: { enabled: false, intervalMinutes: 5 },

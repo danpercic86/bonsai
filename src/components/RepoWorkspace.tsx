@@ -23,6 +23,8 @@ import { effectiveMetrics } from '../graph/metrics';
 import type { GraphDisplayOptions } from '../graph/rightColumns';
 import { createGraphStream } from '../graph/streamAssembler';
 import { createGraphStreamApplier } from './repoWorkspace/graphStreamApply';
+import { composerPreviewFileDiff } from './repoWorkspace/composerPreview';
+import { useRailInput } from './repoWorkspace/railProps';
 import { useCoalescedRefresh, type RefreshOrigin } from './repoWorkspace/useCoalescedRefresh';
 import { type RefreshScope, slicesForScope } from './repoWorkspace/refreshScope';
 import { useRepoChangeSubscription } from './repoWorkspace/useRepoChangeSubscription';
@@ -134,6 +136,7 @@ export function RepoWorkspace({
   graphSeason,
   graphFirstParent,
   graphFoldLinear,
+  graphMinimapAlwaysShow,
   graphRefFilter,
   onGraphFilterChange,
   aiEnabled,
@@ -981,6 +984,8 @@ export function RepoWorkspace({
     collapseDiffSlot();
   }, [collapseDiffSlot]);
 
+  // Spec-005: bumped once per stream `done` — the rail's bucket-rebuild key.
+  const [railGeneration, setRailGeneration] = useState(0);
   const refetchGraph = useCallback(async () => {
     // The `graphReqId` generation is the cancellation crux (P65 §6): it now gates
     // chunk APPLICATION — chunks from a superseded stream (repo switch / new
@@ -1001,7 +1006,7 @@ export function RepoWorkspace({
     const applier = createGraphStreamApplier(
       stream,
       prevSelectedId,
-      { setGraph, setGraphEdgeIndex, setGraphTotal, setSelectedIndex, setFilterFlags: setGraphFilterFlags, setFoldSpans: fold.setSpans },
+      { setGraph, setGraphEdgeIndex, setGraphTotal, setSelectedIndex, setFilterFlags: setGraphFilterFlags, setFoldSpans: fold.setSpans, onDone: () => setRailGeneration((g) => g + 1) },
       (e) => {
         if (id === graphReqId.current) setGraphError(errorMessage(e));
       },
@@ -1918,27 +1923,13 @@ export function RepoWorkspace({
     pushToast,
   });
 
-  // P54c: commit composer. The row "Preview" reuses the EXISTING workdir file-
-  // diff IPC — resolve the changed file's section from the latest snapshot
-  // (unstaged → untracked → staged) and fetch that file's diff (no new path).
+  // Spec-005: the overview-rail bundle (channel pick + jump resolvers live in
+  // railProps.ts; GraphCanvas mounts the rail only while visible).
+  const rail = useRailInput({ search, historySearch, graph, revealCommitByOid, generation: railGeneration, alwaysShow: graphMinimapAlwaysShow });
+
+  // P54c: commit composer row "Preview" — moved to composerPreview.ts.
   const previewComposerFileDiff = useCallback(
-    (path: string): Promise<FileDiff> => {
-      const s = statusRef.current;
-      let entry: StatusEntry | undefined;
-      let staged = false;
-      if (s !== null) {
-        entry = s.unstaged.find((e) => e.path === path);
-        if (entry === undefined) entry = s.untracked.find((e) => e.path === path);
-        if (entry === undefined) {
-          entry = s.staged.find((e) => e.path === path);
-          staged = entry !== undefined;
-        }
-      }
-      if (entry === undefined) {
-        return Promise.reject(new Error(`No working-tree diff available for ${path}`));
-      }
-      return ipc.getWorkdirFileDiff(repoId, entry.path, entry.origPath, staged, false, false);
-    },
+    (path: string): Promise<FileDiff> => composerPreviewFileDiff(statusRef.current, repoId, path),
     [repoId],
   );
   const composer = useCommitComposer({
@@ -2455,6 +2446,7 @@ export function RepoWorkspace({
           graphSeason={graphSeason}
           graphFilter={graphFilter}
           graphFold={fold}
+          rail={rail}
           graphFilterStale={graphFilterStale}
           search={search}
           searchScopeOptions={searchScopeOptions}

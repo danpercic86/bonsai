@@ -43,6 +43,10 @@ import { startRevealFlash } from './revealFlashRunner';
 import { useSway } from './useSway';
 import { resolveHoverTarget } from './hoverTarget';
 import { GraphTooltipOverlay } from './GraphTooltipOverlay';
+import { useCanvasResizeObserver } from './useCanvasResizeObserver';
+// Spec-005: overview rail — mounted ONLY while visible (zero idle cost).
+import { OverviewRail, type RailInput } from './rail/OverviewRail';
+import { useRailReveal } from './rail/useRailReveal';
 
 export type { WipSummary };
 
@@ -122,6 +126,9 @@ export interface GraphCanvasProps {
   /** Spec-004: fold view-model (collapsed-span mapping + expansion callbacks).
    *  Absent ⇒ fold inactive; every path is byte-identical to pre-fold. */
   fold?: GraphFoldView;
+  /** Spec-005: overview-rail bundle (RepoWorkspace assembles it). Absent ⇒ no
+   *  rail plumbing at all — hover-zone checks and mount both skipped. */
+  rail?: RailInput;
 }
 
 /** P2c §5.2: imperative escape hatch — App needs the DOM-measured visible row
@@ -171,6 +178,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     graphStyle = 'standard',
     graphSeason = 'living',
     fold,
+    rail,
   },
   ref,
 ) {
@@ -225,6 +233,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   // path (paintNow) never depends on tooltip state. Measurement/clamp + DOM
   // live in GraphTooltipOverlay (spec-004 size split).
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+  // Spec-005: rail hover-zone / reveal-latch / drag-pin state (useRailReveal).
+  const railReveal = useRailReveal();
 
   useImperativeHandle(
     ref,
@@ -523,36 +533,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     paintNow();
   }, [paintNow]);
 
-  // Mount: ResizeObserver on the host + DPR-change handling (re-armed
-  // matchMedia listener, §4.3). resize() also performs the initial paint.
-  useEffect(() => {
-    const host = hostRef.current;
-    if (host === null) return;
-    resize();
-    const ro = new ResizeObserver(() => resize());
-    ro.observe(host);
-
-    let mq: MediaQueryList | null = null;
-    const onDprChange = (): void => {
-      resize();
-      arm();
-    };
-    const arm = (): void => {
-      mq?.removeEventListener('change', onDprChange);
-      mq = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
-      mq.addEventListener('change', onDprChange);
-    };
-    arm();
-
-    return () => {
-      ro.disconnect();
-      mq?.removeEventListener('change', onDprChange);
-      if (rafRef.current !== 0) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = 0;
-      }
-    };
-  }, [resize]);
+  // Mount: ResizeObserver + DPR handling — moved verbatim to its own hook
+  // (spec-005 size offset). resize() also performs the initial paint.
+  useCanvasResizeObserver(hostRef, resize, rafRef);
 
   // P3e §5.4: authoritative remeasure-on-show. When `active` flips true (tab
   // shown after display:none), re-run the SAME `resize()` the ResizeObserver
@@ -568,6 +551,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       return;
     }
     if (active) resize();
+    else railReveal.reset(); // spec-005: drop the rail's hover state when hidden
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, resize]);
 
   // Layout/selection changes repaint synchronously; the mount paint already
@@ -714,6 +699,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     const x = e.clientX - rect.left;
     mouseYRef.current = y;
     mouseXRef.current = x;
+    // Spec-005: right-edge hover zone (scrollbar included); transitions only.
+    if (rail !== undefined) railReveal.onZoneCheck(x, scroller);
     const row = hitTestAtMouseY(y, scroller.scrollTop);
     if (row !== hoverRowRef.current) {
       hoverRowRef.current = row;
@@ -741,6 +728,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   const handleMouseLeave = () => {
     mouseYRef.current = null;
     mouseXRef.current = null;
+    railReveal.onLeave(); // spec-005: leaving the scroller exits the hover zone
     setTooltip(null); // P7 §6.2: dismiss on leave
     // Spec-004: drop the pointer cursor + a held pill press on leave.
     if (scrollerRef.current !== null) scrollerRef.current.style.cursor = '';
@@ -843,11 +831,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   // still arriving (grow-as-you-go); absent ⇒ layout.nodes.length (unchanged).
   // Spec-004: with collapsed spans the extent is the DISPLAY row count (spans
   // only exist after `done`, so the streamed grow-as-you-go path is unaffected).
-  const spacerH = spacerHeight(
-    foldRows !== null ? dLayout.nodes.length : Math.max(layout.nodes.length, totalRows ?? 0),
-    wip !== null ? 1 : 0,
-    metrics.rowHeight,
-  );
+  const displayRowCount =
+    foldRows !== null ? dLayout.nodes.length : Math.max(layout.nodes.length, totalRows ?? 0);
+  const spacerH = spacerHeight(displayRowCount, wip !== null ? 1 : 0, metrics.rowHeight);
   // §4.1 amended (spec-004): aria row counts + active-descendant ids use
   // DISPLAY rows; the active pill row wins over the selection while set.
   const ariaRowCount = foldRows !== null ? dLayout.nodes.length : (totalRows ?? layout.nodes.length);
@@ -894,6 +880,18 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
         )}
         <div className="graph-spacer" style={{ height: `${spacerH}px` }} />
       </div>
+      {/* Spec-005: mounted ONLY while visible — hidden ⇒ zero DOM/listeners. */}
+      {rail !== undefined && displayRowCount > 0 &&
+        (rail.ringsLive || rail.alwaysShow || railReveal.revealed) && (
+          <OverviewRail
+            rail={rail} layout={dLayout} foldModel={foldModel}
+            displayRowCount={displayRowCount} scrollerRef={scrollerRef}
+            pointerInZone={railReveal.pointerInZone}
+            fadeIn={!rail.ringsLive && !rail.alwaysShow}
+            themeVersion={themeVersion} onHide={railReveal.hide}
+            onDraggingChange={railReveal.onDraggingChange}
+          />
+        )}
       <GraphTooltipOverlay tooltip={tooltip} hostRef={hostRef} />
     </div>
   );

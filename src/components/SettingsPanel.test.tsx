@@ -73,6 +73,7 @@ function renderPanel(over: Partial<SettingsPanelProps> = {}) {
     graphSeason: 'living',
     graphFirstParent: false,
     graphFoldLinear: false,
+    graphMinimapAlwaysShow: false,
     graphRefFilter: null,
     onChange: vi.fn(),
     onToggleTheme: vi.fn(),

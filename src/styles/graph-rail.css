@@ -1,0 +1,42 @@
+/* Bonsai — spec-005 graph overview rail (UI contract §1/§4).
+   One HiDPI canvas, absolutely positioned inside .graph-canvas-host at
+   right: rightInset (set inline — the live scrollbar inset), z-index 4 per the
+   ui-reference §4.2 overlay stack (scrollbar → rail 4 → fabs/chip 5).
+   Hidden ⇒ the element is UNMOUNTED (no CSS hidden state, no fade-out). */
+
+.graph-rail {
+  position: absolute;
+  top: 0;
+  /* height (not bottom:0): canvas is a replaced element, so top+bottom is
+     over-constrained and the intrinsic height attribute would win (7px bug). */
+  height: 100%;
+  /* Default before the first paint() measures the live scrollbar inset —
+     avoids a one-frame flash at the static position on non-fade mounts. */
+  right: 0;
+  width: 14px;
+  z-index: 4;
+  opacity: 1;
+}
+
+/* §4: 120 ms opacity-only fade-in on POINTER-triggered reveals; always-show /
+   search-forced mounts render at opacity 1 instantly (no --fade class). A CSS
+   animation (not a transition) so no post-mount state flip is needed. */
+.graph-rail--fade {
+  animation: graph-rail-fade-in 120ms ease-out;
+}
+
+@keyframes graph-rail-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.graph-rail--dragging {
+  cursor: grabbing !important;
+}
+
+/* Reduced motion: the fade kill lives in styles/reduced-motion.css (the
+   app-wide lock, per the spec-005 UI contract §4). */

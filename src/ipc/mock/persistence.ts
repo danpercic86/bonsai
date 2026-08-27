@@ -314,6 +314,8 @@ export function readUiSettings(): UiSettings {
     const graphFirstParent = parsed.graphFirstParent === true;
     // Spec-004 (additive): fold-linear toggle. Malformed → false, never throws.
     const graphFoldLinear = parsed.graphFoldLinear === true;
+    // Spec-005 (additive): always-show overview rail. Malformed → false.
+    const graphMinimapAlwaysShow = parsed.graphMinimapAlwaysShow === true;
     const graphRefFilter = sanitizeGraphRefFilter(parsed.graphRefFilter);
     // P13 AI fields (additive, like autoFetch/graph): fall back to defaults.
     const aiEnabled =
@@ -371,6 +373,7 @@ export function readUiSettings(): UiSettings {
       graphSeason,
       graphFirstParent,
       graphFoldLinear,
+      graphMinimapAlwaysShow,
       graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,

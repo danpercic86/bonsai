@@ -74,6 +74,8 @@ export interface SettingsPanelProps {
   graphFirstParent: boolean;
   /** Spec-004: fold-linear toggle. */
   graphFoldLinear: boolean;
+  /** Spec-005: overview-rail always-show toggle. */
+  graphMinimapAlwaysShow: boolean;
   graphRefFilter: GraphRefFilter | null;
   /** Fires on ANY change with a partial patch; App debounces the persist +
    *  updates its own state so consumers re-render live. */
@@ -250,6 +252,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     graphSeason,
     graphFirstParent,
     graphFoldLinear,
+    graphMinimapAlwaysShow,
     graphRefFilter,
     aiConflictAutonomy,
     aiAvailability,
@@ -289,6 +292,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       // defaults) so the first-parent row's ↺ tracks the real state.
       graphFirstParent,
       graphFoldLinear,
+      graphMinimapAlwaysShow,
       graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,
@@ -311,6 +315,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       graph,
       graphFirstParent,
       graphFoldLinear,
+      graphMinimapAlwaysShow,
       graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,
@@ -352,6 +357,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       graphSeason,
       graphFirstParent,
       graphFoldLinear,
+      graphMinimapAlwaysShow,
       graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,
@@ -388,6 +394,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       graphSeason,
       graphFirstParent,
       graphFoldLinear,
+      graphMinimapAlwaysShow,
       graphRefFilter,
       aiEnabled,
       aiConflictAutonomy,

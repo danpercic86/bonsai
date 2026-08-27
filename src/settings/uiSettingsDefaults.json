@@ -8,6 +8,7 @@
   "graphSeason": "living",
   "graphFirstParent": false,
   "graphFoldLinear": false,
+  "graphMinimapAlwaysShow": false,
   "graphRefFilter": null,
   "autoFetch": { "enabled": false, "intervalMinutes": 5 },
   "healthRefresh": { "enabled": false, "intervalMinutes": 30 },

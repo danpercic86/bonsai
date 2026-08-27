@@ -413,6 +413,29 @@ fn graph_fold_linear_pref_default_and_roundtrip() {
     assert!(load_from(&file).graph_fold_linear, "true round-trips");
 }
 
+/// Spec-005: `graphMinimapAlwaysShow` — legacy file loads the default (false);
+/// a non-default value round-trips through save/load.
+#[test]
+fn graph_minimap_always_show_pref_default_and_roundtrip() {
+    let dir = tempfile::TempDir::new().expect("create temp dir");
+    let file = settings_path(&dir);
+    let json = r#"{ "version": 1, "recentRepos": [] }"#;
+    std::fs::write(&file, json).expect("write pre-spec-005 settings.json");
+    let loaded = load_from(&file);
+    assert!(!loaded.graph_minimap_always_show, "legacy file → default false");
+    assert_eq!(loaded.version, SETTINGS_VERSION);
+
+    let s = Settings {
+        graph_minimap_always_show: true,
+        ..Settings::default()
+    };
+    save_to(&file, &s).expect("save settings");
+    assert!(
+        load_from(&file).graph_minimap_always_show,
+        "true round-trips"
+    );
+}
+
 /// Spec-003 wire shape: `mode` serializes lowercase (`"solo"`/`"hide"`) and the
 /// struct is camelCase — pinned so the TS mirror never drifts.
 #[test]

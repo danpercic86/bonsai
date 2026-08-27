@@ -234,6 +234,25 @@ fn set_ui_settings_patch_graph_fold_linear_is_partial() {
     assert!(s.graph_fold_linear);
 }
 
+/// Spec-005: `graphMinimapAlwaysShow` patches independently (camelCase on the
+/// wire) and an absent key leaves it untouched.
+#[test]
+fn set_ui_settings_patch_graph_minimap_always_show_is_partial() {
+    let mut s = settings::Settings::default();
+    assert!(!s.graph_minimap_always_show);
+
+    let patch: UiSettingsPatch =
+        serde_json::from_str(r#"{ "graphMinimapAlwaysShow": true }"#).expect("minimap patch");
+    apply_patch(&mut s, patch);
+    assert!(s.graph_minimap_always_show);
+    assert!(!s.graph_fold_linear, "sibling pref untouched");
+
+    // An absent key leaves it unchanged.
+    let patch: UiSettingsPatch = serde_json::from_str(r#"{ "theme": "light" }"#).expect("patch");
+    apply_patch(&mut s, patch);
+    assert!(s.graph_minimap_always_show);
+}
+
 /// Spec-003: the two declutter prefs patch independently, and the
 /// `graphRefFilter` double-option distinguishes ABSENT (leave unchanged) from
 /// an explicit `null` (clear) on the wire.
