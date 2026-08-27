@@ -166,3 +166,65 @@ fn workdir_unstaged_rename_uses_orig_path() {
         "no orig_path => old None (b.png absent from index)"
     );
 }
+
+/// P89 follow-up: the `Range` variant resolves both sides from arbitrary
+/// commit oids (PR mode: old = merge-base, new = PR head), independent of
+/// HEAD. Also covers old-side absence (image added after the old commit)
+/// and a bad oid surfacing as Err, not a panic.
+#[test]
+fn range_resolves_old_and_new_from_commit_pair() {
+    require_git!();
+    let dir = init_repo();
+    let p = dir.path();
+
+    let base_oid = commit_blob(p, "img.png", RED, "base: red");
+    let head_oid = commit_blob(p, "img.png", GREEN, "head: green");
+
+    let diff = get_image_diff(
+        p,
+        &ImageDiffRequest::Range {
+            old_oid: base_oid.clone(),
+            new_oid: head_oid.clone(),
+            path: "img.png".into(),
+            orig_path: None,
+        },
+    )
+    .expect("range diff");
+    assert_eq!(
+        base64_decode(&diff.old.expect("old = base blob").base64),
+        RED,
+        "old side = blob at old_oid"
+    );
+    assert_eq!(
+        base64_decode(&diff.new.expect("new = head blob").base64),
+        GREEN,
+        "new side = blob at new_oid"
+    );
+
+    // Added-in-range: a path absent from the old tree yields old None.
+    let new_file_oid = commit_blob(p, "fresh.png", GREEN, "add fresh");
+    let added = get_image_diff(
+        p,
+        &ImageDiffRequest::Range {
+            old_oid: base_oid.clone(),
+            new_oid: new_file_oid,
+            path: "fresh.png".into(),
+            orig_path: None,
+        },
+    )
+    .expect("range diff for added file");
+    assert!(added.old.is_none(), "added in range => old None");
+    assert!(added.new.is_some(), "added in range => new present");
+
+    // Malformed oid must surface as an error, never a panic.
+    let bad = get_image_diff(
+        p,
+        &ImageDiffRequest::Range {
+            old_oid: "not-an-oid".into(),
+            new_oid: base_oid,
+            path: "img.png".into(),
+            orig_path: None,
+        },
+    );
+    assert!(bad.is_err(), "malformed old oid => Err");
+}

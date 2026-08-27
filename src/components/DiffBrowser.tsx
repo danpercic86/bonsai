@@ -453,9 +453,9 @@ function DiffCardBody({
   // P61b: image files (D4; svg excluded) render the image comparison card, which
   // does its own getImageDiff fetch. Checked BEFORE the binary placeholder since
   // images are `binary:true` too; non-image binaries keep the placeholder below.
-  // pr mode: ImageDiffRequest cannot express a merge-base..head pair, so PR
-  // images fall through to the binary placeholder (same as the old inline rows).
-  if (isImagePath(header.path) && source.mode !== 'pr') {
+  // pr mode uses the `range` request (merge-base..head), so PR images render
+  // the comparison card too.
+  if (isImagePath(header.path)) {
     return <DiffImageCard repoId={repoId} source={source} header={header} />;
   }
   if (header.binary) return <div className="diff-placeholder">Binary file</div>;
