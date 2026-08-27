@@ -2,19 +2,22 @@
 
 **Scope:** increment 4 (React causality instrumentation on **six** surfaces — *no visual change*,
 §9 here) and increment 7 (Settings → Developer page + the app-level logging indicator).
-**Input contract:** `docs/contracts/P91-observability.md` (§7 redaction, §10 settings surface, §12
-increments). All six of the architect's §13 open decisions are **resolved by the user**; the two that
-touch this surface are folded in (logs persist after Dev mode is switched off, with no delete button
-in v1; `metrics_reset` and the Statistics page get no UI). **Out of scope:** the Statistics page
-(§10 here reserves placement only).
+**Input contract:** `docs/contracts/P91-observability.md` (§6/§6.1 log commands, §7 redaction, §10
+settings surface, §12 increments). All of the architect's §13 open decisions are **resolved by the
+user**; the ones that touch this surface are folded in (logs persist after Dev mode is switched off;
+`metrics_reset` and the Statistics page get no UI). **Additionally resolved (2026-08-27):** a
+**`Delete all log files` action ships in v1**, implemented on the architect's **roll-then-purge**
+model — see §8.5 and DR-1 in §11. **Out of scope:** the Statistics page (§10 here reserves placement
+only).
 
 The user story this surface exists to serve, in order:
 
-> **enable → reproduce the flicker → turn Dev mode back off → find the file → send it to an AI.**
+> **enable → reproduce the flicker → turn Dev mode back off → find the file → send it → erase it.**
 
-Every placement decision below is checked against that sequence. In particular the *export path must
-keep working after Dev mode is switched off* — that is the step where the user actually needs it
-(resolved decision: logs are **not** deleted on disable).
+Every placement decision below is checked against that sequence. In particular the *export and
+delete paths must keep working after Dev mode is switched off*, and **delete must actually erase
+everything** — a delete that leaves the raw-names file the user was trying to remove would defeat
+the reason the action exists.
 
 ---
 
@@ -67,7 +70,8 @@ Two entries only, both always available:
 
 **Do not** put a "Toggle Dev mode" command in the palette. A one-keystroke fuzzy match that silently
 starts writing files to disk is exactly the accident the §5 indicator exists to catch; make it a
-deliberate visit to a settings page.
+deliberate visit to a settings page. **And do not put `Delete all log files` in the palette** — a
+fuzzy-matched destructive action is the canonical palette footgun; it lives on the page only.
 
 ---
 
@@ -114,8 +118,11 @@ WHAT A LOG FILE CONTAINS                                    ← always live, nev
 
 LOG FILES                                                   ← always live, never disabled
   Log files                    [ Show in folder ] [ Export session… ]
-  Kept after you turn Dev mode off. Bonsai keeps the 10 most
-  recent sessions and deletes older ones automatically.
+  Kept in {dir} after you turn Dev mode off. Bonsai keeps the
+  10 most recent sessions and deletes older ones automatically.
+  ──────────────────────────────────────────────────────────
+  Delete all log files                        [ Delete logs… ]   ← §8.5, danger, own row, last
+  Removes all 5 log files (15.8 MB) from this computer.
 ```
 
 ### 2.1 Which rows are gated by the master switch
@@ -127,7 +134,7 @@ The split is **by workflow, not by topic**.
 | DEV MODE (`dev.enabled` + status card) | n/a | the gate itself |
 | WHAT IS CAPTURED (`level`, `capture-ipc`, `capture-react`, `capture-frames`, `include-raw-names`) | **yes — `<fieldset disabled>`** | they configure capture; meaningless with capture off |
 | WHAT A LOG FILE CONTAINS | **no** | it is the text that decides whether the user *turns it on*; useless if it only appears afterwards |
-| LOG FILES (reveal / export) | **no** | **the workflow's last two steps happen after Dev mode is turned off, and logs deliberately persist.** Gating these breaks the milestone |
+| LOG FILES (reveal / export / **delete**) | **no** | **the workflow's last three steps happen after Dev mode is turned off, and logs deliberately persist.** Gating any of them breaks the milestone. Delete in particular must work **while Dev mode is on** — a user who realises mid-debug that raw names are recording needs to erase *now*, not after a settings detour (§8.5.4) |
 
 ### 2.2 Disabled, not hidden — justification
 
@@ -157,12 +164,12 @@ All new files; nothing is appended to an existing file. Soft cap ~500 lines, exp
 
 | File | Responsibility | ~lines |
 |---|---|---|
-| `src/components/settings/catalog/dev.ts` | `DEV_ENTRIES: readonly SettingsIndexEntry[]` (§13) | ~120 |
-| `src/components/settings/categories/DevPage.tsx` | container: reads `useSettingsValues()/useSettingsActions()`, holds `LogSessionInfo` polling, export/reveal handlers, confirm-dialog state; composes the four sections | ~180 |
+| `src/components/settings/catalog/dev.ts` | `DEV_ENTRIES: readonly SettingsIndexEntry[]` (§13) | ~130 |
+| `src/components/settings/categories/DevPage.tsx` | container: reads `useSettingsValues()/useSettingsActions()`, holds `LogSessionInfo` polling, reveal/export/**delete** handlers, confirm-dialog state | ~210 |
 | `src/components/settings/SettingsDevModeSection.tsx` | group 1 — master switch + `<DevSessionStatus>` | ~70 |
 | `src/components/settings/SettingsDevCaptureSection.tsx` | group 2 — the `<fieldset>` with level + 3 switches + the sensitive raw-names row | ~130 |
 | `src/components/settings/SettingsDevPrivacySection.tsx` | group 3 — the frozen §7 statement (pure; props = `redaction`) | ~90 |
-| `src/components/settings/SettingsDevLogsSection.tsx` | group 4 — reveal + export buttons, empty/busy/error states | ~120 |
+| `src/components/settings/SettingsDevLogsSection.tsx` | group 4 — reveal + export + **delete** rows, all empty/busy/error states | ~170 |
 | `src/components/settings/DevSessionStatus.tsx` | the §6 status card (presentational; props = `LogSessionInfo \| null`, `enabled`, `state`) | ~110 |
 | `src/components/DevModeIndicator.tsx` | the §5 header chip (presentational + one click handler) | ~60 |
 
@@ -171,10 +178,10 @@ Registration: `SettingsCategoryId` gains `'dev'`; `SETTINGS_CATEGORIES` gains th
 `DevModeIndicator` is rendered by `HeaderToolbar.tsx` (one line, conditional).
 
 **Reuse, not invention.** Everything here is an existing primitive: `SettingsGroup`, `SettingsRow`,
-`SettingsSwitchRow`, the §12.3.2 segmented radiogroup, `.btn-secondary`, `ConfirmDialog`, the §10.2
-toast recipe, `.settings-row-note`, and the `'group'` control kind (`types.ts` AM-2). The only
-genuinely new visuals are the **sensitive-row treatment** (§4.2) and the **header chip** (§5) — both
-justified below, both built from existing tokens.
+`SettingsSwitchRow`, the §12.3.2 segmented radiogroup, `.btn-secondary` / `.btn-danger`,
+`ConfirmDialog` (both variants), the §10.2 toast recipe, `.settings-row-note`, and the `'group'`
+control kind (`types.ts` AM-2). The only genuinely new visuals are the **sensitive-row treatment**
+(§4.2) and the **header chip** (§5) — both justified below, both built from existing tokens.
 
 ---
 
@@ -229,6 +236,14 @@ This one must **not** read like the three switches above it. Treatment, all from
 - `--warning` as a 3px bar / glyph on `--bg-0`: **7.3:1** dark / **4.5:1** light (§2 measured) —
   clears the 3:1 graphics bar in both themes. No new token.
 
+**Note the deliberate contrast with §8.5:** the raw-names switch is *sensitive* (`--warning` bar,
+`primary` confirm) because it is reversible and destroys nothing; `Delete logs…` is *destructive*
+(`--danger` button, `danger` confirm) because it loses data. Two different weights, two different
+treatments — that distinction is the point of the pattern and must not be flattened. Note also that
+the two rows are each other's remedy: the raw-names row is how the user creates the exposure,
+`Delete logs…` is how they undo it, and the second must therefore reach **every** file the first
+produced — including the one being written right now (§8.5.4).
+
 ### 4.3 The raw-names confirmation
 
 Existing `ConfirmDialog`. Fires **only on enable**; turning it back off is silent and instant
@@ -244,9 +259,10 @@ Existing `ConfirmDialog`. Fires **only on enable**; turning it back off is silen
 - Primary: `Include raw names` · Secondary: `Cancel` (default focus: **Cancel**).
 - `confirmVariant: 'primary'`, **not** `'danger'`. Justification: nothing is destroyed or
   irreversible — the setting is a switch the user can flip back, and it affects only files created
-  afterwards. `danger` styling is reserved in this app for data loss (§12.7 sign-out, branch delete);
-  spending it here devalues it. The **privacy** weight is carried by the `--warning` row treatment,
-  the persistent note, and the dialog's explicit consequence copy — not by a red button.
+  afterwards. `danger` styling is reserved in this app for data loss (§12.7 sign-out, branch delete,
+  and now §8.5); spending it here devalues it. The **privacy** weight is carried by the `--warning`
+  row treatment, the persistent note, and the dialog's explicit consequence copy — not by a red
+  button.
 - Esc / backdrop / Cancel → leaves the switch **off** (the switch must not flip optimistically).
   Enter → confirms. Focus trap + restore to the switch, per the existing `ConfirmDialog`.
 
@@ -289,6 +305,9 @@ change than this milestone warrants. See §11 (OQ-1) for an optional escalation.
   records were written in the last 2s, and is solid otherwise. Opacity only, no transform, no layout,
   not on the graph's compositor path. Under `prefers-reduced-motion: reduce` the animation is removed
   entirely and the dot is solid — the pill's presence, not the pulse, carries "logging is on".
+- **The pill does not change during a purge.** Roll-then-purge keeps Dev mode on throughout, so the
+  pill stays mounted and stays saying `Dev mode`; flashing it off and on would imply recording had
+  stopped, which is exactly the misunderstanding §8.5 is written to prevent.
 - Both themes: identical recipe; `--warning` resolves per theme.
 - Densities: unchanged (app chrome is density-invariant, §3).
 
@@ -302,7 +321,8 @@ On transition off→on and on→off the indicator's mount point contains a visua
 
 The live region is **permanently present and empty when idle** (§12.3.4 precedent) so the
 announcement is not lost to a late-mounted region. It is *not* re-announced on record activity —
-that would be a screen-reader denial-of-service.
+that would be a screen-reader denial-of-service. It is reused for the §8 action results (export,
+delete) — one region per page, not one per action.
 
 ---
 
@@ -336,18 +356,26 @@ Row 2 (12px `--text-2` — `--text-3` is forbidden for read text; mono font, `te
 Row 3, **only while `includeRawNames` is on**: the §4.2 leading-bar warning line repeated here, so a
 user who scrolled past the toggle still sees it next to the file they are about to export.
 
-Polling: `log_session_info()` on page mount, on every settings change, and on a **2s interval while
-the Settings Developer page is visible and `dev.enabled` is true**. Never polls when the overlay is
-closed or the category is not selected — this must not become background load. Formatting: bytes via
-the existing house formatter (`3.1 MB`), counts with thousands separators from `Intl.NumberFormat`.
+Polling: `log_session_info()` on page mount, on every settings change, **immediately after a delete
+completes (success, partial or failure)**, and on a **2s interval while the Settings Developer page
+is visible and `dev.enabled` is true**. Never polls when the overlay is closed or the category is not
+selected — this must not become background load. Formatting: bytes via the existing house formatter
+(`3.1 MB`), counts with thousands separators from `Intl.NumberFormat`.
+
+**After a roll-then-purge with Dev mode on**, the card describes the **new** session, not the deleted
+one: `● Recording · 1 file · 0 bytes · 0 records`, with row 2 showing `LogsDeleteResult.activeFile`
+(a file **name**, never a path). The record count resetting to zero is the user-visible proof that
+the old file is gone and a fresh one is being written — it must not carry the old counts forward for
+even one poll cycle, so the post-delete refresh is driven by the delete's own completion, not by the
+2s timer.
 
 `aria-live` is **not** applied to the card — it changes every 2s. The group is reachable in
 screen-reader browse mode; the one-shot transitions are announced by §5.3 instead.
 
 **After Dev mode is switched off** the card does not disappear: it renders one line —
 `Idle · last session: 2 files · 3.1 MB · kept on this computer` — so the persistence of the files is
-visible at the moment the user turns recording off. With no logs ever recorded it renders
-`No logs yet.` in `--text-2`.
+visible at the moment the user turns recording off. With no logs ever recorded, or after a purge with
+Dev mode off, it renders `No logs yet.` in `--text-2`.
 
 ---
 
@@ -376,9 +404,10 @@ paragraph gap. The `contains` / `never contains` lists are `<ul>`s with 4px item
 > your real branch, tag, file and repository names. Everything in the "never contains" list above
 > stays excluded.
 >
-> **Log files stay on this computer until Bonsai prunes them.** They are kept when you turn Dev mode
+> **Log files stay on this computer until you delete them.** They are kept when you turn Dev mode
 > off, so you can export one afterwards. Bonsai keeps the 10 most recent sessions and removes the
-> oldest automatically; you can also delete the files yourself from the logs folder.
+> oldest automatically, and "Delete all log files" below removes every one of them — including the
+> session being recorded right now.
 >
 > Log files are plain text, one record per line. You can open one in any text editor and read it
 > before you send it anywhere.
@@ -391,28 +420,37 @@ Last line changes with the live mode (a `.settings-group-note`, value-tracking):
 **Copy rules applied:** no "redaction", no "telemetry", no "IPC", no "hashing", no "salt". "Replaced
 by default" beats "conservatively redacted" for the reader who has to decide whether to send it. The
 "cannot be matched up" sentence is the honest, jargon-free rendering of the per-session salt. The
-persistence paragraph is required because there is deliberately no delete button in v1 (§11 OQ-2):
-if the app will not remove the files, it must at least say so and say where they are.
+persistence paragraph names the delete action **and its completeness** — "including the session being
+recorded right now" is load-bearing: a user reading this paragraph while raw names are on is asking
+exactly whether the file they are worried about is covered, and the answer must be on the page, not
+discovered in a dialog.
 
 ---
 
-## 8. Actions — reveal & export
+## 8. Actions — reveal, export, delete
 
 ### 8.1 Rows
 
-One `.settings-row--stacked` row, id `dev.logs`, label `Log files`, controls side by side
-(`display:flex; gap:8px`), plus a call-site `.settings-row-note`.
+The LOG FILES group holds **two** rows, in this order:
 
-| Control | Class | Label | Icon (§13 SVG chrome) |
-|---|---|---|---|
-| reveal | `.btn-secondary` | `Show in folder` | folder-open, 14px, leading |
-| export | `.btn-secondary` | `Export session…` | box-arrow-down, 14px, leading |
+1. `dev.logs` — `.settings-row--stacked`, label `Log files`, two secondary buttons side by side
+   (`display:flex; gap:8px`), plus a call-site `.settings-row-note`.
+2. `dev.delete-logs` — a standard (non-stacked) row, label `Delete all log files`, one danger button
+   in the control cell, plus a call-site `.settings-row-note`. **Last row on the page.**
 
-Both are secondary — **this page has no primary action**; the master switch is the thing the user came
-for and a switch is not a button. Ellipsis on `Export session…` per house convention (it opens
-further UI).
+| Control | Row | Class | Label | Icon (§13 SVG chrome) |
+|---|---|---|---|---|
+| reveal | `dev.logs` | `.btn-secondary` | `Show in folder` | folder-open, 14px, leading |
+| export | `dev.logs` | `.btn-secondary` | `Export session…` | box-arrow-down, 14px, leading |
+| delete | `dev.delete-logs` | `.btn-danger` | `Delete logs…` | trash, 14px, leading |
 
-Note line (value-tracking, so no catalog `help`):
+The two benign actions and the destructive one are **in different rows, separated by the standard 1px
+`--border`** — never shoulder-to-shoulder in one flex line. `Export session…` and `Delete logs…`
+would otherwise be adjacent 100px buttons with the same visual weight and opposite consequences,
+which is a misclick generator. Row separation plus `--danger` fill plus the confirm dialog are three
+independent brakes.
+
+`dev.logs` note (value-tracking, so no catalog `help`):
 
 - has logs → `Kept in {dir} after you turn Dev mode off. Bonsai keeps the 10 most recent sessions and deletes older ones automatically.` (`{dir}` truncated with `title`, mono)
 - no logs → `No logs yet. Turn on Dev mode, reproduce the problem, then export the session.`
@@ -421,7 +459,12 @@ Note line (value-tracking, so no catalog `help`):
 call it, and it is honest when the folder exists but is empty. Not "Reveal in Finder" (macOS-only
 phrasing), not "Open logs directory" (jargon).
 
-### 8.2 States
+**This page still has no primary action.** All three buttons are secondary-weight controls; the
+master switch is what the user came for. `.btn-danger` is a *destructive* style, not a *primary*
+one — it must not be the only filled button competing for the eye, which is another reason it sits
+in its own row at the very bottom.
+
+### 8.2 States — reveal & export
 
 | State | `Show in folder` | `Export session…` |
 |---|---|---|
@@ -479,6 +522,171 @@ places (never only a transient toast — the user may be mid-repro and not looki
 The §5 header pill in this state swaps its dot to a `--danger` triangle glyph and its label to
 `Not logging`, with `aria-label="Dev mode is on but Bonsai stopped writing the log. Open Developer
 settings."` — the pill must never claim to be recording when it is not.
+
+### 8.5 `Delete all log files` — roll-then-purge (v1, decision DR-1)
+
+The one destructive action on this page. Ships in v1 because §7 promises the user control over files
+that otherwise sit on disk indefinitely, and a promise the UI cannot keep is worse than no promise.
+
+**Backend contract:** `logs_delete_all()` per `P91-observability.md` §6/§6.1, returning
+
+```ts
+interface LogsDeleteResult {
+  deletedFiles: number;
+  deletedBytes: number;
+  failedFiles: number;
+  /** NAME of the NEW session file (never a path). Meaningful when `rolled`. */
+  activeFile: string;
+  /** true ⇒ Dev mode was on: the writer rolled to a fresh file and recording continues. */
+  rolled: boolean;
+}
+```
+
+**The model, in one line: roll, then purge.** With Dev mode on, the writer flushes and closes the
+current file (releasing the handle), opens a fresh session file whose header carries
+`afterPurge: true`, and only then every `*.jsonl` in the folder is sized and deleted. **Everything the
+user had is erased — including the session they were recording.** With Dev mode off there is no
+writer, everything is deleted, and `rolled` is `false`.
+
+#### 8.5.1 Why the UI is written around roll-then-purge
+
+This is the whole design, so it is stated rather than assumed:
+
+- **There is no open handle at delete time.** No Windows sharing violation, no Unix unlinked-inode
+  writing invisibly into a deleted file. Behaviour is byte-for-byte identical on all three platforms,
+  and the partial-failure path is reserved for genuinely *external* locks (a text editor holding the
+  file open) rather than firing every time on one OS.
+- **It is the only model that satisfies the feature's purpose.** The file being written right now is
+  precisely the one holding the raw-names records a worried user is trying to erase. Any design that
+  spares it would show a success toast while the exposure survives on disk — the exact failure this
+  action exists to prevent.
+- **Consequently the UI never mentions "keeping" anything, and never asks the user to turn Dev mode
+  off first.** That instruction would be both false and unnecessary.
+
+#### 8.5.2 Row & control
+
+- Row id `dev.delete-logs`, label **`Delete all log files`**, last row of the LOG FILES group.
+- Button `.btn-danger`, label **`Delete logs…`** (ellipsis: it opens a confirm), trash glyph. The
+  button label is shorter than the row label deliberately — the row label is the accessible context,
+  and repeating `Delete all log files` inside the row would read twice in a row to a screen reader.
+  The button carries `aria-describedby` pointing at the row note, so the count is announced with it.
+- The button is **never** the visually dominant control on the page (§8.1).
+- `.settings-row-note` (value-tracking, so **no** catalog `help`), four texts:
+
+  | Condition | Note |
+  |---|---|
+  | logs exist, Dev mode **off** | `Removes all {n} log files ({size}) from this computer.` |
+  | logs exist, Dev mode **on** | `Removes all {n} log files ({size}), including the one being recorded now. Recording continues in a new file.` |
+  | no logs | `No log files to delete.` |
+  | deleting | `Deleting…` |
+
+  **`{n}` and `{size}` include the active session's file in both cases.** The user is never shown a
+  number smaller than what will actually be deleted.
+
+#### 8.5.3 No-logs state — **disabled, not hidden**
+
+**Decision: disabled** (`aria-disabled="true"`, `.55` dim, note reads `No log files to delete.`),
+matching the reveal/export treatment two rows above.
+
+1. **Consistency inside one group beats local optimality.** Reveal and export are already
+   disabled-not-hidden in this exact state; a third control that vanishes instead would make the
+   group's foot jump by 44px on the same transition that leaves its siblings in place.
+2. **The affordance must be learnable before it is needed.** A user reading the §7 privacy statement
+   ("'Delete all log files' below removes every one of them") must be able to *see* the control the
+   sentence refers to, even with nothing to delete yet.
+3. **No layout jump after use.** Deleting is precisely the action that empties the state; hiding the
+   button would make it disappear under the user's cursor the instant it succeeded — the classic
+   destructive-action-disappears-on-success defect.
+4. **Catalog simplicity:** no new `SettingsRowRequirement`, no coverage-test branch (§2.2).
+
+It stays in the tab order via `aria-disabled` (not `disabled`) so a keyboard user hears why.
+
+Note the state is genuinely reachable **with Dev mode on**: a purge that rolls into a fresh 0-byte
+file leaves exactly one log file on disk. The row does **not** go empty in that case — the new file is
+itself deletable — so the note returns to the Dev-mode-on variant with `{n} = 1`.
+
+#### 8.5.4 Confirm dialog — **final copy**
+
+Existing `ConfirmDialog`, **`confirmVariant: 'danger'`** — unlike the raw-names toggle (§4.3), this
+*is* data loss and it *is* irreversible, which is exactly the distinction ui-reference §12.11 draws.
+
+- Title: `Delete all log files?`
+- Body:
+  > `Delete {n} log files ({size})? This cannot be undone.`
+  >
+  > *(only when Dev mode is on)* `This includes the session being recorded right now. Bonsai starts a new, empty log file and keeps recording.`
+  >
+  > `Deleting logs does not change any of your repositories.`
+- Primary: `Delete logs` (verb + object, never `OK`) · Secondary: `Cancel`
+- **Default focus: `Cancel`.** Esc / backdrop / Cancel → nothing happens. Enter activates the focused
+  control, which is Cancel — a destructive dialog must not be dismissible-into-action by a stray
+  Return.
+- `{n}` / `{size}` are **re-read from `log_session_info()` when the dialog opens**, not carried from
+  the last poll, so the number the user consents to is the number that gets deleted.
+- The second paragraph does two jobs in two sentences: it confirms the scope the user is most likely
+  to be uncertain about (*is the file I'm worried about included?* — yes), and it pre-empts the fear
+  that deleting will stop their in-progress capture. It never tells them to turn Dev mode off.
+- The third paragraph exists because this page sits inside a Git client: a user nervous enough to read
+  a red dialog deserves to be told that nothing in their repository is at stake.
+
+#### 8.5.5 States
+
+| State | Button | Note | Elsewhere |
+|---|---|---|---|
+| No logs | `aria-disabled`, `.55` dim | `No log files to delete.` | — |
+| Idle, logs exist | enabled `.btn-danger` | `Removes all {n} log files ({size})…` | — |
+| Confirm open | focus ring retained underneath; dialog traps focus | unchanged | — |
+| Deleting | `aria-busy="true"`, non-activatable, label **unchanged** (`Delete logs…`), trash glyph replaced by a 14px spinner | `Deleting…` | reveal + export also `aria-disabled` for the duration — the folder is being mutated |
+| Success, `rolled: false` (Dev mode off) | returns to the disabled/no-logs state | `No log files to delete.` | success toast + live announcement; status card → `No logs yet.` |
+| Success, `rolled: true` (Dev mode on) | **stays enabled** | `Removes all 1 log file (0 bytes), including the one being recorded now. Recording continues in a new file.` | success toast + live announcement; status card immediately re-polls to `● Recording · 1 file · 0 bytes · 0 records` + `activeFile` |
+| Partial failure (`failedFiles > 0`) | returns to enabled | recomputed from the fresh `LogSessionInfo` | danger toast |
+| Total failure | returns to enabled | unchanged | danger toast |
+
+**Toasts** (§10.2 recipe), dedupe key `dev-delete` — **final copy**:
+
+- `rolled: false` → success: `Deleted {n} log files. {size} freed.`
+- `rolled: true` → success: `Deleted {n} log files. {size} freed. Still recording — Bonsai started a new log file.`
+- partial (`failedFiles > 0`) → danger: `Deleted {n} of {total} log files. {failedFiles} could not be deleted — they may be open in another program.` with an action button `Show in folder` so the user can finish the job manually.
+- total failure → danger: `Couldn't delete the log files. {reason}` — mapped sentences only
+  (`Bonsai isn't allowed to delete files in that folder.` / `The logs folder is no longer there.`),
+  never raw OS text.
+
+The `rolled: true` success string is the one piece of copy that must not be shortened: without
+"Still recording", a user who just deleted the file they were capturing into will reasonably assume
+capture stopped and go re-toggle Dev mode — which would roll *again* and cost them the records
+gathered since the purge.
+
+Failure never leaves the UI stale: `log_session_info()` is re-polled after **every** outcome,
+including failures, so the row note and the status card always describe what is actually on disk.
+
+#### 8.5.6 Accessibility
+
+- **Focus destination after the dialog closes** — three cases, all explicit:
+  - **Cancel / Esc / backdrop** → focus returns to the `Delete logs…` button (standard
+    `ConfirmDialog` restore).
+  - **Confirmed, button remains enabled** (`rolled: true`, partial failure, total failure) → focus
+    returns to the `Delete logs…` button.
+  - **Confirmed and the button becomes disabled** (`rolled: false`, everything deleted) → focus must
+    **not** be lost to `<body>` (it would strand the tab ring inside the modal settings overlay).
+    Because the button is `aria-disabled` rather than `disabled` it remains focusable, so focus still
+    returns to it and the screen reader hears the button's name plus its updated `aria-describedby`
+    note (`No log files to delete.`). This is the concrete payoff of the `aria-disabled` choice in
+    §8.2 and is not optional.
+- **Live-region announcement** reuses the single §5.3 polite region (one per page), announced once
+  per outcome:
+  - `Deleted {n} log files. {size} freed.`
+  - `Deleted {n} log files. {size} freed. Still recording in a new log file.`
+  - `Deleted {n} of {total} log files. {failedFiles} could not be deleted.`
+  - `No log files were deleted.`
+  The region is `polite`, never `assertive` — the user initiated this and is not in danger.
+- The dialog is the existing `ConfirmDialog`: `role="dialog" aria-modal="true"`, labelled by its
+  title, focus-trapped, Esc closes, focus restored per above.
+- Hit target: the button is 28px tall in a 44px row — above the §3.1 floor.
+- Colour is not the sole carrier: the word `Delete`, the trash glyph and the `.btn-danger` fill all
+  agree. `.btn-danger` text on `--danger` is the existing house pair and is unchanged here.
+- `prefers-reduced-motion: reduce` → the busy spinner becomes a static glyph with `aria-busy`.
+- Both themes: `.btn-danger` and `ConfirmDialog` danger variant are existing components; no new
+  colour pairs are introduced by this row.
 
 ---
 
@@ -554,32 +762,34 @@ Both are resolved-out by the user.
   Statistics lands it moves to `statistics`, so Developer stays visually last-and-separate.
 - **`metrics_reset` gets no UI in v1** — there must be no way to destroy history from a surface that
   cannot yet display it. When it does surface, it belongs on the Statistics page behind a danger
-  `ConfirmDialog`, never on the Developer page.
+  `ConfirmDialog`, never on the Developer page. Note the deliberate asymmetry with §8.5: log files
+  are deletable in v1 because the page that owns them *is* shipping and the privacy statement
+  promises it; metrics are not, because their page is not.
 
 ---
 
-## 11. Open questions / concerns for the user
+## 11. Decision records & open questions
 
-- **OQ-1 (recommend: skip for now).** Should leaving Dev mode on for a long time escalate beyond the
-  header pill — e.g. after 24h a §10 App-notice-bar row with a `Turn off` action? The pill is always
-  visible while recording, which I judge sufficient, and the notice bar is currently defined as a
-  *global fault* channel. **Recommendation: ship the pill only; revisit if a user actually leaves it
-  on for a week.** Flagged rather than decided because "don't let someone leave it on unknowingly"
-  was an explicit requirement.
-- **OQ-2 — concern, no design produced (the user has resolved this as "no delete button in v1"; I am
-  registering the residual risk, not re-opening it).** With logs persisting after Dev mode is
-  switched off and no in-app delete, a user who ran one session with **raw names on** has a file
-  containing real branch, tag, file and repository names sitting in the app's config directory
-  indefinitely — pruned only once 10 newer sessions accumulate, which for an occasional debugger may
-  be never. The mitigations specced above are all *informational*: the §7 persistence paragraph, the
-  post-off status line, and the note under the buttons naming the folder. **Recommendation for a
-  later increment** (not P91): a `Delete all log files` button on this page, danger `ConfirmDialog`,
-  copy `Delete {n} log files ({size})? This cannot be undone.` ~15 lines of UI, and it closes the only
-  privacy gap this surface still has.
-- **OQ-3.** The status card polls every 2s while the page is open. If the orchestrator prefers zero
-  polling, the fallback is a manual `↻` refresh next to the file name — worse for the "is it actually
-  recording?" question this card exists to answer. **Recommendation: keep the 2s poll, scoped to the
-  visible page.**
+- **DR-1 — RESOLVED (user, 2026-08-27): `Delete all log files` ships in v1, on the architect's
+  roll-then-purge model.** Raised here as a concern that logs persisting after Dev mode is off, with
+  no in-app delete, leaves a raw-names session's real branch/tag/file/repo names on disk
+  indefinitely. **Approved.** An earlier draft of this contract proposed *excluding* the active
+  session file to dodge Windows sharing violations and Unix unlinked-inode writes; **that was
+  superseded by the architect's roll-then-purge**, which dissolves both platform hazards (the handle
+  is closed before any delete, so behaviour is identical everywhere) *and* erases the file that
+  actually holds the raw-names exposure. Fully designed in §8.5. Command is `logs_delete_all()`
+  returning `LogsDeleteResult { deletedFiles, deletedBytes, failedFiles, activeFile, rolled }`, already
+  specified in `P91-observability.md` §6/§6.1 — no backend addition is requested by this contract.
+- **OQ-1 (open; recommend: skip for now).** Should leaving Dev mode on for a long time escalate
+  beyond the header pill — e.g. after 24h a §10 App-notice-bar row with a `Turn off` action? The pill
+  is always visible while recording, which I judge sufficient, and the notice bar is currently
+  defined as a *global fault* channel. **Recommendation: ship the pill only; revisit if a user
+  actually leaves it on for a week.** Flagged rather than decided because "don't let someone leave it
+  on unknowingly" was an explicit requirement.
+- **OQ-3 (open).** The status card polls every 2s while the page is open. If the orchestrator prefers
+  zero polling, the fallback is a manual `↻` refresh next to the file name — worse for the "is it
+  actually recording?" question this card exists to answer. **Recommendation: keep the 2s poll,
+  scoped to the visible page.**
 
 ---
 
@@ -588,10 +798,10 @@ Both are resolved-out by the user.
 The Settings Developer page must be fully verifiable in the browser harness. Required fixtures,
 selectable by a mock scenario key:
 
-| Fixture | `LogSessionInfo` | Verifies |
+| Fixture | `LogSessionInfo` / behaviour | Verifies |
 |---|---|---|
-| `dev-off-never` | `files: []`, all zero, never enabled | off state; fieldset disabled + lead sentence; both buttons disabled; `No logs yet.`; no header pill |
-| `dev-off-kept` | off, 2 files, `bytes: 3_248_112` | **the post-off persistence state** — buttons enabled, `Idle · last session … kept on this computer` |
+| `dev-off-never` | `files: []`, all zero, never enabled | off state; fieldset disabled + lead sentence; all three buttons disabled; `No logs yet.` / `No log files to delete.`; no header pill |
+| `dev-off-kept` | off, 2 files, `bytes: 3_248_112` | **the post-off persistence state** — all three buttons enabled, `Idle · last session … kept on this computer` |
 | `dev-empty` | on, `files: []`, `records: 0` | just-enabled state; `● Idle` |
 | `dev-active` | on, 2 files, `bytes: 3_248_112`, `records: 41_208`, `anomalies: 2`, `redaction:'strict'` | the normal on state, `n flagged`, formatting, header pill |
 | `dev-raw` | as above, `redaction:'raw'`, `includeRawNames:true` | sensitive-row on-state, group note, status row 3, raw variant of the export dialog + privacy last line |
@@ -600,12 +810,19 @@ selectable by a mock scenario key:
 | `dev-sink-error` | on, write failure flag set | `▲ Not writing`, danger toast, header pill danger variant |
 | `dev-export-fail` | `log_export_session` rejects with each mapped code | all four failure toasts |
 | `dev-reveal-fail` | `log_reveal_dir` rejects | reveal failure toast |
-| `dev-pathological` | 8 files, `bytes: 268_435_456`, `records: 9_999_999`, dir = a 240-char nested path, file name at full length | truncation with `title`, no wrapping, no row growth, both densities |
+| **`dev-delete-off`** | **off**, 5 files, 15.8 MB; `logs_delete_all` → `{deletedFiles:5, deletedBytes:16_567_501, failedFiles:0, activeFile:'', rolled:false}` after 400ms | the Dev-mode-off purge: two-paragraph confirm (no roll sentence), busy state, `Deleted 5 log files. 15.8 MB freed.`, row collapsing to the disabled/empty state, focus staying on the button, status card → `No logs yet.` |
+| **`dev-delete-rolled`** | **on**, 5 files incl. the active one, raw names on; → `{deletedFiles:5, deletedBytes:16_567_501, failedFiles:0, activeFile:'bonsai-2026-08-27T15-02-40-b71c.jsonl', rolled:true}` | **the roll-then-purge path** — `{n}` includes the active file in note *and* dialog, the three-paragraph confirm, `Still recording — Bonsai started a new log file.`, status card immediately showing `● Recording · 1 file · 0 bytes · 0 records` + the new `activeFile`, header pill never unmounting, delete button staying enabled |
+| **`dev-delete-partial`** | 5 files; → `{deletedFiles:4, failedFiles:1, rolled:true}` | externally-locked-file path: partial danger toast with `Show in folder`, note recomputed from fresh info |
+| **`dev-delete-fail`** | `logs_delete_all` rejects with permission / folder-missing codes | both mapped total-failure toasts; button returns to enabled; no stale note |
+| `dev-pathological` | 8 files, `bytes: 268_435_456`, `records: 9_999_999`, dir = a 240-char nested path, `activeFile` at full length | truncation with `title`, no wrapping, no row growth, both densities; the delete note's large `{n}`/`{size}` formatting |
 | `sidebar-churn` | mock ref-set driver with **awaitable** steps: 5 checkouts, a fetch adding ~40 remote refs, a ref deletion, a section toggle | **§9.1(B)** — the sidebar high-churn no-visual-change comparison |
 
-`log_reveal_dir` in mock is a no-op that resolves (there is no OS folder in a browser) — **the actual
-folder opening and the native save dialog are USER CHECKPOINT items**, matching architect §12's
-checkpoint (a)/(b). Everything else above is AI-gate verifiable.
+`log_reveal_dir` in mock is a no-op that resolves, and mock `logs_delete_all` mutates only the mock's
+in-memory file list, synthesising a new `activeFile` when `dev.enabled` is true (there is no OS folder
+in a browser) — **the actual folder opening, the native save dialog, and real on-disk deletion are
+USER CHECKPOINT items**, matching architect §12's checkpoint (a)/(b). Add one: **(e) with Dev mode ON,
+`Delete logs…` leaves the logs folder holding exactly one new file, the old files are gone from disk,
+and that new file grows as you keep using the app.** Everything else above is AI-gate verifiable.
 
 ---
 
@@ -617,17 +834,24 @@ All rows carry `category: 'dev'` and searchable `keywords`. Groups exactly as re
 | id | group | label | control | reset |
 |---|---|---|---|---|
 | `dev.enabled` | Dev mode | `Dev mode` | `switch` | `resetField('dev','enabled','Off')` |
-| `dev.session-info` | Dev mode | `Logging status` | **`group`** | — |
+| `dev.session-info` | Dev mode | `Logging status` | `group` | — |
 | `dev.level` | What is captured | `Detail level` | `segmented` | `resetField('dev','level','Debug')` |
 | `dev.capture-ipc` | What is captured | `App requests` | `switch` | `resetField('dev','captureIpc','On')` |
 | `dev.capture-react` | What is captured | `Screen updates` | `switch` | `resetField('dev','captureReact','On')` |
 | `dev.capture-frames` | What is captured | `Frame timing` | `switch` | `resetField('dev','captureFrames','Off')` |
 | `dev.include-raw-names` | What is captured | `Include raw repository names` | `switch` | `resetField('dev','includeRawNames','Off')` |
-| `dev.privacy-note` | What a log file contains | `What a log file contains` | **`group`** | — |
+| `dev.privacy-note` | What a log file contains | `What a log file contains` | `group` | — |
 | `dev.logs` | Log files | `Log files` | `button` | — |
+| `dev.delete-logs` | Log files | `Delete all log files` | `button` | — |
 
 Keyword set (minimum): `debug logging diagnostics troubleshoot verbose trace log jsonl privacy
 redact anonymous export zip folder reveal flicker performance report bug`.
+
+`dev.delete-logs` keywords: **`delete remove clear purge erase wipe clean up logs disk space privacy
+free space`** — a user who wants the files gone will search any of *delete*, *remove*, *clear* or
+*clean*, and one who is worried about disk will search *space*; all must land on this row. Its
+`label` (`Delete all log files`) is unique in the dialog and is the accessible name the search index
+matches, per §12.2.
 
 - `dev.session-info` and `dev.privacy-note` are **`control: 'group'`** (`types.ts` AM-2), not
   `readonly`: each is an aggregate block on a `role="group"` element named by its heading via
@@ -638,6 +862,10 @@ redact anonymous export zip folder reveal flicker performance report bug`.
   architect's contract names `dev.reveal-logs` / `dev.export-session` as row ids; here they are
   **controls within `dev.logs`**, so they are not separate catalog entries. Their accessible names
   (`Show in folder`, `Export session…`) are unique in the dialog.
+- `dev.delete-logs` is a **separate** row rather than a third control in `dev.logs`, for the misclick
+  and hierarchy reasons in §8.1 — and because it must be independently findable by search: a user
+  searching "delete" should get a row whose label says `Delete all log files`, not a row labelled
+  `Log files`.
 
 ---
 
@@ -645,38 +873,46 @@ redact anonymous export zip folder reveal flicker performance report bug`.
 
 - **Tab order** on the page: master switch → (fieldset, if enabled) level radios (arrow keys within,
   one tab stop) → 4 switches → privacy statement (not focusable; browse-mode reachable) →
-  `Show in folder` → `Export session…`. Disabled fieldset removes its 5 controls from the tab order in
-  one place (§12.3.3).
+  `Show in folder` → `Export session…` → `Delete logs…`. The destructive control is **last**, so no
+  keyboard user passes through it to reach anything else. Disabled fieldset removes its 5 controls
+  from the tab order in one place (§12.3.3); the three action buttons use `aria-disabled` and stay
+  reachable.
 - Every switch: native `<input type="checkbox" role="switch">` named by the row label,
   `aria-describedby` = the row's help **or** note id (and both ids when both exist, §12.2).
 - Segmented: `role="radiogroup"` div named by the row label via `aria-labelledby`; never `tablist`.
 - Status card and privacy block: `role="group"` + `aria-labelledby` on their headings; no `aria-live`
   on the card (§6).
-- One-shot announcements only, via the §5.3 polite live region: Dev mode on/off, export succeeded,
-  export failed, logging stopped.
-- Icon-only buttons: none on this page (both actions are labelled). The header pill has a text label
-  plus an `aria-label` that adds the action.
+- **One** polite live region per page (§5.3), used for: Dev mode on/off, export succeeded/failed,
+  logging stopped, and all four delete outcomes (§8.5.6). Never `assertive`.
+- Both dialogs are the existing `ConfirmDialog` (`role="dialog" aria-modal="true"`, labelled by
+  title, focus-trapped, Esc closes). Default focus is **Cancel** in both. Focus restore after the
+  delete dialog is specified per-outcome in §8.5.6.
+- Icon-only buttons: none on this page (all three actions are labelled). The header pill has a text
+  label plus an `aria-label` that adds the action.
 - Hit targets: header pill 32×32 box; settings rows 44px min-height; buttons 28px tall inside 44px
   rows — all clear the §3.1 floor.
 - Colour is never the sole carrier: `Recording`/`Idle`/`Not writing` are words; the sensitive row uses
-  bar + glyph + sentence; `n flagged` is a number, not a hue.
-- `prefers-reduced-motion: reduce` removes the record-dot fade and any button-spinner rotation
-  (spinner becomes a static glyph with `aria-busy`).
+  bar + glyph + sentence; the destructive button uses the word `Delete` + trash glyph + fill;
+  `n flagged` is a number, not a hue.
+- `prefers-reduced-motion: reduce` removes the record-dot fade and all button-spinner rotation
+  (spinners become static glyphs with `aria-busy`).
 - Contrast, pairs used here, both themes: `--text-1` on `--bg-0` 13.5/15.4:1; `--text-2` on `--bg-0`
   7.9/4.9:1; `--warning` bar/glyph on `--bg-0` 7.3/4.5:1; `--danger` glyph on `--bg-1` 4.4/4.6:1;
   `--text-1` over a `--warning` 14% tint 9.24–10.30 / 11.68–12.00:1 (measured on `--bg-2` — see the
-  §5.2 re-measure note for the header's `--bg-1`). All ≥4.5:1 for text, ≥3:1 for graphics.
+  §5.2 re-measure note for the header's `--bg-1`). `.btn-danger` is an existing component pair,
+  unchanged. All ≥4.5:1 for text, ≥3:1 for graphics.
 
 ---
 
 ## 15. New tokens
 
 **None.** Every colour, radius and font on this surface is an existing custom property from
-`src/styles.css`. Two new *patterns* (not tokens) belong in `ui-reference.md`: `§12.11 Developer
-settings, the sensitive row, and the logging indicator`, plus the amended header-toolbar order in §1.
-The exact patch text is staged at **`docs/contracts/ui-reference-patch-P91.md`** because `Edit` was
-unavailable in the authoring session — apply it on the next `ui-designer` invocation, then delete that
-file.
+`src/styles.css`; `.btn-danger` and the `danger` `ConfirmDialog` variant are existing components.
+
+`ui-reference.md` is already current for this contract: the orchestrator applied the §1
+header-toolbar order, the new **§12.11** (Developer settings, the sensitive row, and the logging
+indicator), and the *"Sensitive is not destructive"* clause. **Nothing further is staged** — the
+roll-then-purge change is a behaviour decision inside §8.5 and introduces no new house pattern.
 
 CSS lives in a new `src/styles/settings-dev.css` imported after `settings-primitives.css` (do not
 reorder the existing import list), plus the pill rule in the existing header-toolbar stylesheet.

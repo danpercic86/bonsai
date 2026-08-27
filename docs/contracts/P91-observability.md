@@ -5,8 +5,8 @@
 never-meant-to-happen actions** *mechanically visible* — via correlation ids + machine-emitted
 anomaly records, not via prose log lines.
 
-**All six §13 decisions are RESOLVED (user, 2026-08-27).** §13 is now a decision record, not a
-question list. Nothing in this contract is pending an answer.
+**All §13 decisions are RESOLVED (user, 2026-08-27).** §13 is a decision record, not a question
+list. Nothing in this contract is pending an answer.
 
 **Two distinct systems, do not conflate:**
 
@@ -14,7 +14,7 @@ question list. Nothing in this contract is pending an answer.
 |---|---|---|
 | Gate | Dev mode ON only | always on |
 | Volume | verbose, per-event | tiny, aggregated |
-| Lifetime | rotating session files, prunable | durable, retained (future Statistics page) |
+| Lifetime | rotating session files, prunable, user-deletable | durable, retained (future Statistics page) |
 | Sink | `logs/*.jsonl` | `metrics/usage.json` |
 | Network egress | **none, ever** | **none, ever** |
 
@@ -28,14 +28,14 @@ question list. Nothing in this contract is pending an answer.
 | `obs/mod.rs` | re-exports; `ObsState` held in `AppState` |
 | `obs/record.rs` | `LogRecord` + all payload enums; schema version constant |
 | `obs/redact.rs` | session salt, `Redactor` (stable-within-session id assignment), token scrubber |
-| `obs/sink.rs` | bounded MPSC → writer thread; `try_send`, drop counter, flush |
-| `obs/writer.rs` | file naming, JSONL append, rotation, pruning, header record |
+| `obs/sink.rs` | bounded MPSC → writer thread; `try_send`, drop counter, flush; `RollAndPurge` control message |
+| `obs/writer.rs` | file naming, JSONL append, rotation, pruning, header record, **purge** (§6.1) |
 | `obs/anomaly.rs` | streaming detectors (§5) over the unified record stream |
 | `obs/trace.rs` | `TraceId` type, minting, `TraceMeta`, `emit_logged` event helper |
 | `obs/invoke_shim.rs` | `invoke_handler` wrapper logging every command dispatch |
 | `obs/metrics.rs` | `MetricsStore` (counters/histograms), aggregation cadence |
 | `obs/metrics_file.rs` | atomic load/save of `metrics/usage.json`, daily buckets, retention |
-| `commands/obs.rs` | `log_append`, `log_session_info`, `log_reveal_dir`, `log_export_session`, `metrics_snapshot`, `metrics_reset` |
+| `commands/obs.rs` | `log_append`, `log_session_info`, `log_reveal_dir`, `log_export_session`, `logs_delete_all`, `metrics_snapshot`, `metrics_reset` |
 
 `perf.rs` is **kept** as the hot-path atomic tally and is *absorbed*: `MetricsStore` reads
 `PerfState::snapshot()` at each flush and folds the delta into durable counters. No parallel counters.
@@ -135,7 +135,7 @@ spans in heavy commands (`obs::span!("graph.walk")`), added only where `perf.rs`
 instruments.
 
 Commands excluded from instrumentation by name (would self-amplify):
-`log_append`, `log_session_info`, `metrics_snapshot`, `debug_perf_counters`.
+`log_append`, `log_session_info`, `logs_delete_all`, `metrics_snapshot`, `debug_perf_counters`.
 
 #### 2.3.1 Contingency — executing the fallback without re-deriving it
 
@@ -238,7 +238,9 @@ Payload unions (each record is `LogRecordBase & { kind: K } & PayloadK`):
 interface SessionPayload  { schema: number; app: string; os: string; sessionId: string;
                             devMode: true; level: LogLevel; redaction: RedactionMode;
                             /** Human-readable one-liner restating §7 for the reviewer. */
-                            redactionNote: string; }
+                            redactionNote: string;
+                            /** True when this header opens a file created by a purge roll (§6.1). */
+                            afterPurge?: boolean; }
 interface GesturePayload  { origin: TraceOrigin; gesture: string; }
 interface IpcCallPayload  { cmd: string; argsHash: string; argsShape?: ArgShape;
                             args?: Record<string, unknown>; } // only when redaction==='raw'
@@ -350,11 +352,11 @@ exactly the same anomaly signal as a `raw` one.
   flickered", and keeps one file to one redaction mode). Not daily, not per-repo.
 - **Rotation:** 16 MB per part, max 8 parts per session; **pruning:** keep the 10 most recent
   session files, total cap 256 MB, oldest deleted first at session start.
-- **Retention — DECIDED: logs are NEVER auto-deleted.** Turning Dev mode off closes the sink and
-  leaves every existing file on disk (the user's whole workflow is exporting *after* the fact).
-  The §6 caps above are the **only** deletion path in P91. Implementations must not add
-  delete-on-disable, delete-on-uninstall, or age-based expiry. A user-initiated "Delete all logs"
-  button is an explicit **follow-up**, not in this milestone.
+- **Retention — DECIDED: no AUTOMATIC deletion beyond the caps above.** Turning Dev mode off closes
+  the sink and leaves every existing file on disk (the user's whole workflow is exporting *after*
+  the fact). Implementations must not add delete-on-disable, delete-on-uninstall, or age-based
+  expiry. **This prohibition covers automatic deletion only** — the explicit, user-initiated
+  `logs_delete_all` (§6.1) is in scope for v1 and is not a violation of it.
 - **Sink:** `std::sync::mpsc::sync_channel(4096)` → one dedicated writer thread with a
   `BufWriter`. All producers use `try_send`; on full, increment a drop counter and emit one `drop`
   record when it drains. **Never blocks the git or UI paths — no lock is held across a write.**
@@ -366,12 +368,86 @@ exactly the same anomaly signal as a `raw` one.
 - **Mock mode:** the sink client writes to an in-memory ring buffer; `window.__bonsaiDumpLogs()`
   returns the JSONL string so the browser harness can assert schema + anomalies with no Tauri.
 
+### 6.1 "Delete all log files" — **DECIDED: in v1** (roll-then-purge)
+
+**Why it ships:** logs survive Dev mode being switched off (§6 retention), and pruning only fires
+once 10 *newer* sessions exist. An occasional debugger who enables `raw` names once and never
+produces 10 more sessions would otherwise leave real branch / tag / file / repo names on disk
+indefinitely. Manual folder deletion is not an acceptable remedy for a privacy-relevant artifact
+the app itself created.
+
+```rust
+#[tauri::command]
+async fn logs_delete_all(
+    app: AppHandle, state: State<'_, AppState>,
+) -> Result<LogsDeleteResult, AppError>;
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogsDeleteResult {
+    /// Files actually removed from disk.
+    pub deleted_files: u32,
+    /// Bytes reclaimed (sum of the sizes of the removed files, measured before removal).
+    pub deleted_bytes: u64,
+    /// Files that could not be removed (locked by another process, permission denied, ...).
+    /// Redacted names: `log#<n>.jsonl` — never absolute paths.
+    pub failed_files: u32,
+    /// Present only when Dev mode was ON: the fresh, empty file logging continues into.
+    pub active_file: Option<String>,     // file NAME only, not a path
+    /// True when the writer was rolled to a new file as part of this operation.
+    pub rolled: bool,
+}
+```
+```ts
+export interface LogsDeleteResult {
+  deletedFiles: number; deletedBytes: number; failedFiles: number;
+  activeFile: string | null; rolled: boolean;
+}
+```
+
+**Behaviour when Dev mode is ON and the writer holds the current file open — DECIDED:
+*roll, then purge*.** The command sends a `RollAndPurge` control message to the writer thread and
+awaits its completion (`spawn_blocking`, so the UI never blocks). The writer, on its own thread:
+1. flushes and **closes** the current file (releasing the Windows handle);
+2. opens a **new** session file with a fresh `session` header record carrying `afterPurge: true`;
+3. enumerates every other `*.jsonl` in `logs/`, records each file's size, and deletes it;
+4. returns counts, with `rolled: true` and `active_file: Some(<new file name>)`.
+
+Rationale: it is the only option that satisfies the privacy intent (**every byte written before the
+click is gone, including the current session's — that is what "delete all" must mean for a
+privacy-relevant artifact**), works identically on Windows, macOS and Linux, and does not force the
+user to disable Dev mode and lose their in-progress debugging session. "Keep the live file" would
+leave the very `raw`-names session the user is trying to erase; "refuse while active" makes the
+feature unavailable in the exact state where it matters most.
+
+When Dev mode is OFF, no writer exists: the command deletes every `*.jsonl` in `logs/` and returns
+`rolled: false`, `active_file: None`.
+
+Other rules:
+- **Partial results are reported honestly, never as success.** A file that cannot be removed
+  increments `failed_files`; the command still returns `Ok` with the partial counts, and the UI
+  must state "Deleted N files (X MB); M could not be removed." A `failed_files > 0` result is a
+  visible warning state, not a silent no-op.
+- `deleted_bytes` is summed from `metadata().len()` read **immediately before** each successful
+  removal, so the number the UI shows is what was actually reclaimed.
+- Scope is exactly `<app_config_dir>/logs/*.jsonl` (plus any `*.jsonl.tmp`). The command never
+  touches `metrics/`, `settings.json`, or anything outside `logs/`.
+- `logs_delete_all` is on the IPC-instrumentation exclusion list (§2.3) — deleting logs must not
+  itself write a log record into the file that survives.
+- The UI **must confirm before invoking** (destructive-operation guardrail), and the confirm copy
+  states the file count and total bytes obtained from `log_session_info` beforehand.
+- **Mock IPC:** `src/ipc/mock/obs.ts` clears the in-memory ring buffer and returns a plausible
+  `LogsDeleteResult` (`deletedFiles: 3, deletedBytes: 1_248_130, failedFiles: 0, rolled: true,
+  activeFile: 'bonsai-…-mock.jsonl'`), so the browser harness exercises both the success and the
+  `failedFiles > 0` copy path (a fixture flag toggles the latter).
+
 ### Commands
 ```rust
 #[tauri::command] async fn log_append(state: State<'_, AppState>, records: Vec<LogRecord>) -> Result<(), AppError>;
 #[tauri::command] async fn log_session_info(state: State<'_, AppState>) -> Result<LogSessionInfo, AppError>;
 #[tauri::command] async fn log_reveal_dir(app: AppHandle) -> Result<(), AppError>;
 #[tauri::command] async fn log_export_session(app: AppHandle, dest: Option<String>) -> Result<String, AppError>; // zips current session parts, returns path
+#[tauri::command] async fn logs_delete_all(app: AppHandle, state: State<'_, AppState>) -> Result<LogsDeleteResult, AppError>; // §6.1
 #[tauri::command] async fn metrics_snapshot(state: State<'_, AppState>) -> Result<MetricsSnapshot, AppError>;
 #[tauri::command] async fn metrics_reset(state: State<'_, AppState>) -> Result<(), AppError>;
 ```
@@ -380,14 +456,17 @@ export interface LogSessionInfo {
   sessionId: string; dir: string; files: string[]; bytes: number;
   records: number; anomalies: number; dropped: number;
   redaction: RedactionMode;
+  /** Total across ALL log files on disk, not just this session — the confirm copy needs it. */
+  totalFiles: number; totalBytes: number;
 }
 ```
-All six added to `IpcApi`, `src/ipc/tauri/obs.ts`, `src/ipc/mock/obs.ts`, and
+All seven added to `IpcApi`, `src/ipc/tauri/obs.ts`, `src/ipc/mock/obs.ts`, and
 `generate_handler![...]` in `src-tauri/src/lib.rs`.
 
 **`metrics_reset` — DECIDED:** the command ships (tests need it) but **no UI exposes it in P91**.
 No catalog row, no button. It becomes user-reachable only when a Statistics page exists, so there
-is no way to destroy history from a surface that cannot yet display it.
+is no way to destroy history from a surface that cannot yet display it. (Contrast `logs_delete_all`,
+which *is* user-exposed — logs carry privacy-relevant content; metrics structurally cannot.)
 
 ---
 
@@ -419,6 +498,9 @@ identifies the repo, its people or its contents does.
 | Tokens, passwords, `Authorization` headers, PATs, SSH keys | **NEVER, under any setting** | **NEVER** |
 | Error messages | scrubbed of paths, refs, URLs and tokens | kept, tokens still scrubbed |
 
+`raw` mode is precisely why §6.1 exists: it is the only mode that puts real names on disk, and the
+user must be able to remove them on demand.
+
 ### 7.2 Hashing scheme
 
 ```rust
@@ -434,7 +516,8 @@ pub enum Kind { Repo, Path, Ref, Remote, Other }
 - **Salt: 16 random bytes generated per session, held in memory only, never persisted.**
   Consequence — the same branch is `ref#3` in every record of one file (so the AI reviewer can
   correlate) and is a *different* ordinal in tomorrow's file (so files cannot be cross-linked or
-  dictionary-attacked). This is the explicitly required property.
+  dictionary-attacked). This is the explicitly required property. A purge roll (§6.1) keeps the
+  session salt: the new file continues the same session's ordinals.
 - The frontend gets the same salt at boot via `log_session_info` and applies the identical scheme
   in `src/obs/redact.ts`, so UI-side and Rust-side records agree on `ref#3`.
 - `argsHash` is a salted 8-hex digest of the canonicalized JSON args. It powers `dup-ipc` without
@@ -453,7 +536,7 @@ pub enum Kind { Repo, Path, Ref, Remote, Other }
   mixes modes).
 - The Settings Dev page shows a fixed, always-visible statement of log contents. Copy is
   ui-designer's; the *content* is exactly the §7.1 table plus: "Logs are written only to this
-  computer. Bonsai never uploads them."
+  computer. Bonsai never uploads them." plus a pointer to the delete action.
 
 ---
 
@@ -505,7 +588,8 @@ pub struct Histogram { pub count: u64, pub sum_ms: u64, pub max_ms: u64,
   `perf.status_scans`. `perf.rs` is unchanged; no second hot-path counter is introduced.
 - **Key namespace:** `<domain>.<action>` only, from a fixed allow-list in `obs/metrics.rs` — no
   user-derived string can ever become a key (privacy + unbounded-growth guard). Metrics therefore
-  need no redaction: **they structurally cannot contain repo content.**
+  need no redaction: **they structurally cannot contain repo content**, which is why they are not
+  covered by `logs_delete_all`.
 - **No network sink exists.** No HTTP client is reachable from `obs/*`; a test asserts it.
 - Read API for the future Statistics page: `metrics_snapshot()`. **No UI is designed in P91.**
 
@@ -585,7 +669,7 @@ New category `'dev'` (rail last, `dividerBefore: true`), rows:
 
 | Row id | Control | Effect |
 |---|---|---|
-| `dev.enabled` | switch | master Dev-mode gate; OFF ⇒ no instrumentation active, no file writes, **no log deletion** |
+| `dev.enabled` | switch | master Dev-mode gate; OFF ⇒ no instrumentation active, no file writes, **no automatic log deletion** |
 | `dev.level` | segmented | `info` / `debug` / `trace` (`trace` force-enables frame capture) |
 | `dev.capture-ipc` | switch | ipc/event/channel records (default on) |
 | `dev.capture-react` | switch | render/render.tally/effect/state records (default on) |
@@ -593,10 +677,11 @@ New category `'dev'` (rail last, `dividerBefore: true`), rows:
 | `dev.include-raw-names` | switch | `strict` → `raw` (§7). Default **off**. Confirm dialog on enable; persistent warning row while on; starts a new log file |
 | `dev.reveal-logs` | button | `log_reveal_dir()` |
 | `dev.export-session` | button | `log_export_session()` → save dialog; re-shows the content statement first |
-| `dev.session-info` | readonly | `LogSessionInfo` summary (files, size, records, anomalies, dropped, redaction mode) |
+| `dev.delete-logs` | button (destructive) | **§6.1** — confirm dialog first, stating `totalFiles` / `totalBytes` from `log_session_info`; then `logs_delete_all()`. Reports the result honestly: success count + bytes, and a warning state when `failedFiles > 0`. When Dev mode is ON, the copy states that logging continues into a new, empty file |
+| `dev.session-info` | readonly | `LogSessionInfo` summary (files, size, records, anomalies, dropped, redaction mode); refreshes after a delete |
 | `dev.privacy-note` | readonly | the fixed §7.3 statement of what a log file contains |
 
-**No row for `metrics_reset` and no "Delete all logs" row in P91** (§6).
+**No row for `metrics_reset` in P91** (§6).
 
 **Persistence must change in lockstep across exactly these files:**
 1. `src-tauri/src/settings.rs` — `#[serde(default)] pub dev: DevSettings` on `Settings` (+ struct)
@@ -632,6 +717,7 @@ is written on each enable.
 | Dev mode **ON** | ≤ **5 %** frame-time regression on a 20k-commit scroll; ≤ 2 ms added per IPC call; ≤ 1 `log_append` per 500 ms | perf_gate case with the sink enabled + `unbatched-sink` must not fire in the harness run |
 | Dev mode **ON, sidebar** | a single ref change on a **500-ref** repo produces **≤ 8** react records total (container `each` + 4 aggregate tallies), never one per row | vitest: mount the sidebar with a 500-ref fixture, trigger one ref change, count records |
 | Sink | never blocks a caller (bounded `try_send`), writer thread only | test: fill the channel, assert producers return immediately and a `drop` record appears |
+| `logs_delete_all` | runs on `spawn_blocking`; UI never blocks; no log record is lost between the flush and the new file opening | test: enqueue records concurrently with a purge, assert none are lost after the roll |
 | Redactor | ≤ 5 µs per record (`DashMap` hit + one salted hash) | bench in `obs/redact.rs` tests |
 
 ---
@@ -644,13 +730,13 @@ and user-surface tails.
 
 | # | Increment | UI? | Scope | Acceptance |
 |---|---|---|---|---|
-| 1 | **Log core (Rust)** — `obs/record.rs`, `redact.rs`, `sink.rs`, `writer.rs`, `commands/obs.rs` (all four log commands), `DevSettings` + all 8 lockstep files, mock IPC stubs | no | schema, redaction, sink, rotation, pruning, flush-on-exit, settings plumbing | `cargo test`: rotation at cap; pruning keeps N; backpressure emits `drop`; exit flush loses 0 records; `Redactor` assigns stable ordinals within a session and different ones across sessions; token scrubber catches every fixture pattern; **turning Dev mode off deletes no file**. Enabling Dev mode creates a `logs/*.jsonl` whose first line is a valid `session` record naming the redaction mode |
+| 1 | **Log core (Rust)** — `obs/record.rs`, `redact.rs`, `sink.rs`, `writer.rs`, `commands/obs.rs` (`log_append`, `log_session_info`, `log_reveal_dir`, `log_export_session`), `DevSettings` + all 8 lockstep files, mock IPC stubs | no | schema, redaction, sink, rotation, pruning, flush-on-exit, settings plumbing | `cargo test`: rotation at cap; pruning keeps N; backpressure emits `drop`; exit flush loses 0 records; `Redactor` assigns stable ordinals within a session and different ones across sessions; token scrubber catches every fixture pattern; **turning Dev mode off deletes no file**. Enabling Dev mode creates a `logs/*.jsonl` whose first line is a valid `session` record naming the redaction mode |
 | 2 | **Frontend pipeline** — `obs/{types,enabled,trace,redact,log,batcher,ipcProxy}.ts`, wire into `src/ipc/index.ts`, mock ring buffer + `__bonsaiDumpLogs()` | no | proxy, trace minting, redaction mirror, batching | vitest: a mock-IPC call produces paired `ipc.call`/`ipc.result` sharing one trace + one span; disabled ⇒ method identity preserved; ≤1 `log_append` per 500 ms; a call with a path argument logs `argsHash`+`argsShape` and **no path substring** |
 | 3 | **Rust dispatch + events + watcher** — `invoke_shim.rs` (§2.3, incl. the §2.3.1 contingency note in the module doc), `trace.rs`, migrate every `emit(` site to `emit_logged` with an explicit `TraceMeta`, watcher batch/debounce records | no | backend choke point | every dispatch yields an `ipc.recv` stamped with the frontend-injected `__trace`; no `emit` site remains unmigrated (grep test); a git-op burst yields watcher `fired` records with correct `paths`/`relevant`/`debounceMs`. **If `tauri::ipc::Invoke` will not compile, execute §2.3.1 (drop the shim) and drop only the `ipc.recv` criterion — do not modify command signatures** |
 | 4 | **Refresh + echo causality + React causality across the SIX surfaces** — `armEcho(repoId, trace)`, suppressed-watcher record at `useCoalescedRefresh.ts:82`, `pendingTracesRef` + `refresh` records, `obs/react.ts` + `obs/renderTally.ts`, applied per the §9.3 table (incl. the sidebar), `frameStats` routing | **yes** | **the flicker evidence** | (a) a mutation followed by its fs echo yields a `watcher` record with `suppressed:true` and `causedBy` = the mutation's trace; (b) one mutation ⇒ exactly one `refresh` record listing every collapsed contributing trace; (c) an effect re-run with unchanged deps emits `effect-no-change`; (d) **sidebar: one ref change on a 500-ref fixture yields ≤8 react records — one `each` record for `Sidebar.tsx` plus one `render.tally` per section/row component — and zero per-row records**; (e) a sidebar flicker (repeated re-render with no ref change) shows as a `render.tally` with `renders > 3 × instances` |
 | 5 | **Anomaly detector** — `obs/anomaly.rs`, every sink-side rule in §5 incl. `render-storm` | no | derived records | scripted double-click in the harness produces a `dup-ipc` anomaly whose `refs` point at the two `ipc.call` seqs; each rule has a unit test with a true-positive and a true-negative case |
 | 6 | **Metrics** — `obs/metrics.rs`, `metrics_file.rs`, `perf.rs` absorption, `metrics_snapshot`/`metrics_reset` + mock | no | durable local aggregates | counters survive restart; `.bak` recovery on a corrupt file; daily bucketing correct across a simulated date change; `perf` deltas appear as `perf.*`; test asserts `obs/` reaches no HTTP dependency and that no metric key is user-derived; **`metrics_reset` exists as a command and appears in no catalog row** |
-| 7 | **Settings Dev page** — catalog rows, `DevPage.tsx`, reveal/export actions, raw-names confirm + warning, privacy statement | **yes** (ui-designer first) | user surface | catalog parity test passes; toggling `dev.enabled` starts/stops writing with no restart **and deletes nothing**; enabling raw names confirms and starts a new file; export produces a zip of the session parts |
+| 7 | **Settings Dev page + `logs_delete_all`** — the `RollAndPurge` writer path + `logs_delete_all` command + mock, `LogSessionInfo.totalFiles/totalBytes`, catalog rows, `DevPage.tsx`, reveal/export/delete actions, raw-names confirm + warning, privacy statement | **yes** (ui-designer first) | user surface + purge | catalog parity test passes; toggling `dev.enabled` starts/stops writing **and deletes nothing**; enabling raw names confirms and starts a new file; export produces a zip of the session parts. **`logs_delete_all`:** (a) Dev mode OFF ⇒ every `*.jsonl` removed, `rolled:false`, `activeFile:null`; (b) **Dev mode ON ⇒ the writer rolls to a new file with an `afterPurge:true` header, every prior file (including the one just closed) is removed, `rolled:true`, `activeFile` names the new file, and logging continues with no lost record**; (c) `deletedFiles` / `deletedBytes` **exactly match** the files and byte sizes removed, asserted against a pre-seeded fixture directory; (d) a file made undeletable increments `failedFiles`, the command still returns `Ok`, and the UI shows the partial-result warning; (e) nothing outside `logs/` is touched (assert `metrics/` and `settings.json` survive); (f) the delete is confirm-gated and writes no record into the surviving file |
 
 Increments 4 and 7 require a `ui-designer` pass (`docs/contracts/P91-observability-ui.md`) before
 senior-dev.
@@ -667,8 +753,9 @@ path separators, `@`, `http`, known token shapes, and any branch name present in
 that flicker (**including the sidebar interactions where flickering was observed**), then (a)
 "Reveal logs folder" opens the correct directory, (b) "Export session" produces a zip, (c) the user
 reads the exported JSONL and confirms it identifies the misbehaviour **and contains nothing they
-would not send to a third party**, (d) with Dev mode OFF, graph scroll on a 20k-commit repo feels
-unchanged.
+would not send to a third party**, (d) **"Delete all log files" with Dev mode still ON empties the
+folder down to one fresh file, the reported count/size look right, and logging visibly continues**,
+(e) with Dev mode OFF, graph scroll on a 20k-commit repo feels unchanged.
 
 ---
 
@@ -679,9 +766,11 @@ unchanged.
 | 1 | Trace transport | **APPROVED as specced** — injected `__trace`/`__span` args key + the Rust `ipc.recv` shim. Contingency retained in §2.3.1 with the exact visibility lost if the shim is dropped | §2.2, §2.3, §2.3.1, §12 inc. 3 |
 | 2 | Metrics storage | **APPROVED — rolled-up JSON**, not SQLite. Justification and the sole revisit trigger (per-event drill-down) retained | §8 |
 | 3 | React instrumentation scope | **CHANGED — SIX surfaces**, adding the **left sidebar** (an observed flicker site). Sidebar sections + `rows.tsx` use the new **aggregate** render mode so a per-ref re-render storm cannot flood the log | §9.2, §9.3, §11, §12 inc. 4 |
-| 4 | Log retention | **APPROVED — logs are never auto-deleted.** Turning Dev mode off deletes nothing; the §6 size/count caps are the only deletion path. "Delete all logs" is a follow-up | §6, §10, §12 inc. 1 & 7 |
+| 4 | Log retention | **APPROVED — no automatic deletion.** Turning Dev mode off deletes nothing; the §6 size/count caps are the only *automatic* deletion path | §6, §10, §12 inc. 1 & 7 |
 | 5 | Log file granularity | **APPROVED — one file per session** | §6 |
 | 6 | `metrics_reset` | **APPROVED — ship the command, expose no UI** until a Statistics page exists | §6, §10, §12 inc. 6 |
+| 7 | **"Delete all log files"** | **PULLED INTO v1** (was a deferred follow-up under decision 4; raised by ui-designer, accepted by the user). Rationale: logs survive Dev mode being disabled, and pruning only fires after 10 newer sessions — so one `raw`-names session can leave real names on disk indefinitely for an occasional debugger. Manual folder deletion is not an acceptable remedy for a privacy-relevant artifact the app created. Behaviour with the writer active: **roll to a new file, then purge everything else** | §6.1, §6 Commands, §7.1, §10 (`dev.delete-logs`), §11, §12 inc. 7 |
 
-**Deferred follow-ups (explicitly out of P91):** a "Delete all logs" button; app-wide React
-instrumentation beyond the six surfaces; the Statistics page and any UI for `metrics_reset`.
+**Deferred follow-ups (explicitly out of P91):** app-wide React instrumentation beyond the six
+surfaces; the Statistics page and any UI for `metrics_reset`; selective/per-file log deletion (v1
+is all-or-nothing).

@@ -34,8 +34,8 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 log file to an AI that can identify double triggers, redundant IPC calls, effects firing on
 unchanged deps, echo-induced refreshes and superseded results — without eyeballing 50k lines.
 
-**Contracts:** `docs/contracts/P91-observability.md` (architecture, 687 lines) ·
-`docs/contracts/P91-observability-ui.md` (Dev-mode settings surface, 682 lines) ·
+**Contracts:** `docs/contracts/P91-observability.md` (architecture) ·
+`docs/contracts/P91-observability-ui.md` (Dev-mode settings surface) ·
 `docs/contracts/ui-reference.md` §12.11 + §1 header order (applied by orchestrator from the
 ui-designer's staged patch — its Edit tool was unavailable; patch file consumed and deleted).
 
@@ -61,7 +61,28 @@ backend-receipt visibility); (2) metrics storage = **rolled-up JSON**, not SQLit
 instrumentation = **SIX surfaces** — the user added the **left sidebar** to the original five
 (RepoWorkspace+hooks, DiffBrowser, GraphCanvas, right-panel tabs, PR panel) because the left pane
 is where they saw flickering; (4) logs are NOT auto-deleted when Dev mode goes off (prune by caps
-only; "Delete all logs" = follow-up); (5) per-session log files; (6) `metrics_reset` ships headless.
+only); (5) per-session log files; (6) `metrics_reset` ships headless.
+
+**Decision 7 (2026-08-27) — "Delete all log files" ships in v1**, not as a follow-up. ui-designer
+raised, and the user accepted, that because logs persist after Dev mode goes off and pruning needs
+10 *newer* sessions, a single **raw-names** session can leave real branch/tag/file/repo names on
+disk indefinitely for an occasional debugger. **Model = roll-then-purge** (`logs_delete_all` →
+`LogsDeleteResult { deletedFiles, deletedBytes, failedFiles, activeFile, rolled }`): the writer
+flushes and CLOSES the current file, opens a fresh one (`session` header carries `afterPurge:true`),
+then deletes every other `*.jsonl`. **This resolved a direct contract conflict** — ui-designer had
+specced "always exclude the active file" to dodge the Windows sharing-violation / Unix
+unlinked-inode hazard; roll-then-purge removes the open handle *before* deletion, so both hazards
+vanish AND the active file (the one actually holding the raw names) is erased. Excluding it would
+have shown a success toast while the exposure stayed on disk. Scope hard-limited to `logs/*.jsonl`
++ `.tmp` — never `metrics/` or `settings.json`. Success copy must say "Still recording" when
+`rolled:true`, or users re-toggle Dev mode and lose the records gathered since the purge.
+Decision 4 above forbids **automatic** deletion only; user-initiated delete is in scope.
+
+**Parked for the P91 design-review pass (not blocking):** re-measure the header pill contrast (the
+figure was taken on `--bg-2`, the header is `--bg-1`); status card polls `log_session_info()` every
+2s while visible (keep); >24h Dev-mode escalation to a notice bar (declined — the always-visible
+pill suffices); selective per-file deletion remains a follow-up.
+
 ## ✅ Graph-features run (2026-08-26) — briefs from docs/ideas/graph-features-brief.md — DONE (AI gate + USER CHECKPOINTs green 2026-08-27)
 
 Branch: `feat/bonsai-graph-theme` (stacked on spec-002, per user decision). Autonomous

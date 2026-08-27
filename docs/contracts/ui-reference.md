@@ -1230,6 +1230,15 @@ on every ref change — the comparison must be a *sequence* of signatures across
 an intermediate state and would hide in an end-state-only diff. Frame-timing parity is always a
 USER CHECKPOINT (headless harness, no `requestAnimationFrame`).
 
+**Sensitive is not destructive.** A reversible setting with a privacy consequence gets
+`.settings-row--sensitive` (`--warning` leading bar + glyph) and a `primary` confirm; an action that
+loses data gets `.btn-danger`, a `danger` `ConfirmDialog` naming the count and consequence, and
+**its own row**, separated by the standard hairline from any benign action — never a second filled
+button in the same flex line. A destructive row is **last in tab order** on its page,
+**disabled-not-hidden** when it has nothing to act on, and uses `aria-disabled` rather than
+`disabled` so focus survives its own success (a control that becomes `disabled` on completion drops
+focus to `<body>` and strands the tab ring inside a modal).
+
 **CSS location.** `src/styles/settings-dev.css`, imported after `settings-primitives.css`; the pill
 rule lives in the existing header-toolbar stylesheet. Do not reorder the settings import list.
 
