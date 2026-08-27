@@ -38,6 +38,13 @@ Delivery units (all AI-gate green):
 - **spec-006** — Author coloring + parent-highlight — COMMITTED 0387757 (2026-08-27)
 - **spec-007** — Replay mode — COMMITTED d763ae2 (2026-08-27; AC5 downscoped to frontier pulse; bespoke Bonsai sprout = follow-up)
 
+PR center-diff (2026-08-27, commits 1802e55/4cbc75f/57a8c69): PR changed-file diffs now open in the
+center DiffBrowser (new `pr` source, mergeBase..head via forgePrFileDiff; compare > pr > commit
+precedence; compact file list stays in the right panel). Follow-ups (non-blocking): rename-case
+Rust test for `ImageDiffRequest::Range` (`orig_path: Some` branch untested); auto-collapse or
+virtualize DiffBrowser above N files for very large PRs; native USER CHECKPOINT — PR image diff
+renders real comparison (mock intercepts getImageDiff).
+
 Run follow-ups (non-blocking): eslint warnings 37/40 cap — burn down; bespoke Bonsai sprout (spec-007 AC5 full form); mock resolveLayout ignores kind:'unborn' (blocks empty-repo fab-gate e2e); settings-panel stale sentence + AC7 scroll-to-top + popover Esc capture (spec-003); rail wheel deltaMode + hexToRgba per-pixel alloc + small-repo dashed density (spec-005, cosmetic); foldView displayToModelRow dup (spec-004); transient stale-chip flash between filter change and next meta (spec-003); refactor queue: RepoWorkspace ~2776, GraphCanvas ~898; at-cap files: WorkspaceGraphPane 499, settings.rs, graph.rs 496.
 
 Locked decisions (brief recommendations, adopted for the run): solo/hide always keeps HEAD's
