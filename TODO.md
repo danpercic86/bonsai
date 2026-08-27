@@ -29,16 +29,16 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 Branch: `feat/bonsai-graph-theme` (stacked on spec-002, per user decision). Autonomous
 straight-through run; USER CHECKPOINTs collected in the ledger below and presented at the end.
 
-**Current step:** spec-006 COMMITTED (0387757, gate all-8 green). spec-007 (final unit) implementation running. AC5 downscoped to frontier pulse (recorded; bespoke Bonsai sprout = follow-up). Note: eslint warnings at 39/40 cap — follow-up to burn some down. Watch (at cap): WorkspaceGraphPane 500, settings.rs 500, graph.rs 496; GraphCanvas 898. Follow-up NITs filed: foldView displayToModelRow dup; rail wheel deltaMode; hexToRgba per-pixel alloc; small-repo dashed density (cosmetic); e2e-08 stash placeholder skip (pre-existing).
+**Current step:** ALL FIVE SPECS COMMITTED — AI gates green; awaiting USER CHECKPOINTs (ledger below). Branch tip d763ae2 on feat/bonsai-graph-theme (UNMERGED, stacked on spec-002 theme work).
 
-Spec-003 follow-ups filed (SHOULD-FIX/NIT, velocity mode): RepoWorkspace.tsx +53 growth (queue for refactor campaign); AC7 scroll-to-top when selection doesn't survive filter change; popover Esc vs capture-phase global listeners; settings-panel stale sentence; mock HEAD-pill synthesis divergence (comment); SeedPlan staleness vs symbolic refs (origin/HEAD); transient stale-chip flash between filter change and next meta; chip top:50px offset (ui-designer call).
+Delivery units (all AI-gate green):
+- **spec-003** — Declutter: first-parent + branch solo/hide — COMMITTED 4b2f737 (2026-08-26)
+- **spec-004** — Fold linear runs — COMMITTED 19c5f3f (2026-08-27)
+- **spec-005** — Match rail + on-demand minimap — COMMITTED d7d02a3 (2026-08-27)
+- **spec-006** — Author coloring + parent-highlight — COMMITTED 0387757 (2026-08-27)
+- **spec-007** — Replay mode — COMMITTED d763ae2 (2026-08-27; AC5 downscoped to frontier pulse; bespoke Bonsai sprout = follow-up)
 
-Delivery units (in order):
-- **spec-003** — Declutter: first-parent toggle + branch solo/hide (brief #1 sub 1+2, Rust `GraphFilter`) — in-progress
-- **spec-004** — Fold linear runs (brief #1 sub 3, node-schema `folded` kind) — pending
-- **spec-005** — Match rail + minimap (briefs #2+#3, shared rail, frontend-only) — pending
-- **spec-006** — Author coloring + parent-highlight on hover (brief #4, frontend-only) — pending
-- **spec-007** — Replay/story mode (brief #5, frontend-only) — pending
+Run follow-ups (non-blocking): eslint warnings 37/40 cap — burn down; bespoke Bonsai sprout (spec-007 AC5 full form); mock resolveLayout ignores kind:'unborn' (blocks empty-repo fab-gate e2e); settings-panel stale sentence + AC7 scroll-to-top + popover Esc capture (spec-003); rail wheel deltaMode + hexToRgba per-pixel alloc + small-repo dashed density (spec-005, cosmetic); foldView displayToModelRow dup (spec-004); refactor queue: RepoWorkspace ~2776, GraphCanvas ~898; at-cap files: WorkspaceGraphPane 499, settings.rs, graph.rs 496.
 
 Locked decisions (brief recommendations, adopted for the run): solo/hide always keeps HEAD's
 ancestry; topology toggles in Commit-graph settings category, author-color in Appearance; minimap
