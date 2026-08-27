@@ -65,7 +65,7 @@ mock IPC updated in the same increment as every IPC change.
 per-branch states, no-auto-switch, connect, links, live-region). Reviewer + ui-designer both approved
 (MUST-FIX push-refresh fixed). **USER CHECKPOINT VERIFIED (2026-08-25):** user confirmed on the native
 app — Checks tab shows live per-check detail and refreshes on fetch/pull/push. Committed `b0e880c` on
-`feat/pr-local-diff` (MERGED into local main 2026-08-27, not pushed).
+`feat/pr-local-diff` (already merged into main and pushed as of 40949e1/1.5.0, 2026-08-26).
 
 **Follow-ups (deferred):** P90.1 per-check timing fields; header commit-summary text; command-palette
 `Refresh checks` / `Show checks`; mock fixtures for noForge/error reachable by click.
@@ -142,10 +142,10 @@ P89 touches no e2e/AI-dock/health code. Commits on `feat/pr-local-diff` (off mai
 `71171d4` `a0f0575` `a988388` `48ae17f`. **NOT merged/pushed.**
 **USER CHECKPOINT VERIFIED (2026-08-25):** user confirmed everything OK on the native app (Azure +
 GitHub PR changed-files list + correct three-dot counts + expand-to-diff; fork-head auto-fetch;
-offline/Retry). Branch `feat/pr-local-diff` **MERGED into local main 2026-08-27** (not pushed).
+offline/Retry). Branch `feat/pr-local-diff` **already merged into main and pushed** (in 40949e1/1.5.0, 2026-08-26).
 Follow-ups SF1+SF2+NIT **DONE + committed `fe23d08`** (reviewer APPROVED; tsc clean, 24 vitest,
 clippy -D clean, 6 azure::refs tests incl. 3 new TFS-fallback cases). **All P89 follow-ups cleared.**
-Branch `feat/pr-local-diff` (8 P89 commits) MERGED into local main 2026-08-27, not pushed. Nothing left on P89.
+Branch `feat/pr-local-diff` (8 P89 commits) already merged into main and pushed (in 40949e1/1.5.0). Nothing left on P89.
 
 ---
 
@@ -172,7 +172,7 @@ store cap; byte-identical emit; bonsai 293). **P88a test-gap fill committed `709
 clippy 0-warn workspace, eslint 38≤40, file-size ok, vitest 2288 passed, tsc+build clean, playwright e2e 159 passed
 (1 skip; 1 flake = `e2e/07-rebase.spec.ts` timing, PASSES isolated 1.8m — rebase is outside the P88a matrix, not a
 regression). Commits: contract `31bf4bd`, P88a `2412d8b`, B2a `f4c060c`, B2b `52f5d74`, PB-1 `cc5fdac`, P88a-tests
-`709c9cc`. Branch `perf/git-action-round2` (off c0825a3/1.3.0), **MERGED into local main 2026-08-27** (not pushed). Native USER CHECKPOINTs VERIFIED 2026-08-25. User confirmed "go ahead with B2 after this" (2026-08-24). **Then user chose "Do FU-B2c now"
+`709c9cc`. Branch `perf/git-action-round2` (off c0825a3/1.3.0), **already merged into main and pushed** (in 40949e1/1.5.0). Native USER CHECKPOINTs VERIFIED 2026-08-25. User confirmed "go ahead with B2 after this" (2026-08-24). **Then user chose "Do FU-B2c now"
 (2026-08-24) → FU-B2c IN PROGRESS. Architect design DONE (contract §FU-B2c): Option 1 = move owned `Repository`
 in/out through new `run_with_git_timeout_owned` + `with_repo_timed`/`_mut_timed` wrappers (Send-only, one owner at a
 time; leak-on-timeout self-heals; watchdog abandonment preserved). ODs resolved: accept leak no-cap, delegate the
@@ -186,7 +186,7 @@ Warm status+graph round now opens **0** (was 2/call). bonsai-core 1489, bonsai 2
 **USER CHECKPOINTs VERIFIED (2026-08-25):** user confirmed on the native app — create/delete tag, stash
 push/pop/drop, commit, add/remove remote+submodule, delete local branch, file-by-file conflict resolve all
 snappy + consistent UI (no stale ahead/behind after commit); no regression in checkout/fetch/pull/push/rebase/merge.
-Branch `perf/git-action-round2` — **MERGED into local main 2026-08-27** (not pushed); checkpoints done.
+Branch `perf/git-action-round2` — **already merged into main and pushed** (in 40949e1/1.5.0, 2026-08-26); checkpoints done.
 
 **NEW FOLLOW-UPS (this batch):**
 - **FU-B2c (perf, MED — the remaining B2 win):** hoist `with_repo` OUTSIDE `run_with_git_timeout` for `get_status`+
