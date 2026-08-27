@@ -24,6 +24,38 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
+## 📐 P91 — Observability: Dev mode, structured logs, local telemetry & metrics — PLANNING (awaiting user approval)
+
+**Current step:** contracts written; plan presented to user — **STOP AT PLAN** per user decision
+(2026-08-27). No senior-dev spawn until the user approves and resolves the open decisions.
+
+**Goal:** make unintended app behaviour mechanically visible. The user reports UI flickers and
+"things that don't look right"; they want to enable a Dev mode, reproduce, and send the resulting
+log file to an AI that can identify double triggers, redundant IPC calls, effects firing on
+unchanged deps, echo-induced refreshes and superseded results — without eyeballing 50k lines.
+
+**Contracts:** `docs/contracts/P91-observability.md` (architecture, 615 lines) ·
+`docs/contracts/P91-observability-ui.md` (Dev-mode settings surface + instrumentation constraints).
+
+**Design centrepieces:** per-gesture trace ids threaded UI → invoke → Rust span → emitted events →
+the refresh round they cause; instrumentation at two choke points only (`src/ipc/index.ts` Proxy,
+which covers real and mock by construction, and the Rust dispatch shim) rather than scattered log
+lines; first-class `anomaly` records (dup-ipc, redundant-refresh, effect-no-change, effect-thrash,
+event-storm, watcher-storm, jank-trace, superseded-result, orphan-trace) computed sink-side and
+carrying `refs` into the implicated records.
+
+**User decisions (2026-08-27):** redaction conservative by default with an opt-in raw-names toggle
+(logs must be safe to send to a third party unreviewed; credentials never logged in any mode);
+metrics storage delegated to the architect (recommends rolled-up JSON over SQLite); stop at plan.
+
+**Delivery:** 7 increments — (1) Rust log core, (2) frontend pipeline, (3) Rust dispatch/events/
+watcher, (4) **refresh+echo+React causality = the flicker payload (UI)**, (5) anomaly detector,
+(6) metrics, (7) Settings Dev page (UI). Increments 4 and 7 need the ui-designer pass first.
+
+**Open decisions for the user:** see `docs/contracts/P91-observability.md` §13 — trace transport
+(`tauri::ipc::Invoke` is upstream-unstable), metrics storage (JSON recommended), React
+instrumentation scope (5 surfaces in v1), log retention when Dev mode is switched off, per-session
+log files, `metrics_reset` shipped headless until a Statistics page exists.
 ## ✅ Graph-features run (2026-08-26) — briefs from docs/ideas/graph-features-brief.md — DONE (AI gate + USER CHECKPOINTs green 2026-08-27)
 
 Branch: `feat/bonsai-graph-theme` (stacked on spec-002, per user decision). Autonomous
