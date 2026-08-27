@@ -34,8 +34,10 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 log file to an AI that can identify double triggers, redundant IPC calls, effects firing on
 unchanged deps, echo-induced refreshes and superseded results — without eyeballing 50k lines.
 
-**Contracts:** `docs/contracts/P91-observability.md` (architecture, 615 lines) ·
-`docs/contracts/P91-observability-ui.md` (Dev-mode settings surface + instrumentation constraints).
+**Contracts:** `docs/contracts/P91-observability.md` (architecture, 687 lines) ·
+`docs/contracts/P91-observability-ui.md` (Dev-mode settings surface, 682 lines) ·
+`docs/contracts/ui-reference.md` §12.11 + §1 header order (applied by orchestrator from the
+ui-designer's staged patch — its Edit tool was unavailable; patch file consumed and deleted).
 
 **Design centrepieces:** per-gesture trace ids threaded UI → invoke → Rust span → emitted events →
 the refresh round they cause; instrumentation at two choke points only (`src/ipc/index.ts` Proxy,

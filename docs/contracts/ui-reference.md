@@ -39,9 +39,10 @@ the default. All values below are canonical — implement as CSS custom properti
 - Bottom dock (P68e): full-width third child of `.workspace-host`, `flex: none`, absent from the
   DOM until an AI run exists. Never overlaps the panes — it takes height from them. See §9.
 - Header toolbar (P69): `.header-toolbar` lives in `HeaderToolbar.tsx`, not in `App.tsx`. Order,
-  left to right: theme · list view · AI assets · health · settings · **identity** (§12.6). The
-  identity control is the far-right "account slot"; repo-scoped controls in the toolbar render only
-  when a repo is open.
+  left to right: theme · list view · AI assets · health · **dev (P91, conditional)** · settings ·
+  **identity** (§12.6). The identity control is the far-right "account slot"; repo-scoped controls
+  in the toolbar render only when a repo is open, and the **dev indicator renders only while Dev
+  mode is on** (§12.11).
 
 ## 2. Theme tokens
 
@@ -1171,6 +1172,66 @@ dock** (View D, a twin of the §9 AI dock). Reuses §9 geometry, §11 pills, the
 - **Motion.** No dock height animation (§9 canvas-relayout prohibition — snap). `.file-chevron` 120ms;
   determinate fill 150ms `scaleX`. Add the git-dock/bar selectors to the §9 `prefers-reduced-motion`
   block (sweep → static 100% @ .6 opacity; chevron/fill snap).
+
+### 12.11 Developer settings, the sensitive row, and the logging indicator (P91)
+
+Full contract: `docs/contracts/P91-observability-ui.md`. **No new tokens.**
+
+**Rail.** `'dev'` / label `Developer`, last, `dividerBefore: true`. Discoverable and searchable like
+any other category — a power-user diagnostic surface is still a settings surface, and hiding it would
+break both the entry point of the debugging workflow and `settingsCatalog.coverage.test.tsx`.
+A future `'statistics'` category sits between `About` and `Developer` and inherits the divider.
+
+**Master-gate pattern (canonical).** A page whose rows configure a capture/recording gate splits into
+gated and ungated groups, and the split is by *workflow*, not by topic: rows that configure the gate
+are wrapped in one `<fieldset disabled>` (§12.3.3); rows the user needs **after turning the gate off**
+(here: the privacy statement and the reveal/export actions) are never gated. Disabled, never hidden —
+hiding five rows moves the content below them on the exact click the user is reading it, and needs a
+new `SettingsRowRequirement` plus a coverage-test exception.
+
+**Sensitive-row treatment — `.settings-row--sensitive`.** For a benign-looking switch with a real
+privacy consequence sitting among ordinary switches:
+`padding-left: 12px; box-shadow: inset 3px 0 0 var(--warning);` plus a 12px `--warning` glyph before
+the label. Label stays `--text-1`, help stays `--text-2` — **no tinted background and never a
+coloured label** (§2). It is the §10.2 leading-bar recipe reused at row scale; `--warning` bar/glyph
+on `--bg-0` measures **7.3:1** dark / **4.5:1** light (≥3:1 graphics bar, both themes). The row's
+live-value line uses `.settings-row-note` and therefore carries **no** catalog `help` (§12.2), and
+while the switch is on a matching leading-bar `.settings-group-note` closes the group.
+
+**Privacy-sensitive confirmation uses `confirmVariant: 'primary'`, not `'danger'`.** `danger` is
+reserved for data loss. A reversible setting that only affects files created afterwards carries its
+weight in the copy (name the exact consequence and what is *still* excluded) and in the row
+treatment above. Default focus is `Cancel`; the switch must not flip optimistically.
+
+**App-level activity indicator (the pattern).** A background process the user opted into and could
+forget gets a **conditional header-toolbar pill**, not a §10 notice-bar row — §10 is a *global fault*
+channel and a user-chosen state is not a fault. The pill is **absent from the DOM** when inactive, so
+its chrome cost in the default state is zero. Recipe: 24px pill in a 32×32 button box,
+`background: color-mix(in srgb, var(--warning) 14%, transparent)`, 1px 45%-`--warning` border, 12px
+`--text-1` label (**9.24–10.30:1** dark / **11.68–12.00:1** light — the §2 canonical readable pair on
+a hue tint), leading 8px `--warning` dot, `border-radius: 999px`. **The label is a stable word, not a
+live one** — activity detail belongs in a readable panel, not in glanceable chrome. Fault state swaps
+the dot for a `--danger` triangle glyph and the label for the negated word (`Not logging`); the pill
+must never claim an activity it is not performing. Click opens the owning settings category. Motion:
+opacity-only dot fade, 1200ms ease-out, removed entirely under `prefers-reduced-motion`. A
+permanently-mounted, idle-empty visually-hidden `aria-live="polite"` region announces start and stop
+**once each** — never per record.
+
+**Density.** The whole surface is density-invariant (§3): Settings overlay and header chrome have one
+geometry in `cozy` and `compact`.
+
+**Instrumentation-only increments.** Adding observability hooks to existing components must produce
+**zero** change to DOM structure, class names, computed styles, layout, scroll offset, focus or ARIA
+— with the gate on or off. Design-side verification is a before/after signature capture
+(`nodes`/`classList`/`getBoundingClientRect`/`scrollTop`) per instrumented root, in **one batched**
+`javascript_tool` call. For any surface that re-renders on external churn — the **sidebar** re-renders
+on every ref change — the comparison must be a *sequence* of signatures across a scripted churn run
+(rapid checkouts, a fetch adding many refs, a deletion), not an idle end-state snapshot: a flicker is
+an intermediate state and would hide in an end-state-only diff. Frame-timing parity is always a
+USER CHECKPOINT (headless harness, no `requestAnimationFrame`).
+
+**CSS location.** `src/styles/settings-dev.css`, imported after `settings-primitives.css`; the pill
+rule lives in the existing header-toolbar stylesheet. Do not reorder the settings import list.
 
 ## 13. Icon system (SVG chrome)
 
