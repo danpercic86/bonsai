@@ -27,10 +27,29 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 ## 📐 P91 — Observability: Dev mode, structured logs, local telemetry & metrics — PLANNING (awaiting user approval)
 
 **Current step:** APPROVED — **increment 1 (Rust log core) IN PROGRESS** (senior-dev, 2026-08-27).
-Concurrently: architect adding a **performance-diagnosis addendum** (intra-operation phase spans,
-slow-command + queue-delay + cache-collapse anomaly rules, percentile rollups) after the user asked
-whether the plan also identifies perf issues — constrained to ADDITIVE schema changes only so it
-cannot collide with the in-flight increment 1.
+**Perf-diagnosis addendum DONE (decision 8, 2026-08-27)** — added after the user asked whether the
+plan also identifies performance issues. New §3.1 `span` record kind carrying a flat `phases[]`
+array per completed operation (≤16, dotted labels), plus optional `queuedMs`, `poolInflight/Max`,
+`deadlineFrac`, `cache`, `items`. Timing is taken at the **src-tauri caller layer** so
+`crates/bonsai-core` gains NO dependency on `obs/`; the mechanism is an explicit `PhaseRecorder`
+value, not a task-local (same reasoning as §2.2's rejection of an ambient backend trace). Exactly
+three instrumented ops in v1 — `graph.get` (revwalk/decorate/lane/filter/serialize), `status.scan`,
+`diff.compute` — ~11 phase labels; a fourth needs a new §13 row. New §5.1 rules: `slow-command`
+(self-calibrating `ms > max(floor, k × rolling_p95)` with a MIN_SAMPLES gate + rate limit, so it
+does not fire constantly on a 20k repo), `slow-phase`, `queue-delay`, `pool-saturation`,
+`watchdog-pressure`, `cache-collapse`. New §8.1 derives p50/p95 from the frozen 8 histogram buckets
+— no new storage type, percentiles never persisted, ~3 KB/day. **All ADDITIVE:** one new `LogKind`
+variant + optional serde-default fields, `OBS_SCHEMA_VERSION` stays 1.
+**Absorption: increment 1 UNTOUCHED**, phase work → increment 3, rules → increment 5, percentiles →
+increment 6. **Deferred:** interaction latency (gesture → visible paint) — needs rAF-after-commit
+plumbing in all six surfaces and is unverifiable in the headless harness (0×0 pane, no rAF); the
+existing gesture → ipc.result.ms → span.phases → render.tally → jank-trace chain already
+triangulates the motivating complaints.
+**Nit for the increment-5 prompt:** §5.1 pseudocode says p95 = bucket upper bound, §8.1 says linear
+interpolation — pick one at implementation time.
+**Orchestrator scope error corrected:** I briefed senior-dev to build `logs_delete_all` in
+increment 1; the contract assigns it to increment 7. Told it to keep the work if already done
+(backend-only, correct per §6.1) and record it as pulled forward, else skip.
 
 **Goal:** make unintended app behaviour mechanically visible. The user reports UI flickers and
 "things that don't look right"; they want to enable a Dev mode, reproduce, and send the resulting

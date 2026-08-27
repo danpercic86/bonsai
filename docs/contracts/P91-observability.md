@@ -5,6 +5,11 @@
 never-meant-to-happen actions** *mechanically visible* — via correlation ids + machine-emitted
 anomaly records, not via prose log lines.
 
+**Secondary goal (amendment 2026-08-27, §3.1/§5.1/§8.1):** the same file must make **performance
+problems** mechanically visible — *where* an operation spent its time, whether it was slow relative
+to its own baseline, whether it was queued rather than computing, and whether a cache stopped
+working.
+
 **All §13 decisions are RESOLVED (user, 2026-08-27).** §13 is a decision record, not a question
 list. Nothing in this contract is pending an answer.
 
@@ -32,6 +37,7 @@ list. Nothing in this contract is pending an answer.
 | `obs/writer.rs` | file naming, JSONL append, rotation, pruning, header record, **purge** (§6.1) |
 | `obs/anomaly.rs` | streaming detectors (§5) over the unified record stream |
 | `obs/trace.rs` | `TraceId` type, minting, `TraceMeta`, `emit_logged` event helper |
+| `obs/phase.rs` | **(inc. 3)** `PhaseRecorder` — explicit sub-span timing + `span` record emission (§3.1) |
 | `obs/invoke_shim.rs` | `invoke_handler` wrapper logging every command dispatch |
 | `obs/metrics.rs` | `MetricsStore` (counters/histograms), aggregation cadence |
 | `obs/metrics_file.rs` | atomic load/save of `metrics/usage.json`, daily buckets, retention |
@@ -131,8 +137,7 @@ emits `ipc.recv`, then delegates.
 
 **Known limit:** the shim cannot observe *completion* (the resolver is consumed downstream), so
 **command duration is measured on the frontend side**. Backend-internal timings come from explicit
-spans in heavy commands (`obs::span!("graph.walk")`), added only where `perf.rs` already
-instruments.
+spans in heavy commands (§3.1 `PhaseRecorder`), added only where `perf.rs` already instruments.
 
 Commands excluded from instrumentation by name (would self-amplify):
 `log_append`, `log_session_info`, `logs_delete_all`, `metrics_snapshot`, `debug_perf_counters`.
@@ -147,7 +152,8 @@ repair it and do not add `TraceMeta` parameters to command signatures.**
 (proof that a command actually reached the backend, and the Rust-side receive timestamp). Retained
 in full: per-command traces, spans, args hashes, durations and outcomes (frontend
 `ipc.call`/`ipc.result`), all event/channel/watcher records (`emit_logged` takes its `TraceMeta`
-explicitly and never depended on the shim), echo/double-trigger causality (§2.4, frontend), and
+explicitly and never depended on the shim), echo/double-trigger causality (§2.4, frontend), the
+`span` phase records (§3.1 — they are emitted by explicit call sites, not by the shim), and
 every anomaly rule except the ability to distinguish "never sent" from "sent but never answered"
 — `orphan-trace` degrades from that distinction to a plain unanswered-call signal.
 **No increment other than 3 is affected, and the milestone's core evidence (increment 4) is
@@ -203,6 +209,11 @@ that repeats the same scope with no intervening mutation is a `redundant-refresh
 
 ## 3. Record schema (v1)
 
+> **Amendment rule (2026-08-27).** Everything in §3.1 is **ADDITIVE ONLY**: one new `LogKind`
+> variant plus new fields that are **all optional with `#[serde(default)]`** on the Rust side and
+> `?:` on the TS side. No existing field is renamed, retyped, or redefined; `OBS_SCHEMA_VERSION`
+> stays `1`. A reader of a v1 record without these fields stays valid.
+
 ```ts
 export const OBS_SCHEMA_VERSION = 1;
 
@@ -229,6 +240,7 @@ export type LogKind =
   | 'watcher'      | 'refresh'
   | 'render'       | 'render.tally' | 'effect' | 'state'
   | 'frame'        | 'error'      | 'anomaly'
+  | 'span'                                  // ← added, §3.1
   | 'drop';
 ```
 
@@ -280,6 +292,105 @@ names + type + length only, **never values**.
 
 Rust mirrors these as `#[serde(tag = "kind", rename_all = "camelCase")] enum LogPayload`.
 
+### 3.1 Backend operation spans — phases, queueing, saturation (ADDITIVE; **increment 3**)
+
+**Shape decision: one `span` record per completed operation**, carrying a `phases` array — *not*
+one record per phase. A slow `get_graph` therefore costs exactly one extra line, and its breakdown
+is on that line.
+
+```ts
+export interface PhaseTiming {
+  /** Allow-listed, dotted for nesting: 'revwalk', 'decorate', 'lane', 'serialize'. */
+  name: string;
+  ms: number;
+  /** Optional unit count for the phase (commits walked, files scanned). */
+  n?: number;
+}
+
+export interface SpanPayload {
+  /** Allow-listed operation id, `<domain>.<action>`: 'graph.get' | 'status.scan' | 'diff.compute'. */
+  op: string;
+  /** Total wall time of the operation, measured at the src-tauri call site. */
+  ms: number;
+  /** Ordered, ≤16 entries. Sum may be < ms; the remainder is unattributed time. */
+  phases?: PhaseTiming[];
+  /** ms spent QUEUED before the spawn_blocking closure started running (§3.1.2). */
+  queuedMs?: number;
+  /** Blocking-pool tasks in flight when this one started, and the pool cap. */
+  poolInflight?: number;
+  poolMax?: number;
+  /** elapsed / git-timeout deadline, 0..1+ — watchdog pressure (§3.1.3). */
+  deadlineFrac?: number;
+  /** Graph-cache outcome for this op, emitted only by graph_cache.rs (§5.1 `cache-collapse`). */
+  cache?: 'hit' | 'redecorate' | 'miss';
+  /** Primary unit count for the whole op (commits in the layout, files in the status). */
+  items?: number;
+  outcome?: 'ok' | 'err' | 'timeout';
+}
+```
+
+Rust mirror — every new field `#[serde(default, skip_serializing_if = "Option::is_none")]`.
+
+#### 3.1.1 Mechanism — explicit recorder, no ambient stack
+
+Consistent with §2.2 (no task-local trace): the recorder is a **value threaded explicitly**.
+
+```rust
+// src-tauri/src/obs/phase.rs
+pub struct PhaseRecorder { /* op, start Instant, Vec<PhaseTiming> (cap 16), optional fields */ }
+
+pub struct PhaseGuard<'a>;   // Drop → pushes {name, ms} onto the parent recorder
+
+impl PhaseRecorder {
+    /// No-op recorder when Dev mode is off: all methods compile to a branch + return.
+    pub fn start(op: &'static str) -> Self;
+    /// Opens a phase; nesting is expressed by the caller using dotted names
+    /// ("decorate", "decorate.pills") — there is NO implicit parent stack.
+    pub fn phase(&mut self, name: &'static str) -> PhaseGuard<'_>;
+    pub fn note_queue(&mut self, queued_ms: u32, inflight: u32, max: u32);
+    pub fn note_deadline(&mut self, frac: f32);
+    pub fn note_cache(&mut self, outcome: CacheOutcome);
+    pub fn note_items(&mut self, n: u64);
+    /// Emits the single `span` record. Trace causality is explicit, like emit_logged.
+    pub fn finish(self, meta: &TraceMeta, outcome: SpanOutcome);
+}
+```
+
+Rules:
+- `name` and `op` are `&'static str` from an allow-list in `obs/phase.rs` — no user-derived string
+  can reach a span record (same guard as the metrics key namespace, §8).
+- **Overhead budget:** ≤ 2 `Instant::now()` calls per phase and one `Vec` push; ≤ 16 phases per op;
+  ≤ **5 µs** total added per operation. Dev mode off ⇒ zero allocation (the `Vec` is not created).
+- Phases are **not nested structurally**; a dotted name is just a label. This keeps the array flat
+  and the serializer trivial.
+
+#### 3.1.2 Crate boundary — where the timing lives
+
+`crates/bonsai-core` must **not** depend on `obs/`. All phase timing is taken at the **src-tauri
+caller layer**, which already orchestrates these calls and already increments `perf.rs`:
+
+| `op` | Call site | Phases (v1, exactly these) |
+|---|---|---|
+| `graph.get` | `src-tauri/src/graph_cache.rs` (the walk/decorate/lane orchestration + cache arms) | `revwalk`, `decorate`, `lane`, `filter`, `serialize` |
+| `status.scan` | the status command's `spawn_blocking` body | `statuses`, `index`, `map` |
+| `diff.compute` | the diff command's `spawn_blocking` body | `tree`, `hunks`, `serialize` |
+
+Three operations, ~11 phase labels total. Nothing else is instrumented in v1; this is a diagnostic
+tool, not a profiler. Adding a fourth `op` requires a §13 entry.
+
+#### 3.1.3 Queue delay, saturation, watchdog
+
+- `queuedMs`: capture `Instant::now()` **before** `spawn_blocking`; the first statement inside the
+  closure computes the delta. Wired in the `repo_handle.rs` helpers so every git op gets it for free.
+- `poolInflight` / `poolMax`: one process-wide `AtomicUsize` gauge incremented on closure entry and
+  decremented on exit (added in `obs/phase.rs`, read at span start). `poolMax` is the configured
+  blocking-pool cap.
+- `deadlineFrac`: `run_with_git_timeout*` already knows its deadline (`effective_deadline`); on
+  completion it reports `elapsed / deadline` into the recorder. A near-timeout is
+  `deadlineFrac ≥ 0.8`; a real timeout is `outcome: 'timeout'`.
+
+All three are optional fields on the **same** `span` record — one operation, one line.
+
 ---
 
 ## 4. Frontend choke point
@@ -301,6 +412,9 @@ export function instrumentIpc(api: IpcApi): IpcApi;
   subscription created by trace A shows deliveries as `causedBy: A`.
 - `superseded`: the proxy keeps a per-`cmd` latest-span map; if a call resolves while a newer call
   of the same `cmd` is in flight, its result is stamped `superseded`.
+- **Mock IPC:** `src/ipc/mock/obs.ts` synthesises plausible `span` records (fixture phase arrays for
+  `graph.get`, incl. one deliberately slow fixture) so the harness can exercise §5.1 rules with no
+  Tauri.
 
 ---
 
@@ -323,6 +437,12 @@ Site-local rules are emitted by the site that has the knowledge. Cross-record ru
 | `orphan-trace` | sink | session end | trace with `ipc.call` and no `ipc.result` | error |
 | `unbatched-sink` | sink | 1 s | ≥10 `log_append` calls | info |
 | `drop` | sink | — | records dropped by backpressure | error |
+| **`slow-command`** | sink | — | §5.1 — duration beyond the command's own rolling baseline | warn |
+| **`slow-phase`** | sink | — | §5.1 — one phase is ≥70 % of a `slow-command` span's `ms` | info |
+| **`queue-delay`** | sink | 5 s | ≥3 `span` records with `queuedMs > 100` | warn |
+| **`pool-saturation`** | sink | 5 s | ≥3 spans with `poolInflight >= poolMax` | warn |
+| **`watchdog-pressure`** | sink | — | `deadlineFrac ≥ 0.8`, or `outcome: 'timeout'` (error) | warn |
+| **`cache-collapse`** | sink | 10 s | §5.1 — graph-cache hit rate collapse | warn |
 
 † `jank-trace` is **inert unless `dev.captureFrames` is on**; `level: 'trace'` force-enables frame
 capture so the rule is always live at the highest verbosity.
@@ -333,6 +453,43 @@ straight to the evidence without scanning.
 **Anomaly detection is redaction-independent by construction:** every rule keys off `cmd` names,
 `argsHash`, scopes, component ids, counts and timings — never off repo content. A `strict` log has
 exactly the same anomaly signal as a `raw` one.
+
+### 5.1 Duration & saturation rules (ADDITIVE; **increment 5**)
+
+**`slow-command` — self-calibrating, per command.** A single global threshold is wrong (`get_graph`
+on 20k commits vs `stage_file`), so the detector keeps an **in-memory per-`cmd` rolling
+distribution reusing the §8 `Histogram` bucket shape** (same 8 boundaries — no new summary type):
+
+```
+on ipc.result(cmd, ms):
+    h = baseline[cmd]                      # in-memory, session-scoped, ≤200 cmd keys
+    if h.count >= MIN_SAMPLES(=20):
+        p95 = percentile_from_buckets(h, 0.95)      # bucket upper bound, §8.1
+        if ms > max(FLOOR_MS(=150), K(=3.0) * p95):
+            emit slow-command{cmd, ms, p95, samples: h.count}
+    if ms > HARD_MS(=10_000):              # catch-all, fires even before MIN_SAMPLES
+        emit slow-command{severity: 'error', ...}
+    h.observe(ms)                          # observe AFTER comparing
+```
+
+Constants live in **one table in `obs/anomaly.rs`** (`SLOW_RULES: &[(cmd_prefix, floor_ms, k)]`),
+with a default row and per-command overrides (`get_graph` floor 1200 ms; `commit_create` floor
+2000 ms). Anti-noise properties, stated so they are testable:
+- baseline is *per command*, so a big repo's normal `get_graph` cost becomes the baseline and does
+  not fire;
+- `MIN_SAMPLES` suppresses the cold-start burst (a repo open fires nothing);
+- **rate limit: at most 1 `slow-command` per `cmd` per 10 s**;
+- `k × p95` on a bucketed p95 is intentionally coarse — it fires on step changes, not on jitter.
+
+**`slow-phase`:** when a `slow-command` fires and the correlated `span` (same `trace`) has a phase
+≥70 % of `ms`, emit `slow-phase{op, phase, ms, share}` referencing both seqs. This is the record
+that answers "was it the revwalk or the lane assignment".
+
+**`cache-collapse`:** over a 10 s window of `span{op:'graph.get'}` records, let
+`hits / (hits + redecorates + misses)`. Fire when the window has ≥5 spans and the hit rate is
+`< 0.2` **while no repo-mutating command appeared in the window** (a real mutation legitimately
+invalidates). Detail carries the counts; `refs` point at the offending spans. Cross-checked against
+`perf.graph_cache_hits` / `perf.graph_redecorates` deltas at flush.
 
 ---
 
@@ -486,6 +643,7 @@ identifies the repo, its people or its contents does.
 |---|---|---|
 | Command / event / channel names, `kind`, `outcome`, `errCode` | kept | kept |
 | Trace ids, span ids, seq, timings, counts, scopes | kept | kept |
+| **`span` `op` / `phase` names, phase ms, queue/pool/deadline numbers** | kept (allow-listed symbols, never user data) | kept |
 | Component / effect / state-field names (source symbols, not user data) | kept | kept |
 | Argument **values** | **elided** → `argsHash` + `argsShape` | included as `args` |
 | Repo path | `repo#<n>` | absolute path |
@@ -593,6 +751,46 @@ pub struct Histogram { pub count: u64, pub sum_ms: u64, pub max_ms: u64,
 - **No network sink exists.** No HTTP client is reachable from `obs/*`; a test asserts it.
 - Read API for the future Statistics page: `metrics_snapshot()`. **No UI is designed in P91.**
 
+### 8.1 Duration percentiles — bounded summaries, no sample retention (ADDITIVE; **increment 6**)
+
+**No new summary type.** `Histogram` *is* the durable summary: 8 counters + `count`/`sum_ms`/
+`max_ms` per key per day — fixed size, bounded by the allow-listed key set. Bucket boundaries are
+**frozen** (changing them would break existing files) and no raw sample is ever stored.
+
+Additive changes only:
+
+```rust
+impl Histogram {
+    /// Linear interpolation inside the containing bucket; the top bucket returns `max_ms`.
+    /// p in 0.0..=1.0. Returns None when count == 0.
+    pub fn percentile_ms(&self, p: f32) -> Option<u32>;
+    pub fn mean_ms(&self) -> Option<u32>;   // sum_ms / count
+}
+```
+```rust
+// New OPTIONAL, DERIVED fields — computed at snapshot time, never persisted to usage.json.
+#[serde(default, skip_serializing_if = "Option::is_none")] pub p50_ms: Option<u32>,
+#[serde(default, skip_serializing_if = "Option::is_none")] pub p95_ms: Option<u32>,
+```
+```ts
+export interface Histogram {
+  count: number; sumMs: number; maxMs: number; buckets: number[]; // 8
+  p50Ms?: number; p95Ms?: number;   // present only on metrics_snapshot() results
+}
+```
+
+**Which keys get a duration histogram** (allow-list in `obs/metrics.rs`, folded at flush from
+`span` and `ipc.result` records):
+- `cmd.<name>` for every non-excluded command — end-to-end IPC duration;
+- `op.graph.get`, `op.status.scan`, `op.diff.compute` — total operation time;
+- `op.graph.get.<phase>` for the five §3.1.2 graph phases, plus `op.status.scan.statuses` and
+  `op.diff.compute.hunks` — the sub-keys that answer "which stage got slower";
+- `queue.blocking` — `queuedMs` across all spans.
+
+Ceiling: ~60 histogram keys × ~50 bytes ≈ 3 KB per day bucket; 400 days ≈ 1.2 MB worst case, and
+`lifetime` folding keeps the tail flat. "Did this get slower over the last week" is answered by
+comparing `p95_ms` across `days[]` — no new storage, no new file.
+
 ---
 
 ## 9. React causality instrumentation (dev-mode only, zero-cost off)
@@ -661,6 +859,18 @@ justified only if these six prove insufficient.
 - `frameStats.ts`: `createFrameRecorder()` gains an optional `onWindow(stats)` callback; when Dev
   mode is on, `GraphCanvas` routes it to `logRecord({kind:'frame'})` instead of `console.log`.
 
+### 9.4 Interaction latency (gesture → visible result) — **DEFERRED, with reason**
+
+Considered per the amendment and **not shipped in P91**. A true gesture→paint measure needs a
+`requestAnimationFrame`-after-commit probe wired into every instrumented surface plus a way to know
+which paint *is* the result — new plumbing in all six surfaces, and unreliable in the headless
+harness (the Browser pane is 0×0, so rAF never fires; see the frame-timing note in §11).
+
+The existing triangulation is sufficient for the complaints that motivated P91: `gesture` (t0) →
+`ipc.call`/`ipc.result.ms` (backend cost) → `span.phases` (where inside it) → `render.tally`
+(did the UI churn) → `frame.worstMs` + `jank-trace` (did a frame drop). If, after increment 5, a
+real complaint cannot be explained by that chain, revisit as a follow-up.
+
 ---
 
 ## 10. Settings surface (behaviour only; visuals = ui-designer)
@@ -680,6 +890,9 @@ New category `'dev'` (rail last, `dividerBefore: true`), rows:
 | `dev.delete-logs` | button (destructive) | **§6.1** — confirm dialog first, stating `totalFiles` / `totalBytes` from `log_session_info`; then `logs_delete_all()`. Reports the result honestly: success count + bytes, and a warning state when `failedFiles > 0`. When Dev mode is ON, the copy states that logging continues into a new, empty file |
 | `dev.session-info` | readonly | `LogSessionInfo` summary (files, size, records, anomalies, dropped, redaction mode); refreshes after a delete |
 | `dev.privacy-note` | readonly | the fixed §7.3 statement of what a log file contains |
+
+**No new setting row for spans.** `span` records ride the existing `dev.capture-ipc` gate (they are
+backend operation records, ≤1 per heavy op — see §11).
 
 **No row for `metrics_reset` in P91** (§6).
 
@@ -713,12 +926,15 @@ is written on each enable.
 
 | State | Budget | Enforcement |
 |---|---|---|
-| Dev mode **OFF** | ≤ **1 %** on graph scroll frame time; **zero** allocations per IPC call beyond today; no writer thread spawned; no `useEffect` dep copies; no render tally allocated | perf_gate case asserting sink-disabled paths do no work; vitest asserts `instrumentIpc(api).someCmd === api.someCmd` **while disabled at access time** |
+| Dev mode **OFF** | ≤ **1 %** on graph scroll frame time; **zero** allocations per IPC call beyond today; no writer thread spawned; no `useEffect` dep copies; no render tally allocated; **`PhaseRecorder::start` allocates nothing and `phase()` takes no `Instant`** | perf_gate case asserting sink-disabled paths do no work; vitest asserts `instrumentIpc(api).someCmd === api.someCmd` **while disabled at access time**; `cargo test` asserts a disabled recorder emits no record and holds an empty `Vec` |
 | Dev mode **ON** | ≤ **5 %** frame-time regression on a 20k-commit scroll; ≤ 2 ms added per IPC call; ≤ 1 `log_append` per 500 ms | perf_gate case with the sink enabled + `unbatched-sink` must not fire in the harness run |
+| Dev mode **ON, spans** | ≤ **5 µs** per operation; ≤ **16** phases per span; **exactly 1 `span` record per completed operation** — a 20k-commit repo open produces ≤ 5 span records (~1 KB total), a graph scroll session ≤ 1 per served `get_graph`. Phase timing must never appear on a per-commit or per-file path | `cargo test`: a `graph.get` produces exactly one `span` with ≤16 phases; a bench asserts recorder overhead < 5 µs; grep test asserts no `PhaseRecorder` use inside a loop over commits/files |
+| Dev mode **ON, anomaly baselines** | §5.1 in-memory baselines are ≤ **200 `cmd` keys × 1 `Histogram`** (~10 KB), fixed size, never persisted | `cargo test`: feeding 10k distinct cmd names keeps the map at the cap (LRU eviction) |
 | Dev mode **ON, sidebar** | a single ref change on a **500-ref** repo produces **≤ 8** react records total (container `each` + 4 aggregate tallies), never one per row | vitest: mount the sidebar with a 500-ref fixture, trigger one ref change, count records |
 | Sink | never blocks a caller (bounded `try_send`), writer thread only | test: fill the channel, assert producers return immediately and a `drop` record appears |
 | `logs_delete_all` | runs on `spawn_blocking`; UI never blocks; no log record is lost between the flush and the new file opening | test: enqueue records concurrently with a purge, assert none are lost after the roll |
 | Redactor | ≤ 5 µs per record (`DashMap` hit + one salted hash) | bench in `obs/redact.rs` tests |
+| Metrics percentiles | `percentile_ms` is O(8); no sample buffer exists; a day bucket stays ≤ ~3 KB | `cargo test`: 1M observations leave the histogram byte-size unchanged |
 
 ---
 
@@ -728,14 +944,19 @@ Seven increments, dependency-ordered; each sized for one fresh-context senior-de
 the pipe, **4 is the milestone's payload**, 5 makes it self-analysing, 6–7 are the durable-metrics
 and user-surface tails.
 
+**Amendment routing (2026-08-27):** increment 1 is **unchanged** — it does not implement §3.1.
+The `span` kind, `SpanPayload` and `obs/phase.rs` land in **increment 3**; the duration/saturation
+rules in **increment 5**; the percentile API in **increment 6**. Increment 1's `LogKind` enum simply
+gains one variant in increment 3 (additive, no rework).
+
 | # | Increment | UI? | Scope | Acceptance |
 |---|---|---|---|---|
-| 1 | **Log core (Rust)** — `obs/record.rs`, `redact.rs`, `sink.rs`, `writer.rs`, `commands/obs.rs` (`log_append`, `log_session_info`, `log_reveal_dir`, `log_export_session`), `DevSettings` + all 8 lockstep files, mock IPC stubs | no | schema, redaction, sink, rotation, pruning, flush-on-exit, settings plumbing | `cargo test`: rotation at cap; pruning keeps N; backpressure emits `drop`; exit flush loses 0 records; `Redactor` assigns stable ordinals within a session and different ones across sessions; token scrubber catches every fixture pattern; **turning Dev mode off deletes no file**. Enabling Dev mode creates a `logs/*.jsonl` whose first line is a valid `session` record naming the redaction mode |
+| 1 | **Log core (Rust)** — `obs/record.rs`, `redact.rs`, `sink.rs`, `writer.rs`, `commands/obs.rs` (`log_append`, `log_session_info`, `log_reveal_dir`, `log_export_session`), `DevSettings` + all 8 lockstep files, mock IPC stubs. **No §3.1 work.** | no | schema, redaction, sink, rotation, pruning, flush-on-exit, settings plumbing | `cargo test`: rotation at cap; pruning keeps N; backpressure emits `drop`; exit flush loses 0 records; `Redactor` assigns stable ordinals within a session and different ones across sessions; token scrubber catches every fixture pattern; **turning Dev mode off deletes no file**. Enabling Dev mode creates a `logs/*.jsonl` whose first line is a valid `session` record naming the redaction mode |
 | 2 | **Frontend pipeline** — `obs/{types,enabled,trace,redact,log,batcher,ipcProxy}.ts`, wire into `src/ipc/index.ts`, mock ring buffer + `__bonsaiDumpLogs()` | no | proxy, trace minting, redaction mirror, batching | vitest: a mock-IPC call produces paired `ipc.call`/`ipc.result` sharing one trace + one span; disabled ⇒ method identity preserved; ≤1 `log_append` per 500 ms; a call with a path argument logs `argsHash`+`argsShape` and **no path substring** |
-| 3 | **Rust dispatch + events + watcher** — `invoke_shim.rs` (§2.3, incl. the §2.3.1 contingency note in the module doc), `trace.rs`, migrate every `emit(` site to `emit_logged` with an explicit `TraceMeta`, watcher batch/debounce records | no | backend choke point | every dispatch yields an `ipc.recv` stamped with the frontend-injected `__trace`; no `emit` site remains unmigrated (grep test); a git-op burst yields watcher `fired` records with correct `paths`/`relevant`/`debounceMs`. **If `tauri::ipc::Invoke` will not compile, execute §2.3.1 (drop the shim) and drop only the `ipc.recv` criterion — do not modify command signatures** |
+| 3 | **Rust dispatch + events + watcher + §3.1 spans** — `invoke_shim.rs` (§2.3, incl. the §2.3.1 contingency note in the module doc), `trace.rs`, **`obs/phase.rs` + the `span` `LogKind`/`SpanPayload` (additive to `record.rs`) + the three §3.1.2 call sites + `queuedMs`/pool gauge in `repo_handle.rs` + `deadlineFrac` from `run_with_git_timeout*` + `cache` from `graph_cache.rs`**, migrate every `emit(` site to `emit_logged` with an explicit `TraceMeta`, watcher batch/debounce records, mock `span` fixtures | no | backend choke point + intra-operation breakdown | every dispatch yields an `ipc.recv` stamped with the frontend-injected `__trace`; no `emit` site remains unmigrated (grep test); a git-op burst yields watcher `fired` records with correct `paths`/`relevant`/`debounceMs`. **Spans:** (a) a `get_graph` on a fixture repo emits exactly **one** `span{op:'graph.get'}` whose `phases` cover `revwalk`/`decorate`/`lane` and whose phase sum ≤ `ms`; (b) `queuedMs` is present and ≥0 on every git span, and a test that saturates the blocking pool shows `queuedMs > 0` and `poolInflight >= poolMax`; (c) a forced near-timeout yields `deadlineFrac ≥ 0.8`; (d) a cache-served graph emits `cache:'hit'` with no `revwalk` phase; (e) recorder overhead bench < 5 µs; (f) `bonsai-core` gains **no** dependency on `obs` (compile test). **If `tauri::ipc::Invoke` will not compile, execute §2.3.1 (drop the shim) and drop only the `ipc.recv` criterion — spans are unaffected — do not modify command signatures** |
 | 4 | **Refresh + echo causality + React causality across the SIX surfaces** — `armEcho(repoId, trace)`, suppressed-watcher record at `useCoalescedRefresh.ts:82`, `pendingTracesRef` + `refresh` records, `obs/react.ts` + `obs/renderTally.ts`, applied per the §9.3 table (incl. the sidebar), `frameStats` routing | **yes** | **the flicker evidence** | (a) a mutation followed by its fs echo yields a `watcher` record with `suppressed:true` and `causedBy` = the mutation's trace; (b) one mutation ⇒ exactly one `refresh` record listing every collapsed contributing trace; (c) an effect re-run with unchanged deps emits `effect-no-change`; (d) **sidebar: one ref change on a 500-ref fixture yields ≤8 react records — one `each` record for `Sidebar.tsx` plus one `render.tally` per section/row component — and zero per-row records**; (e) a sidebar flicker (repeated re-render with no ref change) shows as a `render.tally` with `renders > 3 × instances` |
-| 5 | **Anomaly detector** — `obs/anomaly.rs`, every sink-side rule in §5 incl. `render-storm` | no | derived records | scripted double-click in the harness produces a `dup-ipc` anomaly whose `refs` point at the two `ipc.call` seqs; each rule has a unit test with a true-positive and a true-negative case |
-| 6 | **Metrics** — `obs/metrics.rs`, `metrics_file.rs`, `perf.rs` absorption, `metrics_snapshot`/`metrics_reset` + mock | no | durable local aggregates | counters survive restart; `.bak` recovery on a corrupt file; daily bucketing correct across a simulated date change; `perf` deltas appear as `perf.*`; test asserts `obs/` reaches no HTTP dependency and that no metric key is user-derived; **`metrics_reset` exists as a command and appears in no catalog row** |
+| 5 | **Anomaly detector** — `obs/anomaly.rs`, every sink-side rule in §5 incl. `render-storm` **and the §5.1 performance rules** (`slow-command`, `slow-phase`, `queue-delay`, `pool-saturation`, `watchdog-pressure`, `cache-collapse`) + the `SLOW_RULES` constants table | no | derived records | scripted double-click in the harness produces a `dup-ipc` anomaly whose `refs` point at the two `ipc.call` seqs; each rule has a unit test with a true-positive and a true-negative case. **§5.1 specifically:** (a) a synthetic stream of 50 normal `get_graph` results at 900 ms followed by one at 4 s fires **exactly one** `slow-command`; (b) the same 50 results at a *uniformly* high 900 ms fire **none** (large-repo non-firing test); (c) fewer than `MIN_SAMPLES` results fire nothing except the >10 s catch-all; (d) the rate limit caps repeats at 1 per cmd per 10 s; (e) a slow span dominated by `lane` fires `slow-phase{phase:'lane'}` referencing both seqs; (f) 5 spans with `cache:'redecorate'` and no mutation fire `cache-collapse`, and the same 5 *with* an intervening mutation fire nothing; (g) 3 spans with `queuedMs 150` in 5 s fire `queue-delay`; (h) baseline map stays at the 200-key cap |
+| 6 | **Metrics** — `obs/metrics.rs`, `metrics_file.rs`, `perf.rs` absorption, `metrics_snapshot`/`metrics_reset` + mock, **§8.1 `percentile_ms`/`mean_ms` + the derived `p50Ms`/`p95Ms` snapshot fields + folding `span` phase durations into the allow-listed `op.*` histogram keys** | no | durable local aggregates | counters survive restart; `.bak` recovery on a corrupt file; daily bucketing correct across a simulated date change; `perf` deltas appear as `perf.*`; test asserts `obs/` reaches no HTTP dependency and that no metric key is user-derived; **`metrics_reset` exists as a command and appears in no catalog row**. **§8.1:** (a) `percentile_ms` matches a brute-force reference within one bucket width on 10k synthetic samples; (b) 1M observations leave `usage.json` byte-size unchanged (no sample retention); (c) `p50Ms`/`p95Ms` appear on `metrics_snapshot()` output and are **absent** from `usage.json` on disk; (d) `op.graph.get.lane` accumulates from `span` phases across two days and the two days' `p95Ms` are independently comparable; (e) the histogram key set stays within the allow-list |
 | 7 | **Settings Dev page + `logs_delete_all`** — the `RollAndPurge` writer path + `logs_delete_all` command + mock, `LogSessionInfo.totalFiles/totalBytes`, catalog rows, `DevPage.tsx`, reveal/export/delete actions, raw-names confirm + warning, privacy statement | **yes** (ui-designer first) | user surface + purge | catalog parity test passes; toggling `dev.enabled` starts/stops writing **and deletes nothing**; enabling raw names confirms and starts a new file; export produces a zip of the session parts. **`logs_delete_all`:** (a) Dev mode OFF ⇒ every `*.jsonl` removed, `rolled:false`, `activeFile:null`; (b) **Dev mode ON ⇒ the writer rolls to a new file with an `afterPurge:true` header, every prior file (including the one just closed) is removed, `rolled:true`, `activeFile` names the new file, and logging continues with no lost record**; (c) `deletedFiles` / `deletedBytes` **exactly match** the files and byte sizes removed, asserted against a pre-seeded fixture directory; (d) a file made undeletable increments `failedFiles`, the command still returns `Ok`, and the UI shows the partial-result warning; (e) nothing outside `logs/` is touched (assert `metrics/` and `settings.json` survive); (f) the delete is confirm-gated and writes no record into the surviving file |
 
 Increments 4 and 7 require a `ui-designer` pass (`docs/contracts/P91-observability-ui.md`) before
@@ -744,10 +965,12 @@ senior-dev.
 ### Milestone gate
 **AI gate:** `cargo test` + vitest green; `pnpm gate`; browser harness with `VITE_MOCK_IPC=1` runs a
 scripted flicker scenario (including a sidebar ref change) and `__bonsaiDumpLogs()` output is
-inspected for correct traces and at least one true-positive anomaly; §11 budgets hold, incl. the
-sidebar record-count bound; a real `logs/*.jsonl` from a `pnpm tauri dev` session is parsed
-line-by-line by a test asserting schema validity and **zero redaction violations** (regex scan for
-path separators, `@`, `http`, known token shapes, and any branch name present in the fixture repo).
+inspected for correct traces and at least one true-positive anomaly; **the mock slow-`graph.get`
+fixture produces a `slow-command` + `slow-phase` pair whose `refs` resolve to the span**; §11
+budgets hold, incl. the sidebar record-count bound and the ≤1-span-per-operation bound; a real
+`logs/*.jsonl` from a `pnpm tauri dev` session is parsed line-by-line by a test asserting schema
+validity and **zero redaction violations** (regex scan for path separators, `@`, `http`, known token
+shapes, and any branch name present in the fixture repo).
 
 **USER CHECKPOINT:** open a real repo in the native window with Dev mode ON, perform the actions
 that flicker (**including the sidebar interactions where flickering was observed**), then (a)
@@ -755,7 +978,9 @@ that flicker (**including the sidebar interactions where flickering was observed
 reads the exported JSONL and confirms it identifies the misbehaviour **and contains nothing they
 would not send to a third party**, (d) **"Delete all log files" with Dev mode still ON empties the
 folder down to one fresh file, the reported count/size look right, and logging visibly continues**,
-(e) with Dev mode OFF, graph scroll on a 20k-commit repo feels unchanged.
+(e) with Dev mode OFF, graph scroll on a 20k-commit repo feels unchanged, (f) **on a large repo, an
+operation that feels slow produces a `span` record whose phases plausibly explain where the time
+went**.
 
 ---
 
@@ -770,7 +995,16 @@ folder down to one fresh file, the reported count/size look right, and logging v
 | 5 | Log file granularity | **APPROVED — one file per session** | §6 |
 | 6 | `metrics_reset` | **APPROVED — ship the command, expose no UI** until a Statistics page exists | §6, §10, §12 inc. 6 |
 | 7 | **"Delete all log files"** | **PULLED INTO v1** (was a deferred follow-up under decision 4; raised by ui-designer, accepted by the user). Rationale: logs survive Dev mode being disabled, and pruning only fires after 10 newer sessions — so one `raw`-names session can leave real names on disk indefinitely for an occasional debugger. Manual folder deletion is not an acceptable remedy for a privacy-relevant artifact the app created. Behaviour with the writer active: **roll to a new file, then purge everything else** | §6.1, §6 Commands, §7.1, §10 (`dev.delete-logs`), §11, §12 inc. 7 |
+| 8 | **Performance dimension added** (user, 2026-08-27) | **ACCEPTED.** P91 must diagnose *slowness*, not only redundancy. All schema work is **ADDITIVE ONLY** (one new `LogKind` + optional `#[serde(default)]` fields); `OBS_SCHEMA_VERSION` stays 1 so the in-flight increment-1 implementation absorbs it without rework | §3.1, §5.1, §8.1, §11, §12 |
+| 9 | Intra-operation breakdown shape | **DECIDED — one `span` record per operation with a `phases[]` array**, not one record per phase (volume: ~1 line per heavy op). Mechanism is an **explicit `PhaseRecorder` value**, never a task-local — consistent with §2.2's rejection of an ambient backend trace. Nesting is expressed by dotted labels, not a structural tree | §3.1, §3.1.1 |
+| 10 | Where phase timing lives | **DECIDED — at the `src-tauri` caller layer** (`graph_cache.rs`, the status and diff command bodies), **not** inside `crates/bonsai-core`. bonsai-core must not depend on `obs/`; the src-tauri layer already orchestrates these calls and already increments `perf.rs`. **Exactly three ops** (`graph.get`, `status.scan`, `diff.compute`) and ~11 phase labels in v1; a fourth op needs a new decision row | §3.1.2, §12 inc. 3 |
+| 11 | Contention / saturation records | **DECIDED — optional fields on the same `span` record** (`queuedMs`, `poolInflight`, `poolMax`, `deadlineFrac`), not new record kinds. Queue delay is captured around `spawn_blocking` in `repo_handle.rs`; watchdog pressure comes from the existing `run_with_git_timeout*` deadline. One operation ⇒ one line | §3.1.3, §5, §12 inc. 3 |
+| 12 | Slow-operation thresholds | **DECIDED — per-command, self-calibrating.** `ms > max(floor, k × rolling_p95)` over an in-memory per-`cmd` histogram (reusing the §8 bucket shape), gated by `MIN_SAMPLES`, rate-limited to 1 per cmd per 10 s, plus a >10 s absolute catch-all. Constants in one `SLOW_RULES` table in `obs/anomaly.rs`. This is why a 20k-commit repo does not fire continuously: the baseline is that repo's own normal cost | §5.1, §12 inc. 5 |
+| 13 | Cache-effectiveness rule | **DECIDED — `cache-collapse`**, driven by an optional `cache` field on the `graph.get` span emitted by `graph_cache.rs` (site-local knowledge, per §5's philosophy) and suppressed when a mutation occurred in the window | §3.1, §5.1, §12 inc. 5 |
+| 14 | Durable percentiles | **DECIDED — no new storage type.** The existing `Histogram` is the bounded summary; `percentile_ms()` derives p50/p95 from the frozen 8 buckets at snapshot time, and `p50Ms`/`p95Ms` are **derived, never persisted**. Phase durations fold into allow-listed `op.*` sub-keys so week-over-week regression is answerable per phase. Bucket boundaries are frozen — changing them would break existing `usage.json` files | §8.1, §11, §12 inc. 6 |
+| 15 | Interaction-latency (gesture → paint) | **DEFERRED — reason recorded.** Needs rAF-after-commit plumbing in all six surfaces and is unverifiable in the headless harness (0×0 pane ⇒ no rAF). The `gesture → ipc.result.ms → span.phases → render.tally → frame/jank-trace` chain already triangulates the motivating complaints. Revisit only if a real complaint resists that chain after increment 5 | §9.4 |
 
 **Deferred follow-ups (explicitly out of P91):** app-wide React instrumentation beyond the six
 surfaces; the Statistics page and any UI for `metrics_reset`; selective/per-file log deletion (v1
-is all-or-nothing).
+is all-or-nothing); **interaction-latency (gesture→paint) measurement (§9.4)**; **phase
+instrumentation of any operation beyond the three in §3.1.2** (e.g. fetch/push, blame, search).
