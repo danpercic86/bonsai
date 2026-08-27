@@ -52,10 +52,14 @@ metrics storage delegated to the architect (recommends rolled-up JSON over SQLit
 watcher, (4) **refresh+echo+React causality = the flicker payload (UI)**, (5) anomaly detector,
 (6) metrics, (7) Settings Dev page (UI). Increments 4 and 7 need the ui-designer pass first.
 
-**Open decisions for the user:** see `docs/contracts/P91-observability.md` §13 — trace transport
-(`tauri::ipc::Invoke` is upstream-unstable), metrics storage (JSON recommended), React
-instrumentation scope (5 surfaces in v1), log retention when Dev mode is switched off, per-session
-log files, `metrics_reset` shipped headless until a Statistics page exists.
+**All 6 open decisions RESOLVED by user (2026-08-27)** — see `docs/contracts/P91-observability.md` §13:
+(1) trace transport approved as specced (injected `__trace` + Rust `ipc.recv` shim; documented
+fallback = drop the shim if a Tauri upgrade breaks the unstable `tauri::ipc::Invoke`, losing only
+backend-receipt visibility); (2) metrics storage = **rolled-up JSON**, not SQLite; (3) React
+instrumentation = **SIX surfaces** — the user added the **left sidebar** to the original five
+(RepoWorkspace+hooks, DiffBrowser, GraphCanvas, right-panel tabs, PR panel) because the left pane
+is where they saw flickering; (4) logs are NOT auto-deleted when Dev mode goes off (prune by caps
+only; "Delete all logs" = follow-up); (5) per-session log files; (6) `metrics_reset` ships headless.
 ## ✅ Graph-features run (2026-08-26) — briefs from docs/ideas/graph-features-brief.md — DONE (AI gate + USER CHECKPOINTs green 2026-08-27)
 
 Branch: `feat/bonsai-graph-theme` (stacked on spec-002, per user decision). Autonomous
