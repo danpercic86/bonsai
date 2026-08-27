@@ -38,7 +38,7 @@ Delivery units (all AI-gate green):
 - **spec-006** — Author coloring + parent-highlight — COMMITTED 0387757 (2026-08-27)
 - **spec-007** — Replay mode — COMMITTED d763ae2 (2026-08-27; AC5 downscoped to frontier pulse; bespoke Bonsai sprout = follow-up)
 
-Run follow-ups (non-blocking): eslint warnings 37/40 cap — burn down; bespoke Bonsai sprout (spec-007 AC5 full form); mock resolveLayout ignores kind:'unborn' (blocks empty-repo fab-gate e2e); settings-panel stale sentence + AC7 scroll-to-top + popover Esc capture (spec-003); rail wheel deltaMode + hexToRgba per-pixel alloc + small-repo dashed density (spec-005, cosmetic); foldView displayToModelRow dup (spec-004); refactor queue: RepoWorkspace ~2776, GraphCanvas ~898; at-cap files: WorkspaceGraphPane 499, settings.rs, graph.rs 496.
+Run follow-ups (non-blocking): eslint warnings 37/40 cap — burn down; bespoke Bonsai sprout (spec-007 AC5 full form); mock resolveLayout ignores kind:'unborn' (blocks empty-repo fab-gate e2e); settings-panel stale sentence + AC7 scroll-to-top + popover Esc capture (spec-003); rail wheel deltaMode + hexToRgba per-pixel alloc + small-repo dashed density (spec-005, cosmetic); foldView displayToModelRow dup (spec-004); transient stale-chip flash between filter change and next meta (spec-003); refactor queue: RepoWorkspace ~2776, GraphCanvas ~898; at-cap files: WorkspaceGraphPane 499, settings.rs, graph.rs 496.
 
 Locked decisions (brief recommendations, adopted for the run): solo/hide always keeps HEAD's
 ancestry; topology toggles in Commit-graph settings category, author-color in Appearance; minimap
@@ -50,6 +50,7 @@ mock IPC updated in the same increment as every IPC change.
 - [ ] Minimap: no idle cost when hidden; no jank on 20k repo
 - [ ] Hover parent-highlight: no idle repaints, feel
 - [ ] Replay: animation smoothness, reduced-motion behavior, no rAF when paused
+- [ ] Author-color legibility in all 4 theme×style combos (light-mode worst case ≈3.4:1 vs Bonsai paper — thinnest contrast margin in the system)
 
 ## ✅ P90 — Per-branch CI Checks view — DONE (AI gate + USER CHECKPOINT both green 2026-08-25)
 
