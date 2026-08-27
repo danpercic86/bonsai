@@ -26,7 +26,9 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ## 📐 P91 — Observability: Dev mode, structured logs, local telemetry & metrics — PLANNING (awaiting user approval)
 
-**Current step:** APPROVED — **increment 1 (Rust log core) IN PROGRESS** (senior-dev, 2026-08-27).
+**Current step:** increment 1 implemented, **in reviewer round**. 🛑 **USER GATE (2026-08-27): finish
+increment 1 — review → MUST-FIX → commit — then STOP AND WAIT. Do NOT start increment 2 without an
+explicit go from the user. Each subsequent increment requires its own go.**
 **Perf-diagnosis addendum DONE (decision 8, 2026-08-27)** — added after the user asked whether the
 plan also identifies performance issues. New §3.1 `span` record kind carrying a flat `phases[]`
 array per completed operation (≤16, dotted labels), plus optional `queuedMs`, `poolInflight/Max`,
