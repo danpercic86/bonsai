@@ -52,7 +52,7 @@ list. Nothing in this contract is pending an answer.
 | `obs/types.ts` | TS mirror of `LogRecord` + `TraceId` |
 | `obs/enabled.ts` | `obsEnabled()` / `obsLevel()` — single boolean read, set once at boot + on settings change |
 | `obs/trace.ts` | `newTrace()`, `withTrace()`, `currentTrace()` (sync ambient), `bindTrace()` |
-| `obs/redact.ts` | frontend `Redactor` — **`ui:`-namespaced** ordinals + the shared `argsHash` (§7.2) |
+| `obs/redact.ts` | frontend `Redactor` — **`ui:`-namespaced** ordinals + **the sole `argsHash` producer** (§7.2) |
 | `obs/log.ts` | `logRecord(r)` — no-op fast path when disabled; enqueues to batcher |
 | `obs/batcher.ts` | ring buffer, flush on 500 ms / 100 records / `visibilitychange` / `beforeunload` |
 | `obs/ipcProxy.ts` | `instrumentIpc(api: IpcApi): IpcApi` — the frontend choke point |
@@ -135,6 +135,9 @@ Wraps the closure returned by `generate_handler![...]` in `lib.rs`. Reads
 `invoke.message.command()` and the payload map (non-consuming) to extract `__trace`/`__span`,
 emits `ipc.recv`, then delegates.
 
+**`ipc.recv` carries `cmd` + trace ids and NOTHING derived from the arguments** — see §7.2 and
+§12 row 3. It is an arrival stamp, not a second description of the call.
+
 **Known limit:** the shim cannot observe *completion* (the resolver is consumed downstream), so
 **command duration is measured on the frontend side**. Backend-internal timings come from explicit
 spans in heavy commands (§3.1 `PhaseRecorder`), added only where `perf.rs` already instruments.
@@ -155,7 +158,8 @@ in full: per-command traces, spans, args hashes, durations and outcomes (fronten
 explicitly and never depended on the shim), echo/double-trigger causality (§2.4, frontend), the
 `span` phase records (§3.1 — they are emitted by explicit call sites, not by the shim), and
 every anomaly rule except the ability to distinguish "never sent" from "sent but never answered"
-— `orphan-trace` degrades from that distinction to a plain unanswered-call signal.
+— `orphan-trace` degrades from that distinction to a plain unanswered-call signal. **`dup-ipc` is
+unaffected, because it keys exclusively on frontend `ipc.call` records (§5).**
 **No increment other than 3 is affected, and the milestone's core evidence (increment 4) is
 untouched.**
 
@@ -215,6 +219,9 @@ that repeats the same scope with no intervening mutation is a `redundant-refresh
 > `OBS_SCHEMA_VERSION` stays `1`. A reader of a v1 record without these fields stays valid.
 > Additive since increment 1: `'span'` (§3.1), `'truncate'` (§6.3), and the two optional
 > `SessionPayload` truncation fields.
+>
+> **§3 is authoritative for record shape.** Where prose elsewhere in this contract disagreed with a
+> payload definition here, §3 won and the prose was corrected (see §13 row 20).
 
 ```ts
 export const OBS_SCHEMA_VERSION = 1;
@@ -263,12 +270,16 @@ interface SessionPayload  { schema: number; app: string; os: string; sessionId: 
                             /** §6.3 — ADDITIVE. Count of earlier parts deleted so far. */
                             droppedParts?: number; }
 interface GesturePayload  { origin: TraceOrigin; gesture: string; }
+/** The ONLY record kind that carries argsHash/argsShape. Emitted by the frontend proxy only. */
 interface IpcCallPayload  { cmd: string; argsHash: string; argsShape?: ArgShape;
                             args?: Record<string, unknown>; } // only when redaction==='raw'
 interface IpcResultPayload{ cmd: string; argsHash: string; ms: number;
                             outcome: 'ok'|'err'|'aborted'|'superseded';
                             errCode?: string; resultShape?: ArgShape; }
-interface IpcRecvPayload  { cmd: string; }                       // rust-side dispatch stamp
+/** Rust-side arrival stamp. Deliberately carries NO argsHash and NO argsShape — adding one would
+ *  introduce a SECOND canonical form for the same call and silently break `dup-ipc`. See §7.2
+ *  and the §12 row-3 prohibition. */
+interface IpcRecvPayload  { cmd: string; }
 interface EventPayload    { name: string; reason?: string; delivered: boolean; listeners: number; }
 interface ChannelPayload  { name: string; phase: 'open'|'close'; chunks?: number;
                             bytes?: number; ms?: number; outcome?: string; }
@@ -308,7 +319,9 @@ interface TruncatePayload  { reason: 'max-parts';
 ```
 
 `ArgShape` = `Record<string, 'str'|'num'|'bool'|'null'|`arr:${number}`|`obj:${number}`>` — key
-names + type + length only, **never values**.
+names + type + length only, **never values**. Because `IpcApi` methods are **positional**, the
+frontend keys it `"0"`, `"1"`, … (increment 2), matching the positional-array canonical form used
+for `argsHash` (§7.2).
 
 Rust mirrors these as `#[serde(tag = "kind", rename_all = "camelCase")] enum LogPayload`.
 
@@ -350,6 +363,7 @@ export interface SpanPayload {
 ```
 
 Rust mirror — every new field `#[serde(default, skip_serializing_if = "Option::is_none")]`.
+**`SpanPayload` carries no `argsHash` either**, for the same reason as `ipc.recv`.
 
 #### 3.1.1 Mechanism — explicit recorder, no ambient stack
 
@@ -427,6 +441,7 @@ export function instrumentIpc(api: IpcApi): IpcApi;
 - For each call: mint `SpanId`, read `currentTrace()`, inject `__trace`/`__span` into the last
   object argument (or append `{__trace,__span}` when args are positional), emit `ipc.call`,
   `await`, emit `ipc.result` with `ms` + outcome.
+- **This proxy is the single producer of `argsHash`** for the whole system (§7.2).
 - **Callback arguments are wrapped too** (`onRepoChanged(cb)`, channel `onChunk`): the wrapper
   emits `event`/`channel` records on *delivery* and re-binds the subscribing trace, so a
   subscription created by trace A shows deliveries as `causedBy: A`.
@@ -445,7 +460,7 @@ Site-local rules are emitted by the site that has the knowledge. Cross-record ru
 
 | Rule id | Where | Window | Condition | Severity |
 |---|---|---|---|---|
-| `dup-ipc` | sink | 300 ms | same `cmd` + `argsHash`, ≥2 calls, no intervening mutation cmd | warn |
+| `dup-ipc` | sink | 300 ms | **`kind === 'ipc.call'` only** (explicit precondition, see below) — same `cmd` + `argsHash`, ≥2 calls, no intervening mutation cmd | warn |
 | `redundant-refresh` | sink | 1 s | same `scope`, ≥2 executed rounds, no mutation record between | warn |
 | `effect-no-change` | site (`useTracedEffect`) | — | effect re-ran with `changedDeps.length === 0` | warn |
 | `effect-thrash` | sink | 1 s | same `component.effect` ran ≥5× | warn |
@@ -466,6 +481,14 @@ Site-local rules are emitted by the site that has the knowledge. Cross-record ru
 
 † `jank-trace` is **inert unless `dev.captureFrames` is on**; `level: 'trace'` force-enables frame
 capture so the rule is always live at the highest verbosity.
+
+**`dup-ipc` states its own precondition — REQUIRED, not optional.** The detector must filter on
+`kind === 'ipc.call'` **explicitly in code**, not rely on `argsHash` happening to be absent from
+other payload types. Rationale: correctness that emerges from a *missing field elsewhere* is exactly
+the kind that a later additive change breaks silently, and this contract has been making additive
+changes continuously. An explicit kind filter makes the rule locally verifiable and immune to any
+future payload gaining an `argsHash`. A unit test asserts that a synthetic non-`ipc.call` record
+carrying an `argsHash` does **not** contribute to `dup-ipc`. (Increment 5.)
 
 Every anomaly record carries `refs: number[]` (the implicated `seq`s) so the AI reviewer can jump
 straight to the evidence without scanning.
@@ -816,11 +839,11 @@ restore secrecy but cannot be mirrored synchronously in the frontend fast path.
   never imply that a UI `ref#3` and a Rust `ref#3` are the same branch. This prefix is the whole
   mitigation for the "silently implies two different branches" failure mode, and it is mandatory.
 - **The reviewing AI does not need cross-side ordinal identity, and must not attempt to infer it.**
-  Correlation across the boundary runs on `trace` / `span` / `seq` and on `argsHash` — every §5 rule
-  already keys off exactly those. A UI `ipc.call` and its Rust `ipc.recv` share a `trace`; that is a
-  stronger join than a name match would be.
+  Correlation across the boundary runs on `trace` / `span` / `seq` — every §5 rule already keys off
+  exactly those. A UI `ipc.call` and its Rust `ipc.recv` share a `trace`; that is a stronger join
+  than a name match would be.
 - `redactionNote` (§7.3) states this in one sentence: ordinals are per-side and per-session; join on
-  `trace`/`span`/`argsHash`, never on ordinal equality.
+  `trace`/`span`, never on ordinal equality.
 
 ```rust
 // obs/redact.rs
@@ -829,6 +852,8 @@ impl Redactor {
     /// Returns e.g. "path#7". First sight of a value assigns the next ordinal for its Kind.
     /// The counter's starting point is SEEDED FROM THE SALT, which is what delivers (b).
     pub fn tag(&self, kind: Kind, value: &str) -> String;
+    /// Takes ALREADY-CANONICALISED text. There is no Rust canonicaliser and none is to be added
+    /// (see the argsHash bullet below).
     pub fn hash_args(&self, canonical_json: &str) -> String;   // 8-hex, salted FNV-1a-64
 }
 pub enum Kind { Repo, Path, Ref, Remote, Other }
@@ -837,9 +862,28 @@ pub enum Kind { Repo, Path, Ref, Remote, Other }
   log file, not into an export zip, not to `usage.json`. The frontend receives it once at boot via
   `log_session_info` (in-process IPC) and uses it to seed its own counter and its `argsHash`.
 - A purge roll (§6.1) keeps the session salt: the new file continues the same session's ordinals.
-- **`argsHash` is a shared equality token, and the one thing both sides compute identically:** a
-  salted FNV-1a-64 digest (8 hex) over the **raw canonical JSON** of the arguments, so a UI call and
-  its Rust arrival hash alike. It powers `dup-ipc` without storing content.
+- **`argsHash` — one producer, one canonical form. CORRECTED 2026-08-27 (§13 row 20).**
+  `argsHash` is produced by the **frontend only** (`src/obs/ipcProxy.ts` via `src/obs/redact.ts`), as
+  a salted FNV-1a-64 digest (8 hex) over a **positional JSON array** canonical form — positional
+  because `IpcApi` methods are positional, which is also why `argsShape` is keyed `"0"`, `"1"`, ….
+  It appears on `ipc.call` and `ipc.result` and **nowhere else**.
+  **Cross-side agreement is neither required nor implemented**, and an earlier revision of this
+  section wrongly claimed "a UI call and its Rust arrival hash alike" — §3 has always defined
+  `IpcRecvPayload` as `{ cmd }` with no `argsHash`, §3 is authoritative, and that sentence is struck.
+  `Redactor::hash_args` takes an already-canonicalised `&str`; **no Rust canonicaliser exists.**
+  - **PROHIBITION (binding on increment 3 and every later increment): `ipc.recv` must NOT gain an
+    `argsHash` (or `argsShape`) field.** A Rust canonicaliser would naturally serialise a *named
+    payload map*, producing different canonical text for the same logical call. That second canonical
+    form would make `dup-ipc` **silently stop matching real double triggers** — the precise failure
+    this milestone exists to detect, and invisible because the rule would simply go quiet.
+  - **If a future increment genuinely needs a Rust-side `argsHash`, BOTH of the following are
+    required — this is not an either/or:** (1) it must adopt the **identical positional-array
+    canonical form** as `src/obs/redact.ts`, pinned by the existing cross-side vectors at
+    `src-tauri/src/obs/tests_redact.rs:203-211`; **and** (2) `dup-ipc` must already be filtering
+    explicitly on `kind === 'ipc.call'` (§5), which is mandated now and independently of any such
+    change, so the rule cannot be broken by a payload gaining a hash.
+  - `argsHash` powers `dup-ipc` without storing content, and it remains the only mechanism serving
+    both §5 and §7.
   **FNV-1a-64 is adequate here and only here**, for two stated reasons: equality is the only
   property required of it, and the salt never leaves the process, so a file on its own carries no
   key with which to brute-force the digest. It is **not** a concealment primitive — no future change
@@ -1187,13 +1231,19 @@ below asks for it to be rewritten:
   `LogSessionInfo` truncation fields (increment 7), and the widened purge scope (increment 7).
   `log_export_session`'s `exports/` default and `LogSessionInfo.salt` were folded into increment 1.
 
+**Post-increment-2 correction (§13 row 20).** `argsHash` has **one** producer (the frontend proxy)
+and **one** canonical form (positional JSON array). §7.2's old "hash alike" sentence was wrong and is
+struck; §3's `IpcRecvPayload { cmd }` was always authoritative. Two binding consequences below:
+increment 3 must **not** add `argsHash` to `ipc.recv`, and increment 5 must make `dup-ipc` filter
+explicitly on `kind === 'ipc.call'`.
+
 | # | Increment | UI? | Scope | Acceptance |
 |---|---|---|---|---|
 | 1 | **Log core (Rust)** — `obs/record.rs`, `redact.rs`, `sink.rs`, `writer.rs`, `commands/obs.rs` (`log_append`, `log_session_info`, `log_reveal_dir`, `log_export_session`), `DevSettings` + all 8 lockstep files, mock IPC stubs. **No §3.1 work.** | no | schema, redaction, sink, rotation, pruning, flush-on-exit, settings plumbing | `cargo test`: rotation at cap **evicts the oldest part of the current group and never refuses rotation (§6.3), prune runs after each rotation, and the session stays ≤128 MB**; pruning keeps N; backpressure emits `drop`; exit flush loses 0 records; `Redactor` assigns stable ordinals within a session and different ones across sessions (§7.2 (a)+(b); **(c) is explicitly NOT required — do not test for cross-side agreement**); the §7.2.1 scrubber catches every shipped Layer-A pattern **and every fixture in the `(prefix, min_len)` table**, keeps the `basic`-in-prose negative case, and leaves a long real path untouched; **turning Dev mode off deletes no file**. Enabling Dev mode creates a `logs/*.jsonl` whose first line is a valid `session` record naming the redaction mode. **§6.2:** `log_export_session(None)` writes into `<app_config_dir>/exports/` and a test asserts **no `.zip` is ever created inside `logs/`**; `log_session_info` returns the session `salt` and, when exports exist, `exportFiles`/`exportBytes`; a test asserts the salt appears in **no** file on disk |
-| 2 | **Frontend pipeline** — `obs/{types,enabled,trace,redact,log,batcher,ipcProxy}.ts`, wire into `src/ipc/index.ts`, mock ring buffer + `__bonsaiDumpLogs()` | no | proxy, trace minting, redaction mirror, batching | vitest: a mock-IPC call produces paired `ipc.call`/`ipc.result` sharing one trace + one span; disabled ⇒ method identity preserved; ≤1 `log_append` per 500 ms; a call with a path argument logs `argsHash`+`argsShape` and **no path substring**. **§7.2:** every frontend ordinal is `ui:`-prefixed (regex test over a full fixture run — a bare `ref#`/`path#`/`repo#` from `src: 'ui'` is a failure); frontend and Rust produce the **same `argsHash`** for the same canonical args + salt (fixture-vector test); ordinals are stable within the session |
-| 3 | **Rust dispatch + events + watcher + §3.1 spans + the TWO open §7.2.1 Layer-A patterns** — `invoke_shim.rs` (§2.3, incl. the §2.3.1 contingency note in the module doc), `trace.rs`, **`obs/phase.rs` + the `span` `LogKind`/`SpanPayload` (additive to `record.rs`) + the three §3.1.2 call sites + `queuedMs`/pool gauge in `repo_handle.rs` + `deadlineFrac` from `run_with_git_timeout*` + `cache` from `graph_cache.rs`**, migrate every `emit(` site to `emit_logged` with an explicit `TraceMeta`, watcher batch/debounce records, mock `span` fixtures, **the `eyJ…` JWT prefix + in-string `key=value` credential pairs** | no | backend choke point + intra-operation breakdown | every dispatch yields an `ipc.recv` stamped with the frontend-injected `__trace`; no `emit` site remains unmigrated (grep test); a git-op burst yields watcher `fired` records with correct `paths`/`relevant`/`debounceMs`. **Spans:** (a) a `get_graph` on a fixture repo emits exactly **one** `span{op:'graph.get'}` whose `phases` cover `revwalk`/`decorate`/`lane` and whose phase sum ≤ `ms`; (b) `queuedMs` is present and ≥0 on every git span, and a test that saturates the blocking pool shows `queuedMs > 0` and `poolInflight >= poolMax`; (c) a forced near-timeout yields `deadlineFrac ≥ 0.8`; (d) a cache-served graph emits `cache:'hit'` with no `revwalk` phase; (e) recorder overhead bench < 5 µs; (f) `bonsai-core` gains **no** dependency on `obs` (compile test). **§7.2.1 — exactly two additions, nothing else in Layer A is touched:** a JWT (`eyJ…`) and a plain-text `password=…` credential-helper line are both redacted; **`glpat-` and `Basic` are ALREADY SHIPPED — do not re-add them**, and the `redact.rs:377-394` `basic`-in-prose asymmetry must survive unchanged (its existing negative test still passes); a 40-char SHA and a long real path still untouched. **If `tauri::ipc::Invoke` will not compile, execute §2.3.1 (drop the shim) and drop only the `ipc.recv` criterion — spans are unaffected — do not modify command signatures** |
+| 2 | **Frontend pipeline** — `obs/{types,enabled,trace,redact,log,batcher,ipcProxy}.ts`, wire into `src/ipc/index.ts`, mock ring buffer + `__bonsaiDumpLogs()` | no | proxy, trace minting, redaction mirror, batching, **the system's sole `argsHash` producer** | vitest: a mock-IPC call produces paired `ipc.call`/`ipc.result` sharing one trace + one span; disabled ⇒ method identity preserved; ≤1 `log_append` per 500 ms; a call with a path argument logs `argsHash`+`argsShape` and **no path substring**. **§7.2:** every frontend ordinal is `ui:`-prefixed (regex test over a full fixture run — a bare `ref#`/`path#`/`repo#` from `src: 'ui'` is a failure); the canonical form is a **positional JSON array** with `argsShape` keyed `"0"`,`"1"`,…; ordinals are stable within the session |
+| 3 | **Rust dispatch + events + watcher + §3.1 spans + the TWO open §7.2.1 Layer-A patterns** — `invoke_shim.rs` (§2.3, incl. the §2.3.1 contingency note in the module doc), `trace.rs`, **`obs/phase.rs` + the `span` `LogKind`/`SpanPayload` (additive to `record.rs`) + the three §3.1.2 call sites + `queuedMs`/pool gauge in `repo_handle.rs` + `deadlineFrac` from `run_with_git_timeout*` + `cache` from `graph_cache.rs`**, migrate every `emit(` site to `emit_logged` with an explicit `TraceMeta`, watcher batch/debounce records, mock `span` fixtures, **the `eyJ…` JWT prefix + in-string `key=value` credential pairs** | no | backend choke point + intra-operation breakdown | every dispatch yields an `ipc.recv` stamped with the frontend-injected `__trace`; **`ipc.recv` carries `cmd` + trace ids ONLY — adding `argsHash`/`argsShape` is PROHIBITED (§7.2), and a test asserts the emitted `ipc.recv` JSON has no `argsHash` key**; no Rust args canonicaliser is introduced; no `emit` site remains unmigrated (grep test); a git-op burst yields watcher `fired` records with correct `paths`/`relevant`/`debounceMs`. **Spans:** (a) a `get_graph` on a fixture repo emits exactly **one** `span{op:'graph.get'}` whose `phases` cover `revwalk`/`decorate`/`lane` and whose phase sum ≤ `ms`; (b) `queuedMs` is present and ≥0 on every git span, and a test that saturates the blocking pool shows `queuedMs > 0` and `poolInflight >= poolMax`; (c) a forced near-timeout yields `deadlineFrac ≥ 0.8`; (d) a cache-served graph emits `cache:'hit'` with no `revwalk` phase; (e) recorder overhead bench < 5 µs; (f) `bonsai-core` gains **no** dependency on `obs` (compile test). **§7.2.1 — exactly two additions, nothing else in Layer A is touched:** a JWT (`eyJ…`) and a plain-text `password=…` credential-helper line are both redacted; **`glpat-` and `Basic` are ALREADY SHIPPED — do not re-add them**, and the `redact.rs:377-394` `basic`-in-prose asymmetry must survive unchanged (its existing negative test still passes); a 40-char SHA and a long real path still untouched. **If `tauri::ipc::Invoke` will not compile, execute §2.3.1 (drop the shim) and drop only the `ipc.recv` criterion — spans are unaffected — do not modify command signatures** |
 | 4 | **Refresh + echo causality + React causality across the SIX surfaces** — `armEcho(repoId, trace)`, suppressed-watcher record at `useCoalescedRefresh.ts:82`, `pendingTracesRef` + `refresh` records, `obs/react.ts` + `obs/renderTally.ts`, applied per the §9.3 table (incl. the sidebar), `frameStats` routing | **yes** | **the flicker evidence** | (a) a mutation followed by its fs echo yields a `watcher` record with `suppressed:true` and `causedBy` = the mutation's trace; (b) one mutation ⇒ exactly one `refresh` record listing every collapsed contributing trace; (c) an effect re-run with unchanged deps emits `effect-no-change`; (d) **sidebar: one ref change on a 500-ref fixture yields ≤8 react records — one `each` record for `Sidebar.tsx` plus one `render.tally` per section/row component — and zero per-row records**; (e) a sidebar flicker (repeated re-render with no ref change) shows as a `render.tally` with `renders > 3 × instances` |
-| 5 | **Anomaly detector** — `obs/anomaly.rs`, every sink-side rule in §5 incl. `render-storm` **and the §5.1 performance rules** (`slow-command`, `slow-phase`, `queue-delay`, `pool-saturation`, `watchdog-pressure`, `cache-collapse`) + the `SLOW_RULES` constants table | no | derived records | scripted double-click in the harness produces a `dup-ipc` anomaly whose `refs` point at the two `ipc.call` seqs; each rule has a unit test with a true-positive and a true-negative case; **tests assert no rule reads a redaction ordinal (§7.2) and no rule consumes `truncate` (§6.3)**. **§5.1 specifically:** (a) a synthetic stream of 50 normal `get_graph` results at 900 ms followed by one at 4 s fires **exactly one** `slow-command`; (b) the same 50 results at a *uniformly* high 900 ms fire **none** (large-repo non-firing test); (c) fewer than `MIN_SAMPLES` results fire nothing except the >10 s catch-all; (d) the rate limit caps repeats at 1 per cmd per 10 s; (e) a slow span dominated by `lane` fires `slow-phase{phase:'lane'}` referencing both seqs; (f) 5 spans with `cache:'redecorate'` and no mutation fire `cache-collapse`, and the same 5 *with* an intervening mutation fire nothing; (g) 3 spans with `queuedMs 150` in 5 s fire `queue-delay`; (h) baseline map stays at the 200-key cap |
+| 5 | **Anomaly detector** — `obs/anomaly.rs`, every sink-side rule in §5 incl. `render-storm` **and the §5.1 performance rules** (`slow-command`, `slow-phase`, `queue-delay`, `pool-saturation`, `watchdog-pressure`, `cache-collapse`) + the `SLOW_RULES` constants table | no | derived records | scripted double-click in the harness produces a `dup-ipc` anomaly whose `refs` point at the two `ipc.call` seqs; each rule has a unit test with a true-positive and a true-negative case; **`dup-ipc` filters EXPLICITLY on `kind === 'ipc.call'` and a test feeds a synthetic non-`ipc.call` record carrying an `argsHash` and asserts it does not contribute (§5)**; tests assert no rule reads a redaction ordinal (§7.2) and no rule consumes `truncate` (§6.3). **§5.1 specifically:** (a) a synthetic stream of 50 normal `get_graph` results at 900 ms followed by one at 4 s fires **exactly one** `slow-command`; (b) the same 50 results at a *uniformly* high 900 ms fire **none** (large-repo non-firing test); (c) fewer than `MIN_SAMPLES` results fire nothing except the >10 s catch-all; (d) the rate limit caps repeats at 1 per cmd per 10 s; (e) a slow span dominated by `lane` fires `slow-phase{phase:'lane'}` referencing both seqs; (f) 5 spans with `cache:'redecorate'` and no mutation fire `cache-collapse`, and the same 5 *with* an intervening mutation fire nothing; (g) 3 spans with `queuedMs 150` in 5 s fire `queue-delay`; (h) baseline map stays at the 200-key cap |
 | 6 | **Metrics** — `obs/metrics.rs`, `metrics_file.rs`, `perf.rs` absorption, `metrics_snapshot`/`metrics_reset` + mock, **§8.1 `percentile_ms`/`mean_ms` + the derived `p50Ms`/`p95Ms` snapshot fields + folding `span` phase durations into the allow-listed `op.*` histogram keys** | no | durable local aggregates | counters survive restart; `.bak` recovery on a corrupt file; daily bucketing correct across a simulated date change; `perf` deltas appear as `perf.*`; test asserts `obs/` reaches no HTTP dependency and that no metric key is user-derived; **`metrics_reset` exists as a command and appears in no catalog row**. **§8.1:** (a) `percentile_ms` matches a brute-force reference within one bucket width on 10k synthetic samples; (b) 1M observations leave `usage.json` byte-size unchanged (no sample retention); (c) `p50Ms`/`p95Ms` appear on `metrics_snapshot()` output and are **absent** from `usage.json` on disk; (d) `op.graph.get.lane` accumulates from `span` phases across two days and the two days' `p95Ms` are independently comparable; (e) the histogram key set stays within the allow-list |
 | 7 | **Settings Dev page + `logs_delete_all` + §6.3 truncation record** — the `RollAndPurge` writer path + `logs_delete_all` command + mock, **the `truncate` record + `SessionPayload.truncated`/`droppedParts` + `LogSessionInfo.droppedParts`**, `LogSessionInfo.totalFiles/totalBytes` (+ export counts), catalog rows, `DevPage.tsx`, reveal/export/delete actions, raw-names confirm + warning, privacy statement | **yes** (ui-designer first) | user surface + purge + truncation disclosure | catalog parity test passes; toggling `dev.enabled` starts/stops writing **and deletes nothing**; enabling raw names confirms and starts a new file; export produces a zip of the session parts **in `exports/`**. **`logs_delete_all`:** (a) Dev mode OFF ⇒ every in-scope file removed, `rolled:false`, `activeFile:null`; (b) **Dev mode ON ⇒ the writer rolls to a new file with an `afterPurge:true` header, every prior file (including the one just closed) is removed, `rolled:true`, `activeFile` names the new file, and logging continues with no lost record**; (c) `deletedFiles` / `deletedBytes` **exactly match** the files and byte sizes removed, asserted against a pre-seeded fixture directory; (d) a file made undeletable increments `failedFiles`, the command still returns `Ok`, and the UI shows the partial-result warning; (e) nothing outside `logs/` and `exports/` is touched (assert `metrics/` and `settings.json` survive); (f) the delete is confirm-gated and writes no record into the surviving file. **§6.2:** (g) **export a session, then delete: the zip in `exports/` is gone**, `deletedExports` counts it, and its bytes are included in `deletedBytes`; (h) a `.zip` seeded into `logs/` is also removed; (i) a zip saved *outside* both directories survives and the confirm copy says so. **§6.3:** (j) driving a writer past `max_parts` emits exactly one `truncate` record per evicted part **into the surviving newest part**, with `droppedParts` incrementing; (k) every part header opened after an eviction carries `truncated:true` + `droppedParts`; (l) `log_session_info` reports `droppedParts` and the Dev page shows the truncation warning line |
 
@@ -1207,9 +1257,9 @@ inspected for correct traces and at least one true-positive anomaly; **the mock 
 fixture produces a `slow-command` + `slow-phase` pair whose `refs` resolve to the span**; §11
 budgets hold, incl. the sidebar record-count bound, the ≤1-span-per-operation bound and the
 **128 MB per-session disk bound**; a real `logs/*.jsonl` from a `pnpm tauri dev` session is parsed
-line-by-line by a test asserting schema validity and **zero redaction violations** (regex scan for
-path separators, `@`, `http`, known token shapes, the session salt, and any branch name present in
-the fixture repo).
+line-by-line by a test asserting schema validity, **that `argsHash` appears on no record kind other
+than `ipc.call`/`ipc.result`**, and **zero redaction violations** (regex scan for path separators,
+`@`, `http`, known token shapes, the session salt, and any branch name present in the fixture repo).
 
 **USER CHECKPOINT:** open a real repo in the native window with Dev mode ON, perform the actions
 that flicker (**including the sidebar interactions where flickering was observed**), then (a)
@@ -1242,10 +1292,11 @@ whose phases plausibly explain where the time went**.
 | 13 | Cache-effectiveness rule | **DECIDED — `cache-collapse`**, driven by an optional `cache` field on the `graph.get` span emitted by `graph_cache.rs` (site-local knowledge, per §5's philosophy) and suppressed when a mutation occurred in the window | §3.1, §5.1, §12 inc. 5 |
 | 14 | Durable percentiles | **DECIDED — no new storage type.** The existing `Histogram` is the bounded summary; `percentile_ms()` derives p50/p95 from the frozen 8 buckets at snapshot time, and `p50Ms`/`p95Ms` are **derived, never persisted**. Phase durations fold into allow-listed `op.*` sub-keys so week-over-week regression is answerable per phase. Bucket boundaries are frozen — changing them would break existing `usage.json` files | §8.1, §11, §12 inc. 6 |
 | 15 | Interaction-latency (gesture → paint) | **DEFERRED — reason recorded.** Needs rAF-after-commit plumbing in all six surfaces and is unverifiable in the headless harness (0×0 pane ⇒ no rAF). The `gesture → ipc.result.ms → span.phases → render.tally → frame/jank-trace` chain already triangulates the motivating complaints. Revisit only if a real complaint resists that chain after increment 5 | §9.4 |
-| 16 | **§7.2 contradiction — ordinal scheme** (raised by senior-dev during increment 1) | **RESOLVED — keep salt-seeded counters; (a) and (b) hold, (c) cross-side agreement is STRUCK.** A counter cannot agree across sides (different first-sight order), and the only synchronous-mirrorable alternative, `FNV-1a-64(salt, value) → ordinal`, was **rejected on privacy grounds**: branch/tag/remote names are a small, guessable input space and FNV is not a PRF, so anyone with the salt could dictionary-attack every ordinal — while a counter leaks only first-sight order. A cryptographic keyed hash would restore secrecy but cannot be mirrored synchronously on the render path. **Mitigation for the "two different branches look identical" failure mode: frontend ordinals are `ui:`-prefixed**, so the namespaces are disjoint and conflation is impossible. Cross-side correlation uses `trace`/`span`/`seq` and `argsHash` — which every §5 rule already does; **no rule may read an ordinal**. `argsHash` stays salted FNV-1a-64 over raw canonical JSON (equality token only; the salt never leaves the process, and §6/§7.1 now forbid writing it to any file). **Increment 1's implementation stands — no reimplementation**; §12 inc. 1 tests are correct as written and must NOT assert (c) | §7.2, §7.1, §7.3, §6, §5, §12 inc. 1 & 2 & 5 |
+| 16 | **§7.2 contradiction — ordinal scheme** (raised by senior-dev during increment 1) | **RESOLVED — keep salt-seeded counters; (a) and (b) hold, (c) cross-side agreement is STRUCK.** A counter cannot agree across sides (different first-sight order), and the only synchronous-mirrorable alternative, `FNV-1a-64(salt, value) → ordinal`, was **rejected on privacy grounds**: branch/tag/remote names are a small, guessable input space and FNV is not a PRF, so anyone with the salt could dictionary-attack every ordinal — while a counter leaks only first-sight order. A cryptographic keyed hash would restore secrecy but cannot be mirrored synchronously on the render path. **Mitigation for the "two different branches look identical" failure mode: frontend ordinals are `ui:`-prefixed**, so the namespaces are disjoint and conflation is impossible. Cross-side correlation uses `trace`/`span`/`seq`; **no rule may read an ordinal**. **Increment 1's implementation stands — no reimplementation**; §12 inc. 1 tests are correct as written and must NOT assert (c) | §7.2, §7.1, §7.3, §6, §5, §12 inc. 1 & 2 & 5 |
 | 17 | **Export/delete privacy hole** (raised by senior-dev during increment 1) | **RESOLVED — both halves.** `log_export_session` defaulted its zip *into* `logs/`, whose purge scope was `*.jsonl` only, so "Delete all log files" reported success while a **`raw`-names** zip survived — defeating decision 7 outright. Fix: (1) exports default to `<app_config_dir>/exports/`, never `logs/`; (2) the purge scope widens to `logs/*.jsonl`, `logs/*.jsonl.tmp`, `logs/*.zip` and `exports/*.zip`. A zip the user deliberately saved into either app-managed directory **is** deleted — that is intended, the confirm dialog states counts and bytes first, and silently retaining a raw-names archive is the worse failure. Exports saved elsewhere are unreachable and are **not** deleted; the confirm copy and the export content statement must both say so, because claiming completeness the command cannot deliver is the same class of defect. Counts stay honest: export zips appear in `deletedFiles`/`deletedBytes` and are additionally broken out in the new optional `deletedExports` | §6, §6.1, §6.2, §7.1, §10, §12 inc. 1 & 7 |
 | 18 | **Rotation past `max_parts`** (found by reviewer, directed by orchestrator during increment 1) | **RATIFIED AS IMPLEMENTED — evict the oldest part of the current session group; never refuse rotation.** The original "keep appending to the last part" wording left a session unbounded, because `prune` ran only at `LogWriter::open` and never pruned the last group — a single event-storm session could exceed the 256 MB cap until the next launch. Eviction restores a hard **128 MB** per-session bound while preserving the **never discard the newest evidence** invariant (the user's workflow puts the anomaly at the end of the file). Pruning also now runs **after every rotation**, not only at open, so the total cap is enforced continuously. **Accepted cost, disclosed not hidden:** a truncated log cannot prove the *first* occurrence of a bug, which matters for double-trigger work — so truncation is recorded in-band (new additive `truncate` record + `SessionPayload.truncated`/`droppedParts` + `LogSessionInfo.droppedParts`), the reviewing AI must treat missing early records in a truncated file as **inconclusive rather than absent**, and the Dev page surfaces a warning suggesting narrower capture instead of a bigger cap. `truncate` ≠ `drop`: one is on-disk loss, the other in-memory backpressure. **Increment 1's code stands; the additive record lands in increment 7** | §6, §6.3, §3, §5, §7.3, §10, §11, §12 inc. 1 & 7 |
 | 19 | **Token scrubber — Layer B heuristic + Layer A status** (implemented in increment 1 incl. its MUST-FIX round; ratification requested) | **RATIFIED. Layer B constants named: `MIN_SECRET_LEN = 32`, `MIN_B64_RUN = 24`**, alpha+digit mix required, pure hex excluded. The original `/`-rejecting form made §7.2's own "base64 PAT shape" structurally uncatchable. The run test is sound because random base64 hits `/` about once per 64 chars while path segments are human-named and short — and the few that reach 24 chars are word-shaped and fail the digit requirement. Accepted, fail-safe consequences: scp-style remotes ordinalise as `path#` not `remote#`; UUID-shaped strings ≥32 chars and digit-bearing long camelCase segments over-redact. **Precision is permanently subordinate to recall: a missed credential is unrecoverable, an over-redacted path costs only legibility.** **Layer A is largely SHIPPED and must not be re-implemented** — increment 1's MUST-FIX round converted `TOKEN_PREFIXES` to `(prefix, min_len)` pairs (`redact.rs:190`, `:213`) precisely so short tokens escape the global floor, and shipped `glpat-` (+ `gldt-`/`glrt-`/`npm_`/`AKIA`/`ASIA`/`AIza`/`sk-`/`dckr_pat_`/`xoxe-` …), **`Basic` alongside `Bearer`** (`:382`) with a deliberate **`basic`-in-prose guard** (`:377-394`, must survive untouched) and a looser keyword-established length rule (`:304-305`) that already covers ~24-char `Basic` credentials. **Only TWO Layer-A items remain open, both additive in increment 3:** the `eyJ…` **JWT** prefix (a `.` disqualifies a Layer-B candidate and no prefix matches, so JWTs pass through today) and **`key=value` / `key: value` pairs matched inside plain-text string bodies** — `is_sensitive_key` (`:232-243`) is key-name-based and never sees line-oriented credential-helper / `.netrc` output, which is the shape a real credential takes when git hands it back. An earlier revision of this row listed `glpat-` and `Basic` as open; that assessed the pre-MUST-FIX state and is **corrected here** | §7.2.1, §12 inc. 1 & 3 |
+| 20 | **`argsHash` has ONE producer and ONE canonical form** (contradiction found by the increment-2 reviewer) | **CORRECTED — §7.2's "a UI call and its Rust arrival hash alike" sentence is STRUCK; §3 was and is authoritative.** `IpcRecvPayload` is `{ cmd }` with no `argsHash`, so the log stream has exactly one canonical form — the frontend's **positional JSON array** (positional because `IpcApi` methods are, which is also why `argsShape` is keyed `"0"`,`"1"`,…). `argsHash` appears only on `ipc.call`/`ipc.result`. **Cross-side agreement is neither required nor implemented**, and `Redactor::hash_args` takes already-canonicalised `&str` — **no Rust canonicaliser exists**. **PROHIBITION binding on increment 3 and later: `ipc.recv` must NOT gain `argsHash`/`argsShape`.** A Rust canonicaliser would serialise a *named payload map*, yielding different canonical text for the same logical call; the resulting second canonical form would make `dup-ipc` **silently stop matching real double triggers** — the exact failure this milestone exists to detect, and invisible because the rule just goes quiet. **If a future increment truly needs a Rust-side `argsHash`, BOTH are required (not either/or):** it must adopt the **identical positional-array canonical form** as `src/obs/redact.ts`, pinned by the existing cross-side vectors at `src-tauri/src/obs/tests_redact.rs:203-211`; **and** `dup-ipc` must already filter explicitly on `kind`. **Item 3 decision — `dup-ipc` states its own precondition, mandated NOW:** the rule must filter on `kind === 'ipc.call'` **explicitly in code**, with a unit test feeding a synthetic non-`ipc.call` record bearing an `argsHash`. Reason: correctness that emerges from a field being *absent from another payload type* is fragile in a contract making continuous additive changes — any future additive field breaks it silently. An explicit filter makes the rule locally verifiable and independent of every other payload's shape. Documentation-only; no shipped code changes | §3 (`IpcRecvPayload`, `ArgShape`), §2.3, §2.3.1, §4, §5 (`dup-ipc` row + precondition), §7.2, §12 inc. 2/3/5 + gate |
 
 **Deferred follow-ups (explicitly out of P91):** app-wide React instrumentation beyond the six
 surfaces; the Statistics page and any UI for `metrics_reset`; selective/per-file log deletion (v1
@@ -1253,4 +1304,5 @@ is all-or-nothing); **interaction-latency (gesture→paint) measurement (§9.4)*
 instrumentation of any operation beyond the three in §3.1.2** (e.g. fetch/push, blame, search);
 **deletion of exports the user saved outside Bonsai's config directory** (physically unreachable —
 §6.2 requires disclosing this, not solving it); **a user-configurable part/size cap** (§6.3 chose
-disclosure + narrower capture over a bigger cap).
+disclosure + narrower capture over a bigger cap); **a Rust-side `argsHash`** (§13 row 20 states the
+two conditions any such change must meet).
