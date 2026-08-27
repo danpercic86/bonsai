@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './invoke';
 import type { BranchDeleteResult, BranchesSnapshot, CheckoutResult, CreateBranchHereResult, RenameBranchResult, StaleReport } from '../types';
 
 export const branchesCommands = {

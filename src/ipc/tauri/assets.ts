@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './invoke';
 import type { AgentAsset, AgentAssetInput, AgentAssetInventory, AgentAssetKind, AiAssetInventory, AiGeneratedAsset, AssetContent, ContextProfile, ProfileActivation, ProfilePreviewEntry, ProfileStore, WorktreeContextStatus } from '../types';
 
 export const assetsCommands = {

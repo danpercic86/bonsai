@@ -1,10 +1,15 @@
 import type { IpcApi } from './types';
+import { instrumentIpc } from '../obs/ipcProxy';
 
 // Dynamic imports so a plain browser never loads @tauri-apps/* in mock mode.
-export const ipc: IpcApi =
+// P91 §4: `instrumentIpc` wraps the RESOLVED api, so the mock and the real path
+// are instrumented by construction — there is no second dispatch point. When Dev
+// mode is off the proxy hands back the original method identity (§11).
+export const ipc: IpcApi = instrumentIpc(
   import.meta.env.VITE_MOCK_IPC === '1'
     ? (await import('./mock')).mockIpc
-    : (await import('./tauri')).tauriIpc;
+    : (await import('./tauri')).tauriIpc,
+);
 
 export type {
   AccountSource,

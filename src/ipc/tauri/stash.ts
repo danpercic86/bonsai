@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './invoke';
 import type { ApplyStashOutcome, CreateStashResult, StashEntry, StashScope } from '../types';
 
 export const stashCommands = {

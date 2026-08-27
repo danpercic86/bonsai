@@ -1,4 +1,5 @@
-import { invoke, Channel } from '@tauri-apps/api/core';
+import { Channel } from '@tauri-apps/api/core';
+import { invoke } from './invoke';
 import type { BlameLine, FileHistoryEntry, HistoryAnswer, HistoryQuery, HistorySearchResults, IndexProgress, IndexStatus, ReflogEntry, SearchQuery, SearchResults, UndoPlan } from '../types';
 
 export const historyCommands = {

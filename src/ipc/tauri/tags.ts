@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './invoke';
 import type { TagAutoSyncReport, TagSyncReport } from '../types';
 
 export const tagsCommands = {

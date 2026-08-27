@@ -186,3 +186,40 @@ fn sensitive_keys_lose_their_value_whatever_its_shape() {
     assert_eq!(v["list"][0], json!(REDACTED_TOKEN));
     assert_eq!(v["list"][1], json!("fine"));
 }
+
+// ---------------------------------------------------------- cross-side vectors
+
+/// The salt the mock IPC layer reports (`src/ipc/mock/handlers/obs.ts`), so a
+/// harness run and this test hash identically.
+const SALT_MOCK: [u8; 16] = [
+    0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+];
+
+/// §7.2 — `argsHash` is the ONE token both sides compute identically, so these
+/// vectors are the contract between `obs/redact.rs` and `src/obs/redact.ts`.
+/// They are generated HERE and hardcoded in `src/obs/redact.test.ts`; a TS test
+/// checking TS output would prove nothing.
+///
+/// Coverage is chosen for the places canonicalization silently diverges:
+/// UTF-8 vs UTF-16 (the non-ASCII vector), integer-vs-float formatting (`1` is
+/// canonical — `JSON.stringify(1.0)` is `"1"`, and the TS canonicalizer is the
+/// authority for the wire text), key ordering, and nesting.
+pub(crate) const ARGS_HASH_VECTORS: &[(&str, &str)] = &[
+    ("[]", "2375e1e2"),
+    ("[{}]", "c673fb57"),
+    (r#"["/repo/one",{"path":"src/app.ts"}]"#, "05c8197b"),
+    (r#"[{"a":1,"b":"zwei"}]"#, "2502ec22"),
+    (r#"[{"msg":"héllo — ünïcode"}]"#, "885d657a"),
+    (r#"[{"n":1,"f":1.5,"t":true,"z":null}]"#, "ddfacfa0"),
+    (r#"[[1,2,[3,"x"]],"<fn>"]"#, "d2d06e48"),
+];
+
+#[test]
+fn args_hash_cross_side_vectors() {
+    let r = Redactor::with_salt(SALT_MOCK);
+    for (canonical, expected) in ARGS_HASH_VECTORS {
+        let got = r.hash_args(canonical);
+        println!("VECTOR {canonical} => {got}");
+        assert_eq!(&got, expected, "vector drift for {canonical}");
+    }
+}

@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './invoke';
 import type { CommitDiff, CommitResult, CompareDiff, FileDiff, ImageDiff, ImageDiffRequest, LineSelection } from '../types';
 
 export const workdirCommands = {

@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './invoke';
 import type { SubmoduleDeinitOutcome, SubmoduleInfo, SubmoduleRemoveOutcome } from '../types';
 
 export const submoduleCommands = {

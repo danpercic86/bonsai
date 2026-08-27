@@ -1,4 +1,5 @@
-import { invoke, Channel } from '@tauri-apps/api/core';
+import { Channel } from '@tauri-apps/api/core';
+import { invoke } from './invoke';
 import type { GitActivityEvent } from '../types';
 
 // P87 git-activity observability. ONE long-lived subscription (Option B): the

@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './invoke';
 import type { BisectOutcome, RebaseOutcome, RebaseTodoOp } from '../types';
 
 export const rebaseCommands = {

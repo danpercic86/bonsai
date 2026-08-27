@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './invoke';
 import type { CommitStatus, CreatePrInput, FileDiff, ForgeAccount, ForgeKind, ForgeRepoContext, ForgeViewer, MergePrInput, PrDetail, PrDiffStats, PrListQuery, PrPage, ReviewComment } from '../types';
 
 export const forgeCommands = {

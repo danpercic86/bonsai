@@ -1,4 +1,5 @@
-import { invoke, Channel } from '@tauri-apps/api/core';
+import { Channel } from '@tauri-apps/api/core';
+import { invoke } from './invoke';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { CloneProgress, GitAvailability, GraphChunk, GraphFilter, GraphLayout, OpenRepoResult, RepoHealth, StatusSnapshot } from '../types';
 

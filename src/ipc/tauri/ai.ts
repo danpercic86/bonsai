@@ -1,4 +1,5 @@
-import { invoke, Channel } from '@tauri-apps/api/core';
+import { Channel } from '@tauri-apps/api/core';
+import { invoke } from './invoke';
 import type { AiAnalysis, AiAnalysisMode, AiAvailability, AiChangelog, AiDiffTarget, AiDigestRange, AiResolveBatch, AiResolveProposal, AiRunEvent, AiSummary, BranchNameProposal, BranchNameSource, ChangelogRange, CommitMessageProposal, ComposeApplyResult, ComposePlan, ComposeProposal, OperationPlan, PrDescription } from '../types';
 
 export const aiCommands = {

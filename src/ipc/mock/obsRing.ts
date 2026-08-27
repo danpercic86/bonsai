@@ -54,11 +54,23 @@ export function ringDump(): string {
 declare global {
   interface Window {
     __bonsaiDumpLogs?: () => string;
+    __bonsaiClearLogs?: () => void;
+    __bonsaiLogStats?: () => { records: number; dropped: number; buffered: number };
   }
 }
 
-/** Installed once by the mock IPC module so the harness can read the buffer. */
+/**
+ * Installed once by the mock IPC module so the harness can read the buffer.
+ *
+ * P91 increment 2 adds the two companions the scripted-scenario gate needs: a
+ * clear (so a scenario starts from an empty ring instead of one polluted by
+ * boot-time IPC) and a stats read (so an assertion can prove records arrived
+ * before it asserts on their content — an empty ring otherwise makes every
+ * "no raw path appears" check pass vacuously).
+ */
 export function installLogDump(): void {
   if (typeof window === 'undefined') return;
   window.__bonsaiDumpLogs = ringDump;
+  window.__bonsaiClearLogs = ringClear;
+  window.__bonsaiLogStats = () => ({ ...ringStats(), buffered: ring.length });
 }
