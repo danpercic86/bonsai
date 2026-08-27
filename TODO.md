@@ -26,7 +26,30 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ## 📐 P91 — Observability: Dev mode, structured logs, local telemetry & metrics — PLANNING (awaiting user approval)
 
-**Current step:** increment 1 implemented, **in reviewer round**. 🛑 **USER GATE (2026-08-27): finish
+**Current step:** ✅ **INCREMENT 1 DONE + COMMITTED `1b94529`** on `feat/p91-observability`
+(cargo --lib 360 passed / obs 43, clippy -D warnings clean, tsc clean, all new files <500 lines).
+Reviewer round 1 = "request changes" (2 MUST-FIX in the privacy layer); all fixed + re-verified.
+**⏸ HALTED AWAITING USER GO FOR INCREMENT 2.**
+
+**Increment 1 notes worth keeping:** (a) strict mode was NOT enforced — the writer trusted the
+producer, so a frontend bug or mode-toggle race would write real paths/refs into a file whose own
+header claimed `redaction:"strict"`. Now enforced writer-side in `obs/strict.rs` (args dropped
+unconditionally; URLs/refs/paths ordinalised in every string field), because §7 makes this a
+Rust-owned guarantee. (b) Error messages were exempt entirely — an `AppError` Display string leaked
+BOTH a username and a repo name; same pass fixes it. (c) `glpat-` (26 chars) was *structurally*
+uncatchable under a global 40-char floor — `TOKEN_PREFIXES` now carries per-prefix minimums.
+(d) senior-dev self-review caught strict enforcement mangling the header's OWN `redactionNote`
+(the disclosure text contained slashes); note is now asserted verbatim. (e) salt-never-on-disk test
+found a real gap — a producer echoing the salt back reached disk; `scrub_salt` added.
+(f) Rotation now drops the OLDEST part instead of refusing to rotate (orchestrator call — the old
+behaviour left a storm session completely unbounded, since prune only ran at startup);
+**needs architect ratification into §6.**
+
+**Deferred to the architect (non-blocking):** ratify the rotation drop-oldest rule into §6; ratify
+or veto senior-dev's base64-secret heuristic (slash-bearing candidates qualify only when a
+`/`-free run is ≥24 chars + alpha/digit mix, minus pure-hex so SHAs survive; floor lowered 40→32).
+**Known over-redaction (fail-safe, tested):** scp-style remotes ordinalise as `path#` not `remote#`;
+UUID-shaped strings ≥32 chars now over-redact. 🛑 **USER GATE (2026-08-27): finish
 increment 1 — review → MUST-FIX → commit — then STOP AND WAIT. Do NOT start increment 2 without an
 explicit go from the user. Each subsequent increment requires its own go.**
 **Perf-diagnosis addendum DONE (decision 8, 2026-08-27)** — added after the user asked whether the
