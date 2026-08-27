@@ -29,7 +29,33 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 **Current step:** ✅ **INCREMENT 1 DONE + COMMITTED `1b94529`** on `feat/p91-observability`
 (cargo --lib 360 passed / obs 43, clippy -D warnings clean, tsc clean, all new files <500 lines).
 Reviewer round 1 = "request changes" (2 MUST-FIX in the privacy layer); all fixed + re-verified.
-**⏸ HALTED AWAITING USER GO FOR INCREMENT 2.**
+**✅ INCREMENT 2 DONE + COMMITTED `6fc3131`** (frontend pipeline: proxy, trace, ui:-prefixed redact
+mirror, batcher; tsc clean, vitest src/obs+src/ipc 348 passed, broad IPC-consumer pass 1989 passed).
+Reviewer round 1 = "request changes" on 1 MUST-FIX, fixed + independently re-verified.
+**⏸ HALTED AWAITING USER GO FOR INCREMENT 3.**
+
+**Increment 2 notes worth keeping:** (a) MUST-FIX was that `__trace` injection sat one layer too
+high — the proxy appended trace metadata as an extra JS argument, but every real IPC method is
+fixed-arity/positional and builds its own payload, so **nothing ever reached the backend**; the two
+object-arg methods (`setUiSettings`, `setSession`) got keys nested INSIDE a payload that is
+persisted verbatim. Increment 3's core criterion was unachievable as built, and the test masked it
+by using a 2-arg signature that does not exist in the real api. Fixed by creating
+`src/ipc/tauri/invoke.ts` (the codebase had NO central invoke wrapper — 21 modules imported it
+straight from Tauri) which stamps at the payload top level; injection removed from the proxy, which
+also kills the mock-persistence pollution by construction. A glob-based guard test forbids direct
+`@tauri-apps/api/core` invoke imports so an untraced command cannot be reintroduced silently.
+(b) The guard's own first two versions **passed on a real offender** because of a regex escaping
+slip — only the negative control caught it. Lesson: assert a guard fails before trusting that it
+passes. (c) `argsHash` is computed BEFORE injection, else every call hashes uniquely and `dup-ipc`
+could never fire. (d) Reviewer resolved the canonical-form worry with stronger evidence than the
+implementer's: `IpcRecvPayload` has NO `argsHash` field, so only one canonical form exists in the
+stream and `dup-ipc` cannot be fooled.
+
+**Carry-in for increment 3:** the transport stamps only when an ambient trace exists (§2.5 — never
+guess), so increment 3's criterion reads as "every **traced** dispatch yields a stamped
+`ipc.recv`"; untraced calls dispatch with no `__trace` rather than a fabricated one. Wiring traces
+to real gestures is increment 4's job. Also: `configureObs()` and `pendingRestart()` are unused in
+production by design — activation is increments 4/7.
 
 **Increment 1 notes worth keeping:** (a) strict mode was NOT enforced — the writer trusted the
 producer, so a frontend bug or mode-toggle race would write real paths/refs into a file whose own
