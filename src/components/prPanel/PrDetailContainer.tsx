@@ -158,6 +158,7 @@ export function PrDetailContainer({
         stats={headerStats}
         changesSlot={
           <PrChangesSection
+            key={summary.number}
             status={prDiff.status}
             stats={prDiff.stats}
             stale={prDiff.stale}

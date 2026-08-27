@@ -4,9 +4,9 @@ import type { FileDiff } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
 
 // P89: per-file PR diff fetch orchestration (mirrors DiffBrowser's bounded
-// queue + component-local cache, §10). Unlike DiffBrowser this is LAZY — a file
-// is only enqueued when its row expands (PR diffs can be large; never fetch all
-// at once). Keyed `${mergeBaseOid}:${headOid}:${path}` so a head advance (new
+// queue + component-local cache, §10). Files are enqueued eagerly by
+// PrChangesSection (all rows expanded by default, DiffBrowser-style); the
+// bounded queue caps in-flight IPC. Keyed `${mergeBaseOid}:${headOid}:${path}` so a head advance (new
 // oids) never serves a stale payload. No IPC leaks into the presentational row.
 
 /** At most 4 per-file hunk fetches in flight (matches DiffBrowser §6.4). */

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { PrDiffStats } from '../../ipc';
 import { SkeletonRows } from '../CommitPanel';
 import { PrFileRow } from './PrFileRow';
@@ -37,41 +37,48 @@ export function PrChangesSection({
   onRetry,
   fileDiffs,
 }: PrChangesSectionProps) {
-  // Rows start collapsed (lazy per-file fetch); an EMPTY set means all collapsed.
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  // Rows start EXPANDED (DiffBrowser-style); an EMPTY set means all expanded.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const { getEntry, requestFile, retryFile } = fileDiffs;
 
   const files = stats?.files ?? [];
 
+  // Eagerly fetch every non-binary file's hunks as soon as the list (or the
+  // base/head oids behind it) is known — the hook dedupes per cache key and
+  // bounds concurrency, so re-runs are cheap no-ops.
+  useEffect(() => {
+    for (const f of files) {
+      if (!f.binary) requestFile(f.path, f.origPath);
+    }
+  }, [files, requestFile]);
+
   const toggle = useCallback(
     (path: string) => {
-      setExpanded((prev) => {
+      // No fetch here: the eager effect above already requested every
+      // non-binary file, and re-expanding hits the hook's cache.
+      setCollapsed((prev) => {
         const next = new Set(prev);
         if (next.has(path)) {
           next.delete(path);
         } else {
           next.add(path);
-          const header = files.find((f) => f.path === path);
-          if (header !== undefined && !header.binary) requestFile(path, header.origPath);
         }
         return next;
       });
     },
-    [files, requestFile],
+    [],
   );
 
   const expandable = files.filter((f) => !f.binary);
-  const allExpanded = expandable.length > 0 && expandable.every((f) => expanded.has(f.path));
+  const allExpanded = expandable.length > 0 && expandable.every((f) => !collapsed.has(f.path));
   const toggleAll = useCallback(() => {
     if (allExpanded) {
-      setExpanded(new Set());
+      setCollapsed(new Set(files.map((f) => f.path)));
     } else {
-      const next = new Set<string>();
       for (const f of files) {
-        next.add(f.path);
         if (!f.binary) requestFile(f.path, f.origPath);
       }
-      setExpanded(next);
+      setCollapsed(new Set());
     }
   }, [allExpanded, files, requestFile]);
 
@@ -89,7 +96,7 @@ export function PrChangesSection({
           key={f.path}
           header={f}
           entry={f.binary ? undefined : getEntry(f.path)}
-          collapsed={!expanded.has(f.path)}
+          collapsed={collapsed.has(f.path)}
           onToggle={toggle}
           onRetry={retryFile}
         />
