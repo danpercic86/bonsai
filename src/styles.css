@@ -14,6 +14,7 @@
 @import './styles/onboarding.css';
 @import './styles/settings-shell.css';
 @import './styles/settings-primitives.css';
+@import './styles/settings-dev.css';
 @import './styles/settings-legacy-sections.css';
 @import './styles/graph-banners.css';
 @import './styles/tabs.css';

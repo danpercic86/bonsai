@@ -27,6 +27,7 @@ import type {
   AiAutonomy,
   AiAvailability,
   AutoFetchSettings,
+  DevSettings,
   GraphColorMode,
   GraphPrefs,
   GraphRefFilter,
@@ -133,6 +134,9 @@ export interface SettingsPanelProps {
    *  App's UiSettings state; persisted via `onChange` like every other setting. */
   terminalCommand: string;
   editorCommand: string;
+  /** P91 §10: Dev-mode / observability settings (whole-struct, the autoFetch
+   *  idiom). Patched via `onChange({ dev })`. */
+  dev: DevSettings;
   /** Run `claude mcp add` for the running server at the given scope (P16).
    *  `'user'` = global, `'local'` = the open repo (private). Resolves when the
    *  run settles so the panel can clear its in-flight state (App still owns the
@@ -265,6 +269,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     profiles,
     terminalCommand,
     editorCommand,
+    dev,
     repoPath,
     configInitialFocus,
     focusProfileId,
@@ -307,6 +312,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       profiles,
       terminalCommand,
       editorCommand,
+      dev,
       ...aiRun,
     }),
     [
@@ -330,6 +336,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       profiles,
       terminalCommand,
       editorCommand,
+      dev,
       aiRun,
     ],
   );
@@ -374,6 +381,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       profiles,
       terminalCommand,
       editorCommand,
+      dev,
       repoPath,
       aiAvailability,
       aiActive: aiEnabled && aiConsented,
@@ -412,6 +420,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       profiles,
       terminalCommand,
       editorCommand,
+      dev,
       repoPath,
       aiAvailability,
       mcpStatus,

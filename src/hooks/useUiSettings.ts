@@ -27,6 +27,7 @@ import type {
   AiAutonomy,
   AiConflictTools,
   AutoFetchSettings,
+  DevSettings,
   GraphPrefs,
   GraphRefFilter,
   GraphColorMode,
@@ -89,6 +90,9 @@ export interface UiSettingsController {
   profiles: IdentityProfile[];
   terminalCommand: string;
   editorCommand: string;
+  /** P91 §10: Dev-mode / observability settings (whole-struct, the autoFetch
+   *  idiom). Threaded to the Settings Developer page and the header pill. */
+  dev: DevSettings;
   aiDockHeight: number;
   aiDockCollapsed: boolean;
   aiStreamLog: boolean;
@@ -195,6 +199,16 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
   // Threaded into the Settings section; persisted via handleSettingsChange.
   const [terminalCommand, setTerminalCommand] = useState('');
   const [editorCommand, setEditorCommand] = useState('');
+  // P91 §10: Dev-mode / observability settings (whole-struct, like autoFetch).
+  // Privacy defaults out of the box: OFF and strict redaction (mirrors DEFAULTS.dev).
+  const [dev, setDev] = useState<DevSettings>({
+    enabled: false,
+    level: 'debug',
+    captureIpc: true,
+    captureReact: true,
+    captureFrames: false,
+    includeRawNames: false,
+  });
   // P11c §3.2: debounced settings persist — accumulates partial patches so a
   // burst of knob changes within the window all reach disk in one write.
   const settingsSaveTimerRef = useRef<number | null>(null);
@@ -361,6 +375,7 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
       if (patch.profiles !== undefined) setProfiles(patch.profiles);
       if (patch.terminalCommand !== undefined) setTerminalCommand(patch.terminalCommand);
       if (patch.editorCommand !== undefined) setEditorCommand(patch.editorCommand);
+      if (patch.dev !== undefined) setDev(patch.dev);
       if (patch.aiDockHeight !== undefined) setAiDockHeight(patch.aiDockHeight);
       if (patch.aiDockCollapsed !== undefined) setAiDockCollapsed(patch.aiDockCollapsed);
       if (patch.aiStreamLog !== undefined) setAiStreamLog(patch.aiStreamLog);
@@ -405,6 +420,7 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
     setProfiles(s.profiles);
     setTerminalCommand(s.terminalCommand);
     setEditorCommand(s.editorCommand);
+    setDev(s.dev);
     setAiDockHeight(s.aiDockHeight);
     setAiDockCollapsed(s.aiDockCollapsed);
     setAiStreamLog(s.aiStreamLog);
@@ -440,6 +456,7 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
     profiles,
     terminalCommand,
     editorCommand,
+    dev,
     aiDockHeight,
     aiDockCollapsed,
     aiStreamLog,

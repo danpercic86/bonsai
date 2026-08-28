@@ -55,6 +55,7 @@ export type SettingsPersistedValues = Pick<
   | 'profiles'
   | 'terminalCommand'
   | 'editorCommand'
+  | 'dev'
 > &
   /** Spec-002: optional in `UiSettings` (frontend-only, absent from the Rust
    *  oracle), but the adapter resolves them to concrete defaults, so the pages

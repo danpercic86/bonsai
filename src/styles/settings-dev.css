@@ -1,0 +1,113 @@
+/* P91 §6/§4.2/§16.5 — Developer settings page.
+   No new tokens: every colour/radius/font here is an existing custom property.
+   Imported AFTER settings-primitives.css (do not reorder the index). */
+
+/* §4.2 — the sensitive raw-names row: a leading --warning bar (the §10.2 recipe,
+   reused verbatim). Label stays --text-1, help stays --text-2; no tinted bg, no
+   coloured label (hue never carries text). */
+.settings-row--sensitive {
+  padding-left: 12px;
+  box-shadow: inset 3px 0 0 var(--warning);
+}
+
+/* A leading --warning bar + shield glyph on prose warnings (status card
+   truncation/raw lines, the group notes, the export dialog raw block). Meaning is
+   carried by bar + glyph + words, never hue alone. */
+.dev-warning-bar {
+  position: relative;
+  padding-left: 12px;
+  box-shadow: inset 3px 0 0 var(--warning);
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.dev-warning-glyph {
+  color: var(--warning);
+  font-size: 12px;
+  flex: none;
+}
+
+/* §6 — the live status card (a readout, not a row). */
+.dev-status-card {
+  margin: 8px 0 0;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dev-status-line {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+.dev-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--text-3);
+  align-self: center;
+  flex: none;
+}
+.dev-status-dot.is-recording {
+  background: var(--warning);
+}
+.dev-status-state {
+  color: var(--text-1);
+}
+.dev-status-flagged {
+  color: var(--text-1);
+  font-weight: 600;
+}
+.dev-status-dropped {
+  color: var(--text-1);
+}
+.dev-status-file {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dev-status-warn {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  max-width: 56ch;
+}
+
+/* §7 — the privacy prose block. */
+.dev-privacy {
+  font-size: 12px;
+  color: var(--text-2);
+  max-width: 56ch;
+}
+.dev-privacy p {
+  margin: 0 0 8px;
+}
+.dev-privacy p:last-child {
+  margin-bottom: 0;
+}
+
+/* §8.1 — the two benign actions, side by side inside the stacked row. */
+.dev-logs-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* §8.2 — the log-file buttons use aria-disabled (not :disabled) so keyboard
+   users can reach them and hear why. Give them the same dimmed visual state
+   the :disabled recipe carries, so a no-logs button never looks live. */
+.dev-logs-actions .btn-secondary[aria-disabled='true'],
+.settings-row .btn-danger[aria-disabled='true'] {
+  opacity: 0.6;
+  cursor: default;
+}

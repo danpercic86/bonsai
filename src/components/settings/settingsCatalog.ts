@@ -20,6 +20,7 @@
  */
 import { ABOUT_ENTRIES } from './catalog/about';
 import { ACCOUNTS_ENTRIES } from './catalog/accounts';
+import { DEV_ENTRIES } from './catalog/dev';
 import { AI_ENTRIES } from './catalog/ai';
 import { APPEARANCE_ENTRIES } from './catalog/appearance';
 import { GENERAL_ENTRIES } from './catalog/general';
@@ -79,6 +80,12 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
     subtitle: 'Version, updates, and the welcome tour.',
     dividerBefore: true,
   },
+  {
+    id: 'dev',
+    label: 'Developer',
+    subtitle: 'Diagnostic logging for troubleshooting. Everything stays on this computer.',
+    dividerBefore: true,
+  },
 ];
 
 /** Every row, in UI §1.3 rail order. */
@@ -91,6 +98,7 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
   ...ACCOUNTS_ENTRIES,
   ...GIT_CONFIG_ENTRIES,
   ...ABOUT_ENTRIES,
+  ...DEV_ENTRIES,
 ];
 
 const BY_ID = new Map<SettingsRowId, SettingsIndexEntry>(SETTINGS_INDEX.map((e) => [e.id, e]));

@@ -49,12 +49,12 @@ describe('SettingsShell — roles and structure', () => {
     expect(dialog).toHaveAttribute('aria-labelledby', 'settings-title');
   });
 
-  it('is a vertical tablist of eight tabs wired to one tabpanel', () => {
+  it('is a vertical tablist of nine tabs wired to one tabpanel', () => {
     renderPanel();
     const list = screen.getByRole('tablist', { name: 'Settings categories' });
     expect(list).toHaveAttribute('aria-orientation', 'vertical');
     const tabs = screen.getAllByRole('tab');
-    expect(tabs).toHaveLength(8);
+    expect(tabs).toHaveLength(9);
     for (const t of tabs) expect(t).toHaveAttribute('aria-controls', 'settings-pane');
     const pane = screen.getByRole('tabpanel');
     expect(pane).toHaveAttribute('id', 'settings-pane');
@@ -118,12 +118,13 @@ describe('SettingsShell — selection', () => {
     renderPanel();
     tab('General').focus();
     fireEvent.keyDown(tab('General'), { key: 'ArrowUp' });
-    expect(document.activeElement).toBe(tab('About'));
-    fireEvent.keyDown(tab('About'), { key: 'ArrowDown' });
+    // P91: Developer is now the last rail item, so ArrowUp/End wrap onto it.
+    expect(document.activeElement).toBe(tab('Developer'));
+    fireEvent.keyDown(tab('Developer'), { key: 'ArrowDown' });
     expect(document.activeElement).toBe(tab('General'));
     fireEvent.keyDown(tab('General'), { key: 'End' });
-    expect(document.activeElement).toBe(tab('About'));
-    fireEvent.keyDown(tab('About'), { key: 'Home' });
+    expect(document.activeElement).toBe(tab('Developer'));
+    fireEvent.keyDown(tab('Developer'), { key: 'Home' });
     expect(document.activeElement).toBe(tab('General'));
   });
 

@@ -21,6 +21,7 @@ import { IdentitiesCategory } from './IdentitiesCategory';
 import { AccountsCategory } from './AccountsCategory';
 import { GitConfigCategory } from './GitConfigCategory';
 import { AboutCategory } from './AboutCategory';
+import { DevCategory } from './DevCategory';
 
 export interface SettingsCategoryPage {
   Page: ComponentType;
@@ -38,4 +39,5 @@ export const CATEGORY_PAGES: Record<SettingsCategoryId, SettingsCategoryPage> = 
   accounts: { Page: AccountsCategory },
   'git-config': { Page: GitConfigCategory, HeaderTrailing: GitConfigScopeSwitch },
   about: { Page: AboutCategory },
+  dev: { Page: DevCategory },
 };

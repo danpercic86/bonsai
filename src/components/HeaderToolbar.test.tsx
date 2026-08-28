@@ -32,6 +32,7 @@ function renderToolbar(activeRepo: string | null) {
     onOpenHealth: vi.fn(),
     onOpenSettings: vi.fn(),
     onOpenSettingsAt: vi.fn(),
+    devEnabled: false,
     onMenuOpenChange: vi.fn(),
     profiles: PROFILES,
     onProfilesChange: vi.fn(),

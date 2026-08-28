@@ -101,6 +101,18 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
   67: ['graph.minimap-always-show'],
   // Spec-006 §1.3 — Appearance: graph edge/ring coloring segmented control.
   68: ['appearance.graph-colors'],
+  // P91 §13 — Developer category: master switch, status readout, capture knobs,
+  // the privacy statement, and the log-file actions. Each owns its id exclusively.
+  69: ['dev.enabled'],
+  70: ['dev.session-info'],
+  71: ['dev.level'],
+  72: ['dev.capture-ipc'],
+  73: ['dev.capture-react'],
+  74: ['dev.capture-frames'],
+  75: ['dev.include-raw-names'],
+  76: ['dev.privacy-note'],
+  77: ['dev.logs'],
+  78: ['dev.delete-logs'],
 };
 
 /**
@@ -113,12 +125,12 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
  */
 const DISSOLVED_ROWS: ReadonlySet<number> = new Set([5, 25, 38, 39, 40, 43, 52, 55]);
 
-describe('UI §1.3 coverage — all 68 rows, structurally', () => {
-  it('maps exactly rows 1..68', () => {
+describe('UI §1.3 coverage — all 78 rows, structurally', () => {
+  it('maps exactly rows 1..78', () => {
     const rows = Object.keys(COVERAGE)
       .map(Number)
       .sort((a, b) => a - b);
-    expect(rows).toEqual(Array.from({ length: 68 }, (_, i) => i + 1));
+    expect(rows).toEqual(Array.from({ length: 78 }, (_, i) => i + 1));
   });
 
   it('names only real entries, and every entry is claimed by some row', () => {

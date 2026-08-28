@@ -151,6 +151,9 @@ export const MINIMAL: FixtureValues = {
   profiles: [],
   terminalCommand: D.terminalCommand,
   editorCommand: D.editorCommand,
+  // P91: Dev mode off at the production defaults, so the fieldset is disabled and
+  // no dev ↺ shows in the minimal fixture.
+  dev: D.dev,
   updateCurrentVersion: '1.2.3',
   autoCheckUpdates: D.autoCheckUpdates,
   updateState: { status: 'idle' },
@@ -213,4 +216,15 @@ export const MAXIMAL: FixtureValues = {
   terminalCommand: 'wt -d {path}',
   editorCommand: 'code {path}',
   autoCheckUpdates: true,
+  // P91: Dev mode ON with every resettable dev knob off its default, so each dev
+  // row's ↺ is present. `level: 'info'` (not 'trace') keeps Frame timing a live
+  // switch rather than entangling the trace force-on with the ↺ presence check.
+  dev: {
+    enabled: true,
+    level: 'info',
+    captureIpc: false,
+    captureReact: false,
+    captureFrames: true,
+    includeRawNames: true,
+  },
 };

@@ -30,6 +30,7 @@ const CATEGORY_IDS: readonly SettingsCategoryId[] = [
   'accounts',
   'git-config',
   'about',
+  'dev',
 ];
 
 /** Values that differ from the defaults in every field any `reset` touches. */
@@ -68,6 +69,8 @@ const MUTATED: UiSettings = {
   aiMaxTurns: 9,
   aiBulkMaxBytes: 100_000,
   autoCheckUpdates: true,
+  // P91: every dev reset leaf off its default, so each row's ↺ fires.
+  dev: { enabled: true, level: 'info', captureIpc: false, captureReact: false, captureFrames: true, includeRawNames: true },
 };
 
 const withReset = SETTINGS_INDEX.filter((e) => e.reset !== undefined);
@@ -104,6 +107,12 @@ const RESET_LEAVES: Readonly<Record<string, string>> = {
   'ai.max-turns': 'aiMaxTurns',
   'ai.bulk-batch-size': 'aiBulkMaxBytes',
   'about.auto-check-updates': 'autoCheckUpdates',
+  'dev.enabled': 'dev.enabled',
+  'dev.level': 'dev.level',
+  'dev.capture-ipc': 'dev.captureIpc',
+  'dev.capture-react': 'dev.captureReact',
+  'dev.capture-frames': 'dev.captureFrames',
+  'dev.include-raw-names': 'dev.includeRawNames',
 };
 
 /**
@@ -119,6 +128,7 @@ const FORMATTED_DEFAULT_LABELS: Readonly<Record<string, readonly [string, unknow
   'ai.conflict-resolution': ['Propose & review', 'proposeReview'],
   'ai.repository-access': ['Read-only', 'readOnly'],
   'ai.bulk-batch-size': ['400 KB', 400_000],
+  'dev.level': ['Debug', 'debug'],
 };
 
 function leafOf(entry: SettingsIndexEntry): string {
@@ -180,6 +190,7 @@ describe('catalog identity and shape', () => {
     expect(SETTINGS_CATEGORIES.filter((c) => c.dividerBefore === true).map((c) => c.id)).toEqual([
       'git-config',
       'about',
+      'dev',
     ]);
     // Every category actually has rows — an empty pane is a dead rail item.
     for (const c of SETTINGS_CATEGORIES) {
@@ -471,6 +482,7 @@ describe('entry control kinds', () => {
       accounts: [],
       'git-config': ['repo'],
       about: [],
+      dev: [],
     };
     for (const entry of SETTINGS_INDEX) {
       if (entry.requires === undefined) continue;

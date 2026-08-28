@@ -10,6 +10,7 @@
 
 import type { ListView, Theme, IdentityProfile } from '../ipc';
 import { IdentityMenu } from './IdentityMenu';
+import { DevModeIndicator } from './DevModeIndicator';
 import {
   SunIcon,
   MoonIcon,
@@ -38,6 +39,9 @@ export interface HeaderToolbarProps {
     focus?: 'identity' | null,
     focusProfileId?: string | null,
   ): void;
+  /** P91 §5: Dev mode is on ⇒ render the "logging is active" pill left of the
+   *  gear. Absent from the DOM entirely while false (zero default chrome cost). */
+  devEnabled: boolean;
   /** Lifted menu-open state — App suppresses global shortcuts while open. */
   onMenuOpenChange(open: boolean): void;
   profiles: IdentityProfile[];
@@ -55,6 +59,7 @@ export function HeaderToolbar({
   onOpenHealth,
   onOpenSettings,
   onOpenSettingsAt,
+  devEnabled,
   onMenuOpenChange,
   profiles,
   onProfilesChange,
@@ -101,6 +106,7 @@ export function HeaderToolbar({
           <ChartIcon />
         </button>
       )}
+      {devEnabled && <DevModeIndicator onOpen={() => onOpenSettingsAt('dev')} />}
       <button
         type="button"
         className="btn-icon settings-toggle"

@@ -33,6 +33,7 @@ export function SettingsRow({
   rowLabel,
   stacked,
   disabled,
+  className: extraClassName,
   reset,
   hint,
   children,
@@ -53,6 +54,9 @@ export function SettingsRow({
   /** UI §5.1: label / help / control each on their own grid row, control 100%. */
   stacked?: boolean;
   disabled?: boolean;
+  /** Extra modifier class(es) on the row div (P91 `.settings-row--sensitive`).
+   *  Appended to the computed base classes; never replaces them. */
+  className?: string;
   /** Reset source for a leaf section rendered OUTSIDE the provider (its props are
    *  its only value source). Omitted ⇒ resolved from the catalog + context. */
   reset?: SettingsRowResetOverride;
@@ -98,6 +102,7 @@ export function SettingsRow({
     // when the draft hint replaces the help text mid-typing.
     entry?.control === 'numberSlider' ? 'settings-row--slider' : '',
     disabled === true ? 'is-disabled' : '',
+    extraClassName ?? '',
   ]
     .filter((c) => c !== '')
     .join(' ');

@@ -179,7 +179,7 @@ export default function App() {
     autoCheckUpdates,
     profiles,
     terminalCommand,
-    editorCommand,
+    editorCommand, dev,
     aiDockHeight,
     aiDockCollapsed,
     aiStreamLog,
@@ -767,7 +767,7 @@ export default function App() {
             onOpenAiAssets={() => setAiAssetsOpen(true)}
             onOpenHealth={() => setHealthOpen(true)}
             onOpenSettings={() => settings.openAt(null)}
-            onOpenSettingsAt={settings.openAt}
+            onOpenSettingsAt={settings.openAt} devEnabled={dev.enabled}
             onMenuOpenChange={setMenuOpen}
             profiles={profiles}
             onProfilesChange={(next) => handleSettingsChange({ profiles: next })}
@@ -874,7 +874,7 @@ export default function App() {
           focusProfileId={settings.request.focusProfileId}
           profiles={profiles}
           terminalCommand={terminalCommand}
-          editorCommand={editorCommand}
+          editorCommand={editorCommand} dev={dev}
           onRegisterMcp={handleRegisterMcp}
           onShowOnboarding={showOnboarding}
           onOpenRepository={openRepository}

@@ -152,6 +152,51 @@
   margin-left: 0; /* the toolbar owns the auto margin */
 }
 
+/* P91 §5.2 — the "logging is active" pill, left of the gear. Mounted only while
+   Dev mode is on. No new token: --warning resolves per theme. */
+.dev-mode-pill {
+  height: 24px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  color: var(--text-1);
+  font-size: 12px;
+  cursor: pointer;
+}
+.dev-mode-pill:hover {
+  background: color-mix(in srgb, var(--warning) 22%, transparent);
+}
+.dev-mode-pill:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.dev-mode-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--warning);
+  flex: none;
+  animation: dev-mode-pulse 1200ms ease-out infinite alternate;
+}
+@keyframes dev-mode-pulse {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dev-mode-pill-dot {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 /* Icon-system §3: standalone icon buttons carry a 16px SVG in their 32px box.
    Scoped to the header + the toolbar-right group so it can never touch a
    non-icon SVG (e.g. an identity avatar) elsewhere. Colour inherits via

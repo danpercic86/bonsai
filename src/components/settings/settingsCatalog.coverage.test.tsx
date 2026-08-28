@@ -37,6 +37,10 @@ import type { UiSettings } from '../../ipc/types';
 
 type Fixture = typeof MAXIMAL;
 
+/** P91: control-less `group` rows (a readout + a prose block). The group-controls
+ *  sub-assertion is carved out for exactly these ids — see `assertRowShape`. */
+const PROSE_GROUP_ROWS = new Set<string>(['dev.session-info', 'dev.privacy-note']);
+
 /**
  * P69k review A3: these are the PRODUCTION predicates, imported rather than
  * restated. `searchSettings` filters on the same table, so "the guard says this
@@ -285,10 +289,22 @@ function assertRowShape(
       accName(el),
       `settings drift [${c}]: group row "${entry.id}" has accessible name "${accName(el) ?? '(none)'}", expected "${entry.label}". The heading and the catalog label must match byte-for-byte.`,
     ).toBe(entry.label);
-    expect(
-      el.querySelectorAll('input,select,button,textarea').length,
-      `settings drift [${c}]: group row "${entry.id}" contains no controls in the ${JSON.stringify(fx.repoPath)} fixture — the fixture no longer exercises this block, so the guard is checking nothing.`,
-    ).toBeGreaterThan(0);
+    if (PROSE_GROUP_ROWS.has(entry.id)) {
+      // P91 §6/§7: `dev.session-info` (a live readout) and `dev.privacy-note` (a
+      // prose block) are deliberately control-LESS groups. The "populated by the
+      // fixture" guard below is meant for git-config's value groups and does not
+      // apply; assert the block is non-empty instead so it is still checking
+      // something real.
+      expect(
+        (el.textContent ?? '').trim().length,
+        `settings drift [${c}]: prose group "${entry.id}" rendered empty.`,
+      ).toBeGreaterThan(0);
+    } else {
+      expect(
+        el.querySelectorAll('input,select,button,textarea').length,
+        `settings drift [${c}]: group row "${entry.id}" contains no controls in the ${JSON.stringify(fx.repoPath)} fixture — the fixture no longer exercises this block, so the guard is checking nothing.`,
+      ).toBeGreaterThan(0);
+    }
   } else {
     expect(
       el.querySelector('[data-setting-control]'),

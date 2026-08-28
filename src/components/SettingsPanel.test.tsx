@@ -96,6 +96,14 @@ function renderPanel(over: Partial<SettingsPanelProps> = {}) {
     profiles: [],
     terminalCommand: '',
     editorCommand: '',
+    dev: {
+      enabled: false,
+      level: 'debug',
+      captureIpc: true,
+      captureReact: true,
+      captureFrames: false,
+      includeRawNames: false,
+    },
     onRegisterMcp: vi.fn(async () => {}),
     onShowOnboarding: vi.fn(),
     onOpenRepository: vi.fn(),
@@ -161,10 +169,12 @@ describe('SettingsPanel', () => {
   });
 
   // Every rail category is reachable, and exactly one pane renders at a time.
-  it('renders eight tabs and only the selected pane', () => {
+  it('renders nine tabs and only the selected pane', () => {
     renderPanel();
-    expect(screen.getAllByRole('tab')).toHaveLength(8);
+    // P91: the Developer category is the ninth rail item.
+    expect(screen.getAllByRole('tab')).toHaveLength(9);
     expect(screen.getByRole('tab', { name: 'General' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Developer' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Git config, repository' })).toBeInTheDocument();
     expect(screen.queryByRole('radio', { name: 'Dark' })).toBeNull();
   });

@@ -10,7 +10,7 @@ import type { UiSettings, UiSettingsPatch } from '../../../ipc/types';
 import type { SettingsRowReset } from '../types';
 
 /** The whole-struct `UiSettings` keys a row can reset a single field of. */
-export type SettingsStructKey = 'graph' | 'autoFetch' | 'healthRefresh';
+export type SettingsStructKey = 'graph' | 'autoFetch' | 'healthRefresh' | 'dev';
 
 /**
  * The `UiSettings` keys holding a primitive.

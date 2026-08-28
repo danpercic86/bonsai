@@ -16,7 +16,8 @@ export type SettingsCategoryId =
   | 'identities'
   | 'accounts'
   | 'git-config'
-  | 'about';
+  | 'about'
+  | 'dev';
 
 /**
  * A rail entry.
