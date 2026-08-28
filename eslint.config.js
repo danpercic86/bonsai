@@ -1,4 +1,4 @@
-// Bonsai — ESLint v9 flat config (frontend only).
+// Bonsai — ESLint v10 flat config (frontend only).
 //
 // Scope: `src/` (React app + IPC layer) and `e2e/` (Playwright specs). Rust is
 // covered by `cargo clippy -D warnings`; `src-tauri/`, `dist/`, `coverage/` and
@@ -12,8 +12,8 @@
 //   * `warn`    = style/strictness rules that fire broadly across code written
 //                 before linting existed. They are visible in `pnpm lint` output
 //                 as a cleanup backlog but do NOT fail CI.
-// CI runs `pnpm lint:ci` = `eslint . --max-warnings 40`. The tree currently
-// reports 30 warnings, so the budget leaves ~10 of headroom: a single new
+// CI runs `pnpm lint:ci` = `eslint . --max-warnings 50`. The tree currently
+// reports 42 warnings, so the budget leaves ~8 of headroom: a single new
 // warning never blocks an unrelated PR, but a warning explosion (or a
 // newly-enabled noisy rule) does fail the build. Lower the number as the
 // backlog is cleaned up.
@@ -41,6 +41,10 @@ export default tseslint.config(
       'test-results/**',
       'public/**',
       'docs/**',
+      // Scratch git worktrees created by agent runs; they contain a full copy of
+      // the tree (and their own tsconfig.json, which makes typescript-eslint's
+      // root-dir inference ambiguous).
+      '.claude/**',
     ],
   },
 
@@ -54,7 +58,10 @@ export default tseslint.config(
       ecmaVersion: 2022,
       sourceType: 'module',
       globals: { ...globals.browser, ...globals.es2022 },
-      parserOptions: { ecmaFeatures: { jsx: true } },
+      // `tsconfigRootDir` is explicit since typescript-eslint 8.68 / ESLint 10:
+      // inference fails when more than one candidate root (e.g. a scratch
+      // worktree under `.claude/`) is present on disk.
+      parserOptions: { ecmaFeatures: { jsx: true }, tsconfigRootDir: import.meta.dirname },
     },
     plugins: {
       'react-hooks': reactHooks,
@@ -90,6 +97,10 @@ export default tseslint.config(
       // Flags `new Promise(r => setTimeout(r, ms))`, the sleep idiom used in
       // mock IPC + tests. Real bugs would look the same, so keep it visible.
       'no-promise-executor-return': 'warn',
+      // Newly in `js.configs.recommended` as of ESLint 10. The remaining hits
+      // are the `let x = null; if (…) x = …` render-branch idiom in dialogs,
+      // where dropping the initializer would trip TS's use-before-assign.
+      'no-useless-assignment': 'warn',
       // High false-positive rate on `ref.current` / plain-object mutation after
       // an await; every current hit is a guarded ref flag. Warn, don't block.
       'require-atomic-updates': 'warn',
