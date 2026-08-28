@@ -22,6 +22,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { ToastTone } from '../components/Toasts';
 import { ipc } from '../ipc';
+import { configureObs } from '../obs/enabled';
 import type { AiRunPrefs } from '../settings/aiRunPrefs';
 import type {
   AiAutonomy,
@@ -338,6 +339,22 @@ export function useUiSettings(pushToast: PushToast): UiSettingsController {
       disposedRef.current = true;
     };
   }, []);
+
+  // P91 §10/§11 increment 7d — the one wire that activates the frontend
+  // observability pipeline in production. The sink is already attached at module
+  // load (`src/ipc/index.ts` → `instrumentIpc` → `attachSink` with the RAW,
+  // un-proxied api), so by the time this effect first runs the sink-before-enable
+  // ordering holds and the batcher's defensive re-salt path is not relied on.
+  //
+  // `dev` is a fresh object on every hydrate (`setDev(s.dev)`) and every patch
+  // (`setDev(patch.dev)`), so this refires on every change: enabling Dev mode
+  // activates capture live with no reload (§10), and disabling it — or any patch
+  // with `enabled:false` — deactivates fully (`configureObs` sets `config` → null,
+  // so `obsEnabled()` is a single false boolean read again, §11). The initial
+  // `dev.enabled:false` state makes the first run a no-op.
+  useEffect(() => {
+    configureObs(dev);
+  }, [dev]);
 
   // P11c §3.2: apply a Settings patch — update local state immediately (live
   // preview; graph changes bump metricsVersion so the canvas re-measures), then
