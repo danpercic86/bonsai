@@ -24,19 +24,23 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
-## 🔧 DEP REFRESH — 2026-08-28 — in-progress
+## ✅ DEP REFRESH — 2026-08-28 — DONE (AI gate + USER CHECKPOINT both green 2026-08-28)
 
 Goal: bring every frontend, Rust, and CI-action dependency to its current version, then
 resync the user-facing docs (README/CHANGELOG/CONTRIBUTING) with the shipped 1.5.0 app.
 
-**Current step:** awaiting USER CHECKPOINT. AI gate is green — full `pnpm gate` 8/8, nextest
+**Current step:** done, nothing outstanding. AI gate green — full `pnpm gate` 8/8, nextest
 2042 passed / 0 failed, cargo-deny advisories+bans+licenses+sources ok, `pnpm audit` clean,
-reviewer verdict approve. The checkpoint is: run `pnpm tauri dev`, connect a real forge and
-confirm PRs still list, since the reqwest 0.13 TLS-trust-root change and the rand 0.10
-MCP-token change are not browser-harness verifiable.
+reviewer verdict approve.
 
-Shipped so far on `chore/dep-refresh-2026-08`: cfefb8e frontend majors (ESLint 10, Vite 8,
-TS 6.0, jsdom 30) · 13084ca CI action pins (incl. tauri-action v1) · 1fd0a47 docs resync.
+**USER CHECKPOINT verified 2026-08-28** — the user ran the native app and connected **GitHub**
+and **Azure DevOps** with real access tokens; PRs list correctly under the new OS-trust-store
+TLS path. GitLab and Bitbucket remain real-token unverified, and the README says so. The branch
+is ready to merge; not pushed.
+
+Shipped on `chore/dep-refresh-2026-08`: cfefb8e frontend majors (ESLint 10, Vite 8,
+TS 6.0, jsdom 30) · 13084ca CI action pins (incl. tauri-action v1) · 1fd0a47 docs resync ·
+450715a Rust majors (criterion 0.8, rand 0.10, reqwest 0.13 + ring provider, rmcp 3.1).
 Backed out deliberately: TypeScript 7 (typescript-eslint 8.68 rejects the TS 7 API) and
 keyring 4 (restructured onto keyring-core; needs its own increment).
 

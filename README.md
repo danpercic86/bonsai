@@ -20,11 +20,11 @@ renders — so the graph stays fast even over histories of 20,000+ commits.
 > through `1.5.0` have shipped since. The app is feature-complete for everyday Git work on
 > Windows, macOS, and Linux — see the [CHANGELOG](CHANGELOG.md).
 >
-> **The forge / pull-request features are the least battle-tested part.** Listing, reading,
+> **Forge / pull-request support is verified on two of the four providers.** Listing, reading,
 > opening, merging, and closing PRs is implemented for GitHub, GitLab, Bitbucket, and Azure
-> DevOps and covered by tests against the mock harness, but not every provider has been
-> exercised against real access tokens on a real repository — expect rough edges there.
-> Everything else is release-ready.
+> DevOps and covered by tests against the mock harness, but only **GitHub** and **Azure DevOps**
+> have been exercised against real access tokens on a real repository. Expect rough edges on
+> GitLab and Bitbucket until someone runs them for real. Everything else is release-ready.
 
 ## Screenshots
 
@@ -70,8 +70,8 @@ to regenerate these._
   with a personal access token to list, read, open, merge, and close/decline PRs, with PR and CI
   badges in a dedicated forge column beside the graph and a per-branch "Checks" tab. A PR's
   changed files and per-file diffs are computed **locally** from base…head, so line counts are
-  correct on every forge. Not yet exercised against real access tokens on every provider — see
-  the status note above.
+  correct on every forge. Real-token verified on GitHub and Azure DevOps — see the status note
+  above.
 - **Auto-update** — checks a signed release manifest and updates in place (opt-in).
 - **AI features (optional, local)** — everything AI runs through the
   [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed on your own machine,
