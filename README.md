@@ -16,13 +16,15 @@ Bonsai is a local Git client built around a smooth, multi-lane commit graph. Rus
 the Git logic and the graph-layout math via [libgit2](https://libgit2.org/); the UI only
 renders — so the graph stays fast even over histories of 20,000+ commits.
 
-> **Status: shipping `1.0.0`, the first public release.** The app is feature-complete for
-> everyday Git work on Windows, macOS, and Linux.
+> **Status: shipping `1.5.0`.** `1.0.0` was the first public release (2026-08-18); `1.1.0`
+> through `1.5.0` have shipped since. The app is feature-complete for everyday Git work on
+> Windows, macOS, and Linux — see the [CHANGELOG](CHANGELOG.md).
 >
-> **The forge / pull-request features ship as beta.** PR listing for GitHub, GitLab,
-> Bitbucket, and Azure DevOps, the PR/CI badges on the graph, and AI-drafted PR descriptions
-> have not yet been verified against real access tokens for every provider, so expect rough
-> edges there. Everything else is release-ready — see the [CHANGELOG](CHANGELOG.md).
+> **The forge / pull-request features are the least battle-tested part.** Listing, reading,
+> opening, merging, and closing PRs is implemented for GitHub, GitLab, Bitbucket, and Azure
+> DevOps and covered by tests against the mock harness, but not every provider has been
+> exercised against real access tokens on a real repository — expect rough edges there.
+> Everything else is release-ready.
 
 ## Screenshots
 
@@ -41,24 +43,35 @@ to regenerate these._
 
 - **Rich commit graph** — multi-colored branch lanes, smooth curved fork/merge
   edges, and ref pills for local branches, `origin/*` remotes, tags, and HEAD. Virtualized
-  on a canvas so scrolling stays smooth over very large histories.
+  on a canvas so scrolling stays smooth over very large histories. Large histories stream in
+  batches, so the first screenful paints immediately and the rest arrives in the background.
 - **Three-pane workspace** — branches / remotes / tags on the left, the graph in the center,
-  and working-directory status, diffs, and commit details on the right.
+  and working-directory status, diffs, commit details, and per-branch CI checks on the right.
+  The sidebar is a keyboard-navigable tree, and single-clicking a ref reveals it in the graph.
 - **Stage & commit** — file-level staging/unstaging and commit, with author/committer taken
   from your Git config.
 - **Diffs** — for both working-directory changes and any commit you select (vs. its first
   parent), including per-line discard of unstaged changes.
-- **Branches & remotes** — create, checkout, and delete branches; fetch, fast-forward pull,
-  push, and force-push-with-lease.
+- **Branches & remotes** — create, checkout, and delete branches; check out any commit into
+  detached HEAD straight from the graph or a ref pill; fetch, fast-forward pull, push, and
+  force-push-with-lease. Tags are synchronised and marked local-only / remote-only / diverged.
 - **History tools** — reflog viewer with restore, `git bisect`, merge, rebase, and stashes,
   all with in-app conflict resolution.
+- **Git-activity log** — a dock streaming live git phases and progress, so you can see exactly
+  what Bonsai ran and how far it got.
 - **Repository management** — multiple repos open in tabs, named worktrees, background
-  auto-fetch, first-run onboarding, and in-app Git config editing.
+  auto-fetch, first-run onboarding, in-app Git config editing, a repo-health dashboard, and a
+  stale-branch cleanup review.
+- **Commit identities** — multiple Git identities with a color assigned to each, so the header
+  shows at a glance which one your next commit will carry.
 - **Search & command palette** — commit/content search, a `Ctrl`/`Cmd`-K command palette, and
   filtering for the sidebar lists.
-- **Pull requests (beta)** — connect a GitHub, GitLab, Bitbucket or Azure DevOps repository
-  with a personal access token to list, read and open PRs, and see PR/CI badges on the graph.
-  Not yet verified against real access tokens for every provider.
+- **Pull requests** — connect one or more GitHub, GitLab, Bitbucket or Azure DevOps accounts
+  with a personal access token to list, read, open, merge, and close/decline PRs, with PR and CI
+  badges in a dedicated forge column beside the graph and a per-branch "Checks" tab. A PR's
+  changed files and per-file diffs are computed **locally** from base…head, so line counts are
+  correct on every forge. Not yet exercised against real access tokens on every provider — see
+  the status note above.
 - **Auto-update** — checks a signed release manifest and updates in place (opt-in).
 - **AI features (optional, local)** — everything AI runs through the
   [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed on your own machine,
@@ -138,7 +151,8 @@ Setup, architecture rules, and the checks CI enforces are in
 ## Tech stack
 
 - **Backend** — Rust, [Tauri v2](https://v2.tauri.app/), `git2` (libgit2), `notify`, `serde`.
-- **Frontend** — React + Vite + TypeScript; the commit graph is drawn on `<canvas>`.
+- **Frontend** — React + Vite + TypeScript, with `lucide-react` for all chrome icons; the commit
+  graph is drawn on `<canvas>`.
 - **Package manager** — pnpm.
 
 ## License

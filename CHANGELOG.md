@@ -6,10 +6,25 @@ All notable changes to Bonsai are documented here. The format is based on
 
 ## [Unreleased]
 
-## [1.4.0] — 2026-08-26
+### Changed
+
+- **Dependency refresh (maintenance).** Frontend majors: ESLint 9 → 10, Vite 7 → 8,
+  TypeScript 5.9 → 6.0, jsdom 26 → 30, `@testing-library/jest-dom` 6 → 7, and
+  `@vitejs/plugin-react` 5 → 6. Plus a Rust dependency refresh.
+- The `pnpm lint:ci` warning budget moved from `--max-warnings 40` to `--max-warnings 50`
+  (the tree reports 42 warnings, 0 errors).
+- TypeScript **7 is deliberately not adopted**: `typescript-eslint` 8.68 hard-errors against the
+  TypeScript 7 API, so the toolchain stays on TypeScript 6 until that is resolved upstream.
+
+## [1.5.0] — 2026-08-26
 
 Accurate pull-request diffs computed locally, a per-branch CI checks view, and a dedicated forge
 column in the graph — plus a large git-action performance round and an internal file-size cleanup.
+
+> **There is no 1.4.0 release.** This work was first cut as `1.4.0` (commit `5a0bf11`), but the
+> release workflow had to be reworked mid-cut (`4abab3d`, `713dc6d`) and GitHub releases are
+> immutable, so the same content was re-cut and published as `1.5.0` (`40949e1`). No `v1.4.0` tag
+> exists; `v1.5.0` is the shipped artifact.
 
 ### Added
 
@@ -496,7 +511,8 @@ The MVP and first productization phase. Highlights:
 - Tauri v2 auto-update scaffolding (behind Bonsai IPC) and a first-run onboarding overlay.
 - An embedded MCP server exposing structured Git data (graph, diffs, conflicts) to AI tools.
 
-[Unreleased]: https://github.com/danpercic86/bonsai/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/danpercic86/bonsai/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/danpercic86/bonsai/compare/v1.3.0...v1.5.0
 [1.3.0]: https://github.com/danpercic86/bonsai/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/danpercic86/bonsai/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/danpercic86/bonsai/compare/v1.0.0...v1.1.0

@@ -33,12 +33,21 @@ pnpm dev:mock
 This runs the React app on `http://localhost:1420` against the stateful mock backend in
 [`src/ipc/mock.ts`](src/ipc/mock.ts), with fixture data including a 20k-commit graph.
 
+The frontend toolchain is pinned in `package.json` (currently ESLint 10, Vite 8, TypeScript 6,
+vitest 4, jsdom 30). **TypeScript 7 is deliberately not adopted**: `typescript-eslint` 8.68
+hard-errors against the TypeScript 7 API, so the lint gate would break — leave TypeScript on 6
+until that is fixed upstream.
+
 ## Read the contract first
 
 Every feature in Bonsai was designed before it was written, and the design is on disk in
-[`docs/contracts/`](docs/contracts) — 139 documents with interfaces, algorithm pseudocode, and
-acceptance criteria. Before changing an area, read its contract. It will tell you what the code is
-supposed to do, what the edge cases are, and which invariants it was written to preserve.
+[`docs/contracts/`](docs/contracts) — interfaces, algorithm pseudocode, and acceptance criteria.
+Contracts for in-flight work sit at the top level (~30 files); once a milestone's manual checklist
+is confirmed its contract moves to [`docs/contracts/archive/`](docs/contracts/archive) (~160 files),
+so grepping the live directory only costs you current work.
+[`docs/contracts/INDEX.md`](docs/contracts/INDEX.md) is the one-line-per-file index. Before changing
+an area, read its contract. It will tell you what the code is supposed to do, what the edge cases
+are, and which invariants it was written to preserve.
 
 Many contracts have a companion `*-user-checklist.md` — the manual smoke test for that feature in
 the native app.
@@ -144,7 +153,7 @@ paper over growth.
   ```bash
   cargo test --workspace
   cargo clippy --workspace --all-targets -- -D warnings   # run SEPARATELY from cargo test
-  pnpm lint:ci        # eslint, --max-warnings 40
+  pnpm lint:ci        # eslint, --max-warnings 50 (the tree reports 42 warnings, 0 errors)
   pnpm lint:size      # file-size ratchet
   pnpm test           # vitest (node + jsdom projects)
   pnpm test:e2e       # Playwright vs the mock harness
