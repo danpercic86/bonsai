@@ -748,6 +748,115 @@ so an idle snapshot proves almost nothing about it.
 switching still feels smooth — the harness is headless, `requestAnimationFrame` does not fire, so no
 frame measurement taken here is meaningful.
 
+### 9.2 Pinned surface map (increment 4) — resolved to the current tree
+
+§9 above and architect §9.3 name the six surfaces generically ("the tab host", "PR panel
+container", "the workspace container"). This section pins each to the **exact file, component
+identity, `component:` string label, and render mode** as the code stands on
+`feat/p91-observability` (verified 2026-08-28). senior-dev instruments exactly these; the
+`component:` labels are the stable, greppable record keys and must be used verbatim.
+
+| # | Surface | File | Component (identity) | `component:` label | Mode |
+|---|---------|------|----------------------|--------------------|------|
+| 1 | Workspace container | `src/components/RepoWorkspace.tsx` | `RepoWorkspace` (l.127) | `'RepoWorkspace'` | `each` |
+| 1a | — refresh hook | `src/components/repoWorkspace/useCoalescedRefresh.ts` | `useCoalescedRefresh` | `'RepoWorkspace'` (`useTracedEffect` effect name `'coalescedRefresh'`) | n/a (effect) |
+| 1b | — subscription hook | `src/components/repoWorkspace/useRepoChangeSubscription.ts` | `useRepoChangeSubscription` | `'RepoWorkspace'` (effect name `'repoChangeSub'`) | n/a (effect) |
+| 2 | Diff browser | `src/components/DiffBrowser.tsx` | `DiffBrowser` (l.67) | `'DiffBrowser'` | `each` |
+| 3 | Graph canvas | `src/graph/GraphCanvas.tsx` | `GraphCanvas` (l.158, `forwardRef`) + `frameStats` routing | `'GraphCanvas'` | `each` |
+| 4 | Right-panel tab host | `src/components/WorkspaceRightPanel.tsx` | `WorkspaceRightPanel` (l.171) | `'WorkspaceRightPanel'` | `each` |
+| 5 | PR panel | `src/components/PrPanel.tsx` | `PrPanel` (l.61) | `'PrPanel'` | `each` |
+| 6 | Sidebar container | `src/components/Sidebar.tsx` | `Sidebar` (l.120) | `'Sidebar'` | `each` |
+| 6a | Branches section | `src/components/sidebar/BranchesSection.tsx` | `BranchesSection` (l.53) | `'BranchesSection'` | `aggregate` |
+| 6b | Remotes section | `src/components/sidebar/RemotesSection.tsx` | `RemotesSection` (l.36) | `'RemotesSection'` | `aggregate` |
+| 6c | Tags section | `src/components/sidebar/TagsSection.tsx` | `TagsSection` (l.91) | `'TagsSection'` | `aggregate` |
+
+**Row components — one shared tally key per component, NEVER per row instance** (architect §9.3).
+Each renders once per ref/stash/worktree/submodule and would flood `each` mode; all use
+`aggregate`, keyed by the component label below (identical key across every instance):
+
+| Row component | File | `component:` label | Mode |
+|---------------|------|--------------------|------|
+| `BranchRow` | `src/components/sidebar/rows.tsx` (l.42) | `'BranchRow'` | `aggregate` |
+| `RemoteRow` | `src/components/sidebar/rows.tsx` (l.103) | `'RemoteRow'` | `aggregate` |
+| `ConfiguredRemoteRow` | `src/components/sidebar/rows.tsx` (l.149) | `'ConfiguredRemoteRow'` | `aggregate` |
+| `StashRow` | `src/components/sidebar/rows.tsx` (l.191) | `'StashRow'` | `aggregate` |
+| `WorktreeRow` | `src/components/sidebar/rows.tsx` (l.259) | `'WorktreeRow'` | `aggregate` |
+| `DetachedHeadRow` | `src/components/sidebar/rows.tsx` (l.307) | `'DetachedHeadRow'` | `aggregate` |
+| `SubmoduleRow` | `src/components/sidebar/SubmoduleRow.tsx` (l.9) | `'SubmoduleRow'` | `aggregate` |
+| `TagRow` | `src/components/sidebar/TagsSection.tsx` (l.26, **module-local**) | `'TagRow'` | `aggregate` |
+
+**Explicitly NOT instrumented** (stated so the omission is deliberate, not an oversight):
+- `SkeletonRows` (`rows.tsx` l.327) — transient loading placeholder, carries no churn signal.
+- `AheadBehindBadge` (`rows.tsx` l.28) — its render is covered by its parent `BranchRow` tally.
+- `SectionHeader`, `SectionRollupBadge`, `TagSyncBadge`, `RefFilterMarker` — chrome, not the
+  flicker surface; covered by the owning section/container record.
+- `useSidebarTreeItem.ts` / `useSidebarTreeNav.ts` — per-item hooks, excluded per architect §9.3
+  (their signal is already carried by the row tally).
+- `prPanel/PrDetailContainer.tsx` and its children (`PrChangesSection`, `PrFileRow`, …) — outside
+  the six surfaces; architect §9.3 instruments "nothing outside these six" in v1.
+
+### 9.3 Drift from architect §9.3, flagged
+
+None of these change the design; they correct paths/attribution so senior-dev instruments the
+real tree. None is a MUST-FIX.
+
+1. **Workspace container path.** §9.3 row 1 says `src/components/repoWorkspace/*` *container*. The
+   container is `src/components/RepoWorkspace.tsx`; the `repoWorkspace/` subdirectory holds **only
+   hooks and tests**, no container. Pinned to the real path above.
+2. **Sidebar has six sections, only three are components.** Branches/Remotes/Tags are extracted
+   section components (aggregate). **Stashes, Submodules, and Worktrees are rendered inline inside
+   `Sidebar.tsx`** (`SectionHeader` + `StashRow`/`SubmoduleRow`/`WorktreeRow` directly, ~l.321-434).
+   There is therefore no `StashesSection`/`SubmodulesSection`/`WorktreesSection` to instrument —
+   the render signal for those three inline sections is carried by the `Sidebar` `each` record; the
+   individual rows carry their own aggregate tallies. §9.3's "three section components" matches
+   reality; this note just records where the other three sections live.
+3. **`TagRow` lives in `TagsSection.tsx`, not `rows.tsx`.** §9.3 attributes all rows to `rows.tsx`;
+   `TagRow` is a module-local component inside `TagsSection.tsx` (l.26). It still gets its own
+   shared aggregate tally key (`'TagRow'`) — the file location differs, the rule does not.
+4. **`GraphCanvas` is a `forwardRef` component.** Hooks go inside the render function body (after
+   the `function GraphCanvas(props, ref)` signature); no structural change, named here so senior-dev
+   does not hesitate over the `forwardRef` wrapper.
+
+### 9.4 The ≤8-record sidebar budget — arithmetic and the fixture it constrains
+
+Architect increment-4 acceptance (d) and §11 require **≤8 react records** for one ref change on a
+500-ref fixture. The pinned set hits the bound exactly for a branch/remote/tag change:
+
+`Sidebar` (each, 1) + `BranchesSection` + `RemotesSection` + `TagsSection` (3 tallies)
++ `BranchRow` + `RemoteRow` + `ConfiguredRemoteRow` + `TagRow` (4 tallies) = **8**.
+
+This holds **only if the 500-ref fixture contains no stashes, submodules, worktrees, or a detached
+HEAD** — otherwise `StashRow`/`SubmoduleRow`/`WorktreeRow`/`DetachedHeadRow` tallies push the count
+to 11-12. **Contract-consistency note for the orchestrator/tester (not a MUST-FIX):** the `sidebar-churn`
+/ 500-ref budget fixture must be refs-only (branches + remotes + tags, no stash/worktree/submodule/detached
+rows) for the ≤8 assertion to be meaningful. If a broader fixture is wanted, raise the asserted bound
+to match the enumerated row set rather than relaxing the per-instance rule.
+
+### 9.5 Zero-visual / zero-a11y impact — confirmed, with one implementation caution
+
+Confirmed for all ten instrumented components: `useRenderCount`/`useTracedEffect`/
+`useStateTransitionLog` are **inert observers**. Per architect §9.1 they early-return
+`if (!obsEnabled())`, allocate nothing when off, and add no wrapper element, `<Profiler>`,
+provider, memo boundary, `setState`, or scheduling effect. `frameStats` routing in `GraphCanvas`
+is log-plumbing on an existing per-window callback — no new frame is scheduled, no draw changes.
+Nothing inspected contradicts the zero-visual constraint already asserted in §9's opening
+paragraph; the §9.1(A/B/C) harness parity checks remain the gate.
+
+**One caution — MUST-FIX guard for senior-dev, not a design change.** `useRenderCount` and
+`useTracedEffect` are hooks: hook order must stay unconditional (§9.1). Several of these containers
+early-return before their main render (e.g. `RepoWorkspace`/`PrPanel`/`DiffBrowser` guard on a
+missing repo/selection/data). **Every instrumentation hook must be placed above any conditional
+`return`** in the component body. A hook added below an early return would fire inconsistently
+across renders and violate the rules-of-hooks — the one place careless insertion could change
+behavior. senior-dev: verify hook placement precedes every early return in each of the ten targets.
+
+### 9.6 Verdict — increment 4
+
+**No visual or design changes are required for increment 4.** The instrumentation produces zero
+rendered output, DOM, style, layout, focus, or ARIA change (§9 constraint holds). senior-dev may
+**proceed** against the pinned §9.2 mapping and labels above, honouring the §9.4 fixture note and
+the §9.5 hook-placement guard. No new tokens, states, or `ui-reference.md` edits.
+
 ---
 
 ## 10. Statistics page & `metrics_reset` — reserved, not designed
