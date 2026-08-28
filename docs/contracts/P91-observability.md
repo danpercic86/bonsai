@@ -520,6 +520,12 @@ redaction ordinal** (§7.2 (c)). A `strict` log has exactly the same anomaly sig
 severity beyond `warn` and no detector consumes it; its only consumer is the reviewing AI's
 completeness check.
 
+**`unbatched-sink` mechanism (RATIFIED, increment 5).** The rule (≥10 `log_append` calls / 1 s)
+needs per-`log_append` **call boundaries**, which individual records cannot express. This is carried
+by a sink-internal `SinkMsg::BatchMark` channel variant, enqueued best-effort by `log_append` before
+its records; the single `SyncSender` preserves mark-before-records FIFO ordering. A dropped mark only
+softens this one info-severity rule, so best-effort enqueue is acceptable.
+
 ### 5.1 Duration & saturation rules (ADDITIVE; **increment 5**)
 
 **`slow-command` — self-calibrating, per command.** A single global threshold is wrong (`get_graph`
@@ -547,6 +553,11 @@ with a default row and per-command overrides (`get_graph` floor 1200 ms; `commit
 - **rate limit: at most 1 `slow-command` per `cmd` per 10 s**;
 - the p95 is bucket-derived and therefore coarse by construction — the rule fires on step changes,
   not on jitter.
+
+**Percentile method — see §8.1 (authoritative).** The inline "interpolated within the containing
+bucket" note on the `p95 = h.percentile_ms(0.95)` line above is superseded by §8.1: the method is
+**linear interpolation clamped to `max_ms`**, identical to the durable-metrics path, so `slow-command`
+(inc. 5) and `metrics_snapshot` (inc. 6) never disagree on the same histogram.
 
 **`slow-phase`:** when a `slow-command` fires and the correlated `span` (same `trace`) has a phase
 ≥70 % of `ms`, emit `slow-phase{op, phase, ms, share}` referencing both seqs. This is the record
@@ -599,6 +610,12 @@ invalidates). Detail carries the counts; `refs` point at the offending spans. Cr
   in memory and crosses IPC exactly once, to the frontend, via `log_session_info`.
 - **Mock mode:** the sink client writes to an in-memory ring buffer; `window.__bonsaiDumpLogs()`
   returns the JSONL string so the browser harness can assert schema + anomalies with no Tauri.
+  The authoritative anomaly detector (`obs/anomaly.rs`) runs only on the Rust sink writer thread and
+  is absent in mock mode, so those harness anomalies are produced by a **mock-only, dump-time batch
+  analyzer** that scans the ring at `__bonsaiDumpLogs()` time (increment 5b). It is scoped to
+  **exactly the three gate-named rules** (`dup-ipc`, `slow-command`, `slow-phase`), is a harness-only
+  diagnostic that never ships in a production bundle, and does not replace or duplicate the Rust
+  detector, which remains the sole authoritative one.
 
 ### 6.1 "Delete all log files" — **DECIDED: in v1** (roll-then-purge)
 
@@ -1057,6 +1074,17 @@ impl Histogram {
     pub fn mean_ms(&self) -> Option<u32>;   // sum_ms / count
 }
 ```
+
+**Authoritative percentile method (RATIFIED, increment 5).** `percentile_ms` uses **linear
+interpolation inside the containing bucket, then clamps the result to `max_ms`**. This is the single
+method both §5.1's in-memory `slow-command` baseline and §8.1's durable `metrics_snapshot`
+percentiles use — they must agree. The clamp only moves the estimate toward truth (a percentile can
+never exceed the observed maximum), so §8.1's "coarse but within one bucket width" bound is
+preserved. Worked case from the increment-5 review: 50 observations of 900 ms all land in the coarse
+`(500, 2000]` bucket; unclamped interpolation yields p95 ≈ 1925 ms (so a `slow-command` threshold of
+`3 × p95 = 5775` would swallow the §12(a) 4 s acceptance outlier), whereas clamping to `max_ms = 900`
+gives p95 = 900 and threshold 2700, which fires correctly.
+
 ```rust
 // New OPTIONAL, DERIVED fields — computed at snapshot time, never persisted to usage.json.
 #[serde(default, skip_serializing_if = "Option::is_none")] pub p50_ms: Option<u32>,
@@ -1317,6 +1345,7 @@ whose phases plausibly explain where the time went**.
 | 19 | **Token scrubber — Layer B heuristic + Layer A status** (implemented in increment 1 incl. its MUST-FIX round; ratification requested) | **RATIFIED. Layer B constants named: `MIN_SECRET_LEN = 32`, `MIN_B64_RUN = 24`**, alpha+digit mix required, pure hex excluded. The original `/`-rejecting form made §7.2's own "base64 PAT shape" structurally uncatchable. The run test is sound because random base64 hits `/` about once per 64 chars while path segments are human-named and short — and the few that reach 24 chars are word-shaped and fail the digit requirement. Accepted, fail-safe consequences: scp-style remotes ordinalise as `path#` not `remote#`; UUID-shaped strings ≥32 chars and digit-bearing long camelCase segments over-redact. **Precision is permanently subordinate to recall: a missed credential is unrecoverable, an over-redacted path costs only legibility.** **Layer A is largely SHIPPED and must not be re-implemented** — increment 1's MUST-FIX round converted `TOKEN_PREFIXES` to `(prefix, min_len)` pairs (`redact.rs:190`, `:213`) precisely so short tokens escape the global floor, and shipped `glpat-` (+ `gldt-`/`glrt-`/`npm_`/`AKIA`/`ASIA`/`AIza`/`sk-`/`dckr_pat_`/`xoxe-` …), **`Basic` alongside `Bearer`** (`:382`) with a deliberate **`basic`-in-prose guard** (`:377-394`, must survive untouched) and a looser keyword-established length rule (`:304-305`) that already covers ~24-char `Basic` credentials. **Only TWO Layer-A items remain open, both additive in increment 3:** the `eyJ…` **JWT** prefix (a `.` disqualifies a Layer-B candidate and no prefix matches, so JWTs pass through today) and **`key=value` / `key: value` pairs matched inside plain-text string bodies** — `is_sensitive_key` (`:232-243`) is key-name-based and never sees line-oriented credential-helper / `.netrc` output, which is the shape a real credential takes when git hands it back. An earlier revision of this row listed `glpat-` and `Basic` as open; that assessed the pre-MUST-FIX state and is **corrected here** | §7.2.1, §12 inc. 1 & 3 |
 | 20 | **`argsHash` has ONE producer and ONE canonical form** (contradiction found by the increment-2 reviewer) | **CORRECTED — §7.2's "a UI call and its Rust arrival hash alike" sentence is STRUCK; §3 was and is authoritative.** `IpcRecvPayload` is `{ cmd }` with no `argsHash`, so the log stream has exactly one canonical form — the frontend's **positional JSON array** (positional because `IpcApi` methods are, which is also why `argsShape` is keyed `"0"`,`"1"`,…). `argsHash` appears only on `ipc.call`/`ipc.result`. **Cross-side agreement is neither required nor implemented**, and `Redactor::hash_args` takes already-canonicalised `&str` — **no Rust canonicaliser exists**. **PROHIBITION binding on increment 3 and later: `ipc.recv` must NOT gain `argsHash`/`argsShape`.** A Rust canonicaliser would serialise a *named payload map*, yielding different canonical text for the same logical call; the resulting second canonical form would make `dup-ipc` **silently stop matching real double triggers** — the exact failure this milestone exists to detect, and invisible because the rule just goes quiet. **If a future increment truly needs a Rust-side `argsHash`, BOTH are required (not either/or):** it must adopt the **identical positional-array canonical form** as `src/obs/redact.ts`, pinned by the existing cross-side vectors at `src-tauri/src/obs/tests_redact.rs:203-211`; **and** `dup-ipc` must already filter explicitly on `kind`. **Item 3 decision — `dup-ipc` states its own precondition, mandated NOW:** the rule must filter on `kind === 'ipc.call'` **explicitly in code**, with a unit test feeding a synthetic non-`ipc.call` record bearing an `argsHash`. Reason: correctness that emerges from a field being *absent from another payload type* is fragile in a contract making continuous additive changes — any future additive field breaks it silently. An explicit filter makes the rule locally verifiable and independent of every other payload's shape. Documentation-only; no shipped code changes | §3 (`IpcRecvPayload`, `ArgShape`), §2.3, §2.3.1, §4, §5 (`dup-ipc` row + precondition), §7.2, §12 inc. 2/3/5 + gate |
 | 21 | **Sub-phase split unrealisable for status/diff** (D3, ratified during increment 3) | **RATIFIED AS BUILT — commit `a351d36`, reviewer-approved.** `graph.get` is fully phased (`revwalk`/`decorate`/`lane`/`serialize` + `cache`) because its orchestration is visible at `graph_cache.rs`. `status.scan` collapses to a single `statuses` phase and `diff.compute` to a single `hunks` phase: their finer steps (`index`/`map`, `tree`/`serialize`) live inside `crates/bonsai-core`, and hooking them there would breach the `bonsai-core`↔`obs` boundary invariant (`bonsai_core_has_no_obs_reference`). Op-level `ms` + `queuedMs`/`poolInflight`/`poolMax`/`deadlineFrac` retained for all three. Finer status/diff phasing is **permanently rejected** (invariant non-negotiable; op-level `ms` is sufficient granularity), not deferred. **v1 scope note:** only `get_workdir_file_diff` is instrumented; commit-vs-parent diff is uninstrumented | §3.1.2 addendum, §12 inc. 3 |
+| 22 | **Mock-mode anomaly source split** (D5b, ratified during increment 5) | **RATIFIED AS BUILT.** The authoritative anomaly detector (`obs/anomaly.rs`) runs only on the Rust sink writer thread, so in mock mode (`VITE_MOCK_IPC=1`, no Tauri) the ring buffer never yields anomalies — yet §6's mock-mode assertion and the §12 gate + row 5 require the browser harness to show them. Resolution: a **mock-only, dump-time batch analyzer** over the ring at `__bonsaiDumpLogs()` time, scoped to **exactly the three gate-named rules** (`dup-ipc`, `slow-command`, `slow-phase`). `obs/anomaly.rs` stays the **sole authoritative detector**; the mock analyzer is a harness-only diagnostic that never reaches a production bundle. Documentation-only; ratifies increment-5b code | §6, §5, §5.1, §12 inc. 5 + gate |
 
 **Deferred follow-ups (explicitly out of P91):** app-wide React instrumentation beyond the six
 surfaces; the Statistics page and any UI for `metrics_reset`; selective/per-file log deletion (v1
