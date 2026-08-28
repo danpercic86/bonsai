@@ -9,12 +9,16 @@
 import type { LogKind, LogLevel, LogRecordBase, SpanId, TraceId } from '../ipc/types/obs';
 
 export type {
+  DayBucket,
+  Histogram,
   LogKind,
   LogLevel,
   LogRecord,
   LogRecordBase,
   LogSessionInfo,
   LogSource,
+  MetricsSnapshot,
+  MetricTotals,
   RedactionMode,
   SpanId,
   TraceId,

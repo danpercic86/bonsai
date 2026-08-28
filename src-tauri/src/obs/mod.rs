@@ -16,6 +16,8 @@
 pub mod anomaly;
 pub mod histogram;
 pub mod invoke_shim;
+pub mod metrics;
+pub mod metrics_file;
 pub mod phase;
 pub mod record;
 pub mod redact;
@@ -48,6 +50,7 @@ use std::sync::{Arc, Mutex};
 
 use bonsai_core::error::AppError;
 
+pub use metrics::MetricsState;
 pub use record::{LogLevel, LogRecord, RedactionMode};
 pub use sink::Sink;
 
@@ -98,6 +101,17 @@ pub fn logs_dir(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
         .app_config_dir()
         .map_err(|e| AppError::Other(format!("cannot resolve app config dir: {e}")))?;
     Ok(dir.join("logs"))
+}
+
+/// `<app_config_dir>/metrics` — where §8 `usage.json` lives, a sibling of
+/// `logs/` and `settings.json`.
+pub fn metrics_dir(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
+    use tauri::Manager;
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| AppError::Other(format!("cannot resolve app config dir: {e}")))?;
+    Ok(dir.join("metrics"))
 }
 
 /// A session id that is guaranteed NOT to be all digits.

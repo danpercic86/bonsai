@@ -402,6 +402,14 @@ pub fn utc_stamp(secs: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}T{hh:02}-{mm:02}-{ss:02}")
 }
 
+/// `2026-08-27` (UTC calendar date) — the daily-bucket key for §8 metrics.
+/// Same civil-date conversion as [`utc_stamp`], dropping the time-of-day.
+pub fn utc_date(secs: i64) -> String {
+    let days = secs.div_euclid(86_400);
+    let (y, m, d) = civil_from_days(days);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
 fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let z = z + 719_468;
     let era = z.div_euclid(146_097);

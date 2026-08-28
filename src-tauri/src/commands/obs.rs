@@ -8,10 +8,15 @@
 //! about logging self-amplifies — which is why nothing here mints a record.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use bonsai_core::error::AppError;
 
-use crate::obs::{self, record::LogRecord, record::RedactionMode, writer, ObsState};
+use crate::obs::metrics::MetricsFile;
+use crate::obs::record::LogPayload;
+use crate::obs::{self, record::LogRecord, record::RedactionMode, writer, MetricsState, ObsState};
+use crate::perf::PerfState;
+use crate::state::AppState;
 
 /// §6 — what the Dev page shows about the current log session.
 ///
@@ -63,18 +68,65 @@ pub struct LogSessionInfo {
 #[tauri::command]
 pub async fn log_append(
     obs_state: tauri::State<'_, ObsState>,
+    metrics: tauri::State<'_, Arc<MetricsState>>,
     records: Vec<LogRecord>,
 ) -> Result<(), AppError> {
     let Some(sink) = obs_state.sink() else {
         return Ok(());
     };
+    // §8: fold every `ipc.result` into the durable metrics store as it passes
+    // through. In-memory ONLY — `observe_ipc_result` never touches disk, so this
+    // command keeps its no-IO / never-blocks guarantee.
+    let today = writer::utc_date(writer::now_secs());
     // Signal the batch boundary to the detector (§5 `unbatched-sink`) BEFORE the
     // records, so its refs point at the first record of this batch.
     sink.note_batch();
     for rec in records {
+        if let LogPayload::IpcResult {
+            cmd, ms, err_code, ..
+        } = &rec.payload
+        {
+            metrics.observe_ipc_result(cmd, *ms, err_code.as_deref(), &today);
+        }
         sink.enqueue(rec);
     }
     Ok(())
+}
+
+/// §8 read API for the future Statistics page. Folds the latest `perf.*` deltas
+/// first so the snapshot reflects current counters, then returns the aggregates
+/// with DERIVED `p50Ms`/`p95Ms` filled — those are NEVER persisted to disk.
+///
+/// On the §2.3 instrumentation exclusion list (the Dev/Stats page polls it).
+#[tauri::command]
+pub async fn metrics_snapshot(
+    app_state: tauri::State<'_, AppState>,
+    metrics: tauri::State<'_, Arc<MetricsState>>,
+) -> Result<MetricsFile, AppError> {
+    let perf: Arc<PerfState> = app_state.perf.clone();
+    let metrics = Arc::clone(&metrics);
+    tauri::async_runtime::spawn_blocking(move || {
+        let today = writer::utc_date(writer::now_secs());
+        metrics.fold_perf(&perf.snapshot(), &today);
+        metrics.snapshot()
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))
+}
+
+/// §8 `metrics_reset` — clears every local aggregate and persists the empty file.
+///
+/// **Headless by design:** this command exists but appears in NO settings catalog
+/// row — there is no UI affordance for it in P91 (a Statistics page is future
+/// work). Blocking (writes the file), so it runs on the blocking pool.
+#[tauri::command]
+pub async fn metrics_reset(
+    metrics: tauri::State<'_, Arc<MetricsState>>,
+) -> Result<(), AppError> {
+    let metrics = Arc::clone(&metrics);
+    tauri::async_runtime::spawn_blocking(move || metrics.reset(writer::now_secs()))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// §6 — current session summary + the totals the delete-confirm copy needs.

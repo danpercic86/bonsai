@@ -1,4 +1,4 @@
-import type { LogRecord, LogSessionInfo } from './obs';
+import type { LogRecord, LogSessionInfo, MetricsSnapshot } from './obs';
 
 /**
  * P91 §6 — observability (Dev-mode structured logs), split out of `IpcApi`
@@ -24,4 +24,11 @@ export interface IpcApiObs {
    *  mode is off, which is what the "turn Dev mode off, then export" workflow
    *  needs — and resolve with the archive path. */
   logExportSession(dest?: string | null): Promise<string>;
+  /** §8 — read the durable local metrics aggregates (daily buckets + lifetime).
+   *  The returned histograms carry DERIVED `p50Ms`/`p95Ms`, computed at snapshot
+   *  time and never persisted. On the §2.3 instrumentation exclusion list. */
+  metricsSnapshot(): Promise<MetricsSnapshot>;
+  /** §8 — clear every local metric aggregate. HEADLESS: no settings-catalog row
+   *  surfaces it in P91. On the §2.3 exclusion list. */
+  metricsReset(): Promise<void>;
 }

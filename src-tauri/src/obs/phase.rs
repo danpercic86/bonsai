@@ -239,6 +239,14 @@ impl PhaseRecorder {
         } else {
             Some(inner.phases)
         };
+        // §8: fold this span into the durable metrics store (allow-listed keys
+        // only; a no-op when metrics is not initialised). Done before moving
+        // `phases` into the record payload.
+        if let Some(ref ph) = phases {
+            super::metrics::observe_span_global(inner.op, ms, ph, inner.queued_ms);
+        } else {
+            super::metrics::observe_span_global(inner.op, ms, &[], inner.queued_ms);
+        }
         let payload = LogPayload::Span {
             op: inner.op.to_string(),
             ms,

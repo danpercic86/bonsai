@@ -126,3 +126,47 @@ export interface LogSessionInfo {
   exportFiles?: number;
   exportBytes?: number;
 }
+
+/**
+ * P91 §8.1 — the bounded duration summary. 8 frozen buckets (1,5,10,50,100,500,
+ * 2000,+inf ms) plus running aggregates; no raw sample is ever retained, so its
+ * size is independent of the observation count.
+ *
+ * `p50Ms`/`p95Ms` are DERIVED and present **only** on `metricsSnapshot()`
+ * results — they are computed at snapshot time and never persisted to
+ * `usage.json`, so they are absent from any stored histogram.
+ */
+export interface Histogram {
+  count: number;
+  sumMs: number;
+  maxMs: number;
+  /** Always length 8. */
+  buckets: number[];
+  p50Ms?: number;
+  p95Ms?: number;
+}
+
+/** P91 §8 — the tallies inside a day bucket (or `lifetime`). Every key is from
+ *  the fixed `<domain>.<action>` allow-list — never user-derived. */
+export interface MetricTotals {
+  counters: Record<string, number>;
+  durations: Record<string, Histogram>;
+  errors: Record<string, number>;
+  sessionMs: number;
+}
+
+/** P91 §8 — one calendar day's aggregates. */
+export interface DayBucket {
+  date: string;
+  totals: MetricTotals;
+}
+
+/** P91 §8 — the durable metrics root returned by `metricsSnapshot()`. Retains up
+ *  to 400 day buckets; older days fold into `lifetime`. */
+export interface MetricsSnapshot {
+  schema: number;
+  firstSeen: string;
+  sessions: number;
+  days: DayBucket[];
+  lifetime: MetricTotals;
+}

@@ -28,6 +28,15 @@ pub struct Histogram {
     pub sum_ms: u64,
     pub max_ms: u64,
     pub buckets: [u64; 8],
+    /// DERIVED (§8.1): 50th percentile, computed at `metrics_snapshot()` time and
+    /// **never persisted** to `usage.json` (`skip_serializing_if` keeps it off the
+    /// wire for the durable form). Absent (`None`) on every stored histogram.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub p50_ms: Option<u32>,
+    /// DERIVED (§8.1): 95th percentile — same "snapshot-only, never persisted"
+    /// contract as [`Histogram::p50_ms`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub p95_ms: Option<u32>,
 }
 
 impl Histogram {
@@ -68,10 +77,21 @@ impl Histogram {
         for i in 0..8 {
             let bucket_count = self.buckets[i] as f64;
             let next_cum = cum + bucket_count;
-            if next_cum >= target || i == 7 {
+            // Only stop in a bucket that actually holds observations, EXCEPT the
+            // top bucket, which is the guaranteed terminus. Requiring
+            // `bucket_count > 0` here fixes the `percentile_ms(0.0)` edge: with an
+            // empty `buckets[0]`, `next_cum (== 0) >= target (== 0)` used to stop
+            // in bucket 0 and fall through to the `max_ms` fallback below, so p0 of
+            // a distribution whose smallest samples skip bucket 0 wrongly reported
+            // the MAXIMUM. Skipping empty buckets makes p0 land at the lower bound
+            // of the first non-empty bucket. Inert for p in (0, 1] (the first
+            // bucket with `next_cum >= target` for target > 0 is necessarily
+            // non-empty), so the ratified 0.5/0.95 method is unchanged.
+            if (next_cum >= target && bucket_count > 0.0) || i == 7 {
                 if bucket_count == 0.0 {
-                    // Empty containing bucket (only reachable at i == 7): fall back
-                    // to the observed maximum.
+                    // Reachable only at i == 7 when every bucket is empty, i.e.
+                    // count == 0 — already handled above — or a torn state; fall
+                    // back to the observed maximum defensively.
                     return Some(self.max_ms as u32);
                 }
                 let lower = if i == 0 {
@@ -94,6 +114,27 @@ impl Histogram {
             cum = next_cum;
         }
         Some(self.max_ms as u32)
+    }
+
+    /// Folds `other` into `self` (§8.1 400-day → `lifetime` roll-up). Buckets and
+    /// aggregates add; `max_ms` takes the larger. DERIVED percentile fields are
+    /// deliberately NOT merged — they are snapshot-only and always recomputed.
+    pub fn merge(&mut self, other: &Histogram) {
+        self.count = self.count.saturating_add(other.count);
+        self.sum_ms = self.sum_ms.saturating_add(other.sum_ms);
+        self.max_ms = self.max_ms.max(other.max_ms);
+        for i in 0..8 {
+            self.buckets[i] = self.buckets[i].saturating_add(other.buckets[i]);
+        }
+    }
+
+    /// Fills the DERIVED [`Histogram::p50_ms`]/[`Histogram::p95_ms`] fields from
+    /// the frozen buckets. Used only when building a `metrics_snapshot()` result;
+    /// the persisted form never carries them.
+    pub fn with_derived_percentiles(mut self) -> Histogram {
+        self.p50_ms = self.percentile_ms(0.5);
+        self.p95_ms = self.percentile_ms(0.95);
+        self
     }
 
     /// Arithmetic mean (§8.1). `None` when `count == 0`.

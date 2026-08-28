@@ -44,6 +44,7 @@ const EXCLUDED: &[&str] = &[
     "log_session_info",
     "logs_delete_all",
     "metrics_snapshot",
+    "metrics_reset",
     "debug_perf_counters",
 ];
 

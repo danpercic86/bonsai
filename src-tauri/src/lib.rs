@@ -62,6 +62,11 @@ pub fn run() {
         // P91 §1: the observability sink. `None` until Dev mode is enabled — with
         // Dev mode off there is no writer thread and no allocation at all.
         .manage(obs::ObsState::default())
+        // P91 §8: durable local metrics. Always present (unlike the log sink):
+        // `perf.*` counters and `sessions` accumulate on every launch. Loaded
+        // from disk in `setup`; an `Arc` so the blocking-pool span feed and the
+        // 60 s flush task share the one instance.
+        .manage(std::sync::Arc::new(obs::MetricsState::default()))
         .setup(|app| {
             // P30: seed the scheduler config from persisted settings, then
             // start the ONE global tick loop (D2). Settings-load failure is
@@ -114,6 +119,36 @@ pub fn run() {
                 Err(e) => {
                     eprintln!("bonsai: cannot resolve settings file (non-fatal): {e}");
                 }
+            }
+            // P91 §8: load durable metrics from disk and register the process-wide
+            // feed handle. Blocking IO → run on the blocking pool; a failure to
+            // resolve the config dir is non-fatal (metrics stay in-memory and the
+            // flush becomes a no-op). `sessions` is bumped here, once per launch.
+            {
+                let metrics = app.state::<std::sync::Arc<obs::MetricsState>>();
+                let metrics = std::sync::Arc::clone(&metrics);
+                obs::metrics::set_active(Some(std::sync::Arc::clone(&metrics)));
+                if let Ok(dir) = obs::metrics_dir(&app.handle().clone()) {
+                    let m = std::sync::Arc::clone(&metrics);
+                    tauri::async_runtime::spawn_blocking(move || {
+                        m.init(dir, obs::writer::now_secs());
+                    });
+                }
+                // The 60 s dirty-flag flush (§8 write pattern). Folds the current
+                // `perf.*` deltas and persists atomically only when dirty.
+                let perf = app.state::<state::AppState>().perf.clone();
+                let m = std::sync::Arc::clone(&metrics);
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                        let perf = perf.clone();
+                        let m2 = std::sync::Arc::clone(&m);
+                        let _ = tauri::async_runtime::spawn_blocking(move || {
+                            let _ = m2.flush(&perf.snapshot(), obs::writer::now_secs());
+                        })
+                        .await;
+                    }
+                });
             }
             tauri::async_runtime::spawn(scheduler::run_scheduler(
                 handle,
@@ -314,7 +349,9 @@ pub fn run() {
             commands::log_append,
             commands::log_session_info,
             commands::log_reveal_dir,
-            commands::log_export_session
+            commands::log_export_session,
+            commands::metrics_snapshot,
+            commands::metrics_reset
             ],
         ))
         .build(tauri::generate_context!())
@@ -332,6 +369,12 @@ pub fn run() {
                 // P91 §6: flush-and-join the log writer (2 s handshake) so a
                 // clean exit loses ZERO records. A no-op when Dev mode is off.
                 obs::shutdown_on_exit(&app.state::<obs::ObsState>());
+                // P91 §8: final metrics flush so a clean exit persists the last
+                // window of counters (write pattern: dirty-flag flush every 60 s
+                // AND on exit). Blocking, but the process is exiting.
+                let metrics = app.state::<std::sync::Arc<obs::MetricsState>>();
+                let perf = app.state::<state::AppState>().perf.clone();
+                let _ = metrics.flush(&perf.snapshot(), obs::writer::now_secs());
             }
         });
 }

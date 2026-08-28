@@ -1057,6 +1057,13 @@ pub struct Histogram { pub count: u64, pub sum_ms: u64, pub max_ms: u64,
   covered by `logs_delete_all`.
 - **No network sink exists.** No HTTP client is reachable from `obs/*`; a test asserts it.
 - Read API for the future Statistics page: `metrics_snapshot()`. **No UI is designed in P91.**
+- **"Always on" clarified (RATIFIED, increment 6).** Only the **counters** are truly always-on:
+  `perf.*` (folded from `PerfState::snapshot()` every launch) plus `sessions`/`first_seen`. The
+  **duration histograms** (`op.*`, `cmd.*`, `queue.blocking`) accumulate **only during Dev-mode
+  sessions**, because their source records (`span`, `ipc.result`) exist only then — de-gating them
+  would require emitting spans with Dev mode off, violating §11's zero-cost-off budget. This is the
+  correct consequence of the architecture, not a defect: the always-on aggregate is usage/error
+  frequency; latency distributions are a Dev-mode artefact.
 
 ### 8.1 Duration percentiles — bounded summaries, no sample retention (ADDITIVE; **increment 6**)
 
