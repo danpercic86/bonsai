@@ -1025,3 +1025,126 @@ roll-then-purge change is a behaviour decision inside §8.5 and introduces no ne
 
 CSS lives in a new `src/styles/settings-dev.css` imported after `settings-primitives.css` (do not
 reorder the existing import list), plus the pill rule in the existing header-toolbar stylesheet.
+
+---
+
+## 16. Increment-7 reconciliation (ui-designer, 2026-08-28)
+
+Verification/refresh pass over the sections above against the **shipped** backend shapes in
+`P91-observability.md` (§6.1 `LogsDeleteResult`/`LogSessionInfo`, §6.2 export scope, §6.3
+truncation). The contract above is **substantially current**; the deltas below reconcile it. Each
+item names the section it amends; where copy is superseded, the exact final string here wins.
+**No new tokens; no `ui-reference.md` edit.**
+
+### 16.1 `LogsDeleteResult` / `LogSessionInfo` field drift (amends §8.5, §11 DR-1)
+
+Shipped shape (authoritative, `P91-observability.md` §6.1):
+
+```ts
+interface LogsDeleteResult {
+  deletedFiles: number; deletedBytes: number; failedFiles: number;
+  activeFile: string | null;   // was `string` in §8.5 — NULLABLE; null when Dev mode was off
+  rolled: boolean;
+  deletedExports?: number;     // NEW — how many of deletedFiles were export zips (§6.2)
+}
+```
+
+- §8.5's `activeFile: string` → **`string | null`**. Guard the status-card re-poll (§6, l.366) and
+  the `dev-delete-rolled` path on `activeFile != null`; when `rolled:false` it is `null`.
+- §11 DR-1's inline list is **superseded** — add `deletedExports?`.
+- `LogSessionInfo` additionally carries `totalFiles`, `totalBytes`, `exportFiles?`, `exportBytes?`,
+  `droppedParts?`, and `salt`. Map per 16.2–16.5.
+- **`salt` is never rendered.** In the polled payload but in-process-only (§7.2 backend); no dialog,
+  note, or export copy may display it.
+
+### 16.2 Delete confirm dialog — exports + out-of-scope caveat (amends §8.5.4)
+
+Backend §6.1 makes this a **MUST**: the confirm copy states file count + total bytes **and** export
+count/bytes **and** the §6.2 out-of-scope caveat. `{n}`=`totalFiles`, `{size}`=formatted
+`totalBytes` (re-read on dialog open). Final body copy:
+
+> `Delete {n} log files ({size})? This cannot be undone.`
+>
+> *(only when `exportFiles > 0`)* `This includes {exportFiles} exported log archive(s).`
+>
+> *(only when Dev mode is on)* `This includes the session being recorded right now. Bonsai starts a new, empty log file and keeps recording.`
+>
+> `Exports you saved elsewhere are not removed.`
+>
+> `Deleting logs does not change any of your repositories.`
+
+Singular/plural: `1 exported log archive` / `{n} exported log archives`. Title/buttons/default-focus
+(Cancel)/Esc/danger variant per §8.5.4 unchanged.
+
+### 16.3 Export content-statement dialog — same caveat (amends §8.3)
+
+Backend §6.2: the caveat goes in **both** the delete confirm and the post-export content statement.
+Append to the §8.3 body, after the "read it before sending" line, before `Choose location…`:
+
+> `Exports you saved elsewhere are not removed by "Delete all log files".`
+
+### 16.4 Delete toasts — name exports separately (amends §8.5.5)
+
+When `deletedExports > 0` the success toasts differentiate; when `0`/absent the existing strings
+stand. `{n}` here = `deletedFiles − deletedExports` (log parts only); `{size}` = formatted
+`deletedBytes`.
+
+| Outcome | `deletedExports` | Toast |
+|---|---|---|
+| `rolled:false` | 0 / absent | `Deleted {n} log files. {size} freed.` |
+| `rolled:false` | `>0` | `Deleted {n} log files and {deletedExports} exports. {size} freed.` |
+| `rolled:true` | 0 / absent | `Deleted {n} log files. {size} freed. Still recording — Bonsai started a new log file.` |
+| `rolled:true` | `>0` | `Deleted {n} log files and {deletedExports} exports. {size} freed. Still recording — Bonsai started a new log file.` |
+
+Singular: `1 export`. The `Still recording` clause is unshortenable (§8.5.5). Partial-failure toast
+freed-bytes alignment is an optional NIT, not a blocker.
+
+### 16.5 Truncation warning line — `droppedParts > 0` (amends §6, NEW)
+
+§6's status card handles `dropped > 0` (in-memory backpressure). Backend §6.3 defines a **distinct**
+on-disk truncation signal `droppedParts`, pinned to the status card and **never conflated** with
+`dropped`. Add a status-card row (rendered **only while `droppedParts > 0`**), last row of
+`DevSessionStatus`, using the §4.2/§10.2 leading `--warning` bar + shield glyph (no new token), 12px
+`--text-2`, `max-width: 56ch`:
+
+> `This session reached its size limit, so its earliest records were removed. Lower the detail level or turn off captures you don't need, then reproduce the problem in a shorter session.`
+
+No jargon ("part"/"cap"/"truncate"/"MB"); remedy points at `dev.level` + capture switches. Persistent
+line, **not** `aria-live`; reachable via the card's `role="group"`. May render stacked with the
+`dropped` line — never merged.
+
+### 16.6 Rail placement — About is already last (amends §1.1, §10)
+
+Reality (`settingsCatalog.ts`): `git-config` and `about` both carry `dividerBefore:true`, **About is
+currently last**. Developer is appended **after About** as the new last item with its own
+`dividerBefore:true`. Order: General · Appearance · Commit graph · AI · Identities · Accounts · Git
+config `[repo]` ── About ── **Developer**. (Statistics, when it ships, goes between About and Developer.)
+
+### 16.7 Component + registry naming (amends §3)
+
+House convention is `categories/<Name>Category.tsx` + registry `CATEGORY_PAGES` (confirmed in
+`categories/index.ts`).
+
+- `DevPage.tsx` → **`src/components/settings/categories/DevCategory.tsx`** (same responsibility).
+  Pages take **no props**, read context via `useSettingsValues()`/`useSettingsActions()` (confirmed
+  real exports in `SettingsContext.ts`).
+- `CATEGORY_PAGES` maps `dev → { Page: DevCategory }`; `SettingsCategoryId` gains `'dev'`;
+  `SETTINGS_CATEGORIES` gains the entry with `dividerBefore:true` after `about`.
+
+### 16.8 Mock fixtures (amends §12)
+
+- `dev-delete-off`: `activeFile:''` → **`activeFile:null`**.
+- `dev-delete-rolled`: add **`deletedExports:1`** (exercises the exports toast + confirm clause).
+- **New `dev-truncated`:** `on`, some files, `droppedParts:3` (+ a nonzero `dropped` sibling flag to
+  prove the two lines render independently — truncation line wraps within 56ch, both densities/themes,
+  does not merge with the `dropped` line).
+- `dev-delete-partial` / `dev-delete-fail` unchanged.
+
+### 16.9 States coverage gate (increment 7)
+
+Dev off; Dev on (status card + header pill); raw-names confirm; delete confirm (count+bytes+**exports+
+caveat**+Dev-on sentence); partial-failure toast; **truncation line** (`droppedParts>0`, was missing);
+**"Still recording" post-purge** + exports naming; export/reveal success/failure; disk-write-error
+(`▲ Not writing`); pathological long content. a11y: existing `ConfirmDialog` danger variant + focus
+trap/Esc/restore sufficient; added copy is text-only. Colour never sole carrier (truncation line =
+words + `--warning` bar + shield glyph).
