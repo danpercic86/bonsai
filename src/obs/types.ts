@@ -77,6 +77,72 @@ export interface EventPayload {
   listeners: number;
 }
 
+/** §2.4 — a `notify`/refresh signal. The frontend only ever emits the
+ *  SUPPRESSED-echo variant (all count fields 0); real watcher batches come from
+ *  Rust. `paths`/`relevant`/`debounceMs`/`fired` are required by the Rust mirror
+ *  (no serde default), so they must always be present. */
+export interface WatcherPayload {
+  paths: number;
+  relevant: number;
+  debounceMs: number;
+  fired: boolean;
+  suppressed: boolean;
+  suppressReason?: string;
+}
+
+/** §2.5 — one executed coalesced refresh round. >1 contributing trace IS the
+ *  collapse evidence. */
+export interface RefreshPayload {
+  round: number;
+  scope: string;
+  origins: string[];
+  contributingTraces: TraceId[];
+  collapsed: number;
+  ms: number;
+}
+
+/** §9.1 `each` mode — one record per render. */
+export interface RenderPayload {
+  component: string;
+  count: number;
+  sinceMs: number;
+  changedProps?: string[];
+}
+
+/** §9.2 aggregate mode — ONE record per component per 500 ms window. */
+export interface RenderTallyPayload {
+  component: string;
+  windowMs: number;
+  renders: number;
+  instances: number;
+  changedProps: string[];
+  traces: TraceId[];
+}
+
+export interface EffectPayload {
+  component: string;
+  effect: string;
+  run: number;
+  /** `[]` ⇒ ran with no semantic change (the double-fire signal). */
+  changedDeps: string[];
+  depCount: number;
+}
+
+export interface StatePayload {
+  store: string;
+  field: string;
+  from: string;
+  to: string;
+}
+
+export interface FramePayload {
+  paintMs: number;
+  gapMs: number;
+  over33: number;
+  over100: number;
+  worstMs: number;
+}
+
 export interface ErrorPayload {
   where: string;
   code?: string;
@@ -96,12 +162,33 @@ export type UiPayload =
   | ({ kind: 'ipc.call' } & IpcCallPayload)
   | ({ kind: 'ipc.result' } & IpcResultPayload)
   | ({ kind: 'event' } & EventPayload)
+  | ({ kind: 'watcher' } & WatcherPayload)
+  | ({ kind: 'refresh' } & RefreshPayload)
+  | ({ kind: 'render' } & RenderPayload)
+  | ({ kind: 'render.tally' } & RenderTallyPayload)
+  | ({ kind: 'effect' } & EffectPayload)
+  | ({ kind: 'state' } & StatePayload)
+  | ({ kind: 'frame' } & FramePayload)
   | ({ kind: 'error' } & ErrorPayload)
   | ({ kind: 'drop' } & DropPayload)
-  | ({ kind: Exclude<LogKind, 'gesture' | 'ipc.call' | 'ipc.result' | 'event' | 'error' | 'drop'> } & Record<
-      string,
-      unknown
-    >);
+  | ({
+      kind: Exclude<
+        LogKind,
+        | 'gesture'
+        | 'ipc.call'
+        | 'ipc.result'
+        | 'event'
+        | 'watcher'
+        | 'refresh'
+        | 'render'
+        | 'render.tally'
+        | 'effect'
+        | 'state'
+        | 'frame'
+        | 'error'
+        | 'drop'
+      >;
+    } & Record<string, unknown>);
 
 /** What an emitter hands to `logRecord()`: the payload plus the optional
  *  correlation fields. `seq`/`ts`/`mono`/`src` are filled in by `log.ts`, and

@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { mockIpc } from '../../ipc/mock';
 import { useBranchActions } from './useBranchActions';
+import { configureObs, resetObsConfigForTests } from '../../obs/enabled';
+import { resetTraceForTests, withTrace } from '../../obs/trace';
 import {
   appErr,
   asyncFn,
@@ -12,7 +14,36 @@ import {
 } from '../../test/actionHookKit';
 import type { BranchesSnapshot } from '../../ipc';
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  resetObsConfigForTests();
+  resetTraceForTests();
+});
+
+describe('P91 §2.5 — the real handler threads its gesture trace into refreshAll', () => {
+  it('captures the ambient trace at sync entry and passes it to refreshAll', async () => {
+    configureObs({
+      enabled: true,
+      level: 'debug',
+      captureIpc: true,
+      captureReact: true,
+      captureFrames: false,
+      includeRawNames: false,
+    });
+    resetTraceForTests();
+    vi.spyOn(mockIpc, 'createBranch').mockResolvedValue(undefined);
+    const deps = makeDeps();
+    // Invoke the handler INSIDE a gesture, exactly as the wired call site does.
+    // The trace minted here must reappear as refreshAll's second argument.
+    await withTrace('click', 'sidebar.branch.create', () =>
+      useBranchActions(deps).handleCreateBranch('new-branch'),
+    );
+    const call = (deps.refreshAll as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(call[0]).toBe('refsOnly');
+    expect(typeof call[1]).toBe('string'); // the gesture's TraceId, threaded by value
+    expect((call[1] as string).length).toBeGreaterThan(0);
+  });
+});
 
 const BRANCHES: BranchesSnapshot = {
   local: [
@@ -48,7 +79,7 @@ describe('handleCreateBranch', () => {
     // P85 A1: one echo-armed refreshAll, not raw refetchBranches/refetchGraph.
     // P86a: a create at an existing commit is a refsOnly round.
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
-    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly');
+    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly', undefined);
     expectMutatingCycle(deps.setMutating);
   });
 
@@ -139,7 +170,7 @@ describe('handleDeleteBranch / handleDeleteRemoteTracking', () => {
     // P85 A1: one echo-armed refreshAll (a delete can drop reachable commits).
     // P88a row 13: scoped to refsOnly (no HEAD move / worktree change; graph re-walks).
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
-    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly');
+    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly', undefined);
 
     del.mockRejectedValue(appErr('unmergedBranch', 'not merged'));
     await useBranchActions(deps).handleDeleteBranch('feat');
@@ -175,7 +206,7 @@ describe('handleRenameBranch', () => {
     await useBranchActions(deps).handleRenameBranch('main', 'trunk');
     // P86a: renaming HEAD moves the current-branch label → full round.
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
-    expect(deps.refreshAll).toHaveBeenCalledWith('full');
+    expect(deps.refreshAll).toHaveBeenCalledWith('full', undefined);
     expect(deps.pushToast).toHaveBeenCalledWith(
       'success',
       'Renamed main → trunk (tracking origin/main preserved)',
@@ -193,7 +224,7 @@ describe('handleRenameBranch', () => {
     // P85 A1: non-HEAD rename now also routes through the echo-armed refreshAll.
     // P86a: a non-HEAD rename only reshuffles ref pills → refsOnly.
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
-    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly');
+    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly', undefined);
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Renamed feat → feature');
 
     rename.mockRejectedValue(appErr('branchExists', 'exists'));

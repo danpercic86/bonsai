@@ -7,6 +7,8 @@
  * `bindTrace`. An unbound async continuation logs `trace: undefined` — the
  * contract's explicit choice: never guess a wrong trace.
  */
+import { obsEnabled } from './enabled';
+import { logGesture } from './log';
 import type { SpanId, TraceId, TraceOrigin, TraceRoot } from './types';
 
 /** §2.2 — reserved arg keys the IPC proxy injects. Exported so any consumer that
@@ -41,8 +43,16 @@ export function newSpan(): SpanId {
  *  nested `withTrace` restores the outer trace on return, so an inner gesture
  *  cannot orphan its caller's trace. */
 export function withTrace<T>(origin: TraceOrigin, gesture: string, fn: () => T): T {
+  // §11 — zero cost when Dev mode is off: no mint, no ambient, no gesture record.
+  // Gesture correlation only has meaning when records are being written, so an
+  // off session runs the handler bare. Tests flip `obsEnabled` to exercise minting.
+  if (!obsEnabled()) return fn();
   const prev = ambient;
   ambient = { trace: newTrace(), origin, gesture, startedAt: Date.now() };
+  // §12 — exactly ONE `gesture` record per mint (this is the trace's t0).
+  // `withTraceRoot`/`bindTrace` re-enter an EXISTING root and deliberately do
+  // NOT emit, so a continuation replay never duplicates the gesture.
+  logGesture(origin, gesture, ambient.trace);
   try {
     return fn();
   } finally {

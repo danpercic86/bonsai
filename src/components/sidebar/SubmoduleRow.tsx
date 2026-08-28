@@ -5,6 +5,7 @@ import type { SubmoduleInfo } from '../../ipc';
 import type { SubmoduleBusy } from '../repoWorkspace/types';
 import { SUBMODULE_BADGE } from './submoduleBadges';
 import { useSidebarTreeItem } from './useSidebarTreeItem';
+import { useRenderCount } from '../../obs/react';
 
 export function SubmoduleRow({
   sub,
@@ -21,6 +22,7 @@ export function SubmoduleRow({
   treeKey?: string;
   level?: number;
 }) {
+  useRenderCount('SubmoduleRow', undefined, 'aggregate'); // §9.2
   const badge = SUBMODULE_BADGE[sub.status];
   const busy = submoduleBusy?.name === sub.name ? submoduleBusy.label : null;
   const item = useSidebarTreeItem({

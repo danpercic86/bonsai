@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
+import { useTracedEffect } from '../../obs/react';
 import { ipc } from '../../ipc';
 import type { Unsubscribe } from '../../ipc';
 import type { PushToast } from '../../ToastContext';
@@ -30,7 +31,12 @@ export function useRepoChangeSubscription(
   const pushToastRef = useRef(pushToast);
   pushToastRef.current = pushToast;
 
-  useEffect(() => {
+  // P91 §9.2 row 1b — instrumented as effect 'repoChangeSub'. A re-subscribe with
+  // unchanged [repoId, refresh] is the double-subscribe signal this milestone hunts.
+  useTracedEffect(
+    'RepoWorkspace',
+    'repoChangeSub',
+    () => {
     let cancelled = false;
     const unsubs: Unsubscribe[] = [];
     const subscribe = async () => {
@@ -87,5 +93,8 @@ export function useRepoChangeSubscription(
       cancelled = true;
       for (const unsub of unsubs) unsub();
     };
-  }, [repoId, refresh]);
+    },
+    [repoId, refresh],
+    ['repoId', 'refresh'],
+  );
 }

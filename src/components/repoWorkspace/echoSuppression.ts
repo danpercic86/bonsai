@@ -27,14 +27,28 @@ const armedCount = new Map<string, number>();
 /** epoch-ms at which the post-settle tail expires per repoId (set on the
  *  transition to count 0). */
 const disarmUntil = new Map<string, number>();
+/** P91 §2.4 — the arming mutation's `TraceId` per repoId. Read when a `watcher`
+ *  refresh is dropped as an echo so the suppressed record can name what caused
+ *  it (`causedBy`). Last-writer-wins on nested arms (the most recent mutation is
+ *  the likeliest cause of the next echo); it must OUTLIVE `disarmEcho` because
+ *  the echo lands inside the 600 ms tail, and is cleared only on
+ *  `clearEchoSuppression`. */
+const armedTrace = new Map<string, string>();
 
 /** Begin a self-caused-write span for `repoId` (call BEFORE enqueuing the round).
  *  Nesting-counted: overlapping mutations each arm once. While the count is > 0
  *  every watcher event for the repo is suppressed with NO expiry, so a slow
  *  round can never outlive its own window. Clears any pending tail. */
-export function armEcho(repoId: string): void {
+export function armEcho(repoId: string, trace?: string): void {
   armedCount.set(repoId, (armedCount.get(repoId) ?? 0) + 1);
   disarmUntil.delete(repoId);
+  if (trace !== undefined) armedTrace.set(repoId, trace);
+}
+
+/** P91 §2.4 — the arming mutation's trace for `repoId`, or undefined when the
+ *  arming gesture carried no trace (an unbound continuation — never guessed). */
+export function echoTraceFor(repoId: string): string | undefined {
+  return armedTrace.get(repoId);
 }
 
 /** End a span (call in the serving round's `finally`). Decrements the nesting
@@ -61,10 +75,12 @@ export function isEchoSuppressed(repoId: string, now: number = Date.now()): bool
 export function clearEchoSuppression(repoId: string): void {
   armedCount.delete(repoId);
   disarmUntil.delete(repoId);
+  armedTrace.delete(repoId);
 }
 
 /** Test-only: wipe the registry between vitest cases. */
 export function __resetEchoSuppression(): void {
   armedCount.clear();
   disarmUntil.clear();
+  armedTrace.clear();
 }

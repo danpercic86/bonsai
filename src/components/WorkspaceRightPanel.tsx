@@ -10,6 +10,7 @@ import { OpBanner } from './OpBanner';
 import { PrPanel } from './PrPanel';
 import { StatusPanel } from './StatusPanel';
 import { shortOid } from './workspaceUtils';
+import { useRenderCount } from '../obs/react';
 import type {
   AiAnalysisMode,
   AiDiffTarget,
@@ -257,6 +258,15 @@ export function WorkspaceRightPanel({
   onPushChecksBranch,
   onRevealCommit,
 }: WorkspaceRightPanelProps) {
+  // P91 §9.2 surface 4 — right-panel tab host (each mode). Above the render body.
+  useRenderCount('WorkspaceRightPanel', {
+    repoId,
+    rightPaneTab,
+    selectedIndex,
+    scope,
+    mutating,
+    listView,
+  });
   // Audit §2.2: `selectedIndex` can point PAST the end of `graph.nodes` — a
   // streaming refetch publishes its first partial batch BEFORE the progressive
   // selection remap runs, and a rebased/GC'd commit never comes back at all.

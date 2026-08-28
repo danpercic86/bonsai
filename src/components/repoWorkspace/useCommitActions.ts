@@ -1,5 +1,6 @@
 import { ipc } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
+import { currentTrace } from '../../obs/trace';
 import { shortOid } from '../workspaceUtils';
 import { COMMIT_PUSH_CANCELED } from '../commitPushSignal';
 import { nextFileAfter, type WorkdirChange } from '../../utils/nextFile';
@@ -23,7 +24,7 @@ type CommitPushResolver = {
 /** Stage/unstage/commit/amend/reset/discard + Commit & Push (M3/M6/P20). */
 export function useCommitActions(
   deps: BaseActionDeps & {
-    refreshAll: (scope?: RefreshScope) => Promise<void>;
+    refreshAll: (scope?: RefreshScope, trace?: import('../../obs/types').TraceId) => Promise<void>;
     reportStatusError: (message: string) => void;
     fetchDiffSlot: (key: string, fetcher: () => Promise<FileDiff>) => Promise<void>;
     pushCurrentBranch: () => Promise<void>;
@@ -168,12 +169,13 @@ export function useCommitActions(
   // skipHooks:true) rather than surfacing raw. configMissing/emptyMessage still
   // rethrow to CommitBox's own banner.
   async function handleCommit(message: string, sign: boolean | null = null, skipHooks = false) {
+    const trace = currentTrace()?.trace; // §2.5 — captured at sync entry
     await runWithHookGate(async (sh) => {
       setMutating(true);
       try {
         const res = await ipc.commit(repoId, message, sign, sh);
         if (res.hookWarning !== null) pushToast('warning', res.hookWarning);
-        await refreshAll();
+        await refreshAll('full', trace);
         refreshVerification();
       } finally {
         setMutating(false);

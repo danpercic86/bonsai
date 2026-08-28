@@ -37,8 +37,42 @@ Reviewer round 1 = "request changes" on 1 MUST-FIX, fixed + independently re-ver
 contingency NOT needed). cargo --lib 370 passed / 1 ignored (overhead bench), clippy -D clean both
 crates, tsc + build clean, vitest 2503 passed. **Reviewer round 1 = APPROVE, no MUST-FIX.** All 3
 deviations accepted by reviewer (see below).
-**⏸ HALTED AWAITING USER GO FOR INCREMENT 4** (which needs a `ui-designer` pass FIRST — it is the
-six-surface React/flicker payload).
+**✅ INCREMENT 4 DONE + COMMITTED** — the flicker payload: `obs/react.ts` (useRenderCount/
+useTracedEffect/useStateTransitionLog) + `obs/renderTally.ts` (aggregate mode) + `obs/gesture.ts`;
+ten surfaces instrumented per the pinned §9.2 map; echo/refresh causality (`armEcho(repoId,trace)` +
+suppressed-`watcher` record + `pendingTracesRef`/`refresh` records); gesture trace origination for
+the mutation/refresh cluster; `withTrace` now emits one `gesture` record per mint + no-ops when off;
+`frameStats` `onWindow`→`frame` routing. ui-designer pass first (a843174), architect ratified D3
+(3a5c800). tsc + eslint clean, 920 vitest green (incl. real-Sidebar churn test). **Reviewer +
+ui-designer both APPROVE, no MUST-FIX.**
+**⏸ HALTED AWAITING USER GO FOR INCREMENT 5** (anomaly detector — `obs/anomaly.rs`, all §5 sink-side
+rules incl. `dup-ipc` explicit `kind==='ipc.call'` filter + §5.1 perf rules + `SLOW_RULES` table; no
+ui-designer needed).
+
+**Increment 4 — the trap that was avoided (worth keeping):** the ambient trace is SYNCHRONOUS (§2.5)
+and dies across `await`; a mutation handler does `await ipc.mutate()` THEN `refreshAll()`, by which
+point `currentTrace()` is empty. Pattern chosen: capture the trace at each handler's sync entry and
+thread it BY VALUE `refreshAll(scope,trace)`→`refresh(origin,scope,trace)`→`armEcho(repoId,trace)`;
+`currentTrace()` is only ever read synchronously (fallback for callers inside their own gesture's
+sync extent, e.g. manual refresh). A negative-control test proves an unbound post-await refresh logs
+`causedBy:undefined`, never a stale trace. `withTrace` also made a no-op when Dev mode off.
+
+**Increment 4 follow-ups (non-blocking):**
+- **SHOULD-FIX:** `react.ts` `useStateTransitionLog`'s `briefValue` caps length but does NOT route
+  `from`/`to` through `obs/redact.ts` — would leak raw values (branch names) IF wired. Safe today
+  (called nowhere); gate wiring behind redaction before any use. Documented as a known limitation.
+- **NIT:** `frame` records split paint vs gap into two records with the other dimension hard-`0`
+  (`GraphCanvas.tsx emitFrameRecord`); a consumer could misread `gapMs:0` on a paint record. Add a
+  `dim:'paint'|'gap'` discriminator to disambiguate (trace-level, low severity).
+- **NIT:** `useRenderCount` 'each' calls `logRecord` in the render body, so React StrictMode dev
+  double-invoke can double container render counts (fine for a dev-only tool; worth a comment).
+- **Deviations accepted (consistent w/ §12 row 4):** `refresh.ms` = round execution duration;
+  gesture origination wired only for the mutation/refresh cluster.
+- **Gestures NOT wired in v1** (deferred by design): command-palette/appCommands entries; manual
+  Refresh button + focus/activation origins; graph context-menu checkoutCommit/checkoutRemote
+  (shared deps object — wrapping churns hook identity); non-echo-arming submodule init/update/sync +
+  handleSetRemoteUrl (config-only, no refresh round); merge/rebase/bisect/cherrypick/revert/conflict/
+  AI flows. Revisit if the six surfaces + inc-5 anomalies prove insufficient.
 
 **Increment 3 deviations (reviewer-accepted, recorded here per D3's "record in contract" ask):**
 (D1) global `ACTIVE_SINK` static for `PhaseRecorder`/watcher instead of threading `AppHandle` —

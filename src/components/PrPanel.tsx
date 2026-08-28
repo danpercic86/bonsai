@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ipc } from '../ipc';
+import { useRenderCount } from '../obs/react';
 import type {
   CreatePrInput,
   ForgeRepoContext,
@@ -70,8 +71,8 @@ export function PrPanel({
   onOpenPrDiff = noop,
   onClosePrDiff = noop,
 }: PrPanelProps) {
+  useRenderCount('PrPanel', { repoId, defaultHead, defaultBase, openToPr, aiEligible }); // §9.2 surface 5, above early returns
   const pushToast = usePushToast();
-
   const [ctx, setCtx] = useState<ForgeRepoContext | null>(null);
   const [view, setView] = useState<View>('loading');
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);

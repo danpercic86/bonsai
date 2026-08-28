@@ -1,5 +1,7 @@
 import { ipc } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
+import { currentTrace } from '../../obs/trace';
+import { traced, GESTURES } from '../../obs/gesture';
 import type { StashScope } from '../../ipc';
 import type { RefreshAll } from './refreshScope';
 import type { BaseActionDeps, PendingReservedStash, Setter } from './types';
@@ -16,6 +18,7 @@ export function useStashActions(
     deps;
 
   async function handleCreateStash(scope: StashScope) {
+    const trace = currentTrace()?.trace; // §2.5
     setMutating(true);
     try {
       const res = await ipc.createStash(repoId, null, scope);
@@ -26,7 +29,7 @@ export function useStashActions(
         res.created ? successCopy : 'Nothing to stash — working tree is clean',
       );
       // P88a row 6: narrow the full round to status + graph (pills) + stashes.
-      await refreshAll('stash');
+      await refreshAll('stash', trace);
     } catch (e) {
       pushToast('error', errorMessage(e));
     } finally {
@@ -44,6 +47,7 @@ export function useStashActions(
   }
 
   async function handleApplyStash(index: number, skipReserved = false, expectedOid?: string) {
+    const trace = currentTrace()?.trace; // §2.5
     setMutating(true);
     try {
       const res = await ipc.applyStash(repoId, index, skipReserved, expectedOid);
@@ -70,7 +74,7 @@ export function useStashActions(
           break;
       }
       // P88a row 7: apply mutates worktree+index+stash list ⇒ stash scope.
-      await refreshAll('stash');
+      await refreshAll('stash', trace);
     } catch (e) {
       reportStashError(e);
     } finally {
@@ -79,6 +83,7 @@ export function useStashActions(
   }
 
   async function handlePopStash(index: number, skipReserved = false, expectedOid?: string) {
+    const trace = currentTrace()?.trace; // §2.5
     setMutating(true);
     try {
       const res = await ipc.popStash(repoId, index, skipReserved, expectedOid);
@@ -105,7 +110,7 @@ export function useStashActions(
           break;
       }
       // P88a row 8: pop mutates worktree+index+stash list ⇒ stash scope.
-      await refreshAll('stash');
+      await refreshAll('stash', trace);
     } catch (e) {
       reportStashError(e);
     } finally {
@@ -114,6 +119,7 @@ export function useStashActions(
   }
 
   async function handleDropStash(index: number, expectedOid?: string) {
+    const trace = currentTrace()?.trace; // §2.5
     // called after ConfirmDialog
     setMutating(true);
     try {
@@ -121,7 +127,7 @@ export function useStashActions(
       pushToast('success', `Dropped stash@{${index}}`);
       // P88a row 9: the refs/stash write trips the watcher — route through the
       // echo-armed refreshAll('stash') (one coalesced round) instead of a raw pair.
-      await refreshAll('stash');
+      await refreshAll('stash', trace);
     } catch (e) {
       reportStashError(e);
     } finally {
@@ -129,5 +135,13 @@ export function useStashActions(
     }
   }
 
-  return { handleCreateStash, handleApplyStash, handlePopStash, handleDropStash };
+  // P91 §2.4 — originate a trace at the gesture boundary (these ops are reached
+  // from the sidebar stash context menu). `traced` mints + emits the `gesture`
+  // record; each handler's sync-entry capture then threads it into refreshAll.
+  return {
+    handleCreateStash: traced('menu', GESTURES.stashPush, handleCreateStash),
+    handleApplyStash: traced('menu', GESTURES.stashApply, handleApplyStash),
+    handlePopStash: traced('menu', GESTURES.stashPop, handlePopStash),
+    handleDropStash: traced('menu', GESTURES.stashDrop, handleDropStash),
+  };
 }

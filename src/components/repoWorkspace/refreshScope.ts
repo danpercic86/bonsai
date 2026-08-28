@@ -26,9 +26,13 @@ export type RefreshScope = 'full' | 'refsOnly' | 'remoteMeta' | 'worktree' | 'st
 
 /** The container's coalesced-refresh callback signature. Exported so every domain
  *  action hook narrows its `refreshAll` dep identically and can pass a scope
- *  (`refreshAll('worktree')` etc.). The runtime callback in `RepoWorkspace.tsx`
- *  already has this exact shape (`(scope?: RefreshScope) => Promise<void>`). */
-export type RefreshAll = (scope?: RefreshScope) => Promise<void>;
+ *  (`refreshAll('worktree')` etc.). P91 §2.5: an optional `trace` — the arming
+ *  gesture's TraceId, captured at the handler's synchronous entry and threaded by
+ *  value so a post-await refresh can attribute its own fs echo (`causedBy`). */
+export type RefreshAll = (
+  scope?: RefreshScope,
+  trace?: import('../../obs/types').TraceId,
+) => Promise<void>;
 
 /** Which refetch callbacks a scoped `runRefreshRound` invokes. `tagSyncForcable`
  *  gates whether an origin-forced ls-remote drift check is allowed: only `full`

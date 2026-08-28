@@ -1,7 +1,10 @@
 import { ipc } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
+import { currentTrace } from '../../obs/trace';
+import { traced, GESTURES } from '../../obs/gesture';
 import { reportRemoteOpError } from '../../ipc/gitNotFound';
 import type { RefreshAll } from './refreshScope';
+import type { TraceId } from '../../obs/types';
 import type { BaseActionDeps } from './types';
 
 /** P22: tag + remote management. Tag create/delete change the ref/pill set, so
@@ -24,16 +27,17 @@ export function useTagRemoteActions(
    *  (graph + branch/tag list + compare, via `refsOnly`) and the FORCED sync verdict
    *  (no scope forces an ls-remote, so keep the explicit forced tagSync). Armed
    *  refresh drops the tag write's own watcher echo → one round. */
-  async function refreshAfterTagOp() {
-    await Promise.all([refreshAll('refsOnly'), refetchTagSync({ force: true })]);
+  async function refreshAfterTagOp(trace?: TraceId) {
+    await Promise.all([refreshAll('refsOnly', trace), refetchTagSync({ force: true })]);
   }
 
   async function handleCreateTag(oid: string, name: string, message: string | null) {
+    const trace = currentTrace()?.trace; // §2.5
     setMutating(true);
     try {
       await ipc.createTag(repoId, name, oid, message, /* force */ false);
       pushToast('success', `Created tag ${name}`);
-      await refreshAfterTagOp();
+      await refreshAfterTagOp(trace);
     } catch (e) {
       pushToast('error', errorMessage(e));
     } finally {
@@ -42,11 +46,12 @@ export function useTagRemoteActions(
   }
 
   async function handleDeleteTag(name: string) {
+    const trace = currentTrace()?.trace; // §2.5
     setMutating(true);
     try {
       await ipc.deleteTag(repoId, name);
       pushToast('success', `Deleted tag ${name}`);
-      await refreshAfterTagOp();
+      await refreshAfterTagOp(trace);
     } catch (e) {
       pushToast('error', errorMessage(e));
     } finally {
@@ -76,11 +81,12 @@ export function useTagRemoteActions(
   // P77 §3 item 1: force-update a STALE local tag to the remote's target. Local
   // pointer move (reversible via reflog) — no confirm. Success states the change.
   async function handleForceRefreshTag(remote: string, name: string) {
+    const trace = currentTrace()?.trace; // §2.5
     setMutating(true);
     try {
       await ipc.forceRefreshTag(repoId, remote, name);
       pushToast('success', `Updated ${name} to match ${remote}.`);
-      await refreshAfterTagOp();
+      await refreshAfterTagOp(trace);
     } catch (e) {
       pushToast('error', `Couldn't update ${name}. ${errorMessage(e)}`, `tagsync:${name}`);
     } finally {
@@ -91,11 +97,12 @@ export function useTagRemoteActions(
   // P77 §3 item 2: create a local tag from a remote-only ghost row (one-tag fetch
   // brings the tag object across, preserving annotation).
   async function handleFetchRemoteTag(remote: string, name: string) {
+    const trace = currentTrace()?.trace; // §2.5
     setMutating(true);
     try {
       await ipc.forceRefreshTag(repoId, remote, name);
       pushToast('success', `Created local tag ${name}.`);
-      await refreshAfterTagOp();
+      await refreshAfterTagOp(trace);
     } catch (e) {
       pushToast('error', `Couldn't create ${name} locally. ${errorMessage(e)}`, `tagsync:${name}`);
     } finally {
@@ -106,11 +113,12 @@ export function useTagRemoteActions(
   // P77 §4.1: delete a tag ON the remote (destructive — routed through the confirm
   // dialog before this fires).
   async function handleDeleteRemoteTag(remote: string, name: string) {
+    const trace = currentTrace()?.trace; // §2.5
     setMutating(true);
     try {
       await ipc.deleteRemoteTag(repoId, remote, name);
       pushToast('success', `Deleted ${name} on ${remote}.`);
-      await refreshAfterTagOp();
+      await refreshAfterTagOp(trace);
     } catch (e) {
       pushToast(
         'error',
@@ -125,11 +133,12 @@ export function useTagRemoteActions(
   // P77 §4.2: force-move a tag ON the remote (reuse push_tag force=true) — the
   // destructive counterpart to force-refresh. Confirmed before this fires.
   async function handleForceMoveRemoteTag(remote: string, name: string, newShort: string) {
+    const trace = currentTrace()?.trace; // §2.5
     setMutating(true);
     try {
       await ipc.pushTag(repoId, remote, name, /* force */ true);
       pushToast('success', `Moved ${name} on ${remote} to ${newShort}.`);
-      await refreshAfterTagOp();
+      await refreshAfterTagOp(trace);
     } catch (e) {
       pushToast(
         'error',
@@ -142,13 +151,14 @@ export function useTagRemoteActions(
   }
 
   async function handleAddRemote(name: string, url: string) {
+    const trace = currentTrace()?.trace; // §2.5
     setMutating(true);
     try {
       await ipc.addRemote(repoId, name, url);
       pushToast('success', `Added remote ${name}`);
       // P88a rows 2-4: add/remove/rename move remote-tracking refs ⇒ remoteMeta
       // (graph + branches + remotes + compare + non-forced tagSync), echo-armed.
-      await refreshAll('remoteMeta');
+      await refreshAll('remoteMeta', trace);
     } catch (e) {
       pushToast('error', errorMessage(e));
     } finally {
@@ -157,13 +167,14 @@ export function useTagRemoteActions(
   }
 
   async function handleRemoveRemote(name: string) {
+    const trace = currentTrace()?.trace; // §2.5
     setMutating(true);
     try {
       await ipc.removeRemote(repoId, name);
       pushToast('success', `Removed remote ${name}`);
       // P88a rows 2-4: add/remove/rename move remote-tracking refs ⇒ remoteMeta
       // (graph + branches + remotes + compare + non-forced tagSync), echo-armed.
-      await refreshAll('remoteMeta');
+      await refreshAll('remoteMeta', trace);
     } catch (e) {
       pushToast('error', errorMessage(e));
     } finally {
@@ -172,13 +183,14 @@ export function useTagRemoteActions(
   }
 
   async function handleRenameRemote(name: string, newName: string) {
+    const trace = currentTrace()?.trace; // §2.5
     setMutating(true);
     try {
       await ipc.renameRemote(repoId, name, newName);
       pushToast('success', `Renamed remote ${name} → ${newName}`);
       // P88a rows 2-4: add/remove/rename move remote-tracking refs ⇒ remoteMeta
       // (graph + branches + remotes + compare + non-forced tagSync), echo-armed.
-      await refreshAll('remoteMeta');
+      await refreshAll('remoteMeta', trace);
     } catch (e) {
       pushToast('error', errorMessage(e));
     } finally {
@@ -199,17 +211,22 @@ export function useTagRemoteActions(
     }
   }
 
+  // P91 §2.4 — originate a trace at each tag/remote gesture boundary (sidebar
+  // context menus + dialogs). `traced` mints + emits the gesture record; each
+  // handler's sync-entry capture threads it into refreshAfterTagOp/refreshAll.
+  // `handleSetRemoteUrl` writes only .git/config (no watcher event, no armed
+  // refresh) so it needs no trace and is left unwrapped.
   return {
-    handleCreateTag,
-    handleDeleteTag,
-    handlePushTag,
-    handleForceRefreshTag,
-    handleFetchRemoteTag,
-    handleDeleteRemoteTag,
-    handleForceMoveRemoteTag,
-    handleAddRemote,
-    handleRemoveRemote,
-    handleRenameRemote,
+    handleCreateTag: traced('menu', GESTURES.tagCreate, handleCreateTag),
+    handleDeleteTag: traced('menu', GESTURES.tagDelete, handleDeleteTag),
+    handlePushTag: traced('menu', GESTURES.tagPush, handlePushTag),
+    handleForceRefreshTag: traced('menu', GESTURES.tagForceRefresh, handleForceRefreshTag),
+    handleFetchRemoteTag: traced('menu', GESTURES.tagFetchRemote, handleFetchRemoteTag),
+    handleDeleteRemoteTag: traced('menu', GESTURES.tagDeleteRemote, handleDeleteRemoteTag),
+    handleForceMoveRemoteTag: traced('menu', GESTURES.tagForceMoveRemote, handleForceMoveRemoteTag),
+    handleAddRemote: traced('menu', GESTURES.remoteAdd, handleAddRemote),
+    handleRemoveRemote: traced('menu', GESTURES.remoteRemove, handleRemoveRemote),
+    handleRenameRemote: traced('menu', GESTURES.remoteRename, handleRenameRemote),
     handleSetRemoteUrl,
   };
 }

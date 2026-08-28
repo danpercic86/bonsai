@@ -1,13 +1,15 @@
 import { ipc } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
+import { currentTrace } from '../../obs/trace';
 import type { BranchesSnapshot } from '../../ipc';
 import type { RefreshScope } from './refreshScope';
+import type { TraceId } from '../../obs/types';
 import type { BaseActionDeps, Setter } from './types';
 
 /** Local/remote branch create, checkout, delete (P6/P11/P33). */
 export function useBranchActions(
   deps: BaseActionDeps & {
-    refreshAll: (scope?: RefreshScope) => Promise<void>;
+    refreshAll: (scope?: RefreshScope, trace?: TraceId) => Promise<void>;
     branches: BranchesSnapshot | null;
     setBranchesError: Setter<string | null>;
     setPendingCreateBranch: Setter<{ oid: string } | null>;
@@ -34,12 +36,15 @@ export function useBranchActions(
   // touched: a create/rename-at-existing-commit is `refsOnly` (no worktree scan,
   // no HEAD move); a delete or HEAD-moving op stays `full`.
   async function handleCreateBranch(name: string) {
+    // P91 §2.5 — capture the gesture trace at the SYNCHRONOUS entry (still under
+    // the withTrace ambient); thread it by value into the post-await refresh.
+    const trace = currentTrace()?.trace;
     setBranchesError(null);
     setMutating(true);
     try {
       await ipc.createBranch(repoId, name);
       // A create at an existing commit only adds a ref pill — refsOnly.
-      await refreshAll('refsOnly');
+      await refreshAll('refsOnly', trace);
     } finally {
       setMutating(false);
     }
@@ -49,11 +54,12 @@ export function useBranchActions(
   // → re-apply stash. Never hard-fails on a dirty tree; a conflicted re-apply is
   // a SUCCESS (stash retained at stash@{0}).
   async function handleCheckoutBranch(name: string) {
+    const trace = currentTrace()?.trace;
     setBranchesError(null);
     setMutating(true);
     try {
       const res = await ipc.checkoutBranch(repoId, name);
-      await refreshAll();
+      await refreshAll('full', trace);
       if (res.apply?.kind === 'conflicts') {
         pushToast(
           'warning',
@@ -80,10 +86,11 @@ export function useBranchActions(
   // P11 §1.4: create a local branch at `oid` + check it out, carrying any
   // uncommitted work across via auto-stash. HEAD moves, so refreshAll.
   async function handleCreateBranchHere(oid: string, name: string): Promise<void> {
+    const trace = currentTrace()?.trace;
     setMutating(true);
     try {
       const res = await ipc.createBranchHere(repoId, name, oid);
-      await refreshAll();
+      await refreshAll('full', trace);
       if (!res.stashed) {
         pushToast('success', `Created and checked out ${name}`);
       } else if (res.apply?.kind === 'applied') {
@@ -103,6 +110,7 @@ export function useBranchActions(
   }
 
   async function handleDeleteBranch(name: string) {
+    const trace = currentTrace()?.trace;
     setBranchesError(null);
     setMutating(true);
     try {
@@ -111,7 +119,7 @@ export function useBranchActions(
       // handleDeleteRemoteTracking on `refsOnly` (skips status/remotes/stashes/etc).
       // The graph slice still re-walks: a tip removal is a B1 cache Miss (correct —
       // commits only reachable via the deleted branch drop out).
-      await refreshAll('refsOnly');
+      await refreshAll('refsOnly', trace);
     } catch (e) {
       setBranchesError(errorMessage(e));
     } finally {
@@ -132,12 +140,13 @@ export function useBranchActions(
       setPendingRenameBranch(null);
       return;
     }
+    const trace = currentTrace()?.trace;
     setMutating(true);
     try {
       const res = await ipc.renameBranch(repoId, oldName, newName);
       // A1: route through refreshAll whether or not HEAD moved. P86a: a rename of
       // HEAD moves the current-branch label (full); a non-head rename is refsOnly.
-      await refreshAll(res.wasHead ? 'full' : 'refsOnly');
+      await refreshAll(res.wasHead ? 'full' : 'refsOnly', trace);
       pushToast(
         'success',
         `Renamed ${oldName} → ${newName}` +
@@ -154,11 +163,12 @@ export function useBranchActions(
   // Checkout arbitrary commit → detached HEAD. Non-destructive (no confirm),
   // dirty-safe (auto-stash/re-apply). HEAD moves → refreshAll full.
   async function handleCheckoutCommit(oid: string) {
+    const trace = currentTrace()?.trace;
     const short = oid.slice(0, 7);
     setMutating(true);
     try {
       const res = await ipc.checkoutCommit(repoId, oid);
-      await refreshAll();
+      await refreshAll('full', trace);
       if (res.apply?.kind === 'conflicts') {
         pushToast(
           'warning',
@@ -179,11 +189,12 @@ export function useBranchActions(
   // P6 §4.4: GitKraken-style remote checkout — create/reuse a local tracking
   // branch and switch to it (HEAD moves, so refreshAll like handleCheckoutBranch).
   async function handleCheckoutRemote(name: string) {
+    const trace = currentTrace()?.trace;
     setBranchesError(null);
     setMutating(true);
     try {
       await ipc.checkoutRemoteBranch(repoId, name);
-      await refreshAll();
+      await refreshAll('full', trace);
     } catch (e) {
       setBranchesError(errorMessage(e));
     } finally {
@@ -195,11 +206,12 @@ export function useBranchActions(
   // server). P86a: removing a remote-tracking ref only drops a pill (no local
   // HEAD move, no worktree change) — refsOnly.
   async function handleDeleteRemoteTracking(name: string) {
+    const trace = currentTrace()?.trace;
     setBranchesError(null);
     setMutating(true);
     try {
       await ipc.deleteRemoteBranch(repoId, name);
-      await refreshAll('refsOnly');
+      await refreshAll('refsOnly', trace);
     } catch (e) {
       setBranchesError(errorMessage(e));
     } finally {

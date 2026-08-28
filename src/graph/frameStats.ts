@@ -24,7 +24,12 @@ function round1(x: number): number {
   return Math.round(x * 10) / 10;
 }
 
-export function createFrameRecorder(): FrameRecorder {
+/**
+ * @param onWindow P91 §9.3 — invoked with the window's {@link FrameStats} at each
+ *   `flushSummary()`, BEFORE the recorder resets. `GraphCanvas` routes it to a
+ *   `frame` log record when Dev mode is on; omitted on every non-instrumented use.
+ */
+export function createFrameRecorder(onWindow?: (stats: FrameStats) => void): FrameRecorder {
   let frames = 0;
   let totalMs = 0;
   let maxMs = 0;
@@ -57,6 +62,7 @@ export function createFrameRecorder(): FrameRecorder {
         over100,
         maxWindow5Avg: round1(maxWindowAvg),
       };
+      onWindow?.(stats);
       frames = 0;
       totalMs = 0;
       maxMs = 0;

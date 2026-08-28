@@ -17,6 +17,7 @@ import {
 } from '../appIcons';
 import { RefFilterMarker } from './RefFilterMarker';
 import { useSidebarTreeItem } from './useSidebarTreeItem';
+import { useRenderCount } from '../../obs/react';
 
 type BranchContextMenu = (
   name: string,
@@ -62,6 +63,7 @@ export function BranchRow({
   treeKey: string;
   level?: number;
 }) {
+  useRenderCount('BranchRow', undefined, 'aggregate'); // §9.2 — one shared tally key
   const isHead = branch.isHead;
   // HEAD branch: Enter no-op (already checked out). The keyboard menu opens for
   // every row — spec-003 gives the HEAD row a (filter-only) menu, matching
@@ -116,6 +118,7 @@ export function RemoteRow({
   treeKey: string;
   level?: number;
 }) {
+  useRenderCount('RemoteRow', undefined, 'aggregate'); // §9.2
   const item = useSidebarTreeItem({
     treeKey,
     level,
@@ -157,6 +160,7 @@ export function ConfiguredRemoteRow({
   treeKey: string;
   level?: number;
 }) {
+  useRenderCount('ConfiguredRemoteRow', undefined, 'aggregate'); // §9.2
   const item = useSidebarTreeItem({
     treeKey,
     level,
@@ -208,6 +212,7 @@ export function StashRow({
   treeKey: string;
   level?: number;
 }) {
+  useRenderCount('StashRow', undefined, 'aggregate'); // §9.2
   const label = `stash@{${index}}`;
   const now = Math.floor(Date.now() / 1000);
   const item = useSidebarTreeItem({
@@ -267,6 +272,7 @@ export function WorktreeRow({
   treeKey: string;
   level?: number;
 }) {
+  useRenderCount('WorktreeRow', undefined, 'aggregate'); // §9.2
   const item = useSidebarTreeItem({
     treeKey,
     level,
@@ -313,6 +319,7 @@ export function DetachedHeadRow({
   treeKey: string;
   level?: number;
 }) {
+  useRenderCount('DetachedHeadRow', undefined, 'aggregate'); // §9.2
   const item = useSidebarTreeItem({ treeKey, level, kind: 'leaf', ariaDisabled: true });
   return (
     <li {...item} role="treeitem" className="branch-row branch-row-detached" title={oid}>

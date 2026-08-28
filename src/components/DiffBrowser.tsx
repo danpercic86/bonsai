@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { ipc } from '../ipc';
+import { useRenderCount } from '../obs/react';
 import type { FileDiff, FileDiffHeader, FileStatus, ListView } from '../ipc';
 import { errorMessage } from '../utils/errors';
 import { isImagePath } from '../utils/imagePaths';
@@ -65,6 +66,8 @@ export interface DiffBrowserProps {
 }
 
 export function DiffBrowser({ repoId, source, files, scope, listView, onClose }: DiffBrowserProps) {
+  // P91 §9.2 surface 2 — each mode, above every early return (§9.5).
+  useRenderCount('DiffBrowser', { repoId, source, scope, listView, fileCount: files.length });
   // P17d §0.4/§5.2: File/Diff view toggle (locked "toggle everywhere"). Local
   // state — the browser is its own surface and does not share
   // RepoWorkspace.diffViewMode. `diff` (3-context hunks) is the default/current

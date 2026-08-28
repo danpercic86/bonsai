@@ -135,7 +135,7 @@ describe('add / deinit / remove (superproject index changes)', () => {
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Added submodule libs/core');
     expect(deps.refetchSubmodules).toHaveBeenCalledTimes(1);
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
-    expect(deps.refreshAll).toHaveBeenCalledWith('worktree');
+    expect(deps.refreshAll).toHaveBeenCalledWith('worktree', undefined);
   });
 
   it('deinit + remove fire refreshAll(worktree) + a submodule refetch; errors still refresh', async () => {
@@ -151,7 +151,7 @@ describe('add / deinit / remove (superproject index changes)', () => {
     expect(deinit).toHaveBeenCalledWith(REPO, 'libs/core', false);
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Deinitialized libs/core');
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
-    expect(deps.refreshAll).toHaveBeenCalledWith('worktree');
+    expect(deps.refreshAll).toHaveBeenCalledWith('worktree', undefined);
 
     await actions.handleRemoveSubmodule('libs/core');
     expect(remove).toHaveBeenCalledWith(REPO, 'libs/core', false);

@@ -4,7 +4,9 @@ import { reportRemoteOpError } from '../../ipc/gitNotFound';
 import { isGitNotFound } from '../../ipc/errors';
 import { shortOid } from '../workspaceUtils';
 import { COMMIT_HOOK_CANCELED } from '../commitPushSignal';
+import { currentTrace } from '../../obs/trace';
 import type { RefreshScope } from './refreshScope';
+import type { TraceId } from '../../obs/types';
 import type { BaseActionDeps, Setter } from './types';
 
 /** P60b: a fast-forward-only pull hit a diverged branch — drives NonFfPullDialog.
@@ -20,7 +22,7 @@ export interface NonFfPullInfo {
 /** M6 + P37b: fetch / pull / push / force-push-with-lease. */
 export function useRemoteOps(
   deps: BaseActionDeps & {
-    refreshAll: (scope?: RefreshScope) => Promise<void>;
+    refreshAll: (scope?: RefreshScope, trace?: TraceId) => Promise<void>;
     setRemoteOp: Setter<'fetch' | 'pull' | 'push' | null>;
     setPendingForcePush: Setter<boolean>;
     /** P60b: open the non-FF reconcile dialog (Merge / Rebase / Cancel). */
@@ -69,6 +71,7 @@ export function useRemoteOps(
   }
 
   async function handleFetch() {
+    const trace = currentTrace()?.trace; // §2.5 — captured at sync entry
     beginRemoteOp('fetch');
     try {
       const res = await ipc.fetch(repoId);
@@ -81,7 +84,7 @@ export function useRemoteOps(
       );
       // P86a: a fetch only updates remote-tracking refs + remote metadata (no
       // local HEAD move, no worktree change) — remoteMeta scope.
-      await refreshAll('remoteMeta');
+      await refreshAll('remoteMeta', trace);
     } catch (e) {
       // P70 (UI §10.3): a user-PRESSED remote op still gets exactly one toast —
       // coalesced by key, so three presses never stack three sticky errors.
@@ -92,6 +95,7 @@ export function useRemoteOps(
   }
 
   async function handlePull() {
+    const trace = currentTrace()?.trace; // §2.5
     beginRemoteOp('pull');
     try {
       const res = await ipc.pull(repoId);
@@ -113,7 +117,7 @@ export function useRemoteOps(
           });
           break;
       }
-      await refreshAll();
+      await refreshAll('full', trace);
     } catch (e) {
       reportRemoteOpError('Pull', e, pushToast);
     } finally {
@@ -127,6 +131,7 @@ export function useRemoteOps(
   // HookOutputDialog ("Push anyway" retries with skipHooks:true); the attempt
   // performs the push AND its success side-effects, so the retry re-runs both.
   async function pushCurrentBranch() {
+    const trace = currentTrace()?.trace; // §2.5
     beginRemoteOp('push');
     try {
       await runWithHookGate(async (skipHooks) => {
@@ -142,7 +147,7 @@ export function useRemoteOps(
         }
         // P86a: a push advances the remote-tracking ref (+ maybe sets upstream) —
         // refsOnly (no local HEAD move, no worktree change).
-        await refreshAll('refsOnly');
+        await refreshAll('refsOnly', trace);
         // P90: refresh the Checks tab + graph CI badges after a successful push.
         onPushComplete?.();
       }, false);
@@ -165,6 +170,7 @@ export function useRemoteOps(
   }
 
   async function doForcePush() {
+    const trace = currentTrace()?.trace; // §2.5
     setPendingForcePush(false);
     beginRemoteOp('push');
     try {
@@ -178,7 +184,7 @@ export function useRemoteOps(
           pushToast('success', `Force-pushed ${res.branch} → ${res.remote}/${res.branch}`);
         }
         // P86a: force-push only moves the remote-tracking ref — refsOnly.
-        await refreshAll('refsOnly');
+        await refreshAll('refsOnly', trace);
         // P90: refresh the Checks tab + graph CI badges after a successful push.
         onPushComplete?.();
       }, false);

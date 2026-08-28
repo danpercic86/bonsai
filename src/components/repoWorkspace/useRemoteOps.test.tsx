@@ -45,7 +45,7 @@ describe('handleFetch', () => {
     // P85 A1: one echo-armed refreshAll (tag counts now arrive via tag-auto-sync).
     // P86a: a fetch only touches remote metadata → remoteMeta scope.
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
-    expect(deps.refreshAll).toHaveBeenCalledWith('remoteMeta');
+    expect(deps.refreshAll).toHaveBeenCalledWith('remoteMeta', undefined);
     expectRemoteOpCycle(deps, 'fetch');
   });
 
@@ -126,7 +126,7 @@ describe('handlePush / pushCurrentBranch', () => {
     // P85 A1: one echo-armed refreshAll, not raw refetchBranches/refetchGraph.
     // P86a: a push only advances remote-tracking refs → refsOnly scope.
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
-    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly');
+    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly', undefined);
     expectRemoteOpCycle(deps, 'push');
   });
 

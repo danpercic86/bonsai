@@ -28,6 +28,9 @@ import { useRailInput } from './repoWorkspace/railProps';
 import { useReplayController } from './repoWorkspace/replayProps';
 import { usePaletteCallbacks } from './repoWorkspace/paletteCallbacks';
 import { useCoalescedRefresh, type RefreshOrigin } from './repoWorkspace/useCoalescedRefresh';
+import { useRenderCount } from '../obs/react';
+import { traced, GESTURES } from '../obs/gesture';
+import type { TraceId } from '../obs/types';
 import { type RefreshScope, slicesForScope } from './repoWorkspace/refreshScope';
 import { useRepoChangeSubscription } from './repoWorkspace/useRepoChangeSubscription';
 import { usePrDiffBrowser } from './repoWorkspace/usePrDiffBrowser';
@@ -160,6 +163,9 @@ export function RepoWorkspace({
   appCommands,
 }: RepoWorkspaceProps) {
   const pushToast = usePushToast();
+  // P91 §9.2 surface 1 — container render churn (each mode). Above every early
+  // return so hook order is unconditional (§9.5).
+  useRenderCount('RepoWorkspace', { repoId, active, panelDensity, themeVersion, globalModalOpen });
   const repoPath = repoId; // repoId == canonical workdir path (§2)
 
   // P13 §8.2: AI conflict-resolution is offered only when enabled, consented,
@@ -1252,22 +1258,25 @@ export function RepoWorkspace({
   // and the shared echo registry drops the self-caused watcher echo within TTL.
   const { refresh: coalescedRefresh } = useCoalescedRefresh(repoId, runRefreshRound);
   const refresh = useCallback(
-    (origin: RefreshOrigin, scope: RefreshScope): Promise<void> => {
+    (origin: RefreshOrigin, scope: RefreshScope, trace?: TraceId): Promise<void> => {
       // Forced tag-drift re-check for user-initiated origins (mutation writes,
       // manual refresh, activation self-heal, focus rescan). Set BEFORE enqueuing
       // so the round about to start reads it (P81 Flag 2). `watcher` (raw fs echo)
       // and `external` (backend-confirmed change — the backend already ran the
       // tag-sync) do NOT force a fresh ls-remote.
       if (origin !== 'watcher' && origin !== 'external') pendingTagForceRef.current = true;
-      return coalescedRefresh(origin, scope);
+      return coalescedRefresh(origin, scope, trace);
     },
     [coalescedRefresh],
   );
   // Name preserved: the mutation call sites + hook deps stay untouched (they now
   // pass an explicit scope; the default keeps unscoped callers on `full`).
   // A mutation is a local write → arms echo suppression + (for `full`) forces tagSync.
+  // P91 §2.5: `trace` is the arming gesture's TraceId, captured at the action's
+  // synchronous entry and threaded by value (see obs/gesture.ts).
   const refreshAll = useCallback(
-    (scope: RefreshScope = 'full'): Promise<void> => refresh('mutation', scope),
+    (scope: RefreshScope = 'full', trace?: TraceId): Promise<void> =>
+      refresh('mutation', scope, trace),
     [refresh],
   );
 
@@ -1536,8 +1545,14 @@ export function RepoWorkspace({
       onPushComplete: bumpForgeAndChecks,
     });
 
-  const onFetch = useCallback(() => void handleFetch().then(bumpForgeAndChecks), [handleFetch, bumpForgeAndChecks]);
-  const onPull = useCallback(() => void handlePull().then(bumpForgeAndChecks), [handlePull, bumpForgeAndChecks]);
+  const onFetch = useCallback(
+    () => void traced('click', GESTURES.fetch, () => handleFetch().then(bumpForgeAndChecks))(),
+    [handleFetch, bumpForgeAndChecks],
+  );
+  const onPull = useCallback(
+    () => void traced('click', GESTURES.pull, () => handlePull().then(bumpForgeAndChecks))(),
+    [handlePull, bumpForgeAndChecks],
+  );
 
   const {
     handleStage,
@@ -2388,7 +2403,7 @@ export function RepoWorkspace({
         jobNow={jobNow}
         onFetch={onFetch}
         onPull={onPull}
-        onPush={() => void handlePush()}
+        onPush={traced('click', GESTURES.push, () => void handlePush())}
         onForcePush={() => handleForcePush()}
         onWhatChanged={() => setWhatChangedOpen(true)}
         onAskBonsai={openAskBonsai}
@@ -2413,9 +2428,11 @@ export function RepoWorkspace({
           busy={mutating}
           opActive={opActive}
           currentBranch={headBranch?.name ?? null}
-          onCheckout={(name) => void handleCheckoutBranch(name)}
+          onCheckout={traced('click', GESTURES.branchCheckout, (name: string) => {
+            void handleCheckoutBranch(name);
+          })}
           onContextMenu={handleSidebarContextMenu}
-          onCreateBranch={handleCreateBranch}
+          onCreateBranch={traced('click', GESTURES.branchCreate, handleCreateBranch)}
           width={paneWidths.sidebar}
           listView={listView}
           stashes={stashes}
@@ -2596,7 +2613,7 @@ export function RepoWorkspace({
           commitBoxRef={commitBoxRef}
           onCommitAmend={handleCommitAmend}
           onCommitMergeSubmit={handleCommitMerge}
-          onCommit={handleCommit}
+          onCommit={traced('click', GESTURES.commitSubmit, handleCommit)}
           onCommitAndPush={
             headBranch ? (m, sign, skipHooks) => handleCommitAndPush(m, sign, skipHooks) : undefined
           }
@@ -2640,13 +2657,21 @@ export function RepoWorkspace({
         handleBisectReset={() => void handleBisectReset()}
         pendingDeleteBranch={pendingDeleteBranch}
         setPendingDeleteBranch={setPendingDeleteBranch}
-        handleDeleteBranch={(name) => void handleDeleteBranch(name)}
+        handleDeleteBranch={traced('click', GESTURES.branchDelete, (name: string) => {
+          void handleDeleteBranch(name);
+        })}
         pendingRebase={pendingRebase}
         setPendingRebase={setPendingRebase}
         handleRebaseBranch={(name) => void handleRebaseBranch(name)}
         pendingDeleteRemote={pendingDeleteRemote}
         setPendingDeleteRemote={setPendingDeleteRemote}
-        handleDeleteRemoteTracking={(name) => void handleDeleteRemoteTracking(name)}
+        handleDeleteRemoteTracking={traced(
+          'click',
+          GESTURES.deleteRemoteTracking,
+          (name: string) => {
+            void handleDeleteRemoteTracking(name);
+          },
+        )}
         pendingDropStash={pendingDropStash}
         setPendingDropStash={setPendingDropStash}
         handleDropStash={(index, oid) => void handleDropStash(index, oid)}
@@ -2689,10 +2714,22 @@ export function RepoWorkspace({
         refetchGraph={refetchGraph}
         pendingCreateBranch={pendingCreateBranch}
         setPendingCreateBranch={setPendingCreateBranch}
-        handleCreateBranchHere={(oid, name) => void handleCreateBranchHere(oid, name)}
+        handleCreateBranchHere={traced(
+          'click',
+          GESTURES.branchCreateHere,
+          (oid: string, name: string) => {
+            void handleCreateBranchHere(oid, name);
+          },
+        )}
         pendingRenameBranch={pendingRenameBranch}
         setPendingRenameBranch={setPendingRenameBranch}
-        handleRenameBranch={(oldName, newName) => void handleRenameBranch(oldName, newName)}
+        handleRenameBranch={traced(
+          'click',
+          GESTURES.branchRename,
+          (oldName: string, newName: string) => {
+            void handleRenameBranch(oldName, newName);
+          },
+        )}
         aiEligible={aiEligible}
         workingDirty={workingDirty}
         suggestBranchName={suggestBranchName}

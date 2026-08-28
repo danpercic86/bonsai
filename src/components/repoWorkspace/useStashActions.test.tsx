@@ -33,7 +33,7 @@ describe('handleCreateStash', () => {
     expect(create).toHaveBeenCalledWith(REPO, null, 'staged');
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Stashed staged changes');
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
-    expect(deps.refreshAll).toHaveBeenCalledWith('stash'); // P88a row 6
+    expect(deps.refreshAll).toHaveBeenCalledWith('stash', undefined); // P88a row 6
     expectMutatingCycle(deps.setMutating);
   });
 
@@ -61,7 +61,7 @@ describe('handleApplyStash', () => {
     expect(apply).toHaveBeenCalledWith(REPO, 1, false, undefined);
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Applied stash@{1}');
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
-    expect(deps.refreshAll).toHaveBeenCalledWith('stash'); // P88a row 7
+    expect(deps.refreshAll).toHaveBeenCalledWith('stash', undefined); // P88a row 7
   });
 
   it('reservedPaths → arms the confirm dialog, SKIPS refreshAll, clears mutating', async () => {
@@ -112,7 +112,7 @@ describe('handlePopStash', () => {
     await actions.handlePopStash(0);
     expect(pop).toHaveBeenCalledWith(REPO, 0, false, undefined);
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Popped stash@{0}');
-    expect(deps.refreshAll).toHaveBeenCalledWith('stash'); // P88a row 8
+    expect(deps.refreshAll).toHaveBeenCalledWith('stash', undefined); // P88a row 8
 
     pop.mockResolvedValue({ kind: 'conflicts', paths: ['a.ts', 'b.ts'] });
     await actions.handlePopStash(0);
@@ -153,7 +153,7 @@ describe('handleDropStash (confirm-gated upstream)', () => {
     // refreshAll('stash') (status+graph+stashes), so the refs/stash write's watcher
     // echo is suppressed instead of triggering a second unscoped round.
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
-    expect(deps.refreshAll).toHaveBeenCalledWith('stash');
+    expect(deps.refreshAll).toHaveBeenCalledWith('stash', undefined);
   });
 
   it('errors toast and clear mutating', async () => {

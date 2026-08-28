@@ -26,7 +26,10 @@ import {
 import type { GraphDisplayOptions } from './rightColumns';
 import { buildEdgeIndex, edgesInRange } from './edgeIndex';
 import type { IncrementalEdgeIndex } from './incrementalEdgeIndex';
-import { createFrameRecorder } from './frameStats';
+import { createFrameRecorder, type FrameStats } from './frameStats';
+import { useRenderCount } from '../obs/react';
+import { obsEnabled } from '../obs/enabled';
+import { logRecord } from '../obs/log';
 import type { EffectiveMetrics } from './metrics';
 import { resolveContextTarget } from './contextTarget';
 import { useMockDevHooks } from './useMockDevHooks';
@@ -155,6 +158,21 @@ const LOG_EVERY = 120;
  * and schedule one rAF paint. Initial/resize/data-driven paints stay
  * synchronous (rAF is throttled to zero in hidden windows).
  */
+/** P91 §9.3 — route a completed frame-timing window to a `frame` log record when
+ *  Dev mode is on. `paint` and `gap` are separate recorders (§4.7), so each maps
+ *  its own dimension; the other stays 0. `worstMs` is the window's max. */
+function emitFrameRecord(kind: 'paint' | 'gap', s: FrameStats): void {
+  if (!obsEnabled()) return;
+  logRecord({
+    kind: 'frame',
+    paintMs: kind === 'paint' ? s.avgMs : 0,
+    gapMs: kind === 'gap' ? s.avgMs : 0,
+    over33: s.over33,
+    over100: s.over100,
+    worstMs: s.maxMs,
+  });
+}
+
 export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function GraphCanvas(
   {
     layout,
@@ -182,6 +200,16 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   },
   ref,
 ) {
+  // P91 §9.2 surface 3 — canvas render churn (each mode). Inside the forwardRef
+  // body, above all refs; hook order stays unconditional.
+  useRenderCount('GraphCanvas', {
+    layout,
+    selectedIndex,
+    themeVersion,
+    metricsVersion,
+    active,
+    totalRows,
+  });
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -222,9 +250,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   const prevFrameTsRef = useRef<number | null>(null);
   // Two recorders (P1 §4.7): paint durations and scroll inter-frame gaps are
   // different quantities — mixing them made `avg` meaningless.
-  const paintRecorderRef = useRef(createFrameRecorder());
+  const paintRecorderRef = useRef(createFrameRecorder((s) => emitFrameRecord('paint', s)));
   const paintCountRef = useRef(0);
-  const gapRecorderRef = useRef(createFrameRecorder());
+  const gapRecorderRef = useRef(createFrameRecorder((s) => emitFrameRecord('gap', s)));
   const gapCountRef = useRef(0);
   const firstDataPaintSkippedRef = useRef(false);
 

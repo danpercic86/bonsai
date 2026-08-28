@@ -1,5 +1,8 @@
 import { ipc } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
+import { currentTrace } from '../../obs/trace';
+import type { TraceId } from '../../obs/types';
+import { traced, GESTURES } from '../../obs/gesture';
 import type { RefreshAll } from './refreshScope';
 import type { BaseActionDeps, Setter, SubmoduleBusy } from './types';
 
@@ -44,8 +47,8 @@ export function useSubmoduleActions(
   // P88a row 14: add/deinit/remove edit the superproject index + `.gitmodules`
   // (worktree) → the echo-armed `refreshAll('worktree')` covers status + arms the
   // watcher echo; the submodule list has no scope slice, so keep its refetch.
-  async function refreshAfterChange() {
-    await Promise.all([refreshAll('worktree'), refetchSubmodules()]);
+  async function refreshAfterChange(trace?: TraceId) {
+    await Promise.all([refreshAll('worktree', trace), refetchSubmodules()]);
   }
 
   /** P73 §5-§6: the shared shape of every row-scoped submodule op — busy pill,
@@ -132,13 +135,14 @@ export function useSubmoduleActions(
   // refusal we open the danger escalation dialog (no success toast, no mutation);
   // the container re-invokes with force=true after the user confirms.
   async function handleDeinitSubmodule(name: string, force = false) {
+    const trace = currentTrace()?.trace; // §2.5
     await runRowOp({
       name,
       busyLabel: 'deinitializing…',
       verb: 'deinitialize',
       successText: `Deinitialized ${name}`,
       call: () => ipc.deinitSubmodule(repoId, name, force),
-      refresh: refreshAfterChange,
+      refresh: () => refreshAfterChange(trace),
       onResolved: (outcome) => {
         if (!force && outcome.kind === 'dirtyNeedsForce') {
           onSubmoduleDirtyRefused(name, 'deinit');
@@ -150,13 +154,14 @@ export function useSubmoduleActions(
   }
 
   async function handleRemoveSubmodule(name: string, force = false) {
+    const trace = currentTrace()?.trace; // §2.5
     await runRowOp({
       name,
       busyLabel: 'removing…',
       verb: 'remove',
       successText: `Removed ${name}`,
       call: () => ipc.removeSubmodule(repoId, name, force),
-      refresh: refreshAfterChange,
+      refresh: () => refreshAfterChange(trace),
       onResolved: (outcome) => {
         if (!force && outcome.kind === 'dirtyNeedsForce') {
           onSubmoduleDirtyRefused(name, 'remove');
@@ -170,11 +175,12 @@ export function useSubmoduleActions(
   // No busy pill for add: there is no row yet, and the section "+" is already
   // disabled while mutating (P73 §6.1).
   async function handleAddSubmodule(url: string, path: string) {
+    const trace = currentTrace()?.trace; // §2.5
     setMutating(true);
     try {
       const info = await ipc.addSubmodule(repoId, url, path);
       pushToast('success', `Added submodule ${info.path}`);
-      await refreshAfterChange();
+      await refreshAfterChange(trace);
     } catch (e) {
       pushToast('error', errorMessage(e));
     } finally {
@@ -182,12 +188,16 @@ export function useSubmoduleActions(
     }
   }
 
+  // P91 §2.4 — originate a trace on the echo-arming ops (add/deinit/remove route
+  // through refreshAll); init/sync only refetch the submodule list, so they need
+  // no trace. `traced` mints + emits the gesture; each handler's sync-entry
+  // capture threads it into refreshAfterChange.
   return {
     handleInitSubmodule,
     handleUpdateSubmodule,
     handleSyncSubmodule,
-    handleAddSubmodule,
-    handleDeinitSubmodule,
-    handleRemoveSubmodule,
+    handleAddSubmodule: traced('menu', GESTURES.submoduleAdd, handleAddSubmodule),
+    handleDeinitSubmodule: traced('menu', GESTURES.submoduleDeinit, handleDeinitSubmodule),
+    handleRemoveSubmodule: traced('menu', GESTURES.submoduleRemove, handleRemoveSubmodule),
   };
 }

@@ -16,6 +16,7 @@ import { SectionHeader } from './SectionHeader';
 import { TagSyncBadge } from './TagSyncBadge';
 import { SectionRollupBadge } from './SectionRollupBadge';
 import { useSidebarTreeItem } from './useSidebarTreeItem';
+import { useRenderCount } from '../../obs/react';
 
 /** P50d: show a section's inline filter box only once the list is long enough. */
 const FILTER_MIN_ROWS = 6;
@@ -49,6 +50,7 @@ function TagRow({
   treeKey: string;
   level?: number;
 }) {
+  useRenderCount('TagRow', undefined, 'aggregate'); // §9.2 — module-local, shared key
   const item = useSidebarTreeItem({
     treeKey,
     level,
@@ -113,6 +115,7 @@ export function TagsSection({
   /** Fired when the section transitions collapsed → expanded (sync trigger §6). */
   onExpand(): void;
 }) {
+  useRenderCount('TagsSection', undefined, 'aggregate'); // §9.2
   // P11a: Tags start collapsed (least-used, can be long). Local/ephemeral state.
   const [collapsed, setCollapsed] = useState(true);
   const [tagFilter, setTagFilter] = useState('');

@@ -11,6 +11,7 @@ import type {
 import type { RevealTarget } from '../graph/reveal';
 import { StashIcon } from './appIcons';
 import { errorMessage } from '../utils/errors';
+import { useRenderCount } from '../obs/react';
 import { buildPathTree } from '../utils/pathTree';
 import { SubmoduleRow } from './sidebar/SubmoduleRow';
 import { SectionHeader } from './sidebar/SectionHeader';
@@ -152,6 +153,9 @@ export function Sidebar({
   onCleanupBranches,
   onReveal,
 }: SidebarProps) {
+  // P91 §9.2 surface 6 — container render churn (each mode). The observed flicker
+  // site; the section/row tallies aggregate underneath this record.
+  useRenderCount('Sidebar', { data, loading, error, busy, currentBranch, listView });
   const [branchesCollapsed, setBranchesCollapsed] = useState(false);
   const [remotesCollapsed, setRemotesCollapsed] = useState(false);
   const [stashesCollapsed, setStashesCollapsed] = useState(false);

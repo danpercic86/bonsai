@@ -41,7 +41,7 @@ describe('tags', () => {
     expect(create).toHaveBeenCalledWith(REPO, 'v1.0', OID, 'release', false);
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Created tag v1.0');
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
-    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly');
+    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly', undefined);
     // The forced sync verdict is kept explicitly — no scope forces an ls-remote.
     expect(deps.refetchTagSync).toHaveBeenCalledWith({ force: true });
     expect(deps.refetchRemotes).not.toHaveBeenCalled();
@@ -66,7 +66,7 @@ describe('tags', () => {
     expect(del).toHaveBeenCalledWith(REPO, 'v1.0');
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Deleted tag v1.0');
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
-    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly');
+    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly', undefined);
 
     await actions.handlePushTag('origin', 'v1.0');
     expect(push).toHaveBeenCalledWith(REPO, 'origin', 'v1.0', false);
@@ -115,7 +115,7 @@ describe('remotes', () => {
     expect(add).toHaveBeenCalledWith(REPO, 'fork', 'https://x/y.git');
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Added remote fork');
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
-    expect(deps.refreshAll).toHaveBeenCalledWith('remoteMeta');
+    expect(deps.refreshAll).toHaveBeenCalledWith('remoteMeta', undefined);
   });
 
   it('removeRemote / renameRemote fire refreshAll(remoteMeta); errors toast + no refresh (P88a rows 3-4)', async () => {
@@ -129,7 +129,7 @@ describe('remotes', () => {
     expect(remove).toHaveBeenCalledWith(REPO, 'fork');
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Removed remote fork');
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
-    expect(deps.refreshAll).toHaveBeenCalledWith('remoteMeta');
+    expect(deps.refreshAll).toHaveBeenCalledWith('remoteMeta', undefined);
 
     await actions.handleRenameRemote('origin', 'upstream');
     expect(rename).toHaveBeenCalledWith(REPO, 'origin', 'upstream');

@@ -6,6 +6,7 @@ import { Tree } from '../Tree';
 import { ListFilterInput } from '../ListFilterInput';
 import { SectionHeader } from './SectionHeader';
 import { ConfiguredRemoteRow, RemoteRow } from './rows';
+import { useRenderCount } from '../../obs/react';
 
 export interface RemotesSectionProps {
   data: BranchesSnapshot;
@@ -53,6 +54,7 @@ export function RemotesSection({
   remoteTreeFiltered,
   remoteNoMatch,
 }: RemotesSectionProps) {
+  useRenderCount('RemotesSection', undefined, 'aggregate'); // §9.2
   return (
     <section className="sidebar-section">
       <SectionHeader

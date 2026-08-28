@@ -7,6 +7,7 @@ import { Tree } from '../Tree';
 import { ListFilterInput } from '../ListFilterInput';
 import { SectionHeader } from './SectionHeader';
 import { BranchRow, DetachedHeadRow } from './rows';
+import { useRenderCount } from '../../obs/react';
 
 /** P4d: proper ancestor folder prefixes of a branch name.
  *  "a/b/c" -> ["a", "a/b"]; root-level branch -> []. */
@@ -77,6 +78,7 @@ export function BranchesSection({
   closeCreate,
   submitCreate,
 }: BranchesSectionProps) {
+  useRenderCount('BranchesSection', undefined, 'aggregate'); // §9.2
   return (
     <section className="sidebar-section">
       <SectionHeader
