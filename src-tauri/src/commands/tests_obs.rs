@@ -141,3 +141,45 @@ fn export_counts_distinguish_missing_from_empty() {
     std::fs::write(fx.exports.join("notes.txt"), "hi").expect("seed");
     assert_eq!(count_exports(&fx.exports).0, Some(1));
 }
+
+/// §8.4 PRIVACY — `LogSessionInfo.writeFailed` is a BARE BOOLEAN on the wire and
+/// NEVER carries the underlying `io::Error` text (whose Display embeds the log
+/// path — exactly increment 1's leak). The `dir` field is an absolute path BY
+/// DESIGN (Reveal/UI), so we do not forbid paths wholesale; we assert the flag is
+/// a bool and that no io-error phrasing leaked into the payload.
+#[test]
+fn write_failed_is_a_bool_and_carries_no_error_text() {
+    use super::obs::LogSessionInfo;
+    use crate::obs::record::RedactionMode;
+
+    let info = LogSessionInfo {
+        session_id: "sfeedface".into(),
+        dir: "/home/user/logs".into(),
+        files: vec!["bonsai-a.jsonl".into()],
+        bytes: 10,
+        records: 1,
+        anomalies: 0,
+        dropped: 0,
+        redaction: RedactionMode::Strict,
+        salt: String::new(),
+        total_files: 1,
+        total_bytes: 10,
+        dropped_parts: 0,
+        write_failed: true,
+        export_files: None,
+        export_bytes: None,
+    };
+    let value = serde_json::to_value(&info).expect("serialize");
+    assert_eq!(
+        value["writeFailed"],
+        serde_json::Value::Bool(true),
+        "writeFailed must be a bare boolean on the wire",
+    );
+    let json = value.to_string();
+    for leak in ["os error", "cannot write", "cannot flush", "denied", "Permission"] {
+        assert!(
+            !json.contains(leak),
+            "the io::Error phrase {leak:?} must never reach the LogSessionInfo payload",
+        );
+    }
+}

@@ -68,6 +68,20 @@
 .dev-status-dropped {
   color: var(--text-1);
 }
+/* §8.4 — disk-write-error variant. The word "Not writing" carries the state; the
+   --danger triangle is a second, non-hue cue (glyph shape), never the sole one. */
+.dev-status-glyph {
+  font-size: 12px;
+  align-self: center;
+  flex: none;
+}
+.dev-status-glyph-danger {
+  color: var(--danger);
+}
+.dev-status-write-failed .dev-status-state {
+  color: var(--danger);
+  font-weight: 600;
+}
 .dev-status-file {
   margin: 0;
   font-size: 12px;

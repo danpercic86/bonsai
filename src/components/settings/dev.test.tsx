@@ -28,6 +28,7 @@ function info(over: Partial<LogSessionInfo> = {}): LogSessionInfo {
     totalFiles: 2,
     totalBytes: 3_248_112,
     droppedParts: 0,
+    writeFailed: false,
     exportFiles: 0,
     exportBytes: 0,
     ...over,
@@ -62,6 +63,22 @@ describe('DevSessionStatus', () => {
       /records dropped/,
     );
     expect(container.querySelectorAll('.dev-status-warn').length).toBe(1);
+  });
+
+  it('renders the §8.4 "Not writing" state when writeFailed, and not otherwise', () => {
+    const { container, rerender } = render(
+      <DevSessionStatus info={info({ writeFailed: true })} enabled />,
+    );
+    expect(screen.getByText('Not writing')).toBeInTheDocument();
+    expect(screen.queryByText('Recording')).toBeNull();
+    expect(screen.getByText(/Bonsai stopped writing the log/)).toBeInTheDocument();
+    expect(container.querySelector('.dev-status-write-failed')).not.toBeNull();
+    // Privacy: the generic copy never interpolates a path or errno.
+    expect(screen.queryByText(/os error|denied|\/logs/)).toBeNull();
+
+    rerender(<DevSessionStatus info={info({ writeFailed: false })} enabled />);
+    expect(screen.queryByText('Not writing')).toBeNull();
+    expect(screen.queryByText(/Bonsai stopped writing the log/)).toBeNull();
   });
 
   it('never renders the session salt (§16.1)', () => {

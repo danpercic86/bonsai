@@ -16,7 +16,7 @@
 //! loses zero records.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -89,6 +89,9 @@ pub struct Sink {
     anomalies: Arc<AtomicU64>,
     /// §6.3 — parts evicted at the cap this session, shared with the writer.
     dropped_parts: Arc<AtomicU64>,
+    /// §8.4 — the log is currently not reaching disk (sticky-until-next-success),
+    /// shared with the writer. A BOOL only — never the `io::Error` string (privacy).
+    write_failed: Arc<AtomicBool>,
 }
 
 impl Sink {
@@ -106,6 +109,9 @@ impl Sink {
         // Share the writer's eviction counter (§6.3) BEFORE it moves into the
         // thread, so `log_session_info` can read it without touching the writer.
         let dropped_parts = writer.dropped_parts_counter();
+        // Share the write-failure flag (§8.4) BEFORE the writer moves into the
+        // thread, same pattern as `dropped_parts`.
+        let write_failed = writer.write_failed_flag();
         let (tx, rx) = sync_channel::<SinkMsg>(CHANNEL_CAPACITY);
         let dropped = Arc::new(AtomicU64::new(0));
         let thread_dropped = Arc::clone(&dropped);
@@ -128,12 +134,19 @@ impl Sink {
             accepted: AtomicU64::new(0),
             anomalies,
             dropped_parts,
+            write_failed,
         })
     }
 
     /// §6.3 — parts of this session evicted at the cap.
     pub fn dropped_parts(&self) -> u32 {
         self.dropped_parts.load(Ordering::Relaxed) as u32
+    }
+
+    /// §8.4 — whether the log is currently NOT reaching disk (sticky-until-next-
+    /// success). A BOOL only; the underlying error string never crosses this API.
+    pub fn write_failed(&self) -> bool {
+        self.write_failed.load(Ordering::Relaxed)
     }
 
     /// §6.1 — roll to a fresh file and purge every other in-scope artifact on the

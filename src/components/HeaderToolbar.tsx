@@ -10,7 +10,7 @@
 
 import type { ListView, Theme, IdentityProfile } from '../ipc';
 import { IdentityMenu } from './IdentityMenu';
-import { DevModeIndicator } from './DevModeIndicator';
+import { DevModePill } from './DevModePill';
 import {
   SunIcon,
   MoonIcon,
@@ -106,7 +106,7 @@ export function HeaderToolbar({
           <ChartIcon />
         </button>
       )}
-      {devEnabled && <DevModeIndicator onOpen={() => onOpenSettingsAt('dev')} />}
+      {devEnabled && <DevModePill onOpen={() => onOpenSettingsAt('dev')} />}
       <button
         type="button"
         className="btn-icon settings-toggle"

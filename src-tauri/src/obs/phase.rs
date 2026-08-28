@@ -70,8 +70,10 @@ impl SpanOutcome {
     }
 }
 
-/// Process-wide gauge of blocking-pool tasks currently inside a
-/// [`PoolGuard`]. Incremented on closure entry, decremented on exit (§3.1.3).
+/// Process-wide gauge of INSTRUMENTED ops currently inside a [`PoolGuard`] —
+/// i.e. only the span-emitting operations that wrap their closure in a guard, NOT
+/// the true tokio blocking-pool depth (uninstrumented `spawn_blocking` tasks are
+/// invisible to it). Incremented on guard entry, decremented on exit (§3.1.3).
 static POOL_INFLIGHT: AtomicUsize = AtomicUsize::new(0);
 
 /// RAII guard that keeps the [`POOL_INFLIGHT`] gauge accurate. Entered as the

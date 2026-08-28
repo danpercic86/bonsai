@@ -46,6 +46,12 @@ export function DevSessionStatus({
     body = <p className="dev-status-line dev-status-empty">Starting…</p>;
   } else {
     const recording = info.records > 0;
+    // §8.4/§16.9 — the sink is not reaching disk. This state OVERRIDES the
+    // Recording/Idle word (colour is never the sole carrier: the word "Not
+    // writing" is): a pill that still claimed to record when it is not would be a
+    // lie the user is relying on. Generic copy only — `writeFailed` is a bool and
+    // no path/errno ever crossed IPC (privacy, increment 1 MUST-FIX).
+    const writeFailed = info.writeFailed;
     const facts: string[] = [
       plural(info.files.length, 'file', 'files'),
       formatBytes(info.bytes),
@@ -54,12 +60,20 @@ export function DevSessionStatus({
     const fileName = info.files[0] ?? info.sessionId;
     body = (
       <>
-        <p className="dev-status-line">
-          <span
-            className={`dev-status-dot${recording ? ' is-recording' : ''}`}
-            aria-hidden="true"
-          />
-          <span className="dev-status-state">{recording ? 'Recording' : 'Idle'}</span>
+        <p className={`dev-status-line${writeFailed ? ' dev-status-write-failed' : ''}`}>
+          {writeFailed ? (
+            <span className="dev-status-glyph dev-status-glyph-danger" aria-hidden="true">
+              ▲
+            </span>
+          ) : (
+            <span
+              className={`dev-status-dot${recording ? ' is-recording' : ''}`}
+              aria-hidden="true"
+            />
+          )}
+          <span className="dev-status-state">
+            {writeFailed ? 'Not writing' : recording ? 'Recording' : 'Idle'}
+          </span>
           <span className="dev-status-facts">
             {' · '}
             {facts.join(' · ')}
@@ -81,9 +95,20 @@ export function DevSessionStatus({
             )}
           </span>
         </p>
-        <p className="dev-status-file mono" title={fileName}>
-          {fileName}
-        </p>
+        {writeFailed ? (
+          // §8.4 row 2: replaced by the generic recovery message. No `{reason}` is
+          // interpolated — the io::Error (path in its Display) never crosses IPC.
+          <p className="dev-status-warn dev-warning-bar" role="alert">
+            <span className="dev-warning-glyph" aria-hidden="true">
+              ▲
+            </span>
+            Bonsai stopped writing the log. Turn Dev mode off and on to try again.
+          </p>
+        ) : (
+          <p className="dev-status-file mono" title={fileName}>
+            {fileName}
+          </p>
+        )}
         {rawNames && (
           <p className="dev-status-warn dev-warning-bar">
             <span className="dev-warning-glyph" aria-hidden="true">

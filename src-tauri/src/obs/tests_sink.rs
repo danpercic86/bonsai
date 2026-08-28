@@ -4,10 +4,12 @@
 
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use super::record::{LogLevel, LogPayload, LogRecord, LogSource, RedactionMode};
+use super::redact::Redactor;
 use super::sink::Sink;
-use super::writer::{list_log_files, LogWriter, Limits, WriterConfig};
+use super::writer::{list_log_files, part_name, LogWriter, Limits, WriterConfig};
 use super::ObsState;
 
 fn cfg(dir: &Path) -> WriterConfig {
@@ -277,4 +279,48 @@ fn dropped_parts_is_visible_through_the_sink() {
     }
     sink.shutdown();
     assert!(sink.dropped_parts() > 0, "cap evictions are visible to the UI");
+}
+
+/// §8.4 — a PERSISTENT write failure surfaces as `write_failed`, and a recovered
+/// disk clears it (sticky-until-a-flush-reaches-disk). The failure is forced by
+/// pre-creating a DIRECTORY at the exact path the next rotation part must open —
+/// `OpenOptions::open` on a directory fails on every OS, every retry, so the
+/// failure is genuinely persistent rather than a one-shot blip.
+#[test]
+fn write_failed_flag_reflects_a_persistent_rotation_failure_and_clears_on_recovery() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let logs = root.path().join("logs");
+    let mut c = cfg(&logs);
+    c.limits = Limits {
+        part_bytes: 200,
+        max_parts: 8,
+        flush_bytes: 1,
+        ..Limits::default()
+    };
+    let redactor = Arc::new(Redactor::new());
+    let mut writer = LogWriter::open(c.clone(), redactor).expect("open");
+    let flag = writer.write_failed_flag();
+    assert!(!flag.load(Ordering::Relaxed), "healthy at session start");
+
+    // Block the next part (part 1) with a directory at its exact name.
+    let blocked = c.dir.join(part_name(&c.session_id, c.started_secs, 1));
+    std::fs::create_dir_all(&blocked).expect("block next part path");
+
+    // Write past the tiny part cap so a rotation into the blocked part is forced.
+    for i in 0..50 {
+        let _ = writer.write_record(rec(i));
+    }
+    assert!(
+        flag.load(Ordering::Relaxed),
+        "a persistent rotation-open failure sets write_failed",
+    );
+
+    // Recover: remove the blocker, then a successful write + flush clears it.
+    std::fs::remove_dir(&blocked).expect("unblock next part path");
+    writer.write_record(rec(999)).expect("write after recovery");
+    writer.flush().expect("flush after recovery");
+    assert!(
+        !flag.load(Ordering::Relaxed),
+        "a flush that reaches disk clears write_failed",
+    );
 }

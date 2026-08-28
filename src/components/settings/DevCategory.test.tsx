@@ -38,6 +38,7 @@ function sessionInfo(over: Partial<LogSessionInfo> = {}): LogSessionInfo {
     totalFiles: 5,
     totalBytes: 16_567_501,
     droppedParts: 0,
+    writeFailed: false,
     exportFiles: 0,
     exportBytes: 0,
     ...over,

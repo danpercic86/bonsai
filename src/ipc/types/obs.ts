@@ -125,6 +125,14 @@ export interface LogSessionInfo {
    *  the session is truncated (its earliest records are gone) and the Dev page
    *  shows a warning line. 0 while Dev mode is off. */
   droppedParts: number;
+  /** §8.4/§16.9 — the log is currently NOT reaching disk (disk full, permission
+   *  loss on the log dir). Sticky-until-next-success: `true` while the most
+   *  recent write/flush failed, cleared once one succeeds. `false` while Dev mode
+   *  is off. Drives the "Not writing" status row + the header pill danger variant.
+   *
+   *  PRIVACY: a BOOL by design — the underlying `io::Error` (whose text embeds the
+   *  log path) never crosses IPC. The UI shows generic copy only. */
+  writeFailed: boolean;
   /** §6.2 — Bonsai-created export zips, which are inside the delete scope, so
    *  the confirm copy can name them. Absent when the exports directory does not
    *  exist yet (distinct from an existing but empty one, which reports 0). */

@@ -125,12 +125,14 @@ export const obsHandlers = {
         totalFiles: 0,
         totalBytes: 0,
         droppedParts: 0,
+        writeFailed: false,
         exportFiles: 0,
         exportBytes: 0,
       };
     }
     // ~180 bytes per JSONL line is what a real strict-mode record measures.
     const bytes = records * 180;
+    const truncated = query('obsTruncated') === '1';
     return {
       sessionId: 'smock0001',
       dir: MOCK_DIR,
@@ -138,14 +140,19 @@ export const obsHandlers = {
       bytes,
       records,
       anomalies: ringAnomalies().length,
-      dropped,
+      // §16.8 independence proof: the `dev-truncated` fixture forces a nonzero
+      // `dropped` alongside `droppedParts`, so the in-memory backpressure line and
+      // the on-disk truncation line must render as two distinct rows.
+      dropped: truncated ? Math.max(dropped, 42) : dropped,
       redaction,
       salt: MOCK_SALT,
       totalFiles: 1,
       totalBytes: bytes,
       // §6.3: a truncated session (`?obsTruncated=1`) exercises the Dev-page cap
       // warning; the default session is untruncated.
-      droppedParts: query('obsTruncated') === '1' ? 3 : 0,
+      droppedParts: truncated ? 3 : 0,
+      // §8.4/§16.9: `?obsWriteFail=1` drives the "Not writing" disk-error state.
+      writeFailed: query('obsWriteFail') === '1',
       // §6.2: exports live in <config>/exports and are inside the delete scope.
       exportFiles: 0,
       exportBytes: 0,

@@ -18,7 +18,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use bonsai_core::error::AppError;
@@ -91,6 +91,18 @@ pub struct LogWriter {
     /// §6.3 — parts of THIS session evicted at the cap. Shared with the sink so
     /// `log_session_info` can report it; the writer thread is the only mutator.
     dropped_parts: Arc<AtomicU64>,
+    /// §8.4/§16.9 — the log is currently NOT reaching disk. Sticky-until-a-flush-
+    /// reaches-disk: SET on any failed `write_all`, `flush`, or rotation open;
+    /// CLEARED only by a `flush()` that actually succeeds (the one operation that
+    /// provably hits the disk — a buffered `write_all` "success" proves nothing).
+    /// So a persistent failure (disk full, permission loss on the log dir) stays
+    /// `true`, and a recovered disk clears within one flush cadence (~1 s). Shared
+    /// with the sink so `log_session_info` reads it off the writer thread.
+    ///
+    /// PRIVACY (increment 1 MUST-FIX): this is a BOOL and nothing else. The
+    /// underlying `io::Error` — whose Display embeds the log path — is NEVER
+    /// stored here or carried across IPC. The UI shows generic copy only.
+    write_failed: Arc<AtomicBool>,
 }
 
 impl LogWriter {
@@ -110,6 +122,7 @@ impl LogWriter {
             buffered: 0,
             seq: 0,
             dropped_parts: Arc::new(AtomicU64::new(0)),
+            write_failed: Arc::new(AtomicBool::new(false)),
         };
         w.open_part(0, false)?;
         Ok(w)
@@ -131,6 +144,13 @@ impl LogWriter {
         Arc::clone(&self.dropped_parts)
     }
 
+    /// The shared write-failure flag (§8.4), cloned by the sink at startup so
+    /// `log_session_info` can read it without touching the writer thread. See the
+    /// field doc for the sticky-until-next-success semantics and the privacy note.
+    pub fn write_failed_flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.write_failed)
+    }
+
     /// The last `seq` assigned. Used to stamp `drop` records.
     pub fn seq(&self) -> u64 {
         self.seq
@@ -139,11 +159,17 @@ impl LogWriter {
     fn open_part(&mut self, part: u32, after_purge: bool) -> Result<(), AppError> {
         let name = part_name(&self.cfg.session_id, self.cfg.started_secs, part);
         let path = self.cfg.dir.join(&name);
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-            .map_err(|e| AppError::Io(format!("cannot open log file: {e}")))?;
+        let file = match OpenOptions::new().create(true).append(true).open(&path) {
+            Ok(f) => f,
+            Err(e) => {
+                // §8.4 — a rotation whose next part cannot be opened (permission
+                // loss on the log dir, the path taken by something else) is exactly
+                // the "stopped writing" state. Set the flag before surfacing the
+                // error. BOOL only; the `io::Error` (path in its Display) stays.
+                self.write_failed.store(true, Ordering::Relaxed);
+                return Err(AppError::Io(format!("cannot open log file: {e}")));
+            }
+        };
         self.file = Some(BufWriter::new(file));
         self.active = name;
         self.part = part;
@@ -243,8 +269,16 @@ impl LogWriter {
             .file
             .as_mut()
             .ok_or_else(|| AppError::Io("log file is not open".into()))?;
-        f.write_all(line.as_bytes())
-            .map_err(|e| AppError::Io(format!("cannot write log record: {e}")))?;
+        // §8.4 — a failed byte-write SETS the flag. It is NOT cleared here: a
+        // `write_all` into the `BufWriter` usually only buffers (no disk IO), so a
+        // "success" here proves nothing about the disk — clearing on it would make
+        // the flag flap under a persistent full disk (buffer-ok, flush-fail, …).
+        // The flag is cleared only by a flush that actually reaches disk (below).
+        // Only the BOOL is recorded — the `io::Error` (path in its Display) stays.
+        if let Err(e) = f.write_all(line.as_bytes()) {
+            self.write_failed.store(true, Ordering::Relaxed);
+            return Err(AppError::Io(format!("cannot write log record: {e}")));
+        }
         self.part_bytes += bytes;
         self.buffered += bytes;
         if self.buffered >= self.cfg.limits.flush_bytes {
@@ -285,8 +319,16 @@ impl LogWriter {
     /// Pushes the `BufWriter` to the OS. Cheap and idempotent.
     pub fn flush(&mut self) -> Result<(), AppError> {
         if let Some(f) = self.file.as_mut() {
-            f.flush()
-                .map_err(|e| AppError::Io(format!("cannot flush log file: {e}")))?;
+            // §8.4 — the flush is the ONE operation that provably reaches disk, so
+            // it is the sole clear point (sticky-until-a-flush-reaches-disk). A
+            // failed flush sets the flag; a successful one clears it. The writer
+            // loop flushes at least every 1 s, so a recovered disk clears within
+            // ~1 s. BOOL only; the `io::Error` (path in its Display) stays here.
+            if let Err(e) = f.flush() {
+                self.write_failed.store(true, Ordering::Relaxed);
+                return Err(AppError::Io(format!("cannot flush log file: {e}")));
+            }
+            self.write_failed.store(false, Ordering::Relaxed);
         }
         self.buffered = 0;
         Ok(())

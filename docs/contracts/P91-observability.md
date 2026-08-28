@@ -802,6 +802,16 @@ export interface LogSessionInfo {
   exportFiles?: number; exportBytes?: number;
   /** §6.3 — parts of THIS session already evicted at the part cap; >0 ⇒ the session is truncated. */
   droppedParts?: number;
+  /** §8.4 (RATIFIED, increment 7c) — true while the writer cannot persist to disk (disk full,
+   *  permission loss, rotation-open blocked). **A BOOL, never the error string** — an `io::Error`
+   *  Display carries the log path, which must not cross IPC (increment 1's leak lesson). The writer
+   *  sets it on any failed `write_all`/`flush`/`open_part` and clears it ONLY on a `flush()` that
+   *  reaches disk (a buffered write proves nothing), so a recovered disk clears within ~1 s and a
+   *  persistent failure stays true. The UI (§8.4) shows GENERIC copy with **no `{reason}`
+   *  interpolated** — the errno/path is deliberately dropped for privacy. The §8.4 danger toast
+   *  (dedupe key `dev-sink`) is DEFERRED to a follow-up; the always-visible status-card row + the
+   *  header pill danger variant already surface the state. */
+  writeFailed: boolean;
 }
 ```
 All seven added to `IpcApi`, `src/ipc/tauri/obs.ts`, `src/ipc/mock/obs.ts`, and

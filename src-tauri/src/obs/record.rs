@@ -324,7 +324,9 @@ pub enum LogPayload {
         /// Ms spent QUEUED before the `spawn_blocking` closure started (§3.1.2).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         queued_ms: Option<u32>,
-        /// Blocking-pool tasks in flight when this one started, and the pool cap.
+        /// Instrumented ops in flight when this one started, and the pool cap.
+        /// Counts only span-emitting ops holding a `PoolGuard`, not the true tokio
+        /// blocking-pool depth (see `obs::phase::POOL_INFLIGHT`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pool_inflight: Option<u32>,
         #[serde(default, skip_serializing_if = "Option::is_none")]

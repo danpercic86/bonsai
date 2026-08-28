@@ -102,6 +102,9 @@ export function DevCategory() {
       setAnnounce('Session log exported.');
     } catch (e) {
       pushToast('error', exportErrorText(errorMessage(e)), 'dev-export');
+      // Parity with delete failure (below): a screen-reader user must hear the
+      // outcome, not just sighted-only toast text (7b design-review NIT).
+      setAnnounce('The log was not exported.');
     } finally {
       if (mounted.current) setBusy((b) => ({ ...b, export: false }));
       void refresh();

@@ -54,6 +54,14 @@ pub struct LogSessionInfo {
     /// session is truncated (its earliest records are gone); the Dev page shows a
     /// warning line. 0 while Dev mode is off.
     pub dropped_parts: u32,
+    /// §8.4/§16.9 — the log is currently NOT reaching disk (disk full, permission
+    /// loss on the log dir). Sticky-until-next-success: `true` while the most
+    /// recent write/flush failed, cleared once one succeeds. `false` while Dev
+    /// mode is off. The UI shows generic "Not writing" copy.
+    ///
+    /// PRIVACY: this is a BOOL by design. The underlying `io::Error` — whose
+    /// Display embeds the log path — is NEVER carried here or anywhere across IPC.
+    pub write_failed: bool,
     /// §6.2 — export zips inside the purge scope, so the delete-confirm copy can
     /// name them. `None` when the exports directory does not exist yet, which is
     /// distinct from "exists and is empty" (`Some(0)`).
@@ -228,15 +236,25 @@ pub async fn log_session_info(
             s.dropped(),
             s.anomalies(),
             s.dropped_parts(),
+            s.write_failed(),
         )
     });
     tauri::async_runtime::spawn_blocking(move || {
         let all = writer::list_log_files(&dir);
         let total_files = all.len() as u32;
         let total_bytes = all.iter().map(|(_, b)| *b).sum();
-        let (session_id, salt, redaction, records, dropped, anomalies, dropped_parts) =
+        let (session_id, salt, redaction, records, dropped, anomalies, dropped_parts, write_failed) =
             session.unwrap_or_else(|| {
-                (String::new(), String::new(), RedactionMode::Strict, 0, 0, 0, 0)
+                (
+                    String::new(),
+                    String::new(),
+                    RedactionMode::Strict,
+                    0,
+                    0,
+                    0,
+                    0,
+                    false,
+                )
             });
         let (files, bytes) = if session_id.is_empty() {
             (Vec::new(), 0)
@@ -264,6 +282,7 @@ pub async fn log_session_info(
             total_files,
             total_bytes,
             dropped_parts,
+            write_failed,
             export_files,
             export_bytes,
         }

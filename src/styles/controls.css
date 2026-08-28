@@ -196,6 +196,22 @@
     opacity: 1;
   }
 }
+/* P91 §8.4 — disk-write-error variant: the pill must not claim to record. The
+   label word "Not logging" carries the state; the --danger tint + triangle glyph
+   are secondary, non-hue-only cues. No pulse — nothing is being written. */
+.dev-mode-pill.is-write-failed {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+}
+.dev-mode-pill.is-write-failed:hover {
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+}
+.dev-mode-pill-glyph {
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1;
+  flex: none;
+}
 
 /* Icon-system §3: standalone icon buttons carry a 16px SVG in their 32px box.
    Scoped to the header + the toolbar-right group so it can never touch a
