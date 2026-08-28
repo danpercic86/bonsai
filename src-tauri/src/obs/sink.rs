@@ -37,6 +37,10 @@ enum SinkMsg {
     /// Boxed: the enum's size is otherwise the largest payload variant, and this
     /// value is copied into the channel on every single record.
     Record(Box<LogRecord>),
+    /// One `log_append` invocation boundary (§5 `unbatched-sink`). Enqueued
+    /// best-effort by [`Sink::note_batch`] BEFORE the batch's records, so the
+    /// detector sees call boundaries the individual records cannot express.
+    BatchMark,
     Flush,
     Shutdown(SyncSender<()>),
 }
@@ -59,6 +63,9 @@ pub struct Sink {
     level: LogLevel,
     /// Records accepted by the channel (a lower bound on records written).
     accepted: AtomicU64,
+    /// Anomaly records the detector has emitted this session (§5), surfaced by
+    /// `log_session_info`. Shared with the writer thread.
+    anomalies: Arc<AtomicU64>,
 }
 
 impl Sink {
@@ -76,9 +83,11 @@ impl Sink {
         let (tx, rx) = sync_channel::<SinkMsg>(CHANNEL_CAPACITY);
         let dropped = Arc::new(AtomicU64::new(0));
         let thread_dropped = Arc::clone(&dropped);
+        let anomalies = Arc::new(AtomicU64::new(0));
+        let thread_anomalies = Arc::clone(&anomalies);
         let join = std::thread::Builder::new()
             .name("bonsai-obs-writer".into())
-            .spawn(move || writer_loop(writer, rx, thread_dropped))
+            .spawn(move || writer_loop(writer, rx, thread_dropped, thread_anomalies))
             .map_err(|e| AppError::Other(format!("cannot start log writer thread: {e}")))?;
         Ok(Sink {
             tx,
@@ -91,6 +100,7 @@ impl Sink {
             redaction,
             level,
             accepted: AtomicU64::new(0),
+            anomalies,
         })
     }
 
@@ -120,6 +130,17 @@ impl Sink {
 
     pub fn accepted(&self) -> u64 {
         self.accepted.load(Ordering::Relaxed)
+    }
+
+    /// Anomaly records emitted by the detector this session (§5).
+    pub fn anomalies(&self) -> u64 {
+        self.anomalies.load(Ordering::Relaxed)
+    }
+
+    /// Signals one `log_append` boundary to the detector (§5 `unbatched-sink`).
+    /// Non-blocking, best-effort — a dropped mark only softens one `info` rule.
+    pub fn note_batch(&self) {
+        let _ = self.tx.try_send(SinkMsg::BatchMark);
     }
 
     /// NEVER blocks. A full queue costs one atomic increment and the record is
@@ -201,22 +222,51 @@ impl Drop for Sink {
 }
 
 /// The writer thread. Owns the file exclusively; assigns `seq` in write order.
-fn writer_loop(mut writer: LogWriter, rx: Receiver<SinkMsg>, dropped: Arc<AtomicU64>) {
+///
+/// It also OWNS the session's [`AnomalyDetector`] (§5): this is the one place that
+/// sees both frontend and backend records in `seq` order. Each original record is
+/// fed to the detector AFTER it is written (so `seq` is known); any derived
+/// anomalies are written straight back into the stream. The detector's own
+/// anomaly records are never fed back — no recursion.
+fn writer_loop(
+    mut writer: LogWriter,
+    rx: Receiver<SinkMsg>,
+    dropped: Arc<AtomicU64>,
+    anomalies: Arc<AtomicU64>,
+) {
+    use super::anomaly::AnomalyDetector;
     let mut reported_drops: u64 = 0;
+    let mut detector = AnomalyDetector::new(Some(anomalies));
     loop {
         match rx.recv_timeout(FLUSH_INTERVAL) {
             Ok(SinkMsg::Record(rec)) => {
                 emit_pending_drops(&mut writer, &dropped, &mut reported_drops);
+                let record = *rec;
                 // A write failure (disk full, folder deleted underneath us) must
                 // not kill the thread: the next record may well succeed, and a
                 // dead writer would silently stop all logging.
-                let _ = writer.write_record(*rec);
+                if writer.write_record(record.clone()).is_ok() {
+                    let seq = writer.seq();
+                    for anomaly in detector.observe(&record, seq) {
+                        let _ = writer.write_record(anomaly);
+                    }
+                }
+            }
+            Ok(SinkMsg::BatchMark) => {
+                // The next record written will carry `seq()+1`; point the rule's
+                // refs at that first record of the batch.
+                for anomaly in detector.on_batch_mark(now_ms(), writer.seq() + 1) {
+                    let _ = writer.write_record(anomaly);
+                }
             }
             Ok(SinkMsg::Flush) => {
                 let _ = writer.flush();
             }
             Ok(SinkMsg::Shutdown(ack)) => {
                 emit_pending_drops(&mut writer, &dropped, &mut reported_drops);
+                for anomaly in detector.on_session_end() {
+                    let _ = writer.write_record(anomaly);
+                }
                 let _ = writer.flush();
                 let _ = ack.send(());
                 return;
@@ -226,6 +276,9 @@ fn writer_loop(mut writer: LogWriter, rx: Receiver<SinkMsg>, dropped: Arc<Atomic
                 let _ = writer.flush();
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                for anomaly in detector.on_session_end() {
+                    let _ = writer.write_record(anomaly);
+                }
                 let _ = writer.flush();
                 return;
             }

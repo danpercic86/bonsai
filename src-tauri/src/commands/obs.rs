@@ -34,8 +34,7 @@ pub struct LogSessionInfo {
     pub bytes: u64,
     /// Records accepted by the sink this session.
     pub records: u64,
-    /// Anomaly records emitted this session. Always 0 until the detector ships
-    /// (increment 5); the field exists now so the UI contract is stable.
+    /// Anomaly records the detector has emitted this session (§5).
     pub anomalies: u64,
     /// Records discarded by backpressure this session (§6).
     pub dropped: u64,
@@ -69,6 +68,9 @@ pub async fn log_append(
     let Some(sink) = obs_state.sink() else {
         return Ok(());
     };
+    // Signal the batch boundary to the detector (§5 `unbatched-sink`) BEFORE the
+    // records, so its refs point at the first record of this batch.
+    sink.note_batch();
     for rec in records {
         sink.enqueue(rec);
     }
@@ -99,21 +101,17 @@ pub async fn log_session_info(
             s.redaction(),
             s.accepted(),
             s.dropped(),
+            s.anomalies(),
         )
     });
     tauri::async_runtime::spawn_blocking(move || {
         let all = writer::list_log_files(&dir);
         let total_files = all.len() as u32;
         let total_bytes = all.iter().map(|(_, b)| *b).sum();
-        let (session_id, salt, redaction, records, dropped) = session.unwrap_or_else(|| {
-            (
-                String::new(),
-                String::new(),
-                RedactionMode::Strict,
-                0,
-                0,
-            )
-        });
+        let (session_id, salt, redaction, records, dropped, anomalies) =
+            session.unwrap_or_else(|| {
+                (String::new(), String::new(), RedactionMode::Strict, 0, 0, 0)
+            });
         let (files, bytes) = if session_id.is_empty() {
             (Vec::new(), 0)
         } else {
@@ -133,7 +131,7 @@ pub async fn log_session_info(
             files,
             bytes,
             records,
-            anomalies: 0,
+            anomalies,
             dropped,
             redaction,
             salt,

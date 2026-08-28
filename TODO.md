@@ -45,9 +45,29 @@ the mutation/refresh cluster; `withTrace` now emits one `gesture` record per min
 `frameStats` `onWindow`→`frame` routing. ui-designer pass first (a843174), architect ratified D3
 (3a5c800). tsc + eslint clean, 920 vitest green (incl. real-Sidebar churn test). **Reviewer +
 ui-designer both APPROVE, no MUST-FIX.**
-**⏸ HALTED AWAITING USER GO FOR INCREMENT 5** (anomaly detector — `obs/anomaly.rs`, all §5 sink-side
-rules incl. `dup-ipc` explicit `kind==='ipc.call'` filter + §5.1 perf rules + `SLOW_RULES` table; no
-ui-designer needed).
+**✅ INCREMENT 5 DONE + COMMITTED** — anomaly detector (backend Rust): `obs/anomaly.rs` +
+`anomaly/window.rs` + `anomaly/slow.rs` + shared `obs/histogram.rs`; hooked into `sink.rs`
+`writer_loop` (observe after seq assignment, derived anomalies written back, `on_session_end` on
+shutdown+disconnect). All §5 sink rules + §5.1 perf rules + `SLOW_RULES` table. `dup-ipc` filters
+EXPLICITLY on `LogPayload::IpcCall` (synthetic-argsHash negative test genuine). Redaction-independent
+(byte-identical raw vs `path#N`). 100 obs tests / 46 new. clippy -D clean. **Reviewer APPROVE, no
+MUST-FIX.** Percentile = linear interpolation (§8.1) clamped to `max_ms` (needed for §12(a) to fire).
+**Decision: mock-side anomaly (5b) IN PROGRESS** — the milestone AI-gate + §6 require the browser
+harness (`__bonsaiDumpLogs()`) to show anomalies with no Tauri, but the detector runs only on the
+Rust writer thread. Building a mock-only, dump-time batch analyzer scoped to EXACTLY the 3 gate-named
+rules (`dup-ipc`/`slow-command`/`slow-phase`); Rust `obs/anomaly.rs` stays authoritative.
+
+**Increment 5 follow-ups (non-blocking):**
+- **SHOULD-FIX:** `ipc_calls.last_fire` (`window.rs:84`) is keyed by `cmd\0argsHash` and never
+  pruned — argsHash keyspace is unbounded (every other last_fire map keys on a finite catalogue).
+  Fire-gated + Dev-mode-only + session-scoped so growth is tiny in practice, but it falsifies the
+  "bounded (§11)" claim at `anomaly.rs:47`. One-line fix: prune in `Sliding::prune` or cap the map.
+- **SHOULD-FIX:** ratify the `max_ms` percentile clamp into §8.1 (batched into the architect call).
+- **NIT:** `histogram.rs:73` "only reachable at i==7" comment is wrong — `percentile_ms(0.0)` with
+  empty bucket[0] returns `max_ms`; inert now (only 0.95 used) but inc-6 reuses this — fix in inc-6.
+- **NIT:** `BatchMark` arm skips `emit_pending_drops` (minor ordering); `unbatched-sink` 10th-mark ref
+  points at the anomaly not the batch's first record (info-severity); `jank-trace` "overlapped 0
+  span(s)" when no overlapping span (confirm §5 wording — likely intended: unattributed jank is jank).
 
 **Increment 4 — the trap that was avoided (worth keeping):** the ambient trace is SYNCHRONOUS (§2.5)
 and dies across `await`; a mutation handler does `await ipc.mutate()` THEN `refreshAll()`, by which

@@ -13,6 +13,8 @@
 //!    start.* Turning Dev mode OFF stops the sink and leaves every byte on disk
 //!    (decision 4) — see [`stop`].
 
+pub mod anomaly;
+pub mod histogram;
 pub mod invoke_shim;
 pub mod phase;
 pub mod record;
