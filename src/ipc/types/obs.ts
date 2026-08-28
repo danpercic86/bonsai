@@ -40,7 +40,42 @@ export type LogKind =
   | 'frame'
   | 'error'
   | 'anomaly'
+  | 'span'
   | 'drop';
+
+/** §3.1 — one phase of a backend operation span. `name` is allow-listed on the
+ *  Rust producer side, so it is never user-derived. */
+export interface PhaseTiming {
+  /** Allow-listed, dotted for nesting: `revwalk`, `decorate`, `lane`, `serialize`. */
+  name: string;
+  ms: number;
+  /** Optional unit count for the phase (commits walked, files scanned). */
+  n?: number;
+}
+
+/** §3.1 — ONE `span` record per completed backend operation, carrying its phase
+ *  breakdown. Carries NO `argsHash`/`argsShape` (§7.2). Every field beyond
+ *  `op`/`ms` is optional and additive. */
+export interface SpanPayload {
+  /** Allow-listed `<domain>.<action>`: `graph.get` | `status.scan` | `diff.compute`. */
+  op: string;
+  /** Total wall time of the operation, measured at the src-tauri call site. */
+  ms: number;
+  /** Ordered, ≤16 entries. Sum may be < `ms`; the remainder is unattributed. */
+  phases?: PhaseTiming[];
+  /** Ms spent QUEUED before the `spawn_blocking` closure started (§3.1.2). */
+  queuedMs?: number;
+  /** Blocking-pool tasks in flight when this one started, and the pool cap. */
+  poolInflight?: number;
+  poolMax?: number;
+  /** elapsed / git-timeout deadline, 0..1+ — watchdog pressure (§3.1.3). */
+  deadlineFrac?: number;
+  /** Graph-cache outcome, emitted only by `graph_cache.rs` (§5.1). */
+  cache?: 'hit' | 'redecorate' | 'miss';
+  /** Primary unit count for the whole op (commits, files). */
+  items?: number;
+  outcome?: 'ok' | 'err' | 'timeout';
+}
 
 /** §3 `LogRecordBase`. `seq` is assigned by the RUST sink, so a record sent over
  *  `logAppend` leaves it at 0 and has it overwritten in write order. */

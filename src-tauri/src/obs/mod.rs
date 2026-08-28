@@ -13,11 +13,17 @@
 //!    start.* Turning Dev mode OFF stops the sink and leaves every byte on disk
 //!    (decision 4) — see [`stop`].
 
+pub mod invoke_shim;
+pub mod phase;
 pub mod record;
 pub mod redact;
+pub mod scrub;
 pub mod sink;
 pub mod strict;
+pub mod trace;
 pub mod writer;
+
+pub use trace::{emit_logged, TraceMeta};
 
 #[cfg(test)]
 #[path = "tests_redact.rs"]
@@ -135,6 +141,7 @@ pub fn apply_dev_settings(
         if let Some(s) = slot.take() {
             s.shutdown();
         }
+        trace::set_active_sink(None);
         return Ok(());
     }
     if let Some(existing) = slot.as_ref() {
@@ -158,6 +165,7 @@ pub fn apply_dev_settings(
     };
     let sink = Arc::new(Sink::start(cfg)?);
     arm_panic_flush(&sink);
+    trace::set_active_sink(Some(Arc::clone(&sink)));
     *slot = Some(sink);
     Ok(())
 }
@@ -209,6 +217,7 @@ pub fn stop(obs: &ObsState) {
     if let Some(s) = taken {
         s.shutdown();
     }
+    trace::set_active_sink(None);
 }
 
 /// Flush + stop for `RunEvent::ExitRequested` (§6). Safe to call when Dev mode

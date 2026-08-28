@@ -38,8 +38,27 @@ pub(crate) async fn get_workdir_file_diff_inner(
     intraline: bool,
 ) -> Result<FileDiff, AppError> {
     let workdir = repo_path(state, repo_id)?;
+    // P91 §3.1.2/§3.1.3: queue delay + pool saturation for the `diff.compute` span.
+    let queued_at = std::time::Instant::now();
     tauri::async_runtime::spawn_blocking(move || {
-        workdir_file_diff(&workdir, &path, orig_path.as_deref(), staged, full_context, intraline)
+        let pool = crate::obs::phase::PoolGuard::enter();
+        let queued_ms = queued_at.elapsed().as_millis().min(u32::MAX as u128) as u32;
+        let mut recorder =
+            crate::obs::phase::PhaseRecorder::start(crate::obs::phase::OP_DIFF_COMPUTE);
+        recorder.note_queue(queued_ms, pool.inflight(), pool.max());
+        // `workdir_file_diff` is one core call (bonsai-core owns no `obs`
+        // dependency, §3.1.2), so the whole diff is one `hunks` phase.
+        let res = {
+            let _p = recorder.phase("hunks");
+            workdir_file_diff(&workdir, &path, orig_path.as_deref(), staged, full_context, intraline)
+        };
+        let outcome = if res.is_ok() {
+            crate::obs::phase::SpanOutcome::Ok
+        } else {
+            crate::obs::phase::SpanOutcome::Err
+        };
+        recorder.finish(&crate::obs::TraceMeta::root("backend"), outcome);
+        res
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?

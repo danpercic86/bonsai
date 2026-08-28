@@ -11,6 +11,7 @@
  * into the handler file.
  */
 import type { LogRecord } from '../types';
+import { spanFixtures } from './obs';
 
 /** Mirrors the Rust `sync_channel(4096)` bound (§6): oldest is dropped first. */
 export const MOCK_RING_CAPACITY = 4096;
@@ -56,6 +57,9 @@ declare global {
     __bonsaiDumpLogs?: () => string;
     __bonsaiClearLogs?: () => void;
     __bonsaiLogStats?: () => { records: number; dropped: number; buffered: number };
+    /** §4/§5.1 — seed synthesised `span` records (incl. one slow `graph.get`)
+     *  so the harness can exercise the performance rules with no Tauri. */
+    __bonsaiSeedSpans?: () => number;
   }
 }
 
@@ -73,4 +77,9 @@ export function installLogDump(): void {
   window.__bonsaiDumpLogs = ringDump;
   window.__bonsaiClearLogs = ringClear;
   window.__bonsaiLogStats = () => ({ ...ringStats(), buffered: ring.length });
+  window.__bonsaiSeedSpans = () => {
+    const fixtures = spanFixtures();
+    ringAppend(fixtures);
+    return fixtures.length;
+  };
 }

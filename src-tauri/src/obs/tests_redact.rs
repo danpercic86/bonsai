@@ -147,6 +147,40 @@ fn basic_only_swallows_credential_shaped_material() {
     assert!(scrub_string(header).contains(REDACTED_TOKEN));
 }
 
+/// §7.2.1 increment-3 additions: a bare JWT (no `Bearer` keyword) and an
+/// in-string `key=value`/`key: value` credential pair are both scrubbed, while a
+/// 40-char SHA and a long real path stay untouched.
+#[test]
+fn increment3_layer_a_jwt_and_keyvalue() {
+    // Bare JWT that lost its `Bearer ` keyword — the `.` disqualifies the opaque
+    // shape, so only the `eyJ` rule catches it.
+    let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.SflKxwRJSMeKKF2QT4fwpM";
+    let out = scrub_string(jwt);
+    assert!(out.contains(REDACTED_TOKEN), "bare JWT survived: {out}");
+    assert!(!out.contains("SflKxwRJSMeKKF2QT4fwpM"), "JWT signature leaked: {out}");
+
+    // Plain-text credential-helper lines: `password=…` and `password: …`.
+    for line in [
+        "protocol=https\nhost=github.com\nusername=joe\npassword=hunter2secret",
+        "password: s3cr3t-value-here",
+        "the token=abc123def456 was rejected",
+    ] {
+        let o = scrub_string(line);
+        assert!(o.contains(REDACTED_TOKEN), "credential pair survived: {line} -> {o}");
+    }
+    assert!(!scrub_string("password=hunter2secret").contains("hunter2secret"));
+
+    // Negatives: a 40-char SHA and a long path have no sensitive key and must be
+    // left alone (also pinned in `scrubber_keeps_what_the_contract_says_to_keep`).
+    let sha = "9f2a1c4d5e6f70819293a4b5c6d7e8f901234567";
+    assert_eq!(scrub_string(sha), sha);
+    let path = "/home/developer/projects/bonsai/src/components/settings/categories";
+    assert_eq!(scrub_string(path), path);
+    // The `basic`-in-prose asymmetry must survive unchanged.
+    let prose = "basic auth is disabled for this remote";
+    assert_eq!(scrub_string(prose), prose);
+}
+
 #[test]
 fn scrubber_keeps_what_the_contract_says_to_keep() {
     // §7.1: commit SHAs are retained — a 40-hex word is not a credential.

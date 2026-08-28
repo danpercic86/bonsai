@@ -26,9 +26,16 @@ pub(crate) async fn get_status_inner(state: &AppState, repo_id: &str) -> Result<
     let repo_id = repo_id.to_string();
     // P86 instrumentation: this is the O(worktree) scan seam.
     state.perf.inc_status_scans();
+    // P91 §3.1.2/§3.1.3: queue delay + pool saturation for the `status.scan` span.
+    let queued_at = std::time::Instant::now();
+    let deadline = bonsai_core::git::timeout::effective_deadline();
     // F-T5-4 (audit #2 §3.2): the HEAD peel inside `read_status` spins forever
     // on a truncated loose commit — the wrapper converts that into a clean error.
     tauri::async_runtime::spawn_blocking(move || {
+        let pool = crate::obs::phase::PoolGuard::enter();
+        let queued_ms = queued_at.elapsed().as_millis().min(u32::MAX as u128) as u32;
+        let inflight = pool.inflight();
+        let pool_max = pool.max();
         crate::repo_handle::with_repo_timed(
             "read_status",
             &repo_id,
@@ -36,7 +43,29 @@ pub(crate) async fn get_status_inner(state: &AppState, repo_id: &str) -> Result<
             &path,
             &perf,
             // Single-shot: no tick, the deadline bounds the whole scan.
-            move |_progress, repo| read_status_with(repo),
+            move |_progress, repo| {
+                let mut recorder =
+                    crate::obs::phase::PhaseRecorder::start(crate::obs::phase::OP_STATUS_SCAN);
+                recorder.note_queue(queued_ms, inflight, pool_max);
+                let op_start = std::time::Instant::now();
+                // `read_status_with` is one core call (bonsai-core owns no `obs`
+                // dependency, §3.1.2), so the whole scan is one `statuses` phase.
+                let res = {
+                    let _p = recorder.phase("statuses");
+                    read_status_with(repo)
+                };
+                let dl = deadline.as_secs_f32();
+                if dl > 0.0 {
+                    recorder.note_deadline(op_start.elapsed().as_secs_f32() / dl);
+                }
+                let outcome = if res.is_ok() {
+                    crate::obs::phase::SpanOutcome::Ok
+                } else {
+                    crate::obs::phase::SpanOutcome::Err
+                };
+                recorder.finish(&crate::obs::TraceMeta::root("backend"), outcome);
+                res
+            },
         )
     })
     .await
@@ -123,7 +152,16 @@ pub async fn stream_graph(
     // atomics), so both clones bump the SAME counters.
     let perf_seam = state.inner().perf.clone();
     let perf_walk = perf_seam.clone();
+    // P91 §3.1.2/§3.1.3: measure queue delay + pool saturation + watchdog
+    // pressure for the `graph.get` span. `queued_at` is captured BEFORE
+    // `spawn_blocking`; the closure's first statement computes the delta.
+    let queued_at = std::time::Instant::now();
+    let deadline = bonsai_core::git::timeout::effective_deadline();
     tauri::async_runtime::spawn_blocking(move || {
+        let pool = crate::obs::phase::PoolGuard::enter();
+        let queued_ms = queued_at.elapsed().as_millis().min(u32::MAX as u128) as u32;
+        let inflight = pool.inflight();
+        let pool_max = pool.max();
         // F-T5-4 (audit #2 §3.2): a truncated loose object makes libgit2 spin
         // forever inside the walk, so the channel would never send `Done` and
         // the frontend would wait on a partial graph forever. The inactivity-
@@ -137,6 +175,13 @@ pub async fn stream_graph(
             &path,
             &perf_seam,
             move |progress, repo| {
+                // The recorder lives on the watchdog thread with the git work
+                // (§2.2: no ambient trace, threaded explicitly). Queue/pool were
+                // measured on the pool thread and moved in as scalars.
+                let mut recorder =
+                    crate::obs::phase::PhaseRecorder::start(crate::obs::phase::OP_GRAPH_GET);
+                recorder.note_queue(queued_ms, inflight, pool_max);
+                let op_start = std::time::Instant::now();
                 // Cache-aware: an unchanged-topology refresh replays (HitVerbatim)
                 // or re-pills (HitRedecorate) the cached chunks with no revwalk; a
                 // real topology change falls through to a full walk that
@@ -144,16 +189,28 @@ pub async fn stream_graph(
                 // drops the channel (unmount / repo switch / `close_repo`);
                 // `is_ok() == false` stops the pass promptly with `Ok`
                 // (contract §6 cancellation).
-                crate::graph_cache::stream_graph_cached_with(
+                let res = crate::graph_cache::stream_graph_cached_with(
                     repo,
                     &cache,
                     &perf_walk,
                     &filter,
+                    &mut recorder,
                     |chunk| {
                         progress.tick();
                         on_chunk.send(chunk).is_ok()
                     },
-                )
+                );
+                let dl = deadline.as_secs_f32();
+                if dl > 0.0 {
+                    recorder.note_deadline(op_start.elapsed().as_secs_f32() / dl);
+                }
+                let outcome = if res.is_ok() {
+                    crate::obs::phase::SpanOutcome::Ok
+                } else {
+                    crate::obs::phase::SpanOutcome::Err
+                };
+                recorder.finish(&crate::obs::TraceMeta::root("backend"), outcome);
+                res
             },
         )
     })

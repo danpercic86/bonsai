@@ -46,19 +46,26 @@ pub async fn fetch(
             if report.adopted.is_empty() && report.moved.is_empty() {
                 return;
             }
-            let _ = emit_app.emit(
+            // P91 §2.4: backend-originated fan-out (a background tag sync off the
+            // fetch path) — an honest `root("backend")`, not a guessed cause.
+            let meta = crate::obs::TraceMeta::root("backend");
+            crate::obs::emit_logged(
+                &emit_app,
                 "repo-changed",
                 super::repo::RepoChangedPayload {
                     repo_id: evt_repo.clone(),
                     reason: "tags".to_string(),
                 },
+                &meta,
             );
-            let _ = emit_app.emit(
+            crate::obs::emit_logged(
+                &emit_app,
                 "tag-auto-sync",
                 TagAutoSyncEvent {
                     repo_id: evt_repo,
                     report,
                 },
+                &meta,
             );
         });
     }

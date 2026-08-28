@@ -32,7 +32,37 @@ Reviewer round 1 = "request changes" (2 MUST-FIX in the privacy layer); all fixe
 **✅ INCREMENT 2 DONE + COMMITTED `6fc3131`** (frontend pipeline: proxy, trace, ui:-prefixed redact
 mirror, batcher; tsc clean, vitest src/obs+src/ipc 348 passed, broad IPC-consumer pass 1989 passed).
 Reviewer round 1 = "request changes" on 1 MUST-FIX, fixed + independently re-verified.
-**⏸ HALTED AWAITING USER GO FOR INCREMENT 3.**
+**✅ INCREMENT 3 DONE + COMMITTED** (Rust dispatch shim + emit→emit_logged migration + §3.1 spans +
+2 Layer-A redaction patterns + mock span fixtures). Shim compiled against tauri 2.11.5 (§2.3.1
+contingency NOT needed). cargo --lib 370 passed / 1 ignored (overhead bench), clippy -D clean both
+crates, tsc + build clean, vitest 2503 passed. **Reviewer round 1 = APPROVE, no MUST-FIX.** All 3
+deviations accepted by reviewer (see below).
+**⏸ HALTED AWAITING USER GO FOR INCREMENT 4** (which needs a `ui-designer` pass FIRST — it is the
+six-surface React/flicker payload).
+
+**Increment 3 deviations (reviewer-accepted, recorded here per D3's "record in contract" ask):**
+(D1) global `ACTIVE_SINK` static for `PhaseRecorder`/watcher instead of threading `AppHandle` —
+avoids the §2.2-forbidden command-signature churn; set/cleared under the writer slot lock, tests
+serialize via `test_sink_lock()`. (D2) `queuedMs`/pool gauge + `deadlineFrac` wired at the 3
+span-emitting command sites, not in `repo_handle.rs`; queue delta still captured across the real
+`spawn_blocking` boundary (reviewer: correct). (D3) `status.scan`/`diff.compute` collapsed to a
+single phase each (contract specced 3) because finer splits need phase hooks INSIDE `bonsai-core`,
+which the crate-boundary invariant forbids (`bonsai_core_has_no_obs_reference`); only `graph.get` is
+fully phased. **Architect should ratify D3 into §3.1.2/§13.**
+
+**Increment 3 follow-ups (non-blocking, for tester / later increments):**
+- **SHOULD-FIX (tester):** `POOL_INFLIGHT` is bumped only by the 3 span-site `PoolGuard::enter()`
+  calls, so `poolInflight` counts "instrumented git ops in flight," NOT true tokio blocking-pool
+  saturation; `POOL_MAX = 512` is hardcoded, not read from tokio. Row-3 acceptance (b)'s
+  `poolInflight >= poolMax` is unreachable in a realistic test — write the tester assertion against
+  what the gauge actually counts, or narrow the field doc wording (`phase.rs:75-101`, `:35`).
+- **NIT:** `invoke_shim.rs:42-48` exclusion list names `logs_delete_all` + `metrics_snapshot` which
+  aren't registered yet (ship in inc 6/7) — dead entries now; confirm the strings match when those
+  commands land, else self-amplification silently re-enables.
+- **NIT:** recorder-overhead bench for acceptance (e) is `#[ignore]` — tester to run it explicitly.
+- **NIT:** `stream_graph_cached` (`graph_cache.rs:239`) always finishes `SpanOutcome::Ok` even on
+  `Err` (non-routed diagnostic path; routed path correct).
+- **NIT:** diff span covers only `get_workdir_file_diff`; commit-vs-parent diffs uninstrumented (v1).
 
 **Increment 2 notes worth keeping:** (a) MUST-FIX was that `__trace` injection sat one layer too
 high — the proxy appended trace metadata as an extra JS argument, but every real IPC method is

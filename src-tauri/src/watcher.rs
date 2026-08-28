@@ -28,6 +28,41 @@ use bonsai_core::error::AppError;
 
 const DEBOUNCE: Duration = Duration::from_millis(300);
 
+/// One notify batch, reduced to the counts P91 §2.4 records. The paths
+/// themselves never cross into the log — only how many, and how many passed the
+/// `.git`-internals filter.
+#[derive(Clone, Copy, Default)]
+struct WatchTick {
+    paths: u32,
+    relevant: u32,
+}
+
+/// Logs a `watcher` record via the global obs sink (§2.4, `root("watcher")`).
+/// A no-op when Dev mode is off (the sink is `None`). The watcher is
+/// Tauri-decoupled and holds no `AppHandle`, so it goes through the same
+/// process-wide sink handle the phase recorder uses.
+fn log_watcher(paths: u32, relevant: u32, fired: bool) {
+    use crate::obs::record::{LogLevel, LogPayload};
+    let Some(sink) = crate::obs::trace::active_sink() else {
+        return;
+    };
+    let meta = crate::obs::TraceMeta::root("watcher");
+    let rec = crate::obs::trace::make_record(
+        &sink,
+        LogLevel::Debug,
+        &meta,
+        LogPayload::Watcher {
+            paths,
+            relevant,
+            debounce_ms: DEBOUNCE.as_millis() as u32,
+            fired,
+            suppressed: false,
+            suppress_reason: None,
+        },
+    );
+    sink.enqueue(rec);
+}
+
 /// Keeps the watcher and its debounce thread alive; dropping it stops both.
 pub struct WatcherHandle {
     // Field order matters: `watcher` is declared (and thus dropped) first,
@@ -93,15 +128,25 @@ pub fn spawn_watcher(
     let workdir = std::fs::canonicalize(workdir)
         .map_err(|e| AppError::Other(format!("failed to resolve {}: {e}", workdir.display())))?;
     let git_dir = workdir.join(".git");
-    let (tx, rx) = mpsc::channel::<()>();
+    let (tx, rx) = mpsc::channel::<WatchTick>();
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-        let relevant = match &res {
-            Ok(event) => event.paths.iter().any(|p| is_relevant(p, &git_dir)),
-            Err(_) => true, // watcher error → trigger a refresh, cheap and safe
+        // P91 §2.4: log the raw notify batch (counts only), then forward a tick
+        // carrying the same counts so the debounce firing can report the total
+        // paths/relevant that were coalesced into it.
+        let tick = match &res {
+            Ok(event) => {
+                let paths = event.paths.len() as u32;
+                let relevant = event.paths.iter().filter(|p| is_relevant(p, &git_dir)).count() as u32;
+                WatchTick { paths, relevant }
+            }
+            // watcher error → trigger a refresh, cheap and safe; count it as one
+            // relevant path so the debounce fires.
+            Err(_) => WatchTick { paths: 1, relevant: 1 },
         };
-        if relevant {
-            let _ = tx.send(()); // receiver gone: watcher is being torn down
+        log_watcher(tick.paths, tick.relevant, false);
+        if tick.relevant > 0 {
+            let _ = tx.send(tick); // receiver gone: watcher is being torn down
         }
     })
     .map_err(|e| AppError::Other(format!("failed to create file watcher: {e}")))?;
@@ -116,12 +161,21 @@ pub fn spawn_watcher(
             loop {
                 match rx.recv() {
                     Err(mpsc::RecvError) => return, // watcher dropped → clean shutdown
-                    Ok(()) => {
+                    Ok(first) => {
+                        // Accumulate the coalesced counts across the debounce
+                        // window so the `fired` record reports the whole burst.
+                        let mut paths = first.paths;
+                        let mut relevant = first.relevant;
                         // Drain until 300 ms of quiet, then fire once.
                         loop {
                             match rx.recv_timeout(DEBOUNCE) {
-                                Ok(()) => continue, // storm ongoing, keep absorbing
+                                Ok(t) => {
+                                    paths = paths.saturating_add(t.paths);
+                                    relevant = relevant.saturating_add(t.relevant);
+                                    continue; // storm ongoing, keep absorbing
+                                }
                                 Err(mpsc::RecvTimeoutError::Timeout) => {
+                                    log_watcher(paths, relevant, true);
                                     on_change();
                                     break;
                                 }
@@ -316,6 +370,48 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// P91 §2.4: a debounce firing records a `watcher` record with the right
+    /// `paths`/`relevant`/`debounceMs`/`fired`. Drives `log_watcher` directly (a
+    /// real git-op burst is tester/integration scope).
+    #[test]
+    fn watcher_record_shape() {
+        let _serial = crate::obs::trace::test_sink_lock();
+        let log_dir = tempfile::TempDir::new().unwrap();
+        let sink = std::sync::Arc::new(
+            crate::obs::sink::Sink::start(crate::obs::writer::WriterConfig {
+                dir: log_dir.path().to_path_buf(),
+                session_id: "swatch01".into(),
+                started_secs: 1_787_839_391,
+                app_version: "1.5.0".into(),
+                os: "windows".into(),
+                level: crate::obs::record::LogLevel::Debug,
+                redaction: crate::obs::record::RedactionMode::Strict,
+                limits: crate::obs::writer::Limits::default(),
+            })
+            .unwrap(),
+        );
+        crate::obs::trace::set_active_sink(Some(std::sync::Arc::clone(&sink)));
+        log_watcher(5, 3, true);
+        crate::obs::trace::set_active_sink(None);
+        sink.shutdown();
+
+        let mut fired = None;
+        for (name, _) in crate::obs::writer::list_log_files(log_dir.path()) {
+            let text = std::fs::read_to_string(log_dir.path().join(name)).unwrap();
+            for line in text.lines() {
+                let v: serde_json::Value = serde_json::from_str(line).unwrap();
+                if v["kind"] == "watcher" && v["fired"] == true {
+                    fired = Some(v);
+                }
+            }
+        }
+        let v = fired.expect("a fired watcher record");
+        assert_eq!(v["paths"], 5);
+        assert_eq!(v["relevant"], 3);
+        assert_eq!(v["debounceMs"], 300);
+        assert_eq!(v["suppressed"], false);
     }
 
     #[test]

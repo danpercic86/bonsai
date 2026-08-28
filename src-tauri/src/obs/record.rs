@@ -298,9 +298,59 @@ pub enum LogPayload {
         refs: Vec<u64>,
         traces: Vec<String>,
     },
+    /// Backend operation span (§3.1; increment 3). ONE record per completed
+    /// operation, carrying its phase breakdown. Every field beyond `op`/`ms` is
+    /// optional and `skip_serializing_if`, so a span that measured nothing extra
+    /// still serialises to a compact `{op, ms}`.
+    ///
+    /// **Carries NO `argsHash`/`argsShape`** — same reason as `ipc.recv` (§7.2):
+    /// a second canonical form for a call would silently break `dup-ipc`.
+    #[serde(rename = "span")]
+    Span {
+        /// Allow-listed `<domain>.<action>`: `graph.get` | `status.scan` | `diff.compute`.
+        op: String,
+        /// Total wall time of the operation, measured at the src-tauri call site.
+        ms: f64,
+        /// Ordered, ≤16 entries. Sum may be < `ms`; the remainder is unattributed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        phases: Option<Vec<PhaseTiming>>,
+        /// Ms spent QUEUED before the `spawn_blocking` closure started (§3.1.2).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        queued_ms: Option<u32>,
+        /// Blocking-pool tasks in flight when this one started, and the pool cap.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pool_inflight: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pool_max: Option<u32>,
+        /// elapsed / git-timeout deadline, 0..1+ — watchdog pressure (§3.1.3).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        deadline_frac: Option<f32>,
+        /// Graph-cache outcome, emitted only by `graph_cache.rs` (§5.1).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<String>,
+        /// Primary unit count for the whole op (commits, files).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        items: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        outcome: Option<String>,
+    },
     /// Sink backpressure (§6): records the bounded channel refused.
     #[serde(rename = "drop")]
     Drop { dropped: u64, since_seq: u64 },
+}
+
+/// One phase of a backend operation span (§3.1). `name` is an allow-listed
+/// `&'static str` on the producing side (`obs/phase.rs`), so no user-derived
+/// string can reach a span record.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PhaseTiming {
+    /// Allow-listed, dotted for nesting: `revwalk`, `decorate`, `lane`, `serialize`.
+    pub name: String,
+    pub ms: f64,
+    /// Optional unit count for the phase (commits walked, files scanned).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub n: Option<u64>,
 }
 
 impl LogPayload {
@@ -324,6 +374,7 @@ impl LogPayload {
             LogPayload::Frame { .. } => "frame",
             LogPayload::Error { .. } => "error",
             LogPayload::Anomaly { .. } => "anomaly",
+            LogPayload::Span { .. } => "span",
             LogPayload::Drop { .. } => "drop",
         }
     }

@@ -259,13 +259,19 @@ pub type EmitFn = Arc<dyn Fn(SchedulerEvent) + Send + Sync>;
 /// Builds the production emitter over `app.emit(..)`. Emission failures are
 /// ignored (best-effort push signals).
 pub fn emitter_for(app: tauri::AppHandle) -> EmitFn {
-    use tauri::Emitter;
-    Arc::new(move |ev| match ev {
-        SchedulerEvent::JobStatus(p) => {
-            let _ = app.emit("job-status-changed", p);
-        }
-        SchedulerEvent::RepoChanged(p) => {
-            let _ = app.emit("repo-changed", p);
+    Arc::new(move |ev| {
+        // P91 §2.4: scheduler jobs run on the global tick loop, not inside a
+        // user command, so an honest `root("backend")` is the causality — a job
+        // seeded by a user action would be `child_of`, but the tick loop carries
+        // no such trace.
+        let meta = crate::obs::TraceMeta::root("backend");
+        match ev {
+            SchedulerEvent::JobStatus(p) => {
+                crate::obs::emit_logged(&app, "job-status-changed", p, &meta);
+            }
+            SchedulerEvent::RepoChanged(p) => {
+                crate::obs::emit_logged(&app, "repo-changed", p, &meta);
+            }
         }
     })
 }

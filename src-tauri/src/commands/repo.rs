@@ -56,12 +56,16 @@ pub async fn open_repo(
         move |repo_id: String| {
             let emit_app = emit_app.clone();
             Box::new(move || {
-                let _ = emit_app.emit(
+                // P91 §2.4: the fs watcher callback fires outside any command
+                // trace, so a `root("watcher")` is the honest causality here.
+                crate::obs::emit_logged(
+                    &emit_app,
                     "repo-changed",
                     RepoChangedPayload {
                         repo_id: repo_id.clone(),
                         reason: "fs".to_string(),
                     },
+                    &crate::obs::TraceMeta::root("watcher"),
                 );
             })
         },

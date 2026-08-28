@@ -1,8 +1,6 @@
 //! Shared imports (re-exported) and the `repo_path` helper for the
 //! `commands` module, split from the former monolithic `commands.rs`.
 
-pub(crate) use tauri::Emitter;
-
 // P68b streaming conflict resolve. Only the names the command layer NAMES are
 // re-exported (the `compose_apply` convention — avoids an unused-import warning
 // under -D warnings): `RunLimits`/`ToolPolicy`/`RunControl` travel inside

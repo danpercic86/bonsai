@@ -68,11 +68,14 @@ fn graph_chunks_timed(id: &str, gen: u64, path: &Path, perf: &Arc<PerfState>) ->
     let (tx, rx) = std::sync::mpsc::channel::<GraphChunk>();
     let perf_walk = perf.clone();
     with_repo_mut_timed("stream_graph", id, gen, path, perf, move |progress, repo| {
+        let mut recorder =
+            crate::obs::phase::PhaseRecorder::start(crate::obs::phase::OP_GRAPH_GET);
         crate::graph_cache::stream_graph_cached_with(
             repo,
             &cache,
             &perf_walk,
             &GraphFilter::default(),
+            &mut recorder,
             |chunk| {
                 progress.tick();
                 tx.send(chunk).is_ok()

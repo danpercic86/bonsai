@@ -31,7 +31,7 @@ use std::sync::{Arc, Mutex};
 
 use bonsai_core::error::AppError;
 use bonsai_mcp::{BonsaiServer, OpenRepo};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use crate::settings;
 use crate::state::AppState;
@@ -210,7 +210,12 @@ async fn start_or_signal_stopped(
                 })
                 .await;
             }
-            let _ = app.emit("mcp-server-changed", stopped_status());
+            crate::obs::emit_logged(
+                app,
+                "mcp-server-changed",
+                stopped_status(),
+                &crate::obs::TraceMeta::root("backend"),
+            );
             Err(e)
         }
     }
@@ -265,7 +270,12 @@ pub async fn set_allow_write(
         None => {
             // Stopped: nothing to bounce; the setting is persisted for next start.
             let status = stopped_status();
-            let _ = app.emit("mcp-server-changed", status.clone());
+            crate::obs::emit_logged(
+                app,
+                "mcp-server-changed",
+                status.clone(),
+                &crate::obs::TraceMeta::root("backend"),
+            );
             Ok(status)
         }
     }
@@ -358,7 +368,12 @@ async fn start(app: &AppHandle, mcp_state: &McpServerState) -> Result<McpStatus,
         let mut g = mcp_state.inner.lock().map_err(pois)?;
         *g = Some(running);
     }
-    let _ = app.emit("mcp-server-changed", status.clone());
+    crate::obs::emit_logged(
+        app,
+        "mcp-server-changed",
+        status.clone(),
+        &crate::obs::TraceMeta::root("backend"),
+    );
     Ok(status)
 }
 
@@ -381,7 +396,12 @@ async fn stop(app: &AppHandle, mcp_state: &McpServerState) -> Result<McpStatus, 
     }
 
     let status = stopped_status();
-    let _ = app.emit("mcp-server-changed", status.clone());
+    crate::obs::emit_logged(
+        app,
+        "mcp-server-changed",
+        status.clone(),
+        &crate::obs::TraceMeta::root("backend"),
+    );
     Ok(status)
 }
 

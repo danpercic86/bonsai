@@ -27,6 +27,7 @@ use bonsai_core::graph::{
     FoldSpan, GraphChunk, GraphFilter, GraphSeed, RefKind, RefLabel, RefMap,
 };
 
+use crate::obs::phase::{CacheOutcome, PhaseRecorder};
 use crate::perf::PerfState;
 
 /// PB-1 store cap. A cold walk is cached only while its emitted node count stays
@@ -219,7 +220,12 @@ pub fn stream_graph_cached(
         git2::RepositoryOpenFlags::NO_SEARCH,
         std::iter::empty::<&std::ffi::OsStr>(),
     )?;
-    stream_graph_cached_with(&mut repo, cache, perf, filter, emit)
+    // Non-routed callers (tests / diagnostics) own their recorder; the routed
+    // `stream_graph` command owns one carrying queue/pool/deadline.
+    let mut recorder = PhaseRecorder::start(crate::obs::phase::OP_GRAPH_GET);
+    let out = stream_graph_cached_with(&mut repo, cache, perf, filter, &mut recorder, emit);
+    recorder.finish(&crate::obs::TraceMeta::root("backend"), crate::obs::phase::SpanOutcome::Ok);
+    out
 }
 
 /// P88b/B2b: cache-aware graph stream from an ALREADY-OPEN handle (the round
@@ -232,9 +238,10 @@ pub fn stream_graph_cached_with(
     cache: &GraphCache,
     perf: &PerfState,
     filter: &GraphFilter,
+    recorder: &mut PhaseRecorder,
     emit: impl FnMut(GraphChunk) -> bool,
 ) -> Result<(), AppError> {
-    stream_graph_cached_capped(repo, cache, perf, filter, GRAPH_CACHE_MAX_NODES, emit)
+    stream_graph_cached_capped(repo, cache, perf, filter, GRAPH_CACHE_MAX_NODES, recorder, emit)
 }
 
 /// PB-1: [`stream_graph_cached_with`] with an explicit store cap so the store
@@ -247,12 +254,17 @@ fn stream_graph_cached_capped(
     perf: &PerfState,
     filter: &GraphFilter,
     max_nodes: usize,
+    recorder: &mut PhaseRecorder,
     mut emit: impl FnMut(GraphChunk) -> bool,
 ) -> Result<(), AppError> {
     // Spec-003: the probe seed is FILTERED — the classify, the HitRedecorate
     // re-pill, and the store re-probe below all observe the same restricted
     // ref set, so hidden pills can never resurrect from a cached redecorate.
-    let seed = graph_seed_with(repo, filter)?;
+    // P91 §3.1: the seed is the `decorate` phase (ref decoration + filter).
+    let seed = {
+        let _p = recorder.phase("decorate");
+        graph_seed_with(repo, filter)?
+    };
 
     let tips: BTreeSet<git2::Oid> = seed.tips.iter().copied().collect();
     let hide: BTreeSet<git2::Oid> = seed.hide.iter().copied().collect();
@@ -263,8 +275,12 @@ fn stream_graph_cached_capped(
     match classify(guard.as_ref(), filter, &tips, seed.head, &hide, deco_fp) {
         Classification::HitVerbatim => {
             perf.inc_graph_cache_hits();
+            // §5.1: a served hit has NO revwalk/lane phase — `cache-collapse` keys on it.
+            recorder.note_cache(CacheOutcome::Hit);
             if let Some(c) = guard.as_ref() {
+                recorder.note_items(c.node_oids.len() as u64);
                 let spans = request_spans(c, filter);
+                let _p = recorder.phase("serialize");
                 // Sink-gone mid-replay is a clean stop either way (Ok).
                 let _ = replay_chunks(&c.chunks, spans, &mut emit);
             }
@@ -272,6 +288,7 @@ fn stream_graph_cached_capped(
         }
         Classification::HitRedecorate => {
             perf.inc_graph_redecorates();
+            recorder.note_cache(CacheOutcome::Redecorate);
             if let Some(c) = guard.as_mut() {
                 // Re-pill the cached stream in place, then update the WALK
                 // identity to the fresh seed. `node_oids` is unchanged by
@@ -302,7 +319,9 @@ fn stream_graph_cached_capped(
                 c.seed_fp = seed_fp;
                 // Spec-004: spans are computed POST-redecorate (a ref landing
                 // mid-run must break that run) and injected at replay time.
+                recorder.note_items(c.node_oids.len() as u64);
                 let spans = request_spans(c, filter);
+                let _p = recorder.phase("serialize");
                 // Sink-gone mid-replay is a clean stop either way (Ok).
                 let _ = replay_chunks(&c.chunks, spans, &mut emit);
             }
@@ -310,9 +329,12 @@ fn stream_graph_cached_capped(
         }
         Classification::Miss => {
             perf.inc_graph_walks();
+            recorder.note_cache(CacheOutcome::Miss);
             // Never hold the cache lock across the cold walk (contract §B1
             // concurrency); the walk streams holding only the channel.
             drop(guard);
+            let walk_start = std::time::Instant::now();
+            let mut first_batch_at: Option<std::time::Instant> = None;
 
             let mut buf: Vec<GraphChunk> = Vec::new();
             // Spec-004: merge rows are collected on EVERY cold walk (cheap; a
@@ -328,6 +350,9 @@ fn stream_graph_cached_capped(
             stream_graph_from_repo_collect(repo, filter, &mut merge_rows, |chunk| {
                 match &chunk {
                     GraphChunk::Batch { nodes, .. } => {
+                        if first_batch_at.is_none() {
+                            first_batch_at = Some(std::time::Instant::now());
+                        }
                         node_count += nodes.len();
                         // PB-1: the moment the walk's node count exceeds the
                         // cap, free the store buffers immediately and stop
@@ -360,6 +385,14 @@ fn stream_graph_cached_capped(
                 }
                 emit(chunk)
             })?;
+
+            // §3.1: `revwalk` = start → first batch; `lane` = first batch → end.
+            let walk_end = std::time::Instant::now();
+            let first = first_batch_at.unwrap_or(walk_end);
+            let ms = |d: std::time::Duration| d.as_secs_f64() * 1000.0;
+            recorder.add_phase("revwalk", ms(first.saturating_duration_since(walk_start)));
+            recorder.add_phase("lane", ms(walk_end.saturating_duration_since(first)));
+            recorder.note_items(node_count as u64);
 
             // Skip the store when the walk exceeded the cap (`too_big`): the
             // repo re-walks each refresh (a correct, uncached Miss) rather than

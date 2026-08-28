@@ -121,7 +121,11 @@ pub fn run() {
             ));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
+        // P91 §2.3: wrap the generated dispatch closure so every command arrival
+        // stamps an `ipc.recv` record (excluded commands self-amplify — see the
+        // shim). §2.3.1 contingency lives in the module doc.
+        .invoke_handler(obs::invoke_shim::instrumented_handler(
+            tauri::generate_handler![
             commands::open_repo,
             commands::close_repo,
             commands::get_status,
@@ -311,7 +315,8 @@ pub fn run() {
             commands::log_session_info,
             commands::log_reveal_dir,
             commands::log_export_session
-        ])
+            ],
+        ))
         .build(tauri::generate_context!())
         .expect("error while running Bonsai")
         .run(|app, event| {
