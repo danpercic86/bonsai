@@ -155,6 +155,20 @@ export interface DropPayload {
   sinceSeq: number;
 }
 
+/** §5 — a derived cross-record anomaly. Mirrors the Rust `LogPayload::Anomaly`
+ *  wire form (`src-tauri/src/obs/record.rs:293`): `severity` is lowercase, `refs`
+ *  are the `seq` numbers of the implicated records, `traces` are their trace ids.
+ *  Emitted authoritatively by the Rust detector; in mock mode a harness-only
+ *  batch analyzer (`src/ipc/mock/obsAnomaly.ts`) synthesises the same shape. */
+export type AnomalySeverity = 'info' | 'warn' | 'error';
+export interface AnomalyPayload {
+  rule: string;
+  severity: AnomalySeverity;
+  detail: string;
+  refs: number[];
+  traces: TraceId[];
+}
+
 /** The subset of payloads increment 2 emits. Later increments extend the union
  *  additively (`render`, `refresh`, `span`, `anomaly`, ...). */
 export type UiPayload =
@@ -170,6 +184,7 @@ export type UiPayload =
   | ({ kind: 'state' } & StatePayload)
   | ({ kind: 'frame' } & FramePayload)
   | ({ kind: 'error' } & ErrorPayload)
+  | ({ kind: 'anomaly' } & AnomalyPayload)
   | ({ kind: 'drop' } & DropPayload)
   | ({
       kind: Exclude<
@@ -186,6 +201,7 @@ export type UiPayload =
         | 'state'
         | 'frame'
         | 'error'
+        | 'anomaly'
         | 'drop'
       >;
     } & Record<string, unknown>);

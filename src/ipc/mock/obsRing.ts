@@ -11,7 +11,8 @@
  * into the handler file.
  */
 import type { LogRecord } from '../types';
-import { spanFixtures } from './obs';
+import { analyzeAnomalies } from './obsAnomaly';
+import { slowCommandFixtures, spanFixtures } from './obs';
 
 /** Mirrors the Rust `sync_channel(4096)` bound (§6): oldest is dropped first. */
 export const MOCK_RING_CAPACITY = 4096;
@@ -47,9 +48,17 @@ export function ringClear(): void {
   dropped = 0;
 }
 
-/** The JSONL text an exported file would contain. */
+/** The `anomaly` records the harness-only batch analyzer derives from the current
+ *  ring (increment 5b). Computed on demand; the ring itself is never mutated, so
+ *  repeated dumps are stable and `refs` still resolve to the real record seqs. */
+export function ringAnomalies(): LogRecord[] {
+  return analyzeAnomalies(ring);
+}
+
+/** The JSONL text an exported file would contain, with the derived `anomaly`
+ *  records appended so the browser gate can assert anomalies with no Tauri. */
 export function ringDump(): string {
-  return ring.map((r) => JSON.stringify(r)).join('\n');
+  return [...ring, ...ringAnomalies()].map((r) => JSON.stringify(r)).join('\n');
 }
 
 declare global {
@@ -78,8 +87,12 @@ export function installLogDump(): void {
   window.__bonsaiClearLogs = ringClear;
   window.__bonsaiLogStats = () => ({ ...ringStats(), buffered: ring.length });
   window.__bonsaiSeedSpans = () => {
-    const fixtures = spanFixtures();
-    ringAppend(fixtures);
-    return fixtures.length;
+    // Spans FIRST so the slow `graph.get` span precedes its `ipc.result` in seq
+    // order (the analyzer's slow-phase correlation needs the span already seen).
+    const spans = spanFixtures();
+    const results = slowCommandFixtures();
+    ringAppend(spans);
+    ringAppend(results);
+    return spans.length + results.length;
   };
 }

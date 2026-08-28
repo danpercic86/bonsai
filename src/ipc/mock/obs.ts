@@ -119,3 +119,43 @@ export function spanFixtures(): LogRecord[] {
 
   return out;
 }
+
+/** Builds one mock `ipc.result` LogRecord. `seq` is (re)assigned by the ring. */
+function resultRecord(cmd: string, ms: number, trace: string): LogRecord {
+  mockSpanSeq += 1;
+  return {
+    seq: 0,
+    ts: Date.now(),
+    mono: mockSpanSeq * 10,
+    src: 'ui',
+    lvl: 'debug',
+    trace,
+    kind: 'ipc.result',
+    cmd,
+    argsHash: 'ui:h#1',
+    ms,
+    outcome: 'ok',
+  } as unknown as LogRecord;
+}
+
+/**
+ * P91 §5.1 — the `slow-command` fixture, paired with the slow `graph.get` span
+ * above. The Rust `slow-command` rule (and the mock analyzer that mirrors it)
+ * consumes `ipc.result` records keyed by `cmd` (`get_graph`), not spans, and is
+ * gated by `MIN_SAMPLES = 20`. So a lone slow span cannot trip it: we seed 20
+ * healthy `get_graph` results (~90 ms) to establish the baseline, then one slow
+ * result at 4200 ms carrying the same `trace` as the slow span. That fires
+ * `slow-command` via the calibrated branch (4200 > max(floor 1200, 3×p95≈270))
+ * and, via the correlated span whose `lane` phase is ~86 % of `ms`, `slow-phase`.
+ *
+ * The 20 identical fast results also double as a `dup-ipc` true-NEGATIVE: they are
+ * `ipc.result`, never `ipc.call`, so the explicit-kind guard must ignore them.
+ */
+export function slowCommandFixtures(): LogRecord[] {
+  const out: LogRecord[] = [];
+  for (let i = 0; i < 20; i += 1) {
+    out.push(resultRecord('get_graph', 88 + (i % 5), `mock-graph-${i}`));
+  }
+  out.push(resultRecord('get_graph', 4200, 'mock-graph-slow'));
+  return out;
+}

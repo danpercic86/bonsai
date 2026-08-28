@@ -13,7 +13,7 @@
 import type { IpcApi, LogRecord, LogSessionInfo } from '../../types';
 import { delay } from '../repoState';
 import { readUiSettings } from '../persistence';
-import { installLogDump, ringAppend, ringStats } from '../obsRing';
+import { installLogDump, ringAnomalies, ringAppend, ringStats } from '../obsRing';
 
 installLogDump();
 
@@ -63,7 +63,7 @@ export const obsHandlers = {
       files: [MOCK_SESSION_FILE],
       bytes,
       records,
-      anomalies: 0,
+      anomalies: ringAnomalies().length,
       dropped,
       redaction,
       salt: MOCK_SALT,
