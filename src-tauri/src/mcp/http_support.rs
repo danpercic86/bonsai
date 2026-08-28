@@ -209,6 +209,12 @@ pub(super) fn parse_sse(body: &str) -> Vec<Value> {
 }
 
 pub(super) fn no_proxy_client() -> reqwest::Client {
+    // reqwest resolves to `rustls-no-provider` workspace-wide (tauri and
+    // bonsai-forge both select it), so a crypto provider must be installed
+    // before any Client is built. `ring` keeps the TLS stack pure-Rust; the
+    // result is ignored because installation is process-global and only the
+    // first caller wins.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     reqwest::Client::builder()
         .no_proxy()
         .build()

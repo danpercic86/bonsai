@@ -24,6 +24,33 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
+## 🔧 DEP REFRESH — 2026-08-28 — in-progress
+
+Goal: bring every frontend, Rust, and CI-action dependency to its current version, then
+resync the user-facing docs (README/CHANGELOG/CONTRIBUTING) with the shipped 1.5.0 app.
+
+**Current step:** awaiting USER CHECKPOINT. AI gate is green — full `pnpm gate` 8/8, nextest
+2042 passed / 0 failed, cargo-deny advisories+bans+licenses+sources ok, `pnpm audit` clean,
+reviewer verdict approve. The checkpoint is: run `pnpm tauri dev`, connect a real forge and
+confirm PRs still list, since the reqwest 0.13 TLS-trust-root change and the rand 0.10
+MCP-token change are not browser-harness verifiable.
+
+Shipped so far on `chore/dep-refresh-2026-08`: cfefb8e frontend majors (ESLint 10, Vite 8,
+TS 6.0, jsdom 30) · 13084ca CI action pins (incl. tauri-action v1) · 1fd0a47 docs resync.
+Backed out deliberately: TypeScript 7 (typescript-eslint 8.68 rejects the TS 7 API) and
+keyring 4 (restructured onto keyring-core; needs its own increment).
+
+Follow-ups filed, not blocking:
+- **keyring 3 → 4** needs a dedicated increment: 4.x moves onto `keyring-core`, renames every
+  per-backend feature (`windows-native` → `windows-native-keyring-store`, etc.), drops
+  `crypto-rust`, and requires explicit credential-store registration instead of feature-driven
+  resolution — i.e. real changes to `crates/bonsai-forge/src/auth.rs`.
+- `no_proxy_client()` in `src-tauri/src/mcp/http_support.rs` still uses
+  `.expect("build reqwest client")`; fine for a test harness, but it is why the missing rustls
+  provider surfaced as a raw panic rather than a message.
+- `TODO.md` is ~760 lines against the ~300 target and wants a `docs-curator` compaction pass.
+
+
 ## ✅ P90 — Per-branch CI Checks view — DONE (AI gate + USER CHECKPOINT both green 2026-08-25)
 
 **Current step:** none — AI gate passed (tsc/build clean, 52 vitest, size ratchet OK; harness-verified all

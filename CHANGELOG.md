@@ -10,7 +10,19 @@ All notable changes to Bonsai are documented here. The format is based on
 
 - **Dependency refresh (maintenance).** Frontend majors: ESLint 9 → 10, Vite 7 → 8,
   TypeScript 5.9 → 6.0, jsdom 26 → 30, `@testing-library/jest-dom` 6 → 7, and
-  `@vitejs/plugin-react` 5 → 6. Plus a Rust dependency refresh.
+  `@vitejs/plugin-react` 5 → 6. Rust: `criterion` 0.5 → 0.8, `rand` 0.9 → 0.10,
+  `reqwest` 0.12 → 0.13, `rmcp` 3.0 → 3.1, plus a full lockfile refresh. CI action pins moved to
+  their current majors, including `tauri-action` v0 → v1.
+- **Forge HTTPS now trusts the operating system's certificate store** rather than a root set
+  bundled into the binary. This comes with `reqwest` 0.13, which replaced the bundled-roots
+  feature with the platform verifier. In practice this is more compatible, not less — forge
+  requests should now work behind a corporate TLS-inspecting proxy whose root is installed in the
+  OS store. The trade-off: a stripped-down Linux environment with no system CA bundle at all can
+  no longer fall back to roots baked into the binary. The TLS stack stays pure-Rust (rustls with
+  the ring provider) and no OpenSSL is linked on any platform, as before.
+- `keyring` stays on 3.x. Version 4 restructures onto `keyring-core` with renamed per-backend
+  features and explicit credential-store registration, which changes how Bonsai selects each
+  platform's native store — that is its own increment, not a dependency bump.
 - The `pnpm lint:ci` warning budget moved from `--max-warnings 40` to `--max-warnings 50`
   (the tree reports 42 warnings, 0 errors).
 - TypeScript **7 is deliberately not adopted**: `typescript-eslint` 8.68 hard-errors against the

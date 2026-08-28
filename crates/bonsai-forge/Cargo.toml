@@ -11,10 +11,19 @@ bonsai-core = { path = "../bonsai-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 # Blocking HTTP so the crate stays runtime-free (the command layer wraps calls
-# in spawn_blocking); rustls-tls avoids an OpenSSL dependency on Windows. No
-# "json" feature: request bodies are serialized with serde_json and sent as a
-# string, responses are read via .text() and parsed in github/dto.rs.
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+# in spawn_blocking). reqwest 0.13 renamed 0.12's `rustls-tls` to `rustls`, but
+# that feature bundles the aws-lc-rs crypto provider (C/asm + cmake build). We
+# take `rustls-no-provider` and install the pure-Rust **ring** provider
+# ourselves (same pattern as tauri / tauri-plugin-updater), keeping the release
+# — including the cross-compiled macOS x86_64 slice — free of a C toolchain.
+# Trust roots come from rustls-platform-verifier (OS trust store), which reqwest
+# 0.13.2 made the only option by dropping `webpki-roots`/`rustls-native-certs`.
+# No OpenSSL on any platform. No "json" feature: request bodies are serialized
+# with serde_json and sent as a string, responses are read via .text() and
+# parsed in github/dto.rs.
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls-no-provider"] }
+# Provider only — default features would re-enable aws_lc_rs and undo the above.
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
 # keyring 3.x ships no backend by default — each platform selects its native
 # store explicitly. Linux uses the sync secret-service wrapper with a pure-Rust

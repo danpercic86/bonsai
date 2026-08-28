@@ -25,10 +25,10 @@ git2 = { workspace = true }
 notify = "8"
 serde = { workspace = true }
 serde_json = { workspace = true }
-rmcp = { version = "3.0.1", features = ["server", "macros", "transport-streamable-http-server"] }
+rmcp = { version = "3.1", features = ["server", "macros", "transport-streamable-http-server"] }
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
-rand = "0.9"
+rand = "0.10"
 subtle = "2"
 
 # The macOS universal build cross-compiles an x86_64 slice from the arm64 CI
@@ -46,4 +46,8 @@ tempfile = { workspace = true }
 # P16d embedded-HTTP MCP integration test: a raw HTTP client to drive the
 # streamable-HTTP MCP endpoint (security POSTs + hand-rolled JSON-RPC/SSE).
 # `no_proxy` client is built in-test; default TLS is unused (plain 127.0.0.1).
-reqwest = { version = "0.12", default-features = false, features = ["json"] }
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
+# The workspace-unified reqwest is `rustls-no-provider` (see crates/bonsai-forge),
+# so the harness installs the pure-Rust `ring` provider itself. Provider only —
+# default features would re-enable aws_lc_rs. Adds no new lockfile crates.
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
