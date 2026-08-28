@@ -26,6 +26,7 @@ pub mod sink;
 pub mod strict;
 pub mod trace;
 pub mod writer;
+mod writer_files;
 
 pub use trace::{emit_logged, TraceMeta};
 

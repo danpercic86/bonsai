@@ -7,7 +7,7 @@ import { WorkspaceOverlays } from './WorkspaceOverlays';
 import type { PendingForceSubmodule } from './dialogs/SubmoduleDialogs';
 import { WorkspaceGraphPane } from './WorkspaceGraphPane';
 import { WorkspaceRightPanel } from './WorkspaceRightPanel';
-import { isUsableRepo, shortOid } from './workspaceUtils';
+import { isUsableRepo } from './workspaceUtils';
 import { createWorkspaceMenus } from './workspaceMenus';
 import type { DiffOverlayMeta } from './DiffOverlay';
 import type { DiffScope } from './DiffFileTree';
@@ -120,6 +120,7 @@ import { buildPaletteActions, type PaletteAction } from './paletteActions';
 import { safeOpDispatch } from './safeOpDispatch';
 import type { ComboboxOption } from './Combobox';
 import { searchScopeOptionsOf } from './repoWorkspace/searchHelpers';
+import { branchStatsOf, diffBrowserViewOf, graphDisplayOf, prBaseOptionsOf, prCompareOptionsOf, prDefaultBaseOf } from './repoWorkspace/displayModels';
 
 export type { RepoWorkspaceProps } from './repoWorkspace/RepoWorkspaceProps';
 import type { RepoWorkspaceProps } from './repoWorkspace/RepoWorkspaceProps';
@@ -209,13 +210,7 @@ export function RepoWorkspace({
   // included; the chip render gates on divergence (>0) + the showAheadBehind
   // toggle. Memoized on `branches` so the canvas display object is stable
   // between refreshes.
-  const branchStats = useMemo<Map<string, { ahead: number | null; behind: number | null }>>(() => {
-    const m = new Map<string, { ahead: number | null; behind: number | null }>();
-    for (const b of branches?.local ?? []) {
-      if (b.ahead !== null && b.behind !== null) m.set(b.name, { ahead: b.ahead, behind: b.behind });
-    }
-    return m;
-  }, [branches]);
+  const branchStats = useMemo(() => branchStatsOf(branches), [branches]);
 
   const [stashes, setStashes] = useState<StashEntry[]>([]);
   const [submodules, setSubmodules] = useState<SubmoduleInfo[]>([]);
@@ -630,21 +625,7 @@ export function RepoWorkspace({
   // compact rule is enforced HERE (AND-ed into the two forge toggles) so the
   // pure layer never sees `compact`.
   const graphDisplay = useMemo<GraphDisplayOptions>(
-    () => ({
-      // Spec-006: paint-only edge/ring coloring (lane palette vs author hue).
-      colorMode: graphColorMode,
-      showSha: graphPrefs.showSha,
-      showAuthor: graphPrefs.showAuthor,
-      showDate: graphPrefs.showDate,
-      dateBasis: graphPrefs.dateBasis,
-      showAheadBehind: graphPrefs.showAheadBehind,
-      branchStats,
-      showSignatureBadge: graphPrefs.showSignatureBadge,
-      showPrBadge: graphPrefs.showPrBadge && !graphPrefs.compact,
-      showCiStatus: graphPrefs.showCiStatus && !graphPrefs.compact,
-      prByBranch: forgeSignals.prByBranch,
-      ciBySha: forgeSignals.ciBySha,
-    }),
+    () => graphDisplayOf(graphColorMode, graphPrefs, branchStats, forgeSignals.prByBranch, forgeSignals.ciBySha),
     [graphColorMode, graphPrefs, branchStats, forgeSignals.prByBranch, forgeSignals.ciBySha],
   );
 
@@ -1503,22 +1484,12 @@ export function RepoWorkspace({
   // P78: branch suggestions + base hint for the PR create form. Compare = local
   // branches; Base = local + remote-tracking branches. Base hint prefers the head
   // branch's upstream, then a local main/master, else empty.
-  const prCompareOptions = useMemo<ComboboxOption[]>(
-    () => (branches?.local ?? []).map((b) => ({ value: b.name, label: b.name })),
-    [branches],
+  const prCompareOptions = useMemo<ComboboxOption[]>(() => prCompareOptionsOf(branches), [branches]);
+  const prBaseOptions = useMemo<ComboboxOption[]>(() => prBaseOptionsOf(branches), [branches]);
+  const prDefaultBase = useMemo<string | null>(
+    () => prDefaultBaseOf(headBranch, branches),
+    [headBranch, branches],
   );
-  const prBaseOptions = useMemo<ComboboxOption[]>(() => {
-    const locals = (branches?.local ?? []).map((b) => ({ value: b.name, label: b.name }));
-    const remotes = (branches?.remote ?? []).map((b) => ({ value: b.name, label: b.name }));
-    return [...locals, ...remotes];
-  }, [branches]);
-  const prDefaultBase = useMemo<string | null>(() => {
-    if (headBranch?.upstream != null && headBranch.upstream !== '') return headBranch.upstream;
-    const localNames = (branches?.local ?? []).map((b) => b.name);
-    if (localNames.includes('main')) return 'main';
-    if (localNames.includes('master')) return 'master';
-    return '';
-  }, [headBranch, branches]);
 
   // P58c: the selected commit's signature verdict for the CommitPanel line —
   // reuses the shared verify cache (single source; no extra IPC). null when
@@ -2345,40 +2316,10 @@ export function RepoWorkspace({
   // P11g-rev §4.4: resolve the DiffBrowser source labels + header list. Compare
   // mode AUTO-OPENS once data has loaded (≥1 file); commit mode is EXPLICIT-open
   // (gated on commitBrowserOpen). null → browser not rendered.
-  const diffBrowserView = useMemo(() => {
-    // Compare mode: AUTO-OPEN once data has loaded and there is at least one file.
-    if (compare !== null && compareData !== null && compareData.files.length > 0) {
-      const fromLabel = `HEAD${headBranch?.name != null ? ` (${headBranch.name})` : ''}`;
-      const toLabel = `${shortOid(compareData.to.oid)} · ${compareData.to.summary}`;
-      return {
-        source: { mode: 'compare' as const, oid: compare.oid, fromLabel, toLabel },
-        files: compareData.files,
-        onClose: clearCompare, // × in compare mode exits compare (compare IS the diff)
-      };
-    }
-    // PR mode: AUTO-OPENED by the PR panel (beats commit; compare beats it).
-    if (prBrowserView !== null) return prBrowserView;
-    // Commit mode: EXPLICIT-open only.
-    if (selectedIndex !== null && graph !== null && commitBrowserOpen && commitDiff !== null) {
-      // Mid-stream partial layout: the selected commit's row is not in the
-      // streamed window yet -> fall through to null (no browser) until the
-      // refetch remap re-points selectedIndex and this memo re-runs.
-      const node = graph.nodes[selectedIndex];
-      if (node) {
-        const oid = node.id;
-        return {
-          source: {
-            mode: 'commit' as const,
-            oid,
-            title: `${shortOid(oid)} · ${commitDiff.details.summary}`,
-          },
-          files: commitDiff.files,
-          onClose: () => setCommitBrowserOpen(false),
-        };
-      }
-    }
-    return null;
-  }, [compare, compareData, prBrowserView, selectedIndex, graph, commitBrowserOpen, commitDiff, headBranch, clearCompare]);
+  const diffBrowserView = useMemo(
+    () => diffBrowserViewOf({ compare, compareData, prBrowserView, selectedIndex, graph, commitBrowserOpen, commitDiff, headBranch, clearCompare, setCommitBrowserOpen }),
+    [compare, compareData, prBrowserView, selectedIndex, graph, commitBrowserOpen, commitDiff, headBranch, clearCompare],
+  );
 
   // Esc-layering flag derived from the RENDERED branch (not raw PR state):
   // while compare wins the memo, an open-but-invisible PR layer must not
