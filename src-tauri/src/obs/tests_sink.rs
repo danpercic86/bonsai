@@ -218,3 +218,63 @@ fn the_session_salt_never_reaches_disk() {
     }
     assert!(scanned >= 2, "the scan must cover a log part and the zip");
 }
+
+/// §6.1 row-7 (b), end-to-end through the sink: `roll_and_purge` rolls to a fresh
+/// `afterPurge` file, purges every prior file (log parts AND exports), and
+/// logging continues into the new file with no record lost across the roll.
+#[test]
+fn roll_and_purge_rolls_forward_and_erases_the_past() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let logs = root.path().join("logs");
+    let exports = root.path().join("exports");
+    std::fs::create_dir_all(&exports).expect("exports dir");
+
+    let sink = Sink::start(cfg(&logs)).expect("start");
+    for i in 0..50 {
+        sink.enqueue(rec(i));
+    }
+    std::fs::write(exports.join("prior.zip"), vec![b'x'; 321]).expect("seed export");
+
+    let reply = sink.roll_and_purge(exports.clone()).expect("purge");
+    assert_eq!(reply.deleted_exports, 1, "the prior export was purged");
+    assert!(reply.deleted_files >= 2, "prior log part(s) + the export removed");
+    assert!(reply.active_file.ends_with(".jsonl"));
+
+    for i in 50..60 {
+        sink.enqueue(rec(i));
+    }
+    sink.shutdown();
+
+    let files = list_log_files(&logs);
+    assert_eq!(files.len(), 1, "only the fresh file remains: {files:?}");
+    assert_eq!(files[0].0, reply.active_file);
+    assert!(!exports.join("prior.zip").exists(), "the export is gone");
+
+    let rows = all_lines(&logs);
+    assert_eq!(rows[0]["afterPurge"], true);
+    // Post-roll records survive; pre-roll records were erased with the old file.
+    assert!(rows.iter().any(|r| r["gesture"] == "test.59"));
+    assert!(!rows.iter().any(|r| r["gesture"] == "test.0"));
+}
+
+/// §6.3 row-7 (l): the sink surfaces the writer's cap-eviction count so
+/// `log_session_info` can render the truncation warning.
+#[test]
+fn dropped_parts_is_visible_through_the_sink() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let logs = root.path().join("logs");
+    let mut c = cfg(&logs);
+    c.limits = Limits {
+        part_bytes: 400,
+        max_parts: 3,
+        flush_bytes: 1,
+        ..Limits::default()
+    };
+    let sink = Sink::start(c).expect("start");
+    assert_eq!(sink.dropped_parts(), 0, "nothing evicted yet");
+    for i in 0..300 {
+        sink.enqueue(rec(i));
+    }
+    sink.shutdown();
+    assert!(sink.dropped_parts() > 0, "cap evictions are visible to the UI");
+}

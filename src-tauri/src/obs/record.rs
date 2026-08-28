@@ -170,6 +170,13 @@ pub enum LogPayload {
         /// True when this header opens a file created by a purge roll (§6.1).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         after_purge: Option<bool>,
+        /// §6.3 — true once one or more EARLIER parts of this session have been
+        /// evicted at the part cap: the file's beginning is gone.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        truncated: Option<bool>,
+        /// §6.3 — count of earlier parts deleted so far for this session.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dropped_parts: Option<u32>,
     },
     #[serde(rename = "gesture")]
     Gesture { origin: String, gesture: String },
@@ -337,6 +344,23 @@ pub enum LogPayload {
     /// Sink backpressure (§6): records the bounded channel refused.
     #[serde(rename = "drop")]
     Drop { dropped: u64, since_seq: u64 },
+    /// §6.3 — on-disk loss: an earlier part of this session was deleted to honour
+    /// the part cap. Distinct from `drop` (in-memory backpressure). Emitted into
+    /// the SURVIVING newest part immediately after the eviction.
+    #[serde(rename = "truncate")]
+    Truncate {
+        /// Only cause in v1: the `max_parts` cap.
+        reason: String,
+        /// How many parts have now been deleted for this session.
+        dropped_parts: u32,
+        /// Redacted part label, e.g. `part#0` — never a path.
+        dropped_part: String,
+        /// Bytes of the evicted part, measured immediately before removal.
+        bytes: u64,
+        /// Lowest `seq` still present on disk, when known.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        first_retained_seq: Option<u64>,
+    },
 }
 
 /// One phase of a backend operation span (§3.1). `name` is an allow-listed
@@ -376,6 +400,7 @@ impl LogPayload {
             LogPayload::Anomaly { .. } => "anomaly",
             LogPayload::Span { .. } => "span",
             LogPayload::Drop { .. } => "drop",
+            LogPayload::Truncate { .. } => "truncate",
         }
     }
 }

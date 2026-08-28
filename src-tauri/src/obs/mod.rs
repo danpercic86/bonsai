@@ -42,6 +42,10 @@ mod tests_writer;
 mod tests_sink;
 
 #[cfg(test)]
+#[path = "tests_purge.rs"]
+mod tests_purge;
+
+#[cfg(test)]
 #[path = "tests_strict.rs"]
 mod tests_strict;
 

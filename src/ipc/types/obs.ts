@@ -41,7 +41,8 @@ export type LogKind =
   | 'error'
   | 'anomaly'
   | 'span'
-  | 'drop';
+  | 'drop'
+  | 'truncate';
 
 /** §3.1 — one phase of a backend operation span. `name` is allow-listed on the
  *  Rust producer side, so it is never user-derived. */
@@ -120,11 +121,32 @@ export interface LogSessionInfo {
   /** Totals across ALL log files on disk, not just this session. */
   totalFiles: number;
   totalBytes: number;
+  /** §6.3 — parts of THIS session already evicted at the 128 MB cap. `> 0` means
+   *  the session is truncated (its earliest records are gone) and the Dev page
+   *  shows a warning line. 0 while Dev mode is off. */
+  droppedParts: number;
   /** §6.2 — Bonsai-created export zips, which are inside the delete scope, so
    *  the confirm copy can name them. Absent when the exports directory does not
    *  exist yet (distinct from an existing but empty one, which reports 0). */
   exportFiles?: number;
   exportBytes?: number;
+}
+
+/** §6.1 — the honest result of "delete all log files". */
+export interface LogsDeleteResult {
+  /** Files actually removed (log parts AND export zips — see `deletedExports`). */
+  deletedFiles: number;
+  /** Bytes reclaimed (each size measured immediately before removal). */
+  deletedBytes: number;
+  /** Files that could not be removed (locked, permission denied, ...). */
+  failedFiles: number;
+  /** Present only when Dev mode was ON: the fresh, empty file logging continues
+   *  into. NAME only, never a path. */
+  activeFile: string | null;
+  /** True when the writer was rolled to a new file as part of this operation. */
+  rolled: boolean;
+  /** §6.2 — how many of `deletedFiles` were export zips. */
+  deletedExports?: number;
 }
 
 /**

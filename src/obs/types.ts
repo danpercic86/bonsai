@@ -159,6 +159,21 @@ export interface DropPayload {
   sinceSeq: number;
 }
 
+/** §6.3 — on-disk loss: an earlier part of the session was deleted at the part
+ *  cap. Distinct from {@link DropPayload} (in-memory backpressure): `truncate` is
+ *  loss of records ALREADY WRITTEN to disk. Rust-only (`LogPayload::Truncate`),
+ *  emitted into the surviving newest part; the UI never mints it. */
+export interface TruncatePayload {
+  reason: 'max-parts';
+  /** How many parts have now been deleted for this session. */
+  droppedParts: number;
+  /** Redacted part label, e.g. `part#0` — never a path. */
+  droppedPart: string;
+  bytes: number;
+  /** Lowest `seq` still present on disk, when known. */
+  firstRetainedSeq?: number;
+}
+
 /** §5 — a derived cross-record anomaly. Mirrors the Rust `LogPayload::Anomaly`
  *  wire form (`src-tauri/src/obs/record.rs:293`): `severity` is lowercase, `refs`
  *  are the `seq` numbers of the implicated records, `traces` are their trace ids.

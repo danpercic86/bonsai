@@ -1,4 +1,4 @@
-import type { LogRecord, LogSessionInfo, MetricsSnapshot } from './obs';
+import type { LogRecord, LogSessionInfo, LogsDeleteResult, MetricsSnapshot } from './obs';
 
 /**
  * P91 §6 — observability (Dev-mode structured logs), split out of `IpcApi`
@@ -24,6 +24,11 @@ export interface IpcApiObs {
    *  mode is off, which is what the "turn Dev mode off, then export" workflow
    *  needs — and resolve with the archive path. */
   logExportSession(dest?: string | null): Promise<string>;
+  /** §6.1/§6.2 — delete every in-scope log/export artifact (roll-then-purge when
+   *  Dev mode is on, so logging continues into a fresh file). Reports honest
+   *  counts including partial failures. The UI MUST confirm before invoking. On
+   *  the §2.3 instrumentation exclusion list. */
+  logsDeleteAll(): Promise<LogsDeleteResult>;
   /** §8 — read the durable local metrics aggregates (daily buckets + lifetime).
    *  The returned histograms carry DERIVED `p50Ms`/`p95Ms`, computed at snapshot
    *  time and never persisted. On the §2.3 instrumentation exclusion list. */

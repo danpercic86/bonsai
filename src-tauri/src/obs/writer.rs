@@ -18,6 +18,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use bonsai_core::error::AppError;
@@ -87,6 +88,9 @@ pub struct LogWriter {
     part_bytes: u64,
     buffered: u64,
     seq: u64,
+    /// §6.3 — parts of THIS session evicted at the cap. Shared with the sink so
+    /// `log_session_info` can report it; the writer thread is the only mutator.
+    dropped_parts: Arc<AtomicU64>,
 }
 
 impl LogWriter {
@@ -105,6 +109,7 @@ impl LogWriter {
             part_bytes: 0,
             buffered: 0,
             seq: 0,
+            dropped_parts: Arc::new(AtomicU64::new(0)),
         };
         w.open_part(0, false)?;
         Ok(w)
@@ -113,6 +118,17 @@ impl LogWriter {
     /// Name of the file being written right now (never a path — §6.1).
     pub fn active_file(&self) -> &str {
         &self.active
+    }
+
+    /// The logs directory this writer owns — used by the `RollAndPurge` handler.
+    pub fn dir(&self) -> &Path {
+        &self.cfg.dir
+    }
+
+    /// The shared eviction counter (§6.3), cloned by the sink at startup so
+    /// `log_session_info` can read it without touching the writer thread.
+    pub fn dropped_parts_counter(&self) -> Arc<AtomicU64> {
+        Arc::clone(&self.dropped_parts)
     }
 
     /// The last `seq` assigned. Used to stamp `drop` records.
@@ -134,13 +150,16 @@ impl LogWriter {
         self.part_bytes = 0;
         self.buffered = 0;
         // Line 1 is ALWAYS the session header (§6) — including on a rotation part,
-        // so a part handed over on its own is still self-describing.
+        // so a part handed over on its own is still self-describing. Written via
+        // `append_record` (not `write_record`) so a fresh part never re-enters the
+        // cap check while opening.
         let header = self.header_record(after_purge);
-        self.write_record(header)?;
+        self.append_record(header)?;
         Ok(())
     }
 
     fn header_record(&self, after_purge: bool) -> LogRecord {
+        let dropped = self.dropped_parts.load(Ordering::Relaxed) as u32;
         LogRecord {
             seq: 0,
             ts: self.cfg.started_secs.saturating_mul(1000),
@@ -160,28 +179,45 @@ impl LogWriter {
                 redaction: self.cfg.redaction,
                 redaction_note: self.cfg.redaction.note().to_string(),
                 after_purge: after_purge.then_some(true),
+                truncated: (dropped > 0).then_some(true),
+                dropped_parts: (dropped > 0).then_some(dropped),
             },
         }
     }
 
     /// Assigns `seq`, scrubs credentials (§7.2, last step before bytes) and
     /// appends one JSONL line, rotating first when the part cap is hit.
-    pub fn write_record(&mut self, mut rec: LogRecord) -> Result<(), AppError> {
+    pub fn write_record(&mut self, rec: LogRecord) -> Result<(), AppError> {
         if self.part_bytes >= self.cfg.limits.part_bytes {
-            // ORCHESTRATOR-DIRECTED (P91 review round 1; to be ratified into §6).
+            // ORCHESTRATOR-DIRECTED (P91 review round 1; ratified into §6.3).
             //
             // Rotation is never refused, because the newest records are the
             // evidence the user turned Dev mode on to capture. The session is
             // bounded instead by DROPPING THE OLDEST PART once `max_parts` exist:
             // size stays capped at `part_bytes × max_parts` *within* the session,
             // where the earlier "keep appending to the last part" left a storm
-            // session growing without any bound at all (`prune` runs only at
-            // `open`, and never prunes the last remaining group).
+            // session growing without any bound at all.
             let next = self.part + 1;
             self.flush()?;
             self.open_part(next, false)?;
-            self.trim_session_parts();
+            // §6.3: record each on-disk loss in-band, into the surviving newest
+            // part, before appending the caller's record.
+            for (name, bytes) in self.trim_session_parts() {
+                let n = self.dropped_parts.fetch_add(1, Ordering::Relaxed) as u32 + 1;
+                let truncate = truncate_record(part_index(&name), bytes, n);
+                let _ = self.append_record(truncate);
+            }
+            // §6.3: enforce the 256 MB total cap continuously, not only at launch.
+            prune(&self.cfg.dir, self.cfg.limits);
         }
+        self.append_record(rec)
+    }
+
+    /// The rotation-free half of [`write_record`]: assign `seq`, redact, write one
+    /// line. Kept separate so a `truncate` record or a fresh part's header can be
+    /// written WITHOUT re-entering the cap check (which would recurse under the
+    /// tiny `part_bytes` limits the tests use).
+    fn append_record(&mut self, mut rec: LogRecord) -> Result<(), AppError> {
         self.seq += 1;
         rec.seq = self.seq;
         let mut value = serde_json::to_value(&rec)
@@ -219,23 +255,31 @@ impl LogWriter {
 
     /// Keeps at most `max_parts` files for THIS session, deleting the oldest
     /// first. Called right after a rotation, so the newest part always survives.
+    /// Returns the `(name, bytes)` of each part ACTUALLY removed (size measured
+    /// before removal), so the caller can emit one `truncate` record per real
+    /// loss (§6.3).
     ///
     /// Scoped to the current session group by construction — it filters on this
     /// session's own file-name prefix, so no other session's file is reachable.
-    fn trim_session_parts(&self) {
+    fn trim_session_parts(&self) -> Vec<(String, u64)> {
         let group = session_group(&self.active);
         let mut mine: Vec<(String, u64)> = list_log_files(&self.cfg.dir)
             .into_iter()
             .filter(|(n, _)| session_group(n) == group)
             .collect();
         let over = mine.len().saturating_sub(self.cfg.limits.max_parts as usize);
-        for (name, _) in mine.drain(..over) {
+        let mut evicted = Vec::new();
+        for (name, size) in mine.drain(..over) {
             if name == self.active {
                 continue;
             }
             // Best effort: an undeletable old part is not a reason to stop logging.
-            let _ = std::fs::remove_file(self.cfg.dir.join(name));
+            // Only a part that was really removed counts as truncation.
+            if std::fs::remove_file(self.cfg.dir.join(&name)).is_ok() {
+                evicted.push((name, size));
+            }
         }
+        evicted
     }
 
     /// Pushes the `BufWriter` to the OS. Cheap and idempotent.
@@ -252,14 +296,102 @@ impl LogWriter {
     /// header carries `afterPurge` (§6.1 step 1+2). Closing first is what makes a
     /// subsequent delete work on Windows, where an open handle blocks removal.
     ///
-    /// Unused until increment 7 wires `RollAndPurge`; kept here because file
-    /// lifecycle is this module's concern and the roll must not be re-derived.
-    #[allow(dead_code)]
     pub fn roll(&mut self, after_purge: bool) -> Result<(), AppError> {
         self.flush()?;
         self.file = None;
-        self.cfg.started_secs = now_secs();
+        // Guarantee a filename STRICTLY newer than any existing part of this
+        // session. Otherwise, when a purge fires inside the same wall-clock
+        // second the session started, `part_name` collides with the old part-0,
+        // append-mode reopens it, and pre-purge bytes survive the delete —
+        // defeating §6.1's core guarantee that every byte written before the
+        // click is gone.
+        self.cfg.started_secs = now_secs().max(self.cfg.started_secs + 1);
+        // A purge deletes every prior part, so this session's truncation history
+        // is erased with them; `afterPurge: true` carries the disclosure instead,
+        // and a stale count would make the Dev page warn about vanished files.
+        self.dropped_parts.store(0, Ordering::Relaxed);
         self.open_part(0, after_purge)
+    }
+}
+
+/// §6.3 — one `truncate` record for a part just evicted at the cap. `dropped_idx`
+/// is the part index (redacted to `part#<n>`, never a path); `dropped_parts` is
+/// the running total after this eviction.
+fn truncate_record(dropped_idx: u32, bytes: u64, dropped_parts: u32) -> LogRecord {
+    LogRecord {
+        seq: 0,
+        ts: now_ms(),
+        mono: 0,
+        src: LogSource::Rust,
+        lvl: LogLevel::Warn,
+        trace: None,
+        span: None,
+        caused_by: None,
+        payload: LogPayload::Truncate {
+            reason: "max-parts".to_string(),
+            dropped_parts,
+            dropped_part: format!("part#{dropped_idx}"),
+            bytes,
+            first_retained_seq: None,
+        },
+    }
+}
+
+/// §6.1 — count and delete of in-scope log/export artifacts.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct PurgeCounts {
+    pub deleted_files: u32,
+    pub deleted_bytes: u64,
+    pub failed_files: u32,
+    pub deleted_exports: u32,
+}
+
+/// §6.1/§6.2 — delete every in-scope artifact and report honest counts.
+///
+/// Scope, EXACTLY: `<logs>/*.jsonl`, `<logs>/*.jsonl.tmp`, `<logs>/*.zip`
+/// (stray/legacy exports) and `<exports>/*.zip`. Nothing else — `metrics/`,
+/// `settings.json` and files outside these two directories are never touched.
+///
+/// `keep` names the one file in `logs/` to spare (the live file after a purge
+/// roll); pass `None` when Dev mode is off and there is no writer.
+pub fn purge_scope(logs_dir: &Path, exports_dir: &Path, keep: Option<&str>) -> PurgeCounts {
+    let mut c = PurgeCounts::default();
+    purge_dir(logs_dir, keep, true, &mut c);
+    purge_dir(exports_dir, None, false, &mut c);
+    c
+}
+
+fn purge_dir(dir: &Path, keep: Option<&str>, is_logs: bool, c: &mut PurgeCounts) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in rd.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let lower = name.to_ascii_lowercase();
+        let in_scope = if is_logs {
+            lower.ends_with(".jsonl") || lower.ends_with(".jsonl.tmp") || lower.ends_with(".zip")
+        } else {
+            lower.ends_with(".zip")
+        };
+        if !in_scope || keep == Some(name.as_str()) {
+            continue;
+        }
+        let is_zip = lower.ends_with(".zip");
+        // Size read IMMEDIATELY before removal, so `deleted_bytes` is what was
+        // actually reclaimed (§6.1).
+        let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        match std::fs::remove_file(entry.path()) {
+            Ok(()) => {
+                c.deleted_files += 1;
+                c.deleted_bytes += size;
+                if is_zip {
+                    c.deleted_exports += 1;
+                }
+            }
+            // An unremovable file (locked, permission denied, or a directory
+            // that happens to end in `.jsonl`) is reported, never fatal (§6.1).
+            Err(_) => c.failed_files += 1,
+        }
     }
 }
 

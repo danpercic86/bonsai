@@ -350,6 +350,7 @@ pub fn run() {
             commands::log_session_info,
             commands::log_reveal_dir,
             commands::log_export_session,
+            commands::logs_delete_all,
             commands::metrics_snapshot,
             commands::metrics_reset
             ],

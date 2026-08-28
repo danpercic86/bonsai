@@ -10,10 +10,17 @@
  * and `logSessionInfo` reports a FIXED salt so the frontend redactor mirror is
  * deterministic across harness reloads.
  */
-import type { Histogram, IpcApi, LogRecord, LogSessionInfo, MetricsSnapshot } from '../../types';
-import { delay } from '../repoState';
+import type {
+  Histogram,
+  IpcApi,
+  LogRecord,
+  LogSessionInfo,
+  LogsDeleteResult,
+  MetricsSnapshot,
+} from '../../types';
+import { delay, query } from '../repoState';
 import { readUiSettings } from '../persistence';
-import { installLogDump, ringAnomalies, ringAppend, ringStats } from '../obsRing';
+import { installLogDump, ringAnomalies, ringAppend, ringClear, ringStats } from '../obsRing';
 
 installLogDump();
 
@@ -117,6 +124,7 @@ export const obsHandlers = {
         salt: '',
         totalFiles: 0,
         totalBytes: 0,
+        droppedParts: 0,
         exportFiles: 0,
         exportBytes: 0,
       };
@@ -135,9 +143,32 @@ export const obsHandlers = {
       salt: MOCK_SALT,
       totalFiles: 1,
       totalBytes: bytes,
+      // §6.3: a truncated session (`?obsTruncated=1`) exercises the Dev-page cap
+      // warning; the default session is untruncated.
+      droppedParts: query('obsTruncated') === '1' ? 3 : 0,
       // §6.2: exports live in <config>/exports and are inside the delete scope.
       exportFiles: 0,
       exportBytes: 0,
+    };
+  },
+
+  async logsDeleteAll(): Promise<LogsDeleteResult> {
+    await delay(80);
+    // Mirrors the backend: purging clears every prior record. The ring is the
+    // mock's on-disk stand-in, so emptying it is the roll-then-purge equivalent.
+    ringClear();
+    // §6.1 mock spec: `?obsDeleteFail=1` drives the `failedFiles > 0` warning
+    // copy path; otherwise a clean success naming one export via `deletedExports`.
+    const failed = query('obsDeleteFail') === '1';
+    const dev = readUiSettings().dev.enabled;
+    return {
+      deletedFiles: failed ? 3 : 4,
+      deletedBytes: 1_248_130,
+      failedFiles: failed ? 1 : 0,
+      // Dev ON ⇒ logging rolls into a fresh file; Dev OFF ⇒ nothing to continue.
+      activeFile: dev ? 'bonsai-2026-08-27T14-05-52-smock0001.jsonl' : null,
+      rolled: dev,
+      deletedExports: 1,
     };
   },
 

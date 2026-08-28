@@ -1,5 +1,5 @@
 import { invoke } from './invoke';
-import type { LogRecord, LogSessionInfo, MetricsSnapshot } from '../types';
+import type { LogRecord, LogSessionInfo, LogsDeleteResult, MetricsSnapshot } from '../types';
 
 /**
  * P91 §6 — the real-Tauri observability commands.
@@ -22,6 +22,10 @@ export const obsCommands = {
 
   logExportSession(dest?: string | null): Promise<string> {
     return invoke<string>('log_export_session', { dest: dest ?? null });
+  },
+
+  logsDeleteAll(): Promise<LogsDeleteResult> {
+    return invoke<LogsDeleteResult>('logs_delete_all');
   },
 
   metricsSnapshot(): Promise<MetricsSnapshot> {

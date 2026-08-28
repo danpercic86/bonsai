@@ -15,6 +15,7 @@
 //! literally true on the main thread, while a healthy writer still provably
 //! loses zero records.
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
@@ -42,7 +43,27 @@ enum SinkMsg {
     /// detector sees call boundaries the individual records cannot express.
     BatchMark,
     Flush,
+    /// §6.1 — roll to a fresh session file, then delete every OTHER in-scope
+    /// file (and the export artifacts in `exports_dir`) ON THE WRITER THREAD, so
+    /// no record is lost between the flush and the new file opening. The reply
+    /// carries either the counts + the new file name, or the roll error — a
+    /// failed roll purged nothing and must never report as success (§6.1).
+    RollAndPurge {
+        exports_dir: PathBuf,
+        reply: SyncSender<Result<PurgeReply, AppError>>,
+    },
     Shutdown(SyncSender<()>),
+}
+
+/// §6.1 — the writer thread's answer to a `RollAndPurge`.
+#[derive(Debug, Clone)]
+pub struct PurgeReply {
+    pub deleted_files: u32,
+    pub deleted_bytes: u64,
+    pub failed_files: u32,
+    pub deleted_exports: u32,
+    /// NAME (never a path) of the fresh, empty file logging continues into.
+    pub active_file: String,
 }
 
 /// A live logging session: the writer thread plus everything the commands need
@@ -66,6 +87,8 @@ pub struct Sink {
     /// Anomaly records the detector has emitted this session (§5), surfaced by
     /// `log_session_info`. Shared with the writer thread.
     anomalies: Arc<AtomicU64>,
+    /// §6.3 — parts evicted at the cap this session, shared with the writer.
+    dropped_parts: Arc<AtomicU64>,
 }
 
 impl Sink {
@@ -80,6 +103,9 @@ impl Sink {
         // caller instead of dying silently on a detached thread.
         let redactor = Arc::new(Redactor::new());
         let writer = LogWriter::open(cfg, Arc::clone(&redactor))?;
+        // Share the writer's eviction counter (§6.3) BEFORE it moves into the
+        // thread, so `log_session_info` can read it without touching the writer.
+        let dropped_parts = writer.dropped_parts_counter();
         let (tx, rx) = sync_channel::<SinkMsg>(CHANNEL_CAPACITY);
         let dropped = Arc::new(AtomicU64::new(0));
         let thread_dropped = Arc::clone(&dropped);
@@ -101,7 +127,30 @@ impl Sink {
             level,
             accepted: AtomicU64::new(0),
             anomalies,
+            dropped_parts,
         })
+    }
+
+    /// §6.3 — parts of this session evicted at the cap.
+    pub fn dropped_parts(&self) -> u32 {
+        self.dropped_parts.load(Ordering::Relaxed) as u32
+    }
+
+    /// §6.1 — roll to a fresh file and purge every other in-scope artifact on the
+    /// writer thread. BLOCKS the caller until the writer replies, so only ever
+    /// called from `spawn_blocking`. Surfaces the roll error rather than reporting
+    /// a failed purge as a zero-deletion success.
+    pub fn roll_and_purge(&self, exports_dir: PathBuf) -> Result<PurgeReply, AppError> {
+        let (reply_tx, reply_rx) = sync_channel::<Result<PurgeReply, AppError>>(1);
+        self.tx
+            .send(SinkMsg::RollAndPurge {
+                exports_dir,
+                reply: reply_tx,
+            })
+            .map_err(|_| AppError::Other("the log writer thread is gone".into()))?;
+        reply_rx
+            .recv()
+            .map_err(|_| AppError::Other("the log writer did not complete the purge".into()))?
     }
 
     pub fn redactor(&self) -> &Arc<Redactor> {
@@ -261,6 +310,28 @@ fn writer_loop(
             }
             Ok(SinkMsg::Flush) => {
                 let _ = writer.flush();
+            }
+            Ok(SinkMsg::RollAndPurge { exports_dir, reply }) => {
+                // Roll to a fresh, empty file (its header carries afterPurge:true),
+                // then delete every OTHER in-scope file — including the just-closed
+                // one — plus the export artifacts. Same thread as every write, so
+                // no record is lost between the close and the new file opening.
+                let result = match writer.roll(true) {
+                    Ok(()) => {
+                        let active = writer.active_file().to_string();
+                        let c =
+                            super::writer::purge_scope(writer.dir(), &exports_dir, Some(&active));
+                        Ok(PurgeReply {
+                            deleted_files: c.deleted_files,
+                            deleted_bytes: c.deleted_bytes,
+                            failed_files: c.failed_files,
+                            deleted_exports: c.deleted_exports,
+                            active_file: active,
+                        })
+                    }
+                    Err(e) => Err(e),
+                };
+                let _ = reply.send(result);
             }
             Ok(SinkMsg::Shutdown(ack)) => {
                 emit_pending_drops(&mut writer, &dropped, &mut reported_drops);
