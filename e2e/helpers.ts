@@ -141,6 +141,31 @@ export async function clickGraphRow(page: Page, displayRow: number): Promise<voi
   await scroller.click({ position: { x: box.width / 2, y } });
 }
 
+/** Click a DISPLAY row, then assert `target` became visible — retrying the
+ *  CLICK if it did not. Use this instead of `clickGraphRow` + a bare
+ *  `toBeVisible` whenever the click follows a graph MUTATION (commit, rebase,
+ *  merge): the deterministic "graph gained N rows" signal is `scrollHeight`,
+ *  but scrollHeight reaching its final value does not mean the display-row map
+ *  has settled — the WIP row can still appear/disappear as the same refresh
+ *  round's status slice lands, which shifts every row by one and makes the
+ *  click select the neighbour. Under worker contention those two land far
+ *  enough apart to lose the race (P94: e2e/07-rebase.spec.ts:64 reproduced
+ *  ~1-in-6 this way).
+ *
+ *  This weakens NOTHING: the assertion is unchanged, and only a transient
+ *  row-map shift is tolerated. If the mutation genuinely did not produce the
+ *  expected commit, every retry misses and the helper still fails. */
+export async function clickGraphRowUntilVisible(
+  page: Page,
+  displayRow: number,
+  target: Locator,
+): Promise<void> {
+  await expect(async () => {
+    await clickGraphRow(page, displayRow);
+    await expect(target).toBeVisible({ timeout: 1000 });
+  }).toPass({ timeout: 15_000 });
+}
+
 /** Right-click a DISPLAY row (same math as clickGraphRow) → the context menu. */
 export async function rightClickGraphRow(page: Page, displayRow: number): Promise<Locator> {
   const scroller = graphScroller(page);
